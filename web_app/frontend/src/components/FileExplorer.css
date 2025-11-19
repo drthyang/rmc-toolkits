@@ -1,0 +1,71 @@
+.file-explorer {
+    background: #1e1e1e;
+    color: #e0e0e0;
+    padding: 1rem;
+    border-right: 1px solid #333;
+    height: 100%;
+    overflow-y: auto;
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+}
+
+.path-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+    gap: 0.5rem;
+}
+
+.path-header button {
+    background: #333;
+    border: none;
+    color: #fff;
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.path-header button:hover {
+    background: #444;
+}
+
+.current-path {
+    font-size: 0.8rem;
+    color: #888;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.file-item {
+    padding: 0.5rem;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: background 0.2s;
+}
+
+.file-item:hover {
+    background: #2a2a2a;
+}
+
+.file-item.directory {
+    color: #64b5f6;
+}
+
+.file-item.file {
+    color: #e0e0e0;
+}
+
+.icon {
+    font-size: 1.2rem;
+}
