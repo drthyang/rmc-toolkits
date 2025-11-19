@@ -40,7 +40,16 @@ const FileExplorer = ({ onFileSelect }) => {
             <h3>File Explorer</h3>
             <div className="path-header">
                 <button onClick={handleUp} disabled={currentPath === '/'}>⬆ Up</button>
-                <span className="current-path">{currentPath}</span>
+                <div className="path-input-container">
+                    <input
+                        type="text"
+                        value={currentPath}
+                        onChange={(e) => setCurrentPath(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && fetchFiles(currentPath)}
+                        className="path-input"
+                    />
+                    <button onClick={() => fetchFiles(currentPath)}>Go</button>
+                </div>
             </div>
             {error && <div className="error">{error}</div>}
             <ul className="file-list">
