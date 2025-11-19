@@ -30,12 +30,26 @@
     background: #444;
 }
 
-.current-path {
+.path-input-container {
+    display: flex;
+    flex: 1;
+    gap: 0.5rem;
+}
+
+.path-input {
+    flex: 1;
+    background: #333;
+    border: 1px solid #444;
+    color: #e0e0e0;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-family: monospace;
     font-size: 0.8rem;
-    color: #888;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+}
+
+.path-input:focus {
+    outline: none;
+    border-color: #64b5f6;
 }
 
 .file-list {
