@@ -91,7 +91,7 @@ Then open the Vite dev server URL and use the file explorer to navigate your dat
   <img src="assets/2_Bragg.png" width="30%" />
   <img src="assets/3_SQ.png" width="30%" />
 </div>
-<div align="left">
+<div align="center">
   <img src="assets/4_Gr.png" width="30%" />
   <img src="assets/5_Partials.png" width="30%" />
 </div>
