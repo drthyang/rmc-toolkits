@@ -3,7 +3,7 @@
 Post-processing utilities and a small web viewer for RMCProfile outputs. The repo includes:
 
 - CLI plotting scripts for RMCProfile CSV/log outputs.
-- A 3D atom-position visualizer for RMC `.rmc6f` + `Frac*.txt` inputs.
+- A 3D atom-position visualizer for RMC configuration.
 - An interactive KDE slice viewer for 3D atomic densities.
 - A Flask + React web app to browse output files and render plots in the browser.
 
