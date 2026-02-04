@@ -85,7 +85,7 @@ npm run dev
 Then open the Vite dev server URL and use the file explorer to navigate your data directory. The backend runs on port `5000` by default.
 
 ## Screenshots
-
+- Check RMC progress (RMC_plot.py)
 <div align="center">
   <img src="assets/1_R-value.png" width="30%" />
   <img src="assets/2_Bragg.png" width="30%" />
@@ -95,11 +95,12 @@ Then open the Vite dev server URL and use the file explorer to navigate your dat
   <img src="assets/4_Gr.png" width="30%" />
   <img src="assets/5_Partials.png" width="30%" />
 </div>
-
-
 - KDE slice viewer (RMC_KDE.py)
+<div align="center">
+  <img src="assets/KDE.png" width="80%" />
+</div>
 - 3D atomic positions (RMC_3D.py)
-- Web app plot view
+
 
 ## Expected File Types
 
