@@ -95,14 +95,17 @@ Then open the Vite dev server URL and use the file explorer to navigate your dat
   <img src="assets/4_Gr.png" width="30%" />
   <img src="assets/5_Partials.png" width="30%" />
 </div>
-- KDE slice viewer (RMC_KDE.py)
-<div align="center">
-  <img src="assets/KDE.png" width="90%" />
-</div>
+
 - 3D atomic positions (RMC_3D.py)
 <div align="center">
   <img src="assets/Distr_3D.png" width="60%" />
 </div>
+
+- KDE slice viewer (RMC_KDE.py)
+<div align="center">
+  <img src="assets/KDE.png" width="90%" />
+</div>
+
 
 ## Expected File Types
 
