@@ -101,7 +101,7 @@ Then open the Vite dev server URL and use the file explorer to navigate your dat
 </div>
 - 3D atomic positions (RMC_3D.py)
 <div align="center">
-  <img src="assets/Distr_3D.png" width="80%" />
+  <img src="assets/Distr_3D.png" width="60%" />
 </div>
 
 ## Expected File Types
