@@ -52,14 +52,6 @@ Plot a single element (by symbol) instead of all atoms:
 python src/RMC_KDE.py --el Mn
 ```
 
-### KDE Tool Metadata
-
-- Author: Tsung-Han Yang, Ph.D.
-- Affiliation: Oak Ridge National Laboratory (Spallation Neutron Source)
-- Contact: tsung-han_yang@alumni.brown.edu
-- Version: v1.0.0 (2025-08-27)
-- License: Academic and research use. See `LICENSE` for details.
-
 ## 3D Visualization
 
 `src/RMC_3D.py` expects a `Frac*.txt` file and a `.rmc6f` file in the working directory. It uses Mayavi for 3D scatter rendering.
