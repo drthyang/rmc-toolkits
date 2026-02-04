@@ -86,7 +86,7 @@ Then open the Vite dev server URL and use the file explorer to navigate your dat
 
 ## Screenshots
 
-![Monitoring RMC Results](assets/1_R-value.png)
+![Monitoring RMC Results](assets/1_R-value.png)(assets/2_Bragg.png)
 
 - KDE slice viewer (RMC_KDE.py)
 - 3D atomic positions (RMC_3D.py)
