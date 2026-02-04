@@ -4,12 +4,14 @@ Post-processing utilities and a small web viewer for RMCProfile outputs. The rep
 
 - CLI plotting scripts for RMCProfile CSV/log outputs.
 - A 3D atom-position visualizer for RMC `.rmc6f` + `Frac*.txt` inputs.
+- An interactive KDE slice viewer for 3D atomic densities.
 - A Flask + React web app to browse output files and render plots in the browser.
 
 ## Contents
 
 - `src/RMC_plot.py` plots common RMCProfile outputs (`*_FQ1.csv`, `*_FT_XFQ1.csv`, `*_SQ1.csv`, `*_bragg.csv`, `*PDF*.csv`, and `*.log`).
 - `src/RMC_3D.py` renders folded atomic positions in 3D (Mayavi) from `Frac*.txt` and `.rmc6f`.
+- `src/RMC_KDE.py` provides interactive KDE slice plots of 3D atomic densities from `Frac*.txt` and `.rmc6f`.
 - `src/STOG_plot.py` plots STOG outputs like `scale_ft.gr`, `scale_ft.sq`, and related inputs.
 - `web_app/` contains a Flask backend and a React frontend to browse and plot files interactively.
 - `data/` includes example RMCProfile outputs you can use for quick testing.
@@ -34,6 +36,20 @@ python src/RMC_plot.py --dir data
 
 ```bash
 python src/RMC_plot.py --dir data --save --no-show
+```
+
+## KDE Slice Viewer
+
+`src/RMC_KDE.py` expects a `Frac*.txt` file and a `.rmc6f` file in the working directory. It opens an interactive UI with sliders for the z-slice position and thickness.
+
+```bash
+python src/RMC_KDE.py
+```
+
+Plot a single element (by symbol) instead of all atoms:
+
+```bash
+python src/RMC_KDE.py --el Mn
 ```
 
 ## 3D Visualization
@@ -82,6 +98,7 @@ The plotting utilities look for common RMCProfile outputs, including:
 - The scripts assume RMCProfile-style CSV formatting (first row = headers).
 - For headless environments, use `--no-show` and `--save` in `RMC_plot.py`.
 - `STOG_plot.py` expects a local `stog_input.dat` and STOG output files in the current directory.
+- `RMC_KDE.py` and `RMC_3D.py` expect `Frac*.txt` + `.rmc6f` in the working directory.
 
 ## Project Status
 
