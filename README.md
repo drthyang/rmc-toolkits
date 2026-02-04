@@ -52,6 +52,14 @@ Plot a single element (by symbol) instead of all atoms:
 python src/RMC_KDE.py --el Mn
 ```
 
+### KDE Tool Metadata
+
+- Author: Tsung-Han Yang, Ph.D.
+- Affiliation: Oak Ridge National Laboratory (Spallation Neutron Source)
+- Contact: tsung-han_yang@alumni.brown.edu
+- Version: v1.0.0 (2025-08-27)
+- License: Academic and research use. See `LICENSE` for details.
+
 ## 3D Visualization
 
 `src/RMC_3D.py` expects a `Frac*.txt` file and a `.rmc6f` file in the working directory. It uses Mayavi for 3D scatter rendering.
@@ -83,6 +91,14 @@ npm run dev
 ```
 
 Then open the Vite dev server URL and use the file explorer to navigate your data directory. The backend runs on port `5000` by default.
+
+## Screenshots
+
+Add screenshots or example plots here. Suggested images:
+
+- KDE slice viewer (RMC_KDE.py)
+- 3D atomic positions (RMC_3D.py)
+- Web app plot view
 
 ## Expected File Types
 
