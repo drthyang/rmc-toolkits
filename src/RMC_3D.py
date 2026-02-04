@@ -8,6 +8,16 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.transforms import Affine2D
 import seaborn as sns
 
+# --- PATCH START ---
+# NumPy 2.0 removed 'in1d', but VTK still needs it.
+# We map it to the new equivalent 'isin' or restore the old name.
+if not hasattr(np, "in1d"):
+    np.in1d = np.isin
+# --- PATCH END ---
+
+# Now import the rest of your libraries
+from mayavi import mlab
+
 plt.rcParams['font.family'] = 'Dejavu Sans'
 plt.rcParams['mathtext.fontset'] = 'dejavusans'
 plt.rcParams['lines.linewidth']= 1
@@ -128,7 +138,7 @@ def gen_3d_plot(fpath,atype=0) :
 	kde = gaussian_kde(xyz)
 	density = kde(xyz)
 
-	from mayavi import mlab
+	#from mayavi import mlab
 	# Plot scatter with mayavi
 	figure = mlab.figure('DensityPlot')
 	pts = mlab.points3d(xyz[0], xyz[1], xyz[2], density, scale_mode='none', scale_factor=0.01, color=(1,1,0))
