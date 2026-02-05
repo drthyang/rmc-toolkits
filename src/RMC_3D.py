@@ -168,6 +168,7 @@ atm_dic = get_atom_idx('./')
 
 gen_3d_plot_all('./',atm_dic)
 
+
 #for atype in atm_dic :
 #	gen_3d_plot('./',atype)
 
