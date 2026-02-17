@@ -5,7 +5,6 @@ Post-processing utilities and a small web viewer for RMCProfile outputs. The rep
 - CLI plotting scripts for RMCProfile CSV/log outputs.
 - A 3D atom-position visualizer for RMC configuration.
 - An interactive KDE slice viewer for 3D atomic densities.
-- A Flask + React web app to browse output files and render plots in the browser.
 
 ## Contents
 
@@ -13,7 +12,6 @@ Post-processing utilities and a small web viewer for RMCProfile outputs. The rep
 - `src/RMC_3D.py` renders folded atomic positions in 3D (Mayavi) from `Frac*.txt` and `.rmc6f`.
 - `src/RMC_KDE.py` provides interactive KDE slice plots of 3D atomic densities from `Frac*.txt` and `.rmc6f`.
 - `src/STOG_plot.py` plots STOG outputs like `scale_ft.gr`, `scale_ft.sq`, and related inputs.
-- `web_app/` contains a Flask backend and a React frontend to browse and plot files interactively.
 - `data/` includes example RMCProfile outputs you can use for quick testing.
 
 ## Quickstart (CLI)
@@ -60,29 +58,6 @@ python src/RMC_KDE.py --el Mn
 pip install mayavi
 python src/RMC_3D.py
 ```
-
-## Web App
-
-The web app renders plots on the backend and displays them in the frontend. The backend imports `RMC_plot.py` from `src`, so run it with `PYTHONPATH=./src` from the repo root.
-
-1. Backend (Flask):
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r web_app/backend/requirements.txt
-PYTHONPATH=./src python web_app/backend/app.py
-```
-
-2. Frontend (React + Vite):
-
-```bash
-cd web_app/frontend
-npm install
-npm run dev
-```
-
-Then open the Vite dev server URL and use the file explorer to navigate your data directory. The backend runs on port `5000` by default.
 
 ## Screenshots
 - RMC monitor (RMC_plot.py)
