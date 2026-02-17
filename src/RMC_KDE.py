@@ -183,11 +183,11 @@ def interactive_kde_slice(
     grid_xy = np.vstack([XX.ravel(), YY.ravel()])  # (2, M)
 
     # Figure + axes (3 panels horizontally)
-    fig = plt.figure(figsize=(16, 9))
-    gs = GridSpec(1, 3, width_ratios=[2.6, 1.2, 1.2], figure=fig, wspace=0.35)
+    fig = plt.figure(figsize=(16, 8))
+    gs = GridSpec(1, 3, width_ratios=[1,1,0.2], figure=fig, wspace=0.25)
     ax_main = fig.add_subplot(gs[0, 0])  # left: main KDE
-    ax_hist = fig.add_subplot(gs[0, 1])  # middle: z histogram
-    ax_xz   = fig.add_subplot(gs[0, 2])  # right: x–z density
+    ax_xz   = fig.add_subplot(gs[0, 1])  
+    ax_hist = fig.add_subplot(gs[0, 2])  
     plt.subplots_adjust(bottom=0.15)
 
     z0 = 0.5 * (zmin + zmax)
@@ -228,7 +228,7 @@ def interactive_kde_slice(
     ax_hist.set_title("z distribution",fontsize=14)
     bandA = ax_hist.axhspan(z0 - 0.5 * slab_thickness, z0 + 0.5 * slab_thickness,
                             color="C3", alpha=0.25)
-
+    ax_hist.set_aspect('equal')
     # --- Global x–z density + band ---
     nx, nz = gridsize_xz
     H, xedges, zedges = np.histogram2d(x, z, bins=[nx, nz], range=[xlim, zlim])
@@ -243,10 +243,11 @@ def interactive_kde_slice(
     ax_xz.set_title("XZ projection",fontsize=14)
     bandB = ax_xz.axhspan(z0 - 0.5 * slab_thickness, z0 + 0.5 * slab_thickness,
                           color="C3", alpha=0.25)
+    ax_xz.set_aspect('equal')
 
     # --- Sliders ---
-    ax_z  = plt.axes([0.25, 0.05, 0.50, 0.04])
-    ax_dz = plt.axes([0.25, 0.01, 0.50, 0.04])
+    ax_z  = plt.axes([0.25, 0.07, 0.50, 0.06])
+    ax_dz = plt.axes([0.25, 0.01, 0.50, 0.06])
     s_z  = Slider(ax_z,  r"z0 ($\mathrm{\AA}$)", zmin, zmax, valinit=z0)
     s_dz = Slider(ax_dz, r"dz ($\mathrm{\AA}$)", max((zmax - zmin) / 1000.0, 1e-9),
                   (zmax - zmin), valinit=slab_thickness)
