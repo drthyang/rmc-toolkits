@@ -44,6 +44,7 @@ from matplotlib.gridspec import GridSpec
 from scipy.stats import gaussian_kde
 import glob, sys
 import argparse
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 # Read the fractional atomic coordinates from Frac*.txt
 def read_frac_atom(fpath,atype='Ta',mode='Latt') :
@@ -154,6 +155,7 @@ def interactive_kde_slice(
     contour_color: str = "gray",
     contour_linewidth: float = 1,
 ) -> None:
+    global log_scale
     # --- Robust input coercion ---
     if hasattr(xyz, "to_numpy"):  # pandas DataFrame
         xyz = xyz.to_numpy()
@@ -184,7 +186,7 @@ def interactive_kde_slice(
 
     # Figure + axes (3 panels horizontally)
     fig = plt.figure(figsize=(16, 8))
-    gs = GridSpec(1, 3, width_ratios=[1,1,0.2], figure=fig, wspace=0.25)
+    gs = GridSpec(1, 3, width_ratios=[1,1,0.2], figure=fig, wspace=0.40)
     ax_main = fig.add_subplot(gs[0, 0])  # left: main KDE
     ax_xz   = fig.add_subplot(gs[0, 1])  
     ax_hist = fig.add_subplot(gs[0, 2])  
@@ -202,15 +204,23 @@ def interactive_kde_slice(
 
     # --- Main XY heatmap + contours ---
     dens0 = compute_xy_kde(z0, slab_thickness)
+    if log_scale==True :
+        dens0 = np.log10(dens0 + 1e-12)  # avoid log(0)
     im_xy = ax_main.imshow(
         dens0, origin="lower",
         extent=[xlim[0], xlim[1], ylim[0], ylim[1]],
         aspect="equal", cmap=cmap_xy
     )
-    cbar_xy = fig.colorbar(im_xy, ax=ax_main, pad=0.01, aspect=30)
+
+    divider = make_axes_locatable(ax_main)
+    cax = divider.append_axes("right", size="5%", pad=0.1)
+
+    cbar_xy = fig.colorbar(im_xy, cax=cax)
+    
     cbar_xy.set_label("KDE density (slab)", rotation=270, labelpad=14, fontsize=14)
+
     ax_main.set_xlabel(r"x ($\mathrm{\AA}$)",fontsize=12); ax_main.set_ylabel(r"y ($\mathrm{\AA}$)",fontsize=12)
-    title_main = ax_main.set_title(f"XY KDE @ z={z0:.3g}, dz={slab_thickness:.3g}",fontsize=14)
+    title_main = ax_main.set_title(f"XY KDE @ z={z0:.3g}, dz={slab_thickness:.3g}, log_scale={log_scale}",fontsize=14)
 
     # contour overlay on XY panel
     contours_xy = ax_main.contour(
@@ -237,10 +247,19 @@ def interactive_kde_slice(
         extent=[xedges[0], xedges[-1], zedges[0], zedges[-1]],
         aspect="auto", cmap=cmap_xz
     )
-    cbar_xz = fig.colorbar(im_xz, ax=ax_xz, pad=0.01, aspect=30)
-    cbar_xz.set_label("counts", rotation=270, labelpad=16,fontsize=12)
+
+    # Create a divider for the specific axes 'ax_xz'
+    divider_xz = make_axes_locatable(ax_xz)
+    
+    # Append the colorbar axes (cax) to the right of ax_xz
+    cax_xz = divider_xz.append_axes("right", size="5%", pad=0.1)
+    
+    # Plot the colorbar into cax_xz
+    cbar_xz = fig.colorbar(im_xz, cax=cax_xz)
+    # cbar_xz = fig.colorbar(im_xz, ax=ax_xz, pad=0.01, aspect=30)
+    cbar_xz.set_label("Counts", rotation=270, labelpad=16,fontsize=14)
     ax_xz.set_xlabel(r"x ($\mathrm{\AA}$)",fontsize=12); ax_xz.set_ylabel(r"z ($\mathrm{\AA}$)",fontsize=12)
-    ax_xz.set_title("XZ projection",fontsize=14)
+    ax_xz.set_title(f"XZ projection, log_scale={log_scale}",fontsize=14)
     bandB = ax_xz.axhspan(z0 - 0.5 * slab_thickness, z0 + 0.5 * slab_thickness,
                           color="C3", alpha=0.25)
     ax_xz.set_aspect('equal')
@@ -313,7 +332,15 @@ def main():
     parser.add_argument("--el", "--element", dest="element", default=None,
                         help="Element symbol or index understood by read_frac_atom (e.g. 'Mn'). "
                              "If omitted, use all elements.")
+    parser.add_argument("--log", action="store_true", help="Plot Y-axis in log scale.")
     args = parser.parse_args()
+    
+    global log_scale
+    if args.log:
+        print(">>> Log scale enabled for KDE density.")
+        log_scale = True
+    else:
+        log_scale = False  
 
     data_dir = "./" 
 
@@ -339,3 +366,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
