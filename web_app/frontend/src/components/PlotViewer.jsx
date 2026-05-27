@@ -78,34 +78,46 @@ const PlotViewer = ({ file, onConverted }) => {
     }, [imageUrl]);
 
     if (!filePath) {
-        return <div className="plot-viewer empty">Select a file to view plot</div>;
+        return <div className="plot-viewer empty">Select a file</div>;
     }
 
     return (
         <div className="plot-viewer">
-            {loading && <div className="loading">Generating plot...</div>}
-            {filePath?.endsWith('.rmc6f') && (
-                <div className="conversion-panel">
-                    <button onClick={convertRmc6f} disabled={converting}>
-                        {converting ? 'Generating...' : 'Generate Frac_coord txt'}
+            <div className="viewer-toolbar">
+                <div>
+                    <h2>{file.name}</h2>
+                    <p>{file.path}</p>
+                </div>
+                {filePath?.endsWith('.rmc6f') && (
+                    <button className="conversion-button" onClick={convertRmc6f} disabled={converting}>
+                        {converting ? 'Generating...' : 'Generate Frac_coord'}
                     </button>
-                </div>
-            )}
-            {message && <div className="message">{message}</div>}
-            {error && <div className="error">{error}</div>}
-            {metadata && (
-                <div className="plot-meta">
-                    <span>{metadata.title}</span>
-                    {Object.entries(metadata.metrics || {}).map(([key, value]) => (
-                        <span key={key}>{key}: {Number(value).toPrecision(5)}</span>
-                    ))}
-                </div>
-            )}
-            {imageUrl && (
-                <div className="plot-container">
-                    <img src={imageUrl} alt="RMC Plot" />
-                </div>
-            )}
+                )}
+            </div>
+            <div className="viewer-body">
+                {loading && <div className="loading">Generating plot...</div>}
+                {message && <div className="message">{message}</div>}
+                {error && <div className="error">{error}</div>}
+                {metadata && (
+                    <div className="plot-meta">
+                        <span>{metadata.title}</span>
+                        {Object.entries(metadata.metrics || {}).map(([key, value]) => (
+                            <span key={key}>{key}: {Number(value).toPrecision(5)}</span>
+                        ))}
+                    </div>
+                )}
+                {imageUrl && (
+                    <div className="plot-container">
+                        <img src={imageUrl} alt="RMC Plot" />
+                    </div>
+                )}
+                {!loading && !imageUrl && !error && !filePath?.endsWith('.rmc6f') && (
+                    <div className="empty-panel">No plot preview is available for this file.</div>
+                )}
+                {!loading && !imageUrl && filePath?.endsWith('.rmc6f') && (
+                    <div className="empty-panel">Structure files can be converted for KDE and 3D workflows.</div>
+                )}
+            </div>
         </div>
     );
 };

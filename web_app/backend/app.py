@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 import io
+import math
 import os
 import sys
 
@@ -14,7 +15,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from rmc_toolkits.kde import UnitCellPositions, kde_slice, load_unit_cell_positions
-from rmc_toolkits.parsers import iter_rmc6f_atoms, read_atom_indices, read_cell_vectors, write_frac_from_rmc6f
+from rmc_toolkits.parsers import (
+    iter_rmc6f_atoms,
+    read_atom_indices,
+    read_cell_vectors,
+    read_chi,
+    read_rmc_csv,
+    read_stog,
+    write_frac_from_rmc6f,
+)
 from rmc_toolkits.plots import close_plot, detect_plot_kind, make_plot, plot_to_png
 
 
@@ -69,6 +78,19 @@ def _sample_atoms_by_site(atoms: list[dict], max_points: int) -> tuple[list[dict
         sampled.extend(group[::stride][:quota])
 
     return sampled[:max_points], max(1, len(atoms) // max_points)
+
+
+def _clean_axis_label(label: str) -> str:
+    normalized = label.strip()
+    if normalized == "Q":
+        return "Q (Å^{-1})"
+    if normalized in ("r", "R"):
+        return "r (Å)"
+    return (
+        normalized.replace("(A^-1)", "(Å^{-1})")
+        .replace("(A^{-1})", "(Å^{-1})")
+        .replace("(A)", "(Å)")
+    )
 
 
 @app.route("/api/health", methods=["GET"])
@@ -129,6 +151,72 @@ def plot_metadata():
         metadata = {"kind": result.kind, "title": result.title, "metrics": result.metrics}
         close_plot(result)
         return jsonify(metadata)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/plot/data", methods=["GET"])
+def plot_data():
+    try:
+        path = _resolve_inside_root(request.args.get("path"))
+        if not path.exists() or not path.is_file():
+            return jsonify({"error": "File not found"}), 404
+
+        kind = detect_plot_kind(path)
+        if kind is None:
+            return jsonify({"error": f"Unsupported plot file type: {path.name}"}), 400
+
+        metadata_result = make_plot(path)
+        metadata = {"kind": metadata_result.kind, "title": metadata_result.title, "metrics": metadata_result.metrics}
+        close_plot(metadata_result)
+
+        if kind == "r_value":
+            _, chi_r = read_chi([path])
+            y_values = [float(value) for value in chi_r]
+            return jsonify(
+                {
+                    **metadata,
+                    "xLabel": "Time steps",
+                    "yLabel": "log(χ)",
+                    "series": [
+                        {
+                            "label": "R",
+                            "x": list(range(len(y_values))),
+                            "y": [float(math.log(max(value, 1e-12))) for value in y_values],
+                        }
+                    ],
+                }
+            )
+
+        if kind == "stog":
+            data = read_stog(path)
+            return jsonify(
+                {
+                    **metadata,
+                    "xLabel": "r (Å)" if path.name.endswith(".gr") else "Q (Å^{-1})",
+                    "yLabel": "G(r)" if path.name.endswith(".gr") else "S(Q)",
+                    "series": [{"label": path.name, "x": data[0].tolist(), "y": data[1].tolist()}],
+                }
+            )
+
+        series = read_rmc_csv(path)
+        x_values = series.data[0].tolist()
+        payload_series = []
+        for idx, label in enumerate(series.labels[1:], start=1):
+            if idx < len(series.data):
+                payload_series.append({"label": label.strip() or f"Series {idx}", "x": x_values, "y": series.data[idx].tolist()})
+
+        x_label = series.labels[0] if series.labels else "x"
+        if kind in ("xpdf", "npdf", "pdf_partials"):
+            x_label = "r (Å)"
+        elif kind == "bragg":
+            x_label = "Q (Å^{-1})"
+        else:
+            x_label = _clean_axis_label(x_label)
+
+        return jsonify({**metadata, "xLabel": x_label, "yLabel": "data", "series": payload_series})
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except Exception as exc:

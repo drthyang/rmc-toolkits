@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
+import InteractivePlot from './InteractivePlot';
 import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
@@ -51,14 +52,6 @@ const Dashboard = ({ directory }) => {
             .sort((a, b) => plotOrder.indexOf(a.plotKind) - plotOrder.indexOf(b.plotKind));
     }, [files]);
 
-    const counts = useMemo(() => {
-        return files.reduce((acc, file) => {
-            const key = file.type === 'directory' ? 'directories' : file.plotKind || 'other';
-            acc[key] = (acc[key] || 0) + 1;
-            return acc;
-        }, {});
-    }, [files]);
-
     return (
         <section className="dashboard-page">
             <div className="dashboard-toolbar">
@@ -70,25 +63,6 @@ const Dashboard = ({ directory }) => {
             </div>
 
             {error && <div className="dashboard-error">{error}</div>}
-
-            <div className="metric-strip">
-                <div className="metric-tile">
-                    <span>Plots</span>
-                    <strong>{plotFiles.length}</strong>
-                </div>
-                <div className="metric-tile">
-                    <span>RMC Files</span>
-                    <strong>{counts.other || 0}</strong>
-                </div>
-                <div className="metric-tile">
-                    <span>Folders</span>
-                    <strong>{counts.directories || 0}</strong>
-                </div>
-                <div className="metric-tile">
-                    <span>Rwp Values</span>
-                    <strong>{Object.values(metadata).filter((meta) => meta?.metrics?.rwp !== undefined).length}</strong>
-                </div>
-            </div>
 
             <div className="plot-grid">
                 {plotFiles.map((file) => {
@@ -104,11 +78,7 @@ const Dashboard = ({ directory }) => {
                                     <span className="rwp-chip">Rwp {Number(meta.metrics.rwp).toPrecision(4)}</span>
                                 )}
                             </div>
-                            <img
-                                src={`${API_BASE_URL}/api/plot?path=${encodeURIComponent(file.path)}`}
-                                alt={file.name}
-                                loading="lazy"
-                            />
+                            <InteractivePlot file={file} />
                         </article>
                     );
                 })}

@@ -44,6 +44,22 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 - The default z-slice now auto-snaps to the densest z-band on load, because the geometric cell midpoint can fall in an empty gap between atomic layers (as it does for the GNSe sample).
 - Added `.venv/`, `__pycache__/`, and `*.pyc` to `.gitignore`.
 
+## 2026-05-27 Update: Package Tests
+
+- Added a standard-library `unittest` suite under `tests/`.
+- Covered sample-file parsing for RMC CSV outputs, RMC log chi values, Rwp calculation, `.rmc6f` lattice and atom metadata, `.rmc6f` to `Frac_coord*.txt` conversion, full folded structure loading, plot-kind detection, plot metadata/PNG serialization, and KDE position loading/slice computation.
+- Documented the test command in `README.md`.
+
+## 2026-05-27 Update: UI Refresh And Interactive Dashboard
+
+- Added a bright/dark theme system using CSS variables, with a persisted theme toggle in the app header.
+- Removed the old sidebar-first workflow from the primary app shell. The app now defaults to the `data` path and exposes the data-path input, Dashboard/KDE navigation, and theme toggle directly in the header.
+- Added `GET /api/plot/data`, which returns parsed plot series and normalized scientific labels for browser-native rendering. Labels now use `χ`, `Å`, and `Q (Å^{-1})` with frontend superscript rendering.
+- Replaced static dashboard PNG cards with `InteractivePlot.jsx`, a lightweight SVG renderer with hover readouts, legend toggles, integer x-axis ticks, and drag-to-zoom x-range selection with a reset button.
+- Simplified the Dashboard by removing the summary tiles and arranging plots in a three-card desktop grid.
+- Reworked KDE/3D into three side-by-side panels on wide screens: KDE XY slice, slab-in-cell x-z projection, and Three.js model. The 2D panels preserve lattice-parameter aspect ratios; the 3D model uses lattice-scaled positions.
+- Added gray slab-edge outlines in the Three.js model to make the current z/dz slab boundaries visible.
+
 ## Important Files
 
 - `rmc_toolkits/parsers.py`: parsing and structure-loading functions.
@@ -54,6 +70,7 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 - `web_app/frontend/src/api.js`: frontend API base URL config.
 - `web_app/frontend/src/components/FileExplorer.jsx`: file navigation.
 - `web_app/frontend/src/components/Dashboard.jsx`: all-plots run dashboard.
+- `web_app/frontend/src/components/InteractivePlot.jsx`: browser-native SVG plot renderer for the dashboard.
 - `web_app/frontend/src/components/StructurePage.jsx`: KDE slice and 3D model page.
 - `web_app/frontend/src/components/PlotViewer.jsx`: PNG plot rendering and metadata display.
 - `docs/ROADMAP.md`: development roadmap for the larger application.
@@ -62,10 +79,10 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 
 - The old `src/RMC_3D.py` still imports Mayavi and executes visualization at import time. It should be refactored before being reused by the web app.
 - `src/STOG_plot.py` still contains top-level plotting code. The new package has basic STOG single-file plotting, but not the full multi-panel STOG workflow yet.
-- The web app still renders static PNG plots. Interactive Plotly/Three.js visualizations are a future milestone.
-- The dashboard currently uses static PNG plot cards. Replacing those cards with interactive Plotly panels is still a future milestone.
+- The Dashboard now renders interactive SVG plots directly from parsed data. The standalone File view still uses the PNG plot endpoint.
+- The dashboard renderer is intentionally lightweight and custom. It supports hover, legend toggles, integer x ticks, and x-range drag zoom, but not full Plotly-style pan/selection/export yet.
 - The KDE page now uses the real SciPy `gaussian_kde` via `GET /api/kde/slice` (resolved 2026-05-27). Remaining gaps vs. `src/RMC_KDE.py`: the desktop tool also shows a z-distribution histogram and a global x-z projection panel alongside the slice, and it supports non-orthorhombic limits; the web page mirrors only the slab x-z projection so far. The KDE fit is subsampled to 6000 slab points, which is fine for visualization but not an exact full-population estimate.
-- There are no automated tests yet. Add tests around the package layer before expanding the app.
+- The test suite currently targets the reusable package layer and sample fixtures. Expand it around backend API behavior and edge-case fixture files before broadening app features.
 - The backend is Flask. It is acceptable for the current local viewer, but FastAPI would be a better fit for typed analysis APIs and background job status.
 - The `.rmc6f` to `Frac_coord*.txt` converter preserves the current observed format exactly for the sample data. Add fixtures for non-cubic or unusual RMCProfile outputs before relying on it for every dataset.
 
@@ -98,4 +115,4 @@ Note: the machine's Anaconda Python has a broken numpy and no flask. Use a dedic
 
 ## Next Best Engineering Step
 
-Structure metadata (`/api/structure`) and KDE slice (`/api/kde/slice`) endpoints now exist. Next: add package-level tests using the sample files in `data/` (including the new `rmc_toolkits/kde.py`), then refactor `src/RMC_3D.py` and `src/STOG_plot.py` so no analysis module performs work at import time. Remaining viewer work: add the z-distribution histogram and global x-z projection panels to match `src/RMC_KDE.py`, and build out the Three.js structure viewer (element visibility toggles, camera presets, screenshot export). Batch run summaries are still future work.
+Structure metadata (`/api/structure`), KDE slice (`/api/kde/slice`), and plot-data (`/api/plot/data`) endpoints now exist, and the reusable package layer has initial sample-backed tests. Next: add backend API tests around the Flask endpoints, then refactor `src/RMC_3D.py` and `src/STOG_plot.py` so no analysis module performs work at import time. Remaining viewer work: add the z-distribution histogram and global x-z projection panels to match `src/RMC_KDE.py`, add export/screenshot controls, and keep tightening dashboard interactions if researchers need pan or publication export. Batch run summaries are still future work.

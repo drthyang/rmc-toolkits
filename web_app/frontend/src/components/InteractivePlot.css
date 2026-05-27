@@ -1,0 +1,150 @@
+.interactive-plot {
+    position: relative;
+    min-height: 0;
+}
+
+.plot-actions {
+    position: absolute;
+    z-index: 2;
+    right: 0.6rem;
+    top: 0.5rem;
+    display: flex;
+    gap: 0.25rem;
+}
+
+.plot-actions button {
+    min-height: 1.7rem;
+    padding: 0 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 680;
+    background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.interactive-plot svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    touch-action: none;
+    aspect-ratio: 16 / 9;
+}
+
+.plot-bg {
+    fill: var(--plot-bg);
+}
+
+.plot-grid-line {
+    stroke: color-mix(in srgb, var(--border) 70%, transparent);
+    stroke-width: 1;
+}
+
+.plot-grid-line.soft {
+    opacity: 0.55;
+}
+
+.plot-frame {
+    fill: none;
+    stroke: var(--border-strong);
+    stroke-width: 1.2;
+}
+
+.plot-tick,
+.axis-label {
+    fill: var(--text);
+    font-size: 14px;
+    font-weight: 560;
+}
+
+.axis-label {
+    fill: var(--muted);
+    font-size: 15px;
+    font-weight: 650;
+}
+
+.series-path {
+    fill: none;
+    stroke-width: 1.7;
+    vector-effect: non-scaling-stroke;
+}
+
+.hover-line {
+    stroke: var(--accent-strong);
+    stroke-width: 1;
+    stroke-dasharray: 4 4;
+}
+
+.zoom-selection {
+    fill: var(--accent-soft);
+    stroke: var(--accent-strong);
+    stroke-width: 1.4;
+    pointer-events: none;
+}
+
+.plot-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.45rem 0.6rem 0;
+    max-height: 4.4rem;
+    overflow: auto;
+}
+
+.plot-legend button {
+    min-height: 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.76rem;
+    font-weight: 620;
+    color: var(--text);
+    background: var(--panel-soft);
+    justify-content: flex-start;
+    text-align: left;
+}
+
+.plot-legend button.muted {
+    opacity: 0.45;
+}
+
+.plot-legend span {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+}
+
+.plot-tooltip {
+    position: absolute;
+    right: 0.75rem;
+    top: 2.55rem;
+    display: grid;
+    gap: 0.15rem;
+    max-width: min(18rem, calc(100% - 1.5rem));
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--panel-bg) 92%, transparent);
+    color: var(--text);
+    padding: 0.45rem 0.55rem;
+    font-size: 0.78rem;
+    pointer-events: none;
+    box-shadow: var(--shadow);
+}
+
+.plot-tooltip strong {
+    color: var(--text-strong);
+}
+
+.interactive-plot-loading,
+.interactive-plot-error {
+    min-height: 14rem;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+}
+
+
+.interactive-plot-error {
+    color: var(--danger);
+}

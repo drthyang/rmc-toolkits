@@ -1,81 +1,59 @@
 .dashboard-page {
     flex: 1;
+    min-height: 0;
     overflow: auto;
-    padding: 1.25rem 1.5rem 2rem;
-    background: #101113;
+    padding: 1rem;
+    background: var(--app-bg);
 }
 
 .dashboard-toolbar {
-    display: flex;
+    display: none;
     justify-content: space-between;
     gap: 1rem;
     align-items: flex-start;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
 }
 
 .dashboard-toolbar h2 {
     margin: 0;
-    font-size: 1.25rem;
-    font-weight: 650;
+    font-size: 1.15rem;
+    line-height: 1.25;
+    font-weight: 720;
+    color: var(--text-strong);
 }
 
 .dashboard-toolbar p {
-    margin: 0.2rem 0 0;
-    color: #9ba5b1;
-    font-family: monospace;
-    font-size: 0.85rem;
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82rem;
 }
 
 .status-pill,
 .rwp-chip {
-    border: 1px solid #3b6f58;
-    color: #9ad7b0;
-    border-radius: 4px;
-    padding: 0.25rem 0.45rem;
-    font-size: 0.78rem;
+    border: 1px solid color-mix(in srgb, var(--success) 46%, var(--border));
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 11%, transparent);
+    border-radius: 999px;
+    padding: 0.26rem 0.55rem;
+    font-size: 0.76rem;
+    font-weight: 680;
     white-space: nowrap;
-}
-
-.metric-strip {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(120px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-}
-
-.metric-tile {
-    border: 1px solid #2d3238;
-    background: #181a1d;
-    border-radius: 6px;
-    padding: 0.75rem;
-    min-height: 4.25rem;
-}
-
-.metric-tile span {
-    display: block;
-    color: #aeb7c2;
-    font-size: 0.78rem;
-}
-
-.metric-tile strong {
-    display: block;
-    margin-top: 0.2rem;
-    font-size: 1.35rem;
-    color: #f3f5f7;
 }
 
 .plot-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem;
 }
 
 .plot-card {
-    border: 1px solid #2d3238;
-    background: #17191c;
-    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    border-radius: 8px;
     min-width: 0;
     overflow: hidden;
+    box-shadow: var(--shadow);
 }
 
 .plot-card-header {
@@ -83,50 +61,79 @@
     justify-content: space-between;
     gap: 0.75rem;
     align-items: flex-start;
-    padding: 0.75rem 0.85rem;
-    border-bottom: 1px solid #2d3238;
+    padding: 0.45rem 0.65rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-raised);
 }
 
 .plot-card h3 {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: 1rem;
+    color: var(--text-strong);
+    line-height: 1.25;
 }
 
 .plot-card p {
-    margin: 0.15rem 0 0;
-    color: #8f9aa6;
-    font-size: 0.75rem;
+    margin: 0.2rem 0 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 560;
 }
 
-.plot-card img {
-    display: block;
-    width: 100%;
-    min-height: 260px;
-    object-fit: contain;
-    background: #f7f7f7;
+.plot-card .interactive-plot {
+    min-height: 335px;
+}
+
+.plot-card .interactive-plot svg {
+    aspect-ratio: 16 / 9;
+    max-height: 330px;
 }
 
 .dashboard-error,
 .empty-state {
-    border: 1px solid #5c3030;
-    color: #ef9a9a;
-    background: rgba(239, 83, 80, 0.1);
-    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+    color: var(--danger);
+    background: var(--danger-soft);
+    border-radius: 8px;
     padding: 1rem;
 }
 
 .empty-state {
-    border-color: #2d3238;
-    color: #9ba5b1;
-    background: #181a1d;
+    border-color: var(--border);
+    color: var(--muted);
+    background: var(--panel-bg);
+}
+
+@media (max-width: 1180px) {
+    .plot-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 760px) {
-    .metric-strip {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+    .dashboard-page {
+        padding: 0.9rem;
+    }
+
+    .dashboard-toolbar {
+        flex-direction: column;
     }
 
     .plot-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 1500px) and (min-aspect-ratio: 16 / 10) {
+    .dashboard-page {
+        padding: 0.9rem 1rem;
+    }
+
+    .plot-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .plot-card .interactive-plot svg {
+        max-height: 340px;
     }
 }

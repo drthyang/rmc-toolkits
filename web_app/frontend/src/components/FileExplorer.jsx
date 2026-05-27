@@ -49,9 +49,12 @@ const FileExplorer = ({ onFileSelect, onDirectoryChange, refreshKey }) => {
 
     return (
         <div className="file-explorer">
-            <h3>File Explorer</h3>
+            <div className="explorer-title">
+                <h2>Files</h2>
+                <span>{files.length} items</span>
+            </div>
             <div className="path-header">
-                <button onClick={handleUp} disabled={currentPath === rootPath}>Up</button>
+                <button className="up-button" onClick={handleUp} disabled={currentPath === rootPath}>Up</button>
                 <div className="path-input-container">
                     <input
                         type="text"
@@ -69,8 +72,8 @@ const FileExplorer = ({ onFileSelect, onDirectoryChange, refreshKey }) => {
                     <li key={index}
                         className={`file-item ${file.type}`}
                         onClick={() => handleNavigate(file.path, file.type, file)}>
-                        <span className="icon">{file.type === 'directory' ? 'DIR' : file.plotKind || 'FILE'}</span>
-                        {file.name}
+                        <span className="file-kind">{file.type === 'directory' ? 'DIR' : file.plotKind || 'FILE'}</span>
+                        <span className="file-name">{file.name}</span>
                     </li>
                 ))}
             </ul>
