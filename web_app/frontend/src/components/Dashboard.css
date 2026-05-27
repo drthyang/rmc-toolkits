@@ -1,0 +1,132 @@
+.dashboard-page {
+    flex: 1;
+    overflow: auto;
+    padding: 1.25rem 1.5rem 2rem;
+    background: #101113;
+}
+
+.dashboard-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.dashboard-toolbar h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 650;
+}
+
+.dashboard-toolbar p {
+    margin: 0.2rem 0 0;
+    color: #9ba5b1;
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+.status-pill,
+.rwp-chip {
+    border: 1px solid #3b6f58;
+    color: #9ad7b0;
+    border-radius: 4px;
+    padding: 0.25rem 0.45rem;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.metric-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.metric-tile {
+    border: 1px solid #2d3238;
+    background: #181a1d;
+    border-radius: 6px;
+    padding: 0.75rem;
+    min-height: 4.25rem;
+}
+
+.metric-tile span {
+    display: block;
+    color: #aeb7c2;
+    font-size: 0.78rem;
+}
+
+.metric-tile strong {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 1.35rem;
+    color: #f3f5f7;
+}
+
+.plot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 1rem;
+}
+
+.plot-card {
+    border: 1px solid #2d3238;
+    background: #17191c;
+    border-radius: 6px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.plot-card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: flex-start;
+    padding: 0.75rem 0.85rem;
+    border-bottom: 1px solid #2d3238;
+}
+
+.plot-card h3 {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.plot-card p {
+    margin: 0.15rem 0 0;
+    color: #8f9aa6;
+    font-size: 0.75rem;
+}
+
+.plot-card img {
+    display: block;
+    width: 100%;
+    min-height: 260px;
+    object-fit: contain;
+    background: #f7f7f7;
+}
+
+.dashboard-error,
+.empty-state {
+    border: 1px solid #5c3030;
+    color: #ef9a9a;
+    background: rgba(239, 83, 80, 0.1);
+    border-radius: 6px;
+    padding: 1rem;
+}
+
+.empty-state {
+    border-color: #2d3238;
+    color: #9ba5b1;
+    background: #181a1d;
+}
+
+@media (max-width: 760px) {
+    .metric-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .plot-grid {
+        grid-template-columns: 1fr;
+    }
+}

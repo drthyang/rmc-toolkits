@@ -3,11 +3,15 @@
 Post-processing utilities and a small web viewer for RMCProfile outputs. The repo includes:
 
 - CLI plotting scripts for RMCProfile CSV/log outputs.
+- A reusable `rmc_toolkits/` package for parsing and plot generation.
+- A React dashboard for viewing all detected plots in a run folder.
+- A KDE / 3D page for structure-density slices and a Three.js atom model.
 - A 3D atom-position visualizer for RMC configuration.
 - An interactive KDE slice viewer for 3D atomic densities.
 
 ## Contents
 
+- `rmc_toolkits/` contains reusable parsing and plotting functions for app development.
 - `src/RMC_plot.py` plots common RMCProfile outputs (`*_FQ1.csv`, `*_FT_XFQ1.csv`, `*_SQ1.csv`, `*_bragg.csv`, `*PDF*.csv`, and `*.log`).
 - `src/RMC_3D.py` renders folded atomic positions in 3D (Mayavi) from `Frac*.txt` and `.rmc6f`.
 - `src/RMC_KDE.py` provides interactive KDE slice plots of 3D atomic densities from `Frac*.txt` and `.rmc6f`.
@@ -39,6 +43,14 @@ python src/RMC_plot.py --dir data --save --no-show
 ## KDE Slice Viewer
 
 `src/RMC_KDE.py` expects a `Frac*.txt` file and a `.rmc6f` file in the working directory. It opens an interactive UI with sliders for the z-slice position and thickness.
+
+If you only have an `.rmc6f` file, generate the matching fractional-coordinate text file from Python:
+
+```python
+from rmc_toolkits.parsers import write_frac_from_rmc6f
+
+write_frac_from_rmc6f("data/GNSe.rmc6f", overwrite=True)
+```
 
 ```bash
 python src/RMC_KDE.py
@@ -100,4 +112,4 @@ The plotting utilities look for common RMCProfile outputs, including:
 
 ## Project Status
 
-This is a research tooling repo with lightweight scripts and a simple viewer. If you need new plot types or additional file patterns, feel free to extend `src/RMC_plot.py`.
+This is a research tooling repo evolving into a local-first analysis app. See `docs/HANDOFF.md` for the current implementation hand-off and `docs/ROADMAP.md` for the development roadmap.

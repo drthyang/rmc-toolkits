@@ -24,11 +24,12 @@ body,
 
 .app-header {
   background: #1e1e1e;
-  padding: 1rem 2rem;
+  padding: 0.8rem 1.5rem;
   border-bottom: 1px solid #333;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
 }
 
 .app-header h1 {
@@ -38,8 +39,46 @@ body,
   color: #fff;
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.page-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.page-tabs button {
+  min-height: 2rem;
+  border: 1px solid #384048;
+  background: #17191c;
+  color: #cbd5df;
+  border-radius: 4px;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+}
+
+.page-tabs button.active {
+  background: #254a3a;
+  border-color: #3b6f58;
+  color: #f2fff7;
+}
+
+.page-tabs button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .selected-file {
   font-family: monospace;
   color: #888;
   font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 42vw;
 }
