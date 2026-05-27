@@ -1,31 +1,37 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Dashboard from './components/Dashboard';
-import FileExplorer from './components/FileExplorer';
-import PlotViewer from './components/PlotViewer';
 import StructurePage from './components/StructurePage';
 import './App.css';
 
 function App() {
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [activePage, setActivePage] = useState('dashboard');
-  const [currentDirectory, setCurrentDirectory] = useState('.');
-  const handleFileSelect = (file) => {
-    setSelectedFile(file);
-    setActivePage('file');
+  const [currentDirectory, setCurrentDirectory] = useState('data');
+  const [draftDirectory, setDraftDirectory] = useState('data');
+  const [theme, setTheme] = useState(() => localStorage.getItem('rmc-theme') || 'dark');
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('rmc-theme', theme);
+  }, [theme]);
+
+  const handleDirectorySubmit = (event) => {
+    event.preventDefault();
+    const nextDirectory = draftDirectory.trim() || '.';
+    setCurrentDirectory(nextDirectory);
   };
 
   return (
     <div className="app-container">
-      <FileExplorer
-        onFileSelect={handleFileSelect}
-        onDirectoryChange={setCurrentDirectory}
-        refreshKey={refreshKey}
-      />
       <main className="main-content">
         <header className="app-header">
-          <div className="brand-row">
-            <h1>RMC++ Workspace</h1>
+          <div className="header-primary">
+            <div className="brand-row">
+              <div className="brand-mark">R</div>
+              <div className="brand-copy">
+                <h1>RMC++ Workspace</h1>
+                <span>{currentDirectory}</span>
+              </div>
+            </div>
             <nav className="page-tabs" aria-label="Workspace pages">
               <button
                 className={activePage === 'dashboard' ? 'active' : ''}
@@ -39,25 +45,35 @@ function App() {
               >
                 KDE / 3D
               </button>
-              <button
-                className={activePage === 'file' ? 'active' : ''}
-                onClick={() => setActivePage('file')}
-                disabled={!selectedFile}
-              >
-                File
-              </button>
             </nav>
+            <div className="header-actions">
+              <button
+                className="theme-toggle"
+                type="button"
+                onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}
+                aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              >
+                <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+              </button>
+            </div>
           </div>
-          <span className="selected-file">{selectedFile?.path || currentDirectory}</span>
+          <form className="path-bar" onSubmit={handleDirectorySubmit}>
+            <label htmlFor="data-path">Data path</label>
+            <input
+              id="data-path"
+              type="text"
+              value={draftDirectory}
+              onChange={(event) => setDraftDirectory(event.target.value)}
+              spellCheck="false"
+            />
+            <button type="submit">
+              Load
+            </button>
+          </form>
         </header>
         {activePage === 'dashboard' && <Dashboard directory={currentDirectory} />}
-        {activePage === 'structure' && <StructurePage directory={currentDirectory} />}
-        {activePage === 'file' && (
-          <PlotViewer
-            file={selectedFile}
-            onConverted={() => setRefreshKey((value) => value + 1)}
-          />
-        )}
+        {activePage === 'structure' && <StructurePage directory={currentDirectory} theme={theme} />}
       </main>
     </div>
   );

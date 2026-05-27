@@ -40,6 +40,14 @@ python src/RMC_plot.py --dir data
 python src/RMC_plot.py --dir data --save --no-show
 ```
 
+## Tests
+
+The reusable package layer has a standard-library `unittest` suite that uses the sample files in `data/`:
+
+```bash
+MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
+```
+
 ## KDE Slice Viewer
 
 `src/RMC_KDE.py` expects a `Frac*.txt` file and a `.rmc6f` file in the working directory. It opens an interactive UI with sliders for the z-slice position and thickness.

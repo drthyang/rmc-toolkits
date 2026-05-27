@@ -3,7 +3,7 @@ import axios from 'axios';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import API_BASE_URL from '../api';
-import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
+import { COLORMAP_NAMES, getLut } from '../colormaps';
 import './StructurePage.css';
 
 const colors = {
@@ -13,7 +13,7 @@ const colors = {
     default: '#d5d9df'
 };
 
-const StructurePage = ({ directory }) => {
+const StructurePage = ({ directory, theme }) => {
     const [structure, setStructure] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -31,6 +31,25 @@ const StructurePage = ({ directory }) => {
     const canvasRef = useRef(null);
     const slabCanvasRef = useRef(null);
     const mountRef = useRef(null);
+    const themeVars = useMemo(() => {
+        if (typeof window === 'undefined') {
+            return {
+                canvasBg: '#101419',
+                text: '#ecf1f7',
+                muted: '#9ba7b5',
+                border: '#2d3540',
+                contour: 'rgba(40, 44, 48, 0.85)'
+            };
+        }
+        const styles = getComputedStyle(document.documentElement);
+        return {
+            canvasBg: styles.getPropertyValue('--canvas-bg').trim() || '#101419',
+            text: styles.getPropertyValue('--text').trim() || '#ecf1f7',
+            muted: styles.getPropertyValue('--muted').trim() || '#9ba7b5',
+            border: styles.getPropertyValue('--border-strong').trim() || '#2d3540',
+            contour: theme === 'light' ? 'rgba(21, 34, 50, 0.72)' : 'rgba(230, 236, 244, 0.76)'
+        };
+    }, [theme]);
 
     useEffect(() => {
         const fetchStructure = async () => {
@@ -160,7 +179,7 @@ const StructurePage = ({ directory }) => {
         canvas.height = height * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#0b0c0e';
+        ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
 
         const density = kde?.density;
@@ -195,7 +214,7 @@ const StructurePage = ({ directory }) => {
                 const spanX = xMax - xMin || 1;
                 const spanY = yMax - yMin || 1;
                 ctx.lineWidth = 1;
-                ctx.strokeStyle = 'rgba(40, 44, 48, 0.85)';
+                ctx.strokeStyle = themeVars.contour;
                 kde.contours.forEach((contour) => {
                     contour.lines.forEach((line) => {
                         ctx.beginPath();
@@ -210,21 +229,21 @@ const StructurePage = ({ directory }) => {
                 });
             }
         } else {
-            ctx.fillStyle = '#7c858f';
+            ctx.fillStyle = themeVars.muted;
             ctx.font = '13px system-ui';
             ctx.fillText(kdeLoading ? 'Computing KDE...' : 'No atoms in this slab', 14, 28);
         }
 
-        ctx.strokeStyle = '#384048';
+        ctx.strokeStyle = themeVars.border;
         ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
-        ctx.fillStyle = '#dce3ea';
+        ctx.fillStyle = themeVars.text;
         ctx.font = '12px system-ui';
         if (kde) {
             ctx.fillText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
             ctx.fillText(`z=${kde.z.toFixed(2)} A  dz=${kde.dz.toFixed(2)} A  bw=${kde.bw}`, 12, 40);
             if (kde.log) ctx.fillText('log10 density', 12, 58);
         }
-    }, [kde, colormap, showContours, kdeLoading]);
+    }, [kde, colormap, showContours, kdeLoading, themeVars]);
 
     useEffect(() => {
         const canvas = slabCanvasRef.current;
@@ -238,57 +257,41 @@ const StructurePage = ({ directory }) => {
         canvas.height = height * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#111316';
+        ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
 
-        // Size the plot box so equal distances in x and z map to equal pixels,
-        // i.e. width:height matches the in-plane lattice parameters a:c.
-        const aspect = unitCell.lengths[0] / Math.max(unitCell.lengths[2], 1e-9);
-        const padX = 28;
-        const padTop = 16;
-        const padBottom = 24;
-        const availW = width - padX * 2;
-        const availH = height - padTop - padBottom;
-        let plotW = availW;
-        let plotH = plotW / aspect;
-        if (plotH > availH) {
-            plotH = availH;
-            plotW = plotH * aspect;
-        }
-        const plotX = padX + (availW - plotW) / 2;
-        const plotY = padTop + (availH - plotH) / 2;
         const zStart = Math.max(0, zCenter - thickness / 2);
         const zEnd = Math.min(1, zCenter + thickness / 2);
-        const bandTop = plotY + (1 - zEnd) * plotH;
-        const bandHeight = Math.max(2, (zEnd - zStart) * plotH);
+        const bandTop = (1 - zEnd) * height;
+        const bandHeight = Math.max(2, (zEnd - zStart) * height);
 
-        ctx.strokeStyle = '#48515b';
+        ctx.strokeStyle = themeVars.border;
         ctx.lineWidth = 1;
-        ctx.strokeRect(plotX, plotY, plotW, plotH);
+        ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
 
         ctx.fillStyle = 'rgba(79, 140, 255, 0.18)';
-        ctx.fillRect(plotX, bandTop, plotW, bandHeight);
+        ctx.fillRect(0, bandTop, width, bandHeight);
         ctx.strokeStyle = '#74a7ff';
-        ctx.strokeRect(plotX, bandTop, plotW, bandHeight);
+        ctx.strokeRect(0.5, bandTop + 0.5, width - 1, bandHeight);
 
         const sampleLimit = Math.min(points.length, 9000);
         const stride = Math.max(1, Math.floor(points.length / sampleLimit));
         for (let index = 0; index < points.length; index += stride) {
             const point = points[index];
-            const x = plotX + point.x * plotW;
-            const y = plotY + (1 - point.z) * plotH;
+            const x = point.x * width;
+            const y = (1 - point.z) * height;
             const inSlab = Math.abs(point.z - zCenter) <= thickness / 2;
             ctx.fillStyle = inSlab ? (colors[point.element] || colors.default) : 'rgba(166, 176, 188, 0.22)';
             ctx.fillRect(x, y, inSlab ? 2 : 1, inSlab ? 2 : 1);
         }
 
-        ctx.fillStyle = '#dce3ea';
+        ctx.fillStyle = themeVars.text;
         ctx.font = '12px system-ui';
-        ctx.fillText('x', plotX + plotW - 4, height - 7);
-        ctx.fillText('z', 8, plotY + 8);
-        ctx.fillText(`z=${zCenter.toFixed(3)}`, plotX + 8, Math.max(30, bandTop - 6));
-        ctx.fillText(`dz=${thickness.toFixed(3)}`, plotX + 8, Math.min(height - 16, bandTop + bandHeight + 16));
-    }, [points, zCenter, thickness, unitCell]);
+        ctx.fillText('x', width - 16, height - 8);
+        ctx.fillText('z', 8, 16);
+        ctx.fillText(`z=${zCenter.toFixed(3)}`, 10, Math.max(30, bandTop - 6));
+        ctx.fillText(`dz=${thickness.toFixed(3)}`, 10, Math.min(height - 16, bandTop + bandHeight + 16));
+    }, [points, zCenter, thickness, unitCell, themeVars]);
 
     useEffect(() => {
         const mount = mountRef.current;
@@ -297,7 +300,7 @@ const StructurePage = ({ directory }) => {
         const width = mount.clientWidth;
         const height = mount.clientHeight;
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color('#101113');
+        scene.background = new THREE.Color(themeVars.canvasBg);
         const camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 10);
         camera.position.set(1.8, 1.6, 1.9);
         camera.lookAt(0, 0, 0);
@@ -360,6 +363,31 @@ const StructurePage = ({ directory }) => {
         slabMesh.position.set(0, 0, slabZ);
         scene.add(slabMesh);
 
+        const slabEdgePoints = [];
+        const halfX = 0.5 * unitCell.scale[0];
+        const halfY = 0.5 * unitCell.scale[1];
+        const halfSlab = 0.5 * slabThickness;
+        [slabZ - halfSlab, slabZ + halfSlab].forEach((zValue) => {
+            slabEdgePoints.push(
+                new THREE.Vector3(-halfX, -halfY, zValue),
+                new THREE.Vector3(halfX, -halfY, zValue),
+                new THREE.Vector3(halfX, -halfY, zValue),
+                new THREE.Vector3(halfX, halfY, zValue),
+                new THREE.Vector3(halfX, halfY, zValue),
+                new THREE.Vector3(-halfX, halfY, zValue),
+                new THREE.Vector3(-halfX, halfY, zValue),
+                new THREE.Vector3(-halfX, -halfY, zValue)
+            );
+        });
+        const slabEdgeGeometry = new THREE.BufferGeometry().setFromPoints(slabEdgePoints);
+        const slabEdgeMaterial = new THREE.LineBasicMaterial({
+            color: '#8c96a3',
+            transparent: true,
+            opacity: 0.95
+        });
+        const slabEdges = new THREE.LineSegments(slabEdgeGeometry, slabEdgeMaterial);
+        scene.add(slabEdges);
+
         let frameId;
         const animate = () => {
             controls.update();
@@ -374,12 +402,14 @@ const StructurePage = ({ directory }) => {
             renderer.dispose();
             slabGeometry.dispose();
             slabMaterial.dispose();
+            slabEdgeGeometry.dispose();
+            slabEdgeMaterial.dispose();
             group.traverse((object) => {
                 object.geometry?.dispose?.();
                 object.material?.dispose?.();
             });
         };
-    }, [points, unitCell, zCenter, thickness]);
+    }, [points, unitCell, zCenter, thickness, themeVars]);
 
     return (
         <section className="structure-page">
@@ -464,27 +494,27 @@ const StructurePage = ({ directory }) => {
                     {kdeError && <div className="structure-error">{kdeError}</div>}
 
                     <div className="analysis-layout">
-                        <div className="kde-panel">
+                        <div
+                            className="kde-panel"
+                            style={{ '--panel-aspect': `${unitCell.lengths[0]} / ${unitCell.lengths[1]}` }}
+                        >
                             <h3>KDE Slice</h3>
-                            <div className="kde-layout">
-                                <canvas
-                                    ref={canvasRef}
-                                    className="kde-canvas"
-                                    style={{ aspectRatio: `${unitCell.lengths[0]} / ${unitCell.lengths[1]}` }}
-                                />
-                                <div className="slab-panel">
-                                    <div className="slab-panel-header">
-                                        <span>Slab In Cell</span>
-                                        <strong>{(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
-                                    </div>
-                                    <canvas
-                                        ref={slabCanvasRef}
-                                        style={{ aspectRatio: `${unitCell.lengths[0]} / ${unitCell.lengths[2]}` }}
-                                    />
-                                </div>
-                            </div>
+                            <canvas ref={canvasRef} className="kde-canvas" />
                         </div>
-                        <div className="model-panel">
+                        <div
+                            className="slab-panel"
+                            style={{ '--panel-aspect': `${unitCell.lengths[0]} / ${unitCell.lengths[2]}` }}
+                        >
+                            <div className="slab-panel-header">
+                                <span>Slab In Cell</span>
+                                <strong>{(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
+                            </div>
+                            <canvas ref={slabCanvasRef} />
+                        </div>
+                        <div
+                            className="model-panel"
+                            style={{ '--panel-aspect': `${Math.max(unitCell.lengths[0], unitCell.lengths[1])} / ${unitCell.lengths[2]}` }}
+                        >
                             <h3>3D Model</h3>
                             <div ref={mountRef} className="three-mount" />
                         </div>
