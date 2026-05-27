@@ -84,7 +84,15 @@
 }
 
 .structure-controls input[type='range'] {
-    width: 180px;
+    width: 150px;
+}
+
+.structure-controls label.checkbox {
+    gap: 0.35rem;
+}
+
+.structure-controls label.checkbox input {
+    accent-color: #4f8cff;
 }
 
 .analysis-layout {
@@ -147,7 +155,8 @@
 .slab-panel canvas {
     display: block;
     width: 100%;
-    height: 390px;
+    height: auto;
+    max-height: 620px;
     background: #111316;
 }
 

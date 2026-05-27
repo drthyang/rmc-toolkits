@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import API_BASE_URL from '../api';
+import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
 import './StructurePage.css';
 
 const colors = {
@@ -19,6 +20,14 @@ const StructurePage = ({ directory }) => {
     const [selectedElement, setSelectedElement] = useState('all');
     const [zCenter, setZCenter] = useState(0.5);
     const [thickness, setThickness] = useState(0.08);
+    const [bandwidth, setBandwidth] = useState(0.03);
+    const [gridSize, setGridSize] = useState(120);
+    const [colormap, setColormap] = useState('viridis');
+    const [showContours, setShowContours] = useState(true);
+    const [logScale, setLogScale] = useState(false);
+    const [kde, setKde] = useState(null);
+    const [kdeLoading, setKdeLoading] = useState(false);
+    const [kdeError, setKdeError] = useState(null);
     const canvasRef = useRef(null);
     const slabCanvasRef = useRef(null);
     const mountRef = useRef(null);
@@ -81,12 +90,64 @@ const StructurePage = ({ directory }) => {
         };
     }, [structure]);
 
+    // Default the z-slice to the densest band so the slice is populated on load
+    // (the geometric midpoint can fall in a gap between atomic layers).
     useEffect(() => {
         if (!points.length) return;
-        const zs = points.map((point) => point.z).sort((a, b) => a - b);
-        setZCenter(zs[Math.floor(zs.length / 2)]);
+        const bins = 50;
+        const counts = new Array(bins).fill(0);
+        points.forEach((point) => {
+            const bin = Math.max(0, Math.min(bins - 1, Math.floor(point.z * bins)));
+            counts[bin] += 1;
+        });
+        let best = 0;
+        counts.forEach((count, index) => {
+            if (count > counts[best]) best = index;
+        });
+        setZCenter((best + 0.5) / bins);
     }, [points]);
 
+    // Fetch a real server-side gaussian_kde slice (debounced) whenever a
+    // parameter that changes the density field updates.
+    useEffect(() => {
+        if (!structure) return undefined;
+        const controller = new AbortController();
+        const handle = setTimeout(async () => {
+            setKdeLoading(true);
+            setKdeError(null);
+            try {
+                const response = await axios.get(`${API_BASE_URL}/api/kde/slice`, {
+                    params: {
+                        dir: directory || '.',
+                        element: selectedElement,
+                        z: zCenter,
+                        dz: thickness,
+                        bw: bandwidth,
+                        grid: gridSize,
+                        log: logScale,
+                        levels: 8
+                    },
+                    signal: controller.signal
+                });
+                setKde(response.data);
+            } catch (err) {
+                if (!axios.isCancel(err) && err.code !== 'ERR_CANCELED') {
+                    setKde(null);
+                    setKdeError(err.response?.data?.error || 'KDE computation failed');
+                }
+            } finally {
+                setKdeLoading(false);
+            }
+        }, 160);
+
+        return () => {
+            controller.abort();
+            clearTimeout(handle);
+        };
+    }, [structure, directory, selectedElement, zCenter, thickness, bandwidth, gridSize, logScale]);
+
+    // Render the KDE density grid + contour overlay. Colormap and contour
+    // visibility are pure client-side re-renders (no refetch).
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -94,50 +155,76 @@ const StructurePage = ({ directory }) => {
         const size = canvas.getBoundingClientRect();
         const width = Math.max(320, Math.floor(size.width));
         const height = Math.max(260, Math.floor(size.height));
-        canvas.width = width * window.devicePixelRatio;
-        canvas.height = height * window.devicePixelRatio;
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = '#111316';
+        ctx.fillStyle = '#0b0c0e';
         ctx.fillRect(0, 0, width, height);
 
-        const slab = points.filter((point) => Math.abs(point.z - zCenter) <= thickness / 2);
-        const grid = 220;
-        const density = Array.from({ length: grid }, () => Array(grid).fill(0));
-        slab.forEach((point) => {
-            const gx = Math.max(0, Math.min(grid - 1, Math.floor(point.x * grid)));
-            const gy = Math.max(0, Math.min(grid - 1, Math.floor(point.y * grid)));
-            for (let dx = -5; dx <= 5; dx += 1) {
-                for (let dy = -5; dy <= 5; dy += 1) {
-                    const x = gx + dx;
-                    const y = gy + dy;
-                    if (x >= 0 && y >= 0 && x < grid && y < grid) {
-                        const distanceSq = dx * dx + dy * dy;
-                        density[y][x] += Math.exp(-distanceSq / 10);
-                    }
+        const density = kde?.density;
+        const grid = kde?.grid || 0;
+        if (density && grid > 0 && kde.vmax > kde.vmin) {
+            const lut = getLut(colormap);
+            const offscreen = document.createElement('canvas');
+            offscreen.width = grid;
+            offscreen.height = grid;
+            const offCtx = offscreen.getContext('2d');
+            const imageData = offCtx.createImageData(grid, grid);
+            const span = kde.vmax - kde.vmin || 1;
+            for (let py = 0; py < grid; py += 1) {
+                // Flip rows: image row 0 is the top (max y), density row 0 is min y.
+                const densityRow = density[grid - 1 - py];
+                for (let px = 0; px < grid; px += 1) {
+                    const normalized = (densityRow[px] - kde.vmin) / span;
+                    const lutIndex = Math.max(0, Math.min(255, Math.round(normalized * 255))) * 3;
+                    const offset = (py * grid + px) * 4;
+                    imageData.data[offset] = lut[lutIndex];
+                    imageData.data[offset + 1] = lut[lutIndex + 1];
+                    imageData.data[offset + 2] = lut[lutIndex + 2];
+                    imageData.data[offset + 3] = 255;
                 }
             }
-        });
+            offCtx.putImageData(imageData, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(offscreen, 0, 0, grid, grid, 0, 0, width, height);
 
-        const maxDensity = Math.max(1, ...density.flat());
-        const cellW = width / grid;
-        const cellH = height / grid;
-        for (let y = 0; y < grid; y += 1) {
-            for (let x = 0; x < grid; x += 1) {
-                const value = density[y][x] / maxDensity;
-                if (value > 0) {
-                    ctx.fillStyle = `rgba(${Math.floor(65 + value * 190)}, ${Math.floor(125 + value * 80)}, ${Math.floor(135 + value * 70)}, ${Math.min(0.9, 0.15 + value)})`;
-                    ctx.fillRect(x * cellW, height - (y + 1) * cellH, cellW + 1, cellH + 1);
-                }
+            if (showContours && kde.contours?.length) {
+                const [xMin, xMax, yMin, yMax] = kde.extent;
+                const spanX = xMax - xMin || 1;
+                const spanY = yMax - yMin || 1;
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(40, 44, 48, 0.85)';
+                kde.contours.forEach((contour) => {
+                    contour.lines.forEach((line) => {
+                        ctx.beginPath();
+                        line.forEach(([dataX, dataY], index) => {
+                            const cx = ((dataX - xMin) / spanX) * width;
+                            const cy = height - ((dataY - yMin) / spanY) * height;
+                            if (index === 0) ctx.moveTo(cx, cy);
+                            else ctx.lineTo(cx, cy);
+                        });
+                        ctx.stroke();
+                    });
+                });
             }
+        } else {
+            ctx.fillStyle = '#7c858f';
+            ctx.font = '13px system-ui';
+            ctx.fillText(kdeLoading ? 'Computing KDE...' : 'No atoms in this slab', 14, 28);
         }
+
         ctx.strokeStyle = '#384048';
         ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
         ctx.fillStyle = '#dce3ea';
         ctx.font = '12px system-ui';
-        ctx.fillText(`${slab.length} atoms in slab`, 12, 22);
-        ctx.fillText(`a:b = ${unitCell.lengths[0].toFixed(3)}:${unitCell.lengths[1].toFixed(3)}`, 12, 40);
-    }, [points, zCenter, thickness, unitCell]);
+        if (kde) {
+            ctx.fillText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
+            ctx.fillText(`z=${kde.z.toFixed(2)} A  dz=${kde.dz.toFixed(2)} A  bw=${kde.bw}`, 12, 40);
+            if (kde.log) ctx.fillText('log10 density', 12, 58);
+        }
+    }, [kde, colormap, showContours, kdeLoading]);
 
     useEffect(() => {
         const canvas = slabCanvasRef.current;
@@ -154,11 +241,22 @@ const StructurePage = ({ directory }) => {
         ctx.fillStyle = '#111316';
         ctx.fillRect(0, 0, width, height);
 
-        const pad = 28;
-        const plotX = pad;
-        const plotY = 16;
-        const plotW = width - pad * 2;
-        const plotH = height - pad * 2;
+        // Size the plot box so equal distances in x and z map to equal pixels,
+        // i.e. width:height matches the in-plane lattice parameters a:c.
+        const aspect = unitCell.lengths[0] / Math.max(unitCell.lengths[2], 1e-9);
+        const padX = 28;
+        const padTop = 16;
+        const padBottom = 24;
+        const availW = width - padX * 2;
+        const availH = height - padTop - padBottom;
+        let plotW = availW;
+        let plotH = plotW / aspect;
+        if (plotH > availH) {
+            plotH = availH;
+            plotW = plotH * aspect;
+        }
+        const plotX = padX + (availW - plotW) / 2;
+        const plotY = padTop + (availH - plotH) / 2;
         const zStart = Math.max(0, zCenter - thickness / 2);
         const zEnd = Math.min(1, zCenter + thickness / 2);
         const bandTop = plotY + (1 - zEnd) * plotH;
@@ -190,7 +288,7 @@ const StructurePage = ({ directory }) => {
         ctx.fillText('z', 8, plotY + 8);
         ctx.fillText(`z=${zCenter.toFixed(3)}`, plotX + 8, Math.max(30, bandTop - 6));
         ctx.fillText(`dz=${thickness.toFixed(3)}`, plotX + 8, Math.min(height - 16, bandTop + bandHeight + 16));
-    }, [points, zCenter, thickness]);
+    }, [points, zCenter, thickness, unitCell]);
 
     useEffect(() => {
         const mount = mountRef.current;
@@ -290,7 +388,7 @@ const StructurePage = ({ directory }) => {
                     <h2>KDE And 3D Model</h2>
                     <p>{directory}</p>
                 </div>
-                {loading && <span className="status-pill">Loading</span>}
+                {(loading || kdeLoading) && <span className="status-pill">{loading ? 'Loading' : 'KDE'}</span>}
             </div>
 
             {error && <div className="structure-error">{error}</div>}
@@ -331,7 +429,39 @@ const StructurePage = ({ directory }) => {
                             <input type="range" min="0.01" max="0.5" step="0.01" value={thickness} onChange={(event) => setThickness(Number(event.target.value))} />
                             <span>{thickness.toFixed(2)}</span>
                         </label>
+                        <label>
+                            bw
+                            <input type="range" min="0.005" max="0.15" step="0.005" value={bandwidth} onChange={(event) => setBandwidth(Number(event.target.value))} />
+                            <span>{bandwidth.toFixed(3)}</span>
+                        </label>
+                        <label>
+                            cmap
+                            <select value={colormap} onChange={(event) => setColormap(event.target.value)}>
+                                {COLORMAP_NAMES.map((name) => (
+                                    <option key={name} value={name}>{name}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <label>
+                            grid
+                            <select value={gridSize} onChange={(event) => setGridSize(Number(event.target.value))}>
+                                <option value={80}>80</option>
+                                <option value={120}>120</option>
+                                <option value={160}>160</option>
+                                <option value={220}>220</option>
+                            </select>
+                        </label>
+                        <label className="checkbox">
+                            <input type="checkbox" checked={showContours} onChange={(event) => setShowContours(event.target.checked)} />
+                            contours
+                        </label>
+                        <label className="checkbox">
+                            <input type="checkbox" checked={logScale} onChange={(event) => setLogScale(event.target.checked)} />
+                            log
+                        </label>
                     </div>
+
+                    {kdeError && <div className="structure-error">{kdeError}</div>}
 
                     <div className="analysis-layout">
                         <div className="kde-panel">
@@ -347,7 +477,10 @@ const StructurePage = ({ directory }) => {
                                         <span>Slab In Cell</span>
                                         <strong>{(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
                                     </div>
-                                    <canvas ref={slabCanvasRef} />
+                                    <canvas
+                                        ref={slabCanvasRef}
+                                        style={{ aspectRatio: `${unitCell.lengths[0]} / ${unitCell.lengths[2]}` }}
+                                    />
                                 </div>
                             </div>
                         </div>

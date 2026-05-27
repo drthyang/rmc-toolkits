@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 import io
 import os
@@ -12,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from rmc_toolkits.kde import UnitCellPositions, kde_slice, load_unit_cell_positions
 from rmc_toolkits.parsers import iter_rmc6f_atoms, read_atom_indices, read_cell_vectors, write_frac_from_rmc6f
 from rmc_toolkits.plots import close_plot, detect_plot_kind, make_plot, plot_to_png
 
@@ -210,5 +212,54 @@ def structure():
         return jsonify({"error": str(exc)}), 500
 
 
+@lru_cache(maxsize=16)
+def _cached_positions(path_str: str, mtime: float, element: str | None) -> UnitCellPositions:
+    return load_unit_cell_positions(path_str, element=element)
+
+
+@app.route("/api/kde/slice", methods=["GET"])
+def kde_slice_endpoint():
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+
+        element = request.args.get("element") or None
+        if element in ("", "all"):
+            element = None
+        positions = _cached_positions(str(rmc6f_path), rmc6f_path.stat().st_mtime, element)
+        cell_lengths = positions.cell_lengths
+
+        # z and dz arrive as fractions of the cell edge (matching the slider
+        # semantics in the frontend); convert to Angstrom for the KDE math.
+        z_frac = float(request.args.get("z", 0.5))
+        dz_frac = float(request.args.get("dz", 0.08))
+        bw = float(request.args.get("bw", 0.03))
+        grid = int(request.args.get("grid", 120))
+        levels = int(request.args.get("levels", 8))
+        log = request.args.get("log", "false").lower() in ("1", "true", "yes")
+
+        result = kde_slice(
+            positions.positions,
+            z_frac * cell_lengths[2],
+            dz_frac * cell_lengths[2],
+            xlim=(0.0, float(cell_lengths[0])),
+            ylim=(0.0, float(cell_lengths[1])),
+            bw=bw,
+            grid=grid,
+            log=log,
+            n_levels=levels,
+        )
+        result["cellLengths"] = cell_lengths.tolist()
+        result["source"] = str(rmc6f_path)
+        result["element"] = element or "all"
+        return jsonify(result)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=int(os.environ.get("RMC_TOOLKITS_PORT", 5000)))
