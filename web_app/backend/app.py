@@ -1,129 +1,214 @@
-from flask import Flask, jsonify, request, send_file
-from flask_cors import CORS
+from __future__ import annotations
+
+from pathlib import Path
+import io
 import os
 import sys
-import glob
-import io
-import matplotlib
-matplotlib.use('Agg') # Use non-interactive backend
-import matplotlib.pyplot as plt
 
-# Add project root to sys.path to import RMC_plot
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-import RMC_plot
+from flask import Flask, jsonify, request, send_file
+from flask_cors import CORS
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from rmc_toolkits.parsers import iter_rmc6f_atoms, read_atom_indices, read_cell_vectors, write_frac_from_rmc6f
+from rmc_toolkits.plots import close_plot, detect_plot_kind, make_plot, plot_to_png
+
 
 app = Flask(__name__)
-CORS(app) # Enable CORS for frontend communication
+CORS(app)
 
-@app.route('/api/files', methods=['GET'])
+DATA_ROOT = Path(os.environ.get("RMC_TOOLKITS_DATA_ROOT", PROJECT_ROOT)).expanduser().resolve()
+SUPPORTED_PATTERNS = ("*.csv", "*.log", "*.rmc6f", "Frac*.txt", "scale_ft.*", "stog_input.dat")
+
+
+def _resolve_inside_root(raw_path: str | None) -> Path:
+    candidate = Path(raw_path or ".").expanduser()
+    if not candidate.is_absolute():
+        candidate = DATA_ROOT / candidate
+    resolved = candidate.resolve()
+    if resolved != DATA_ROOT and DATA_ROOT not in resolved.parents:
+        raise PermissionError(f"Path is outside configured data root: {DATA_ROOT}")
+    return resolved
+
+
+def _file_payload(path: Path, kind: str = "file") -> dict[str, str]:
+    return {
+        "name": path.name,
+        "path": str(path),
+        "type": kind,
+        "plotKind": detect_plot_kind(path) if kind == "file" else None,
+    }
+
+
+def _find_rmc6f(directory: Path) -> Path:
+    if directory.is_file() and directory.suffix == ".rmc6f":
+        return directory
+    rmc6f_files = sorted(directory.glob("*.rmc6f"))
+    if not rmc6f_files:
+        raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    return rmc6f_files[0]
+
+
+def _sample_atoms_by_site(atoms: list[dict], max_points: int) -> tuple[list[dict], int]:
+    if len(atoms) <= max_points:
+        return atoms, 1
+
+    by_reference: dict[int, list[dict]] = {}
+    for atom in atoms:
+        by_reference.setdefault(atom["reference_number"], []).append(atom)
+
+    quota = max(1, max_points // len(by_reference))
+    sampled: list[dict] = []
+    for reference_number in sorted(by_reference):
+        group = by_reference[reference_number]
+        stride = max(1, len(group) // quota)
+        sampled.extend(group[::stride][:quota])
+
+    return sampled[:max_points], max(1, len(atoms) // max_points)
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "dataRoot": str(DATA_ROOT)})
+
+
+@app.route("/api/files", methods=["GET"])
 def list_files():
-    directory = request.args.get('dir', './')
     try:
-        # Expand user path if needed
-        directory = os.path.expanduser(directory)
-        if not os.path.exists(directory):
-             return jsonify({'error': 'Directory not found'}), 404
-        
-        files = []
-        # List relevant files
-        patterns = ['*.csv', '*.log', '*.rmc6f']
-        for pattern in patterns:
-            for fpath in glob.glob(os.path.join(directory, pattern)):
-                files.append({
-                    'name': os.path.basename(fpath),
-                    'path': os.path.abspath(fpath),
-                    'type': 'file'
-                })
-        
-        # Also list subdirectories for navigation
-        for item in os.listdir(directory):
-            item_path = os.path.join(directory, item)
-            if os.path.isdir(item_path) and not item.startswith('.'):
-                files.append({
-                    'name': item,
-                    'path': os.path.abspath(item_path),
-                    'type': 'directory'
-                })
-                
-        return jsonify({'files': sorted(files, key=lambda x: (x['type'] != 'directory', x['name']))})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        directory = _resolve_inside_root(request.args.get("dir", "."))
+        if not directory.exists() or not directory.is_dir():
+            return jsonify({"error": "Directory not found"}), 404
 
-@app.route('/api/plot', methods=['GET'])
+        paths: dict[Path, dict[str, str]] = {}
+        for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
+            if item.is_dir() and not item.name.startswith("."):
+                paths[item] = _file_payload(item, "directory")
+
+        for pattern in SUPPORTED_PATTERNS:
+            for item in directory.glob(pattern):
+                if item.is_file():
+                    paths[item] = _file_payload(item)
+
+        files = sorted(paths.values(), key=lambda item: (item["type"] != "directory", item["name"].lower()))
+        return jsonify({"root": str(DATA_ROOT), "currentPath": str(directory), "files": files})
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/plot", methods=["GET"])
 def plot_file():
-    fpath = request.args.get('path')
-    if not fpath or not os.path.exists(fpath):
-        return jsonify({'error': 'File not found'}), 404
-
     try:
-        # Determine plot type based on filename
-        filename = os.path.basename(fpath)
-        
-        # Clear previous figures
-        plt.clf()
-        plt.close('all')
-        
-        # Use RMC_plot logic
-        # We need to simulate args object
-        class Args:
-            save = False
-            no_show = True # We handle showing
-            
-        args = Args()
-        
-        # Capture the figure
-        fig = None
-        
-        # Logic adapted from RMC_plot.main()
-        if '_FT_XFQ1.csv' in filename:
-            RMC_plot.plot_data(fpath, 'xPDF', r'r ($\mathrm{\AA}$)', 'data', args, calc_rwp=True, rwp_label_prefix="G(r) (x-ray):")
-            fig = plt.gcf()
-        elif 'PDF' in filename and '.csv' in filename:
-            # Extract index logic
-            x = RMC_plot._pdf_idx(fpath)
-            plot_title_suffix = filename.split('.csv')[0].split('_')[-1]
-            if 'PDFpartials' in plot_title_suffix:
-                 RMC_plot.plot_data(fpath, plot_title_suffix, r'r ($\mathrm{\AA}$)', 'data', args, calc_rwp=False)
-            else:
-                 tag = f"G(r) (neutron{'' if x in (0,1) else f' #{x}'})"
-                 RMC_plot.plot_data(fpath, plot_title_suffix, r'r ($\mathrm{\AA}$)', 'data', args, calc_rwp=True, rwp_label_prefix=tag)
-            fig = plt.gcf()
-        elif '_FQ1.csv' in filename:
-            labels, _ = RMC_plot.read_csv(fpath)
-            xlabel = labels[0].strip() if labels else r'Q ($\mathrm{\AA^{-1}}$)'
-            RMC_plot.plot_data(fpath, 'S(Q) (x-ray)', xlabel, 'data', args, calc_rwp=True, rwp_label_prefix="S(Q) (x-ray):")
-            fig = plt.gcf()
-        elif '_SQ1.csv' in filename:
-            labels, _ = RMC_plot.read_csv(fpath)
-            xlabel = labels[0].strip() if labels else r'Q ($\mathrm{\AA^{-1}}$)'
-            RMC_plot.plot_data(fpath, 'S(Q) (neutron)', xlabel, 'data', args, calc_rwp=True, rwp_label_prefix="S(Q) (neutron):")
-            fig = plt.gcf()
-        elif '_bragg.csv' in filename:
-            RMC_plot.plot_data(fpath, 'BRAGG', r'Q ($\mathrm{\AA^{-1}}$)', 'data', args, calc_rwp=True, rwp_label_prefix="BRAGG:")
-            fig = plt.gcf()
-        elif '.log' in filename:
-            # Special handling for log files as they are not single plot_data calls in original script
-            # But we can reuse the logic
-            chi_Q, chi_R = RMC_plot.read_chi([fpath])
-            if len(chi_R) > 0:
-                fig = plt.figure(figsize=(3.375*2,3.375*1.2))
-                dx = fig.add_subplot(111)
-                dx.plot(np.log(chi_R),label=r'R',lw=1.0,alpha=0.5)
-                dx.set_xlabel(r'Time steps',fontsize=11)
-                dx.set_ylabel(r'log($\mathrm{\chi}$)',fontsize=11)
-                dx.legend(loc=1,fontsize=9,frameon=False)
-                fig.suptitle('R-value', fontsize=14)
-        
-        if fig:
-            img = io.BytesIO()
-            fig.savefig(img, format='png', bbox_inches='tight', dpi=150)
-            img.seek(0)
-            return send_file(img, mimetype='image/png')
-        else:
-            return jsonify({'error': 'Could not generate plot for this file type'}), 400
+        path = _resolve_inside_root(request.args.get("path"))
+        if not path.exists() or not path.is_file():
+            return jsonify({"error": "File not found"}), 404
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        result = make_plot(path)
+        image = io.BytesIO(plot_to_png(result))
+        return send_file(
+            image,
+            mimetype="image/png",
+            download_name=f"{path.stem}.png",
+        )
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
-if __name__ == '__main__':
+
+@app.route("/api/plot/metadata", methods=["GET"])
+def plot_metadata():
+    try:
+        path = _resolve_inside_root(request.args.get("path"))
+        result = make_plot(path)
+        metadata = {"kind": result.kind, "title": result.title, "metrics": result.metrics}
+        close_plot(result)
+        return jsonify(metadata)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/convert/frac", methods=["POST"])
+def convert_frac():
+    try:
+        payload = request.get_json(silent=True) or {}
+        source = _resolve_inside_root(payload.get("path"))
+        if source.suffix != ".rmc6f":
+            return jsonify({"error": "Expected a .rmc6f file"}), 400
+
+        output_raw = payload.get("outputPath")
+        output = _resolve_inside_root(output_raw) if output_raw else None
+        out_path = write_frac_from_rmc6f(
+            source,
+            output_path=output,
+            overwrite=bool(payload.get("overwrite", False)),
+        )
+        return jsonify({"path": str(out_path), "name": out_path.name})
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileExistsError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/structure", methods=["GET"])
+def structure():
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        max_points = max(100, min(int(request.args.get("maxPoints", 12000)), 75000))
+        rmc6f_path = _find_rmc6f(target)
+        lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
+        atom_indices = read_atom_indices(rmc6f_path)
+
+        atoms = list(iter_rmc6f_atoms(rmc6f_path))
+        sampled, stride = _sample_atoms_by_site(atoms, max_points)
+        points = []
+        counts: dict[str, int] = {}
+        for atom in atoms:
+            counts[atom["element"]] = counts.get(atom["element"], 0) + 1
+        for atom in sampled:
+            reduced = atom["coords"] - (atom["cell_indices"] / supercell)
+            unit_cell = (reduced * supercell) % 1.0
+            points.append(
+                {
+                    "element": atom["element"],
+                    "referenceNumber": atom["reference_number"],
+                    "boxX": float(atom["coords"][0]),
+                    "boxY": float(atom["coords"][1]),
+                    "boxZ": float(atom["coords"][2]),
+                    "x": float(unit_cell[0]),
+                    "y": float(unit_cell[1]),
+                    "z": float(unit_cell[2]),
+                }
+            )
+
+        return jsonify(
+            {
+                "source": str(rmc6f_path),
+                "totalAtoms": len(atoms),
+                "sampledAtoms": len(points),
+                "sampleStride": stride,
+                "elements": sorted(counts.keys()),
+                "elementCounts": counts,
+                "atomIndices": atom_indices,
+                "supercell": supercell.tolist(),
+                "latticeVectors": lattice_vectors.tolist(),
+                "points": points,
+            }
+        )
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+if __name__ == "__main__":
     app.run(debug=True, port=5000)
