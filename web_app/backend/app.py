@@ -5,6 +5,8 @@ from pathlib import Path
 import io
 import math
 import os
+import platform
+import subprocess
 import sys
 
 from flask import Flask, jsonify, request, send_file
@@ -31,7 +33,12 @@ app = Flask(__name__)
 CORS(app)
 
 DATA_ROOT = Path(os.environ.get("RMC_TOOLKITS_DATA_ROOT", PROJECT_ROOT)).expanduser().resolve()
+SELECTED_DATA_ROOTS: set[Path] = set()
 SUPPORTED_PATTERNS = ("*.csv", "*.log", "*.rmc6f", "Frac*.txt", "scale_ft.*", "stog_input.dat")
+
+
+def _is_inside_root(candidate: Path, root: Path) -> bool:
+    return candidate == root or root in candidate.parents
 
 
 def _resolve_inside_root(raw_path: str | None) -> Path:
@@ -39,9 +46,46 @@ def _resolve_inside_root(raw_path: str | None) -> Path:
     if not candidate.is_absolute():
         candidate = DATA_ROOT / candidate
     resolved = candidate.resolve()
-    if resolved != DATA_ROOT and DATA_ROOT not in resolved.parents:
-        raise PermissionError(f"Path is outside configured data root: {DATA_ROOT}")
+    allowed_roots = (DATA_ROOT, *SELECTED_DATA_ROOTS)
+    if not any(_is_inside_root(resolved, root) for root in allowed_roots):
+        allowed = ", ".join(str(root) for root in allowed_roots)
+        raise PermissionError(f"Path is outside configured data roots: {allowed}")
     return resolved
+
+
+def _choose_folder(initial_dir: Path) -> Path | None:
+    if platform.system() == "Darwin":
+        escaped_initial_dir = str(initial_dir).replace('"', '\\"')
+        script = (
+            'POSIX path of (choose folder with prompt "Select an RMCProfile run folder" '
+            f'default location POSIX file "{escaped_initial_dir}")'
+        )
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return None
+        return Path(result.stdout.strip()).expanduser().resolve()
+
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    try:
+        selected = filedialog.askdirectory(
+            initialdir=str(initial_dir),
+            title="Select an RMCProfile run folder",
+            mustexist=True,
+        )
+    finally:
+        root.destroy()
+
+    return Path(selected).expanduser().resolve() if selected else None
 
 
 def _file_payload(path: Path, kind: str = "file") -> dict[str, str]:
@@ -117,6 +161,28 @@ def list_files():
 
         files = sorted(paths.values(), key=lambda item: (item["type"] != "directory", item["name"].lower()))
         return jsonify({"root": str(DATA_ROOT), "currentPath": str(directory), "files": files})
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/dialog/folder", methods=["POST"])
+def choose_folder():
+    try:
+        payload = request.get_json(silent=True) or {}
+        initial_dir = _resolve_inside_root(payload.get("dir", "."))
+        if initial_dir.is_file():
+            initial_dir = initial_dir.parent
+
+        selected = _choose_folder(initial_dir)
+        if selected is None:
+            return jsonify({"error": "Folder selection cancelled"}), 400
+        if not selected.exists() or not selected.is_dir():
+            return jsonify({"error": "Selected path is not a folder"}), 400
+
+        SELECTED_DATA_ROOTS.add(selected)
+        return jsonify({"path": str(selected), "name": selected.name})
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except Exception as exc:
