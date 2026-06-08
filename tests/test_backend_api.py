@@ -57,6 +57,23 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn("outside configured data root", response.get_json()["error"])
 
+    def test_folder_dialog_registers_selected_external_folder(self):
+        original_choose_folder = backend_app._choose_folder
+        with tempfile.TemporaryDirectory() as tmpdir:
+            selected = Path(tmpdir).resolve()
+            backend_app._choose_folder = lambda _initial_dir: selected
+            try:
+                response = self.client.post("/api/dialog/folder", json={"dir": "data"})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json()["path"], str(selected))
+
+                files_response = self.client.get("/api/files", query_string={"dir": str(selected)})
+                self.assertEqual(files_response.status_code, 200)
+                self.assertEqual(files_response.get_json()["currentPath"], str(selected))
+            finally:
+                backend_app._choose_folder = original_choose_folder
+                backend_app.SELECTED_DATA_ROOTS.discard(selected)
+
     def test_plot_metadata_and_data_endpoints(self):
         metadata_response = self.client.get(
             "/api/plot/metadata",
