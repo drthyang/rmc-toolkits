@@ -2,7 +2,7 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 1rem;
+    padding: 1rem 1.05rem 1.25rem;
     background: var(--app-bg);
 }
 
@@ -41,10 +41,155 @@
     white-space: nowrap;
 }
 
+.model-table-panel table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.model-table-panel th,
+.model-table-panel td {
+    border-bottom: 1px solid var(--border);
+    padding: 0.55rem 0.72rem;
+    text-align: left;
+    font-size: 0.9rem;
+    line-height: 1.25;
+}
+
+.model-table-panel th {
+    color: var(--muted);
+    background: var(--panel-soft);
+    font-size: 0.73rem;
+    font-weight: 760;
+    text-transform: uppercase;
+    letter-spacing: 0;
+}
+
+.model-table-panel tr:last-child td {
+    border-bottom: 0;
+}
+
+.model-summary,
+.model-summary-empty {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    box-shadow: var(--shadow);
+    margin-bottom: 0.85rem;
+    overflow: hidden;
+}
+
+.model-summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.72rem 0.86rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-raised);
+}
+
+.model-summary-header h2 {
+    margin: 0;
+    color: var(--text-strong);
+    font-size: 1.08rem;
+    line-height: 1.25;
+}
+
+.model-summary-header p {
+    margin: 0.18rem 0 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 560;
+}
+
+.model-summary-header > span {
+    border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    padding: 0.28rem 0.62rem;
+    font-size: 0.8rem;
+    font-weight: 760;
+    white-space: nowrap;
+}
+
+.model-table-grid {
+    display: grid;
+    grid-template-columns: minmax(430px, 1.02fr) minmax(480px, 0.98fr);
+    gap: 0.82rem;
+    padding: 0.82rem;
+    align-items: stretch;
+}
+
+.model-table-panel {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--panel-soft);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.model-table-panel h3 {
+    margin: 0;
+    padding: 0.62rem 0.72rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-raised);
+    color: var(--text-strong);
+    font-size: 0.98rem;
+    font-weight: 740;
+    line-height: 1.25;
+}
+
+.model-table-panel td:first-child {
+    color: var(--text-strong);
+    font-weight: 700;
+}
+
+.model-table-panel td:not(:first-child) {
+    color: var(--text);
+}
+
+.supercell-summary {
+    margin: 0;
+    padding: 0.82rem 0.72rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-strong);
+    font-size: 1.04rem;
+    font-weight: 760;
+    line-height: 1.35;
+}
+
+.cell-summary {
+    background: color-mix(in srgb, var(--panel-raised) 45%, transparent);
+}
+
+.supercell-summary span {
+    display: inline-block;
+    margin: 0 0.55rem;
+    color: var(--muted);
+    font-weight: 650;
+}
+
+.lattice-panel {
+    grid-column: span 1;
+}
+
+.composition-panel {
+    grid-column: span 1;
+}
+
+.model-summary-empty {
+    padding: 0.9rem;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
 .plot-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.6rem;
+    gap: 0.72rem;
 }
 
 .plot-card {
@@ -59,16 +204,16 @@
 .plot-card-header {
     display: flex;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.85rem;
     align-items: flex-start;
-    padding: 0.45rem 0.65rem;
+    padding: 0.58rem 0.72rem;
     border-bottom: 1px solid var(--border);
     background: var(--panel-raised);
 }
 
 .plot-card h3 {
     margin: 0;
-    font-size: 1rem;
+    font-size: 1.05rem;
     color: var(--text-strong);
     line-height: 1.25;
 }
@@ -76,7 +221,7 @@
 .plot-card p {
     margin: 0.2rem 0 0;
     color: var(--muted);
-    font-size: 0.78rem;
+    font-size: 0.8rem;
     font-weight: 560;
 }
 
@@ -105,6 +250,14 @@
 }
 
 @media (max-width: 1180px) {
+    .model-table-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .lattice-panel {
+        grid-column: 1 / -1;
+    }
+
     .plot-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -117,6 +270,14 @@
 
     .dashboard-toolbar {
         flex-direction: column;
+    }
+
+    .model-summary-header {
+        flex-direction: column;
+    }
+
+    .model-table-grid {
+        grid-template-columns: 1fr;
     }
 
     .plot-grid {

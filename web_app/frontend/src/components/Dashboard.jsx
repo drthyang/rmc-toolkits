@@ -6,9 +6,24 @@ import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
 
+const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+
+const angleBetween = (a, b) => {
+    const denominator = Math.max(vectorLength(a) * vectorLength(b), 1e-12);
+    const cosine = a.reduce((sum, value, index) => sum + value * b[index], 0) / denominator;
+    const clamped = Math.max(-1, Math.min(1, cosine));
+    return Math.acos(clamped) * (180 / Math.PI);
+};
+
+const formatNumber = (value, digits = 3) => Number(value).toLocaleString(undefined, {
+    maximumFractionDigits: digits
+});
+
 const Dashboard = ({ directory }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
+    const [structure, setStructure] = useState(null);
+    const [structureError, setStructureError] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
 
@@ -36,8 +51,21 @@ const Dashboard = ({ directory }) => {
                     })
                 );
                 setMetadata(Object.fromEntries(metadataEntries));
+
+                try {
+                    const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
+                        params: { dir: directory || '.', maxPoints: 100 }
+                    });
+                    setStructure(structureResponse.data);
+                    setStructureError(null);
+                } catch (structureErr) {
+                    setStructure(null);
+                    setStructureError(structureErr.response?.data?.error || 'No model structure detected');
+                }
             } catch (err) {
                 setError(err.response?.data?.error || 'Failed to load dashboard data');
+                setStructure(null);
+                setStructureError(null);
             } finally {
                 setLoading(false);
             }
@@ -52,6 +80,37 @@ const Dashboard = ({ directory }) => {
             .sort((a, b) => plotOrder.indexOf(a.plotKind) - plotOrder.indexOf(b.plotKind));
     }, [files]);
 
+    const modelSummary = useMemo(() => {
+        if (!structure?.latticeVectors || !structure?.supercell) return null;
+
+        const boxLengths = structure.latticeVectors.map(vectorLength);
+        const cellLengths = boxLengths.map((length, index) => length / Math.max(structure.supercell[index], 1));
+        const angles = [
+            angleBetween(structure.latticeVectors[1], structure.latticeVectors[2]),
+            angleBetween(structure.latticeVectors[0], structure.latticeVectors[2]),
+            angleBetween(structure.latticeVectors[0], structure.latticeVectors[1])
+        ];
+        const elementEntries = Object.entries(structure.elementCounts || {})
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([element, count]) => ({
+                element,
+                count,
+                referenceSites: structure.atomIndices?.[element]?.length || 0
+            }));
+        const referenceSites = Object.values(structure.atomIndices || {}).reduce((sum, indices) => sum + indices.length, 0);
+
+        return {
+            source: structure.source?.split('/').pop() || 'Structure file',
+            totalAtoms: structure.totalAtoms,
+            referenceSites,
+            supercell: structure.supercell,
+            cellLengths,
+            boxLengths,
+            angles,
+            elementEntries
+        };
+    }, [structure]);
+
     return (
         <section className="dashboard-page">
             <div className="dashboard-toolbar">
@@ -63,6 +122,73 @@ const Dashboard = ({ directory }) => {
             </div>
 
             {error && <div className="dashboard-error">{error}</div>}
+
+            {modelSummary && (
+                <section className="model-summary" aria-label="Model information">
+                    <div className="model-summary-header">
+                        <div>
+                            <h2>Model information</h2>
+                            <p>{modelSummary.source}</p>
+                        </div>
+                        <span>{formatNumber(modelSummary.totalAtoms, 0)} atoms</span>
+                    </div>
+                    <div className="model-table-grid">
+                        <div className="model-table-panel lattice-panel">
+                            <h3>Cell</h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Length</th>
+                                        <th>Value</th>
+                                        <th>Angle</th>
+                                        <th>Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {['a', 'b', 'c'].map((label, index) => (
+                                        <tr key={label}>
+                                            <td>{label}</td>
+                                            <td>{formatNumber(modelSummary.cellLengths[index])} Å</td>
+                                            <td>{['α', 'β', 'γ'][index]}</td>
+                                            <td>{formatNumber(modelSummary.angles[index], 2)}°</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            <p className="supercell-summary cell-summary">
+                                Supercell: {modelSummary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}
+                                <span>|</span>
+                                {formatNumber(modelSummary.totalAtoms, 0)} atoms
+                            </p>
+                        </div>
+                        <div className="model-table-panel composition-panel">
+                            <h3>Atoms</h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Element</th>
+                                        <th>Reference sites</th>
+                                        <th>Atoms</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {modelSummary.elementEntries.map(({ element, referenceSites, count }) => (
+                                        <tr key={element}>
+                                            <td>{element}</td>
+                                            <td>{formatNumber(referenceSites, 0)}</td>
+                                            <td>{formatNumber(count, 0)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            {!modelSummary && structureError && (
+                <div className="model-summary-empty">{structureError}</div>
+            )}
 
             <div className="plot-grid">
                 {plotFiles.map((file) => {
