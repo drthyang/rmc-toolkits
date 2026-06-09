@@ -191,6 +191,7 @@ def write_frac_from_rmc6f(
         raise FileExistsError(f"{output_path} already exists; pass overwrite=True to replace it")
 
     lines = frac_lines_from_rmc6f(rmc6f_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("".join(lines), encoding="utf-8")
     return output_path
 
