@@ -132,56 +132,33 @@ const Dashboard = ({ directory }) => {
                         </div>
                         <span>{formatNumber(modelSummary.totalAtoms, 0)} atoms</span>
                     </div>
-                    <div className="model-table-grid">
-                        <div className="model-table-panel lattice-panel">
-                            <h3>Cell</h3>
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Length</th>
-                                        <th>Value</th>
-                                        <th>Angle</th>
-                                        <th>Value</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {['a', 'b', 'c'].map((label, index) => (
-                                        <tr key={label}>
-                                            <td>{label}</td>
-                                            <td>{formatNumber(modelSummary.cellLengths[index])} Å</td>
-                                            <td>{['α', 'β', 'γ'][index]}</td>
-                                            <td>{formatNumber(modelSummary.angles[index], 2)}°</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                            <p className="supercell-summary cell-summary">
-                                Supercell: {modelSummary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}
-                                <span>|</span>
-                                {formatNumber(modelSummary.totalAtoms, 0)} atoms
-                            </p>
+                    <div className="model-stats">
+                        <div className="stat">
+                            <span className="stat-label">Lattice a · b · c (Å)</span>
+                            <span className="stat-value">
+                                {modelSummary.cellLengths.map((value) => formatNumber(value)).join('  ·  ')}
+                            </span>
                         </div>
-                        <div className="model-table-panel composition-panel">
-                            <h3>Atoms</h3>
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Element</th>
-                                        <th>Reference sites</th>
-                                        <th>Atoms</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {modelSummary.elementEntries.map(({ element, referenceSites, count }) => (
-                                        <tr key={element}>
-                                            <td>{element}</td>
-                                            <td>{formatNumber(referenceSites, 0)}</td>
-                                            <td>{formatNumber(count, 0)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <div className="stat">
+                            <span className="stat-label">Angles α · β · γ (°)</span>
+                            <span className="stat-value">
+                                {modelSummary.angles.map((value) => formatNumber(value, 1)).join('  ·  ')}
+                            </span>
                         </div>
+                        <div className="stat">
+                            <span className="stat-label">Supercell</span>
+                            <span className="stat-value">
+                                {modelSummary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}
+                            </span>
+                        </div>
+                        <span className="stat-divider" aria-hidden="true" />
+                        {modelSummary.elementEntries.map(({ element, referenceSites, count }) => (
+                            <div className="stat" key={element}>
+                                <span className="stat-label">{element}</span>
+                                <span className="stat-value">{formatNumber(count, 0)}</span>
+                                <span className="stat-sub">{formatNumber(referenceSites, 0)} sites</span>
+                            </div>
+                        ))}
                     </div>
                 </section>
             )}
