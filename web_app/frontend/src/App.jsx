@@ -9,13 +9,12 @@ function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [currentDirectory, setCurrentDirectory] = useState('data');
   const [draftDirectory, setDraftDirectory] = useState('data');
-  const [theme, setTheme] = useState(() => localStorage.getItem('rmc-theme') || 'dark');
   const [browseStatus, setBrowseStatus] = useState(null);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem('rmc-theme', theme);
-  }, [theme]);
+    document.documentElement.dataset.theme = 'light';
+    localStorage.setItem('rmc-theme', 'light');
+  }, []);
 
   const handleDirectorySubmit = (event) => {
     event.preventDefault();
@@ -51,8 +50,10 @@ function App() {
             <div className="brand-row">
               <div className="brand-mark">R</div>
               <div className="brand-copy">
-                <h1>RMCProfile Run Monitor</h1>
-                <span>{currentDirectory}</span>
+                <h1>
+                  RMCprofile
+                  <span>Run Monitor</span>
+                </h1>
               </div>
             </div>
             <nav className="page-tabs" aria-label="Workspace pages">
@@ -69,17 +70,6 @@ function App() {
                 KDE / 3D
               </button>
             </nav>
-            <div className="header-actions">
-              <button
-                className="theme-toggle"
-                type="button"
-                onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}
-                aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-                title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-              >
-                <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
-              </button>
-            </div>
           </div>
           <form className="path-bar" onSubmit={handleDirectorySubmit}>
             <label htmlFor="data-path">Data path</label>
@@ -90,7 +80,11 @@ function App() {
               onChange={(event) => setDraftDirectory(event.target.value)}
               spellCheck="false"
             />
-            <button type="button" className="secondary-button" onClick={handleNativeBrowse}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleNativeBrowse}
+            >
               Browse
             </button>
             <button type="submit">
@@ -100,7 +94,7 @@ function App() {
           {browseStatus && <div className={`browse-status ${browseStatus.kind}`}>{browseStatus.text}</div>}
         </header>
         {activePage === 'dashboard' && <Dashboard directory={currentDirectory} />}
-        {activePage === 'structure' && <StructurePage directory={currentDirectory} theme={theme} />}
+        {activePage === 'structure' && <StructurePage directory={currentDirectory} theme="light" />}
       </main>
     </div>
   );

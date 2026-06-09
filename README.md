@@ -8,7 +8,7 @@ analysis workspace. It now has three layers:
 - **`rmc_toolkits/`** — a reusable Python package for parsing RMC outputs, generating plots,
   and computing KDE density slices. New development should depend on this package.
 - **`web_app/`** — a Flask backend + React (Vite) frontend that turns a run directory into an
-  interactive dashboard, a file explorer, and a KDE / 3D structure viewer.
+  interactive dashboard and a KDE / 3D structure viewer.
 - **`src/`** — the original standalone CLI scripts, kept for familiar research workflows.
 
 > See [`docs/HANDOFF.md`](docs/HANDOFF.md) for the implementation hand-off and
@@ -19,11 +19,12 @@ analysis workspace. It now has three layers:
 - **Run dashboard** — renders every detected plot in a run folder (R-value history, S(Q),
   G(r), Bragg, partials) as interactive browser-native SVG charts with hover readouts, legend
   toggles, and drag-to-zoom.
-- **File explorer** — browse a data directory, with automatic detection of each file's plot kind.
+- **Native folder picker** — choose a data directory from the system file browser, with automatic
+  detection of each file's plot kind after loading.
 - **KDE / 3D page** — a real server-side SciPy `gaussian_kde` density slice with bandwidth,
   colormap, grid-resolution, contour, and log-scale controls; an x–z slab-in-cell projection;
   and a Three.js folded-unit-cell atom viewer with orbit/pan/zoom.
-- **Light / dark theme** and a native folder picker for choosing a data root.
+- **Light-mode workspace** with a native folder picker for choosing a data root.
 - **`.rmc6f` → `Frac_coord_<stem>.txt`** conversion from the file browser or the API.
 
 ## Repository layout
@@ -104,7 +105,7 @@ VITE_API_BASE_URL=http://localhost:5050 npm run dev
 ### 3. Open the app
 
 Vite serves the UI at **`http://localhost:5173/`**. Use the data-path field in the header to
-browse a run folder, switch between the **Dashboard** and **KDE / 3D** views, and toggle the theme.
+browse a run folder and switch between the **Dashboard** and **KDE / 3D** views.
 
 ## Backend API
 
@@ -214,5 +215,5 @@ KDE slice viewer (`RMC_KDE.py`):
 
 This is a research tooling repo growing into a local-first analysis app. The reusable package
 layer and the interactive web viewer are in place; current focus is broadening backend API
-coverage and the KDE/structure tooling. See [`docs/HANDOFF.md`](docs/HANDOFF.md) and
+coverage, improving the dashboard UI polish, and expanding the KDE/structure tooling. See [`docs/HANDOFF.md`](docs/HANDOFF.md) and
 [`docs/ROADMAP.md`](docs/ROADMAP.md) for details.
