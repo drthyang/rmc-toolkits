@@ -130,35 +130,63 @@ const Dashboard = ({ directory }) => {
                             <h2>Model information</h2>
                             <p>{modelSummary.source}</p>
                         </div>
-                        <span>{formatNumber(modelSummary.totalAtoms, 0)} atoms</span>
                     </div>
                     <div className="model-stats">
-                        <div className="stat">
-                            <span className="stat-label">Lattice a · b · c (Å)</span>
-                            <span className="stat-value">
-                                {modelSummary.cellLengths.map((value) => formatNumber(value)).join('  ·  ')}
-                            </span>
-                        </div>
-                        <div className="stat">
-                            <span className="stat-label">Angles α · β · γ (°)</span>
-                            <span className="stat-value">
-                                {modelSummary.angles.map((value) => formatNumber(value, 1)).join('  ·  ')}
-                            </span>
-                        </div>
-                        <div className="stat">
-                            <span className="stat-label">Supercell</span>
-                            <span className="stat-value">
-                                {modelSummary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}
-                            </span>
-                        </div>
-                        <span className="stat-divider" aria-hidden="true" />
-                        {modelSummary.elementEntries.map(({ element, referenceSites, count }) => (
-                            <div className="stat" key={element}>
-                                <span className="stat-label">{element}</span>
-                                <span className="stat-value">{formatNumber(count, 0)}</span>
-                                <span className="stat-sub">{formatNumber(referenceSites, 0)} sites</span>
-                            </div>
-                        ))}
+                        <table className="geometry-table" aria-label="Model geometry">
+                            <thead>
+                                <tr>
+                                    <th scope="col">a</th>
+                                    <th scope="col">b</th>
+                                    <th scope="col">c</th>
+                                    <th scope="col">α</th>
+                                    <th scope="col">β</th>
+                                    <th scope="col">γ</th>
+                                    <th scope="col">nx</th>
+                                    <th scope="col">ny</th>
+                                    <th scope="col">nz</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    {modelSummary.cellLengths.map((value, index) => (
+                                        <td key={`cell-${index}`}>{formatNumber(value)} Å</td>
+                                    ))}
+                                    {modelSummary.angles.map((value, index) => (
+                                        <td key={`angle-${index}`}>{formatNumber(value, 1)}°</td>
+                                    ))}
+                                    {modelSummary.supercell.map((value, index) => (
+                                        <td key={`supercell-${index}`}>{formatNumber(value, 0)}</td>
+                                    ))}
+                                </tr>
+                            </tbody>
+                        </table>
+                        <table className="composition-table" aria-label="Model composition">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Element</th>
+                                    {modelSummary.elementEntries.map(({ element }) => (
+                                        <th scope="col" key={element}>{element}</th>
+                                    ))}
+                                    <th scope="col">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Atoms</th>
+                                    {modelSummary.elementEntries.map(({ element, count }) => (
+                                        <td key={element}>{formatNumber(count, 0)}</td>
+                                    ))}
+                                    <td>{formatNumber(modelSummary.totalAtoms, 0)}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Sites</th>
+                                    {modelSummary.elementEntries.map(({ element, referenceSites }) => (
+                                        <td key={element}>{formatNumber(referenceSites, 0)}</td>
+                                    ))}
+                                    <td>{formatNumber(modelSummary.referenceSites, 0)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </section>
             )}

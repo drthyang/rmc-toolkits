@@ -6,6 +6,7 @@ import io
 import math
 import os
 import platform
+import shutil
 import subprocess
 import sys
 
@@ -55,13 +56,17 @@ def _resolve_inside_root(raw_path: str | None) -> Path:
 
 def _choose_folder(initial_dir: Path) -> Path | None:
     if platform.system() == "Darwin":
+        osascript = shutil.which("osascript") or "/usr/bin/osascript"
+        if not Path(osascript).exists():
+            raise FileNotFoundError("macOS folder picker is unavailable: osascript was not found")
+
         escaped_initial_dir = str(initial_dir).replace('"', '\\"')
         script = (
             'POSIX path of (choose folder with prompt "Select an RMCProfile run folder" '
             f'default location POSIX file "{escaped_initial_dir}")'
         )
         result = subprocess.run(
-            ["osascript", "-e", script],
+            [osascript, "-e", script],
             check=False,
             capture_output=True,
             text=True,
