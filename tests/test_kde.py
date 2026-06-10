@@ -69,6 +69,31 @@ class KdeTests(unittest.TestCase):
         self.assertEqual(result["vmin"], 0.0)
         self.assertEqual(result["vmax"], 0.0)
 
+    def test_kde_slice_handles_degenerate_slab_without_error(self):
+        positions = np.array(
+            [
+                [0.1, 0.1, 0.5],
+                [0.2, 0.2, 0.5],
+                [0.3, 0.3, 0.5],
+                [0.4, 0.4, 0.5],
+                [0.5, 0.5, 0.5],
+            ]
+        )
+
+        result = kde_slice(
+            positions,
+            z_center=0.5,
+            dz=0.1,
+            xlim=(0.0, 1.0),
+            ylim=(0.0, 1.0),
+            grid=16,
+        )
+
+        self.assertEqual(result["slabCount"], 5)
+        self.assertEqual(result["fitCount"], 0)
+        self.assertEqual(result["vmin"], 0.0)
+        self.assertEqual(result["vmax"], 0.0)
+
     def test_kde_slice_reports_subsampled_fit_count(self):
         rng = np.random.default_rng(0)
         positions = np.column_stack(

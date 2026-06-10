@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from typing import Iterator, TypedDict
 
 import numpy as np
 
@@ -24,6 +25,15 @@ class RmcStructure:
     positions: np.ndarray
 
 
+class Rmc6fAtom(TypedDict):
+    atom_number: int
+    element: str
+    type_label: str
+    coords: np.ndarray
+    reference_number: int
+    cell_indices: np.ndarray
+
+
 def read_rmc_csv(path: str | Path) -> CsvSeries:
     path = Path(path)
     with path.open("r", encoding="utf-8") as handle:
@@ -34,9 +44,14 @@ def read_rmc_csv(path: str | Path) -> CsvSeries:
 
     labels = [label.strip() for label in lines[0].split(",")]
     rows: list[list[float]] = []
-    for line in lines[1:]:
+    expected_columns = len(labels)
+    for line_number, line in enumerate(lines[1:], start=2):
         values = [value.strip() for value in line.split(",") if value.strip()]
         if values:
+            if len(values) != expected_columns:
+                raise ValueError(
+                    f"{path} line {line_number} has {len(values)} values; expected {expected_columns}"
+                )
             rows.append([float(value) for value in values])
 
     if not rows:
@@ -54,8 +69,11 @@ def read_chi(paths: list[str | Path]) -> tuple[np.ndarray, np.ndarray]:
         for line in lines[2:]:
             parts = line.split()
             if len(parts) >= 2:
-                chi_q.append(float(parts[-2]))
-                chi_r.append(float(parts[-1]))
+                try:
+                    chi_q.append(float(parts[-2]))
+                    chi_r.append(float(parts[-1]))
+                except ValueError:
+                    continue
     return np.asarray(chi_q, dtype=float), np.asarray(chi_r, dtype=float)
 
 
@@ -127,7 +145,7 @@ def read_cell_vectors(rmc6f_path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     return lattice_vectors, supercell
 
 
-def iter_rmc6f_atoms(rmc6f_path: str | Path):
+def iter_rmc6f_atoms(rmc6f_path: str | Path) -> Iterator[Rmc6fAtom]:
     """Yield atom records from an RMCProfile `.rmc6f` file."""
     in_atoms = False
     with Path(rmc6f_path).open("r", encoding="utf-8", errors="replace") as handle:
@@ -201,6 +219,9 @@ def read_structure(
     element: str | int | None = None,
     mode: str = "cartesian",
 ) -> RmcStructure:
+    if mode not in {"cartesian", "fractional"}:
+        raise ValueError("mode must be either 'cartesian' or 'fractional'")
+
     directory = Path(directory)
     frac_path = next(iter(sorted(directory.glob("Frac*.txt"))), None)
     rmc6f_path = next(iter(sorted(directory.glob("*.rmc6f"))), None)
@@ -212,7 +233,16 @@ def read_structure(
     atom_indices = read_atom_indices(rmc6f_path)
     lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
     unit_vectors = lattice_vectors / supercell[:, None]
-    selected_indices = None if element in (None, 0, "0", "all") else set(atom_indices[str(element)])
+    if element in (None, 0, "0", "all"):
+        selected_indices = None
+    else:
+        element_key = str(element)
+        if element_key not in atom_indices:
+            available = ", ".join(sorted(atom_indices)) or "none"
+            raise ValueError(
+                f"Unknown element/reference label {element_key!r}; available labels: {available}"
+            )
+        selected_indices = set(atom_indices[element_key])
 
     atom_types: list[str] = []
     positions: list[np.ndarray] = []
@@ -232,7 +262,11 @@ def read_structure(
         if mode == "fractional":
             positions.append(folded)
         else:
-            positions.append(folded[0] * unit_vectors[0] + folded[1] * unit_vectors[1] + folded[2] * unit_vectors[2])
+            positions.append(
+                folded[0] * unit_vectors[0]
+                + folded[1] * unit_vectors[1]
+                + folded[2] * unit_vectors[2]
+            )
 
     return RmcStructure(
         atom_indices=atom_indices,
