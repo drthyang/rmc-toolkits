@@ -42,7 +42,8 @@ const AxisLabel = ({ label, x, y, textAnchor = 'middle', rotate = false }) => {
     );
 };
 
-const InteractivePlot = ({ file }) => {
+const InteractivePlot = ({ file, variant }) => {
+    const wide = variant === 'wide';
     const [plot, setPlot] = useState(null);
     const [error, setError] = useState(null);
     const [hidden, setHidden] = useState(() => new Set());
@@ -84,7 +85,9 @@ const InteractivePlot = ({ file }) => {
         return { x: currentX, y: niceDomain(allY.length ? allY : visibleSeries.flatMap((series) => series.y)), baseX };
     }, [visibleSeries, xDomain]);
 
-    const view = { width: 720, height: 405, left: 72, right: 14, top: 14, bottom: 62 };
+    const view = wide
+        ? { width: 1440, height: 300, left: 76, right: 18, top: 16, bottom: 56 }
+        : { width: 720, height: 405, left: 72, right: 14, top: 14, bottom: 62 };
     const plotWidth = view.width - view.left - view.right;
     const plotHeight = view.height - view.top - view.bottom;
 
@@ -204,7 +207,7 @@ const InteractivePlot = ({ file }) => {
     if (!plot) return <div className="interactive-plot-loading">Loading plot...</div>;
 
     return (
-        <div className="interactive-plot">
+        <div className={`interactive-plot${wide ? ' interactive-plot--wide' : ''}`}>
             <div className="plot-actions">
                 <button type="button" onClick={() => setXDomain(null)}>Reset</button>
             </div>
@@ -248,7 +251,7 @@ const InteractivePlot = ({ file }) => {
                         <text className="plot-tick" x={view.left - 12} y={yScale(tick) + 4} textAnchor="end">{formatNumber(tick)}</text>
                     </g>
                 ))}
-                {integerTicks(domains.x).map((tick) => (
+                {integerTicks(domains.x, wide ? 9 : 4).map((tick) => (
                     <g key={`x-${tick}`}>
                         <line className="plot-grid-line soft" x1={xScale(tick)} x2={xScale(tick)} y1={view.top} y2={view.top + plotHeight} />
                         <text className="plot-tick" x={xScale(tick)} y={view.height - 30} textAnchor="middle">{formatInteger(tick)}</text>
