@@ -190,7 +190,7 @@ Notes:
 CLI tool output (`RMC_plot.py`):
 
 <div align="center">
-  <img src="assets/rmc-toolkits-dashboard.png" width="60%" />
+  <img src="assets/rmc-toolkits-dashboard.png" width="80%" />
 </div>
 <!-- <div align="center">
   <img src="assets/1_R-value.png" width="30%" />
