@@ -193,16 +193,10 @@ RMCprofile run monitor (`RMC_plot.py`):
   <img src="assets/rmc-toolkits-dashboard.png" width="100%" />
 </div>
 
-3D atomic positions reduced to the unit cell (`RMC_3D.py`):
+Collapsed unit cell and KDE plot (`RMC_3D.py`):
 
 <div align="center">
-  <img src="assets/Distr_3D.png" width="60%" />
-</div>
-
-KDE slice viewer (`RMC_KDE.py`):
-
-<div align="center">
-  <img src="assets/KDE.png" width="90%" />
+  <img src="assets/rmc-toolkits-KDE.png" width="100%" />
 </div>
 
 ## Project status
