@@ -7,6 +7,7 @@ density with its own colormap and contour styling.
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -108,6 +109,9 @@ def kde_slice(
     contour polylines, and the slab atom count.
     """
     positions = np.asarray(positions, dtype=float)
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise ValueError("positions must be a numeric array with shape (N, 3)")
+
     grid = int(max(16, min(grid, 400)))
     grid_x = np.linspace(xlim[0], xlim[1], grid)
     grid_y = np.linspace(ylim[0], ylim[1], grid)
@@ -116,6 +120,7 @@ def kde_slice(
 
     density = np.zeros_like(mesh_x)
     slab_count = 0
+    fit_count = 0
     if positions.shape[0]:
         x, y, z = positions[:, 0], positions[:, 1], positions[:, 2]
         half = 0.5 * max(dz, 1e-12)
@@ -123,14 +128,19 @@ def kde_slice(
         slab = np.column_stack([x[mask], y[mask]])
         slab_count = int(slab.shape[0])
 
-        if slab_count >= 5:
+        has_enough_unique_points = np.unique(slab, axis=0).shape[0] >= 3
+        centered_slab = slab - slab.mean(axis=0)
+        has_two_dimensional_spread = np.linalg.matrix_rank(centered_slab) >= 2
+        if slab_count >= 5 and has_enough_unique_points and has_two_dimensional_spread:
             if slab_count > MAX_KDE_FIT_POINTS:
                 rng = np.random.default_rng(rng_seed)
                 choice = rng.choice(slab_count, MAX_KDE_FIT_POINTS, replace=False)
                 slab = slab[choice]
-            kde = gaussian_kde(slab.T, bw_method=bw)
-            sample = np.vstack([mesh_x.ravel(), mesh_y.ravel()])
-            density = kde(sample).reshape(mesh_x.shape)
+            with suppress(np.linalg.LinAlgError, ValueError):
+                kde = gaussian_kde(slab.T, bw_method=bw)
+                sample = np.vstack([mesh_x.ravel(), mesh_y.ravel()])
+                density = kde(sample).reshape(mesh_x.shape)
+                fit_count = int(slab.shape[0])
 
     if log:
         density = np.log10(density + 1e-12)
@@ -146,7 +156,7 @@ def kde_slice(
         "bw": float(bw),
         "log": bool(log),
         "slabCount": slab_count,
-        "fitCount": int(min(slab_count, MAX_KDE_FIT_POINTS)) if slab_count >= 5 else 0,
+        "fitCount": fit_count,
         "vmin": float(np.nanmin(density)) if density.size else 0.0,
         "vmax": float(np.nanmax(density)) if density.size else 0.0,
         "contours": contours,

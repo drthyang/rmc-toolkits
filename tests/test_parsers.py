@@ -76,6 +76,13 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(np.all(structure.positions >= 0.0))
         self.assertTrue(np.all(structure.positions <= 10.4116))
 
+    def test_read_structure_rejects_unknown_element_and_mode(self):
+        with self.assertRaisesRegex(ValueError, "Unknown element"):
+            read_structure(DATA, element="Zn")
+
+        with self.assertRaisesRegex(ValueError, "mode must be"):
+            read_structure(DATA, mode="bad-mode")
+
 
 if __name__ == "__main__":
     unittest.main()
