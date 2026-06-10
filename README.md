@@ -94,6 +94,36 @@ Open `http://localhost:5173/`. If the backend is not on port 5000, point the fro
 VITE_API_BASE_URL=http://localhost:5050 npm run dev
 ```
 
+## Hosting The Dashboard
+
+The dashboard needs the Flask API for file browsing, plot parsing, structure sampling, and KDE
+computation, so it cannot run as a full-featured app on GitHub Pages alone. Host it as a small web
+service instead.
+
+The included `Dockerfile` builds the React dashboard and serves it from the Flask/Gunicorn backend:
+
+```bash
+docker build -t rmc-toolkits-dashboard .
+docker run --rm -p 5000:5000 rmc-toolkits-dashboard
+```
+
+Open `http://localhost:5000/` to test the production-style build.
+
+For a public deployment, create a Docker-backed web service on a host such as Render, Fly.io,
+Railway, or a VPS. Use this repository as the build source and set the service port to the
+provider's `PORT` environment variable; the container already honors `PORT` and falls back to
+`5000`.
+
+By default, the hosted dashboard browses the files copied into the image, including the sample
+`data/` directory. For a real lab deployment, mount or copy your run folders into the container and
+set:
+
+```bash
+RMC_TOOLKITS_DATA_ROOT=/absolute/path/inside/container
+```
+
+The native folder picker is meant for local desktop use and is not useful on a remote server.
+
 ## Python Package Usage
 
 Top-level imports expose the current package API:
