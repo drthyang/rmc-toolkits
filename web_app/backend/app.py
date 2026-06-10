@@ -10,12 +10,13 @@ import shutil
 import subprocess
 import sys
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+FRONTEND_DIST = PROJECT_ROOT / "web_app" / "frontend" / "dist"
 
 from rmc_toolkits.kde import UnitCellPositions, kde_slice, load_unit_cell_positions
 from rmc_toolkits.parsers import (
@@ -30,7 +31,7 @@ from rmc_toolkits.parsers import (
 from rmc_toolkits.plots import close_plot, detect_plot_kind, make_plot, plot_to_png
 
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=str(FRONTEND_DIST), static_url_path="")
 CORS(app)
 
 DATA_ROOT = Path(os.environ.get("RMC_TOOLKITS_DATA_ROOT", PROJECT_ROOT)).expanduser().resolve()
@@ -420,5 +421,29 @@ def kde_slice_endpoint():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path: str):
+    if path.startswith("api/"):
+        return jsonify({"error": "API endpoint not found"}), 404
+
+    static_folder = Path(app.static_folder or FRONTEND_DIST)
+    requested = static_folder / path
+    if path and requested.is_file():
+        return send_from_directory(static_folder, path)
+
+    index = static_folder / "index.html"
+    if index.exists():
+        return send_from_directory(static_folder, "index.html")
+
+    return jsonify(
+        {
+            "error": "Frontend build not found",
+            "hint": "Run `npm run build` in web_app/frontend or use the Dockerfile.",
+        }
+    ), 404
+
+
 if __name__ == "__main__":
-    app.run(debug=True, port=int(os.environ.get("RMC_TOOLKITS_PORT", 5000)))
+    port = int(os.environ.get("PORT", os.environ.get("RMC_TOOLKITS_PORT", 5000)))
+    app.run(debug=True, host="0.0.0.0", port=port)
