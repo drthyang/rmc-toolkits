@@ -187,20 +187,11 @@ Notes:
 
 ## Screenshots
 
-CLI tool output (`RMC_plot.py`):
+RMCprofile run monitor (`RMC_plot.py`):
 
 <div align="center">
-  <img src="assets/rmc-toolkits-dashboard.png" width="80%" />
+  <img src="assets/rmc-toolkits-dashboard.png" width="100%" />
 </div>
-<!-- <div align="center">
-  <img src="assets/1_R-value.png" width="30%" />
-  <img src="assets/2_Bragg.png" width="30%" />
-  <img src="assets/3_SQ.png" width="30%" />
-</div>
-<div align="center">
-  <img src="assets/4_Gr.png" width="30%" />
-  <img src="assets/5_Partials.png" width="30%" />
-</div> -->
 
 3D atomic positions reduced to the unit cell (`RMC_3D.py`):
 
