@@ -162,7 +162,8 @@
   background: var(--danger-soft);
 }
 
-@media (max-width: 760px) {
+/* Below ~880px the tabs no longer fit beside the path bar; stack the header rows. */
+@media (max-width: 880px) {
   .app-header {
     grid-template-columns: 1fr;
     padding: 0.8rem;

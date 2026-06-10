@@ -42,78 +42,55 @@
 }
 
 .model-stats {
-    display: grid;
+    display: flex;
     flex: 1 1 auto;
-    grid-template-columns: max-content max-content;
-    align-items: center;
-    gap: 0.85rem;
+    flex-wrap: wrap;
+    align-items: stretch;
+    row-gap: 0.55rem;
     min-width: 0;
-    overflow-x: auto;
-    padding: 0.58rem 0.86rem 0.58rem 1.25rem;
+    margin: 0;
+    padding: 0.62rem 0.95rem;
 }
 
-.geometry-table,
-.composition-table {
-    border: 1px solid var(--border);
-    border-collapse: separate;
-    border-radius: 6px;
-    border-spacing: 0;
-    flex: 0 0 auto;
+.model-stat {
+    display: grid;
+    align-content: start;
+    gap: 0.18rem;
+    padding: 0 1rem;
+}
+
+.model-stat:first-child {
+    padding-left: 0;
+}
+
+.model-stat + .model-stat {
+    border-left: 1px solid var(--border);
+}
+
+.model-stat dt {
+    color: var(--muted);
+    font-size: 0.71rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.model-stat dd {
+    display: grid;
+    gap: 0.12rem;
+    margin: 0;
+    color: var(--text-strong);
+    font-size: 0.95rem;
+    font-weight: 720;
     font-variant-numeric: tabular-nums;
-    overflow: hidden;
-    background: var(--panel-bg);
-}
-
-.geometry-table th,
-.geometry-table td,
-.composition-table th,
-.composition-table td {
-    border-right: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-    line-height: 1.2;
-    padding: 0.28rem 0.52rem;
+    line-height: 1.15;
     white-space: nowrap;
 }
 
-.geometry-table tr > :last-child,
-.composition-table tr > :last-child {
-    border-right: 0;
-}
-
-.geometry-table tbody tr:last-child > *,
-.composition-table tbody tr:last-child > * {
-    border-bottom: 0;
-}
-
-.geometry-table thead th,
-.composition-table thead th {
-    background: var(--panel-raised);
+.model-stat-sub {
     color: var(--muted);
-    font-size: 0.72rem;
-    font-weight: 700;
+    font-size: 0.7rem;
+    font-weight: 620;
     letter-spacing: 0.01em;
-    text-align: center;
-}
-
-.geometry-table td,
-.composition-table td {
-    color: var(--text-strong);
-    font-size: 0.88rem;
-    font-weight: 720;
-    text-align: right;
-}
-
-.composition-table tbody th {
-    color: var(--muted);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-    text-align: left;
-}
-
-.composition-table tbody tr:last-child th,
-.composition-table tbody tr:last-child td {
-    background: color-mix(in srgb, var(--panel-soft) 72%, transparent);
 }
 
 .model-summary,
@@ -131,40 +108,17 @@
     align-items: stretch;
 }
 
-.model-summary-header {
+.model-summary-title {
     display: flex;
     flex: 0 0 auto;
-    justify-content: flex-start;
     align-items: center;
-    gap: 0.8rem;
-    padding: 0.58rem 0.86rem;
+    margin: 0;
+    padding: 0.62rem 1.05rem;
     border-right: 1px solid var(--border);
     background: var(--panel-raised);
-}
-
-.model-summary-header h2 {
-    margin: 0;
     color: var(--text-strong);
-    font-size: 1.08rem;
+    font-size: 1.02rem;
     line-height: 1.25;
-    white-space: nowrap;
-}
-
-.model-summary-header p {
-    margin: 0.18rem 0 0;
-    color: var(--muted);
-    font-size: 0.82rem;
-    font-weight: 560;
-}
-
-.model-summary-header > span {
-    border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
-    border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent-strong);
-    padding: 0.28rem 0.62rem;
-    font-size: 0.8rem;
-    font-weight: 760;
     white-space: nowrap;
 }
 
@@ -174,9 +128,37 @@
     font-size: 0.86rem;
 }
 
+/* R-value: a slim full-width convergence strip that collapses to its header bar. */
+.r-value-card {
+    margin-bottom: 0.85rem;
+}
+
+.r-value-card.is-collapsed .plot-card-header {
+    border-bottom: 0;
+}
+
+.plot-card-header-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.panel-toggle {
+    min-height: 1.7rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.74rem;
+    font-weight: 680;
+    color: var(--text);
+    background: var(--panel-soft);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
 .plot-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.72rem;
 }
 
@@ -193,7 +175,7 @@
     display: flex;
     justify-content: space-between;
     gap: 0.85rem;
-    align-items: flex-start;
+    align-items: center;
     padding: 0.58rem 0.72rem;
     border-bottom: 1px solid var(--border);
     background: var(--panel-raised);
@@ -206,20 +188,13 @@
     line-height: 1.25;
 }
 
-.plot-card p {
-    margin: 0.2rem 0 0;
-    color: var(--muted);
-    font-size: 0.8rem;
-    font-weight: 560;
-}
-
-.plot-card .interactive-plot {
+.plot-grid .plot-card .interactive-plot {
     min-height: 335px;
 }
 
-.plot-card .interactive-plot svg {
+.plot-grid .plot-card .interactive-plot svg {
     aspect-ratio: 16 / 9;
-    max-height: 330px;
+    max-height: 400px;
 }
 
 .dashboard-error,
@@ -237,12 +212,6 @@
     background: var(--panel-bg);
 }
 
-@media (max-width: 1180px) {
-    .plot-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
 @media (max-width: 760px) {
     .dashboard-page {
         padding: 0.9rem;
@@ -252,19 +221,16 @@
         flex-direction: column;
     }
 
-    .model-summary-header {
-        flex-direction: column;
-        align-items: flex-start;
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
-    }
-
     .model-summary {
         flex-direction: column;
     }
 
+    .model-summary-title {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+    }
+
     .model-stats {
-        grid-template-columns: 1fr;
         padding: 0.72rem 0.9rem 0.8rem;
     }
 
@@ -282,7 +248,7 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .plot-card .interactive-plot svg {
+    .plot-grid .plot-card .interactive-plot svg {
         max-height: 340px;
     }
 }

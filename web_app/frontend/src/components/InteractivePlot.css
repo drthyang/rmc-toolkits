@@ -30,6 +30,10 @@
     aspect-ratio: 16 / 9;
 }
 
+.interactive-plot--wide svg {
+    aspect-ratio: 1440 / 300;
+}
+
 .plot-bg {
     fill: var(--plot-bg);
 }
@@ -85,7 +89,8 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
-    padding: 0.45rem 0.6rem 0;
+    /* Right padding clears the absolutely positioned Reset button. */
+    padding: 0.45rem 4.6rem 0 0.6rem;
     max-height: 4.4rem;
     overflow: auto;
 }
