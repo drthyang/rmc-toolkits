@@ -8,10 +8,10 @@ import ModelSummary from './ModelSummary';
 import './StructurePage.css';
 
 const colors = {
-    Ga: '#4f8cff',
-    Nb: '#f2b84b',
-    Se: '#62c084',
-    default: '#d5d9df'
+    Ga: '#0072B2',
+    Nb: '#E69F00',
+    Se: '#CC79A7',
+    default: '#8A8F98'
 };
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -281,6 +281,7 @@ const StructurePage = ({ directory, theme }) => {
     const slabCanvasRef = useRef(null);
     const mountRef = useRef(null);
     const normalMenuRef = useRef(null);
+    const cameraStateRef = useRef(null);
     const themeVars = useMemo(() => {
         if (typeof window === 'undefined') {
             return {
@@ -763,12 +764,18 @@ const StructurePage = ({ directory, theme }) => {
         const radius = Math.max(sphere.radius, 0.5);
         camera.near = radius / 100;
         camera.far = radius * 20;
-        camera.position.copy(sphere.center).add(new THREE.Vector3(radius * 1.7, radius * 1.45, radius * 1.55));
-        camera.lookAt(sphere.center);
-        camera.updateProjectionMatrix();
-        controls.target.copy(sphere.center);
         controls.minDistance = radius * 0.35;
         controls.maxDistance = radius * 8;
+        if (cameraStateRef.current) {
+            camera.position.fromArray(cameraStateRef.current.position);
+            controls.target.fromArray(cameraStateRef.current.target);
+            camera.zoom = cameraStateRef.current.zoom;
+        } else {
+            camera.position.copy(sphere.center).add(new THREE.Vector3(radius * 1.7, radius * 1.45, radius * 1.55));
+            controls.target.copy(sphere.center);
+        }
+        camera.lookAt(controls.target);
+        camera.updateProjectionMatrix();
 
         let frameId;
         const animate = () => {
@@ -779,6 +786,11 @@ const StructurePage = ({ directory, theme }) => {
         animate();
 
         return () => {
+            cameraStateRef.current = {
+                position: camera.position.toArray(),
+                target: controls.target.toArray(),
+                zoom: camera.zoom
+            };
             cancelAnimationFrame(frameId);
             controls.dispose();
             renderer.dispose();
