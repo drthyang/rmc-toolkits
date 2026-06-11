@@ -5,6 +5,7 @@ from .kde import (
     UnitCellPositions,
     kde_slice,
     load_unit_cell_positions,
+    oriented_kde_slice,
 )
 from .parsers import (
     CsvSeries,
@@ -37,6 +38,7 @@ __all__ = [
     "kde_slice",
     "load_unit_cell_positions",
     "make_plot",
+    "oriented_kde_slice",
     "plot_to_png",
     "read_atom_indices",
     "read_cell_vectors",

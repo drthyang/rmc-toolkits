@@ -146,6 +146,50 @@ class BackendApiTests(unittest.TestCase):
         self.assertGreater(payload["slabCount"], 0)
         self.assertEqual(len(payload["density"]), 16)
 
+    def test_kde_slice_endpoint_handles_empty_default_slab(self):
+        response = self.client.get(
+            "/api/kde/slice",
+            query_string={
+                "dir": "data",
+                "orientation": "c",
+                "z": 0.5,
+                "dz": 0.08,
+                "grid": 16,
+                "levels": 1,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["orientation"], "c")
+        self.assertEqual(payload["slabCount"], 0)
+        self.assertEqual(payload["fitCount"], 0)
+        self.assertEqual(len(payload["density"]), 16)
+
+    def test_kde_slice_endpoint_accepts_custom_orientation(self):
+        response = self.client.get(
+            "/api/kde/slice",
+            query_string={
+                "dir": "data",
+                "orientation": "custom",
+                "nx": 1,
+                "ny": 1,
+                "nz": 0,
+                "z": 0.5,
+                "dz": 0.12,
+                "grid": 16,
+                "levels": 1,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["orientation"], "custom")
+        self.assertEqual(payload["grid"], 16)
+        self.assertEqual(len(payload["normal"]), 3)
+        self.assertTrue(payload["planeVertices"])
+        self.assertTrue(payload["slabVertices"])
+
 
 if __name__ == "__main__":
     unittest.main()

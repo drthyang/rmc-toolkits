@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,15 @@ from .parsers import iter_rmc6f_atoms, read_cell_vectors
 # stable well below the full population, and the eval cost scales with the
 # number of fit points, so subsampling keeps slider interaction responsive.
 MAX_KDE_FIT_POINTS = 6000
+_CUBE_CORNERS = np.asarray(
+    [[float(x), float(y), float(z)] for x in (0, 1) for y in (0, 1) for z in (0, 1)],
+    dtype=float,
+)
+_CUBE_EDGES = [
+    (start, end)
+    for start, end in combinations(range(len(_CUBE_CORNERS)), 2)
+    if np.count_nonzero(_CUBE_CORNERS[start] != _CUBE_CORNERS[end]) == 1
+]
 
 
 @dataclass(frozen=True)
@@ -100,6 +110,154 @@ def _contour_segments(
     return segments
 
 
+def _normalize_vector(vector: np.ndarray, name: str) -> np.ndarray:
+    vector = np.asarray(vector, dtype=float)
+    norm = float(np.linalg.norm(vector))
+    if vector.shape != (3,) or norm <= 1e-12:
+        raise ValueError(f"{name} must be a non-zero 3D vector")
+    return vector / norm
+
+
+def _orthogonal_axis(vector: np.ndarray) -> np.ndarray:
+    axis = np.eye(3)[int(np.argmin(np.abs(vector)))]
+    candidate = axis - np.dot(axis, vector) * vector
+    return _normalize_vector(candidate, "plane axis")
+
+
+def _plane_basis(
+    normal: np.ndarray,
+    u_axis: np.ndarray | None = None,
+    v_axis: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    normal = _normalize_vector(normal, "normal")
+    if u_axis is None:
+        u_axis = _orthogonal_axis(normal)
+    else:
+        u_axis = np.asarray(u_axis, dtype=float)
+        u_axis = u_axis - np.dot(u_axis, normal) * normal
+        u_axis = _normalize_vector(u_axis, "u_axis")
+
+    if v_axis is None:
+        v_axis = np.cross(normal, u_axis)
+    else:
+        v_axis = np.asarray(v_axis, dtype=float)
+        v_axis = v_axis - np.dot(v_axis, normal) * normal - np.dot(v_axis, u_axis) * u_axis
+    v_axis = _normalize_vector(v_axis, "v_axis")
+    return normal, u_axis, v_axis
+
+
+def _plane_section_vertices(normal: np.ndarray, offset: float) -> list[list[float]]:
+    vertices: list[np.ndarray] = []
+    for start, end in _CUBE_EDGES:
+        p0 = _CUBE_CORNERS[start]
+        p1 = _CUBE_CORNERS[end]
+        d0 = float(np.dot(p0, normal) - offset)
+        d1 = float(np.dot(p1, normal) - offset)
+        if abs(d0) <= 1e-9:
+            vertices.append(p0)
+        if abs(d1) <= 1e-9:
+            vertices.append(p1)
+        if d0 * d1 < 0:
+            t = d0 / (d0 - d1)
+            vertices.append(p0 + t * (p1 - p0))
+
+    unique: list[np.ndarray] = []
+    for vertex in vertices:
+        if not any(np.linalg.norm(vertex - existing) <= 1e-8 for existing in unique):
+            unique.append(vertex)
+    if len(unique) < 3:
+        return []
+
+    _, u_axis, v_axis = _plane_basis(normal)
+    center = np.mean(unique, axis=0)
+    ordered = sorted(
+        unique,
+        key=lambda vertex: np.arctan2(np.dot(vertex - center, v_axis), np.dot(vertex - center, u_axis)),
+    )
+    return [vertex.tolist() for vertex in ordered]
+
+
+def oriented_kde_slice(
+    positions: np.ndarray,
+    center: float,
+    thickness: float,
+    *,
+    normal: np.ndarray,
+    u_axis: np.ndarray | None = None,
+    v_axis: np.ndarray | None = None,
+    bw: float = 0.03,
+    grid: int = 120,
+    log: bool = False,
+    n_levels: int = 8,
+    rng_seed: int = 0,
+) -> dict:
+    """Compute a KDE slice through fractional coordinates along any direction.
+
+    ``center`` and ``thickness`` are fractions of the unit-cube projection range
+    along ``normal``. For example, normal ``[0, 0, 1]`` matches the original
+    c-axis slice semantics.
+    """
+    positions = np.asarray(positions, dtype=float)
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise ValueError("positions must be a numeric array with shape (N, 3)")
+
+    normal, u_axis, v_axis = _plane_basis(normal, u_axis, v_axis)
+    corner_depths = _CUBE_CORNERS @ normal
+    depth_min = float(np.min(corner_depths))
+    depth_max = float(np.max(corner_depths))
+    depth_span = max(depth_max - depth_min, 1e-12)
+    center = max(0.0, min(float(center), 1.0))
+    thickness = max(float(thickness), 1e-12)
+    center_depth = depth_min + center * depth_span
+    thickness_depth = thickness * depth_span
+
+    projected_corners = np.column_stack([_CUBE_CORNERS @ u_axis, _CUBE_CORNERS @ v_axis])
+    xlim = (float(np.min(projected_corners[:, 0])), float(np.max(projected_corners[:, 0])))
+    ylim = (float(np.min(projected_corners[:, 1])), float(np.max(projected_corners[:, 1])))
+
+    projected_positions = np.column_stack([positions @ u_axis, positions @ v_axis, positions @ normal])
+    result = kde_slice(
+        projected_positions,
+        z_center=center_depth,
+        dz=thickness_depth,
+        xlim=xlim,
+        ylim=ylim,
+        bw=bw,
+        grid=grid,
+        log=log,
+        n_levels=n_levels,
+        rng_seed=rng_seed,
+    )
+
+    slab_start = max(depth_min, center_depth - thickness_depth / 2)
+    slab_end = min(depth_max, center_depth + thickness_depth / 2)
+    plane_vertices = _plane_section_vertices(normal, center_depth)
+    result.update(
+        {
+            "center": center,
+            "thickness": thickness,
+            "depth": float(center_depth),
+            "depthThickness": float(thickness_depth),
+            "depthRange": [depth_min, depth_max],
+            "normal": normal.tolist(),
+            "uVector": u_axis.tolist(),
+            "vVector": v_axis.tolist(),
+            "planeVertices": plane_vertices,
+            "planePolygon": [
+                [float(np.dot(vertex, u_axis)), float(np.dot(vertex, v_axis))]
+                for vertex in np.asarray(plane_vertices, dtype=float)
+            ]
+            if plane_vertices
+            else [],
+            "slabVertices": [
+                _plane_section_vertices(normal, slab_start),
+                _plane_section_vertices(normal, slab_end),
+            ],
+        }
+    )
+    return result
+
+
 def kde_slice(
     positions: np.ndarray,
     z_center: float,
@@ -138,10 +296,15 @@ def kde_slice(
         slab = np.column_stack([x[mask], y[mask]])
         slab_count = int(slab.shape[0])
 
-        has_enough_unique_points = np.unique(slab, axis=0).shape[0] >= 3
-        centered_slab = slab - slab.mean(axis=0)
-        has_two_dimensional_spread = np.linalg.matrix_rank(centered_slab) >= 2
-        if slab_count >= 5 and has_enough_unique_points and has_two_dimensional_spread:
+        if slab_count >= 5:
+            has_enough_unique_points = np.unique(slab, axis=0).shape[0] >= 3
+            centered_slab = slab - slab.mean(axis=0)
+            has_two_dimensional_spread = np.linalg.matrix_rank(centered_slab) >= 2
+        else:
+            has_enough_unique_points = False
+            has_two_dimensional_spread = False
+
+        if has_enough_unique_points and has_two_dimensional_spread:
             if slab_count > MAX_KDE_FIT_POINTS:
                 rng = np.random.default_rng(rng_seed)
                 choice = rng.choice(slab_count, MAX_KDE_FIT_POINTS, replace=False)
