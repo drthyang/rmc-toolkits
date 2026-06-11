@@ -389,8 +389,9 @@ def kde_slice_endpoint():
         positions = _cached_positions(str(rmc6f_path), rmc6f_path.stat().st_mtime, element)
         cell_lengths = positions.cell_lengths
 
-        # z and dz arrive as fractions of the cell edge (matching the slider
-        # semantics in the frontend); convert to Angstrom for the KDE math.
+        # z and dz arrive as fractional cell coordinates. Keep the KDE slice in
+        # fractional a/b/c coordinates so non-orthogonal cells can be projected
+        # through the actual cell basis in the frontend.
         z_frac = float(request.args.get("z", 0.5))
         dz_frac = float(request.args.get("dz", 0.08))
         bw = float(request.args.get("bw", 0.03))
@@ -399,17 +400,18 @@ def kde_slice_endpoint():
         log = request.args.get("log", "false").lower() in ("1", "true", "yes")
 
         result = kde_slice(
-            positions.positions,
-            z_frac * cell_lengths[2],
-            dz_frac * cell_lengths[2],
-            xlim=(0.0, float(cell_lengths[0])),
-            ylim=(0.0, float(cell_lengths[1])),
+            positions.fractional_positions,
+            z_frac,
+            dz_frac,
+            xlim=(0.0, 1.0),
+            ylim=(0.0, 1.0),
             bw=bw,
             grid=grid,
             log=log,
             n_levels=levels,
         )
         result["cellLengths"] = cell_lengths.tolist()
+        result["unitVectors"] = positions.unit_vectors.tolist()
         result["source"] = str(rmc6f_path)
         result["element"] = element or "all"
         return jsonify(result)

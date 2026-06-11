@@ -1,4 +1,5 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 import numpy as np
@@ -20,6 +21,33 @@ class KdeTests(unittest.TestCase):
         np.testing.assert_allclose(all_positions.cell_lengths, [10.4116, 10.4116, 10.4116])
         self.assertTrue(np.all(ga_positions.positions >= 0.0))
         self.assertTrue(np.all(ga_positions.positions <= 10.4116))
+
+    def test_load_unit_cell_positions_preserves_nonorthogonal_basis(self):
+        with TemporaryDirectory() as tmpdir:
+            rmc6f = Path(tmpdir) / "skewed.rmc6f"
+            rmc6f.write_text(
+                "\n".join(
+                    [
+                        "Supercell dimensions 1 1 1",
+                        "Lattice vectors",
+                        "2.0 0.0 0.0",
+                        "1.0 3.0 0.0",
+                        "0.5 0.25 4.0",
+                        "Atoms:",
+                        "1 Ga Ga 0.25 0.50 0.75 1 0 0 0",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            positions = load_unit_cell_positions(rmc6f)
+
+        np.testing.assert_allclose(
+            positions.unit_vectors,
+            [[2.0, 0.0, 0.0], [1.0, 3.0, 0.0], [0.5, 0.25, 4.0]],
+        )
+        np.testing.assert_allclose(positions.fractional_positions, [[0.25, 0.5, 0.75]])
+        np.testing.assert_allclose(positions.positions, [[1.375, 1.6875, 3.0]])
 
     def test_kde_slice_returns_density_grid_and_contours(self):
         positions = np.array(

@@ -27,6 +27,8 @@ class UnitCellPositions:
     """Cartesian (Angstrom) atom positions folded into a single unit cell."""
 
     positions: np.ndarray  # (N, 3)
+    fractional_positions: np.ndarray  # (N, 3)
+    unit_vectors: np.ndarray  # (3, 3)
     cell_lengths: np.ndarray  # (3,) unit-cell edge lengths
 
 
@@ -45,10 +47,12 @@ def load_unit_cell_positions(
 
     select = element if element not in (None, "", "all") else None
     folded: list[np.ndarray] = []
+    fractional: list[np.ndarray] = []
     for atom in iter_rmc6f_atoms(rmc6f_path):
         if select is not None and atom["element"] != select:
             continue
         unit_frac = (atom["coords"] * supercell) % 1.0
+        fractional.append(unit_frac)
         cartesian = (
             unit_frac[0] * unit_vectors[0]
             + unit_frac[1] * unit_vectors[1]
@@ -57,8 +61,14 @@ def load_unit_cell_positions(
         folded.append(cartesian)
 
     positions = np.asarray(folded, dtype=float) if folded else np.empty((0, 3))
+    fractional_positions = np.asarray(fractional, dtype=float) if fractional else np.empty((0, 3))
     cell_lengths = np.linalg.norm(unit_vectors, axis=1)
-    return UnitCellPositions(positions=positions, cell_lengths=cell_lengths)
+    return UnitCellPositions(
+        positions=positions,
+        fractional_positions=fractional_positions,
+        unit_vectors=unit_vectors,
+        cell_lengths=cell_lengths,
+    )
 
 
 def _contour_segments(

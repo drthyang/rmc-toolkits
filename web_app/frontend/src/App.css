@@ -195,6 +195,16 @@
   background: var(--danger-soft);
 }
 
+.app-footer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--subtle);
+  padding: 0.45rem 1.25rem;
+  font-size: 0.74rem;
+  text-align: center;
+}
+
 /* Below ~880px the tabs no longer fit beside the path bar; stack the header rows. */
 @media (max-width: 880px) {
   .app-header {
@@ -221,5 +231,9 @@
 
   .path-bar label {
     display: none;
+  }
+
+  .app-footer {
+    padding-inline: 0.8rem;
   }
 }

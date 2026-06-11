@@ -95,6 +95,9 @@ function App() {
         </header>
         {activePage === 'dashboard' && <Dashboard directory={currentDirectory} />}
         {activePage === 'structure' && <StructurePage directory={currentDirectory} theme="light" />}
+        <footer className="app-footer">
+          &copy; 2026 Tsung-Han Yang. All rights reserved.
+        </footer>
       </main>
     </div>
   );

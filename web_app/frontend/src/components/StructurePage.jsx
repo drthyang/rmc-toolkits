@@ -14,6 +14,119 @@ const colors = {
     default: '#d5d9df'
 };
 
+const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+const dot = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0);
+const add = (a, b) => a.map((value, index) => value + b[index]);
+const subtract = (a, b) => a.map((value, index) => value - b[index]);
+const scale = (vector, factor) => vector.map((value) => value * factor);
+
+const vectorFromFraction = (fraction, basis) => basis.reduce(
+    (acc, vector, index) => add(acc, scale(vector, fraction[index])),
+    [0, 0, 0]
+);
+
+const toVector3 = (vector) => new THREE.Vector3(vector[0], vector[1], vector[2]);
+
+const makePlane = (uVector, vVector) => {
+    const uLength = vectorLength(uVector);
+    const vLength = vectorLength(vVector);
+    const cosine = dot(uVector, vVector) / Math.max(uLength * vLength, 1e-12);
+    const clamped = Math.max(-1, Math.min(1, cosine));
+    const sine = Math.sqrt(Math.max(0, 1 - clamped * clamped));
+    const u = [uLength, 0];
+    const v = [vLength * clamped, vLength * sine];
+    const corners = [
+        [0, 0],
+        u,
+        add(u, v),
+        v
+    ];
+    const xs = corners.map((corner) => corner[0]);
+    const ys = corners.map((corner) => corner[1]);
+    const bounds = {
+        minX: Math.min(...xs),
+        maxX: Math.max(...xs),
+        minY: Math.min(...ys),
+        maxY: Math.max(...ys)
+    };
+    return {
+        u,
+        v,
+        bounds,
+        aspect: (bounds.maxX - bounds.minX) / Math.max(bounds.maxY - bounds.minY, 1e-9)
+    };
+};
+
+const makePlaneMapper = (plane, width, height, padding = 18) => {
+    const spanX = plane.bounds.maxX - plane.bounds.minX || 1;
+    const spanY = plane.bounds.maxY - plane.bounds.minY || 1;
+    const scaleFactor = Math.min(
+        (width - padding * 2) / spanX,
+        (height - padding * 2) / spanY
+    );
+    const offsetX = (width - spanX * scaleFactor) / 2;
+    const offsetY = (height - spanY * scaleFactor) / 2;
+
+    const map = (uFraction, vFraction) => {
+        const x = plane.u[0] * uFraction + plane.v[0] * vFraction;
+        const y = plane.u[1] * uFraction + plane.v[1] * vFraction;
+        return {
+            x: offsetX + (x - plane.bounds.minX) * scaleFactor,
+            y: offsetY + (plane.bounds.maxY - y) * scaleFactor
+        };
+    };
+
+    return { map };
+};
+
+const drawPolygon = (ctx, points) => {
+    ctx.beginPath();
+    points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+    });
+    ctx.closePath();
+};
+
+const cellCorners = (basis, center, zStart = 0, zEnd = 1) => [
+    [0, 0, zStart],
+    [1, 0, zStart],
+    [1, 1, zStart],
+    [0, 1, zStart],
+    [0, 0, zEnd],
+    [1, 0, zEnd],
+    [1, 1, zEnd],
+    [0, 1, zEnd]
+].map((fraction) => toVector3(subtract(vectorFromFraction(fraction, basis), center)));
+
+const edgeIndexPairs = [
+    [0, 1], [1, 2], [2, 3], [3, 0],
+    [4, 5], [5, 6], [6, 7], [7, 4],
+    [0, 4], [1, 5], [2, 6], [3, 7]
+];
+
+const makeCellEdgeGeometry = (corners) => {
+    const points = edgeIndexPairs.flatMap(([start, end]) => [corners[start], corners[end]]);
+    return new THREE.BufferGeometry().setFromPoints(points);
+};
+
+const makeSlabGeometry = (corners) => {
+    const vertices = new Float32Array(corners.flatMap((corner) => [corner.x, corner.y, corner.z]));
+    const indices = [
+        0, 1, 2, 0, 2, 3,
+        4, 6, 5, 4, 7, 6,
+        0, 4, 5, 0, 5, 1,
+        1, 5, 6, 1, 6, 2,
+        2, 6, 7, 2, 7, 3,
+        3, 7, 4, 3, 4, 0
+    ];
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+};
+
 const StructurePage = ({ directory, theme }) => {
     const [structure, setStructure] = useState(null);
     const [error, setError] = useState(null);
@@ -96,17 +209,28 @@ const StructurePage = ({ directory, theme }) => {
 
     const unitCell = useMemo(() => {
         if (!structure?.latticeVectors || !structure?.supercell) {
-            return { lengths: [1, 1, 1], scale: [1, 1, 1], xyAspect: 1 };
+            const unitVectors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+            return {
+                lengths: [1, 1, 1],
+                basis: unitVectors,
+                center: [0.5, 0.5, 0.5],
+                abPlane: makePlane(unitVectors[0], unitVectors[1]),
+                acPlane: makePlane(unitVectors[0], unitVectors[2])
+            };
         }
-        const lengths = structure.latticeVectors.map((vector, index) => {
-            const vectorLength = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
-            return vectorLength / structure.supercell[index];
-        });
+        const unitVectors = structure.latticeVectors.map((vector, index) => (
+            vector.map((value) => value / Math.max(structure.supercell[index], 1e-12))
+        ));
+        const lengths = unitVectors.map(vectorLength);
         const maxLength = Math.max(...lengths, 1e-9);
+        const basis = unitVectors.map((vector) => scale(vector, 1 / maxLength));
+        const center = scale(basis.reduce((acc, vector) => add(acc, vector), [0, 0, 0]), 0.5);
         return {
             lengths,
-            scale: lengths.map((length) => length / maxLength),
-            xyAspect: lengths[0] / Math.max(lengths[1], 1e-9)
+            basis,
+            center,
+            abPlane: makePlane(unitVectors[0], unitVectors[1]),
+            acPlane: makePlane(unitVectors[0], unitVectors[2])
         };
     }, [structure]);
 
@@ -183,6 +307,13 @@ const StructurePage = ({ directory, theme }) => {
         ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
 
+        const mapper = makePlaneMapper(unitCell.abPlane, width, height, 18);
+        const cellOutline = [
+            mapper.map(0, 0),
+            mapper.map(1, 0),
+            mapper.map(1, 1),
+            mapper.map(0, 1)
+        ];
         const density = kde?.density;
         const grid = kde?.grid || 0;
         if (density && grid > 0 && kde.vmax > kde.vmin) {
@@ -194,8 +325,7 @@ const StructurePage = ({ directory, theme }) => {
             const imageData = offCtx.createImageData(grid, grid);
             const span = kde.vmax - kde.vmin || 1;
             for (let py = 0; py < grid; py += 1) {
-                // Flip rows: image row 0 is the top (max y), density row 0 is min y.
-                const densityRow = density[grid - 1 - py];
+                const densityRow = density[py];
                 for (let px = 0; px < grid; px += 1) {
                     const normalized = (densityRow[px] - kde.vmin) / span;
                     const lutIndex = Math.max(0, Math.min(255, Math.round(normalized * 255))) * 3;
@@ -208,7 +338,22 @@ const StructurePage = ({ directory, theme }) => {
             }
             offCtx.putImageData(imageData, 0, 0);
             ctx.imageSmoothingEnabled = true;
-            ctx.drawImage(offscreen, 0, 0, grid, grid, 0, 0, width, height);
+            const origin = mapper.map(0, 0);
+            const uEdge = mapper.map(1, 0);
+            const vEdge = mapper.map(0, 1);
+            ctx.save();
+            drawPolygon(ctx, cellOutline);
+            ctx.clip();
+            ctx.transform(
+                uEdge.x - origin.x,
+                uEdge.y - origin.y,
+                vEdge.x - origin.x,
+                vEdge.y - origin.y,
+                origin.x,
+                origin.y
+            );
+            ctx.drawImage(offscreen, 0, 0, grid, grid, 0, 0, 1, 1);
+            ctx.restore();
 
             if (showContours && kde.contours?.length) {
                 const [xMin, xMax, yMin, yMax] = kde.extent;
@@ -220,10 +365,9 @@ const StructurePage = ({ directory, theme }) => {
                     contour.lines.forEach((line) => {
                         ctx.beginPath();
                         line.forEach(([dataX, dataY], index) => {
-                            const cx = ((dataX - xMin) / spanX) * width;
-                            const cy = height - ((dataY - yMin) / spanY) * height;
-                            if (index === 0) ctx.moveTo(cx, cy);
-                            else ctx.lineTo(cx, cy);
+                            const point = mapper.map((dataX - xMin) / spanX, (dataY - yMin) / spanY);
+                            if (index === 0) ctx.moveTo(point.x, point.y);
+                            else ctx.lineTo(point.x, point.y);
                         });
                         ctx.stroke();
                     });
@@ -236,7 +380,9 @@ const StructurePage = ({ directory, theme }) => {
         }
 
         ctx.strokeStyle = themeVars.border;
-        ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+        ctx.lineWidth = 1;
+        drawPolygon(ctx, cellOutline);
+        ctx.stroke();
         // Outlined text stays legible over any colormap.
         const drawOverlayText = (text, x, y) => {
             ctx.lineWidth = 3;
@@ -249,10 +395,10 @@ const StructurePage = ({ directory, theme }) => {
         ctx.font = '500 12px Inter, system-ui';
         if (kde) {
             drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
-            drawOverlayText(`z=${kde.z.toFixed(2)} Å  dz=${kde.dz.toFixed(2)} Å  bw=${kde.bw}`, 12, 40);
+            drawOverlayText(`c=${kde.z.toFixed(3)}  dc=${kde.dz.toFixed(3)}  bw=${kde.bw}`, 12, 40);
             if (kde.log) drawOverlayText('log10 density', 12, 58);
         }
-    }, [kde, colormap, showContours, kdeLoading, themeVars]);
+    }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell]);
 
     useEffect(() => {
         const canvas = slabCanvasRef.current;
@@ -269,37 +415,53 @@ const StructurePage = ({ directory, theme }) => {
         ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
 
+        const mapper = makePlaneMapper(unitCell.acPlane, width, height, 18);
+        const cellOutline = [
+            mapper.map(0, 0),
+            mapper.map(1, 0),
+            mapper.map(1, 1),
+            mapper.map(0, 1)
+        ];
         const zStart = Math.max(0, zCenter - thickness / 2);
         const zEnd = Math.min(1, zCenter + thickness / 2);
-        const bandTop = (1 - zEnd) * height;
-        const bandHeight = Math.max(2, (zEnd - zStart) * height);
+        const slabOutline = [
+            mapper.map(0, zStart),
+            mapper.map(1, zStart),
+            mapper.map(1, zEnd),
+            mapper.map(0, zEnd)
+        ];
 
         ctx.strokeStyle = themeVars.border;
         ctx.lineWidth = 1;
-        ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+        drawPolygon(ctx, cellOutline);
+        ctx.stroke();
 
         ctx.fillStyle = 'rgba(79, 140, 255, 0.18)';
-        ctx.fillRect(0, bandTop, width, bandHeight);
+        drawPolygon(ctx, slabOutline);
+        ctx.fill();
         ctx.strokeStyle = '#74a7ff';
-        ctx.strokeRect(0.5, bandTop + 0.5, width - 1, bandHeight);
+        drawPolygon(ctx, slabOutline);
+        ctx.stroke();
 
         const sampleLimit = Math.min(points.length, 9000);
         const stride = Math.max(1, Math.floor(points.length / sampleLimit));
         for (let index = 0; index < points.length; index += stride) {
             const point = points[index];
-            const x = point.x * width;
-            const y = (1 - point.z) * height;
+            const projected = mapper.map(point.x, point.z);
             const inSlab = Math.abs(point.z - zCenter) <= thickness / 2;
             ctx.fillStyle = inSlab ? (colors[point.element] || colors.default) : 'rgba(166, 176, 188, 0.22)';
-            ctx.fillRect(x, y, inSlab ? 2 : 1, inSlab ? 2 : 1);
+            ctx.fillRect(projected.x, projected.y, inSlab ? 2 : 1, inSlab ? 2 : 1);
         }
 
         ctx.fillStyle = themeVars.text;
         ctx.font = '500 12px Inter, system-ui';
-        ctx.fillText('x', width - 16, height - 8);
-        ctx.fillText('z', 8, 16);
-        ctx.fillText(`z=${zCenter.toFixed(3)}`, 10, Math.max(30, bandTop - 6));
-        ctx.fillText(`dz=${thickness.toFixed(3)}`, 10, Math.min(height - 16, bandTop + bandHeight + 16));
+        const xLabel = mapper.map(1, 0);
+        const zLabel = mapper.map(0, 1);
+        const slabLabel = mapper.map(0, zStart);
+        ctx.fillText('a', Math.min(width - 16, xLabel.x + 4), Math.min(height - 8, xLabel.y + 14));
+        ctx.fillText('c', Math.max(8, zLabel.x - 12), Math.max(16, zLabel.y - 6));
+        ctx.fillText(`c=${zCenter.toFixed(3)}`, 10, Math.max(30, slabLabel.y - 6));
+        ctx.fillText(`dc=${thickness.toFixed(3)}`, 10, Math.min(height - 16, slabLabel.y + 18));
     }, [points, zCenter, thickness, unitCell, themeVars]);
 
     useEffect(() => {
@@ -310,9 +472,7 @@ const StructurePage = ({ directory, theme }) => {
         const height = mount.clientHeight;
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(themeVars.canvasBg);
-        const camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 10);
-        camera.position.set(1.8, 1.6, 1.9);
-        camera.lookAt(0, 0, 0);
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 20);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -323,8 +483,6 @@ const StructurePage = ({ directory, theme }) => {
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
         controls.enablePan = true;
-        controls.minDistance = 0.7;
-        controls.maxDistance = 5;
 
         const group = new THREE.Group();
         scene.add(group);
@@ -339,9 +497,13 @@ const StructurePage = ({ directory, theme }) => {
             const geometry = new THREE.BufferGeometry();
             const positions = new Float32Array(elementPoints.length * 3);
             elementPoints.forEach((point, index) => {
-                positions[index * 3] = (point.x - 0.5) * unitCell.scale[0];
-                positions[index * 3 + 1] = (point.y - 0.5) * unitCell.scale[1];
-                positions[index * 3 + 2] = (point.z - 0.5) * unitCell.scale[2];
+                const position = subtract(
+                    vectorFromFraction([point.x, point.y, point.z], unitCell.basis),
+                    unitCell.center
+                );
+                positions[index * 3] = position[0];
+                positions[index * 3 + 1] = position[1];
+                positions[index * 3 + 2] = position[2];
             });
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             const material = new THREE.PointsMaterial({
@@ -352,43 +514,27 @@ const StructurePage = ({ directory, theme }) => {
             group.add(new THREE.Points(geometry, material));
         });
 
-        const box = new THREE.Box3(
-            new THREE.Vector3(-0.5 * unitCell.scale[0], -0.5 * unitCell.scale[1], -0.5 * unitCell.scale[2]),
-            new THREE.Vector3(0.5 * unitCell.scale[0], 0.5 * unitCell.scale[1], 0.5 * unitCell.scale[2])
-        );
-        const helper = new THREE.Box3Helper(box, new THREE.Color('#737c86'));
-        scene.add(helper);
+        const corners = cellCorners(unitCell.basis, unitCell.center);
+        const cellEdgeGeometry = makeCellEdgeGeometry(corners);
+        const cellEdgeMaterial = new THREE.LineBasicMaterial({ color: '#737c86' });
+        const cellEdges = new THREE.LineSegments(cellEdgeGeometry, cellEdgeMaterial);
+        scene.add(cellEdges);
 
-        const slabZ = (zCenter - 0.5) * unitCell.scale[2];
-        const slabThickness = thickness * unitCell.scale[2];
-        const slabGeometry = new THREE.BoxGeometry(unitCell.scale[0], unitCell.scale[1], slabThickness);
+        const zStart = Math.max(0, zCenter - thickness / 2);
+        const zEnd = Math.min(1, zCenter + thickness / 2);
+        const slabCorners = cellCorners(unitCell.basis, unitCell.center, zStart, zEnd);
+        const slabGeometry = makeSlabGeometry(slabCorners);
         const slabMaterial = new THREE.MeshBasicMaterial({
             color: '#4f8cff',
             transparent: true,
             opacity: 0.12,
+            side: THREE.DoubleSide,
             depthWrite: false
         });
         const slabMesh = new THREE.Mesh(slabGeometry, slabMaterial);
-        slabMesh.position.set(0, 0, slabZ);
         scene.add(slabMesh);
 
-        const slabEdgePoints = [];
-        const halfX = 0.5 * unitCell.scale[0];
-        const halfY = 0.5 * unitCell.scale[1];
-        const halfSlab = 0.5 * slabThickness;
-        [slabZ - halfSlab, slabZ + halfSlab].forEach((zValue) => {
-            slabEdgePoints.push(
-                new THREE.Vector3(-halfX, -halfY, zValue),
-                new THREE.Vector3(halfX, -halfY, zValue),
-                new THREE.Vector3(halfX, -halfY, zValue),
-                new THREE.Vector3(halfX, halfY, zValue),
-                new THREE.Vector3(halfX, halfY, zValue),
-                new THREE.Vector3(-halfX, halfY, zValue),
-                new THREE.Vector3(-halfX, halfY, zValue),
-                new THREE.Vector3(-halfX, -halfY, zValue)
-            );
-        });
-        const slabEdgeGeometry = new THREE.BufferGeometry().setFromPoints(slabEdgePoints);
+        const slabEdgeGeometry = makeCellEdgeGeometry(slabCorners);
         const slabEdgeMaterial = new THREE.LineBasicMaterial({
             color: '#8c96a3',
             transparent: true,
@@ -396,6 +542,19 @@ const StructurePage = ({ directory, theme }) => {
         });
         const slabEdges = new THREE.LineSegments(slabEdgeGeometry, slabEdgeMaterial);
         scene.add(slabEdges);
+
+        const bounds = new THREE.Box3().setFromPoints(corners);
+        const sphere = new THREE.Sphere();
+        bounds.getBoundingSphere(sphere);
+        const radius = Math.max(sphere.radius, 0.5);
+        camera.near = radius / 100;
+        camera.far = radius * 20;
+        camera.position.copy(sphere.center).add(new THREE.Vector3(radius * 1.7, radius * 1.45, radius * 1.55));
+        camera.lookAt(sphere.center);
+        camera.updateProjectionMatrix();
+        controls.target.copy(sphere.center);
+        controls.minDistance = radius * 0.35;
+        controls.maxDistance = radius * 8;
 
         let frameId;
         const animate = () => {
@@ -411,6 +570,8 @@ const StructurePage = ({ directory, theme }) => {
             renderer.dispose();
             slabGeometry.dispose();
             slabMaterial.dispose();
+            cellEdgeGeometry.dispose();
+            cellEdgeMaterial.dispose();
             slabEdgeGeometry.dispose();
             slabEdgeMaterial.dispose();
             group.traverse((object) => {
@@ -502,14 +663,14 @@ const StructurePage = ({ directory, theme }) => {
                     <div className="analysis-layout">
                         <div
                             className="kde-panel"
-                            style={{ '--panel-aspect': `${unitCell.lengths[0]} / ${unitCell.lengths[1]}` }}
+                            style={{ '--panel-aspect': unitCell.abPlane.aspect }}
                         >
                             <h3>KDE Slice</h3>
                             <canvas ref={canvasRef} className="kde-canvas" />
                         </div>
                         <div
                             className="slab-panel"
-                            style={{ '--panel-aspect': `${unitCell.lengths[0]} / ${unitCell.lengths[2]}` }}
+                            style={{ '--panel-aspect': unitCell.acPlane.aspect }}
                         >
                             <div className="slab-panel-header">
                                 <span>Slab In Cell</span>
@@ -519,7 +680,7 @@ const StructurePage = ({ directory, theme }) => {
                         </div>
                         <div
                             className="model-panel"
-                            style={{ '--panel-aspect': `${Math.max(unitCell.lengths[0], unitCell.lengths[1])} / ${unitCell.lengths[2]}` }}
+                            style={{ '--panel-aspect': Math.max(unitCell.abPlane.aspect, 1) }}
                         >
                             <h3>3D Model</h3>
                             <div ref={mountRef} className="three-mount" />
