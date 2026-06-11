@@ -228,7 +228,7 @@ RMCProfile run dashboard:
   <img src="assets/rmc-toolkits-dashboard.png" width="100%" />
 </div>
 
-Collapsed unit cell and KDE plot:
+KDE slice, slab view, and 3D model:
 
 <div align="center">
   <img src="assets/rmc-toolkits-KDE.png" width="100%" />
