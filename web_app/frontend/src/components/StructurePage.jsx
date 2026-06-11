@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import API_BASE_URL from '../api';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
+import ModelSummary from './ModelSummary';
 import './StructurePage.css';
 
 const colors = {
@@ -230,18 +231,26 @@ const StructurePage = ({ directory, theme }) => {
             }
         } else {
             ctx.fillStyle = themeVars.muted;
-            ctx.font = '13px system-ui';
+            ctx.font = '500 13px Inter, system-ui';
             ctx.fillText(kdeLoading ? 'Computing KDE...' : 'No atoms in this slab', 14, 28);
         }
 
         ctx.strokeStyle = themeVars.border;
         ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
-        ctx.fillStyle = themeVars.text;
-        ctx.font = '12px system-ui';
+        // Outlined text stays legible over any colormap.
+        const drawOverlayText = (text, x, y) => {
+            ctx.lineWidth = 3;
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = 'rgba(13, 18, 28, 0.62)';
+            ctx.strokeText(text, x, y);
+            ctx.fillStyle = '#fff';
+            ctx.fillText(text, x, y);
+        };
+        ctx.font = '500 12px Inter, system-ui';
         if (kde) {
-            ctx.fillText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
-            ctx.fillText(`z=${kde.z.toFixed(2)} A  dz=${kde.dz.toFixed(2)} A  bw=${kde.bw}`, 12, 40);
-            if (kde.log) ctx.fillText('log10 density', 12, 58);
+            drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
+            drawOverlayText(`z=${kde.z.toFixed(2)} Å  dz=${kde.dz.toFixed(2)} Å  bw=${kde.bw}`, 12, 40);
+            if (kde.log) drawOverlayText('log10 density', 12, 58);
         }
     }, [kde, colormap, showContours, kdeLoading, themeVars]);
 
@@ -286,7 +295,7 @@ const StructurePage = ({ directory, theme }) => {
         }
 
         ctx.fillStyle = themeVars.text;
-        ctx.font = '12px system-ui';
+        ctx.font = '500 12px Inter, system-ui';
         ctx.fillText('x', width - 16, height - 8);
         ctx.fillText('z', 8, 16);
         ctx.fillText(`z=${zCenter.toFixed(3)}`, 10, Math.max(30, bandTop - 6));
@@ -425,16 +434,11 @@ const StructurePage = ({ directory, theme }) => {
 
             {structure && (
                 <>
-                    <div className="structure-summary">
-                        <div><span>Total atoms</span><strong>{structure.totalAtoms}</strong></div>
-                        <div><span>Rendered atoms</span><strong>{points.length}</strong></div>
-                        <div><span>Unit cell</span><strong>{unitCell.lengths.map((value) => value.toFixed(3)).join(' x ')} A</strong></div>
-                        <div><span>Source</span><strong>{structure.source.split('/').pop()}</strong></div>
-                    </div>
+                    <ModelSummary structure={structure} />
 
                     <div className="structure-controls">
-                        <label>
-                            Element
+                        <label className="control">
+                            <span className="control-name">Element</span>
                             <select value={selectedElement} onChange={(event) => setSelectedElement(event.target.value)}>
                                 <option value="all">All</option>
                                 {structure.elements.map((element) => (
@@ -442,8 +446,8 @@ const StructurePage = ({ directory, theme }) => {
                                 ))}
                             </select>
                         </label>
-                        <label>
-                            z
+                        <label className="control">
+                            <span className="control-name">Slice z</span>
                             <input
                                 type="range"
                                 min={ranges.z[0]}
@@ -452,28 +456,28 @@ const StructurePage = ({ directory, theme }) => {
                                 value={zCenter}
                                 onChange={(event) => setZCenter(Number(event.target.value))}
                             />
-                            <span>{zCenter.toFixed(2)}</span>
+                            <span className="control-value">{zCenter.toFixed(2)}</span>
                         </label>
-                        <label>
-                            dz
+                        <label className="control">
+                            <span className="control-name">Thickness</span>
                             <input type="range" min="0.01" max="0.5" step="0.01" value={thickness} onChange={(event) => setThickness(Number(event.target.value))} />
-                            <span>{thickness.toFixed(2)}</span>
+                            <span className="control-value">{thickness.toFixed(2)}</span>
                         </label>
-                        <label>
-                            bw
+                        <label className="control">
+                            <span className="control-name">Bandwidth</span>
                             <input type="range" min="0.005" max="0.15" step="0.005" value={bandwidth} onChange={(event) => setBandwidth(Number(event.target.value))} />
-                            <span>{bandwidth.toFixed(3)}</span>
+                            <span className="control-value">{bandwidth.toFixed(3)}</span>
                         </label>
-                        <label>
-                            cmap
+                        <label className="control">
+                            <span className="control-name">Colormap</span>
                             <select value={colormap} onChange={(event) => setColormap(event.target.value)}>
                                 {COLORMAP_NAMES.map((name) => (
                                     <option key={name} value={name}>{name}</option>
                                 ))}
                             </select>
                         </label>
-                        <label>
-                            grid
+                        <label className="control">
+                            <span className="control-name">Grid</span>
                             <select value={gridSize} onChange={(event) => setGridSize(Number(event.target.value))}>
                                 <option value={80}>80</option>
                                 <option value={120}>120</option>
@@ -481,13 +485,15 @@ const StructurePage = ({ directory, theme }) => {
                                 <option value={220}>220</option>
                             </select>
                         </label>
-                        <label className="checkbox">
+                        <label className="control switch">
+                            <span className="control-name">Contours</span>
                             <input type="checkbox" checked={showContours} onChange={(event) => setShowContours(event.target.checked)} />
-                            contours
+                            <i className="switch-track" aria-hidden="true" />
                         </label>
-                        <label className="checkbox">
+                        <label className="control switch">
+                            <span className="control-name">Log scale</span>
                             <input type="checkbox" checked={logScale} onChange={(event) => setLogScale(event.target.checked)} />
-                            log
+                            <i className="switch-track" aria-hidden="true" />
                         </label>
                     </div>
 
