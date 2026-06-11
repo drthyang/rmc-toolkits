@@ -2,7 +2,7 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 1rem 1.05rem 1.25rem;
+    padding: 1.1rem 1.25rem 1.5rem;
     background: var(--app-bg);
 }
 
@@ -18,123 +18,33 @@
     margin: 0;
     font-size: 1.15rem;
     line-height: 1.25;
-    font-weight: 720;
+    font-weight: 700;
     color: var(--text-strong);
 }
 
 .dashboard-toolbar p {
     margin: 0.25rem 0 0;
     color: var(--muted);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 0.82rem;
 }
 
 .status-pill,
 .rwp-chip {
-    border: 1px solid color-mix(in srgb, var(--success) 46%, var(--border));
+    border: 1px solid color-mix(in srgb, var(--success) 26%, transparent);
     color: var(--success);
-    background: color-mix(in srgb, var(--success) 11%, transparent);
+    background: color-mix(in srgb, var(--success) 8%, transparent);
     border-radius: 999px;
-    padding: 0.26rem 0.55rem;
-    font-size: 0.76rem;
-    font-weight: 680;
-    white-space: nowrap;
-}
-
-.model-stats {
-    display: flex;
-    flex: 1 1 auto;
-    flex-wrap: wrap;
-    align-items: stretch;
-    row-gap: 0.55rem;
-    min-width: 0;
-    margin: 0;
-    padding: 0.62rem 0.95rem;
-}
-
-.model-stat {
-    display: grid;
-    align-content: start;
-    gap: 0.18rem;
-    padding: 0 1rem;
-}
-
-.model-stat:first-child {
-    padding-left: 0;
-}
-
-.model-stat + .model-stat {
-    border-left: 1px solid var(--border);
-}
-
-.model-stat dt {
-    color: var(--muted);
-    font-size: 0.71rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-}
-
-.model-stat dd {
-    display: grid;
-    gap: 0.12rem;
-    margin: 0;
-    color: var(--text-strong);
-    font-size: 0.95rem;
-    font-weight: 720;
+    padding: 0.22rem 0.6rem;
+    font-size: 0.74rem;
+    font-weight: 650;
     font-variant-numeric: tabular-nums;
-    line-height: 1.15;
     white-space: nowrap;
-}
-
-.model-stat-sub {
-    color: var(--muted);
-    font-size: 0.7rem;
-    font-weight: 620;
-    letter-spacing: 0.01em;
-}
-
-.model-summary,
-.model-summary-empty {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel-bg);
-    box-shadow: var(--shadow);
-    margin-bottom: 0.85rem;
-    overflow: hidden;
-}
-
-.model-summary {
-    display: flex;
-    align-items: stretch;
-}
-
-.model-summary-title {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    margin: 0;
-    padding: 0.62rem 1.05rem;
-    border-right: 1px solid var(--border);
-    background: var(--panel-raised);
-    color: var(--text-strong);
-    font-size: 1.02rem;
-    line-height: 1.25;
-    white-space: nowrap;
-}
-
-.model-summary-empty {
-    padding: 0.9rem;
-    color: var(--muted);
-    font-size: 0.86rem;
 }
 
 /* R-value: a slim full-width convergence strip that collapses to its header bar. */
 .r-value-card {
-    margin-bottom: 0.85rem;
-}
-
-.r-value-card.is-collapsed .plot-card-header {
-    border-bottom: 0;
+    margin-bottom: 1rem;
 }
 
 .plot-card-header-actions {
@@ -146,28 +56,38 @@
 
 .panel-toggle {
     min-height: 1.7rem;
-    padding: 0.2rem 0.6rem;
+    padding: 0.15rem 0.65rem;
     font-size: 0.74rem;
-    font-weight: 680;
-    color: var(--text);
-    background: var(--panel-soft);
-    border: 1px solid var(--border-strong);
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
     border-radius: 999px;
     white-space: nowrap;
+}
+
+.panel-toggle:hover:not(:disabled) {
+    color: var(--text-strong);
 }
 
 .plot-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.72rem;
+    gap: 1rem;
 }
 
 .plot-card {
     border: 1px solid var(--border);
     background: var(--panel-bg);
-    border-radius: 8px;
+    border-radius: 12px;
     min-width: 0;
     overflow: hidden;
+    box-shadow: var(--shadow-xs);
+    transition: box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.plot-card:hover {
+    border-color: var(--border-strong);
     box-shadow: var(--shadow);
 }
 
@@ -176,33 +96,33 @@
     justify-content: space-between;
     gap: 0.85rem;
     align-items: center;
-    padding: 0.58rem 0.72rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel-raised);
+    padding: 0.7rem 0.95rem 0;
+}
+
+.r-value-card .plot-card-header,
+.r-value-card.is-collapsed .plot-card-header {
+    padding-bottom: 0.7rem;
 }
 
 .plot-card h3 {
     margin: 0;
-    font-size: 1.05rem;
+    font-size: 0.95rem;
+    font-weight: 650;
     color: var(--text-strong);
-    line-height: 1.25;
-}
-
-.plot-grid .plot-card .interactive-plot {
-    min-height: 335px;
+    line-height: 1.3;
 }
 
 .plot-grid .plot-card .interactive-plot svg {
-    aspect-ratio: 16 / 9;
-    max-height: 400px;
+    aspect-ratio: 8 / 5;
+    max-height: 430px;
 }
 
 .dashboard-error,
 .empty-state {
-    border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
     color: var(--danger);
     background: var(--danger-soft);
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 1rem;
 }
 
@@ -210,6 +130,8 @@
     border-color: var(--border);
     color: var(--muted);
     background: var(--panel-bg);
+    text-align: center;
+    padding: 2.4rem 1rem;
 }
 
 @media (max-width: 760px) {
@@ -221,19 +143,6 @@
         flex-direction: column;
     }
 
-    .model-summary {
-        flex-direction: column;
-    }
-
-    .model-summary-title {
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .model-stats {
-        padding: 0.72rem 0.9rem 0.8rem;
-    }
-
     .plot-grid {
         grid-template-columns: 1fr;
     }
@@ -241,14 +150,15 @@
 
 @media (min-width: 1500px) and (min-aspect-ratio: 16 / 10) {
     .dashboard-page {
-        padding: 0.9rem 1rem;
+        padding: 1rem 1.15rem;
     }
 
     .plot-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.85rem;
     }
 
     .plot-grid .plot-card .interactive-plot svg {
-        max-height: 340px;
+        max-height: 360px;
     }
 }
