@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from rmc_toolkits.kde import MAX_KDE_FIT_POINTS, kde_slice, load_unit_cell_positions
+from rmc_toolkits.kde import MAX_KDE_FIT_POINTS, kde_slice, load_unit_cell_positions, oriented_kde_slice
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +97,21 @@ class KdeTests(unittest.TestCase):
         self.assertEqual(result["vmin"], 0.0)
         self.assertEqual(result["vmax"], 0.0)
 
+    def test_kde_slice_handles_nonempty_structure_with_empty_slab(self):
+        result = kde_slice(
+            np.array([[0.1, 0.2, 0.1], [0.3, 0.4, 0.2]]),
+            z_center=0.9,
+            dz=0.05,
+            xlim=(0.0, 1.0),
+            ylim=(0.0, 1.0),
+            grid=16,
+        )
+
+        self.assertEqual(result["slabCount"], 0)
+        self.assertEqual(result["fitCount"], 0)
+        self.assertEqual(result["vmin"], 0.0)
+        self.assertEqual(result["vmax"], 0.0)
+
     def test_kde_slice_handles_degenerate_slab_without_error(self):
         positions = np.array(
             [
@@ -145,6 +160,48 @@ class KdeTests(unittest.TestCase):
 
         self.assertEqual(result["slabCount"], MAX_KDE_FIT_POINTS + 10)
         self.assertEqual(result["fitCount"], MAX_KDE_FIT_POINTS)
+
+    def test_oriented_kde_slice_supports_axis_and_custom_normals(self):
+        positions = np.array(
+            [
+                [0.48, 0.2, 0.2],
+                [0.49, 0.3, 0.4],
+                [0.5, 0.45, 0.2],
+                [0.51, 0.55, 0.7],
+                [0.52, 0.7, 0.55],
+                [0.5, 0.8, 0.8],
+                [0.9, 0.1, 0.9],
+            ]
+        )
+
+        axis_result = oriented_kde_slice(
+            positions,
+            center=0.5,
+            thickness=0.08,
+            normal=np.array([1.0, 0.0, 0.0]),
+            u_axis=np.array([0.0, 1.0, 0.0]),
+            v_axis=np.array([0.0, 0.0, 1.0]),
+            bw=0.2,
+            grid=24,
+            n_levels=2,
+        )
+        custom_result = oriented_kde_slice(
+            positions,
+            center=0.5,
+            thickness=0.2,
+            normal=np.array([1.0, 1.0, 0.0]),
+            bw=0.2,
+            grid=24,
+            n_levels=2,
+        )
+
+        self.assertEqual(axis_result["slabCount"], 6)
+        self.assertEqual(axis_result["normal"], [1.0, 0.0, 0.0])
+        self.assertEqual(axis_result["grid"], 24)
+        self.assertTrue(axis_result["planePolygon"])
+        self.assertGreaterEqual(custom_result["slabCount"], 1)
+        self.assertAlmostEqual(np.linalg.norm(custom_result["normal"]), 1.0)
+        self.assertTrue(custom_result["planeVertices"])
 
 
 if __name__ == "__main__":

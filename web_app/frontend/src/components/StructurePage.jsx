@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -19,6 +19,74 @@ const dot = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0)
 const add = (a, b) => a.map((value, index) => value + b[index]);
 const subtract = (a, b) => a.map((value, index) => value - b[index]);
 const scale = (vector, factor) => vector.map((value) => value * factor);
+const cross = (a, b) => [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+];
+const normalize = (vector, fallback = [0, 0, 1]) => {
+    const length = vectorLength(vector);
+    if (length <= 1e-9) return fallback;
+    return vector.map((value) => value / length);
+};
+
+const CUBE_CORNERS = [
+    [0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
+    [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]
+];
+const CUBE_EDGES = [
+    [0, 1], [0, 2], [1, 3], [2, 3],
+    [4, 5], [4, 6], [5, 7], [6, 7],
+    [0, 4], [1, 5], [2, 6], [3, 7]
+];
+
+const SLICE_PRESETS = {
+    a: { label: 'a', normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1], uLabel: 'b', vLabel: 'c' },
+    b: { label: 'b', normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], uLabel: 'a', vLabel: 'c' },
+    c: { label: 'c', normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0], uLabel: 'a', vLabel: 'b' }
+};
+const CUSTOM_DIRECTION_LABELS = ['a', 'b', 'c'];
+
+const projectionRange = (normal) => {
+    const values = CUBE_CORNERS.map((corner) => dot(corner, normal));
+    return [Math.min(...values), Math.max(...values)];
+};
+
+const makeFreePlaneBasis = (normal) => {
+    const reference = Math.abs(normal[0]) < 0.85 ? [1, 0, 0] : [0, 1, 0];
+    const u = normalize(subtract(reference, scale(normal, dot(reference, normal))), [0, 1, 0]);
+    const v = normalize(cross(normal, u), [0, 0, 1]);
+    return { u, v };
+};
+
+const makeSliceConfig = (sliceDirection, customDirection) => {
+    if (sliceDirection !== 'custom') {
+        const preset = SLICE_PRESETS[sliceDirection] || SLICE_PRESETS.c;
+        const normal = normalize(preset.normal);
+        return {
+            key: sliceDirection,
+            label: preset.label,
+            normal,
+            u: normalize(preset.u),
+            v: normalize(preset.v),
+            uLabel: preset.uLabel,
+            vLabel: preset.vLabel,
+            range: projectionRange(normal)
+        };
+    }
+    const normal = normalize(customDirection, [0, 0, 1]);
+    const { u, v } = makeFreePlaneBasis(normal);
+    return {
+        key: 'custom',
+        label: `[${customDirection.map((value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })).join(' ')}]`,
+        normal,
+        u,
+        v,
+        uLabel: 'u',
+        vLabel: 'v',
+        range: projectionRange(normal)
+    };
+};
 
 const vectorFromFraction = (fraction, basis) => basis.reduce(
     (acc, vector, index) => add(acc, scale(vector, fraction[index])),
@@ -57,6 +125,26 @@ const makePlane = (uVector, vVector) => {
     };
 };
 
+const makeProjectedPlane = (uVector, vVector, uvPoints) => {
+    const base = makePlane(uVector, vVector);
+    const projected = uvPoints.map(([uValue, vValue]) => (
+        add(scale(base.u, uValue), scale(base.v, vValue))
+    ));
+    const xs = projected.map((point) => point[0]);
+    const ys = projected.map((point) => point[1]);
+    return {
+        u: base.u,
+        v: base.v,
+        bounds: {
+            minX: Math.min(...xs),
+            maxX: Math.max(...xs),
+            minY: Math.min(...ys),
+            maxY: Math.max(...ys)
+        },
+        aspect: (Math.max(...xs) - Math.min(...xs)) / Math.max(Math.max(...ys) - Math.min(...ys), 1e-9)
+    };
+};
+
 const makePlaneMapper = (plane, width, height, padding = 18) => {
     const spanX = plane.bounds.maxX - plane.bounds.minX || 1;
     const spanY = plane.bounds.maxY - plane.bounds.minY || 1;
@@ -88,38 +176,61 @@ const drawPolygon = (ctx, points) => {
     ctx.closePath();
 };
 
-const cellCorners = (basis, center, zStart = 0, zEnd = 1) => [
-    [0, 0, zStart],
-    [1, 0, zStart],
-    [1, 1, zStart],
-    [0, 1, zStart],
-    [0, 0, zEnd],
-    [1, 0, zEnd],
-    [1, 1, zEnd],
-    [0, 1, zEnd]
-].map((fraction) => toVector3(subtract(vectorFromFraction(fraction, basis), center)));
-
-const edgeIndexPairs = [
-    [0, 1], [1, 2], [2, 3], [3, 0],
-    [4, 5], [5, 6], [6, 7], [7, 4],
-    [0, 4], [1, 5], [2, 6], [3, 7]
-];
+const cellCorners = (basis, center) => CUBE_CORNERS.map((fraction) => (
+    toVector3(subtract(vectorFromFraction(fraction, basis), center))
+));
 
 const makeCellEdgeGeometry = (corners) => {
-    const points = edgeIndexPairs.flatMap(([start, end]) => [corners[start], corners[end]]);
+    const points = CUBE_EDGES.flatMap(([start, end]) => [corners[start], corners[end]]);
     return new THREE.BufferGeometry().setFromPoints(points);
 };
 
-const makeSlabGeometry = (corners) => {
+const planeSectionVertices = (normal, offset) => {
+    const vertices = [];
+    CUBE_EDGES.forEach(([start, end]) => {
+        const p0 = CUBE_CORNERS[start];
+        const p1 = CUBE_CORNERS[end];
+        const d0 = dot(p0, normal) - offset;
+        const d1 = dot(p1, normal) - offset;
+        if (Math.abs(d0) <= 1e-9) vertices.push(p0);
+        if (Math.abs(d1) <= 1e-9) vertices.push(p1);
+        if (d0 * d1 < 0) {
+            const t = d0 / (d0 - d1);
+            vertices.push(add(p0, scale(subtract(p1, p0), t)));
+        }
+    });
+
+    const unique = [];
+    vertices.forEach((vertex) => {
+        if (!unique.some((existing) => vectorLength(subtract(vertex, existing)) <= 1e-8)) {
+            unique.push(vertex);
+        }
+    });
+    if (unique.length < 3) return [];
+
+    const { u, v } = makeFreePlaneBasis(normal);
+    const center = scale(unique.reduce((acc, vertex) => add(acc, vertex), [0, 0, 0]), 1 / unique.length);
+    return unique.sort((a, b) => {
+        const aDelta = subtract(a, center);
+        const bDelta = subtract(b, center);
+        return Math.atan2(dot(aDelta, v), dot(aDelta, u)) - Math.atan2(dot(bDelta, v), dot(bDelta, u));
+    });
+};
+
+const makeSlabGeometry = (sections) => {
+    const corners = sections.flat();
+    if (!corners.length) return new THREE.BufferGeometry();
     const vertices = new Float32Array(corners.flatMap((corner) => [corner.x, corner.y, corner.z]));
-    const indices = [
-        0, 1, 2, 0, 2, 3,
-        4, 6, 5, 4, 7, 6,
-        0, 4, 5, 0, 5, 1,
-        1, 5, 6, 1, 6, 2,
-        2, 6, 7, 2, 7, 3,
-        3, 7, 4, 3, 4, 0
-    ];
+    const indices = [];
+    let offset = 0;
+    sections.forEach((section) => {
+        if (section.length >= 3) {
+            for (let index = 1; index < section.length - 1; index += 1) {
+                indices.push(offset, offset + index, offset + index + 1);
+            }
+        }
+        offset += section.length;
+    });
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
     geometry.setIndex(indices);
@@ -127,11 +238,28 @@ const makeSlabGeometry = (corners) => {
     return geometry;
 };
 
+const makeSectionEdgeGeometry = (sections) => {
+    const points = [];
+    sections.forEach((section) => {
+        section.forEach((point, index) => {
+            points.push(point, section[(index + 1) % section.length]);
+        });
+    });
+    if (sections.length === 2 && sections[0].length === sections[1].length) {
+        sections[0].forEach((point, index) => {
+            points.push(point, sections[1][index]);
+        });
+    }
+    return new THREE.BufferGeometry().setFromPoints(points);
+};
+
 const StructurePage = ({ directory, theme }) => {
     const [structure, setStructure] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
     const [selectedElement, setSelectedElement] = useState('all');
+    const [sliceDirection, setSliceDirection] = useState('c');
+    const [customDirection, setCustomDirection] = useState([1, 1, 0]);
     const [zCenter, setZCenter] = useState(0.5);
     const [thickness, setThickness] = useState(0.08);
     const [bandwidth, setBandwidth] = useState(0.03);
@@ -193,29 +321,14 @@ const StructurePage = ({ directory, theme }) => {
         return allPoints.filter((point) => point.element === selectedElement);
     }, [structure, selectedElement]);
 
-    const ranges = useMemo(() => {
-        if (!points.length) {
-            return { x: [0, 1], y: [0, 1], z: [0, 1] };
-        }
-        const xs = points.map((point) => point.x);
-        const ys = points.map((point) => point.y);
-        const zs = points.map((point) => point.z);
-        return {
-            x: [Math.min(...xs), Math.max(...xs)],
-            y: [Math.min(...ys), Math.max(...ys)],
-            z: [Math.min(...zs), Math.max(...zs)]
-        };
-    }, [points]);
-
     const unitCell = useMemo(() => {
         if (!structure?.latticeVectors || !structure?.supercell) {
             const unitVectors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
             return {
                 lengths: [1, 1, 1],
+                unitVectors,
                 basis: unitVectors,
-                center: [0.5, 0.5, 0.5],
-                abPlane: makePlane(unitVectors[0], unitVectors[1]),
-                acPlane: makePlane(unitVectors[0], unitVectors[2])
+                center: [0.5, 0.5, 0.5]
             };
         }
         const unitVectors = structure.latticeVectors.map((vector, index) => (
@@ -227,21 +340,55 @@ const StructurePage = ({ directory, theme }) => {
         const center = scale(basis.reduce((acc, vector) => add(acc, vector), [0, 0, 0]), 0.5);
         return {
             lengths,
+            unitVectors,
             basis,
-            center,
-            abPlane: makePlane(unitVectors[0], unitVectors[1]),
-            acPlane: makePlane(unitVectors[0], unitVectors[2])
+            center
         };
     }, [structure]);
 
-    // Default the z-slice to the densest band so the slice is populated on load
+    const sliceConfig = useMemo(() => makeSliceConfig(sliceDirection, customDirection), [sliceDirection, customDirection]);
+    const slicePanelGeometry = useMemo(() => {
+        const planePoints = CUBE_CORNERS.map((corner) => [dot(corner, sliceConfig.u), dot(corner, sliceConfig.v)]);
+        const sidePoints = CUBE_CORNERS.map((corner) => [dot(corner, sliceConfig.u), dot(corner, sliceConfig.normal)]);
+        return {
+            planeAspect: makeProjectedPlane(
+                vectorFromFraction(sliceConfig.u, unitCell.unitVectors),
+                vectorFromFraction(sliceConfig.v, unitCell.unitVectors),
+                planePoints
+            ).aspect,
+            sideAspect: makeProjectedPlane(
+                vectorFromFraction(sliceConfig.u, unitCell.unitVectors),
+                vectorFromFraction(sliceConfig.normal, unitCell.unitVectors),
+                sidePoints
+            ).aspect
+        };
+    }, [sliceConfig, unitCell]);
+
+    const updateCustomDirection = (axisIndex, value) => {
+        setCustomDirection((current) => current.map((axisValue, index) => (
+            index === axisIndex ? Number(value) : axisValue
+        )));
+    };
+
+    const pointDepth = useCallback((point) => {
+        const rawDepth = dot([point.x, point.y, point.z], sliceConfig.normal);
+        const span = sliceConfig.range[1] - sliceConfig.range[0] || 1;
+        return (rawDepth - sliceConfig.range[0]) / span;
+    }, [sliceConfig]);
+
+    const inActiveSlab = useCallback(
+        (point) => Math.abs(pointDepth(point) - zCenter) <= thickness / 2,
+        [pointDepth, zCenter, thickness]
+    );
+
+    // Default the slice to the densest band so the view is populated on load
     // (the geometric midpoint can fall in a gap between atomic layers).
     useEffect(() => {
         if (!points.length) return;
         const bins = 50;
         const counts = new Array(bins).fill(0);
         points.forEach((point) => {
-            const bin = Math.max(0, Math.min(bins - 1, Math.floor(point.z * bins)));
+            const bin = Math.max(0, Math.min(bins - 1, Math.floor(pointDepth(point) * bins)));
             counts[bin] += 1;
         });
         let best = 0;
@@ -249,7 +396,7 @@ const StructurePage = ({ directory, theme }) => {
             if (count > counts[best]) best = index;
         });
         setZCenter((best + 0.5) / bins);
-    }, [points]);
+    }, [points, sliceConfig, pointDepth]);
 
     // Fetch a real server-side gaussian_kde slice (debounced) whenever a
     // parameter that changes the density field updates.
@@ -264,6 +411,10 @@ const StructurePage = ({ directory, theme }) => {
                     params: {
                         dir: directory || '.',
                         element: selectedElement,
+                        orientation: sliceDirection,
+                        nx: sliceConfig.normal[0],
+                        ny: sliceConfig.normal[1],
+                        nz: sliceConfig.normal[2],
                         z: zCenter,
                         dz: thickness,
                         bw: bandwidth,
@@ -288,7 +439,7 @@ const StructurePage = ({ directory, theme }) => {
             controller.abort();
             clearTimeout(handle);
         };
-    }, [structure, directory, selectedElement, zCenter, thickness, bandwidth, gridSize, logScale]);
+    }, [structure, directory, selectedElement, sliceDirection, sliceConfig, zCenter, thickness, bandwidth, gridSize, logScale]);
 
     // Render the KDE density grid + contour overlay. Colormap and contour
     // visibility are pure client-side re-renders (no refetch).
@@ -307,12 +458,21 @@ const StructurePage = ({ directory, theme }) => {
         ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
 
-        const mapper = makePlaneMapper(unitCell.abPlane, width, height, 18);
+        const extent = kde?.extent || [-0.5, 0.5, -0.5, 0.5];
+        const [xMin, xMax, yMin, yMax] = extent;
+        const uVector = kde?.uVector || sliceConfig.u;
+        const vVector = kde?.vVector || sliceConfig.v;
+        const planePolygon = kde?.planePolygon?.length
+            ? kde.planePolygon
+            : [[xMin, yMin], [xMax, yMin], [xMax, yMax], [xMin, yMax]];
+        const projectedPlane = makeProjectedPlane(
+            vectorFromFraction(uVector, unitCell.unitVectors),
+            vectorFromFraction(vVector, unitCell.unitVectors),
+            planePolygon
+        );
+        const mapper = makePlaneMapper(projectedPlane, width, height, 18);
         const cellOutline = [
-            mapper.map(0, 0),
-            mapper.map(1, 0),
-            mapper.map(1, 1),
-            mapper.map(0, 1)
+            ...planePolygon.map(([uValue, vValue]) => mapper.map(uValue, vValue))
         ];
         const density = kde?.density;
         const grid = kde?.grid || 0;
@@ -338,9 +498,9 @@ const StructurePage = ({ directory, theme }) => {
             }
             offCtx.putImageData(imageData, 0, 0);
             ctx.imageSmoothingEnabled = true;
-            const origin = mapper.map(0, 0);
-            const uEdge = mapper.map(1, 0);
-            const vEdge = mapper.map(0, 1);
+            const origin = mapper.map(xMin, yMin);
+            const uEdge = mapper.map(xMax, yMin);
+            const vEdge = mapper.map(xMin, yMax);
             ctx.save();
             drawPolygon(ctx, cellOutline);
             ctx.clip();
@@ -356,16 +516,13 @@ const StructurePage = ({ directory, theme }) => {
             ctx.restore();
 
             if (showContours && kde.contours?.length) {
-                const [xMin, xMax, yMin, yMax] = kde.extent;
-                const spanX = xMax - xMin || 1;
-                const spanY = yMax - yMin || 1;
                 ctx.lineWidth = 1;
                 ctx.strokeStyle = themeVars.contour;
                 kde.contours.forEach((contour) => {
                     contour.lines.forEach((line) => {
                         ctx.beginPath();
                         line.forEach(([dataX, dataY], index) => {
-                            const point = mapper.map((dataX - xMin) / spanX, (dataY - yMin) / spanY);
+                            const point = mapper.map(dataX, dataY);
                             if (index === 0) ctx.moveTo(point.x, point.y);
                             else ctx.lineTo(point.x, point.y);
                         });
@@ -395,10 +552,10 @@ const StructurePage = ({ directory, theme }) => {
         ctx.font = '500 12px Inter, system-ui';
         if (kde) {
             drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
-            drawOverlayText(`c=${kde.z.toFixed(3)}  dc=${kde.dz.toFixed(3)}  bw=${kde.bw}`, 12, 40);
+            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}  bw=${kde.bw}`, 12, 40);
             if (kde.log) drawOverlayText('log10 density', 12, 58);
         }
-    }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell]);
+    }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell, sliceConfig]);
 
     useEffect(() => {
         const canvas = slabCanvasRef.current;
@@ -415,20 +572,36 @@ const StructurePage = ({ directory, theme }) => {
         ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
 
-        const mapper = makePlaneMapper(unitCell.acPlane, width, height, 18);
+        const uVector = vectorFromFraction(sliceConfig.u, unitCell.unitVectors);
+        const normalVector = vectorFromFraction(sliceConfig.normal, unitCell.unitVectors);
+        const projectedCorners = CUBE_CORNERS.map((corner) => [dot(corner, sliceConfig.u), dot(corner, sliceConfig.normal)]);
+        const depthSpan = sliceConfig.range[1] - sliceConfig.range[0] || 1;
+        const centerDepth = sliceConfig.range[0] + zCenter * depthSpan;
+        const depthThickness = thickness * depthSpan;
+        const depthStart = Math.max(sliceConfig.range[0], centerDepth - depthThickness / 2);
+        const depthEnd = Math.min(sliceConfig.range[1], centerDepth + depthThickness / 2);
+        const uValues = projectedCorners.map(([uValue]) => uValue);
+        const uMin = Math.min(...uValues);
+        const uMax = Math.max(...uValues);
+        const sidePlane = makeProjectedPlane(uVector, normalVector, [
+            ...projectedCorners,
+            [uMin, depthStart],
+            [uMax, depthStart],
+            [uMax, depthEnd],
+            [uMin, depthEnd]
+        ]);
+        const mapper = makePlaneMapper(sidePlane, width, height, 18);
         const cellOutline = [
-            mapper.map(0, 0),
-            mapper.map(1, 0),
-            mapper.map(1, 1),
-            mapper.map(0, 1)
+            mapper.map(uMin, sliceConfig.range[0]),
+            mapper.map(uMax, sliceConfig.range[0]),
+            mapper.map(uMax, sliceConfig.range[1]),
+            mapper.map(uMin, sliceConfig.range[1])
         ];
-        const zStart = Math.max(0, zCenter - thickness / 2);
-        const zEnd = Math.min(1, zCenter + thickness / 2);
         const slabOutline = [
-            mapper.map(0, zStart),
-            mapper.map(1, zStart),
-            mapper.map(1, zEnd),
-            mapper.map(0, zEnd)
+            mapper.map(uMin, depthStart),
+            mapper.map(uMax, depthStart),
+            mapper.map(uMax, depthEnd),
+            mapper.map(uMin, depthEnd)
         ];
 
         ctx.strokeStyle = themeVars.border;
@@ -447,22 +620,23 @@ const StructurePage = ({ directory, theme }) => {
         const stride = Math.max(1, Math.floor(points.length / sampleLimit));
         for (let index = 0; index < points.length; index += stride) {
             const point = points[index];
-            const projected = mapper.map(point.x, point.z);
-            const inSlab = Math.abs(point.z - zCenter) <= thickness / 2;
+            const fraction = [point.x, point.y, point.z];
+            const projected = mapper.map(dot(fraction, sliceConfig.u), dot(fraction, sliceConfig.normal));
+            const inSlab = inActiveSlab(point);
             ctx.fillStyle = inSlab ? (colors[point.element] || colors.default) : 'rgba(166, 176, 188, 0.22)';
             ctx.fillRect(projected.x, projected.y, inSlab ? 2 : 1, inSlab ? 2 : 1);
         }
 
         ctx.fillStyle = themeVars.text;
         ctx.font = '500 12px Inter, system-ui';
-        const xLabel = mapper.map(1, 0);
-        const zLabel = mapper.map(0, 1);
-        const slabLabel = mapper.map(0, zStart);
-        ctx.fillText('a', Math.min(width - 16, xLabel.x + 4), Math.min(height - 8, xLabel.y + 14));
-        ctx.fillText('c', Math.max(8, zLabel.x - 12), Math.max(16, zLabel.y - 6));
-        ctx.fillText(`c=${zCenter.toFixed(3)}`, 10, Math.max(30, slabLabel.y - 6));
-        ctx.fillText(`dc=${thickness.toFixed(3)}`, 10, Math.min(height - 16, slabLabel.y + 18));
-    }, [points, zCenter, thickness, unitCell, themeVars]);
+        const xLabel = mapper.map(uMax, sliceConfig.range[0]);
+        const normalLabel = mapper.map(uMin, sliceConfig.range[1]);
+        const slabLabel = mapper.map(uMin, depthStart);
+        ctx.fillText(sliceConfig.uLabel, Math.min(width - 24, xLabel.x + 4), Math.min(height - 8, xLabel.y + 14));
+        ctx.fillText(sliceConfig.label, Math.max(8, normalLabel.x - 12), Math.max(16, normalLabel.y - 6));
+        ctx.fillText(`${sliceConfig.label}=${zCenter.toFixed(3)}`, 10, Math.max(30, slabLabel.y - 6));
+        ctx.fillText(`d=${thickness.toFixed(3)}`, 10, Math.min(height - 16, slabLabel.y + 18));
+    }, [points, zCenter, thickness, unitCell, themeVars, sliceConfig, inActiveSlab]);
 
     useEffect(() => {
         const mount = mountRef.current;
@@ -520,10 +694,17 @@ const StructurePage = ({ directory, theme }) => {
         const cellEdges = new THREE.LineSegments(cellEdgeGeometry, cellEdgeMaterial);
         scene.add(cellEdges);
 
-        const zStart = Math.max(0, zCenter - thickness / 2);
-        const zEnd = Math.min(1, zCenter + thickness / 2);
-        const slabCorners = cellCorners(unitCell.basis, unitCell.center, zStart, zEnd);
-        const slabGeometry = makeSlabGeometry(slabCorners);
+        const depthSpan = sliceConfig.range[1] - sliceConfig.range[0] || 1;
+        const centerDepth = sliceConfig.range[0] + zCenter * depthSpan;
+        const depthThickness = thickness * depthSpan;
+        const depthStart = Math.max(sliceConfig.range[0], centerDepth - depthThickness / 2);
+        const depthEnd = Math.min(sliceConfig.range[1], centerDepth + depthThickness / 2);
+        const slabSections = [depthStart, depthEnd].map((depth) => (
+            planeSectionVertices(sliceConfig.normal, depth).map((fraction) => (
+                toVector3(subtract(vectorFromFraction(fraction, unitCell.basis), unitCell.center))
+            ))
+        ));
+        const slabGeometry = makeSlabGeometry(slabSections);
         const slabMaterial = new THREE.MeshBasicMaterial({
             color: '#4f8cff',
             transparent: true,
@@ -534,7 +715,7 @@ const StructurePage = ({ directory, theme }) => {
         const slabMesh = new THREE.Mesh(slabGeometry, slabMaterial);
         scene.add(slabMesh);
 
-        const slabEdgeGeometry = makeCellEdgeGeometry(slabCorners);
+        const slabEdgeGeometry = makeSectionEdgeGeometry(slabSections);
         const slabEdgeMaterial = new THREE.LineBasicMaterial({
             color: '#8c96a3',
             transparent: true,
@@ -579,7 +760,7 @@ const StructurePage = ({ directory, theme }) => {
                 object.material?.dispose?.();
             });
         };
-    }, [points, unitCell, zCenter, thickness, themeVars]);
+    }, [points, unitCell, zCenter, thickness, themeVars, sliceConfig]);
 
     return (
         <section className="structure-page">
@@ -608,11 +789,35 @@ const StructurePage = ({ directory, theme }) => {
                             </select>
                         </label>
                         <label className="control">
-                            <span className="control-name">Slice z</span>
+                            <span className="control-name">Normal</span>
+                            <select value={sliceDirection} onChange={(event) => setSliceDirection(event.target.value)}>
+                                <option value="c">c</option>
+                                <option value="a">a</option>
+                                <option value="b">b</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                        </label>
+                        {sliceDirection === 'custom' && (
+                            <label className="control custom-direction">
+                                <span className="control-name">Direction</span>
+                                {customDirection.map((value, index) => (
+                                    <input
+                                        key={CUSTOM_DIRECTION_LABELS[index]}
+                                        type="number"
+                                        step="0.1"
+                                        value={value}
+                                        aria-label={`Direction ${CUSTOM_DIRECTION_LABELS[index]}`}
+                                        onChange={(event) => updateCustomDirection(index, event.target.value)}
+                                    />
+                                ))}
+                            </label>
+                        )}
+                        <label className="control">
+                            <span className="control-name">Slice</span>
                             <input
                                 type="range"
-                                min={ranges.z[0]}
-                                max={ranges.z[1]}
+                                min="0"
+                                max="1"
                                 step="0.001"
                                 value={zCenter}
                                 onChange={(event) => setZCenter(Number(event.target.value))}
@@ -663,24 +868,24 @@ const StructurePage = ({ directory, theme }) => {
                     <div className="analysis-layout">
                         <div
                             className="kde-panel"
-                            style={{ '--panel-aspect': unitCell.abPlane.aspect }}
+                            style={{ '--panel-aspect': slicePanelGeometry.planeAspect }}
                         >
                             <h3>KDE Slice</h3>
                             <canvas ref={canvasRef} className="kde-canvas" />
                         </div>
                         <div
                             className="slab-panel"
-                            style={{ '--panel-aspect': unitCell.acPlane.aspect }}
+                            style={{ '--panel-aspect': slicePanelGeometry.sideAspect }}
                         >
                             <div className="slab-panel-header">
                                 <span>Slab In Cell</span>
-                                <strong>{(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
+                                <strong>{sliceConfig.label} {(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
                             </div>
                             <canvas ref={slabCanvasRef} />
                         </div>
                         <div
                             className="model-panel"
-                            style={{ '--panel-aspect': Math.max(unitCell.abPlane.aspect, 1) }}
+                            style={{ '--panel-aspect': Math.max(slicePanelGeometry.planeAspect, 1) }}
                         >
                             <h3>3D Model</h3>
                             <div ref={mountRef} className="three-mount" />

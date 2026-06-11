@@ -18,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 FRONTEND_DIST = PROJECT_ROOT / "web_app" / "frontend" / "dist"
 
-from rmc_toolkits.kde import UnitCellPositions, kde_slice, load_unit_cell_positions
+from rmc_toolkits.kde import UnitCellPositions, load_unit_cell_positions, oriented_kde_slice
 from rmc_toolkits.parsers import (
     iter_rmc6f_atoms,
     read_atom_indices,
@@ -377,6 +377,27 @@ def _cached_positions(path_str: str, mtime: float, element: str | None) -> UnitC
     return load_unit_cell_positions(path_str, element=element)
 
 
+SLICE_ORIENTATIONS = {
+    "a": {"normal": (1.0, 0.0, 0.0), "u": (0.0, 1.0, 0.0), "v": (0.0, 0.0, 1.0)},
+    "b": {"normal": (0.0, 1.0, 0.0), "u": (1.0, 0.0, 0.0), "v": (0.0, 0.0, 1.0)},
+    "c": {"normal": (0.0, 0.0, 1.0), "u": (1.0, 0.0, 0.0), "v": (0.0, 1.0, 0.0)},
+}
+
+
+def _slice_orientation_from_request():
+    orientation = (request.args.get("orientation") or "c").lower()
+    if orientation in SLICE_ORIENTATIONS:
+        config = SLICE_ORIENTATIONS[orientation]
+        return orientation, config["normal"], config["u"], config["v"]
+
+    normal = (
+        float(request.args.get("nx", 0.0)),
+        float(request.args.get("ny", 0.0)),
+        float(request.args.get("nz", 1.0)),
+    )
+    return "custom", normal, None, None
+
+
 @app.route("/api/kde/slice", methods=["GET"])
 def kde_slice_endpoint():
     try:
@@ -389,9 +410,11 @@ def kde_slice_endpoint():
         positions = _cached_positions(str(rmc6f_path), rmc6f_path.stat().st_mtime, element)
         cell_lengths = positions.cell_lengths
 
-        # z and dz arrive as fractional cell coordinates. Keep the KDE slice in
-        # fractional a/b/c coordinates so non-orthogonal cells can be projected
-        # through the actual cell basis in the frontend.
+        orientation, normal, u_axis, v_axis = _slice_orientation_from_request()
+
+        # z and dz arrive as fractions of the projection range along the slice
+        # normal. Keep the KDE slice in fractional coordinates so non-orthogonal
+        # cells can be projected through the actual cell basis in the frontend.
         z_frac = float(request.args.get("z", 0.5))
         dz_frac = float(request.args.get("dz", 0.08))
         bw = float(request.args.get("bw", 0.03))
@@ -399,12 +422,13 @@ def kde_slice_endpoint():
         levels = int(request.args.get("levels", 8))
         log = request.args.get("log", "false").lower() in ("1", "true", "yes")
 
-        result = kde_slice(
+        result = oriented_kde_slice(
             positions.fractional_positions,
-            z_frac,
-            dz_frac,
-            xlim=(0.0, 1.0),
-            ylim=(0.0, 1.0),
+            center=z_frac,
+            thickness=dz_frac,
+            normal=normal,
+            u_axis=u_axis,
+            v_axis=v_axis,
             bw=bw,
             grid=grid,
             log=log,
@@ -412,6 +436,7 @@ def kde_slice_endpoint():
         )
         result["cellLengths"] = cell_lengths.tolist()
         result["unitVectors"] = positions.unit_vectors.tolist()
+        result["orientation"] = orientation
         result["source"] = str(rmc6f_path)
         result["element"] = element or "all"
         return jsonify(result)
