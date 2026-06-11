@@ -45,6 +45,12 @@ const SLICE_PRESETS = {
     b: { label: 'b', normal: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], uLabel: 'a', vLabel: 'c' },
     c: { label: 'c', normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0], uLabel: 'a', vLabel: 'b' }
 };
+const NORMAL_OPTIONS = [
+    { value: 'a', label: 'a' },
+    { value: 'b', label: 'b' },
+    { value: 'c', label: 'c' },
+    { value: 'custom', label: 'Custom' }
+];
 const CUSTOM_DIRECTION_LABELS = ['a', 'b', 'c'];
 
 const projectionRange = (normal) => {
@@ -259,6 +265,7 @@ const StructurePage = ({ directory, theme }) => {
     const [loading, setLoading] = useState(false);
     const [selectedElement, setSelectedElement] = useState('all');
     const [sliceDirection, setSliceDirection] = useState('c');
+    const [normalMenuOpen, setNormalMenuOpen] = useState(false);
     const [customDirection, setCustomDirection] = useState([1, 1, 0]);
     const [zCenter, setZCenter] = useState(0.5);
     const [thickness, setThickness] = useState(0.08);
@@ -273,6 +280,7 @@ const StructurePage = ({ directory, theme }) => {
     const canvasRef = useRef(null);
     const slabCanvasRef = useRef(null);
     const mountRef = useRef(null);
+    const normalMenuRef = useRef(null);
     const themeVars = useMemo(() => {
         if (typeof window === 'undefined') {
             return {
@@ -312,6 +320,26 @@ const StructurePage = ({ directory, theme }) => {
 
         fetchStructure();
     }, [directory]);
+
+    useEffect(() => {
+        if (!normalMenuOpen) return undefined;
+        const handlePointerDown = (event) => {
+            if (!normalMenuRef.current?.contains(event.target)) {
+                setNormalMenuOpen(false);
+            }
+        };
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                setNormalMenuOpen(false);
+            }
+        };
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [normalMenuOpen]);
 
     const points = useMemo(() => {
         const allPoints = structure?.points || [];
@@ -368,6 +396,11 @@ const StructurePage = ({ directory, theme }) => {
         setCustomDirection((current) => current.map((axisValue, index) => (
             index === axisIndex ? Number(value) : axisValue
         )));
+    };
+
+    const chooseSliceDirection = (value) => {
+        setSliceDirection(value);
+        setNormalMenuOpen(false);
     };
 
     const pointDepth = useCallback((point) => {
@@ -790,12 +823,33 @@ const StructurePage = ({ directory, theme }) => {
                         </label>
                         <label className="control">
                             <span className="control-name">Normal</span>
-                            <select value={sliceDirection} onChange={(event) => setSliceDirection(event.target.value)}>
-                                <option value="c">c</option>
-                                <option value="a">a</option>
-                                <option value="b">b</option>
-                                <option value="custom">Custom</option>
-                            </select>
+                            <span className="normal-menu" ref={normalMenuRef}>
+                                <button
+                                    type="button"
+                                    className="normal-menu-button"
+                                    aria-haspopup="listbox"
+                                    aria-expanded={normalMenuOpen}
+                                    onClick={() => setNormalMenuOpen((open) => !open)}
+                                >
+                                    {NORMAL_OPTIONS.find((option) => option.value === sliceDirection)?.label || 'c'}
+                                </button>
+                                {normalMenuOpen && (
+                                    <span className="normal-menu-list" role="listbox" aria-label="Normal">
+                                        {NORMAL_OPTIONS.map((option) => (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                role="option"
+                                                aria-selected={sliceDirection === option.value}
+                                                className={sliceDirection === option.value ? 'is-selected' : ''}
+                                                onClick={() => chooseSliceDirection(option.value)}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        ))}
+                                    </span>
+                                )}
+                            </span>
                         </label>
                         {sliceDirection === 'custom' && (
                             <label className="control custom-direction">
