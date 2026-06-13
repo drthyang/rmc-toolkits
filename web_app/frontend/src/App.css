@@ -1,45 +1,239 @@
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: #121212;
-  color: #e0e0e0;
-}
-
 .app-container {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
+  background: var(--app-bg);
 }
 
 .main-content {
-  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
 .app-header {
-  background: #1e1e1e;
-  padding: 1rem 2rem;
-  border-bottom: 1px solid #333;
-  display: flex;
-  justify-content: space-between;
+  padding: 0.7rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.25fr);
   align-items: center;
+  gap: 1.25rem;
 }
 
-.app-header h1 {
+.header-primary {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 6px rgba(29, 78, 216, 0.35);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 750;
+  flex: 0 0 auto;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-copy h1 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-strong);
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.brand-copy h1 span {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--subtle);
+  font-size: 0.66rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.page-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.page-tabs button {
+  min-height: 2.05rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 0.3rem 0.95rem;
+  font-size: 0.88rem;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.page-tabs button:hover:not(:disabled) {
+  color: var(--text-strong);
+  background: transparent;
+  border: 0;
+}
+
+.page-tabs button.active {
+  background: var(--panel-bg);
+  color: var(--text-strong);
+  box-shadow: var(--shadow-xs), 0 1px 3px rgba(16, 24, 40, 0.09);
+}
+
+/* The path bar reads as one joined field: label prefix, input, ghost + primary buttons. */
+.path-bar {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) auto auto;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-xs);
+  padding: 0.32rem 0.32rem 0.32rem 0.85rem;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.path-bar:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.path-bar label {
+  color: var(--subtle);
+  font-size: 0.68rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+
+.path-bar input {
+  min-width: 0;
+  height: 2.05rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.path-bar input:focus {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.path-bar button {
+  min-height: 2.05rem;
+  padding: 0 0.85rem;
+  font-size: 0.85rem;
+  background: var(--accent);
+  border: 1px solid var(--accent);
   color: #fff;
 }
 
-.selected-file {
-  font-family: monospace;
-  color: #888;
-  font-size: 0.9rem;
+.path-bar button:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.path-bar .secondary-button {
+  color: var(--text);
+  background: transparent;
+  border-color: transparent;
+}
+
+.path-bar .secondary-button:hover:not(:disabled) {
+  background: var(--panel-soft);
+  border-color: transparent;
+}
+
+.browse-status {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.84rem;
+}
+
+.browse-status.error {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
+  background: var(--danger-soft);
+}
+
+.app-footer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--subtle);
+  padding: 0.45rem 1.25rem;
+  font-size: 0.74rem;
+  text-align: center;
+}
+
+/* Below ~880px the tabs no longer fit beside the path bar; stack the header rows. */
+@media (max-width: 880px) {
+  .app-header {
+    grid-template-columns: 1fr;
+    padding: 0.8rem;
+  }
+
+  .header-primary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .page-tabs {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .page-tabs button {
+    flex: 1;
+  }
+
+  .path-bar {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .path-bar label {
+    display: none;
+  }
+
+  .app-footer {
+    padding-inline: 0.8rem;
+  }
 }

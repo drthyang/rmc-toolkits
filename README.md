@@ -1,103 +1,242 @@
 # rmc-toolkits
 
-Post-processing utilities and a small web viewer for RMCProfile outputs. The repo includes:
+Post-processing utilities and a local-first web app for **RMCProfile** and **STOG** outputs.
 
-- CLI plotting scripts for RMCProfile CSV/log outputs.
-- A 3D atom-position visualizer for RMC configuration.
-- An interactive KDE slice viewer for 3D atomic densities.
+`rmc-toolkits` now has two active layers:
 
-## Contents
+- **Python package (`rmc_toolkits/`)** for parsing RMC/STOG outputs, building plots, converting
+  `.rmc6f` files, loading folded structures, and computing SciPy KDE slices.
+- **Web app (`web_app/`)** with a Flask API and React/Vite frontend for browsing a run directory,
+  inspecting interactive plots, converting structures, and exploring KDE/3D views.
 
-- `src/RMC_plot.py` plots common RMCProfile outputs (`*_FQ1.csv`, `*_FT_XFQ1.csv`, `*_SQ1.csv`, `*_bragg.csv`, `*PDF*.csv`, and `*.log`).
-- `src/RMC_3D.py` renders folded atomic positions in 3D (Mayavi) from `Frac*.txt` and `.rmc6f`.
-- `src/RMC_KDE.py` provides interactive KDE slice plots of 3D atomic densities from `Frac*.txt` and `.rmc6f`.
-- `src/STOG_plot.py` plots STOG outputs like `scale_ft.gr`, `scale_ft.sq`, and related inputs.
-- `data/` includes example RMCProfile outputs you can use for quick testing.
+The original standalone research scripts are still available in `src/` for familiar command-line
+workflows.
 
-## Quickstart (CLI)
+## Features
 
-1. Create a Python environment and install dependencies (minimal set shown):
+- **Run dashboard**: detects supported RMCProfile outputs in a folder and renders browser-native
+  SVG charts with hover readouts, legend toggles, and drag-to-zoom.
+- **File browser**: lists directories and supported files under a configured data root, with a
+  native folder picker for registering external run folders.
+- **Plot API**: returns plot metadata, PNG renderings, and parsed data series for R-value logs,
+  S(Q), G(r), Bragg, PDF, PDF partials, and basic STOG outputs.
+- **Structure conversion**: writes `Frac_coord_<stem>.txt` from an `.rmc6f` file.
+- **Structure viewer data**: samples folded unit-cell atom positions while preserving reference
+  number/site coverage for larger structures.
+- **KDE slices**: computes server-side `scipy.stats.gaussian_kde` XY density grids for z-slabs,
+  with element filtering, bandwidth, grid size, contour, and log-scale options.
+- **3D frontend view**: uses Three.js orbit/pan/zoom controls with a slab overlay synchronized to
+  the KDE controls.
+
+## Repository Layout
+
+| Path | Purpose |
+| --- | --- |
+| `rmc_toolkits/parsers.py` | RMC CSV/log/STOG parsing, `.rmc6f` metadata, atom iteration, `Frac*.txt` conversion, folded structure loading. |
+| `rmc_toolkits/plots.py` | Plot-kind detection, matplotlib figure generation, Rwp/final chi metrics, PNG serialization. |
+| `rmc_toolkits/kde.py` | Unit-cell position loading and server-side KDE slice computation with contour extraction. |
+| `web_app/backend/app.py` | Flask API server with data-root guarding. |
+| `web_app/frontend/` | React + Vite single-page app. |
+| `src/` | Original standalone CLI/desktop scripts. |
+| `data/` | GNSe sample files for quick testing. |
+| `tests/` | Standard-library `unittest` suite for the package and backend API. |
+| `docs/` | Handoff notes and roadmap. |
+
+## Setup
+
+Create a Python environment from the project root:
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
+pip install -r web_app/backend/requirements.txt
+```
+
+The frontend requires Node.js compatible with Vite 7, such as Node `20.19+` or `22.12+`.
+
+```bash
+cd web_app/frontend
+npm install
+```
+
+## Running The Web App
+
+Start the backend:
+
+```bash
+source .venv/bin/activate
+python web_app/backend/app.py
+```
+
+The backend listens on `http://localhost:5000` by default. On macOS, port 5000 can be occupied by
+AirPlay Receiver; use another port if needed:
+
+```bash
+RMC_TOOLKITS_PORT=5050 python web_app/backend/app.py
+```
+
+By default, the backend only serves paths under the repository root. To browse another data root:
+
+```bash
+RMC_TOOLKITS_DATA_ROOT=/absolute/path/to/rmc/data python web_app/backend/app.py
+```
+
+Start the frontend in a second shell:
+
+```bash
+cd web_app/frontend
+npm run dev
+```
+
+Open `http://localhost:5173/`. If the backend is not on port 5000, point the frontend at it:
+
+```bash
+VITE_API_BASE_URL=http://localhost:5050 npm run dev
+```
+
+## Hosting The Dashboard
+
+The dashboard needs the Flask API for file browsing, plot parsing, structure sampling, and KDE
+computation, so it cannot run as a full-featured app on GitHub Pages alone. Host it as a small web
+service instead.
+
+The included `Dockerfile` builds the React dashboard and serves it from the Flask/Gunicorn backend:
+
+```bash
+docker build -t rmc-toolkits-dashboard .
+docker run --rm -p 5000:5000 rmc-toolkits-dashboard
+```
+
+Open `http://localhost:5000/` to test the production-style build.
+
+For a public deployment, create a Docker-backed web service on a host such as Render, Fly.io,
+Railway, or a VPS. Use this repository as the build source and set the service port to the
+provider's `PORT` environment variable; the container already honors `PORT` and falls back to
+`5000`.
+
+By default, the hosted dashboard browses the files copied into the image, including the sample
+`data/` directory. For a real lab deployment, mount or copy your run folders into the container and
+set:
+
+```bash
+RMC_TOOLKITS_DATA_ROOT=/absolute/path/inside/container
+```
+
+The native folder picker is meant for local desktop use and is not useful on a remote server.
+
+## Python Package Usage
+
+Top-level imports expose the current package API:
+
+```python
+from rmc_toolkits import (
+    detect_plot_kind,
+    kde_slice,
+    load_unit_cell_positions,
+    make_plot,
+    plot_to_png,
+    read_structure,
+    write_frac_from_rmc6f,
+)
+
+print(detect_plot_kind("data/GNSe_FQ1.csv"))
+
+frac_path = write_frac_from_rmc6f("data/GNSe.rmc6f", overwrite=True)
+structure = read_structure("data")
+
+positions = load_unit_cell_positions("data/GNSe.rmc6f", element="Ga")
+payload = kde_slice(
+    positions.positions,
+    z_center=0.5 * positions.cell_lengths[2],
+    dz=0.08 * positions.cell_lengths[2],
+    xlim=(0.0, float(positions.cell_lengths[0])),
+    ylim=(0.0, float(positions.cell_lengths[1])),
+)
+
+plot = make_plot("data/GNSe_FQ1.csv")
+png_bytes = plot_to_png(plot)
+```
+
+Useful lower-level parser helpers are also exported, including `read_rmc_csv`, `read_chi`,
+`read_stog`, `read_atom_indices`, `read_cell_vectors`, `iter_rmc6f_atoms`, `frac_lines_from_rmc6f`,
+and `rwp`.
+
+## Backend API
+
+All endpoints are under `/api`. Relative paths resolve under `RMC_TOOLKITS_DATA_ROOT`; absolute
+paths are rejected unless they are inside the configured root or a folder selected through the
+native folder picker.
+
+| Method & path | Description |
+| --- | --- |
+| `GET /api/health` | Service status and active data root. |
+| `GET /api/files?dir=data` | Directory listing with detected `plotKind` values. |
+| `POST /api/dialog/folder` | Open a native folder picker and register the selected folder as an allowed root. |
+| `GET /api/plot?path=data/GNSe_FQ1.csv` | Render one supported file as a PNG. |
+| `GET /api/plot/metadata?path=...` | Plot kind, title, and metrics such as `rwp` or `final_chi_r`. |
+| `GET /api/plot/data?path=...` | Parsed plot series and normalized scientific axis labels for SVG rendering. |
+| `POST /api/convert/frac` | Convert `.rmc6f` to `Frac_coord_<stem>.txt`; JSON body accepts `path`, optional `outputPath`, and `overwrite`. |
+| `GET /api/structure?dir=data&maxPoints=12000` | Sampled folded atom positions, element counts, atom-index metadata, supercell, and lattice vectors. |
+| `GET /api/kde/slice?dir=data&element=Ga&z=0.5&dz=0.08` | KDE density grid, contour polylines, slab counts, and cell lengths. |
+
+## Supported File Patterns
+
+- Real-space PDF/G(r): `*_FT_XFQ1.csv`, `*PDF*.csv`
+- Reciprocal-space S(Q): `*_FQ1.csv`, `*_SQ1.csv`
+- Bragg profiles: `*_bragg.csv`
+- R-value logs: `*.log`
+- Basic STOG outputs: `scale_ft.gr`, `scale_ft.sq`, `scale_ft_rmc.fq`
+- Structure files: `*.rmc6f`, `Frac*.txt`
+
+The parsers expect RMCProfile-style CSV files where the first row contains labels and following
+rows are numeric.
+
+## CLI Scripts
+
+The older scripts remain useful for quick local workflows:
+
+```bash
 pip install numpy matplotlib scipy seaborn
-```
 
-2. Plot RMCProfile outputs from a directory:
-
-```bash
 python src/RMC_plot.py --dir data
-```
-
-3. Save plots to PNG files instead of showing them:
-
-```bash
 python src/RMC_plot.py --dir data --save --no-show
-```
 
-## KDE Slice Viewer
-
-`src/RMC_KDE.py` expects a `Frac*.txt` file and a `.rmc6f` file in the working directory. It opens an interactive UI with sliders for the z-slice position and thickness.
-
-```bash
 python src/RMC_KDE.py
-```
-
-Plot a single element (by symbol) instead of all atoms:
-
-```bash
 python src/RMC_KDE.py --el Mn
-```
 
-## 3D Visualization
-
-`src/RMC_3D.py` expects a `Frac*.txt` file and a `.rmc6f` file in the working directory. It uses Mayavi for 3D scatter rendering.
-
-```bash
 pip install mayavi
 python src/RMC_3D.py
 ```
 
+`RMC_KDE.py` and `RMC_3D.py` expect `Frac*.txt` plus `.rmc6f` in the working directory.
+`STOG_plot.py` expects `stog_input.dat` and STOG output files in the current directory.
+
+## Tests
+
+Run the package and backend test suite from the project root:
+
+```bash
+source .venv/bin/activate
+MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
+```
+
 ## Screenshots
-- RMC monitor (RMC_plot.py)
+
+RMCProfile run dashboard:
+
 <div align="center">
-  <img src="assets/1_R-value.png" width="30%" />
-  <img src="assets/2_Bragg.png" width="30%" />
-  <img src="assets/3_SQ.png" width="30%" />
-</div>
-<div align="center">
-  <img src="assets/4_Gr.png" width="30%" />
-  <img src="assets/5_Partials.png" width="30%" />
+  <img src="assets/rmc-toolkits-dashboard.png" width="100%" />
 </div>
 
-- 3D atomic positions, reduced to unit cell (RMC_3D.py)
+KDE slice, slab view, and 3D model:
+
 <div align="center">
-  <img src="assets/Distr_3D.png" width="60%" />
+  <img src="assets/rmc-toolkits-KDE.png" width="100%" />
 </div>
 
-- KDE slice viewer (RMC_KDE.py)
-<div align="center">
-  <img src="assets/KDE.png" width="90%" />
-</div>
+## Status
 
-
-## Expected File Types
-
-The plotting utilities look for common RMCProfile outputs, including:
-
-- Real-space `G(r)` files: `*_FT_XFQ1.csv`, `*PDF*.csv`
-- Reciprocal-space `S(Q)` files: `*_FQ1.csv`, `*_SQ1.csv`
-- Bragg: `*_bragg.csv`
-- Log files with chi values: `*-*.log`
-
-## Notes
-
-- The scripts assume RMCProfile-style CSV formatting (first row = headers).
-- For headless environments, use `--no-show` and `--save` in `RMC_plot.py`.
-- `STOG_plot.py` expects a local `stog_input.dat` and STOG output files in the current directory.
-- `RMC_KDE.py` and `RMC_3D.py` expect `Frac*.txt` + `.rmc6f` in the working directory.
-
-## Project Status
-
-This is a research tooling repo with lightweight scripts and a simple viewer. If you need new plot types or additional file patterns, feel free to extend `src/RMC_plot.py`.
+The reusable Python package, Flask API, interactive dashboard, server-side KDE computation, and
+Three.js structure viewer are in place. Current engineering priorities are broader file-pattern
+coverage, richer project summaries, export/report workflows, and refactoring the legacy scripts
+into thin wrappers around `rmc_toolkits`.
