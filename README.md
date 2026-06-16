@@ -2,6 +2,9 @@
 
 Post-processing utilities and a local-first dashboard for **RMCProfile** and **STOG** outputs.
 
+Launch the hosted RMCprofile Run Monitor dashboard:
+[https://drthyang.github.io/rmc-toolkits/](https://drthyang.github.io/rmc-toolkits/)
+
 `rmc-toolkits` now has two active layers:
 
 - **Python package (`rmc_toolkits/`)** for parsing RMC/STOG outputs, building plots, converting
