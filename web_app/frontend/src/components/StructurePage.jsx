@@ -259,98 +259,6 @@ const makeSectionEdgeGeometry = (sections) => {
     return new THREE.BufferGeometry().setFromPoints(points);
 };
 
-const computeLocalDensitySlice = ({
-    points,
-    sliceConfig,
-    zCenter,
-    thickness,
-    bandwidth,
-    gridSize,
-    logScale
-}) => {
-    const projectedCorners = CUBE_CORNERS.map((corner) => [dot(corner, sliceConfig.u), dot(corner, sliceConfig.v)]);
-    const xValues = projectedCorners.map(([x]) => x);
-    const yValues = projectedCorners.map(([, y]) => y);
-    const xMin = Math.min(...xValues);
-    const xMax = Math.max(...xValues);
-    const yMin = Math.min(...yValues);
-    const yMax = Math.max(...yValues);
-    const xSpan = xMax - xMin || 1;
-    const ySpan = yMax - yMin || 1;
-    const depthSpan = sliceConfig.range[1] - sliceConfig.range[0] || 1;
-    const density = Array.from({ length: gridSize }, () => new Array(gridSize).fill(0));
-    const slab = [];
-
-    points.forEach((point) => {
-        const fraction = [point.x, point.y, point.z];
-        const normalizedDepth = (dot(fraction, sliceConfig.normal) - sliceConfig.range[0]) / depthSpan;
-        if (Math.abs(normalizedDepth - zCenter) <= thickness / 2) {
-            slab.push([dot(fraction, sliceConfig.u), dot(fraction, sliceConfig.v)]);
-        }
-    });
-
-    const fitLimit = 6000;
-    const stride = Math.max(1, Math.ceil(slab.length / fitLimit));
-    const sigma = Math.max(0.75, bandwidth * gridSize);
-    const radius = Math.max(1, Math.ceil(sigma * 2.5));
-    const invTwoSigma2 = 1 / (2 * sigma * sigma);
-    let fitCount = 0;
-
-    for (let index = 0; index < slab.length; index += stride) {
-        const [uValue, vValue] = slab[index];
-        const gx = ((uValue - xMin) / xSpan) * (gridSize - 1);
-        const gy = ((vValue - yMin) / ySpan) * (gridSize - 1);
-        const xStart = Math.max(0, Math.floor(gx - radius));
-        const xEnd = Math.min(gridSize - 1, Math.ceil(gx + radius));
-        const yStart = Math.max(0, Math.floor(gy - radius));
-        const yEnd = Math.min(gridSize - 1, Math.ceil(gy + radius));
-        fitCount += 1;
-
-        for (let py = yStart; py <= yEnd; py += 1) {
-            const dy = py - gy;
-            for (let px = xStart; px <= xEnd; px += 1) {
-                const dx = px - gx;
-                density[py][px] += Math.exp(-(dx * dx + dy * dy) * invTwoSigma2);
-            }
-        }
-    }
-
-    let vmin = Infinity;
-    let vmax = -Infinity;
-    for (let py = 0; py < gridSize; py += 1) {
-        for (let px = 0; px < gridSize; px += 1) {
-            if (logScale) density[py][px] = Math.log10(density[py][px] + 1e-12);
-            vmin = Math.min(vmin, density[py][px]);
-            vmax = Math.max(vmax, density[py][px]);
-        }
-    }
-
-    const centerDepth = sliceConfig.range[0] + zCenter * depthSpan;
-    const planeVertices = planeSectionVertices(sliceConfig.normal, centerDepth);
-    return {
-        density,
-        extent: [xMin, xMax, yMin, yMax],
-        grid: gridSize,
-        z: zCenter,
-        dz: thickness,
-        bw: bandwidth,
-        log: logScale,
-        slabCount: slab.length,
-        fitCount,
-        vmin: Number.isFinite(vmin) ? vmin : 0,
-        vmax: Number.isFinite(vmax) ? vmax : 0,
-        contours: [],
-        center: zCenter,
-        thickness,
-        normal: sliceConfig.normal,
-        uVector: sliceConfig.u,
-        vVector: sliceConfig.v,
-        planeVertices,
-        planePolygon: planeVertices.map((vertex) => [dot(vertex, sliceConfig.u), dot(vertex, sliceConfig.v)]),
-        localApproximation: true
-    };
-};
-
 const StructurePage = ({ directory, localRun, theme }) => {
     const [structure, setStructure] = useState(null);
     const [error, setError] = useState(null);
@@ -374,6 +282,8 @@ const StructurePage = ({ directory, localRun, theme }) => {
     const mountRef = useRef(null);
     const normalMenuRef = useRef(null);
     const cameraStateRef = useRef(null);
+    const localKdeWorkerRef = useRef(null);
+    const localKdeRequestRef = useRef(0);
     const isLocalStructure = Boolean(localRun);
     const themeVars = useMemo(() => {
         if (typeof window === 'undefined') {
@@ -394,6 +304,37 @@ const StructurePage = ({ directory, localRun, theme }) => {
             contour: theme === 'light' ? 'rgba(21, 34, 50, 0.72)' : 'rgba(230, 236, 244, 0.76)'
         };
     }, [theme]);
+
+    useEffect(() => {
+        if (!isLocalStructure) return undefined;
+        const worker = new Worker(new URL('../workers/localKdeWorker.js', import.meta.url), {
+            type: 'module'
+        });
+        localKdeWorkerRef.current = worker;
+
+        worker.onmessage = (event) => {
+            if (event.data.id !== localKdeRequestRef.current) return;
+            setKdeLoading(false);
+            if (event.data.error) {
+                setKde(null);
+                setKdeError(event.data.error);
+                return;
+            }
+            setKde(event.data.result);
+            setKdeError(null);
+        };
+
+        worker.onerror = () => {
+            setKdeLoading(false);
+            setKde(null);
+            setKdeError('Browser KDE worker failed');
+        };
+
+        return () => {
+            worker.terminate();
+            localKdeWorkerRef.current = null;
+        };
+    }, [isLocalStructure]);
 
     useEffect(() => {
         if (localRun) {
@@ -540,24 +481,25 @@ const StructurePage = ({ directory, localRun, theme }) => {
         if (!structure) return undefined;
         if (isLocalStructure) {
             const handle = setTimeout(() => {
+                const worker = localKdeWorkerRef.current;
+                if (!worker) return;
+                const id = localKdeRequestRef.current + 1;
+                localKdeRequestRef.current = id;
                 setKdeLoading(true);
                 setKdeError(null);
-                try {
-                    setKde(computeLocalDensitySlice({
-                        points,
-                        sliceConfig,
-                        zCenter,
-                        thickness,
-                        bandwidth,
-                        gridSize,
-                        logScale
-                    }));
-                } catch (err) {
-                    setKde(null);
-                    setKdeError(err.message || 'Density computation failed');
-                } finally {
-                    setKdeLoading(false);
-                }
+                worker.postMessage({
+                    id,
+                    points,
+                    normal: sliceConfig.normal,
+                    uVector: sliceConfig.u,
+                    vVector: sliceConfig.v,
+                    range: sliceConfig.range,
+                    zCenter,
+                    thickness,
+                    bandwidth,
+                    gridSize,
+                    logScale
+                });
             }, 80);
 
             return () => clearTimeout(handle);
@@ -1044,13 +986,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
                                 <option value={220}>220</option>
                             </select>
                         </label>
-                        {!isLocalStructure && (
-                            <label className="control switch">
-                                <span className="control-name">Contours</span>
-                                <input type="checkbox" checked={showContours} onChange={(event) => setShowContours(event.target.checked)} />
-                                <i className="switch-track" aria-hidden="true" />
-                            </label>
-                        )}
+                        <label className="control switch">
+                            <span className="control-name">Contours</span>
+                            <input type="checkbox" checked={showContours} onChange={(event) => setShowContours(event.target.checked)} />
+                            <i className="switch-track" aria-hidden="true" />
+                        </label>
                         <label className="control switch">
                             <span className="control-name">Log scale</span>
                             <input type="checkbox" checked={logScale} onChange={(event) => setLogScale(event.target.checked)} />
@@ -1065,11 +1005,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             className="kde-panel"
                             style={{ '--panel-aspect': slicePanelGeometry.planeAspect }}
                         >
-                            <h3>{isLocalStructure ? 'Density Slice' : 'KDE Slice'}</h3>
+                            <h3>KDE Slice</h3>
                             <canvas ref={canvasRef} className="kde-canvas" />
                             {isLocalStructure && (
                                 <div className="local-density-note">
-                                    Browser-side density preview. The Flask app uses SciPy KDE for publication-grade values.
+                                    Browser-side Gaussian KDE. The Flask app uses SciPy KDE for reference-grade values.
                                 </div>
                             )}
                         </div>
