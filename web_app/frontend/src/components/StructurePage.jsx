@@ -8,9 +8,9 @@ import ModelSummary from './ModelSummary';
 import './StructurePage.css';
 
 const colors = {
-    Ga: '#0072B2',
-    Nb: '#E69F00',
-    Se: '#CC79A7',
+    Ga: '#3C5488',
+    Nb: '#E64B35',
+    Se: '#00A087',
     default: '#8A8F98'
 };
 
