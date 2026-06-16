@@ -8,9 +8,9 @@ Build a sophisticated local-first analysis app for RMCProfile and STOG workflows
 
 Goal: make the project reliable enough to build on.
 
-- Package reusable analysis logic under `rmc_toolkits/`.
+- Package reusable analysis logic under `rmc_toolkits/`. **Done for the active parser, plot, and KDE paths.**
 - Keep CLI scripts as thin wrappers over package functions.
-- Add tests for:
+- Add and maintain tests for:
   - RMC CSV parsing.
   - Log chi parsing.
   - Rwp calculation.
@@ -32,29 +32,30 @@ Goal: move from file-by-file plotting to project-level analysis.
   - STOG input/output files.
 - Create project summary JSON with file roles, available plots, metrics, lattice metadata, element list, and warnings.
 - Add frontend workspace layout:
-  - left project/file browser,
-  - center visualization panel,
-  - right analysis settings/metadata panel.
-- Expand the current dashboard into a richer run overview with plot grouping, run metadata, and warnings.
+  - header-level data path controls,
+  - dashboard page for run plots and model summary,
+  - KDE / 3D page for structure exploration.
+- Expand the current dashboard with richer run metadata, warnings, and optional comparison summaries.
 - Add run comparison support for multiple directories.
 
 ## Phase 3: Interactive Analysis
 
 Goal: replace static inspection with interactive scientific workflows.
 
-- Use Plotly for RMC curve plots, residuals, Bragg profiles, and R-value histories.
+- Continue with the current browser-native SVG plots unless Plotly-level pan/export features become
+  necessary for researcher workflows.
 - Add controls for axes, range, residual display, log scale, and export resolution.
-- Build a browser-native KDE slice viewer:
+- Extend the KDE slice viewer:
   - element selector,
   - z-position slider,
   - slab thickness control,
   - bandwidth control,
   - colormap selector,
   - contour toggle.
-- Upgrade the current density-style KDE slice canvas to support real bandwidth controls and optional server-side SciPy KDE.
-- Build structure viewer with Three.js:
+- Maintain the current server-side SciPy KDE path and add export/reproducibility controls.
+- Extend the Three.js structure viewer:
   - element visibility toggles,
-  - atom coloring,
+  - configurable atom coloring,
   - unit cell/supercell display,
   - camera presets,
   - screenshot export.
@@ -112,11 +113,11 @@ Goal: make the tool safe and pleasant for broader use.
 
 ## Suggested Immediate Backlog
 
-1. Add automated tests for `rmc_toolkits`.
+1. Add backend API tests around `/api/files`, `/api/plot/data`, `/api/structure`, and `/api/kde/slice`.
 2. Refactor `src/RMC_plot.py` into a CLI wrapper around `rmc_toolkits.plots`.
 3. Refactor `src/STOG_plot.py` so all top-level plotting becomes callable functions.
 4. Refactor `src/RMC_3D.py` to avoid Mayavi import and execution at import time.
 5. Add `/api/project/scan` for directory-level summaries.
-6. Add `/api/structure` for element metadata and atom coordinate payloads.
-7. Add `/api/kde/slice` for server-side KDE image or array generation.
-8. Replace static PNG display with interactive frontend plots.
+6. Add project-level warnings for missing expected files, malformed outputs, and unsupported STOG layouts.
+7. Add export controls for plot PNG/SVG/CSV and KDE/3D screenshots.
+8. Add recent-project persistence for local desktop use.

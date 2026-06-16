@@ -1,12 +1,12 @@
 # rmc-toolkits
 
-Post-processing utilities and a local-first web app for **RMCProfile** and **STOG** outputs.
+Post-processing utilities and a local-first dashboard for **RMCProfile** and **STOG** outputs.
 
 `rmc-toolkits` now has two active layers:
 
 - **Python package (`rmc_toolkits/`)** for parsing RMC/STOG outputs, building plots, converting
   `.rmc6f` files, loading folded structures, and computing SciPy KDE slices.
-- **Web app (`web_app/`)** with a Flask API and React/Vite frontend for browsing a run directory,
+- **Web app (`web_app/`)** with a Flask API and React/Vite frontend for loading a run directory,
   inspecting interactive plots, converting structures, and exploring KDE/3D views.
 
 The original standalone research scripts are still available in `src/` for familiar command-line
@@ -16,8 +16,8 @@ workflows.
 
 - **Run dashboard**: detects supported RMCProfile outputs in a folder and renders browser-native
   SVG charts with hover readouts, legend toggles, and drag-to-zoom.
-- **File browser**: lists directories and supported files under a configured data root, with a
-  native folder picker for registering external run folders.
+- **Local data loading**: opens the default `data/` sample, accepts a data-path entry, and can use
+  the native folder picker to register external run folders for local desktop sessions.
 - **Plot API**: returns plot metadata, PNG renderings, and parsed data series for R-value logs,
   S(Q), G(r), Bragg, PDF, PDF partials, and basic STOG outputs.
 - **Structure conversion**: writes `Frac_coord_<stem>.txt` from an `.rmc6f` file.
@@ -25,8 +25,18 @@ workflows.
   number/site coverage for larger structures.
 - **KDE slices**: computes server-side `scipy.stats.gaussian_kde` XY density grids for z-slabs,
   with element filtering, bandwidth, grid size, contour, and log-scale options.
-- **3D frontend view**: uses Three.js orbit/pan/zoom controls with a slab overlay synchronized to
-  the KDE controls.
+- **3D frontend view**: uses Three.js orbit/pan/zoom controls, a Nature Publishing Group-style atom
+  palette, and a slab overlay synchronized to the KDE controls.
+
+## Screenshots
+
+RMCProfile run dashboard:
+
+![RMCProfile run dashboard](assets/rmc-toolkits-dashboard.png)
+
+KDE slice, slab view, and 3D model:
+
+![KDE slice, slab view, and 3D model](assets/rmc-toolkits-KDE.png)
 
 ## Repository Layout
 
@@ -92,6 +102,13 @@ Open `http://localhost:5173/`. If the backend is not on port 5000, point the fro
 
 ```bash
 VITE_API_BASE_URL=http://localhost:5050 npm run dev
+```
+
+To test the production build locally:
+
+```bash
+VITE_API_BASE_URL=http://localhost:5050 npm run build
+npm run preview -- --host 127.0.0.1 --port 5174
 ```
 
 ## Hosting The Dashboard
@@ -219,20 +236,6 @@ Run the package and backend test suite from the project root:
 source .venv/bin/activate
 MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
 ```
-
-## Screenshots
-
-RMCProfile run dashboard:
-
-<div align="center">
-  <img src="assets/rmc-toolkits-dashboard.png" width="100%" />
-</div>
-
-KDE slice, slab view, and 3D model:
-
-<div align="center">
-  <img src="assets/rmc-toolkits-KDE.png" width="100%" />
-</div>
 
 ## Status
 
