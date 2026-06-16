@@ -60,6 +60,13 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 - Reworked KDE/3D into three side-by-side panels on wide screens: KDE XY slice, slab-in-cell x-z projection, and Three.js model. The 2D panels preserve lattice-parameter aspect ratios; the 3D model uses lattice-scaled positions.
 - Added gray slab-edge outlines in the Three.js model to make the current z/dz slab boundaries visible.
 
+## 2026-06-15 Update: KDE / 3D Palette And Docs
+
+- Updated the Three.js atom colors in `StructurePage.jsx` to a Nature Publishing Group-style
+  palette: Ga deep blue, Nb vermillion, and Se teal.
+- Refreshed `assets/rmc-toolkits-KDE.png` with the current KDE / slab / 3D layout.
+- Updated `README.md` and frontend documentation to describe the current local preview workflow.
+
 ## Important Files
 
 - `rmc_toolkits/parsers.py`: parsing and structure-loading functions.
@@ -79,9 +86,17 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 
 - The old `src/RMC_3D.py` still imports Mayavi and executes visualization at import time. It should be refactored before being reused by the web app.
 - `src/STOG_plot.py` still contains top-level plotting code. The new package has basic STOG single-file plotting, but not the full multi-panel STOG workflow yet.
-- The Dashboard now renders interactive SVG plots directly from parsed data. The standalone File view still uses the PNG plot endpoint.
+- The Dashboard renders interactive SVG plots directly from parsed data. The PNG plot endpoint is
+  still available for API consumers and future export workflows.
 - The dashboard renderer is intentionally lightweight and custom. It supports hover, legend toggles, integer x ticks, and x-range drag zoom, but not full Plotly-style pan/selection/export yet.
-- The KDE page now uses the real SciPy `gaussian_kde` via `GET /api/kde/slice` (resolved 2026-05-27). Remaining gaps vs. `src/RMC_KDE.py`: the desktop tool also shows a z-distribution histogram and a global x-z projection panel alongside the slice, and it supports non-orthorhombic limits; the web page mirrors only the slab x-z projection so far. The KDE fit is subsampled to 6000 slab points, which is fine for visualization but not an exact full-population estimate.
+- The KDE page uses the real SciPy `gaussian_kde` via `GET /api/kde/slice` (resolved 2026-05-27).
+  Remaining gaps vs. `src/RMC_KDE.py`: the desktop tool also shows a z-distribution histogram and
+  a global x-z projection panel alongside the slice, and it supports non-orthorhombic limits; the
+  web page mirrors only the slab x-z projection so far. The KDE fit is subsampled to 6000 slab
+  points, which is fine for visualization but not an exact full-population estimate.
+- The native folder picker is intended for local desktop sessions. It depends on OS-level dialog
+  availability and is not expected to work when the app is served remotely or inside restricted
+  browser/sandbox environments.
 - The test suite currently targets the reusable package layer and sample fixtures. Expand it around backend API behavior and edge-case fixture files before broadening app features.
 - The backend is Flask. It is acceptable for the current local viewer, but FastAPI would be a better fit for typed analysis APIs and background job status.
 - The `.rmc6f` to `Frac_coord*.txt` converter preserves the current observed format exactly for the sample data. Add fixtures for non-cubic or unusual RMCProfile outputs before relying on it for every dataset.
