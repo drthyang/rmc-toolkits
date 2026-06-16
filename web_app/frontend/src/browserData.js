@@ -271,7 +271,7 @@ export const buildLocalRun = async (fileList) => {
     let structureError = null;
     if (rmc6f) {
         try {
-            structure = structureFromRmc6f(rmc6f);
+            structure = structureFromRmc6f(rmc6f, 75000);
         } catch (error) {
             structureError = error.message;
         }

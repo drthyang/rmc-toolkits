@@ -131,7 +131,8 @@ There are two supported hosting modes:
 
 - **GitHub Pages static dashboard**: easiest public link. Users select a local run folder in the
   browser, and the dashboard parses supported plot files on their machine. This mode does not upload
-  data and does not require a Python server. KDE/3D remains a server-backed feature for now.
+  data and does not require a Python server. Static mode also renders uploaded `.rmc6f` structures
+  with a browser-side density preview and 3D model view.
 - **Flask web service**: full-featured deployment with server-side file browsing, structure
   sampling, conversion, and SciPy KDE computation.
 
@@ -149,10 +150,10 @@ VITE_STATIC_MODE=true VITE_BASE_PATH=/ npm run build
 npm run preview
 ```
 
-Open the preview URL and choose a local run folder. The static dashboard currently supports local
-plot parsing for RMCProfile CSV/log files and basic STOG outputs, plus lightweight `.rmc6f` model
-summary parsing. Browser-side KDE computation is the next step if full GitHub Pages parity is
-needed.
+Open the preview URL and choose a local run folder. The static dashboard supports local plot parsing
+for RMCProfile CSV/log files and basic STOG outputs, plus `.rmc6f` model summaries, slab controls,
+a browser-side density preview, and a Three.js 3D model view. The Flask service still provides the
+server-side SciPy KDE path for publication-grade density values.
 
 ### Flask Web Service
 

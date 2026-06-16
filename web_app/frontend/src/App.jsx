@@ -21,12 +21,6 @@ function App() {
     localStorage.setItem('rmc-theme', 'light');
   }, []);
 
-  useEffect(() => {
-    if (staticMode && activePage === 'structure') {
-      setActivePage('dashboard');
-    }
-  }, [activePage, staticMode]);
-
   const handleDirectorySubmit = (event) => {
     event.preventDefault();
     const nextDirectory = draftDirectory.trim() || '.';
@@ -94,14 +88,12 @@ function App() {
               >
                 Dashboard
               </button>
-              {!staticMode && (
-                <button
-                  className={activePage === 'structure' ? 'active' : ''}
-                  onClick={() => setActivePage('structure')}
-                >
-                  KDE / 3D
-                </button>
-              )}
+              <button
+                className={activePage === 'structure' ? 'active' : ''}
+                onClick={() => setActivePage('structure')}
+              >
+                KDE / 3D
+              </button>
             </nav>
           </div>
           {staticMode ? (
@@ -150,7 +142,9 @@ function App() {
           {browseStatus && <div className={`browse-status ${browseStatus.kind}`}>{browseStatus.text}</div>}
         </header>
         {activePage === 'dashboard' && <Dashboard directory={currentDirectory} localRun={localRun} />}
-        {activePage === 'structure' && !staticMode && <StructurePage directory={currentDirectory} theme="light" />}
+        {activePage === 'structure' && (
+          <StructurePage directory={currentDirectory} localRun={localRun} theme="light" />
+        )}
         <footer className="app-footer">
           &copy; 2026 Tsung-Han Yang. All rights reserved.
         </footer>

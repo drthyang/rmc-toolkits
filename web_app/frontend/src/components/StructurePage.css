@@ -292,6 +292,14 @@
     background: var(--canvas-bg);
 }
 
+.local-density-note {
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    padding: 0.55rem 0.8rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
 .slab-panel {
     background: var(--panel-bg);
 }
