@@ -24,10 +24,11 @@
 }
 
 .header-primary {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 1rem;
+  justify-content: flex-start;
+  gap: 0.9rem;
+  min-width: 0;
 }
 
 .brand-row {
@@ -237,11 +238,11 @@
   }
 
   .header-primary {
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .page-tabs {
-    grid-column: 1 / -1;
     width: 100%;
   }
 
