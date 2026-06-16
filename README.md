@@ -113,9 +113,34 @@ npm run preview -- --host 127.0.0.1 --port 5174
 
 ## Hosting The Dashboard
 
-The dashboard needs the Flask API for file browsing, plot parsing, structure sampling, and KDE
-computation, so it cannot run as a full-featured app on GitHub Pages alone. Host it as a small web
-service instead.
+There are two supported hosting modes:
+
+- **GitHub Pages static dashboard**: easiest public link. Users select a local run folder in the
+  browser, and the dashboard parses supported plot files on their machine. This mode does not upload
+  data and does not require a Python server. KDE/3D remains a server-backed feature for now.
+- **Flask web service**: full-featured deployment with server-side file browsing, structure
+  sampling, conversion, and SciPy KDE computation.
+
+### GitHub Pages Static Dashboard
+
+The repository includes a GitHub Actions workflow at `.github/workflows/pages.yml`. After GitHub
+Pages is enabled for Actions deployments, pushes to `main` build `web_app/frontend` with
+`VITE_STATIC_MODE=true` and publish the static dashboard.
+
+To test the static build locally:
+
+```bash
+cd web_app/frontend
+VITE_STATIC_MODE=true VITE_BASE_PATH=/ npm run build
+npm run preview
+```
+
+Open the preview URL and choose a local run folder. The static dashboard currently supports local
+plot parsing for RMCProfile CSV/log files and basic STOG outputs, plus lightweight `.rmc6f` model
+summary parsing. Browser-side KDE computation is the next step if full GitHub Pages parity is
+needed.
+
+### Flask Web Service
 
 The included `Dockerfile` builds the React dashboard and serves it from the Flask/Gunicorn backend:
 
