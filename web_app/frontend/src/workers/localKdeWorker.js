@@ -78,6 +78,28 @@ const makeSlab = ({ points, normal, uVector, vVector, range, zCenter, thickness 
     return slab;
 };
 
+const randomUnit = (seed) => {
+    let value = seed >>> 0;
+    return () => {
+        value += 0x6D2B79F5;
+        let mixed = value;
+        mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+        mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+        return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+    };
+};
+
+const sampleWithoutReplacement = (items, limit, seed = 0) => {
+    if (items.length <= limit) return items;
+    const random = randomUnit(seed);
+    const indices = Array.from({ length: items.length }, (_, index) => index);
+    for (let index = 0; index < limit; index += 1) {
+        const swapIndex = index + Math.floor(random() * (indices.length - index));
+        [indices[index], indices[swapIndex]] = [indices[swapIndex], indices[index]];
+    }
+    return indices.slice(0, limit).map((index) => items[index]);
+};
+
 const covariance = (samples) => {
     const n = samples.length;
     const mean = samples.reduce((acc, sample) => [acc[0] + sample[0], acc[1] + sample[1]], [0, 0])
@@ -190,9 +212,8 @@ const computeKde = (payload) => {
     let fitCount = 0;
 
     if (slab.length >= 5) {
-        const fitLimit = grid > 180 ? 3500 : 6000;
-        const stride = Math.max(1, Math.ceil(slab.length / fitLimit));
-        const samples = slab.filter((_, index) => index % stride === 0).slice(0, fitLimit);
+        const fitLimit = 6000;
+        const samples = sampleWithoutReplacement(slab, fitLimit, 0);
         fitCount = samples.length;
 
         if (samples.length >= 5) {
