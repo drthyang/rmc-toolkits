@@ -38,20 +38,6 @@ KDE slice, slab view, and 3D model:
 
 ![KDE slice, slab view, and 3D model](assets/rmc-toolkits-KDE.png)
 
-Additional plot and structure views:
-
-| R-value | Bragg | S(Q) |
-| --- | --- | --- |
-| ![R-value plot](assets/1_R-value.png) | ![Bragg plot](assets/2_Bragg.png) | ![S(Q) plot](assets/3_SQ.png) |
-
-| G(r) | Partials | KDE / 3D |
-| --- | --- | --- |
-| ![G(r) plot](assets/4_Gr.png) | ![Partial PDF plot](assets/5_Partials.png) | ![KDE and 3D views](assets/KDE.png) |
-
-3D distribution view:
-
-![3D distribution view](assets/Distr_3D.png)
-
 ## Repository Layout
 
 | Path | Purpose |
