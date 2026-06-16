@@ -89,7 +89,7 @@ const AxisLabel = ({ label, x, y, textAnchor = 'middle', rotate = false }) => {
     );
 };
 
-const InteractivePlot = ({ file, variant }) => {
+const InteractivePlot = ({ file, variant, plotData }) => {
     const wide = variant === 'wide';
     const [plot, setPlot] = useState(null);
     const [error, setError] = useState(null);
@@ -98,8 +98,13 @@ const InteractivePlot = ({ file, variant }) => {
     const [hover, setHover] = useState(null);
     const [drag, setDrag] = useState(null);
     const svgRef = useRef(null);
+    const effectivePlot = plotData || plot;
 
     useEffect(() => {
+        if (plotData) {
+            return;
+        }
+
         const fetchData = async () => {
             setPlot(null);
             setError(null);
@@ -116,12 +121,12 @@ const InteractivePlot = ({ file, variant }) => {
         };
 
         fetchData();
-    }, [file.path]);
+    }, [file.path, plotData]);
 
     // Measured data first (drawn underneath, first palette color); the
     // calculated curve follows and is drawn on top of the hollow markers.
     const orderedSeries = useMemo(() => {
-        const series = plot?.series || [];
+        const series = effectivePlot?.series || [];
         const experimental = series.filter((entry) => isExperimental(entry.label));
         const calculated = series.filter((entry) => !isExperimental(entry.label));
         const paired = experimental.length > 0 && calculated.length > 0;
@@ -131,7 +136,7 @@ const InteractivePlot = ({ file, variant }) => {
             marker: paired && isExperimental(entry.label),
             color: palette[index % palette.length]
         }));
-    }, [plot]);
+    }, [effectivePlot]);
 
     const visibleSeries = useMemo(() => {
         return orderedSeries.filter((series) => !hidden.has(series.label));
@@ -200,7 +205,7 @@ const InteractivePlot = ({ file, variant }) => {
     const clampPlotX = (x) => Math.max(view.left, Math.min(view.width - view.right, x));
 
     const nearestHover = (event) => {
-        if (!plot || !visibleSeries.length) return;
+        if (!effectivePlot || !visibleSeries.length) return;
         const x = pointerToViewX(event);
         if (x < view.left || x > view.width - view.right) {
             setHover(null);
@@ -278,7 +283,7 @@ const InteractivePlot = ({ file, variant }) => {
     };
 
     if (error) return <div className="interactive-plot-error">{error}</div>;
-    if (!plot) return <div className="interactive-plot-loading">Loading plot...</div>;
+    if (!effectivePlot) return <div className="interactive-plot-loading">Loading plot...</div>;
 
     // Keep the tooltip on the emptier side of the crosshair.
     const hoverOnLeftHalf = hover && hover.px < view.width / 2;
@@ -320,7 +325,7 @@ const InteractivePlot = ({ file, variant }) => {
                     ref={svgRef}
                     viewBox={`0 0 ${view.width} ${view.height}`}
                     role="img"
-                    aria-label={plot.title}
+                    aria-label={effectivePlot.title}
                     onPointerDown={startDrag}
                     onPointerMove={moveDrag}
                     onPointerUp={finishDrag}
@@ -361,8 +366,8 @@ const InteractivePlot = ({ file, variant }) => {
                         />
                     ))}
                     <rect className="plot-frame" x={view.left} y={view.top} width={plotWidth} height={plotHeight} />
-                    <AxisLabel label={plot.xLabel} x={view.left + plotWidth / 2} y={view.height - 10} />
-                    <AxisLabel label={plot.yLabel} x={18} y={view.top + plotHeight / 2} rotate />
+                    <AxisLabel label={effectivePlot.xLabel} x={view.left + plotWidth / 2} y={view.height - 10} />
+                    <AxisLabel label={effectivePlot.yLabel} x={18} y={view.top + plotHeight / 2} rotate />
                     {hover && (
                         <g>
                             <line className="hover-line" x1={hover.px} x2={hover.px} y1={view.top} y2={view.top + plotHeight} />
@@ -388,7 +393,7 @@ const InteractivePlot = ({ file, variant }) => {
                             ? { left: `calc(${(hover.px / view.width) * 100}% + 14px)` }
                             : { right: `calc(${100 - (hover.px / view.width) * 100}% + 14px)` }}
                     >
-                        <strong>{labelToText(plot.xLabel)}: {formatNumber(hover.x)}</strong>
+                        <strong>{labelToText(effectivePlot.xLabel)}: {formatNumber(hover.x)}</strong>
                         {hover.values.map((value) => (
                             <span key={value.label}>
                                 <i style={{ background: value.color }} />

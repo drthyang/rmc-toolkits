@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import Dashboard from './components/Dashboard';
 import StructurePage from './components/StructurePage';
 import API_BASE_URL from './api';
+import { buildLocalRun, isStaticMode } from './browserData';
 import './App.css';
 
 function App() {
@@ -10,11 +11,21 @@ function App() {
   const [currentDirectory, setCurrentDirectory] = useState('data');
   const [draftDirectory, setDraftDirectory] = useState('data');
   const [browseStatus, setBrowseStatus] = useState(null);
+  const [localRun, setLocalRun] = useState(null);
+  const [localLoading, setLocalLoading] = useState(false);
+  const directoryInputRef = useRef(null);
+  const staticMode = isStaticMode();
 
   useEffect(() => {
     document.documentElement.dataset.theme = 'light';
     localStorage.setItem('rmc-theme', 'light');
   }, []);
+
+  useEffect(() => {
+    if (staticMode && activePage === 'structure') {
+      setActivePage('dashboard');
+    }
+  }, [activePage, staticMode]);
 
   const handleDirectorySubmit = (event) => {
     event.preventDefault();
@@ -42,6 +53,26 @@ function App() {
     }
   };
 
+  const handleLocalFiles = async (event) => {
+    const selectedFiles = event.target.files;
+    if (!selectedFiles?.length) return;
+    setLocalLoading(true);
+    setBrowseStatus({ kind: 'loading', text: 'Reading local files...' });
+    try {
+      const nextRun = await buildLocalRun(selectedFiles);
+      setLocalRun(nextRun);
+      setCurrentDirectory(nextRun.name);
+      setDraftDirectory(nextRun.name);
+      setBrowseStatus(null);
+      setActivePage('dashboard');
+    } catch (error) {
+      setBrowseStatus({ kind: 'error', text: error.message || 'Could not read the selected files' });
+    } finally {
+      setLocalLoading(false);
+      event.target.value = '';
+    }
+  };
+
   return (
     <div className="app-container">
       <main className="main-content">
@@ -63,38 +94,63 @@ function App() {
               >
                 Dashboard
               </button>
-              <button
-                className={activePage === 'structure' ? 'active' : ''}
-                onClick={() => setActivePage('structure')}
-              >
-                KDE / 3D
-              </button>
+              {!staticMode && (
+                <button
+                  className={activePage === 'structure' ? 'active' : ''}
+                  onClick={() => setActivePage('structure')}
+                >
+                  KDE / 3D
+                </button>
+              )}
             </nav>
           </div>
-          <form className="path-bar" onSubmit={handleDirectorySubmit}>
-            <label htmlFor="data-path">Data path</label>
-            <input
-              id="data-path"
-              type="text"
-              value={draftDirectory}
-              onChange={(event) => setDraftDirectory(event.target.value)}
-              spellCheck="false"
-            />
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={handleNativeBrowse}
-            >
-              Browse
-            </button>
-            <button type="submit">
-              Load
-            </button>
-          </form>
+          {staticMode ? (
+            <div className="path-bar local-file-bar">
+              <label htmlFor="local-run-files">Local run</label>
+              <input
+                ref={directoryInputRef}
+                id="local-run-files"
+                className="visually-hidden"
+                type="file"
+                multiple
+                webkitdirectory=""
+                onChange={handleLocalFiles}
+              />
+              <div className="selected-run-name">{localRun?.name || 'No folder selected'}</div>
+              <button
+                type="button"
+                onClick={() => directoryInputRef.current?.click()}
+                disabled={localLoading}
+              >
+                {localLoading ? 'Reading' : 'Select Folder'}
+              </button>
+            </div>
+          ) : (
+            <form className="path-bar" onSubmit={handleDirectorySubmit}>
+              <label htmlFor="data-path">Data path</label>
+              <input
+                id="data-path"
+                type="text"
+                value={draftDirectory}
+                onChange={(event) => setDraftDirectory(event.target.value)}
+                spellCheck="false"
+              />
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleNativeBrowse}
+              >
+                Browse
+              </button>
+              <button type="submit">
+                Load
+              </button>
+            </form>
+          )}
           {browseStatus && <div className={`browse-status ${browseStatus.kind}`}>{browseStatus.text}</div>}
         </header>
-        {activePage === 'dashboard' && <Dashboard directory={currentDirectory} />}
-        {activePage === 'structure' && <StructurePage directory={currentDirectory} theme="light" />}
+        {activePage === 'dashboard' && <Dashboard directory={currentDirectory} localRun={localRun} />}
+        {activePage === 'structure' && !staticMode && <StructurePage directory={currentDirectory} theme="light" />}
         <footer className="app-footer">
           &copy; 2026 Tsung-Han Yang. All rights reserved.
         </footer>

@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
+import { plotMetadataFromFile } from '../browserData';
 import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
 
-const Dashboard = ({ directory }) => {
+const Dashboard = ({ directory, localRun }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
@@ -17,6 +18,21 @@ const Dashboard = ({ directory }) => {
     const [showRValue, setShowRValue] = useState(false);
 
     useEffect(() => {
+        if (localRun) {
+            const loadedFiles = localRun.files || [];
+            setFiles(loadedFiles);
+            setMetadata(Object.fromEntries(
+                loadedFiles
+                    .filter((file) => file.plotKind)
+                    .map((file) => [file.path, plotMetadataFromFile(file)])
+            ));
+            setStructure(localRun.structure || null);
+            setStructureError(localRun.structure ? null : localRun.structureError || 'No model structure detected');
+            setError(null);
+            setLoading(false);
+            return;
+        }
+
         const fetchDashboard = async () => {
             setLoading(true);
             setError(null);
@@ -61,7 +77,7 @@ const Dashboard = ({ directory }) => {
         };
 
         fetchDashboard();
-    }, [directory]);
+    }, [directory, localRun]);
 
     const plotFiles = useMemo(() => {
         return files
@@ -88,7 +104,8 @@ const Dashboard = ({ directory }) => {
                         <span className="rwp-chip">Rwp {Number(meta.metrics.rwp).toPrecision(4)}</span>
                     )}
                 </div>
-                <InteractivePlot file={file} />
+                <InteractivePlot file={file} plotData={file.plotData} />
+                {file.parseError && <div className="dashboard-error">{file.parseError}</div>}
             </article>
         );
     };
@@ -114,7 +131,7 @@ const Dashboard = ({ directory }) => {
                         </button>
                     </div>
                 </div>
-                {showRValue && <InteractivePlot file={rValueFile} variant="wide" />}
+                {showRValue && <InteractivePlot file={rValueFile} plotData={rValueFile.plotData} variant="wide" />}
             </article>
         );
     };
@@ -124,7 +141,7 @@ const Dashboard = ({ directory }) => {
             <div className="dashboard-toolbar">
                 <div>
                     <h2>Run Dashboard</h2>
-                    <p>{directory}</p>
+                    <p>{localRun ? localRun.name : directory}</p>
                 </div>
                 {loading && <span className="status-pill">Loading</span>}
             </div>

@@ -168,6 +168,30 @@
   border-color: var(--accent-strong);
 }
 
+.local-file-bar {
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+}
+
+.selected-run-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
 .path-bar .secondary-button {
   color: var(--text);
   background: transparent;
