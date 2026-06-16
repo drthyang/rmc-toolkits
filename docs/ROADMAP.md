@@ -53,6 +53,8 @@ Goal: replace static inspection with interactive scientific workflows.
   - colormap selector,
   - contour toggle.
 - Maintain the current server-side SciPy KDE path and add export/reproducibility controls.
+- Maintain the hosted GitHub Pages path with browser-side parsing and Web Worker KDE for users who
+  want to inspect local files without installing the package.
 - Extend the Three.js structure viewer:
   - element visibility toggles,
   - configurable atom coloring,
@@ -108,6 +110,7 @@ Goal: make the tool safe and pleasant for broader use.
 - `rmc_toolkits/`: pure Python package for parsing, analysis, plotting, and structure transforms.
 - `web_app/backend/`: API server, project scanner, jobs, artifact storage.
 - `web_app/frontend/`: React app with project workspace, interactive plots, KDE, structure viewer, and exports.
+- `.github/workflows/pages.yml`: builds the static GitHub Pages dashboard from `web_app/frontend`.
 - `data/`: small example fixtures.
 - `docs/`: hand-off records, roadmap, workflow notes, and architecture decisions.
 
@@ -120,4 +123,5 @@ Goal: make the tool safe and pleasant for broader use.
 5. Add `/api/project/scan` for directory-level summaries.
 6. Add project-level warnings for missing expected files, malformed outputs, and unsupported STOG layouts.
 7. Add export controls for plot PNG/SVG/CSV and KDE/3D screenshots.
-8. Add recent-project persistence for local desktop use.
+8. Move heavier static-mode parsing/KDE work toward transferable typed arrays and profile large `.rmc6f` files.
+9. Add recent-project persistence for local desktop use.

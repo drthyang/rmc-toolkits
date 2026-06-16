@@ -67,6 +67,27 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 - Refreshed `assets/rmc-toolkits-KDE.png` with the current KDE / slab / 3D layout.
 - Updated `README.md` and frontend documentation to describe the current local preview workflow.
 
+## 2026-06-16 Update: Hosted Static Dashboard
+
+- Added a GitHub Pages deployment workflow at `.github/workflows/pages.yml`. The repository Pages
+  source should be set to **GitHub Actions** so `https://drthyang.github.io/rmc-toolkits/` serves
+  the built React/Vite dashboard instead of the README/Jekyll page.
+- Added static-mode local file loading in `web_app/frontend/src/browserData.js`. Users can open the
+  hosted dashboard directly in a browser, select a local run folder, and parse supported RMCProfile
+  CSV/log/STOG outputs without installing the Python package or uploading data.
+- Extended static mode to parse uploaded `.rmc6f` files, populate the model summary, render the
+  slab-in-cell projection, and show the Three.js 3D structure view.
+- Added `web_app/frontend/src/workers/localKdeWorker.js`: a browser-side Gaussian KDE worker for the
+  hosted dashboard. It evaluates KDE off the UI thread, caps the fit population at 6000 slab points,
+  uses deterministic pseudo-random sampling to avoid RMC atom-order aliasing, and emits contour
+  segments for the existing overlay renderer.
+- Kept the Flask app as the reference path for server-side SciPy KDE through `/api/kde/slice`.
+  Browser KDE is useful for the hosted tool and local privacy-preserving inspection, but it is still
+  slower than the local Flask/SciPy path and should be treated as a visualization workflow rather
+  than a replacement for validated publication calculations.
+- Added the hosted dashboard link near the top of `README.md` and tightened the app header so the
+  Dashboard and KDE/3D tabs sit closer to the RMCprofile Run Monitor logo.
+
 ## Important Files
 
 - `rmc_toolkits/parsers.py`: parsing and structure-loading functions.
@@ -79,6 +100,8 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 - `web_app/frontend/src/components/Dashboard.jsx`: all-plots run dashboard.
 - `web_app/frontend/src/components/InteractivePlot.jsx`: browser-native SVG plot renderer for the dashboard.
 - `web_app/frontend/src/components/StructurePage.jsx`: KDE slice and 3D model page.
+- `web_app/frontend/src/browserData.js`: static-mode local file parsing and run assembly.
+- `web_app/frontend/src/workers/localKdeWorker.js`: browser-side KDE worker for GitHub Pages/static mode.
 - `web_app/frontend/src/components/PlotViewer.jsx`: PNG plot rendering and metadata display.
 - `docs/ROADMAP.md`: development roadmap for the larger application.
 
@@ -94,6 +117,10 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
   a global x-z projection panel alongside the slice, and it supports non-orthorhombic limits; the
   web page mirrors only the slab x-z projection so far. The KDE fit is subsampled to 6000 slab
   points, which is fine for visualization but not an exact full-population estimate.
+- GitHub Pages/static mode has no Python backend. It uses local browser parsing and a Web Worker KDE
+  implementation, so it can be slower than the local Flask/SciPy app on large structures. The worker
+  uses deterministic random subsampling when a slab exceeds 6000 points to avoid biased densities
+  from file-order stride sampling.
 - The native folder picker is intended for local desktop sessions. It depends on OS-level dialog
   availability and is not expected to work when the app is served remotely or inside restricted
   browser/sandbox environments.
