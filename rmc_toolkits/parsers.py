@@ -163,7 +163,7 @@ def iter_rmc6f_atoms(rmc6f_path: str | Path) -> Iterator[Rmc6fAtom]:
             try:
                 yield {
                     "atom_number": int(parts[0]),
-                    "element": parts[1],
+                    "element": parts[1].capitalize(),
                     "type_label": parts[2],
                     "coords": np.asarray(parts[3:6], dtype=float),
                     "reference_number": int(parts[6]),

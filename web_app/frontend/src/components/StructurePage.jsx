@@ -272,7 +272,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
     const [bandwidth, setBandwidth] = useState(0.03);
     const [gridSize, setGridSize] = useState(120);
     const [colormap, setColormap] = useState('viridis');
-    const [showContours, setShowContours] = useState(true);
+    const [showContours, setShowContours] = useState(false);
     const [logScale, setLogScale] = useState(false);
     const [kde, setKde] = useState(null);
     const [kdeLoading, setKdeLoading] = useState(false);
@@ -880,7 +880,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
         <section className="structure-page">
             <div className="structure-header">
                 <div>
-                    <h2>KDE And 3D Model</h2>
+                    <h2>KDE And Folded Unit Cell</h2>
                     <p>{localRun ? localRun.name : directory}</p>
                 </div>
                 {(loading || kdeLoading) && <span className="status-pill">{loading ? 'Loading' : isLocalStructure ? 'Density' : 'KDE'}</span>}
@@ -1027,7 +1027,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             className="model-panel"
                             style={{ '--panel-aspect': Math.max(slicePanelGeometry.planeAspect, 1) }}
                         >
-                            <h3>3D Model</h3>
+                            <h3>Folded Unit Cell</h3>
                             <div ref={mountRef} className="three-mount" />
                         </div>
                     </div>
