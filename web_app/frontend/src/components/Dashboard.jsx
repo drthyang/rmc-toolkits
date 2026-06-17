@@ -163,6 +163,10 @@ const Dashboard = ({ directory, localRun }) => {
             {!loading && plotFiles.length === 0 && (
                 <div className="empty-state">Open a run folder such as data to populate the dashboard.</div>
             )}
+
+            <footer className="app-footer">
+                &copy; 2026 Tsung-Han Yang. All rights reserved.
+            </footer>
         </section>
     );
 };

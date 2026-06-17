@@ -145,9 +145,6 @@ function App() {
         {activePage === 'structure' && (
           <StructurePage directory={currentDirectory} localRun={localRun} theme="light" />
         )}
-        <footer className="app-footer">
-          &copy; 2026 Tsung-Han Yang. All rights reserved.
-        </footer>
       </main>
     </div>
   );

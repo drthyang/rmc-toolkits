@@ -1033,6 +1033,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
                     </div>
                 </>
             )}
+            
+            <footer className="app-footer">
+                &copy; 2026 Tsung-Han Yang. All rights reserved.
+            </footer>
         </section>
     );
 };
