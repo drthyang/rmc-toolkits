@@ -267,22 +267,12 @@ export const buildLocalRun = async (fileList) => {
     });
 
     const rmc6f = enrichedFiles.find((file) => file.name.endsWith('.rmc6f'));
-    let structure = null;
-    let structureError = null;
-    if (rmc6f) {
-        try {
-            structure = structureFromRmc6f(rmc6f, 75000);
-        } catch (error) {
-            structureError = error.message;
-        }
-    } else {
-        structureError = 'No model structure detected';
-    }
 
     return {
         name: enrichedFiles[0]?.path.split('/')[0] || 'Local files',
         files: enrichedFiles,
-        structure,
-        structureError
+        structure: null,
+        structureFile: rmc6f || null,
+        structureError: rmc6f ? 'Open KDE / 3D to load structure data' : 'No model structure detected'
     };
 };
