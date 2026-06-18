@@ -6,7 +6,7 @@ export const isStaticMode = () => {
 };
 
 export const detectPlotKind = (name) => {
-    if (name.endsWith('_FT_XFQ1.csv')) return 'xpdf';
+    if (/_FT_XFQ\d+\.csv$/.test(name)) return 'xpdf';
     if (name.includes('PDF') && name.endsWith('.csv')) {
         return name.includes('PDFpartials') ? 'pdf_partials' : 'npdf';
     }

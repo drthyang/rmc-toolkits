@@ -17,6 +17,7 @@ class PlotTests(unittest.TestCase):
     def test_detect_plot_kind_for_supported_outputs(self):
         cases = {
             "GNSe_FT_XFQ1.csv": "xpdf",
+            "GNSe_FT_XFQ2.csv": "xpdf",
             "GNSe_FQ1.csv": "xray_sq",
             "GNSe_bragg.csv": "bragg",
             "GNSe_PDFpartials.csv": "pdf_partials",

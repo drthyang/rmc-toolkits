@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import io
+import re
 
 import matplotlib
 
@@ -25,7 +26,7 @@ class PlotResult:
 
 def detect_plot_kind(path: str | Path) -> str | None:
     name = Path(path).name
-    if name.endswith("_FT_XFQ1.csv"):
+    if re.search(r"_FT_XFQ\d+\.csv$", name):
         return "xpdf"
     if "PDF" in name and name.endswith(".csv"):
         return "pdf_partials" if "PDFpartials" in name else "npdf"
