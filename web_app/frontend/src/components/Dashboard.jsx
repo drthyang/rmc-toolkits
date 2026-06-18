@@ -245,7 +245,7 @@ const Dashboard = ({ directory, localRun }) => {
             </div>
 
             {!loading && plotFiles.length === 0 && (
-                <div className="empty-state">Open a run folder such as data to populate the dashboard.</div>
+                <div className="empty-state">Open a run folder to populate the dashboard.</div>
             )}
 
             <footer className="app-footer">
