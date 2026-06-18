@@ -22,6 +22,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
     const [showRValue, setShowRValue] = useState(false);
+    const [showLoadedFiles, setShowLoadedFiles] = useState(false);
+    const [hiddenPlotPaths, setHiddenPlotPaths] = useState(() => new Set());
     const signatureRef = useRef('');
     const pollInFlightRef = useRef(false);
 
@@ -99,6 +101,11 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     }, [directory, loadDashboard, localRun]);
 
     useEffect(() => {
+        setShowLoadedFiles(false);
+        setHiddenPlotPaths(new Set());
+    }, [directory, localRun]);
+
+    useEffect(() => {
         if (!watchFiles || localRun) return undefined;
 
         const pollForUpdates = async () => {
@@ -124,11 +131,15 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
         return () => window.clearInterval(interval);
     }, [directory, loadDashboard, localRun, watchFiles]);
 
-    const plotFiles = useMemo(() => {
+    const allPlotFiles = useMemo(() => {
         return files
             .filter((file) => file.plotKind)
             .sort((a, b) => plotOrder.indexOf(a.plotKind) - plotOrder.indexOf(b.plotKind));
     }, [files]);
+
+    const plotFiles = useMemo(() => {
+        return allPlotFiles.filter((file) => !hiddenPlotPaths.has(file.path));
+    }, [allPlotFiles, hiddenPlotPaths]);
 
     const rValueFile = useMemo(
         () => plotFiles.find((file) => file.plotKind === 'r_value') || null,
@@ -138,6 +149,14 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
         () => plotFiles.filter((file) => file.plotKind !== 'r_value'),
         [plotFiles]
     );
+
+    const handleHidePlot = (path) => {
+        setHiddenPlotPaths((current) => {
+            const next = new Set(current);
+            next.add(path);
+            return next;
+        });
+    };
 
     const renderPlotCard = (file) => {
         const meta = metadata[file.path];
@@ -192,6 +211,54 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
         );
     };
 
+    const renderLoadedFilesPanel = () => {
+        if (allPlotFiles.length === 0) {
+            return structureError ? <div className="model-summary-empty">{structureError}</div> : null;
+        }
+
+        return (
+            <article className={`plot-card loaded-files-card${showLoadedFiles ? '' : ' is-collapsed'}`}>
+                <div className="plot-card-header">
+                    <div>
+                        <h3>
+                            Loaded {plotFiles.length} plot {plotFiles.length === 1 ? 'file' : 'files'}
+                        </h3>
+                        {structureError && <p>{structureError}</p>}
+                    </div>
+                    <button
+                        type="button"
+                        className="panel-toggle"
+                        onClick={() => setShowLoadedFiles((value) => !value)}
+                        aria-expanded={showLoadedFiles}
+                    >
+                        {showLoadedFiles ? 'Hide' : 'Show'}
+                    </button>
+                </div>
+                {showLoadedFiles && (
+                    <ul className="loaded-files-list">
+                        {plotFiles.map((file) => (
+                            <li key={file.path}>
+                                <span className="loaded-file-badge">
+                                    <span className="loaded-file-kind">{file.plotKind}</span>
+                                    <span className="loaded-file-name">{file.name}</span>
+                                    <button
+                                        type="button"
+                                        className="loaded-file-hide"
+                                        onClick={() => handleHidePlot(file.path)}
+                                        aria-label={`Hide ${file.name} chart`}
+                                        title="Hide chart"
+                                    >
+                                        &times;
+                                    </button>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </article>
+        );
+    };
+
     return (
         <section className="dashboard-page">
             <div className="dashboard-toolbar">
@@ -206,9 +273,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
 
             <ModelSummary structure={structure} />
 
-            {!structure && structureError && (
-                <div className="model-summary-empty">{structureError}</div>
-            )}
+            {renderLoadedFilesPanel()}
 
             {renderRValuePanel()}
 
@@ -216,7 +281,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                 {gridFiles.map((file) => renderPlotCard(file))}
             </div>
 
-            {!loading && plotFiles.length === 0 && (
+            {!loading && allPlotFiles.length === 0 && (
                 <div className="empty-state">Open a run folder such as data to populate the dashboard.</div>
             )}
         </section>
