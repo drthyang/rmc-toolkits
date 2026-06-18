@@ -9,6 +9,8 @@ from typing import Iterator, TypedDict
 
 import numpy as np
 
+R_VALUE_LOG_RE = re.compile(r"^(.+)-(\d{2,})\.log$")
+
 
 @dataclass(frozen=True)
 class CsvSeries:
@@ -75,6 +77,40 @@ def read_chi(paths: list[str | Path]) -> tuple[np.ndarray, np.ndarray]:
                 except ValueError:
                     continue
     return np.asarray(chi_q, dtype=float), np.asarray(chi_r, dtype=float)
+
+
+def r_value_log_parts(path: str | Path) -> tuple[str, int] | None:
+    match = R_VALUE_LOG_RE.match(Path(path).name)
+    if not match:
+        return None
+    return match.group(1), int(match.group(2))
+
+
+def sort_r_value_logs(paths: list[str | Path]) -> list[Path]:
+    def sort_key(path: str | Path) -> tuple[str, int, str]:
+        parsed = r_value_log_parts(path)
+        resolved = Path(path)
+        if parsed:
+            stem, sequence = parsed
+            return stem.lower(), sequence, resolved.name.lower()
+        return resolved.stem.lower(), -1, resolved.name.lower()
+
+    return sorted((Path(path) for path in paths), key=sort_key)
+
+
+def related_r_value_logs(path: str | Path) -> list[Path]:
+    path = Path(path)
+    parsed = r_value_log_parts(path)
+    if not parsed or not path.parent.exists():
+        return [path]
+
+    stem, _ = parsed
+    matches: list[Path] = []
+    for candidate in path.parent.iterdir():
+        candidate_parts = r_value_log_parts(candidate)
+        if candidate.is_file() and candidate_parts and candidate_parts[0] == stem:
+            matches.append(candidate)
+    return sort_r_value_logs(matches) or [path]
 
 
 def read_stog(path: str | Path) -> np.ndarray:

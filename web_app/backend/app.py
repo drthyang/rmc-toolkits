@@ -27,6 +27,7 @@ from rmc_toolkits.parsers import (
     read_chi,
     read_rmc_csv,
     read_stog,
+    related_r_value_logs,
     write_frac_from_rmc6f,
 )
 from rmc_toolkits.plots import close_plot, detect_plot_kind, make_plot, plot_to_png
@@ -274,7 +275,7 @@ def plot_data():
         close_plot(metadata_result)
 
         if kind == "r_value":
-            _, chi_r = read_chi([path])
+            _, chi_r = read_chi(related_r_value_logs(path))
             y_values = [float(value) for value in chi_r]
             return jsonify(
                 {

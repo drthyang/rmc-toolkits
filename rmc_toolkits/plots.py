@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .parsers import pdf_index, read_chi, read_rmc_csv, read_stog, rwp
+from .parsers import pdf_index, read_chi, read_rmc_csv, read_stog, related_r_value_logs, rwp
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,8 @@ def _series_plot(
 
 
 def _chi_plot(path: Path) -> PlotResult:
-    _, chi_r = read_chi([path])
+    log_paths = related_r_value_logs(path)
+    _, chi_r = read_chi(log_paths)
     if len(chi_r) == 0:
         raise ValueError(f"{path} does not contain chi values")
 

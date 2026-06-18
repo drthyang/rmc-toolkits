@@ -55,6 +55,20 @@ class PlotTests(unittest.TestCase):
         finally:
             close_plot(result)
 
+    def test_log_plot_combines_related_logs_in_numeric_order(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir)
+            (directory / "run-10.log").write_text("header\nheader\n1 0.1 10.0\n", encoding="utf-8")
+            (directory / "run-01.log").write_text("header\nheader\n1 0.1 1.0\n", encoding="utf-8")
+            (directory / "run-02.log").write_text("header\nheader\n1 0.1 2.0\n", encoding="utf-8")
+
+            result = make_plot(directory / "run-01.log")
+            try:
+                self.assertEqual(result.kind, "r_value")
+                self.assertAlmostEqual(result.metrics["final_chi_r"], 10.0)
+            finally:
+                close_plot(result)
+
 
 if __name__ == "__main__":
     unittest.main()
