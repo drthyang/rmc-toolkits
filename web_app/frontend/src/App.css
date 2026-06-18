@@ -232,6 +232,7 @@
   .app-header {
     grid-template-columns: 1fr;
     padding: 0.8rem;
+    align-items: stretch;
   }
 
   .header-primary {
@@ -240,15 +241,25 @@
   }
 
   .page-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
   }
 
   .page-tabs button {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .path-bar {
     grid-template-columns: 1fr auto auto;
+  }
+
+  .local-file-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
   }
 
   .path-bar label {
@@ -257,5 +268,24 @@
 
   .app-footer {
     padding-inline: 0.8rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .app-header {
+    gap: 0.75rem;
+  }
+
+  .page-tabs button {
+    padding-inline: 0.45rem;
+  }
+
+  .local-file-bar button {
+    min-width: 6.4rem;
+    padding-inline: 0.65rem;
+  }
+
+  .selected-run-name {
+    min-width: 0;
   }
 }
