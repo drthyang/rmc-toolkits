@@ -107,6 +107,12 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 
 ## Known Limitations
 
+- **Known issue, 2026-06-17:** GitHub Pages/static mode currently does not run reliably on iPhone
+  Safari/mobile browsers after selecting a local run folder. Desktop static mode works. The failure
+  is likely in the mobile browser folder-selection/file-enumeration path rather than the dashboard
+  rendering itself, but this still needs a focused device-side debug pass. Keep the local
+  Flask/backend workflow as the supported path for mobile-adjacent use until a unified import/source
+  abstraction is implemented and verified on iOS.
 - The old `src/RMC_3D.py` still imports Mayavi and executes visualization at import time. It should be refactored before being reused by the web app.
 - `src/STOG_plot.py` still contains top-level plotting code. The new package has basic STOG single-file plotting, but not the full multi-panel STOG workflow yet.
 - The Dashboard renders interactive SVG plots directly from parsed data. The PNG plot endpoint is
