@@ -139,7 +139,7 @@ const Dashboard = ({ directory, localRun }) => {
                     setStructureError(structureErr.response?.data?.error || 'No model structure detected');
                 }
             } catch (err) {
-                setError(err.response?.data?.error || 'Load a RMCprofile data folder to start.');
+                setError(err.response?.data?.error || null);
                 setStructure(null);
                 setStructureError(null);
             } finally {
