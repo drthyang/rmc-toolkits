@@ -13,6 +13,7 @@ function App() {
   const [browseStatus, setBrowseStatus] = useState(null);
   const [localRun, setLocalRun] = useState(null);
   const [localLoading, setLocalLoading] = useState(false);
+  const [watchFiles, setWatchFiles] = useState(false);
   const directoryInputRef = useRef(null);
   const staticMode = isStaticMode();
 
@@ -120,6 +121,15 @@ function App() {
           ) : (
             <form className="path-bar" onSubmit={handleDirectorySubmit}>
               <label htmlFor="data-path">Data path</label>
+              <label className="watch-toggle">
+                <input
+                  type="checkbox"
+                  checked={watchFiles}
+                  onChange={(event) => setWatchFiles(event.target.checked)}
+                />
+                <span aria-hidden="true" />
+                <b>Watch</b>
+              </label>
               <input
                 id="data-path"
                 type="text"
@@ -141,7 +151,7 @@ function App() {
           )}
           {browseStatus && <div className={`browse-status ${browseStatus.kind}`}>{browseStatus.text}</div>}
         </header>
-        {activePage === 'dashboard' && <Dashboard directory={currentDirectory} localRun={localRun} />}
+        {activePage === 'dashboard' && <Dashboard directory={currentDirectory} localRun={localRun} watchFiles={watchFiles} />}
         {activePage === 'structure' && (
           <StructurePage directory={currentDirectory} localRun={localRun} theme="light" />
         )}

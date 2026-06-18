@@ -94,13 +94,21 @@ def _choose_folder(initial_dir: Path) -> Path | None:
     return Path(selected).expanduser().resolve() if selected else None
 
 
-def _file_payload(path: Path, kind: str = "file") -> dict[str, str]:
-    return {
+def _file_payload(path: Path, kind: str = "file") -> dict[str, object]:
+    payload = {
         "name": path.name,
         "path": str(path),
         "type": kind,
         "plotKind": detect_plot_kind(path) if kind == "file" else None,
     }
+    try:
+        stat = path.stat()
+        payload["modified"] = stat.st_mtime
+        payload["size"] = stat.st_size if kind == "file" else None
+    except OSError:
+        payload["modified"] = None
+        payload["size"] = None
+    return payload
 
 
 def _find_rmc6f(directory: Path) -> Path:
@@ -155,7 +163,7 @@ def list_files():
         if not directory.exists() or not directory.is_dir():
             return jsonify({"error": "Directory not found"}), 404
 
-        paths: dict[Path, dict[str, str]] = {}
+        paths: dict[Path, dict[str, object]] = {}
         for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
             if item.is_dir() and not item.name.startswith("."):
                 paths[item] = _file_payload(item, "directory")

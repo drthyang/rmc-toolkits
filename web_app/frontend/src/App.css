@@ -113,7 +113,7 @@
 /* The path bar reads as one joined field: label prefix, input, ghost + primary buttons. */
 .path-bar {
   display: grid;
-  grid-template-columns: auto minmax(220px, 1fr) auto auto;
+  grid-template-columns: auto auto minmax(220px, 1fr) auto auto;
   align-items: center;
   gap: 0.45rem;
   border: 1px solid var(--border);
@@ -138,6 +138,59 @@
   white-space: nowrap;
 }
 
+.path-bar .watch-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 2.05rem;
+  padding: 0 0.35rem 0 0.15rem;
+  color: var(--muted);
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.watch-toggle span {
+  position: relative;
+  width: 2rem;
+  height: 1.1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.watch-toggle span::after {
+  content: "";
+  position: absolute;
+  top: 0.16rem;
+  left: 0.18rem;
+  width: 0.66rem;
+  height: 0.66rem;
+  border-radius: 50%;
+  background: var(--subtle);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.watch-toggle input:checked + span {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-bg));
+}
+
+.watch-toggle input:checked + span::after {
+  transform: translateX(0.86rem);
+  background: var(--accent);
+}
+
+.watch-toggle input:focus-visible + span {
+  box-shadow: var(--focus-ring);
+}
+
+.watch-toggle b {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .path-bar input {
   min-width: 0;
   height: 2.05rem;
@@ -147,6 +200,15 @@
   padding: 0 0.35rem;
   font-family: var(--font-mono);
   font-size: 0.85rem;
+}
+
+.path-bar .watch-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .path-bar input:focus {
@@ -251,11 +313,15 @@
   }
 
   .path-bar {
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: auto 1fr auto auto;
   }
 
-  .path-bar label {
+  .path-bar > label:not(.watch-toggle) {
     display: none;
+  }
+
+  .local-file-bar {
+    grid-template-columns: 1fr auto;
   }
 
   .app-footer {

@@ -48,6 +48,8 @@ class BackendApiTests(unittest.TestCase):
         files = {item["name"]: item for item in payload["files"]}
         self.assertEqual(payload["currentPath"], str(DATA))
         self.assertEqual(files["GNSe_FQ1.csv"]["plotKind"], "xray_sq")
+        self.assertGreater(files["GNSe_FQ1.csv"]["modified"], 0)
+        self.assertGreater(files["GNSe_FQ1.csv"]["size"], 0)
         self.assertEqual(files["GNSe-02.log"]["plotKind"], "r_value")
         self.assertIn("GNSe.rmc6f", files)
 

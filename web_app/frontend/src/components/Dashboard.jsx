@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { plotMetadataFromFile } from '../browserData';
@@ -7,8 +7,14 @@ import ModelSummary from './ModelSummary';
 import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
+const WATCH_INTERVAL_MS = 3000;
 
-const Dashboard = ({ directory, localRun }) => {
+const fileSignature = (items) => items
+    .map((file) => `${file.path}:${file.modified ?? ''}:${file.size ?? ''}:${file.plotKind ?? ''}`)
+    .sort()
+    .join('|');
+
+const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
@@ -16,10 +22,66 @@ const Dashboard = ({ directory, localRun }) => {
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
     const [showRValue, setShowRValue] = useState(false);
+    const signatureRef = useRef('');
+    const pollInFlightRef = useRef(false);
+
+    const loadDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
+        if (silent) {
+            setError(null);
+        } else {
+            setLoading(true);
+            setError(null);
+        }
+
+        try {
+            let loadedFiles = knownFiles;
+            if (!loadedFiles) {
+                const response = await axios.get(`${API_BASE_URL}/api/files`, {
+                    params: { dir: directory || '.' }
+                });
+                loadedFiles = response.data.files || [];
+            }
+
+            signatureRef.current = fileSignature(loadedFiles);
+            setFiles(loadedFiles);
+            const plotFiles = loadedFiles.filter((file) => file.plotKind);
+            const metadataEntries = await Promise.all(
+                plotFiles.map(async (file) => {
+                    try {
+                        const meta = await axios.get(`${API_BASE_URL}/api/plot/metadata`, {
+                            params: { path: file.path }
+                        });
+                        return [file.path, meta.data];
+                    } catch {
+                        return [file.path, null];
+                    }
+                })
+            );
+            setMetadata(Object.fromEntries(metadataEntries));
+
+            try {
+                const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
+                    params: { dir: directory || '.', maxPoints: 100 }
+                });
+                setStructure(structureResponse.data);
+                setStructureError(null);
+            } catch (structureErr) {
+                setStructure(null);
+                setStructureError(structureErr.response?.data?.error || 'No model structure detected');
+            }
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to load dashboard data');
+            setStructure(null);
+            setStructureError(null);
+        } finally {
+            if (!silent) setLoading(false);
+        }
+    }, [directory]);
 
     useEffect(() => {
         if (localRun) {
             const loadedFiles = localRun.files || [];
+            signatureRef.current = fileSignature(loadedFiles);
             setFiles(loadedFiles);
             setMetadata(Object.fromEntries(
                 loadedFiles
@@ -33,51 +95,34 @@ const Dashboard = ({ directory, localRun }) => {
             return;
         }
 
-        const fetchDashboard = async () => {
-            setLoading(true);
-            setError(null);
+        loadDashboard();
+    }, [directory, loadDashboard, localRun]);
+
+    useEffect(() => {
+        if (!watchFiles || localRun) return undefined;
+
+        const pollForUpdates = async () => {
+            if (pollInFlightRef.current) return;
+            pollInFlightRef.current = true;
             try {
                 const response = await axios.get(`${API_BASE_URL}/api/files`, {
                     params: { dir: directory || '.' }
                 });
                 const loadedFiles = response.data.files || [];
-                setFiles(loadedFiles);
-                const plotFiles = loadedFiles.filter((file) => file.plotKind);
-                const metadataEntries = await Promise.all(
-                    plotFiles.map(async (file) => {
-                        try {
-                            const meta = await axios.get(`${API_BASE_URL}/api/plot/metadata`, {
-                                params: { path: file.path }
-                            });
-                            return [file.path, meta.data];
-                        } catch {
-                            return [file.path, null];
-                        }
-                    })
-                );
-                setMetadata(Object.fromEntries(metadataEntries));
-
-                try {
-                    const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
-                        params: { dir: directory || '.', maxPoints: 100 }
-                    });
-                    setStructure(structureResponse.data);
-                    setStructureError(null);
-                } catch (structureErr) {
-                    setStructure(null);
-                    setStructureError(structureErr.response?.data?.error || 'No model structure detected');
+                const nextSignature = fileSignature(loadedFiles);
+                if (nextSignature !== signatureRef.current) {
+                    await loadDashboard({ silent: true, loadedFiles });
                 }
             } catch (err) {
-                setError(err.response?.data?.error || 'Failed to load dashboard data');
-                setStructure(null);
-                setStructureError(null);
+                setError(err.response?.data?.error || 'Failed to monitor dashboard files');
             } finally {
-                setLoading(false);
+                pollInFlightRef.current = false;
             }
         };
 
-        fetchDashboard();
-    }, [directory, localRun]);
+        const interval = window.setInterval(pollForUpdates, WATCH_INTERVAL_MS);
+        return () => window.clearInterval(interval);
+    }, [directory, loadDashboard, localRun, watchFiles]);
 
     const plotFiles = useMemo(() => {
         return files
@@ -104,7 +149,11 @@ const Dashboard = ({ directory, localRun }) => {
                         <span className="rwp-chip">Rwp {Number(meta.metrics.rwp).toPrecision(4)}</span>
                     )}
                 </div>
-                <InteractivePlot file={file} plotData={file.plotData} />
+                <InteractivePlot
+                    file={file}
+                    plotData={file.plotData}
+                    refreshKey={`${file.modified ?? ''}:${file.size ?? ''}`}
+                />
                 {file.parseError && <div className="dashboard-error">{file.parseError}</div>}
             </article>
         );
@@ -131,7 +180,14 @@ const Dashboard = ({ directory, localRun }) => {
                         </button>
                     </div>
                 </div>
-                {showRValue && <InteractivePlot file={rValueFile} plotData={rValueFile.plotData} variant="wide" />}
+                {showRValue && (
+                    <InteractivePlot
+                        file={rValueFile}
+                        plotData={rValueFile.plotData}
+                        refreshKey={`${rValueFile.modified ?? ''}:${rValueFile.size ?? ''}`}
+                        variant="wide"
+                    />
+                )}
             </article>
         );
     };
