@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { plotMetadataFromFile, readAndParseLocalPlotFile } from '../browserData';
@@ -7,6 +7,12 @@ import ModelSummary from './ModelSummary';
 import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
+const WATCH_INTERVAL_MS = 3000;
+
+const fileSignature = (items) => items
+    .map((file) => `${file.path}:${file.modified ?? ''}:${file.size ?? ''}:${file.plotKind ?? ''}`)
+    .sort()
+    .join('|');
 
 const rValueLogParts = (name) => {
     const match = name.match(/^(.+)-(\d{2,})\.log$/);
@@ -73,7 +79,7 @@ const combineRValueFiles = (rValueFiles) => {
     };
 };
 
-const Dashboard = ({ directory, localRun }) => {
+const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
@@ -82,6 +88,59 @@ const Dashboard = ({ directory, localRun }) => {
     const [loading, setLoading] = useState(false);
     const [localStatus, setLocalStatus] = useState(null);
     const [showRValue, setShowRValue] = useState(false);
+    const [showLoadedFiles, setShowLoadedFiles] = useState(false);
+    const [hiddenPlotPaths, setHiddenPlotPaths] = useState(() => new Set());
+    const signatureRef = useRef('');
+    const pollInFlightRef = useRef(false);
+
+    const loadServerDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
+        if (!silent) setLoading(true);
+        setError(null);
+        setLocalStatus(null);
+        try {
+            let loadedFiles = knownFiles;
+            if (!loadedFiles) {
+                const response = await axios.get(`${API_BASE_URL}/api/files`, {
+                    params: { dir: directory || '.' }
+                });
+                loadedFiles = response.data.files || [];
+            }
+
+            signatureRef.current = fileSignature(loadedFiles);
+            setFiles(loadedFiles);
+            const plotFiles = loadedFiles.filter((file) => file.plotKind);
+            const metadataEntries = await Promise.all(
+                plotFiles.map(async (file) => {
+                    try {
+                        const meta = await axios.get(`${API_BASE_URL}/api/plot/metadata`, {
+                            params: { path: file.path }
+                        });
+                        return [file.path, meta.data];
+                    } catch {
+                        return [file.path, null];
+                    }
+                })
+            );
+            setMetadata(Object.fromEntries(metadataEntries));
+
+            try {
+                const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
+                    params: { dir: directory || '.', maxPoints: 100 }
+                });
+                setStructure(structureResponse.data);
+                setStructureError(null);
+            } catch (structureErr) {
+                setStructure(null);
+                setStructureError(structureErr.response?.data?.error || 'No model structure detected');
+            }
+        } catch (err) {
+            setError(err.response?.data?.error || null);
+            setStructure(null);
+            setStructureError(null);
+        } finally {
+            if (!silent) setLoading(false);
+        }
+    }, [directory]);
 
     useEffect(() => {
         if (localRun) {
@@ -89,6 +148,7 @@ const Dashboard = ({ directory, localRun }) => {
             const loadedFiles = localRun.files || [];
             const plotFiles = loadedFiles.filter((file) => file.plotKind);
             const diagnostics = localRun.diagnostics;
+            signatureRef.current = fileSignature(loadedFiles);
             setFiles(loadedFiles);
             setMetadata(Object.fromEntries(
                 plotFiles
@@ -123,6 +183,7 @@ const Dashboard = ({ directory, localRun }) => {
                 if (cancelled) return;
                 const parsedByPath = Object.fromEntries(parsedEntries);
                 const nextFiles = loadedFiles.map((file) => parsedByPath[file.path] || file);
+                signatureRef.current = fileSignature(nextFiles);
                 setFiles(nextFiles);
                 setMetadata(Object.fromEntries(
                     nextFiles
@@ -130,7 +191,7 @@ const Dashboard = ({ directory, localRun }) => {
                         .map((file) => [file.path, plotMetadataFromFile(file)])
                 ));
                 setLoading(false);
-                setLocalStatus(`Loaded ${plotFiles.length} plot files`);
+                setLocalStatus(null);
             };
 
             parsePlots();
@@ -168,58 +229,49 @@ const Dashboard = ({ directory, localRun }) => {
             };
         }
 
-        const fetchDashboard = async () => {
-            setLoading(true);
-            setError(null);
-            setLocalStatus(null);
+        loadServerDashboard();
+    }, [directory, loadServerDashboard, localRun]);
+
+    useEffect(() => {
+        setShowLoadedFiles(false);
+        setHiddenPlotPaths(new Set());
+    }, [directory, localRun]);
+
+    useEffect(() => {
+        if (!watchFiles || localRun) return undefined;
+
+        const pollForUpdates = async () => {
+            if (pollInFlightRef.current) return;
+            pollInFlightRef.current = true;
             try {
                 const response = await axios.get(`${API_BASE_URL}/api/files`, {
                     params: { dir: directory || '.' }
                 });
                 const loadedFiles = response.data.files || [];
-                setFiles(loadedFiles);
-                const plotFiles = loadedFiles.filter((file) => file.plotKind);
-                const metadataEntries = await Promise.all(
-                    plotFiles.map(async (file) => {
-                        try {
-                            const meta = await axios.get(`${API_BASE_URL}/api/plot/metadata`, {
-                                params: { path: file.path }
-                            });
-                            return [file.path, meta.data];
-                        } catch {
-                            return [file.path, null];
-                        }
-                    })
-                );
-                setMetadata(Object.fromEntries(metadataEntries));
-
-                try {
-                    const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
-                        params: { dir: directory || '.', maxPoints: 100 }
-                    });
-                    setStructure(structureResponse.data);
-                    setStructureError(null);
-                } catch (structureErr) {
-                    setStructure(null);
-                    setStructureError(structureErr.response?.data?.error || 'No model structure detected');
+                const nextSignature = fileSignature(loadedFiles);
+                if (nextSignature !== signatureRef.current) {
+                    await loadServerDashboard({ silent: true, loadedFiles });
                 }
             } catch (err) {
-                setError(err.response?.data?.error || null);
-                setStructure(null);
-                setStructureError(null);
+                setError(err.response?.data?.error || 'Failed to monitor dashboard files');
             } finally {
-                setLoading(false);
+                pollInFlightRef.current = false;
             }
         };
 
-        fetchDashboard();
-    }, [directory, localRun]);
+        const interval = window.setInterval(pollForUpdates, WATCH_INTERVAL_MS);
+        return () => window.clearInterval(interval);
+    }, [directory, loadServerDashboard, localRun, watchFiles]);
 
-    const plotFiles = useMemo(() => {
+    const allPlotFiles = useMemo(() => {
         return files
             .filter((file) => file.plotKind)
             .sort(comparePlotFiles);
     }, [files]);
+
+    const plotFiles = useMemo(() => {
+        return allPlotFiles.filter((file) => !hiddenPlotPaths.has(file.path));
+    }, [allPlotFiles, hiddenPlotPaths]);
 
     const rValueFiles = useMemo(
         () => plotFiles.filter((file) => file.plotKind === 'r_value'),
@@ -231,6 +283,18 @@ const Dashboard = ({ directory, localRun }) => {
         [plotFiles]
     );
 
+    const handleTogglePlotVisibility = (path) => {
+        setHiddenPlotPaths((current) => {
+            const next = new Set(current);
+            if (next.has(path)) {
+                next.delete(path);
+            } else {
+                next.add(path);
+            }
+            return next;
+        });
+    };
+
     const renderPlotBody = (file, variant) => {
         if (file.sourceFile && !file.plotData && !file.parseError) {
             return <div className="plot-loading">Parsing plot file...</div>;
@@ -238,7 +302,14 @@ const Dashboard = ({ directory, localRun }) => {
         if (file.sourceFile && file.parseError) {
             return null;
         }
-        return <InteractivePlot file={file} plotData={file.plotData} variant={variant} />;
+        return (
+            <InteractivePlot
+                file={file}
+                plotData={file.plotData}
+                refreshKey={`${file.modified ?? ''}:${file.size ?? ''}`}
+                variant={variant}
+            />
+        );
     };
 
     const renderPlotCard = (file) => {
@@ -284,6 +355,58 @@ const Dashboard = ({ directory, localRun }) => {
         );
     };
 
+    const renderLoadedFilesPanel = () => {
+        if (allPlotFiles.length === 0) {
+            return structureError ? <div className="model-summary-empty">{structureError}</div> : null;
+        }
+
+        return (
+            <article className={`plot-card loaded-files-card${showLoadedFiles ? '' : ' is-collapsed'}`}>
+                <div className="plot-card-header">
+                    <div>
+                        <h3>
+                            Loaded {allPlotFiles.length} plot {allPlotFiles.length === 1 ? 'file' : 'files'}
+                        </h3>
+                        {structureError && <p>{structureError}</p>}
+                    </div>
+                    <button
+                        type="button"
+                        className="panel-toggle"
+                        onClick={() => setShowLoadedFiles((value) => !value)}
+                        aria-expanded={showLoadedFiles}
+                    >
+                        {showLoadedFiles ? 'Hide' : 'Show'}
+                    </button>
+                </div>
+                {showLoadedFiles && (
+                    <ul className="loaded-files-list">
+                        {allPlotFiles.map((file) => {
+                            const isHidden = hiddenPlotPaths.has(file.path);
+                            return (
+                                <li key={file.path}>
+                                    <span className={`loaded-file-badge${isHidden ? ' is-hidden' : ''}`}>
+                                        <span className="loaded-file-kind">{file.plotKind}</span>
+                                        <span className="loaded-file-name">{file.name}</span>
+                                        <button
+                                            type="button"
+                                            className="loaded-file-hide"
+                                            onClick={() => handleTogglePlotVisibility(file.path)}
+                                            aria-label={isHidden ? `Show ${file.name} chart` : `Hide ${file.name} chart`}
+                                            aria-pressed={isHidden}
+                                            title={isHidden ? 'Show chart' : 'Hide chart'}
+                                        >
+                                            &times;
+                                        </button>
+                                    </span>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+            </article>
+        );
+    };
+
     return (
         <section className="dashboard-page">
             <div className="dashboard-toolbar">
@@ -300,9 +423,7 @@ const Dashboard = ({ directory, localRun }) => {
 
             <ModelSummary structure={structure} />
 
-            {!structure && structureError && (
-                <div className="model-summary-empty">{structureError}</div>
-            )}
+            {renderLoadedFilesPanel()}
 
             {renderRValuePanel()}
 
@@ -310,7 +431,7 @@ const Dashboard = ({ directory, localRun }) => {
                 {gridFiles.map((file) => renderPlotCard(file))}
             </div>
 
-            {!loading && plotFiles.length === 0 && (
+            {!loading && allPlotFiles.length === 0 && (
                 <div className="empty-state">Open a run folder to populate the dashboard.</div>
             )}
 

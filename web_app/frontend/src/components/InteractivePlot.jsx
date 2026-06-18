@@ -89,7 +89,7 @@ const AxisLabel = ({ label, x, y, textAnchor = 'middle', rotate = false }) => {
     );
 };
 
-const InteractivePlot = ({ file, variant, plotData }) => {
+const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const wide = variant === 'wide';
     const [plot, setPlot] = useState(null);
     const [error, setError] = useState(null);
@@ -121,7 +121,7 @@ const InteractivePlot = ({ file, variant, plotData }) => {
         };
 
         fetchData();
-    }, [file.path, plotData]);
+    }, [file.path, plotData, refreshKey]);
 
     // Measured data first (drawn underneath, first palette color); the
     // calculated curve follows and is drawn on top of the hollow markers.
