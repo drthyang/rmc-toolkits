@@ -35,6 +35,9 @@ Goal: move from file-by-file plotting to project-level analysis.
   - header-level data path controls,
   - dashboard page for run plots and model summary,
   - KDE / 3D page for structure exploration.
+- Add optional local Live Data monitoring so charts refresh when files in the selected run folder
+  change. **Done for the Flask dashboard.**
+- Add loaded-file controls for hiding/showing individual dashboard charts. **Done.**
 - Expand the current dashboard with richer run metadata, warnings, and optional comparison summaries.
 - Add run comparison support for multiple directories.
 
@@ -54,7 +57,8 @@ Goal: replace static inspection with interactive scientific workflows.
   - contour toggle.
 - Maintain the current server-side SciPy KDE path and add export/reproducibility controls.
 - Maintain the hosted GitHub Pages path with browser-side parsing and Web Worker KDE for users who
-  want to inspect local files without installing the package.
+  want to inspect local files without installing the package. Live Data remains local-Flask-only
+  because static GitHub Pages cannot watch filesystem changes.
 - Extend the Three.js structure viewer:
   - element visibility toggles,
   - configurable atom coloring,

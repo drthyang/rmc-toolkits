@@ -98,6 +98,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const [hover, setHover] = useState(null);
     const [drag, setDrag] = useState(null);
     const svgRef = useRef(null);
+    const loadedPathRef = useRef(file.path);
     const effectivePlot = plotData || plot;
 
     useEffect(() => {
@@ -106,14 +107,18 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         }
 
         const fetchData = async () => {
-            setPlot(null);
             setError(null);
-            setHidden(new Set());
-            setXDomain(null);
             try {
                 const response = await axios.get(`${API_BASE_URL}/api/plot/data`, {
                     params: { path: file.path }
                 });
+                if (loadedPathRef.current !== file.path) {
+                    setHidden(new Set());
+                    setXDomain(null);
+                    setHover(null);
+                    setDrag(null);
+                    loadedPathRef.current = file.path;
+                }
                 setPlot(response.data);
             } catch (err) {
                 setError(err.response?.data?.error || 'Failed to load interactive plot');
@@ -282,7 +287,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         if (next[1] - next[0] > 1e-9) setXDomain(next);
     };
 
-    if (error) return <div className="interactive-plot-error">{error}</div>;
+    if (error && !effectivePlot) return <div className="interactive-plot-error">{error}</div>;
     if (!effectivePlot) return <div className="interactive-plot-loading">Loading plot...</div>;
 
     // Keep the tooltip on the emptier side of the crosshair.

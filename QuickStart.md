@@ -1,9 +1,38 @@
 # QuickStart
 
-Run `rmc-toolkits` locally to inspect RMCProfile output files, plots, structures, KDE slices, and
-the 3D model viewer.
+Use `rmc-toolkits` to inspect RMCProfile run folders with interactive plots, model information,
+KDE slices, and a 3D structure view.
 
-## 1. Install
+## 1. Open The Hosted Dashboard
+
+Go to:
+
+[https://drthyang.github.io/rmc-toolkits/](https://drthyang.github.io/rmc-toolkits/)
+
+Click `Select Folder` and choose a local RMCProfile run folder. Your files stay on your machine.
+
+## 2. Use A Run Folder
+
+A typical folder contains files like:
+
+```text
+sample.rmc6f
+sample-01.log
+sample_FQ1.csv
+sample_SQ1.csv
+sample_FT_XFQ1.csv
+sample_bragg.csv
+```
+
+After loading, use:
+
+- `Dashboard` for plots, loaded-file badges, and hide/show chart toggles.
+- `KDE / 3D` for model information, KDE slices, and the folded unit-cell view.
+
+## 3. Run Locally For Live Data
+
+Use the local Flask app when you want `Live Data`, which watches the selected folder and refreshes
+charts when files are updated.
 
 From the repository root:
 
@@ -14,87 +43,35 @@ pip install -r web_app/backend/requirements.txt
 
 cd web_app/frontend
 npm install
+npm run build
+
+cd ../..
+python web_app/backend/app.py
 ```
 
-Use Node.js compatible with Vite 7, such as Node `20.19+` or `22.12+`.
+Open:
 
-## 2. Start The Backend
+[http://127.0.0.1:5000/](http://127.0.0.1:5000/)
 
-From the repository root:
+Click `Select Folder`, choose your run folder, then turn on `Live Data`.
+
+## 4. If Port 5000 Is Busy
+
+Use another port:
 
 ```bash
-source .venv/bin/activate
 RMC_TOOLKITS_PORT=5050 python web_app/backend/app.py
 ```
 
-The API runs at `http://localhost:5050`.
+Then open:
 
-## 3. Start The Frontend
+[http://127.0.0.1:5050/](http://127.0.0.1:5050/)
 
-In a second terminal:
+## Supported Files
 
-```bash
-cd web_app/frontend
-VITE_API_BASE_URL=http://localhost:5050 npm run dev
-```
-
-Open the Vite URL, usually `http://localhost:5173/`.
-
-## 4. Read The Sample Dataset
-
-The app opens the included sample folder by default:
-
-```text
-data/
-```
-
-You should see:
-
-- Dashboard plots for R-value, Bragg, S(Q), xPDF, and PDF partials.
-- Model information from `data/GNSe.rmc6f`.
-- KDE / 3D controls on the `KDE / 3D` page.
-
-## 5. Load Your Own Dataset
-
-Use a folder containing RMCProfile-style outputs, for example:
-
-```text
-your-run/
-  sample.rmc6f
-  sample.log
-  sample_FQ1.csv
-  sample_FT_XFQ1.csv
-  sample_bragg.csv
-```
-
-Either type the folder path in the app's `Data path` field and click `Load`, or start the backend
-with a custom data root:
-
-```bash
-RMC_TOOLKITS_DATA_ROOT=/absolute/path/to/your/runs RMC_TOOLKITS_PORT=5050 python web_app/backend/app.py
-```
-
-Then load a folder path relative to that data root.
-
-## Common File Patterns
-
-- `*.rmc6f` for structure and KDE / 3D views.
+- `*.rmc6f` for model information, KDE, and 3D structure views.
 - `*.log` for R-value history.
-- `*_FQ1.csv` or `*_SQ1.csv` for S(Q).
-- `*_FT_XFQ1.csv` or `*PDF*.csv` for real-space PDF/G(r).
+- `*_FQ1.csv` and `*_SQ1.csv` for S(Q).
+- `*_FT_XFQ1.csv` and `*PDF*.csv` for PDF/G(r).
 - `*_bragg.csv` for Bragg profiles.
-- `*partials*.csv` for partial PDFs.
-
-## Quick Check
-
-Backend health:
-
-```bash
-curl http://localhost:5050/api/health
-```
-
-Expected response includes:
-
-```json
-{"status": "ok"}
-```
+- `scale_ft.gr`, `scale_ft.sq`, and `scale_ft_rmc.fq` for basic STOG outputs.
