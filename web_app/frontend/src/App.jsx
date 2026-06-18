@@ -7,7 +7,7 @@ import { buildLocalRun, isStaticMode } from './browserData';
 import './App.css';
 
 const REPO_URL = 'https://github.com/drthyang/rmc-toolkits';
-const STATUS_TIMEOUT_MS = 7000;
+const STATUS_TIMEOUT_MS = 15000;
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
