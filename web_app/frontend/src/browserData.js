@@ -256,6 +256,9 @@ export const buildLocalRun = async (fileList) => {
                 text: await file.text()
             };
         }));
+    if (!files.length) {
+        throw new Error('No supported RMCprofile files were selected');
+    }
 
     const enrichedFiles = files.map((file) => {
         if (!file.plotKind) return file;
@@ -267,9 +270,13 @@ export const buildLocalRun = async (fileList) => {
     });
 
     const rmc6f = enrichedFiles.find((file) => file.name.endsWith('.rmc6f'));
+    const directoryRoot = enrichedFiles
+        .map((file) => file.path)
+        .find((path) => path.includes('/'))
+        ?.split('/')[0];
 
     return {
-        name: enrichedFiles[0]?.path.split('/')[0] || 'Local files',
+        name: directoryRoot || 'Local files',
         files: enrichedFiles,
         structure: null,
         structureFile: rmc6f || null,
