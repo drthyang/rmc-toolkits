@@ -6,6 +6,7 @@ import io
 import math
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -103,12 +104,40 @@ def _file_payload(path: Path, kind: str = "file") -> dict[str, str]:
     }
 
 
+def _run_stem_from_output_name(name: str) -> tuple[int, str] | None:
+    patterns = (
+        (0, r"^(.+)-\d{2,}\.log$"),
+        (1, r"^(.+)_FT_XFQ\d+\.csv$"),
+        (1, r"^(.+)_[FS]Q\d+\.csv$"),
+        (1, r"^(.+)_bragg\.csv$"),
+        (1, r"^(.+)_PDF(?:partials|\d+)?\.csv$"),
+        (2, r"^Frac_coord_(.+)\.txt$"),
+    )
+    for priority, pattern in patterns:
+        match = re.match(pattern, name)
+        if match:
+            return priority, match.group(1)
+    return None
+
+
 def _find_rmc6f(directory: Path) -> Path:
     if directory.is_file() and directory.suffix == ".rmc6f":
         return directory
     rmc6f_files = sorted(directory.glob("*.rmc6f"))
     if not rmc6f_files:
         raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    rmc6f_by_stem = {path.stem: path for path in rmc6f_files}
+    output_stems: list[tuple[int, str, str]] = []
+    for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
+        if not item.is_file():
+            continue
+        stem_match = _run_stem_from_output_name(item.name)
+        if stem_match:
+            priority, stem = stem_match
+            output_stems.append((priority, item.name.lower(), stem))
+    for _, _, stem in sorted(output_stems):
+        if stem in rmc6f_by_stem:
+            return rmc6f_by_stem[stem]
     return rmc6f_files[0]
 
 

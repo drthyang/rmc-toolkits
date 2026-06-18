@@ -51,6 +51,17 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(files["GNSe-02.log"]["plotKind"], "r_value")
         self.assertIn("GNSe.rmc6f", files)
 
+    def test_find_rmc6f_prefers_output_stem_match(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir)
+            earlier = directory / "alpha.rmc6f"
+            expected = directory / "beta.rmc6f"
+            earlier.write_text("", encoding="utf-8")
+            expected.write_text("", encoding="utf-8")
+            (directory / "beta-01.log").write_text("", encoding="utf-8")
+
+            self.assertEqual(backend_app._find_rmc6f(directory), expected)
+
     def test_rejects_paths_outside_data_root(self):
         response = self.client.get("/api/files", query_string={"dir": "/private/tmp"})
 

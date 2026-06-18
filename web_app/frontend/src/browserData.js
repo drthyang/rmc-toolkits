@@ -27,6 +27,49 @@ const isSupportedFile = (name) => (
 );
 
 const basename = (path) => path.split('/').pop() || path;
+const dirname = (path) => path.includes('/') ? path.split('/').slice(0, -1).join('/') : '';
+
+const runStemFromOutputName = (name) => {
+    const patterns = [
+        [0, /^(.+)-\d{2,}\.log$/],
+        [1, /^(.+)_FT_XFQ\d+\.csv$/],
+        [1, /^(.+)_[FS]Q\d+\.csv$/],
+        [1, /^(.+)_bragg\.csv$/],
+        [1, /^(.+)_PDF(?:partials|\d+)?\.csv$/],
+        [2, /^Frac_coord_(.+)\.txt$/]
+    ];
+    for (const [priority, pattern] of patterns) {
+        const match = name.match(pattern);
+        if (match) return { priority, stem: match[1] };
+    }
+    return null;
+};
+
+const chooseStructureFile = (files) => {
+    const rmc6fFiles = files.filter((file) => file.name.endsWith('.rmc6f'));
+    if (!rmc6fFiles.length) return null;
+    const rmc6fByLocationAndStem = new Map(
+        rmc6fFiles.map((file) => [`${dirname(file.path)}/${file.name.replace(/\.rmc6f$/, '')}`, file])
+    );
+    const outputStems = files
+        .map((file) => {
+            const stemMatch = runStemFromOutputName(file.name);
+            if (!stemMatch) return null;
+            return {
+                ...stemMatch,
+                directory: dirname(file.path),
+                sortName: file.name.toLowerCase()
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.priority - b.priority || a.sortName.localeCompare(b.sortName));
+
+    for (const output of outputStems) {
+        const match = rmc6fByLocationAndStem.get(`${output.directory}/${output.stem}`);
+        if (match) return match;
+    }
+    return rmc6fFiles[0];
+};
 
 const parseNumberRows = (lines, startIndex = 0, separator = /\s+/) => {
     const rows = [];
@@ -270,7 +313,7 @@ export const buildLocalRun = async (fileList) => {
         throw new Error(`No supported RMCprofile files found in ${selected.length} selected files`);
     }
 
-    const rmc6f = files.find((file) => file.name.endsWith('.rmc6f'));
+    const rmc6f = chooseStructureFile(files);
     const directoryRoot = files
         .map((file) => file.path)
         .find((path) => path.includes('/'))
