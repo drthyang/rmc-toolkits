@@ -14,7 +14,6 @@ function App() {
   const [localRun, setLocalRun] = useState(null);
   const [localLoading, setLocalLoading] = useState(false);
   const directoryInputRef = useRef(null);
-  const fileInputRef = useRef(null);
   const staticMode = isStaticMode();
 
   useEffect(() => {
@@ -102,19 +101,11 @@ function App() {
               <label htmlFor="local-run-files">Local run</label>
               <input
                 ref={directoryInputRef}
-                id="local-run-folder"
-                className="visually-hidden"
-                type="file"
-                multiple
-                webkitdirectory=""
-                onChange={handleLocalFiles}
-              />
-              <input
-                ref={fileInputRef}
                 id="local-run-files"
                 className="visually-hidden"
                 type="file"
                 multiple
+                webkitdirectory=""
                 onChange={handleLocalFiles}
               />
               <div className="selected-run-name">{localRun?.name || 'No folder selected'}</div>
@@ -124,14 +115,6 @@ function App() {
                 disabled={localLoading}
               >
                 {localLoading ? 'Reading' : 'Select Folder'}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={localLoading}
-              >
-                Files
               </button>
             </div>
           ) : (
