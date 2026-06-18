@@ -68,6 +68,13 @@ function App() {
     }
   };
 
+  const handleStaticLiveDataNotice = () => {
+    setBrowseStatus({
+      kind: 'info',
+      text: 'Live Data is only supported in the local Flask app. GitHub Pages cannot watch local file changes.'
+    });
+  };
+
   return (
     <div className="app-container">
       <main className="main-content">
@@ -98,25 +105,36 @@ function App() {
             </nav>
           </div>
           {staticMode ? (
-            <div className="path-bar local-file-bar">
-              <label htmlFor="local-run-files">Local run</label>
-              <input
-                ref={directoryInputRef}
-                id="local-run-files"
-                className="visually-hidden"
-                type="file"
-                multiple
-                webkitdirectory=""
-                onChange={handleLocalFiles}
-              />
-              <div className="selected-run-name">{localRun?.name || 'No folder selected'}</div>
+            <div className="path-controls">
               <button
                 type="button"
-                onClick={() => directoryInputRef.current?.click()}
-                disabled={localLoading}
+                className="watch-toggle watch-toggle-button"
+                onClick={handleStaticLiveDataNotice}
+                aria-pressed="false"
               >
-                {localLoading ? 'Reading' : 'Select Folder'}
+                <span aria-hidden="true" />
+                <b>Live Data</b>
               </button>
+              <div className="path-bar local-file-bar">
+                <label htmlFor="local-run-files">Local run</label>
+                <input
+                  ref={directoryInputRef}
+                  id="local-run-files"
+                  className="visually-hidden"
+                  type="file"
+                  multiple
+                  webkitdirectory=""
+                  onChange={handleLocalFiles}
+                />
+                <div className="selected-run-name">{localRun?.name || 'No folder selected'}</div>
+                <button
+                  type="button"
+                  onClick={() => directoryInputRef.current?.click()}
+                  disabled={localLoading}
+                >
+                  {localLoading ? 'Reading' : 'Select Folder'}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="path-controls">
