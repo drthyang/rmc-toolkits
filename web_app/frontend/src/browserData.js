@@ -243,46 +243,50 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
     };
 };
 
+export const readAndParseLocalPlotFile = async (file) => {
+    if (!file.sourceFile) {
+        throw new Error(`${file.name} is not backed by a browser file`);
+    }
+    const text = await file.sourceFile.text();
+    return plotDataFromText({ ...file, text });
+};
+
 export const buildLocalRun = async (fileList) => {
-    const files = await Promise.all([...fileList]
+    const selected = [...fileList];
+    const files = selected
         .filter((file) => isSupportedFile(file.name))
-        .map(async (file) => {
+        .map((file) => {
             const path = file.webkitRelativePath || file.name;
             return {
                 name: basename(path),
                 path,
                 type: 'file',
                 plotKind: detectPlotKind(basename(path)),
-                text: await file.text()
+                sourceFile: file,
+                size: file.size
             };
-        }));
-
-    const enrichedFiles = files.map((file) => {
-        if (!file.plotKind) return file;
-        try {
-            return { ...file, plotData: plotDataFromText(file) };
-        } catch (error) {
-            return { ...file, parseError: error.message };
-        }
-    });
-
-    const rmc6f = enrichedFiles.find((file) => file.name.endsWith('.rmc6f'));
-    let structure = null;
-    let structureError = null;
-    if (rmc6f) {
-        try {
-            structure = structureFromRmc6f(rmc6f, 75000);
-        } catch (error) {
-            structureError = error.message;
-        }
-    } else {
-        structureError = 'No model structure detected';
+        });
+    if (!files.length) {
+        throw new Error(`No supported RMCprofile files found in ${selected.length} selected files`);
     }
 
+    const rmc6f = files.find((file) => file.name.endsWith('.rmc6f'));
+    const directoryRoot = files
+        .map((file) => file.path)
+        .find((path) => path.includes('/'))
+        ?.split('/')[0];
+
     return {
-        name: enrichedFiles[0]?.path.split('/')[0] || 'Local files',
-        files: enrichedFiles,
-        structure,
-        structureError
+        name: directoryRoot || 'Local files',
+        files,
+        structure: null,
+        structureFile: rmc6f || null,
+        structureError: rmc6f ? 'Structure data loads when needed' : 'No model structure detected',
+        diagnostics: {
+            selectedFileCount: selected.length,
+            supportedFileCount: files.length,
+            plotFileCount: files.filter((file) => file.plotKind).length,
+            hasStructureFile: Boolean(rmc6f)
+        }
     };
 };

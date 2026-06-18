@@ -117,13 +117,30 @@
     max-height: 430px;
 }
 
+.plot-loading {
+    display: grid;
+    place-items: center;
+    min-height: 14rem;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
 .dashboard-error,
-.empty-state {
+.empty-state,
+.dashboard-local-status {
     border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
     color: var(--danger);
     background: var(--danger-soft);
     border-radius: 12px;
     padding: 1rem;
+}
+
+.dashboard-local-status {
+    margin-bottom: 0.85rem;
+    border-color: var(--border);
+    color: var(--muted);
+    background: var(--panel-bg);
+    font-size: 0.84rem;
 }
 
 .empty-state {
