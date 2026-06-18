@@ -5,6 +5,8 @@ Post-processing utilities and a local-first dashboard for **RMCProfile** and **S
 Launch the hosted RMCprofile Run Monitor dashboard:
 [https://drthyang.github.io/rmc-toolkits/](https://drthyang.github.io/rmc-toolkits/)
 
+For the shortest setup path, see [QuickStart.md](QuickStart.md).
+
 `rmc-toolkits` now has two active layers:
 
 - **Python package (`rmc_toolkits/`)** for parsing RMC/STOG outputs, building plots, converting
@@ -19,8 +21,12 @@ workflows.
 
 - **Run dashboard**: detects supported RMCProfile outputs in a folder and renders browser-native
   SVG charts with hover readouts, legend toggles, and drag-to-zoom.
-- **Local data loading**: opens the default `data/` sample, accepts a data-path entry, and can use
-  the native folder picker to register external run folders for local desktop sessions.
+- **Loaded-file controls**: lists detected plot files in the dashboard and lets users hide or show
+  individual charts from the loaded-file badges.
+- **Local data loading**: accepts a run-folder path, uses a native folder picker in local desktop
+  sessions, and supports browser-only folder selection on GitHub Pages.
+- **Live Data monitoring**: in the local Flask app, watches the selected folder and refreshes charts
+  when supported files change.
 - **Plot API**: returns plot metadata, PNG renderings, and parsed data series for R-value logs,
   S(Q), G(r), Bragg, PDF, PDF partials, and basic STOG outputs.
 - **Structure conversion**: writes `Frac_coord_<stem>.txt` from an `.rmc6f` file.
@@ -74,14 +80,23 @@ npm install
 
 ## Running The Web App
 
-Start the backend:
+For normal local use, build the frontend once and serve it from Flask:
+
+```bash
+cd web_app/frontend
+npm install
+npm run build
+cd ../..
+```
+
+Start the local app:
 
 ```bash
 source .venv/bin/activate
 python web_app/backend/app.py
 ```
 
-The backend listens on `http://localhost:5000` by default. On macOS, port 5000 can be occupied by
+Open `http://127.0.0.1:5000/`. On macOS, port 5000 can be occupied by
 AirPlay Receiver; use another port if needed:
 
 ```bash
@@ -94,7 +109,10 @@ By default, the backend only serves paths under the repository root. To browse a
 RMC_TOOLKITS_DATA_ROOT=/absolute/path/to/rmc/data python web_app/backend/app.py
 ```
 
-Start the frontend in a second shell:
+Use `Select Folder` to choose a run folder. Turn on `Live Data` when you want the local app to
+monitor that folder and refresh charts after files are updated.
+
+For frontend development, start Vite in a second shell:
 
 ```bash
 cd web_app/frontend
@@ -121,9 +139,10 @@ There are two supported hosting modes:
 - **GitHub Pages static dashboard**: easiest public link. Users select a local run folder in the
   browser, and the dashboard parses supported plot files on their machine. This mode does not upload
   data and does not require a Python server. Static mode also renders uploaded `.rmc6f` structures
-  with a browser-side Gaussian KDE worker and 3D model view.
+  with a browser-side Gaussian KDE worker and 3D model view. Live Data monitoring is not available
+  in this mode because GitHub Pages cannot watch local filesystem changes.
 - **Flask web service**: full-featured deployment with server-side file browsing, structure
-  sampling, conversion, and SciPy KDE computation.
+  sampling, conversion, SciPy KDE computation, and Live Data folder monitoring.
 
 ### GitHub Pages Static Dashboard
 

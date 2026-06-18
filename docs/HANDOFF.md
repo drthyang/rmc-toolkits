@@ -88,6 +88,20 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 - Added the hosted dashboard link near the top of `README.md` and tightened the app header so the
   Dashboard and KDE/3D tabs sit closer to the RMCprofile Run Monitor logo.
 
+## 2026-06-18 Update: Live Data And Loaded-File Controls
+
+- Added optional Live Data monitoring for the local Flask dashboard. When enabled, the dashboard
+  polls the selected folder for supported file changes and refreshes plot metadata/charts without a
+  manual reload.
+- Added file modification time and size to `/api/files` responses so the frontend can detect changes
+  cheaply.
+- Added a collapsed `Loaded x plot files` dashboard panel. Expanding it shows detected plot files as
+  badges, and each badge can hide or show its chart.
+- Updated the local folder selector copy to match the hosted dashboard more closely: `Run folder`
+  and `Select Folder`.
+- Hardened the native folder picker startup path so a missing default folder falls back to the
+  nearest existing directory before opening the OS dialog.
+
 ## Important Files
 
 - `rmc_toolkits/parsers.py`: parsing and structure-loading functions.
@@ -134,6 +148,8 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
   implementation, so it can be slower than the local Flask/SciPy app on large structures. The worker
   uses deterministic random subsampling when a slab exceeds 6000 points to avoid biased densities
   from file-order stride sampling.
+- Live Data monitoring is only available in the local Flask app. GitHub Pages/static mode cannot
+  watch filesystem changes after a folder is selected.
 - The native folder picker is intended for local desktop sessions. It depends on OS-level dialog
   availability and is not expected to work when the app is served remotely or inside restricted
   browser/sandbox environments.
