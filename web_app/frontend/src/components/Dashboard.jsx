@@ -14,6 +14,12 @@ const fileSignature = (items) => items
     .sort()
     .join('|');
 
+const defaultHiddenPlotPaths = (items) => new Set(
+    items
+        .filter((file) => file.plotKind === 'stog')
+        .map((file) => file.path)
+);
+
 const rValueLogParts = (name) => {
     const match = name.match(/^(.+)-(\d{2,})\.log$/);
     return match ? { stem: match[1].toLowerCase(), sequence: Number(match[2]) } : null;
@@ -90,8 +96,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     const [showRValue, setShowRValue] = useState(false);
     const [showLoadedFiles, setShowLoadedFiles] = useState(false);
     const [hiddenPlotPaths, setHiddenPlotPaths] = useState(() => new Set());
+    const [dismissedErrors, setDismissedErrors] = useState(() => new Set());
     const signatureRef = useRef('');
     const pollInFlightRef = useRef(false);
+    const manuallyToggledPathsRef = useRef(new Set());
 
     const loadServerDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
         if (!silent) setLoading(true);
@@ -108,6 +116,14 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
 
             signatureRef.current = fileSignature(loadedFiles);
             setFiles(loadedFiles);
+            setHiddenPlotPaths((current) => {
+                if (!silent) return defaultHiddenPlotPaths(loadedFiles);
+                const next = new Set(current);
+                loadedFiles
+                    .filter((file) => file.plotKind === 'stog' && !manuallyToggledPathsRef.current.has(file.path))
+                    .forEach((file) => next.add(file.path));
+                return next;
+            });
             const plotFiles = loadedFiles.filter((file) => file.plotKind);
             const metadataEntries = await Promise.all(
                 plotFiles.map(async (file) => {
@@ -150,6 +166,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
             const diagnostics = localRun.diagnostics;
             signatureRef.current = fileSignature(loadedFiles);
             setFiles(loadedFiles);
+            setHiddenPlotPaths(defaultHiddenPlotPaths(loadedFiles));
             setMetadata(Object.fromEntries(
                 plotFiles
                     .map((file) => [file.path, plotMetadataFromFile(file)])
@@ -234,7 +251,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
 
     useEffect(() => {
         setShowLoadedFiles(false);
-        setHiddenPlotPaths(new Set());
+        manuallyToggledPathsRef.current = new Set();
+        setDismissedErrors(new Set());
     }, [directory, localRun]);
 
     useEffect(() => {
@@ -284,6 +302,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     );
 
     const handleTogglePlotVisibility = (path) => {
+        manuallyToggledPathsRef.current.add(path);
         setHiddenPlotPaths((current) => {
             const next = new Set(current);
             if (next.has(path)) {
@@ -293,6 +312,32 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
             }
             return next;
         });
+    };
+
+    const dismissError = (key) => {
+        setDismissedErrors((current) => {
+            const next = new Set(current);
+            next.add(key);
+            return next;
+        });
+    };
+
+    const renderDashboardError = (key, message) => {
+        if (!message || dismissedErrors.has(key)) return null;
+        return (
+            <div className="dashboard-error" role="alert">
+                <span>{message}</span>
+                <button
+                    type="button"
+                    className="notification-close"
+                    onClick={() => dismissError(key)}
+                    aria-label="Close notification"
+                    title="Close"
+                >
+                    &times;
+                </button>
+            </div>
+        );
     };
 
     const renderPlotBody = (file, variant) => {
@@ -323,7 +368,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                     )}
                 </div>
                 {renderPlotBody(file)}
-                {file.parseError && <div className="dashboard-error">{file.parseError}</div>}
+                {renderDashboardError(`plot:${file.path}:${file.parseError}`, file.parseError)}
             </article>
         );
     };
@@ -350,7 +395,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                     </div>
                 </div>
                 {showRValue && renderPlotBody(rValueFile, 'wide')}
-                {rValueFile.parseError && <div className="dashboard-error">{rValueFile.parseError}</div>}
+                {renderDashboardError(`r-value:${rValueFile.parseError}`, rValueFile.parseError)}
             </article>
         );
     };
@@ -417,7 +462,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                 {loading && <span className="status-pill">Loading</span>}
             </div>
 
-            {error && <div className="dashboard-error">{error}</div>}
+            {renderDashboardError(`dashboard:${error}`, error)}
 
             {localStatus && <div className="dashboard-local-status">{localStatus}</div>}
 
