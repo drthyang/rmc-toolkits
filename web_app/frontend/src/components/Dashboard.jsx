@@ -427,9 +427,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                     <ul className="loaded-files-list">
                         {allPlotFiles.map((file) => {
                             const isHidden = hiddenPlotPaths.has(file.path);
+                            const kindClass = `kind-${file.plotKind}`;
                             return (
                                 <li key={file.path}>
-                                    <span className={`loaded-file-badge${isHidden ? ' is-hidden' : ''}`}>
+                                    <span className={`loaded-file-badge ${kindClass}${isHidden ? ' is-hidden' : ''}`}>
                                         <span className="loaded-file-kind">{file.plotKind}</span>
                                         <span className="loaded-file-name">{file.name}</span>
                                         <button
