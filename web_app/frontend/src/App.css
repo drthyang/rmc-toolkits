@@ -170,7 +170,7 @@
 }
 
 .local-file-bar {
-  grid-template-columns: auto minmax(180px, 1fr) auto;
+  grid-template-columns: auto minmax(180px, 1fr) auto auto;
 }
 
 .selected-run-name {
@@ -258,7 +258,7 @@
   }
 
   .local-file-bar {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     width: 100%;
   }
 
@@ -281,11 +281,12 @@
   }
 
   .local-file-bar button {
-    min-width: 6.4rem;
+    min-width: 4.8rem;
     padding-inline: 0.65rem;
   }
 
   .selected-run-name {
+    grid-column: 1 / -1;
     min-width: 0;
   }
 }
