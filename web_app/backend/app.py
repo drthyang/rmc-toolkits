@@ -96,13 +96,30 @@ def _choose_folder(initial_dir: Path) -> Path | None:
     return Path(selected).expanduser().resolve() if selected else None
 
 
-def _file_payload(path: Path, kind: str = "file") -> dict[str, str]:
-    return {
+def _nearest_existing_directory(path: Path) -> Path:
+    current = path if path.is_dir() else path.parent
+    while not current.exists() or not current.is_dir():
+        if current == current.parent:
+            return DATA_ROOT
+        current = current.parent
+    return current
+
+
+def _file_payload(path: Path, kind: str = "file") -> dict[str, object]:
+    payload = {
         "name": path.name,
         "path": str(path),
         "type": kind,
         "plotKind": detect_plot_kind(path) if kind == "file" else None,
     }
+    try:
+        stat = path.stat()
+        payload["modified"] = stat.st_mtime
+        payload["size"] = stat.st_size if kind == "file" else None
+    except OSError:
+        payload["modified"] = None
+        payload["size"] = None
+    return payload
 
 
 def _run_stem_from_output_name(name: str) -> tuple[int, str] | None:
@@ -185,7 +202,7 @@ def list_files():
         if not directory.exists() or not directory.is_dir():
             return jsonify({"error": "Directory not found"}), 404
 
-        paths: dict[Path, dict[str, str]] = {}
+        paths: dict[Path, dict[str, object]] = {}
         for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
             if item.is_dir() and not item.name.startswith("."):
                 paths[item] = _file_payload(item, "directory")
@@ -210,6 +227,7 @@ def choose_folder():
         initial_dir = _resolve_inside_root(payload.get("dir", "."))
         if initial_dir.is_file():
             initial_dir = initial_dir.parent
+        initial_dir = _nearest_existing_directory(initial_dir)
 
         selected = _choose_folder(initial_dir)
         if selected is None:
