@@ -113,6 +113,13 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
   rendering itself, but this still needs a focused device-side debug pass. Keep the local
   Flask/backend workflow as the supported path for mobile-adjacent use until a unified import/source
   abstraction is implemented and verified on iOS.
+- **Known issue, 2026-06-18:** Some datasets load plots on iPhone/static mode but show `0` total
+  atoms and no KDE/3D structure. This suggests the `.rmc6f` file is being selected/read, but the
+  browser-side atom parser is skipping all atom rows. The current parser assumes an exact atom-line
+  format after `Atoms:`: atom number, element, type label, x/y/z, reference number, and cell indices.
+  Future work should make `.rmc6f` parsing tolerant to alternate RMCProfile variants, support rows
+  with or without a type-label column, validate parsed atom count against the declared `Number of
+  atoms`, and surface a clear parse error when zero atoms are parsed.
 - The old `src/RMC_3D.py` still imports Mayavi and executes visualization at import time. It should be refactored before being reused by the web app.
 - `src/STOG_plot.py` still contains top-level plotting code. The new package has basic STOG single-file plotting, but not the full multi-panel STOG workflow yet.
 - The Dashboard renders interactive SVG plots directly from parsed data. The PNG plot endpoint is
