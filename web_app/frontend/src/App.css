@@ -110,10 +110,18 @@
   box-shadow: var(--shadow-xs), 0 1px 3px rgba(16, 24, 40, 0.09);
 }
 
+.path-controls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
 /* The path bar reads as one joined field: label prefix, input, ghost + primary buttons. */
 .path-bar {
   display: grid;
-  grid-template-columns: auto auto minmax(220px, 1fr) auto auto;
+  grid-template-columns: auto minmax(220px, 1fr) auto auto;
   align-items: center;
   gap: 0.45rem;
   border: 1px solid var(--border);
@@ -138,7 +146,8 @@
   white-space: nowrap;
 }
 
-.path-bar .watch-toggle {
+.watch-toggle {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.38rem;
@@ -148,6 +157,7 @@
   cursor: pointer;
   text-transform: none;
   letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .watch-toggle span {
@@ -202,7 +212,7 @@
   font-size: 0.85rem;
 }
 
-.path-bar .watch-toggle input {
+.watch-toggle input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -312,11 +322,20 @@
     flex: 1;
   }
 
-  .path-bar {
-    grid-template-columns: auto 1fr auto auto;
+  .path-controls {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.5rem;
   }
 
-  .path-bar > label:not(.watch-toggle) {
+  .watch-toggle {
+    justify-self: start;
+  }
+
+  .path-bar {
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .path-bar label {
     display: none;
   }
 

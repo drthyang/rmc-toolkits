@@ -119,8 +119,7 @@ function App() {
               </button>
             </div>
           ) : (
-            <form className="path-bar" onSubmit={handleDirectorySubmit}>
-              <label htmlFor="data-path">Data path</label>
+            <div className="path-controls">
               <label className="watch-toggle">
                 <input
                   type="checkbox"
@@ -128,26 +127,29 @@ function App() {
                   onChange={(event) => setWatchFiles(event.target.checked)}
                 />
                 <span aria-hidden="true" />
-                <b>Watch</b>
+                <b>Live Data</b>
               </label>
-              <input
-                id="data-path"
-                type="text"
-                value={draftDirectory}
-                onChange={(event) => setDraftDirectory(event.target.value)}
-                spellCheck="false"
-              />
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={handleNativeBrowse}
-              >
-                Browse
-              </button>
-              <button type="submit">
-                Load
-              </button>
-            </form>
+              <form className="path-bar" onSubmit={handleDirectorySubmit}>
+                <label htmlFor="data-path">Data path</label>
+                <input
+                  id="data-path"
+                  type="text"
+                  value={draftDirectory}
+                  onChange={(event) => setDraftDirectory(event.target.value)}
+                  spellCheck="false"
+                />
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleNativeBrowse}
+                >
+                  Browse
+                </button>
+                <button type="submit">
+                  Load
+                </button>
+              </form>
+            </div>
           )}
           {browseStatus && <div className={`browse-status ${browseStatus.kind}`}>{browseStatus.text}</div>}
         </header>
