@@ -140,26 +140,63 @@
 }
 
 .loaded-file-badge {
+    --kind-color: var(--muted);
+    --kind-soft: color-mix(in srgb, var(--kind-color) 10%, var(--panel-soft));
+    --kind-border: color-mix(in srgb, var(--kind-color) 28%, var(--border));
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.45rem;
     min-width: 0;
-    border: 1px solid var(--border);
+    border: 1px solid var(--kind-border);
     border-radius: 999px;
-    background: var(--panel-soft);
+    background: color-mix(in srgb, var(--kind-color) 5%, var(--panel-soft));
     padding: 0.18rem 0.24rem 0.18rem 0.28rem;
 }
 
+.loaded-file-badge.kind-r_value {
+    --kind-color: #2563eb;
+}
+
+.loaded-file-badge.kind-bragg {
+    --kind-color: #0f766e;
+}
+
+.loaded-file-badge.kind-xray_sq {
+    --kind-color: #dc6803;
+}
+
+.loaded-file-badge.kind-neutron_sq {
+    --kind-color: #7c3aed;
+}
+
+.loaded-file-badge.kind-xpdf {
+    --kind-color: #c026d3;
+}
+
+.loaded-file-badge.kind-npdf {
+    --kind-color: #0891b2;
+}
+
+.loaded-file-badge.kind-pdf_partials {
+    --kind-color: #16a34a;
+}
+
+.loaded-file-badge.kind-stog {
+    --kind-color: #64748b;
+}
+
 .loaded-file-badge.is-hidden {
-    opacity: 0.62;
+    --kind-soft: color-mix(in srgb, var(--kind-color) 6%, var(--panel-soft));
+    --kind-border: color-mix(in srgb, var(--kind-color) 16%, var(--border));
+    background: color-mix(in srgb, var(--kind-color) 3%, var(--panel-soft));
 }
 
 .loaded-file-kind {
-    border: 1px solid var(--border);
+    border: 1px solid var(--kind-border);
     border-radius: 999px;
-    color: var(--subtle);
-    background: var(--panel-soft);
+    color: var(--kind-color);
+    background: var(--kind-soft);
     padding: 0.12rem 0.42rem;
     font-size: 0.62rem;
     font-weight: 700;
@@ -179,7 +216,13 @@
 }
 
 .loaded-file-badge.is-hidden .loaded-file-name {
+    color: var(--muted);
     text-decoration: line-through;
+}
+
+.loaded-file-badge.is-hidden .loaded-file-kind {
+    color: color-mix(in srgb, var(--kind-color) 58%, var(--subtle));
+    background: color-mix(in srgb, var(--kind-color) 4%, var(--panel-soft));
 }
 
 .loaded-file-hide {
