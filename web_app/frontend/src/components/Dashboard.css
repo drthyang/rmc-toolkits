@@ -238,6 +238,13 @@
     padding: 1rem;
 }
 
+.dashboard-error {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.7rem;
+}
+
 .dashboard-local-status {
     margin-bottom: 0.85rem;
     border-color: var(--border);

@@ -6,6 +6,9 @@ import API_BASE_URL from './api';
 import { buildLocalRun, isStaticMode } from './browserData';
 import './App.css';
 
+const REPO_URL = 'https://github.com/drthyang/rmc-toolkits';
+const STATUS_TIMEOUT_MS = 7000;
+
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [currentDirectory, setCurrentDirectory] = useState('data');
@@ -21,6 +24,12 @@ function App() {
     document.documentElement.dataset.theme = 'light';
     localStorage.setItem('rmc-theme', 'light');
   }, []);
+
+  useEffect(() => {
+    if (!browseStatus || browseStatus.kind === 'loading') return undefined;
+    const timer = window.setTimeout(() => setBrowseStatus(null), STATUS_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [browseStatus]);
 
   const handleDirectorySubmit = (event) => {
     event.preventDefault();
@@ -71,8 +80,40 @@ function App() {
   const handleStaticLiveDataNotice = () => {
     setBrowseStatus({
       kind: 'info',
-      text: 'Live Data is only supported in the local Flask app. GitHub Pages cannot watch local file changes.'
+      text: 'Live Data needs the local Flask app because GitHub Pages cannot watch local file changes.',
+      link: {
+        href: REPO_URL,
+        label: 'Install the local app'
+      }
     });
+  };
+
+  const renderBrowseStatus = () => {
+    if (!browseStatus) return null;
+    return (
+      <div className={`browse-status ${browseStatus.kind}`} role="status">
+        <span>
+          {browseStatus.text}
+          {browseStatus.link && (
+            <>
+              {' '}
+              <a href={browseStatus.link.href} target="_blank" rel="noreferrer">
+                {browseStatus.link.label}
+              </a>
+            </>
+          )}
+        </span>
+        <button
+          type="button"
+          className="notification-close"
+          onClick={() => setBrowseStatus(null)}
+          aria-label="Close notification"
+          title="Close"
+        >
+          &times;
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -169,7 +210,7 @@ function App() {
               </form>
             </div>
           )}
-          {browseStatus && <div className={`browse-status ${browseStatus.kind}`}>{browseStatus.text}</div>}
+          {renderBrowseStatus()}
         </header>
         {activePage === 'dashboard' && <Dashboard directory={currentDirectory} localRun={localRun} watchFiles={watchFiles} />}
         {activePage === 'structure' && (
