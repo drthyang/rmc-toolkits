@@ -124,4 +124,6 @@ Goal: make the tool safe and pleasant for broader use.
 6. Add project-level warnings for missing expected files, malformed outputs, and unsupported STOG layouts.
 7. Add export controls for plot PNG/SVG/CSV and KDE/3D screenshots.
 8. Move heavier static-mode parsing/KDE work toward transferable typed arrays and profile large `.rmc6f` files.
-9. Add recent-project persistence for local desktop use.
+9. Resolve GitHub Pages/static dashboard loading on iPhone Safari by adding a unified run-source
+   abstraction, explicit import diagnostics, and a verified mobile folder-access strategy.
+10. Add recent-project persistence for local desktop use.
