@@ -29,12 +29,12 @@ workflows.
   when supported files change.
 - **Plot API**: returns plot metadata, PNG renderings, and parsed data series for R-value logs,
   S(Q), G(r), Bragg, PDF, PDF partials, and basic STOG outputs.
-- **Structure conversion**: writes `Frac_coord_<stem>.txt` from an `.rmc6f` file.
+- **Structure conversion**: writes `Frac_coord_<stem>.txt` from an `<stem>.rmc6f` file (thermal_ellipsoid).
 - **Structure viewer data**: samples folded unit-cell atom positions while preserving reference
   number/site coverage for larger structures.
 - **KDE slices**: computes server-side `scipy.stats.gaussian_kde` XY density grids for z-slabs,
   with element filtering, bandwidth, grid size, contour, and log-scale options.
-- **3D frontend view**: uses Three.js orbit/pan/zoom controls, a Nature Publishing Group-style atom
+- **3D frontend view**: uses Three.js orbit/pan/zoom controls, a publication-style atom
   palette, and a slab overlay synchronized to the KDE controls.
 
 ## Screenshots
