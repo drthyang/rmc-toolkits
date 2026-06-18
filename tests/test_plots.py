@@ -22,6 +22,9 @@ class PlotTests(unittest.TestCase):
             "GNSe_bragg.csv": "bragg",
             "GNSe_PDFpartials.csv": "pdf_partials",
             "GNSe-02.log": "r_value",
+            "GNSe-123.log": "r_value",
+            "GNSe.log": None,
+            "run-info.log": None,
             "scale_ft.gr": "stog",
             "notes.txt": None,
         }

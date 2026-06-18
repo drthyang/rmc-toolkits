@@ -36,7 +36,7 @@ def detect_plot_kind(path: str | Path) -> str | None:
         return "neutron_sq"
     if name.endswith("_bragg.csv"):
         return "bragg"
-    if name.endswith(".log"):
+    if re.search(r"-\d{2,}\.log$", name):
         return "r_value"
     if name in {"scale_ft.gr", "scale_ft.sq", "scale_ft_rmc.fq"}:
         return "stog"

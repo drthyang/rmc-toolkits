@@ -13,7 +13,7 @@ export const detectPlotKind = (name) => {
     if (name.endsWith('_FQ1.csv')) return 'xray_sq';
     if (name.endsWith('_SQ1.csv')) return 'neutron_sq';
     if (name.endsWith('_bragg.csv')) return 'bragg';
-    if (name.endsWith('.log')) return 'r_value';
+    if (/-\d{2,}\.log$/.test(name)) return 'r_value';
     if (['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq'].includes(name)) return 'stog';
     return null;
 };
