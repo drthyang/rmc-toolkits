@@ -179,6 +179,28 @@
   font-weight: 700;
 }
 
+.watch-toggle-button {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  font-weight: inherit;
+}
+
+.watch-toggle-button:hover:not(:disabled) {
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+}
+
+.watch-toggle-button:focus-visible {
+  outline: none;
+}
+
+.watch-toggle-button:focus-visible span {
+  box-shadow: var(--focus-ring);
+}
+
 /* The path bar reads as one joined field: label prefix, input, ghost + primary buttons. */
 .path-bar {
   display: grid;
