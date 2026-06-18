@@ -243,18 +243,15 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
     };
 };
 
-export const buildLocalRun = async (fileList) => {
-    const files = await Promise.all([...fileList]
+export const buildLocalRunFromEntries = (entries) => {
+    const files = entries
         .filter((file) => isSupportedFile(file.name))
-        .map(async (file) => {
-            const path = file.webkitRelativePath || file.name;
-            return {
-                name: basename(path),
-                path,
-                type: 'file',
-                plotKind: detectPlotKind(basename(path)),
-                text: await file.text()
-            };
+        .map((file) => ({
+            ...file,
+            name: basename(file.path || file.name),
+            path: file.path || file.name,
+            type: 'file',
+            plotKind: detectPlotKind(basename(file.path || file.name))
         }));
     if (!files.length) {
         throw new Error('No supported RMCprofile files were selected');
@@ -282,4 +279,18 @@ export const buildLocalRun = async (fileList) => {
         structureFile: rmc6f || null,
         structureError: rmc6f ? 'Open KDE / 3D to load structure data' : 'No model structure detected'
     };
+};
+
+export const buildLocalRun = async (fileList) => {
+    const entries = await Promise.all([...fileList]
+        .filter((file) => isSupportedFile(file.name))
+        .map(async (file) => {
+            const path = file.webkitRelativePath || file.name;
+            return {
+                name: basename(path),
+                path,
+                text: await file.text()
+            };
+        }));
+    return buildLocalRunFromEntries(entries);
 };

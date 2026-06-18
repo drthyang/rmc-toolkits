@@ -13,8 +13,10 @@ function App() {
   const [browseStatus, setBrowseStatus] = useState(null);
   const [localRun, setLocalRun] = useState(null);
   const [localLoading, setLocalLoading] = useState(false);
+  const [localLoadingLabel, setLocalLoadingLabel] = useState('Reading');
   const directoryInputRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const zipInputRef = useRef(null);
+  const zipRequestRef = useRef(0);
   const staticMode = isStaticMode();
 
   useEffect(() => {
@@ -52,6 +54,7 @@ function App() {
     const selectedFiles = event.target.files;
     if (!selectedFiles?.length) return;
     setLocalLoading(true);
+    setLocalLoadingLabel('Reading');
     setBrowseStatus({ kind: 'loading', text: 'Reading local files...' });
     try {
       const nextRun = await buildLocalRun(selectedFiles);
@@ -62,6 +65,48 @@ function App() {
       setActivePage('dashboard');
     } catch (error) {
       setBrowseStatus({ kind: 'error', text: error.message || 'Could not read the selected files' });
+    } finally {
+      setLocalLoading(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleLocalZip = async (event) => {
+    const selectedFile = event.target.files?.[0];
+    if (!selectedFile) return;
+    const id = zipRequestRef.current + 1;
+    zipRequestRef.current = id;
+    setLocalLoading(true);
+    setLocalLoadingLabel('Importing');
+    setBrowseStatus({ kind: 'loading', text: 'Importing ZIP archive...' });
+    try {
+      const buffer = await selectedFile.arrayBuffer();
+      const nextRun = await new Promise((resolve, reject) => {
+        const worker = new Worker(new URL('./workers/localZipWorker.js', import.meta.url), {
+          type: 'module'
+        });
+        worker.onmessage = (messageEvent) => {
+          worker.terminate();
+          if (messageEvent.data.id !== id) return;
+          if (messageEvent.data.error) {
+            reject(new Error(messageEvent.data.error));
+            return;
+          }
+          resolve(messageEvent.data.result);
+        };
+        worker.onerror = () => {
+          worker.terminate();
+          reject(new Error('Browser ZIP importer failed'));
+        };
+        worker.postMessage({ id, name: selectedFile.name, buffer }, [buffer]);
+      });
+      setLocalRun(nextRun);
+      setCurrentDirectory(nextRun.name);
+      setDraftDirectory(nextRun.name);
+      setBrowseStatus(null);
+      setActivePage('dashboard');
+    } catch (error) {
+      setBrowseStatus({ kind: 'error', text: error.message || 'Could not import ZIP file' });
     } finally {
       setLocalLoading(false);
       event.target.value = '';
@@ -99,7 +144,15 @@ function App() {
           </div>
           {staticMode ? (
             <div className="path-bar local-file-bar">
-              <label htmlFor="local-run-files">Local run</label>
+              <label htmlFor="local-run-zip">Local run</label>
+              <input
+                ref={zipInputRef}
+                id="local-run-zip"
+                className="visually-hidden"
+                type="file"
+                accept=".zip,application/zip"
+                onChange={handleLocalZip}
+              />
               <input
                 ref={directoryInputRef}
                 id="local-run-folder"
@@ -109,29 +162,21 @@ function App() {
                 webkitdirectory=""
                 onChange={handleLocalFiles}
               />
-              <input
-                ref={fileInputRef}
-                id="local-run-files"
-                className="visually-hidden"
-                type="file"
-                multiple
-                onChange={handleLocalFiles}
-              />
-              <div className="selected-run-name">{localRun?.name || 'No folder selected'}</div>
+              <div className="selected-run-name">{localRun?.name || 'No run selected'}</div>
               <button
                 type="button"
-                onClick={() => directoryInputRef.current?.click()}
+                onClick={() => zipInputRef.current?.click()}
                 disabled={localLoading}
               >
-                {localLoading ? 'Reading' : 'Select Folder'}
+                {localLoading ? localLoadingLabel : 'Import ZIP'}
               </button>
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => directoryInputRef.current?.click()}
                 disabled={localLoading}
               >
-                Files
+                Folder
               </button>
             </div>
           ) : (
