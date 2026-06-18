@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
-import { plotMetadataFromFile } from '../browserData';
+import { plotMetadataFromFile, readAndParseLocalPlotFile } from '../browserData';
 import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import './Dashboard.css';
@@ -15,27 +15,98 @@ const Dashboard = ({ directory, localRun }) => {
     const [structureError, setStructureError] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [localStatus, setLocalStatus] = useState(null);
     const [showRValue, setShowRValue] = useState(false);
 
     useEffect(() => {
         if (localRun) {
+            let cancelled = false;
             const loadedFiles = localRun.files || [];
+            const plotFiles = loadedFiles.filter((file) => file.plotKind);
+            const diagnostics = localRun.diagnostics;
             setFiles(loadedFiles);
             setMetadata(Object.fromEntries(
-                loadedFiles
-                    .filter((file) => file.plotKind)
+                plotFiles
                     .map((file) => [file.path, plotMetadataFromFile(file)])
             ));
-            setStructure(localRun.structure || null);
-            setStructureError(localRun.structure ? null : localRun.structureError || 'No model structure detected');
+            setStructure(null);
+            setStructureError(localRun.structureFile ? 'Loading structure summary...' : localRun.structureError || 'No model structure detected');
             setError(null);
-            setLoading(false);
-            return;
+            setLoading(true);
+            setLocalStatus(
+                diagnostics
+                    ? `Indexed ${diagnostics.supportedFileCount} supported files from ${diagnostics.selectedFileCount} selected files`
+                    : 'Indexed local run files'
+            );
+
+            const parsePlots = async () => {
+                if (!plotFiles.length) {
+                    if (!cancelled) {
+                        setLoading(false);
+                        setLocalStatus('No plot files detected');
+                    }
+                    return;
+                }
+                setLocalStatus(`Parsing ${plotFiles.length} plot files...`);
+                const parsedEntries = await Promise.all(plotFiles.map(async (file) => {
+                    try {
+                        return [file.path, { ...file, plotData: await readAndParseLocalPlotFile(file) }];
+                    } catch (plotError) {
+                        return [file.path, { ...file, parseError: plotError.message || 'Could not parse plot file' }];
+                    }
+                }));
+                if (cancelled) return;
+                const parsedByPath = Object.fromEntries(parsedEntries);
+                const nextFiles = loadedFiles.map((file) => parsedByPath[file.path] || file);
+                setFiles(nextFiles);
+                setMetadata(Object.fromEntries(
+                    nextFiles
+                        .filter((file) => file.plotKind)
+                        .map((file) => [file.path, plotMetadataFromFile(file)])
+                ));
+                setLoading(false);
+                setLocalStatus(`Loaded ${plotFiles.length} plot files`);
+            };
+
+            parsePlots();
+
+            let structureWorker = null;
+            if (localRun.structureFile) {
+                structureWorker = new Worker(new URL('../workers/localStructureWorker.js', import.meta.url), {
+                    type: 'module'
+                });
+                structureWorker.onmessage = (event) => {
+                    if (cancelled) return;
+                    if (event.data.error) {
+                        setStructure(null);
+                        setStructureError(event.data.error);
+                        return;
+                    }
+                    setStructure(event.data.result);
+                    setStructureError(null);
+                };
+                structureWorker.onerror = () => {
+                    if (cancelled) return;
+                    setStructure(null);
+                    setStructureError('Browser structure summary parser failed');
+                };
+                structureWorker.postMessage({
+                    id: 1,
+                    file: localRun.structureFile,
+                    maxPoints: 100
+                });
+            }
+
+            return () => {
+                cancelled = true;
+                structureWorker?.terminate();
+            };
         }
 
         const fetchDashboard = async () => {
             setLoading(true);
             setError(null);
+            setLocalStatus(null);
             try {
                 const response = await axios.get(`${API_BASE_URL}/api/files`, {
                     params: { dir: directory || '.' }
@@ -94,6 +165,16 @@ const Dashboard = ({ directory, localRun }) => {
         [plotFiles]
     );
 
+    const renderPlotBody = (file, variant) => {
+        if (file.sourceFile && !file.plotData && !file.parseError) {
+            return <div className="plot-loading">Parsing plot file...</div>;
+        }
+        if (file.sourceFile && file.parseError) {
+            return null;
+        }
+        return <InteractivePlot file={file} plotData={file.plotData} variant={variant} />;
+    };
+
     const renderPlotCard = (file) => {
         const meta = metadata[file.path];
         return (
@@ -104,7 +185,7 @@ const Dashboard = ({ directory, localRun }) => {
                         <span className="rwp-chip">Rwp {Number(meta.metrics.rwp).toPrecision(4)}</span>
                     )}
                 </div>
-                <InteractivePlot file={file} plotData={file.plotData} />
+                {renderPlotBody(file)}
                 {file.parseError && <div className="dashboard-error">{file.parseError}</div>}
             </article>
         );
@@ -131,7 +212,8 @@ const Dashboard = ({ directory, localRun }) => {
                         </button>
                     </div>
                 </div>
-                {showRValue && <InteractivePlot file={rValueFile} plotData={rValueFile.plotData} variant="wide" />}
+                {showRValue && renderPlotBody(rValueFile, 'wide')}
+                {rValueFile.parseError && <div className="dashboard-error">{rValueFile.parseError}</div>}
             </article>
         );
     };
@@ -147,6 +229,8 @@ const Dashboard = ({ directory, localRun }) => {
             </div>
 
             {error && <div className="dashboard-error">{error}</div>}
+
+            {localStatus && <div className="dashboard-local-status">{localStatus}</div>}
 
             <ModelSummary structure={structure} />
 

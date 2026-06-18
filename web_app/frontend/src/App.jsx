@@ -51,7 +51,7 @@ function App() {
     const selectedFiles = event.target.files;
     if (!selectedFiles?.length) return;
     setLocalLoading(true);
-    setBrowseStatus({ kind: 'loading', text: 'Reading local files...' });
+    setBrowseStatus({ kind: 'loading', text: 'Indexing selected folder...' });
     try {
       const nextRun = await buildLocalRun(selectedFiles);
       setLocalRun(nextRun);
