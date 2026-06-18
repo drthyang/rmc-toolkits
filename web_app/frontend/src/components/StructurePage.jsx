@@ -282,8 +282,6 @@ const StructurePage = ({ directory, localRun, theme }) => {
     const mountRef = useRef(null);
     const normalMenuRef = useRef(null);
     const cameraStateRef = useRef(null);
-    const localStructureWorkerRef = useRef(null);
-    const localStructureRequestRef = useRef(0);
     const localKdeWorkerRef = useRef(null);
     const localKdeRequestRef = useRef(0);
     const isLocalStructure = Boolean(localRun);
@@ -306,37 +304,6 @@ const StructurePage = ({ directory, localRun, theme }) => {
             contour: theme === 'light' ? 'rgba(21, 34, 50, 0.72)' : 'rgba(230, 236, 244, 0.76)'
         };
     }, [theme]);
-
-    useEffect(() => {
-        if (!isLocalStructure) return undefined;
-        const worker = new Worker(new URL('../workers/localStructureWorker.js', import.meta.url), {
-            type: 'module'
-        });
-        localStructureWorkerRef.current = worker;
-
-        worker.onmessage = (event) => {
-            if (event.data.id !== localStructureRequestRef.current) return;
-            setLoading(false);
-            if (event.data.error) {
-                setStructure(null);
-                setError(event.data.error);
-                return;
-            }
-            setStructure(event.data.result);
-            setError(null);
-        };
-
-        worker.onerror = () => {
-            setLoading(false);
-            setStructure(null);
-            setError('Browser structure parser failed');
-        };
-
-        return () => {
-            worker.terminate();
-            localStructureWorkerRef.current = null;
-        };
-    }, [isLocalStructure]);
 
     useEffect(() => {
         if (!isLocalStructure) return undefined;
@@ -371,37 +338,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
 
     useEffect(() => {
         if (localRun) {
+            setStructure(localRun.structure || null);
+            setError(localRun.structure ? null : localRun.structureError || 'No structure data available in this folder');
+            setLoading(false);
             setKde(null);
             setKdeError(null);
-            if (localRun.structure) {
-                setStructure(localRun.structure);
-                setError(null);
-                setLoading(false);
-                return;
-            }
-            if (localRun.structureFile) {
-                const worker = localStructureWorkerRef.current;
-                if (!worker) {
-                    setStructure(null);
-                    setError('Browser structure parser is not available');
-                    setLoading(false);
-                    return;
-                }
-                const id = localStructureRequestRef.current + 1;
-                localStructureRequestRef.current = id;
-                setStructure(null);
-                setError(null);
-                setLoading(true);
-                worker.postMessage({
-                    id,
-                    file: localRun.structureFile,
-                    maxPoints: 75000
-                });
-                return;
-            }
-            setStructure(null);
-            setError(localRun.structureError || 'No structure data available in this folder');
-            setLoading(false);
             return;
         }
 
