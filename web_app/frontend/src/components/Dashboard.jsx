@@ -8,6 +8,71 @@ import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
 
+const rValueLogParts = (name) => {
+    const match = name.match(/^(.+)-(\d{2,})\.log$/);
+    return match ? { stem: match[1].toLowerCase(), sequence: Number(match[2]) } : null;
+};
+
+const comparePlotFiles = (a, b) => {
+    const kindOrder = plotOrder.indexOf(a.plotKind) - plotOrder.indexOf(b.plotKind);
+    if (kindOrder !== 0) return kindOrder;
+
+    const aLog = rValueLogParts(a.name);
+    const bLog = rValueLogParts(b.name);
+    if (aLog && bLog) {
+        const stemOrder = aLog.stem.localeCompare(bLog.stem);
+        if (stemOrder !== 0) return stemOrder;
+        if (aLog.sequence !== bLog.sequence) return aLog.sequence - bLog.sequence;
+    }
+
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+};
+
+const combineRValueFiles = (rValueFiles) => {
+    if (!rValueFiles.length) return null;
+    if (
+        rValueFiles.length === 1
+        || !rValueFiles.some((file) => file.sourceFile || file.plotData || file.parseError)
+        || rValueFiles.some((file) => file.sourceFile && !file.plotData && !file.parseError)
+    ) {
+        return rValueFiles[0];
+    }
+
+    const parsedFiles = rValueFiles.filter((file) => file.plotData?.series?.[0]?.y?.length);
+    if (!parsedFiles.length) {
+        return {
+            ...rValueFiles[0],
+            parseError: rValueFiles.map((file) => file.parseError).filter(Boolean).join('; ') || 'Could not parse R-value logs'
+        };
+    }
+
+    const yValues = parsedFiles.flatMap((file) => file.plotData.series[0].y);
+    const lastParsed = parsedFiles[parsedFiles.length - 1];
+    const parseErrors = rValueFiles
+        .filter((file) => file.parseError)
+        .map((file) => `${file.name}: ${file.parseError}`);
+
+    return {
+        ...parsedFiles[0],
+        name: 'R-value',
+        path: `r-value:${parsedFiles.map((file) => file.path).join('|')}`,
+        sourceFile: undefined,
+        parseError: parseErrors.join('; '),
+        plotData: {
+            kind: 'r_value',
+            title: 'R-value',
+            metrics: { final_chi_r: lastParsed.plotData.metrics?.final_chi_r },
+            xLabel: 'Time steps',
+            yLabel: 'log(χ)',
+            series: [{
+                label: 'R',
+                x: yValues.map((_, index) => index),
+                y: yValues
+            }]
+        }
+    };
+};
+
 const Dashboard = ({ directory, localRun }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
@@ -153,13 +218,14 @@ const Dashboard = ({ directory, localRun }) => {
     const plotFiles = useMemo(() => {
         return files
             .filter((file) => file.plotKind)
-            .sort((a, b) => plotOrder.indexOf(a.plotKind) - plotOrder.indexOf(b.plotKind));
+            .sort(comparePlotFiles);
     }, [files]);
 
-    const rValueFile = useMemo(
-        () => plotFiles.find((file) => file.plotKind === 'r_value') || null,
+    const rValueFiles = useMemo(
+        () => plotFiles.filter((file) => file.plotKind === 'r_value'),
         [plotFiles]
     );
+    const rValueFile = useMemo(() => combineRValueFiles(rValueFiles), [rValueFiles]);
     const gridFiles = useMemo(
         () => plotFiles.filter((file) => file.plotKind !== 'r_value'),
         [plotFiles]

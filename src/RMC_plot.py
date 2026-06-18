@@ -152,7 +152,12 @@ def main():
         plot_data(fnames[0], 'BRAGG', r'Q ($\mathrm{\AA^{-1}}$)', 'data', args, calc_rwp=True, rwp_label_prefix="BRAGG:")
 
     # Chi-values
-    fnames = glob.glob(os.path.join(input_dir, '*-*.log'))
+    def log_sort_key(path):
+        name = os.path.basename(path)
+        match = re.search(r'^(.+)-(\d+)\.log$', name)
+        return (match.group(1).lower(), int(match.group(2))) if match else (name.lower(), -1)
+
+    fnames = sorted(glob.glob(os.path.join(input_dir, '*-*.log')), key=log_sort_key)
     if fnames:
         chi_Q, chi_R = read_chi(fnames)
         if len(chi_R) > 0:

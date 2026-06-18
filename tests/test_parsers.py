@@ -11,6 +11,7 @@ from rmc_toolkits.parsers import (
     read_chi,
     read_rmc_csv,
     read_structure,
+    related_r_value_logs,
     rwp,
     write_frac_from_rmc6f,
 )
@@ -35,6 +36,16 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(len(chi_r), 571)
         self.assertAlmostEqual(float(chi_q[0]), 0.00541)
         self.assertAlmostEqual(float(chi_r[-1]), 0.00405)
+
+    def test_related_r_value_logs_use_numeric_suffix_order(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir)
+            for name in ("run-10.log", "run-02.log", "run-01.log", "other-01.log"):
+                (directory / name).write_text("header\nheader\n1 0.1 0.2\n", encoding="utf-8")
+
+            logs = related_r_value_logs(directory / "run-02.log")
+
+            self.assertEqual([path.name for path in logs], ["run-01.log", "run-02.log", "run-10.log"])
 
     def test_rwp_uses_observed_series_as_denominator(self):
         value = rwp(

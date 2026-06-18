@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 import os
 import sys
 import unittest
@@ -106,6 +107,24 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(payload["xLabel"], "Q (Å^{-1})")
         self.assertEqual(len(payload["series"]), 2)
         self.assertEqual(len(payload["series"][0]["x"]), 2649)
+
+    def test_r_value_data_endpoint_combines_related_logs_in_numeric_order(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmpdir:
+            directory = Path(tmpdir)
+            (directory / "run-10.log").write_text("header\nheader\n1 0.1 10.0\n", encoding="utf-8")
+            (directory / "run-01.log").write_text("header\nheader\n1 0.1 1.0\n", encoding="utf-8")
+            (directory / "run-02.log").write_text("header\nheader\n1 0.1 2.0\n", encoding="utf-8")
+
+            response = self.client.get(
+                "/api/plot/data",
+                query_string={"path": str(directory / "run-01.log")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["series"][0]["x"], [0, 1, 2])
+        self.assertEqual(payload["series"][0]["y"], [0.0, math.log(2.0), math.log(10.0)])
+        self.assertAlmostEqual(payload["metrics"]["final_chi_r"], 10.0)
 
     def test_convert_frac_writes_requested_output_inside_root(self):
         response = self.client.post(
