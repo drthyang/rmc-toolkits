@@ -27,6 +27,7 @@ function App() {
   const directoryInputRef = useRef(null);
   const dirHandleRef = useRef(null);
   const lastSignatureRef = useRef('');
+  const runIdRef = useRef(0);
   const staticMode = isStaticMode();
   const fsAccess = staticMode && supportsFileSystemAccess();
 
@@ -55,7 +56,8 @@ function App() {
         const signature = fileSignature(nextRun.files);
         if (!cancelled && signature !== lastSignatureRef.current) {
           lastSignatureRef.current = signature;
-          setLocalRun(nextRun);
+          // Same folder, updated files: keep runId so the dashboard refreshes in place.
+          setLocalRun({ ...nextRun, runId: runIdRef.current });
         }
       } catch (error) {
         if (!cancelled) {
@@ -109,7 +111,8 @@ function App() {
     setBrowseStatus({ kind: 'loading', text: 'Indexing selected folder...' });
     try {
       const nextRun = await buildLocalRun(selectedFiles);
-      setLocalRun(nextRun);
+      runIdRef.current += 1;
+      setLocalRun({ ...nextRun, runId: runIdRef.current });
       setCurrentDirectory(nextRun.name);
       setDraftDirectory(nextRun.name);
       setBrowseStatus(null);
@@ -130,7 +133,8 @@ function App() {
       dirHandleRef.current = handle;
       const nextRun = await buildLocalRunFromHandle(handle);
       lastSignatureRef.current = fileSignature(nextRun.files);
-      setLocalRun(nextRun);
+      runIdRef.current += 1;
+      setLocalRun({ ...nextRun, runId: runIdRef.current });
       setCurrentDirectory(nextRun.name);
       setDraftDirectory(nextRun.name);
       setBrowseStatus(null);

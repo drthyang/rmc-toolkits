@@ -94,6 +94,12 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     const signatureRef = useRef('');
     const pollInFlightRef = useRef(false);
     const manuallyToggledPathsRef = useRef(new Set());
+    const currentRunIdRef = useRef(null);
+    const filesRef = useRef([]);
+
+    useEffect(() => {
+        filesRef.current = files;
+    }, [files]);
 
     const loadServerDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
         if (!silent) setLoading(true);
@@ -158,33 +164,46 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
             const loadedFiles = localRun.files || [];
             const plotFiles = loadedFiles.filter((file) => file.plotKind);
             const diagnostics = localRun.diagnostics;
+            // Live Data sends a new localRun (same runId) when files change. Refresh the existing
+            // view in place instead of tearing it down, mirroring the Flask silent poll.
+            const sameRun = localRun.runId != null && localRun.runId === currentRunIdRef.current;
+            currentRunIdRef.current = localRun.runId ?? null;
+            const prevByPath = new Map(filesRef.current.map((file) => [file.path, file]));
             signatureRef.current = fileSignature(loadedFiles);
-            setFiles(loadedFiles);
-            setHiddenPlotPaths(defaultHiddenPlotPaths(loadedFiles));
-            setMetadata(Object.fromEntries(
-                plotFiles
-                    .map((file) => [file.path, plotMetadataFromFile(file)])
-            ));
-            setStructure(null);
-            setStructureError(localRun.structureFile ? 'Loading structure summary...' : localRun.structureError || 'No model structure detected');
-            setError(null);
-            setLoading(true);
-            setLocalStatus(
-                diagnostics
-                    ? `Indexed ${diagnostics.supportedFileCount} supported files from ${diagnostics.selectedFileCount} selected files`
-                    : 'Indexed local run files'
-            );
+
+            if (!sameRun) {
+                setFiles(loadedFiles);
+                setHiddenPlotPaths(defaultHiddenPlotPaths(loadedFiles));
+                setMetadata(Object.fromEntries(
+                    plotFiles
+                        .map((file) => [file.path, plotMetadataFromFile(file)])
+                ));
+                setStructure(null);
+                setStructureError(localRun.structureFile ? 'Loading structure summary...' : localRun.structureError || 'No model structure detected');
+                setError(null);
+                setLoading(true);
+                setLocalStatus(
+                    diagnostics
+                        ? `Indexed ${diagnostics.supportedFileCount} supported files from ${diagnostics.selectedFileCount} selected files`
+                        : 'Indexed local run files'
+                );
+            }
 
             const parsePlots = async () => {
                 if (!plotFiles.length) {
-                    if (!cancelled) {
+                    if (!cancelled && !sameRun) {
                         setLoading(false);
                         setLocalStatus('No plot files detected');
                     }
                     return;
                 }
-                setLocalStatus(`Parsing ${plotFiles.length} plot files...`);
+                if (!sameRun) setLocalStatus(`Parsing ${plotFiles.length} plot files...`);
                 const parsedEntries = await Promise.all(plotFiles.map(async (file) => {
+                    const prev = prevByPath.get(file.path);
+                    // Reuse already-parsed data for files that did not change between polls.
+                    if (sameRun && prev?.plotData && prev.modified === file.modified && prev.size === file.size) {
+                        return [file.path, { ...file, plotData: prev.plotData }];
+                    }
                     try {
                         return [file.path, { ...file, plotData: await readAndParseLocalPlotFile(file) }];
                     } catch (plotError) {
@@ -201,21 +220,40 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                         .filter((file) => file.plotKind)
                         .map((file) => [file.path, plotMetadataFromFile(file)])
                 ));
-                setLoading(false);
-                setLocalStatus(null);
+                if (sameRun) {
+                    // Hide newly-appeared STOG plots by default without discarding manual toggles.
+                    setHiddenPlotPaths((current) => {
+                        const next = new Set(current);
+                        nextFiles
+                            .filter((file) => file.plotKind === 'stog' && !manuallyToggledPathsRef.current.has(file.path))
+                            .forEach((file) => next.add(file.path));
+                        return next;
+                    });
+                } else {
+                    setLoading(false);
+                    setLocalStatus(null);
+                }
             };
 
             parsePlots();
 
+            // On a live update only re-parse the structure if the .rmc6f actually changed, and keep
+            // the current model summary visible until the new one is ready (no flash to empty).
+            const prevStructure = prevByPath.get(localRun.structureFile?.path);
+            const structureChanged = !sameRun || (
+                !prevStructure
+                || prevStructure.modified !== localRun.structureFile?.modified
+                || prevStructure.size !== localRun.structureFile?.size
+            );
             let structureWorker = null;
-            if (localRun.structureFile) {
+            if (localRun.structureFile && structureChanged) {
                 structureWorker = new Worker(new URL('../workers/localStructureWorker.js', import.meta.url), {
                     type: 'module'
                 });
                 structureWorker.onmessage = (event) => {
                     if (cancelled) return;
                     if (event.data.error) {
-                        setStructure(null);
+                        if (!sameRun) setStructure(null);
                         setStructureError(event.data.error);
                         return;
                     }
@@ -224,7 +262,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                 };
                 structureWorker.onerror = () => {
                     if (cancelled) return;
-                    setStructure(null);
+                    if (!sameRun) setStructure(null);
                     setStructureError('Browser structure summary parser failed');
                 };
                 structureWorker.postMessage({
@@ -247,10 +285,12 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     }, [directory, loadServerDashboard, localRun]);
 
     useEffect(() => {
+        // Reset view state only when the folder changes, not on each Live Data refresh
+        // (directory stays constant across live updates of the same run).
         setShowLoadedFiles(false);
         manuallyToggledPathsRef.current = new Set();
         setDismissedErrors(new Set());
-    }, [directory, localRun]);
+    }, [directory]);
 
     useEffect(() => {
         // Server-side file watching is Flask-only; static mode watches via App-level handle polling.
