@@ -149,10 +149,10 @@ function App() {
   const handleStaticLiveDataNotice = () => {
     setBrowseStatus({
       kind: 'info',
-      text: 'Live Data on the hosted dashboard needs a Chromium browser (Chrome/Edge), or use the local app.',
+      text: 'Live Data works in Chromium browsers — Chrome, Edge, Arc, or Opera. You can still open a folder here to view results, or',
       link: {
         href: REPO_URL,
-        label: 'Install the local app'
+        label: 'install the local app'
       }
     });
   };

@@ -29,10 +29,11 @@ After loading, use:
 - `Dashboard` for plots, loaded-file badges, and hide/show chart toggles.
 - `KDE / 3D` for model information, KDE slices, and the folded unit-cell view.
 
-## 3. Run Locally For Live Data
+## 3. Live Data (Auto-Refresh)
 
-Use the local Flask app when you want `Live Data`, which watches the selected folder and refreshes
-charts when files are updated.
+`Live Data` watches your selected folder and refreshes charts as files are updated. On the hosted
+dashboard it works in Chromium browsers (Chrome, Edge, Arc, Opera). In Safari or Firefox, run the
+local Flask app for the same feature:
 
 From the repository root:
 
