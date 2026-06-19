@@ -5,6 +5,20 @@ export const isStaticMode = () => {
     return window.location.hostname.endsWith('github.io');
 };
 
+// File System Access API (window.showDirectoryPicker) powers static-mode Live Data.
+// Chromium-only (Chrome/Edge/Arc/Opera); Firefox/Safari fall back to <input webkitdirectory>.
+export const supportsFileSystemAccess = () => (
+    typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function'
+);
+
+export const WATCH_INTERVAL_MS = 3000;
+
+// Stable fingerprint of a run's files; a change signals the dashboard should reload.
+export const fileSignature = (items) => items
+    .map((file) => `${file.path}:${file.modified ?? ''}:${file.size ?? ''}:${file.plotKind ?? ''}`)
+    .sort()
+    .join('|');
+
 export const detectPlotKind = (name) => {
     if (/_FT_XFQ\d+\.csv$/.test(name)) return 'xpdf';
     if (name.includes('PDF') && name.endsWith('.csv')) {
@@ -294,23 +308,22 @@ export const readAndParseLocalPlotFile = async (file) => {
     return plotDataFromText({ ...file, text });
 };
 
-export const buildLocalRun = async (fileList) => {
-    const selected = [...fileList];
-    const files = selected
-        .filter((file) => isSupportedFile(file.name))
-        .map((file) => {
-            const path = file.webkitRelativePath || file.name;
-            return {
-                name: basename(path),
-                path,
-                type: 'file',
-                plotKind: detectPlotKind(basename(path)),
-                sourceFile: file,
-                size: file.size
-            };
-        });
+// Build a run object from { path, file } pairs. Shared by the <input webkitdirectory>
+// path (buildLocalRun) and the File System Access path (buildLocalRunFromHandle).
+const makeRunFromEntries = (entries) => {
+    const files = entries
+        .filter(({ path }) => isSupportedFile(basename(path)))
+        .map(({ path, file }) => ({
+            name: basename(path),
+            path,
+            type: 'file',
+            plotKind: detectPlotKind(basename(path)),
+            sourceFile: file,
+            size: file.size,
+            modified: file.lastModified
+        }));
     if (!files.length) {
-        throw new Error(`No supported RMCprofile files found in ${selected.length} selected files`);
+        throw new Error(`No supported RMCprofile files found in ${entries.length} selected files`);
     }
 
     const rmc6f = chooseStructureFile(files);
@@ -326,10 +339,40 @@ export const buildLocalRun = async (fileList) => {
         structureFile: rmc6f || null,
         structureError: rmc6f ? 'Structure data loads when needed' : 'No model structure detected',
         diagnostics: {
-            selectedFileCount: selected.length,
+            selectedFileCount: entries.length,
             supportedFileCount: files.length,
             plotFileCount: files.filter((file) => file.plotKind).length,
             hasStructureFile: Boolean(rmc6f)
         }
     };
+};
+
+export const buildLocalRun = async (fileList) => {
+    const entries = [...fileList].map((file) => ({
+        path: file.webkitRelativePath || file.name,
+        file
+    }));
+    return makeRunFromEntries(entries);
+};
+
+// Recursively walk a FileSystemDirectoryHandle into { path, file } pairs. getFile()
+// returns a fresh File each call, so re-walking the same handle reflects on-disk changes.
+export const collectHandleEntries = async (dirHandle, prefix = '') => {
+    const entries = [];
+    for await (const [name, entry] of dirHandle.entries()) {
+        const path = prefix ? `${prefix}/${name}` : name;
+        if (entry.kind === 'file') {
+            entries.push({ path, file: await entry.getFile() });
+        } else if (entry.kind === 'directory') {
+            entries.push(...await collectHandleEntries(entry, path));
+        }
+    }
+    return entries;
+};
+
+export const buildLocalRunFromHandle = async (dirHandle) => {
+    // Prefix with the folder name so paths match the webkitdirectory layout
+    // (root folder as the first segment) and directoryRoot resolves to the folder.
+    const entries = await collectHandleEntries(dirHandle, dirHandle.name);
+    return makeRunFromEntries(entries);
 };

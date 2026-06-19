@@ -3,6 +3,7 @@ import axios from 'axios';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import API_BASE_URL from '../api';
+import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
 import ModelSummary from './ModelSummary';
 import './StructurePage.css';
@@ -401,6 +402,14 @@ const StructurePage = ({ directory, localRun, theme }) => {
             }
             setStructure(null);
             setError(localRun.structureError || 'No structure data available in this folder');
+            setLoading(false);
+            return;
+        }
+
+        // Static mode has no Flask backend; structure data comes from a selected local run.
+        if (isStaticMode()) {
+            setStructure(null);
+            setError('Open a run folder to view the structure.');
             setLoading(false);
             return;
         }
