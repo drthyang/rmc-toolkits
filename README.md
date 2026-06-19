@@ -139,8 +139,9 @@ There are two supported hosting modes:
 - **GitHub Pages static dashboard**: easiest public link. Users select a local run folder in the
   browser, and the dashboard parses supported plot files on their machine. This mode does not upload
   data and does not require a Python server. Static mode also renders uploaded `.rmc6f` structures
-  with a browser-side Gaussian KDE worker and 3D model view. Live Data monitoring is not available
-  in this mode because GitHub Pages cannot watch local filesystem changes.
+  with a browser-side Gaussian KDE worker and 3D model view. Live Data monitoring is available in
+  this mode in Chromium browsers (Chrome, Edge, Arc, Opera) via the File System Access API; Safari
+  and Firefox can still load a folder once for a static view.
 - **Flask web service**: full-featured deployment with server-side file browsing, structure
   sampling, conversion, SciPy KDE computation, and Live Data folder monitoring.
 
