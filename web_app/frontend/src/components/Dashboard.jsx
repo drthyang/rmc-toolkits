@@ -1,18 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
-import { plotMetadataFromFile, readAndParseLocalPlotFile } from '../browserData';
+import { fileSignature, isStaticMode, plotMetadataFromFile, readAndParseLocalPlotFile, WATCH_INTERVAL_MS } from '../browserData';
 import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
-const WATCH_INTERVAL_MS = 3000;
-
-const fileSignature = (items) => items
-    .map((file) => `${file.path}:${file.modified ?? ''}:${file.size ?? ''}:${file.plotKind ?? ''}`)
-    .sort()
-    .join('|');
 
 const defaultHiddenPlotPaths = (items) => new Set(
     items
@@ -246,7 +240,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
             };
         }
 
-        loadServerDashboard();
+        // Static mode has no Flask backend; the dashboard is driven entirely by localRun.
+        if (!isStaticMode()) {
+            loadServerDashboard();
+        }
     }, [directory, loadServerDashboard, localRun]);
 
     useEffect(() => {
@@ -256,7 +253,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     }, [directory, localRun]);
 
     useEffect(() => {
-        if (!watchFiles || localRun) return undefined;
+        // Server-side file watching is Flask-only; static mode watches via App-level handle polling.
+        if (!watchFiles || localRun || isStaticMode()) return undefined;
 
         const pollForUpdates = async () => {
             if (pollInFlightRef.current) return;
