@@ -56,9 +56,10 @@ Goal: replace static inspection with interactive scientific workflows.
   - colormap selector,
   - contour toggle.
 - Maintain the current server-side SciPy KDE path and add export/reproducibility controls.
-- Maintain the hosted GitHub Pages path with browser-side parsing and Web Worker KDE for users who
-  want to inspect local files without installing the package. Live Data remains local-Flask-only
-  because static GitHub Pages cannot watch filesystem changes.
+- Maintain the hosted GitHub Pages path with browser-side parsing and Web Worker KDE (WebGPU-
+  accelerated with an automatic CPU fallback) for users who want to inspect local files without
+  installing the package. Live Data remains local-Flask-only because static GitHub Pages cannot watch
+  filesystem changes.
 - Extend the Three.js structure viewer:
   - element visibility toggles,
   - configurable atom coloring,

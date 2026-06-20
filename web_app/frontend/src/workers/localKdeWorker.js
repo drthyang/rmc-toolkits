@@ -1,3 +1,5 @@
+import { computeDensityGpu, shouldUseGpu } from './gpuKde.js';
+
 const CUBE_CORNERS = [
     [0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
     [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]
@@ -186,7 +188,30 @@ const extractContours = ({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax, le
     return contours;
 };
 
-const computeKde = (payload) => {
+// The density map is the worker's hot loop: for every grid cell, sum an
+// anisotropic 2D Gaussian over every sample (O(grid^2 * samples)). This is the
+// CPU implementation, used directly on devices without WebGPU and as the
+// fallback whenever the GPU path is unavailable or errors.
+const computeDensityCpu = ({ samples, kernel, grid, xMin, yMin, xStep, yStep }) => {
+    const density = Array.from({ length: grid }, () => new Array(grid).fill(0));
+    for (let y = 0; y < grid; y += 1) {
+        const gy = yMin + y * yStep;
+        for (let x = 0; x < grid; x += 1) {
+            const gx = xMin + x * xStep;
+            let sum = 0;
+            for (let index = 0; index < samples.length; index += 1) {
+                const dx = gx - samples[index][0];
+                const dy = gy - samples[index][1];
+                const exponent = -0.5 * (kernel.inv00 * dx * dx + 2 * kernel.inv01 * dx * dy + kernel.inv11 * dy * dy);
+                if (exponent > -60) sum += Math.exp(exponent);
+            }
+            density[y][x] = sum * kernel.normalizer;
+        }
+    }
+    return density;
+};
+
+const computeKde = async (payload) => {
     const {
         points,
         normal,
@@ -208,8 +233,9 @@ const computeKde = (payload) => {
     const yMax = Math.max(...yValues);
     const slab = makeSlab({ points, normal, uVector, vVector, range, zCenter, thickness });
     const grid = Math.max(16, Math.min(Number(gridSize) || 120, 260));
-    const density = Array.from({ length: grid }, () => new Array(grid).fill(0));
+    let density = Array.from({ length: grid }, () => new Array(grid).fill(0));
     let fitCount = 0;
+    let backend = 'cpu';
 
     if (slab.length >= 5) {
         const fitLimit = 6000;
@@ -220,19 +246,24 @@ const computeKde = (payload) => {
             const kernel = makeKernel(samples, bandwidth);
             const xStep = (xMax - xMin) / Math.max(grid - 1, 1);
             const yStep = (yMax - yMin) / Math.max(grid - 1, 1);
-            for (let y = 0; y < grid; y += 1) {
-                const gy = yMin + y * yStep;
-                for (let x = 0; x < grid; x += 1) {
-                    const gx = xMin + x * xStep;
-                    let sum = 0;
-                    for (let index = 0; index < samples.length; index += 1) {
-                        const dx = gx - samples[index][0];
-                        const dy = gy - samples[index][1];
-                        const exponent = -0.5 * (kernel.inv00 * dx * dx + 2 * kernel.inv01 * dx * dy + kernel.inv11 * dy * dy);
-                        if (exponent > -60) sum += Math.exp(exponent);
-                    }
-                    density[y][x] = sum * kernel.normalizer;
+            const args = { samples, kernel, grid, xMin, yMin, xStep, yStep };
+
+            // Run the density map on the GPU when the workload is large enough to
+            // amortize the setup cost. Any failure or unavailability falls back to
+            // the CPU loop so the output is identical on every device.
+            let mapped = null;
+            if (shouldUseGpu(grid, samples.length)) {
+                try {
+                    mapped = await computeDensityGpu(args);
+                } catch {
+                    mapped = null;
                 }
+            }
+            if (mapped) {
+                density = mapped;
+                backend = 'gpu';
+            } else {
+                density = computeDensityCpu(args);
             }
         }
     }
@@ -270,13 +301,14 @@ const computeKde = (payload) => {
         vVector,
         planeVertices,
         planePolygon: planeVertices.map((vertex) => [dot(vertex, uVector), dot(vertex, vVector)]),
-        browserKde: true
+        browserKde: true,
+        backend
     };
 };
 
-self.onmessage = (event) => {
+self.onmessage = async (event) => {
     try {
-        const result = computeKde(event.data);
+        const result = await computeKde(event.data);
         self.postMessage({ id: event.data.id, result });
     } catch (error) {
         self.postMessage({ id: event.data.id, error: error.message || 'Browser KDE computation failed' });

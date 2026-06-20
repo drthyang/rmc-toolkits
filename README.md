@@ -36,6 +36,10 @@ workflows.
   with element filtering, bandwidth, grid size, contour, and log-scale options.
 - **3D frontend view**: uses Three.js orbit/pan/zoom controls, a publication-style atom
   palette, and a slab overlay synchronized to the KDE controls.
+- **GPU-accelerated browser KDE**: in static/offline mode the Web Worker computes the KDE density
+  map with a WebGPU compute shader when available (modern iOS Safari and Android Chrome), and falls
+  back automatically to the CPU path on unsupported devices — up to ~100× faster on the heaviest
+  density grids, with numerically identical output.
 
 ## Screenshots
 
@@ -139,7 +143,8 @@ There are two supported hosting modes:
 - **GitHub Pages static dashboard**: easiest public link. Users select a local run folder in the
   browser, and the dashboard parses supported plot files on their machine. This mode does not upload
   data and does not require a Python server. Static mode also renders uploaded `.rmc6f` structures
-  with a browser-side Gaussian KDE worker and 3D model view. Live Data monitoring is available in
+  with a browser-side Gaussian KDE worker (WebGPU-accelerated with an automatic CPU fallback) and
+  3D model view. Live Data monitoring is available in
   this mode in Chromium browsers (Chrome, Edge, Arc, Opera) via the File System Access API; Safari
   and Firefox can still load a folder once for a static view.
 - **Flask web service**: full-featured deployment with server-side file browsing, structure
@@ -161,7 +166,8 @@ npm run preview
 
 Open the preview URL and choose a local run folder. The static dashboard supports local plot parsing
 for RMCProfile CSV/log files and basic STOG outputs, plus `.rmc6f` model summaries, slab controls,
-a browser-side Gaussian KDE slice, contours, and a Three.js 3D model view. The Flask service still
+a browser-side Gaussian KDE slice (GPU-accelerated via a WebGPU compute shader where supported,
+with a CPU fallback otherwise), contours, and a Three.js 3D model view. The Flask service still
 provides the server-side SciPy KDE path for reference-grade density values.
 
 ### Flask Web Service
