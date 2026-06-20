@@ -1072,16 +1072,6 @@ const StructurePage = ({ directory, localRun, theme }) => {
                     {kdeError && <div className="structure-error">{kdeError}</div>}
 
                     <div className="analysis-layout">
-                        {Object.keys(elementColors).length > 0 && (
-                            <div className="atom-legend" aria-label="Atom colors by element">
-                                {Object.entries(elementColors).map(([element, color]) => (
-                                    <span key={element} className="atom-legend-item">
-                                        <span className="atom-legend-swatch" style={{ background: color }} />
-                                        {element}
-                                    </span>
-                                ))}
-                            </div>
-                        )}
                         <div
                             className="kde-panel"
                             style={{ '--panel-aspect': slicePanelGeometry.planeAspect }}
@@ -1110,6 +1100,16 @@ const StructurePage = ({ directory, localRun, theme }) => {
                         >
                             <h3>Folded Unit Cell</h3>
                             <div ref={mountRef} className="three-mount" />
+                            {Object.keys(elementColors).length > 0 && (
+                                <div className="atom-legend" aria-label="Atom colors by element">
+                                    {Object.entries(elementColors).map(([element, color]) => (
+                                        <span key={element} className="atom-legend-item">
+                                            <span className="atom-legend-swatch" style={{ background: color }} />
+                                            {element}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </>
