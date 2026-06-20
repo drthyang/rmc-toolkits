@@ -260,6 +260,37 @@
     align-items: start;
 }
 
+.atom-legend {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.9rem;
+    padding: 0.5rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel-bg);
+    box-shadow: var(--shadow-xs);
+}
+
+.atom-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-strong);
+    font-variant-numeric: tabular-nums;
+}
+
+.atom-legend-swatch {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 3px;
+    border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
+    flex: none;
+}
+
 .kde-panel,
 .slab-panel,
 .model-panel {
