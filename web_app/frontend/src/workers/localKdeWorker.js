@@ -233,7 +233,7 @@ const computeKde = async (payload) => {
     const yMax = Math.max(...yValues);
     const slab = makeSlab({ points, normal, uVector, vVector, range, zCenter, thickness });
     const grid = Math.max(16, Math.min(Number(gridSize) || 120, 260));
-    let density = Array.from({ length: grid }, () => new Array(grid).fill(0));
+    let density = null;
     let fitCount = 0;
     let backend = 'cpu';
 
@@ -259,13 +259,15 @@ const computeKde = async (payload) => {
                     mapped = null;
                 }
             }
-            if (mapped) {
-                density = mapped;
-                backend = 'gpu';
-            } else {
-                density = computeDensityCpu(args);
-            }
+            density = mapped ?? computeDensityCpu(args);
+            if (mapped) backend = 'gpu';
         }
+    }
+
+    // Degenerate slabs never reach the density solver; emit a flat grid so the
+    // scaling and contour passes below always have a well-formed array.
+    if (!density) {
+        density = Array.from({ length: grid }, () => new Array(grid).fill(0));
     }
 
     let vmin = Infinity;
