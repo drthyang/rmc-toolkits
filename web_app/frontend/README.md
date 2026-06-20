@@ -60,4 +60,6 @@ Open `http://127.0.0.1:5174/`.
 - GitHub Pages/static mode does not support Live Data monitoring because the browser cannot watch
   local filesystem changes.
 - The Dashboard page renders parsed plot data as browser-native SVG.
-- The KDE / 3D page uses backend SciPy KDE data and a Three.js structure viewer.
+- The KDE / 3D page uses backend SciPy KDE data and a Three.js structure viewer. In static/offline
+  mode it instead computes the KDE in a Web Worker, using a WebGPU compute shader when the browser
+  supports it and falling back to a CPU loop otherwise.

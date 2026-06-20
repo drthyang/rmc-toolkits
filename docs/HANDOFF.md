@@ -102,6 +102,36 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 - Hardened the native folder picker startup path so a missing default folder falls back to the
   nearest existing directory before opening the OS dialog.
 
+## 2026-06-19 Update: WebGPU-Accelerated Browser KDE
+
+- Addressed slow browser-side KDE on mobile by moving the density-map hot loop
+  (`O(grid^2 * samples)`, up to ~400M `exp()` evaluations per slice) onto the GPU. Each grid cell
+  is independent, so it maps cleanly to a WebGPU compute shader with one invocation per cell.
+- Added `web_app/frontend/src/workers/gpuKde.js`: an inline WGSL compute shader, a lazily-cached
+  adapter/device initializer, `computeDensityGpu` (writes sample/param/output buffers, dispatches,
+  reads back via `mapAsync`, reshapes to the same `density[y][x]` grid the CPU path returns), and a
+  `shouldUseGpu` work-size heuristic.
+- Refactored `localKdeWorker.js`: extracted the existing loop into `computeDensityCpu`, added a
+  GPU-or-CPU branch (`density = gpuResult ?? computeDensityCpu(args)`), and made `computeKde` and the
+  `onmessage` handler async. The worker still posts the same `{ id, result }` message, so
+  `StructurePage.jsx` needed no changes; its existing request-`id` guard already drops stale async
+  replies during rapid slider drags. The result now carries a `backend: 'gpu' | 'cpu'` diagnostic tag.
+- The GPU path is used only when `grid * grid * sampleCount >= 2_000_000` (`GPU_MIN_WORK`); smaller
+  slices stay on the CPU to avoid GPU setup/readback overhead. Init is attempted once per worker and
+  the result cached, so unsupported devices never re-probe on every message.
+- **Robustness is the design point.** Missing `navigator.gpu`, no adapter, a device/shader error, a
+  lost device, or sub-threshold work all fall back to the existing JS loop. Output is identical and
+  no GPU failure ever surfaces through `worker.onerror`. Devices without WebGPU behave exactly as
+  before; modern iOS Safari (26+) and Android Chrome (121+) ship WebGPU on by default and get the win.
+- Verified in-browser (Chromium/Metal): numeric parity between GPU (f32) and CPU (f64) is
+  ~1.7e-6 relative across grids 16/120/260 — well under the 1e-4 tolerance — and the density step
+  measured ~59× faster at grid 120 (1.9 ms vs 112.6 ms) and ~107× faster at grid 260
+  (4.3 ms vs 461.8 ms). Confirmed the fallback returns cleanly (cached null, no retry storm) and the
+  worker reports `backend: 'cpu'` below the threshold, with no console errors.
+- The GPU acceleration speeds up the *density-map computation* only; the worker still subsamples to
+  6000 slab points and uses f32 on the GPU, so static-mode KDE remains a visualization workflow, not
+  a substitute for the server-side SciPy `gaussian_kde` reference path.
+
 ## Important Files
 
 - `rmc_toolkits/parsers.py`: parsing and structure-loading functions.
@@ -115,7 +145,8 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
 - `web_app/frontend/src/components/InteractivePlot.jsx`: browser-native SVG plot renderer for the dashboard.
 - `web_app/frontend/src/components/StructurePage.jsx`: KDE slice and 3D model page.
 - `web_app/frontend/src/browserData.js`: static-mode local file parsing and run assembly.
-- `web_app/frontend/src/workers/localKdeWorker.js`: browser-side KDE worker for GitHub Pages/static mode.
+- `web_app/frontend/src/workers/localKdeWorker.js`: browser-side KDE worker for GitHub Pages/static mode (GPU-or-CPU density map, contours, slab math).
+- `web_app/frontend/src/workers/gpuKde.js`: WebGPU compute-shader density map plus `shouldUseGpu` heuristic and cached device init; falls back to the worker's CPU loop when WebGPU is unavailable.
 - `web_app/frontend/src/components/PlotViewer.jsx`: PNG plot rendering and metadata display.
 - `docs/ROADMAP.md`: development roadmap for the larger application.
 
@@ -145,9 +176,11 @@ This hand-off adds a reusable package layer in `rmc_toolkits/` and wires the web
   web page mirrors only the slab x-z projection so far. The KDE fit is subsampled to 6000 slab
   points, which is fine for visualization but not an exact full-population estimate.
 - GitHub Pages/static mode has no Python backend. It uses local browser parsing and a Web Worker KDE
-  implementation, so it can be slower than the local Flask/SciPy app on large structures. The worker
-  uses deterministic random subsampling when a slab exceeds 6000 points to avoid biased densities
-  from file-order stride sampling.
+  implementation whose density map runs on the GPU via a WebGPU compute shader when available (with
+  an automatic CPU fallback), so the heaviest slices are far faster than the old CPU-only loop. On
+  devices without WebGPU it uses the CPU path and can still trail the local Flask/SciPy app on very
+  large structures. The worker uses deterministic random subsampling when a slab exceeds 6000 points
+  to avoid biased densities from file-order stride sampling.
 - Live Data monitoring is only available in the local Flask app. GitHub Pages/static mode cannot
   watch filesystem changes after a folder is selected.
 - The native folder picker is intended for local desktop sessions. It depends on OS-level dialog
