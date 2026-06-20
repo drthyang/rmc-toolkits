@@ -5,15 +5,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import API_BASE_URL from '../api';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
+import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import ModelSummary from './ModelSummary';
 import './StructurePage.css';
-
-const colors = {
-    Ga: '#3C5488',
-    Nb: '#E64B35',
-    Se: '#00A087',
-    default: '#8A8F98'
-};
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
 const dot = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0);
@@ -461,6 +455,15 @@ const StructurePage = ({ directory, localRun, theme }) => {
         return allPoints.filter((point) => point.element === selectedElement);
     }, [structure, selectedElement]);
 
+    // One distinct color per element, stable across element filtering and shared
+    // by the slab-in-cell canvas and the folded-unit-cell 3D view.
+    const elementColors = useMemo(() => {
+        const elements = structure?.elements?.length
+            ? structure.elements
+            : (structure?.points || []).map((point) => point.element);
+        return buildElementColors(elements);
+    }, [structure]);
+
     const unitCell = useMemo(() => {
         if (!structure?.latticeVectors || !structure?.supercell) {
             const unitVectors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -794,7 +797,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
             const fraction = [point.x, point.y, point.z];
             const projected = mapper.map(dot(fraction, sliceConfig.u), dot(fraction, sliceConfig.normal));
             const inSlab = inActiveSlab(point);
-            ctx.fillStyle = inSlab ? (colors[point.element] || colors.default) : 'rgba(166, 176, 188, 0.22)';
+            ctx.fillStyle = inSlab ? (elementColors[point.element] || DEFAULT_ELEMENT_COLOR) : 'rgba(166, 176, 188, 0.22)';
             ctx.fillRect(projected.x, projected.y, inSlab ? 2 : 1, inSlab ? 2 : 1);
         }
 
@@ -807,7 +810,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
         ctx.fillText(sliceConfig.label, Math.max(8, normalLabel.x - 12), Math.max(16, normalLabel.y - 6));
         ctx.fillText(`${sliceConfig.label}=${zCenter.toFixed(3)}`, 10, Math.max(30, slabLabel.y - 6));
         ctx.fillText(`d=${thickness.toFixed(3)}`, 10, Math.min(height - 16, slabLabel.y + 18));
-    }, [points, zCenter, thickness, unitCell, themeVars, sliceConfig, inActiveSlab]);
+    }, [points, zCenter, thickness, unitCell, themeVars, sliceConfig, inActiveSlab, elementColors]);
 
     useEffect(() => {
         const mount = mountRef.current;
@@ -852,7 +855,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
             });
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             const material = new THREE.PointsMaterial({
-                color: colors[element] || colors.default,
+                color: elementColors[element] || DEFAULT_ELEMENT_COLOR,
                 size: 0.018,
                 sizeAttenuation: true
             });
@@ -942,7 +945,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
                 object.material?.dispose?.();
             });
         };
-    }, [points, unitCell, zCenter, thickness, themeVars, sliceConfig]);
+    }, [points, unitCell, zCenter, thickness, themeVars, sliceConfig, elementColors]);
 
     return (
         <section className="structure-page">
