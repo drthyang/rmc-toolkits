@@ -261,16 +261,13 @@
 }
 
 .atom-legend {
-    grid-column: 1 / -1;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.35rem 0.9rem;
-    padding: 0.5rem 0.8rem;
-    border: 1px solid var(--border);
-    border-radius: 12px;
+    padding: 0.55rem 0.9rem;
+    border-top: 1px solid var(--border);
     background: var(--panel-bg);
-    box-shadow: var(--shadow-xs);
 }
 
 .atom-legend-item {
