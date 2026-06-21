@@ -4,7 +4,6 @@ Post-processing utilities and a local-first dashboard for **RMCProfile** and **S
 
 🔗 **Hosted dashboard:** [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
 📖 **New here?** Start with [QuickStart.md](QuickStart.md).
-🤖 **Contributing / AI agents?** See [AGENTS.md](AGENTS.md) and the [development log](docs/CHANGELOG.md).
 
 ## What's Inside
 
