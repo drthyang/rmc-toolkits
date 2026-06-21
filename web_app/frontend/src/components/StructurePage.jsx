@@ -1224,7 +1224,14 @@ const StructurePage = ({ directory, localRun, theme }) => {
             )}
             
             <footer className="app-footer">
-                &copy; 2026 Tsung-Han Yang. All rights reserved.
+                &copy; 2026 Tsung-Han Yang &middot;{' '}
+                <a
+                    href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE"
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    MIT License
+                </a>
             </footer>
         </section>
     );
