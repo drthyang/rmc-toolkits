@@ -240,6 +240,9 @@ function App() {
                   {localLoading ? 'Reading' : 'Select Folder'}
                 </button>
               </div>
+              <small className="local-privacy-note">
+                Files stay on your device — they are read locally and never uploaded.
+              </small>
             </div>
           ) : staticMode ? (
             <div className="path-controls">
@@ -272,6 +275,10 @@ function App() {
                   {localLoading ? 'Reading' : 'Select Folder'}
                 </button>
               </div>
+              <small className="local-privacy-note">
+                Files stay on your device — they are read locally and never uploaded. Your browser may
+                still label the picker button “Upload”.
+              </small>
             </div>
           ) : (
             <div className="path-controls">
