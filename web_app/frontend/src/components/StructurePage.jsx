@@ -917,7 +917,8 @@ const StructurePage = ({ directory, localRun, theme }) => {
             canvas.removeEventListener('pointercancel', endDrag);
             canvas.removeEventListener('pointerleave', handlePointerLeave);
         };
-    }, []);
+    // Re-attach once the slab canvas mounts (it only renders after a structure loads).
+    }, [structure]);
 
     useEffect(() => {
         const mount = mountRef.current;
