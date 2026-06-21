@@ -2,6 +2,10 @@
 
 Post-processing utilities and a local-first dashboard for **RMCProfile** and **STOG** outputs.
 
+🔒 **Your data stays yours.** Run files are read and rendered entirely in your own browser (or on
+your own machine) and are never uploaded to any server — a private, secure way to monitor an RMC
+refinement.
+
 🔗 **Hosted dashboard:** [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
 📖 **New here?** Start with [QuickStart.md](QuickStart.md).
 
