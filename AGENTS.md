@@ -82,12 +82,16 @@ VITE_API_BASE_URL=http://localhost:5050 npm run dev
 # Static-mode dev (no backend)
 VITE_STATIC_MODE=true npm run dev
 
-# Tests
+# Tests (sample-data-backed tests skip when data/ GNSe sample is absent)
 MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
 
 # Lint frontend
 cd web_app/frontend && npx eslint src
 ```
+
+CI (`.github/workflows/tests.yml`) runs the Python suite + frontend lint/build on every push/PR to
+`main`. `.github/workflows/pages.yml` deploys the static dashboard. The `rmc_toolkits` package is
+pip-installable (`pip install -e .`, see `pyproject.toml`) and exposes `__version__`.
 
 The repo's sample data lives in `data/` (a GaNb₄Se₈ run). Point the run folder at a subdirectory
 containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
@@ -104,11 +108,14 @@ containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
   RMCProfile variants and validate against the declared atom count.
 - `src/RMC_3D.py` imports Mayavi and runs work at import time; `src/STOG_plot.py` has top-level
   plotting. Refactor before reusing from the web app.
-- Tests cover the package layer and sample fixtures; backend API endpoints are not yet covered.
+- The GNSe example dataset (the tests' and README's reference sample) is gitignored and not in the
+  repo. Sample-backed tests skip without it, so CI exercises only logic/synthetic-fixture tests. A
+  committed standard example run is still wanted so the full suite runs in CI.
 
 ## Next best steps
 
-1. Backend API tests for `/api/files`, `/api/plot/data`, `/api/structure`, `/api/kde/slice`.
+1. Commit a small standard example run (or trimmed fixtures) so the sample-backed tests run in CI
+   instead of skipping.
 2. Refactor `src/RMC_plot.py`, `src/STOG_plot.py`, `src/RMC_3D.py` into thin wrappers with no
    import-time work.
 3. Make browser `.rmc6f` parsing tolerant + diagnostic (fixes the zero-atom mobile issue).

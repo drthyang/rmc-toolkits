@@ -10,8 +10,16 @@ from rmc_toolkits.kde import MAX_KDE_FIT_POINTS, kde_slice, load_unit_cell_posit
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 
+# The GNSe example dataset is gitignored (see README), so sample-backed tests
+# skip rather than fail when it is not present locally / in CI.
+requires_sample = unittest.skipUnless(
+    (DATA / "GNSe.rmc6f").exists(),
+    "GNSe sample data not present in data/ (gitignored)",
+)
+
 
 class KdeTests(unittest.TestCase):
+    @requires_sample
     def test_load_unit_cell_positions_filters_by_element(self):
         all_positions = load_unit_cell_positions(DATA / "GNSe.rmc6f")
         ga_positions = load_unit_cell_positions(DATA / "GNSe.rmc6f", element="Ga")

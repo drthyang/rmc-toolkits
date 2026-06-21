@@ -1,5 +1,7 @@
 """Reusable analysis helpers for RMCProfile post-processing."""
 
+__version__ = "0.1.0"
+
 from .kde import (
     MAX_KDE_FIT_POINTS,
     UnitCellPositions,
@@ -25,6 +27,7 @@ from .parsers import (
 from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_png
 
 __all__ = [
+    "__version__",
     "CsvSeries",
     "MAX_KDE_FIT_POINTS",
     "PlotResult",
