@@ -274,14 +274,6 @@
   white-space: nowrap;
 }
 
-.local-privacy-note {
-  grid-column: 1 / -1;
-  margin-top: 0.1rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.3;
-}
-
 .visually-hidden {
   position: absolute;
   width: 1px;
