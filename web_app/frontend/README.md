@@ -63,3 +63,7 @@ Open `http://127.0.0.1:5174/`.
 - The KDE / 3D page uses backend SciPy KDE data and a Three.js structure viewer. In static/offline
   mode it instead computes the KDE in a Web Worker, using a WebGPU compute shader when the browser
   supports it and falling back to a CPU loop otherwise.
+- On the KDE / 3D page, the `Slab In Cell` band is draggable: grab it to move the slice position
+  (`zCenter`) live without using the slider.
+- Working on this codebase? See [`AGENTS.md`](../../AGENTS.md) for architecture and conventions, and
+  [`docs/CHANGELOG.md`](../../docs/CHANGELOG.md) for history.

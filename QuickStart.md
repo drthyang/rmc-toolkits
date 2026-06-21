@@ -27,7 +27,8 @@ sample_bragg.csv
 After loading, use:
 
 - `Dashboard` for plots, loaded-file badges, and hide/show chart toggles.
-- `KDE / 3D` for model information, KDE slices, and the folded unit-cell view.
+- `KDE / 3D` for model information, KDE slices, and the folded unit-cell view. Drag the highlighted
+  band in the `Slab In Cell` panel to move the slice position directly.
 
 ## 3. Live Data (Auto-Refresh)
 

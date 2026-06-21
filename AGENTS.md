@@ -1,0 +1,118 @@
+# Agent Guide
+
+Onboarding for AI agents and new contributors. Human users want [README.md](README.md) /
+[QuickStart.md](QuickStart.md). This file is the "pick up where we left off" record: architecture,
+key files, conventions, and current state. Full chronological history lives in
+[docs/CHANGELOG.md](docs/CHANGELOG.md); forward plans in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## What this project is
+
+Post-processing for **RMCProfile** / **STOG** outputs, in three layers:
+
+1. **`rmc_toolkits/`** — pure-Python package (parsing, plots, KDE). The source of truth; new app
+   code should call into this, not the legacy scripts.
+2. **`web_app/`** — Flask API (`backend/app.py`) + React/Vite SPA (`frontend/`).
+3. **`src/`** — original standalone research scripts, kept for CLI workflows.
+
+The same React app ships in two runtime modes:
+- **Flask mode** — backend serves the built SPA and provides server-side file browsing, SciPy KDE,
+  conversion, and Live Data.
+- **Static mode** (`VITE_STATIC_MODE=true`) — GitHub Pages build. No backend; the browser parses
+  files locally and computes KDE in a Web Worker (WebGPU + CPU fallback).
+
+## Architecture map
+
+```
+rmc_toolkits/
+  parsers.py   RMC CSV/log/STOG, .rmc6f metadata + atom iteration, Frac*.txt conversion, structure loading
+  plots.py     plot-kind detection, matplotlib figures, Rwp/chi metrics, PNG serialization
+  kde.py       unit-cell position loading + server-side gaussian_kde slice (+ contours)
+
+web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,element) LRU cache for KDE
+
+web_app/frontend/src/
+  browserData.js                 static-mode local file parsing + run assembly
+  colormaps.js                   colormap LUTs for the KDE canvas
+  api.js                         frontend API base URL config (VITE_API_BASE_URL)
+  components/
+    App.jsx                      shell, run-folder selection, page nav, Live Data
+    Dashboard.jsx                all-plots run dashboard
+    InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
+    PlotViewer.jsx               PNG plot rendering + metadata
+    StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
+    FileExplorer.jsx             file navigation
+  workers/
+    localKdeWorker.js            static-mode KDE worker (GPU-or-CPU density map, contours, slab math)
+    gpuKde.js                    WGSL compute-shader density map + shouldUseGpu heuristic + cached device init
+```
+
+## Key conventions & gotchas
+
+- **`z` / `dz` are cell-edge fractions** at the API/slider boundary, converted to Ångström inside
+  `kde.py`. Keep that contract when touching KDE code.
+- **KDE fit is subsampled to 6000 slab points** (deterministic pseudo-random, to avoid RMC
+  atom-order aliasing). Static-mode KDE is a *visualization* path — the server-side SciPy
+  `gaussian_kde` is the reference for publication values.
+- **GPU KDE must always degrade gracefully.** Missing `navigator.gpu`, no adapter, device/shader
+  error, lost device, or sub-threshold work all fall back to the CPU loop with identical output.
+  GPU is used only when `grid*grid*samples >= 2_000_000`.
+- **`StructurePage.jsx` canvases render conditionally** (`{structure && (...)}`). Effects that attach
+  listeners to those canvases must depend on `structure` (or the canvas ref), not `[]` — otherwise
+  they run at mount before the canvas exists and never attach. (This was the slab-drag bug, fixed
+  2026-06-21.)
+- **Slab In Cell drag**: cursor→slice mapping inverts the 2D plane projection in `makePlaneMapper`
+  (`invert()`); the band geometry is published each render into `slabGeometryRef` for the pointer
+  handlers. Drag updates `zCenter` live.
+- **Three.js atom palette** is a Nature-style scheme; each element gets a distinct color shared by
+  the slab and 3D views via a legend above them.
+- **Backend data-root guard**: relative paths resolve under `RMC_TOOLKITS_DATA_ROOT` (default repo
+  root); absolute paths are rejected unless inside the root or a natively-picked folder.
+
+## Run & test
+
+```bash
+# Backend (venv with numpy scipy flask flask-cors matplotlib)
+source .venv/bin/activate
+RMC_TOOLKITS_PORT=5050 python web_app/backend/app.py
+
+# Frontend dev
+cd web_app/frontend
+VITE_API_BASE_URL=http://localhost:5050 npm run dev
+
+# Static-mode dev (no backend)
+VITE_STATIC_MODE=true npm run dev
+
+# Tests
+MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
+
+# Lint frontend
+cd web_app/frontend && npx eslint src
+```
+
+The repo's sample data lives in `data/` (a GaNb₄Se₈ run). Point the run folder at a subdirectory
+containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
+
+> The machine's Anaconda Python has a broken numpy and no Flask — always use the dedicated `.venv`.
+
+## Current known issues
+
+- **iPhone Safari static mode** (2026-06-17): unreliable after selecting a local run folder; desktop
+  static mode works. Likely in the mobile folder-selection / file-enumeration path. Keep the local
+  Flask workflow as the supported path for mobile until a unified run-source abstraction lands.
+- **Zero-atom `.rmc6f` parse** (2026-06-18): some datasets load plots but show 0 atoms / no KDE in
+  static mode — the browser `.rmc6f` parser assumes one exact atom-line format. Make it tolerant to
+  RMCProfile variants and validate against the declared atom count.
+- `src/RMC_3D.py` imports Mayavi and runs work at import time; `src/STOG_plot.py` has top-level
+  plotting. Refactor before reusing from the web app.
+- Tests cover the package layer and sample fixtures; backend API endpoints are not yet covered.
+
+## Next best steps
+
+1. Backend API tests for `/api/files`, `/api/plot/data`, `/api/structure`, `/api/kde/slice`.
+2. Refactor `src/RMC_plot.py`, `src/STOG_plot.py`, `src/RMC_3D.py` into thin wrappers with no
+   import-time work.
+3. Make browser `.rmc6f` parsing tolerant + diagnostic (fixes the zero-atom mobile issue).
+4. Add the z-distribution histogram and global x-z projection panels to match `src/RMC_KDE.py`.
+5. Export controls (plot PNG/SVG/CSV, KDE/3D screenshots) and `/api/project/scan` summaries.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.

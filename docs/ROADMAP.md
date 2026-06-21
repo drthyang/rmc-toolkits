@@ -50,7 +50,7 @@ Goal: replace static inspection with interactive scientific workflows.
 - Add controls for axes, range, residual display, log scale, and export resolution.
 - Extend the KDE slice viewer:
   - element selector,
-  - z-position slider,
+  - z-position slider (plus drag-the-slab-band to set the slice position — **Done.**),
   - slab thickness control,
   - bandwidth control,
   - colormap selector,
@@ -117,7 +117,7 @@ Goal: make the tool safe and pleasant for broader use.
 - `web_app/frontend/`: React app with project workspace, interactive plots, KDE, structure viewer, and exports.
 - `.github/workflows/pages.yml`: builds the static GitHub Pages dashboard from `web_app/frontend`.
 - `data/`: small example fixtures.
-- `docs/`: hand-off records, roadmap, workflow notes, and architecture decisions.
+- `docs/`: development changelog, roadmap, and architecture notes (agent guide at repo-root `AGENTS.md`).
 
 ## Suggested Immediate Backlog
 
