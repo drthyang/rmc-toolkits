@@ -353,6 +353,7 @@
     height: auto;
     max-height: calc(100vh - 17rem);
     background: var(--canvas-bg);
+    touch-action: none;
 }
 
 .three-mount {

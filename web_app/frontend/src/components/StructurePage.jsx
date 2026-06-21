@@ -165,7 +165,19 @@ const makePlaneMapper = (plane, width, height, padding = 18) => {
         };
     };
 
-    return { map };
+    // Recover the (uFraction, vFraction) plane coordinates from a screen point.
+    const invert = (screenX, screenY) => {
+        const x = (screenX - offsetX) / scaleFactor + plane.bounds.minX;
+        const y = plane.bounds.maxY - (screenY - offsetY) / scaleFactor;
+        const det = plane.u[0] * plane.v[1] - plane.v[0] * plane.u[1];
+        if (Math.abs(det) < 1e-12) return { uFraction: 0, vFraction: 0 };
+        return {
+            uFraction: (x * plane.v[1] - plane.v[0] * y) / det,
+            vFraction: (plane.u[0] * y - x * plane.u[1]) / det
+        };
+    };
+
+    return { map, invert };
 };
 
 const drawPolygon = (ctx, points) => {
@@ -275,6 +287,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
     const canvasRef = useRef(null);
     const slabCanvasRef = useRef(null);
     const mountRef = useRef(null);
+    // Geometry of the last "Slab In Cell" render, used to drag the slice band.
+    const slabGeometryRef = useRef(null);
+    const slabDragRef = useRef(null);
+    const zCenterRef = useRef(zCenter);
     const normalMenuRef = useRef(null);
     const cameraStateRef = useRef(null);
     const localStructureWorkerRef = useRef(null);
@@ -765,6 +781,16 @@ const StructurePage = ({ directory, localRun, theme }) => {
             [uMin, depthEnd]
         ]);
         const mapper = makePlaneMapper(sidePlane, width, height, 18);
+        // Publish the band geometry so the drag handler can map cursor -> slice.
+        slabGeometryRef.current = {
+            invert: mapper.invert,
+            uMin,
+            uMax,
+            depthStart,
+            depthEnd,
+            rangeMin: sliceConfig.range[0],
+            depthSpan
+        };
         const cellOutline = [
             mapper.map(uMin, sliceConfig.range[0]),
             mapper.map(uMax, sliceConfig.range[0]),
@@ -811,6 +837,87 @@ const StructurePage = ({ directory, localRun, theme }) => {
         ctx.fillText(`${sliceConfig.label}=${zCenter.toFixed(3)}`, 10, Math.max(30, slabLabel.y - 6));
         ctx.fillText(`d=${thickness.toFixed(3)}`, 10, Math.min(height - 16, slabLabel.y + 18));
     }, [points, zCenter, thickness, unitCell, themeVars, sliceConfig, inActiveSlab, elementColors]);
+
+    useEffect(() => {
+        zCenterRef.current = zCenter;
+    }, [zCenter]);
+
+    // Let users drag the highlighted band in "Slab In Cell" to move the slice.
+    useEffect(() => {
+        const canvas = slabCanvasRef.current;
+        if (!canvas) return undefined;
+
+        const planeCoordsAt = (event) => {
+            const geometry = slabGeometryRef.current;
+            if (!geometry) return null;
+            const rect = canvas.getBoundingClientRect();
+            return geometry.invert(event.clientX - rect.left, event.clientY - rect.top);
+        };
+
+        const overBand = (coords) => {
+            const geometry = slabGeometryRef.current;
+            if (!geometry || !coords) return false;
+            return (
+                coords.uFraction >= geometry.uMin &&
+                coords.uFraction <= geometry.uMax &&
+                coords.vFraction >= geometry.depthStart &&
+                coords.vFraction <= geometry.depthEnd
+            );
+        };
+
+        const zCenterAt = (coords) => {
+            const geometry = slabGeometryRef.current;
+            return (coords.vFraction - geometry.rangeMin) / geometry.depthSpan;
+        };
+
+        const handlePointerDown = (event) => {
+            const coords = planeCoordsAt(event);
+            if (!overBand(coords)) return;
+            slabDragRef.current = { offset: zCenterRef.current - zCenterAt(coords) };
+            canvas.setPointerCapture(event.pointerId);
+            canvas.style.cursor = 'grabbing';
+            event.preventDefault();
+        };
+
+        const handlePointerMove = (event) => {
+            const coords = planeCoordsAt(event);
+            if (!coords) return;
+            if (slabDragRef.current) {
+                const next = zCenterAt(coords) + slabDragRef.current.offset;
+                setZCenter(Math.min(1, Math.max(0, next)));
+                event.preventDefault();
+            } else {
+                canvas.style.cursor = overBand(coords) ? 'grab' : 'default';
+            }
+        };
+
+        const endDrag = (event) => {
+            if (!slabDragRef.current) return;
+            slabDragRef.current = null;
+            if (canvas.hasPointerCapture?.(event.pointerId)) {
+                canvas.releasePointerCapture(event.pointerId);
+            }
+            canvas.style.cursor = overBand(planeCoordsAt(event)) ? 'grab' : 'default';
+        };
+
+        const handlePointerLeave = () => {
+            if (!slabDragRef.current) canvas.style.cursor = 'default';
+        };
+
+        canvas.addEventListener('pointerdown', handlePointerDown);
+        canvas.addEventListener('pointermove', handlePointerMove);
+        canvas.addEventListener('pointerup', endDrag);
+        canvas.addEventListener('pointercancel', endDrag);
+        canvas.addEventListener('pointerleave', handlePointerLeave);
+
+        return () => {
+            canvas.removeEventListener('pointerdown', handlePointerDown);
+            canvas.removeEventListener('pointermove', handlePointerMove);
+            canvas.removeEventListener('pointerup', endDrag);
+            canvas.removeEventListener('pointercancel', endDrag);
+            canvas.removeEventListener('pointerleave', handlePointerLeave);
+        };
+    }, []);
 
     useEffect(() => {
         const mount = mountRef.current;
