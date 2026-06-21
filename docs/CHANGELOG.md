@@ -3,6 +3,21 @@
 Chronological record of notable changes, newest first. For current architecture and conventions see
 [AGENTS.md](../AGENTS.md); for forward plans see [ROADMAP.md](ROADMAP.md).
 
+## v0.1.0 — 2026-06-21 (first tagged release)
+
+First public, releasable version: the reusable Python package, Flask API, interactive dashboard,
+server-side + browser (WebGPU/CPU) KDE, and Three.js structure viewer with a draggable slice band.
+
+Release engineering added in this version:
+
+- **License:** added an MIT `LICENSE`.
+- **Packaging:** added `pyproject.toml` so `rmc_toolkits` is pip-installable (`pip install -e .`) and
+  exposes `rmc_toolkits.__version__`.
+- **CI:** added `.github/workflows/tests.yml` — runs the Python test suite plus frontend lint/build
+  on every push and PR to `main`.
+- **Tests:** sample-data-backed tests now skip cleanly when the gitignored GNSe example dataset is
+  absent, so the suite is green on a fresh clone and in CI (17 run, 16 skip without the sample).
+
 ## 2026-06-21 — Draggable slice band + structure-view color work
 
 - **Slab In Cell drag-to-move slice.** Users can now grab the highlighted band in the *Slab In Cell*

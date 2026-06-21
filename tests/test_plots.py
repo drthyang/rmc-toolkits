@@ -12,6 +12,13 @@ from rmc_toolkits.plots import close_plot, detect_plot_kind, make_plot, plot_to_
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 
+# The GNSe example dataset is gitignored (see README), so sample-backed tests
+# skip rather than fail when it is not present locally / in CI.
+requires_sample = unittest.skipUnless(
+    (DATA / "GNSe.rmc6f").exists(),
+    "GNSe sample data not present in data/ (gitignored)",
+)
+
 
 class PlotTests(unittest.TestCase):
     def test_detect_plot_kind_for_supported_outputs(self):
@@ -33,6 +40,7 @@ class PlotTests(unittest.TestCase):
             with self.subTest(filename=filename):
                 self.assertEqual(detect_plot_kind(filename), expected)
 
+    @requires_sample
     def test_make_plot_returns_metadata_and_png_bytes(self):
         result = make_plot(DATA / "GNSe_FQ1.csv")
         try:
@@ -47,6 +55,7 @@ class PlotTests(unittest.TestCase):
         finally:
             close_plot(result)
 
+    @requires_sample
     def test_log_plot_reports_final_chi(self):
         result = make_plot(DATA / "GNSe-02.log")
         try:

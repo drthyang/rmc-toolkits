@@ -1,5 +1,8 @@
 # rmc-toolkits
 
+[![Tests](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml/badge.svg)](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Post-processing utilities and a local-first dashboard for **RMCProfile** and **STOG** outputs.
 
 🔒 **Your data stays yours.** Run files are read and rendered entirely in your own browser (or on
@@ -56,7 +59,8 @@ refinement.
 # Python (from repo root)
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r web_app/backend/requirements.txt
+pip install -r web_app/backend/requirements.txt   # web app
+pip install -e .                                   # rmc_toolkits package (editable)
 
 # Frontend (Node 20.19+ or 22.12+, for Vite 7)
 cd web_app/frontend
@@ -203,3 +207,7 @@ are in place. Current priorities: broader file-pattern coverage, richer run summ
 workflows, and refactoring the legacy scripts into thin wrappers around `rmc_toolkits`. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for the full plan and [docs/CHANGELOG.md](docs/CHANGELOG.md) for
 history.
+
+## License
+
+Released under the [MIT License](LICENSE) © 2026 Tsung-Han Yang.

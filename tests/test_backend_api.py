@@ -21,6 +21,13 @@ import app as backend_app
 
 DATA = ROOT / "data"
 
+# The GNSe example dataset is gitignored (see README), so sample-backed tests
+# skip rather than fail when it is not present locally / in CI.
+requires_sample = unittest.skipUnless(
+    (DATA / "GNSe.rmc6f").exists(),
+    "GNSe sample data not present in data/ (gitignored)",
+)
+
 
 class BackendApiTests(unittest.TestCase):
     @classmethod
@@ -41,6 +48,7 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["dataRoot"], str(ROOT))
 
+    @requires_sample
     def test_files_lists_supported_outputs_with_plot_kind(self):
         response = self.client.get("/api/files", query_string={"dir": "data"})
 
@@ -88,6 +96,7 @@ class BackendApiTests(unittest.TestCase):
                 backend_app._choose_folder = original_choose_folder
                 backend_app.SELECTED_DATA_ROOTS.discard(selected)
 
+    @requires_sample
     def test_plot_metadata_and_data_endpoints(self):
         metadata_response = self.client.get(
             "/api/plot/metadata",
@@ -128,6 +137,7 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(payload["series"][0]["y"], [0.0, math.log(2.0), math.log(10.0)])
         self.assertAlmostEqual(payload["metrics"]["final_chi_r"], 10.0)
 
+    @requires_sample
     def test_convert_frac_writes_requested_output_inside_root(self):
         response = self.client.post(
             "/api/convert/frac",
@@ -142,6 +152,7 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(payload["name"], "Frac_coord_api_test.txt")
         self.assertTrue((ROOT / "results" / "Frac_coord_api_test.txt").exists())
 
+    @requires_sample
     def test_structure_endpoint_samples_atoms_and_reports_metadata(self):
         response = self.client.get(
             "/api/structure",
@@ -157,6 +168,7 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(len(payload["points"]), payload["sampledAtoms"])
         self.assertIn("latticeVectors", payload)
 
+    @requires_sample
     def test_kde_slice_endpoint_returns_density_payload(self):
         response = self.client.get(
             "/api/kde/slice",
@@ -178,6 +190,7 @@ class BackendApiTests(unittest.TestCase):
         self.assertGreater(payload["slabCount"], 0)
         self.assertEqual(len(payload["density"]), 16)
 
+    @requires_sample
     def test_kde_slice_endpoint_handles_empty_default_slab(self):
         response = self.client.get(
             "/api/kde/slice",
@@ -198,6 +211,7 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(payload["fitCount"], 0)
         self.assertEqual(len(payload["density"]), 16)
 
+    @requires_sample
     def test_kde_slice_endpoint_accepts_custom_orientation(self):
         response = self.client.get(
             "/api/kde/slice",
