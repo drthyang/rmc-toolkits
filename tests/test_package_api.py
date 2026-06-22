@@ -9,6 +9,7 @@ class PackageApiTests(unittest.TestCase):
             "detect_plot_kind",
             "kde_slice",
             "load_unit_cell_positions",
+            "read_exafs_csv",
             "read_rmc_csv",
             "read_structure",
             "write_frac_from_rmc6f",

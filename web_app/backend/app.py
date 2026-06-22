@@ -25,6 +25,7 @@ from rmc_toolkits.parsers import (
     read_atom_indices,
     read_cell_vectors,
     read_chi,
+    read_exafs_csv,
     read_rmc_csv,
     read_stog,
     related_r_value_logs,
@@ -125,6 +126,7 @@ def _file_payload(path: Path, kind: str = "file") -> dict[str, object]:
 def _run_stem_from_output_name(name: str) -> tuple[int, str] | None:
     patterns = (
         (0, r"^(.+)-\d{2,}\.log$"),
+        (1, r"^(.+)-EXAFS-.+_[QR]_OUTPUT\.csv$"),
         (1, r"^(.+)_FT_XFQ\d+\.csv$"),
         (1, r"^(.+)_[FS]Q\d+\.csv$"),
         (1, r"^(.+)_bragg\.csv$"),
@@ -321,7 +323,7 @@ def plot_data():
                 }
             )
 
-        series = read_rmc_csv(path)
+        series = read_exafs_csv(path) if kind in ("exafs_q", "exafs_r") else read_rmc_csv(path)
         x_values = series.data[0].tolist()
         payload_series = []
         for idx, label in enumerate(series.labels[1:], start=1):
@@ -329,14 +331,23 @@ def plot_data():
                 payload_series.append({"label": label.strip() or f"Series {idx}", "x": x_values, "y": series.data[idx].tolist()})
 
         x_label = series.labels[0] if series.labels else "x"
-        if kind in ("xpdf", "npdf", "pdf_partials"):
+        if kind == "exafs_q":
+            x_label = "k (Å^{-1})"
+            y_label = "χ(k) k²"
+        elif kind == "exafs_r":
             x_label = "r (Å)"
+            y_label = "FT[χ(k) k²]"
+        elif kind in ("xpdf", "npdf", "pdf_partials"):
+            x_label = "r (Å)"
+            y_label = "data"
         elif kind == "bragg":
             x_label = "Q (Å^{-1})"
+            y_label = "data"
         else:
             x_label = _clean_axis_label(x_label)
+            y_label = "data"
 
-        return jsonify({**metadata, "xLabel": x_label, "yLabel": "data", "series": payload_series})
+        return jsonify({**metadata, "xLabel": x_label, "yLabel": y_label, "series": payload_series})
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except Exception as exc:

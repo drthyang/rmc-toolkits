@@ -170,6 +170,14 @@
     --kind-color: #7c3aed;
 }
 
+.loaded-file-badge.kind-exafs_q {
+    --kind-color: #d92d20;
+}
+
+.loaded-file-badge.kind-exafs_r {
+    --kind-color: #9e165f;
+}
+
 .loaded-file-badge.kind-xpdf {
     --kind-color: #c026d3;
 }

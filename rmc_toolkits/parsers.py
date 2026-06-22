@@ -62,6 +62,59 @@ def read_rmc_csv(path: str | Path) -> CsvSeries:
     return CsvSeries(labels=labels, data=np.asarray(rows, dtype=float).T)
 
 
+def _csv_values(line: str) -> list[str]:
+    return [value.strip() for value in line.split(",") if value.strip()]
+
+
+def _numeric_csv_values(line: str) -> list[float] | None:
+    values = _csv_values(line)
+    if not values:
+        return None
+    try:
+        return [float(value) for value in values]
+    except ValueError:
+        return None
+
+
+def read_exafs_csv(path: str | Path) -> CsvSeries:
+    """Read RMCProfile EXAFS Q/R output CSV files.
+
+    Q output files include a descriptive title row before the column header,
+    while R output files start directly with the column header. The data rows
+    are detected by scanning for the first fully numeric CSV row.
+    """
+    path = Path(path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        raise ValueError(f"{path} is empty")
+
+    data_start = None
+    for idx, line in enumerate(lines):
+        if _numeric_csv_values(line) is not None:
+            data_start = idx
+            break
+    if data_start is None or data_start == 0:
+        raise ValueError(f"{path} does not contain an EXAFS column header and numeric rows")
+
+    labels = _csv_values(lines[data_start - 1])
+    rows: list[list[float]] = []
+    expected_columns = len(labels)
+    for line_number, line in enumerate(lines[data_start:], start=data_start + 1):
+        values = _numeric_csv_values(line)
+        if values is None:
+            continue
+        if len(values) != expected_columns:
+            raise ValueError(
+                f"{path} line {line_number} has {len(values)} values; expected {expected_columns}"
+            )
+        rows.append(values)
+
+    if not rows:
+        raise ValueError(f"{path} does not contain numeric rows")
+
+    return CsvSeries(labels=labels, data=np.asarray(rows, dtype=float).T)
+
+
 def read_chi(paths: list[str | Path]) -> tuple[np.ndarray, np.ndarray]:
     chi_q: list[float] = []
     chi_r: list[float] = []
