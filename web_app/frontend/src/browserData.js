@@ -2,13 +2,17 @@ const SUPPORTED_NAMES = new Set(['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq'
 
 export const isStaticMode = () => {
     if (import.meta.env.VITE_STATIC_MODE === 'true') return true;
+    if (import.meta.env.VITE_STATIC_MODE === 'false') return false;
+    if (import.meta.env.DEV && !import.meta.env.VITE_API_BASE_URL) return true;
     return window.location.hostname.endsWith('github.io');
 };
 
 // File System Access API (window.showDirectoryPicker) powers static-mode Live Data.
 // Chromium-only (Chrome/Edge/Arc/Opera); Firefox/Safari fall back to <input webkitdirectory>.
 export const supportsFileSystemAccess = () => (
-    typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function'
+    import.meta.env.DEV && !import.meta.env.VITE_API_BASE_URL
+        ? false
+        : typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function'
 );
 
 export const WATCH_INTERVAL_MS = 3000;

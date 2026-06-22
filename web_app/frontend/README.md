@@ -18,7 +18,17 @@ Use Node.js compatible with Vite 7, such as Node `20.19+` or `22.12+`.
 
 ## Development
 
-Start the backend from the repository root. Use a non-default port if needed:
+For a browser-only preview, start Vite directly:
+
+```bash
+npm run dev
+```
+
+Open the URL printed by Vite, usually `http://localhost:5173/`. This mode reads a selected local
+folder in the browser and does not require Flask.
+
+For the full Flask-backed development path, start the backend from the repository root. Use a
+non-default port if needed:
 
 ```bash
 source .venv/bin/activate
