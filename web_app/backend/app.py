@@ -40,6 +40,7 @@ CORS(app)
 DATA_ROOT = Path(os.environ.get("RMC_TOOLKITS_DATA_ROOT", PROJECT_ROOT)).expanduser().resolve()
 SELECTED_DATA_ROOTS: set[Path] = set()
 SUPPORTED_PATTERNS = ("*.csv", "*.log", "*.rmc6f", "Frac*.txt", "scale_ft.*", "stog_input.dat")
+MAX_STRUCTURE_POINTS = 1_000_000
 
 
 def _is_inside_root(candidate: Path, root: Path) -> bool:
@@ -382,7 +383,7 @@ def convert_frac():
 def structure():
     try:
         target = _resolve_inside_root(request.args.get("dir", "."))
-        max_points = max(100, min(int(request.args.get("maxPoints", 12000)), 75000))
+        max_points = max(100, min(int(request.args.get("maxPoints", MAX_STRUCTURE_POINTS)), MAX_STRUCTURE_POINTS))
         rmc6f_path = _find_rmc6f(target)
         lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
         atom_indices = read_atom_indices(rmc6f_path)

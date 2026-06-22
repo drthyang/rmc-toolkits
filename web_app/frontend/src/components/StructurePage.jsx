@@ -34,6 +34,8 @@ const CUBE_EDGES = [
     [4, 5], [4, 6], [5, 7], [6, 7],
     [0, 4], [1, 5], [2, 6], [3, 7]
 ];
+const STRUCTURE_MAX_POINTS = 1000000;
+const SLAB_CANVAS_MAX_POINTS = 1000000;
 
 const SLICE_PRESETS = {
     a: { label: 'a', normal: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1], uLabel: 'b', vLabel: 'c' },
@@ -406,7 +408,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
                 worker.postMessage({
                     id,
                     file: localRun.structureFile,
-                    maxPoints: 75000
+                    maxPoints: STRUCTURE_MAX_POINTS
                 });
                 return;
             }
@@ -429,7 +431,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
             setError(null);
             try {
                 const response = await axios.get(`${API_BASE_URL}/api/structure`, {
-                    params: { dir: directory || '.', maxPoints: 75000 }
+                    params: { dir: directory || '.', maxPoints: STRUCTURE_MAX_POINTS }
                 });
                 setStructure(response.data);
             } catch (err) {
@@ -816,7 +818,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
         drawPolygon(ctx, slabOutline);
         ctx.stroke();
 
-        const sampleLimit = Math.min(points.length, 9000);
+        const sampleLimit = Math.min(points.length, SLAB_CANVAS_MAX_POINTS);
         const stride = Math.max(1, Math.floor(points.length / sampleLimit));
         for (let index = 0; index < points.length; index += stride) {
             const point = points[index];
