@@ -73,6 +73,28 @@ class BackendApiTests(unittest.TestCase):
 
             self.assertEqual(backend_app._find_rmc6f(directory), expected)
 
+    def test_files_lists_exafs_outputs_with_plot_kind(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmpdir:
+            directory = Path(tmpdir)
+            (directory / "Nb-EXAFS-1_Q_OUTPUT.csv").write_text(
+                " EXAFS #1,   chi(k)*k^2\n"
+                "      k    ,  calculated  ,  experiment\n"
+                " 3.300 ,    -0.32999 ,    -0.23780\n",
+                encoding="utf-8",
+            )
+            (directory / "Nb-EXAFS-1_R_OUTPUT.csv").write_text(
+                "     r   ,   Re_Calc  ,  Im_Calc  ,  Mod_Calc  ,   Re_Ex   ,   Im_Ex  ,   Mod_Ex\n"
+                "   0.25000 ,    0.04898 ,   -0.29264 ,    0.29671 ,    0.04412 ,   -0.27550 ,    0.27901\n",
+                encoding="utf-8",
+            )
+
+            response = self.client.get("/api/files", query_string={"dir": str(directory)})
+
+        self.assertEqual(response.status_code, 200)
+        files = {item["name"]: item for item in response.get_json()["files"]}
+        self.assertEqual(files["Nb-EXAFS-1_Q_OUTPUT.csv"]["plotKind"], "exafs_q")
+        self.assertEqual(files["Nb-EXAFS-1_R_OUTPUT.csv"]["plotKind"], "exafs_r")
+
     def test_rejects_paths_outside_data_root(self):
         response = self.client.get("/api/files", query_string={"dir": "/private/tmp"})
 
@@ -136,6 +158,47 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(payload["series"][0]["x"], [0, 1, 2])
         self.assertEqual(payload["series"][0]["y"], [0.0, math.log(2.0), math.log(10.0)])
         self.assertAlmostEqual(payload["metrics"]["final_chi_r"], 10.0)
+
+    def test_exafs_q_data_endpoint_uses_exafs_labels(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmpdir:
+            path = Path(tmpdir) / "Nb-EXAFS-1_Q_OUTPUT.csv"
+            path.write_text(
+                " EXAFS #1,   chi(k)*k^2\n"
+                "      k    ,  calculated  ,  experiment\n"
+                " 3.300 ,    -0.32999 ,    -0.23780\n"
+                " 3.350 ,    -0.62595 ,    -0.33942\n",
+                encoding="utf-8",
+            )
+
+            response = self.client.get("/api/plot/data", query_string={"path": str(path)})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["kind"], "exafs_q")
+        self.assertEqual(payload["title"], "EXAFS Q-space")
+        self.assertEqual(payload["xLabel"], "k (Å^{-1})")
+        self.assertEqual(payload["yLabel"], "χ(k) k²")
+        self.assertEqual([series["label"] for series in payload["series"]], ["calculated", "experiment"])
+        self.assertEqual(payload["series"][0]["x"], [3.3, 3.35])
+
+    def test_exafs_r_data_endpoint_uses_exafs_labels(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as tmpdir:
+            path = Path(tmpdir) / "Nb-EXAFS-1_R_OUTPUT.csv"
+            path.write_text(
+                "     r   ,   Re_Calc  ,  Im_Calc  ,  Mod_Calc  ,   Re_Ex   ,   Im_Ex  ,   Mod_Ex\n"
+                "   0.25000 ,    0.04898 ,   -0.29264 ,    0.29671 ,    0.04412 ,   -0.27550 ,    0.27901\n",
+                encoding="utf-8",
+            )
+
+            response = self.client.get("/api/plot/data", query_string={"path": str(path)})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["kind"], "exafs_r")
+        self.assertEqual(payload["title"], "EXAFS R-space")
+        self.assertEqual(payload["xLabel"], "r (Å)")
+        self.assertEqual(payload["yLabel"], "FT[χ(k) k²]")
+        self.assertEqual([series["label"] for series in payload["series"]], ["Re_Calc", "Im_Calc", "Mod_Calc", "Re_Ex", "Im_Ex", "Mod_Ex"])
 
     @requires_sample
     def test_convert_frac_writes_requested_output_inside_root(self):

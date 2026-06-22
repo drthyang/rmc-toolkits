@@ -24,6 +24,8 @@ export const fileSignature = (items) => items
     .join('|');
 
 export const detectPlotKind = (name) => {
+    if (/-EXAFS-.+_Q_OUTPUT\.csv$/.test(name)) return 'exafs_q';
+    if (/-EXAFS-.+_R_OUTPUT\.csv$/.test(name)) return 'exafs_r';
     if (/_FT_XFQ\d+\.csv$/.test(name)) return 'xpdf';
     if (name.includes('PDF') && name.endsWith('.csv')) {
         return name.includes('PDFpartials') ? 'pdf_partials' : 'npdf';
@@ -50,6 +52,7 @@ const dirname = (path) => path.includes('/') ? path.split('/').slice(0, -1).join
 const runStemFromOutputName = (name) => {
     const patterns = [
         [0, /^(.+)-\d{2,}\.log$/],
+        [1, /^(.+)-EXAFS-.+_[QR]_OUTPUT\.csv$/],
         [1, /^(.+)_FT_XFQ\d+\.csv$/],
         [1, /^(.+)_[FS]Q\d+\.csv$/],
         [1, /^(.+)_bragg\.csv$/],
@@ -118,6 +121,35 @@ const readRmcCsv = (text, name) => {
     return { labels, data: transpose(rows) };
 };
 
+const csvValues = (line) => line.split(',').map((value) => value.trim()).filter(Boolean);
+
+const numericCsvValues = (line) => {
+    const values = csvValues(line);
+    if (!values.length) return null;
+    const parsed = values.map(Number);
+    return parsed.every(Number.isFinite) ? parsed : null;
+};
+
+const readExafsCsv = (text, name) => {
+    const lines = text.split(/\r?\n/);
+    const dataStart = lines.findIndex((line) => numericCsvValues(line));
+    if (dataStart <= 0) {
+        throw new Error(`${name} does not contain an EXAFS column header and numeric rows`);
+    }
+
+    const labels = csvValues(lines[dataStart - 1]);
+    const rows = lines.slice(dataStart).map((line, index) => {
+        const values = numericCsvValues(line);
+        if (!values) return null;
+        if (values.length !== labels.length) {
+            throw new Error(`${name} line ${dataStart + index + 1} has ${values.length} values; expected ${labels.length}`);
+        }
+        return values;
+    }).filter(Boolean);
+    if (!rows.length) throw new Error(`${name} does not contain numeric rows`);
+    return { labels, data: transpose(rows) };
+};
+
 const readChi = (text) => {
     const chiR = [];
     text.split(/\r?\n/).slice(2).forEach((line) => {
@@ -162,6 +194,8 @@ const cleanAxisLabel = (label) => {
 export const plotMetadataFromFile = (file) => {
     const kind = file.plotKind;
     if (kind === 'xpdf') return { kind, title: 'xPDF', metrics: file.plotData?.metrics || {} };
+    if (kind === 'exafs_q') return { kind, title: 'EXAFS Q-space', metrics: file.plotData?.metrics || {} };
+    if (kind === 'exafs_r') return { kind, title: 'EXAFS R-space', metrics: file.plotData?.metrics || {} };
     if (kind === 'npdf') return { kind, title: file.name.replace(/\.[^.]+$/, '').split('_').pop(), metrics: file.plotData?.metrics || {} };
     if (kind === 'pdf_partials') return { kind, title: file.name.replace(/\.[^.]+$/, '').split('_').pop(), metrics: file.plotData?.metrics || {} };
     if (kind === 'xray_sq') return { kind, title: 'S(Q) (x-ray)', metrics: file.plotData?.metrics || {} };
@@ -205,7 +239,9 @@ export const plotDataFromText = (file) => {
         };
     }
 
-    const csv = readRmcCsv(file.text, file.name);
+    const csv = ['exafs_q', 'exafs_r'].includes(kind)
+        ? readExafsCsv(file.text, file.name)
+        : readRmcCsv(file.text, file.name);
     const metrics = {};
     if (['xpdf', 'npdf', 'xray_sq', 'neutron_sq', 'bragg'].includes(kind) && csv.data.length >= 3) {
         metrics.rwp = rwp(csv.data[0], csv.data[1], csv.data[2]);
@@ -213,7 +249,14 @@ export const plotDataFromText = (file) => {
     if (kind === 'npdf') metrics.pdf_index = pdfIndex(file.name);
 
     let xLabel = csv.labels[0] || 'x';
-    if (['xpdf', 'npdf', 'pdf_partials'].includes(kind)) xLabel = 'r (Å)';
+    let yLabel = 'data';
+    if (kind === 'exafs_q') {
+        xLabel = 'k (Å^{-1})';
+        yLabel = 'χ(k) k²';
+    } else if (kind === 'exafs_r') {
+        xLabel = 'r (Å)';
+        yLabel = 'FT[χ(k) k²]';
+    } else if (['xpdf', 'npdf', 'pdf_partials'].includes(kind)) xLabel = 'r (Å)';
     else if (kind === 'bragg') xLabel = 'Q (Å^{-1})';
     else xLabel = cleanAxisLabel(xLabel);
 
@@ -223,7 +266,7 @@ export const plotDataFromText = (file) => {
         title,
         metrics,
         xLabel,
-        yLabel: 'data',
+        yLabel,
         series: csv.labels.slice(1).map((label, index) => ({
             label: label.trim() || `Series ${index + 1}`,
             x: csv.data[0],

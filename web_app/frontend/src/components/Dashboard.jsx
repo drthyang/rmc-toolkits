@@ -6,7 +6,7 @@ import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import './Dashboard.css';
 
-const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
+const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'exafs_q', 'exafs_r', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
 
 const defaultHiddenPlotPaths = (items) => new Set(
     items

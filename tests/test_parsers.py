@@ -9,6 +9,7 @@ from rmc_toolkits.parsers import (
     read_atom_indices,
     read_cell_vectors,
     read_chi,
+    read_exafs_csv,
     read_rmc_csv,
     read_structure,
     related_r_value_logs,
@@ -36,6 +37,38 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(series.labels, ["Q", "F(Q)_RMC", "F(Q)_Expt"])
         self.assertEqual(series.data.shape, (3, 2649))
         np.testing.assert_allclose(series.data[:, 0], [0.5, -1.0350516, -0.6322244])
+
+    def test_read_exafs_csv_skips_q_output_title_row(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "Nb-EXAFS-1_Q_OUTPUT.csv"
+            path.write_text(
+                " EXAFS #1,   chi(k)*k^2\n"
+                "      k    ,  calculated  ,  experiment\n"
+                " 3.300 ,    -0.32999 ,    -0.23780\n"
+                " 3.350 ,    -0.62595 ,    -0.33942\n",
+                encoding="utf-8",
+            )
+
+            series = read_exafs_csv(path)
+
+        self.assertEqual(series.labels, ["k", "calculated", "experiment"])
+        self.assertEqual(series.data.shape, (3, 2))
+        np.testing.assert_allclose(series.data[:, 0], [3.3, -0.32999, -0.2378])
+
+    def test_read_exafs_csv_accepts_r_output_header(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "Nb-EXAFS-1_R_OUTPUT.csv"
+            path.write_text(
+                "     r   ,   Re_Calc  ,  Im_Calc  ,  Mod_Calc  ,   Re_Ex   ,   Im_Ex  ,   Mod_Ex\n"
+                "   0.25000 ,    0.04898 ,   -0.29264 ,    0.29671 ,    0.04412 ,   -0.27550 ,    0.27901\n",
+                encoding="utf-8",
+            )
+
+            series = read_exafs_csv(path)
+
+        self.assertEqual(series.labels, ["r", "Re_Calc", "Im_Calc", "Mod_Calc", "Re_Ex", "Im_Ex", "Mod_Ex"])
+        self.assertEqual(series.data.shape, (7, 1))
+        np.testing.assert_allclose(series.data[:, 0], [0.25, 0.04898, -0.29264, 0.29671, 0.04412, -0.2755, 0.27901])
 
     @requires_sample
     def test_read_chi_extracts_q_and_r_columns(self):

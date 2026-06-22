@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .parsers import pdf_index, read_chi, read_rmc_csv, read_stog, related_r_value_logs, rwp
+from .parsers import pdf_index, read_chi, read_exafs_csv, read_rmc_csv, read_stog, related_r_value_logs, rwp
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,10 @@ class PlotResult:
 
 def detect_plot_kind(path: str | Path) -> str | None:
     name = Path(path).name
+    if re.search(r"-EXAFS-.+_Q_OUTPUT\.csv$", name):
+        return "exafs_q"
+    if re.search(r"-EXAFS-.+_R_OUTPUT\.csv$", name):
+        return "exafs_r"
     if re.search(r"_FT_XFQ\d+\.csv$", name):
         return "xpdf"
     if "PDF" in name and name.endswith(".csv"):
@@ -49,8 +53,9 @@ def _series_plot(
     xlabel: str,
     ylabel: str = "data",
     calculate_rwp: bool = False,
+    reader=read_rmc_csv,
 ) -> PlotResult:
-    series = read_rmc_csv(path)
+    series = reader(path)
     if len(series.data) < 2:
         raise ValueError(f"{path} needs at least two numeric columns")
 
@@ -108,6 +113,22 @@ def make_plot(path: str | Path) -> PlotResult:
     if kind is None:
         raise ValueError(f"Unsupported plot file type: {path.name}")
 
+    if kind == "exafs_q":
+        return _series_plot(
+            path,
+            "EXAFS Q-space",
+            r"k ($\mathrm{\AA^{-1}}$)",
+            r"$\chi(k) k^2$",
+            reader=read_exafs_csv,
+        )
+    if kind == "exafs_r":
+        return _series_plot(
+            path,
+            "EXAFS R-space",
+            r"r ($\mathrm{\AA}$)",
+            r"FT[$\chi(k) k^2$]",
+            reader=read_exafs_csv,
+        )
     if kind == "xpdf":
         return _series_plot(path, "xPDF", r"r ($\mathrm{\AA}$)", calculate_rwp=True)
     if kind == "npdf":

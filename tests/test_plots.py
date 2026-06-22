@@ -28,6 +28,9 @@ class PlotTests(unittest.TestCase):
             "GNSe_FQ1.csv": "xray_sq",
             "GNSe_bragg.csv": "bragg",
             "GNSe_PDFpartials.csv": "pdf_partials",
+            "Nb-EXAFS-1_Q_OUTPUT.csv": "exafs_q",
+            "Nb-EXAFS-1_R_OUTPUT.csv": "exafs_r",
+            "Nb-EXAFS-1_OUTPUT.csv": None,
             "GNSe-02.log": "r_value",
             "GNSe-123.log": "r_value",
             "GNSe.log": None,
@@ -39,6 +42,43 @@ class PlotTests(unittest.TestCase):
         for filename, expected in cases.items():
             with self.subTest(filename=filename):
                 self.assertEqual(detect_plot_kind(filename), expected)
+
+    def test_make_plot_supports_exafs_q_output(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "Nb-EXAFS-1_Q_OUTPUT.csv"
+            path.write_text(
+                " EXAFS #1,   chi(k)*k^2\n"
+                "      k    ,  calculated  ,  experiment\n"
+                " 3.300 ,    -0.32999 ,    -0.23780\n"
+                " 3.350 ,    -0.62595 ,    -0.33942\n",
+                encoding="utf-8",
+            )
+
+            result = make_plot(path)
+            try:
+                self.assertEqual(result.kind, "exafs_q")
+                self.assertEqual(result.title, "EXAFS Q-space")
+                png = plot_to_png(result, dpi=72)
+                self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+            finally:
+                close_plot(result)
+
+    def test_make_plot_supports_exafs_r_output(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "Nb-EXAFS-1_R_OUTPUT.csv"
+            path.write_text(
+                "     r   ,   Re_Calc  ,  Im_Calc  ,  Mod_Calc  ,   Re_Ex   ,   Im_Ex  ,   Mod_Ex\n"
+                "   0.25000 ,    0.04898 ,   -0.29264 ,    0.29671 ,    0.04412 ,   -0.27550 ,    0.27901\n"
+                "   0.26000 ,    0.06389 ,   -0.28345 ,    0.29057 ,    0.05774 ,   -0.26676 ,    0.27294\n",
+                encoding="utf-8",
+            )
+
+            result = make_plot(path)
+            try:
+                self.assertEqual(result.kind, "exafs_r")
+                self.assertEqual(result.title, "EXAFS R-space")
+            finally:
+                close_plot(result)
 
     @requires_sample
     def test_make_plot_returns_metadata_and_png_bytes(self):
