@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Tsung-Han Yang" }]
-keywords = ["RMCProfile", "STOG", "PDF", "crystallography", "neutron", "x-ray", "KDE"]
+keywords = ["RMCProfile", "STOG", "PDF", "EXAFS", "crystallography", "neutron", "x-ray", "KDE"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",

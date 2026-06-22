@@ -27,7 +27,7 @@ Goal: move from file-by-file plotting to project-level analysis.
 
 - Add a project scanner that detects:
   - RMC CSV outputs.
-  - PDF, S(Q), Bragg, partials, and logs.
+  - PDF, S(Q), Bragg, EXAFS Q/R outputs, partials, and logs.
   - `.rmc6f` and `Frac*.txt` structure files.
   - STOG input/output files.
 - Create project summary JSON with file roles, available plots, metrics, lattice metadata, element list, and warnings.
@@ -121,7 +121,7 @@ Goal: make the tool safe and pleasant for broader use.
 
 ## Suggested Immediate Backlog
 
-1. Add backend API tests around `/api/files`, `/api/plot/data`, `/api/structure`, and `/api/kde/slice`.
+1. Add a committed standard example run or trimmed fixtures so sample-backed tests run in CI.
 2. Refactor `src/RMC_plot.py` into a CLI wrapper around `rmc_toolkits.plots`.
 3. Refactor `src/STOG_plot.py` so all top-level plotting becomes callable functions.
 4. Refactor `src/RMC_3D.py` to avoid Mayavi import and execution at import time.
