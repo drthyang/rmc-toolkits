@@ -14,8 +14,8 @@ refinement.
 
 ## What's Inside
 
-- **Python package (`rmc_toolkits/`)** — parse RMC/STOG outputs, build plots, convert `.rmc6f`
-  files, load folded structures, and compute SciPy KDE slices.
+- **Python package (`rmc_toolkits/`)** — parse RMC/STOG/EXAFS outputs, build plots, convert
+  `.rmc6f` files, load folded structures, and compute SciPy KDE slices.
 - **Web app (`web_app/`)** — Flask API + React/Vite frontend for loading a run directory,
   inspecting interactive plots, converting structures, and exploring KDE/3D views.
 - **Legacy scripts (`src/`)** — original standalone CLI/desktop research scripts.
@@ -24,6 +24,8 @@ refinement.
 
 - **Run dashboard** — auto-detects RMCProfile outputs in a folder and renders browser-native SVG
   charts with hover readouts, legend toggles, and drag-to-zoom.
+- **EXAFS outputs** — recognizes `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv`, including
+  Q-space title rows and R-space real/imaginary/modulus columns, with appropriate `k` and `r` axes.
 - **Live Data** — the local Flask app watches the selected folder and refreshes charts when files
   change.
 - **KDE / 3D page** — model summary, server-side `scipy.stats.gaussian_kde` density slices, a
@@ -132,7 +134,7 @@ npm run preview
 ```python
 from rmc_toolkits import (
     detect_plot_kind, kde_slice, load_unit_cell_positions,
-    make_plot, plot_to_png, read_structure, write_frac_from_rmc6f,
+    make_plot, plot_to_png, read_exafs_csv, read_structure, write_frac_from_rmc6f,
 )
 
 frac_path = write_frac_from_rmc6f("data/GNSe.rmc6f", overwrite=True)
@@ -150,7 +152,7 @@ payload = kde_slice(
 png_bytes = plot_to_png(make_plot("data/GNSe_FQ1.csv"))
 ```
 
-Lower-level parser helpers are also exported: `read_rmc_csv`, `read_chi`, `read_stog`,
+Lower-level parser helpers are also exported: `read_rmc_csv`, `read_exafs_csv`, `read_chi`, `read_stog`,
 `read_atom_indices`, `read_cell_vectors`, `iter_rmc6f_atoms`, `frac_lines_from_rmc6f`, `rwp`.
 
 ## Backend API
@@ -167,19 +169,21 @@ paths are rejected unless inside the configured root or a folder selected via th
 | `GET /api/plot/metadata?path=...` | Plot kind, title, and metrics (`rwp`, `final_chi_r`). |
 | `GET /api/plot/data?path=...` | Parsed plot series and normalized axis labels for SVG rendering. |
 | `POST /api/convert/frac` | Convert `.rmc6f` → `Frac_coord_<stem>.txt`. |
-| `GET /api/structure?dir=...&maxPoints=12000` | Sampled folded atom positions, counts, lattice. |
+| `GET /api/structure?dir=...&maxPoints=1000000` | Folded atom positions, counts, lattice. |
 | `GET /api/kde/slice?dir=...&element=Ga&z=0.5&dz=0.08` | KDE density grid, contours, slab counts. |
 
 ## Supported File Patterns
 
 - Real-space PDF/G(r): `*_FT_XFQ1.csv`, `*PDF*.csv`
 - Reciprocal-space S(Q): `*_FQ1.csv`, `*_SQ1.csv`
+- EXAFS: `*-EXAFS-*_Q_OUTPUT.csv` (`k` vs `χ(k) k²`) and `*-EXAFS-*_R_OUTPUT.csv` (`r` vs Fourier-transform components)
 - Bragg profiles: `*_bragg.csv`
 - R-value logs: `*.log`
 - Basic STOG outputs: `scale_ft.gr`, `scale_ft.sq`, `scale_ft_rmc.fq`
 - Structure files: `*.rmc6f`, `Frac*.txt`
 
-Parsers expect RMCProfile-style CSV files: first row labels, following rows numeric.
+Most RMCProfile CSV parsers expect first-row labels followed by numeric rows. EXAFS Q-output files
+may include a descriptive title row before the column header; `read_exafs_csv` handles that layout.
 
 ## Legacy CLI Scripts
 
@@ -202,8 +206,8 @@ MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
 
 ## Status
 
-The reusable Python package, Flask API, interactive dashboard, server-side KDE, and Three.js viewer
-are in place. Current priorities: broader file-pattern coverage, richer run summaries, export/report
+The reusable Python package, Flask API, interactive dashboard, EXAFS plotting support, server-side
+KDE, and Three.js viewer are in place. Current priorities: richer run summaries, export/report
 workflows, and refactoring the legacy scripts into thin wrappers around `rmc_toolkits`. See
 [docs/ROADMAP.md](docs/ROADMAP.md) for the full plan and [docs/CHANGELOG.md](docs/CHANGELOG.md) for
 history.

@@ -1,6 +1,11 @@
+from pathlib import Path
+import tomllib
 import unittest
 
 import rmc_toolkits
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class PackageApiTests(unittest.TestCase):
@@ -18,6 +23,11 @@ class PackageApiTests(unittest.TestCase):
         self.assertTrue(expected.issubset(set(rmc_toolkits.__all__)))
         for name in expected:
             self.assertTrue(hasattr(rmc_toolkits, name), name)
+
+    def test_package_version_matches_pyproject(self):
+        metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(rmc_toolkits.__version__, metadata["project"]["version"])
 
 
 if __name__ == "__main__":
