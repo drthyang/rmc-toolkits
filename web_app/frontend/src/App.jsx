@@ -18,6 +18,7 @@ const STATUS_TIMEOUT_MS = 15000;
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
+  const [visitedPages, setVisitedPages] = useState({ dashboard: true, structure: false });
   const [currentDirectory, setCurrentDirectory] = useState('data');
   const [draftDirectory, setDraftDirectory] = useState('data');
   const [browseStatus, setBrowseStatus] = useState(null);
@@ -35,6 +36,19 @@ function App() {
     document.documentElement.dataset.theme = 'light';
     localStorage.setItem('rmc-theme', 'light');
   }, []);
+
+  useEffect(() => {
+    setVisitedPages((current) => (
+      current[activePage] ? current : { ...current, [activePage]: true }
+    ));
+  }, [activePage]);
+
+  const handlePageChange = (page) => {
+    setVisitedPages((current) => (
+      current[page] ? current : { ...current, [page]: true }
+    ));
+    setActivePage(page);
+  };
 
   // Startup reminder (static mode): reassure users that picking a folder keeps
   // files on their device, since the browser's native picker may say "Upload".
@@ -216,13 +230,13 @@ function App() {
             <nav className="page-tabs" aria-label="Workspace pages">
               <button
                 className={activePage === 'dashboard' ? 'active' : ''}
-                onClick={() => setActivePage('dashboard')}
+                onClick={() => handlePageChange('dashboard')}
               >
                 Dashboard
               </button>
               <button
                 className={activePage === 'structure' ? 'active' : ''}
-                onClick={() => setActivePage('structure')}
+                onClick={() => handlePageChange('structure')}
               >
                 KDE / 3D
               </button>
@@ -318,10 +332,24 @@ function App() {
           )}
           {renderBrowseStatus()}
         </header>
-        {activePage === 'dashboard' && <Dashboard directory={currentDirectory} localRun={localRun} watchFiles={watchFiles} />}
-        {activePage === 'structure' && (
-          <StructurePage directory={currentDirectory} localRun={localRun} theme="light" />
-        )}
+        <div className="workspace-pages">
+          {visitedPages.dashboard && (
+            <div
+              className={`workspace-page${activePage === 'dashboard' ? ' is-active' : ' is-hidden'}`}
+              aria-hidden={activePage !== 'dashboard'}
+            >
+              <Dashboard directory={currentDirectory} localRun={localRun} watchFiles={watchFiles} />
+            </div>
+          )}
+          {visitedPages.structure && (
+            <div
+              className={`workspace-page${activePage === 'structure' ? ' is-active' : ' is-hidden'}`}
+              aria-hidden={activePage !== 'structure'}
+            >
+              <StructurePage directory={currentDirectory} localRun={localRun} theme="light" />
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );
