@@ -340,10 +340,13 @@ def plot_data():
             y_label = "FT[χ(k) k²]"
         elif kind in ("xpdf", "npdf", "pdf_partials"):
             x_label = "r (Å)"
-            y_label = "data"
+            y_label = "G(r)"
+        elif kind in ("xray_sq", "neutron_sq"):
+            x_label = "Q (Å^{-1})"
+            y_label = "S(Q)"
         elif kind == "bragg":
             x_label = "Q (Å^{-1})"
-            y_label = "data"
+            y_label = "Intensity"
         else:
             x_label = _clean_axis_label(x_label)
             y_label = "data"

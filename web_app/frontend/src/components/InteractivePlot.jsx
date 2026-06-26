@@ -1,9 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
+import { saveSvgFigure } from '../figureExport';
+import SaveMenu from './SaveMenu';
 import './InteractivePlot.css';
 
 const palette = ['#1f6fd6', '#e8590c', '#099268', '#d6336c', '#6741d9', '#66a80f', '#0c8599', '#e67700'];
+
+const CHART_SAVE_OPTIONS = [
+    { id: 'png', label: 'PNG image', hint: '.png' },
+    { id: 'svg', label: 'SVG vector', hint: '.svg' },
+];
 
 // Series whose label mentions "exp" hold measured data (Experiment, F(Q)_Expt, X_ray_exp_renorm, ...).
 const isExperimental = (label) => /exp/i.test(label);
@@ -287,6 +294,15 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         if (next[1] - next[0] > 1e-9) setXDomain(next);
     };
 
+    const saveFigure = async (format) => {
+        if (!svgRef.current) return;
+        try {
+            await saveSvgFigure(svgRef.current, effectivePlot?.title || file.name, format);
+        } catch (saveError) {
+            setError(saveError.message || 'Could not save the figure');
+        }
+    };
+
     if (error && !effectivePlot) return <div className="interactive-plot-error">{error}</div>;
     if (!effectivePlot) return <div className="interactive-plot-loading">Loading plot...</div>;
 
@@ -319,11 +335,14 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                         </button>
                     ))}
                 </div>
-                {xDomain && (
-                    <button type="button" className="plot-reset" onClick={() => setXDomain(null)}>
-                        Reset zoom
-                    </button>
-                )}
+                <div className="plot-actions">
+                    {xDomain && (
+                        <button type="button" className="plot-reset" onClick={() => setXDomain(null)}>
+                            Reset zoom
+                        </button>
+                    )}
+                    <SaveMenu onSave={saveFigure} options={CHART_SAVE_OPTIONS} label="Save" align="right" />
+                </div>
             </div>
             <div className="plot-stage">
                 <svg

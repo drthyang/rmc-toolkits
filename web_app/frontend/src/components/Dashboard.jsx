@@ -2,11 +2,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { fileSignature, isStaticMode, plotMetadataFromFile, readAndParseLocalPlotFile, WATCH_INTERVAL_MS } from '../browserData';
+import { saveSvgFiguresAsZip } from '../figureExport';
 import InteractivePlot from './InteractivePlot';
+import SaveMenu from './SaveMenu';
 import ModelSummary from './ModelSummary';
 import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'exafs_q', 'exafs_r', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
+
+const CHART_SAVE_OPTIONS = [
+    { id: 'png', label: 'PNG image', hint: '.png' },
+    { id: 'svg', label: 'SVG vector', hint: '.svg' },
+];
 
 const defaultHiddenPlotPaths = (items) => new Set(
     items
@@ -91,6 +98,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
     const [showLoadedFiles, setShowLoadedFiles] = useState(false);
     const [hiddenPlotPaths, setHiddenPlotPaths] = useState(() => new Set());
     const [dismissedErrors, setDismissedErrors] = useState(() => new Set());
+    const [savingAll, setSavingAll] = useState(false);
+    const pageRef = useRef(null);
     const signatureRef = useRef('');
     const pollInFlightRef = useRef(false);
     const manuallyToggledPathsRef = useRef(new Set());
@@ -352,6 +361,31 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
         });
     };
 
+    // Rasterize every chart currently rendered in the dashboard to its own PNG.
+    // We read the live SVG nodes (rather than holding refs to each plot) so the
+    // R-value strip is included only when expanded, matching what the user sees.
+    const handleSaveAllFigures = async (format) => {
+        const root = pageRef.current;
+        if (!root || savingAll) return;
+        setSavingAll(true);
+        try {
+            const figures = [];
+            let index = 0;
+            root.querySelectorAll('.plot-card').forEach((card) => {
+                const svg = card.querySelector('.interactive-plot svg');
+                if (!svg) return;
+                index += 1;
+                const title = card.querySelector('.plot-card-header h3')?.textContent?.trim();
+                figures.push({ svgElement: svg, name: title || `figure-${index}` });
+            });
+            if (figures.length) {
+                await saveSvgFiguresAsZip(figures, format, `figures-${format}.zip`);
+            }
+        } finally {
+            setSavingAll(false);
+        }
+    };
+
     const dismissError = (key) => {
         setDismissedErrors((current) => {
             const next = new Set(current);
@@ -452,14 +486,26 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                         </h3>
                         {structureError && <p>{structureError}</p>}
                     </div>
-                    <button
-                        type="button"
-                        className="panel-toggle"
-                        onClick={() => setShowLoadedFiles((value) => !value)}
-                        aria-expanded={showLoadedFiles}
-                    >
-                        {showLoadedFiles ? 'Hide' : 'Show'}
-                    </button>
+                    <div className="plot-card-header-actions">
+                        {hasFigures && (
+                            <SaveMenu
+                                onSave={handleSaveAllFigures}
+                                options={CHART_SAVE_OPTIONS}
+                                label="Save all figures"
+                                align="right"
+                                busy={savingAll}
+                                className="save-menu--accent"
+                            />
+                        )}
+                        <button
+                            type="button"
+                            className="panel-toggle"
+                            onClick={() => setShowLoadedFiles((value) => !value)}
+                            aria-expanded={showLoadedFiles}
+                        >
+                            {showLoadedFiles ? 'Hide' : 'Show'}
+                        </button>
+                    </div>
                 </div>
                 {showLoadedFiles && (
                     <ul className="loaded-files-list">
@@ -491,8 +537,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
         );
     };
 
+    const hasFigures = gridFiles.length > 0 || (rValueFile && showRValue);
+
     return (
-        <section className="dashboard-page">
+        <section className="dashboard-page" ref={pageRef}>
             <div className="dashboard-toolbar">
                 <div>
                     <h2>Run Dashboard</h2>

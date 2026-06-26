@@ -51,6 +51,12 @@
     margin-bottom: 1rem;
 }
 
+/* Let the Save-all dropdown escape the card when the panel is collapsed.
+   The double class beats the equal-specificity `.plot-card { overflow: hidden }`. */
+.plot-card.loaded-files-card {
+    overflow: visible;
+}
+
 .plot-card-header-actions {
     display: flex;
     flex: 0 0 auto;

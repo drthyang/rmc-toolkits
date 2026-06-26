@@ -6,7 +6,9 @@ import API_BASE_URL from '../api';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
+import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import ModelSummary from './ModelSummary';
+import SaveMenu from './SaveMenu';
 import './StructurePage.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -49,6 +51,12 @@ const NORMAL_OPTIONS = [
     { value: 'custom', label: 'Custom' }
 ];
 const CUSTOM_DIRECTION_LABELS = ['a', 'b', 'c'];
+
+// KDE/3D panels are raster, so they export as PNG at native or 3x resolution.
+const PANEL_SAVE_OPTIONS = [
+    { id: 'png', label: 'PNG image', hint: '1×' },
+    { id: 'png3x', label: 'High-res PNG', hint: '3×' },
+];
 
 const projectionRange = (normal) => {
     const values = CUBE_CORNERS.map((corner) => dot(corner, normal));
@@ -289,6 +297,9 @@ const StructurePage = ({ directory, localRun, theme }) => {
     const canvasRef = useRef(null);
     const slabCanvasRef = useRef(null);
     const mountRef = useRef(null);
+    // three.js render context (renderer/scene/camera + size), used to re-render
+    // the model at a higher resolution for export.
+    const modelExportRef = useRef(null);
     // Geometry of the last "Slab In Cell" render, used to drag the slice band.
     const slabGeometryRef = useRef(null);
     const slabDragRef = useRef(null);
@@ -536,6 +547,59 @@ const StructurePage = ({ directory, localRun, theme }) => {
         setNormalMenuOpen(false);
     };
 
+    // Native PNG reads the live canvas; "png3x" re-renders the same drawing onto
+    // a 3x offscreen canvas so the export is genuinely higher-resolution.
+    const save2dPanel = async (canvas, drawFn, name, minW, minH, format) => {
+        if (!canvas) return;
+        if (format === 'png3x') {
+            const rect = canvas.getBoundingClientRect();
+            const width = Math.max(minW, Math.floor(rect.width));
+            const height = Math.max(minH, Math.floor(rect.height));
+            const scale = 3;
+            const off = document.createElement('canvas');
+            off.width = width * scale;
+            off.height = height * scale;
+            const ctx = off.getContext('2d');
+            ctx.setTransform(scale, 0, 0, scale, 0, 0);
+            drawFn(ctx, width, height);
+            await saveCanvasAsPng(off, name);
+        } else {
+            await saveCanvasAsPng(canvas, name);
+        }
+    };
+
+    // Re-render the three.js scene at a higher pixel ratio, capture, then restore.
+    const captureModelBlob = (scale) => new Promise((resolve) => {
+        const context = modelExportRef.current;
+        if (!context) {
+            resolve(null);
+            return;
+        }
+        const { renderer, scene, camera, width, height } = context;
+        const previousRatio = renderer.getPixelRatio();
+        renderer.setPixelRatio(scale);
+        renderer.setSize(width, height, false);
+        renderer.render(scene, camera);
+        renderer.domElement.toBlob((blob) => {
+            renderer.setPixelRatio(previousRatio);
+            renderer.setSize(width, height, false);
+            renderer.render(scene, camera);
+            resolve(blob);
+        }, 'image/png');
+    });
+
+    const saveKdeSlice = (format) => save2dPanel(canvasRef.current, drawKdeSlice, `KDE_Slice_${sliceConfig.label}`, 320, 260, format);
+    const saveSlab = (format) => save2dPanel(slabCanvasRef.current, drawSlab, `Slab_In_Cell_${sliceConfig.label}`, 220, 260, format);
+    const saveModel = async (format) => {
+        if (format === 'png3x') {
+            const blob = await captureModelBlob(3);
+            if (blob) downloadBlob(blob, `${sanitizeFilename('Folded_Unit_Cell')}.png`);
+        } else {
+            const canvas = mountRef.current?.querySelector('canvas');
+            if (canvas) await saveCanvasAsPng(canvas, 'Folded_Unit_Cell');
+        }
+    };
+
     const pointDepth = useCallback((point) => {
         const rawDepth = dot([point.x, point.y, point.z], sliceConfig.normal);
         const span = sliceConfig.range[1] - sliceConfig.range[0] || 1;
@@ -633,19 +697,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
         };
     }, [structure, isLocalStructure, points, directory, selectedElement, sliceDirection, sliceConfig, zCenter, thickness, bandwidth, gridSize, logScale]);
 
-    // Render the KDE density grid + contour overlay. Colormap and contour
-    // visibility are pure client-side re-renders (no refetch).
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        const size = canvas.getBoundingClientRect();
-        const width = Math.max(320, Math.floor(size.width));
-        const height = Math.max(260, Math.floor(size.height));
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = width * dpr;
-        canvas.height = height * dpr;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Render the KDE density grid + contour overlay into a 2D context sized to
+    // (width, height) CSS units. The caller sets the backing resolution and the
+    // matching transform, so the same draw serves the live canvas and a
+    // higher-resolution offscreen canvas for export.
+    const drawKdeSlice = useCallback((ctx, width, height) => {
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
@@ -749,17 +805,26 @@ const StructurePage = ({ directory, localRun, theme }) => {
         }
     }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell, sliceConfig]);
 
+    // Colormap and contour visibility are pure client-side re-renders (no refetch).
     useEffect(() => {
-        const canvas = slabCanvasRef.current;
+        const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const size = canvas.getBoundingClientRect();
-        const width = Math.max(220, Math.floor(size.width));
+        const width = Math.max(320, Math.floor(size.width));
         const height = Math.max(260, Math.floor(size.height));
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
         canvas.height = height * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawKdeSlice(ctx, width, height);
+    }, [drawKdeSlice]);
+
+    // Draw the "Slab In Cell" side view into a 2D context sized to (width,
+    // height) CSS units. Returns the band geometry the drag handler needs; the
+    // live effect publishes it, export ignores it. Like drawKdeSlice, the caller
+    // owns the backing resolution and transform.
+    const drawSlab = useCallback((ctx, width, height) => {
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
@@ -783,8 +848,8 @@ const StructurePage = ({ directory, localRun, theme }) => {
             [uMin, depthEnd]
         ]);
         const mapper = makePlaneMapper(sidePlane, width, height, 18);
-        // Publish the band geometry so the drag handler can map cursor -> slice.
-        slabGeometryRef.current = {
+        // Band geometry so the drag handler can map cursor -> slice (returned below).
+        const geometry = {
             invert: mapper.invert,
             uMin,
             uMax,
@@ -838,7 +903,23 @@ const StructurePage = ({ directory, localRun, theme }) => {
         ctx.fillText(sliceConfig.label, Math.max(8, normalLabel.x - 12), Math.max(16, normalLabel.y - 6));
         ctx.fillText(`${sliceConfig.label}=${zCenter.toFixed(3)}`, 10, Math.max(30, slabLabel.y - 6));
         ctx.fillText(`d=${thickness.toFixed(3)}`, 10, Math.min(height - 16, slabLabel.y + 18));
+        return geometry;
     }, [points, zCenter, thickness, unitCell, themeVars, sliceConfig, inActiveSlab, elementColors]);
+
+    useEffect(() => {
+        const canvas = slabCanvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const size = canvas.getBoundingClientRect();
+        const width = Math.max(220, Math.floor(size.width));
+        const height = Math.max(260, Math.floor(size.height));
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Publish the band geometry so the drag handler can map cursor -> slice.
+        slabGeometryRef.current = drawSlab(ctx, width, height);
+    }, [drawSlab]);
 
     useEffect(() => {
         zCenterRef.current = zCenter;
@@ -932,7 +1013,9 @@ const StructurePage = ({ directory, localRun, theme }) => {
         scene.background = new THREE.Color(themeVars.canvasBg);
         const camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 20);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        // preserveDrawingBuffer keeps the rendered frame readable so the figure
+        // can be captured for PNG export at any time.
+        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(width, height);
         mount.replaceChildren(renderer.domElement);
@@ -1027,6 +1110,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
         camera.lookAt(controls.target);
         camera.updateProjectionMatrix();
 
+        // Expose the render context so the figure can be re-rendered at a higher
+        // pixel ratio for export.
+        modelExportRef.current = { renderer, scene, camera, width, height };
+
         let frameId;
         const animate = () => {
             controls.update();
@@ -1041,6 +1128,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
                 target: controls.target.toArray(),
                 zoom: camera.zoom
             };
+            modelExportRef.current = null;
             cancelAnimationFrame(frameId);
             controls.dispose();
             renderer.dispose();
@@ -1186,7 +1274,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             className="kde-panel"
                             style={{ '--panel-aspect': slicePanelGeometry.planeAspect }}
                         >
-                            <h3>KDE Slice</h3>
+                            <h3>
+                                KDE Slice
+                                <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
+                            </h3>
                             <canvas ref={canvasRef} className="kde-canvas" />
                             {isLocalStructure && (
                                 <div className="local-density-note">
@@ -1200,7 +1291,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
                         >
                             <div className="slab-panel-header">
                                 <span>Slab In Cell</span>
-                                <strong>{sliceConfig.label} {(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
+                                <div className="slab-panel-header-meta">
+                                    <strong>{sliceConfig.label} {(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
+                                    <SaveMenu onSave={saveSlab} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
+                                </div>
                             </div>
                             <canvas ref={slabCanvasRef} />
                         </div>
@@ -1208,7 +1302,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             className="model-panel"
                             style={{ '--panel-aspect': Math.max(slicePanelGeometry.planeAspect, 1) }}
                         >
-                            <h3>Folded Unit Cell</h3>
+                            <h3>
+                                Folded Unit Cell
+                                <SaveMenu onSave={saveModel} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
+                            </h3>
                             <div ref={mountRef} className="three-mount" />
                             {Object.keys(elementColors).length > 0 && (
                                 <div className="atom-legend" aria-label="Atom colors by element">

@@ -24,6 +24,9 @@ refinement.
 
 - **Run dashboard** — auto-detects RMCProfile outputs in a folder and renders browser-native SVG
   charts with hover readouts, legend toggles, and drag-to-zoom.
+- **Figure export** — every chart has a Save badge for **PNG** or true-vector **SVG**, *Save all
+  figures* bundles the dashboard into a single `.zip`, and the KDE/3D panels export PNG at native or
+  high (3×) resolution.
 - **EXAFS outputs** — recognizes `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv`, including
   Q-space title rows and R-space real/imaginary/modulus columns, with appropriate `k` and `r` axes.
 - **Live Data** — the local Flask app watches the selected folder and refreshes charts when files
