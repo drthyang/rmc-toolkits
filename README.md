@@ -3,21 +3,33 @@
 [![Tests](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml/badge.svg)](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Post-processing utilities and a local-first dashboard for **RMCProfile** and **STOG** outputs.
+A **browser-based dashboard** for **RMCProfile** and **STOG** outputs — no install, no setup, no
+server. Just open the page, pick your run folder, and explore your refinement.
 
-🔒 **Your data stays yours.** Run files are read and rendered entirely in your own browser (or on
-your own machine) and are never uploaded to any server — a private, secure way to monitor an RMC
-refinement.
+### ▶️ Open the app — [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
 
-🔗 **Hosted dashboard:** [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
-📖 **New here?** Start with [QuickStart.md](QuickStart.md).
+1. Visit the link above.
+2. Click **Select Folder** and choose your RMCProfile run directory.
+3. Your plots, KDE slices, and folded 3D structure render instantly — all in your browser.
+
+🔒 **Your data never leaves your device.** Run files are read and rendered entirely in your browser
+and are never uploaded to any server — a private, secure way to monitor an RMC refinement. (Your
+browser's picker may say “Upload”, but nothing is sent anywhere.)
+
+⚡ **Live monitoring** auto-refreshes charts as new files are written, in Chromium browsers (Chrome,
+Edge, Arc, Opera).
+
+📖 **New here?** Start with [QuickStart.md](QuickStart.md). Want server-side features or a Python
+API? See [Run locally](#run-locally-optional) and [Python package usage](#python-package-usage).
 
 ## What's Inside
 
+- **Web app (`web_app/`)** — a React/Vite single-page app that runs fully in the browser (the hosted
+  link above), so anyone can inspect a run with no setup. An **optional** Flask backend adds
+  server-side file browsing, `.rmc6f` conversion, and reference-grade SciPy KDE for local/self-hosted
+  use.
 - **Python package (`rmc_toolkits/`)** — parse RMC/STOG/EXAFS outputs, build plots, convert
   `.rmc6f` files, load folded structures, and compute SciPy KDE slices.
-- **Web app (`web_app/`)** — Flask API + React/Vite frontend for loading a run directory,
-  inspecting interactive plots, converting structures, and exploring KDE/3D views.
 - **Legacy scripts (`src/`)** — original standalone CLI/desktop research scripts.
 
 ## Features
@@ -29,14 +41,15 @@ refinement.
   high (3×) resolution.
 - **EXAFS outputs** — recognizes `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv`, including
   Q-space title rows and R-space real/imaginary/modulus columns, with appropriate `k` and `r` axes.
-- **Live Data** — the local Flask app watches the selected folder and refreshes charts when files
-  change.
-- **KDE / 3D page** — model summary, server-side `scipy.stats.gaussian_kde` density slices, a
-  slab-in-cell projection, and a Three.js folded unit-cell view. **Drag the highlighted band in the
-  Slab In Cell panel** to move the slice position directly.
-- **GPU-accelerated browser KDE** — in static/offline mode a Web Worker computes the density map
-  with a WebGPU compute shader when available (with an automatic CPU fallback) — up to ~100× faster
-  on the heaviest grids, with numerically identical output.
+- **Live Data** — auto-refreshes charts as your refinement writes new files. In the browser this
+  uses the File System Access API (Chromium: Chrome, Edge, Arc, Opera); the optional Flask backend
+  watches the folder server-side.
+- **KDE / 3D page** — model summary, KDE density slices, a slab-in-cell projection, and a Three.js
+  folded unit-cell view. **Drag the highlighted band in the Slab In Cell panel** to move the slice
+  position directly.
+- **GPU-accelerated browser KDE** — the browser computes the density map in a Web Worker with a
+  WebGPU compute shader when available (automatic CPU fallback) — up to ~100× faster on the heaviest
+  grids, with output numerically identical to the server-side SciPy KDE.
 - **Structure tools** — `.rmc6f` → `Frac_coord_<stem>.txt` conversion and reference-number-preserving
   atom sampling for large structures.
 
@@ -60,6 +73,9 @@ refinement.
 
 ## Setup
 
+> Only needed to run the Flask backend, use the Python package, or develop locally. **To just use
+> the dashboard, open the [hosted app](https://drthyang.github.io/rmc-toolkits/) — nothing to install.**
+
 ```bash
 # Python (from repo root)
 python3 -m venv .venv
@@ -72,7 +88,12 @@ cd web_app/frontend
 npm install
 ```
 
-## Running The Web App
+## Run Locally (optional)
+
+Most users don't need this — the [hosted app](https://drthyang.github.io/rmc-toolkits/) covers
+monitoring and visualization entirely in the browser. Run the Flask backend only when you want
+server-side file browsing, `.rmc6f` conversion, reference-grade SciPy KDE, or to self-host on a
+network.
 
 Build the frontend once, then serve it from Flask:
 
@@ -105,13 +126,15 @@ VITE_API_BASE_URL=http://localhost:5050 npm run dev   # http://localhost:5173/
 
 ## Hosting The Dashboard
 
-Two supported modes:
+Two ways to deploy:
 
-- **GitHub Pages (static)** — easiest public link. Users select a local run folder in the browser;
-  data stays on their machine, no Python server required. Plot parsing, `.rmc6f` model summaries,
-  the slab view, browser-side KDE (WebGPU + CPU fallback), and the 3D view all run client-side.
-  Live Data works in Chromium browsers (Chrome, Edge, Arc, Opera) via the File System Access API.
-  Deployed automatically from `main` by `.github/workflows/pages.yml`.
+- **GitHub Pages (static)** — how the public app at
+  [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/) is served, and the
+  recommended way to share it. Users select a local run folder in the browser; data stays on their
+  machine, no Python server required. Plot parsing, `.rmc6f` model summaries, the slab view,
+  browser-side KDE (WebGPU + CPU fallback), and the 3D view all run client-side. Live Data works in
+  Chromium browsers (Chrome, Edge, Arc, Opera) via the File System Access API. Deployed automatically
+  from `main` by `.github/workflows/pages.yml`.
 - **Flask web service** — full-featured: server-side file browsing, structure sampling, conversion,
   SciPy KDE, and Live Data. The included `Dockerfile` builds the frontend and serves it via
   Flask/Gunicorn:
