@@ -5,7 +5,11 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
-Figure export + axis labels:
+_Nothing yet._
+
+## v0.2.0 — 2026-06-26
+
+Figure export, axis labels, and browser-first positioning.
 
 - Added per-figure **Save** controls. Dashboard charts (inline SVG) export as **PNG** (raster) or
   true-vector **SVG**; the KDE/3D panels (canvas + WebGL) export **PNG** at native or **3×**
@@ -22,8 +26,18 @@ Figure export + axis labels:
 - Gave proper vertical-axis labels to plots that previously showed a generic `data`: PDF/partials →
   `G(r)`, x-ray/neutron S(Q) → `S(Q)`, Bragg → `Intensity`. Applied in both the Flask
   `/api/plot/data` endpoint and the browser static-mode parser.
+- Reframed the README and roadmap around the hosted browser app (GitHub Pages) as the primary,
+  no-install way to use the dashboard; the Flask backend and Python package are now positioned as
+  optional local/advanced paths. Added a Phase 7 plan for interactive STOG reduction and guided
+  RMCProfile run setup.
+- Capitalized **RMCProfile** consistently in the app title, header, and messages.
 
-EXAFS and large-structure display update:
+## v0.1.0 — 2026-06-21 (first tagged release)
+
+First public, releasable version: the reusable Python package, Flask API, interactive dashboard,
+server-side + browser (WebGPU/CPU) KDE, and Three.js structure viewer with a draggable slice band.
+
+EXAFS and large-structure display (added late in the v0.1.0 cycle):
 
 - Added EXAFS plot-kind detection for `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv` in both
   the Python package and browser static mode.
@@ -37,11 +51,6 @@ EXAFS and large-structure display update:
 - Raised the structure endpoint and Structure page point limits to 1,000,000 and raised the Slab In
   Cell canvas draw cap to match, so moderate structures such as `data/RMC/snao.rmc6f` render all
   returned atoms instead of every other point.
-
-## v0.1.0 — 2026-06-21 (first tagged release)
-
-First public, releasable version: the reusable Python package, Flask API, interactive dashboard,
-server-side + browser (WebGPU/CPU) KDE, and Three.js structure viewer with a draggable slice band.
 
 Release engineering added in this version:
 

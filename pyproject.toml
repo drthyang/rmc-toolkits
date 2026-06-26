@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rmc-toolkits"
-version = "0.1.0"
-description = "Post-processing utilities and a local-first dashboard for RMCProfile and STOG outputs."
+version = "0.2.0"
+description = "A browser-based dashboard and post-processing utilities for RMCProfile and STOG outputs."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
