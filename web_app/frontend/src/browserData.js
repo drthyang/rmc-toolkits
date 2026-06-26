@@ -377,7 +377,7 @@ const makeRunFromEntries = (entries) => {
             modified: file.lastModified
         }));
     if (!files.length) {
-        throw new Error(`No supported RMCprofile files found in ${entries.length} selected files`);
+        throw new Error(`No supported RMCProfile files found in ${entries.length} selected files`);
     }
 
     const rmc6f = chooseStructureFile(files);
