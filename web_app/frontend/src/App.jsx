@@ -222,7 +222,7 @@ function App() {
               <div className="brand-mark">R</div>
               <div className="brand-copy">
                 <h1>
-                  RMCprofile
+                  RMCProfile
                   <span>Run Monitor</span>
                 </h1>
               </div>
