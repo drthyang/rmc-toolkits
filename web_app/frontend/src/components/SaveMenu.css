@@ -1,0 +1,95 @@
+.save-menu {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.save-menu-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    min-height: 1.7rem;
+    padding: 0 0.62rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.save-menu-trigger:hover:not(:disabled) {
+    color: var(--text-strong);
+    border-color: var(--border-strong);
+}
+
+.save-menu-trigger:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.save-menu-icon {
+    font-size: 0.9em;
+    line-height: 1;
+}
+
+/* Accent treatment for the prominent dashboard-level Save-all control. */
+.save-menu--accent .save-menu-trigger {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.save-menu--accent .save-menu-trigger:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+.save-menu-list {
+    position: absolute;
+    top: calc(100% + 0.3rem);
+    z-index: 30;
+    min-width: 9.5rem;
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.3rem;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+}
+
+.save-menu-list--right {
+    right: 0;
+}
+
+.save-menu-list--left {
+    left: 0;
+}
+
+.save-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    width: 100%;
+    padding: 0.32rem 0.5rem;
+    font-size: 0.76rem;
+    font-weight: 550;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.save-menu-item:hover {
+    background: var(--panel-raised);
+    color: var(--text-strong);
+}
+
+.save-menu-item span {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+}

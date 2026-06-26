@@ -5,6 +5,24 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Figure export + axis labels:
+
+- Added per-figure **Save** controls. Dashboard charts (inline SVG) export as **PNG** (raster) or
+  true-vector **SVG**; the KDE/3D panels (canvas + WebGL) export **PNG** at native or **3×**
+  resolution. The earlier raster-PDF attempt was dropped — a PDF of a chart isn't true vector, and
+  SVG is the proper vector format (convertible to PDF offline if needed).
+- Added **Save all figures** in the dashboard's *Loaded N plot files* header. It bundles every
+  visible chart into a single `.zip` (PNG or SVG), avoiding the browser's multi-download blocking.
+- Added supporting modules: `figureExport.js` (SVG/canvas rasterization + standalone-SVG
+  serialization with inlined computed styles), a shared `SaveMenu` component, and a dependency-free
+  store-method ZIP writer (`zipArchive.js`, with CRC-32).
+- High-resolution panel export re-renders the same drawing onto a 3× offscreen canvas (KDE slice,
+  slab) or re-renders the Three.js scene at a higher pixel ratio (`preserveDrawingBuffer`), so the
+  output is genuinely higher-resolution rather than upscaled.
+- Gave proper vertical-axis labels to plots that previously showed a generic `data`: PDF/partials →
+  `G(r)`, x-ray/neutron S(Q) → `S(Q)`, Bragg → `Intensity`. Applied in both the Flask
+  `/api/plot/data` endpoint and the browser static-mode parser.
+
 EXAFS and large-structure display update:
 
 - Added EXAFS plot-kind detection for `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv` in both

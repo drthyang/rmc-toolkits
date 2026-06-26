@@ -256,9 +256,16 @@ export const plotDataFromText = (file) => {
     } else if (kind === 'exafs_r') {
         xLabel = 'r (Å)';
         yLabel = 'FT[χ(k) k²]';
-    } else if (['xpdf', 'npdf', 'pdf_partials'].includes(kind)) xLabel = 'r (Å)';
-    else if (kind === 'bragg') xLabel = 'Q (Å^{-1})';
-    else xLabel = cleanAxisLabel(xLabel);
+    } else if (['xpdf', 'npdf', 'pdf_partials'].includes(kind)) {
+        xLabel = 'r (Å)';
+        yLabel = 'G(r)';
+    } else if (['xray_sq', 'neutron_sq'].includes(kind)) {
+        xLabel = 'Q (Å^{-1})';
+        yLabel = 'S(Q)';
+    } else if (kind === 'bragg') {
+        xLabel = 'Q (Å^{-1})';
+        yLabel = 'Intensity';
+    } else xLabel = cleanAxisLabel(xLabel);
 
     const title = plotMetadataFromFile({ ...file, plotData: { metrics } })?.title || file.name;
     return {

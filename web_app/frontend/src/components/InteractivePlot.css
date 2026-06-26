@@ -10,6 +10,13 @@
     padding: 0.55rem 0.9rem 0.35rem;
 }
 
+.plot-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.4rem;
+}
+
 .plot-reset {
     flex: 0 0 auto;
     min-height: 1.7rem;
@@ -20,6 +27,7 @@
     background: var(--accent-soft);
     border: 1px solid transparent;
     border-radius: 999px;
+    white-space: nowrap;
 }
 
 .plot-reset:hover:not(:disabled) {
