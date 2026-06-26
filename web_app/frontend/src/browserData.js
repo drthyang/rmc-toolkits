@@ -191,6 +191,13 @@ const cleanAxisLabel = (label) => {
         .replace('(A)', '(Å)');
 };
 
+// Bragg x-axis from the data's column header: time-of-flight CSVs label the first
+// column "Flight time (us)", shown as ToF in microseconds (the conventional neutron
+// unit, used as-is). Everything else (e.g. "Q or theta") stays a Q axis.
+const braggAxis = (header) => (
+    /tof|flight|time/.test((header || '').toLowerCase()) ? 'ToF (µs)' : 'Q (Å^{-1})'
+);
+
 export const plotMetadataFromFile = (file) => {
     const kind = file.plotKind;
     if (kind === 'xpdf') return { kind, title: 'xPDF', metrics: file.plotData?.metrics || {} };
@@ -263,7 +270,7 @@ export const plotDataFromText = (file) => {
         xLabel = 'Q (Å^{-1})';
         yLabel = 'S(Q)';
     } else if (kind === 'bragg') {
-        xLabel = 'Q (Å^{-1})';
+        xLabel = braggAxis(csv.labels[0]);
         yLabel = 'Intensity';
     } else xLabel = cleanAxisLabel(xLabel);
 

@@ -6,7 +6,7 @@ import unittest
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "rmc_toolkits_matplotlib"))
 Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
 
-from rmc_toolkits.plots import close_plot, detect_plot_kind, make_plot, plot_to_png
+from rmc_toolkits.plots import bragg_is_tof, close_plot, detect_plot_kind, make_plot, plot_to_png
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -117,6 +117,16 @@ class PlotTests(unittest.TestCase):
                 self.assertAlmostEqual(result.metrics["final_chi_r"], 10.0)
             finally:
                 close_plot(result)
+
+
+class BraggAxisTests(unittest.TestCase):
+    def test_time_of_flight_headers(self):
+        for header in ("Flight time (us)", "TOF,ms", "Time"):
+            self.assertTrue(bragg_is_tof(header))
+
+    def test_reciprocal_space_is_not_tof(self):
+        for header in ("Q or theta", "2-theta, deg", "", None):
+            self.assertFalse(bragg_is_tof(header))
 
 
 if __name__ == "__main__":

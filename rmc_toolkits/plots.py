@@ -47,6 +47,16 @@ def detect_plot_kind(path: str | Path) -> str | None:
     return None
 
 
+def bragg_is_tof(header: str | None) -> bool:
+    """True when a Bragg dataset's column header is time-of-flight.
+
+    RMCProfile time-of-flight Bragg CSVs label the first column ``Flight time (us)``;
+    those are shown as ToF in microseconds (the conventional neutron unit), so the
+    raw x-values are used as-is. Anything else (e.g. ``Q or theta``) stays a Q axis.
+    """
+    return bool(re.search(r"tof|flight|time", (header or "").lower()))
+
+
 def _series_plot(
     path: Path,
     title: str,
@@ -147,7 +157,9 @@ def make_plot(path: str | Path) -> PlotResult:
         labels = read_rmc_csv(path).labels
         return _series_plot(path, "S(Q) (neutron)", labels[0] if labels else r"Q ($\mathrm{\AA^{-1}}$)", calculate_rwp=True)
     if kind == "bragg":
-        return _series_plot(path, "BRAGG", r"Q ($\mathrm{\AA^{-1}}$)", calculate_rwp=True)
+        labels = read_rmc_csv(path).labels
+        x_label = r"ToF ($\mu$s)" if bragg_is_tof(labels[0] if labels else None) else r"Q ($\mathrm{\AA^{-1}}$)"
+        return _series_plot(path, "BRAGG", x_label, calculate_rwp=True)
     if kind == "r_value":
         return _chi_plot(path)
     return _stog_plot(path)

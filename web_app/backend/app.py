@@ -31,7 +31,7 @@ from rmc_toolkits.parsers import (
     related_r_value_logs,
     write_frac_from_rmc6f,
 )
-from rmc_toolkits.plots import close_plot, detect_plot_kind, make_plot, plot_to_png
+from rmc_toolkits.plots import bragg_is_tof, close_plot, detect_plot_kind, make_plot, plot_to_png
 
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIST), static_url_path="")
@@ -345,7 +345,7 @@ def plot_data():
             x_label = "Q (Å^{-1})"
             y_label = "S(Q)"
         elif kind == "bragg":
-            x_label = "Q (Å^{-1})"
+            x_label = "ToF (µs)" if bragg_is_tof(series.labels[0] if series.labels else None) else "Q (Å^{-1})"
             y_label = "Intensity"
         else:
             x_label = _clean_axis_label(x_label)
