@@ -131,7 +131,10 @@ const ModelSummary = ({ structure }) => {
                         </div>
                         {ladder.length > 0 && (
                             <div className="model-stat sym-ladder-cell">
-                                <dt>Space group vs. tolerance</dt>
+                                <dt className="sym-ladder-dt">
+                                    <span>Space group vs. tolerance</span>
+                                    <span className="sym-tol-arrow" title="Bricks run from tight (left) to loose (right) atomic-position tolerance">atom pos. tol. →</span>
+                                </dt>
                                 <dd>
                                     <div className="sym-ladder" role="group" aria-label="Space group vs. tolerance — click to select">
                                         {ladder.map((b, i) => {
