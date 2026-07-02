@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { describeSymmetry, toleranceLadder, orbitLabel } from '../symmetryModel';
+import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import './ModelSummary.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -28,7 +28,6 @@ const brickStyle = (nSpace, maxOps) => {
 
 const ModelSummary = ({ structure }) => {
     const [symTol, setSymTol] = useState(0.2);   // Å tolerance for symmetry detection
-    const [showWyckoff, setShowWyckoff] = useState(false);   // reveal Wyckoff sites
 
     // Symmetry finder (FINDSYM-like): space group + Wyckoff orbits at `symTol`,
     // plus the full symmetry-vs-tolerance ladder. Runs client-side, no backend.
@@ -151,28 +150,6 @@ const ModelSummary = ({ structure }) => {
                                             );
                                         })}
                                     </div>
-                                    {symmetry.orbits.length > 0 && (
-                                        <div className="sym-wp">
-                                            <button
-                                                type="button"
-                                                className="sym-wp-toggle"
-                                                aria-expanded={showWyckoff}
-                                                onClick={() => setShowWyckoff((v) => !v)}
-                                            >
-                                                {showWyckoff ? 'Hide WP' : 'Show WP'}
-                                            </button>
-                                            {showWyckoff && (
-                                                <div className="sym-orbits">
-                                                    {symmetry.orbits.map((o, i) => (
-                                                        <span className="sym-orbit" key={i} title={`site symmetry ${o.site}`}>
-                                                            <span className="sym-orbit-el">{o.element}</span>
-                                                            {orbitLabel(o)}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
                                 </dd>
                             </div>
                         )}
