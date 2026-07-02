@@ -102,13 +102,11 @@
     letter-spacing: 0.01em;
 }
 
-/* ── Crystal Symmetry card — reuses .model-stats, plus a Wyckoff + ladder cell ── */
-/* Wyckoff-sites cell: chips instead of a single value. */
-.model-stat dd.sym-orbits {
+/* ── Crystal Symmetry card — reuses .model-stats, plus the ladder cell ──────── */
+.sym-orbits {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
-    white-space: normal;
 }
 
 /* The tolerance color bar fills the rest of the row (the freed Wyckoff space). */
@@ -129,6 +127,27 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
+}
+
+/* "Show WP" toggle + the revealed Wyckoff chips, below the color bar. */
+.sym-wp {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
+.sym-wp-toggle {
+    flex: 0 0 auto;
+    padding: 0.1rem 0.6rem;
+    color: var(--muted);
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
 }
 
 .sym-brick {
