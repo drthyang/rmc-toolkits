@@ -326,11 +326,12 @@ export function pointGroupOf(rotations) {
 
 // Symmorphic space-group number for centering + point group (common groups).
 const SG_NUMBER = {
-  'P1': 1, 'P-1': 2, 'P2': 3, 'Pm': 6, 'P2/m': 10, 'C2/m': 12,
-  'P222': 16, 'Pmm2': 25, 'Pmmm': 47, 'Cmmm': 65, 'Fmmm': 69, 'Immm': 71,
+  'P1': 1, 'P-1': 2, 'P2': 3, 'C2': 5, 'Pm': 6, 'Cm': 8, 'P2/m': 10, 'C2/m': 12,
+  'P222': 16, 'C222': 21, 'F222': 22, 'I222': 23, 'Pmm2': 25, 'Fmm2': 42, 'Imm2': 44,
+  'Pmmm': 47, 'Cmmm': 65, 'Fmmm': 69, 'Immm': 71,
   'P4': 75, 'P-4': 81, 'P4/m': 83, 'P422': 89, 'P4mm': 99, 'P-42m': 111, 'P4/mmm': 123,
   'I4': 79, 'I-4': 82, 'I4/m': 87, 'I422': 97, 'I4mm': 107, 'I-42m': 121, 'I4/mmm': 139,
-  'C222': 21, 'Cmm2': 35, 'Amm2': 38,
+  'Cmm2': 35, 'Amm2': 38,
   'P3': 143, 'P-3': 147, 'P32': 149, 'P3m': 156, 'P-3m': 162, 'R3': 146, 'R-3m': 166,
   'P6': 168, 'P6/m': 175, 'P622': 177, 'P6mm': 183, 'P6/mmm': 191,
   'P23': 195, 'F23': 196, 'I23': 197, 'Pm-3': 200, 'Fm-3': 202, 'Im-3': 204,

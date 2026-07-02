@@ -117,9 +117,9 @@ const ModelSummary = ({ structure }) => {
                             <dt>Space group</dt>
                             <dd title={`Point group ${symmetry.pointGroup} · fits to ${symmetry.maxResidual.toFixed(3)} Å`}>
                                 {symmetry.spaceGroup}
-                                {symmetry.spaceGroupNumber && (
-                                    <span className="model-stat-sub">No. {symmetry.spaceGroupNumber} · {symmetry.pointGroup}</span>
-                                )}
+                                <span className="model-stat-sub">
+                                    {symmetry.spaceGroupNumber ? `No. ${symmetry.spaceGroupNumber} · ` : ''}{symmetry.pointGroup}
+                                </span>
                             </dd>
                         </div>
                         <div className="model-stat">
