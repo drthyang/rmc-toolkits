@@ -10,6 +10,7 @@
 
 .model-summary {
     display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
 }
 
@@ -87,8 +88,136 @@
     letter-spacing: 0.01em;
 }
 
+/* ── Symmetry Analysis — a second title|content row mirroring Model information ── */
+.model-symmetry {
+    flex: 1 0 100%;
+    display: flex;
+    align-items: stretch;
+    border-top: 1px solid var(--border);
+}
+
+/* Left label cell, styled by the shared .model-summary-title. */
+.model-symmetry-title {
+    align-self: stretch;
+}
+
+.model-symmetry-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    align-content: center;
+    gap: 0.5rem;
+    padding: 0.68rem 1rem;
+}
+
+.sg-line {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.sg-symbol {
+    color: var(--text-strong);
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+}
+
+.sg-number {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.sg-meta {
+    color: var(--subtle);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+}
+
+.sym-ladder {
+    display: flex;
+    height: 24px;
+    max-width: 460px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.sym-brick {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-right: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    border-radius: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter 140ms ease;
+}
+
+.sym-brick:last-child {
+    border-right: 0;
+}
+
+.sym-brick:hover:not(:disabled) {
+    filter: brightness(1.06);
+    background: inherit;
+}
+
+.sym-brick.is-active {
+    box-shadow: inset 0 0 0 2px var(--accent-strong);
+}
+
+.sym-brick:focus-visible {
+    box-shadow: var(--focus-ring);
+    z-index: 1;
+}
+
+.sym-brick-label {
+    padding: 0 5px;
+    color: inherit;
+    font-size: 0.67rem;
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sym-orbits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+/* Wyckoff-orbit chips — same pill idiom as .rwp-chip / loaded-file badges. */
+.sym-orbit {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.sym-orbit-el {
+    color: var(--text-strong);
+    font-weight: 650;
+}
+
 @media (max-width: 760px) {
-    .model-summary {
+    .model-summary,
+    .model-symmetry {
         flex-direction: column;
     }
 

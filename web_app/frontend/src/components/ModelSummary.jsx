@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { describeSymmetry, toleranceLadder, orbitLabel } from '../symmetryModel';
 import './ModelSummary.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -14,7 +15,32 @@ const formatNumber = (value, digits = 3) => Number(value).toLocaleString(undefin
     maximumFractionDigits: digits
 });
 
+// Ladder brick style: more operations → deeper accent fill (theme-aware via
+// color-mix over the panel), with a legible label colour for the fill darkness.
+const brickStyle = (nSpace, maxOps) => {
+    const level = maxOps > 1 ? Math.log(nSpace) / Math.log(maxOps) : 0;
+    const pct = Math.round(12 + level * 74);
+    return {
+        background: `color-mix(in srgb, var(--accent) ${pct}%, var(--panel-raised))`,
+        color: pct > 50 ? '#fff' : 'var(--text)'
+    };
+};
+
 const ModelSummary = ({ structure }) => {
+    const [symTol, setSymTol] = useState(0.2);   // Å tolerance for symmetry detection
+
+    // Symmetry finder (FINDSYM-like): space group + Wyckoff orbits at `symTol`,
+    // plus the full symmetry-vs-tolerance ladder. Runs client-side, no backend.
+    const symmetry = useMemo(() => describeSymmetry(structure, symTol), [structure, symTol]);
+    const ladder = useMemo(() => toleranceLadder(structure, 1.0), [structure]);
+    const maxOps = ladder.length ? Math.max(...ladder.map((b) => b.nSpace)) : 1;
+
+    // Brick widths are NOT the raw tolerance range — the full-symmetry rung holds
+    // over most of the axis and would dominate. Cap the widest rung at ~1/3 and
+    // split the rest evenly, so the progression reads clearly.
+    const widestBrick = ladder.reduce((best, b, i) => ((b.to - b.from) > (ladder[best].to - ladder[best].from) ? i : best), 0);
+    const brickWidth = (i) => (ladder.length <= 1 ? 100 : i === widestBrick ? 34 : 66 / (ladder.length - 1));
+
     const summary = useMemo(() => {
         if (!structure?.latticeVectors || !structure?.supercell) return null;
 
@@ -80,6 +106,52 @@ const ModelSummary = ({ structure }) => {
                     </dd>
                 </div>
             </dl>
+
+            {symmetry && (
+                <div className="model-symmetry">
+                    <h3 className="model-summary-title model-symmetry-title">Symmetry Analysis</h3>
+                    <div className="model-symmetry-body">
+                        <div className="sg-line">
+                            <span className="sg-symbol" title={`Point group ${symmetry.pointGroup} · ${symmetry.nSpace} operations · fits to ${symmetry.maxResidual.toFixed(3)} Å`}>
+                                {symmetry.spaceGroup}
+                            </span>
+                            {symmetry.spaceGroupNumber && <span className="sg-number">No. {symmetry.spaceGroupNumber}</span>}
+                            <span className="sg-meta">{symmetry.pointGroup} · {symmetry.nSpace} ops</span>
+                        </div>
+
+                        {ladder.length > 0 && (
+                            <div className="sym-ladder" role="group" aria-label="Space group vs. tolerance — click to select">
+                                {ladder.map((b, i) => {
+                                    const active = symTol >= b.from && symTol < b.to;
+                                    return (
+                                        <button
+                                            key={i}
+                                            type="button"
+                                            className={`sym-brick${active ? ' is-active' : ''}`}
+                                            style={{ width: `${brickWidth(i)}%`, ...brickStyle(b.nSpace, maxOps) }}
+                                            title={`${b.spaceGroup}${b.spaceGroupNumber ? ` (No. ${b.spaceGroupNumber})` : ''} · holds ${b.from.toFixed(2)}–${b.to.toFixed(2)} Å · ${b.nSpace} ops — click to select`}
+                                            onClick={() => setSymTol(Math.max(0.02, Math.min(1, (b.from + b.to) / 2)))}
+                                        >
+                                            <span className="sym-brick-label">{b.spaceGroup}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {symmetry.orbits.length > 0 && (
+                            <div className="sym-orbits">
+                                {symmetry.orbits.map((o, i) => (
+                                    <span className="sym-orbit" key={i} title={`site symmetry ${o.site}`}>
+                                        <span className="sym-orbit-el">{o.element}</span>
+                                        {orbitLabel(o)}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </section>
     );
 };
