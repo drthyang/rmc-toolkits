@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { describeSymmetry, toleranceLadder, orbitLabel } from '../symmetryModel';
+import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import './ModelSummary.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -129,19 +129,6 @@ const ModelSummary = ({ structure }) => {
                                 <span className="model-stat-sub">symmetry ops</span>
                             </dd>
                         </div>
-                        {symmetry.orbits.length > 0 && (
-                            <div className="model-stat sym-stat-wyckoff">
-                                <dt>Wyckoff sites</dt>
-                                <dd className="sym-orbits">
-                                    {symmetry.orbits.map((o, i) => (
-                                        <span className="sym-orbit" key={i} title={`site symmetry ${o.site}`}>
-                                            <span className="sym-orbit-el">{o.element}</span>
-                                            {orbitLabel(o)}
-                                        </span>
-                                    ))}
-                                </dd>
-                            </div>
-                        )}
                         {ladder.length > 0 && (
                             <div className="model-stat sym-ladder-cell">
                                 <dt>Space group vs. tolerance</dt>

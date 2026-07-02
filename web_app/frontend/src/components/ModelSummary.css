@@ -111,9 +111,10 @@
     white-space: normal;
 }
 
-/* The tolerance ladder sits at the right of the row. */
+/* The tolerance color bar fills the rest of the row (the freed Wyckoff space). */
 .sym-ladder-cell {
-    margin-left: auto;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .sym-ladder-cell dd {
@@ -122,8 +123,7 @@
 
 .sym-ladder {
     display: flex;
-    width: 15rem;
-    max-width: 100%;
+    width: 100%;
     height: 22px;
     margin-top: 0.1rem;
     border: 1px solid var(--border);
