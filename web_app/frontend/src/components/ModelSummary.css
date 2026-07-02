@@ -1,22 +1,36 @@
+/* Two matched cards side by side, equal height (stretch), equal title width. */
+.model-cards {
+    display: flex;
+    align-items: stretch;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
 .model-summary,
 .model-summary-empty {
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--panel-bg);
     box-shadow: var(--shadow-xs);
-    margin-bottom: 1rem;
     overflow: hidden;
 }
 
+.model-summary-empty {
+    margin-bottom: 1rem;
+}
+
 .model-summary {
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: stretch;
 }
 
 .model-summary-title {
     display: flex;
     flex: 0 0 auto;
+    width: 10rem;                 /* identical width in both cards */
     align-items: center;
     margin: 0;
     padding: 0.68rem 1.1rem;
@@ -39,7 +53,7 @@
     display: flex;
     flex: 1 1 auto;
     flex-wrap: wrap;
-    align-items: stretch;
+    align-items: center;
     row-gap: 0.6rem;
     min-width: 0;
     margin: 0;
@@ -88,60 +102,30 @@
     letter-spacing: 0.01em;
 }
 
-/* ── Symmetry Analysis — a second title|content row mirroring Model information ── */
-.model-symmetry {
-    flex: 1 0 100%;
+/* ── Crystal Symmetry card — reuses .model-stats, plus a Wyckoff + ladder cell ── */
+/* Wyckoff-sites cell: chips instead of a single value. */
+.model-stat dd.sym-orbits {
     display: flex;
-    align-items: stretch;
-    border-top: 1px solid var(--border);
-}
-
-/* Left label cell, styled by the shared .model-summary-title. */
-.model-symmetry-title {
-    align-self: stretch;
-}
-
-.model-symmetry-body {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: grid;
-    align-content: center;
-    gap: 0.5rem;
-    padding: 0.68rem 1rem;
-}
-
-.sg-line {
-    display: flex;
-    align-items: baseline;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.35rem;
+    white-space: normal;
 }
 
-.sg-symbol {
-    color: var(--text-strong);
-    font-size: 1.05rem;
-    font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: -0.01em;
+/* The tolerance ladder sits at the right of the row. */
+.sym-ladder-cell {
+    margin-left: auto;
 }
 
-.sg-number {
-    color: var(--muted);
-    font-size: 0.78rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-}
-
-.sg-meta {
-    color: var(--subtle);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
+.sym-ladder-cell dd {
+    white-space: normal;
 }
 
 .sym-ladder {
     display: flex;
-    height: 24px;
-    max-width: 460px;
+    width: 15rem;
+    max-width: 100%;
+    height: 22px;
+    margin-top: 0.1rem;
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
@@ -188,12 +172,6 @@
     text-overflow: ellipsis;
 }
 
-.sym-orbits {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-}
-
 /* Wyckoff-orbit chips — same pill idiom as .rwp-chip / loaded-file badges. */
 .sym-orbit {
     display: inline-flex;
@@ -215,13 +193,20 @@
     font-weight: 650;
 }
 
+/* Stack the two cards before they get too narrow to sit side by side. */
+@media (max-width: 900px) {
+    .model-cards {
+        flex-direction: column;
+    }
+}
+
 @media (max-width: 760px) {
-    .model-summary,
-    .model-symmetry {
+    .model-summary {
         flex-direction: column;
     }
 
     .model-summary-title {
+        width: auto;
         border-right: 0;
         border-bottom: 1px solid var(--border);
     }

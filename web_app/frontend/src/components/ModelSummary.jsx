@@ -74,85 +74,102 @@ const ModelSummary = ({ structure }) => {
     if (!summary) return null;
 
     return (
-        <section className="model-summary" aria-label="Model information">
-            <h2 className="model-summary-title" title={summary.source}>Model information</h2>
-            <dl className="model-stats">
-                <div className="model-stat">
-                    <dt>Cell (Å)</dt>
-                    <dd>{summary.cellLengths.map((value) => formatNumber(value)).join(' × ')}</dd>
-                </div>
-                <div className="model-stat">
-                    <dt>Angles</dt>
-                    <dd>{summary.angles.map((value) => `${formatNumber(value, 1)}°`).join(' · ')}</dd>
-                </div>
-                <div className="model-stat">
-                    <dt>Supercell</dt>
-                    <dd>{summary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}</dd>
-                </div>
-                {summary.elementEntries.map(({ element, count, referenceSites }) => (
-                    <div className="model-stat" key={element}>
-                        <dt>{element}</dt>
+        <div className="model-cards">
+            <section className="model-summary" aria-label="Model information">
+                <h2 className="model-summary-title" title={summary.source}>Model information</h2>
+                <dl className="model-stats">
+                    <div className="model-stat">
+                        <dt>Cell (Å)</dt>
+                        <dd>{summary.cellLengths.map((value) => formatNumber(value)).join(' × ')}</dd>
+                    </div>
+                    <div className="model-stat">
+                        <dt>Angles</dt>
+                        <dd>{summary.angles.map((value) => `${formatNumber(value, 1)}°`).join(' · ')}</dd>
+                    </div>
+                    <div className="model-stat">
+                        <dt>Supercell</dt>
+                        <dd>{summary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}</dd>
+                    </div>
+                    {summary.elementEntries.map(({ element, count, referenceSites }) => (
+                        <div className="model-stat" key={element}>
+                            <dt>{element}</dt>
+                            <dd>
+                                {formatNumber(count, 0)}
+                                <span className="model-stat-sub">{formatNumber(referenceSites, 0)} sites</span>
+                            </dd>
+                        </div>
+                    ))}
+                    <div className="model-stat">
+                        <dt>Total atoms</dt>
                         <dd>
-                            {formatNumber(count, 0)}
-                            <span className="model-stat-sub">{formatNumber(referenceSites, 0)} sites</span>
+                            {formatNumber(summary.totalAtoms, 0)}
+                            <span className="model-stat-sub">{formatNumber(summary.referenceSites, 0)} sites</span>
                         </dd>
                     </div>
-                ))}
-                <div className="model-stat">
-                    <dt>Total atoms</dt>
-                    <dd>
-                        {formatNumber(summary.totalAtoms, 0)}
-                        <span className="model-stat-sub">{formatNumber(summary.referenceSites, 0)} sites</span>
-                    </dd>
-                </div>
-            </dl>
+                </dl>
+            </section>
 
             {symmetry && (
-                <div className="model-symmetry">
-                    <h3 className="model-summary-title model-symmetry-title">Symmetry Analysis</h3>
-                    <div className="model-symmetry-body">
-                        <div className="sg-line">
-                            <span className="sg-symbol" title={`Point group ${symmetry.pointGroup} · ${symmetry.nSpace} operations · fits to ${symmetry.maxResidual.toFixed(3)} Å`}>
+                <section className="model-summary model-symmetry" aria-label="Crystal symmetry">
+                    <h2 className="model-summary-title">Crystal Symmetry</h2>
+                    <dl className="model-stats">
+                        <div className="model-stat">
+                            <dt>Space group</dt>
+                            <dd title={`Point group ${symmetry.pointGroup} · fits to ${symmetry.maxResidual.toFixed(3)} Å`}>
                                 {symmetry.spaceGroup}
-                            </span>
-                            {symmetry.spaceGroupNumber && <span className="sg-number">No. {symmetry.spaceGroupNumber}</span>}
-                            <span className="sg-meta">{symmetry.pointGroup} · {symmetry.nSpace} ops</span>
+                                {symmetry.spaceGroupNumber && (
+                                    <span className="model-stat-sub">No. {symmetry.spaceGroupNumber} · {symmetry.pointGroup}</span>
+                                )}
+                            </dd>
                         </div>
-
-                        {ladder.length > 0 && (
-                            <div className="sym-ladder" role="group" aria-label="Space group vs. tolerance — click to select">
-                                {ladder.map((b, i) => {
-                                    const active = symTol >= b.from && symTol < b.to;
-                                    return (
-                                        <button
-                                            key={i}
-                                            type="button"
-                                            className={`sym-brick${active ? ' is-active' : ''}`}
-                                            style={{ width: `${brickWidth(i)}%`, ...brickStyle(b.nSpace, maxOps) }}
-                                            title={`${b.spaceGroup}${b.spaceGroupNumber ? ` (No. ${b.spaceGroupNumber})` : ''} · holds ${b.from.toFixed(2)}–${b.to.toFixed(2)} Å · ${b.nSpace} ops — click to select`}
-                                            onClick={() => setSymTol(Math.max(0.02, Math.min(1, (b.from + b.to) / 2)))}
-                                        >
-                                            <span className="sym-brick-label">{b.spaceGroup}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-
+                        <div className="model-stat">
+                            <dt>Operations</dt>
+                            <dd>
+                                {symmetry.nSpace}
+                                <span className="model-stat-sub">symmetry ops</span>
+                            </dd>
+                        </div>
                         {symmetry.orbits.length > 0 && (
-                            <div className="sym-orbits">
-                                {symmetry.orbits.map((o, i) => (
-                                    <span className="sym-orbit" key={i} title={`site symmetry ${o.site}`}>
-                                        <span className="sym-orbit-el">{o.element}</span>
-                                        {orbitLabel(o)}
-                                    </span>
-                                ))}
+                            <div className="model-stat sym-stat-wyckoff">
+                                <dt>Wyckoff sites</dt>
+                                <dd className="sym-orbits">
+                                    {symmetry.orbits.map((o, i) => (
+                                        <span className="sym-orbit" key={i} title={`site symmetry ${o.site}`}>
+                                            <span className="sym-orbit-el">{o.element}</span>
+                                            {orbitLabel(o)}
+                                        </span>
+                                    ))}
+                                </dd>
                             </div>
                         )}
-                    </div>
-                </div>
+                        {ladder.length > 0 && (
+                            <div className="model-stat sym-ladder-cell">
+                                <dt>Space group vs. tolerance</dt>
+                                <dd>
+                                    <div className="sym-ladder" role="group" aria-label="Space group vs. tolerance — click to select">
+                                        {ladder.map((b, i) => {
+                                            const active = symTol >= b.from && symTol < b.to;
+                                            return (
+                                                <button
+                                                    key={i}
+                                                    type="button"
+                                                    className={`sym-brick${active ? ' is-active' : ''}`}
+                                                    style={{ width: `${brickWidth(i)}%`, ...brickStyle(b.nSpace, maxOps) }}
+                                                    title={`${b.spaceGroup}${b.spaceGroupNumber ? ` (No. ${b.spaceGroupNumber})` : ''} · holds ${b.from.toFixed(2)}–${b.to.toFixed(2)} Å · ${b.nSpace} ops — click to select`}
+                                                    onClick={() => setSymTol(Math.max(0.02, Math.min(1, (b.from + b.to) / 2)))}
+                                                >
+                                                    <span className="sym-brick-label">{b.spaceGroup}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </dd>
+                            </div>
+                        )}
+                    </dl>
+                </section>
             )}
-        </section>
+        </div>
     );
 };
 
