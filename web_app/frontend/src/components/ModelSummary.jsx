@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
+import { SymTolContext } from '../symTolContext';
 import './ModelSummary.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -27,7 +28,11 @@ const brickStyle = (nSpace, maxOps) => {
 };
 
 const ModelSummary = ({ structure }) => {
-    const [symTol, setSymTol] = useState(0.2);   // Å tolerance for symmetry detection
+    // Tolerance is shared via context (kept across page switches); fall back to
+    // local state if no provider is present.
+    const sharedSymTol = useContext(SymTolContext);
+    const localSymTol = useState(0.2);
+    const [symTol, setSymTol] = sharedSymTol ?? localSymTol;
 
     // Symmetry finder (FINDSYM-like): space group + Wyckoff orbits at `symTol`,
     // plus the full symmetry-vs-tolerance ladder. Runs client-side, no backend.
