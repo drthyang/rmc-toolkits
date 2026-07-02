@@ -11,6 +11,7 @@ import {
   supportsFileSystemAccess,
   WATCH_INTERVAL_MS,
 } from './browserData';
+import { SymTolContext } from './symTolContext';
 import './App.css';
 
 const REPO_URL = 'https://github.com/drthyang/rmc-toolkits';
@@ -25,6 +26,8 @@ function App() {
   const [localRun, setLocalRun] = useState(null);
   const [localLoading, setLocalLoading] = useState(false);
   const [watchFiles, setWatchFiles] = useState(false);
+  // Shared "Detected SG" tolerance, so the ladder selection persists across pages.
+  const symTolState = useState(0.2);
   const directoryInputRef = useRef(null);
   const dirHandleRef = useRef(null);
   const lastSignatureRef = useRef('');
@@ -332,6 +335,7 @@ function App() {
           )}
           {renderBrowseStatus()}
         </header>
+        <SymTolContext.Provider value={symTolState}>
         <div className="workspace-pages">
           {visitedPages.dashboard && (
             <div
@@ -350,6 +354,7 @@ function App() {
             </div>
           )}
         </div>
+        </SymTolContext.Provider>
       </main>
     </div>
   );

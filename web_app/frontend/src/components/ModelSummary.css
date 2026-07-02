@@ -1,21 +1,36 @@
+/* Model information, then Crystal Symmetry stacked below it — two matching
+   full-width cards sharing one design and an equal-width title cell. */
+.model-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
 .model-summary,
 .model-summary-empty {
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--panel-bg);
     box-shadow: var(--shadow-xs);
-    margin-bottom: 1rem;
     overflow: hidden;
 }
 
+.model-summary-empty {
+    margin-bottom: 1rem;
+}
+
 .model-summary {
+    flex: 0 0 auto;
     display: flex;
+    flex-wrap: wrap;
     align-items: stretch;
 }
 
 .model-summary-title {
     display: flex;
     flex: 0 0 auto;
+    width: 10rem;                 /* identical width in both cards */
     align-items: center;
     margin: 0;
     padding: 0.68rem 1.1rem;
@@ -38,7 +53,7 @@
     display: flex;
     flex: 1 1 auto;
     flex-wrap: wrap;
-    align-items: stretch;
+    align-items: center;
     row-gap: 0.6rem;
     min-width: 0;
     margin: 0;
@@ -87,12 +102,140 @@
     letter-spacing: 0.01em;
 }
 
+/* ── Detected SG card — reuses .model-stats, plus the ladder cell ───────────── */
+.sym-orbits {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+/* The tolerance color bar fills the rest of the row (the freed Wyckoff space). */
+.sym-ladder-cell {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Section label (left) + tolerance-direction hint (right) above the color bar. */
+.sym-ladder-dt {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+}
+
+.sym-tol-arrow {
+    flex: 0 0 auto;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+    color: var(--subtle);
+    white-space: nowrap;
+}
+
+.sym-ladder-cell dd {
+    white-space: normal;
+}
+
+.sym-ladder {
+    display: flex;
+    width: 100%;
+    height: 22px;
+    margin-top: 0.1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* "Show WP" toggle + the revealed Wyckoff chips, below the color bar. */
+.sym-wp {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
+.sym-wp-toggle {
+    flex: 0 0 auto;
+    padding: 0.1rem 0.6rem;
+    color: var(--muted);
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sym-brick {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-right: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    border-radius: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter 140ms ease;
+}
+
+.sym-brick:last-child {
+    border-right: 0;
+}
+
+.sym-brick:hover:not(:disabled) {
+    filter: brightness(1.06);
+    background: inherit;
+}
+
+.sym-brick.is-active {
+    box-shadow: inset 0 0 0 2px var(--accent-strong);
+}
+
+.sym-brick:focus-visible {
+    box-shadow: var(--focus-ring);
+    z-index: 1;
+}
+
+.sym-brick-label {
+    padding: 0 5px;
+    color: inherit;
+    font-size: 0.67rem;
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Wyckoff-orbit chips — same pill idiom as .rwp-chip / loaded-file badges. */
+.sym-orbit {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.sym-orbit-el {
+    color: var(--text-strong);
+    font-weight: 650;
+}
+
 @media (max-width: 760px) {
     .model-summary {
         flex-direction: column;
     }
 
     .model-summary-title {
+        width: auto;
         border-right: 0;
         border-bottom: 1px solid var(--border);
     }
