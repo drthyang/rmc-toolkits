@@ -143,7 +143,7 @@ const ModelSummary = ({ structure }) => {
                                                     className={`sym-brick${active ? ' is-active' : ''}`}
                                                     style={{ width: `${brickWidth(i)}%`, ...brickStyle(b.nSpace, maxOps) }}
                                                     title={`${b.spaceGroup}${b.spaceGroupNumber ? ` (No. ${b.spaceGroupNumber})` : ''} · holds ${b.from.toFixed(2)}–${b.to.toFixed(2)} Å · ${b.nSpace} ops — click to select`}
-                                                    onClick={() => setSymTol(Math.max(0.02, Math.min(1, (b.from + b.to) / 2)))}
+                                                    onClick={() => setSymTol((b.from + b.to) / 2)}
                                                 >
                                                     <span className="sym-brick-label">{b.spaceGroup}</span>
                                                 </button>
