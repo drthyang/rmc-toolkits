@@ -1,4 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
+import { describeSymmetry, toleranceLadder } from '../symmetryModel';
+import { SymTolContext } from '../symTolContext';
 import './ModelSummary.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -14,7 +16,36 @@ const formatNumber = (value, digits = 3) => Number(value).toLocaleString(undefin
     maximumFractionDigits: digits
 });
 
+// Ladder brick style: more operations → deeper accent fill (theme-aware via
+// color-mix over the panel), with a legible label colour for the fill darkness.
+const brickStyle = (nSpace, maxOps) => {
+    const level = maxOps > 1 ? Math.log(nSpace) / Math.log(maxOps) : 0;
+    const pct = Math.round(12 + level * 74);
+    return {
+        background: `color-mix(in srgb, var(--accent) ${pct}%, var(--panel-raised))`,
+        color: pct > 50 ? '#fff' : 'var(--text)'
+    };
+};
+
 const ModelSummary = ({ structure }) => {
+    // Tolerance is shared via context (kept across page switches); fall back to
+    // local state if no provider is present.
+    const sharedSymTol = useContext(SymTolContext);
+    const localSymTol = useState(0.2);
+    const [symTol, setSymTol] = sharedSymTol ?? localSymTol;
+
+    // Symmetry finder (FINDSYM-like): space group + Wyckoff orbits at `symTol`,
+    // plus the full symmetry-vs-tolerance ladder. Runs client-side, no backend.
+    const symmetry = useMemo(() => describeSymmetry(structure, symTol), [structure, symTol]);
+    const ladder = useMemo(() => toleranceLadder(structure, 1.0), [structure]);
+    const maxOps = ladder.length ? Math.max(...ladder.map((b) => b.nSpace)) : 1;
+
+    // Brick widths are NOT the raw tolerance range — the full-symmetry rung holds
+    // over most of the axis and would dominate. Cap the widest rung at ~1/3 and
+    // split the rest evenly, so the progression reads clearly.
+    const widestBrick = ladder.reduce((best, b, i) => ((b.to - b.from) > (ladder[best].to - ladder[best].from) ? i : best), 0);
+    const brickWidth = (i) => (ladder.length <= 1 ? 100 : i === widestBrick ? 34 : 66 / (ladder.length - 1));
+
     const summary = useMemo(() => {
         if (!structure?.latticeVectors || !structure?.supercell) return null;
 
@@ -48,39 +79,92 @@ const ModelSummary = ({ structure }) => {
     if (!summary) return null;
 
     return (
-        <section className="model-summary" aria-label="Model information">
-            <h2 className="model-summary-title" title={summary.source}>Model information</h2>
-            <dl className="model-stats">
-                <div className="model-stat">
-                    <dt>Cell (Å)</dt>
-                    <dd>{summary.cellLengths.map((value) => formatNumber(value)).join(' × ')}</dd>
-                </div>
-                <div className="model-stat">
-                    <dt>Angles</dt>
-                    <dd>{summary.angles.map((value) => `${formatNumber(value, 1)}°`).join(' · ')}</dd>
-                </div>
-                <div className="model-stat">
-                    <dt>Supercell</dt>
-                    <dd>{summary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}</dd>
-                </div>
-                {summary.elementEntries.map(({ element, count, referenceSites }) => (
-                    <div className="model-stat" key={element}>
-                        <dt>{element}</dt>
+        <div className="model-cards">
+            <section className="model-summary" aria-label="Model information">
+                <h2 className="model-summary-title" title={summary.source}>Model information</h2>
+                <dl className="model-stats">
+                    <div className="model-stat">
+                        <dt>Cell (Å)</dt>
+                        <dd>{summary.cellLengths.map((value) => formatNumber(value)).join(' × ')}</dd>
+                    </div>
+                    <div className="model-stat">
+                        <dt>Angles</dt>
+                        <dd>{summary.angles.map((value) => `${formatNumber(value, 1)}°`).join(' · ')}</dd>
+                    </div>
+                    <div className="model-stat">
+                        <dt>Supercell</dt>
+                        <dd>{summary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}</dd>
+                    </div>
+                    {summary.elementEntries.map(({ element, count, referenceSites }) => (
+                        <div className="model-stat" key={element}>
+                            <dt>{element}</dt>
+                            <dd>
+                                {formatNumber(count, 0)}
+                                <span className="model-stat-sub">{formatNumber(referenceSites, 0)} sites</span>
+                            </dd>
+                        </div>
+                    ))}
+                    <div className="model-stat">
+                        <dt>Total atoms</dt>
                         <dd>
-                            {formatNumber(count, 0)}
-                            <span className="model-stat-sub">{formatNumber(referenceSites, 0)} sites</span>
+                            {formatNumber(summary.totalAtoms, 0)}
+                            <span className="model-stat-sub">{formatNumber(summary.referenceSites, 0)} sites</span>
                         </dd>
                     </div>
-                ))}
-                <div className="model-stat">
-                    <dt>Total atoms</dt>
-                    <dd>
-                        {formatNumber(summary.totalAtoms, 0)}
-                        <span className="model-stat-sub">{formatNumber(summary.referenceSites, 0)} sites</span>
-                    </dd>
-                </div>
-            </dl>
-        </section>
+                </dl>
+            </section>
+
+            {symmetry && (
+                <section className="model-summary model-symmetry" aria-label="Detected space group">
+                    <h2 className="model-summary-title">Detected SG</h2>
+                    <dl className="model-stats">
+                        <div className="model-stat">
+                            <dt>Space group</dt>
+                            <dd title={`Point group ${symmetry.pointGroup} · fits to ${symmetry.maxResidual.toFixed(3)} Å`}>
+                                {symmetry.spaceGroup}
+                                <span className="model-stat-sub">
+                                    {symmetry.spaceGroupNumber ? `No. ${symmetry.spaceGroupNumber} · ` : ''}{symmetry.pointGroup}
+                                </span>
+                            </dd>
+                        </div>
+                        <div className="model-stat">
+                            <dt>Operations</dt>
+                            <dd>
+                                {symmetry.nSpace}
+                                <span className="model-stat-sub">symmetry ops</span>
+                            </dd>
+                        </div>
+                        {ladder.length > 0 && (
+                            <div className="model-stat sym-ladder-cell">
+                                <dt className="sym-ladder-dt">
+                                    <span>Space group vs. tolerance</span>
+                                    <span className="sym-tol-arrow" title="Bricks run from tight (left) to loose (right) atomic-position tolerance">atom pos. tol. →</span>
+                                </dt>
+                                <dd>
+                                    <div className="sym-ladder" role="group" aria-label="Space group vs. tolerance — click to select">
+                                        {ladder.map((b, i) => {
+                                            const active = symTol >= b.from && symTol < b.to;
+                                            return (
+                                                <button
+                                                    key={i}
+                                                    type="button"
+                                                    className={`sym-brick${active ? ' is-active' : ''}`}
+                                                    style={{ width: `${brickWidth(i)}%`, ...brickStyle(b.nSpace, maxOps) }}
+                                                    title={`${b.spaceGroup}${b.spaceGroupNumber ? ` (No. ${b.spaceGroupNumber})` : ''} · holds ${b.from.toFixed(2)}–${b.to.toFixed(2)} Å · ${b.nSpace} ops — click to select`}
+                                                    onClick={() => setSymTol((b.from + b.to) / 2)}
+                                                >
+                                                    <span className="sym-brick-label">{b.spaceGroup}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </dd>
+                            </div>
+                        )}
+                    </dl>
+                </section>
+            )}
+        </div>
     );
 };
 

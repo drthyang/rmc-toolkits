@@ -7,6 +7,25 @@ Chronological record of notable changes, newest first. For current architecture 
 
 _Nothing yet._
 
+## v0.3.0 — 2026-07-02
+
+Symmetry analysis in the browser.
+
+- Added a **Detected SG** card beside *Model information* on both the Dashboard and KDE/3D pages: a
+  client-side, table-free **FINDSYM-like space-group finder** (ported from the RMC-phonon-dynamics
+  project — no spglib/WASM). From the folded `.rmc6f` basis it detects the space group (H–M symbol +
+  number), point group, and operation count, and draws an interactive **tolerance ladder** — each
+  brick is the space group that holds over a range of atomic-position tolerance; click a rung to
+  select it. New frontend modules `symmetry.js` (the finder) and `symmetryModel.js` (structure →
+  conventional cell + basis glue); `browserData.structureFromRmc6f` now also returns a
+  circular-mean per-reference-number basis.
+- The space-group **number table is complete for every producible symbol** (all point-group ×
+  allowed-centering combinations), and the headline always shows the point group even when a number
+  is unavailable.
+- The **Detected SG tolerance selection persists** when switching between the Dashboard and KDE/3D
+  pages (shared via context).
+- KDE/3D: **contours and log-scale density are on by default.**
+
 ## v0.2.0 — 2026-06-26
 
 Figure export, axis labels, and browser-first positioning.

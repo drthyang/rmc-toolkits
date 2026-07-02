@@ -289,8 +289,8 @@ const StructurePage = ({ directory, localRun, theme }) => {
     const [bandwidth, setBandwidth] = useState(0.03);
     const [gridSize, setGridSize] = useState(120);
     const [colormap, setColormap] = useState('viridis');
-    const [showContours, setShowContours] = useState(false);
-    const [logScale, setLogScale] = useState(false);
+    const [showContours, setShowContours] = useState(true);
+    const [logScale, setLogScale] = useState(true);
     const [kde, setKde] = useState(null);
     const [kdeLoading, setKdeLoading] = useState(false);
     const [kdeError, setKdeError] = useState(null);

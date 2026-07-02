@@ -306,11 +306,17 @@ const readCellVectors = (text) => {
     return { latticeVectors, supercell };
 };
 
+// Circular mean of an angle-like quantity in [0,1): averages the box copies of a
+// site's within-cell fraction so a boundary-wrapping site (≈0 ≡ 1) lands on the
+// true position, and thermal displacement in a single snapshot averages out.
+const TWO_PI = 2 * Math.PI;
+
 export const structureFromRmc6f = (file, maxPoints = 100) => {
     const { latticeVectors, supercell } = readCellVectors(file.text);
     const counts = {};
     const atomIndices = {};
     const atoms = [];
+    const rnAcc = new Map();   // referenceNumber -> { element, sc:[3], ss:[3] } for the circular-mean basis
     let inAtoms = false;
     file.text.split(/\r?\n/).forEach((line) => {
         const parts = line.trim().split(/\s+/).filter(Boolean);
@@ -329,7 +335,27 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
         if (!atomIndices[element]) atomIndices[element] = new Set();
         atomIndices[element].add(referenceNumber);
         atoms.push({ element, referenceNumber, coords, cellIndices });
+        // Accumulate this atom's within-cell fraction into its reference-number site.
+        let acc = rnAcc.get(referenceNumber);
+        if (!acc) { acc = { element, sc: [0, 0, 0], ss: [0, 0, 0] }; rnAcc.set(referenceNumber, acc); }
+        for (let i = 0; i < 3; i++) {
+            const wf = ((coords[i] * supercell[i]) % 1 + 1) % 1;   // within-unit-cell fraction
+            acc.sc[i] += Math.cos(TWO_PI * wf); acc.ss[i] += Math.sin(TWO_PI * wf);
+        }
     });
+
+    // One representative site per reference number (its circular-mean fraction) —
+    // the (element, fractional) basis the symmetry finder consumes.
+    const basis = [...rnAcc.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([referenceNumber, acc]) => ({
+            el: acc.element,
+            referenceNumber,
+            frac: [0, 1, 2].map((i) => {
+                const a = Math.atan2(acc.ss[i], acc.sc[i]) / TWO_PI;
+                return a - Math.floor(a);
+            })
+        }));
 
     const stride = Math.max(1, Math.ceil(atoms.length / maxPoints));
     const points = atoms.filter((_, index) => index % stride === 0).slice(0, maxPoints).map((atom) => {
@@ -357,6 +383,7 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
         atomIndices: Object.fromEntries(Object.entries(atomIndices).map(([key, value]) => [key, [...value].sort((a, b) => a - b)])),
         supercell,
         latticeVectors,
+        basis,
         points
     };
 };
