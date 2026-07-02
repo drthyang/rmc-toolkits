@@ -110,8 +110,8 @@ const ModelSummary = ({ structure }) => {
             </section>
 
             {symmetry && (
-                <section className="model-summary model-symmetry" aria-label="Detected symmetry">
-                    <h2 className="model-summary-title">Detected Symmetry</h2>
+                <section className="model-summary model-symmetry" aria-label="Detected space group">
+                    <h2 className="model-summary-title">Detected SG</h2>
                     <dl className="model-stats">
                         <div className="model-stat">
                             <dt>Space group</dt>

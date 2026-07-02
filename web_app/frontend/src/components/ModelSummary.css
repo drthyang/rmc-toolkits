@@ -102,14 +102,7 @@
     letter-spacing: 0.01em;
 }
 
-/* ── Detected Symmetry card — reuses .model-stats, plus the ladder cell ─────── */
-/* "Detected Symmetry" is longer than "Model information"; let it wrap to two
-   lines within the same fixed-width title cell instead of looking cramped. */
-.model-symmetry .model-summary-title {
-    white-space: normal;
-    line-height: 1.2;
-}
-
+/* ── Detected SG card — reuses .model-stats, plus the ladder cell ───────────── */
 .sym-orbits {
     display: flex;
     flex-wrap: wrap;
