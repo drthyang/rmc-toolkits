@@ -44,9 +44,14 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
 - **Live Data** — auto-refreshes charts as your refinement writes new files. In the browser this
   uses the File System Access API (Chromium: Chrome, Edge, Arc, Opera); the optional Flask backend
   watches the folder server-side.
-- **KDE / 3D page** — model summary, KDE density slices, a slab-in-cell projection, and a Three.js
-  folded unit-cell view. **Drag the highlighted band in the Slab In Cell panel** to move the slice
-  position directly.
+- **Symmetry analysis (Detected SG)** — a client-side, FINDSYM-like space-group finder shown beside
+  *Model information* on both pages. From the folded `.rmc6f` structure it detects the space group
+  (Hermann–Mauguin symbol + number), point group, and operation count, with an interactive
+  **tolerance ladder** — click a rung to see how the detected symmetry changes with atomic-position
+  tolerance. No backend or spglib required.
+- **KDE / 3D page** — model summary, KDE density slices (contours and log-scale density on by
+  default), a slab-in-cell projection, and a Three.js folded unit-cell view. **Drag the highlighted
+  band in the Slab In Cell panel** to move the slice position directly.
 - **GPU-accelerated browser KDE** — the browser computes the density map in a Web Worker with a
   WebGPU compute shader when available (automatic CPU fallback) — up to ~100× faster on the heaviest
   grids, with output numerically identical to the server-side SciPy KDE.
