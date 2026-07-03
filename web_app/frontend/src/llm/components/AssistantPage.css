@@ -5,14 +5,21 @@
 .assistant-page {
     flex: 1;
     min-height: 0;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
     background: var(--app-bg);
-    padding: 1.1rem 1.25rem 1.5rem;
+    padding: 1.1rem 1.25rem 1.25rem;
 }
 
+/* Fill the page height so the chat area grows with the window; the message log
+   scrolls internally and the composer stays pinned at the bottom. */
 .assistant-page-inner {
-    max-width: 880px;
+    width: 100%;
+    max-width: 1000px;
     margin: 0 auto;
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 1rem;
@@ -42,12 +49,13 @@
     color: var(--text-strong);
 }
 
-/* Reuses .plot-card surface tokens; a flex column so the tabs and the active
-   view keep their rhythm, static (no hover lift) since it's the main content. */
+/* Reuses .plot-card surface tokens; grows to fill the page (flex: 1) and holds
+   the chat, which manages its own internal scroll. Static (no hover lift). */
 .assistant-surface {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
     padding: 1.15rem 1.25rem 1.3rem;
     overflow: visible;
 }
@@ -57,7 +65,27 @@
     box-shadow: var(--shadow-xs);
 }
 
+/* Chat fills the surface; the log scrolls internally, composer pinned bottom. */
+.assistant-surface .llm-chat {
+    flex: 1;
+    min-height: 0;
+}
+
+.assistant-surface .llm-chat-log {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+}
+
+.assistant-surface .llm-chat-empty {
+    flex: 1;
+    justify-content: center;
+}
+
 .assistant-empty {
+    flex: 1;
+    display: grid;
+    place-items: center;
     border: 1px solid var(--border);
     border-radius: 12px;
     padding: 2.4rem 1rem;
