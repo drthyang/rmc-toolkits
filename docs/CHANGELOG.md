@@ -5,6 +5,14 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Rendered Markdown in AI Assistant chat replies.
+
+- Assistant answers now render **Markdown** — GitHub-flavored **tables**, lists, code blocks, inline
+  code, headings — via `react-markdown` + `remark-gfm`, so a "summarize this as a table" request
+  shows a real table instead of raw `| --- |` text. Rendering builds a React tree with raw HTML
+  disallowed, so the no-injection property is preserved (covered by a test); user messages stay
+  plain. (eslint: enable `ignoreRestSiblings` for the `{ node, ...props }` component overrides.)
+
 App identity — a minimalist pair-distribution "wave" mark.
 
 - Replaced the placeholder "R" brand with a single shared g(r)-wave SVG (flat brand blue, `#2563eb`):

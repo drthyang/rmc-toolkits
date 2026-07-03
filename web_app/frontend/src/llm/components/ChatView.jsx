@@ -1,11 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { buildChatMessages } from '../prompts/templates';
 import { useStreamedReply } from '../useStreamedReply';
 
 // Ask questions about the loaded run; the run context is injected into every
-// request, so answers can quote the actual Rwp / convergence numbers. Replies
-// render as plain pre-wrapped text — no HTML injection surface. Reasoning models
+// request, so answers can quote the actual Rwp / convergence numbers. Assistant
+// replies render Markdown (GitHub-flavored: tables, lists, code) via
+// react-markdown, which builds a React tree and disallows raw HTML — so there is
+// still no injection surface; user messages stay plain text. Reasoning models
 // stream their chain-of-thought first, shown as a collapsible "Thinking" panel.
+
+// Open links in a new tab and wrap tables so wide ones scroll instead of
+// breaking the bubble. `node` is dropped so it is not spread onto the DOM.
+const MARKDOWN_COMPONENTS = {
+    a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+    table: ({ node, ...props }) => <div className="llm-md-table"><table {...props} /></div>
+};
 
 const SUGGESTIONS = [
     'Is there any sign of local distortion?',
@@ -114,8 +125,10 @@ const Message = ({ role, name, content, reasoning, reasoningMs, streaming }) => 
                 ) : null}
                 {thinkingOnly && !reasoning && <ThinkingDots />}
                 {content ? (
-                    <div className={`llm-bubble${streaming ? ' is-streaming' : ''}`}>
-                        {content}
+                    <div className={`llm-bubble${isUser ? '' : ' is-markdown'}${streaming ? ' is-streaming' : ''}`}>
+                        {isUser
+                            ? content
+                            : <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{content}</Markdown>}
                         {streaming && <span className="llm-caret" aria-hidden="true" />}
                     </div>
                 ) : null}
