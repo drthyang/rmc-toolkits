@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { buildChatMessages } from '../prompts/templates';
 import { useStreamedReply } from '../useStreamedReply';
 
@@ -10,6 +12,17 @@ import { useStreamedReply } from '../useStreamedReply';
 // react-markdown, which builds a React tree and disallows raw HTML — so there is
 // still no injection surface; user messages stay plain text. Reasoning models
 // stream their chain-of-thought first, shown as a collapsible "Thinking" panel.
+
+// Models often use inline HTML (e.g. <br> for line breaks inside table cells),
+// so raw HTML is parsed (rehypeRaw) and then sanitized (rehypeSanitize): safe
+// tags like <br>/<sub> render, while scripts, event handlers, and images (no
+// external loads from model output) are stripped — the no-injection guarantee
+// holds. Order matters: raw → sanitize.
+const REMARK_PLUGINS = [remarkGfm];
+const REHYPE_PLUGINS = [
+    rehypeRaw,
+    [rehypeSanitize, { ...defaultSchema, tagNames: (defaultSchema.tagNames || []).filter((tag) => tag !== 'img') }]
+];
 
 // Open links in a new tab and wrap tables so wide ones scroll instead of
 // breaking the bubble. `node` is dropped so it is not spread onto the DOM.
@@ -128,7 +141,15 @@ const Message = ({ role, name, content, reasoning, reasoningMs, streaming }) => 
                     <div className={`llm-bubble${isUser ? '' : ' is-markdown'}${streaming ? ' is-streaming' : ''}`}>
                         {isUser
                             ? content
-                            : <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{content}</Markdown>}
+                            : (
+                                <Markdown
+                                    remarkPlugins={REMARK_PLUGINS}
+                                    rehypePlugins={REHYPE_PLUGINS}
+                                    components={MARKDOWN_COMPONENTS}
+                                >
+                                    {content}
+                                </Markdown>
+                            )}
                         {streaming && <span className="llm-caret" aria-hidden="true" />}
                     </div>
                 ) : null}
