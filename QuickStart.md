@@ -59,7 +59,37 @@ Open:
 
 Click `Select Folder`, choose your run folder, then turn on `Live Data`.
 
-## 4. If Port 5000 Is Busy
+## 4. AI Assistant (Optional)
+
+The `AI Assistant` tab lets you chat about the loaded run using an LLM. It runs against a model on
+your own machine (private) — [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai) — or a
+cloud provider (OpenAI, Gemini) with your own API key.
+
+Because the hosted dashboard is served over HTTPS, a **local** model server must allow this page's
+origin (`https://drthyang.github.io`) via CORS. For Ollama:
+
+```bash
+# start Ollama allowing the hosted app:
+OLLAMA_ORIGINS="https://drthyang.github.io" ollama serve
+
+# or, for the macOS menu-bar app, set it once and reopen Ollama (resets on logout):
+launchctl setenv OLLAMA_ORIGINS "https://drthyang.github.io"
+```
+
+For LM Studio, enable CORS in the server settings. Then open `AI Assistant` → pick the provider →
+`Test` → choose a model.
+
+**Safari note:** Safari blocks HTTPS pages from calling `http://localhost`. Use Chrome, Edge, or
+Firefox, or run the app locally over http so the page and the model share the `localhost` origin:
+
+```bash
+cd web_app/frontend && VITE_STATIC_MODE=true npm run dev
+```
+
+**Cloud note:** OpenAI/Gemini need no server, but your (summarized) run data is sent to that provider
+— the app labels those options and warns before you use them. API keys are stored in your browser only.
+
+## 5. If Port 5000 Is Busy
 
 Use another port:
 
