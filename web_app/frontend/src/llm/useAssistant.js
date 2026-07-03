@@ -15,6 +15,7 @@ export const useAssistant = ({
     rValueFile,
     structure,
     symmetry,
+    runSettings,
     liveData,
     enabled = true
 } = {}) => {
@@ -25,9 +26,9 @@ export const useAssistant = ({
 
     const context = useMemo(() => (
         enabled
-            ? buildRunContext({ runName, plotFiles, rValueFile, structure, symmetry, liveData })
+            ? buildRunContext({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, liveData })
             : null
-    ), [enabled, runName, plotFiles, rValueFile, structure, symmetry, liveData]);
+    ), [enabled, runName, plotFiles, rValueFile, structure, symmetry, runSettings, liveData]);
 
     const runTest = useCallback(async () => {
         setConnection({ status: 'testing', models: [], error: null, hint: null });

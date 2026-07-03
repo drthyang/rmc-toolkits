@@ -11,8 +11,8 @@ import './AssistantPage.css';
 // settings) live in the page header beside the title; the settings drawer opens
 // below it; the tabs and active view sit in the content box.
 
-const AssistantPage = ({ runName, plotFiles, rValueFile, structure, symmetry, liveData }) => {
-    const assistant = useAssistant({ runName, plotFiles, rValueFile, structure, symmetry, liveData, enabled: true });
+const AssistantPage = ({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, liveData }) => {
+    const assistant = useAssistant({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, liveData, enabled: true });
     const hasRun = Boolean((plotFiles && plotFiles.length) || structure);
 
     return (

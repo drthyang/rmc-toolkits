@@ -390,6 +390,7 @@ function App() {
                 rValueFile={assistantRun?.rValueFile ?? null}
                 structure={assistantRun?.structure ?? null}
                 symmetry={assistantRun?.symmetry ?? null}
+                runSettings={assistantRun?.runSettings ?? null}
                 liveData={watchFiles}
               />
             </div>
