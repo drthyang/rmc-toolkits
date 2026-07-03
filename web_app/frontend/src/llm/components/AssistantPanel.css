@@ -1,0 +1,306 @@
+/* Styles for the experimental AI Assistant card and the watchdog badge.
+   Reuses the app's theme variables (--panel, --panel-raised, --accent, …) and
+   the shared .plot-card / .panel-toggle classes from Dashboard.css. */
+
+.plot-card.llm-assistant-card {
+    overflow: visible;
+}
+
+.plot-card.llm-assistant-card.is-collapsed .plot-card-header {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.llm-assistant-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.llm-experimental-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+}
+
+.llm-connection-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: #22a06b;
+}
+
+.llm-assistant-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+/* --- settings drawer -------------------------------------------------- */
+
+.llm-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.8rem;
+}
+
+.llm-settings-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.llm-settings-row > label {
+    min-width: 5.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.llm-settings-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.llm-settings-controls input[type='text'] {
+    flex: 1;
+    min-width: 14rem;
+}
+
+.llm-settings-controls input[type='number'] {
+    width: 4.5rem;
+}
+
+.llm-preset.is-active {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.llm-inline-label {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.llm-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+}
+
+.llm-connection-status {
+    font-size: 0.85rem;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+}
+
+.llm-connection-status.is-ok {
+    color: #1b7a4d;
+    background: rgba(34, 160, 107, 0.12);
+}
+
+.llm-connection-status.is-error {
+    color: #b3261e;
+    background: rgba(179, 38, 30, 0.1);
+}
+
+.llm-connection-status.is-error p {
+    margin: 0.35rem 0 0;
+}
+
+.llm-guide-toggle {
+    align-self: flex-start;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.8rem;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.llm-setup-guide {
+    font-size: 0.85rem;
+    color: var(--text);
+    line-height: 1.5;
+}
+
+.llm-setup-guide code {
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 0.3rem;
+}
+
+/* --- tabs and views ---------------------------------------------------- */
+
+.llm-tabs {
+    display: flex;
+    gap: 0.4rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+}
+
+.llm-tabs button {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0.3rem 0.85rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.llm-tabs button.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: var(--accent);
+}
+
+.llm-view {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.llm-view-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.llm-view-hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.llm-stop {
+    border-color: #b3261e;
+    color: #b3261e;
+}
+
+.llm-reply-text {
+    white-space: pre-wrap;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 0.9rem;
+}
+
+.llm-context-inspector summary {
+    font-size: 0.8rem;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.llm-context-inspector pre {
+    max-height: 16rem;
+    overflow: auto;
+    font-size: 0.75rem;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.6rem;
+}
+
+/* --- chat --------------------------------------------------------------- */
+
+.llm-chat-log {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-height: 22rem;
+    overflow-y: auto;
+}
+
+.llm-chat-turn {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.llm-chat-turn.is-user .llm-reply-text {
+    background: var(--accent-soft);
+    border-color: transparent;
+}
+
+.llm-chat-role {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+}
+
+.llm-chat-input {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.llm-chat-input input {
+    flex: 1;
+}
+
+/* --- watchdog badge (dashboard toolbar) --------------------------------- */
+
+.llm-watchdog-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: var(--panel-raised);
+}
+
+.llm-watchdog-badge.is-improving {
+    color: #1b7a4d;
+    border-color: rgba(34, 160, 107, 0.4);
+    background: rgba(34, 160, 107, 0.12);
+}
+
+.llm-watchdog-badge.is-converged {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.llm-watchdog-badge.is-stalled {
+    color: #9a6b00;
+    border-color: rgba(154, 107, 0, 0.4);
+    background: rgba(240, 180, 41, 0.14);
+}
+
+.llm-watchdog-badge.is-diverging {
+    color: #b3261e;
+    border-color: rgba(179, 38, 30, 0.4);
+    background: rgba(179, 38, 30, 0.1);
+}
+
+.llm-watchdog-source {
+    font-size: 0.62rem;
+    font-weight: 700;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    padding: 0 0.25rem;
+}

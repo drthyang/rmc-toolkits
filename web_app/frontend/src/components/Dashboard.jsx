@@ -1,8 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { fileSignature, isStaticMode, plotMetadataFromFile, readAndParseLocalPlotFile, WATCH_INTERVAL_MS } from '../browserData';
 import { saveSvgFiguresAsZip } from '../figureExport';
+import { AssistantPanel, WatchdogBadge } from '../llm';
+import { describeSymmetry } from '../symmetryModel';
+import { SymTolContext } from '../symTolContext';
 import InteractivePlot from './InteractivePlot';
 import SaveMenu from './SaveMenu';
 import ModelSummary from './ModelSummary';
@@ -348,6 +351,12 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
         [plotFiles]
     );
 
+    // Detected space group for the AI assistant's run context, at the shared
+    // tolerance — keeps symmetryModel out of the llm module's imports.
+    const sharedSymTol = useContext(SymTolContext);
+    const symTol = sharedSymTol ? sharedSymTol[0] : 0.2;
+    const symmetry = useMemo(() => describeSymmetry(structure, symTol), [structure, symTol]);
+
     const handleTogglePlotVisibility = (path) => {
         manuallyToggledPathsRef.current.add(path);
         setHiddenPlotPaths((current) => {
@@ -453,6 +462,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
                 <div className="plot-card-header">
                     <h3>{meta?.title || rValueFile.name}</h3>
                     <div className="plot-card-header-actions">
+                        <WatchdogBadge rValueFile={rValueFile} />
                         {meta?.metrics?.rwp !== undefined && (
                             <span className="rwp-chip">Rwp {Number(meta.metrics.rwp).toPrecision(4)}</span>
                         )}
@@ -562,6 +572,17 @@ const Dashboard = ({ directory, localRun, watchFiles = false }) => {
             <div className="plot-grid">
                 {gridFiles.map((file) => renderPlotCard(file))}
             </div>
+
+            {(allPlotFiles.length > 0 || structure) && (
+                <AssistantPanel
+                    runName={localRun ? localRun.name : directory}
+                    plotFiles={allPlotFiles}
+                    rValueFile={rValueFile}
+                    structure={structure}
+                    symmetry={symmetry}
+                    liveData={watchFiles}
+                />
+            )}
 
             {!loading && allPlotFiles.length === 0 && (
                 <div className="empty-state">Open a run folder to populate the dashboard.</div>
