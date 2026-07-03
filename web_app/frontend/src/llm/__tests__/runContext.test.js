@@ -37,7 +37,20 @@ const fixtureProps = () => ({
             { el: 'Nb', frac: [0.6, 0.6, 0.6], dispA: 0.25 },
             { el: 'Nb', frac: [0.4, 0.4, 0.4], dispA: 0.15 },
             { el: 'Se', frac: [0.37, 0.37, 0.37], dispA: 0.1 }
-        ]
+        ],
+        moves: { generated: 2689753, tried: 2685185, accepted: 586675, accumulatedTimeS: 24958824.16 }
+    },
+    // Parsed <stem>.dat run-control settings, as browserData.parseRunSettings returns.
+    runSettings: {
+        title: 'GaNb4Se8 5K',
+        temperature: '5K',
+        atoms: ['Ga', 'Nb', 'Se'],
+        minimumDistancesA: [2.2, 2.3, 2.4, 2.5, 2.6, 2.7],
+        maximumMovesA: [0.05, 0.06, 0.07],
+        timeLimit: '10000000.00 MINUTES',
+        weightOptimization: true,
+        flags: ['NO_MOVEOUT'],
+        datasets: [{ block: 'XRAY_RECIPROCAL_SPACE_DATA', file: 'scale_ft_rmc.fq', fit_type: 'F(Q)' }]
     },
     // The shape Dashboard passes: describeSymmetry() output + toleranceA + ladder.
     symmetry: {
@@ -113,6 +126,36 @@ describe('buildRunContext', () => {
         expect(context.convergence.final_chi_squared).toBe(2.38);
         expect(context.convergence.history.length).toBeLessThanOrEqual(48);
         expect(context.convergence.quantity).toContain('ln');
+    });
+
+    it('derives sampling stats from the rmc6f move counters', () => {
+        const refinement = buildRunContext(fixtureProps()).refinement;
+        expect(refinement.moves_accepted).toBe(586675);
+        expect(refinement.acceptance_ratio).toBe(0.22);            // 586675 / 2685185
+        expect(refinement.accepted_moves_per_atom).toBe(47.7);     // 586675 / 12288
+        expect(refinement.accumulated_time_h).toBe(6930);          // 24958824 s
+    });
+
+    it('labels run-settings distances per element pair', () => {
+        const settings = buildRunContext(fixtureProps()).run_settings;
+        expect(settings.title).toBe('GaNb4Se8 5K');
+        expect(settings.min_distances_A).toEqual({
+            'Ga-Ga': 2.2, 'Ga-Nb': 2.3, 'Ga-Se': 2.4, 'Nb-Nb': 2.5, 'Nb-Se': 2.6, 'Se-Se': 2.7
+        });
+        expect(settings.max_move_A).toEqual({ Ga: 0.05, Nb: 0.06, Se: 0.07 });
+        expect(settings.weight_optimization).toBe(true);
+        expect(settings.fitted_data).toEqual([
+            { type: 'xray_reciprocal_space', file: 'scale_ft_rmc.fq', fit: 'F(Q)' }
+        ]);
+    });
+
+    it('omits refinement and run_settings when their inputs are missing', () => {
+        const props = fixtureProps();
+        delete props.structure.moves;
+        props.runSettings = null;
+        const context = buildRunContext(props);
+        expect(context.refinement).toBeUndefined();
+        expect(context.run_settings).toBeUndefined();
     });
 
     it('builds the symmetry block: group, ladder, and displacement-ranked sites', () => {

@@ -35,7 +35,11 @@ stays the default. Nothing is sent until the user acts. API keys are stored in
    symmetry-vs-tolerance ladder, and Wyckoff-orbit sites ranked by rms
    displacement — the local-distortion evidence), **pair correlations** (each
    partial-PDF pair's first g(r) peaks next to the average structure's
-   nearest-neighbour distance), per-dataset Rwp values, and the ln(χ²)
+   nearest-neighbour distance), a **refinement block** (move counters from the
+   `.rmc6f` header with acceptance ratio and accepted moves per atom — the
+   sampling-sufficiency gauge), **run settings** (the stem-matched RMCProfile
+   `.dat` control file: pair-labeled minimum-distance constraints, move sizes,
+   fitted datasets, flags), per-dataset Rwp values, and the ln(χ²)
    convergence history **downsampled to ≤48 points** with summary statistics
    computed on the *full* series first. `contextToJson()` enforces a
    ~4,500-character budget with an explicit trim order (extra peaks → ladder
@@ -109,13 +113,13 @@ always works for local providers.
 This module is designed to be lifted into its own repository:
 
 - Run data enters **only as props** to `AssistantPage` / `AssistantPanel` /
-  `WatchdogBadge` (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`,
+  `WatchdogBadge` (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`, `runSettings`,
   `liveData`). Nothing in `src/llm/` imports `browserData.js`,
   `symmetryModel.js`, or any host component — the module is fully self-contained;
   cell math is deliberately duplicated from `ModelSummary.jsx`.
 - The host imports only `src/llm/index.js`.
 
-To extract: copy `src/llm/` and feed the six props from your own data source.
+To extract: copy `src/llm/` and feed the seven props from your own data source.
 
 ## Tests
 
