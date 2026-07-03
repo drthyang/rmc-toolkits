@@ -5,6 +5,15 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Chat rendering fixes and a window-filling chat box.
+
+- Markdown now parses **and sanitizes** inline HTML (`rehype-raw` + `rehype-sanitize`), so `<br>`
+  line breaks inside table cells render instead of collapsing onto one line; scripts, event
+  handlers, and images are still stripped (no injection surface, no external loads from model
+  output) — covered by tests.
+- The AI Assistant chat box now **fills the window height** (message log scrolls internally, the
+  composer stays pinned at the bottom) and the column is a bit wider (880 → 1000 px).
+
 Rendered Markdown in AI Assistant chat replies.
 
 - Assistant answers now render **Markdown** — GitHub-flavored **tables**, lists, code blocks, inline
