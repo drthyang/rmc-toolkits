@@ -367,6 +367,7 @@ function App() {
                 directory={currentDirectory}
                 localRun={localRun}
                 watchFiles={watchFiles}
+                wantAssistantData={visitedPages.assistant}
                 onRunContextChange={setAssistantRun}
               />
             </div>
