@@ -3,6 +3,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import { contextToJson } from '../context/runContext';
 import { buildChatMessages } from '../prompts/templates';
 import { useStreamedReply } from '../useStreamedReply';
 
@@ -268,6 +269,12 @@ const ChatView = ({ context, settings, connected }) => {
                                 </button>
                             ))}
                         </div>
+                    )}
+                    {context && (
+                        <details className="llm-context-inspector">
+                            <summary>Context sent to the model</summary>
+                            <pre>{contextToJson(context)}</pre>
+                        </details>
                     )}
                 </div>
             )}

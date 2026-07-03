@@ -89,7 +89,7 @@ const combineRValueFiles = (rValueFiles) => {
     };
 };
 
-const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange }) => {
+const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData = false, onRunContextChange }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
@@ -287,25 +287,6 @@ const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange
                 });
             }
 
-            // Run-control settings (<stem>.dat) for the AI assistant: tiny file,
-            // read inline. Re-parsed only when the file identity/mtime changes.
-            const settingsFile = localRun.settingsFile;
-            const settingsSig = settingsFile ? `${settingsFile.path}:${settingsFile.modified}` : '';
-            if (settingsSig !== settingsSigRef.current) {
-                settingsSigRef.current = settingsSig;
-                if (!settingsFile?.sourceFile) {
-                    setRunSettings(null);
-                } else {
-                    settingsFile.sourceFile.text()
-                        .then((text) => {
-                            if (!cancelled) setRunSettings(parseRunSettings(text));
-                        })
-                        .catch(() => {
-                            if (!cancelled) setRunSettings(null);
-                        });
-                }
-            }
-
             return () => {
                 cancelled = true;
                 structureWorker?.terminate();
@@ -314,11 +295,28 @@ const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange
 
         // Static mode has no Flask backend; the dashboard is driven entirely by localRun.
         if (!isStaticMode()) {
-            settingsSigRef.current = '';
-            setRunSettings(null);
             loadServerDashboard();
         }
     }, [directory, loadServerDashboard, localRun]);
+
+    // Parse the run-control settings (<stem>.dat) only once the assistant is in
+    // use — the file is tiny but this keeps Dashboard/KDE-only startup clean and
+    // re-reads only when the file identity/mtime changes.
+    useEffect(() => {
+        const settingsFile = wantAssistantData ? localRun?.settingsFile : null;
+        const sig = settingsFile ? `${settingsFile.path}:${settingsFile.modified}` : '';
+        if (sig === settingsSigRef.current) return undefined;
+        settingsSigRef.current = sig;
+        if (!settingsFile?.sourceFile) {
+            setRunSettings(null);
+            return undefined;
+        }
+        let cancelled = false;
+        settingsFile.sourceFile.text()
+            .then((text) => { if (!cancelled) setRunSettings(parseRunSettings(text)); })
+            .catch(() => { if (!cancelled) setRunSettings(null); });
+        return () => { cancelled = true; };
+    }, [wantAssistantData, localRun]);
 
     useEffect(() => {
         // Reset view state only when the folder changes, not on each Live Data refresh
@@ -377,27 +375,30 @@ const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange
 
     // Detected space group for the AI assistant's run context, at the shared
     // tolerance — keeps symmetryModel out of the llm module's imports. The
-    // tolerance ladder rides along so the context can express distortion
-    // magnitude (the tolerance where higher symmetry first holds).
+    // ladder rides along so the context can express distortion magnitude.
+    // Gated on wantAssistantData: this symmetry finder (+ ladder) is redundant
+    // with ModelSummary's and only feeds the assistant, so it stays idle until
+    // the user opens the AI Assistant page — Dashboard/KDE-only startup does no
+    // extra work.
     const sharedSymTol = useContext(SymTolContext);
     const symTol = sharedSymTol ? sharedSymTol[0] : 0.2;
     const symmetry = useMemo(() => {
+        if (!wantAssistantData) return null;
         const detected = describeSymmetry(structure, symTol);
         if (!detected) return null;
         return { ...detected, toleranceA: symTol, ladder: toleranceLadder(structure, 1.0) };
-    }, [structure, symTol]);
+    }, [wantAssistantData, structure, symTol]);
 
-    // The AI Assistant now lives on its own page. Publish the same parsed run
-    // context the dashboard card used to consume so App can feed AssistantPage;
-    // the WatchdogBadge below stays on the dashboard's R-value card.
-    const assistantRun = useMemo(() => ({
+    // Publish the parsed run context for App → AssistantPage, but only once the
+    // assistant has been opened; the WatchdogBadge below stays on the dashboard.
+    const assistantRun = useMemo(() => (wantAssistantData ? {
         runName: localRun ? localRun.name : directory,
         plotFiles: allPlotFiles,
         rValueFile,
         structure,
         symmetry,
         runSettings,
-    }), [localRun, directory, allPlotFiles, rValueFile, structure, symmetry, runSettings]);
+    } : null), [wantAssistantData, localRun, directory, allPlotFiles, rValueFile, structure, symmetry, runSettings]);
 
     useEffect(() => {
         onRunContextChange?.(assistantRun);
