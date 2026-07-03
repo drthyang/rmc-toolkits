@@ -225,7 +225,19 @@ function App() {
         <header className="app-header">
           <div className="header-primary">
             <div className="brand-row">
-              <div className="brand-mark">R</div>
+              <div className="brand-mark" aria-hidden="true">
+                <svg className="brand-mark-icon" viewBox="0 0 100 100">
+                  <path
+                    d="M14 62 C22 62 27 24 37 24 C47 24 45 66 54 66 C62 66 61 44 69 44 C76 44 78 57 86 57"
+                    transform="translate(0,5)"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
               <div className="brand-copy">
                 <h1>
                   RMCProfile
