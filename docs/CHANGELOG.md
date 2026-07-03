@@ -5,6 +5,13 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Gentler AI Assistant startup.
+
+- The automatic on-load connection probe no longer shows a red "Connection failed" before the user
+  has set anything up. The status reads a neutral **"Connect a model to start"** (grey dot), and the
+  settings drawer stays clean; the full error + setup hint appear only after the user actively
+  presses **Test**.
+
 Assistant "Beta" badge and a cleaner chat speaker label.
 
 - The header badge now reads **Beta** (was "Experimental") in **amber** — the complement of the
