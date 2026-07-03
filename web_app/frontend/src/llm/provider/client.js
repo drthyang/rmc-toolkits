@@ -12,13 +12,17 @@ const authHeaders = (apiKey) => (apiKey ? { Authorization: `Bearer ${apiKey}` } 
 // A failed fetch to localhost surfaces as a bare TypeError both when the server
 // is not running and when the browser blocked the response for CORS, so the
 // hint has to name both causes — the user cannot tell them apart from the page.
-const unreachableHint = (baseUrl) => (
-    `Could not reach ${trimBase(baseUrl)}. Either the server is not running, or it is not `
-    + 'allowing this site via CORS. For Ollama set OLLAMA_ORIGINS before `ollama serve`; '
-    + 'for LM Studio enable CORS in the server settings. Some browsers (and future Chrome '
-    + 'private-network rules) may also block public sites from calling localhost — if all '
-    + 'else fails, run the app locally.'
-);
+// It quotes this page's exact origin so the OLLAMA_ORIGINS value is copy-ready.
+const unreachableHint = (baseUrl) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'this page';
+    return (
+        `Could not reach ${trimBase(baseUrl)}. Either the server is not running, or it is not `
+        + `allowing this page (${origin}) via CORS. Start Ollama with this origin allowed — `
+        + `OLLAMA_ORIGINS="${origin}" ollama serve — or enable CORS in LM Studio's server settings. `
+        + 'Safari also blocks HTTPS pages from calling http://localhost; use Chrome, Edge, or Firefox '
+        + '(or run the app locally). See the setup guide for the macOS steps.'
+    );
+};
 
 const describeHttpError = async (response) => {
     let detail = '';

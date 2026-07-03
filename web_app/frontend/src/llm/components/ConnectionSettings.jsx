@@ -43,6 +43,8 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
     const activeProvider = providerForUrl(settings.baseUrl);
     const isCloud = activeProvider ? activeProvider.cloud : !isLocalUrl(settings.baseUrl);
     const providerLabel = activeProvider?.label || 'this remote server';
+    // This page's origin — the value a local server must allow via CORS.
+    const pageOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://drthyang.github.io';
 
     return (
         <div className="llm-settings">
@@ -221,8 +223,17 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                         calls (CORS); if the test fails, run the app locally.
                     </p>
                     <p>
-                        On the HTTPS hosted app, browsers still allow requests to <code>http://localhost</code> as a
-                        trustworthy origin in Chrome, Edge, and Firefox; Safari may block them.
+                        <strong>Hosted app + Ollama:</strong> Ollama must allow this page's origin
+                        (<code>{pageOrigin}</code>). Quit Ollama, then start it with the origin allowed:{' '}
+                        <code>OLLAMA_ORIGINS="{pageOrigin}" ollama serve</code>. On the macOS menu-bar app run{' '}
+                        <code>launchctl setenv OLLAMA_ORIGINS "{pageOrigin}"</code> and reopen Ollama (this resets on
+                        logout).
+                    </p>
+                    <p>
+                        <strong>Safari</strong> blocks HTTPS pages from calling <code>http://localhost</code> — Chrome,
+                        Edge, and Firefox allow it. If the test fails only in Safari, use one of those, or run the app
+                        locally over http (<code>VITE_STATIC_MODE=true npm run dev</code>) so the page and the model
+                        share the localhost origin.
                     </p>
                 </div>
             )}
