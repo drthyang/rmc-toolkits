@@ -5,6 +5,20 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+App identity — a minimalist pair-distribution "wave" mark.
+
+- Replaced the placeholder "R" brand with a single shared g(r)-wave SVG (flat brand blue, `#2563eb`):
+  a base-aware favicon (`public/favicon.svg`), the header brand mark, and the AI Assistant
+  avatar / empty-state icon. Removed the default `vite.svg`.
+
+ChatGPT-style "Thinking" indicator for reasoning models.
+
+- Reasoning models (e.g. qwen3 via Ollama) stream their chain-of-thought in a separate field; the
+  streaming client now yields structured content/reasoning chunks and the chat shows a collapsible,
+  shimmering **"Thinking"** panel (live reasoning) that collapses to **"Thought for Ns"**
+  (re-expandable), plus a bouncing-dots indicator for non-reasoning models slow to their first token.
+  Reasoning is preserved on each turn.
+
 Local-distortion evidence in the AI Assistant's run context.
 
 - The context JSON gains a **`symmetry` block** — space group, the symmetry-vs-tolerance **ladder**

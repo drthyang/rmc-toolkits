@@ -57,12 +57,16 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
   grids, with output numerically identical to the server-side SciPy KDE.
 - **Structure tools** — `.rmc6f` → `Frac_coord_<stem>.txt` conversion and reference-number-preserving
   atom sampling for large structures.
-- **AI Assistant (experimental)** — connect the dashboard to a **local LLM** (Ollama or LM Studio)
-  for a one-click run assessment, chat about the loaded run, a Markdown run report, and a live
-  convergence watchdog badge. The browser talks directly to `http://localhost` — run-derived
-  summaries go only to the model server you run yourself, keeping the no-upload promise. See
-  [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md) for setup
-  (one CORS setting) and architecture.
+- **AI Assistant (experimental)** — a dedicated chat page for reasoning about the loaded run.
+  Connect a **local LLM** (Ollama or LM Studio — private, the default) or a **cloud** model
+  (OpenAI, Gemini) with your own API key. Every message carries a compact run context — Rwp values,
+  ln(χ²) convergence, the detected symmetry with per-site displacements, and partial-PDF peaks vs
+  average-structure distances — so it can flag signs of local distortion and which sites take part.
+  Reasoning models show their chain-of-thought in a collapsible “Thinking” panel, and a live
+  convergence **watchdog** badge rides on the R-value card. Local providers keep the no-upload
+  promise (the browser talks directly to `http://localhost`); cloud providers are opt-in and clearly
+  warned. See [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md) for setup
+  (Ollama CORS + Safari note) and architecture.
 
 ## Screenshots
 
