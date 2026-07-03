@@ -4,11 +4,17 @@ import React from 'react';
 // and a gear that toggles the settings drawer. Rendered in the page header and
 // in the dashboard card, driven by the shared useAssistant hook.
 
-const STATUS_TEXT = {
-    idle: 'Not connected',
-    testing: 'Connecting…',
-    ok: 'Connected',
-    error: 'Connection failed'
+// The status pill's label + state class. Before the user has actively tested —
+// on first load, or when the automatic probe fails — show a gentle prompt in
+// the neutral (idle) style rather than a red "Connection failed"; that error is
+// reserved for a failed manual test.
+const statusDisplay = (connection) => {
+    if (connection.status === 'ok') return { state: 'ok', text: 'Connected' };
+    if (connection.status === 'testing') return { state: 'testing', text: 'Connecting…' };
+    if (connection.status === 'error' && connection.manual) {
+        return { state: 'error', text: 'Connection failed' };
+    }
+    return { state: 'idle', text: 'Connect a model to start' };
 };
 
 const GearIcon = () => (
@@ -20,12 +26,13 @@ const GearIcon = () => (
 
 const AssistantConnectionBar = ({ connection, settings, onSave, showSettings, onToggleSettings }) => {
     const hasModels = connection.models.length > 0;
+    const status = statusDisplay(connection);
 
     return (
         <div className="llm-connbar">
-            <span className={`llm-status is-${connection.status}`} role="status">
+            <span className={`llm-status is-${status.state}`} role="status">
                 <span className="llm-status-dot" aria-hidden="true" />
-                {STATUS_TEXT[connection.status]}
+                {status.text}
             </span>
             <div className="llm-connbar-controls">
                 {hasModels ? (
