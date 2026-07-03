@@ -34,13 +34,13 @@ web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly
   colormaps.js                   colormap LUTs for the KDE canvas
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
-  llm/                           experimental AI assistant (local LLM via Ollama/LM Studio) — see its README
-    context/runContext.js        dashboard state → compact LLM context JSON (downsampling, char budget)
-    provider/client.js           OpenAI-compatible client (models, SSE streaming, connection hints)
-    prompts/                     shared system prompt + per-feature message builders
+  llm/                           experimental AI assistant — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini); see its README
+    context/                     dashboard state → compact LLM context JSON (symmetry + per-site displacements, pair correlations, char budget)
+    provider/client.js           OpenAI-compatible client (models, SSE streaming incl. reasoning, connection hints)
+    prompts/                     shared system prompt + chat/watchdog message builders
     watchdog/                    convergence heuristics (source of truth) + LLM-narrated badge hook
-    report/buildReport.js        Markdown run report assembly + download
-    components/                  AssistantPanel card, settings drawer, Summary/Chat/Report views, badge
+    useAssistant.js              shared hook: settings, connection probe/auto-connect, run context
+    components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
   components/
     App.jsx                      shell, run-folder selection, page nav, Live Data
     Dashboard.jsx                all-plots run dashboard
