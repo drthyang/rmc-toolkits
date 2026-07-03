@@ -71,10 +71,12 @@ stays the default. Nothing is sent until the user acts. API keys are stored in
    The page (`AssistantPage`) composes `AssistantConnectionBar` (status
    indicator + model switcher + settings gear), the `ConnectionSettings` drawer
    (local + cloud providers, API key, warnings), and `ChatView` (a modern
-   composer with message bubbles and the app's wave avatar; replies render as
-   plain pre-wrapped text — no HTML injection surface; reasoning models get a
-   collapsible "Thinking" panel that times the thinking phase). `WatchdogBadge`
-   renders on the dashboard's R-value card. `AssistantPanel` wraps the same `ChatView` workspace as a collapsible
+   composer with message bubbles and the app's wave avatar; assistant replies
+   render **Markdown** — GitHub-flavored tables, lists, code — via
+   `react-markdown`, which builds a React tree and disallows raw HTML, so there
+   is still no injection surface; reasoning models get a collapsible "Thinking"
+   panel that times the thinking phase). `WatchdogBadge` renders on the
+   dashboard's R-value card. `AssistantPanel` wraps the same `ChatView` workspace as a collapsible
    dashboard card, kept as a self-contained extractable surface.
 
 ## Provider setup
