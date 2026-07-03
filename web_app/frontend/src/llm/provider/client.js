@@ -83,9 +83,13 @@ const postChat = async ({ baseUrl, model, messages, temperature, stream, signal,
     return response;
 };
 
-// Stream a chat completion, yielding content deltas as they arrive. The SSE
-// body is `data: {json}` lines terminated by `data: [DONE]`; chunks can split
-// mid-line, so incomplete tail lines are buffered across reads.
+// Stream a chat completion, yielding `{ content, reasoning }` deltas as they
+// arrive (each chunk carries one or the other). The SSE body is `data: {json}`
+// lines terminated by `data: [DONE]`; chunks can split mid-line, so incomplete
+// tail lines are buffered across reads. Reasoning models (e.g. qwen3 via
+// Ollama) stream their chain-of-thought in a separate `reasoning` field before
+// the answer arrives in `content` — surfaced so the UI can show a thinking
+// indicator instead of an empty bubble.
 export async function* streamChat({ baseUrl, model, messages, temperature = 0.2, signal, apiKey }) {
     const response = await postChat({ baseUrl, model, messages, temperature, stream: true, signal, apiKey });
     if (!response.body) throw new Error('The server returned no response body to stream');
@@ -110,8 +114,13 @@ export async function* streamChat({ baseUrl, model, messages, temperature = 0.2,
                 } catch {
                     continue;
                 }
-                const delta = parsed.choices?.[0]?.delta?.content;
-                if (delta) yield delta;
+                const delta = parsed.choices?.[0]?.delta;
+                if (!delta) continue;
+                if (delta.content) yield { content: delta.content };
+                // OpenAI-compatible servers name this `reasoning` (Ollama) or
+                // `reasoning_content` (DeepSeek and others).
+                const reasoning = delta.reasoning ?? delta.reasoning_content;
+                if (reasoning) yield { reasoning };
             }
         }
     } finally {
