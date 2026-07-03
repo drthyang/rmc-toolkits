@@ -31,9 +31,33 @@ const fixtureProps = () => ({
         latticeVectors: [[60.12, 0, 0], [0, 60.12, 0], [0, 0, 60.12]],
         supercell: [6, 6, 6],
         totalAtoms: 12288,
-        elementCounts: { Ga: 864, Nb: 3456, Se: 6912 }
+        elementCounts: { Ga: 864, Nb: 3456, Se: 6912 },
+        basis: [
+            { el: 'Ga', frac: [0, 0, 0], dispA: 0.05 },
+            { el: 'Nb', frac: [0.6, 0.6, 0.6], dispA: 0.25 },
+            { el: 'Nb', frac: [0.4, 0.4, 0.4], dispA: 0.15 },
+            { el: 'Se', frac: [0.37, 0.37, 0.37], dispA: 0.1 }
+        ]
     },
-    symmetry: { spaceGroup: 'F-43m', spaceGroupNumber: 216 }
+    // The shape Dashboard passes: describeSymmetry() output + toleranceA + ladder.
+    symmetry: {
+        spaceGroup: 'F-43m',
+        spaceGroupNumber: 216,
+        pointGroup: '-43m',
+        nSpace: 96,
+        maxResidual: 0.142,
+        toleranceA: 0.2,
+        ladder: [
+            { spaceGroup: 'P1', from: 0, to: 0.06, nSpace: 1 },
+            { spaceGroup: 'P-42m', from: 0.06, to: 0.15, nSpace: 8 },
+            { spaceGroup: 'F-43m', from: 0.15, to: 1, nSpace: 96 }
+        ],
+        orbits: [
+            { element: 'Ga', size: 4, site: '-43m', rep: [0, 0, 0], wyckoff: 'a', members: [0] },
+            { element: 'Nb', size: 16, site: '3m', rep: [0.6, 0.6, 0.6], wyckoff: 'e', members: [1, 2] },
+            { element: 'Se', size: 16, site: '3m', rep: [0.37, 0.37, 0.37], wyckoff: 'e', members: [3] }
+        ]
+    }
 });
 
 describe('downsampleSeries', () => {
@@ -81,7 +105,6 @@ describe('buildRunContext', () => {
         expect(context.live_mode).toBe(true);
         expect(context.structure.cell_A).toEqual([10.02, 10.02, 10.02]);
         expect(context.structure.angles_deg).toEqual([90, 90, 90]);
-        expect(context.structure.space_group).toBe('F-43m (No. 216)');
         expect(context.structure.elements.Se).toBe(6912);
         // r_value files are convergence data, not fitted datasets.
         expect(context.datasets).toHaveLength(3);
@@ -92,10 +115,48 @@ describe('buildRunContext', () => {
         expect(context.convergence.quantity).toContain('ln');
     });
 
+    it('builds the symmetry block: group, ladder, and displacement-ranked sites', () => {
+        const context = buildRunContext(fixtureProps());
+        const symmetry = context.symmetry;
+        expect(context.structure.space_group).toBeUndefined();   // moved into symmetry
+        expect(symmetry.space_group).toBe('F-43m (No. 216)');
+        expect(symmetry.point_group).toBe('-43m');
+        expect(symmetry.n_ops).toBe(96);
+        expect(symmetry.tolerance_A).toBe(0.2);
+        expect(symmetry.max_residual_A).toBe(0.14);
+        expect(symmetry.ladder).toEqual([
+            { sg: 'P1', holds_A: [0, 0.06], n_ops: 1 },
+            { sg: 'P-42m', holds_A: [0.06, 0.15], n_ops: 8 },
+            { sg: 'F-43m', holds_A: [0.15, 1], n_ops: 96 }
+        ]);
+        // Sites sorted by mean displacement, largest first — Nb leads.
+        expect(symmetry.sites.map((site) => site.element)).toEqual(['Nb', 'Se', 'Ga']);
+        expect(symmetry.sites[0]).toEqual({
+            element: 'Nb',
+            multiplicity: 16,
+            wyckoff: '16e',
+            site_sym: '3m',
+            frac: [0.6, 0.6, 0.6],
+            mean_disp_A: 0.2,     // (0.25 + 0.15) / 2 over the orbit's basis members
+            max_disp_A: 0.25
+        });
+    });
+
+    it('builds a minimal symmetry block from just a space group (Flask mode)', () => {
+        const props = fixtureProps();
+        props.symmetry = { spaceGroup: 'F-43m', spaceGroupNumber: 216 };
+        const symmetry = buildRunContext(props).symmetry;
+        expect(symmetry.space_group).toBe('F-43m (No. 216)');
+        expect(symmetry.ladder).toBeUndefined();
+        expect(symmetry.sites).toBeUndefined();
+    });
+
     it('omits sections whose inputs are missing', () => {
         const context = buildRunContext({ runName: 'bare' });
         expect(context.run).toBe('bare');
         expect(context.structure).toBeUndefined();
+        expect(context.symmetry).toBeUndefined();
+        expect(context.pair_correlations).toBeUndefined();
         expect(context.datasets).toBeUndefined();
         expect(context.convergence).toBeUndefined();
     });
@@ -137,5 +198,52 @@ describe('contextToJson budget', () => {
     it('leaves small contexts untouched', () => {
         const context = buildRunContext({ runName: 'tiny' });
         expect(JSON.parse(contextToJson(context))).toEqual(context);
+    });
+
+    it('trims evidence in order — peaks, ladder rungs, history, sites, datasets — recording omissions', () => {
+        const context = {
+            symmetry: {
+                ladder: historyOf(5, (index) => ({ sg: `SG${index}`, holds_A: [index, index + 1], n_ops: index + 1 })),
+                sites: historyOf(10, (index) => ({ element: 'X', multiplicity: 4, mean_disp_A: 1 - index * 0.05 }))
+            },
+            pair_correlations: [
+                { pair: 'A-B', gr_peaks_A: [{ r: 2, fwhm: 0.2 }, { r: 3, fwhm: 0.3 }] }
+            ],
+            convergence: { history: historyOf(48, (index) => index) },
+            datasets: historyOf(20, (index) => ({ kind: 'npdf', title: `PDF${index}` }))
+        };
+        const parsed = JSON.parse(contextToJson(context, 10));   // force every trim step
+        expect(parsed.pair_correlations[0].gr_peaks_A).toHaveLength(1);
+        expect(parsed.symmetry.ladder).toHaveLength(2);
+        expect(parsed.symmetry.ladder_rungs_omitted).toBe(3);
+        expect(parsed.symmetry.ladder[1].sg).toBe('SG4');   // endpoints kept
+        expect(parsed.convergence.history).toHaveLength(12);
+        expect(parsed.symmetry.sites).toHaveLength(8);
+        expect(parsed.symmetry.sites_omitted).toBe(2);
+        expect(parsed.datasets).toHaveLength(12);
+        expect(parsed.datasets_omitted).toBe(8);
+    });
+});
+
+describe('pair correlations integration', () => {
+    it('includes pair correlations when partials are parsed', () => {
+        const props = fixtureProps();
+        const x = historyOf(300, (index) => index * 0.02);
+        props.plotFiles.push({
+            plotKind: 'pdf_partials',
+            plotData: {
+                title: 'PDFpartials',
+                metrics: {},
+                series: [
+                    { label: 'Nb-Nb', x, y: x.map((r) => Math.exp(-((r - 3) ** 2) / 0.02)) }
+                ]
+            }
+        });
+        const context = buildRunContext(props);
+        expect(context.pair_correlations).toHaveLength(1);
+        expect(context.pair_correlations[0].pair).toBe('Nb-Nb');
+        expect(context.pair_correlations[0].gr_peaks_A[0].r).toBeCloseTo(3, 1);
+        // Fixture basis: Nb at (.6,.6,.6) and (.4,.4,.4) → 0.2·√3 · 10.02 Å ≈ 3.47 Å.
+        expect(context.pair_correlations[0].avg_structure_d_A).toBeCloseTo(3.47, 1);
     });
 });

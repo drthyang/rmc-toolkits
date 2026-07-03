@@ -5,6 +5,30 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Local-distortion evidence in the AI Assistant's run context.
+
+- The context JSON gains a **`symmetry` block** — space group, the symmetry-vs-tolerance **ladder**
+  (distortion magnitude + character), and the Wyckoff-orbit **sites ranked by rms displacement** —
+  plus **`pair_correlations`**: each partial-PDF pair's first g(r) peaks next to the
+  nearest-neighbour distance the average structure predicts, so the model can point at the sites
+  and pairs participating in short-range correlations.
+- Per-site rms displacements (`dispA`) fall out of the circular-mean accumulators
+  `structureFromRmc6f` already had — derived per axis from the resultant length, scaled to Å; the
+  symmetry orbits now carry `members` (basis indices) so the context can aggregate per orbit.
+- New `llm/context/pairCorrelations.js` (average-structure NN distances over periodic images +
+  a smoothed local-maxima peak finder); context budget raised to ~4.5k chars with an explicit trim
+  order (extra peaks → ladder middle rungs → history → low-displacement sites → datasets, each
+  recorded with an `*_omitted` count); system prompt teaches the model how to read the new blocks.
+- Tests: 51 passing (peak finder, NN distances, displacement math on synthetic .rmc6f fixtures,
+  symmetry-block assembly, trim order).
+
+AI Assistant rework (shipped as PRs #3/#4, catching the log up): moved from a dashboard card to a
+dedicated **AI Assistant page** (chat-only — Summary/Report tabs removed, everything happens in the
+chat), modern chat UI with a persistent connection bar (status dot, model switcher, settings gear,
+auto-connect), redesigned Connection Settings, and optional **cloud providers** (OpenAI, Gemini)
+with Bearer API-key auth and explicit data-leaves-your-device warnings; local Ollama/LM Studio
+remains the default. Ollama CORS + Safari setup documented in-app and in QuickStart.
+
 Experimental AI Assistant — local LLM in the data-monitor pipeline.
 
 - Added `web_app/frontend/src/llm/`, a self-contained experimental module connecting the dashboard
