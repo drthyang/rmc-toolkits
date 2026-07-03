@@ -4,12 +4,13 @@ import { useStreamedReply } from '../useStreamedReply';
 
 // Ask questions about the loaded run; the run context is injected into every
 // request, so answers can quote the actual Rwp / convergence numbers. Replies
-// render as plain pre-wrapped text — no HTML injection surface.
+// render as plain pre-wrapped text — no HTML injection surface. Reasoning models
+// stream their chain-of-thought first, shown as a collapsible "Thinking" panel.
 
 const SUGGESTIONS = [
-    'Which dataset fits worst?',
-    'Is the refinement converged?',
-    'Summarize the fit quality.'
+    'Is there any sign of local distortion?',
+    'Which atomic sites are most displaced?',
+    'Is the refinement converged?'
 ];
 
 const ArrowUpIcon = () => (
@@ -37,8 +38,62 @@ const SparkGlyph = () => (
     </svg>
 );
 
-const Message = ({ role, name, content, streaming }) => {
+const ChevronIcon = () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" />
+    </svg>
+);
+
+const formatThinkTime = (ms) => {
+    if (!Number.isFinite(ms)) return null;
+    const seconds = ms / 1000;
+    return seconds < 1 ? '<1s' : `${Math.round(seconds)}s`;
+};
+
+// The animated dots shown while the model has started but produced nothing yet
+// (a non-reasoning model slow to its first token).
+const ThinkingDots = () => (
+    <div className="llm-thinking" role="status" aria-label="Thinking">
+        <span className="llm-thinking-dot" />
+        <span className="llm-thinking-dot" />
+        <span className="llm-thinking-dot" />
+    </div>
+);
+
+// A collapsible chain-of-thought panel: auto-expanded and shimmering while the
+// model is still thinking, then collapsed to "Thought for Ns" (re-expandable).
+const ReasoningPanel = ({ reasoning, active, reasoningMs }) => {
+    const [manualOpen, setManualOpen] = useState(null);
+    const open = manualOpen ?? active;
+    const bodyRef = useRef(null);
+
+    useEffect(() => {
+        if (active && open && bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }, [reasoning, active, open]);
+
+    const label = active
+        ? 'Thinking'
+        : (reasoningMs != null ? `Thought for ${formatThinkTime(reasoningMs)}` : 'Reasoning');
+
+    return (
+        <div className={`llm-reasoning${open ? ' is-open' : ''}`}>
+            <button
+                type="button"
+                className="llm-reasoning-toggle"
+                onClick={() => setManualOpen(!open)}
+                aria-expanded={open}
+            >
+                <span className={`llm-reasoning-label${active ? ' is-active' : ''}`}>{label}</span>
+                <span className="llm-reasoning-chevron" aria-hidden="true"><ChevronIcon /></span>
+            </button>
+            {open && <div className="llm-reasoning-body" ref={bodyRef}>{reasoning}</div>}
+        </div>
+    );
+};
+
+const Message = ({ role, name, content, reasoning, reasoningMs, streaming }) => {
     const isUser = role === 'user';
+    const thinkingOnly = streaming && !content;
     return (
         <div className={`llm-message is-${role}`}>
             <span className="llm-message-avatar" aria-hidden="true">
@@ -46,10 +101,16 @@ const Message = ({ role, name, content, streaming }) => {
             </span>
             <div className="llm-message-body">
                 <span className="llm-message-name">{name}</span>
-                <div className={`llm-bubble${streaming ? ' is-streaming' : ''}`}>
-                    {content}
-                    {streaming && <span className="llm-caret" aria-hidden="true" />}
-                </div>
+                {reasoning ? (
+                    <ReasoningPanel reasoning={reasoning} active={thinkingOnly} reasoningMs={reasoningMs} />
+                ) : null}
+                {thinkingOnly && !reasoning && <ThinkingDots />}
+                {content ? (
+                    <div className={`llm-bubble${streaming ? ' is-streaming' : ''}`}>
+                        {content}
+                        {streaming && <span className="llm-caret" aria-hidden="true" />}
+                    </div>
+                ) : null}
             </div>
         </div>
     );
@@ -58,18 +119,19 @@ const Message = ({ role, name, content, streaming }) => {
 const ChatView = ({ context, settings, connected }) => {
     const [turns, setTurns] = useState([]);
     const [draft, setDraft] = useState('');
-    const { text: pending, streaming, error, start, stop } = useStreamedReply();
+    const { text: pending, reasoning: pendingReasoning, reasoningMs: pendingReasoningMs, streaming, error, start, stop } = useStreamedReply();
     const logRef = useRef(null);
     const textareaRef = useRef(null);
 
     const modelName = settings.model || 'Model';
     const hasConversation = turns.length > 0 || streaming;
 
-    // Keep the newest message in view as turns arrive and tokens stream in.
+    // Keep the newest message in view as turns arrive and tokens (answer or
+    // reasoning) stream in.
     useEffect(() => {
         const el = logRef.current;
         if (el) el.scrollTop = el.scrollHeight;
-    }, [turns, pending]);
+    }, [turns, pending, pendingReasoning]);
 
     const resizeTextarea = () => {
         const ta = textareaRef.current;
@@ -92,8 +154,13 @@ const ChatView = ({ context, settings, connected }) => {
             apiKey: settings.apiKey,
             messages: buildChatMessages(context, history, question)
         });
-        if (reply) {
-            setTurns((current) => [...current, { role: 'assistant', content: reply }]);
+        if (reply?.text) {
+            setTurns((current) => [...current, {
+                role: 'assistant',
+                content: reply.text,
+                reasoning: reply.reasoning || undefined,
+                reasoningMs: reply.reasoningMs
+            }]);
         }
     };
 
@@ -128,10 +195,19 @@ const ChatView = ({ context, settings, connected }) => {
                             role={turn.role}
                             name={turn.role === 'user' ? 'You' : modelName}
                             content={turn.content}
+                            reasoning={turn.reasoning}
+                            reasoningMs={turn.reasoningMs}
                         />
                     ))}
                     {streaming && (
-                        <Message role="assistant" name={modelName} content={pending} streaming />
+                        <Message
+                            role="assistant"
+                            name={modelName}
+                            content={pending}
+                            reasoning={pendingReasoning}
+                            reasoningMs={pendingReasoningMs}
+                            streaming
+                        />
                     )}
                 </div>
             ) : (
@@ -140,7 +216,7 @@ const ChatView = ({ context, settings, connected }) => {
                     <p className="llm-chat-empty-title">Ask about this run</p>
                     <p className="llm-chat-empty-hint">
                         {connected
-                            ? 'The run’s metrics and convergence history travel with every message, so answers can quote the actual numbers.'
+                            ? 'The run’s metrics, symmetry, and convergence history travel with every message, so answers can quote the actual numbers.'
                             : 'Connect a local model — pick one from the selector above — to start a conversation.'}
                     </p>
                     {connected && (

@@ -594,6 +594,103 @@
     50% { opacity: 0; }
 }
 
+/* Thinking dots — model has started but produced no visible token yet. */
+.llm-thinking {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.7rem 0.9rem;
+    width: fit-content;
+    background: var(--panel-soft);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    border-top-left-radius: 5px;
+}
+
+.llm-thinking-dot {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background: var(--muted);
+    animation: llm-bounce 1.2s ease-in-out infinite;
+}
+
+.llm-thinking-dot:nth-child(2) { animation-delay: 0.16s; }
+.llm-thinking-dot:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes llm-bounce {
+    0%, 80%, 100% { opacity: 0.35; transform: translateY(0); }
+    40% { opacity: 1; transform: translateY(-0.18rem); }
+}
+
+/* Collapsible chain-of-thought panel (reasoning models). */
+.llm-reasoning {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.1rem;
+}
+
+.llm-reasoning-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    align-self: flex-start;
+    padding: 0.15rem 0.1rem;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.llm-reasoning-toggle:hover:not(:disabled) {
+    background: none;
+    color: var(--text-strong);
+}
+
+.llm-reasoning-chevron {
+    display: inline-grid;
+    place-items: center;
+    transition: transform 140ms ease;
+}
+
+.llm-reasoning-chevron svg {
+    width: 0.85rem;
+    height: 0.85rem;
+}
+
+.llm-reasoning.is-open .llm-reasoning-chevron {
+    transform: rotate(180deg);
+}
+
+/* Shimmer the label while the model is still thinking. */
+.llm-reasoning-label.is-active {
+    background: linear-gradient(90deg, var(--subtle) 25%, var(--text-strong) 50%, var(--subtle) 75%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: llm-shimmer 1.6s linear infinite;
+}
+
+@keyframes llm-shimmer {
+    to { background-position: -200% 0; }
+}
+
+.llm-reasoning-body {
+    max-height: 13rem;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: var(--muted);
+    padding: 0.1rem 0 0.2rem 0.75rem;
+    border-left: 2px solid var(--border-strong);
+}
+
 /* Empty state: a centered invitation with clickable prompt suggestions. */
 .llm-chat-empty {
     display: flex;
