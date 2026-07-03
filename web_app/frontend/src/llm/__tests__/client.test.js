@@ -36,7 +36,19 @@ describe('streamChat', () => {
             sseLine('never seen')
         ])));
         const parts = await collect(streamChat({ baseUrl: 'http://localhost:11434/v1', model: 'm', messages: [] }));
-        expect(parts).toEqual(['Hel', 'lo']);
+        expect(parts).toEqual([{ content: 'Hel' }, { content: 'lo' }]);
+    });
+
+    it('yields reasoning deltas separately from content', async () => {
+        const reasoningLine = (r) => `data: ${JSON.stringify({ choices: [{ delta: { reasoning: r } }] })}\n\n`;
+        vi.stubGlobal('fetch', vi.fn(async () => streamResponse([
+            reasoningLine('think'),
+            reasoningLine('ing'),
+            sseLine('answer'),
+            'data: [DONE]\n'
+        ])));
+        const parts = await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [] }));
+        expect(parts).toEqual([{ reasoning: 'think' }, { reasoning: 'ing' }, { content: 'answer' }]);
     });
 
     it('reassembles lines split across chunk boundaries', async () => {
@@ -47,7 +59,7 @@ describe('streamChat', () => {
             'data: [DONE]\n'
         ])));
         const parts = await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [] }));
-        expect(parts).toEqual(['split-delta']);
+        expect(parts).toEqual([{ content: 'split-delta' }]);
     });
 
     it('skips malformed JSON lines and empty deltas', async () => {
@@ -58,7 +70,7 @@ describe('streamChat', () => {
             'data: [DONE]\n'
         ])));
         const parts = await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [] }));
-        expect(parts).toEqual(['ok']);
+        expect(parts).toEqual([{ content: 'ok' }]);
     });
 
     it('throws with the server error message on HTTP failure', async () => {
