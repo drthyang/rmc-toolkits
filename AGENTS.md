@@ -34,6 +34,13 @@ web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly
   colormaps.js                   colormap LUTs for the KDE canvas
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
+  llm/                           experimental AI assistant (local LLM via Ollama/LM Studio) — see its README
+    context/runContext.js        dashboard state → compact LLM context JSON (downsampling, char budget)
+    provider/client.js           OpenAI-compatible client (models, SSE streaming, connection hints)
+    prompts/                     shared system prompt + per-feature message builders
+    watchdog/                    convergence heuristics (source of truth) + LLM-narrated badge hook
+    report/buildReport.js        Markdown run report assembly + download
+    components/                  AssistantPanel card, settings drawer, Summary/Chat/Report views, badge
   components/
     App.jsx                      shell, run-folder selection, page nav, Live Data
     Dashboard.jsx                all-plots run dashboard
@@ -67,6 +74,12 @@ web_app/frontend/src/
   the slab and 3D views via a legend above them.
 - **Backend data-root guard**: relative paths resolve under `RMC_TOOLKITS_DATA_ROOT` (default repo
   root); absolute paths are rejected unless inside the root or a natively-picked folder.
+- **`src/llm/` import boundary**: the AI assistant module receives run data **only as props**
+  (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`, `liveData`) and must not import
+  from the rest of the app except `figureExport.js` (`downloadBlob`/`sanitizeFilename`). Cell math
+  is duplicated from `ModelSummary.jsx` on purpose. This keeps the module extractable — don't
+  "clean up" the duplication by adding host imports. The R-value series it receives is **ln(χ²)**
+  (browserData applies `Math.log`); the context builder labels it so the model reads it correctly.
 
 ## Run & test
 
@@ -87,6 +100,9 @@ MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
 
 # Lint frontend
 cd web_app/frontend && npx eslint src
+
+# Frontend unit tests (vitest — src/llm module)
+cd web_app/frontend && npm test
 ```
 
 CI (`.github/workflows/tests.yml`) runs the Python suite + frontend lint/build on every push/PR to

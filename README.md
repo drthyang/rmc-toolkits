@@ -57,6 +57,12 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
   grids, with output numerically identical to the server-side SciPy KDE.
 - **Structure tools** — `.rmc6f` → `Frac_coord_<stem>.txt` conversion and reference-number-preserving
   atom sampling for large structures.
+- **AI Assistant (experimental)** — connect the dashboard to a **local LLM** (Ollama or LM Studio)
+  for a one-click run assessment, chat about the loaded run, a Markdown run report, and a live
+  convergence watchdog badge. The browser talks directly to `http://localhost` — run-derived
+  summaries go only to the model server you run yourself, keeping the no-upload promise. See
+  [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md) for setup
+  (one CORS setting) and architecture.
 
 ## Screenshots
 
@@ -233,6 +239,9 @@ python src/RMC_3D.py            # needs mayavi
 ```bash
 source .venv/bin/activate
 MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
+
+# Frontend unit tests (vitest — AI assistant module)
+cd web_app/frontend && npm test
 ```
 
 ## Status

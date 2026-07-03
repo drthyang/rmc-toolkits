@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import Dashboard from './components/Dashboard';
 import StructurePage from './components/StructurePage';
+import { AssistantPage } from './llm';
 import API_BASE_URL from './api';
 import {
   buildLocalRun,
@@ -19,7 +20,9 @@ const STATUS_TIMEOUT_MS = 15000;
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [visitedPages, setVisitedPages] = useState({ dashboard: true, structure: false });
+  const [visitedPages, setVisitedPages] = useState({ dashboard: true, structure: false, assistant: false });
+  // Parsed run context published by the Dashboard, consumed by the AI Assistant page.
+  const [assistantRun, setAssistantRun] = useState(null);
   const [currentDirectory, setCurrentDirectory] = useState('data');
   const [draftDirectory, setDraftDirectory] = useState('data');
   const [browseStatus, setBrowseStatus] = useState(null);
@@ -243,6 +246,12 @@ function App() {
               >
                 KDE / 3D
               </button>
+              <button
+                className={activePage === 'assistant' ? 'active' : ''}
+                onClick={() => handlePageChange('assistant')}
+              >
+                AI Assistant
+              </button>
             </nav>
           </div>
           {fsAccess ? (
@@ -342,7 +351,12 @@ function App() {
               className={`workspace-page${activePage === 'dashboard' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'dashboard'}
             >
-              <Dashboard directory={currentDirectory} localRun={localRun} watchFiles={watchFiles} />
+              <Dashboard
+                directory={currentDirectory}
+                localRun={localRun}
+                watchFiles={watchFiles}
+                onRunContextChange={setAssistantRun}
+              />
             </div>
           )}
           {visitedPages.structure && (
@@ -351,6 +365,21 @@ function App() {
               aria-hidden={activePage !== 'structure'}
             >
               <StructurePage directory={currentDirectory} localRun={localRun} theme="light" />
+            </div>
+          )}
+          {visitedPages.assistant && (
+            <div
+              className={`workspace-page${activePage === 'assistant' ? ' is-active' : ' is-hidden'}`}
+              aria-hidden={activePage !== 'assistant'}
+            >
+              <AssistantPage
+                runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
+                plotFiles={assistantRun?.plotFiles ?? []}
+                rValueFile={assistantRun?.rValueFile ?? null}
+                structure={assistantRun?.structure ?? null}
+                symmetry={assistantRun?.symmetry ?? null}
+                liveData={watchFiles}
+              />
             </div>
           )}
         </div>

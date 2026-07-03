@@ -1,0 +1,67 @@
+/* Page chrome for the AI Assistant workspace page. Mirrors .dashboard-page /
+   .structure-page (padding, scroll, tokens) so it sits alongside the other
+   pages; the inner column is width-capped because this page is text-led. */
+
+.assistant-page {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background: var(--app-bg);
+    padding: 1.1rem 1.25rem 1.5rem;
+}
+
+.assistant-page-inner {
+    max-width: 880px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+/* Title on the left, connection controls (status + model + gear) on the right. */
+.assistant-page-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem 1.25rem;
+    flex-wrap: wrap;
+    min-height: 2rem;
+}
+
+.assistant-page-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.assistant-page-title h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    line-height: 1.25;
+    font-weight: 700;
+    color: var(--text-strong);
+}
+
+/* Reuses .plot-card surface tokens; a flex column so the tabs and the active
+   view keep their rhythm, static (no hover lift) since it's the main content. */
+.assistant-surface {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.15rem 1.25rem 1.3rem;
+    overflow: visible;
+}
+
+.assistant-surface:hover {
+    border-color: var(--border);
+    box-shadow: var(--shadow-xs);
+}
+
+.assistant-empty {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2.4rem 1rem;
+    text-align: center;
+    color: var(--muted);
+    background: var(--panel-bg);
+}
