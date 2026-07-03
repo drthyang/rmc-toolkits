@@ -57,7 +57,7 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
   grids, with output numerically identical to the server-side SciPy KDE.
 - **Structure tools** — `.rmc6f` → `Frac_coord_<stem>.txt` conversion and reference-number-preserving
   atom sampling for large structures.
-- **AI Assistant (experimental)** — a dedicated chat page for reasoning about the loaded run.
+- **AI Assistant (beta)** — a dedicated chat page for reasoning about the loaded run.
   Connect a **local LLM** (Ollama or LM Studio — private, the default) or a **cloud** model
   (OpenAI, Gemini) with your own API key. Every message carries a compact run context — Rwp values,
   ln(χ²) convergence, the detected symmetry with per-site displacements, and partial-PDF peaks vs

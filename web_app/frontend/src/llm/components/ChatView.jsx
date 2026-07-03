@@ -165,7 +165,6 @@ const ChatView = ({ context, settings, connected }) => {
     const logRef = useRef(null);
     const textareaRef = useRef(null);
 
-    const modelName = settings.model || 'Model';
     const hasConversation = turns.length > 0 || streaming;
 
     // Keep the newest message in view as turns arrive and tokens (answer or
@@ -235,7 +234,7 @@ const ChatView = ({ context, settings, connected }) => {
                         <Message
                             key={index}
                             role={turn.role}
-                            name={turn.role === 'user' ? 'You' : modelName}
+                            name={turn.role === 'user' ? 'You' : 'Assistant'}
                             content={turn.content}
                             reasoning={turn.reasoning}
                             reasoningMs={turn.reasoningMs}
@@ -244,7 +243,7 @@ const ChatView = ({ context, settings, connected }) => {
                     {streaming && (
                         <Message
                             role="assistant"
-                            name={modelName}
+                            name="Assistant"
                             content={pending}
                             reasoning={pendingReasoning}
                             reasoningMs={pendingReasoningMs}
