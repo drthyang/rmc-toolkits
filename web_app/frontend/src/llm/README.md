@@ -28,14 +28,20 @@ stays the default. Nothing is sent until the user acts. API keys are stored in
 
 ## How each seam works (reading order)
 
-1. **`context/runContext.js`** — the heart of the module. `buildRunContext()`
-   distills the dashboard's parsed state into a compact JSON object: cell and
-   angles recomputed from the lattice vectors, the detected space group,
-   per-dataset Rwp values, and the ln(χ²) convergence history **downsampled to
-   ≤48 points** with summary statistics computed on the *full* series first.
-   `contextToJson()` enforces a ~3,000-character budget so small local models
-   never overflow. Every field is optional — a run with no `.rmc6f` or no logs
-   simply omits those sections.
+1. **`context/runContext.js` + `context/pairCorrelations.js`** — the heart of
+   the module. `buildRunContext()` distills the dashboard's parsed state into a
+   compact JSON object: cell/angles, a **symmetry block** (space group, the
+   symmetry-vs-tolerance ladder, and Wyckoff-orbit sites ranked by rms
+   displacement — the local-distortion evidence), **pair correlations** (each
+   partial-PDF pair's first g(r) peaks next to the average structure's
+   nearest-neighbour distance), per-dataset Rwp values, and the ln(χ²)
+   convergence history **downsampled to ≤48 points** with summary statistics
+   computed on the *full* series first. `contextToJson()` enforces a
+   ~4,500-character budget with an explicit trim order (extra peaks → ladder
+   rungs → history → low-displacement sites → datasets, each recorded with an
+   `*_omitted` count) so small local models never overflow. Every field is
+   optional — a run with no `.rmc6f`, no partials, or no logs simply omits
+   those sections.
 2. **`prompts/system.js` + `prompts/templates.js`** — one shared system prompt
    establishes the domain (what Rwp means, that the history is ln(χ²), "quote
    the numbers, don't guess"). `buildChatMessages()` injects the context ahead
