@@ -5,6 +5,20 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Run history and run-control settings in the AI Assistant's context.
+
+- **`refinement` block** from the `.rmc6f` header: moves generated/tried/accepted plus the derived
+  **acceptance ratio** and **accepted moves per atom** — the standard gauge of whether the
+  configuration has been sampled long enough — and accumulated running time.
+- **`run_settings` block** from the RMCProfile run-control file. The correct `.dat` is the one whose
+  basename matches the chosen structure stem (so `chi2.dat`, `optimization.dat`, … are never picked
+  up). Extracts title/material/phase/temperature, **minimum distances labeled per element pair**
+  (hard closest-approach constraints — the model is told a g(r) peak pinned there may be
+  constraint-limited), max move sizes per element, time/save limits, flags, and the fitted-data
+  blocks. Static mode only, like the rest of the browser-parsed context.
+- System prompt teaches both blocks; 9 new tests (header counters, `.dat` parser, stem-matched
+  selection, derived stats, pair labeling).
+
 Chat rendering fixes and a window-filling chat box.
 
 - Markdown now parses **and sanitizes** inline HTML (`rehype-raw` + `rehype-sanitize`), so `<br>`

@@ -1,7 +1,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
-import { fileSignature, isStaticMode, plotMetadataFromFile, readAndParseLocalPlotFile, WATCH_INTERVAL_MS } from '../browserData';
+import { fileSignature, isStaticMode, parseRunSettings, plotMetadataFromFile, readAndParseLocalPlotFile, WATCH_INTERVAL_MS } from '../browserData';
 import { saveSvgFiguresAsZip } from '../figureExport';
 import { WatchdogBadge } from '../llm';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
@@ -94,6 +94,9 @@ const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
     const [structureError, setStructureError] = useState(null);
+    // Parsed <stem>.dat run-control settings (static mode) for the AI assistant.
+    const [runSettings, setRunSettings] = useState(null);
+    const settingsSigRef = useRef('');
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
     const [localStatus, setLocalStatus] = useState(null);
@@ -284,6 +287,25 @@ const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange
                 });
             }
 
+            // Run-control settings (<stem>.dat) for the AI assistant: tiny file,
+            // read inline. Re-parsed only when the file identity/mtime changes.
+            const settingsFile = localRun.settingsFile;
+            const settingsSig = settingsFile ? `${settingsFile.path}:${settingsFile.modified}` : '';
+            if (settingsSig !== settingsSigRef.current) {
+                settingsSigRef.current = settingsSig;
+                if (!settingsFile?.sourceFile) {
+                    setRunSettings(null);
+                } else {
+                    settingsFile.sourceFile.text()
+                        .then((text) => {
+                            if (!cancelled) setRunSettings(parseRunSettings(text));
+                        })
+                        .catch(() => {
+                            if (!cancelled) setRunSettings(null);
+                        });
+                }
+            }
+
             return () => {
                 cancelled = true;
                 structureWorker?.terminate();
@@ -292,6 +314,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange
 
         // Static mode has no Flask backend; the dashboard is driven entirely by localRun.
         if (!isStaticMode()) {
+            settingsSigRef.current = '';
+            setRunSettings(null);
             loadServerDashboard();
         }
     }, [directory, loadServerDashboard, localRun]);
@@ -372,7 +396,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange
         rValueFile,
         structure,
         symmetry,
-    }), [localRun, directory, allPlotFiles, rValueFile, structure, symmetry]);
+        runSettings,
+    }), [localRun, directory, allPlotFiles, rValueFile, structure, symmetry, runSettings]);
 
     useEffect(() => {
         onRunContextChange?.(assistantRun);

@@ -140,6 +140,75 @@ const symmetryContext = (structure, symmetry) => {
     return block;
 };
 
+// Run-history counters from the .rmc6f header. The derived numbers are the
+// useful ones: acceptance ratio, and accepted moves per atom — the standard
+// gauge of whether the configuration has been sampled long enough.
+const refinementContext = (structure) => {
+    const moves = structure?.moves;
+    if (!moves) return null;
+    const block = {};
+    if (Number.isFinite(moves.generated)) block.moves_generated = moves.generated;
+    if (Number.isFinite(moves.tried)) block.moves_tried = moves.tried;
+    if (Number.isFinite(moves.accepted)) block.moves_accepted = moves.accepted;
+    if (Number.isFinite(moves.accepted) && moves.tried > 0) {
+        block.acceptance_ratio = roundSig(moves.accepted / moves.tried, 2);
+    }
+    if (Number.isFinite(moves.accepted) && structure.totalAtoms > 0) {
+        block.accepted_moves_per_atom = roundSig(moves.accepted / structure.totalAtoms);
+    }
+    if (Number.isFinite(moves.accumulatedTimeS)) {
+        block.accumulated_time_h = roundSig(moves.accumulatedTimeS / 3600);
+    }
+    return Object.keys(block).length ? block : null;
+};
+
+// Element-pair labels in RMCProfile's upper-triangle row-wise order (Ga-Ga,
+// Ga-Nb, Ga-Se, Nb-Nb, …) — the order MINIMUM_DISTANCES values are given in,
+// matching the partial-PDF column order.
+const pairLabels = (atoms) => {
+    const labels = [];
+    for (let i = 0; i < atoms.length; i++) {
+        for (let j = i; j < atoms.length; j++) labels.push(`${atoms[i]}-${atoms[j]}`);
+    }
+    return labels;
+};
+
+// The run-control settings parsed from <stem>.dat (browserData.parseRunSettings).
+// Minimum distances are labeled per element pair when the counts line up, so
+// the model can spot g(r) peaks pinned at a closest-approach constraint.
+const runSettingsContext = (settings) => {
+    if (!settings) return null;
+    const block = {};
+    for (const key of ['title', 'material', 'phase', 'temperature']) {
+        if (settings[key]) block[key] = settings[key];
+    }
+    const atoms = settings.atoms || [];
+    if (settings.minimumDistancesA?.length) {
+        const labels = pairLabels(atoms);
+        block.min_distances_A = labels.length === settings.minimumDistancesA.length
+            ? Object.fromEntries(settings.minimumDistancesA.map((d, i) => [labels[i], d]))
+            : settings.minimumDistancesA;
+    }
+    if (settings.maximumMovesA?.length) {
+        block.max_move_A = atoms.length === settings.maximumMovesA.length
+            ? Object.fromEntries(settings.maximumMovesA.map((d, i) => [atoms[i], d]))
+            : settings.maximumMovesA;
+    }
+    if (settings.timeLimit) block.time_limit = settings.timeLimit;
+    if (settings.savePeriod) block.save_period = settings.savePeriod;
+    if (settings.weightOptimization) block.weight_optimization = true;
+    if (settings.flags?.length) block.flags = settings.flags.slice(0, 8);
+    if (settings.datasets?.length) {
+        block.fitted_data = settings.datasets.map((dataset) => {
+            const entry = { type: dataset.block.replace(/_DATA$/, '').toLowerCase() };
+            if (dataset.file) entry.file = dataset.file;
+            if (dataset.fit_type) entry.fit = dataset.fit_type;
+            return entry;
+        });
+    }
+    return Object.keys(block).length ? block : null;
+};
+
 const datasetContext = (plotFiles) => (
     (plotFiles || [])
         .filter((file) => file.plotKind && file.plotKind !== 'r_value')
@@ -184,6 +253,7 @@ export const buildRunContext = ({
     rValueFile = null,
     structure = null,
     symmetry = null,
+    runSettings = null,
     liveData = false
 } = {}) => {
     const context = {
@@ -192,6 +262,10 @@ export const buildRunContext = ({
     };
     const structureInfo = structureContext(structure);
     if (structureInfo) context.structure = structureInfo;
+    const refinement = refinementContext(structure);
+    if (refinement) context.refinement = refinement;
+    const settingsInfo = runSettingsContext(runSettings);
+    if (settingsInfo) context.run_settings = settingsInfo;
     const symmetryInfo = symmetryContext(structure, symmetry);
     if (symmetryInfo) context.symmetry = symmetryInfo;
     const pairs = pairCorrelationsContext(structure, plotFiles);

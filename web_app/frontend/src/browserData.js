@@ -92,6 +92,81 @@ const chooseStructureFile = (files) => {
     return rmc6fFiles[0];
 };
 
+// The RMCProfile run-control file: <structure stem>.dat, `KEY :: value` lines
+// with `>`-prefixed sub-lines under FLAGS and *_DATA blocks. Several other .dat
+// files live in a run folder (chi2.dat, optimization.dat, …) — the stem match
+// is what disambiguates. Extracts the settings the AI assistant reasons about;
+// returns null when the text has no `KEY :: value` structure (wrong file).
+export const parseRunSettings = (text) => {
+    const settings = {};
+    const leadingNumbers = (value) => {
+        const numbers = [];
+        for (const token of value.trim().split(/\s+/)) {
+            const parsed = Number(token);
+            if (!Number.isFinite(parsed)) break;
+            numbers.push(parsed);
+        }
+        return numbers;
+    };
+    let block = null;   // { type: 'flags' } | { type: 'dataset', entry }
+    let matchedAnything = false;
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (line.startsWith('>')) {
+            if (!block) continue;
+            const sub = line.slice(1).trim();
+            const subMatch = /^([A-Z_]+)\s*::\s*(.*)$/.exec(sub);
+            if (block.type === 'flags') {
+                if (sub) block.list.push(subMatch ? subMatch[1] : sub.split(/\s+/)[0]);
+            } else if (subMatch) {
+                const [, subKey, subValue] = subMatch;
+                if (subKey === 'FILENAME') block.entry.file = subValue.trim();
+                if (subKey === 'FIT_TYPE' || (subKey === 'DATA_TYPE' && !block.entry.fit_type)) {
+                    block.entry.fit_type = subValue.trim();
+                }
+            }
+            continue;
+        }
+        const match = /^([A-Z_\d]+)\s*::\s*(.*)$/.exec(line);
+        if (!match) { block = null; continue; }
+        matchedAnything = true;
+        const [, key, value] = match;
+        block = null;
+        if (key === 'END') break;
+        if (key === 'FLAGS') {
+            settings.flags = settings.flags || [];
+            block = { type: 'flags', list: settings.flags };
+        } else if (key.endsWith('_DATA')) {
+            settings.datasets = settings.datasets || [];
+            if (settings.datasets.length < 8) {
+                const entry = { block: key };
+                settings.datasets.push(entry);
+                block = { type: 'dataset', entry };
+            }
+        } else if (key === 'TITLE') settings.title = value.trim();
+        else if (key === 'MATERIAL') settings.material = value.trim();
+        else if (key === 'PHASE') settings.phase = value.trim();
+        else if (key === 'TEMPERATURE') settings.temperature = value.trim();
+        else if (key === 'ATOMS') settings.atoms = value.trim().split(/\s+/).filter(Boolean);
+        else if (key === 'MINIMUM_DISTANCES') settings.minimumDistancesA = leadingNumbers(value);
+        else if (key === 'MAXIMUM_MOVES') settings.maximumMovesA = leadingNumbers(value);
+        else if (key === 'TIME_LIMIT') settings.timeLimit = value.trim();
+        else if (key === 'SAVE_PERIOD') settings.savePeriod = value.trim();
+        else if (key === 'WEIGHT_OPTIMIZATION') settings.weightOptimization = true;
+    }
+    return matchedAnything && Object.keys(settings).length ? settings : null;
+};
+
+// The run-control .dat sits next to the structure with the same stem. Selected
+// from the RAW entries (isSupportedFile would drop it) so auxiliary .dat files
+// (chi2.dat, weights_update.dat, …) are never picked up.
+const chooseSettingsEntry = (entries, structureFile) => {
+    if (!structureFile) return null;
+    const wanted = structureFile.path.replace(/\.rmc6f$/, '.dat');
+    return entries.find(({ path }) => path === wanted) || null;
+};
+
 const parseNumberRows = (lines, startIndex = 0, separator = /\s+/) => {
     const rows = [];
     lines.slice(startIndex).forEach((line) => {
@@ -289,6 +364,25 @@ export const plotDataFromText = (file) => {
     };
 };
 
+// Run-history counters from the .rmc6f header (everything before "Atoms:"):
+// how many moves were generated / tried / accepted and the accumulated running
+// time. With the atom count these gauge sampling sufficiency (accepted moves
+// per atom), so they feed the AI assistant's run context.
+const readMovesMetadata = (text) => {
+    const header = text.slice(0, text.indexOf('Atoms:') > 0 ? text.indexOf('Atoms:') : 4000);
+    const grab = (pattern) => {
+        const match = pattern.exec(header);
+        return match ? Number(match[1]) : null;
+    };
+    const moves = {
+        generated: grab(/Number of moves generated:\s*([\d.]+)/),
+        tried: grab(/Number of moves tried:\s*([\d.]+)/),
+        accepted: grab(/Number of moves accepted:\s*([\d.]+)/),
+        accumulatedTimeS: grab(/Accumulated time \(s\)[^:]*:\s*([\d.]+)/)
+    };
+    return Object.values(moves).some(Number.isFinite) ? moves : null;
+};
+
 const readCellVectors = (text) => {
     const lines = text.split(/\r?\n/);
     let latticeVectors = null;
@@ -399,7 +493,8 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
         supercell,
         latticeVectors,
         basis,
-        points
+        points,
+        moves: readMovesMetadata(file.text)
     };
 };
 
@@ -430,6 +525,7 @@ const makeRunFromEntries = (entries) => {
     }
 
     const rmc6f = chooseStructureFile(files);
+    const settingsEntry = chooseSettingsEntry(entries, rmc6f);
     const directoryRoot = files
         .map((file) => file.path)
         .find((path) => path.includes('/'))
@@ -440,6 +536,15 @@ const makeRunFromEntries = (entries) => {
         files,
         structure: null,
         structureFile: rmc6f || null,
+        settingsFile: settingsEntry
+            ? {
+                name: basename(settingsEntry.path),
+                path: settingsEntry.path,
+                sourceFile: settingsEntry.file,
+                size: settingsEntry.file.size,
+                modified: settingsEntry.file.lastModified
+            }
+            : null,
         structureError: rmc6f ? 'Structure data loads when needed' : 'No model structure detected',
         diagnostics: {
             selectedFileCount: entries.length,
