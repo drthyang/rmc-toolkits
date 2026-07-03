@@ -5,7 +5,26 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
-_Nothing yet._
+Experimental AI Assistant — local LLM in the data-monitor pipeline.
+
+- Added `web_app/frontend/src/llm/`, a self-contained experimental module connecting the dashboard
+  to a **local LLM** (Ollama `/v1` or LM Studio, both OpenAI-compatible) **directly from the
+  browser** — no server, no API keys; run-derived summaries go only to the model server the user
+  runs. Four features: one-click **run summary/assessment** (streamed), **chat Q&A** with the run
+  context injected, one-click **Markdown run report** (deterministic metrics tables + clearly
+  labeled AI narrative), and a **live convergence watchdog** badge on the R-value card
+  (slope heuristics are the source of truth; the LLM only writes the note; piggybacks on the
+  existing Live Data poll).
+- Pipeline seams are explicit as a learning artifact (see the module README): context builder with
+  history downsampling + a ~3k-char budget → prompt templates → hand-rolled SSE streaming client →
+  streaming UI with a "context sent to the model" inspector. Connection test translates failures
+  into actionable CORS/setup hints.
+- Dashboard mounts the collapsible **AI Assistant** card (zero network activity until used) and the
+  watchdog badge; strict import boundary (props in, one `figureExport` helper out) keeps the module
+  extractable to its own repository.
+- Added **vitest** (first frontend unit tests, 43 passing) covering the context builder,
+  convergence heuristics, SSE parsing, prompt templates, and report assembly; CI now runs
+  `npm test` between lint and build.
 
 ## v0.3.0 — 2026-07-02
 

@@ -70,10 +70,24 @@ Goal: make the app useful at the end of a research session. **Status: in progres
 
 - Export individual plots as PNG and SVG, and bundle a whole dashboard into one `.zip`. **Done.**
   CSV (raw series) export is *planned*.
-- Export project summary as JSON. *(Planned.)*
+- Export project summary as JSON. *(Partial — the AI assistant's context builder assembles a
+  compact run-summary JSON, viewable in its "context sent to the model" inspector.)*
 - Generate a reproducible report containing input directory, detected files, software version, plot
-  parameters, Rwp metrics, lattice metadata, and selected figures. *(Planned.)*
+  parameters, Rwp metrics, lattice metadata, and selected figures. *(Partial — the experimental AI
+  assistant exports a Markdown run report with model summary, Rwp metrics, and convergence tables,
+  plus an optional LLM-written assessment; figures and plot parameters still planned.)*
 - Add figure presets for manuscript, talk, and notebook usage. *(Planned.)*
+
+### Experimental: AI assistant (local LLM)
+
+An experimental track (module `web_app/frontend/src/llm/`, see its README) connecting the dashboard
+to a user-run local LLM (Ollama / LM Studio) straight from the browser — no server, no API keys,
+data stays local:
+
+- Run summary/assessment, chat Q&A over the loaded run, Markdown report generation, and a live
+  convergence watchdog (heuristics-first, LLM-narrated). **Done (experimental).**
+- Possible next steps: feed KDE/symmetry findings into the context, run comparison Q&A, and a
+  guided "why is my fit bad?" diagnostic flow.
 
 ## Phase 6: Lab-Ready App
 
