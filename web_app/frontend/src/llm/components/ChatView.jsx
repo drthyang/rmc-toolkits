@@ -31,9 +31,17 @@ const UserGlyph = () => (
     </svg>
 );
 
-const SparkGlyph = () => (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M12 2l1.7 5.1a5 5 0 0 0 3.2 3.2L22 12l-5.1 1.7a5 5 0 0 0-3.2 3.2L12 22l-1.7-5.1a5 5 0 0 0-3.2-3.2L2 12l5.1-1.7a5 5 0 0 0 3.2-3.2z" />
+// The app's pair-distribution-wave mark, shared with the header and favicon.
+const WaveMark = () => (
+    <svg viewBox="0 0 100 100" fill="none" aria-hidden="true">
+        <path
+            d="M14 62 C22 62 27 24 37 24 C47 24 45 66 54 66 C62 66 61 44 69 44 C76 44 78 57 86 57"
+            transform="translate(0,5)"
+            stroke="currentColor"
+            strokeWidth="9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
     </svg>
 );
 
@@ -42,7 +50,7 @@ const Message = ({ role, name, content, streaming }) => {
     return (
         <div className={`llm-message is-${role}`}>
             <span className="llm-message-avatar" aria-hidden="true">
-                {isUser ? <UserGlyph /> : <SparkGlyph />}
+                {isUser ? <UserGlyph /> : <WaveMark />}
             </span>
             <div className="llm-message-body">
                 <span className="llm-message-name">{name}</span>
@@ -136,7 +144,7 @@ const ChatView = ({ context, settings, connected }) => {
                 </div>
             ) : (
                 <div className="llm-chat-empty">
-                    <span className="llm-chat-empty-icon" aria-hidden="true"><SparkGlyph /></span>
+                    <span className="llm-chat-empty-icon" aria-hidden="true"><WaveMark /></span>
                     <p className="llm-chat-empty-title">Ask about this run</p>
                     <p className="llm-chat-empty-hint">
                         {connected
