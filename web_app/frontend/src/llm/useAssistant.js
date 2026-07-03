@@ -30,14 +30,18 @@ export const useAssistant = ({
             : null
     ), [enabled, runName, plotFiles, rValueFile, structure, symmetry, runSettings, liveData]);
 
-    const runTest = useCallback(async () => {
-        setConnection({ status: 'testing', models: [], error: null, hint: null });
+    // `manual` records whether the user actively pressed Test (vs. the automatic
+    // on-load probe): a failed auto-probe is shown as a gentle "connect a model"
+    // prompt, while a failed manual test surfaces the full error + hint.
+    const probe = useCallback(async (manual) => {
+        setConnection({ status: 'testing', models: [], error: null, hint: null, manual });
         const result = await checkConnection(settings.baseUrl, { apiKey: settings.apiKey });
         setConnection({
             status: result.ok ? 'ok' : 'error',
             models: result.models,
             error: result.error,
-            hint: result.hint
+            hint: result.hint,
+            manual
         });
         // Auto-pick a model when none is chosen (or the chosen one is gone).
         if (result.ok && result.models.length && !result.models.includes(settings.model)) {
@@ -45,9 +49,11 @@ export const useAssistant = ({
         }
     }, [settings.baseUrl, settings.apiKey, settings.model]);
 
+    const runTest = useCallback(() => probe(true), [probe]);
+
     // Probe the server once per base URL when active, so the status indicator
     // and model list populate without a manual click. The ref guard keeps a
-    // model switch (which changes runTest) from re-probing.
+    // model switch (which changes probe) from re-probing.
     useEffect(() => {
         if (!enabled) return;
         if (autoTestedRef.current === settings.baseUrl) return;
@@ -55,8 +61,8 @@ export const useAssistant = ({
         // One-shot probe of the user's local server — an intentional sync with
         // an external system, not React-derived state.
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        runTest();
-    }, [enabled, settings.baseUrl, runTest]);
+        probe(false);
+    }, [enabled, settings.baseUrl, probe]);
 
     const connected = connection.status === 'ok' && Boolean(settings.model);
 

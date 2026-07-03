@@ -137,7 +137,7 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                     Connected — {connection.models.length} model{connection.models.length === 1 ? '' : 's'} available.
                 </div>
             )}
-            {connection.status === 'error' && (
+            {connection.status === 'error' && connection.manual && (
                 <div className="llm-connection-status is-error" role="alert">
                     <strong>{connection.error}</strong>
                     {connection.hint && <p>{connection.hint}</p>}
