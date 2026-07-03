@@ -337,7 +337,8 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
         atoms.push({ element, referenceNumber, coords, cellIndices });
         // Accumulate this atom's within-cell fraction into its reference-number site.
         let acc = rnAcc.get(referenceNumber);
-        if (!acc) { acc = { element, sc: [0, 0, 0], ss: [0, 0, 0] }; rnAcc.set(referenceNumber, acc); }
+        if (!acc) { acc = { element, n: 0, sc: [0, 0, 0], ss: [0, 0, 0] }; rnAcc.set(referenceNumber, acc); }
+        acc.n += 1;
         for (let i = 0; i < 3; i++) {
             const wf = ((coords[i] * supercell[i]) % 1 + 1) % 1;   // within-unit-cell fraction
             acc.sc[i] += Math.cos(TWO_PI * wf); acc.ss[i] += Math.sin(TWO_PI * wf);
@@ -345,7 +346,15 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
     });
 
     // One representative site per reference number (its circular-mean fraction) —
-    // the (element, fractional) basis the symmetry finder consumes.
+    // the (element, fractional) basis the symmetry finder consumes. The same
+    // accumulators also give the spread about that mean for free: the resultant
+    // length R = |Σ(cos,sin)|/n yields the circular std √(−2 ln R) per axis,
+    // which scaled to Å is the site's rms displacement (dispA) — the
+    // local-distortion signal (static disorder + thermal motion) that the AI
+    // assistant's run context aggregates per Wyckoff orbit.
+    const cellEdgeA = latticeVectors.map((row, i) => (
+        Math.sqrt(row.reduce((sum, value) => sum + value * value, 0)) / Math.max(supercell[i], 1)
+    ));
     const basis = [...rnAcc.entries()]
         .sort(([a], [b]) => a - b)
         .map(([referenceNumber, acc]) => ({
@@ -354,7 +363,13 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
             frac: [0, 1, 2].map((i) => {
                 const a = Math.atan2(acc.ss[i], acc.sc[i]) / TWO_PI;
                 return a - Math.floor(a);
-            })
+            }),
+            dispA: Math.sqrt([0, 1, 2].reduce((sum, i) => {
+                const resultant = Math.hypot(acc.sc[i], acc.ss[i]) / acc.n;
+                if (resultant >= 1) return sum;   // zero spread (or a single atom)
+                const sigmaFrac = Math.sqrt(-2 * Math.log(Math.max(resultant, 1e-6))) / TWO_PI;
+                return sum + (sigmaFrac * cellEdgeA[i]) ** 2;
+            }, 0))
         }));
 
     const stride = Math.max(1, Math.ceil(atoms.length / maxPoints));

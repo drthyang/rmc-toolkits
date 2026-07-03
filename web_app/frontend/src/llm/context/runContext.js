@@ -5,11 +5,15 @@
 // context window. Everything here is a pure function of plain data — no React,
 // no network — which is what makes it the most testable part of the module.
 
-// Rough character budget for the serialized context: ~3k chars leaves a 4k-token
-// local model plenty of room for the system prompt, the question, and its answer.
-export const CONTEXT_CHAR_BUDGET = 3000;
+import { pairCorrelationsContext } from './pairCorrelations';
+
+// Rough character budget for the serialized context: ~4.5k chars leaves even a
+// small local model plenty of room for the system prompt, the question, and
+// its answer, while fitting the symmetry/site and pair-correlation evidence.
+export const CONTEXT_CHAR_BUDGET = 4500;
 
 const HISTORY_POINTS = 48;
+const MAX_SITES = 12;
 
 const roundSig = (value, digits = 3) => (
     Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(digits)) : value
@@ -71,7 +75,7 @@ const angleBetween = (a, b) => {
 // Cell lengths/angles are recomputed from the lattice vectors with the same
 // math as ModelSummary.jsx — duplicated deliberately: importing from a host
 // component would break this module's import boundary.
-const structureContext = (structure, symmetry) => {
+const structureContext = (structure) => {
     if (!structure?.latticeVectors || !structure?.supercell) return null;
     const cell = {
         cell_A: structure.latticeVectors.map((vector, index) => (
@@ -88,11 +92,52 @@ const structureContext = (structure, symmetry) => {
     if (structure.elementCounts && Object.keys(structure.elementCounts).length) {
         cell.elements = structure.elementCounts;
     }
-    if (symmetry?.spaceGroup) {
-        cell.space_group = `${symmetry.spaceGroup}`
-            + `${symmetry.spaceGroupNumber ? ` (No. ${symmetry.spaceGroupNumber})` : ''}`;
-    }
     return cell;
+};
+
+// The detected-symmetry block: space group, the tolerance ladder (distortion
+// magnitude + symmetry character), and the Wyckoff orbits with per-orbit rms
+// displacement aggregated from structure.basis[].dispA — sorted largest first
+// so the sites participating most in local distortion lead, and budget
+// trimming keeps them. Works with a minimal { spaceGroup } too (Flask mode
+// sends no basis/orbits; those fields are simply absent).
+const symmetryContext = (structure, symmetry) => {
+    if (!symmetry?.spaceGroup) return null;
+    const block = {
+        space_group: `${symmetry.spaceGroup}`
+            + `${symmetry.spaceGroupNumber ? ` (No. ${symmetry.spaceGroupNumber})` : ''}`
+    };
+    if (symmetry.pointGroup) block.point_group = symmetry.pointGroup;
+    if (Number.isFinite(symmetry.nSpace)) block.n_ops = symmetry.nSpace;
+    if (Number.isFinite(symmetry.toleranceA)) block.tolerance_A = roundSig(symmetry.toleranceA, 2);
+    if (Number.isFinite(symmetry.maxResidual)) block.max_residual_A = roundSig(symmetry.maxResidual, 2);
+    if (Array.isArray(symmetry.ladder) && symmetry.ladder.length > 1) {
+        block.ladder = symmetry.ladder.map((brick) => ({
+            sg: brick.spaceGroup,
+            holds_A: [roundSig(brick.from, 2), roundSig(brick.to, 2)],
+            n_ops: brick.nSpace
+        }));
+    }
+    if (Array.isArray(symmetry.orbits) && symmetry.orbits.length) {
+        const basis = structure?.basis;
+        const sites = symmetry.orbits.map((orbit) => {
+            const site = { element: orbit.element, multiplicity: orbit.size };
+            if (orbit.wyckoff) site.wyckoff = `${orbit.size}${orbit.wyckoff}`;
+            if (orbit.site) site.site_sym = orbit.site;
+            if (Array.isArray(orbit.rep)) site.frac = orbit.rep.map((value) => roundSig(value, 3));
+            const disps = (orbit.members || [])
+                .map((index) => basis?.[index]?.dispA)
+                .filter(Number.isFinite);
+            if (disps.length) {
+                site.mean_disp_A = roundSig(disps.reduce((sum, value) => sum + value, 0) / disps.length, 2);
+                site.max_disp_A = roundSig(Math.max(...disps), 2);
+            }
+            return site;
+        }).sort((a, b) => (b.mean_disp_A ?? -1) - (a.mean_disp_A ?? -1));
+        block.sites = sites.slice(0, MAX_SITES);
+        if (sites.length > MAX_SITES) block.sites_omitted = sites.length - MAX_SITES;
+    }
+    return block;
 };
 
 const datasetContext = (plotFiles) => (
@@ -145,8 +190,12 @@ export const buildRunContext = ({
         run: runName || 'unnamed run',
         live_mode: Boolean(liveData)
     };
-    const structureInfo = structureContext(structure, symmetry);
+    const structureInfo = structureContext(structure);
     if (structureInfo) context.structure = structureInfo;
+    const symmetryInfo = symmetryContext(structure, symmetry);
+    if (symmetryInfo) context.symmetry = symmetryInfo;
+    const pairs = pairCorrelationsContext(structure, plotFiles);
+    if (pairs) context.pair_correlations = pairs;
     const datasets = datasetContext(plotFiles);
     if (datasets.length) context.datasets = datasets;
     const convergence = convergenceContext(rValueFile, HISTORY_POINTS);
@@ -154,31 +203,64 @@ export const buildRunContext = ({
     return context;
 };
 
-// Serialize with the character budget enforced: first shrink the history, then
-// truncate the dataset list (recording how many were dropped) — never silently.
+// Serialize with the character budget enforced, trimming the least essential
+// detail first and never silently: extra g(r) peaks, then middle ladder rungs,
+// then convergence-history points, then low-displacement sites, then the
+// dataset list (each truncation recorded with an *_omitted count).
 export const contextToJson = (context, budget = CONTEXT_CHAR_BUDGET) => {
     let current = context;
     let json = JSON.stringify(current, null, 1);
+    const shrink = (patch) => {
+        current = patch(current);
+        json = JSON.stringify(current, null, 1);
+    };
+
+    if (json.length > budget && current.pair_correlations?.some((pair) => pair.gr_peaks_A?.length > 1)) {
+        shrink((c) => ({
+            ...c,
+            pair_correlations: c.pair_correlations.map((pair) => (
+                pair.gr_peaks_A?.length > 1 ? { ...pair, gr_peaks_A: pair.gr_peaks_A.slice(0, 1) } : pair
+            ))
+        }));
+    }
+    if (json.length > budget && current.symmetry?.ladder?.length > 2) {
+        shrink((c) => ({
+            ...c,
+            symmetry: {
+                ...c.symmetry,
+                ladder: [c.symmetry.ladder[0], c.symmetry.ladder[c.symmetry.ladder.length - 1]],
+                ladder_rungs_omitted: c.symmetry.ladder.length - 2
+            }
+        }));
+    }
     for (const historyPoints of [24, 12]) {
         if (json.length <= budget) return json;
         if (current.convergence?.history?.length > historyPoints) {
-            current = {
-                ...current,
+            shrink((c) => ({
+                ...c,
                 convergence: {
-                    ...current.convergence,
-                    history: downsampleSeries(current.convergence.history, historyPoints)
+                    ...c.convergence,
+                    history: downsampleSeries(c.convergence.history, historyPoints)
                 }
-            };
-            json = JSON.stringify(current, null, 1);
+            }));
         }
     }
+    if (json.length > budget && current.symmetry?.sites?.length > 8) {
+        shrink((c) => ({
+            ...c,
+            symmetry: {
+                ...c.symmetry,
+                sites: c.symmetry.sites.slice(0, 8),
+                sites_omitted: (c.symmetry.sites_omitted || 0) + c.symmetry.sites.length - 8
+            }
+        }));
+    }
     if (json.length > budget && current.datasets?.length > 12) {
-        current = {
-            ...current,
-            datasets: current.datasets.slice(0, 12),
-            datasets_omitted: current.datasets.length - 12
-        };
-        json = JSON.stringify(current, null, 1);
+        shrink((c) => ({
+            ...c,
+            datasets: c.datasets.slice(0, 12),
+            datasets_omitted: c.datasets.length - 12
+        }));
     }
     return json;
 };

@@ -28,6 +28,9 @@ export function describeSymmetry(structure, tol = 0.2) {
     site: o.site,
     rep: o.rep,
     wyckoff: wyckoffLetter(sg.spaceGroupNumber, sg.centering, o.size, o.site, o.rep),
+    // Indices into structure.basis, so callers can aggregate per-site data
+    // (e.g. rms displacements) over each orbit's member sites.
+    members: o.index,
   }));
   return {
     spaceGroup: sg.spaceGroup,

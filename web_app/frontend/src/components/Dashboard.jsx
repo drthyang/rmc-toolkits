@@ -4,7 +4,7 @@ import API_BASE_URL from '../api';
 import { fileSignature, isStaticMode, plotMetadataFromFile, readAndParseLocalPlotFile, WATCH_INTERVAL_MS } from '../browserData';
 import { saveSvgFiguresAsZip } from '../figureExport';
 import { WatchdogBadge } from '../llm';
-import { describeSymmetry } from '../symmetryModel';
+import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { SymTolContext } from '../symTolContext';
 import InteractivePlot from './InteractivePlot';
 import SaveMenu from './SaveMenu';
@@ -352,10 +352,16 @@ const Dashboard = ({ directory, localRun, watchFiles = false, onRunContextChange
     );
 
     // Detected space group for the AI assistant's run context, at the shared
-    // tolerance — keeps symmetryModel out of the llm module's imports.
+    // tolerance — keeps symmetryModel out of the llm module's imports. The
+    // tolerance ladder rides along so the context can express distortion
+    // magnitude (the tolerance where higher symmetry first holds).
     const sharedSymTol = useContext(SymTolContext);
     const symTol = sharedSymTol ? sharedSymTol[0] : 0.2;
-    const symmetry = useMemo(() => describeSymmetry(structure, symTol), [structure, symTol]);
+    const symmetry = useMemo(() => {
+        const detected = describeSymmetry(structure, symTol);
+        if (!detected) return null;
+        return { ...detected, toleranceA: symTol, ladder: toleranceLadder(structure, 1.0) };
+    }, [structure, symTol]);
 
     // The AI Assistant now lives on its own page. Publish the same parsed run
     // context the dashboard card used to consume so App can feed AssistantPage;
