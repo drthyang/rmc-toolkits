@@ -2,24 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
     CHAT_HISTORY_TURNS,
     buildChatMessages,
-    buildReportMessages,
-    buildSummaryMessages,
     buildWatchdogMessages,
     parseWatchdogReply
 } from '../prompts/templates';
-import { SYSTEM_PROMPT } from '../prompts/system';
 
 const context = { run: 'test-run', live_mode: false };
-
-describe('buildSummaryMessages', () => {
-    it('carries the system prompt and the context JSON', () => {
-        const messages = buildSummaryMessages(context);
-        expect(messages[0]).toEqual({ role: 'system', content: SYSTEM_PROMPT });
-        expect(messages[1].role).toBe('user');
-        expect(messages[1].content).toContain('"run": "test-run"');
-        expect(messages[1].content).toContain('```json');
-    });
-});
 
 describe('buildChatMessages', () => {
     it('injects context before the conversation and appends the question', () => {
@@ -63,13 +50,5 @@ describe('watchdog prompt round trip', () => {
         expect(parseWatchdogReply('The refinement looks fine to me.')).toBeNull();
         expect(parseWatchdogReply('')).toBeNull();
         expect(parseWatchdogReply(null)).toBeNull();
-    });
-});
-
-describe('buildReportMessages', () => {
-    it('asks for markdown narrative with the context attached', () => {
-        const messages = buildReportMessages(context);
-        expect(messages[1].content).toContain('"run": "test-run"');
-        expect(messages[1].content).toContain('Markdown');
     });
 });

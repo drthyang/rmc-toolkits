@@ -7,18 +7,6 @@ import { contextToJson } from '../context/runContext';
 
 const contextBlock = (context) => `Context for this refinement run:\n\`\`\`json\n${contextToJson(context)}\n\`\`\``;
 
-export const buildSummaryMessages = (context) => [
-    { role: 'system', content: SYSTEM_PROMPT },
-    {
-        role: 'user',
-        content: `${contextBlock(context)}\n\n`
-            + 'Assess this run in under 250 words, as four short sections: '
-            + '1) convergence verdict, 2) per-dataset fit quality from the Rwp values, '
-            + '3) anything anomalous, 4) suggested next checks. '
-            + 'If a section has no supporting data in the context, say "not available".'
-    }
-];
-
 // Keep only the newest turns so long conversations stay inside small local
 // models' context windows; the run context is re-sent every call anyway.
 export const CHAT_HISTORY_TURNS = 8;
@@ -59,15 +47,3 @@ export const parseWatchdogReply = (text) => {
     if (!match) return null;
     return { status: match[1].toLowerCase(), note: match[2].trim() || null };
 };
-
-export const buildReportMessages = (context) => [
-    { role: 'system', content: SYSTEM_PROMPT },
-    {
-        role: 'user',
-        content: `${contextBlock(context)}\n\n`
-            + 'Write an "Assessment" narrative for a Markdown report on this run: '
-            + 'convergence behavior, fit quality per dataset, and caveats. '
-            + 'Under 300 words. Plain Markdown paragraphs and lists only; no headings '
-            + 'above level 3 (###) and no preamble — start directly with the assessment.'
-    }
-];

@@ -19,7 +19,6 @@ export const useAssistant = ({
     enabled = true
 } = {}) => {
     const settings = useLlmSettings();
-    const [activeTab, setActiveTab] = useState('chat');
     const [showSettings, setShowSettings] = useState(false);
     const [connection, setConnection] = useState({ status: 'idle', models: [], error: null, hint: null });
     const autoTestedRef = useRef(null);
@@ -68,8 +67,6 @@ export const useAssistant = ({
         showSettings,
         setShowSettings,
         runTest,
-        context,
-        activeTab,
-        setActiveTab
+        context
     };
 };

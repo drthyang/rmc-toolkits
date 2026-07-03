@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAssistant } from '../useAssistant';
 import AssistantConnectionBar from './AssistantConnectionBar';
-import AssistantViews from './AssistantViews';
+import ChatView from './ChatView';
 import ConnectionSettings from './ConnectionSettings';
 import './AssistantPanel.css';
 import './AssistantPage.css';
@@ -43,9 +43,7 @@ const AssistantPage = ({ runName, plotFiles, rValueFile, structure, symmetry, li
 
                 {hasRun ? (
                     <div className="plot-card assistant-surface">
-                        <AssistantViews
-                            activeTab={assistant.activeTab}
-                            onTabChange={assistant.setActiveTab}
+                        <ChatView
                             context={assistant.context}
                             settings={assistant.settings}
                             connected={assistant.connected}
