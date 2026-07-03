@@ -21,7 +21,7 @@ const AssistantPage = ({ runName, plotFiles, rValueFile, structure, symmetry, ru
                 <header className="assistant-page-head">
                     <div className="assistant-page-title">
                         <h2>AI Assistant</h2>
-                        <span className="llm-experimental-tag">Experimental</span>
+                        <span className="llm-beta-tag">Beta</span>
                     </div>
                     <AssistantConnectionBar
                         connection={assistant.connection}

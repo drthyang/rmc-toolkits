@@ -5,6 +5,14 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Assistant "Beta" badge and a cleaner chat speaker label.
+
+- The header badge now reads **Beta** (was "Experimental") in **amber** — the complement of the
+  app's cobalt accent, and the same palette as the cloud-provider notices — so the beta reminder
+  stands out instead of blending into the blue theme.
+- Chat messages are labeled **Assistant** rather than the raw model id (which stays visible in the
+  header's model switcher), for a cleaner transcript.
+
 Run history and run-control settings in the AI Assistant's context.
 
 - **`refinement` block** from the `.rmc6f` header: moves generated/tried/accepted plus the derived

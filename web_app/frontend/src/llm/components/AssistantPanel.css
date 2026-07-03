@@ -18,14 +18,17 @@
     gap: 0.5rem;
 }
 
-.llm-experimental-tag {
+/* Amber — the complement of the app's cobalt accent — so the beta reminder
+   stands out instead of blending into the blue theme; same warning palette as
+   the cloud-provider notices. */
+.llm-beta-tag {
     font-size: 0.66rem;
     font-weight: 650;
     text-transform: uppercase;
     letter-spacing: 0.07em;
-    color: var(--accent);
-    background: var(--accent-soft);
-    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+    color: #b45309;
+    background: color-mix(in srgb, #b45309 12%, transparent);
+    border: 1px solid color-mix(in srgb, #b45309 32%, transparent);
     border-radius: 999px;
     padding: 0.12rem 0.5rem;
 }

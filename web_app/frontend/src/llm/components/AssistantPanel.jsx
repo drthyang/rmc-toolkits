@@ -16,7 +16,7 @@ const AssistantPanel = (props) => {
             <div className="plot-card-header">
                 <div className="llm-assistant-heading">
                     <h3>AI Assistant</h3>
-                    <span className="llm-experimental-tag">Experimental</span>
+                    <span className="llm-beta-tag">Beta</span>
                 </div>
                 <div className="plot-card-header-actions">
                     <button
