@@ -14,13 +14,14 @@ const RunSummaryView = ({ context, settings, connected }) => {
         baseUrl: settings.baseUrl,
         model: settings.model,
         temperature: settings.temperature,
+        apiKey: settings.apiKey,
         messages: buildSummaryMessages(context)
     });
 
     return (
         <div className="llm-view">
             <div className="llm-view-actions">
-                <button type="button" onClick={handleAssess} disabled={!connected || streaming}>
+                <button type="button" className="llm-primary" onClick={handleAssess} disabled={!connected || streaming}>
                     {streaming ? 'Assessing…' : 'Assess this run'}
                 </button>
                 {streaming && (

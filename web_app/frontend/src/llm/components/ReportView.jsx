@@ -14,6 +14,7 @@ const ReportView = ({ context, settings, connected }) => {
         baseUrl: settings.baseUrl,
         model: settings.model,
         temperature: settings.temperature,
+        apiKey: settings.apiKey,
         messages: buildReportMessages(context)
     });
 
@@ -28,7 +29,7 @@ const ReportView = ({ context, settings, connected }) => {
     return (
         <div className="llm-view">
             <div className="llm-view-actions">
-                <button type="button" onClick={handleGenerate} disabled={!connected || streaming}>
+                <button type="button" className="llm-primary" onClick={handleGenerate} disabled={!connected || streaming}>
                     {streaming ? 'Writing assessment…' : narrative ? 'Regenerate AI assessment' : 'Generate AI assessment'}
                 </button>
                 {streaming && (

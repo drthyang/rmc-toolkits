@@ -9,6 +9,9 @@ const STORAGE_KEY = 'rmc-llm-settings-v1';
 export const DEFAULT_SETTINGS = {
     baseUrl: 'http://localhost:11434/v1',
     model: '',
+    // Sent as a Bearer token to cloud providers (OpenAI, Gemini, …). Empty for
+    // local servers, which need no key. Persisted in this browser only.
+    apiKey: '',
     temperature: 0.2,
     watchdogEnabled: false,
     watchdogIntervalMin: 5

@@ -41,7 +41,7 @@ export const useWatchdog = ({ rValueFile, settings }) => {
 
     useEffect(() => () => abortRef.current?.abort(), []);
 
-    const { baseUrl, model, watchdogIntervalMin = 5 } = settings || {};
+    const { baseUrl, model, apiKey, watchdogIntervalMin = 5 } = settings || {};
 
     useEffect(() => {
         if (!enabled || nSteps < 2) return;
@@ -68,6 +68,7 @@ export const useWatchdog = ({ rValueFile, settings }) => {
         completeChat({
             baseUrl,
             model,
+            apiKey,
             messages: buildWatchdogMessages(stats, status, lastLlmRef.current.status),
             temperature: 0,
             signal: controller.signal
@@ -88,7 +89,7 @@ export const useWatchdog = ({ rValueFile, settings }) => {
             lastLlmRef.current = { status, stats, at: Date.now() };
             inFlightRef.current = false;
         });
-    }, [enabled, nSteps, lastValue, baseUrl, model, watchdogIntervalMin]);
+    }, [enabled, nSteps, lastValue, baseUrl, model, apiKey, watchdogIntervalMin]);
 
     if (!enabled || nSteps < 2) {
         return { status: 'off', source: 'heuristic', note: null, lastCheckedAt: null };

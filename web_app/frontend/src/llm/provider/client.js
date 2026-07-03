@@ -5,6 +5,10 @@
 
 const trimBase = (baseUrl) => (baseUrl || '').replace(/\/+$/, '');
 
+// Cloud providers (OpenAI, Gemini, …) authenticate with a Bearer token; local
+// servers need none, so the header is only added when a key is present.
+const authHeaders = (apiKey) => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
+
 // A failed fetch to localhost surfaces as a bare TypeError both when the server
 // is not running and when the browser blocked the response for CORS, so the
 // hint has to name both causes — the user cannot tell them apart from the page.
@@ -28,13 +32,15 @@ const describeHttpError = async (response) => {
 };
 
 const httpHint = (status) => {
+    if (status === 401) return 'Got 401 — the provider rejected the API key. Check that your key is correct and active.';
     if (status === 404) return 'Got 404 — check that the base URL ends in /v1 (e.g. http://localhost:11434/v1).';
-    if (status === 403) return 'Got 403 — the server rejected this origin. Check its CORS/allowed-origins setting.';
+    if (status === 403) return 'Got 403 — the server rejected this origin or key. Check its CORS/allowed-origins or key permissions.';
+    if (status === 429) return 'Got 429 — the provider is rate-limiting or your quota is exhausted.';
     return null;
 };
 
-export const listModels = async (baseUrl, { signal } = {}) => {
-    const response = await fetch(`${trimBase(baseUrl)}/models`, { signal });
+export const listModels = async (baseUrl, { signal, apiKey } = {}) => {
+    const response = await fetch(`${trimBase(baseUrl)}/models`, { signal, headers: authHeaders(apiKey) });
     if (!response.ok) {
         const error = new Error(await describeHttpError(response));
         error.status = response.status;
@@ -46,9 +52,9 @@ export const listModels = async (baseUrl, { signal } = {}) => {
 
 // Probe the server and translate failures into actionable setup hints.
 // Returns { ok, models, error, hint } and never throws.
-export const checkConnection = async (baseUrl, { signal } = {}) => {
+export const checkConnection = async (baseUrl, { signal, apiKey } = {}) => {
     try {
-        const models = await listModels(baseUrl, { signal });
+        const models = await listModels(baseUrl, { signal, apiKey });
         return { ok: true, models, error: null, hint: null };
     } catch (error) {
         if (error?.name === 'AbortError') throw error;
@@ -62,10 +68,10 @@ export const checkConnection = async (baseUrl, { signal } = {}) => {
     }
 };
 
-const postChat = async ({ baseUrl, model, messages, temperature, stream, signal }) => {
+const postChat = async ({ baseUrl, model, messages, temperature, stream, signal, apiKey }) => {
     const response = await fetch(`${trimBase(baseUrl)}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(apiKey) },
         body: JSON.stringify({ model, messages, temperature, stream }),
         signal
     });
@@ -76,8 +82,8 @@ const postChat = async ({ baseUrl, model, messages, temperature, stream, signal 
 // Stream a chat completion, yielding content deltas as they arrive. The SSE
 // body is `data: {json}` lines terminated by `data: [DONE]`; chunks can split
 // mid-line, so incomplete tail lines are buffered across reads.
-export async function* streamChat({ baseUrl, model, messages, temperature = 0.2, signal }) {
-    const response = await postChat({ baseUrl, model, messages, temperature, stream: true, signal });
+export async function* streamChat({ baseUrl, model, messages, temperature = 0.2, signal, apiKey }) {
+    const response = await postChat({ baseUrl, model, messages, temperature, stream: true, signal, apiKey });
     if (!response.body) throw new Error('The server returned no response body to stream');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -111,8 +117,8 @@ export async function* streamChat({ baseUrl, model, messages, temperature = 0.2,
 
 // Non-streaming completion, used where the whole reply is parsed at once
 // (watchdog status lines, report narrative fallback).
-export const completeChat = async ({ baseUrl, model, messages, temperature = 0, signal }) => {
-    const response = await postChat({ baseUrl, model, messages, temperature, stream: false, signal });
+export const completeChat = async ({ baseUrl, model, messages, temperature = 0, signal, apiKey }) => {
+    const response = await postChat({ baseUrl, model, messages, temperature, stream: false, signal, apiKey });
     const payload = await response.json();
     const content = payload.choices?.[0]?.message?.content;
     if (typeof content !== 'string') throw new Error('The model returned no message content');

@@ -14,14 +14,14 @@ export const useStreamedReply = () => {
     const stop = useCallback(() => abortRef.current?.abort(), []);
 
     // Returns the full reply text, or null when the request failed.
-    const start = useCallback(async ({ baseUrl, model, messages, temperature }) => {
+    const start = useCallback(async ({ baseUrl, model, messages, temperature, apiKey }) => {
         abortRef.current?.abort();
         const controller = new AbortController();
         abortRef.current = controller;
         setReply({ text: '', streaming: true, error: null });
         let text = '';
         try {
-            for await (const delta of streamChat({ baseUrl, model, messages, temperature, signal: controller.signal })) {
+            for await (const delta of streamChat({ baseUrl, model, messages, temperature, apiKey, signal: controller.signal })) {
                 text += delta;
                 setReply({ text, streaming: true, error: null });
             }
