@@ -12,9 +12,10 @@ server. Just open the page, pick your run folder, and explore your refinement.
 2. Click **Select Folder** and choose your RMCProfile run directory.
 3. Your plots, KDE slices, and folded 3D structure render instantly — all in your browser.
 
-🔒 **Your data never leaves your device.** Run files are read and rendered entirely in your browser
-and are never uploaded to any server — a private, secure way to monitor an RMC refinement. (Your
-browser's picker may say “Upload”, but nothing is sent anywhere.)
+🔒 **Your raw run files never leave your device.** They are read and rendered entirely in your
+browser and are never uploaded to rmc-toolkits or any project server — a private, secure way to
+monitor an RMC refinement. (Your browser's picker may say “Upload”, but nothing is sent
+anywhere.)[^cloud-llm-privacy]
 
 ⚡ **Live monitoring** auto-refreshes charts as new files are written, in Chromium browsers (Chrome,
 Edge, Arc, Opera).
@@ -69,8 +70,9 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
   warned. See [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md) for setup
   (Ollama CORS + Safari note) and architecture.
 
-[^cloud-llm-privacy]: The dashboard remains local and secure. If you opt into a cloud LLM, the
-    summarized run context used for assistant responses is sent to the cloud LLM server you selected.
+[^cloud-llm-privacy]: If you opt into a cloud LLM, the compact summarized run context used for
+    assistant responses is sent directly to the cloud LLM server you selected. Raw run files are not
+    uploaded to rmc-toolkits.
 
 ## Screenshots
 
