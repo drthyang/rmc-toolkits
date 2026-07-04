@@ -59,14 +59,18 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
   atom sampling for large structures.
 - **AI Assistant (beta)** — a dedicated chat page for reasoning about the loaded run.
   Connect a **local LLM** (Ollama or LM Studio — private, the default) or a **cloud** model
-  (OpenAI, Gemini) with your own API key. Every message carries a compact run context — Rwp values,
-  ln(χ²) convergence, the detected symmetry with per-site displacements, and partial-PDF peaks vs
-  average-structure distances — so it can flag signs of local distortion and which sites take part.
+  (OpenAI, Gemini) with your own API key.[^cloud-llm-privacy] Every message carries a compact run
+  context — Rwp values, ln(χ²) convergence, the detected symmetry with per-site displacements, and
+  partial-PDF peaks vs average-structure distances — so it can flag signs of local distortion and
+  which sites take part.
   Reasoning models show their chain-of-thought in a collapsible “Thinking” panel, and a live
   convergence **watchdog** badge rides on the R-value card. Local providers keep the no-upload
   promise (the browser talks directly to `http://localhost`); cloud providers are opt-in and clearly
   warned. See [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md) for setup
   (Ollama CORS + Safari note) and architecture.
+
+[^cloud-llm-privacy]: The dashboard remains local and secure. If you opt into a cloud LLM, the
+    summarized run context used for assistant responses is sent to the cloud LLM server you selected.
 
 ## Screenshots
 
