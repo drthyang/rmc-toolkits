@@ -2,11 +2,12 @@
 
 ## Product Vision
 
-Build a **browser-first** analysis app for RMCProfile refinement workflows. Anyone can open the
-hosted dashboard, import a run directory, inspect detected outputs, compare fits, explore atomic
-structures, generate KDE slices, monitor R-values, and export publication-ready figures — with no
-install and no data ever leaving their device. An optional Flask backend adds server-side file
-browsing, structure conversion, and reference-grade computation for local or self-hosted use.
+Build a **browser-first** analysis app for RMCProfile modeling workflows: atomistic configuration
+optimization under experimental constraints. Anyone can open the hosted dashboard, import a run
+directory, inspect detected outputs, compare fits, explore atomic structures, generate KDE slices,
+monitor R-values, and export publication-ready figures — with no install and no data ever leaving
+their device. An optional Flask backend adds server-side file browsing, structure conversion, and
+reference-grade computation for local or self-hosted use.
 
 The next frontier is lowering the technical barrier to *running* RMCProfile itself: guided run setup
 with validation and ready-to-use input files, so researchers spend less time hand-editing command
@@ -105,7 +106,7 @@ Goal: make the tool safe and pleasant for broader use. **Status: planned (partia
 
 Goal: **minimize the technical barrier to running RMCProfile.** Today the app visualizes finished
 outputs; the next step is form-driven run setup, so going from measured/reduced data to a configured
-refinement does not require hand-editing input files or the command line. **Status: next major
+RMC modeling run does not require hand-editing input files or the command line. **Status: next major
 focus.**
 
 ### Guided RMCProfile run setup
@@ -120,7 +121,7 @@ focus.**
 
 ### Deferred preprocessing
 
-STOG is a preprocessing/reduction tool, not a refinement or fit. Keep STOG-specific scaling and
+STOG is a preprocessing/reduction tool, not a modeling or fit engine. Keep STOG-specific scaling and
 Fourier-transform workflows out of the current app surface until there is a dedicated preprocessing
 module with a clear user path.
 

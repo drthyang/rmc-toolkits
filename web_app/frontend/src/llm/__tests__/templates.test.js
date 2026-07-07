@@ -47,7 +47,7 @@ describe('watchdog prompt round trip', () => {
     });
 
     it('returns null on replies that ignore the format', () => {
-        expect(parseWatchdogReply('The refinement looks fine to me.')).toBeNull();
+        expect(parseWatchdogReply('The modeling run looks fine to me.')).toBeNull();
         expect(parseWatchdogReply('')).toBeNull();
         expect(parseWatchdogReply(null)).toBeNull();
     });

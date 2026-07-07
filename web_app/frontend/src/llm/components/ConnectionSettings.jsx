@@ -172,7 +172,7 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                         checked={settings.watchdogEnabled}
                         onChange={(event) => onSave({ watchdogEnabled: event.target.checked })}
                     />
-                    <span>Flag stalled or diverging refinements on the dashboard.</span>
+                    <span>Flag stalled or diverging modeling runs on the dashboard.</span>
                 </label>
                 <div className="llm-watch-row">
                     <span className="llm-field-hint">Re-check with the model every</span>

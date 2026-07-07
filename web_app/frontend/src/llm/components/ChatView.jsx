@@ -35,7 +35,7 @@ const MARKDOWN_COMPONENTS = {
 const SUGGESTIONS = [
     'Is there any sign of local distortion?',
     'Which atomic sites are most displaced?',
-    'Is the refinement converged?'
+    'Has the modeling run converged?'
 ];
 
 const ArrowUpIcon = () => (

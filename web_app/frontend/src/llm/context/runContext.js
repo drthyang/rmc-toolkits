@@ -143,7 +143,7 @@ const symmetryContext = (structure, symmetry) => {
 // Run-history counters from the .rmc6f header. The derived numbers are the
 // useful ones: acceptance ratio, and accepted moves per atom — the standard
 // gauge of whether the configuration has been sampled long enough.
-const refinementContext = (structure) => {
+const configurationOptimizationContext = (structure) => {
     const moves = structure?.moves;
     if (!moves) return null;
     const block = {};
@@ -262,8 +262,8 @@ export const buildRunContext = ({
     };
     const structureInfo = structureContext(structure);
     if (structureInfo) context.structure = structureInfo;
-    const refinement = refinementContext(structure);
-    if (refinement) context.refinement = refinement;
+    const optimization = configurationOptimizationContext(structure);
+    if (optimization) context.configuration_optimization = optimization;
     const settingsInfo = runSettingsContext(runSettings);
     if (settingsInfo) context.run_settings = settingsInfo;
     const symmetryInfo = symmetryContext(structure, symmetry);

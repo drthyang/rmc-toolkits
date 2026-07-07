@@ -129,11 +129,11 @@ describe('buildRunContext', () => {
     });
 
     it('derives sampling stats from the rmc6f move counters', () => {
-        const refinement = buildRunContext(fixtureProps()).refinement;
-        expect(refinement.moves_accepted).toBe(586675);
-        expect(refinement.acceptance_ratio).toBe(0.22);            // 586675 / 2685185
-        expect(refinement.accepted_moves_per_atom).toBe(47.7);     // 586675 / 12288
-        expect(refinement.accumulated_time_h).toBe(6930);          // 24958824 s
+        const optimization = buildRunContext(fixtureProps()).configuration_optimization;
+        expect(optimization.moves_accepted).toBe(586675);
+        expect(optimization.acceptance_ratio).toBe(0.22);            // 586675 / 2685185
+        expect(optimization.accepted_moves_per_atom).toBe(47.7);     // 586675 / 12288
+        expect(optimization.accumulated_time_h).toBe(6930);          // 24958824 s
     });
 
     it('labels run-settings distances per element pair', () => {
@@ -149,12 +149,12 @@ describe('buildRunContext', () => {
         ]);
     });
 
-    it('omits refinement and run_settings when their inputs are missing', () => {
+    it('omits configuration_optimization and run_settings when their inputs are missing', () => {
         const props = fixtureProps();
         delete props.structure.moves;
         props.runSettings = null;
         const context = buildRunContext(props);
-        expect(context.refinement).toBeUndefined();
+        expect(context.configuration_optimization).toBeUndefined();
         expect(context.run_settings).toBeUndefined();
     });
 
