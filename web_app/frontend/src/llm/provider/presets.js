@@ -34,6 +34,18 @@ export const PROVIDER_PRESETS = [
         cloud: true,
         keyUrl: 'https://aistudio.google.com/apikey',
         corsHint: 'Needs a Google AI Studio (Gemini) API key. Your run data is sent to Google — it does not stay on your device.'
+    },
+    {
+        // Anthropic's OpenAI-compatible endpoint speaks the same /chat/completions
+        // dialect, so it slots in as a preset. Its browser-CORS + version headers
+        // are added in the client (see anthropicHeaders); models are Claude IDs
+        // like claude-opus-4-8 / claude-sonnet-5 / claude-haiku-4-5.
+        id: 'anthropic',
+        label: 'Anthropic',
+        baseUrl: 'https://api.anthropic.com/v1',
+        cloud: true,
+        keyUrl: 'https://console.anthropic.com/settings/keys',
+        corsHint: 'Needs an Anthropic (Claude) API key. Your run data is sent to Anthropic — it does not stay on your device.'
     }
 ];
 
