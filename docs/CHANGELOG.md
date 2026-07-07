@@ -159,17 +159,17 @@ Figure export, axis labels, and browser-first positioning.
 First public, releasable version: the reusable Python package, Flask API, interactive dashboard,
 server-side + browser (WebGPU/CPU) KDE, and Three.js structure viewer with a draggable slice band.
 
-EXAFS and large-structure display (added late in the v0.1.0 cycle):
+RMCProfile EXAFS dataset output parsing and large-structure display (added late in the v0.1.0 cycle):
 
-- Added EXAFS plot-kind detection for `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv` in both
-  the Python package and browser static mode.
+- Added plot-kind detection for RMCProfile EXAFS dataset output files (`*-EXAFS-*_Q_OUTPUT.csv` and
+  `*-EXAFS-*_R_OUTPUT.csv`) in both the Python package and browser static mode.
 - Added `read_exafs_csv`, which handles Q-output files with a descriptive title row before the column
   header and R-output files with real/imaginary/modulus transform columns.
-- Added backend and frontend chart labels for EXAFS:
+- Added backend and frontend chart labels for these dataset outputs:
   - Q-space: `k (Å^{-1})` vs `χ(k) k²`.
   - R-space: `r (Å)` vs `FT[χ(k) k²]`.
-- Added EXAFS file badges/order in the dashboard and tests for parser, plot metadata, file listing,
-  and `/api/plot/data`.
+- Added dashboard file badges/order and tests for parser, plot metadata, file listing, and
+  `/api/plot/data`.
 - Raised the structure endpoint and Structure page point limits to 1,000,000 and raised the Slab In
   Cell canvas draw cap to match, so moderate structures such as `data/RMC/snao.rmc6f` render all
   returned atoms instead of every other point.
