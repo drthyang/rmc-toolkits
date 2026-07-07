@@ -91,6 +91,25 @@ describe('streamChat', () => {
         const [url, options] = fetchMock.mock.calls[0];
         expect(url).toBe('http://x/v1/chat/completions');
         expect(JSON.parse(options.body)).toEqual({ model: 'llama3.2', messages, temperature: 0.7, stream: true });
+        // Non-Anthropic hosts must not receive the Anthropic-only headers.
+        expect(options.headers['anthropic-version']).toBeUndefined();
+        expect(options.headers['anthropic-dangerous-direct-browser-access']).toBeUndefined();
+    });
+
+    it('adds Anthropic browser-access and version headers for api.anthropic.com', async () => {
+        const fetchMock = vi.fn(async () => streamResponse(['data: [DONE]\n']));
+        vi.stubGlobal('fetch', fetchMock);
+        await collect(streamChat({
+            baseUrl: 'https://api.anthropic.com/v1',
+            model: 'claude-opus-4-8',
+            messages: [{ role: 'user', content: 'hi' }],
+            apiKey: 'sk-ant-test'
+        }));
+        const [url, options] = fetchMock.mock.calls[0];
+        expect(url).toBe('https://api.anthropic.com/v1/chat/completions');
+        expect(options.headers.Authorization).toBe('Bearer sk-ant-test');
+        expect(options.headers['anthropic-version']).toBe('2023-06-01');
+        expect(options.headers['anthropic-dangerous-direct-browser-access']).toBe('true');
     });
 });
 

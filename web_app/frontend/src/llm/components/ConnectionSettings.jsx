@@ -218,9 +218,9 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                         <li>Pick the matching provider above and press <em>Test</em>.</li>
                     </ol>
                     <p>
-                        <strong>Cloud:</strong> pick OpenAI or Gemini and paste an API key — no server to run, but your
-                        run context is sent to that provider. Some providers or networks may block direct browser
-                        calls (CORS); if the test fails, run the app locally.
+                        <strong>Cloud:</strong> pick OpenAI, Gemini, or Anthropic and paste an API key — no server to
+                        run, but your run context is sent to that provider. Some providers or networks may block direct
+                        browser calls (CORS); if the test fails, run the app locally.
                     </p>
                     <p>
                         <strong>Hosted app + Ollama:</strong> Ollama must allow this page's origin

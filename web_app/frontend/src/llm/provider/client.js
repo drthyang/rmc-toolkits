@@ -9,6 +9,30 @@ const trimBase = (baseUrl) => (baseUrl || '').replace(/\/+$/, '');
 // servers need none, so the header is only added when a key is present.
 const authHeaders = (apiKey) => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
 
+// Anthropic's API blocks browser (CORS) requests unless the caller opts in with
+// `anthropic-dangerous-direct-browser-access`, and its endpoints expect an API
+// version. Its OpenAI-compatible /chat/completions still authenticates with a
+// Bearer token, so only these two extra headers are Anthropic-specific.
+const isAnthropic = (baseUrl) => {
+    try {
+        return new URL(baseUrl).hostname === 'api.anthropic.com';
+    } catch {
+        return false;
+    }
+};
+
+// Headers for one request: Bearer auth plus, for Anthropic, its browser-access
+// and version headers. Keyed off the base URL so no per-call plumbing is needed.
+const requestHeaders = (baseUrl, apiKey) => ({
+    ...authHeaders(apiKey),
+    ...(isAnthropic(baseUrl)
+        ? {
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+        }
+        : {})
+});
+
 // A failed fetch to localhost surfaces as a bare TypeError both when the server
 // is not running and when the browser blocked the response for CORS, so the
 // hint has to name both causes — the user cannot tell them apart from the page.
@@ -44,7 +68,7 @@ const httpHint = (status) => {
 };
 
 export const listModels = async (baseUrl, { signal, apiKey } = {}) => {
-    const response = await fetch(`${trimBase(baseUrl)}/models`, { signal, headers: authHeaders(apiKey) });
+    const response = await fetch(`${trimBase(baseUrl)}/models`, { signal, headers: requestHeaders(baseUrl, apiKey) });
     if (!response.ok) {
         const error = new Error(await describeHttpError(response));
         error.status = response.status;
@@ -75,7 +99,7 @@ export const checkConnection = async (baseUrl, { signal, apiKey } = {}) => {
 const postChat = async ({ baseUrl, model, messages, temperature, stream, signal, apiKey }) => {
     const response = await fetch(`${trimBase(baseUrl)}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(apiKey) },
+        headers: { 'Content-Type': 'application/json', ...requestHeaders(baseUrl, apiKey) },
         body: JSON.stringify({ model, messages, temperature, stream }),
         signal
     });
