@@ -8,10 +8,18 @@ Chronological record of notable changes, newest first. For current architecture 
 RMCProfile-first positioning.
 
 - README, QuickStart, roadmap, and agent notes now frame the current app as an RMCProfile
-  refinement-output dashboard. STOG is treated as deferred preprocessing/legacy parser support, not
-  a current refinement-analysis feature.
+  modeling-output dashboard. STOG is treated as deferred preprocessing/legacy parser support, not
+  a current RMC modeling feature.
 - The dashboard excludes STOG plot kinds from the visible plot list and assistant context while
   keeping the underlying parser support in place.
+
+RMCProfile wording cleanup.
+
+- Replaced RMCProfile "refinement" language in docs and assistant prompts with RMC modeling /
+  atomistic configuration optimization wording, to avoid implying Rietveld-style parameter
+  refinement.
+- Renamed the assistant's move-counter context from `refinement` to
+  `configuration_optimization`.
 
 Gentler AI Assistant startup.
 
@@ -30,9 +38,9 @@ Assistant "Beta" badge and a cleaner chat speaker label.
 
 Run history and run-control settings in the AI Assistant's context.
 
-- **`refinement` block** from the `.rmc6f` header: moves generated/tried/accepted plus the derived
-  **acceptance ratio** and **accepted moves per atom** — the standard gauge of whether the
-  configuration has been sampled long enough — and accumulated running time.
+- **`configuration_optimization` block** from the `.rmc6f` header: moves generated/tried/accepted
+  plus the derived **acceptance ratio** and **accepted moves per atom** — the standard gauge of
+  whether the configuration has been sampled long enough — and accumulated running time.
 - **`run_settings` block** from the RMCProfile run-control file. The correct `.dat` is the one whose
   basename matches the chosen structure stem (so `chi2.dat`, `optimization.dat`, … are never picked
   up). Extracts title/material/phase/temperature, **minimum distances labeled per element pair**

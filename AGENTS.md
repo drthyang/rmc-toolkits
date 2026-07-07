@@ -7,8 +7,11 @@ key files, conventions, and current state. Full chronological history lives in
 
 ## What this project is
 
-Post-processing for **RMCProfile** refinement outputs, in three layers. STOG-related code remains as
-legacy/preprocessing support, but it should not be promoted as a current user-facing app feature.
+Post-processing for **RMCProfile** modeling outputs, in three layers. RMCProfile performs atomistic
+configuration optimization under experimental constraints; avoid calling those runs
+"refinements" (Rietveld-style parameter refinement is a different workflow). STOG-related code
+remains as legacy/preprocessing support, but it should not be promoted as a current user-facing app
+feature.
 
 1. **`rmc_toolkits/`** — pure-Python package (parsing, plots, KDE). The source of truth; new app
    code should call into this, not the legacy scripts.

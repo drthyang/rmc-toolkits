@@ -5,7 +5,7 @@ import { contextToJson } from '../context/runContext';
 // array for a chat-completions call; the run context always travels inside a
 // fenced JSON block so the model can tell data from instructions.
 
-const contextBlock = (context) => `Context for this refinement run:\n\`\`\`json\n${contextToJson(context)}\n\`\`\``;
+const contextBlock = (context) => `Context for this RMC modeling run:\n\`\`\`json\n${contextToJson(context)}\n\`\`\``;
 
 // Keep only the newest turns so long conversations stay inside small local
 // models' context windows; the run context is re-sent every call anyway.
@@ -16,7 +16,7 @@ export const buildChatMessages = (context, history, userText) => [
     { role: 'user', content: contextBlock(context) },
     {
         role: 'assistant',
-        content: 'Understood. I will answer questions about this refinement run using only the context above.'
+        content: 'Understood. I will answer questions about this RMC modeling run using only the context above.'
     },
     ...(history || []).slice(-CHAT_HISTORY_TURNS).map(({ role, content }) => ({ role, content })),
     { role: 'user', content: userText }
@@ -30,7 +30,7 @@ export const buildWatchdogMessages = (stats, heuristicStatus, prevStatus) => [
     { role: 'system', content: SYSTEM_PROMPT },
     {
         role: 'user',
-        content: 'You are watching a live refinement. Recent convergence statistics '
+        content: 'You are watching a live RMC modeling run. Recent convergence statistics '
             + `(values are ln of chi^2, lower is better): ${JSON.stringify(stats)}. `
             + `A simple slope heuristic classifies this as "${heuristicStatus}"`
             + `${prevStatus ? `; the previous assessment was "${prevStatus}"` : ''}. `

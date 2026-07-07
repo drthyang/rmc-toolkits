@@ -35,9 +35,9 @@ stays the default. Nothing is sent until the user acts. API keys are stored in
    symmetry-vs-tolerance ladder, and Wyckoff-orbit sites ranked by rms
    displacement — the local-distortion evidence), **pair correlations** (each
    partial-PDF pair's first g(r) peaks next to the average structure's
-   nearest-neighbour distance), a **refinement block** (move counters from the
-   `.rmc6f` header with acceptance ratio and accepted moves per atom — the
-   sampling-sufficiency gauge), **run settings** (the stem-matched RMCProfile
+   nearest-neighbour distance), a **configuration_optimization block** (move
+   counters from the `.rmc6f` header with acceptance ratio and accepted moves per
+   atom — the sampling-sufficiency gauge), **run settings** (the stem-matched RMCProfile
    `.dat` control file: pair-labeled minimum-distance constraints, move sizes,
    fitted datasets, flags), per-dataset Rwp values, and the ln(χ²)
    convergence history **downsampled to ≤48 points** with summary statistics

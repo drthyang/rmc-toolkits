@@ -3,7 +3,7 @@
 [![Tests](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml/badge.svg)](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A **browser-first dashboard** for inspecting **RMCProfile** refinement run folders. Open the hosted
+A **browser-first dashboard** for inspecting **RMCProfile** modeling run folders. Open the hosted
 app, select a run directory, and review plots, model information, KDE slices, symmetry, and 3D
 structure views without installing anything.
 
@@ -15,7 +15,7 @@ structure views without installing anything.
 
 🔒 **Your raw run files never leave your device.** They are read and rendered entirely in your
 browser and are never uploaded to rmc-toolkits or any project server — a private, secure way to
-monitor an RMC refinement. (Your browser's picker may say “Upload”, but nothing is sent
+monitor an RMC modeling run. (Your browser's picker may say “Upload”, but nothing is sent
 anywhere.)[^cloud-llm-privacy]
 
 ⚡ **Live monitoring** auto-refreshes charts as new files are written, in Chromium browsers (Chrome,
@@ -42,8 +42,8 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
 - **Interactive plots and export** — hover readouts, legend toggles, drag-to-zoom, per-chart PNG/SVG
   export, and a *Save all figures* `.zip`; KDE, slab, and 3D panels export PNG at native or 3×
   resolution.
-- **Live Data** — auto-refreshes charts as your refinement writes new files. The hosted app uses the
-  File System Access API in Chromium browsers; the optional Flask backend watches folders
+- **Live Data** — auto-refreshes charts as your RMC modeling run writes new files. The hosted app
+  uses the File System Access API in Chromium browsers; the optional Flask backend watches folders
   server-side.
 - **Structure workspace** — reads folded `.rmc6f` structures, summarizes the model, draws KDE density
   slices, shows a slab-in-cell projection, and renders a Three.js unit-cell view. Drag the
