@@ -147,7 +147,8 @@ def main():
         plot_data(fname_n[0], 'S(Q) (neutron)', xlabel, 'data', args, calc_rwp=True, rwp_label_prefix="S(Q) (neutron):")
 
     # BRAGG
-    fnames = glob.glob(os.path.join(input_dir, '*_bragg.csv'))
+    fnames = sorted(set(glob.glob(os.path.join(input_dir, '*_bragg.csv'))
+                        + glob.glob(os.path.join(input_dir, '*_bragg_*.csv'))))
     if fnames:
         plot_data(fnames[0], 'BRAGG', r'Q ($\mathrm{\AA^{-1}}$)', 'data', args, calc_rwp=True, rwp_label_prefix="BRAGG:")
 

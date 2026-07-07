@@ -27,6 +27,8 @@ class PlotTests(unittest.TestCase):
             "GNSe_FT_XFQ2.csv": "xpdf",
             "GNSe_FQ1.csv": "xray_sq",
             "GNSe_bragg.csv": "bragg",
+            "GNSe_bragg_1.csv": "bragg",
+            "GNSe_braggish.csv": None,
             "GNSe_PDFpartials.csv": "pdf_partials",
             "Nb-EXAFS-1_Q_OUTPUT.csv": "exafs_q",
             "Nb-EXAFS-1_R_OUTPUT.csv": "exafs_r",

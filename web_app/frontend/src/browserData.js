@@ -32,7 +32,7 @@ export const detectPlotKind = (name) => {
     }
     if (name.endsWith('_FQ1.csv')) return 'xray_sq';
     if (name.endsWith('_SQ1.csv')) return 'neutron_sq';
-    if (name.endsWith('_bragg.csv')) return 'bragg';
+    if (/_bragg(?:_.+)?\.csv$/.test(name)) return 'bragg';
     if (/-\d{2,}\.log$/.test(name)) return 'r_value';
     if (['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq'].includes(name)) return 'stog';
     return null;
@@ -55,7 +55,7 @@ const runStemFromOutputName = (name) => {
         [1, /^(.+)-EXAFS-.+_[QR]_OUTPUT\.csv$/],
         [1, /^(.+)_FT_XFQ\d+\.csv$/],
         [1, /^(.+)_[FS]Q\d+\.csv$/],
-        [1, /^(.+)_bragg\.csv$/],
+        [1, /^(.+)_bragg(?:_.+)?\.csv$/],
         [1, /^(.+)_PDF(?:partials|\d+)?\.csv$/],
         [2, /^Frac_coord_(.+)\.txt$/]
     ];
