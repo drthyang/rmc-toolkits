@@ -38,7 +38,7 @@ def detect_plot_kind(path: str | Path) -> str | None:
         return "xray_sq"
     if name.endswith("_SQ1.csv"):
         return "neutron_sq"
-    if name.endswith("_bragg.csv"):
+    if re.search(r"_bragg(?:_.+)?\.csv$", name):
         return "bragg"
     if re.search(r"-\d{2,}\.log$", name):
         return "r_value"

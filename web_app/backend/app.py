@@ -130,7 +130,7 @@ def _run_stem_from_output_name(name: str) -> tuple[int, str] | None:
         (1, r"^(.+)-EXAFS-.+_[QR]_OUTPUT\.csv$"),
         (1, r"^(.+)_FT_XFQ\d+\.csv$"),
         (1, r"^(.+)_[FS]Q\d+\.csv$"),
-        (1, r"^(.+)_bragg\.csv$"),
+        (1, r"^(.+)_bragg(?:_.+)?\.csv$"),
         (1, r"^(.+)_PDF(?:partials|\d+)?\.csv$"),
         (2, r"^Frac_coord_(.+)\.txt$"),
     )
