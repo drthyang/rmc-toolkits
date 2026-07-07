@@ -1,4 +1,4 @@
-"""Plot builders for RMCProfile and STOG outputs."""
+"""Plot builders for RMCProfile outputs and legacy STOG preprocessing files."""
 
 from __future__ import annotations
 

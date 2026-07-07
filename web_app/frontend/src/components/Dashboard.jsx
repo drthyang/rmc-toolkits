@@ -11,18 +11,13 @@ import SaveMenu from './SaveMenu';
 import ModelSummary from './ModelSummary';
 import './Dashboard.css';
 
-const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'exafs_q', 'exafs_r', 'xpdf', 'npdf', 'pdf_partials', 'stog'];
+const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'exafs_q', 'exafs_r', 'xpdf', 'npdf', 'pdf_partials'];
+const isDashboardPlotFile = (file) => file.plotKind && file.plotKind !== 'stog';
 
 const CHART_SAVE_OPTIONS = [
     { id: 'png', label: 'PNG image', hint: '.png' },
     { id: 'svg', label: 'SVG vector', hint: '.svg' },
 ];
-
-const defaultHiddenPlotPaths = (items) => new Set(
-    items
-        .filter((file) => file.plotKind === 'stog')
-        .map((file) => file.path)
-);
 
 const rValueLogParts = (name) => {
     const match = name.match(/^(.+)-(\d{2,})\.log$/);
@@ -132,14 +127,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
             signatureRef.current = fileSignature(loadedFiles);
             setFiles(loadedFiles);
             setHiddenPlotPaths((current) => {
-                if (!silent) return defaultHiddenPlotPaths(loadedFiles);
-                const next = new Set(current);
-                loadedFiles
-                    .filter((file) => file.plotKind === 'stog' && !manuallyToggledPathsRef.current.has(file.path))
-                    .forEach((file) => next.add(file.path));
-                return next;
+                if (!silent) return new Set();
+                return current;
             });
-            const plotFiles = loadedFiles.filter((file) => file.plotKind);
+            const plotFiles = loadedFiles.filter(isDashboardPlotFile);
             const metadataEntries = await Promise.all(
                 plotFiles.map(async (file) => {
                     try {
@@ -177,7 +168,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         if (localRun) {
             let cancelled = false;
             const loadedFiles = localRun.files || [];
-            const plotFiles = loadedFiles.filter((file) => file.plotKind);
+            const plotFiles = loadedFiles.filter(isDashboardPlotFile);
             const diagnostics = localRun.diagnostics;
             // Live Data sends a new localRun (same runId) when files change. Refresh the existing
             // view in place instead of tearing it down, mirroring the Flask silent poll.
@@ -188,7 +179,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
 
             if (!sameRun) {
                 setFiles(loadedFiles);
-                setHiddenPlotPaths(defaultHiddenPlotPaths(loadedFiles));
+                setHiddenPlotPaths(new Set());
                 setMetadata(Object.fromEntries(
                     plotFiles
                         .map((file) => [file.path, plotMetadataFromFile(file)])
@@ -232,19 +223,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 setFiles(nextFiles);
                 setMetadata(Object.fromEntries(
                     nextFiles
-                        .filter((file) => file.plotKind)
+                        .filter(isDashboardPlotFile)
                         .map((file) => [file.path, plotMetadataFromFile(file)])
                 ));
-                if (sameRun) {
-                    // Hide newly-appeared STOG plots by default without discarding manual toggles.
-                    setHiddenPlotPaths((current) => {
-                        const next = new Set(current);
-                        nextFiles
-                            .filter((file) => file.plotKind === 'stog' && !manuallyToggledPathsRef.current.has(file.path))
-                            .forEach((file) => next.add(file.path));
-                        return next;
-                    });
-                } else {
+                if (!sameRun) {
                     setLoading(false);
                     setLocalStatus(null);
                 }
@@ -355,7 +337,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
 
     const allPlotFiles = useMemo(() => {
         return files
-            .filter((file) => file.plotKind)
+            .filter(isDashboardPlotFile)
             .sort(comparePlotFiles);
     }, [files]);
 

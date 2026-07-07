@@ -7,7 +7,8 @@ key files, conventions, and current state. Full chronological history lives in
 
 ## What this project is
 
-Post-processing for **RMCProfile** / **STOG** outputs, in three layers:
+Post-processing for **RMCProfile** refinement outputs, in three layers. STOG-related code remains as
+legacy/preprocessing support, but it should not be promoted as a current user-facing app feature.
 
 1. **`rmc_toolkits/`** — pure-Python package (parsing, plots, KDE). The source of truth; new app
    code should call into this, not the legacy scripts.
@@ -24,7 +25,7 @@ The same React app ships in two runtime modes:
 
 ```
 rmc_toolkits/
-  parsers.py   RMC CSV/log/STOG, .rmc6f metadata + atom iteration, Frac*.txt conversion, structure loading
+  parsers.py   RMC CSV/log, legacy STOG parsing, .rmc6f metadata + atom iteration, Frac*.txt conversion, structure loading
   plots.py     plot-kind detection, matplotlib figures, Rwp/chi metrics, PNG serialization
   kde.py       unit-cell position loading + server-side gaussian_kde slice (+ contours)
 
@@ -122,8 +123,8 @@ containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
 - **Zero-atom `.rmc6f` parse** (2026-06-18): some datasets load plots but show 0 atoms / no KDE in
   static mode — the browser `.rmc6f` parser assumes one exact atom-line format. Make it tolerant to
   RMCProfile variants and validate against the declared atom count.
-- `src/RMC_3D.py` imports Mayavi and runs work at import time; `src/STOG_plot.py` has top-level
-  plotting. Refactor before reusing from the web app.
+- `src/RMC_3D.py` imports Mayavi and runs work at import time. `src/STOG_plot.py` also has
+  top-level plotting, but STOG should stay hidden until a dedicated preprocessing workflow returns.
 - The GNSe example dataset (the tests' and README's reference sample) is gitignored and not in the
   repo. Sample-backed tests skip without it, so CI exercises only logic/synthetic-fixture tests. A
   committed standard example run is still wanted so the full suite runs in CI.
@@ -132,8 +133,8 @@ containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
 
 1. Commit a small standard example run (or trimmed fixtures) so the sample-backed tests run in CI
    instead of skipping.
-2. Refactor `src/RMC_plot.py`, `src/STOG_plot.py`, `src/RMC_3D.py` into thin wrappers with no
-   import-time work.
+2. Refactor `src/RMC_plot.py` and `src/RMC_3D.py` into thin wrappers with no import-time work.
+   Defer `src/STOG_plot.py` unless preprocessing becomes a visible workflow again.
 3. Make browser `.rmc6f` parsing tolerant + diagnostic (fixes the zero-atom mobile issue).
 4. Add the z-distribution histogram and global x-z projection panels to match `src/RMC_KDE.py`.
 5. Export controls (plot PNG/SVG/CSV, KDE/3D screenshots) and `/api/project/scan` summaries.

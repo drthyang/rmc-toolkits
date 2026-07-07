@@ -110,4 +110,3 @@ Then open:
 - `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv` for RMCProfile EXAFS dataset Q-space and
   R-space outputs.
 - `*_bragg.csv` for Bragg profiles.
-- `scale_ft.gr`, `scale_ft.sq`, and `scale_ft_rmc.fq` for basic STOG outputs.

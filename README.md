@@ -3,9 +3,9 @@
 [![Tests](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml/badge.svg)](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A **browser-first dashboard** for inspecting **RMCProfile** and **STOG** refinement folders. Open the
-hosted app, select a run directory, and review plots, model information, KDE slices, symmetry, and
-3D structure views without installing anything.
+A **browser-first dashboard** for inspecting **RMCProfile** refinement run folders. Open the hosted
+app, select a run directory, and review plots, model information, KDE slices, symmetry, and 3D
+structure views without installing anything.
 
 ### ▶️ Open the app — [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
 
@@ -30,13 +30,13 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
   **optional** Flask backend adds server-side file browsing, `.rmc6f` conversion, and
   reference-grade SciPy KDE for local or self-hosted use.
 - **Python package (`rmc_toolkits/`)** — reusable parsing, plotting, `.rmc6f` conversion, folded
-  structure loading, and SciPy KDE helpers for RMCProfile/STOG outputs, including RMCProfile EXAFS
-  dataset CSVs.
+  structure loading, and SciPy KDE helpers for RMCProfile outputs, including RMCProfile EXAFS dataset
+  CSVs.
 - **Legacy scripts (`src/`)** — original standalone CLI/desktop research scripts.
 
 ## Features
 
-- **Run dashboard** — auto-detects supported RMCProfile/STOG files and renders browser-native SVG
+- **Run dashboard** — auto-detects supported RMCProfile files and renders browser-native SVG
   charts for PDFs/G(r), S(Q), Bragg profiles, R-value logs, partials, and RMCProfile EXAFS dataset
   Q/R CSVs.
 - **Interactive plots and export** — hover readouts, legend toggles, drag-to-zoom, per-chart PNG/SVG
@@ -188,7 +188,7 @@ payload = kde_slice(
 png_bytes = plot_to_png(make_plot("data/GNSe_FQ1.csv"))
 ```
 
-Lower-level parser helpers are also exported: `read_rmc_csv`, `read_exafs_csv`, `read_chi`, `read_stog`,
+Lower-level parser helpers are also exported: `read_rmc_csv`, `read_exafs_csv`, `read_chi`,
 `read_atom_indices`, `read_cell_vectors`, `iter_rmc6f_atoms`, `frac_lines_from_rmc6f`, `rwp`.
 
 ## Backend API
@@ -216,7 +216,6 @@ paths are rejected unless inside the configured root or a folder selected via th
   `*-EXAFS-*_R_OUTPUT.csv` (`r` vs Fourier-transform components)
 - Bragg profiles: `*_bragg.csv`
 - R-value logs: `*.log`
-- Basic STOG outputs: `scale_ft.gr`, `scale_ft.sq`, `scale_ft_rmc.fq`
 - Structure files: `*.rmc6f`, `Frac*.txt`
 
 Most RMCProfile CSV parsers expect first-row labels followed by numeric rows. RMCProfile EXAFS
@@ -232,8 +231,7 @@ python src/RMC_KDE.py [--el Mn]
 python src/RMC_3D.py            # needs mayavi
 ```
 
-`RMC_KDE.py` and `RMC_3D.py` expect `Frac*.txt` plus `.rmc6f` in the working directory;
-`STOG_plot.py` expects `stog_input.dat` and STOG output files.
+`RMC_KDE.py` and `RMC_3D.py` expect `Frac*.txt` plus `.rmc6f` in the working directory.
 
 ## Tests
 
@@ -247,7 +245,7 @@ cd web_app/frontend && npm test
 
 ## Status
 
-The reusable Python package, hosted dashboard, optional Flask API, RMCProfile/STOG plot handling,
+The reusable Python package, hosted dashboard, optional Flask API, RMCProfile plot handling,
 server-side/browser KDE paths, symmetry panel, AI assistant, and Three.js viewer are in place.
 Current priorities: richer run summaries, export/report workflows, and refactoring the legacy
 scripts into thin wrappers around `rmc_toolkits`. See [docs/ROADMAP.md](docs/ROADMAP.md) for the
