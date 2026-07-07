@@ -1,6 +1,7 @@
 import React, { useContext, useMemo, useState } from 'react';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { SymTolContext } from '../symTolContext';
+import InfoBadge from './InfoBadge';
 import './ModelSummary.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -116,7 +117,23 @@ const ModelSummary = ({ structure }) => {
 
             {symmetry && (
                 <section className="model-summary model-symmetry" aria-label="Detected space group">
-                    <h2 className="model-summary-title">Detected SG</h2>
+                    <h2 className="model-summary-title">
+                        Detected SG
+                        <InfoBadge label="How space-group detection works">
+                            <p>
+                                The average (reference) site positions from the <code>.rmc6f</code> model
+                                are tested for the symmetry operations {'{R | t}'} that map them onto
+                                themselves within a position tolerance (Å). The matching operations are
+                                classified into a centering and point group, giving the Hermann–Mauguin
+                                symbol and number.
+                            </p>
+                            <p>
+                                It runs entirely in your browser — no fitting or external service.
+                                Loosening the tolerance admits more operations, so higher symmetry
+                                appears; the ladder shows which space group holds over each tolerance range.
+                            </p>
+                        </InfoBadge>
+                    </h2>
                     <dl className="model-stats">
                         <div className="model-stat">
                             <dt>Space group</dt>

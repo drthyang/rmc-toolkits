@@ -1,0 +1,74 @@
+/* Small inline "?" help badge with a hover/focus popover. Theme-aware via the
+   shared CSS variables; the popover stays within its positioned wrapper. */
+.info-badge {
+    position: relative;
+    display: inline-flex;
+    vertical-align: middle;
+}
+
+.info-badge-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--panel-bg);
+    color: var(--muted);
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.info-badge-trigger:hover,
+.info-badge-trigger:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+    outline: none;
+}
+
+.info-badge-popover {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    z-index: 20;
+    width: max-content;
+    max-width: 20rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-raised);
+    box-shadow: var(--shadow-md, 0 6px 20px rgba(0, 0, 0, 0.18));
+    color: var(--text);
+    font-size: 0.76rem;
+    font-weight: 400;
+    line-height: 1.45;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-2px);
+    transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+
+.info-badge-popover--start { left: 0; }
+.info-badge-popover--end { right: 0; }
+
+.info-badge:hover .info-badge-popover,
+.info-badge:focus-within .info-badge-popover {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.info-badge-popover p {
+    margin: 0;
+}
+
+.info-badge-popover p + p {
+    margin-top: 0.45rem;
+}
