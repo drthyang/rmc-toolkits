@@ -5,6 +5,14 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+RMCProfile-first positioning.
+
+- README, QuickStart, roadmap, and agent notes now frame the current app as an RMCProfile
+  refinement-output dashboard. STOG is treated as deferred preprocessing/legacy parser support, not
+  a current refinement-analysis feature.
+- The dashboard excludes STOG plot kinds from the visible plot list and assistant context while
+  keeping the underlying parser support in place.
+
 Gentler AI Assistant startup.
 
 - The automatic on-load connection probe no longer shows a red "Connection failed" before the user

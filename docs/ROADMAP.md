@@ -2,15 +2,16 @@
 
 ## Product Vision
 
-Build a **browser-first** analysis app for RMCProfile and STOG workflows. Anyone can open the hosted
-dashboard, import a run directory, inspect detected outputs, compare fits, explore atomic structures,
-generate KDE slices, monitor R-values, and export publication-ready figures — with no install and no
-data ever leaving their device. An optional Flask backend adds server-side file browsing, structure
-conversion, and reference-grade computation for local or self-hosted use.
+Build a **browser-first** analysis app for RMCProfile refinement workflows. Anyone can open the
+hosted dashboard, import a run directory, inspect detected outputs, compare fits, explore atomic
+structures, generate KDE slices, monitor R-values, and export publication-ready figures — with no
+install and no data ever leaving their device. An optional Flask backend adds server-side file
+browsing, structure conversion, and reference-grade computation for local or self-hosted use.
 
-The next frontier is lowering the technical barrier to *producing* the data and *running* RMCProfile
-itself: interactive STOG data reduction and guided run setup, in the browser, so researchers spend
-less time hand-editing input files and command lines (see [Phase 7](#phase-7-interactive-stog--guided-rmcprofile-setup)).
+The next frontier is lowering the technical barrier to *running* RMCProfile itself: guided run setup
+with validation and ready-to-use input files, so researchers spend less time hand-editing command
+files and command lines. STOG-style scaling/Fourier-transform work is preprocessing, so it stays out
+of the visible app scope for now.
 
 ## Phase 1: Foundation
 
@@ -29,8 +30,7 @@ Goal: make the project reliable enough to build on. **Status: largely complete.*
 Goal: move from file-by-file plotting to project-level analysis. **Status: mostly complete.**
 
 - Project scanner that detects RMC CSV outputs; PDF, S(Q), Bragg, partials, logs, and RMCProfile
-  EXAFS dataset Q/R outputs; `.rmc6f`/`Frac*.txt` structure files; and STOG input/output files.
-  **Done.**
+  EXAFS dataset Q/R outputs; and `.rmc6f`/`Frac*.txt` structure files. **Done.**
 - Frontend workspace layout: header data-path controls, a dashboard page for run plots and model
   summary, and a KDE / 3D page for structure exploration. **Done.**
 - Optional Live Data monitoring so charts refresh when files change. **Done** — both the Flask
@@ -101,26 +101,12 @@ Goal: make the tool safe and pleasant for broader use. **Status: planned (partia
 - Add robust error messages for malformed files. *(Partial.)*
 - Add documentation with example workflows and screenshots. **Done** (README + QuickStart).
 
-## Phase 7: Interactive STOG & Guided RMCProfile Setup
+## Phase 7: Guided RMCProfile Setup
 
 Goal: **minimize the technical barrier to running RMCProfile.** Today the app visualizes finished
-outputs; the next step is to help researchers *produce* those inputs — interactive STOG data
-reduction and form-driven run setup — so going from measured data to a configured refinement does not
-require hand-editing input files or the command line. **Status: next major focus.**
-
-### Interactive STOG (S(Q) → G(r)) data reduction
-
-- Load measured/reduced total-scattering data (S(Q)/F(Q) and existing STOG outputs) directly in the
-  browser, reusing the current parser and file-detection layer.
-- Live, parameter-driven Fourier transform to G(r): adjustable Q-min/Q-max, window/Lorch function,
-  number density, and standard corrections, recomputed client-side as sliders move — following the
-  same Web Worker / WebGPU pattern already used for browser KDE.
-- Side-by-side **S(Q) ↔ G(r)** view with immediate visual feedback and quality indicators, so the
-  effect of each parameter is obvious without re-running a CLI tool.
-- Generate and export a ready-to-run `stog_input.dat` from the UI, so the same reduction is
-  reproducible outside the app and feeds straight into an RMCProfile run.
-- Promote `src/STOG_plot.py` into a reusable `rmc_toolkits` reduction/transform module that both the
-  browser path and the (optional) backend share.
+outputs; the next step is form-driven run setup, so going from measured/reduced data to a configured
+refinement does not require hand-editing input files or the command line. **Status: next major
+focus.**
 
 ### Guided RMCProfile run setup
 
@@ -132,21 +118,26 @@ require hand-editing input files or the command line. **Status: next major focus
 - Presets for common dataset combinations (neutron / x-ray total scattering, combined runs, and
   runs that include RMCProfile EXAFS datasets).
 
+### Deferred preprocessing
+
+STOG is a preprocessing/reduction tool, not a refinement or fit. Keep STOG-specific scaling and
+Fourier-transform workflows out of the current app surface until there is a dedicated preprocessing
+module with a clear user path.
+
 ### Lowering the barrier end-to-end
 
-- A guided path **raw/reduced data → STOG reduction → configured RMC run**, with plain-language
-  explanations and links back to the RMCProfile documentation.
+- A guided path **reduced data → configured RMC run**, with plain-language explanations and links
+  back to the RMCProfile documentation.
 - Stay browser-first wherever possible; offload only genuinely native steps (executing the
-  RMCProfile/STOG binaries) to the optional local backend or to a downloadable, ready-to-run input
-  bundle.
+  RMCProfile binary) to the optional local backend or to a downloadable, ready-to-run input bundle.
 
 ## Architecture Target
 
 - `rmc_toolkits/`: pure Python package for parsing, analysis, plotting, structure transforms, and
-  (planned) STOG reduction and RMC input-file generation.
+  (planned) RMC input-file generation.
 - `web_app/backend/`: API server, project scanner, optional run-setup/input generation, jobs, artifact storage.
 - `web_app/frontend/`: React app with project workspace, interactive plots, KDE, structure viewer,
-  figure export, and (planned) interactive STOG + guided run-setup pages.
+  figure export, and (planned) guided run-setup pages.
 - `.github/workflows/pages.yml`: builds the static GitHub Pages dashboard from `web_app/frontend`.
 - `data/`: small example fixtures.
 - `docs/`: development changelog, roadmap, and architecture notes (agent guide at repo-root `AGENTS.md`).
@@ -155,16 +146,12 @@ require hand-editing input files or the command line. **Status: next major focus
 
 1. Add a committed standard example run or trimmed fixtures so sample-backed tests run in CI.
 2. Refactor `src/RMC_plot.py` into a CLI wrapper around `rmc_toolkits.plots`.
-3. Refactor `src/STOG_plot.py` so all top-level plotting/reduction becomes callable functions
-   (prerequisite for interactive STOG).
-4. Refactor `src/RMC_3D.py` to avoid Mayavi import and execution at import time.
-5. Add `/api/project/scan` for directory-level summaries.
-6. Add project-level warnings for missing expected files, malformed outputs, and unsupported STOG layouts.
-7. Export controls for plots — PNG/SVG and dashboard `.zip` **Done**; KDE/3D PNG (native/3×) **Done**; raw-series CSV export remaining.
-8. Move heavier static-mode parsing/KDE work toward transferable typed arrays and profile large `.rmc6f` files.
-9. Resolve GitHub Pages/static dashboard loading on iPhone Safari by adding a unified run-source
+3. Refactor `src/RMC_3D.py` to avoid Mayavi import and execution at import time.
+4. Add `/api/project/scan` for directory-level summaries.
+5. Add project-level warnings for missing expected files and malformed outputs.
+6. Export controls for plots — PNG/SVG and dashboard `.zip` **Done**; KDE/3D PNG (native/3×) **Done**; raw-series CSV export remaining.
+7. Move heavier static-mode parsing/KDE work toward transferable typed arrays and profile large `.rmc6f` files.
+8. Resolve GitHub Pages/static dashboard loading on iPhone Safari by adding a unified run-source
    abstraction, explicit import diagnostics, and a verified mobile folder-access strategy.
-10. Add recent-project persistence for local desktop use.
-11. Extract a reusable STOG reduction/Fourier-transform routine in `rmc_toolkits` with a browser-friendly path.
-12. Prototype an interactive S(Q) → G(r) panel with live Q-range/window/density controls.
-13. Draft RMCProfile input-file templates and a form-to-input generator with pre-flight validation.
+9. Add recent-project persistence for local desktop use.
+10. Draft RMCProfile input-file templates and a form-to-input generator with pre-flight validation.
