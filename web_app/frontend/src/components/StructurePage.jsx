@@ -9,6 +9,7 @@ import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import ModelSummary from './ModelSummary';
 import SaveMenu from './SaveMenu';
+import InfoBadge from './InfoBadge';
 import './StructurePage.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -1275,7 +1276,22 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             style={{ '--panel-aspect': slicePanelGeometry.planeAspect }}
                         >
                             <h3>
-                                KDE Slice
+                                <span className="panel-title-label">
+                                    KDE Slice
+                                    <InfoBadge label="How the KDE slice works">
+                                        <p>
+                                            Atoms of the selected element are folded into one unit cell,
+                                            and a thin slab (depth ± thickness/2) about the chosen plane is
+                                            projected onto it. A 2D anisotropic Gaussian kernel density
+                                            estimate over those points gives the density map — bandwidth
+                                            scales the kernel width, so smaller values resolve finer detail.
+                                        </p>
+                                        <p>
+                                            It runs in your browser (GPU when available, CPU otherwise).
+                                            The Flask app uses SciPy KDE for reference-grade values.
+                                        </p>
+                                    </InfoBadge>
+                                </span>
                                 <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
                             </h3>
                             <canvas ref={canvasRef} className="kde-canvas" />

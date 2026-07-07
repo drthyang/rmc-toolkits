@@ -314,6 +314,28 @@
     background: var(--panel-bg);
 }
 
+/* Title text + help badge grouped on the left, so the Save menu stays right. */
+.panel-title-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+/* Let the KDE Slice help popover extend past the panel edge; the first/last
+   children carry the panel's rounded corners now that it no longer clips. */
+.kde-panel {
+    overflow: visible;
+}
+
+.kde-panel > h3 {
+    border-radius: 12px 12px 0 0;
+}
+
+.kde-panel > :last-child {
+    border-radius: 0 0 12px 12px;
+}
+
 .slab-panel-header-meta {
     display: flex;
     align-items: center;
