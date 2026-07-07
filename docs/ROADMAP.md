@@ -28,8 +28,9 @@ Goal: make the project reliable enough to build on. **Status: largely complete.*
 
 Goal: move from file-by-file plotting to project-level analysis. **Status: mostly complete.**
 
-- Project scanner that detects RMC CSV outputs; PDF, S(Q), Bragg, EXAFS Q/R, partials, and logs;
-  `.rmc6f`/`Frac*.txt` structure files; and STOG input/output files. **Done.**
+- Project scanner that detects RMC CSV outputs; PDF, S(Q), Bragg, partials, logs, and RMCProfile
+  EXAFS dataset Q/R outputs; `.rmc6f`/`Frac*.txt` structure files; and STOG input/output files.
+  **Done.**
 - Frontend workspace layout: header data-path controls, a dashboard page for run plots and model
   summary, and a KDE / 3D page for structure exploration. **Done.**
 - Optional Live Data monitoring so charts refresh when files change. **Done** — both the Flask
@@ -128,7 +129,8 @@ require hand-editing input files or the command line. **Status: next major focus
   defaults instead of hand-edited text.
 - A pre-flight check before a run: missing data files, unit/format mismatches, and density/lattice
   sanity, with plain-language diagnostics.
-- Presets for common experiment types (neutron / x-ray total scattering, combined, EXAFS-constrained).
+- Presets for common dataset combinations (neutron / x-ray total scattering, combined runs, and
+  runs that include RMCProfile EXAFS datasets).
 
 ### Lowering the barrier end-to-end
 

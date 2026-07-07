@@ -107,6 +107,7 @@ Then open:
 - `*.log` for R-value history.
 - `*_FQ1.csv` and `*_SQ1.csv` for S(Q).
 - `*_FT_XFQ1.csv` and `*PDF*.csv` for PDF/G(r).
-- `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv` for EXAFS Q-space and R-space outputs.
+- `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv` for RMCProfile EXAFS dataset Q-space and
+  R-space outputs.
 - `*_bragg.csv` for Bragg profiles.
 - `scale_ft.gr`, `scale_ft.sq`, and `scale_ft_rmc.fq` for basic STOG outputs.

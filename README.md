@@ -3,14 +3,15 @@
 [![Tests](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml/badge.svg)](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A **browser-based dashboard** for **RMCProfile** and **STOG** outputs — no install, no setup, no
-server. Just open the page, pick your run folder, and explore your refinement.
+A **browser-first dashboard** for inspecting **RMCProfile** and **STOG** refinement folders. Open the
+hosted app, select a run directory, and review plots, model information, KDE slices, symmetry, and
+3D structure views without installing anything.
 
 ### ▶️ Open the app — [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
 
 1. Visit the link above.
 2. Click **Select Folder** and choose your RMCProfile run directory.
-3. Your plots, KDE slices, and folded 3D structure render instantly — all in your browser.
+3. Your plots, KDE slices, symmetry summary, and folded 3D structure render in your browser.
 
 🔒 **Your raw run files never leave your device.** They are read and rendered entirely in your
 browser and are never uploaded to rmc-toolkits or any project server — a private, secure way to
@@ -25,50 +26,38 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
 
 ## What's Inside
 
-- **Web app (`web_app/`)** — a React/Vite single-page app that runs fully in the browser (the hosted
-  link above), so anyone can inspect a run with no setup. An **optional** Flask backend adds
-  server-side file browsing, `.rmc6f` conversion, and reference-grade SciPy KDE for local/self-hosted
-  use.
-- **Python package (`rmc_toolkits/`)** — parse RMC/STOG/EXAFS outputs, build plots, convert
-  `.rmc6f` files, load folded structures, and compute SciPy KDE slices.
+- **Web app (`web_app/`)** — a React/Vite single-page app for the hosted, no-install dashboard. An
+  **optional** Flask backend adds server-side file browsing, `.rmc6f` conversion, and
+  reference-grade SciPy KDE for local or self-hosted use.
+- **Python package (`rmc_toolkits/`)** — reusable parsing, plotting, `.rmc6f` conversion, folded
+  structure loading, and SciPy KDE helpers for RMCProfile/STOG outputs, including RMCProfile EXAFS
+  dataset CSVs.
 - **Legacy scripts (`src/`)** — original standalone CLI/desktop research scripts.
 
 ## Features
 
-- **Run dashboard** — auto-detects RMCProfile outputs in a folder and renders browser-native SVG
-  charts with hover readouts, legend toggles, and drag-to-zoom.
-- **Figure export** — every chart has a Save badge for **PNG** or true-vector **SVG**, *Save all
-  figures* bundles the dashboard into a single `.zip`, and the KDE/3D panels export PNG at native or
-  high (3×) resolution.
-- **EXAFS outputs** — recognizes `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv`, including
-  Q-space title rows and R-space real/imaginary/modulus columns, with appropriate `k` and `r` axes.
-- **Live Data** — auto-refreshes charts as your refinement writes new files. In the browser this
-  uses the File System Access API (Chromium: Chrome, Edge, Arc, Opera); the optional Flask backend
-  watches the folder server-side.
-- **Symmetry analysis (Detected SG)** — a client-side, FINDSYM-like space-group finder shown beside
-  *Model information* on both pages. From the folded `.rmc6f` structure it detects the space group
-  (Hermann–Mauguin symbol + number), point group, and operation count, with an interactive
-  **tolerance ladder** — click a rung to see how the detected symmetry changes with atomic-position
-  tolerance. No backend or spglib required.
-- **KDE / 3D page** — model summary, KDE density slices (contours and log-scale density on by
-  default), a slab-in-cell projection, and a Three.js folded unit-cell view. **Drag the highlighted
-  band in the Slab In Cell panel** to move the slice position directly.
-- **GPU-accelerated browser KDE** — the browser computes the density map in a Web Worker with a
-  WebGPU compute shader when available (automatic CPU fallback) — up to ~100× faster on the heaviest
-  grids, with output numerically identical to the server-side SciPy KDE.
-- **Structure tools** — `.rmc6f` → `Frac_coord_<stem>.txt` conversion and reference-number-preserving
-  atom sampling for large structures.
-- **AI Assistant (beta)** — a dedicated chat page for reasoning about the loaded run.
-  Connect a **local LLM** (Ollama or LM Studio — private, the default) or a **cloud** model
-  (OpenAI, Gemini) with your own API key.[^cloud-llm-privacy] Every message carries a compact run
-  context — Rwp values, ln(χ²) convergence, the detected symmetry with per-site displacements, and
-  partial-PDF peaks vs average-structure distances — so it can flag signs of local distortion and
-  which sites take part.
-  Reasoning models show their chain-of-thought in a collapsible “Thinking” panel, and a live
-  convergence **watchdog** badge rides on the R-value card. Local providers keep the no-upload
-  promise (the browser talks directly to `http://localhost`); cloud providers are opt-in and clearly
-  warned. See [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md) for setup
-  (Ollama CORS + Safari note) and architecture.
+- **Run dashboard** — auto-detects supported RMCProfile/STOG files and renders browser-native SVG
+  charts for PDFs/G(r), S(Q), Bragg profiles, R-value logs, partials, and RMCProfile EXAFS dataset
+  Q/R CSVs.
+- **Interactive plots and export** — hover readouts, legend toggles, drag-to-zoom, per-chart PNG/SVG
+  export, and a *Save all figures* `.zip`; KDE, slab, and 3D panels export PNG at native or 3×
+  resolution.
+- **Live Data** — auto-refreshes charts as your refinement writes new files. The hosted app uses the
+  File System Access API in Chromium browsers; the optional Flask backend watches folders
+  server-side.
+- **Structure workspace** — reads folded `.rmc6f` structures, summarizes the model, draws KDE density
+  slices, shows a slab-in-cell projection, and renders a Three.js unit-cell view. Drag the
+  highlighted slab band to move the slice position directly.
+- **Browser KDE with fallback** — computes density maps in a Web Worker, using WebGPU when available
+  and falling back automatically to CPU. The optional backend keeps the reference SciPy KDE path for
+  local use.
+- **Symmetry analysis** — a client-side, FINDSYM-like *Detected SG* panel reports space group, point
+  group, operation count, and tolerance-dependent changes from the folded structure.
+- **AI Assistant (beta)** — optional chat over the loaded run with a local LLM by default (Ollama or
+  LM Studio) or an opt-in cloud model (OpenAI, Gemini). It sends compact run context such as Rwp,
+  ln(χ²), symmetry, and pair-correlation cues; raw files are not uploaded to
+  rmc-toolkits.[^cloud-llm-privacy] See
+  [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md) for setup.
 
 [^cloud-llm-privacy]: If you opt into a cloud LLM, the compact summarized run context used for
     assistant responses is sent directly to the cloud LLM server you selected. Raw run files are not
@@ -223,14 +212,16 @@ paths are rejected unless inside the configured root or a folder selected via th
 
 - Real-space PDF/G(r): `*_FT_XFQ1.csv`, `*PDF*.csv`
 - Reciprocal-space S(Q): `*_FQ1.csv`, `*_SQ1.csv`
-- EXAFS: `*-EXAFS-*_Q_OUTPUT.csv` (`k` vs `χ(k) k²`) and `*-EXAFS-*_R_OUTPUT.csv` (`r` vs Fourier-transform components)
+- RMCProfile EXAFS dataset outputs: `*-EXAFS-*_Q_OUTPUT.csv` (`k` vs `χ(k) k²`) and
+  `*-EXAFS-*_R_OUTPUT.csv` (`r` vs Fourier-transform components)
 - Bragg profiles: `*_bragg.csv`
 - R-value logs: `*.log`
 - Basic STOG outputs: `scale_ft.gr`, `scale_ft.sq`, `scale_ft_rmc.fq`
 - Structure files: `*.rmc6f`, `Frac*.txt`
 
-Most RMCProfile CSV parsers expect first-row labels followed by numeric rows. EXAFS Q-output files
-may include a descriptive title row before the column header; `read_exafs_csv` handles that layout.
+Most RMCProfile CSV parsers expect first-row labels followed by numeric rows. RMCProfile EXAFS
+dataset Q-output files may include a descriptive title row before the column header;
+`read_exafs_csv` handles that layout.
 
 ## Legacy CLI Scripts
 
@@ -256,11 +247,11 @@ cd web_app/frontend && npm test
 
 ## Status
 
-The reusable Python package, Flask API, interactive dashboard, EXAFS plotting support, server-side
-KDE, and Three.js viewer are in place. Current priorities: richer run summaries, export/report
-workflows, and refactoring the legacy scripts into thin wrappers around `rmc_toolkits`. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for the full plan and [docs/CHANGELOG.md](docs/CHANGELOG.md) for
-history.
+The reusable Python package, hosted dashboard, optional Flask API, RMCProfile/STOG plot handling,
+server-side/browser KDE paths, symmetry panel, AI assistant, and Three.js viewer are in place.
+Current priorities: richer run summaries, export/report workflows, and refactoring the legacy
+scripts into thin wrappers around `rmc_toolkits`. See [docs/ROADMAP.md](docs/ROADMAP.md) for the
+full plan and [docs/CHANGELOG.md](docs/CHANGELOG.md) for history.
 
 ## License
 
