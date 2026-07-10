@@ -281,7 +281,21 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         // Static mode has no Flask backend; the dashboard is driven entirely by localRun.
         if (!isStaticMode()) {
             loadServerDashboard();
+            return undefined;
         }
+
+        // No run loaded in static mode (e.g. the demo was toggled off): clear everything.
+        currentRunIdRef.current = null;
+        signatureRef.current = '';
+        setFiles([]);
+        setMetadata({});
+        setStructure(null);
+        setStructureError(null);
+        setError(null);
+        setLoading(false);
+        setLocalStatus(null);
+        setHiddenPlotPaths(new Set());
+        return undefined;
     }, [directory, loadServerDashboard, localRun]);
 
     // Parse the run-control settings (<stem>.dat) only once the assistant is in
