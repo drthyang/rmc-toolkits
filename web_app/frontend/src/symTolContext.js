@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import { createContext } from 'react';
 
 // Shared symmetry-detection tolerance so the "Detected SG" ladder selection is

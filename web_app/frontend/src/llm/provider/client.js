@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // Minimal OpenAI-compatible chat client for local LLM servers (Ollama's /v1,
 // LM Studio, or anything speaking the same dialect). Hand-rolled on fetch — no
 // SDK, no SSE library — so the whole provider surface stays readable in one

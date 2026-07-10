@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import { useEffect, useRef, useState } from 'react';
 import { completeChat } from '../provider/client';
 import { buildWatchdogMessages, parseWatchdogReply } from '../prompts/templates';

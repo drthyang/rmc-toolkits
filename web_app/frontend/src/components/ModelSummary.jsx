@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import React, { useContext, useMemo, useState } from 'react';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { SymTolContext } from '../symTolContext';

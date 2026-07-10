@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // web_app/frontend/src/symmetry.js
 //
 // Pure, fully-offline crystal symmetry finder (a lightweight FINDSYM-like tool),

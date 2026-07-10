@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { checkConnection, completeChat, listModels, streamChat } from '../provider/client';
 

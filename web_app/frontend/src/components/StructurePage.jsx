@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import * as THREE from 'three';
@@ -1345,7 +1348,15 @@ const StructurePage = ({ directory, localRun, theme }) => {
                     target="_blank"
                     rel="noreferrer"
                 >
-                    MIT License
+                    AGPLv3
+                </a>
+                {' '}&middot;{' '}
+                <a
+                    href="https://github.com/drthyang/rmc-toolkits"
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    About & documentation
                 </a>
             </footer>
         </section>

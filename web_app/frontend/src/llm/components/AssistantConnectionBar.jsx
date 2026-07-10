@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import React from 'react';
 
 // The always-visible connection controls: a status indicator, a model switcher,

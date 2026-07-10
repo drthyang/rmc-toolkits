@@ -1,7 +1,7 @@
 # rmc-toolkits
 
 [![Tests](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml/badge.svg)](https://github.com/drthyang/rmc-toolkits/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 A **browser-first dashboard** for inspecting **RMCProfile** modeling run folders. Open the hosted
 app, select a run directory, and review plots, model information, KDE slices, symmetry, and 3D
@@ -253,4 +253,9 @@ full plan and [docs/CHANGELOG.md](docs/CHANGELOG.md) for history.
 
 ## License
 
-Released under the [MIT License](LICENSE) © 2026 Tsung-Han Yang.
+Released under the [GNU Affero General Public License v3.0](LICENSE) © 2026 Tsung-Han Yang.
+
+The AGPL is a strong copyleft license: you may use, study, modify, and redistribute this
+software, but derivative works must also be released under the AGPLv3. Notably, if you run a
+modified version as a **network service**, you must offer its complete source code to the users
+of that service (AGPL §13). If you use rmc-toolkits in published research, please cite it.
