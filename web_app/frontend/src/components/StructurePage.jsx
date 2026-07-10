@@ -1352,7 +1352,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
                 </a>
                 {' '}&middot;{' '}
                 <a
-                    href="https://github.com/drthyang/rmc-toolkits"
+                    href="https://github.com/drthyang/rmc-toolkits#readme"
                     target="_blank"
                     rel="noreferrer"
                 >
