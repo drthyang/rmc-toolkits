@@ -620,7 +620,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 </a>
                 {' '}&middot;{' '}
                 <a
-                    href="https://github.com/drthyang/rmc-toolkits"
+                    href="https://github.com/drthyang/rmc-toolkits#readme"
                     target="_blank"
                     rel="noreferrer"
                 >
