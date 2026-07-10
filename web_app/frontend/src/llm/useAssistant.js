@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildRunContext } from './context/runContext';
 import { checkConnection } from './provider/client';

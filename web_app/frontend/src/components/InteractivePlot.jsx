@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';

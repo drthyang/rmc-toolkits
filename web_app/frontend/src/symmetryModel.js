@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // web_app/frontend/src/symmetryModel.js
 //
 // Glue between the parsed RMC structure (browserData.structureFromRmc6f) and the

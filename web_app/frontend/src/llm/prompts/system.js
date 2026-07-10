@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // One shared system prompt establishes the domain so per-feature templates can
 // stay short. Kept deliberately factual and hedged: small local models follow
 // concrete numeric instructions far better than open-ended science questions.

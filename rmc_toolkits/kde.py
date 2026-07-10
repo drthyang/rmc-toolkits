@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-Han Yang
+
 """Server-side KDE slice computation for RMC structures.
 
 Ports the XY ``gaussian_kde`` slab math from ``src/RMC_KDE.py`` into a reusable

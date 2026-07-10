@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // Pair-correlation evidence for the LLM context: the nearest-neighbour distance
 // each element pair has in the AVERAGE structure (basis sites in the
 // conventional cell, over periodic images) next to the first peaks of that

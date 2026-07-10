@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // Minimal, dependency-free ZIP archive builder (store method, no compression).
 //
 // Figures are already compact (PNG is compressed; a handful of SVGs are small),
