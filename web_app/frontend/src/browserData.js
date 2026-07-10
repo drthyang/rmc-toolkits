@@ -566,6 +566,37 @@ export const buildLocalRun = async (fileList) => {
     return makeRunFromEntries(entries);
 };
 
+// A GaTa4Se8 250 K run bundled as static assets under <base>/demo/ so the header's
+// "Demo" button works in every mode (static, Flask, dev): each file is fetched and
+// wrapped as a File, then fed through the same local-run path as folder selection.
+const DEMO_FOLDER = 'Demo';
+const DEMO_FILES = [
+    'GTS_250K.rmc6f',
+    'GTS_250K.dat',
+    'GTS_250K-00.log',
+    'GTS_250K-01.log',
+    'GTS_250K-02.log',
+    'GTS_250K_FQ1.csv',
+    'GTS_250K_FQ1partials.csv',
+    'GTS_250K_FT_XFQ1.csv',
+    'GTS_250K_PDFpartials.csv',
+    'GTS_250K_XFQ1.csv'
+];
+
+export const loadDemoRun = async () => {
+    const base = import.meta.env.BASE_URL || '/';
+    const entries = await Promise.all(DEMO_FILES.map(async (name) => {
+        const response = await fetch(`${base}demo/${name}`);
+        if (!response.ok) {
+            throw new Error(`Could not load demo file ${name} (${response.status})`);
+        }
+        const blob = await response.blob();
+        // Preserve the folder prefix so the run name resolves to "Demo".
+        return { path: `${DEMO_FOLDER}/${name}`, file: new File([blob], name, { lastModified: Date.now() }) };
+    }));
+    return makeRunFromEntries(entries);
+};
+
 // Recursively walk a FileSystemDirectoryHandle into { path, file } pairs. getFile()
 // returns a fresh File each call, so re-walking the same handle reflects on-disk changes.
 export const collectHandleEntries = async (dirHandle, prefix = '') => {
