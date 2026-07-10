@@ -12,6 +12,7 @@ import {
   buildLocalRunFromHandle,
   fileSignature,
   isStaticMode,
+  loadDemoRun,
   supportsFileSystemAccess,
   WATCH_INTERVAL_MS,
 } from './browserData';
@@ -31,6 +32,8 @@ function App() {
   const [browseStatus, setBrowseStatus] = useState(null);
   const [localRun, setLocalRun] = useState(null);
   const [localLoading, setLocalLoading] = useState(false);
+  // Whether the bundled demo run is the one currently loaded (drives the header toggle).
+  const [demoActive, setDemoActive] = useState(false);
   const [watchFiles, setWatchFiles] = useState(false);
   // Shared "Detected SG" tolerance, so the ladder selection persists across pages.
   const symTolState = useState(0.2);
@@ -146,6 +149,7 @@ function App() {
       const nextRun = await buildLocalRun(selectedFiles);
       runIdRef.current += 1;
       setLocalRun({ ...nextRun, runId: runIdRef.current });
+      setDemoActive(false);
       setCurrentDirectory(nextRun.name);
       setDraftDirectory(nextRun.name);
       setBrowseStatus(null);
@@ -168,6 +172,7 @@ function App() {
       lastSignatureRef.current = fileSignature(nextRun.files);
       runIdRef.current += 1;
       setLocalRun({ ...nextRun, runId: runIdRef.current });
+      setDemoActive(false);
       setCurrentDirectory(nextRun.name);
       setDraftDirectory(nextRun.name);
       setBrowseStatus(null);
@@ -178,6 +183,36 @@ function App() {
       } else {
         setBrowseStatus({ kind: 'error', text: error.message || 'Could not read the selected folder' });
       }
+    } finally {
+      setLocalLoading(false);
+    }
+  };
+
+  const handleToggleDemo = async () => {
+    // Second click: tear the demo run back down and return to the empty state.
+    if (demoActive) {
+      dirHandleRef.current = null;
+      lastSignatureRef.current = '';
+      setLocalRun(null);
+      setDemoActive(false);
+      setCurrentDirectory('data');
+      setDraftDirectory('data');
+      setBrowseStatus(null);
+      return;
+    }
+    setLocalLoading(true);
+    setBrowseStatus({ kind: 'loading', text: 'Loading demo dataset...' });
+    try {
+      const nextRun = await loadDemoRun();
+      runIdRef.current += 1;
+      setLocalRun({ ...nextRun, runId: runIdRef.current });
+      setDemoActive(true);
+      setCurrentDirectory(nextRun.name);
+      setDraftDirectory(nextRun.name);
+      setBrowseStatus(null);
+      setActivePage('dashboard');
+    } catch (error) {
+      setBrowseStatus({ kind: 'error', text: error.message || 'Could not load the demo dataset' });
     } finally {
       setLocalLoading(false);
     }
@@ -268,6 +303,16 @@ function App() {
                 AI Assistant
               </button>
             </nav>
+            <button
+              type="button"
+              className={`demo-button${demoActive ? ' is-active' : ''}`}
+              onClick={handleToggleDemo}
+              disabled={localLoading}
+              aria-pressed={demoActive}
+              title={demoActive ? 'Clear the demo dataset' : 'Load a bundled GaTa4Se8 250 K example run'}
+            >
+              {localLoading ? 'Loading…' : 'Demo'}
+            </button>
           </div>
           {fsAccess ? (
             <div className="path-controls">
