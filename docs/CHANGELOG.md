@@ -5,6 +5,16 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Demo run and refreshed screenshots.
+
+- Added a header **Demo** toggle that loads a bundled GaTa4Se8 250 K example run (under
+  `web_app/frontend/public/demo/`) so first-time visitors see a populated dashboard; a second click
+  clears it.
+- Recaptured the Dashboard and KDE/3D screenshots against the demo run and added an AI Assistant demo
+  GIF (local LM Studio model summarizing the run as tables). Renamed the screenshots to
+  `assets/rmc-toolkits-dashboard-demo.png` / `assets/rmc-toolkits-kde-demo.png` (new paths bust the
+  stale README image cache) and removed the unused legacy screenshots from `assets/`.
+
 Relicensed to AGPLv3.
 
 - Switched the project license from MIT to the **GNU Affero General Public License v3.0** to keep
