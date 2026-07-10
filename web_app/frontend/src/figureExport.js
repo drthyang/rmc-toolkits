@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import { buildZip } from './zipArchive';
 
 // Export figures from the dashboard and KDE pages.

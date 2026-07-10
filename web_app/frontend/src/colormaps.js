@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // Minimal colormap lookup tables for rendering KDE density grids on a canvas.
 // Each map is a list of [r, g, b] anchors interpolated linearly over [0, 1].
 

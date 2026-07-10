@@ -5,6 +5,15 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Relicensed to AGPLv3.
+
+- Switched the project license from MIT to the **GNU Affero General Public License v3.0** to keep
+  the code open while requiring that modified versions — including those run as a hosted network
+  service (AGPL §13) — release their source. Updated `LICENSE`, `pyproject.toml` (license field +
+  trove classifier), the README badge/notice, and the in-app footers.
+- Added an **About & documentation** link in the Dashboard and KDE/3D footers pointing to the repo,
+  which also surfaces the source for AGPL §13 network-use compliance.
+
 RMCProfile-first positioning.
 
 - README, QuickStart, roadmap, and agent notes now frame the current app as an RMCProfile

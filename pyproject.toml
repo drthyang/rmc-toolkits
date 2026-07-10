@@ -8,13 +8,13 @@ version = "0.3.0"
 description = "A browser-based dashboard and post-processing utilities for RMCProfile and STOG outputs."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-or-later" }
 authors = [{ name = "Tsung-Han Yang" }]
 keywords = ["RMCProfile", "STOG", "PDF", "EXAFS", "crystallography", "neutron", "x-ray", "KDE"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Physics",
 ]

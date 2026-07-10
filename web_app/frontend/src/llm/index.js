@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // Public surface of the experimental LLM assistant module. The host app should
 // import only from here; everything else in src/llm/ is internal. See
 // src/llm/README.md for the architecture and the extraction recipe.

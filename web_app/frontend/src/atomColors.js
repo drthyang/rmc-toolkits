@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // Distinct, recognizable atom colors for the structure views.
 //
 // Common elements use a CPK/Jmol-style table; any element outside it is assigned

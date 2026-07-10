@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import { useSyncExternalStore } from 'react';
 
 // Assistant settings live in localStorage so they survive reloads without any

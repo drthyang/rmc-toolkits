@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-Han Yang
+
 """File parsers used by the CLI scripts and web application."""
 
 from __future__ import annotations

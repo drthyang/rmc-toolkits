@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Tsung-Han Yang
+
 """Reusable analysis helpers for RMCProfile post-processing."""
 
 __version__ = "0.3.0"

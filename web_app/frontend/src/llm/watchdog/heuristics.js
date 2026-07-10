@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 import { recentSlope, seriesStats } from '../context/runContext';
 
 // Convergence heuristics over the ln(chi^2) history. These pure functions are

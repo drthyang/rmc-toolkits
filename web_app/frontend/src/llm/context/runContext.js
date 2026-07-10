@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // The seam where dashboard state becomes LLM input. buildRunContext distills
 // the run object the dashboard already holds (parsed plot files, the combined
 // R-value history, the folded structure, the detected symmetry) into a compact

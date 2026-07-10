@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
 // OpenAI-compatible servers this module can talk to. Local servers (Ollama, LM
 // Studio) expose GET /models and POST /chat/completions under a /v1 prefix with
 // no API key, so the browser calls them directly and run data never leaves the
