@@ -67,7 +67,7 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
 
 | Run dashboard | KDE / slab / 3D |
 | --- | --- |
-| ![dashboard](assets/rmc-toolkits-dashboard.png) | ![KDE](assets/rmc-toolkits-KDE.png) |
+| ![dashboard](assets/rmc-toolkits-dashboard-demo.png) | ![KDE](assets/rmc-toolkits-kde-demo.png) |
 
 ### AI Assistant
 
