@@ -69,6 +69,15 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
 | --- | --- |
 | ![dashboard](assets/rmc-toolkits-dashboard.png) | ![KDE](assets/rmc-toolkits-KDE.png) |
 
+### AI Assistant
+
+Ask about the loaded run in plain language. The run's metrics, symmetry, and convergence history
+travel with every message, so answers quote the actual numbers — and reasoning models stream their
+chain of thought in a collapsible *Thinking* panel. Below, a local model (LM Studio) summarizes the
+bundled demo run as a set of tables.
+
+![AI Assistant summarizing a run as tables](assets/rmc-toolkits-assistant.gif)
+
 ## Repository Layout
 
 | Path | Purpose |
