@@ -2,8 +2,12 @@
 # Copyright (C) 2026 Tsung-Han Yang
 
 from pathlib import Path
-import tomllib
 import unittest
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib
 
 import rmc_toolkits
 
