@@ -73,8 +73,8 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
 
 Ask about the loaded run in plain language. The run's metrics, symmetry, and convergence history
 travel with every message, so answers quote the actual numbers — and reasoning models stream their
-chain of thought in a collapsible *Thinking* panel. Below, a local model (LM Studio) summarizes the
-bundled demo run as a set of tables.
+chain of thought in a collapsible *Thinking* panel. Below, a local model (Ollama) summarizes the
+bundled demo run as a table, with LaTeX math such as Rwp and χ² rendered inline.
 
 ![AI Assistant summarizing a run as tables](assets/rmc-toolkits-assistant.gif)
 
