@@ -5,13 +5,22 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Math rendering in AI Assistant replies.
+
+- Assistant Markdown now typesets LaTeX: integrated `remark-math` + `rehype-katex` so
+  dollar-delimited math (e.g. `$R_{wp}$`, `$\chi^2$`, `$\text{\AA}$`) in replies renders as real
+  math instead of literal text — including inline math inside GFM table cells, which is how models
+  tend to format result summaries. KaTeX runs *after* `rehype-sanitize` (raw → sanitize → katex) so
+  model HTML stays fully sanitized while KaTeX emits its own trusted markup, and KaTeX fonts are
+  bundled locally so the static GitHub Pages build needs no CDN.
+
 Demo run and refreshed screenshots.
 
 - Added a header **Demo** toggle that loads a bundled GaTa4Se8 250 K example run (under
   `web_app/frontend/public/demo/`) so first-time visitors see a populated dashboard; a second click
   clears it.
 - Recaptured the Dashboard and KDE/3D screenshots against the demo run and added an AI Assistant demo
-  GIF (local LM Studio model summarizing the run as tables). Renamed the screenshots to
+  GIF (a local Ollama model summarizing the run as a table with inline LaTeX math). Renamed the screenshots to
   `assets/rmc-toolkits-dashboard-demo.png` / `assets/rmc-toolkits-kde-demo.png` (new paths bust the
   stale README image cache) and removed the unused legacy screenshots from `assets/`.
 

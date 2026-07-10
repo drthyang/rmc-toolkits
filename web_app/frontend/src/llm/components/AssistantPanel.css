@@ -696,6 +696,19 @@
     background: color-mix(in srgb, var(--panel-raised) 45%, transparent);
 }
 
+/* KaTeX math (rendered from $...$). Inline math flows with the text; block
+   ($$...$$) math gets its own line and scrolls horizontally like tables rather
+   than overflowing the bubble. Scale slightly toward the body text size. */
+.llm-bubble.is-markdown .katex {
+    font-size: 1.05em;
+}
+
+.llm-bubble.is-markdown .katex-display {
+    margin: 0.5em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
 .llm-caret {
     display: inline-block;
     width: 0.45rem;
