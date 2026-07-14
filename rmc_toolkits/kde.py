@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from dataclasses import dataclass
-from itertools import combinations
+from itertools import combinations, product
 from pathlib import Path
 
 import numpy as np
@@ -113,6 +113,37 @@ def _contour_segments(
     return segments
 
 
+def _augment_periodic_images(
+    positions: np.ndarray,
+    margin: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Tile fractional positions into neighbor cells within ``margin`` of the cube.
+
+    Folding atoms into one unit cell drops their periodic neighbors, so a KDE
+    evaluated near a cell face misses the density that should wrap around from
+    the opposite face. Adding the images restores those contributions. Returns
+    the augmented positions plus, for every row, the index of its source atom
+    so callers can count unique atoms and normalize out the image duplicates.
+    """
+    positions = np.asarray(positions, dtype=float)
+    n = positions.shape[0]
+    source_index = np.arange(n)
+    if n == 0 or margin <= 0:
+        return positions, source_index
+
+    augmented = [positions]
+    sources = [source_index]
+    for offset in product((-1.0, 0.0, 1.0), repeat=3):
+        if offset == (0.0, 0.0, 0.0):
+            continue
+        shifted = positions + np.asarray(offset)
+        inside = np.all((shifted >= -margin) & (shifted <= 1.0 + margin), axis=1)
+        if inside.any():
+            augmented.append(shifted[inside])
+            sources.append(source_index[inside])
+    return np.concatenate(augmented), np.concatenate(sources)
+
+
 def _normalize_vector(vector: np.ndarray, name: str) -> np.ndarray:
     vector = np.asarray(vector, dtype=float)
     norm = float(np.linalg.norm(vector))
@@ -199,10 +230,21 @@ def oriented_kde_slice(
     ``center`` and ``thickness`` are fractions of the unit-cube projection range
     along ``normal``. For example, normal ``[0, 0, 1]`` matches the original
     c-axis slice semantics.
+
+    Positions are treated as periodic: images from neighbor cells within a
+    margin of the unit cube join the slab selection and the KDE fit, so the
+    density is correct at cell faces, edges, and corners instead of decaying
+    toward the boundary.
     """
     positions = np.asarray(positions, dtype=float)
     if positions.ndim != 2 or positions.shape[1] != 3:
         raise ValueError("positions must be a numeric array with shape (N, 3)")
+
+    # Margin must cover the kernel reach (sigma scales with bw times the data
+    # spread, which is O(1) in fractional units) and the slab depth, so both
+    # the in-plane density and the depth selection wrap correctly.
+    margin = min(0.5, max(0.1, 2.0 * bw, thickness))
+    positions, source_index = _augment_periodic_images(positions, margin)
 
     normal, u_axis, v_axis = _plane_basis(normal, u_axis, v_axis)
     corner_depths = _CUBE_CORNERS @ normal
@@ -230,6 +272,7 @@ def oriented_kde_slice(
         log=log,
         n_levels=n_levels,
         rng_seed=rng_seed,
+        source_index=source_index,
     )
 
     slab_start = max(depth_min, center_depth - thickness_depth / 2)
@@ -273,11 +316,17 @@ def kde_slice(
     log: bool = False,
     n_levels: int = 8,
     rng_seed: int = 0,
+    source_index: np.ndarray | None = None,
 ) -> dict:
     """Compute an XY ``gaussian_kde`` density for a z-slab of a structure.
 
     Returns a JSON-serializable dict with the density grid, plot extent,
     contour polylines, and the slab atom count.
+
+    ``source_index`` maps each position row to its source atom when the input
+    contains periodic images. The reported ``slabCount`` is then the number of
+    unique atoms in the slab, and the density is rescaled to per-atom
+    normalization (``gaussian_kde`` divides by every fit point, images included).
     """
     positions = np.asarray(positions, dtype=float)
     if positions.ndim != 2 or positions.shape[1] != 3:
@@ -297,9 +346,13 @@ def kde_slice(
         half = 0.5 * max(dz, 1e-12)
         mask = (z >= z_center - half) & (z <= z_center + half)
         slab = np.column_stack([x[mask], y[mask]])
-        slab_count = int(slab.shape[0])
+        slab_total = int(slab.shape[0])
+        if source_index is not None:
+            slab_count = int(np.unique(np.asarray(source_index)[mask]).size)
+        else:
+            slab_count = slab_total
 
-        if slab_count >= 5:
+        if slab_total >= 5:
             has_enough_unique_points = np.unique(slab, axis=0).shape[0] >= 3
             centered_slab = slab - slab.mean(axis=0)
             has_two_dimensional_spread = np.linalg.matrix_rank(centered_slab) >= 2
@@ -308,14 +361,19 @@ def kde_slice(
             has_two_dimensional_spread = False
 
         if has_enough_unique_points and has_two_dimensional_spread:
-            if slab_count > MAX_KDE_FIT_POINTS:
+            if slab_total > MAX_KDE_FIT_POINTS:
                 rng = np.random.default_rng(rng_seed)
-                choice = rng.choice(slab_count, MAX_KDE_FIT_POINTS, replace=False)
+                choice = rng.choice(slab_total, MAX_KDE_FIT_POINTS, replace=False)
                 slab = slab[choice]
             with suppress(np.linalg.LinAlgError, ValueError):
                 kde = gaussian_kde(slab.T, bw_method=bw)
                 sample = np.vstack([mesh_x.ravel(), mesh_y.ravel()])
                 density = kde(sample).reshape(mesh_x.shape)
+                if slab_total > slab_count > 0:
+                    # gaussian_kde divides by every fit point, periodic images
+                    # included; rescale to per-source-atom normalization so the
+                    # amplitude matches the cell interior.
+                    density *= slab_total / slab_count
                 fit_count = int(slab.shape[0])
 
     if log:
