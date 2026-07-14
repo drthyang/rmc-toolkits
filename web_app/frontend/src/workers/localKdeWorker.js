@@ -70,17 +70,49 @@ const planeSectionVertices = (normal, offset) => {
     });
 };
 
-const makeSlab = ({ points, normal, uVector, vVector, range, zCenter, thickness }) => {
+// Folding atoms into one unit cell drops their periodic neighbors, so a KDE
+// evaluated near a cell face misses the density that should wrap around from
+// the opposite face. Tile images from neighbor cells within `margin` of the
+// unit cube; sourceIndex maps every kept point back to its source atom so the
+// kernel can be normalized by unique atoms rather than by image duplicates.
+export const augmentPeriodicImages = (points, margin) => {
+    const augmented = [];
+    const sourceIndex = [];
+    points.forEach((point, index) => {
+        for (let ox = -1; ox <= 1; ox += 1) {
+            for (let oy = -1; oy <= 1; oy += 1) {
+                for (let oz = -1; oz <= 1; oz += 1) {
+                    const x = point.x + ox;
+                    const y = point.y + oy;
+                    const z = point.z + oz;
+                    if (
+                        x >= -margin && x <= 1 + margin
+                        && y >= -margin && y <= 1 + margin
+                        && z >= -margin && z <= 1 + margin
+                    ) {
+                        augmented.push({ x, y, z });
+                        sourceIndex.push(index);
+                    }
+                }
+            }
+        }
+    });
+    return { augmented, sourceIndex };
+};
+
+const makeSlab = ({ points, sourceIndex, normal, uVector, vVector, range, zCenter, thickness }) => {
     const depthSpan = range[1] - range[0] || 1;
     const slab = [];
-    points.forEach((point) => {
+    const sources = new Set();
+    points.forEach((point, index) => {
         const fraction = [point.x, point.y, point.z];
         const normalizedDepth = (dot(fraction, normal) - range[0]) / depthSpan;
         if (Math.abs(normalizedDepth - zCenter) <= thickness / 2) {
             slab.push([dot(fraction, uVector), dot(fraction, vVector)]);
+            sources.add(sourceIndex ? sourceIndex[index] : index);
         }
     });
-    return slab;
+    return { slab, sourceCount: sources.size };
 };
 
 const randomUnit = (seed) => {
@@ -123,7 +155,7 @@ const covariance = (samples) => {
     return { c00: c00 / denom, c01: c01 / denom, c11: c11 / denom };
 };
 
-const makeKernel = (samples, bandwidth) => {
+const makeKernel = (samples, bandwidth, imageFactor = 1) => {
     const cov = covariance(samples);
     const factor = Math.max(Number(bandwidth) || 0.03, 1e-4);
     const scaleFactor = factor * factor;
@@ -144,7 +176,9 @@ const makeKernel = (samples, bandwidth) => {
     const inv00 = k11 / det;
     const inv01 = -k01 / det;
     const inv11 = k00 / det;
-    const normalizer = 1 / (2 * Math.PI * Math.sqrt(det) * samples.length);
+    // imageFactor (slab points / unique source atoms, >= 1) rescales the sum to
+    // per-source-atom normalization when the samples include periodic images.
+    const normalizer = imageFactor / (2 * Math.PI * Math.sqrt(det) * samples.length);
     return { inv00, inv01, inv11, normalizer };
 };
 
@@ -214,7 +248,7 @@ const computeDensityCpu = ({ samples, kernel, grid, xMin, yMin, xStep, yStep }) 
     return density;
 };
 
-const computeKde = async (payload) => {
+export const computeKde = async (payload) => {
     const {
         points,
         normal,
@@ -234,7 +268,21 @@ const computeKde = async (payload) => {
     const xMax = Math.max(...xValues);
     const yMin = Math.min(...yValues);
     const yMax = Math.max(...yValues);
-    const slab = makeSlab({ points, normal, uVector, vVector, range, zCenter, thickness });
+    // Margin must cover the kernel reach (sigma scales with bandwidth times the
+    // data spread, which is O(1) in fractional units) and the slab depth, so
+    // both the in-plane density and the depth selection wrap correctly.
+    const margin = Math.min(0.5, Math.max(0.1, 2 * (Number(bandwidth) || 0.03), thickness));
+    const { augmented, sourceIndex } = augmentPeriodicImages(points, margin);
+    const { slab, sourceCount } = makeSlab({
+        points: augmented,
+        sourceIndex,
+        normal,
+        uVector,
+        vVector,
+        range,
+        zCenter,
+        thickness
+    });
     const grid = Math.max(16, Math.min(Number(gridSize) || 120, 260));
     let density = null;
     let fitCount = 0;
@@ -246,7 +294,7 @@ const computeKde = async (payload) => {
         fitCount = samples.length;
 
         if (samples.length >= 5) {
-            const kernel = makeKernel(samples, bandwidth);
+            const kernel = makeKernel(samples, bandwidth, slab.length / Math.max(sourceCount, 1));
             const xStep = (xMax - xMin) / Math.max(grid - 1, 1);
             const yStep = (yMax - yMin) / Math.max(grid - 1, 1);
             const args = { samples, kernel, grid, xMin, yMin, xStep, yStep };
@@ -294,7 +342,7 @@ const computeKde = async (payload) => {
         dz: thickness,
         bw: bandwidth,
         log: logScale,
-        slabCount: slab.length,
+        slabCount: sourceCount,
         fitCount,
         vmin: Number.isFinite(vmin) ? vmin : 0,
         vmax: Number.isFinite(vmax) ? vmax : 0,
@@ -311,11 +359,14 @@ const computeKde = async (payload) => {
     };
 };
 
-self.onmessage = async (event) => {
-    try {
-        const result = await computeKde(event.data);
-        self.postMessage({ id: event.data.id, result });
-    } catch (error) {
-        self.postMessage({ id: event.data.id, error: error.message || 'Browser KDE computation failed' });
-    }
-};
+// Guarded so the module can be imported by tests outside a worker context.
+if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
+    self.onmessage = async (event) => {
+        try {
+            const result = await computeKde(event.data);
+            self.postMessage({ id: event.data.id, result });
+        } catch (error) {
+            self.postMessage({ id: event.data.id, error: error.message || 'Browser KDE computation failed' });
+        }
+    };
+}

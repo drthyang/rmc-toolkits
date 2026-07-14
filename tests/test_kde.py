@@ -172,6 +172,80 @@ class KdeTests(unittest.TestCase):
         self.assertEqual(result["slabCount"], MAX_KDE_FIT_POINTS + 10)
         self.assertEqual(result["fitCount"], MAX_KDE_FIT_POINTS)
 
+    def test_oriented_kde_slice_wraps_density_across_the_cell_boundary(self):
+        rng = np.random.default_rng(1)
+        background = np.column_stack(
+            [rng.random(400), rng.random(400), 0.5 + 0.04 * (rng.random(400) - 0.5)]
+        )
+        # Cluster hugging the x=0 face: its periodic image must contribute the
+        # same density at the x=1 edge of the slice.
+        cluster = np.column_stack(
+            [
+                0.01 + 0.02 * rng.random(200),
+                0.5 + 0.04 * (rng.random(200) - 0.5),
+                0.5 + 0.04 * (rng.random(200) - 0.5),
+            ]
+        )
+        positions = np.vstack([background, cluster])
+
+        periodic = oriented_kde_slice(
+            positions,
+            center=0.5,
+            thickness=0.2,
+            normal=np.array([0.0, 0.0, 1.0]),
+            u_axis=np.array([1.0, 0.0, 0.0]),
+            v_axis=np.array([0.0, 1.0, 0.0]),
+            bw=0.1,
+            grid=41,
+            n_levels=0,
+        )
+        # kde_slice alone applies no periodic images: the reference for the
+        # old, boundary-truncated behavior.
+        truncated = kde_slice(
+            positions,
+            z_center=0.5,
+            dz=0.2,
+            xlim=(0.0, 1.0),
+            ylim=(0.0, 1.0),
+            bw=0.1,
+            grid=41,
+            n_levels=0,
+        )
+
+        self.assertEqual(periodic["slabCount"], 600)
+        mid = 20  # y = 0.5 row of the 41-point grid
+        left_edge = periodic["density"][mid][0]
+        right_edge = periodic["density"][mid][-1]
+        self.assertGreater(left_edge, 0.0)
+        # By periodicity the two edges see the cluster at the same distance.
+        self.assertLess(abs(right_edge - left_edge) / max(right_edge, left_edge), 0.2)
+        # The wrapped contribution is what the truncated estimate was missing.
+        self.assertGreater(right_edge, 3.0 * truncated["density"][mid][-1])
+
+    def test_oriented_kde_slice_wraps_slab_selection_in_depth(self):
+        rng = np.random.default_rng(2)
+        # All atoms sit just below z=1; a slab centered at z=0 only finds them
+        # through their periodic images at z-1.
+        positions = np.column_stack(
+            [rng.random(30), rng.random(30), 0.97 + 0.02 * rng.random(30)]
+        )
+
+        result = oriented_kde_slice(
+            positions,
+            center=0.0,
+            thickness=0.1,
+            normal=np.array([0.0, 0.0, 1.0]),
+            u_axis=np.array([1.0, 0.0, 0.0]),
+            v_axis=np.array([0.0, 1.0, 0.0]),
+            bw=0.1,
+            grid=16,
+            n_levels=0,
+        )
+
+        self.assertEqual(result["slabCount"], 30)
+        self.assertGreater(result["fitCount"], 0)
+        self.assertGreater(result["vmax"], 0.0)
+
     def test_oriented_kde_slice_supports_axis_and_custom_normals(self):
         positions = np.array(
             [
