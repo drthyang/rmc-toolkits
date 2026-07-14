@@ -69,7 +69,7 @@ const PROJECTION_META = [
     { key: 'pc23', label: 'PC2 – PC3' }
 ];
 
-export default function PcaKdePage({ directory, localRun, theme = 'light' }) {
+export default function PcaKdePage({ directory, localRun }) {
     const [rmc6fText, setRmc6fText] = useState(null);
     const [sites, setSites] = useState(null);
     const [selectedRef, setSelectedRef] = useState(null);
@@ -243,17 +243,23 @@ export default function PcaKdePage({ directory, localRun, theme = 'light' }) {
         const handleResize = () => {
             const w = mount.clientWidth || width;
             const h = mount.clientHeight || height;
+            if (w === 0 || h === 0) return;
             camera.aspect = w / h;
             camera.updateProjectionMatrix();
             renderer.setSize(w, h);
         };
         window.addEventListener('resize', handleResize);
+        // Track the mount itself so the canvas follows the panel's aspect-ratio
+        // box and the responsive column layout, not just window resizes.
+        const resizeObserver = new ResizeObserver(handleResize);
+        resizeObserver.observe(mount);
 
         sceneRef.current = { scene, camera, renderer, controls, surfaceGroup, ellipsoidGroup, axesGroup };
 
         return () => {
             cancelAnimationFrame(animationId);
             window.removeEventListener('resize', handleResize);
+            resizeObserver.disconnect();
             controls.dispose();
             renderer.dispose();
             if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
@@ -356,8 +362,9 @@ export default function PcaKdePage({ directory, localRun, theme = 'light' }) {
             axesGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: triadColors[a] })));
         }
 
-        // Frame the camera to the box on first load of a site.
-        const radius = axisLength * 2.4 || 1;
+        // Frame the camera so the axis triad (drawn out to the box half-width)
+        // roughly fills the view, keeping the ellipsoid comfortably large.
+        const radius = axisLength * 1.75 || 1;
         controls.target.set(mean[0], mean[1], mean[2]);
         const offset = new THREE.Vector3(0.8, 0.6, 1).normalize().multiplyScalar(radius);
         camera.position.copy(controls.target).add(offset);
@@ -380,17 +387,24 @@ export default function PcaKdePage({ directory, localRun, theme = 'light' }) {
     const noRun = staticMode && !structureFile;
 
     return (
-        <div className="pca-page" data-theme={theme}>
+        <div className="pca-page">
             <div className="pca-controls">
-                <div className="pca-control">
-                    <label htmlFor="pca-site">Site
-                        <InfoBadge text="Reference site (RMCProfile reference number). Its displacement cloud is analyzed by PCA." />
-                    </label>
+                <label className="control">
+                    <span className="control-name">
+                        Site
+                        <InfoBadge label="About the site picker">
+                            <p>
+                                Each reference site (an RMCProfile reference number) is one
+                                crystallographic position. Its cloud of per-atom displacements about
+                                the average structure is analysed by PCA to give the thermal ellipsoid.
+                            </p>
+                        </InfoBadge>
+                    </span>
                     <select
-                        id="pca-site"
                         value={selectedRef ?? ''}
                         onChange={(event) => setSelectedRef(Number(event.target.value))}
                         disabled={!sites}
+                        aria-label="Site"
                     >
                         {sites?.sites.map((site) => (
                             <option key={site.referenceNumber} value={site.referenceNumber}>
@@ -398,111 +412,197 @@ export default function PcaKdePage({ directory, localRun, theme = 'light' }) {
                             </option>
                         ))}
                     </select>
-                </div>
-                <div className="pca-control">
-                    <label htmlFor="pca-grid">Grid</label>
-                    <select id="pca-grid" value={grid} onChange={(event) => setGrid(Number(event.target.value))}>
+                </label>
+                <label className="control">
+                    <span className="control-name">Grid</span>
+                    <select value={grid} onChange={(event) => setGrid(Number(event.target.value))} aria-label="Grid size">
                         {GRID_OPTIONS.map((value) => <option key={value} value={value}>{`${value}³`}</option>)}
                     </select>
-                </div>
-                <div className="pca-control">
-                    <label htmlFor="pca-bw">Bandwidth</label>
-                    <select id="pca-bw" value={bw} onChange={(event) => setBw(event.target.value)}>
+                </label>
+                <label className="control">
+                    <span className="control-name">Bandwidth</span>
+                    <select value={bw} onChange={(event) => setBw(event.target.value)} aria-label="Bandwidth rule">
                         {BW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
-                </div>
-                <div className="pca-control">
-                    <label htmlFor="pca-extent">Box (σ): {extent.toFixed(1)}</label>
+                </label>
+                <label className="control">
+                    <span className="control-name">Box</span>
                     <input
-                        id="pca-extent" type="range" min="2" max="5" step="0.5"
+                        type="range" min="2" max="5" step="0.5"
                         value={extent} onChange={(event) => setExtent(Number(event.target.value))}
+                        aria-label="Box half-width in sigma"
                     />
-                </div>
-                <div className="pca-control">
-                    <label htmlFor="pca-prob">Ellipsoid: {Math.round(probability * 100)}%
-                        <InfoBadge text="Enclosed-probability level for the thermal ellipsoid (50% is the crystallographic convention)." />
-                    </label>
+                    <span className="control-value">{extent.toFixed(1)}σ</span>
+                </label>
+                <label className="control">
+                    <span className="control-name">
+                        Ellipsoid
+                        <InfoBadge label="About the ellipsoid level">
+                            <p>
+                                The enclosed-probability level drawn as the thermal-ellipsoid
+                                wireframe. 50% is the crystallographic convention.
+                            </p>
+                        </InfoBadge>
+                    </span>
                     <input
-                        id="pca-prob" type="range" min="0.1" max="0.99" step="0.01"
+                        type="range" min="0.1" max="0.99" step="0.01"
                         value={probability} onChange={(event) => setProbability(Number(event.target.value))}
+                        aria-label="Ellipsoid probability"
                     />
-                </div>
-                <div className="pca-control">
-                    <label htmlFor="pca-iso">Isosurface mass: {isoPercent}%
-                        <InfoBadge text="The density isosurface enclosing this fraction of the cloud. Compare its shape to the harmonic ellipsoid." />
-                    </label>
+                    <span className="control-value">{Math.round(probability * 100)}%</span>
+                </label>
+                <label className="control">
+                    <span className="control-name">
+                        Isosurface
+                        <InfoBadge label="About the isosurface">
+                            <p>
+                                The KDE density isosurface enclosing this fraction of the cloud's
+                                mass. Compare its shape to the harmonic ellipsoid — where it sits
+                                inside, the motion is anharmonic (see Non-Gaussianity).
+                            </p>
+                        </InfoBadge>
+                    </span>
                     <input
-                        id="pca-iso" type="range" min="1" max="99" step="1"
+                        type="range" min="1" max="99" step="1"
                         value={isoPercent} onChange={(event) => setIsoPercent(Number(event.target.value))}
+                        aria-label="Isosurface enclosed mass"
                     />
-                </div>
-                <div className="pca-control">
-                    <label htmlFor="pca-cmap">Colormap</label>
-                    <select id="pca-cmap" value={colormap} onChange={(event) => setColormap(event.target.value)}>
+                    <span className="control-value">{isoPercent}%</span>
+                </label>
+                <label className="control">
+                    <span className="control-name">Colormap</span>
+                    <select value={colormap} onChange={(event) => setColormap(event.target.value)} aria-label="Colormap">
                         {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
                     </select>
-                </div>
-                <div className="pca-control pca-toggles">
-                    <label><input type="checkbox" checked={showSurface} onChange={(event) => setShowSurface(event.target.checked)} /> Isosurface</label>
-                    <label><input type="checkbox" checked={showEllipsoid} onChange={(event) => setShowEllipsoid(event.target.checked)} /> Ellipsoid</label>
-                </div>
+                </label>
+                <label className="control switch">
+                    <span className="control-name">Isosurface</span>
+                    <input type="checkbox" checked={showSurface} onChange={(event) => setShowSurface(event.target.checked)} />
+                    <i className="switch-track" aria-hidden="true" />
+                </label>
+                <label className="control switch">
+                    <span className="control-name">Ellipsoid</span>
+                    <input type="checkbox" checked={showEllipsoid} onChange={(event) => setShowEllipsoid(event.target.checked)} />
+                    <i className="switch-track" aria-hidden="true" />
+                </label>
             </div>
 
-            {noRun && <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to view thermal ellipsoids.</p>}
-            {sitesError && <p className="pca-error">{sitesError}</p>}
+            {noRun && (
+                <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to view thermal ellipsoids.</p>
+            )}
+            {sitesError && <p className="pca-error-banner">{sitesError}</p>}
 
-            <div className="pca-body">
-                <div className="pca-viewport">
-                    <div className="pca-canvas" ref={mountRef} />
-                    {(loadingKde || loadingSites) && <div className="pca-spinner">Computing…</div>}
-                    {kdeError && <div className="pca-error pca-overlay">{kdeError}</div>}
+            <div className="pca-layout">
+                <div className="pca-panel pca-viewport">
+                    <h3>
+                        <span className="panel-title-label">
+                            {selectedEllipsoid
+                                ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber}`
+                                : 'Thermal ellipsoid'}
+                        </span>
+                        {selectedEllipsoid && (
+                            <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
+                        )}
+                    </h3>
+                    <div className="pca-canvas" ref={mountRef}>
+                        {(loadingKde || loadingSites) && <div className="pca-badge">Computing…</div>}
+                        {kdeError && <div className="pca-badge is-error">{kdeError}</div>}
+                    </div>
                     <div className="pca-legend">
-                        <span><i style={{ background: '#d64545' }} /> PC1</span>
-                        <span><i style={{ background: '#3fa34d' }} /> PC2</span>
-                        <span><i style={{ background: '#3f7fd6' }} /> PC3</span>
-                        <span><i style={{ background: '#ff5a5a' }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
+                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
+                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
+                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#ff5a5a' }} /> {Math.round(probability * 100)}% ellipsoid</span>
                     </div>
                 </div>
 
                 <div className="pca-side">
-                    {selectedEllipsoid && (
-                        <div className="pca-stats">
-                            <h3>{selectedEllipsoid.element} site #{selectedEllipsoid.referenceNumber}
-                                <span className="pca-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
-                            </h3>
-                            <table>
-                                <tbody>
-                                    <tr><th>U<sub>iso</sub> (Å²)</th><td>{numberFormat(selectedEllipsoid.uIso)}</td></tr>
-                                    <tr><th>B<sub>iso</sub> (Å²)</th><td>{numberFormat(selectedEllipsoid.bIso, 3)}</td></tr>
-                                    <tr><th>RMS axes (Å)</th><td>{selectedEllipsoid.rms.map((value) => numberFormat(value, 3)).join(', ')}</td></tr>
-                                    <tr><th>Anisotropy</th><td>{numberFormat(selectedEllipsoid.anisotropy, 2)}{selectedEllipsoid.degenerate ? ' (degenerate)' : ''}</td></tr>
-                                    <tr>
-                                        <th>Non-Gaussianity
-                                            <InfoBadge text="Mean excess kurtosis of the displacement cloud (0 = harmonic/Gaussian). Positive means a peaked, fat-tailed distribution — the KDE isosurface sits inside the ellipsoid, signalling anharmonic motion or split sites." />
-                                        </th>
-                                        <td>{numberFormat(selectedEllipsoid.nonGaussianity ?? kde?.nonGaussianity, 2)}</td>
-                                    </tr>
-                                    <tr><th>Eigenvalues (Å²)</th><td>{selectedEllipsoid.eigenvalues.map((value) => numberFormat(value, 4)).join(', ')}</td></tr>
-                                </tbody>
-                            </table>
-                            {kde && (
-                                <p className="pca-meta">
-                                    Volume {kde.grid}³ · fit {kde.fitCount.toLocaleString()}/{kde.count.toLocaleString()} ·
-                                    captured mass {numberFormat(kde.mass * 100, 1)}%
-                                    {Number.isFinite(isoMassLevel) ? ` · iso @ ${isoPercent}% mass` : ''}
-                                    {kde.browserPcaKde ? ' · browser' : ' · server'}
-                                </p>
-                            )}
-                        </div>
-                    )}
+                    <div className="pca-panel">
+                        <h3>
+                            <span className="panel-title-label">
+                                Displacement statistics
+                                <InfoBadge label="About the displacement statistics" align="end">
+                                    <p>
+                                        Anisotropic displacement parameters from the site's cloud
+                                        covariance: U<sub>iso</sub>/B<sub>iso</sub> are the isotropic
+                                        equivalents, RMS axes are the principal amplitudes.
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                        </h3>
+                        {selectedEllipsoid ? (
+                            <>
+                                <dl className="pca-stats">
+                                    <div className="pca-stat">
+                                        <dt>U<sub>iso</sub> (Å²)</dt>
+                                        <dd>{numberFormat(selectedEllipsoid.uIso)}</dd>
+                                    </div>
+                                    <div className="pca-stat">
+                                        <dt>B<sub>iso</sub> (Å²)</dt>
+                                        <dd>{numberFormat(selectedEllipsoid.bIso, 3)}</dd>
+                                    </div>
+                                    <div className="pca-stat">
+                                        <dt>RMS axes (Å)</dt>
+                                        <dd>{selectedEllipsoid.rms.map((value) => numberFormat(value, 3)).join(', ')}</dd>
+                                    </div>
+                                    <div className="pca-stat">
+                                        <dt>Anisotropy</dt>
+                                        <dd>{numberFormat(selectedEllipsoid.anisotropy, 2)}{selectedEllipsoid.degenerate ? ' · degenerate' : ''}</dd>
+                                    </div>
+                                    <div className="pca-stat">
+                                        <dt>
+                                            Non-Gaussianity
+                                            <InfoBadge label="About non-Gaussianity" align="end">
+                                                <p>
+                                                    Mean excess kurtosis of the displacement cloud
+                                                    (0 = harmonic/Gaussian). Positive means a peaked,
+                                                    fat-tailed distribution — the KDE isosurface then
+                                                    sits inside the ellipsoid, signalling anharmonic
+                                                    motion or split sites.
+                                                </p>
+                                            </InfoBadge>
+                                        </dt>
+                                        <dd>{numberFormat(selectedEllipsoid.nonGaussianity ?? kde?.nonGaussianity, 2)}</dd>
+                                    </div>
+                                    <div className="pca-stat">
+                                        <dt>Eigenvalues (Å²)</dt>
+                                        <dd>{selectedEllipsoid.eigenvalues.map((value) => numberFormat(value, 4)).join(', ')}</dd>
+                                    </div>
+                                </dl>
+                                {kde && (
+                                    <p className="pca-meta">
+                                        Volume {kde.grid}³ · fit {kde.fitCount.toLocaleString()}/{kde.count.toLocaleString()} ·
+                                        captured mass {numberFormat(kde.mass * 100, 1)}%
+                                        {Number.isFinite(isoMassLevel) ? ` · iso @ ${isoPercent}% mass` : ''}
+                                        {kde.browserPcaKde ? ' · browser' : ' · server'}
+                                    </p>
+                                )}
+                            </>
+                        ) : (
+                            <p className="pca-meta">{loadingSites ? 'Loading sites…' : 'No site selected.'}</p>
+                        )}
+                    </div>
 
-                    <div className="pca-projections">
-                        {PROJECTION_META.map(({ key, label }) => (
-                            <figure key={key}>
-                                <canvas ref={projectionRefs[key]} className="pca-projection" />
-                                <figcaption>{label}</figcaption>
-                            </figure>
-                        ))}
+                    <div className="pca-panel">
+                        <h3>
+                            <span className="panel-title-label">
+                                Principal-plane projections
+                                <InfoBadge label="About the projections" align="end">
+                                    <p>
+                                        The displacement density projected onto each pair of principal
+                                        axes — the 2D shadows of the 3D isosurface shown at left.
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                        </h3>
+                        <div className="pca-projections">
+                            {PROJECTION_META.map(({ key, label }) => (
+                                <figure key={key}>
+                                    <canvas ref={projectionRefs[key]} className="pca-projection" />
+                                    <figcaption>{label}</figcaption>
+                                </figure>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>

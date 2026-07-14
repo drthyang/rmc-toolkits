@@ -1,208 +1,371 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
    Copyright (C) 2026 Tsung-Han Yang */
 
+/* Mirrors the KDE / 3D page's design language (see StructurePage.css): the same
+   controls bar, slim range sliders, pill toggle switches, 12px panels with
+   header bars, and uppercase control labels. */
+
 .pca-page {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    padding: 12px 4px;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background: var(--app-bg);
+    padding: 1.1rem 1.25rem 1.5rem;
 }
 
+/* ── Controls bar ─────────────────────────────────────────────────────────── */
 .pca-controls {
     display: flex;
     flex-wrap: wrap;
-    gap: 14px 20px;
-    align-items: flex-end;
-    padding: 12px 16px;
-    background: var(--panel-bg);
+    gap: 0.4rem 1.5rem;
+    align-items: center;
+    margin-bottom: 0.85rem;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    background: var(--panel-bg);
+    border-radius: 12px;
+    padding: 0.55rem 0.95rem;
     box-shadow: var(--shadow-xs);
 }
 
-.pca-control {
+.pca-controls .control {
     display: flex;
-    flex-direction: column;
-    gap: 5px;
-    font-size: 0.82rem;
-    min-width: 90px;
+    gap: 0.55rem;
+    align-items: center;
+    min-height: 2.3rem;
 }
 
-.pca-control label {
-    color: var(--muted);
-    display: flex;
+.pca-controls .control-name {
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 0.3rem;
+    color: var(--subtle);
+    font-size: 0.68rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
     white-space: nowrap;
 }
 
-.pca-control select,
-.pca-control input[type='range'] {
-    accent-color: var(--accent);
+.pca-controls .control-value {
+    min-width: 2.6rem;
+    color: var(--text-strong);
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
-.pca-control select {
-    padding: 5px 8px;
-    border: 1px solid var(--border-strong);
-    border-radius: 6px;
-    background: var(--panel-soft);
+.pca-controls select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: var(--panel-bg);
     color: var(--text);
-    font-size: 0.82rem;
-}
-
-.pca-control input[type='range'] {
-    width: 150px;
-}
-
-.pca-toggles {
-    flex-direction: row;
-    gap: 14px;
-    align-items: center;
-}
-
-.pca-toggles label {
-    flex-direction: row;
-    gap: 5px;
-    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.84rem;
+    font-weight: 550;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23667085' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    padding: 0.32rem 1.7rem 0.32rem 0.6rem;
     cursor: pointer;
 }
 
-.pca-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
-    gap: 16px;
-    align-items: stretch;
+.pca-controls select:hover {
+    border-color: var(--border-strong);
 }
 
+/* Slim custom range sliders (identical to the KDE / 3D page). */
+.pca-controls input[type='range'] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 118px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    cursor: pointer;
+}
+
+.pca-controls input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--accent);
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.25);
+    cursor: grab;
+}
+
+.pca-controls input[type='range']::-webkit-slider-thumb:active {
+    cursor: grabbing;
+}
+
+.pca-controls input[type='range']::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid var(--accent);
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.25);
+    cursor: grab;
+}
+
+.pca-controls input[type='range']::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+}
+
+/* Pill toggle switches for boolean options. */
+.pca-controls .control.switch {
+    position: relative;
+    cursor: pointer;
+}
+
+.pca-controls .control.switch input {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    cursor: pointer;
+}
+
+.pca-controls .switch-track {
+    position: relative;
+    width: 2.15rem;
+    height: 1.2rem;
+    border-radius: 999px;
+    background: var(--border-strong);
+    transition: background 160ms ease;
+    flex: 0 0 auto;
+}
+
+.pca-controls .switch-track::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(1.2rem - 4px);
+    height: calc(1.2rem - 4px);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.3);
+    transition: transform 160ms ease;
+}
+
+.pca-controls .control.switch input:checked ~ .switch-track {
+    background: var(--accent);
+}
+
+.pca-controls .control.switch input:checked ~ .switch-track::after {
+    transform: translateX(0.95rem);
+}
+
+.pca-controls .control.switch input:focus-visible ~ .switch-track {
+    box-shadow: var(--focus-ring);
+}
+
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.pca-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(18rem, 1fr);
+    gap: 0.85rem;
+    align-items: start;
+}
+
+.pca-panel {
+    min-width: 0;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    border-radius: 12px;
+    box-shadow: var(--shadow-xs);
+    /* Visible so a header InfoBadge popover can extend past the card edge; the
+       first/last children round the corners in its place. */
+    overflow: visible;
+}
+
+.pca-panel > :first-child {
+    border-radius: 12px 12px 0 0;
+}
+
+.pca-panel > :last-child {
+    border-radius: 0 0 12px 12px;
+}
+
+.pca-panel > h3 {
+    margin: 0;
+    min-height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.9rem;
+    font-weight: 650;
+    color: var(--text-strong);
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-bg);
+}
+
+.panel-title-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.panel-title-count {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* ── 3D viewport ──────────────────────────────────────────────────────────── */
 .pca-viewport {
     position: relative;
-    min-height: 520px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    background:
-        radial-gradient(circle at 50% 40%, rgba(120, 150, 190, 0.10), transparent 70%),
-        var(--canvas-bg);
 }
 
 .pca-canvas {
-    position: absolute;
-    inset: 0;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    min-height: 20rem;
+    max-height: calc(100vh - 14rem);
+    background:
+        radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 68%),
+        var(--canvas-bg);
 }
 
-.pca-spinner,
-.pca-overlay {
+.pca-canvas canvas {
+    display: block;
+    cursor: grab;
+}
+
+.pca-canvas canvas:active {
+    cursor: grabbing;
+}
+
+.pca-badge {
     position: absolute;
-    top: 12px;
-    left: 12px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    background: rgba(16, 20, 25, 0.72);
-    color: #eef3f9;
+    z-index: 2;
+    top: 0.6rem;
+    left: 0.7rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
     font-family: var(--font-mono);
+    background: color-mix(in srgb, var(--canvas-bg) 82%, transparent);
+    border: 1px solid var(--border);
+    color: var(--text);
 }
 
-.pca-overlay {
+.pca-badge.is-error {
     background: var(--danger-soft);
+    border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
     color: var(--danger);
     max-width: 80%;
 }
 
 .pca-legend {
-    position: absolute;
-    bottom: 10px;
-    left: 12px;
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
-    font-size: 0.72rem;
-    color: #dfe7f0;
-    background: rgba(16, 20, 25, 0.55);
-    padding: 5px 9px;
-    border-radius: 6px;
-}
-
-.pca-legend span {
-    display: inline-flex;
     align-items: center;
-    gap: 5px;
-}
-
-.pca-legend i {
-    width: 12px;
-    height: 12px;
-    border-radius: 3px;
-    display: inline-block;
-}
-
-.pca-side {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-.pca-stats {
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 14px;
+    gap: 0.35rem 0.9rem;
+    padding: 0.55rem 0.9rem;
+    border-top: 1px solid var(--border);
     background: var(--panel-bg);
 }
 
-.pca-stats h3 {
-    margin: 0 0 8px;
-    font-size: 0.95rem;
+.pca-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-strong);
+    font-variant-numeric: tabular-nums;
+}
+
+.pca-legend-swatch {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 3px;
+    border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
+    flex: none;
+}
+
+/* ── Side column ──────────────────────────────────────────────────────────── */
+.pca-side {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.pca-stats {
+    margin: 0;
+    padding: 0.35rem 0.2rem;
+}
+
+.pca-stat {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 8px;
+    gap: 0.75rem;
+    padding: 0.4rem 0.7rem;
 }
 
-.pca-count {
-    font-size: 0.72rem;
-    color: var(--muted);
-    font-weight: 400;
+.pca-stat + .pca-stat {
+    border-top: 1px solid var(--border);
 }
 
-.pca-stats table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.8rem;
+.pca-stat dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--subtle);
+    font-size: 0.67rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
 }
 
-.pca-stats th {
-    text-align: left;
-    font-weight: 500;
-    color: var(--muted);
-    padding: 3px 8px 3px 0;
+.pca-stat dd {
+    margin: 0;
+    text-align: right;
+    color: var(--text-strong);
+    font-size: 0.86rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
 
-.pca-stats td {
-    text-align: right;
-    font-family: var(--font-mono);
-    color: var(--text);
-    padding: 3px 0;
-}
-
 .pca-meta {
-    margin: 8px 0 0;
-    font-size: 0.72rem;
+    margin: 0;
+    padding: 0.55rem 0.9rem;
+    border-top: 1px solid var(--border);
     color: var(--muted);
+    font-size: 0.72rem;
     line-height: 1.4;
 }
 
+/* ── Projections ──────────────────────────────────────────────────────────── */
 .pca-projections {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    gap: 0.5rem;
+    padding: 0.7rem 0.9rem 0.9rem;
 }
 
 .pca-projections figure {
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 0.3rem;
 }
 
 .pca-projection {
@@ -210,41 +373,48 @@
     aspect-ratio: 1;
     image-rendering: pixelated;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     background: var(--canvas-bg);
 }
 
 .pca-projections figcaption {
-    font-size: 0.68rem;
-    color: var(--muted);
+    color: var(--subtle);
+    font-size: 0.62rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     text-align: center;
-    font-family: var(--font-mono);
 }
 
-.pca-hint,
-.pca-error {
-    margin: 0;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 0.85rem;
-}
-
+/* ── Empty / error states ─────────────────────────────────────────────────── */
 .pca-hint {
+    margin: 0 0 0.85rem;
+    padding: 1rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: 12px;
     background: var(--panel-soft);
     color: var(--muted);
-    border: 1px dashed var(--border-strong);
+    font-size: 0.86rem;
 }
 
-.pca-error {
+.pca-error-banner {
+    margin: 0 0 0.85rem;
+    padding: 1rem;
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+    border-radius: 12px;
     background: var(--danger-soft);
     color: var(--danger);
+    font-size: 0.86rem;
 }
 
-@media (max-width: 900px) {
-    .pca-body {
+@media (max-width: 980px) {
+    .pca-layout {
         grid-template-columns: 1fr;
     }
-    .pca-viewport {
-        min-height: 400px;
+}
+
+@media (max-width: 760px) {
+    .pca-page {
+        padding: 0.9rem;
     }
 }
