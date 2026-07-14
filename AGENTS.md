@@ -141,5 +141,11 @@ containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
 3. Make browser `.rmc6f` parsing tolerant + diagnostic (fixes the zero-atom mobile issue).
 4. Add the z-distribution histogram and global x-z projection panels to match `src/RMC_KDE.py`.
 5. Export controls (plot PNG/SVG/CSV, KDE/3D screenshots) and `/api/project/scan` summaries.
+6. Thermal-ellipsoid ("PCA_KDE") view for the KDE / 3D page (user-requested, planning first): PCA
+   over per-site RMC displacement clouds gives the anisotropic ellipsoid axes. The UI will be very
+   similar to the current KDE slice but interprets the distribution with different physics, so the
+   page design needs an explicit planning pass before implementation. Reference code:
+   Maxim Eremenko's PCA_KDE utilities (`KDE.js`, `KDE_test.py`, `PCA_KDE_rmcdisplacements.html`) at
+   <https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.
