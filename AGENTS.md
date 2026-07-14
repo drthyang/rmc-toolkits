@@ -31,8 +31,9 @@ rmc_toolkits/
   parsers.py   RMC CSV/log, legacy STOG parsing, .rmc6f metadata + atom iteration, Frac*.txt conversion, structure loading
   plots.py     plot-kind detection, matplotlib figures, Rwp/chi metrics, PNG serialization
   kde.py       unit-cell position loading + server-side gaussian_kde slice (+ contours)
+  pca_kde.py   per-site RMC displacement clouds → PCA/thermal-ellipsoid stats + separable 3D KDE volume (source of truth)
 
-web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,element) LRU cache for KDE
+web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,element) LRU cache for KDE + PCA-KDE
 
 web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly
@@ -51,10 +52,14 @@ web_app/frontend/src/
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
+    PcaKdePage.jsx               Thermal Ellipsoids tab: site picker, ADP table, Three.js isosurface + ellipsoid + projections
     FileExplorer.jsx             file navigation
   workers/
     localKdeWorker.js            static-mode KDE worker (GPU-or-CPU density map, contours, slab math)
     gpuKde.js                    WGSL compute-shader density map + shouldUseGpu heuristic + cached device init
+    pcaKde.js                    static-mode PCA-KDE engine (JS port of pca_kde.py): 3×3 Jacobi eigensolver, per-site clouds, separable volume + projections
+    pcaKdeWorker.js              static-mode PCA-KDE worker (parses clouds once, answers 'sites'/'kde' requests off-thread)
+    marchingCubes.js             isosurface extraction over a scalar field (Lorensen-Cline tables) for the Three.js KDE surface
 ```
 
 ## Key conventions & gotchas
@@ -67,6 +72,17 @@ web_app/frontend/src/
 - **GPU KDE must always degrade gracefully.** Missing `navigator.gpu`, no adapter, device/shader
   error, lost device, or sub-threshold work all fall back to the CPU loop with identical output.
   GPU is used only when `grid*grid*samples >= 2_000_000`.
+- **PCA-KDE is separable, not approximate.** `pca_kde.py` samples the 3D KDE on a grid aligned with
+  the cloud's principal axes; with SciPy's `H = factor²·C` bandwidth, `C` and `H` are both diagonal
+  in that frame, so the Gaussian factorizes into three 1D kernels and the volume is their tensor
+  product (`N·3·grid` exponentials, contracted via BLAS, instead of `N·grid³`). The result equals
+  `scipy.stats.gaussian_kde` to round-off — `tests/test_pca_kde.py` and the JS
+  `pcaKde.test.js` both assert exact agreement against the full estimator. `pcaKde.js` is a straight
+  port (a 3×3 Jacobi eigensolver stands in for `eigh`); keep the two in sync when touching either.
+- **PCA displacement convention**: an atom's offset is `coords − cellIndices/supercell` folded over
+  the *supercell* boundary (only that edge wraps), mean-subtracted per reference site, then mapped to
+  Cartesian Å through the full supercell `latticeVectors`. Clouds pooled by element are meaningful
+  because each site is already centered on its own average position.
 - **`StructurePage.jsx` canvases render conditionally** (`{structure && (...)}`). Effects that attach
   listeners to those canvases must depend on `structure` (or the canvas ref), not `[]` — otherwise
   they run at mount before the canvas exists and never attach. (This was the slab-drag bug, fixed
@@ -141,11 +157,14 @@ containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
 3. Make browser `.rmc6f` parsing tolerant + diagnostic (fixes the zero-atom mobile issue).
 4. Add the z-distribution histogram and global x-z projection panels to match `src/RMC_KDE.py`.
 5. Export controls (plot PNG/SVG/CSV, KDE/3D screenshots) and `/api/project/scan` summaries.
-6. Thermal-ellipsoid ("PCA_KDE") view for the KDE / 3D page (user-requested, planning first): PCA
-   over per-site RMC displacement clouds gives the anisotropic ellipsoid axes. The UI will be very
-   similar to the current KDE slice but interprets the distribution with different physics, so the
-   page design needs an explicit planning pass before implementation. Reference code:
-   Maxim Eremenko's PCA_KDE utilities (`KDE.js`, `KDE_test.py`, `PCA_KDE_rmcdisplacements.html`) at
+6. ~~Thermal-ellipsoid ("PCA_KDE") view~~ **DONE** — `rmc_toolkits/pca_kde.py` (source of truth) +
+   `workers/pcaKde.js` (static mode), `/api/pca/sites` + `/api/pca/kde`, and the **Thermal
+   Ellipsoids** tab (`PcaKdePage.jsx` + `marchingCubes.js`): site picker, ADP table with a
+   non-Gaussianity (excess-kurtosis) readout, Three.js isosurface + p% ellipsoid + PC-axis triad,
+   and three PC-plane projections. Verified in both runtimes. Possible follow-ups: element-pooled
+   clouds in the picker (the engine already supports `element=`), a per-site ellipsoid overlay in
+   the main structure view, PNG/CSV export of the volume, and letting the user compare two sites
+   side by side. Reference: Maxim Eremenko's PCA_KDE utilities at
    <https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.

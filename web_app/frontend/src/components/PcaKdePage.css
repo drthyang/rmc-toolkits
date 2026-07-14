@@ -1,0 +1,250 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang */
+
+.pca-page {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 12px 4px;
+}
+
+.pca-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 20px;
+    align-items: flex-end;
+    padding: 12px 16px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-xs);
+}
+
+.pca-control {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.82rem;
+    min-width: 90px;
+}
+
+.pca-control label {
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.pca-control select,
+.pca-control input[type='range'] {
+    accent-color: var(--accent);
+}
+
+.pca-control select {
+    padding: 5px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--panel-soft);
+    color: var(--text);
+    font-size: 0.82rem;
+}
+
+.pca-control input[type='range'] {
+    width: 150px;
+}
+
+.pca-toggles {
+    flex-direction: row;
+    gap: 14px;
+    align-items: center;
+}
+
+.pca-toggles label {
+    flex-direction: row;
+    gap: 5px;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.pca-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+    gap: 16px;
+    align-items: stretch;
+}
+
+.pca-viewport {
+    position: relative;
+    min-height: 520px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 50% 40%, rgba(120, 150, 190, 0.10), transparent 70%),
+        var(--canvas-bg);
+}
+
+.pca-canvas {
+    position: absolute;
+    inset: 0;
+}
+
+.pca-spinner,
+.pca-overlay {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: rgba(16, 20, 25, 0.72);
+    color: #eef3f9;
+    font-family: var(--font-mono);
+}
+
+.pca-overlay {
+    background: var(--danger-soft);
+    color: var(--danger);
+    max-width: 80%;
+}
+
+.pca-legend {
+    position: absolute;
+    bottom: 10px;
+    left: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 0.72rem;
+    color: #dfe7f0;
+    background: rgba(16, 20, 25, 0.55);
+    padding: 5px 9px;
+    border-radius: 6px;
+}
+
+.pca-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.pca-legend i {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.pca-side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.pca-stats {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: var(--panel-bg);
+}
+
+.pca-stats h3 {
+    margin: 0 0 8px;
+    font-size: 0.95rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.pca-count {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-weight: 400;
+}
+
+.pca-stats table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+.pca-stats th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--muted);
+    padding: 3px 8px 3px 0;
+    white-space: nowrap;
+}
+
+.pca-stats td {
+    text-align: right;
+    font-family: var(--font-mono);
+    color: var(--text);
+    padding: 3px 0;
+}
+
+.pca-meta {
+    margin: 8px 0 0;
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+.pca-projections {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+
+.pca-projections figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.pca-projection {
+    width: 100%;
+    aspect-ratio: 1;
+    image-rendering: pixelated;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--canvas-bg);
+}
+
+.pca-projections figcaption {
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-align: center;
+    font-family: var(--font-mono);
+}
+
+.pca-hint,
+.pca-error {
+    margin: 0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+
+.pca-hint {
+    background: var(--panel-soft);
+    color: var(--muted);
+    border: 1px dashed var(--border-strong);
+}
+
+.pca-error {
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+
+@media (max-width: 900px) {
+    .pca-body {
+        grid-template-columns: 1fr;
+    }
+    .pca-viewport {
+        min-height: 400px;
+    }
+}

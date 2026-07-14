@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import Dashboard from './components/Dashboard';
 import StructurePage from './components/StructurePage';
+import PcaKdePage from './components/PcaKdePage';
 import { AssistantPage } from './llm';
 import API_BASE_URL from './api';
 import {
@@ -24,7 +25,7 @@ const STATUS_TIMEOUT_MS = 15000;
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [visitedPages, setVisitedPages] = useState({ dashboard: true, structure: false, assistant: false });
+  const [visitedPages, setVisitedPages] = useState({ dashboard: true, structure: false, ellipsoids: false, assistant: false });
   // Parsed run context published by the Dashboard, consumed by the AI Assistant page.
   const [assistantRun, setAssistantRun] = useState(null);
   const [currentDirectory, setCurrentDirectory] = useState('data');
@@ -297,6 +298,12 @@ function App() {
                 KDE / 3D
               </button>
               <button
+                className={activePage === 'ellipsoids' ? 'active' : ''}
+                onClick={() => handlePageChange('ellipsoids')}
+              >
+                Thermal Ellipsoids
+              </button>
+              <button
                 className={activePage === 'assistant' ? 'active' : ''}
                 onClick={() => handlePageChange('assistant')}
               >
@@ -426,6 +433,14 @@ function App() {
               aria-hidden={activePage !== 'structure'}
             >
               <StructurePage directory={currentDirectory} localRun={localRun} theme="light" />
+            </div>
+          )}
+          {visitedPages.ellipsoids && (
+            <div
+              className={`workspace-page${activePage === 'ellipsoids' ? ' is-active' : ' is-hidden'}`}
+              aria-hidden={activePage !== 'ellipsoids'}
+            >
+              <PcaKdePage directory={currentDirectory} localRun={localRun} theme="light" />
             </div>
           )}
           {visitedPages.assistant && (
