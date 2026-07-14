@@ -70,6 +70,7 @@ const combineRValueFiles = (rValueFiles) => {
         ...parsedFiles[0],
         name: 'R-value',
         path: `r-value:${parsedFiles.map((file) => file.path).join('|')}`,
+        sourceNames: parsedFiles.map((file) => file.name),
         sourceFile: undefined,
         parseError: parseErrors.join('; '),
         plotData: {
@@ -486,10 +487,16 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
 
     const renderPlotCard = (file) => {
         const meta = metadata[file.path];
+        const title = meta?.title || file.name;
         return (
             <article className="plot-card" key={file.path}>
                 <div className="plot-card-header">
-                    <h3>{meta?.title || file.name}</h3>
+                    <div className="plot-card-heading">
+                        <h3>{title}</h3>
+                        {title !== file.name && (
+                            <span className="plot-card-source" title={file.path}>{file.name}</span>
+                        )}
+                    </div>
                     {meta?.metrics?.rwp !== undefined && (
                         <span className="rwp-chip">Rwp {Number(meta.metrics.rwp).toPrecision(4)}</span>
                     )}
@@ -503,10 +510,17 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     const renderRValuePanel = () => {
         if (!rValueFile) return null;
         const meta = metadata[rValueFile.path];
+        const title = meta?.title || rValueFile.name;
+        const sourceLabel = rValueFile.sourceNames?.join(', ') || rValueFile.name;
         return (
             <article className={`plot-card r-value-card${showRValue ? '' : ' is-collapsed'}`}>
                 <div className="plot-card-header">
-                    <h3>{meta?.title || rValueFile.name}</h3>
+                    <div className="plot-card-heading">
+                        <h3>{title}</h3>
+                        {sourceLabel !== title && (
+                            <span className="plot-card-source" title={sourceLabel}>{sourceLabel}</span>
+                        )}
+                    </div>
                     <div className="plot-card-header-actions">
                         <WatchdogBadge rValueFile={rValueFile} />
                         {meta?.metrics?.rwp !== undefined && (

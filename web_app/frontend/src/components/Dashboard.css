@@ -124,6 +124,22 @@
     line-height: 1.3;
 }
 
+.plot-card-heading {
+    min-width: 0;
+}
+
+/* Source data file for the chart, so users can tell which file each figure plots. */
+.plot-card-source {
+    display: block;
+    overflow: hidden;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .loaded-files-card .plot-card-header p {
     margin: 0.2rem 0 0;
     color: var(--muted);

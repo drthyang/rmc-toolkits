@@ -71,6 +71,7 @@ const ModelSummary = ({ structure }) => {
 
         return {
             source: structure.source?.split('/').pop() || 'Structure file',
+            sourcePath: structure.source,
             totalAtoms: structure.totalAtoms,
             referenceSites,
             supercell: structure.supercell,
@@ -85,7 +86,10 @@ const ModelSummary = ({ structure }) => {
     return (
         <div className="model-cards">
             <section className="model-summary" aria-label="Model information">
-                <h2 className="model-summary-title" title={summary.source}>Model information</h2>
+                <h2 className="model-summary-title" title={summary.sourcePath || summary.source}>
+                    Model information
+                    <span className="model-summary-source">{summary.source}</span>
+                </h2>
                 <dl className="model-stats">
                     <div className="model-stat">
                         <dt>Cell (Å)</dt>
