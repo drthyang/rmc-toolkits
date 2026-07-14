@@ -37,9 +37,11 @@
 .model-summary-title {
     display: flex;
     flex: 0 0 auto;
+    flex-wrap: wrap;
     width: 10rem;                 /* identical width in both cards */
     align-items: center;
-    gap: 0.4rem;
+    align-content: center;
+    gap: 0.1rem 0.4rem;
     margin: 0;
     padding: 0.68rem 1.1rem;
     border-right: 1px solid var(--border);
@@ -49,6 +51,19 @@
     font-weight: 650;
     line-height: 1.3;
     white-space: nowrap;
+}
+
+/* Source .rmc6f file name, so users can tell which data the model figures use. */
+.model-summary-source {
+    flex-basis: 100%;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 500;
+    line-height: 1.3;
+    text-overflow: ellipsis;
 }
 
 .model-summary-title code {
