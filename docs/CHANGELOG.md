@@ -5,6 +5,36 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Periodic boundary conditions for the KDE slice.
+
+- The KDE under-counted near cell boundaries: folding atoms into one unit cell drops their
+  periodic neighbors, so the density decayed toward faces/edges/corners (an edge blob showed
+  roughly half the interior amplitude, a corner roughly a quarter), and a slab centered on the
+  z=0 face missed the atoms just below z=1 entirely.
+- Both KDE paths now tile periodic images from the 26 neighbor cells within a margin that covers
+  the kernel reach and the slab depth (`min(0.5, max(0.1, 2*bw, thickness))`). In
+  `rmc_toolkits/kde.py`, `_augment_periodic_images` feeds `oriented_kde_slice`, and `kde_slice`
+  reports `slabCount` as unique source atoms and rescales the density (SciPy's `gaussian_kde`
+  divides by every fit point, images included). In `localKdeWorker.js` the same augmentation runs
+  before `makeSlab`, and the image factor rides in the kernel normalizer, so the WebGPU path
+  inherits the fix unchanged. `kde_slice` called directly (no `source_index`) keeps the old
+  truncated behavior for generic point clouds.
+- Verified on `snao.rmc6f` at a z=0 slab: slab population 3110 → 6034 atoms, corner density
+  20.8 → 55.4, edge-column peaks now match interior peaks (~73 vs ~75), opposite edges agree to
+  ~5% (fit-subsampling noise). New tests: in-plane wrap symmetry and depth-wrap slab selection in
+  `tests/test_kde.py`, plus a mirrored vitest suite for the worker (whose `onmessage` registration
+  is now guarded so tests can import the module outside a worker).
+
+Source data file names on figures (user-experience feedback).
+
+- Every dashboard plot card shows its source file name in monospace under the title — the two
+  otherwise-identical `EXAFS Q-space` cards are now distinguishable — with the full path on hover.
+- The collapsed R-value strip shows its source log name(s); a combined multi-log strip lists every
+  parsed log.
+- The Model information title cell now displays the source `.rmc6f` file name (previously hidden
+  in a tooltip), which also covers the KDE / 3D panels since they all derive from that one file.
+- File names sit outside the card `h3`, so "Save all figures" export names are unchanged.
+
 Math rendering in AI Assistant replies.
 
 - Assistant Markdown now typesets LaTeX: integrated `remark-math` + `rehype-katex` so
