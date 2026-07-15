@@ -3,6 +3,18 @@
 
 """PCA + KDE engine for RMC displacement clouds (thermal-ellipsoid analysis).
 
+The method -- per-site PCA over RMC displacement clouds, the anisotropic
+displacement ellipsoid, and the 3D Gaussian-KDE isosurface with 2D projections on
+the box walls -- is due to Maxim Eremenko's PCA_KDE utilities:
+https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE
+
+This module is an independent reimplementation, not a port of his code. His
+``KDE.js`` evaluates a full multivariate Gaussian KDE (Cholesky whitening, one
+kernel sum per grid point); the engine here samples on a grid aligned to the
+cloud's principal axes so the estimator factorizes and costs two orders of
+magnitude less (see below). The physics, conventions, and the shadow-box
+visualization follow his work.
+
 RMCProfile tags every atom with the reference site it belongs to and the cell
 index of the box copy it sits in. Subtracting a site's average position from
 each of its copies leaves one displacement cloud per crystallographic site: the

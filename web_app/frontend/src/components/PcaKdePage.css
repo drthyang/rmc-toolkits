@@ -381,6 +381,23 @@
     font-size: 0.86rem;
 }
 
+.pca-credit {
+    margin: 0.9rem 0 0;
+    text-align: right;
+    color: var(--subtle);
+    font-size: 0.72rem;
+}
+
+.pca-credit a {
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.pca-credit a:hover {
+    color: var(--accent);
+}
+
 @media (max-width: 980px) {
     .pca-layout {
         grid-template-columns: 1fr;

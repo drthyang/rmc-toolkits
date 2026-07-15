@@ -104,6 +104,74 @@ const makeProjectionWall = (projection, axes, mean, halfWidths, colormap) => {
     return plane;
 };
 
+// Marching-squares line segments of a 2D field at one level. Each cell yields 0,
+// 1, or 2 segments; endpoints come back in continuous grid coordinates (fi along
+// the first axis, fj along the second).
+const contourSegments = (density, level) => {
+    const nFirst = density.length;
+    const nSecond = density[0] ? density[0].length : 0;
+    const segments = [];
+    for (let i = 0; i < nFirst - 1; i += 1) {
+        for (let j = 0; j < nSecond - 1; j += 1) {
+            const corners = [
+                { fi: i, fj: j, v: density[i][j] },
+                { fi: i + 1, fj: j, v: density[i + 1][j] },
+                { fi: i + 1, fj: j + 1, v: density[i + 1][j + 1] },
+                { fi: i, fj: j + 1, v: density[i][j + 1] }
+            ];
+            const crossings = [];
+            for (const [a, b] of [[0, 1], [1, 2], [2, 3], [3, 0]]) {
+                const ca = corners[a];
+                const cb = corners[b];
+                if ((ca.v < level) !== (cb.v < level)) {
+                    const t = (level - ca.v) / (cb.v - ca.v);
+                    crossings.push([ca.fi + (cb.fi - ca.fi) * t, ca.fj + (cb.fj - ca.fj) * t]);
+                }
+            }
+            if (crossings.length === 2) {
+                segments.push(crossings[0], crossings[1]);
+            } else if (crossings.length === 4) {
+                segments.push(crossings[0], crossings[1], crossings[2], crossings[3]);
+            }
+        }
+    }
+    return segments;
+};
+
+// Contour lines for one projection, drawn just in front of its wall so they read
+// on top of the colormap (like the projected contours in Maxim's Plotly figure).
+const makeProjectionContours = (projection, axes, mean, halfWidths, color) => {
+    const density = projection.density;
+    const nFirst = density.length;
+    const nSecond = density[0] ? density[0].length : 0;
+    const vmax = projection.vmax || 0;
+    if (!nFirst || !nSecond || vmax <= 0) return null;
+
+    const [first, second] = projection.axes;
+    const third = 3 - first - second;
+    const stepFirst = (2 * halfWidths[first]) / Math.max(nFirst - 1, 1);
+    const stepSecond = (2 * halfWidths[second]) / Math.max(nSecond - 1, 1);
+    // Lift the lines a hair off the wall toward the interior so they never z-fight.
+    const wallOffset = -(halfWidths[third] + 0.055 * halfWidths[third]);
+
+    const points = [];
+    [0.1, 0.25, 0.4, 0.55, 0.7, 0.85].forEach((fraction) => {
+        contourSegments(density, fraction * vmax).forEach(([fi, fj]) => {
+            const pFirst = -halfWidths[first] + fi * stepFirst;
+            const pSecond = -halfWidths[second] + fj * stepSecond;
+            points.push(new THREE.Vector3(
+                mean[0] + pFirst * axes[first][0] + pSecond * axes[second][0] + wallOffset * axes[third][0],
+                mean[1] + pFirst * axes[first][1] + pSecond * axes[second][1] + wallOffset * axes[third][1],
+                mean[2] + pFirst * axes[first][2] + pSecond * axes[second][2] + wallOffset * axes[third][2]
+            ));
+        });
+    });
+    if (!points.length) return null;
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false });
+    return new THREE.LineSegments(geometry, material);
+};
+
 // Wireframe box around the sampling volume (±halfWidths in the PCA frame), so
 // the wall projections read as the faces of a shadow box.
 const makeBoundingBox = (axes, mean, halfWidths, color) => {
@@ -253,7 +321,9 @@ export default function PcaKdePage({ directory, localRun }) {
             try {
                 const data = await requestPca(
                     'kde',
-                    { referenceNumber: selectedRef, grid, bw, extent, probability, projections: true }
+                    // cubicBox keeps all three axes on one scale, so the wall
+                    // projections come out the same size (Maxim's cubic layout).
+                    { referenceNumber: selectedRef, grid, bw, extent, probability, cubicBox: true, projections: true }
                 );
                 if (!cancelled) setKde(data);
             } catch (error) {
@@ -372,8 +442,11 @@ export default function PcaKdePage({ directory, localRun }) {
         if (showProjections && kde.projections) {
             wallsGroup.add(makeBoundingBox(axes, mean, halfWidths, 0x8a97a8));
             PROJECTION_META.forEach(({ key }) => {
-                const wall = makeProjectionWall(kde.projections[key], axes, mean, halfWidths, colormap);
+                const projection = kde.projections[key];
+                const wall = makeProjectionWall(projection, axes, mean, halfWidths, colormap);
                 if (wall) wallsGroup.add(wall);
+                const contours = makeProjectionContours(projection, axes, mean, halfWidths, 0xeef3f8);
+                if (contours) wallsGroup.add(contours);
             });
         }
 
@@ -671,6 +744,17 @@ export default function PcaKdePage({ directory, localRun }) {
                     </div>
                 </div>
             </div>
+
+            <p className="pca-credit">
+                Thermal-ellipsoid PCA / KDE method after{' '}
+                <a
+                    href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    Maxim Eremenko&rsquo;s PCA_KDE utilities
+                </a>.
+            </p>
         </div>
     );
 }
