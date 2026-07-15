@@ -12,7 +12,7 @@ PCA / thermal-ellipsoid KDE computation engine.
   structure is `coords − cellIndices/supercell` folded over the supercell boundary, mean-subtracted
   per reference site, then mapped to Cartesian Å; the covariance of each site's cloud is its ADP,
   and a Gaussian KDE of the cloud is the density the ellipsoid only approximates. The method — and
-  the shadow-box visualization below — is due to **Maxim Eremenko's PCA_KDE utilities**
+  the shadow-box visualization below — is due to **Maksim Eremenko's PCA_KDE utilities**
   (<https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>); this is an
   independent reimplementation into the toolkit's dual-mode architecture, not a port of his code
   (his `KDE.js` evaluates a full multivariate Gaussian KDE; ours factorizes it — see below).
@@ -37,7 +37,7 @@ PCA / thermal-ellipsoid KDE computation engine.
   folding, mass normalization, and known-anisotropy recovery.
 - Flask exposes `/api/pca/sites` (per-site ellipsoid table) and `/api/pca/kde` (one site's or one
   element's volume), both behind a per-(path, mtime) LRU cache.
-- **Thermal Ellipsoids page** (new top-level tab). A site picker over all reference sites, an
+- **PCA Ellipsoid page** (new top-level tab; the "KDE / 3D" tab is renamed "Atomic Density"). A site picker over all reference sites, an
   ellipsoid summary table, a Three.js scene showing the KDE isosurface (extracted by a self-written
   marching-cubes module — `workers/marchingCubes.js`, since Three's `MarchingCubes` only builds
   metaballs) nested with the p% thermal-ellipsoid wireframe and PC-axis triad, and the three

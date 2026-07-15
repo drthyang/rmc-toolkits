@@ -5,7 +5,7 @@
 
 The method -- per-site PCA over RMC displacement clouds, the anisotropic
 displacement ellipsoid, and the 3D Gaussian-KDE isosurface with 2D projections on
-the box walls -- is due to Maxim Eremenko's PCA_KDE utilities:
+the box walls -- is due to Maksim Eremenko's PCA_KDE utilities:
 https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE
 
 This module is an independent reimplementation, not a port of his code. His

@@ -4,7 +4,7 @@
 // PCA + KDE engine for RMC displacement clouds (browser / static mode).
 //
 // The method (per-site PCA + thermal ellipsoid + 3D KDE isosurface with wall
-// projections) is due to Maxim Eremenko's PCA_KDE utilities:
+// projections) is due to Maksim Eremenko's PCA_KDE utilities:
 // https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE
 // This is an independent reimplementation of that method, not a port of his
 // KDE.js (which evaluates a full multivariate Gaussian KDE).

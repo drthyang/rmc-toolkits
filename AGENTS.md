@@ -52,7 +52,7 @@ web_app/frontend/src/
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
-    PcaKdePage.jsx               Thermal Ellipsoids tab: site picker, ADP table, Three.js isosurface + ellipsoid + projections
+    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections + clickable unit-cell structure
     FileExplorer.jsx             file navigation
   workers/
     localKdeWorker.js            static-mode KDE worker (GPU-or-CPU density map, contours, slab math)
@@ -164,7 +164,7 @@ containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
    and three PC-plane projections. Verified in both runtimes. Possible follow-ups: element-pooled
    clouds in the picker (the engine already supports `element=`), a per-site ellipsoid overlay in
    the main structure view, PNG/CSV export of the volume, and letting the user compare two sites
-   side by side. Reference: Maxim Eremenko's PCA_KDE utilities at
+   side by side. Reference: Maksim Eremenko's PCA_KDE utilities at
    <https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.

@@ -72,7 +72,7 @@ const projectionTexture = (projection, colormap) => {
 };
 
 // Build the wall plane for one projection: a textured quad in the PCA frame on
-// the far wall along the axis not spanned by the projection (Maxim Eremenko's
+// the far wall along the axis not spanned by the projection (Maksim Eremenko's
 // shadow-box layout). first/second index the projection's axes; the plane's
 // local X → axes[first], local Y → axes[second], placed at -halfWidth of the
 // remaining axis and offset slightly outward so it sits just past the cloud.
@@ -140,7 +140,7 @@ const contourSegments = (density, level) => {
 };
 
 // Contour lines for one projection, drawn just in front of its wall so they read
-// on top of the colormap (like the projected contours in Maxim's Plotly figure).
+// on top of the colormap (like the projected contours in Maksim's Plotly figure).
 const makeProjectionContours = (projection, axes, mean, halfWidths, color) => {
     const density = projection.density;
     const nFirst = density.length;
@@ -199,6 +199,27 @@ const makeBoundingBox = (axes, mean, halfWidths, color) => {
     }
     const geometry = new THREE.BufferGeometry().setFromPoints(edges);
     return new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35 }));
+};
+
+const TRIAD_COLORS = [0xd64545, 0x3fa34d, 0x3f7fd6]; // PC1 red, PC2 green, PC3 blue
+const TRIAD_UP = new THREE.Vector3(0, 1, 0);
+
+// PC1/PC2/PC3 triad as thin rods from `origin` along the principal axes (rows).
+// Thin cylinders rather than lines so a little thickness reads at any zoom
+// without dominating; used both around the volume and on the selected atom.
+const buildAxisTriad = (origin, axes, length, radius) => {
+    const meshes = [];
+    for (let a = 0; a < 3; a += 1) {
+        const dir = new THREE.Vector3(axes[a][0], axes[a][1], axes[a][2]).normalize();
+        const mesh = new THREE.Mesh(
+            new THREE.CylinderGeometry(radius, radius, length, 10),
+            new THREE.MeshBasicMaterial({ color: TRIAD_COLORS[a] })
+        );
+        mesh.position.copy(origin).addScaledVector(dir, length / 2);
+        mesh.quaternion.setFromUnitVectors(TRIAD_UP, dir);
+        meshes.push(mesh);
+    }
+    return meshes;
 };
 
 const PROJECTION_META = [
@@ -330,7 +351,7 @@ export default function PcaKdePage({ directory, localRun }) {
                 const data = await requestPca(
                     'kde',
                     // cubicBox keeps all three axes on one scale, so the wall
-                    // projections come out the same size (Maxim's cubic layout).
+                    // projections come out the same size (Maksim's cubic layout).
                     { referenceNumber: selectedRef, grid, bw, extent, probability, cubicBox: true, projections: true }
                 );
                 if (!cancelled) setKde(data);
@@ -453,7 +474,7 @@ export default function PcaKdePage({ directory, localRun }) {
         const gridN = kde.grid;
         const halfWidths = kde.halfWidths;
 
-        // Density projections on the far walls + a wireframe cage (Maxim
+        // Density projections on the far walls + a wireframe cage (Maksim
         // Eremenko's shadow-box layout): the isosurface floats inside a box whose
         // three back walls show the PC-plane KDE projections.
         if (showProjections && kde.projections) {
@@ -522,38 +543,28 @@ export default function PcaKdePage({ directory, localRun }) {
             ellipsoidGroup.add(mesh);
         }
 
-        // Principal-axis triad (PC1 red, PC2 green, PC3 blue), scaled to the box.
+        // Principal-axis triad (PC1 red, PC2 green, PC3 blue) from the centre out
+        // to the box faces. Thin rods so they read without dominating.
         const axisLength = Math.max(...kde.halfWidths);
-        const triadColors = [0xd64545, 0x3fa34d, 0x3f7fd6];
-        for (let a = 0; a < 3; a += 1) {
-            const dir = new THREE.Vector3(axes[a][0], axes[a][1], axes[a][2]);
-            const points = [
-                new THREE.Vector3(mean[0], mean[1], mean[2]),
-                new THREE.Vector3(
-                    mean[0] + dir.x * axisLength,
-                    mean[1] + dir.y * axisLength,
-                    mean[2] + dir.z * axisLength
-                )
-            ];
-            const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            axesGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: triadColors[a] })));
-        }
+        const meanVec = new THREE.Vector3(mean[0], mean[1], mean[2]);
+        buildAxisTriad(meanVec, axes, axisLength, axisLength * 0.012)
+            .forEach((rod) => axesGroup.add(rod));
 
         // Reframe the camera only when the site changes, so toggling layers or
-        // sweeping a slider doesn't yank the view out from under the user.
-        const radius = axisLength * 2.4 || 1;
-        controls.target.set(mean[0], mean[1], mean[2]);
+        // sweeping a slider doesn't yank the view out from under the user. The
+        // default looks straight down the box body diagonal (the +PC1/+PC2/+PC3
+        // direction), so the three min-corner walls sit symmetrically at the back;
+        // the distance fits the whole cube corner-on with margin.
+        const radius = axisLength * 3.6 || 1;
+        controls.target.copy(meanVec);
         if (framedRefRef.current !== selectedRef) {
-            // Frame relative to the PCA axes (not world), so every site gets the
-            // same reading: viewed from the +PC1/+PC2/+PC3 octant with PC3 up, the
-            // three min-corner projection walls sit at the back and floor.
             const dir = new THREE.Vector3(
-                axes[0][0] * 0.9 + axes[1][0] * 0.7 + axes[2][0] * 1.0,
-                axes[0][1] * 0.9 + axes[1][1] * 0.7 + axes[2][1] * 1.0,
-                axes[0][2] * 0.9 + axes[1][2] * 0.7 + axes[2][2] * 1.0
+                axes[0][0] + axes[1][0] + axes[2][0],
+                axes[0][1] + axes[1][1] + axes[2][1],
+                axes[0][2] + axes[1][2] + axes[2][2]
             ).normalize();
             camera.up.set(axes[2][0], axes[2][1], axes[2][2]);
-            camera.position.copy(controls.target).addScaledVector(dir, radius);
+            camera.position.copy(meanVec).addScaledVector(dir, radius);
             framedRefRef.current = selectedRef;
         }
         camera.near = radius / 100;
@@ -718,122 +729,74 @@ export default function PcaKdePage({ directory, localRun }) {
             pos: new THREE.Vector3(...toCartesian(site.siteFractional))
         }));
 
-        // --- Bonds: distance-based, periodic-aware (Maxim's structures have their
-        // coordination polyhedra spanning cell faces). The cutoff tracks the
-        // nearest-neighbour distance so it adapts to the material. ---------------
-        const offsets = [];
-        for (let dx = -1; dx <= 1; dx += 1) {
-            for (let dy = -1; dy <= 1; dy += 1) {
-                for (let dz = -1; dz <= 1; dz += 1) offsets.push([dx, dy, dz]);
-            }
-        }
-        const latVec = (o) => new THREE.Vector3(
-            o[0] * unit[0][0] + o[1] * unit[1][0] + o[2] * unit[2][0],
-            o[0] * unit[0][1] + o[1] * unit[1][1] + o[2] * unit[2][1],
-            o[0] * unit[0][2] + o[1] * unit[1][2] + o[2] * unit[2][2]
-        );
+        // --- Bonds: thin lines between in-cell atoms only (no periodic images, so
+        // nothing is drawn outside the box). The cutoff tracks the nearest-
+        // neighbour distance so it adapts to the material. -----------------------
         let nearest = Infinity;
         for (let i = 0; i < positions.length; i += 1) {
-            for (let j = 0; j < positions.length; j += 1) {
-                for (const o of offsets) {
-                    if (i === j && !o[0] && !o[1] && !o[2]) continue;
-                    const d = positions[i].pos.distanceTo(positions[j].pos.clone().add(latVec(o)));
-                    if (d > 0.4 && d < nearest) nearest = d;
-                }
+            for (let j = i + 1; j < positions.length; j += 1) {
+                const d = positions[i].pos.distanceTo(positions[j].pos);
+                if (d > 0.4 && d < nearest) nearest = d;
             }
         }
         const cutoff = Math.min(3.4, Math.max(2.0, nearest * 1.3));
-
-        const bondRadius = baseRadius * 0.26;
-        const cylUp = new THREE.Vector3(0, 1, 0);
-        const bondMaterial = new THREE.MeshPhongMaterial({ color: 0x9aa3ad, shininess: 15 });
-        const addBond = (from, to) => {
-            const seg = to.clone().sub(from);
-            const len = seg.length();
-            if (len < 1e-4) return;
-            const cylinder = new THREE.Mesh(
-                new THREE.CylinderGeometry(bondRadius, bondRadius, len, 6),
-                bondMaterial
-            );
-            cylinder.position.copy(from).addScaledVector(seg, 0.5);
-            cylinder.quaternion.setFromUnitVectors(cylUp, seg.normalize());
-            bondsGroup.add(cylinder);
-        };
-        const ghostSphere = new THREE.SphereGeometry(1, 12, 10);
-        const seenBond = new Set();
-        const seenGhost = new Set();
-        const round = (v) => `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)}`;
+        const bondPoints = [];
         for (let i = 0; i < positions.length; i += 1) {
-            for (let j = 0; j < positions.length; j += 1) {
-                for (const o of offsets) {
-                    if (i === j && !o[0] && !o[1] && !o[2]) continue;
-                    const partner = positions[j].pos.clone().add(latVec(o));
-                    const d = positions[i].pos.distanceTo(partner);
-                    if (d < 0.4 || d > cutoff) continue;
-                    const key = [round(positions[i].pos), round(partner)].sort().join('|');
-                    if (seenBond.has(key)) continue;
-                    seenBond.add(key);
-                    addBond(positions[i].pos, partner);
-                    // A partner in a neighbour cell gets a faint "ghost" atom so the
-                    // bond does not dangle into empty space.
-                    if (o[0] || o[1] || o[2]) {
-                        const gkey = `${j}|${o.join(',')}`;
-                        if (!seenGhost.has(gkey)) {
-                            seenGhost.add(gkey);
-                            const color = new THREE.Color(elementColors[positions[j].el] || DEFAULT_ELEMENT_COLOR);
-                            const ghost = new THREE.Mesh(
-                                ghostSphere,
-                                new THREE.MeshPhongMaterial({ color: color.multiplyScalar(0.45), shininess: 10 })
-                            );
-                            ghost.position.copy(partner);
-                            ghost.scale.setScalar(baseRadius * 0.85);
-                            bondsGroup.add(ghost);
-                        }
-                    }
-                }
+            for (let j = i + 1; j < positions.length; j += 1) {
+                const d = positions[i].pos.distanceTo(positions[j].pos);
+                if (d > 0.4 && d <= cutoff) bondPoints.push(positions[i].pos, positions[j].pos);
             }
         }
+        if (bondPoints.length) {
+            bondsGroup.add(new THREE.LineSegments(
+                new THREE.BufferGeometry().setFromPoints(bondPoints),
+                new THREE.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.7 })
+            ));
+        }
 
-        // --- Atoms: opaque spheres colored by element. The selected atom keeps its
-        // size but its color stays bright while the others are dimmed, and it gets a
-        // soft translucent highlight cloud (below) rather than growing. -----------
+        // --- Atoms: spheres colored by element. Unselected atoms are translucent
+        // so they recede; the selected atom is opaque, bright, and wrapped in a
+        // soft highlight cloud plus a correctly-oriented PC1/PC2/PC3 triad. -------
         const sphere = new THREE.SphereGeometry(1, 20, 16);
         positions.forEach((site) => {
             const isSelected = site.ref === selectedRef;
             const base = new THREE.Color(elementColors[site.el] || DEFAULT_ELEMENT_COLOR);
-            const color = isSelected ? base : base.clone().multiplyScalar(0.5);
             const marker = new THREE.Mesh(sphere, new THREE.MeshPhongMaterial({
-                color,
+                color: base,
                 emissive: isSelected ? base.clone().multiplyScalar(0.25) : new THREE.Color(0x000000),
-                shininess: isSelected ? 60 : 20
+                shininess: isSelected ? 60 : 20,
+                transparent: !isSelected,
+                opacity: isSelected ? 1 : 0.45
             }));
             marker.position.copy(site.pos);
             marker.scale.setScalar(baseRadius);
             marker.userData.referenceNumber = site.ref;
             sitesGroup.add(marker);
 
-            // Highlight cloud: two soft concentric shells around the selected atom.
             if (isSelected) {
+                // Soft concentric highlight shells.
                 [[2.6, 0.16], [1.7, 0.26]].forEach(([scale, opacity]) => {
                     const glow = new THREE.Mesh(sphere, new THREE.MeshBasicMaterial({
-                        color: base,
-                        transparent: true,
-                        opacity,
-                        depthWrite: false
+                        color: base, transparent: true, opacity, depthWrite: false
                     }));
                     glow.position.copy(site.pos);
                     glow.scale.setScalar(baseRadius * scale);
                     highlightGroup.add(glow);
                 });
+                // Local principal-axis triad, using this site's PCA axes (same
+                // Cartesian frame as the structure), so the orientation is exact.
+                if (selectedEllipsoid?.axes) {
+                    buildAxisTriad(site.pos, selectedEllipsoid.axes, baseRadius * 3.2, baseRadius * 0.14)
+                        .forEach((rod) => highlightGroup.add(rod));
+                }
             }
         });
 
-        // Frame the cell once; keep the user's orientation afterwards. A little
-        // extra room leaves the boundary-crossing ghost atoms in view.
+        // Frame the cell once; keep the user's orientation afterwards.
         controls.target.set(...center);
         if (!handle.framed) {
             const span = Math.max(...unit.map((row) => Math.hypot(...row)));
-            const radius = span * 1.9 || 1;
+            const radius = span * 1.7 || 1;
             camera.position.set(center[0] + radius, center[1] + radius * 0.7, center[2] + radius);
             camera.near = radius / 100;
             camera.far = radius * 100;
@@ -841,7 +804,7 @@ export default function PcaKdePage({ directory, localRun }) {
             handle.framed = true;
         }
         controls.update();
-    }, [sites, selectedRef, elementColors]);
+    }, [sites, selectedRef, selectedEllipsoid, elementColors]);
 
     const isoMassLevel = kde?.massLevels?.[isoPercent]?.level;
     const noRun = staticMode && !localFile;
@@ -1081,14 +1044,14 @@ export default function PcaKdePage({ directory, localRun }) {
             </div>
 
             <p className="pca-credit">
-                Thermal-ellipsoid PCA / KDE method after{' '}
+                PCA-ellipsoid analysis based on the method by{' '}
                 <a
                     href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
                     target="_blank"
                     rel="noreferrer"
                 >
-                    Maxim Eremenko&rsquo;s PCA_KDE utilities
-                </a>.
+                    Maksim Eremenko
+                </a>{' '}(PCA_KDE).
             </p>
         </div>
     );
