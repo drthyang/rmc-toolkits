@@ -136,6 +136,28 @@ module with a clear user path.
 - Stay browser-first wherever possible; offload only genuinely native steps (executing the
   RMCProfile binary) to the optional local backend or to a downloadable, ready-to-run input bundle.
 
+## Phase 8: Remote / HPC Run Monitoring
+
+Goal: **monitor RMCProfile runs executing on an HPC cluster** with the same feature set available
+today (dashboard R-values/convergence, Atomic Density, PCA Ellipsoid, AI assistant, Live Data),
+without hand-copying the run down. **Status: planned.** Full design in
+[`docs/HPC_MONITORING_PLAN.md`](HPC_MONITORING_PLAN.md) (written for both this project and the
+RMCProfile team).
+
+Principles: **security first, performance second**; **listen-only / read-only** (the app monitors and
+never writes to or controls the run); **no third parties** (data flows only between the HPC and the
+user's own machine); auth via the user's **existing SSH trust** (public key / `ssh-agent`, bastion
+and MFA aware) — the app never stores credentials.
+
+- **Phase 8a — MVP (our side only, no RMCProfile changes):** the local Flask backend pulls the run's
+  output files read-only over SSH (`rsync`/`sftp`, incremental) into a local cache; every existing
+  page reads that cache like a local folder. Requires the local backend (browser-only static mode
+  can't open SSH).
+- **Phase 8b — status file:** consume an RMCProfile-emitted, atomically-updated JSON status/heartbeat
+  file (step, χ²/Rwp, phase, ETA) for cheaper, more robust convergence monitoring.
+- **Phase 8c — optional:** opt-in low-latency push over an SSH reverse tunnel; SLURM/PBS scheduler
+  status (`squeue`/`sacct`, read-only). See the plan for the RMCProfile-team asks and open questions.
+
 ## Architecture Target
 
 - `rmc_toolkits/`: pure Python package for parsing, analysis, plotting, structure transforms, and
@@ -160,3 +182,5 @@ module with a clear user path.
    abstraction, explicit import diagnostics, and a verified mobile folder-access strategy.
 9. Add recent-project persistence for local desktop use.
 10. Draft RMCProfile input-file templates and a form-to-input generator with pre-flight validation.
+11. Prototype Phase 8a remote monitoring: a read-only SSH pull of an HPC run directory into a local
+    cache, surfaced through the existing run-source abstraction (see `docs/HPC_MONITORING_PLAN.md`).
