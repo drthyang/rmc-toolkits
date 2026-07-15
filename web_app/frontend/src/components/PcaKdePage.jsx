@@ -238,8 +238,33 @@ const PROJECTION_META = [
     { key: 'pc23', label: 'PC2 – PC3' }
 ];
 
+// Point the main camera down the box body diagonal (+PC1/+PC2/+PC3) at a
+// comfortable distance, so the three min-corner walls sit symmetrically at the
+// back and the whole cube fits corner-on. This is the default framing, applied
+// on a new site and re-applied by the panel's "Reset view" button.
+const frameMainCamera = (camera, controls, kde) => {
+    const axes = kde.axes;
+    const meanVec = new THREE.Vector3(kde.mean[0], kde.mean[1], kde.mean[2]);
+    const axisLength = Math.max(...kde.halfWidths);
+    const radius = axisLength * 4.3 || 1;
+    const dir = new THREE.Vector3(
+        axes[0][0] + axes[1][0] + axes[2][0],
+        axes[0][1] + axes[1][1] + axes[2][1],
+        axes[0][2] + axes[1][2] + axes[2][2]
+    ).normalize();
+    controls.target.copy(meanVec);
+    camera.up.set(axes[2][0], axes[2][1], axes[2][2]);
+    camera.position.copy(meanVec).addScaledVector(dir, radius);
+    camera.near = radius / 100;
+    camera.far = radius * 100;
+    camera.updateProjectionMatrix();
+    controls.update();
+};
+
 export default function PcaKdePage({ directory, localRun }) {
-    const [rmc6fText, setRmc6fText] = useState(null);
+    // The loaded .rmc6f text, tagged with the file it came from, so a just-changed
+    // dataset never runs against the previous model's text (see rmc6fText below).
+    const [loadedText, setLoadedText] = useState({ file: null, text: null });
     const [sites, setSites] = useState(null);
     const [selectedRef, setSelectedRef] = useState(null);
     const [kde, setKde] = useState(null);
@@ -274,18 +299,22 @@ export default function PcaKdePage({ directory, localRun }) {
     // backend directory goes through the Flask API. Static mode has no backend, so
     // it always relies on a local file.
     const localFile = structureFile?.sourceFile || null;
+    // Only treat the text as current when it was read from the file in props right
+    // now. On a dataset switch this is null until the new file's text loads, so the
+    // effects below never fire against the previous model.
+    const rmc6fText = loadedText.file === localFile ? loadedText.text : null;
 
     // --- Read the raw .rmc6f text once per local file. ------------------------
     useEffect(() => {
         let cancelled = false;
         if (localFile) {
             localFile.text().then((text) => {
-                if (!cancelled) setRmc6fText(text);
+                if (!cancelled) setLoadedText({ file: localFile, text });
             }).catch(() => {
-                if (!cancelled) { setRmc6fText(null); setSitesError('Could not read the structure file.'); }
+                if (!cancelled) { setLoadedText({ file: null, text: null }); setSitesError('Could not read the structure file.'); }
             });
         } else {
-            setRmc6fText(null);
+            setLoadedText({ file: null, text: null });
         }
         return () => { cancelled = true; };
     }, [localFile]);
@@ -313,14 +342,14 @@ export default function PcaKdePage({ directory, localRun }) {
                     else resolve(event.data.result);
                 };
                 worker.addEventListener('message', handler);
-                worker.postMessage({ id, kind, text: rmc6fText, cacheKey: structureFile?.path || 'run', ...params });
+                worker.postMessage({ id, kind, text: rmc6fText, ...params });
             });
         }
         const endpoint = kind === 'sites' ? '/api/pca/sites' : '/api/pca/kde';
         return axios
             .get(`${API_BASE_URL}${endpoint}`, { params: { dir: directory || '.', ...params } })
             .then((response) => response.data);
-    }, [rmc6fText, structureFile, directory]);
+    }, [rmc6fText, directory]);
 
     // --- Load the per-site ellipsoid table. -----------------------------------
     useEffect(() => {
@@ -384,6 +413,13 @@ export default function PcaKdePage({ directory, localRun }) {
         () => buildElementColors(sites?.elements ?? []),
         [sites]
     );
+
+    // Re-apply the default framing to the main panel on demand (the user may have
+    // orbited/zoomed away). No-op until a volume is loaded.
+    const resetMainView = useCallback(() => {
+        const handle = sceneRef.current;
+        if (handle && kde) frameMainCamera(handle.camera, handle.controls, kde);
+    }, [kde]);
 
     // Keep the click handler pointing at the current setter without re-creating
     // the (once-mounted) structure scene.
@@ -560,31 +596,26 @@ export default function PcaKdePage({ directory, localRun }) {
         buildAxisTriad(meanVec, axes, axisLength, axisLength * 0.012)
             .forEach((rod) => axesGroup.add(rod));
 
-        // Reframe the camera only when the displayed volume is for a new site, so
-        // toggling layers or sweeping a slider doesn't yank the view. Keying off
-        // the volume's own reference number (not selectedRef) avoids a premature
-        // reframe against the previous site's axes while its KDE is still loading —
-        // that mismatch was what made the view snap to a wrong angle on click.
-        // The default looks straight down the box body diagonal (the +PC1/+PC2/+PC3
-        // direction), so the three min-corner walls sit symmetrically at the back;
-        // the distance fits the whole cube corner-on with margin.
+        // Reframe to the default view only when the displayed volume is for a new
+        // site, so toggling layers or sweeping a slider doesn't yank the view.
+        // Keying off the volume's own reference number (not selectedRef) avoids a
+        // premature reframe against the previous site's axes while its KDE is still
+        // loading — that mismatch was what made the view snap to a wrong angle on
+        // click. The "Reset view" button re-applies the same framing on demand.
         const kdeRef = kde.referenceNumber ?? selectedRef;
-        const radius = axisLength * 4.3 || 1;
-        controls.target.copy(meanVec);
         if (framedRefRef.current !== kdeRef) {
-            const dir = new THREE.Vector3(
-                axes[0][0] + axes[1][0] + axes[2][0],
-                axes[0][1] + axes[1][1] + axes[2][1],
-                axes[0][2] + axes[1][2] + axes[2][2]
-            ).normalize();
-            camera.up.set(axes[2][0], axes[2][1], axes[2][2]);
-            camera.position.copy(meanVec).addScaledVector(dir, radius);
+            frameMainCamera(camera, controls, kde);
             framedRefRef.current = kdeRef;
+        } else {
+            // Same site: keep the pivot and clip planes synced to the current
+            // volume without moving the user's camera.
+            const radius = axisLength * 4.3 || 1;
+            controls.target.copy(meanVec);
+            camera.near = radius / 100;
+            camera.far = radius * 100;
+            camera.updateProjectionMatrix();
+            controls.update();
         }
-        camera.near = radius / 100;
-        camera.far = radius * 100;
-        camera.updateProjectionMatrix();
-        controls.update();
     }, [kde, isoPercent, colormap, showEllipsoid, showSurface, showProjections, selectedEllipsoid, selectedRef]);
 
     // --- Unit-cell structure scene: one clickable marker per reference site. ---
@@ -945,9 +976,24 @@ export default function PcaKdePage({ directory, localRun }) {
                                 ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber}`
                                 : 'PCA ellipsoid'}
                         </span>
-                        {selectedEllipsoid && (
-                            <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
-                        )}
+                        <span className="panel-title-actions">
+                            {selectedEllipsoid && (
+                                <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
+                            )}
+                            <button
+                                type="button"
+                                className="pca-reset-view"
+                                onClick={resetMainView}
+                                disabled={!kde}
+                                title="Reset the camera to the default view"
+                            >
+                                <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                    <path d="M3 3v5h5" />
+                                </svg>
+                                Reset view
+                            </button>
+                        </span>
                     </h3>
                     <div className="pca-canvas" ref={mountRef}>
                         {(loadingKde || loadingSites) && <div className="pca-badge">Computing…</div>}

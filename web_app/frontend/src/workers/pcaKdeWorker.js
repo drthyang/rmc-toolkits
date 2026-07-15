@@ -16,11 +16,24 @@ import {
 } from './pcaKde.js';
 
 // Parsing the whole configuration into clouds is the expensive part, so cache it
-// per file text; selecting a site or changing bandwidth then only re-runs the
-// (fast) volume solve.
+// and re-parse only when the .rmc6f text itself changes. The key MUST come from
+// the text content, not a file path: two runs can share a filename, and a
+// path-based key would hand back the previous model's clouds for a new dataset.
 let cache = { key: null, parsed: null };
 
-const parseCached = (key, text) => {
+// Cheap content signature (FNV-1a over a stride sample + full length). Distinct
+// structure files differ in length and/or sampled bytes, so this re-parses on a
+// real dataset change while staying a cache hit for the same text.
+const textSignature = (text) => {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 64) {
+        hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
+    }
+    return `${text.length}:${(hash >>> 0).toString(36)}`;
+};
+
+const parseCached = (text) => {
+    const key = textSignature(text);
     if (cache.key !== key || !cache.parsed) {
         cache = { key, parsed: siteDisplacementsFromRmc6f(text) };
     }
@@ -41,9 +54,9 @@ const summarizeSites = (parsed, probability) => {
 };
 
 export const handlePcaMessage = async (data, getText) => {
-    const { kind = 'kde', cacheKey, probability = 0.5 } = data;
+    const { kind = 'kde', probability = 0.5 } = data;
     const text = await getText();
-    const parsed = parseCached(cacheKey ?? text.length, text);
+    const parsed = parseCached(text);
 
     if (kind === 'sites') {
         return summarizeSites(parsed, probability);
