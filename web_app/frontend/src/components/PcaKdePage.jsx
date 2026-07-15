@@ -965,7 +965,7 @@ export default function PcaKdePage({ directory, localRun }) {
                             target="_blank"
                             rel="noreferrer"
                         >
-                            PCA_KDE method: Maksim Eremenko
+                            Analysis after Maksim Eremenko&rsquo;s PCA_KDE
                         </a>
                     </div>
                 </div>
