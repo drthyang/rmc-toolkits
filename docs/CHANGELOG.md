@@ -5,6 +5,34 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+PCA Ellipsoid: reset the main view on a new dataset, and a deterministic camera reset.
+
+- Loading a different run now returns the main 3D panel to the default body-diagonal view instead of
+  inheriting the previous model's orbit. The reframe is keyed on the run's identity (App's `runId`),
+  so it fires even when the new run's first site shares a reference number with the old one, while a
+  Live Data refresh of the same run and any slider/layer tweak leave the view untouched.
+- Root-caused and fixed why the reset sometimes landed rotated off the default: `frameMainCamera` set
+  the pose and then called `OrbitControls.update()` once, which applied the control's leftover damped
+  orbit velocity to the new pose. It now flushes that velocity first (a damping-off `update()` that
+  zeroes the pending delta), so the reset is deterministic regardless of prior momentum — the same
+  reason it also fixes the "Reset view" button landing slightly off right after a drag. This let the
+  reframe live in one place (the scene rebuild) and removed the visibility-tracking scaffolding.
+
+PCA displacements in the AI Assistant context.
+
+- The run context sent to the local model now carries a `pca_displacements` section: one entry per
+  reference site from the PCA Ellipsoid analysis (isotropic ADP `U_iso_A2`, the three principal RMS
+  amplitudes `rms_axes_A`, `anisotropy`, and mean-excess-kurtosis `non_gaussianity`), ranked most
+  non-Gaussian first so the anharmonic / split sites lead and survive budget trimming. This is
+  information the model previously couldn't see — symmetry gives only mean displacement per Wyckoff
+  orbit, not the anisotropy or the anharmonicity. The system prompt gains a matching bullet so the
+  model interprets the kurtosis correctly, and the character-budget ladder trims the least-anharmonic
+  PCA sites (then their explanatory note) alongside the other evidence.
+- Wiring: the PCA Ellipsoid page publishes its computed per-site table upward (`onSitesChange`), App
+  holds it, and the AI Assistant page threads it into `buildRunContext`. The section is present once
+  the PCA Ellipsoid page has been opened for the run (its analysis runs there), and follows the active
+  dataset. Covered by four new cases in `src/llm/__tests__/runContext.test.js`.
+
 PCA Ellipsoid page refinements.
 
 - The main 3D view has a **Reset view** button in the panel header that returns the camera to the

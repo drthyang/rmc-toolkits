@@ -76,6 +76,17 @@ const fixtureProps = () => ({
     }
 });
 
+// The per-site ellipsoid table the PCA Ellipsoid page publishes (worker /
+// /api/pca/sites), trimmed to the fields pcaContext reads.
+const pcaSitesFixture = () => ({
+    probability: 0.5,
+    sites: [
+        { referenceNumber: 1, element: 'Ta', count: 1000, uIso: 0.016, rms: [0.14, 0.125, 0.113], anisotropy: 1.24, nonGaussianity: 4.47 },
+        { referenceNumber: 2, element: 'Se', count: 1000, uIso: 0.0103, rms: [0.11, 0.101, 0.095], anisotropy: 1.16, nonGaussianity: 0.8 },
+        { referenceNumber: 4, element: 'Ga', count: 1000, uIso: 0.0127, rms: [0.118, 0.113, 0.108], anisotropy: 1.09, nonGaussianity: 1.2, degenerate: true }
+    ]
+});
+
 describe('downsampleSeries', () => {
     it('keeps the first and last points and respects the cap', () => {
         const values = historyOf(1000, (index) => index * 0.5);
@@ -202,9 +213,51 @@ describe('buildRunContext', () => {
         expect(context.run).toBe('bare');
         expect(context.structure).toBeUndefined();
         expect(context.symmetry).toBeUndefined();
+        expect(context.pca_displacements).toBeUndefined();
         expect(context.pair_correlations).toBeUndefined();
         expect(context.datasets).toBeUndefined();
         expect(context.convergence).toBeUndefined();
+    });
+
+    it('builds the pca_displacements block ranked by non-Gaussianity', () => {
+        const context = buildRunContext({ ...fixtureProps(), pcaSites: pcaSitesFixture() });
+        const pca = context.pca_displacements;
+        expect(pca.note).toContain('non_gaussianity');
+        // Most anharmonic first: Ta (4.47) > Ga (1.2) > Se (0.8).
+        expect(pca.sites.map((site) => site.element)).toEqual(['Ta', 'Ga', 'Se']);
+        expect(pca.sites[0]).toEqual({
+            ref: 1,
+            element: 'Ta',
+            U_iso_A2: 0.016,
+            rms_axes_A: [0.14, 0.125, 0.113],
+            anisotropy: 1.24,
+            non_gaussianity: 4.47
+        });
+        // The degenerate flag rides along only when true.
+        expect(pca.sites.find((site) => site.element === 'Ga').degenerate).toBe(true);
+        expect(pca.sites.find((site) => site.element === 'Ta').degenerate).toBeUndefined();
+    });
+
+    it('omits pca_displacements when no PCA sites are supplied', () => {
+        expect(buildRunContext(fixtureProps()).pca_displacements).toBeUndefined();
+        expect(buildRunContext({ ...fixtureProps(), pcaSites: { sites: [] } }).pca_displacements).toBeUndefined();
+    });
+
+    it('caps the pca site list at 12, recording the omission', () => {
+        const pcaSites = {
+            sites: historyOf(20, (index) => ({
+                referenceNumber: index + 1,
+                element: 'X',
+                uIso: 0.01,
+                rms: [0.1, 0.09, 0.08],
+                anisotropy: 1.2,
+                nonGaussianity: index   // ascending, so the top 12 are the highest
+            }))
+        };
+        const pca = buildRunContext({ runName: 'r', pcaSites }).pca_displacements;
+        expect(pca.sites).toHaveLength(12);
+        expect(pca.sites_omitted).toBe(8);
+        expect(pca.sites[0].non_gaussianity).toBe(19);   // most anharmonic leads
     });
 
     it('tolerates a structure with no lattice (known empty-.rmc6f case)', () => {
@@ -244,6 +297,22 @@ describe('contextToJson budget', () => {
     it('leaves small contexts untouched', () => {
         const context = buildRunContext({ runName: 'tiny' });
         expect(JSON.parse(contextToJson(context))).toEqual(context);
+    });
+
+    it('trims PCA sites to six then drops the note under a tight budget', () => {
+        const context = {
+            pca_displacements: {
+                note: 'x'.repeat(200),
+                sites: historyOf(10, (index) => ({
+                    ref: index + 1, element: 'X', U_iso_A2: 0.01,
+                    rms_axes_A: [0.1, 0.09, 0.08], anisotropy: 1.2, non_gaussianity: 1
+                }))
+            }
+        };
+        const parsed = JSON.parse(contextToJson(context, 10));
+        expect(parsed.pca_displacements.sites).toHaveLength(6);
+        expect(parsed.pca_displacements.sites_omitted).toBe(4);
+        expect(parsed.pca_displacements.note).toBeUndefined();
     });
 
     it('trims evidence in order — peaks, ladder rungs, history, sites, datasets — recording omissions', () => {
