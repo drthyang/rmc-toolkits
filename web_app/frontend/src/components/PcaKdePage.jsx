@@ -1205,43 +1205,47 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         {(loadingKde || loadingSites) && <div className="pca-badge">Computing…</div>}
                         {kdeError && <div className="pca-badge is-error">{kdeError}</div>}
                         {kde && (
-                            <div className="pca-view-controls">
-                                <div className="pca-view-group" role="group" aria-label="Projection">
-                                    <button
-                                        type="button"
-                                        className={`pca-view-btn ${perspective ? 'is-active' : ''}`}
-                                        onClick={() => applyPerspective(true)}
-                                        aria-pressed={perspective}
-                                        title="Perspective projection"
-                                    >
-                                        Perspective
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`pca-view-btn ${perspective ? '' : 'is-active'}`}
-                                        onClick={() => applyPerspective(false)}
-                                        aria-pressed={!perspective}
-                                        title="Orthographic (parallel) projection"
-                                    >
-                                        Orthographic
-                                    </button>
-                                </div>
-                                <div className="pca-view-group" role="group" aria-label="Camera orientation">
-                                    <span className="pca-view-group-label">Along</span>
-                                    {[0, 1, 2].map((axisIndex) => (
+                            <>
+                                <div className="pca-view-controls pca-view-controls--left">
+                                    <div className="pca-view-group" role="group" aria-label="Projection">
                                         <button
-                                            key={axisIndex}
                                             type="button"
-                                            className={`pca-view-btn ${viewAxis === axisIndex ? 'is-active' : ''}`}
-                                            onClick={() => lookAlong(axisIndex)}
-                                            aria-pressed={viewAxis === axisIndex}
-                                            title={`Look down PC${axisIndex + 1}`}
+                                            className={`pca-view-btn ${perspective ? 'is-active' : ''}`}
+                                            onClick={() => applyPerspective(true)}
+                                            aria-pressed={perspective}
+                                            title="Perspective projection"
                                         >
-                                            {`PC${axisIndex + 1}`}
+                                            Perspective
                                         </button>
-                                    ))}
+                                        <button
+                                            type="button"
+                                            className={`pca-view-btn ${perspective ? '' : 'is-active'}`}
+                                            onClick={() => applyPerspective(false)}
+                                            aria-pressed={!perspective}
+                                            title="Orthographic (parallel) projection"
+                                        >
+                                            Orthographic
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                                <div className="pca-view-controls pca-view-controls--right">
+                                    <div className="pca-view-group" role="group" aria-label="Camera orientation">
+                                        <span className="pca-view-group-label">Along</span>
+                                        {[0, 1, 2].map((axisIndex) => (
+                                            <button
+                                                key={axisIndex}
+                                                type="button"
+                                                className={`pca-view-btn ${viewAxis === axisIndex ? 'is-active' : ''}`}
+                                                onClick={() => lookAlong(axisIndex)}
+                                                aria-pressed={viewAxis === axisIndex}
+                                                title={`Look down PC${axisIndex + 1}`}
+                                            >
+                                                {`PC${axisIndex + 1}`}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </div>
                     <div className="pca-legend">

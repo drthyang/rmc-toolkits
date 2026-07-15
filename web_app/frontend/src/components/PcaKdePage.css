@@ -316,17 +316,25 @@
     max-width: 80%;
 }
 
-/* Camera controls overlaid on the bottom-right of the viewport: projection
-   (perspective / orthographic) and snap-to principal axis (PC1/PC2/PC3). */
+/* Camera controls overlaid on the viewport corners: projection (perspective /
+   orthographic) sits bottom-left, snap-to principal axis (PC1/PC2/PC3) bottom-right. */
 .pca-view-controls {
     position: absolute;
     z-index: 2;
-    right: 0.7rem;
     bottom: 0.7rem;
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
     gap: 0.4rem;
+}
+
+.pca-view-controls--left {
+    left: 0.7rem;
+    align-items: flex-start;
+}
+
+.pca-view-controls--right {
+    right: 0.7rem;
+    align-items: flex-end;
 }
 
 .pca-view-group {
