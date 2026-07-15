@@ -5,6 +5,22 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+PCA Ellipsoid statistics detail and a 16:9 layout; Demo button beside the page tabs.
+
+- The **Displacement statistics** panel now shows the full covariance tensor U (Å², Cartesian x/y/z with the
+  variance diagonal highlighted) and a **Principal axes** table — each PCA component (eigenvector) as a row
+  in Cartesian x/y/z with its eigenvalue λ (Å²), RMS amplitude (Å), and per-axis excess kurtosis κ. PC1/PC2/
+  PC3 rows are color-keyed to the 3D triad and the viewport legend. The old single-line "RMS axes" and
+  "Eigenvalues" rows fold into that table (now per-PC columns); U_iso / B_iso / Anisotropy / Non-Gaussianity
+  stay as the scalar summary. Both the Flask and browser-worker paths already return `covariance` / `axes` /
+  `eigenvalues` / `rms` / `excessKurtosis`, so the detail appears in every runtime mode.
+- The page layout is keyed to named grid areas so it reflows with width: on wide (≥ 1440 px, 16:9) screens the
+  viewport, statistics, and unit-cell panels sit three-across, so the landscape width carries the added detail
+  and the vertical footprint stays short. It falls back to the prior viewport-plus-stacked-side-column at
+  laptop widths and a single column below 980 px.
+- The header **Demo** toggle moves into the left cluster just after the AI Assistant tab (beside the page
+  tabs), leaving Live Data + the run-folder field as the right-hand data-source group.
+
 PCA Ellipsoid: reset the main view on a new dataset, and a deterministic camera reset.
 
 - Loading a different run now returns the main 3D panel to the default body-diagonal view instead of
