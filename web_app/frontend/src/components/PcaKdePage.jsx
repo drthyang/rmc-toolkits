@@ -34,26 +34,29 @@ const pcaVertexToCartesian = (fi, fj, fk, axisCoords, axes, mean, out) => {
     return out;
 };
 
-// Draw a 2D KDE projection (density[rows][cols]) into a canvas with a colormap.
-const paintProjection = (canvas, projection, colormap) => {
-    if (!canvas || !projection) return;
+// Colormap texture for a 2D KDE projection. density is [gridFirst][gridSecond]
+// over the projection's two principal axes; the texel grid is laid out so u runs
+// along the first axis and v along the second, matching the wall plane's basis.
+const projectionTexture = (projection, colormap) => {
     const density = projection.density;
-    const rows = density.length;
-    const cols = density[0] ? density[0].length : 0;
-    if (!rows || !cols) return;
-    canvas.width = cols;
-    canvas.height = rows;
+    const nFirst = density.length;
+    const nSecond = density[0] ? density[0].length : 0;
+    if (!nFirst || !nSecond) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = nFirst;
+    canvas.height = nSecond;
     const ctx = canvas.getContext('2d');
-    const image = ctx.createImageData(cols, rows);
+    const image = ctx.createImageData(nFirst, nSecond);
     const lut = getLut(colormap);
+    const stops = lut.length / 3 - 1;
     const vmax = projection.vmax || 1;
-    for (let r = 0; r < rows; r += 1) {
-        // Flip vertically so the second axis increases upward on screen.
-        const srcRow = rows - 1 - r;
-        for (let c = 0; c < cols; c += 1) {
-            const value = Math.max(0, Math.min(1, density[srcRow][c] / vmax));
-            const lutIndex = Math.round(value * (lut.length / 3 - 1)) * 3;
-            const pixel = (r * cols + c) * 4;
+    for (let i = 0; i < nFirst; i += 1) {
+        for (let j = 0; j < nSecond; j += 1) {
+            const value = Math.max(0, Math.min(1, density[i][j] / vmax));
+            const lutIndex = Math.round(value * stops) * 3;
+            // CanvasTexture flips vertically on upload, so row (nSecond-1-j) maps
+            // to v = j: second axis then increases along the plane's local +Y.
+            const pixel = ((nSecond - 1 - j) * nFirst + i) * 4;
             image.data[pixel] = lut[lutIndex];
             image.data[pixel + 1] = lut[lutIndex + 1];
             image.data[pixel + 2] = lut[lutIndex + 2];
@@ -61,6 +64,72 @@ const paintProjection = (canvas, projection, colormap) => {
         }
     }
     ctx.putImageData(image, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    return texture;
+};
+
+// Build the wall plane for one projection: a textured quad in the PCA frame on
+// the far wall along the axis not spanned by the projection (Maxim Eremenko's
+// shadow-box layout). first/second index the projection's axes; the plane's
+// local X → axes[first], local Y → axes[second], placed at -halfWidth of the
+// remaining axis and offset slightly outward so it sits just past the cloud.
+const makeProjectionWall = (projection, axes, mean, halfWidths, colormap) => {
+    const [first, second] = projection.axes;
+    const third = 3 - first - second;
+    const texture = projectionTexture(projection, colormap);
+    if (!texture) return null;
+
+    const geometry = new THREE.PlaneGeometry(2 * halfWidths[first], 2 * halfWidths[second]);
+    const material = new THREE.MeshBasicMaterial({
+        map: texture,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.96,
+        depthWrite: false
+    });
+    const plane = new THREE.Mesh(geometry, material);
+
+    const xAxis = new THREE.Vector3(axes[first][0], axes[first][1], axes[first][2]);
+    const yAxis = new THREE.Vector3(axes[second][0], axes[second][1], axes[second][2]);
+    const normal = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
+    const offset = -(halfWidths[third] + 0.06 * halfWidths[third]);
+    const position = new THREE.Vector3(
+        mean[0] + offset * axes[third][0],
+        mean[1] + offset * axes[third][1],
+        mean[2] + offset * axes[third][2]
+    );
+    plane.applyMatrix4(new THREE.Matrix4().makeBasis(xAxis, yAxis, normal).setPosition(position));
+    return plane;
+};
+
+// Wireframe box around the sampling volume (±halfWidths in the PCA frame), so
+// the wall projections read as the faces of a shadow box.
+const makeBoundingBox = (axes, mean, halfWidths, color) => {
+    const corners = [];
+    for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+            for (const sz of [-1, 1]) {
+                const p = [sx * halfWidths[0], sy * halfWidths[1], sz * halfWidths[2]];
+                corners.push(new THREE.Vector3(
+                    mean[0] + p[0] * axes[0][0] + p[1] * axes[1][0] + p[2] * axes[2][0],
+                    mean[1] + p[0] * axes[0][1] + p[1] * axes[1][1] + p[2] * axes[2][1],
+                    mean[2] + p[0] * axes[0][2] + p[1] * axes[1][2] + p[2] * axes[2][2]
+                ));
+            }
+        }
+    }
+    // Corner index = ((sx>0)<<2) | ((sy>0)<<1) | (sz>0); connect Hamming-1 pairs.
+    const edges = [];
+    for (let a = 0; a < 8; a += 1) {
+        for (let b = a + 1; b < 8; b += 1) {
+            const diff = a ^ b;
+            if (diff === 1 || diff === 2 || diff === 4) edges.push(corners[a], corners[b]);
+        }
+    }
+    const geometry = new THREE.BufferGeometry().setFromPoints(edges);
+    return new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35 }));
 };
 
 const PROJECTION_META = [
@@ -87,11 +156,13 @@ export default function PcaKdePage({ directory, localRun }) {
     const [colormap, setColormap] = useState(DEFAULTS.colormap);
     const [showEllipsoid, setShowEllipsoid] = useState(true);
     const [showSurface, setShowSurface] = useState(true);
+    const [showProjections, setShowProjections] = useState(true);
 
     const workerRef = useRef(null);
     const requestIdRef = useRef(0);
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
+    const framedRefRef = useRef(null);
 
     const staticMode = isStaticMode();
     const structureFile = localRun?.structureFile || null;
@@ -230,7 +301,8 @@ export default function PcaKdePage({ directory, localRun }) {
         const surfaceGroup = new THREE.Group();
         const ellipsoidGroup = new THREE.Group();
         const axesGroup = new THREE.Group();
-        scene.add(surfaceGroup, ellipsoidGroup, axesGroup);
+        const wallsGroup = new THREE.Group();
+        scene.add(wallsGroup, surfaceGroup, ellipsoidGroup, axesGroup);
 
         let animationId = 0;
         const animate = () => {
@@ -254,7 +326,7 @@ export default function PcaKdePage({ directory, localRun }) {
         const resizeObserver = new ResizeObserver(handleResize);
         resizeObserver.observe(mount);
 
-        sceneRef.current = { scene, camera, renderer, controls, surfaceGroup, ellipsoidGroup, axesGroup };
+        sceneRef.current = { scene, camera, renderer, controls, surfaceGroup, ellipsoidGroup, axesGroup, wallsGroup };
 
         return () => {
             cancelAnimationFrame(animationId);
@@ -271,12 +343,14 @@ export default function PcaKdePage({ directory, localRun }) {
     useEffect(() => {
         const handle = sceneRef.current;
         if (!handle || !kde) return;
-        const { surfaceGroup, ellipsoidGroup, axesGroup, camera, controls } = handle;
+        const { surfaceGroup, ellipsoidGroup, axesGroup, wallsGroup, camera, controls } = handle;
 
         const dispose = (group) => {
             while (group.children.length) {
                 const child = group.children.pop();
                 child.geometry?.dispose();
+                // Wall planes carry a CanvasTexture that must be released too.
+                child.material?.map?.dispose();
                 child.material?.dispose();
                 group.remove(child);
             }
@@ -284,11 +358,24 @@ export default function PcaKdePage({ directory, localRun }) {
         dispose(surfaceGroup);
         dispose(ellipsoidGroup);
         dispose(axesGroup);
+        dispose(wallsGroup);
 
         const axes = kde.axes;
         const mean = kde.mean;
         const axisCoords = kde.axisCoords;
         const gridN = kde.grid;
+        const halfWidths = kde.halfWidths;
+
+        // Density projections on the far walls + a wireframe cage (Maxim
+        // Eremenko's shadow-box layout): the isosurface floats inside a box whose
+        // three back walls show the PC-plane KDE projections.
+        if (showProjections && kde.projections) {
+            wallsGroup.add(makeBoundingBox(axes, mean, halfWidths, 0x8a97a8));
+            PROJECTION_META.forEach(({ key }) => {
+                const wall = makeProjectionWall(kde.projections[key], axes, mean, halfWidths, colormap);
+                if (wall) wallsGroup.add(wall);
+            });
+        }
 
         // Isosurface at the enclosed-mass threshold from the slider.
         const massLevel = kde.massLevels?.[isoPercent]?.level ?? (kde.vmax * (1 - isoPercent / 100));
@@ -362,26 +449,20 @@ export default function PcaKdePage({ directory, localRun }) {
             axesGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: triadColors[a] })));
         }
 
-        // Frame the camera so the axis triad (drawn out to the box half-width)
-        // roughly fills the view, keeping the ellipsoid comfortably large.
+        // Reframe the camera only when the site changes, so toggling layers or
+        // sweeping a slider doesn't yank the view out from under the user.
         const radius = axisLength * 1.75 || 1;
         controls.target.set(mean[0], mean[1], mean[2]);
-        const offset = new THREE.Vector3(0.8, 0.6, 1).normalize().multiplyScalar(radius);
-        camera.position.copy(controls.target).add(offset);
+        if (framedRefRef.current !== selectedRef) {
+            const offset = new THREE.Vector3(0.8, 0.6, 1).normalize().multiplyScalar(radius);
+            camera.position.copy(controls.target).add(offset);
+            framedRefRef.current = selectedRef;
+        }
         camera.near = radius / 100;
         camera.far = radius * 100;
         camera.updateProjectionMatrix();
         controls.update();
-    }, [kde, isoPercent, colormap, showEllipsoid, showSurface, selectedEllipsoid]);
-
-    // --- Paint the projection canvases. ---------------------------------------
-    const projectionRefs = { pc12: useRef(null), pc13: useRef(null), pc23: useRef(null) };
-    useEffect(() => {
-        if (!kde?.projections) return;
-        PROJECTION_META.forEach(({ key }) => {
-            paintProjection(projectionRefs[key].current, kde.projections[key], colormap);
-        });
-    }, [kde, colormap]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [kde, isoPercent, colormap, showEllipsoid, showSurface, showProjections, selectedEllipsoid, selectedRef]);
 
     const isoMassLevel = kde?.massLevels?.[isoPercent]?.level;
     const noRun = staticMode && !structureFile;
@@ -485,6 +566,11 @@ export default function PcaKdePage({ directory, localRun }) {
                     <input type="checkbox" checked={showEllipsoid} onChange={(event) => setShowEllipsoid(event.target.checked)} />
                     <i className="switch-track" aria-hidden="true" />
                 </label>
+                <label className="control switch">
+                    <span className="control-name">Projections</span>
+                    <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} />
+                    <i className="switch-track" aria-hidden="true" />
+                </label>
             </div>
 
             {noRun && (
@@ -513,6 +599,7 @@ export default function PcaKdePage({ directory, localRun }) {
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#ff5a5a' }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        <span className="pca-legend-item pca-legend-note">walls: PC-plane density projections</span>
                     </div>
                 </div>
 
@@ -581,28 +668,6 @@ export default function PcaKdePage({ directory, localRun }) {
                         ) : (
                             <p className="pca-meta">{loadingSites ? 'Loading sites…' : 'No site selected.'}</p>
                         )}
-                    </div>
-
-                    <div className="pca-panel">
-                        <h3>
-                            <span className="panel-title-label">
-                                Principal-plane projections
-                                <InfoBadge label="About the projections" align="end">
-                                    <p>
-                                        The displacement density projected onto each pair of principal
-                                        axes — the 2D shadows of the 3D isosurface shown at left.
-                                    </p>
-                                </InfoBadge>
-                            </span>
-                        </h3>
-                        <div className="pca-projections">
-                            {PROJECTION_META.map(({ key, label }) => (
-                                <figure key={key}>
-                                    <canvas ref={projectionRefs[key]} className="pca-projection" />
-                                    <figcaption>{label}</figcaption>
-                                </figure>
-                            ))}
-                        </div>
                     </div>
                 </div>
             </div>
