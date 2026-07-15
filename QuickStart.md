@@ -29,8 +29,11 @@ Nb-EXAFS-1_R_OUTPUT.csv
 After loading, use:
 
 - `Dashboard` for plots, loaded-file badges, and hide/show chart toggles.
-- `KDE / 3D` for model information, KDE slices, and the folded unit-cell view. Drag the highlighted
-  band in the `Slab In Cell` panel to move the slice position directly.
+- `Atomic Density` for model information, KDE slices, and the folded unit-cell view. Drag the
+  highlighted band in the `Slab In Cell` panel to move the slice position directly.
+- `PCA Ellipsoid` for per-site thermal ellipsoids: pick a site (from the list or by clicking an atom
+  in the unit-cell view) to see its PCA displacement ellipsoid, the 3D KDE isosurface with density
+  projected on the box walls, and a non-Gaussianity readout.
 
 ## 3. Live Data (Auto-Refresh)
 

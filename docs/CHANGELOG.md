@@ -5,6 +5,53 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+PCA / thermal-ellipsoid KDE computation engine.
+
+- New engine turns per-site RMC displacement clouds into anisotropic displacement tensors (the
+  thermal ellipsoids) and a smooth 3D probability density. An atom's offset from the average
+  structure is `coords − cellIndices/supercell` folded over the supercell boundary, mean-subtracted
+  per reference site, then mapped to Cartesian Å; the covariance of each site's cloud is its ADP,
+  and a Gaussian KDE of the cloud is the density the ellipsoid only approximates. The method — and
+  the shadow-box visualization below — is due to **Maksim Eremenko's PCA_KDE utilities**
+  (<https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>); this is an
+  independent reimplementation into the toolkit's dual-mode architecture, not a port of his code
+  (his `KDE.js` evaluates a full multivariate Gaussian KDE; ours factorizes it — see below).
+- **The KDE is separable, and exact.** Sampling on a grid aligned with the cloud's principal axes
+  makes SciPy's `H = factor²·C` bandwidth diagonal, so the 3D Gaussian factorizes into three 1D
+  kernels and the volume becomes their tensor product: `N·3·grid` exponentials contracted through
+  BLAS instead of `N·grid³` kernel evaluations. Measured **36–51× faster than a naïve
+  `scipy.stats.gaussian_kde` sweep of the same volume, with max abs error ~1e-13** (machine
+  precision) — it is the same estimator, not an approximation. A 52-site, 52 000-atom configuration
+  builds all clouds in ~80 ms and all 52 ellipsoids in ~1 ms; a single-site 48³ volume solves in
+  ~7 ms server-side.
+- `rmc_toolkits/pca_kde.py` is the source of truth: `load_site_displacements`, `site_ellipsoids`
+  (batched, one pass), `pca_kde_volume` / `site_pca_kde` (volume + PC-plane projections + iso
+  thresholds by enclosed probability mass and by raw density). Axes are sign- and
+  handedness-canonicalized for reproducibility; a floored eigenvalue keeps flat/linear clouds
+  non-singular and flags them `degenerate`.
+- `web_app/frontend/src/workers/pcaKde.js` is a straight JS port for static mode (a 3×3 Jacobi
+  eigensolver stands in for `eigh`), driven by `pcaKdeWorker.js` off the main thread — ~96 ms for a
+  1000-point 48³ volume in-browser, no GPU needed. `tests/test_pca_kde.py` and
+  `src/workers/__tests__/pcaKde.test.js` both assert the separable volume equals the full
+  brute-force estimator to round-off (15 + 14 tests), plus site extraction, supercell-boundary
+  folding, mass normalization, and known-anisotropy recovery.
+- Flask exposes `/api/pca/sites` (per-site ellipsoid table) and `/api/pca/kde` (one site's or one
+  element's volume), both behind a per-(path, mtime) LRU cache.
+- **PCA Ellipsoid page** (new top-level tab; the "KDE / 3D" tab is renamed "Atomic Density"). A site picker over all reference sites, an
+  ellipsoid summary table, a Three.js scene showing the KDE isosurface (extracted by a self-written
+  marching-cubes module — `workers/marchingCubes.js`, since Three's `MarchingCubes` only builds
+  metaballs) nested with the p% thermal-ellipsoid wireframe and PC-axis triad, and the three
+  PC-plane KDE projections as heatmaps. An isosurface-mass slider sweeps the enclosed-probability
+  threshold. Works in both runtimes: Flask endpoints in backend mode, the `pcaKdeWorker` +
+  `pcaKde.js` engine off the main thread in static mode (verified on the bundled Demo run).
+- **Non-Gaussianity (excess kurtosis)** is reported per site. It quantifies why a KDE isosurface can
+  sit inside its harmonic ellipsoid: the covariance is inflated by fat tails while the isosurface
+  tracks the peaked core. Verified on `data/5K_try1` — Nb sites read ~5–7 (strongly anharmonic,
+  isosurface well inside the ellipsoid), near-isotropic Ga sites read ~1 (isosurface ≈ ellipsoid),
+  and a synthetic Gaussian cloud reads ~0. Marching cubes has its own sphere/normals tests; the
+  isosurface-vs-ellipsoid scaling was validated to agree with theory (KDE surface ≈ 1.06× the
+  ellipsoid for a true Gaussian).
+
 Periodic boundary conditions for the KDE slice.
 
 - The KDE under-counted near cell boundaries: folding atoms into one unit cell drops their

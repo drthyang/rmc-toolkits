@@ -70,10 +70,12 @@ Open `http://127.0.0.1:5174/`.
 - GitHub Pages/static mode does not support Live Data monitoring because the browser cannot watch
   local filesystem changes.
 - The Dashboard page renders parsed plot data as browser-native SVG.
-- The KDE / 3D page uses backend SciPy KDE data and a Three.js structure viewer. In static/offline
-  mode it instead computes the KDE in a Web Worker, using a WebGPU compute shader when the browser
-  supports it and falling back to a CPU loop otherwise.
-- On the KDE / 3D page, the `Slab In Cell` band is draggable: grab it to move the slice position
-  (`zCenter`) live without using the slider.
+- The Atomic Density page uses backend SciPy KDE data and a Three.js structure viewer. In
+  static/offline mode it instead computes the KDE in a Web Worker, using a WebGPU compute shader when
+  the browser supports it and falling back to a CPU loop otherwise.
+- On the Atomic Density page, the `Slab In Cell` band is draggable: grab it to move the slice
+  position (`zCenter`) live without using the slider.
+- The PCA Ellipsoid page runs the separable PCA-KDE engine (`rmc_toolkits/pca_kde.py`, mirrored in
+  `workers/pcaKde.js` for static mode) to build per-site thermal ellipsoids and 3D KDE isosurfaces.
 - Working on this codebase? See [`AGENTS.md`](../../AGENTS.md) for architecture and conventions, and
   [`docs/CHANGELOG.md`](../../docs/CHANGELOG.md) for history.
