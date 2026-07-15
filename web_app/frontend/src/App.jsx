@@ -313,8 +313,6 @@ function App() {
                 AI Assistant
               </button>
             </nav>
-          </div>
-          <div className="header-actions">
             <button
               type="button"
               className={`demo-button${demoActive ? ' is-active' : ''}`}
@@ -325,6 +323,8 @@ function App() {
             >
               {localLoading ? 'Loading…' : 'Demo'}
             </button>
+          </div>
+          <div className="header-actions">
           {fsAccess ? (
             <div className="path-controls">
               <label className="watch-toggle">

@@ -168,14 +168,46 @@
 }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
-/* The two columns stretch to a common height so their top and bottom edges line
-   up: the side column's stacked panels set the height, and the 3D viewport's
-   canvas grows to fill it. */
+/* Three panels — the 3D viewport, the displacement statistics, and the unit cell
+   — placed by named areas so the arrangement can reflow with width. The default
+   (portrait-ish / laptop) layout keeps the viewport large on the left with the
+   stats above the unit cell on the right; every column stretches to a common
+   height so the viewport's canvas grows to fill whatever the side panels need. */
 .pca-layout {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(16rem, 0.85fr);
+    grid-template-columns: minmax(0, 2fr) minmax(16rem, 0.9fr);
+    grid-template-areas:
+        "viewport stats"
+        "viewport unitcell";
     gap: 0.85rem;
     align-items: stretch;
+}
+
+/* The wrapper is transparent to the grid (display: contents) so its two panels
+   are placed directly by the layout's named areas. */
+.pca-side {
+    display: contents;
+}
+
+.pca-viewport {
+    grid-area: viewport;
+}
+
+.pca-stats-panel {
+    grid-area: stats;
+}
+
+.pca-unitcell-panel {
+    grid-area: unitcell;
+}
+
+/* 16:9 / wide desktop: spread the three panels across one row so the landscape
+   width carries the detail and the vertical footprint stays short. */
+@media (min-width: 1440px) {
+    .pca-layout {
+        grid-template-columns: minmax(0, 1.7fr) minmax(21rem, 1fr) minmax(17rem, 0.9fr);
+        grid-template-areas: "viewport stats unitcell";
+    }
 }
 
 .pca-panel {
@@ -421,14 +453,7 @@
     font-variant-numeric: normal;
 }
 
-/* ── Side column ──────────────────────────────────────────────────────────── */
-.pca-side {
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-    min-width: 0;
-}
-
+/* ── Side panels: statistics + unit cell ──────────────────────────────────── */
 .pca-stats {
     margin: 0;
     padding: 0.35rem 0.2rem;
@@ -474,6 +499,94 @@
     color: var(--muted);
     font-size: 0.72rem;
     line-height: 1.4;
+}
+
+/* ── Covariance / principal-axes matrices ─────────────────────────────────── */
+.pca-matrices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.65rem 0.55rem 0.2rem;
+    border-top: 1px solid var(--border);
+}
+
+.pca-matrix-block {
+    min-width: 0;
+}
+
+.pca-matrix-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: 0.4rem;
+    color: var(--subtle);
+    font-size: 0.66rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+/* Narrow side column: let a wide table scroll rather than clip or overflow. */
+.pca-matrix-scroll {
+    overflow-x: auto;
+}
+
+.pca-matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.73rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.pca-matrix th,
+.pca-matrix td {
+    padding: 0.2rem 0.3rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.pca-matrix thead th {
+    color: var(--subtle);
+    font-weight: 650;
+    font-size: 0.64rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.pca-matrix tbody th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 650;
+}
+
+.pca-matrix td {
+    color: var(--text-strong);
+}
+
+/* The diagonal carries the per-axis variance — lift it out of the off-diagonal
+   covariances with a faint accent wash. */
+.pca-matrix td.is-diagonal {
+    font-weight: 700;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.pca-matrix--axes tbody th {
+    color: var(--text-strong);
+}
+
+.pca-matrix--axes abbr {
+    text-decoration: none;
+    cursor: help;
+}
+
+/* Color dot tying each PC row to the 3D triad (PC1 red, PC2 green, PC3 blue). */
+.pca-pc-dot {
+    display: inline-block;
+    width: 0.55rem;
+    height: 0.55rem;
+    margin-right: 0.35rem;
+    border-radius: 50%;
+    vertical-align: middle;
 }
 
 /* ── Unit-cell structure view ─────────────────────────────────────────────── */
@@ -535,6 +648,10 @@
 @media (max-width: 980px) {
     .pca-layout {
         grid-template-columns: 1fr;
+        grid-template-areas:
+            "viewport"
+            "stats"
+            "unitcell";
     }
 }
 

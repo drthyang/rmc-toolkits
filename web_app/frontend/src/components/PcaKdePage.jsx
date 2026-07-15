@@ -221,6 +221,9 @@ const makeBoundingBox = (axes, mean, halfWidths, color) => {
 };
 
 const TRIAD_COLORS = [0xd64545, 0x3fa34d, 0x3f7fd6]; // PC1 red, PC2 green, PC3 blue
+// CSS twins of TRIAD_COLORS, used to tint the PC rows in the statistics tables so
+// they read as the same axes shown by the 3D triad and the viewport legend.
+const PC_CSS_COLORS = ['#d64545', '#3fa34d', '#3f7fd6'];
 const TRIAD_UP = new THREE.Vector3(0, 1, 0);
 
 // PC1/PC2/PC3 triad as thin rods from `origin` along the principal axes (rows).
@@ -1266,7 +1269,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                 </div>
 
                 <div className="pca-side">
-                    <div className="pca-panel">
+                    <div className="pca-panel pca-stats-panel">
                         <h3>
                             <span className="panel-title-label">
                                 Displacement statistics
@@ -1274,7 +1277,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                     <p>
                                         Anisotropic displacement parameters from the site's cloud
                                         covariance: U<sub>iso</sub>/B<sub>iso</sub> are the isotropic
-                                        equivalents, RMS axes are the principal amplitudes.
+                                        equivalents, and the tables below give the covariance tensor
+                                        with its principal axes (PCA components) and per-axis amplitudes.
                                     </p>
                                 </InfoBadge>
                             </span>
@@ -1289,10 +1293,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                     <div className="pca-stat">
                                         <dt>B<sub>iso</sub> (Å²)</dt>
                                         <dd>{numberFormat(selectedEllipsoid.bIso, 3)}</dd>
-                                    </div>
-                                    <div className="pca-stat">
-                                        <dt>RMS axes (Å)</dt>
-                                        <dd>{selectedEllipsoid.rms.map((value) => numberFormat(value, 3)).join(', ')}</dd>
                                     </div>
                                     <div className="pca-stat">
                                         <dt>Anisotropy</dt>
@@ -1313,11 +1313,98 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                         </dt>
                                         <dd>{numberFormat(selectedEllipsoid.nonGaussianity ?? kde?.nonGaussianity, 2)}</dd>
                                     </div>
-                                    <div className="pca-stat">
-                                        <dt>Eigenvalues (Å²)</dt>
-                                        <dd>{selectedEllipsoid.eigenvalues.map((value) => numberFormat(value, 4)).join(', ')}</dd>
-                                    </div>
                                 </dl>
+                                <div className="pca-matrices">
+                                    <div className="pca-matrix-block">
+                                        <div className="pca-matrix-title">
+                                            Covariance U (Å²)
+                                            <InfoBadge label="About the covariance matrix" align="end">
+                                                <p>
+                                                    The displacement covariance tensor in Cartesian
+                                                    (x, y, z) axes — the anisotropic displacement
+                                                    parameters. Its eigen-decomposition gives the
+                                                    principal axes below.
+                                                </p>
+                                            </InfoBadge>
+                                        </div>
+                                        <div className="pca-matrix-scroll">
+                                            <table className="pca-matrix">
+                                                <thead>
+                                                    <tr>
+                                                        <th aria-hidden="true" />
+                                                        <th scope="col">x</th>
+                                                        <th scope="col">y</th>
+                                                        <th scope="col">z</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {['x', 'y', 'z'].map((label, i) => (
+                                                        <tr key={label}>
+                                                            <th scope="row">{label}</th>
+                                                            {selectedEllipsoid.covariance[i].map((value, j) => (
+                                                                <td key={j} className={i === j ? 'is-diagonal' : ''}>
+                                                                    {numberFormat(value, 4)}
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <div className="pca-matrix-block">
+                                        <div className="pca-matrix-title">
+                                            Principal axes
+                                            <InfoBadge label="About the principal axes" align="end">
+                                                <p>
+                                                    The PCA components (eigenvectors of the
+                                                    covariance), one per row: each is a unit direction
+                                                    in Cartesian (x, y, z). λ is its eigenvalue
+                                                    (variance, Å²), RMS the amplitude (Å), and κ the
+                                                    excess kurtosis along it (0 = Gaussian).
+                                                </p>
+                                            </InfoBadge>
+                                        </div>
+                                        <div className="pca-matrix-scroll">
+                                            <table className="pca-matrix pca-matrix--axes">
+                                                <thead>
+                                                    <tr>
+                                                        <th aria-hidden="true" />
+                                                        <th scope="col">x</th>
+                                                        <th scope="col">y</th>
+                                                        <th scope="col">z</th>
+                                                        <th scope="col">λ (Å²)</th>
+                                                        <th scope="col">RMS (Å)</th>
+                                                        <th scope="col">
+                                                            <abbr title="Excess kurtosis along this axis (0 = Gaussian)">κ</abbr>
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {selectedEllipsoid.axes.map((axis, i) => (
+                                                        <tr key={i}>
+                                                            <th scope="row">
+                                                                <span
+                                                                    className="pca-pc-dot"
+                                                                    style={{ background: PC_CSS_COLORS[i] }}
+                                                                    aria-hidden="true"
+                                                                />
+                                                                PC{i + 1}
+                                                            </th>
+                                                            {axis.map((value, j) => (
+                                                                <td key={j}>{numberFormat(value, 3)}</td>
+                                                            ))}
+                                                            <td>{numberFormat(selectedEllipsoid.eigenvalues[i], 4)}</td>
+                                                            <td>{numberFormat(selectedEllipsoid.rms[i], 3)}</td>
+                                                            <td>{numberFormat(selectedEllipsoid.excessKurtosis?.[i], 2)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
                                 {kde && (
                                     <p className="pca-meta">
                                         Volume {kde.grid}³ · fit {kde.fitCount.toLocaleString()}/{kde.count.toLocaleString()} ·
@@ -1332,7 +1419,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         )}
                     </div>
 
-                    <div className="pca-panel">
+                    <div className="pca-panel pca-unitcell-panel">
                         <h3>
                             <span className="panel-title-label">
                                 Unit cell
