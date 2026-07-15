@@ -360,6 +360,27 @@
     line-height: 1.4;
 }
 
+/* ── Unit-cell structure view ─────────────────────────────────────────────── */
+.pca-structure {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    max-height: 22rem;
+    background:
+        radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
+        var(--canvas-bg);
+    border-bottom: 1px solid var(--border);
+}
+
+.pca-structure canvas {
+    display: block;
+    cursor: grab;
+}
+
+.pca-structure canvas:active {
+    cursor: grabbing;
+}
+
 /* ── Empty / error states ─────────────────────────────────────────────────── */
 .pca-hint {
     margin: 0 0 0.85rem;

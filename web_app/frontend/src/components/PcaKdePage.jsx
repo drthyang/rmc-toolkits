@@ -8,6 +8,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import API_BASE_URL from '../api';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
+import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { marchingCubes } from '../workers/marchingCubes';
 import InfoBadge from './InfoBadge';
 import './PcaKdePage.css';
@@ -231,42 +232,47 @@ export default function PcaKdePage({ directory, localRun }) {
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
     const framedRefRef = useRef(null);
+    const structureMountRef = useRef(null);
+    const structureSceneRef = useRef(null);
+    const selectRef = useRef(null);
 
     const staticMode = isStaticMode();
     const structureFile = localRun?.structureFile || null;
+    // A locally-loaded run (the Demo, or a picked folder) carries its .rmc6f as a
+    // browser file, so it is parsed in the worker in BOTH runtimes; only a typed
+    // backend directory goes through the Flask API. Static mode has no backend, so
+    // it always relies on a local file.
+    const localFile = structureFile?.sourceFile || null;
 
-    // --- Load the raw .rmc6f text once per selected file (static mode). --------
+    // --- Read the raw .rmc6f text once per local file. ------------------------
     useEffect(() => {
         let cancelled = false;
-        if (staticMode) {
-            if (structureFile?.sourceFile) {
-                structureFile.sourceFile.text().then((text) => {
-                    if (!cancelled) setRmc6fText(text);
-                }).catch(() => {
-                    if (!cancelled) { setRmc6fText(null); setSitesError('Could not read the structure file.'); }
-                });
-            } else {
-                setRmc6fText(null);
-            }
+        if (localFile) {
+            localFile.text().then((text) => {
+                if (!cancelled) setRmc6fText(text);
+            }).catch(() => {
+                if (!cancelled) { setRmc6fText(null); setSitesError('Could not read the structure file.'); }
+            });
+        } else {
+            setRmc6fText(null);
         }
         return () => { cancelled = true; };
-    }, [staticMode, structureFile]);
+    }, [localFile]);
 
-    // --- Static-mode worker lifecycle. ----------------------------------------
+    // --- Worker lifecycle (used whenever a local file is the data source). -----
     useEffect(() => {
-        if (!staticMode) return undefined;
         const worker = new Worker(new URL('../workers/pcaKdeWorker.js', import.meta.url), { type: 'module' });
         workerRef.current = worker;
         return () => { worker.terminate(); workerRef.current = null; };
-    }, [staticMode]);
+    }, []);
 
-    // A single request path for both runtimes: Flask GET, or the static worker.
+    // A single request path for both data sources: the worker when a local file
+    // is loaded, otherwise the Flask API against the run directory.
     const requestPca = useCallback((kind, params) => {
-        if (staticMode) {
+        if (rmc6fText) {
             return new Promise((resolve, reject) => {
                 const worker = workerRef.current;
                 if (!worker) { reject(new Error('PCA-KDE worker unavailable')); return; }
-                if (!rmc6fText) { reject(new Error('Open a run folder to view thermal ellipsoids.')); return; }
                 const id = requestIdRef.current + 1;
                 requestIdRef.current = id;
                 const handler = (event) => {
@@ -283,13 +289,15 @@ export default function PcaKdePage({ directory, localRun }) {
         return axios
             .get(`${API_BASE_URL}${endpoint}`, { params: { dir: directory || '.', ...params } })
             .then((response) => response.data);
-    }, [staticMode, rmc6fText, structureFile, directory]);
+    }, [rmc6fText, structureFile, directory]);
 
     // --- Load the per-site ellipsoid table. -----------------------------------
     useEffect(() => {
         let cancelled = false;
         const loadSites = async () => {
-            if (staticMode && !rmc6fText) { setSites(null); return; }
+            // Wait for a local file's text before requesting; a backend directory
+            // needs no text and proceeds immediately.
+            if (localFile && !rmc6fText) { setSites(null); return; }
             setLoadingSites(true);
             setSitesError(null);
             try {
@@ -308,14 +316,14 @@ export default function PcaKdePage({ directory, localRun }) {
         };
         loadSites();
         return () => { cancelled = true; };
-    }, [requestPca, staticMode, rmc6fText, probability]);
+    }, [requestPca, localFile, rmc6fText, probability]);
 
     // --- Load the KDE volume for the selected site. ---------------------------
     useEffect(() => {
         let cancelled = false;
         const loadKde = async () => {
             if (selectedRef == null) { setKde(null); return; }
-            if (staticMode && !rmc6fText) return;
+            if (localFile && !rmc6fText) return;
             setLoadingKde(true);
             setKdeError(null);
             try {
@@ -334,12 +342,21 @@ export default function PcaKdePage({ directory, localRun }) {
         };
         loadKde();
         return () => { cancelled = true; };
-    }, [requestPca, staticMode, rmc6fText, selectedRef, grid, bw, extent, probability]);
+    }, [requestPca, localFile, rmc6fText, selectedRef, grid, bw, extent, probability]);
 
     const selectedEllipsoid = useMemo(
         () => sites?.sites.find((site) => site.referenceNumber === selectedRef) || null,
         [sites, selectedRef]
     );
+
+    const elementColors = useMemo(
+        () => buildElementColors(sites?.elements ?? []),
+        [sites]
+    );
+
+    // Keep the click handler pointing at the current setter without re-creating
+    // the (once-mounted) structure scene.
+    selectRef.current = setSelectedRef;
 
     // --- Three.js scene: build once, keep a handle for updates. ---------------
     useEffect(() => {
@@ -537,8 +554,187 @@ export default function PcaKdePage({ directory, localRun }) {
         controls.update();
     }, [kde, isoPercent, colormap, showEllipsoid, showSurface, showProjections, selectedEllipsoid, selectedRef]);
 
+    // --- Unit-cell structure scene: one clickable marker per reference site. ---
+    useEffect(() => {
+        const mount = structureMountRef.current;
+        if (!mount) return undefined;
+        const width = mount.clientWidth || 260;
+        const height = mount.clientHeight || 260;
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(40, width / height, 0.01, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
+        renderer.setSize(width, height);
+        mount.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.12;
+        controls.enablePan = false;
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        const key = new THREE.DirectionalLight(0xffffff, 0.7);
+        key.position.set(1, 1, 1);
+        scene.add(key);
+
+        const sitesGroup = new THREE.Group();
+        const cellGroup = new THREE.Group();
+        scene.add(cellGroup, sitesGroup);
+
+        // Click (not drag) on a site marker selects that site. A small pointer
+        // travel budget separates a click from an orbit drag.
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let downXY = null;
+        const toNdc = (event) => {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        };
+        const pick = () => {
+            raycaster.setFromCamera(pointer, camera);
+            return raycaster.intersectObjects(sitesGroup.children, false)[0]?.object ?? null;
+        };
+        const onPointerDown = (event) => { downXY = [event.clientX, event.clientY]; };
+        const onPointerUp = (event) => {
+            if (!downXY) return;
+            const moved = Math.hypot(event.clientX - downXY[0], event.clientY - downXY[1]);
+            downXY = null;
+            if (moved > 5) return;
+            toNdc(event);
+            const hit = pick();
+            if (hit) selectRef.current?.(hit.userData.referenceNumber);
+        };
+        const onPointerMove = (event) => {
+            toNdc(event);
+            renderer.domElement.style.cursor = pick() ? 'pointer' : 'grab';
+        };
+        renderer.domElement.addEventListener('pointerdown', onPointerDown);
+        renderer.domElement.addEventListener('pointerup', onPointerUp);
+        renderer.domElement.addEventListener('pointermove', onPointerMove);
+
+        let animationId = 0;
+        const animate = () => {
+            controls.update();
+            renderer.render(scene, camera);
+            animationId = requestAnimationFrame(animate);
+        };
+        animate();
+
+        const handleResize = () => {
+            const w = mount.clientWidth || width;
+            const h = mount.clientHeight || height;
+            if (w === 0 || h === 0) return;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+        };
+        const resizeObserver = new ResizeObserver(handleResize);
+        resizeObserver.observe(mount);
+
+        structureSceneRef.current = { scene, camera, renderer, controls, sitesGroup, cellGroup, framed: false };
+
+        return () => {
+            cancelAnimationFrame(animationId);
+            resizeObserver.disconnect();
+            renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+            renderer.domElement.removeEventListener('pointerup', onPointerUp);
+            renderer.domElement.removeEventListener('pointermove', onPointerMove);
+            controls.dispose();
+            renderer.dispose();
+            if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
+            structureSceneRef.current = null;
+        };
+    }, []);
+
+    // Rebuild the site markers + unit-cell box, and re-highlight the selection.
+    useEffect(() => {
+        const handle = structureSceneRef.current;
+        if (!handle || !sites) return;
+        const { sitesGroup, cellGroup, camera, controls } = handle;
+
+        const dispose = (group) => {
+            while (group.children.length) {
+                const child = group.children.pop();
+                child.geometry?.dispose();
+                child.material?.dispose();
+                group.remove(child);
+            }
+        };
+        dispose(sitesGroup);
+        dispose(cellGroup);
+
+        // Unit-cell vectors = supercell vectors / supercell counts.
+        const lattice = sites.latticeVectors;
+        const supercell = sites.supercell;
+        const unit = lattice.map((row, i) => row.map((value) => value / supercell[i]));
+        const toCartesian = (frac) => [0, 1, 2].map(
+            (axis) => frac[0] * unit[0][axis] + frac[1] * unit[1][axis] + frac[2] * unit[2][axis]
+        );
+        const edgeLength = Math.min(...unit.map((row) => Math.hypot(...row)));
+        const center = toCartesian([0.5, 0.5, 0.5]);
+
+        // Unit-cell wireframe: the 12 edges of the parallelepiped.
+        const cellCorners = [];
+        for (const a of [0, 1]) {
+            for (const b of [0, 1]) {
+                for (const c of [0, 1]) cellCorners.push(toCartesian([a, b, c]));
+            }
+        }
+        const cellPoints = [];
+        for (let i = 0; i < 8; i += 1) {
+            for (let j = i + 1; j < 8; j += 1) {
+                const gi = [(i >> 2) & 1, (i >> 1) & 1, i & 1];
+                const gj = [(j >> 2) & 1, (j >> 1) & 1, j & 1];
+                if (gi.reduce((s, v, k) => s + (v !== gj[k] ? 1 : 0), 0) === 1) {
+                    cellPoints.push(new THREE.Vector3(...cellCorners[i]), new THREE.Vector3(...cellCorners[j]));
+                }
+            }
+        }
+        cellGroup.add(new THREE.LineSegments(
+            new THREE.BufferGeometry().setFromPoints(cellPoints),
+            new THREE.LineBasicMaterial({ color: 0x8a97a8, transparent: true, opacity: 0.4 })
+        ));
+
+        // One sphere per reference site, colored by element; the selected site is
+        // enlarged and given an emissive glow.
+        const baseRadius = 0.05 * edgeLength;
+        const sphere = new THREE.SphereGeometry(1, 20, 16);
+        sites.sites.forEach((site) => {
+            const isSelected = site.referenceNumber === selectedRef;
+            const color = new THREE.Color(elementColors[site.element] || DEFAULT_ELEMENT_COLOR);
+            const material = new THREE.MeshPhongMaterial({
+                color,
+                emissive: isSelected ? color.clone().multiplyScalar(0.5) : new THREE.Color(0x000000),
+                shininess: 40,
+                transparent: !isSelected,
+                opacity: isSelected ? 1 : 0.85
+            });
+            const marker = new THREE.Mesh(sphere, material);
+            const position = toCartesian(site.siteFractional);
+            marker.position.set(...position);
+            marker.scale.setScalar(isSelected ? baseRadius * 1.7 : baseRadius);
+            marker.userData.referenceNumber = site.referenceNumber;
+            sitesGroup.add(marker);
+        });
+
+        // Frame the cell once; keep the user's orientation afterwards.
+        controls.target.set(...center);
+        if (!handle.framed) {
+            const span = Math.max(...unit.map((row) => Math.hypot(...row)));
+            const radius = span * 1.6 || 1;
+            camera.position.set(center[0] + radius, center[1] + radius * 0.7, center[2] + radius);
+            camera.near = radius / 100;
+            camera.far = radius * 100;
+            camera.updateProjectionMatrix();
+            handle.framed = true;
+        }
+        controls.update();
+    }, [sites, selectedRef, elementColors]);
+
     const isoMassLevel = kde?.massLevels?.[isoPercent]?.level;
-    const noRun = staticMode && !structureFile;
+    const noRun = staticMode && !localFile;
 
     return (
         <div className="pca-page">
@@ -740,6 +936,35 @@ export default function PcaKdePage({ directory, localRun }) {
                             </>
                         ) : (
                             <p className="pca-meta">{loadingSites ? 'Loading sites…' : 'No site selected.'}</p>
+                        )}
+                    </div>
+
+                    <div className="pca-panel">
+                        <h3>
+                            <span className="panel-title-label">
+                                Unit cell
+                                <InfoBadge label="About the unit cell view" align="end">
+                                    <p>
+                                        Every reference site in the average unit cell, colored by
+                                        element. Click an atom to load its PCA-KDE in the main panel;
+                                        the selected site is enlarged and highlighted.
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                        </h3>
+                        <div className="pca-structure" ref={structureMountRef} />
+                        {sites?.elements?.length > 0 && (
+                            <div className="pca-legend">
+                                {sites.elements.map((element) => (
+                                    <span key={element} className="pca-legend-item">
+                                        <i
+                                            className="pca-legend-swatch"
+                                            style={{ background: elementColors[element] || DEFAULT_ELEMENT_COLOR }}
+                                        />
+                                        {element}
+                                    </span>
+                                ))}
+                            </div>
                         )}
                     </div>
                 </div>
