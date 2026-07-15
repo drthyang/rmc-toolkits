@@ -5,6 +5,19 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Dashboard plots labeled by the fit function declared in the run-control `.dat`.
+
+- The RMCProfile run-control `<stem>.dat` records the correction / fit-function form per dataset
+  (`> DATA_TYPE :: G(r)` with `> FIT_TYPE :: D(r)` means the data is fit as D(r)). The dashboard now uses
+  that fit type as the plot's heading and y-axis label, so a `.gr` file fit as D(r) reads **D(r)**, not
+  G(r) (F(Q), S(Q), … likewise). `parseRunSettings` already extracted it; a new `fitTypeByFilename` maps it
+  by file name and the run assembly pairs it onto the matching plot file.
+- Finding the right `.dat` among the many in a run folder (chi2.dat, optimization.dat, …) uses the existing
+  stem match (`<rmc6f-stem>.dat`) first, then a capped content scan of the other `.dat` files as a fallback,
+  reading only each file's head so a large data `.dat` is never read in full.
+- Any `.gr` / `.sq` / `.fq` STOG data file now loads as a dashboard plot, not just the default `scale_ft.*`
+  names — runs commonly use descriptive data-file names (e.g. `PMN_300k_rmc_..._v2.gr`).
+
 Robust `.rmc6f` parsing, dashboard box-zoom, Atomic Density render fix, and PCA polish.
 
 - **Older `.rmc6f` files now load.** The only structural difference from the current format is the per-atom

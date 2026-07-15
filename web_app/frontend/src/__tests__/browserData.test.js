@@ -2,7 +2,15 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
-import { buildLocalRun, parseRunSettings, structureFromRmc6f } from '../browserData';
+import {
+    buildLocalRun,
+    detectPlotKind,
+    fitTypeByFilename,
+    parseRunSettings,
+    plotDataFromText,
+    plotMetadataFromFile,
+    structureFromRmc6f,
+} from '../browserData';
 
 // Minimal .rmc6f fixture: 2×1×1 supercell of a 10 Å cubic cell, one Ga
 // reference site whose two supercell copies sit at within-cell fraction
@@ -161,5 +169,69 @@ describe('settings file selection (buildLocalRun)', () => {
             withPath('chi2.dat')
         ]);
         expect(run.settingsFile).toBeNull();
+    });
+});
+
+describe('run-control fit-function labels on Dashboard plots', () => {
+    it('detects any .gr / .sq / .fq file as a STOG plot, not just scale_ft.*', () => {
+        expect(detectPlotKind('PMN_300k_rmc_v2.gr')).toBe('stog');
+        expect(detectPlotKind('PMN_300k.sq')).toBe('stog');
+        expect(detectPlotKind('data.fq')).toBe('stog');
+        expect(detectPlotKind('scale_ft.gr')).toBe('stog');
+        expect(detectPlotKind('something.csv')).not.toBe('stog');
+    });
+
+    it('parses FIT_TYPE per dataset and maps it by filename (fit type wins over data type)', () => {
+        const dat = [
+            'TITLE :: PMN',
+            'NEUTRON_REAL_SPACE_DATA :: 3',
+            '  > FILENAME :: PMN_300k_rmc_30_100_lOWTfurn_v2.gr',
+            '  > DATA_TYPE :: G(r)',
+            '  > FIT_TYPE :: D(r)',
+            'XRAY_RECIPROCAL_SPACE_DATA ::',
+            '  > FILENAME :: PMN_XFQ.fq',
+            '  > DATA_TYPE :: F(Q)',
+            '  > FIT_TYPE ::  F(Q)',
+            'END ::',
+        ].join('\n');
+        const map = fitTypeByFilename(parseRunSettings(dat));
+        expect(map.get('pmn_300k_rmc_30_100_lowtfurn_v2.gr')).toBe('D(r)');
+        expect(map.get('pmn_xfq.fq')).toBe('F(Q)');
+    });
+
+    it('labels a STOG plot by its fit type when paired, else by extension', () => {
+        const stogText = 'STOG header\n2\n0.00 1.0 1.1\n0.10 2.0 2.1\n';
+        const withFit = { plotKind: 'stog', name: 'PMN_v2.gr', fitType: 'D(r)', text: stogText };
+        const noFit = { plotKind: 'stog', name: 'PMN_v2.gr', text: stogText };
+        expect(plotMetadataFromFile(withFit).title).toBe('D(r)');
+        expect(plotDataFromText(withFit).yLabel).toBe('D(r)');
+        expect(plotDataFromText(withFit).xLabel).toBe('r (Å)');
+        expect(plotMetadataFromFile(noFit).title).toBe('G(r)');
+        expect(plotDataFromText(noFit).yLabel).toBe('G(r)');
+    });
+
+    it('pairs the fit type from the stem-matched .dat onto the loaded .gr plot file (buildLocalRun)', async () => {
+        const dat = [
+            'TITLE :: PMN',
+            'NEUTRON_REAL_SPACE_DATA :: 3',
+            '  > FILENAME :: PMN_v2.gr',
+            '  > FIT_TYPE :: D(r)',
+            'END ::',
+        ].join('\n');
+        const withPath = (name, content) => {
+            const file = new File([content], name, { lastModified: 1 });
+            Object.defineProperty(file, 'webkitRelativePath', { value: `run/${name}` });
+            return file;
+        };
+        const run = await buildLocalRun([
+            withPath('PMN.rmc6f', 'x'),
+            withPath('PMN.dat', dat),
+            withPath('chi2.dat', '0.1 0.2\n0.3 0.4\n'),
+            withPath('PMN_v2.gr', 'h1\nh2\n0 1\n0.1 2\n'),
+        ]);
+        const gr = run.files.find((file) => file.name === 'PMN_v2.gr');
+        expect(gr).toBeTruthy();
+        expect(gr.fitType).toBe('D(r)');
+        expect(plotMetadataFromFile(gr).title).toBe('D(r)');
     });
 });
