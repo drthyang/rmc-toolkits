@@ -35,17 +35,30 @@
   padding: 0.7rem 1.25rem;
   border-bottom: 1px solid var(--border);
   background: var(--panel-bg);
-  display: grid;
-  grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.25fr);
+  /* Two clusters — navigation (brand + tabs) on the left, data-source controls on
+     the right — sized to their content. flex-wrap lets the right cluster drop to
+     its own row on mid widths instead of the tabs clipping the brand. */
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.6rem 1rem;
 }
 
 .header-primary {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   gap: 0.9rem;
+  min-width: 0;
+}
+
+/* Right cluster: Demo + Live Data + the run-folder field, pushed to the far edge
+   and grouped together (they are all data-source controls). */
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
+  margin-left: auto;
   min-width: 0;
 }
 
@@ -170,8 +183,7 @@
 }
 
 .path-controls {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
   gap: 0.65rem;
   min-width: 0;
@@ -263,11 +275,9 @@
 /* The path bar reads as one joined field: label prefix, input, ghost + primary buttons. */
 .path-bar {
   display: grid;
-  grid-template-columns: auto minmax(0, 11rem) auto auto;
-  /* Shrink-wrap to content and sit at the right edge of the controls cell: the
-     Live Data toggle stays grouped with Demo on the left, while the run-folder
-     field only needs room for a short path (no more column-wide empty box). */
-  justify-self: end;
+  /* A compact field: the run folder is usually a short path, so the input only
+     needs ~10rem — no more column-wide empty box. */
+  grid-template-columns: auto minmax(0, 10rem) auto auto;
   align-items: center;
   gap: 0.45rem;
   border: 1px solid var(--border);
@@ -324,7 +334,7 @@
 }
 
 .local-file-bar {
-  grid-template-columns: auto minmax(0, 11rem) auto;
+  grid-template-columns: auto minmax(0, 10rem) auto;
 }
 
 .selected-run-name {
@@ -359,7 +369,8 @@
 }
 
 .browse-status {
-  grid-column: 1 / -1;
+  flex-basis: 100%;
+  width: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -421,17 +432,20 @@
   text-align: center;
 }
 
-/* Below ~880px the tabs no longer fit beside the path bar; stack the header rows. */
-@media (max-width: 880px) {
+/* Below ~1040px the nav and the full data-source cluster no longer fit on one
+   line; stack the header into rows so nothing clips or overflows. */
+@media (max-width: 1040px) {
   .app-header {
-    grid-template-columns: 1fr;
-    padding: 0.8rem;
+    flex-direction: column;
     align-items: stretch;
+    padding: 0.8rem;
+    gap: 0.55rem;
   }
 
   .header-primary {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
   }
 
   .page-tabs {
@@ -447,21 +461,31 @@
     text-overflow: ellipsis;
   }
 
+  /* Demo sits on its own full-width row, then Live Data + the run-folder field. */
+  .header-actions {
+    margin-left: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+
+  .demo-button {
+    width: 100%;
+  }
+
   .path-controls {
-    grid-template-columns: auto minmax(0, 1fr);
     gap: 0.5rem;
   }
 
   .path-bar {
-    /* Stacked header: let the field fill the row again (the desktop right-align
-       and narrow field only make sense beside the tabs). */
+    /* Stacked header: let the field fill the row again (the compact desktop field
+       only makes sense beside the tabs). */
+    flex: 1 1 auto;
     grid-template-columns: 1fr auto auto;
-    justify-self: stretch;
   }
 
   .local-file-bar {
     grid-template-columns: minmax(0, 1fr) auto;
-    width: 100%;
   }
 
   .path-bar label {
