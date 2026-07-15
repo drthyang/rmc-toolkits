@@ -80,16 +80,22 @@ const sampleDensityTrilinear = (density, grid, fi, fj, fk) => {
 // real density departs from the ellipsoid (anharmonicity). The ellipsoid-surface
 // point for a unit-sphere vertex is (semi .* vertex) in the PCA frame, which both
 // maps to world coordinates (baked in, like the isosurface) and indexes the grid.
+// Coloring is stretched to the shell's OWN density range (not the global 0..vmax),
+// so the small variation across an iso-probability shell reads with full contrast.
 const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap) => {
     const geometry = new THREE.SphereGeometry(1, 96, 64);
     const unit = geometry.attributes.position;
     const count = unit.count;
     const world = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
+    const values = new Float64Array(count);
     const grid = kde.grid;
     const axisCoords = kde.axisCoords;
     const step = [0, 1, 2].map((a) => (axisCoords[a][1] - axisCoords[a][0]) || 1);
-    const vmax = kde.vmax || 1;
+    // First pass: bake world positions and sample the density at each vertex,
+    // tracking the min/max that actually occur on this shell.
+    let shellMin = Infinity;
+    let shellMax = -Infinity;
     for (let v = 0; v < count; v += 1) {
         const p0 = semi[0] * unit.getX(v);
         const p1 = semi[1] * unit.getY(v);
@@ -97,13 +103,21 @@ const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap) => {
         world[3 * v] = mean[0] + p0 * axes[0][0] + p1 * axes[1][0] + p2 * axes[2][0];
         world[3 * v + 1] = mean[1] + p0 * axes[0][1] + p1 * axes[1][1] + p2 * axes[2][1];
         world[3 * v + 2] = mean[2] + p0 * axes[0][2] + p1 * axes[1][2] + p2 * axes[2][2];
-        const value = sampleDensityTrilinear(
+        const d = sampleDensityTrilinear(
             kde.density, grid,
             (p0 - axisCoords[0][0]) / step[0],
             (p1 - axisCoords[1][0]) / step[1],
             (p2 - axisCoords[2][0]) / step[2]
-        ) / vmax;
-        const rgb = sampleColormap(colormap, value < 0 ? 0 : value > 1 ? 1 : value);
+        );
+        values[v] = d;
+        if (d < shellMin) shellMin = d;
+        if (d > shellMax) shellMax = d;
+    }
+    // Second pass: stretch the shell's density range across the full colormap.
+    const shellRange = shellMax - shellMin || 1;
+    for (let v = 0; v < count; v += 1) {
+        const t = (values[v] - shellMin) / shellRange;
+        const rgb = sampleColormap(colormap, t < 0 ? 0 : t > 1 ? 1 : t);
         colors[3 * v] = rgb[0] / 255;
         colors[3 * v + 1] = rgb[1] / 255;
         colors[3 * v + 2] = rgb[2] / 255;

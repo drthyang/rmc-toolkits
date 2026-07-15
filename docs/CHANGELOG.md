@@ -9,7 +9,9 @@ PCA Ellipsoid: selectable / KDE-projected ellipsoid, Site selector; taller dashb
 
 - **KDE shell** (new, optional): a "KDE shell" toggle paints the KDE density onto the p% ellipsoid surface
   (per-vertex trilinear sample of the volume, current colormap), so anharmonic departures from the harmonic
-  ellipsoid read as hot/cold patches on the shell. It shows the same density as the isosurface from the
+  ellipsoid read as hot/cold patches on the shell. The coloring is stretched to the shell's own density range
+  (not the global 0..vmax), so the small variation across a near-iso-probability shell reads at full contrast
+  (a Gaussian cloud stays near-flat, as it should). It shows the same density as the isosurface from the
   outside and would occlude it, so the two are mutually exclusive — enabling one switches the other off, and
   both-off is allowed (wireframe + wall projections only).
 - **Ellipsoid wireframe color** is now chosen from the controls bar (swatch + dropdown: Amber, White, Silver,
