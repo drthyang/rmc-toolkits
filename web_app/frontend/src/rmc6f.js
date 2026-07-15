@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
+// Robust field extraction for one RMCProfile `.rmc6f` atom line, tolerant of both
+// the current format and older files. The only difference between them is an
+// optional label column between the element and the coordinates:
+//   current:  id  element  [type]  x  y  z  ref  cellx  celly  cellz   (10 fields)
+//   older:    id  element          x  y  z  ref  cellx  celly  cellz   ( 9 fields)
+// The reference number and the three cell indices are always the last four fields,
+// and the fractional coordinates the three before them, so indexing from the END
+// tolerates any number of label columns between the element and the coordinates.
+//
+// `parts` is the whitespace-split, non-empty tokens of a line. Returns null for a
+// non-atom / malformed line (too few fields, or non-numeric coords/ref/cell) so
+// callers can skip it.
+export const parseAtomLine = (parts) => {
+    const n = parts.length;
+    // Minimum: id, element, x, y, z, ref, cellx, celly, cellz.
+    if (n < 9) return null;
+    const element = parts[1];
+    const coords = [Number(parts[n - 7]), Number(parts[n - 6]), Number(parts[n - 5])];
+    const referenceNumber = Number(parts[n - 4]);
+    const cellIndices = [Number(parts[n - 3]), Number(parts[n - 2]), Number(parts[n - 1])];
+    if (!Number.isFinite(referenceNumber)) return null;
+    if (!coords.every(Number.isFinite) || !cellIndices.every(Number.isFinite)) return null;
+    return { element, coords, referenceNumber, cellIndices };
+};

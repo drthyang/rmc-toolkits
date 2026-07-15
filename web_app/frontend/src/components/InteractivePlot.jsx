@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
@@ -105,8 +105,12 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const [error, setError] = useState(null);
     const [hidden, setHidden] = useState(() => new Set());
     const [xDomain, setXDomain] = useState(null);
+    const [yDomain, setYDomain] = useState(null);
     const [hover, setHover] = useState(null);
     const [drag, setDrag] = useState(null);
+    // Unique clip-path id so a rectangle-zoomed series is clipped to the plot area
+    // (and does not draw over the axes) even with several charts on the page.
+    const clipId = `plot-clip-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
     const svgRef = useRef(null);
     const loadedPathRef = useRef(file.path);
     const effectivePlot = plotData || plot;
@@ -164,8 +168,9 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         const allY = visibleSeries.flatMap((series) =>
             series.y.filter((_, index) => series.x[index] >= currentX[0] && series.x[index] <= currentX[1])
         );
-        return { x: currentX, y: niceDomain(allY.length ? allY : visibleSeries.flatMap((series) => series.y)), baseX };
-    }, [visibleSeries, xDomain]);
+        const baseY = niceDomain(allY.length ? allY : visibleSeries.flatMap((series) => series.y));
+        return { x: currentX, y: yDomain || baseY, baseX, baseY };
+    }, [visibleSeries, xDomain, yDomain]);
 
     // 8:5 (golden-ish) for grid cards, a slim strip for the wide variant.
     const view = wide
@@ -177,6 +182,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const xScale = (x) => view.left + ((x - domains.x[0]) / (domains.x[1] - domains.x[0] || 1)) * plotWidth;
     const yScale = (y) => view.top + plotHeight - ((y - domains.y[0]) / (domains.y[1] - domains.y[0] || 1)) * plotHeight;
     const xInvert = (px) => domains.x[0] + ((px - view.left) / plotWidth) * (domains.x[1] - domains.x[0]);
+    const yInvert = (py) => domains.y[0] + ((view.top + plotHeight - py) / plotHeight) * (domains.y[1] - domains.y[0]);
 
     const yTicks = niceTicks(domains.y, wide ? 4 : 6);
     const xTicks = niceTicks(domains.x, wide ? 11 : 7);
@@ -208,16 +214,18 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         });
     }, [visibleSeries, domains, view.left, view.top, plotWidth, plotHeight]);
 
-    const pointerToViewX = (event) => {
+    const pointerToView = (event) => {
         const svg = svgRef.current;
-        if (!svg) return view.left;
+        if (!svg) return { x: view.left, y: view.top };
         const transform = svg.getScreenCTM();
-        if (!transform) return view.left;
+        if (!transform) return { x: view.left, y: view.top };
         const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(transform.inverse());
-        return point.x;
+        return { x: point.x, y: point.y };
     };
+    const pointerToViewX = (event) => pointerToView(event).x;
 
     const clampPlotX = (x) => Math.max(view.left, Math.min(view.width - view.right, x));
+    const clampPlotY = (y) => Math.max(view.top, Math.min(view.height - view.bottom, y));
 
     const nearestHover = (event) => {
         if (!effectivePlot || !visibleSeries.length) return;
@@ -250,14 +258,14 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     };
 
     const startDrag = (event) => {
-        const x = pointerToViewX(event);
+        const { x, y } = pointerToView(event);
         if (x < view.left || x > view.width - view.right) return;
         try {
             event.currentTarget.setPointerCapture(event.pointerId);
         } catch {
             // Pointer capture is best-effort; drag still works without it.
         }
-        setDrag({ start: x, current: x });
+        setDrag({ x0: clampPlotX(x), y0: clampPlotY(y), x1: clampPlotX(x), y1: clampPlotY(y) });
         setHover(null);
     };
 
@@ -266,19 +274,25 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
             nearestHover(event);
             return;
         }
-        const x = clampPlotX(pointerToViewX(event));
-        setDrag((current) => ({ ...current, current: x }));
+        const { x, y } = pointerToView(event);
+        setDrag((current) => ({ ...current, x1: clampPlotX(x), y1: clampPlotY(y) }));
     };
 
     const finishDrag = (event) => {
         if (!drag) return;
-        const current = clampPlotX(pointerToViewX(event));
-        const start = Math.min(drag.start, current);
-        const end = Math.max(drag.start, current);
+        const { x, y } = pointerToView(event);
+        const xLo = Math.min(drag.x0, clampPlotX(x));
+        const xHi = Math.max(drag.x0, clampPlotX(x));
+        const yLo = Math.min(drag.y0, clampPlotY(y));
+        const yHi = Math.max(drag.y0, clampPlotY(y));
         setDrag(null);
-        if (end - start > 8) {
-            setXDomain([xInvert(start), xInvert(end)]);
-        }
+        // Zoom whichever dimension(s) the drag actually spans (> 8px): a real box
+        // zooms both axes to it, a thin horizontal/vertical drag zooms just that
+        // axis. Screen y grows downward, so the top pixel is the higher value.
+        const zoomX = xHi - xLo > 8;
+        const zoomY = yHi - yLo > 8;
+        if (zoomX) setXDomain([xInvert(xLo), xInvert(xHi)]);
+        if (zoomY) setYDomain([yInvert(yHi), yInvert(yLo)]);
         try {
             event.currentTarget.releasePointerCapture?.(event.pointerId);
         } catch {
@@ -339,8 +353,12 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                     ))}
                 </div>
                 <div className="plot-actions">
-                    {xDomain && (
-                        <button type="button" className="plot-reset" onClick={() => setXDomain(null)}>
+                    {(xDomain || yDomain) && (
+                        <button
+                            type="button"
+                            className="plot-reset"
+                            onClick={() => { setXDomain(null); setYDomain(null); }}
+                        >
                             Reset zoom
                         </button>
                     )}
@@ -359,8 +377,13 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                     onPointerCancel={() => setDrag(null)}
                     onPointerLeave={() => setHover(null)}
                     onWheel={zoom}
-                    onDoubleClick={() => setXDomain(null)}
+                    onDoubleClick={() => { setXDomain(null); setYDomain(null); }}
                 >
+                    <defs>
+                        <clipPath id={clipId}>
+                            <rect x={view.left} y={view.top} width={plotWidth} height={plotHeight} />
+                        </clipPath>
+                    </defs>
                     <rect className="plot-bg" x={view.left} y={view.top} width={plotWidth} height={plotHeight} />
                     {yTicks.ticks.map((tick) => (
                         <g key={`y-${tick}`}>
@@ -384,19 +407,21 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                             </text>
                         </g>
                     ))}
-                    {seriesShapes.map((series) => (
-                        <path
-                            key={series.label}
-                            className={series.marker ? 'series-markers' : 'series-path'}
-                            d={series.d}
-                            stroke={series.color}
-                        />
-                    ))}
+                    <g clipPath={`url(#${clipId})`}>
+                        {seriesShapes.map((series) => (
+                            <path
+                                key={series.label}
+                                className={series.marker ? 'series-markers' : 'series-path'}
+                                d={series.d}
+                                stroke={series.color}
+                            />
+                        ))}
+                    </g>
                     <rect className="plot-frame" x={view.left} y={view.top} width={plotWidth} height={plotHeight} />
                     <AxisLabel label={effectivePlot.xLabel} x={view.left + plotWidth / 2} y={view.height - 10} />
                     <AxisLabel label={effectivePlot.yLabel} x={18} y={view.top + plotHeight / 2} rotate />
                     {hover && (
-                        <g>
+                        <g clipPath={`url(#${clipId})`}>
                             <line className="hover-line" x1={hover.px} x2={hover.px} y1={view.top} y2={view.top + plotHeight} />
                             {hover.values.map((value) => (
                                 <circle key={value.label} className="hover-dot" cx={value.cx} cy={value.cy} r="3.6" fill={value.color} />
@@ -406,10 +431,10 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                     {drag && (
                         <rect
                             className="zoom-selection"
-                            x={Math.min(drag.start, drag.current)}
-                            y={view.top}
-                            width={Math.abs(drag.current - drag.start)}
-                            height={plotHeight}
+                            x={Math.min(drag.x0, drag.x1)}
+                            y={Math.min(drag.y0, drag.y1)}
+                            width={Math.abs(drag.x1 - drag.x0)}
+                            height={Math.abs(drag.y1 - drag.y0)}
                         />
                     )}
                 </svg>

@@ -320,6 +320,7 @@ const PC_CSS_COLORS = ['#d64545', '#3fa34d', '#3f7fd6'];
 const ELLIPSOID_COLOR_OPTIONS = [
     { value: '#ff7a1a', label: 'Amber' },
     { value: '#ffffff', label: 'White' },
+    { value: '#111111', label: 'Black' },
     { value: '#c3d4e6', label: 'Silver' },
     { value: '#8fd4ef', label: 'Cyan' },
     { value: '#b892ff', label: 'Violet' }
@@ -895,7 +896,14 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             const scaleMatrix = new THREE.Matrix4().makeScale(semi[0], semi[1], semi[2]);
             const model = orientation.multiply(scaleMatrix);
             model.setPosition(mean[0], mean[1], mean[2]);
-            const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(ellipsoidColor), wireframe: true, transparent: true, opacity: ELLIPSOID_OPACITY });
+            // Opaque cage over the KDE shell (crisp lines against the colored surface);
+            // translucent otherwise so it never crowds the isosurface.
+            const material = new THREE.MeshBasicMaterial({
+                color: new THREE.Color(ellipsoidColor),
+                wireframe: true,
+                transparent: !showEllipsoidKde,
+                opacity: showEllipsoidKde ? 1 : ELLIPSOID_OPACITY
+            });
             const mesh = new THREE.Mesh(sphere, material);
             mesh.applyMatrix4(model);
             ellipsoidGroup.add(mesh);
@@ -1087,8 +1095,21 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         const positions = sites.sites.map((site) => ({
             ref: site.referenceNumber,
             el: site.element,
+            rms: site.rms,
+            axes: site.axes,
             pos: new THREE.Vector3(...toCartesian(site.siteFractional))
         }));
+
+        // Draw each site as its calculated thermal ellipsoid (shape from the PCA
+        // eigenvalues/axes) rather than a uniform sphere. The true RMS amplitudes
+        // (~0.1 Å) are tiny next to the cell, so magnify them by a single global
+        // factor tuned to the old sphere-marker size: the familiar footprint stays,
+        // but each site now shows its anisotropy and its size relative to the others.
+        const rmsValues = positions.flatMap((p) => p.rms || []);
+        const meanRms = rmsValues.length
+            ? rmsValues.reduce((sum, value) => sum + value, 0) / rmsValues.length
+            : baseRadius;
+        const ellipsoidScale = baseRadius / (meanRms || baseRadius);
 
         // --- Bonds: thin lines between in-cell atoms only (no periodic images, so
         // nothing is drawn outside the box). The cutoff tracks the nearest-
@@ -1132,25 +1153,50 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                 transparent: !isSelected,
                 opacity: isSelected ? 1 : 0.45
             }));
-            marker.position.copy(site.pos);
-            marker.scale.setScalar(baseRadius);
             marker.userData.referenceNumber = site.ref;
+            // Semi-axes of this site's ellipsoid marker (magnified RMS, floored so a
+            // near-degenerate third axis never collapses to an invisible sliver);
+            // falls back to a uniform sphere when a site lacks PCA data.
+            const hasEllipsoid = Boolean(site.rms && site.axes);
+            const semi = hasEllipsoid
+                ? site.rms.map((r) => Math.max(r * ellipsoidScale, baseRadius * 0.15))
+                : [baseRadius, baseRadius, baseRadius];
+            if (hasEllipsoid) {
+                // Unit sphere scaled by the semi-axes and oriented by the site's
+                // principal axes, centered on the site.
+                const orientation = new THREE.Matrix4().set(
+                    site.axes[0][0], site.axes[1][0], site.axes[2][0], 0,
+                    site.axes[0][1], site.axes[1][1], site.axes[2][1], 0,
+                    site.axes[0][2], site.axes[1][2], site.axes[2][2], 0,
+                    0, 0, 0, 1
+                );
+                const model = orientation.multiply(new THREE.Matrix4().makeScale(semi[0], semi[1], semi[2]));
+                model.setPosition(site.pos.x, site.pos.y, site.pos.z);
+                marker.applyMatrix4(model);
+            } else {
+                marker.position.copy(site.pos);
+                marker.scale.setScalar(baseRadius);
+            }
             sitesGroup.add(marker);
 
             if (isSelected) {
+                // Size the highlight to the selected marker's own extent so the glow
+                // cloud always encloses it and the triad rods reach past it, however
+                // large a soft / anisotropic site's ellipsoid gets.
+                const extent = Math.max(...semi, baseRadius);
                 // Soft concentric highlight shells in the same contrast color.
-                [[2.6, 0.18], [1.7, 0.28]].forEach(([scale, opacity]) => {
+                [[1.9, 0.18], [1.35, 0.28]].forEach(([scale, opacity]) => {
                     const glow = new THREE.Mesh(sphere, new THREE.MeshBasicMaterial({
                         color: highlightColor, transparent: true, opacity, depthWrite: false
                     }));
                     glow.position.copy(site.pos);
-                    glow.scale.setScalar(baseRadius * scale);
+                    glow.scale.setScalar(extent * scale);
                     highlightGroup.add(glow);
                 });
                 // Local principal-axis triad, using this site's PCA axes (same
                 // Cartesian frame as the structure), so the orientation is exact.
                 if (selectedEllipsoid?.axes) {
-                    buildAxisTriad(site.pos, selectedEllipsoid.axes, baseRadius * 3.2, baseRadius * 0.14)
+                    buildAxisTriad(site.pos, selectedEllipsoid.axes, extent * 2.3, extent * 0.1)
                         .forEach((rod) => highlightGroup.add(rod));
                 }
             }
@@ -1300,32 +1346,35 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                     <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} />
                     <i className="switch-track" aria-hidden="true" />
                 </label>
-                <label className="control switch">
-                    <span className="control-name">
-                        KDE shell
-                        <InfoBadge label="About the KDE shell">
-                            <p>
-                                Paints the KDE density onto the ellipsoid surface. A near-uniform
-                                color means the motion is Gaussian; hotter and colder patches mark
-                                where the real density departs from the harmonic ellipsoid.
-                            </p>
-                            <p>
-                                It shows the same density as the isosurface from the outside, so the
-                                two switch off each other.
-                            </p>
-                        </InfoBadge>
-                    </span>
-                    <input
-                        type="checkbox"
-                        checked={showEllipsoidKde}
-                        onChange={(event) => {
-                            const on = event.target.checked;
-                            setShowEllipsoidKde(on);
-                            if (on) setShowSurface(false);
-                        }}
-                    />
-                    <i className="switch-track" aria-hidden="true" />
-                </label>
+                {/* The InfoBadge is a sibling of the toggle label, not inside it, so the
+                    "?" help button never sits inside the switch's clickable area (an
+                    interactive element nested in a <label> makes the toggle click ambiguous). */}
+                <div className="switch-with-info">
+                    <label className="control switch">
+                        <span className="control-name">KDE shell</span>
+                        <input
+                            type="checkbox"
+                            checked={showEllipsoidKde}
+                            onChange={(event) => {
+                                const on = event.target.checked;
+                                setShowEllipsoidKde(on);
+                                if (on) setShowSurface(false);
+                            }}
+                        />
+                        <i className="switch-track" aria-hidden="true" />
+                    </label>
+                    <InfoBadge label="About the KDE shell" align="end">
+                        <p>
+                            Paints the KDE density onto the ellipsoid surface. A near-uniform
+                            color means the motion is Gaussian; hotter and colder patches mark
+                            where the real density departs from the harmonic ellipsoid.
+                        </p>
+                        <p>
+                            It shows the same density as the isosurface from the outside, so the
+                            two switch off each other.
+                        </p>
+                    </InfoBadge>
+                </div>
             </div>
 
             {noRun && (

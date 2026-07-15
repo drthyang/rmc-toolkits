@@ -9,6 +9,7 @@ import numpy as np
 
 from rmc_toolkits.parsers import (
     frac_lines_from_rmc6f,
+    iter_rmc6f_atoms,
     read_atom_indices,
     read_cell_vectors,
     read_chi,
@@ -142,6 +143,54 @@ class ParserTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "mode must be"):
             read_structure(DATA, mode="bad-mode")
+
+
+# An older (2018-era) `.rmc6f` omits the per-atom bracketed type label, so its atom
+# lines have 9 fields instead of 10. The parser must read both.
+OLD_FORMAT_RMC6F = """(Version 6f format configuration file)
+Metadata owner:     Maxim
+Metadata date:      17-07-2018
+Number of atoms:                     4
+Supercell dimensions:                2  2  2
+Cell (Ang/deg):   10.000000  10.000000  10.000000   90.000000   90.000000   90.000000
+Lattice vectors (Ang):
+  10.000000   0.000000   0.000000
+   0.000000  10.000000   0.000000
+   0.000000   0.000000  10.000000
+Atoms:
+       1   Pb  0.010  0.010  0.010     1   0   0   0
+       2   Pb  0.020  0.480  0.020     1   0   1   0
+       3   Pb  0.490  0.010  0.480     2   1   0   1
+       4   Pb  0.510  0.510  0.510     2   1   1   1
+"""
+
+
+class OldFormatRmc6fTests(unittest.TestCase):
+    def _write_old(self) -> Path:
+        directory = Path(tempfile.mkdtemp())
+        path = directory / "old.rmc6f"
+        path.write_text(OLD_FORMAT_RMC6F, encoding="utf-8")
+        return path
+
+    def test_read_cell_vectors_from_old_format(self):
+        path = self._write_old()
+        lattice_vectors, supercell = read_cell_vectors(path)
+        np.testing.assert_array_equal(supercell, [2, 2, 2])
+        np.testing.assert_array_equal(lattice_vectors[0], [10.0, 0.0, 0.0])
+
+    def test_iter_atoms_from_old_9_field_format(self):
+        path = self._write_old()
+        atoms = list(iter_rmc6f_atoms(path))
+        self.assertEqual(len(atoms), 4)
+        first = atoms[0]
+        self.assertEqual(first["element"], "Pb")
+        self.assertEqual(first["type_label"], "")  # no label column in the old format
+        self.assertEqual(first["reference_number"], 1)
+        np.testing.assert_allclose(first["coords"], [0.010, 0.010, 0.010])
+        np.testing.assert_array_equal(first["cell_indices"], [0, 0, 0])
+        # reference numbers and the trailing cell indices come from the line end
+        self.assertEqual([atom["reference_number"] for atom in atoms], [1, 1, 2, 2])
+        np.testing.assert_array_equal(atoms[3]["cell_indices"], [1, 1, 1])
 
 
 if __name__ == "__main__":
