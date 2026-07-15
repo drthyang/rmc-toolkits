@@ -239,7 +239,9 @@ const PROJECTION_META = [
 ];
 
 export default function PcaKdePage({ directory, localRun }) {
-    const [rmc6fText, setRmc6fText] = useState(null);
+    // The loaded .rmc6f text, tagged with the file it came from, so a just-changed
+    // dataset never runs against the previous model's text (see rmc6fText below).
+    const [loadedText, setLoadedText] = useState({ file: null, text: null });
     const [sites, setSites] = useState(null);
     const [selectedRef, setSelectedRef] = useState(null);
     const [kde, setKde] = useState(null);
@@ -274,18 +276,22 @@ export default function PcaKdePage({ directory, localRun }) {
     // backend directory goes through the Flask API. Static mode has no backend, so
     // it always relies on a local file.
     const localFile = structureFile?.sourceFile || null;
+    // Only treat the text as current when it was read from the file in props right
+    // now. On a dataset switch this is null until the new file's text loads, so the
+    // effects below never fire against the previous model.
+    const rmc6fText = loadedText.file === localFile ? loadedText.text : null;
 
     // --- Read the raw .rmc6f text once per local file. ------------------------
     useEffect(() => {
         let cancelled = false;
         if (localFile) {
             localFile.text().then((text) => {
-                if (!cancelled) setRmc6fText(text);
+                if (!cancelled) setLoadedText({ file: localFile, text });
             }).catch(() => {
-                if (!cancelled) { setRmc6fText(null); setSitesError('Could not read the structure file.'); }
+                if (!cancelled) { setLoadedText({ file: null, text: null }); setSitesError('Could not read the structure file.'); }
             });
         } else {
-            setRmc6fText(null);
+            setLoadedText({ file: null, text: null });
         }
         return () => { cancelled = true; };
     }, [localFile]);
@@ -313,14 +319,14 @@ export default function PcaKdePage({ directory, localRun }) {
                     else resolve(event.data.result);
                 };
                 worker.addEventListener('message', handler);
-                worker.postMessage({ id, kind, text: rmc6fText, cacheKey: structureFile?.path || 'run', ...params });
+                worker.postMessage({ id, kind, text: rmc6fText, ...params });
             });
         }
         const endpoint = kind === 'sites' ? '/api/pca/sites' : '/api/pca/kde';
         return axios
             .get(`${API_BASE_URL}${endpoint}`, { params: { dir: directory || '.', ...params } })
             .then((response) => response.data);
-    }, [rmc6fText, structureFile, directory]);
+    }, [rmc6fText, directory]);
 
     // --- Load the per-site ellipsoid table. -----------------------------------
     useEffect(() => {
