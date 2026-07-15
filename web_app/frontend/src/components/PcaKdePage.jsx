@@ -18,7 +18,11 @@ const BW_OPTIONS = [
     { value: 'scott', label: 'Scott' },
     { value: 'silverman', label: 'Silverman' }
 ];
-const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 50, colormap: 'viridis' };
+const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 25, colormap: 'viridis' };
+
+// Contrast highlight for the selected atom in the unit-cell view — a warm color
+// that stands out against the cool element palette (teal Se, blue Ga/Ta).
+const SELECTED_ATOM_COLOR = 0xff7a1a;
 
 const numberFormat = (value, digits = 4) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -762,13 +766,16 @@ export default function PcaKdePage({ directory, localRun }) {
         // so they recede; the selected atom is opaque, bright, and wrapped in a
         // soft highlight cloud plus a correctly-oriented PC1/PC2/PC3 triad. -------
         const sphere = new THREE.SphereGeometry(1, 20, 16);
+        const highlightColor = new THREE.Color(SELECTED_ATOM_COLOR);
         positions.forEach((site) => {
             const isSelected = site.ref === selectedRef;
-            const base = new THREE.Color(elementColors[site.el] || DEFAULT_ELEMENT_COLOR);
+            // The selected atom takes the contrast highlight color so it stands out
+            // among the element-colored atoms; the rest keep their element color.
+            const color = isSelected ? highlightColor : new THREE.Color(elementColors[site.el] || DEFAULT_ELEMENT_COLOR);
             const marker = new THREE.Mesh(sphere, new THREE.MeshPhongMaterial({
-                color: base,
-                emissive: isSelected ? base.clone().multiplyScalar(0.25) : new THREE.Color(0x000000),
-                shininess: isSelected ? 60 : 20,
+                color,
+                emissive: isSelected ? highlightColor.clone().multiplyScalar(0.35) : new THREE.Color(0x000000),
+                shininess: isSelected ? 70 : 20,
                 transparent: !isSelected,
                 opacity: isSelected ? 1 : 0.45
             }));
@@ -778,10 +785,10 @@ export default function PcaKdePage({ directory, localRun }) {
             sitesGroup.add(marker);
 
             if (isSelected) {
-                // Soft concentric highlight shells.
-                [[2.6, 0.16], [1.7, 0.26]].forEach(([scale, opacity]) => {
+                // Soft concentric highlight shells in the same contrast color.
+                [[2.6, 0.18], [1.7, 0.28]].forEach(([scale, opacity]) => {
                     const glow = new THREE.Mesh(sphere, new THREE.MeshBasicMaterial({
-                        color: base, transparent: true, opacity, depthWrite: false
+                        color: highlightColor, transparent: true, opacity, depthWrite: false
                     }));
                     glow.position.copy(site.pos);
                     glow.scale.setScalar(baseRadius * scale);
@@ -939,14 +946,6 @@ export default function PcaKdePage({ directory, localRun }) {
                     <div className="pca-canvas" ref={mountRef}>
                         {(loadingKde || loadingSites) && <div className="pca-badge">Computing…</div>}
                         {kdeError && <div className="pca-badge is-error">{kdeError}</div>}
-                        <a
-                            className="pca-canvas-credit"
-                            href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            PCA_KDE method: Maksim Eremenko
-                        </a>
                     </div>
                     <div className="pca-legend">
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
@@ -954,6 +953,14 @@ export default function PcaKdePage({ directory, localRun }) {
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#ff5a5a' }} /> {Math.round(probability * 100)}% ellipsoid</span>
                         <span className="pca-legend-item pca-legend-note">walls: PC-plane density projections</span>
+                        <a
+                            className="pca-legend-credit"
+                            href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            PCA_KDE method: Maksim Eremenko
+                        </a>
                     </div>
                 </div>
 
