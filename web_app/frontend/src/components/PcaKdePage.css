@@ -227,6 +227,49 @@
     white-space: nowrap;
 }
 
+/* Right-side header cluster: atom count + the reset-view button. */
+.panel-title-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex: none;
+}
+
+.pca-reset-view {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    padding: 0.26rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    color: var(--subtle);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color 140ms ease, color 140ms ease;
+}
+
+.pca-reset-view:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    color: var(--text-strong);
+}
+
+.pca-reset-view:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+.pca-reset-view:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.pca-reset-view svg {
+    flex: none;
+}
+
 /* ── 3D viewport ──────────────────────────────────────────────────────────── */
 .pca-viewport {
     display: flex;
