@@ -55,6 +55,10 @@ Goal: replace static inspection with interactive scientific workflows. **Status:
   API — it is no longer Flask-only.
 - Three.js structure viewer: per-element coloring, unit-cell display, and figure/screenshot export
   (PNG, native or 3×). **Done.** Standalone element visibility toggles and camera presets are *planned*.
+- PCA Ellipsoid page: per-site PCA of RMC displacement clouds → thermal ellipsoid + separable 3D
+  Gaussian-KDE isosurface with wall projections/contours, non-Gaussianity readout, and a clickable
+  unit-cell structure picker. **Done** (method after Maksim Eremenko's PCA_KDE). Isosurface/CSV
+  export of the volume is *planned*.
 
 ## Phase 4: Background Jobs
 

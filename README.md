@@ -51,6 +51,12 @@ API? See [Run locally](#run-locally-optional) and [Python package usage](#python
 - **Browser KDE with fallback** — computes density maps in a Web Worker, using WebGPU when available
   and falling back automatically to CPU. The optional backend keeps the reference SciPy KDE path for
   local use.
+- **PCA Ellipsoid (thermal ellipsoids)** — per-site PCA over RMC displacement clouds gives the
+  anisotropic displacement tensor (thermal ellipsoid) and a 3D Gaussian-KDE isosurface with the
+  density projected onto the box walls (contours included), a per-site non-Gaussianity (excess
+  kurtosis) readout, and a clickable unit-cell structure view for picking sites. The KDE is sampled
+  in the PCA frame so it factorizes and runs in the browser (or the optional backend). Method after
+  Maksim Eremenko's [PCA_KDE utilities](https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE).
 - **Symmetry analysis** — a client-side, FINDSYM-like *Detected SG* panel reports space group, point
   group, operation count, and tolerance-dependent changes from the folded structure.
 - **AI Assistant (beta)** — optional chat over the loaded run with a local LLM by default (Ollama or
