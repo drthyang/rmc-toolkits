@@ -10,8 +10,17 @@ import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { marchingCubes } from '../workers/marchingCubes';
+import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
+import SaveMenu from './SaveMenu';
 import './PcaKdePage.css';
+
+// The main viewport exports as PNG at native or 3× resolution, matching the
+// KDE / 3D page's save options.
+const SAVE_OPTIONS = [
+    { id: 'png', label: 'Standard PNG', hint: '1×' },
+    { id: 'png3x', label: 'High quality PNG', hint: '3×' }
+];
 
 const GRID_OPTIONS = [24, 32, 40, 48, 56, 64];
 const BW_OPTIONS = [
@@ -238,38 +247,78 @@ const PROJECTION_META = [
     { key: 'pc23', label: 'PC2 – PC3' }
 ];
 
-// Point the main camera down the box body diagonal (+PC1/+PC2/+PC3) at a
-// comfortable distance, so the three min-corner walls sit symmetrically at the
-// back and the whole cube fits corner-on. This is the default framing, applied
-// on a new site and re-applied by the panel's "Reset view" button.
-const frameMainCamera = (camera, controls, kde) => {
-    const axes = kde.axes;
+// Vertical field of view (deg) of the perspective camera. The orthographic
+// camera's frustum is sized from it so switching projection preserves framing.
+const CAMERA_FOV = 45;
+
+// Size an orthographic camera so its view at `distance` matches a perspective
+// camera of CAMERA_FOV at the same distance (same on-screen scale of the box).
+const setOrthoFrustum = (camera, distance, aspect) => {
+    const halfHeight = distance * Math.tan((CAMERA_FOV * Math.PI) / 360);
+    const halfWidth = halfHeight * aspect;
+    camera.left = -halfWidth;
+    camera.right = halfWidth;
+    camera.top = halfHeight;
+    camera.bottom = -halfHeight;
+};
+
+// Place the main camera at `radius` along `dir` from the cloud mean, looking
+// back at it, with `up` as the screen-up axis. Handles perspective and
+// orthographic cameras alike (the latter gets a matched frustum + reset zoom).
+const placeMainCamera = (camera, controls, kde, dir, up, aspect) => {
     const meanVec = new THREE.Vector3(kde.mean[0], kde.mean[1], kde.mean[2]);
     const axisLength = Math.max(...kde.halfWidths);
     const radius = axisLength * 4.3 || 1;
-    const dir = new THREE.Vector3(
-        axes[0][0] + axes[1][0] + axes[2][0],
-        axes[0][1] + axes[1][1] + axes[2][1],
-        axes[0][2] + axes[1][2] + axes[2][2]
-    ).normalize();
     // OrbitControls carries a damped orbit velocity after a drag, which its own
     // update() loop normally decays to zero over ~1 s. Flush it FIRST, with a
     // damping-off update() (that both applies and then zeroes the pending delta),
     // so none of that leftover rotation gets applied to the pose we are about to
     // set. Without this, a reframe fired before the glide settles — e.g. right
-    // after loading a new run — lands rotated off the diagonal default.
+    // after loading a new run — lands rotated off the intended default.
     const damping = controls.enableDamping;
     controls.enableDamping = false;
     controls.update();
-    // Now place the camera on the default framing and commit it with zero velocity.
+    // Now place the camera on the requested framing and commit it with zero velocity.
     controls.target.copy(meanVec);
-    camera.up.set(axes[2][0], axes[2][1], axes[2][2]);
+    camera.up.set(up[0], up[1], up[2]);
     camera.position.copy(meanVec).addScaledVector(dir, radius);
     camera.near = radius / 100;
     camera.far = radius * 100;
+    if (camera.isOrthographicCamera) {
+        camera.zoom = 1;
+        setOrthoFrustum(camera, radius, aspect);
+    }
     camera.updateProjectionMatrix();
     controls.update();
     controls.enableDamping = damping;
+};
+
+// Point the main camera down the box body diagonal (+PC1/+PC2/+PC3) at a
+// comfortable distance, so the three min-corner walls sit symmetrically at the
+// back and the whole cube fits corner-on. This is the default framing, applied
+// on a new site and re-applied by the panel's "Reset view" button.
+const frameMainCamera = (camera, controls, kde, aspect = 1) => {
+    const axes = kde.axes;
+    const dir = new THREE.Vector3(
+        axes[0][0] + axes[1][0] + axes[2][0],
+        axes[0][1] + axes[1][1] + axes[2][1],
+        axes[0][2] + axes[1][2] + axes[2][2]
+    ).normalize();
+    placeMainCamera(camera, controls, kde, dir, axes[2], aspect);
+};
+
+// Screen-up axis when looking straight down each principal axis: along PC1 or
+// PC2, PC3 points up; along PC3, PC2 points up.
+const VIEW_UP_AXIS = [2, 2, 1];
+
+// Look straight down principal axis `axisIndex`, so its conjugate PC-plane faces
+// the camera (the projection wall for that pair fills the frame).
+const frameAlongAxis = (camera, controls, kde, axisIndex, aspect = 1) => {
+    const axes = kde.axes;
+    const dir = new THREE.Vector3(
+        axes[axisIndex][0], axes[axisIndex][1], axes[axisIndex][2]
+    ).normalize();
+    placeMainCamera(camera, controls, kde, dir, axes[VIEW_UP_AXIS[axisIndex]], aspect);
 };
 
 export default function PcaKdePage({ directory, localRun, onSitesChange }) {
@@ -293,6 +342,10 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     const [showEllipsoid, setShowEllipsoid] = useState(true);
     const [showSurface, setShowSurface] = useState(true);
     const [showProjections, setShowProjections] = useState(true);
+    const [perspective, setPerspective] = useState(true);
+    // Which principal axis the camera is snapped to look down (null = free / the
+    // default diagonal view); drives the highlight on the view-axis buttons.
+    const [viewAxis, setViewAxis] = useState(null);
 
     const workerRef = useRef(null);
     const requestIdRef = useRef(0);
@@ -442,12 +495,64 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         [sites]
     );
 
-    // Re-apply the default framing to the main panel on demand (the user may have
-    // orbited/zoomed away). No-op until a volume is loaded.
+    // Current aspect ratio of the main canvas, needed to size the orthographic
+    // frustum when (re)framing.
+    const mainAspect = () => {
+        const mount = mountRef.current;
+        return mount && mount.clientHeight ? mount.clientWidth / mount.clientHeight : 1;
+    };
+
+    // Re-apply the default (diagonal) framing to the main panel on demand (the
+    // user may have orbited/zoomed away). No-op until a volume is loaded.
     const resetMainView = useCallback(() => {
         const handle = sceneRef.current;
-        if (handle && kde) frameMainCamera(handle.camera, handle.controls, kde);
+        if (handle && kde) {
+            frameMainCamera(handle.camera, handle.controls, kde, mainAspect());
+            setViewAxis(null);
+        }
     }, [kde]);
+
+    // Snap the camera to look straight down a principal axis (PC1/PC2/PC3).
+    const lookAlong = useCallback((axisIndex) => {
+        const handle = sceneRef.current;
+        if (!handle || !kde) return;
+        frameAlongAxis(handle.camera, handle.controls, kde, axisIndex, mainAspect());
+        setViewAxis(axisIndex);
+    }, [kde]);
+
+    // Toggle the main viewport between perspective and orthographic projection,
+    // preserving the current orientation (the scene handle swaps the camera).
+    const applyPerspective = useCallback((value) => {
+        setPerspective(value);
+        sceneRef.current?.setProjection?.(value);
+    }, []);
+
+    // Export the current main-panel figure as PNG. Standard reads the live canvas
+    // (preserveDrawingBuffer keeps it readable); high quality re-renders the same
+    // frame at 3× pixel ratio, captures, then restores.
+    const saveMainView = useCallback(async (format) => {
+        const handle = sceneRef.current;
+        if (!handle) return;
+        const { renderer, scene, camera } = handle;
+        const name = selectedEllipsoid
+            ? `PCA_Ellipsoid_${selectedEllipsoid.element}_site${selectedEllipsoid.referenceNumber}`
+            : 'PCA_Ellipsoid';
+        if (format === 'png3x') {
+            const size = renderer.getSize(new THREE.Vector2());
+            const previousRatio = renderer.getPixelRatio();
+            renderer.setPixelRatio(3);
+            renderer.setSize(size.x, size.y, false);
+            renderer.render(scene, camera);
+            const blob = await new Promise((resolve) => renderer.domElement.toBlob(resolve, 'image/png'));
+            renderer.setPixelRatio(previousRatio);
+            renderer.setSize(size.x, size.y, false);
+            renderer.render(scene, camera);
+            if (blob) downloadBlob(blob, `${sanitizeFilename(name)}.png`);
+        } else {
+            renderer.render(scene, camera);
+            await saveCanvasAsPng(renderer.domElement, name);
+        }
+    }, [selectedEllipsoid]);
 
     // Publish the per-site ellipsoid table upward (App → AI Assistant), so the
     // assistant can reason about the thermal displacements once this page has
@@ -468,14 +573,23 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         const height = mount.clientHeight || 520;
 
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(45, width / height, 0.001, 1000);
-        camera.position.set(0.6, 0.5, 0.9);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        // Two cameras share the scene: a perspective one (default) and an
+        // orthographic one (parallel projection, no foreshortening — useful for
+        // comparing the KDE isosurface against the harmonic ellipsoid). The
+        // projection toggle swaps which is active; `camera`/`controls` are `let`
+        // so the animate loop and handle always read the live pair.
+        const perspectiveCamera = new THREE.PerspectiveCamera(CAMERA_FOV, width / height, 0.001, 1000);
+        perspectiveCamera.position.set(0.6, 0.5, 0.9);
+        const orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.001, 1000);
+        let camera = perspectiveCamera;
+        // preserveDrawingBuffer keeps the rendered frame readable so the figure
+        // can be captured for PNG export at any time.
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
         renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.setSize(width, height);
         mount.appendChild(renderer.domElement);
 
-        const controls = new OrbitControls(camera, renderer.domElement);
+        let controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.12;
 
@@ -505,8 +619,15 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             const w = mount.clientWidth || width;
             const h = mount.clientHeight || height;
             if (w === 0 || h === 0) return;
-            camera.aspect = w / h;
-            camera.updateProjectionMatrix();
+            const aspect = w / h;
+            perspectiveCamera.aspect = aspect;
+            perspectiveCamera.updateProjectionMatrix();
+            // Keep the ortho camera's vertical extent; recompute the horizontal
+            // half-width from the new aspect so a resize doesn't stretch the view.
+            const halfHeight = orthographicCamera.top || 1;
+            orthographicCamera.left = -halfHeight * aspect;
+            orthographicCamera.right = halfHeight * aspect;
+            orthographicCamera.updateProjectionMatrix();
             renderer.setSize(w, h);
         };
         window.addEventListener('resize', handleResize);
@@ -515,7 +636,46 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         const resizeObserver = new ResizeObserver(handleResize);
         resizeObserver.observe(mount);
 
-        sceneRef.current = { scene, camera, renderer, controls, surfaceGroup, ellipsoidGroup, axesGroup, wallsGroup };
+        const handle = { scene, camera, renderer, controls, surfaceGroup, ellipsoidGroup, axesGroup, wallsGroup };
+
+        // Swap the active camera between perspective and orthographic while keeping
+        // the current orientation, distance, and pivot, so the toggle looks like a
+        // pure projection change. Rebuilds OrbitControls on the new camera so its
+        // up-vector bookkeeping is correct for the swapped type.
+        handle.setProjection = (usePerspective) => {
+            const next = usePerspective ? perspectiveCamera : orthographicCamera;
+            if (next === camera) return;
+            const target = controls.target.clone();
+            const distance = camera.position.distanceTo(target);
+            const w = mount.clientWidth || width;
+            const h = mount.clientHeight || height;
+            const aspect = h ? w / h : 1;
+            next.up.copy(camera.up);
+            next.position.copy(camera.position);
+            next.near = camera.near;
+            next.far = camera.far;
+            if (next.isOrthographicCamera) {
+                next.zoom = 1;
+                setOrthoFrustum(next, distance, aspect);
+            } else {
+                next.aspect = aspect;
+            }
+            next.updateProjectionMatrix();
+            next.lookAt(target);
+            const previousControls = controls;
+            const nextControls = new OrbitControls(next, renderer.domElement);
+            nextControls.enableDamping = true;
+            nextControls.dampingFactor = 0.12;
+            nextControls.target.copy(target);
+            previousControls.dispose();
+            nextControls.update();
+            camera = next;
+            controls = nextControls;
+            handle.camera = camera;
+            handle.controls = controls;
+        };
+
+        sceneRef.current = handle;
 
         return () => {
             cancelAnimationFrame(animationId);
@@ -640,8 +800,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         // when this runs while the panel is off-screen after a load.
         const kdeRef = kde.referenceNumber ?? selectedRef;
         if (framedRefRef.current !== kdeRef) {
-            frameMainCamera(camera, controls, kde);
+            const m = mountRef.current;
+            frameMainCamera(camera, controls, kde, m && m.clientHeight ? m.clientWidth / m.clientHeight : 1);
             framedRefRef.current = kdeRef;
+            // A fresh diagonal framing supersedes any snapped PC-axis view.
+            setViewAxis(null);
         } else {
             // Same site: keep the pivot and clip planes synced to the current volume
             // without moving the user's camera.
@@ -1029,11 +1192,57 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                 </svg>
                                 Reset view
                             </button>
+                            <SaveMenu
+                                onSave={saveMainView}
+                                options={SAVE_OPTIONS}
+                                label="Save"
+                                align="right"
+                                disabled={!kde}
+                            />
                         </span>
                     </h3>
                     <div className="pca-canvas" ref={mountRef}>
                         {(loadingKde || loadingSites) && <div className="pca-badge">Computing…</div>}
                         {kdeError && <div className="pca-badge is-error">{kdeError}</div>}
+                        {kde && (
+                            <div className="pca-view-controls">
+                                <div className="pca-view-group" role="group" aria-label="Projection">
+                                    <button
+                                        type="button"
+                                        className={`pca-view-btn ${perspective ? 'is-active' : ''}`}
+                                        onClick={() => applyPerspective(true)}
+                                        aria-pressed={perspective}
+                                        title="Perspective projection"
+                                    >
+                                        Perspective
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`pca-view-btn ${perspective ? '' : 'is-active'}`}
+                                        onClick={() => applyPerspective(false)}
+                                        aria-pressed={!perspective}
+                                        title="Orthographic (parallel) projection"
+                                    >
+                                        Orthographic
+                                    </button>
+                                </div>
+                                <div className="pca-view-group" role="group" aria-label="Camera orientation">
+                                    <span className="pca-view-group-label">Along</span>
+                                    {[0, 1, 2].map((axisIndex) => (
+                                        <button
+                                            key={axisIndex}
+                                            type="button"
+                                            className={`pca-view-btn ${viewAxis === axisIndex ? 'is-active' : ''}`}
+                                            onClick={() => lookAlong(axisIndex)}
+                                            aria-pressed={viewAxis === axisIndex}
+                                            title={`Look down PC${axisIndex + 1}`}
+                                        >
+                                            {`PC${axisIndex + 1}`}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <div className="pca-legend">
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
