@@ -5,6 +5,17 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+PCA Ellipsoid page refinements.
+
+- The main 3D view has a **Reset view** button in the panel header that returns the camera to the
+  default body-diagonal framing after you orbit or zoom away — the same framing applied automatically
+  when the site changes, now available on demand.
+- Fixed the PCA Ellipsoid not recomputing for a newly loaded dataset. The static-mode worker cached
+  parsed displacement clouds by file *path*, so a different run reused the previous model's clouds. The
+  cache is now content-addressed (keyed on a signature of the `.rmc6f` text), and the page ties the
+  loaded text to the file it came from, so requests never run against the previous dataset. Covered by
+  `src/workers/__tests__/pcaKdeWorker.test.js`.
+
 PCA / thermal-ellipsoid KDE computation engine.
 
 - New engine turns per-site RMC displacement clouds into anisotropic displacement tensors (the
