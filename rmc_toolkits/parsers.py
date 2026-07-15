@@ -250,16 +250,23 @@ def iter_rmc6f_atoms(rmc6f_path: str | Path) -> Iterator[Rmc6fAtom]:
                 continue
             if not in_atoms:
                 continue
-            if len(parts) < 10:
+            # Index from the END so both the current format (with a bracketed type
+            # label between the element and coordinates) and older files that omit
+            # it parse: the reference number and three cell indices are always the
+            # last four fields, the fractional coordinates the three before them.
+            #   current:  id element [type] x y z ref cellx celly cellz  (10 fields)
+            #   older:    id element        x y z ref cellx celly cellz  ( 9 fields)
+            n = len(parts)
+            if n < 9:
                 continue
             try:
                 yield {
                     "atom_number": int(parts[0]),
                     "element": parts[1].capitalize(),
-                    "type_label": parts[2],
-                    "coords": np.asarray(parts[3:6], dtype=float),
-                    "reference_number": int(parts[6]),
-                    "cell_indices": np.asarray(parts[7:10], dtype=int),
+                    "type_label": " ".join(parts[2 : n - 7]),
+                    "coords": np.asarray(parts[n - 7 : n - 4], dtype=float),
+                    "reference_number": int(parts[n - 4]),
+                    "cell_indices": np.asarray(parts[n - 3 : n], dtype=int),
                 }
             except ValueError:
                 continue

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
+import { parseAtomLine } from './rmc6f.js';
+
 const SUPPORTED_NAMES = new Set(['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq', 'stog_input.dat']);
 
 export const isStaticMode = () => {
@@ -422,12 +424,10 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
             inAtoms = true;
             return;
         }
-        if (!inAtoms || parts.length < 10) return;
-        const referenceNumber = Number(parts[6]);
-        const element = parts[1];
-        const coords = parts.slice(3, 6).map(Number);
-        const cellIndices = parts.slice(7, 10).map(Number);
-        if (![referenceNumber, ...coords, ...cellIndices].every(Number.isFinite)) return;
+        if (!inAtoms) return;
+        const atom = parseAtomLine(parts);
+        if (!atom) return;
+        const { referenceNumber, element, coords, cellIndices } = atom;
         counts[element] = (counts[element] || 0) + 1;
         if (!atomIndices[element]) atomIndices[element] = new Set();
         atomIndices[element].add(referenceNumber);

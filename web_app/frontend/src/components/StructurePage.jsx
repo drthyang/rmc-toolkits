@@ -298,6 +298,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
     const [kde, setKde] = useState(null);
     const [kdeLoading, setKdeLoading] = useState(false);
     const [kdeError, setKdeError] = useState(null);
+    // Bumped whenever a panel's layout size changes, so the 2D slice canvases
+    // re-measure and re-draw at the real display resolution (see the ResizeObserver
+    // effect). Guards the first-visit race where a panel is measured before layout
+    // settles and the canvas falls back to its minimum size ("raw resolution").
+    const [sizeTick, setSizeTick] = useState(0);
     const canvasRef = useRef(null);
     const slabCanvasRef = useRef(null);
     const mountRef = useRef(null);
@@ -822,7 +827,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
         canvas.height = height * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         drawKdeSlice(ctx, width, height);
-    }, [drawKdeSlice]);
+    }, [drawKdeSlice, sizeTick]);
 
     // Draw the "Slab In Cell" side view into a 2D context sized to (width,
     // height) CSS units. Returns the band geometry the drag handler needs; the
@@ -923,7 +928,26 @@ const StructurePage = ({ directory, localRun, theme }) => {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         // Publish the band geometry so the drag handler can map cursor -> slice.
         slabGeometryRef.current = drawSlab(ctx, width, height);
-    }, [drawSlab]);
+    }, [drawSlab, sizeTick]);
+
+    // Re-measure and re-draw the 2D slice canvases when their layout size settles.
+    // On the first visit a panel can be measured before the browser finishes layout,
+    // so the canvas falls back to its minimum size and looks raw; observing the
+    // canvases and bumping sizeTick once the real size lands redraws them crisp.
+    useEffect(() => {
+        const targets = [canvasRef.current, slabCanvasRef.current].filter(Boolean);
+        if (!targets.length) return undefined;
+        let raf = 0;
+        const observer = new ResizeObserver(() => {
+            cancelAnimationFrame(raf);
+            raf = requestAnimationFrame(() => setSizeTick((tick) => tick + 1));
+        });
+        targets.forEach((target) => observer.observe(target));
+        return () => {
+            cancelAnimationFrame(raf);
+            observer.disconnect();
+        };
+    }, [structure]);
 
     useEffect(() => {
         zCenterRef.current = zCenter;
@@ -1126,7 +1150,25 @@ const StructurePage = ({ directory, localRun, theme }) => {
         };
         animate();
 
+        // Track the mount so a first-visit build at 0x0 (measured before layout) or
+        // any later panel resize updates the camera + renderer in place, rather than
+        // leaving the model invisible or stretched.
+        const resizeObserver = new ResizeObserver(() => {
+            const w = mount.clientWidth;
+            const h = mount.clientHeight;
+            if (!w || !h) return;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+            if (modelExportRef.current) {
+                modelExportRef.current.width = w;
+                modelExportRef.current.height = h;
+            }
+        });
+        resizeObserver.observe(mount);
+
         return () => {
+            resizeObserver.disconnect();
             cameraStateRef.current = {
                 position: camera.position.toArray(),
                 target: controls.target.toArray(),

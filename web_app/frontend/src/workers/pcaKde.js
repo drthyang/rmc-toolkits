@@ -26,6 +26,8 @@
 // makes a 48^3 volume interactive in a browser worker; the contraction itself
 // is the same estimator scipy.stats.gaussian_kde defines, to round-off.
 
+import { parseAtomLine } from '../rmc6f.js';
+
 // --- Linear algebra on 3x3 symmetric matrices --------------------------------
 
 const EIGENVALUE_FLOOR_RATIO = 1e-8;
@@ -472,12 +474,10 @@ export const siteDisplacementsFromRmc6f = (text) => {
         const parts = line.trim().split(/\s+/).filter(Boolean);
         if (!parts.length) return;
         if (parts[0] === 'Atoms:') { inAtoms = true; return; }
-        if (!inAtoms || parts.length < 10) return;
-        const element = parts[1];
-        const referenceNumber = Number(parts[6]);
-        const coords = parts.slice(3, 6).map(Number);
-        const cellIndices = parts.slice(7, 10).map(Number);
-        if (![referenceNumber, ...coords, ...cellIndices].every(Number.isFinite)) return;
+        if (!inAtoms) return;
+        const atom = parseAtomLine(parts);
+        if (!atom) return;
+        const { element, referenceNumber, coords, cellIndices } = atom;
         const offset = coords.map((value, i) => {
             let delta = value - cellIndices[i] / supercell[i];
             delta -= Math.round(delta);

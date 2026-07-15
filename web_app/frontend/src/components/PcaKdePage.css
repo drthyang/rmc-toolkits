@@ -135,6 +135,15 @@
     background: var(--border-strong);
 }
 
+/* A switch paired with a standalone "?" InfoBadge. The badge sits OUTSIDE the
+   toggle's <label> so it never overlaps the switch's clickable area. */
+.switch-with-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: 2.3rem;
+}
+
 /* Pill toggle switches for boolean options. */
 .pca-controls .control.switch {
     position: relative;
@@ -510,15 +519,24 @@
     border-bottom: 1px solid var(--border);
 }
 
+/* A normal inline context (not flex) so the U/B iso subscripts drop with
+   vertical-align; an inline-flex dt would lay <sub> out as a flex item and ignore
+   it. The InfoBadge (inline-flex, vertical-align: middle) still aligns inline. */
 .pca-stat dt {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
     color: var(--subtle);
     font-size: 0.67rem;
     font-weight: 650;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+}
+
+.pca-stat dt sub {
+    font-size: 0.72em;
+    letter-spacing: 0;
+}
+
+.pca-stat dt .info-badge {
+    margin-left: 0.28rem;
 }
 
 .pca-stat dd {

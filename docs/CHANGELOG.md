@@ -5,6 +5,28 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Robust `.rmc6f` parsing, dashboard box-zoom, Atomic Density render fix, and PCA polish.
+
+- **Older `.rmc6f` files now load.** The only structural difference from the current format is the per-atom
+  type label (`id element [type] x y z ref cx cy cz`, 10 fields); older 2018-era files omit it (9 fields).
+  Atom-line parsing now indexes the reference number, cell indices, and coordinates from the END of the line,
+  tolerating any number of label columns. A new shared `web_app/frontend/src/rmc6f.js` (`parseAtomLine`) backs
+  both the structure and PCA browser parsers; Python `iter_rmc6f_atoms` (used by `pca_kde` and `kde`) gets the
+  same treatment. Covered by `src/__tests__/rmc6f.test.js` and `OldFormatRmc6fTests` in `tests/test_parsers.py`.
+- **Dashboard charts support box zoom.** Drag a rectangle to zoom into that region on both axes (a thin
+  horizontal or vertical drag still zooms just that axis); series are clipped to the plot area, and Reset
+  zoom / double-click restore the full view.
+- **Atomic Density first-visit render fix.** The KDE-slice / slab canvases and the 3D model measured their size
+  once on mount with no observer, so a first visit before layout settled could leave the 2D panels below
+  display resolution and the 3D model at 0×0. They now re-measure via a `ResizeObserver` (2D redraw; 3D updates
+  the camera + renderer in place), matching the pattern the PCA viewport already uses.
+- **PCA Ellipsoid polish:** a **Black** wireframe option; the wireframe is drawn opaque while the KDE shell is
+  on (crisp cage over the colored surface); the **KDE shell** toggle's `?` moved out of the switch `<label>`
+  so the toggle click is no longer swallowed by the help badge, and its popover opens leftward (`align="end"`);
+  Site-selector markers are drawn as each site's calculated thermal ellipsoid, with the selection glow + triad
+  scaled to the marker so a soft site can't outgrow them; and the U_iso / B_iso subscripts render correctly
+  (the stat label was an inline-flex box that dropped `vertical-align` on `<sub>`).
+
 PCA Ellipsoid: selectable / KDE-projected ellipsoid, Site selector; taller dashboard charts.
 
 - **KDE shell** (new, optional): a "KDE shell" toggle paints the KDE density onto the p% ellipsoid surface
