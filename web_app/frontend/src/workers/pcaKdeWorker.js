@@ -10,6 +10,7 @@
 // modes present the identical shape to the UI.
 
 import {
+    DEFAULT_CLUSTER_THRESHOLD,
     siteDisplacementsFromRmc6f,
     siteEllipsoids,
     sitePcaKde
@@ -32,10 +33,13 @@ const textSignature = (text) => {
     return `${text.length}:${(hash >>> 0).toString(36)}`;
 };
 
-const parseCached = (text) => {
-    const key = textSignature(text);
+// The clustering threshold changes the reconstructed sites of an old (coords-only)
+// file, so it is part of the cache key; for files with real site columns it is inert
+// and every threshold hits the same cached parse.
+const parseCached = (text, clusterThreshold) => {
+    const key = `${textSignature(text)}@${clusterThreshold}`;
     if (cache.key !== key || !cache.parsed) {
-        cache = { key, parsed: siteDisplacementsFromRmc6f(text) };
+        cache = { key, parsed: siteDisplacementsFromRmc6f(text, { clusterThreshold }) };
     }
     return cache.parsed;
 };
@@ -48,15 +52,18 @@ const summarizeSites = (parsed, probability) => {
         totalAtoms: parsed.sites.reduce((sum, site) => sum + site.count, 0),
         latticeVectors: parsed.latticeVectors,
         supercell: parsed.supercell,
+        // True when the sites were reconstructed by folding + clustering because the
+        // file lacked site/cell columns; the UI shows the threshold knob + count/N.
+        reconstructed: Boolean(parsed.reconstructed),
         probability,
         sites: ellipsoids
     };
 };
 
 export const handlePcaMessage = async (data, getText) => {
-    const { kind = 'kde', probability = 0.5 } = data;
+    const { kind = 'kde', probability = 0.5, clusterThreshold = DEFAULT_CLUSTER_THRESHOLD } = data;
     const text = await getText();
-    const parsed = parseCached(text);
+    const parsed = parseCached(text, clusterThreshold);
 
     if (kind === 'sites') {
         return summarizeSites(parsed, probability);

@@ -487,9 +487,13 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
         if (!atom) return;
         const { referenceNumber, element, coords, cellIndices } = atom;
         counts[element] = (counts[element] || 0) + 1;
+        atoms.push({ element, referenceNumber, coords, cellIndices });
+        // Old coords-only files carry no reference-site column, so there are no
+        // per-site accumulators to build; the density view needs only the folded
+        // positions below. Skip the average-structure basis for those.
+        if (referenceNumber === null) return;
         if (!atomIndices[element]) atomIndices[element] = new Set();
         atomIndices[element].add(referenceNumber);
-        atoms.push({ element, referenceNumber, coords, cellIndices });
         // Accumulate this atom's within-cell fraction into its reference-number site.
         let acc = rnAcc.get(referenceNumber);
         if (!acc) { acc = { element, n: 0, sc: [0, 0, 0], ss: [0, 0, 0] }; rnAcc.set(referenceNumber, acc); }
@@ -529,8 +533,10 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
 
     const stride = Math.max(1, Math.ceil(atoms.length / maxPoints));
     const points = atoms.filter((_, index) => index % stride === 0).slice(0, maxPoints).map((atom) => {
-        const reduced = atom.coords.map((value, index) => value - atom.cellIndices[index] / supercell[index]);
-        const unitCell = reduced.map((value, index) => ((value * supercell[index]) % 1 + 1) % 1);
+        // Fold the box coordinate straight into one unit cell. Subtracting the cell
+        // index first is equivalent (it only removes an integer before the mod), so
+        // this also works for old files that carry no per-atom cell index.
+        const unitCell = atom.coords.map((value, index) => ((value * supercell[index]) % 1 + 1) % 1);
         return {
             element: atom.element,
             referenceNumber: atom.referenceNumber,
