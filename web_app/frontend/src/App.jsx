@@ -295,13 +295,13 @@ function App() {
                 className={activePage === 'structure' ? 'active' : ''}
                 onClick={() => handlePageChange('structure')}
               >
-                KDE / 3D
+                Atomic Density
               </button>
               <button
                 className={activePage === 'ellipsoids' ? 'active' : ''}
                 onClick={() => handlePageChange('ellipsoids')}
               >
-                Thermal Ellipsoids
+                PCA Ellipsoid
               </button>
               <button
                 className={activePage === 'assistant' ? 'active' : ''}

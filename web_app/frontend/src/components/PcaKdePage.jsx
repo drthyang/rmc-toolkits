@@ -541,11 +541,19 @@ export default function PcaKdePage({ directory, localRun }) {
 
         // Reframe the camera only when the site changes, so toggling layers or
         // sweeping a slider doesn't yank the view out from under the user.
-        const radius = axisLength * 1.75 || 1;
+        const radius = axisLength * 2.4 || 1;
         controls.target.set(mean[0], mean[1], mean[2]);
         if (framedRefRef.current !== selectedRef) {
-            const offset = new THREE.Vector3(0.8, 0.6, 1).normalize().multiplyScalar(radius);
-            camera.position.copy(controls.target).add(offset);
+            // Frame relative to the PCA axes (not world), so every site gets the
+            // same reading: viewed from the +PC1/+PC2/+PC3 octant with PC3 up, the
+            // three min-corner projection walls sit at the back and floor.
+            const dir = new THREE.Vector3(
+                axes[0][0] * 0.9 + axes[1][0] * 0.7 + axes[2][0] * 1.0,
+                axes[0][1] * 0.9 + axes[1][1] * 0.7 + axes[2][1] * 1.0,
+                axes[0][2] * 0.9 + axes[1][2] * 0.7 + axes[2][2] * 1.0
+            ).normalize();
+            camera.up.set(axes[2][0], axes[2][1], axes[2][2]);
+            camera.position.copy(controls.target).addScaledVector(dir, radius);
             framedRefRef.current = selectedRef;
         }
         camera.near = radius / 100;
@@ -579,8 +587,10 @@ export default function PcaKdePage({ directory, localRun }) {
         scene.add(key);
 
         const sitesGroup = new THREE.Group();
+        const bondsGroup = new THREE.Group();
         const cellGroup = new THREE.Group();
-        scene.add(cellGroup, sitesGroup);
+        const highlightGroup = new THREE.Group();
+        scene.add(cellGroup, bondsGroup, sitesGroup, highlightGroup);
 
         // Click (not drag) on a site marker selects that site. A small pointer
         // travel budget separates a click from an orbit drag.
@@ -633,7 +643,9 @@ export default function PcaKdePage({ directory, localRun }) {
         const resizeObserver = new ResizeObserver(handleResize);
         resizeObserver.observe(mount);
 
-        structureSceneRef.current = { scene, camera, renderer, controls, sitesGroup, cellGroup, framed: false };
+        structureSceneRef.current = {
+            scene, camera, renderer, controls, sitesGroup, bondsGroup, cellGroup, highlightGroup, framed: false
+        };
 
         return () => {
             cancelAnimationFrame(animationId);
@@ -648,11 +660,11 @@ export default function PcaKdePage({ directory, localRun }) {
         };
     }, []);
 
-    // Rebuild the site markers + unit-cell box, and re-highlight the selection.
+    // Rebuild the site markers + bonds + unit-cell box, and re-highlight selection.
     useEffect(() => {
         const handle = structureSceneRef.current;
         if (!handle || !sites) return;
-        const { sitesGroup, cellGroup, camera, controls } = handle;
+        const { sitesGroup, bondsGroup, cellGroup, highlightGroup, camera, controls } = handle;
 
         const dispose = (group) => {
             while (group.children.length) {
@@ -663,7 +675,9 @@ export default function PcaKdePage({ directory, localRun }) {
             }
         };
         dispose(sitesGroup);
+        dispose(bondsGroup);
         dispose(cellGroup);
+        dispose(highlightGroup);
 
         // Unit-cell vectors = supercell vectors / supercell counts.
         const lattice = sites.latticeVectors;
@@ -697,33 +711,129 @@ export default function PcaKdePage({ directory, localRun }) {
             new THREE.LineBasicMaterial({ color: 0x8a97a8, transparent: true, opacity: 0.4 })
         ));
 
-        // One sphere per reference site, colored by element; the selected site is
-        // enlarged and given an emissive glow.
         const baseRadius = 0.05 * edgeLength;
+        const positions = sites.sites.map((site) => ({
+            ref: site.referenceNumber,
+            el: site.element,
+            pos: new THREE.Vector3(...toCartesian(site.siteFractional))
+        }));
+
+        // --- Bonds: distance-based, periodic-aware (Maxim's structures have their
+        // coordination polyhedra spanning cell faces). The cutoff tracks the
+        // nearest-neighbour distance so it adapts to the material. ---------------
+        const offsets = [];
+        for (let dx = -1; dx <= 1; dx += 1) {
+            for (let dy = -1; dy <= 1; dy += 1) {
+                for (let dz = -1; dz <= 1; dz += 1) offsets.push([dx, dy, dz]);
+            }
+        }
+        const latVec = (o) => new THREE.Vector3(
+            o[0] * unit[0][0] + o[1] * unit[1][0] + o[2] * unit[2][0],
+            o[0] * unit[0][1] + o[1] * unit[1][1] + o[2] * unit[2][1],
+            o[0] * unit[0][2] + o[1] * unit[1][2] + o[2] * unit[2][2]
+        );
+        let nearest = Infinity;
+        for (let i = 0; i < positions.length; i += 1) {
+            for (let j = 0; j < positions.length; j += 1) {
+                for (const o of offsets) {
+                    if (i === j && !o[0] && !o[1] && !o[2]) continue;
+                    const d = positions[i].pos.distanceTo(positions[j].pos.clone().add(latVec(o)));
+                    if (d > 0.4 && d < nearest) nearest = d;
+                }
+            }
+        }
+        const cutoff = Math.min(3.4, Math.max(2.0, nearest * 1.3));
+
+        const bondRadius = baseRadius * 0.26;
+        const cylUp = new THREE.Vector3(0, 1, 0);
+        const bondMaterial = new THREE.MeshPhongMaterial({ color: 0x9aa3ad, shininess: 15 });
+        const addBond = (from, to) => {
+            const seg = to.clone().sub(from);
+            const len = seg.length();
+            if (len < 1e-4) return;
+            const cylinder = new THREE.Mesh(
+                new THREE.CylinderGeometry(bondRadius, bondRadius, len, 6),
+                bondMaterial
+            );
+            cylinder.position.copy(from).addScaledVector(seg, 0.5);
+            cylinder.quaternion.setFromUnitVectors(cylUp, seg.normalize());
+            bondsGroup.add(cylinder);
+        };
+        const ghostSphere = new THREE.SphereGeometry(1, 12, 10);
+        const seenBond = new Set();
+        const seenGhost = new Set();
+        const round = (v) => `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)}`;
+        for (let i = 0; i < positions.length; i += 1) {
+            for (let j = 0; j < positions.length; j += 1) {
+                for (const o of offsets) {
+                    if (i === j && !o[0] && !o[1] && !o[2]) continue;
+                    const partner = positions[j].pos.clone().add(latVec(o));
+                    const d = positions[i].pos.distanceTo(partner);
+                    if (d < 0.4 || d > cutoff) continue;
+                    const key = [round(positions[i].pos), round(partner)].sort().join('|');
+                    if (seenBond.has(key)) continue;
+                    seenBond.add(key);
+                    addBond(positions[i].pos, partner);
+                    // A partner in a neighbour cell gets a faint "ghost" atom so the
+                    // bond does not dangle into empty space.
+                    if (o[0] || o[1] || o[2]) {
+                        const gkey = `${j}|${o.join(',')}`;
+                        if (!seenGhost.has(gkey)) {
+                            seenGhost.add(gkey);
+                            const color = new THREE.Color(elementColors[positions[j].el] || DEFAULT_ELEMENT_COLOR);
+                            const ghost = new THREE.Mesh(
+                                ghostSphere,
+                                new THREE.MeshPhongMaterial({ color: color.multiplyScalar(0.45), shininess: 10 })
+                            );
+                            ghost.position.copy(partner);
+                            ghost.scale.setScalar(baseRadius * 0.85);
+                            bondsGroup.add(ghost);
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Atoms: opaque spheres colored by element. The selected atom keeps its
+        // size but its color stays bright while the others are dimmed, and it gets a
+        // soft translucent highlight cloud (below) rather than growing. -----------
         const sphere = new THREE.SphereGeometry(1, 20, 16);
-        sites.sites.forEach((site) => {
-            const isSelected = site.referenceNumber === selectedRef;
-            const color = new THREE.Color(elementColors[site.element] || DEFAULT_ELEMENT_COLOR);
-            const material = new THREE.MeshPhongMaterial({
+        positions.forEach((site) => {
+            const isSelected = site.ref === selectedRef;
+            const base = new THREE.Color(elementColors[site.el] || DEFAULT_ELEMENT_COLOR);
+            const color = isSelected ? base : base.clone().multiplyScalar(0.5);
+            const marker = new THREE.Mesh(sphere, new THREE.MeshPhongMaterial({
                 color,
-                emissive: isSelected ? color.clone().multiplyScalar(0.5) : new THREE.Color(0x000000),
-                shininess: 40,
-                transparent: !isSelected,
-                opacity: isSelected ? 1 : 0.85
-            });
-            const marker = new THREE.Mesh(sphere, material);
-            const position = toCartesian(site.siteFractional);
-            marker.position.set(...position);
-            marker.scale.setScalar(isSelected ? baseRadius * 1.7 : baseRadius);
-            marker.userData.referenceNumber = site.referenceNumber;
+                emissive: isSelected ? base.clone().multiplyScalar(0.25) : new THREE.Color(0x000000),
+                shininess: isSelected ? 60 : 20
+            }));
+            marker.position.copy(site.pos);
+            marker.scale.setScalar(baseRadius);
+            marker.userData.referenceNumber = site.ref;
             sitesGroup.add(marker);
+
+            // Highlight cloud: two soft concentric shells around the selected atom.
+            if (isSelected) {
+                [[2.6, 0.16], [1.7, 0.26]].forEach(([scale, opacity]) => {
+                    const glow = new THREE.Mesh(sphere, new THREE.MeshBasicMaterial({
+                        color: base,
+                        transparent: true,
+                        opacity,
+                        depthWrite: false
+                    }));
+                    glow.position.copy(site.pos);
+                    glow.scale.setScalar(baseRadius * scale);
+                    highlightGroup.add(glow);
+                });
+            }
         });
 
-        // Frame the cell once; keep the user's orientation afterwards.
+        // Frame the cell once; keep the user's orientation afterwards. A little
+        // extra room leaves the boundary-crossing ghost atoms in view.
         controls.target.set(...center);
         if (!handle.framed) {
             const span = Math.max(...unit.map((row) => Math.hypot(...row)));
-            const radius = span * 1.6 || 1;
+            const radius = span * 1.9 || 1;
             camera.position.set(center[0] + radius, center[1] + radius * 0.7, center[2] + radius);
             camera.near = radius / 100;
             camera.far = radius * 100;
@@ -853,7 +963,7 @@ export default function PcaKdePage({ directory, localRun }) {
                         <span className="panel-title-label">
                             {selectedEllipsoid
                                 ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber}`
-                                : 'Thermal ellipsoid'}
+                                : 'PCA ellipsoid'}
                         </span>
                         {selectedEllipsoid && (
                             <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>

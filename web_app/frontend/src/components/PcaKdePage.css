@@ -168,11 +168,14 @@
 }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
+/* The two columns stretch to a common height so their top and bottom edges line
+   up: the side column's stacked panels set the height, and the 3D viewport's
+   canvas grows to fill it. */
 .pca-layout {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(16rem, 0.85fr);
     gap: 0.85rem;
-    align-items: start;
+    align-items: stretch;
 }
 
 .pca-panel {
@@ -226,15 +229,15 @@
 
 /* ── 3D viewport ──────────────────────────────────────────────────────────── */
 .pca-viewport {
-    position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 .pca-canvas {
     position: relative;
+    flex: 1 1 auto;
     width: 100%;
-    aspect-ratio: 16 / 10;
-    min-height: 20rem;
-    max-height: calc(100vh - 14rem);
+    min-height: 22rem;
     background:
         radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 68%),
         var(--canvas-bg);
