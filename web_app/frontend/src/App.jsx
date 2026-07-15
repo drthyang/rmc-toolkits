@@ -28,6 +28,9 @@ function App() {
   const [visitedPages, setVisitedPages] = useState({ dashboard: true, structure: false, ellipsoids: false, assistant: false });
   // Parsed run context published by the Dashboard, consumed by the AI Assistant page.
   const [assistantRun, setAssistantRun] = useState(null);
+  // Per-site PCA ellipsoid table published by the PCA Ellipsoid page (once opened),
+  // also fed to the AI Assistant so it can reason about the thermal displacements.
+  const [pcaSites, setPcaSites] = useState(null);
   const [currentDirectory, setCurrentDirectory] = useState('data');
   const [draftDirectory, setDraftDirectory] = useState('data');
   const [browseStatus, setBrowseStatus] = useState(null);
@@ -440,7 +443,7 @@ function App() {
               className={`workspace-page${activePage === 'ellipsoids' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'ellipsoids'}
             >
-              <PcaKdePage directory={currentDirectory} localRun={localRun} theme="light" />
+              <PcaKdePage directory={currentDirectory} localRun={localRun} theme="light" onSitesChange={setPcaSites} />
             </div>
           )}
           {visitedPages.assistant && (
@@ -455,6 +458,7 @@ function App() {
                 structure={assistantRun?.structure ?? null}
                 symmetry={assistantRun?.symmetry ?? null}
                 runSettings={assistantRun?.runSettings ?? null}
+                pcaSites={pcaSites}
                 liveData={watchFiles}
               />
             </div>

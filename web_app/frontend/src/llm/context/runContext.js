@@ -143,6 +143,43 @@ const symmetryContext = (structure, symmetry) => {
     return block;
 };
 
+// Per-site PCA of the RMC displacement clouds (the "PCA Ellipsoid" analysis):
+// the anisotropic displacement parameters plus the non-Gaussianity that plain
+// symmetry/mean-displacement stats can't express. `pcaSites` is the table the
+// PCA Ellipsoid page computes (worker or Flask /api/pca/sites) — one entry per
+// reference site with uIso, the three principal RMS amplitudes, anisotropy, and
+// mean excess kurtosis. Sites are ranked by non-Gaussianity (then uIso) so the
+// most anharmonic / split sites lead and survive budget trimming.
+const pcaContext = (pcaSites) => {
+    const rows = pcaSites?.sites;
+    if (!Array.isArray(rows) || !rows.length) return null;
+    const sites = rows.map((site) => {
+        const entry = {
+            ref: site.referenceNumber,
+            element: site.element,
+            U_iso_A2: roundSig(site.uIso, 3),
+            rms_axes_A: Array.isArray(site.rms) ? site.rms.map((value) => roundSig(value, 3)) : undefined,
+            anisotropy: roundSig(site.anisotropy, 3)
+        };
+        if (Number.isFinite(site.nonGaussianity)) entry.non_gaussianity = roundSig(site.nonGaussianity, 3);
+        if (site.degenerate) entry.degenerate = true;
+        return entry;
+    }).sort((a, b) => (
+        (b.non_gaussianity ?? -Infinity) - (a.non_gaussianity ?? -Infinity)
+        || (b.U_iso_A2 ?? -Infinity) - (a.U_iso_A2 ?? -Infinity)
+    ));
+    const block = {
+        // Tell the model what the numbers mean, or it will misread the kurtosis.
+        note: 'Per reference site, from PCA of RMC displacement clouds. U_iso_A2: isotropic '
+            + 'ADP (Å²); rms_axes_A: principal RMS displacement amplitudes PC1≥PC2≥PC3 (Å); '
+            + 'anisotropy = rms1/rms3; non_gaussianity: mean excess kurtosis (0 = harmonic/Gaussian, '
+            + '>0 = peaked, fat-tailed — anharmonic motion or an unresolved split site).',
+        sites: sites.slice(0, MAX_SITES)
+    };
+    if (sites.length > MAX_SITES) block.sites_omitted = sites.length - MAX_SITES;
+    return block;
+};
+
 // Run-history counters from the .rmc6f header. The derived numbers are the
 // useful ones: acceptance ratio, and accepted moves per atom — the standard
 // gauge of whether the configuration has been sampled long enough.
@@ -257,6 +294,7 @@ export const buildRunContext = ({
     structure = null,
     symmetry = null,
     runSettings = null,
+    pcaSites = null,
     liveData = false
 } = {}) => {
     const context = {
@@ -271,6 +309,8 @@ export const buildRunContext = ({
     if (settingsInfo) context.run_settings = settingsInfo;
     const symmetryInfo = symmetryContext(structure, symmetry);
     if (symmetryInfo) context.symmetry = symmetryInfo;
+    const pcaInfo = pcaContext(pcaSites);
+    if (pcaInfo) context.pca_displacements = pcaInfo;
     const pairs = pairCorrelationsContext(structure, plotFiles);
     if (pairs) context.pair_correlations = pairs;
     const datasets = datasetContext(plotFiles);
@@ -282,8 +322,9 @@ export const buildRunContext = ({
 
 // Serialize with the character budget enforced, trimming the least essential
 // detail first and never silently: extra g(r) peaks, then middle ladder rungs,
-// then convergence-history points, then low-displacement sites, then the
-// dataset list (each truncation recorded with an *_omitted count).
+// then convergence-history points, then the least-anharmonic PCA sites (and, if
+// still over, their explanatory note), then low-displacement symmetry sites,
+// then the dataset list (each truncation recorded with an *_omitted count).
 export const contextToJson = (context, budget = CONTEXT_CHAR_BUDGET) => {
     let current = context;
     let json = JSON.stringify(current, null, 1);
@@ -321,6 +362,22 @@ export const contextToJson = (context, budget = CONTEXT_CHAR_BUDGET) => {
                 }
             }));
         }
+    }
+    if (json.length > budget && current.pca_displacements?.sites?.length > 6) {
+        shrink((c) => ({
+            ...c,
+            pca_displacements: {
+                ...c.pca_displacements,
+                sites: c.pca_displacements.sites.slice(0, 6),
+                sites_omitted: (c.pca_displacements.sites_omitted || 0) + c.pca_displacements.sites.length - 6
+            }
+        }));
+    }
+    if (json.length > budget && current.pca_displacements?.note) {
+        shrink((c) => {
+            const { note, ...rest } = c.pca_displacements;
+            return { ...c, pca_displacements: rest };
+        });
     }
     if (json.length > budget && current.symmetry?.sites?.length > 8) {
         shrink((c) => ({
