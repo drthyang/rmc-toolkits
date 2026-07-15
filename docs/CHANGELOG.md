@@ -11,11 +11,12 @@ PCA / thermal-ellipsoid KDE computation engine.
   thermal ellipsoids) and a smooth 3D probability density. An atom's offset from the average
   structure is `coords − cellIndices/supercell` folded over the supercell boundary, mean-subtracted
   per reference site, then mapped to Cartesian Å; the covariance of each site's cloud is its ADP,
-  and a Gaussian KDE of the cloud is the density the ellipsoid only approximates. The method — and
-  the shadow-box visualization below — is due to **Maksim Eremenko's PCA_KDE utilities**
-  (<https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>); this is an
-  independent reimplementation into the toolkit's dual-mode architecture, not a port of his code
-  (his `KDE.js` evaluates a full multivariate Gaussian KDE; ours factorizes it — see below).
+  and a Gaussian KDE of the cloud is the density the ellipsoid only approximates. PCA and KDE are
+  standard tools; the specific per-site analysis and the shadow-box visualization below follow
+  **Maksim Eremenko's PCA_KDE utilities**
+  (<https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>) — we followed
+  that approach and reimplemented it independently into the toolkit's dual-mode architecture, not a
+  port of his code (his `KDE.js` evaluates a full multivariate Gaussian KDE; ours factorizes it).
 - **The KDE is separable, and exact.** Sampling on a grid aligned with the cloud's principal axes
   makes SciPy's `H = factor²·C` bandwidth diagonal, so the 3D Gaussian factorizes into three 1D
   kernels and the volume becomes their tensor product: `N·3·grid` exponentials contracted through
