@@ -405,21 +405,24 @@
     font-size: 0.86rem;
 }
 
-.pca-credit {
-    margin: 0.9rem 0 0;
-    text-align: right;
-    color: var(--subtle);
-    font-size: 0.72rem;
-}
-
-.pca-credit a {
+/* Maksim's method credit, tucked into the bottom-right of the 3D view. */
+.pca-canvas-credit {
+    position: absolute;
+    z-index: 2;
+    right: 0.6rem;
+    bottom: 0.5rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.68rem;
     color: var(--muted);
-    text-decoration: underline;
-    text-underline-offset: 2px;
+    background: color-mix(in srgb, var(--canvas-bg) 78%, transparent);
+    border: 1px solid var(--border);
+    text-decoration: none;
 }
 
-.pca-credit a:hover {
+.pca-canvas-credit:hover {
     color: var(--accent);
+    border-color: var(--accent);
 }
 
 @media (max-width: 980px) {

@@ -935,6 +935,14 @@ export default function PcaKdePage({ directory, localRun }) {
                     <div className="pca-canvas" ref={mountRef}>
                         {(loadingKde || loadingSites) && <div className="pca-badge">Computing…</div>}
                         {kdeError && <div className="pca-badge is-error">{kdeError}</div>}
+                        <a
+                            className="pca-canvas-credit"
+                            href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            PCA_KDE method: Maksim Eremenko
+                        </a>
                     </div>
                     <div className="pca-legend">
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
@@ -1043,16 +1051,24 @@ export default function PcaKdePage({ directory, localRun }) {
                 </div>
             </div>
 
-            <p className="pca-credit">
-                PCA-ellipsoid analysis based on the method by{' '}
+            <footer className="app-footer">
+                &copy; 2026 Tsung-Han Yang &middot;{' '}
                 <a
-                    href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
+                    href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE"
                     target="_blank"
                     rel="noreferrer"
                 >
-                    Maksim Eremenko
-                </a>{' '}(PCA_KDE).
-            </p>
+                    AGPLv3
+                </a>
+                {' '}&middot;{' '}
+                <a
+                    href="https://github.com/drthyang/rmc-toolkits#readme"
+                    target="_blank"
+                    rel="noreferrer"
+                >
+                    About & documentation
+                </a>
+            </footer>
         </div>
     );
 }
