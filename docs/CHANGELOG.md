@@ -5,6 +5,30 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Old coordinates-only `.rmc6f` files reconstruct thermal-ellipsoid sites; PCA controls regrouped with a shell contrast knob.
+
+- **The oldest `.rmc6f` files (coordinates only) now drive PCA-KDE and Atomic Density.** That format drops the
+  reference-site and per-atom cell columns entirely (`id element [label] x y z`, 6 fields), so there was no
+  per-site grouping — the file failed to load at all. `parseAtomLine` now also accepts those short lines, and
+  when a file carries no reference numbers the PCA parser reconstructs sites by folding every atom into one unit
+  cell and clustering per element (periodic, full cell-metric minimum image, circular-mean unwrap of each
+  cluster). Each reconstructed site reports its member count against the one-per-cell expectation from the
+  supercell: `27/27` is a clean crystallographic site, while `162/27` flags atoms that do not resolve into
+  separate sites at the chosen distance — close sites, or an orientationally-disordered group such as a rotor
+  shell, whose "ellipsoid" is a shell best read from the KDE. A **Cluster** distance knob (shown only for such
+  files) tunes the grouping; the site list and a badge surface the count and a clean / merged-or-disordered
+  label, and the default selection prefers a clean site. Atomic Density needed only the coordinate fold, which
+  no longer depends on the cell columns. New synthetic, oblique-cell, and real SF6 190 K (rotor-phase) cases in
+  `src/__tests__/rmc6f.test.js`. (The Flask `/api/pca` backend does not reconstruct; the browser worker path does.)
+- **PCA Ellipsoid controls regrouped for a clearer layout.** The wireframe and the density painted on its
+  surface now share one **Ellipsoid** group (Wireframe · Level · Color · Shell · Colormap · Contrast), with
+  every toggle labeled by what it toggles. A new **Contrast** knob stretches the KDE-shell colormap around its
+  mid-tone — a single control over the effective vmin/vmax — so faint departures from the harmonic ellipsoid
+  stand out. Turning on the **Isosurface** now also clears the wireframe and shell for a clean volume view.
+- **The Displacement-statistics panel no longer clips.** It now sizes to its content (so the full covariance
+  matrix, all three principal axes, and the summary line always show), and the Site-ellipsoids 3D view below it
+  re-fits to the remaining space even though its PCA arrives asynchronously from a worker.
+
 Dashboard plots labeled by the fit function declared in the run-control `.dat`.
 
 - The RMCProfile run-control `<stem>.dat` records the correction / fit-function form per dataset

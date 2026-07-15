@@ -466,18 +466,41 @@ const readCellVectors = (text) => {
  * displacement about the average structure, then the supercell lattice maps
  * fractional offsets to Cartesian Angstrom. Mirrors `load_site_displacements`.
  */
-export const siteDisplacementsFromRmc6f = (text) => {
-    const { latticeVectors, supercell } = readCellVectors(text);
+// Default fold-and-cluster distance (Å) for reconstructing sites from an old file
+// that carries no reference-site or cell columns. Chosen below typical bond lengths
+// but well above thermal spread, so genuine sites separate; exposed as a UI knob.
+export const DEFAULT_CLUSTER_THRESHOLD = 1.5;
+
+// Turn one site's fractional offsets (each atom's position within its own cell, in
+// supercell-fractional units) into the site record: mean-centered Cartesian
+// displacements (Å) and the site's within-unit-cell fractional position. Offsets
+// must already be unwrapped (no boundary split) so the plain mean is the true mean.
+const buildSite = (referenceNumber, element, offsets, latticeVectors, supercell, copiesPerCell = null) => {
+    const n = offsets.length;
+    const mean = [0, 0, 0];
+    offsets.forEach((offset) => { mean[0] += offset[0]; mean[1] += offset[1]; mean[2] += offset[2]; });
+    mean[0] /= n; mean[1] /= n; mean[2] /= n;
+    // Centered fractional offset mapped to Cartesian Angstrom via the box.
+    const displacements = offsets.map((offset) => {
+        const df = [offset[0] - mean[0], offset[1] - mean[1], offset[2] - mean[2]];
+        return [
+            df[0] * latticeVectors[0][0] + df[1] * latticeVectors[1][0] + df[2] * latticeVectors[2][0],
+            df[0] * latticeVectors[0][1] + df[1] * latticeVectors[1][1] + df[2] * latticeVectors[2][1],
+            df[0] * latticeVectors[0][2] + df[1] * latticeVectors[1][2] + df[2] * latticeVectors[2][2]
+        ];
+    });
+    const siteFractional = mean.map((value, i) => {
+        const frac = (value * supercell[i]) % 1;
+        return (frac + 1) % 1;
+    });
+    return { referenceNumber, element, count: n, displacements, siteFractional, copiesPerCell };
+};
+
+// Current path: RMCProfile tags every atom with its reference site and box copy, so
+// grouping by reference number and subtracting the cell origin gives each cloud.
+const sitesByReferenceNumber = (atoms, latticeVectors, supercell) => {
     const clouds = new Map();   // referenceNumber -> { element, offsets: [[dfx,dfy,dfz], ...] }
-    let inAtoms = false;
-    text.split(/\r?\n/).forEach((line) => {
-        const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (!parts.length) return;
-        if (parts[0] === 'Atoms:') { inAtoms = true; return; }
-        if (!inAtoms) return;
-        const atom = parseAtomLine(parts);
-        if (!atom) return;
-        const { element, referenceNumber, coords, cellIndices } = atom;
+    atoms.forEach(({ element, referenceNumber, coords, cellIndices }) => {
         const offset = coords.map((value, i) => {
             let delta = value - cellIndices[i] / supercell[i];
             delta -= Math.round(delta);
@@ -487,32 +510,188 @@ export const siteDisplacementsFromRmc6f = (text) => {
         if (!cloud) { cloud = { element, offsets: [] }; clouds.set(referenceNumber, cloud); }
         cloud.offsets.push(offset);
     });
-    if (clouds.size === 0) throw new Error('No atoms found in structure');
-
     const referenceNumbers = [...clouds.keys()].sort((a, b) => a - b);
     const sites = referenceNumbers.map((referenceNumber) => {
         const { element, offsets } = clouds.get(referenceNumber);
-        const n = offsets.length;
-        const mean = [0, 0, 0];
-        offsets.forEach((offset) => { mean[0] += offset[0]; mean[1] += offset[1]; mean[2] += offset[2]; });
-        mean[0] /= n; mean[1] /= n; mean[2] /= n;
-        // Centered fractional offset mapped to Cartesian Angstrom via the box.
-        const displacements = offsets.map((offset) => {
-            const df = [offset[0] - mean[0], offset[1] - mean[1], offset[2] - mean[2]];
-            return [
-                df[0] * latticeVectors[0][0] + df[1] * latticeVectors[1][0] + df[2] * latticeVectors[2][0],
-                df[0] * latticeVectors[0][1] + df[1] * latticeVectors[1][1] + df[2] * latticeVectors[2][1],
-                df[0] * latticeVectors[0][2] + df[1] * latticeVectors[1][2] + df[2] * latticeVectors[2][2]
-            ];
-        });
-        const siteFractional = mean.map((value, i) => {
-            const frac = (value * supercell[i]) % 1;
-            return (frac + 1) % 1;
-        });
-        return { referenceNumber, element, count: n, displacements, siteFractional };
+        return buildSite(referenceNumber, element, offsets, latticeVectors, supercell);
+    });
+    return { referenceNumbers, sites };
+};
+
+// Periodic single-linkage clustering of unit-cell fractional points by minimum-image
+// Cartesian distance. A uniform grid with bins at least `thresholdA` wide bounds each
+// point's neighbour search to its own and adjacent bins (wrapped), so this stays near
+// linear even when a large supercell folds thousands of atoms into one cell. Returns
+// arrays of point indices, one per cluster.
+const clusterPeriodic = (points, unitVec, thresholdA) => {
+    const n = points.length;
+    const parent = Array.from({ length: n }, (_, i) => i);
+    const find = (x) => { let r = x; while (parent[r] !== r) r = parent[r]; while (parent[x] !== r) { const next = parent[x]; parent[x] = r; x = next; } return r; };
+    const union = (a, b) => { const ra = find(a); const rb = find(b); if (ra !== rb) parent[ra] = rb; };
+
+    // Grid over the (fractional) unit cell. Binning by each axis's PERPENDICULAR
+    // width (cell volume / opposite-face area), not its vector length, keeps a
+    // fractional step of 1/bins spanning >= thresholdA even for an oblique cell, so
+    // two points within thresholdA always share a bin or an adjacent one. For an
+    // orthogonal cell the perpendicular width equals the edge length.
+    const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    const norm = (u) => Math.hypot(u[0], u[1], u[2]);
+    const volume = Math.abs(dot(unitVec[0], cross(unitVec[1], unitVec[2]))) || 1;
+    const bins = [0, 1, 2].map((i) => {
+        const perpWidth = volume / (norm(cross(unitVec[(i + 1) % 3], unitVec[(i + 2) % 3])) || 1);
+        return Math.max(1, Math.floor(perpWidth / Math.max(thresholdA, 1e-9)));
+    });
+    const wrap = (value) => ((value % 1) + 1) % 1;
+    const binOf = (uf) => uf.map((v, i) => Math.min(bins[i] - 1, Math.floor(wrap(v) * bins[i])));
+    const keyOf = (b) => `${b[0]},${b[1]},${b[2]}`;
+
+    const buckets = new Map();
+    points.forEach((uf, idx) => {
+        const key = keyOf(binOf(uf));
+        const bucket = buckets.get(key);
+        if (bucket) bucket.push(idx); else buckets.set(key, [idx]);
     });
 
-    return { referenceNumbers, sites, latticeVectors, supercell };
+    const thr2 = thresholdA * thresholdA;
+    // Minimum-image distance under the FULL unit-cell metric. Per-axis reduction gives
+    // the primary image, then the 27 neighbouring images are searched for the true
+    // minimum: an oblique cell's closest copy can be diagonal, which per-axis rounding
+    // alone would miss. For an orthogonal cell the primary image always wins.
+    const dist2 = (a, b) => {
+        const f = [0, 1, 2].map((i) => { const d = a[i] - b[i]; return d - Math.round(d); });
+        let best = Infinity;
+        for (let ix = -1; ix <= 1; ix += 1) {
+            for (let iy = -1; iy <= 1; iy += 1) {
+                for (let iz = -1; iz <= 1; iz += 1) {
+                    const d0 = f[0] + ix; const d1 = f[1] + iy; const d2 = f[2] + iz;
+                    const x = d0 * unitVec[0][0] + d1 * unitVec[1][0] + d2 * unitVec[2][0];
+                    const y = d0 * unitVec[0][1] + d1 * unitVec[1][1] + d2 * unitVec[2][1];
+                    const z = d0 * unitVec[0][2] + d1 * unitVec[1][2] + d2 * unitVec[2][2];
+                    const s = x * x + y * y + z * z;
+                    if (s < best) best = s;
+                }
+            }
+        }
+        return best;
+    };
+    points.forEach((uf, idx) => {
+        const b = binOf(uf);
+        const seen = new Set();
+        for (let dx = -1; dx <= 1; dx += 1) {
+            for (let dy = -1; dy <= 1; dy += 1) {
+                for (let dz = -1; dz <= 1; dz += 1) {
+                    const nb = [
+                        ((b[0] + dx) % bins[0] + bins[0]) % bins[0],
+                        ((b[1] + dy) % bins[1] + bins[1]) % bins[1],
+                        ((b[2] + dz) % bins[2] + bins[2]) % bins[2]
+                    ];
+                    const key = keyOf(nb);
+                    if (seen.has(key)) continue;   // few bins -> neighbours alias; scan each once
+                    seen.add(key);
+                    const bucket = buckets.get(key);
+                    if (!bucket) continue;
+                    bucket.forEach((j) => { if (j > idx && dist2(uf, points[j]) < thr2) union(idx, j); });
+                }
+            }
+        }
+    });
+
+    const groups = new Map();
+    for (let i = 0; i < n; i += 1) {
+        const root = find(i);
+        const group = groups.get(root);
+        if (group) group.push(i); else groups.set(root, [i]);
+    }
+    return [...groups.values()];
+};
+
+// Fallback path for old files without site/cell columns: fold every atom into a
+// single unit cell, cluster per element, and treat each cluster as one site. The
+// expected copy count is the supercell product (one image per cell), so a cluster of
+// that size is a clean crystallographic site while a multiple flags close/merged or
+// orientationally-disordered atoms (e.g. a rotor shell) — surfaced as count/copies.
+const sitesByClustering = (atoms, latticeVectors, supercell, thresholdA) => {
+    const copiesPerCell = Math.max(1, Math.round(supercell[0] * supercell[1] * supercell[2]));
+    // Unit-cell vectors (supercell vectors / counts); distances use the full metric.
+    const unitVec = latticeVectors.map((row, i) => row.map((value) => value / Math.max(supercell[i], 1)));
+    const folded = atoms.map((atom) => ({
+        element: atom.element,
+        uf: atom.coords.map((value, i) => { const f = (value * supercell[i]) % 1; return (f + 1) % 1; })
+    }));
+
+    const elements = [...new Set(folded.map((atom) => atom.element))].sort();
+    const clusters = [];   // { element, members: [uf, ...], centroid: [x,y,z] }
+    elements.forEach((element) => {
+        const pts = folded.filter((atom) => atom.element === element).map((atom) => atom.uf);
+        clusterPeriodic(pts, unitVec, thresholdA).forEach((indices) => {
+            const members = indices.map((i) => pts[i]);
+            // Unwrap into the frame centred on the cluster's CIRCULAR mean per axis, not
+            // an arbitrary member: a wide cluster (e.g. an orientationally-disordered
+            // rotor shell spanning more than half a cell edge) would be split by a
+            // member-relative min-image and its displacements corrupted, whereas every
+            // member lies within half a cell of the circular centre. The circular mean
+            // also handles a compact cluster that straddles a cell boundary.
+            const TAU = 2 * Math.PI;
+            const centre = [0, 1, 2].map((i) => {
+                let cos = 0; let sin = 0;
+                members.forEach((uf) => { cos += Math.cos(TAU * uf[i]); sin += Math.sin(TAU * uf[i]); });
+                const m = Math.atan2(sin, cos) / TAU;
+                return m - Math.floor(m);
+            });
+            const unwrapped = members.map((uf) => uf.map((v, i) => { let d = v - centre[i]; d -= Math.round(d); return centre[i] + d; }));
+            const centroid = [0, 1, 2].map((i) => unwrapped.reduce((s, uf) => s + uf[i], 0) / unwrapped.length);
+            clusters.push({ element, unwrapped, centroid });
+        });
+    });
+
+    // Stable ordering: element, then folded centroid (x, y, z) — deterministic across
+    // runs so a site keeps its synthetic reference number when the knob is unchanged.
+    clusters.sort((a, b) => (
+        a.element.localeCompare(b.element)
+        || (((a.centroid[0] % 1 + 1) % 1) - ((b.centroid[0] % 1 + 1) % 1))
+        || (((a.centroid[1] % 1 + 1) % 1) - ((b.centroid[1] % 1 + 1) % 1))
+        || (((a.centroid[2] % 1 + 1) % 1) - ((b.centroid[2] % 1 + 1) % 1))
+    ));
+
+    const sites = clusters.map((cluster, index) => {
+        const offsets = cluster.unwrapped.map((uf) => uf.map((v, i) => v / supercell[i]));
+        return buildSite(index + 1, cluster.element, offsets, latticeVectors, supercell, copiesPerCell);
+    });
+    return { referenceNumbers: sites.map((site) => site.referenceNumber), sites };
+};
+
+/**
+ * Parse an `.rmc6f` file into per-site Cartesian displacement clouds. Files that
+ * carry the reference-site and cell columns are grouped by reference number; older
+ * files that carry only coordinates are reconstructed by folding into one unit cell
+ * and clustering (see `sitesByClustering`), and the result is flagged `reconstructed`.
+ */
+export const siteDisplacementsFromRmc6f = (text, { clusterThreshold = DEFAULT_CLUSTER_THRESHOLD } = {}) => {
+    const { latticeVectors, supercell } = readCellVectors(text);
+    const atoms = [];
+    let inAtoms = false;
+    text.split(/\r?\n/).forEach((line) => {
+        const parts = line.trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) return;
+        if (parts[0] === 'Atoms:') { inAtoms = true; return; }
+        if (!inAtoms) return;
+        const atom = parseAtomLine(parts);
+        if (atom) atoms.push(atom);
+    });
+    if (atoms.length === 0) throw new Error('No atoms found in structure');
+
+    // Choose the path by majority so a single malformed line can't flip a normal,
+    // site-tagged file onto the reconstruction path: if most atoms carry reference
+    // and cell columns, group by reference number (dropping any untagged strays);
+    // otherwise reconstruct sites by folding every atom into one cell and clustering.
+    const tagged = atoms.filter((atom) => atom.referenceNumber !== null && atom.cellIndices !== null);
+    const useReferenceNumbers = tagged.length > atoms.length / 2;
+    const { referenceNumbers, sites } = useReferenceNumbers
+        ? sitesByReferenceNumber(tagged, latticeVectors, supercell)
+        : sitesByClustering(atoms, latticeVectors, supercell, clusterThreshold);
+
+    return { referenceNumbers, sites, latticeVectors, supercell, reconstructed: !useReferenceNumbers };
 };
 
 /** Anisotropic displacement tensor + ellipsoid for every site, in one pass. */
@@ -528,6 +707,7 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
             referenceNumber: site.referenceNumber,
             element: site.element,
             count: site.count,
+            copiesPerCell: site.copiesPerCell ?? null,
             siteFractional: site.siteFractional,
             covariance: cov,
             eigenvalues,

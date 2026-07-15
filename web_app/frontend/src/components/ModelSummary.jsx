@@ -108,7 +108,9 @@ const ModelSummary = ({ structure }) => {
                             <dt>{element}</dt>
                             <dd>
                                 {formatNumber(count, 0)}
-                                <span className="model-stat-sub">{formatNumber(referenceSites, 0)} sites</span>
+                                {referenceSites > 0 && (
+                                    <span className="model-stat-sub">{formatNumber(referenceSites, 0)} sites</span>
+                                )}
                             </dd>
                         </div>
                     ))}
@@ -116,7 +118,9 @@ const ModelSummary = ({ structure }) => {
                         <dt>Total atoms</dt>
                         <dd>
                             {formatNumber(summary.totalAtoms, 0)}
-                            <span className="model-stat-sub">{formatNumber(summary.referenceSites, 0)} sites</span>
+                            {summary.referenceSites > 0 && (
+                                <span className="model-stat-sub">{formatNumber(summary.referenceSites, 0)} sites</span>
+                            )}
                         </dd>
                     </div>
                 </dl>

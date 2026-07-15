@@ -27,7 +27,7 @@ const BW_OPTIONS = [
     { value: 'scott', label: 'Scott' },
     { value: 'silverman', label: 'Silverman' }
 ];
-const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 25, colormap: 'viridis' };
+const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 25, colormap: 'viridis', shellColormap: 'viridis', shellContrast: 1, clusterThreshold: 1.5 };
 
 // Contrast highlight for the selected atom in the unit-cell view — a warm color
 // that stands out against the cool element palette (teal Se, blue Ga/Ta).
@@ -82,7 +82,7 @@ const sampleDensityTrilinear = (density, grid, fi, fj, fk) => {
 // maps to world coordinates (baked in, like the isosurface) and indexes the grid.
 // Coloring is stretched to the shell's OWN density range (not the global 0..vmax),
 // so the small variation across an iso-probability shell reads with full contrast.
-const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap) => {
+const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap, contrast = 1) => {
     const geometry = new THREE.SphereGeometry(1, 96, 64);
     const unit = geometry.attributes.position;
     const count = unit.count;
@@ -113,10 +113,12 @@ const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap) => {
         if (d < shellMin) shellMin = d;
         if (d > shellMax) shellMax = d;
     }
-    // Second pass: stretch the shell's density range across the full colormap.
+    // Second pass: stretch the shell's density range across the full colormap, then
+    // apply the user contrast as a symmetric gain about the mid-tone (0.5) — >1
+    // narrows the effective vmin/vmax so faint departures stand out, <1 flattens it.
     const shellRange = shellMax - shellMin || 1;
     for (let v = 0; v < count; v += 1) {
-        const t = (values[v] - shellMin) / shellRange;
+        const t = 0.5 + ((values[v] - shellMin) / shellRange - 0.5) * contrast;
         const rgb = sampleColormap(colormap, t < 0 ? 0 : t > 1 ? 1 : t);
         colors[3 * v] = rgb[0] / 255;
         colors[3 * v + 1] = rgb[1] / 255;
@@ -312,19 +314,18 @@ const TRIAD_COLORS = [0xd64545, 0x3fa34d, 0x3f7fd6]; // PC1 red, PC2 green, PC3 
 const PC_CSS_COLORS = ['#d64545', '#3fa34d', '#3f7fd6'];
 
 // Wireframe color for the p% thermal-ellipsoid reference cage, chosen from the
-// controls bar. The default is Amber — the same warm tone as the selected-site
-// highlight in the unit-cell view (SELECTED_ATOM_COLOR 0xff7a1a), so the ellipsoid
-// reads as "this site". The cage is drawn transparent, so whatever color is picked
-// it never crowds the KDE isosurface it wraps. The first entry is the default and
-// also feeds the viewport legend swatch.
+// controls bar. The cage is always drawn transparent, so whatever color is picked
+// it never crowds the KDE shell / isosurface it wraps. The value feeds the 3D
+// material and the viewport legend swatch.
 const ELLIPSOID_COLOR_OPTIONS = [
+    { value: '#b892ff', label: 'Violet' },
     { value: '#ff7a1a', label: 'Amber' },
     { value: '#ffffff', label: 'White' },
     { value: '#111111', label: 'Black' },
     { value: '#c3d4e6', label: 'Silver' },
-    { value: '#8fd4ef', label: 'Cyan' },
-    { value: '#b892ff', label: 'Violet' }
+    { value: '#8fd4ef', label: 'Cyan' }
 ];
+// Violet reads well against the default (viridis) KDE shell.
 const ELLIPSOID_COLOR = ELLIPSOID_COLOR_OPTIONS[0].value;
 const ELLIPSOID_OPACITY = 0.4;
 
@@ -443,15 +444,26 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     const [grid, setGrid] = useState(DEFAULTS.grid);
     const [bw, setBw] = useState(DEFAULTS.bw);
     const [extent, setExtent] = useState(DEFAULTS.extent);
+    // Fold-and-cluster distance (Å) used only when the loaded file has no reference-
+    // site/cell columns and its sites must be reconstructed (see the PCA worker).
+    const [clusterThreshold, setClusterThreshold] = useState(DEFAULTS.clusterThreshold);
     const [probability, setProbability] = useState(DEFAULTS.probability);
     const [isoPercent, setIsoPercent] = useState(DEFAULTS.isoPercent);
     const [colormap, setColormap] = useState(DEFAULTS.colormap);
+    // The KDE shell has its own colormap so it can be read independently of the
+    // wall projections / isosurface (which use `colormap`).
+    const [shellColormap, setShellColormap] = useState(DEFAULTS.shellColormap);
+    // Contrast gain for the shell colormap: a single knob that tightens (>1) or
+    // loosens (<1) the effective vmin/vmax around the shell's mid-tone.
+    const [shellContrast, setShellContrast] = useState(DEFAULTS.shellContrast);
     const [ellipsoidColor, setEllipsoidColor] = useState(ELLIPSOID_COLOR);
     const [showEllipsoid, setShowEllipsoid] = useState(true);
-    const [showSurface, setShowSurface] = useState(true);
+    // The KDE shell is the default density view; it and the isosurface are mutually
+    // exclusive (the shell shows the same density from the outside), so the
+    // isosurface starts off.
+    const [showSurface, setShowSurface] = useState(false);
     const [showProjections, setShowProjections] = useState(true);
-    // Optional: paint the KDE density onto the ellipsoid surface (off by default).
-    const [showEllipsoidKde, setShowEllipsoidKde] = useState(false);
+    const [showEllipsoidKde, setShowEllipsoidKde] = useState(true);
     const [perspective, setPerspective] = useState(true);
     // Which principal axis the camera is snapped to look down (null = free / the
     // default diagonal view); drives the highlight on the view-axis buttons.
@@ -541,12 +553,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             setLoadingSites(true);
             setSitesError(null);
             try {
-                const data = await requestPca('sites', { probability });
+                const data = await requestPca('sites', { probability, clusterThreshold });
                 if (cancelled) return;
                 setSites(data);
                 setSelectedRef((current) => {
                     const refs = data.sites.map((site) => site.referenceNumber);
-                    return current != null && refs.includes(current) ? current : refs[0] ?? null;
+                    if (current != null && refs.includes(current)) return current;
+                    // Prefer a clean reconstructed site (members == one-per-cell) so the
+                    // default view is a genuine thermal ellipsoid, not a disordered shell.
+                    // Inert for files with real site columns (copiesPerCell is null there).
+                    const clean = data.sites.find((site) => site.copiesPerCell && site.count === site.copiesPerCell);
+                    return clean?.referenceNumber ?? refs[0] ?? null;
                 });
             } catch (error) {
                 if (!cancelled) { setSites(null); setSitesError(error.message); }
@@ -556,7 +573,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         };
         loadSites();
         return () => { cancelled = true; };
-    }, [requestPca, localFile, rmc6fText, probability]);
+    }, [requestPca, localFile, rmc6fText, probability, clusterThreshold]);
 
     // --- Load the KDE volume for the selected site. ---------------------------
     useEffect(() => {
@@ -571,7 +588,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                     'kde',
                     // cubicBox keeps all three axes on one scale, so the wall
                     // projections come out the same size (Maksim's cubic layout).
-                    { referenceNumber: selectedRef, grid, bw, extent, probability, cubicBox: true, projections: true }
+                    { referenceNumber: selectedRef, grid, bw, extent, probability, clusterThreshold, cubicBox: true, projections: true }
                 );
                 if (cancelled) return;
                 // Silent view reset on a genuinely new run: null the framing marker
@@ -586,14 +603,20 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                 }
                 setKde(data);
             } catch (error) {
-                if (!cancelled) { setKde(null); setKdeError(error.message); }
+                if (cancelled) return;
+                // Changing the cluster distance re-clusters and re-numbers the sites, so
+                // the KDE effect can momentarily request a reference number the new
+                // clustering dropped. That self-heals when the reloaded sites re-pick a
+                // valid site, so keep the current volume and don't surface the transient.
+                if (/Unknown reference number/i.test(error.message || '')) return;
+                setKde(null); setKdeError(error.message);
             } finally {
                 if (!cancelled) setLoadingKde(false);
             }
         };
         loadKde();
         return () => { cancelled = true; };
-    }, [requestPca, localFile, rmc6fText, selectedRef, grid, bw, extent, probability, datasetKey]);
+    }, [requestPca, localFile, rmc6fText, selectedRef, grid, bw, extent, probability, clusterThreshold, datasetKey]);
 
     const selectedEllipsoid = useMemo(
         () => sites?.sites.find((site) => site.referenceNumber === selectedRef) || null,
@@ -877,7 +900,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         // before the wireframe so, when both are on, the cage sits on top.
         if (showEllipsoidKde && selectedEllipsoid) {
             ellipsoidGroup.add(
-                makeEllipsoidKdeSurface(selectedEllipsoid.semiAxes, axes, mean, kde, colormap)
+                makeEllipsoidKdeSurface(selectedEllipsoid.semiAxes, axes, mean, kde, shellColormap, shellContrast)
             );
         }
 
@@ -896,13 +919,12 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             const scaleMatrix = new THREE.Matrix4().makeScale(semi[0], semi[1], semi[2]);
             const model = orientation.multiply(scaleMatrix);
             model.setPosition(mean[0], mean[1], mean[2]);
-            // Opaque cage over the KDE shell (crisp lines against the colored surface);
-            // translucent otherwise so it never crowds the isosurface.
+            // Always a translucent cage, so it never crowds the KDE shell / isosurface.
             const material = new THREE.MeshBasicMaterial({
                 color: new THREE.Color(ellipsoidColor),
                 wireframe: true,
-                transparent: !showEllipsoidKde,
-                opacity: showEllipsoidKde ? 1 : ELLIPSOID_OPACITY
+                transparent: true,
+                opacity: ELLIPSOID_OPACITY
             });
             const mesh = new THREE.Mesh(sphere, material);
             mesh.applyMatrix4(model);
@@ -940,7 +962,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             camera.updateProjectionMatrix();
             controls.update();
         }
-    }, [kde, isoPercent, colormap, ellipsoidColor, showEllipsoid, showSurface, showProjections, showEllipsoidKde, selectedEllipsoid, selectedRef]);
+    }, [kde, isoPercent, colormap, shellColormap, shellContrast, ellipsoidColor, showEllipsoid, showSurface, showProjections, showEllipsoidKde, selectedEllipsoid, selectedRef]);
 
     // --- Unit-cell structure scene: one clickable marker per reference site. ---
     useEffect(() => {
@@ -1216,164 +1238,264 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         controls.update();
     }, [sites, selectedRef, selectedEllipsoid, elementColors]);
 
+    // Re-fit the site-ellipsoids canvas to its mount whenever the Displacement-
+    // statistics panel — which shares this column — changes height. Its content
+    // lands in stages (the PCA result, then the KDE mass levels), each one
+    // collapsing the shared row a little more; effects run after layout, so the
+    // mount is settled here. In production a ResizeObserver also catches window
+    // resizes, but this keeps the canvas exact without depending on its timing.
+    useEffect(() => {
+        const handle = structureSceneRef.current;
+        const mount = structureMountRef.current;
+        if (!handle || !mount || !mount.clientWidth || !mount.clientHeight) return;
+        const { renderer, camera } = handle;
+        const current = renderer.getSize(new THREE.Vector2());
+        if (Math.abs(current.x - mount.clientWidth) < 1 && Math.abs(current.y - mount.clientHeight) < 1) return;
+        camera.aspect = mount.clientWidth / mount.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(mount.clientWidth, mount.clientHeight);
+    }, [sites, selectedRef, selectedEllipsoid, kde]);
+
     const isoMassLevel = kde?.massLevels?.[isoPercent]?.level;
+    // For a reconstructed site, compare its member count against the one-per-cell
+    // expectation: an exact match is a clean crystallographic site, a larger count
+    // means atoms that don't separate at this distance (close/merged sites or an
+    // orientationally-disordered shell), and a smaller one means it fragmented.
+    const siteTag = selectedEllipsoid?.copiesPerCell
+        ? {
+            count: selectedEllipsoid.count,
+            per: selectedEllipsoid.copiesPerCell,
+            clean: selectedEllipsoid.count === selectedEllipsoid.copiesPerCell,
+            status: selectedEllipsoid.count === selectedEllipsoid.copiesPerCell
+                ? 'clean site'
+                : selectedEllipsoid.count > selectedEllipsoid.copiesPerCell
+                    ? 'merged / disordered'
+                    : 'fragmented — raise the distance'
+        }
+        : null;
     const noRun = staticMode && !localFile;
 
     return (
         <div className="pca-page">
             <div className="pca-controls">
-                <label className="control">
-                    <span className="control-name">
-                        Site
-                        <InfoBadge label="About the site picker">
-                            <p>
-                                Each reference site (an RMCProfile reference number) is one
-                                crystallographic position. Its cloud of per-atom displacements about
-                                the average structure is analysed by PCA to give the thermal ellipsoid.
-                            </p>
-                        </InfoBadge>
-                    </span>
-                    <select
-                        value={selectedRef ?? ''}
-                        onChange={(event) => setSelectedRef(Number(event.target.value))}
-                        disabled={!sites}
-                        aria-label="Site"
-                    >
-                        {sites?.sites.map((site) => (
-                            <option key={site.referenceNumber} value={site.referenceNumber}>
-                                {`#${site.referenceNumber} ${site.element} — U=${numberFormat(site.uIso, 4)} Å²`}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <label className="control">
-                    <span className="control-name">Grid</span>
-                    <select value={grid} onChange={(event) => setGrid(Number(event.target.value))} aria-label="Grid size">
-                        {GRID_OPTIONS.map((value) => <option key={value} value={value}>{`${value}³`}</option>)}
-                    </select>
-                </label>
-                <label className="control">
-                    <span className="control-name">Bandwidth</span>
-                    <select value={bw} onChange={(event) => setBw(event.target.value)} aria-label="Bandwidth rule">
-                        {BW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                </label>
-                <label className="control">
-                    <span className="control-name">Box</span>
-                    <input
-                        type="range" min="2" max="5" step="0.5"
-                        value={extent} onChange={(event) => setExtent(Number(event.target.value))}
-                        aria-label="Box half-width in sigma"
-                    />
-                    <span className="control-value">{extent.toFixed(1)}σ</span>
-                </label>
-                <label className="control">
-                    <span className="control-name">
-                        Ellipsoid
-                        <InfoBadge label="About the ellipsoid level">
-                            <p>
-                                The enclosed-probability level drawn as the thermal-ellipsoid
-                                wireframe. 50% is the crystallographic convention.
-                            </p>
-                        </InfoBadge>
-                    </span>
-                    <input
-                        type="range" min="0.1" max="0.99" step="0.01"
-                        value={probability} onChange={(event) => setProbability(Number(event.target.value))}
-                        aria-label="Ellipsoid probability"
-                    />
-                    <span className="control-value">{Math.round(probability * 100)}%</span>
-                </label>
-                <label className="control">
-                    <span className="control-name">
-                        Isosurface
-                        <InfoBadge label="About the isosurface">
-                            <p>
-                                The KDE density isosurface enclosing this fraction of the cloud's
-                                mass. Compare its shape to the harmonic ellipsoid — where it sits
-                                inside, the motion is anharmonic (see Non-Gaussianity).
-                            </p>
-                        </InfoBadge>
-                    </span>
-                    <input
-                        type="range" min="1" max="99" step="1"
-                        value={isoPercent} onChange={(event) => setIsoPercent(Number(event.target.value))}
-                        aria-label="Isosurface enclosed mass"
-                    />
-                    <span className="control-value">{isoPercent}%</span>
-                </label>
-                <label className="control">
-                    <span className="control-name">Colormap</span>
-                    <select value={colormap} onChange={(event) => setColormap(event.target.value)} aria-label="Colormap">
-                        {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
-                    </select>
-                </label>
-                <label className="control">
-                    <span className="control-name">Ellipsoid color</span>
-                    <i className="ellipsoid-color-swatch" style={{ background: ellipsoidColor }} aria-hidden="true" />
-                    <select
-                        value={ellipsoidColor}
-                        onChange={(event) => setEllipsoidColor(event.target.value)}
-                        aria-label="Ellipsoid wireframe color"
-                    >
-                        {ELLIPSOID_COLOR_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                    </select>
-                </label>
-                <label className="control switch">
-                    <span className="control-name">Isosurface</span>
-                    <input
-                        type="checkbox"
-                        checked={showSurface}
-                        onChange={(event) => {
-                            const on = event.target.checked;
-                            setShowSurface(on);
-                            // The isosurface and the KDE shell are two views of the same
-                            // density (and the shell hides the isosurface), so only one shows.
-                            if (on) setShowEllipsoidKde(false);
-                        }}
-                    />
-                    <i className="switch-track" aria-hidden="true" />
-                </label>
-                <label className="control switch">
-                    <span className="control-name">Ellipsoid</span>
-                    <input type="checkbox" checked={showEllipsoid} onChange={(event) => setShowEllipsoid(event.target.checked)} />
-                    <i className="switch-track" aria-hidden="true" />
-                </label>
-                <label className="control switch">
-                    <span className="control-name">Projections</span>
-                    <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} />
-                    <i className="switch-track" aria-hidden="true" />
-                </label>
-                {/* The InfoBadge is a sibling of the toggle label, not inside it, so the
-                    "?" help button never sits inside the switch's clickable area (an
-                    interactive element nested in a <label> makes the toggle click ambiguous). */}
-                <div className="switch-with-info">
+                {/* Site & KDE sampling */}
+                <div className="control-group" role="group" aria-label="Site and sampling">
+                    <span className="control-group-label">Sample</span>
+                    <label className="control">
+                        <span className="control-name">
+                            Site
+                            <InfoBadge label="About the site picker">
+                                <p>
+                                    Each reference site (an RMCProfile reference number) is one
+                                    crystallographic position. Its cloud of per-atom displacements about
+                                    the average structure is analysed by PCA to give the thermal ellipsoid.
+                                </p>
+                            </InfoBadge>
+                        </span>
+                        <select
+                            value={selectedRef ?? ''}
+                            onChange={(event) => setSelectedRef(Number(event.target.value))}
+                            disabled={!sites}
+                            aria-label="Site"
+                        >
+                            {sites?.sites.map((site) => (
+                                <option key={site.referenceNumber} value={site.referenceNumber}>
+                                    {`#${site.referenceNumber} ${site.element} — U=${numberFormat(site.uIso, 4)} Å²`}
+                                    {site.copiesPerCell ? ` (${site.count}/${site.copiesPerCell})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="control">
+                        <span className="control-name">Grid</span>
+                        <select value={grid} onChange={(event) => setGrid(Number(event.target.value))} aria-label="Grid size">
+                            {GRID_OPTIONS.map((value) => <option key={value} value={value}>{`${value}³`}</option>)}
+                        </select>
+                    </label>
+                    <label className="control">
+                        <span className="control-name">Bandwidth</span>
+                        <select value={bw} onChange={(event) => setBw(event.target.value)} aria-label="Bandwidth rule">
+                            {BW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                    </label>
+                    <label className="control">
+                        <span className="control-name">Box</span>
+                        <input
+                            type="range" min="2" max="5" step="0.5"
+                            value={extent} onChange={(event) => setExtent(Number(event.target.value))}
+                            aria-label="Box half-width in sigma"
+                        />
+                        <span className="control-value">{extent.toFixed(1)}σ</span>
+                    </label>
+                    {sites?.reconstructed && (
+                        <label className="control">
+                            <span className="control-name">
+                                Cluster
+                                <InfoBadge label="About site clustering">
+                                    <p>
+                                        This file carries no reference-site or cell columns, so sites are
+                                        rebuilt by folding every atom into one unit cell and grouping atoms
+                                        of the same element within this distance. Each site should gather one
+                                        copy per supercell image; the count beside a site (e.g. 27/27) is its
+                                        members against that expected number. Raise the distance to merge
+                                        over-split sites, lower it to separate ones that ran together.
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                            <input
+                                type="range" min="0.4" max="2.5" step="0.1"
+                                value={clusterThreshold} onChange={(event) => setClusterThreshold(Number(event.target.value))}
+                                aria-label="Site clustering distance in Angstrom"
+                            />
+                            <span className="control-value">{clusterThreshold.toFixed(1)} Å</span>
+                        </label>
+                    )}
+                </div>
+
+                {/* Ellipsoid — the wireframe reference and the KDE density painted on it
+                    (two aspects of the same surface, so they share one control group). */}
+                <div className="control-group" role="group" aria-label="Ellipsoid and density shell">
+                    <span className="control-group-label">Ellipsoid</span>
                     <label className="control switch">
-                        <span className="control-name">KDE shell</span>
+                        <span className="control-name">Wireframe</span>
+                        <input type="checkbox" checked={showEllipsoid} onChange={(event) => setShowEllipsoid(event.target.checked)} aria-label="Show ellipsoid wireframe" />
+                        <i className="switch-track" aria-hidden="true" />
+                    </label>
+                    <label className="control">
+                        <span className="control-name">
+                            Level
+                            <InfoBadge label="About the ellipsoid level">
+                                <p>
+                                    The enclosed-probability level drawn as the thermal-ellipsoid
+                                    wireframe. 50% is the crystallographic convention.
+                                </p>
+                            </InfoBadge>
+                        </span>
+                        <input
+                            type="range" min="0.1" max="0.99" step="0.01"
+                            value={probability} onChange={(event) => setProbability(Number(event.target.value))}
+                            aria-label="Ellipsoid probability"
+                        />
+                        <span className="control-value">{Math.round(probability * 100)}%</span>
+                    </label>
+                    <label className="control">
+                        <span className="control-name">Color</span>
+                        <i className="ellipsoid-color-swatch" style={{ background: ellipsoidColor }} aria-hidden="true" />
+                        <select
+                            value={ellipsoidColor}
+                            onChange={(event) => setEllipsoidColor(event.target.value)}
+                            aria-label="Ellipsoid wireframe color"
+                        >
+                            {ELLIPSOID_COLOR_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                        </select>
+                    </label>
+                    {/* The InfoBadge is a sibling of the toggle label, not inside it, so the
+                        "?" never sits inside the switch's clickable area (an interactive
+                        element nested in a <label> makes the toggle click ambiguous). */}
+                    <div className="switch-with-info">
+                        <label className="control switch">
+                            <span className="control-name">Shell</span>
+                            <input
+                                type="checkbox"
+                                checked={showEllipsoidKde}
+                                aria-label="Show KDE density shell"
+                                onChange={(event) => {
+                                    const on = event.target.checked;
+                                    setShowEllipsoidKde(on);
+                                    if (on) setShowSurface(false);
+                                }}
+                            />
+                            <i className="switch-track" aria-hidden="true" />
+                        </label>
+                        <InfoBadge label="About the KDE shell" align="end">
+                            <p>
+                                Paints the KDE density onto the ellipsoid surface. A near-uniform
+                                color means the motion is Gaussian; hotter and colder patches mark
+                                where the real density departs from the harmonic ellipsoid.
+                            </p>
+                            <p>
+                                It shows the same density as the isosurface from the outside, so the
+                                two switch off each other.
+                            </p>
+                        </InfoBadge>
+                    </div>
+                    <label className="control">
+                        <span className="control-name">Colormap</span>
+                        <select value={shellColormap} onChange={(event) => setShellColormap(event.target.value)} aria-label="KDE shell colormap">
+                            {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                    </label>
+                    <label className="control">
+                        <span className="control-name">
+                            Contrast
+                            <InfoBadge label="About the shell contrast" align="end">
+                                <p>
+                                    Stretches the shell colormap around its mid-tone: higher values
+                                    push the effective range (vmin/vmax) together so faint departures
+                                    from the ellipsoid stand out, lower values flatten it.
+                                </p>
+                            </InfoBadge>
+                        </span>
+                        <input
+                            type="range" min="0.5" max="3" step="0.1"
+                            value={shellContrast} onChange={(event) => setShellContrast(Number(event.target.value))}
+                            aria-label="KDE shell contrast"
+                        />
+                        <span className="control-value">{shellContrast.toFixed(1)}×</span>
+                    </label>
+                </div>
+
+                {/* Isosurface & wall projections — the volume density views (shared colormap) */}
+                <div className="control-group" role="group" aria-label="Isosurface and wall projections">
+                    <span className="control-group-label">Volume</span>
+                    <label className="control switch">
+                        <span className="control-name">
+                            Isosurface
+                            <InfoBadge label="About the isosurface">
+                                <p>
+                                    The KDE density isosurface enclosing this fraction of the cloud's
+                                    mass. Compare its shape to the harmonic ellipsoid — where it sits
+                                    inside, the motion is anharmonic (see Non-Gaussianity).
+                                </p>
+                            </InfoBadge>
+                        </span>
                         <input
                             type="checkbox"
-                            checked={showEllipsoidKde}
+                            checked={showSurface}
+                            aria-label="Show isosurface"
                             onChange={(event) => {
                                 const on = event.target.checked;
-                                setShowEllipsoidKde(on);
-                                if (on) setShowSurface(false);
+                                setShowSurface(on);
+                                // The isosurface is a clean standalone view of the density volume:
+                                // turning it on clears the ellipsoid wireframe and its KDE shell
+                                // (the shell shows the same density, drawn on the surface instead).
+                                if (on) { setShowEllipsoidKde(false); setShowEllipsoid(false); }
                             }}
                         />
                         <i className="switch-track" aria-hidden="true" />
                     </label>
-                    <InfoBadge label="About the KDE shell" align="end">
-                        <p>
-                            Paints the KDE density onto the ellipsoid surface. A near-uniform
-                            color means the motion is Gaussian; hotter and colder patches mark
-                            where the real density departs from the harmonic ellipsoid.
-                        </p>
-                        <p>
-                            It shows the same density as the isosurface from the outside, so the
-                            two switch off each other.
-                        </p>
-                    </InfoBadge>
+                    <label className="control">
+                        <span className="control-name">Level</span>
+                        <input
+                            type="range" min="1" max="99" step="1"
+                            value={isoPercent} onChange={(event) => setIsoPercent(Number(event.target.value))}
+                            aria-label="Isosurface enclosed mass"
+                        />
+                        <span className="control-value">{isoPercent}%</span>
+                    </label>
+                    <label className="control switch">
+                        <span className="control-name">Projections</span>
+                        <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} aria-label="Show wall projections" />
+                        <i className="switch-track" aria-hidden="true" />
+                    </label>
+                    <label className="control">
+                        <span className="control-name">Colormap</span>
+                        <select value={colormap} onChange={(event) => setColormap(event.target.value)} aria-label="Isosurface and projections colormap">
+                            {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                    </label>
                 </div>
             </div>
 
@@ -1498,6 +1620,23 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         <div className="pca-stats-body">
                         {selectedEllipsoid ? (
                             <>
+                                {siteTag && (
+                                    <p className={`pca-site-tag ${siteTag.clean ? 'is-clean' : 'is-flagged'}`}>
+                                        <span className="pca-site-tag-count">{siteTag.count}/{siteTag.per}</span>
+                                        <span>copies · {siteTag.status}</span>
+                                        <InfoBadge label="About the reconstructed site" align="end">
+                                            <p>
+                                                Sites were rebuilt by folding + clustering because this file
+                                                has no reference-site columns. The count is this site's members
+                                                against the one-per-cell expectation from the supercell. A larger
+                                                count means atoms that don't resolve into separate sites at the
+                                                current distance — close sites, or an orientationally disordered
+                                                group such as a rotor shell, whose “ellipsoid” is really a shell
+                                                and is best read from the KDE rather than as a thermal ellipsoid.
+                                            </p>
+                                        </InfoBadge>
+                                    </p>
+                                )}
                                 <dl className="pca-stats">
                                     <div className="pca-stat">
                                         <dt>U<sub>iso</sub> (Å²)</dt>
@@ -1636,12 +1775,12 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                     <div className="pca-panel pca-unitcell-panel">
                         <h3>
                             <span className="panel-title-label">
-                                Site selector
-                                <InfoBadge label="About the site selector" align="end">
+                                Site ellipsoids
+                                <InfoBadge label="About the site ellipsoids" align="end">
                                     <p>
-                                        Pick which site to analyze: every reference site in the average
-                                        unit cell, colored by element. Click an atom to load its PCA-KDE
-                                        in the main panel; the selected site is enlarged and highlighted.
+                                        Every reference site in the average unit cell, drawn as its
+                                        calculated thermal ellipsoid and colored by element. Click one to
+                                        load its PCA-KDE in the main panel; the selected site is highlighted.
                                     </p>
                                 </InfoBadge>
                             </span>

@@ -25,7 +25,7 @@
 .pca-controls {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.4rem 1.5rem;
+    gap: 0.5rem 0.9rem;
     align-items: center;
     margin-bottom: 0.85rem;
     border: 1px solid var(--border);
@@ -33,6 +33,29 @@
     border-radius: 12px;
     padding: 0.55rem 0.95rem;
     box-shadow: var(--shadow-xs);
+}
+
+/* Controls are organised into labelled clusters (Sample · Ellipsoid · KDE shell ·
+   Volume), each a flex row that wraps as a unit, separated by a thin divider. */
+.control-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 1rem;
+}
+
+.control-group:not(:first-child) {
+    border-left: 1px solid var(--border);
+    padding-left: 0.9rem;
+}
+
+.control-group-label {
+    color: var(--accent);
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
 }
 
 .pca-controls .control {
@@ -196,16 +219,17 @@
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 /* The 3D viewport takes three-quarters of the width on the left; the displacement
-   statistics and unit cell stack in the remaining quarter as two EQUAL-height rows
-   that the viewport spans, so all four outer edges line up. The grid fills the
-   page's leftover height (flex: 1) so the whole view roughly fills a 16:9 screen
-   rather than sprawling wide; each stacked panel then manages its own overflow. */
+   statistics and unit cell stack in the remaining quarter, with the viewport
+   spanning both so all four outer edges line up. The statistics row sizes to its
+   content (so the covariance / principal-axes tables are never cut) and the site
+   ellipsoids take the rest; the grid fills the page's leftover height (flex: 1) so
+   the whole view roughly fills a 16:9 screen rather than sprawling wide. */
 .pca-layout {
     flex: 1;
     min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
         "viewport stats"
         "viewport unitcell";
@@ -558,6 +582,49 @@
     line-height: 1.4;
 }
 
+/* Reconstructed-site copy count (members / one-per-cell expectation). Green when a
+   site is clean; amber when it merged or fragmented at the current cluster distance. */
+.pca-site-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.5rem;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    color: var(--muted);
+    font-size: 0.72rem;
+    line-height: 1.3;
+}
+
+.pca-site-tag-count {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.pca-site-tag.is-clean {
+    border-color: color-mix(in srgb, #3ba776 45%, var(--border));
+    background: color-mix(in srgb, #3ba776 8%, transparent);
+}
+
+.pca-site-tag.is-clean .pca-site-tag-count {
+    color: #3ba776;
+}
+
+.pca-site-tag.is-flagged {
+    border-color: color-mix(in srgb, #d98a2b 45%, var(--border));
+    background: color-mix(in srgb, #d98a2b 8%, transparent);
+}
+
+.pca-site-tag.is-flagged .pca-site-tag-count {
+    color: #d98a2b;
+}
+
+/* Push the info badge to the trailing edge of the tag row. */
+.pca-site-tag .info-badge {
+    margin-left: auto;
+}
+
 /* ── Covariance / principal-axes matrices ─────────────────────────────────── */
 .pca-matrices {
     display: flex;
@@ -647,14 +714,14 @@
 }
 
 /* ── Unit-cell structure view ─────────────────────────────────────────────── */
-/* Fill the space between the panel header and the element legend so the unit-cell
-   panel's height is driven by the equal-height grid row (a ResizeObserver on the
-   mount keeps the WebGL canvas in step). The single-column breakpoint restores a
-   fixed square. */
+/* Fill the space between the panel header and the element legend; the site-ellipsoid
+   panel takes whatever height is left after the statistics row, so keep the floor
+   small enough that it shrinks gracefully (a ResizeObserver on the mount keeps the
+   WebGL canvas in step). The single-column breakpoint restores a fixed square. */
 .pca-structure {
     position: relative;
     flex: 1;
-    min-height: 12rem;
+    min-height: 9rem;
     width: 100%;
     background:
         radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
