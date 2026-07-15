@@ -23,6 +23,12 @@ if str(PROJECT_ROOT) not in sys.path:
 FRONTEND_DIST = PROJECT_ROOT / "web_app" / "frontend" / "dist"
 
 from rmc_toolkits.kde import UnitCellPositions, load_unit_cell_positions, oriented_kde_slice
+from rmc_toolkits.pca_kde import (
+    SiteDisplacements,
+    cached_site_displacements,
+    site_ellipsoids,
+    site_pca_kde,
+)
 from rmc_toolkits.parsers import (
     iter_rmc6f_atoms,
     read_atom_indices,
@@ -450,6 +456,14 @@ SLICE_ORIENTATIONS = {
 }
 
 
+def _bw_argument(raw: str) -> str | float:
+    """Bandwidth query arg: the names 'scott'/'silverman', else a positive float."""
+    name = str(raw).strip().lower()
+    if name in ("scott", "silverman"):
+        return name
+    return float(raw)
+
+
 def _slice_orientation_from_request():
     orientation = (request.args.get("orientation") or "c").lower()
     if orientation in SLICE_ORIENTATIONS:
@@ -510,6 +524,81 @@ def kde_slice_endpoint():
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+def _cached_site_displacements(rmc6f_path: Path) -> SiteDisplacements:
+    return cached_site_displacements(str(rmc6f_path), rmc6f_path.stat().st_mtime)
+
+
+@app.route("/api/pca/sites", methods=["GET"])
+def pca_sites_endpoint():
+    """Anisotropic displacement tensor + thermal ellipsoid for every site.
+
+    One cheap batched pass over the whole configuration; the frontend uses it to
+    populate the site picker and the per-site ellipsoid summary table.
+    """
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+        probability = float(request.args.get("probability", 0.5))
+        sites = _cached_site_displacements(rmc6f_path)
+        ellipsoids = site_ellipsoids(sites, probability=probability)
+        return jsonify(
+            {
+                "source": str(rmc6f_path),
+                "referenceNumbers": sites.reference_numbers.tolist(),
+                "elements": sorted(set(sites.elements)),
+                "totalAtoms": int(sites.counts.sum()),
+                "latticeVectors": sites.lattice_vectors.tolist(),
+                "supercell": sites.supercell.tolist(),
+                "probability": probability,
+                "sites": ellipsoids,
+            }
+        )
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/pca/kde", methods=["GET"])
+def pca_kde_endpoint():
+    """PCA-aligned 3D KDE volume for one site (or one element's pooled sites)."""
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+        sites = _cached_site_displacements(rmc6f_path)
+
+        reference_raw = request.args.get("referenceNumber")
+        reference_number = int(reference_raw) if reference_raw not in (None, "") else None
+        element = request.args.get("element") or None
+        if element in ("", "all"):
+            element = None
+
+        result = site_pca_kde(
+            sites,
+            reference_number=reference_number,
+            element=element,
+            bw=_bw_argument(request.args.get("bw", "scott")),
+            bw_scale=float(request.args.get("bwScale", 1.0)),
+            grid=int(request.args.get("grid", 48)),
+            extent=float(request.args.get("extent", 3.0)),
+            cubic_box=request.args.get("cubicBox", "false").lower() in ("1", "true", "yes"),
+            probability=float(request.args.get("probability", 0.5)),
+            projections=request.args.get("projections", "true").lower() in ("1", "true", "yes"),
+        )
+        result["source"] = str(rmc6f_path)
+        return jsonify(result)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
