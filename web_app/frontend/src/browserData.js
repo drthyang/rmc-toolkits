@@ -39,7 +39,9 @@ export const detectPlotKind = (name) => {
     if (name.endsWith('_SQ1.csv')) return 'neutron_sq';
     if (/_bragg(?:_.+)?\.csv$/.test(name)) return 'bragg';
     if (/-\d{2,}\.log$/.test(name)) return 'r_value';
-    if (['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq'].includes(name)) return 'stog';
+    // Any RMCProfile STOG data file (r-space .gr, reciprocal .sq / .fq), not just the
+    // default scale_ft.* names — runs often use descriptive data-file names.
+    if (/\.(gr|sq|fq)$/i.test(name)) return 'stog';
     return null;
 };
 
@@ -48,6 +50,7 @@ const isSupportedFile = (name) => (
     || name.endsWith('.log')
     || name.endsWith('.rmc6f')
     || name.startsWith('Frac')
+    || /\.(gr|sq|fq)$/i.test(name)
     || SUPPORTED_NAMES.has(name)
 );
 
@@ -163,6 +166,19 @@ export const parseRunSettings = (text) => {
     return matchedAnything && Object.keys(settings).length ? settings : null;
 };
 
+// basename -> fit-function label (D(r), F(Q), …) from a parsed run-control file's
+// datasets, keyed lower-case so a plot file can be labeled by the function it
+// actually represents rather than a guess from its extension.
+export const fitTypeByFilename = (settings) => {
+    const map = new Map();
+    (settings?.datasets || []).forEach((dataset) => {
+        if (dataset.file && dataset.fit_type) {
+            map.set(basename(dataset.file).toLowerCase(), dataset.fit_type.trim());
+        }
+    });
+    return map;
+};
+
 // The run-control .dat sits next to the structure with the same stem. Selected
 // from the RAW entries (isSupportedFile would drop it) so auxiliary .dat files
 // (chi2.dat, weights_update.dat, …) are never picked up.
@@ -170,6 +186,39 @@ const chooseSettingsEntry = (entries, structureFile) => {
     if (!structureFile) return null;
     const wanted = structureFile.path.replace(/\.rmc6f$/, '.dat');
     return entries.find(({ path }) => path === wanted) || null;
+};
+
+// .dat entries to try as the run-control file, stem-matched first, then any other
+// .dat as a fallback (a run folder has several — chi2.dat, optimization.dat, …),
+// capped so a large data-.dat scan never dominates the load.
+const runControlCandidates = (entries, settingsEntry) => {
+    const dats = entries.filter(({ path }) => /\.dat$/i.test(basename(path)));
+    const ordered = [];
+    if (settingsEntry) ordered.push(settingsEntry);
+    dats.forEach((entry) => { if (entry !== settingsEntry) ordered.push(entry); });
+    return ordered.slice(0, 6);
+};
+
+// Attach the fit-function label each plot file is declared with in the run-control
+// .dat, so the dashboard can title/label it by what it represents (a .gr fit as
+// D(r) shows "D(r)", not "G(r)"). Reads only the head of each candidate — the data
+// sections sit near the top — so a big data .dat is never read in full.
+const pairFitTypes = async (files, entries, settingsEntry) => {
+    for (const entry of runControlCandidates(entries, settingsEntry)) {
+        try {
+            const head = await entry.file.slice(0, 131072).text();
+            const map = fitTypeByFilename(parseRunSettings(head));
+            if (map.size) {
+                files.forEach((file) => {
+                    const fit = map.get(file.name.toLowerCase());
+                    if (fit) file.fitType = fit;
+                });
+                return;
+            }
+        } catch {
+            // Not a readable run-control file; labels fall back to the extension.
+        }
+    }
 };
 
 const parseNumberRows = (lines, startIndex = 0, separator = /\s+/) => {
@@ -289,7 +338,12 @@ export const plotMetadataFromFile = (file) => {
     if (kind === 'neutron_sq') return { kind, title: 'S(Q) (neutron)', metrics: file.plotData?.metrics || {} };
     if (kind === 'bragg') return { kind, title: 'BRAGG', metrics: file.plotData?.metrics || {} };
     if (kind === 'r_value') return { kind, title: 'R-value', metrics: file.plotData?.metrics || {} };
-    if (kind === 'stog') return { kind, title: file.name, metrics: file.plotData?.metrics || {} };
+    if (kind === 'stog') {
+        // Heading is the fit-function form from the run-control .dat (e.g. "D(r)")
+        // when known, else the extension-based default; the file name shows beneath.
+        const funcLabel = file.fitType || (file.name.toLowerCase().endsWith('.gr') ? 'G(r)' : 'S(Q)');
+        return { kind, title: funcLabel, metrics: file.plotData?.metrics || {} };
+    }
     return null;
 };
 
@@ -316,12 +370,16 @@ export const plotDataFromText = (file) => {
 
     if (kind === 'stog') {
         const data = readStog(file.text, file.name);
+        const isRealSpace = file.name.toLowerCase().endsWith('.gr');
+        // The run-control .dat declares the actual fit-function form (e.g. a .gr
+        // file fit as D(r)); prefer it over the extension-based default.
+        const funcLabel = file.fitType || (isRealSpace ? 'G(r)' : 'S(Q)');
         return {
             kind,
             title: file.name,
             metrics: {},
-            xLabel: file.name.endsWith('.gr') ? 'r (Å)' : 'Q (Å^{-1})',
-            yLabel: file.name.endsWith('.gr') ? 'G(r)' : 'S(Q)',
+            xLabel: isRealSpace ? 'r (Å)' : 'Q (Å^{-1})',
+            yLabel: funcLabel,
             series: [{ label: file.name, x: data[0], y: data[1] }]
         };
     }
@@ -511,7 +569,7 @@ export const readAndParseLocalPlotFile = async (file) => {
 
 // Build a run object from { path, file } pairs. Shared by the <input webkitdirectory>
 // path (buildLocalRun) and the File System Access path (buildLocalRunFromHandle).
-const makeRunFromEntries = (entries) => {
+const makeRunFromEntries = async (entries) => {
     const files = entries
         .filter(({ path }) => isSupportedFile(basename(path)))
         .map(({ path, file }) => ({
@@ -529,6 +587,7 @@ const makeRunFromEntries = (entries) => {
 
     const rmc6f = chooseStructureFile(files);
     const settingsEntry = chooseSettingsEntry(entries, rmc6f);
+    await pairFitTypes(files, entries, settingsEntry);
     const directoryRoot = files
         .map((file) => file.path)
         .find((path) => path.includes('/'))
