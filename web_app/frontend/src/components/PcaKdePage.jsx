@@ -1283,6 +1283,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                 </InfoBadge>
                             </span>
                         </h3>
+                        <div className="pca-stats-body">
                         {selectedEllipsoid ? (
                             <>
                                 <dl className="pca-stats">
@@ -1417,6 +1418,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         ) : (
                             <p className="pca-meta">{loadingSites ? 'Loading sites…' : 'No site selected.'}</p>
                         )}
+                        </div>
                     </div>
 
                     <div className="pca-panel pca-unitcell-panel">

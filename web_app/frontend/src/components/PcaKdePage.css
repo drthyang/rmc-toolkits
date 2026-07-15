@@ -8,9 +8,17 @@
 .pca-page {
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
     overflow: auto;
     background: var(--app-bg);
     padding: 1.1rem 1.25rem 1.5rem;
+}
+
+/* Trim the shared footer's top margin here so the fill-height layout keeps as
+   much vertical room as possible on a 16:9 screen. */
+.pca-page > .app-footer {
+    margin-top: 0.85rem;
 }
 
 /* ── Controls bar ─────────────────────────────────────────────────────────── */
@@ -168,14 +176,17 @@
 }
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
-/* Three panels — the 3D viewport, the displacement statistics, and the unit cell
-   — placed by named areas so the arrangement can reflow with width. The default
-   (portrait-ish / laptop) layout keeps the viewport large on the left with the
-   stats above the unit cell on the right; every column stretches to a common
-   height so the viewport's canvas grows to fill whatever the side panels need. */
+/* The 3D viewport takes three-quarters of the width on the left; the displacement
+   statistics and unit cell stack in the remaining quarter as two EQUAL-height rows
+   that the viewport spans, so all four outer edges line up. The grid fills the
+   page's leftover height (flex: 1) so the whole view roughly fills a 16:9 screen
+   rather than sprawling wide; each stacked panel then manages its own overflow. */
 .pca-layout {
+    flex: 1;
+    min-height: 0;
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(16rem, 0.9fr);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
         "viewport stats"
         "viewport unitcell";
@@ -191,23 +202,25 @@
 
 .pca-viewport {
     grid-area: viewport;
+    min-height: 0;
 }
 
 .pca-stats-panel {
     grid-area: stats;
+    min-height: 0;
 }
 
 .pca-unitcell-panel {
     grid-area: unitcell;
+    min-height: 0;
 }
 
-/* 16:9 / wide desktop: spread the three panels across one row so the landscape
-   width carries the detail and the vertical footprint stays short. */
-@media (min-width: 1440px) {
-    .pca-layout {
-        grid-template-columns: minmax(0, 1.7fr) minmax(21rem, 1fr) minmax(17rem, 0.9fr);
-        grid-template-areas: "viewport stats unitcell";
-    }
+/* Both stacked panels are flex columns: a fixed header, then a growing body that
+   fills (unit cell canvas) or scrolls (statistics) within the equal-height row. */
+.pca-stats-panel,
+.pca-unitcell-panel {
+    display: flex;
+    flex-direction: column;
 }
 
 .pca-panel {
@@ -454,21 +467,37 @@
 }
 
 /* ── Side panels: statistics + unit cell ──────────────────────────────────── */
+/* The statistics content can be taller than its equal-height row; let it scroll
+   inside the panel body so the row height (and the aligned edges) stay fixed. The
+   header sits above this body, so its InfoBadge popover is never clipped here. */
+.pca-stats-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* Four scalar figures in a 2x2 grid — compact enough for the quarter-width column
+   so the covariance + principal-axes tables sit higher and clear the fold. */
 .pca-stats {
     margin: 0;
-    padding: 0.35rem 0.2rem;
+    padding: 0.4rem 0.35rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 0.75rem;
+    row-gap: 0.1rem;
 }
 
 .pca-stat {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 0.75rem;
-    padding: 0.4rem 0.7rem;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem;
 }
 
-.pca-stat + .pca-stat {
-    border-top: 1px solid var(--border);
+/* Hairline divider between the two stat rows. */
+.pca-stat:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
 }
 
 .pca-stat dt {
@@ -494,7 +523,7 @@
 
 .pca-meta {
     margin: 0;
-    padding: 0.55rem 0.9rem;
+    padding: 0.45rem 0.9rem;
     border-top: 1px solid var(--border);
     color: var(--muted);
     font-size: 0.72rem;
@@ -505,8 +534,8 @@
 .pca-matrices {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.65rem 0.55rem 0.2rem;
+    gap: 0.6rem;
+    padding: 0.5rem 0.55rem 0.2rem;
     border-top: 1px solid var(--border);
 }
 
@@ -518,7 +547,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.3rem;
     color: var(--subtle);
     font-size: 0.66rem;
     font-weight: 650;
@@ -590,11 +619,15 @@
 }
 
 /* ── Unit-cell structure view ─────────────────────────────────────────────── */
+/* Fill the space between the panel header and the element legend so the unit-cell
+   panel's height is driven by the equal-height grid row (a ResizeObserver on the
+   mount keeps the WebGL canvas in step). The single-column breakpoint restores a
+   fixed square. */
 .pca-structure {
     position: relative;
+    flex: 1;
+    min-height: 12rem;
     width: 100%;
-    aspect-ratio: 1;
-    max-height: 22rem;
     background:
         radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
         var(--canvas-bg);
@@ -646,12 +679,27 @@
 }
 
 @media (max-width: 980px) {
+    /* Stack into one column at natural heights and let the page scroll — the
+       fill-the-screen equal-row layout only makes sense on a wide split. */
     .pca-layout {
+        flex: none;
         grid-template-columns: 1fr;
+        grid-template-rows: auto;
         grid-template-areas:
             "viewport"
             "stats"
             "unitcell";
+    }
+
+    .pca-stats-body {
+        overflow-y: visible;
+    }
+
+    .pca-structure {
+        flex: none;
+        aspect-ratio: 1;
+        min-height: 0;
+        max-height: 22rem;
     }
 }
 

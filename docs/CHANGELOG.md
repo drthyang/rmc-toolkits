@@ -14,10 +14,12 @@ PCA Ellipsoid statistics detail and a 16:9 layout; Demo button beside the page t
   "Eigenvalues" rows fold into that table (now per-PC columns); U_iso / B_iso / Anisotropy / Non-Gaussianity
   stay as the scalar summary. Both the Flask and browser-worker paths already return `covariance` / `axes` /
   `eigenvalues` / `rms` / `excessKurtosis`, so the detail appears in every runtime mode.
-- The page layout is keyed to named grid areas so it reflows with width: on wide (≥ 1440 px, 16:9) screens the
-  viewport, statistics, and unit-cell panels sit three-across, so the landscape width carries the added detail
-  and the vertical footprint stays short. It falls back to the prior viewport-plus-stacked-side-column at
-  laptop widths and a single column below 980 px.
+- The page now fills the screen height instead of sprawling wide. The 3D viewport takes three-quarters of the
+  width on the left; the statistics and unit-cell panels stack as two **equal-height** rows in the remaining
+  quarter, with the viewport spanning both so all four outer edges line up. The grid flexes to fill the page's
+  leftover height, so the view roughly fills a 16:9 screen. The four scalar figures sit in a 2×2 grid and the
+  statistics body scrolls within its row if a small window can't show every table; below 980 px it stacks into
+  one column at natural heights and the page scrolls.
 - The header **Demo** toggle moves into the left cluster just after the AI Assistant tab (beside the page
   tabs), leaving Live Data + the run-folder field as the right-hand data-source group.
 
