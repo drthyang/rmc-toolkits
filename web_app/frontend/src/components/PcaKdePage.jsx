@@ -156,8 +156,8 @@ const makeProjectionContours = (projection, axes, mean, halfWidths, color) => {
     const third = 3 - first - second;
     const stepFirst = (2 * halfWidths[first]) / Math.max(nFirst - 1, 1);
     const stepSecond = (2 * halfWidths[second]) / Math.max(nSecond - 1, 1);
-    // Lift the lines a hair off the wall toward the interior so they never z-fight.
-    const wallOffset = -(halfWidths[third] + 0.055 * halfWidths[third]);
+    // Sit the lines just inside the wall (toward the box interior).
+    const wallOffset = -(halfWidths[third] + 0.05 * halfWidths[third]);
 
     const points = [];
     [0.1, 0.25, 0.4, 0.55, 0.7, 0.85].forEach((fraction) => {
@@ -173,8 +173,14 @@ const makeProjectionContours = (projection, axes, mean, halfWidths, color) => {
     });
     if (!points.length) return null;
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false });
-    return new THREE.LineSegments(geometry, material);
+    const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false });
+    const lines = new THREE.LineSegments(geometry, material);
+    // The contour lines and their wall are transparent and nearly coplanar, so a
+    // plain distance sort makes the wall randomly draw over the lines and hide
+    // them. renderOrder forces the lines to paint after the walls; depthTest stays
+    // on, so the central isosurface/ellipsoid still occlude them correctly.
+    lines.renderOrder = 2;
+    return lines;
 };
 
 // Wireframe box around the sampling volume (±halfWidths in the PCA frame), so
@@ -959,7 +965,7 @@ export default function PcaKdePage({ directory, localRun }) {
                             target="_blank"
                             rel="noreferrer"
                         >
-                            PCA_KDE method: Maksim Eremenko
+                            Analysis after Maksim Eremenko&rsquo;s PCA_KDE
                         </a>
                     </div>
                 </div>
