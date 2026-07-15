@@ -1280,7 +1280,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             <div className="pca-controls">
                 {/* Site & KDE sampling */}
                 <div className="control-group" role="group" aria-label="Site and sampling">
-                    <span className="control-group-label">Sample</span>
                     <label className="control">
                         <span className="control-name">
                             Site
@@ -1327,6 +1326,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         />
                         <span className="control-value">{extent.toFixed(1)}σ</span>
                     </label>
+                    <label className="control switch">
+                        <span className="control-name">Projections</span>
+                        <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} aria-label="Show wall projections" />
+                        <i className="switch-track" aria-hidden="true" />
+                    </label>
                     {sites?.reconstructed && (
                         <label className="control">
                             <span className="control-name">
@@ -1355,28 +1359,10 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                 {/* Ellipsoid — the wireframe reference and the KDE density painted on it
                     (two aspects of the same surface, so they share one control group). */}
                 <div className="control-group" role="group" aria-label="Ellipsoid and density shell">
-                    <span className="control-group-label">Ellipsoid</span>
                     <label className="control switch">
                         <span className="control-name">Wireframe</span>
                         <input type="checkbox" checked={showEllipsoid} onChange={(event) => setShowEllipsoid(event.target.checked)} aria-label="Show ellipsoid wireframe" />
                         <i className="switch-track" aria-hidden="true" />
-                    </label>
-                    <label className="control">
-                        <span className="control-name">
-                            Level
-                            <InfoBadge label="About the ellipsoid level">
-                                <p>
-                                    The enclosed-probability level drawn as the thermal-ellipsoid
-                                    wireframe. 50% is the crystallographic convention.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <input
-                            type="range" min="0.1" max="0.99" step="0.01"
-                            value={probability} onChange={(event) => setProbability(Number(event.target.value))}
-                            aria-label="Ellipsoid probability"
-                        />
-                        <span className="control-value">{Math.round(probability * 100)}%</span>
                     </label>
                     <label className="control">
                         <span className="control-name">Color</span>
@@ -1429,6 +1415,23 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                     </label>
                     <label className="control">
                         <span className="control-name">
+                            Level
+                            <InfoBadge label="About the ellipsoid level">
+                                <p>
+                                    The enclosed-probability level drawn as the thermal-ellipsoid
+                                    wireframe. 50% is the crystallographic convention.
+                                </p>
+                            </InfoBadge>
+                        </span>
+                        <input
+                            type="range" min="0.1" max="0.99" step="0.01"
+                            value={probability} onChange={(event) => setProbability(Number(event.target.value))}
+                            aria-label="Ellipsoid probability"
+                        />
+                        <span className="control-value">{Math.round(probability * 100)}%</span>
+                    </label>
+                    <label className="control">
+                        <span className="control-name">
                             Contrast
                             <InfoBadge label="About the shell contrast" align="end">
                                 <p>
@@ -1449,7 +1452,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
 
                 {/* Isosurface & wall projections — the volume density views (shared colormap) */}
                 <div className="control-group" role="group" aria-label="Isosurface and wall projections">
-                    <span className="control-group-label">Volume</span>
                     <label className="control switch">
                         <span className="control-name">
                             Isosurface
@@ -1484,11 +1486,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             aria-label="Isosurface enclosed mass"
                         />
                         <span className="control-value">{isoPercent}%</span>
-                    </label>
-                    <label className="control switch">
-                        <span className="control-name">Projections</span>
-                        <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} aria-label="Show wall projections" />
-                        <i className="switch-track" aria-hidden="true" />
                     </label>
                     <label className="control">
                         <span className="control-name">Colormap</span>
