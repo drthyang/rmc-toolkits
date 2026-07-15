@@ -358,7 +358,10 @@
         gap: 0.85rem;
     }
 
+    /* Let the 8:5 chart grow to fill the (wider) 3-column card instead of being
+       capped short and letterboxed with empty side margins. The cap only bites on
+       very wide (>1440p) cards; up through 1440p the plot fills the card width. */
     .plot-grid .plot-card .interactive-plot svg {
-        max-height: 360px;
+        max-height: 540px;
     }
 }

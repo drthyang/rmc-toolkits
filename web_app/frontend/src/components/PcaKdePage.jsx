@@ -48,6 +48,78 @@ const pcaVertexToCartesian = (fi, fj, fk, axisCoords, axes, mean, out) => {
     return out;
 };
 
+// Trilinear sample of the flat KDE density grid (C order over PC1, PC2, PC3:
+// index = (i*grid + j)*grid + k) at continuous grid indices (fi, fj, fk).
+const sampleDensityTrilinear = (density, grid, fi, fj, fk) => {
+    const clamp = (v) => (v < 0 ? 0 : v > grid - 1 ? grid - 1 : v);
+    const ci = clamp(fi);
+    const cj = clamp(fj);
+    const ck = clamp(fk);
+    const i0 = Math.floor(ci);
+    const j0 = Math.floor(cj);
+    const k0 = Math.floor(ck);
+    const i1 = Math.min(i0 + 1, grid - 1);
+    const j1 = Math.min(j0 + 1, grid - 1);
+    const k1 = Math.min(k0 + 1, grid - 1);
+    const di = ci - i0;
+    const dj = cj - j0;
+    const dk = ck - k0;
+    const at = (i, j, k) => density[(i * grid + j) * grid + k];
+    const c00 = at(i0, j0, k0) * (1 - di) + at(i1, j0, k0) * di;
+    const c01 = at(i0, j0, k1) * (1 - di) + at(i1, j0, k1) * di;
+    const c10 = at(i0, j1, k0) * (1 - di) + at(i1, j1, k0) * di;
+    const c11 = at(i0, j1, k1) * (1 - di) + at(i1, j1, k1) * di;
+    const c0 = c00 * (1 - dj) + c10 * dj;
+    const c1 = c01 * (1 - dj) + c11 * dj;
+    return c0 * (1 - dk) + c1 * dk;
+};
+
+// Solid p% ellipsoid whose surface is colored by the KDE density sampled at each
+// vertex -- "projecting" the density onto the harmonic reference shell. A perfectly
+// Gaussian cloud gives a near-uniform color; hotter/colder patches mark where the
+// real density departs from the ellipsoid (anharmonicity). The ellipsoid-surface
+// point for a unit-sphere vertex is (semi .* vertex) in the PCA frame, which both
+// maps to world coordinates (baked in, like the isosurface) and indexes the grid.
+const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap) => {
+    const geometry = new THREE.SphereGeometry(1, 96, 64);
+    const unit = geometry.attributes.position;
+    const count = unit.count;
+    const world = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const grid = kde.grid;
+    const axisCoords = kde.axisCoords;
+    const step = [0, 1, 2].map((a) => (axisCoords[a][1] - axisCoords[a][0]) || 1);
+    const vmax = kde.vmax || 1;
+    for (let v = 0; v < count; v += 1) {
+        const p0 = semi[0] * unit.getX(v);
+        const p1 = semi[1] * unit.getY(v);
+        const p2 = semi[2] * unit.getZ(v);
+        world[3 * v] = mean[0] + p0 * axes[0][0] + p1 * axes[1][0] + p2 * axes[2][0];
+        world[3 * v + 1] = mean[1] + p0 * axes[0][1] + p1 * axes[1][1] + p2 * axes[2][1];
+        world[3 * v + 2] = mean[2] + p0 * axes[0][2] + p1 * axes[1][2] + p2 * axes[2][2];
+        const value = sampleDensityTrilinear(
+            kde.density, grid,
+            (p0 - axisCoords[0][0]) / step[0],
+            (p1 - axisCoords[1][0]) / step[1],
+            (p2 - axisCoords[2][0]) / step[2]
+        ) / vmax;
+        const rgb = sampleColormap(colormap, value < 0 ? 0 : value > 1 ? 1 : value);
+        colors[3 * v] = rgb[0] / 255;
+        colors[3 * v + 1] = rgb[1] / 255;
+        colors[3 * v + 2] = rgb[2] / 255;
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(world, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.92,
+        side: THREE.FrontSide
+    });
+    return new THREE.Mesh(geometry, material);
+};
+
 // Colormap texture for a 2D KDE projection. density is [gridFirst][gridSecond]
 // over the projection's two principal axes; the texel grid is laid out so u runs
 // along the first axis and v along the second, matching the wall plane's basis.
@@ -224,6 +296,23 @@ const TRIAD_COLORS = [0xd64545, 0x3fa34d, 0x3f7fd6]; // PC1 red, PC2 green, PC3 
 // CSS twins of TRIAD_COLORS, used to tint the PC rows in the statistics tables so
 // they read as the same axes shown by the 3D triad and the viewport legend.
 const PC_CSS_COLORS = ['#d64545', '#3fa34d', '#3f7fd6'];
+
+// Wireframe color for the p% thermal-ellipsoid reference cage, chosen from the
+// controls bar. The default is Amber — the same warm tone as the selected-site
+// highlight in the unit-cell view (SELECTED_ATOM_COLOR 0xff7a1a), so the ellipsoid
+// reads as "this site". The cage is drawn transparent, so whatever color is picked
+// it never crowds the KDE isosurface it wraps. The first entry is the default and
+// also feeds the viewport legend swatch.
+const ELLIPSOID_COLOR_OPTIONS = [
+    { value: '#ff7a1a', label: 'Amber' },
+    { value: '#ffffff', label: 'White' },
+    { value: '#c3d4e6', label: 'Silver' },
+    { value: '#8fd4ef', label: 'Cyan' },
+    { value: '#b892ff', label: 'Violet' }
+];
+const ELLIPSOID_COLOR = ELLIPSOID_COLOR_OPTIONS[0].value;
+const ELLIPSOID_OPACITY = 0.4;
+
 const TRIAD_UP = new THREE.Vector3(0, 1, 0);
 
 // PC1/PC2/PC3 triad as thin rods from `origin` along the principal axes (rows).
@@ -342,9 +431,12 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     const [probability, setProbability] = useState(DEFAULTS.probability);
     const [isoPercent, setIsoPercent] = useState(DEFAULTS.isoPercent);
     const [colormap, setColormap] = useState(DEFAULTS.colormap);
+    const [ellipsoidColor, setEllipsoidColor] = useState(ELLIPSOID_COLOR);
     const [showEllipsoid, setShowEllipsoid] = useState(true);
     const [showSurface, setShowSurface] = useState(true);
     const [showProjections, setShowProjections] = useState(true);
+    // Optional: paint the KDE density onto the ellipsoid surface (off by default).
+    const [showEllipsoidKde, setShowEllipsoidKde] = useState(false);
     const [perspective, setPerspective] = useState(true);
     // Which principal axis the camera is snapped to look down (null = free / the
     // default diagonal view); drives the highlight on the view-axis buttons.
@@ -766,6 +858,14 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             }
         }
 
+        // Optional: paint the KDE density onto the p% ellipsoid surface. Drawn
+        // before the wireframe so, when both are on, the cage sits on top.
+        if (showEllipsoidKde && selectedEllipsoid) {
+            ellipsoidGroup.add(
+                makeEllipsoidKdeSurface(selectedEllipsoid.semiAxes, axes, mean, kde, colormap)
+            );
+        }
+
         // p% thermal ellipsoid: unit sphere scaled by the semi-axes, oriented by
         // the principal axes. This is the harmonic reference the KDE isosurface
         // is compared against -- where they differ, the motion is anharmonic.
@@ -781,7 +881,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             const scaleMatrix = new THREE.Matrix4().makeScale(semi[0], semi[1], semi[2]);
             const model = orientation.multiply(scaleMatrix);
             model.setPosition(mean[0], mean[1], mean[2]);
-            const material = new THREE.MeshBasicMaterial({ color: 0xff5a5a, wireframe: true, transparent: true, opacity: 0.5 });
+            const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(ellipsoidColor), wireframe: true, transparent: true, opacity: ELLIPSOID_OPACITY });
             const mesh = new THREE.Mesh(sphere, material);
             mesh.applyMatrix4(model);
             ellipsoidGroup.add(mesh);
@@ -818,7 +918,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             camera.updateProjectionMatrix();
             controls.update();
         }
-    }, [kde, isoPercent, colormap, showEllipsoid, showSurface, showProjections, selectedEllipsoid, selectedRef]);
+    }, [kde, isoPercent, colormap, ellipsoidColor, showEllipsoid, showSurface, showProjections, showEllipsoidKde, selectedEllipsoid, selectedRef]);
 
     // --- Unit-cell structure scene: one clickable marker per reference site. ---
     useEffect(() => {
@@ -1148,9 +1248,32 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
                     </select>
                 </label>
+                <label className="control">
+                    <span className="control-name">Ellipsoid color</span>
+                    <i className="ellipsoid-color-swatch" style={{ background: ellipsoidColor }} aria-hidden="true" />
+                    <select
+                        value={ellipsoidColor}
+                        onChange={(event) => setEllipsoidColor(event.target.value)}
+                        aria-label="Ellipsoid wireframe color"
+                    >
+                        {ELLIPSOID_COLOR_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </select>
+                </label>
                 <label className="control switch">
                     <span className="control-name">Isosurface</span>
-                    <input type="checkbox" checked={showSurface} onChange={(event) => setShowSurface(event.target.checked)} />
+                    <input
+                        type="checkbox"
+                        checked={showSurface}
+                        onChange={(event) => {
+                            const on = event.target.checked;
+                            setShowSurface(on);
+                            // The isosurface and the KDE shell are two views of the same
+                            // density (and the shell hides the isosurface), so only one shows.
+                            if (on) setShowEllipsoidKde(false);
+                        }}
+                    />
                     <i className="switch-track" aria-hidden="true" />
                 </label>
                 <label className="control switch">
@@ -1161,6 +1284,32 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                 <label className="control switch">
                     <span className="control-name">Projections</span>
                     <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} />
+                    <i className="switch-track" aria-hidden="true" />
+                </label>
+                <label className="control switch">
+                    <span className="control-name">
+                        KDE shell
+                        <InfoBadge label="About the KDE shell">
+                            <p>
+                                Paints the KDE density onto the ellipsoid surface. A near-uniform
+                                color means the motion is Gaussian; hotter and colder patches mark
+                                where the real density departs from the harmonic ellipsoid.
+                            </p>
+                            <p>
+                                It shows the same density as the isosurface from the outside, so the
+                                two switch off each other.
+                            </p>
+                        </InfoBadge>
+                    </span>
+                    <input
+                        type="checkbox"
+                        checked={showEllipsoidKde}
+                        onChange={(event) => {
+                            const on = event.target.checked;
+                            setShowEllipsoidKde(on);
+                            if (on) setShowSurface(false);
+                        }}
+                    />
                     <i className="switch-track" aria-hidden="true" />
                 </label>
             </div>
@@ -1255,7 +1404,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
-                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#ff5a5a' }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
                         <span className="pca-legend-item pca-legend-note">walls: PC-plane density projections</span>
                         <a
                             className="pca-legend-credit"
@@ -1424,12 +1573,12 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                     <div className="pca-panel pca-unitcell-panel">
                         <h3>
                             <span className="panel-title-label">
-                                Unit cell
-                                <InfoBadge label="About the unit cell view" align="end">
+                                Site selector
+                                <InfoBadge label="About the site selector" align="end">
                                     <p>
-                                        Every reference site in the average unit cell, colored by
-                                        element. Click an atom to load its PCA-KDE in the main panel;
-                                        the selected site is enlarged and highlighted.
+                                        Pick which site to analyze: every reference site in the average
+                                        unit cell, colored by element. Click an atom to load its PCA-KDE
+                                        in the main panel; the selected site is enlarged and highlighted.
                                     </p>
                                 </InfoBadge>
                             </span>
