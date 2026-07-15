@@ -18,7 +18,7 @@ const BW_OPTIONS = [
     { value: 'scott', label: 'Scott' },
     { value: 'silverman', label: 'Silverman' }
 ];
-const DEFAULTS = { grid: 40, bw: 'scott', extent: 3, probability: 0.5, isoPercent: 50, colormap: 'viridis' };
+const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 50, colormap: 'viridis' };
 
 const numberFormat = (value, digits = 4) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -550,14 +550,18 @@ export default function PcaKdePage({ directory, localRun }) {
         buildAxisTriad(meanVec, axes, axisLength, axisLength * 0.012)
             .forEach((rod) => axesGroup.add(rod));
 
-        // Reframe the camera only when the site changes, so toggling layers or
-        // sweeping a slider doesn't yank the view out from under the user. The
-        // default looks straight down the box body diagonal (the +PC1/+PC2/+PC3
+        // Reframe the camera only when the displayed volume is for a new site, so
+        // toggling layers or sweeping a slider doesn't yank the view. Keying off
+        // the volume's own reference number (not selectedRef) avoids a premature
+        // reframe against the previous site's axes while its KDE is still loading —
+        // that mismatch was what made the view snap to a wrong angle on click.
+        // The default looks straight down the box body diagonal (the +PC1/+PC2/+PC3
         // direction), so the three min-corner walls sit symmetrically at the back;
         // the distance fits the whole cube corner-on with margin.
-        const radius = axisLength * 3.6 || 1;
+        const kdeRef = kde.referenceNumber ?? selectedRef;
+        const radius = axisLength * 4.3 || 1;
         controls.target.copy(meanVec);
-        if (framedRefRef.current !== selectedRef) {
+        if (framedRefRef.current !== kdeRef) {
             const dir = new THREE.Vector3(
                 axes[0][0] + axes[1][0] + axes[2][0],
                 axes[0][1] + axes[1][1] + axes[2][1],
@@ -565,7 +569,7 @@ export default function PcaKdePage({ directory, localRun }) {
             ).normalize();
             camera.up.set(axes[2][0], axes[2][1], axes[2][2]);
             camera.position.copy(meanVec).addScaledVector(dir, radius);
-            framedRefRef.current = selectedRef;
+            framedRefRef.current = kdeRef;
         }
         camera.near = radius / 100;
         camera.far = radius * 100;
