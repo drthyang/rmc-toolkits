@@ -313,6 +313,8 @@ function App() {
                 AI Assistant
               </button>
             </nav>
+          </div>
+          <div className="header-actions">
             <button
               type="button"
               className={`demo-button${demoActive ? ' is-active' : ''}`}
@@ -323,7 +325,6 @@ function App() {
             >
               {localLoading ? 'Loading…' : 'Demo'}
             </button>
-          </div>
           {fsAccess ? (
             <div className="path-controls">
               <label className="watch-toggle">
@@ -412,6 +413,7 @@ function App() {
               </form>
             </div>
           )}
+          </div>
           {renderBrowseStatus()}
         </header>
         <SymTolContext.Provider value={symTolState}>
