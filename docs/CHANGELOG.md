@@ -5,6 +5,22 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+PCA Ellipsoid: selectable / KDE-projected ellipsoid, Site selector; taller dashboard charts.
+
+- **KDE shell** (new, optional): a "KDE shell" toggle paints the KDE density onto the p% ellipsoid surface
+  (per-vertex trilinear sample of the volume, current colormap), so anharmonic departures from the harmonic
+  ellipsoid read as hot/cold patches on the shell. It shows the same density as the isosurface from the
+  outside and would occlude it, so the two are mutually exclusive — enabling one switches the other off, and
+  both-off is allowed (wireframe + wall projections only).
+- **Ellipsoid wireframe color** is now chosen from the controls bar (swatch + dropdown: Amber, White, Silver,
+  Cyan, Violet), kept transparent so it never crowds the isosurface. The default is Amber (`#ff7a1a`) — the
+  same warm tone as the selected-site highlight in the Site selector, so the cage reads as "this site."
+- The **Unit cell** side panel is renamed **Site selector**, since its job is picking the reference site to
+  analyze (click an atom to load its PCA-KDE).
+- Dashboard charts fill the panel width on wide (≥ 1500 px, 16:9) screens instead of being capped short and
+  letterboxed with empty side margins: the 8:5 plot's height cap goes 360 px → 540 px, so it grows to fill the
+  card at the same aspect (e.g. 1080p: 576×360 with side gaps → 618×386 filling). Fills fully through 1440p.
+
 PCA Ellipsoid statistics detail and a 16:9 layout; Demo button beside the page tabs.
 
 - The **Displacement statistics** panel now shows the full covariance tensor U (Å², Cartesian x/y/z with the

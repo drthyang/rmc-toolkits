@@ -82,6 +82,16 @@
     border-color: var(--border-strong);
 }
 
+/* Current-color chip beside the ellipsoid-color picker (the select shows names). */
+.ellipsoid-color-swatch {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+    flex: none;
+}
+
 /* Slim custom range sliders (identical to the KDE / 3D page). */
 .pca-controls input[type='range'] {
     appearance: none;
