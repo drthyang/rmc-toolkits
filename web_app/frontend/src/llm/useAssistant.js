@@ -19,6 +19,7 @@ export const useAssistant = ({
     structure,
     symmetry,
     runSettings,
+    pcaSites,
     liveData,
     enabled = true
 } = {}) => {
@@ -29,9 +30,9 @@ export const useAssistant = ({
 
     const context = useMemo(() => (
         enabled
-            ? buildRunContext({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, liveData })
+            ? buildRunContext({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData })
             : null
-    ), [enabled, runName, plotFiles, rValueFile, structure, symmetry, runSettings, liveData]);
+    ), [enabled, runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData]);
 
     // `manual` records whether the user actively pressed Test (vs. the automatic
     // on-load probe): a failed auto-probe is shown as a gentle "connect a model"

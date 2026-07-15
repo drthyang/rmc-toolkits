@@ -252,6 +252,16 @@ const frameMainCamera = (camera, controls, kde) => {
         axes[0][1] + axes[1][1] + axes[2][1],
         axes[0][2] + axes[1][2] + axes[2][2]
     ).normalize();
+    // OrbitControls carries a damped orbit velocity after a drag, which its own
+    // update() loop normally decays to zero over ~1 s. Flush it FIRST, with a
+    // damping-off update() (that both applies and then zeroes the pending delta),
+    // so none of that leftover rotation gets applied to the pose we are about to
+    // set. Without this, a reframe fired before the glide settles — e.g. right
+    // after loading a new run — lands rotated off the diagonal default.
+    const damping = controls.enableDamping;
+    controls.enableDamping = false;
+    controls.update();
+    // Now place the camera on the default framing and commit it with zero velocity.
     controls.target.copy(meanVec);
     camera.up.set(axes[2][0], axes[2][1], axes[2][2]);
     camera.position.copy(meanVec).addScaledVector(dir, radius);
@@ -259,9 +269,10 @@ const frameMainCamera = (camera, controls, kde) => {
     camera.far = radius * 100;
     camera.updateProjectionMatrix();
     controls.update();
+    controls.enableDamping = damping;
 };
 
-export default function PcaKdePage({ directory, localRun }) {
+export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     // The loaded .rmc6f text, tagged with the file it came from, so a just-changed
     // dataset never runs against the previous model's text (see rmc6fText below).
     const [loadedText, setLoadedText] = useState({ file: null, text: null });
@@ -288,6 +299,7 @@ export default function PcaKdePage({ directory, localRun }) {
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
     const framedRefRef = useRef(null);
+    const framedDatasetRef = useRef(null);
     const structureMountRef = useRef(null);
     const structureSceneRef = useRef(null);
     const selectRef = useRef(null);
@@ -303,6 +315,11 @@ export default function PcaKdePage({ directory, localRun }) {
     // now. On a dataset switch this is null until the new file's text loads, so the
     // effects below never fire against the previous model.
     const rmc6fText = loadedText.file === localFile ? loadedText.text : null;
+    // Stable per-dataset identity: App's monotonic runId (bumped on every folder /
+    // demo load, but KEPT across Live Data polls of the same run), falling back to
+    // the backend directory. A change here means a genuinely different dataset was
+    // loaded — a live refresh of the same run leaves it untouched.
+    const datasetKey = localRun?.runId ?? directory ?? null;
 
     // --- Read the raw .rmc6f text once per local file. ------------------------
     useEffect(() => {
@@ -393,7 +410,18 @@ export default function PcaKdePage({ directory, localRun }) {
                     // projections come out the same size (Maksim's cubic layout).
                     { referenceNumber: selectedRef, grid, bw, extent, probability, cubicBox: true, projections: true }
                 );
-                if (!cancelled) setKde(data);
+                if (cancelled) return;
+                // Silent view reset on a genuinely new run: null the framing marker
+                // right before storing THIS fresh volume, so the rebuild effect
+                // reframes to the default against it — never a stale one — even when
+                // the new run's first site shares a reference number with the old.
+                // Site and slider changes keep datasetKey (and a Live Data refresh
+                // reuses the same runId), so those never trigger this reset.
+                if (framedDatasetRef.current !== datasetKey) {
+                    framedDatasetRef.current = datasetKey;
+                    framedRefRef.current = null;
+                }
+                setKde(data);
             } catch (error) {
                 if (!cancelled) { setKde(null); setKdeError(error.message); }
             } finally {
@@ -402,7 +430,7 @@ export default function PcaKdePage({ directory, localRun }) {
         };
         loadKde();
         return () => { cancelled = true; };
-    }, [requestPca, localFile, rmc6fText, selectedRef, grid, bw, extent, probability]);
+    }, [requestPca, localFile, rmc6fText, selectedRef, grid, bw, extent, probability, datasetKey]);
 
     const selectedEllipsoid = useMemo(
         () => sites?.sites.find((site) => site.referenceNumber === selectedRef) || null,
@@ -420,6 +448,13 @@ export default function PcaKdePage({ directory, localRun }) {
         const handle = sceneRef.current;
         if (handle && kde) frameMainCamera(handle.camera, handle.controls, kde);
     }, [kde]);
+
+    // Publish the per-site ellipsoid table upward (App → AI Assistant), so the
+    // assistant can reason about the thermal displacements once this page has
+    // computed them. Follows the current dataset, and clears on error/reset.
+    useEffect(() => {
+        onSitesChange?.(sites);
+    }, [sites, onSitesChange]);
 
     // Keep the click handler pointing at the current setter without re-creating
     // the (once-mounted) structure scene.
@@ -597,18 +632,19 @@ export default function PcaKdePage({ directory, localRun }) {
             .forEach((rod) => axesGroup.add(rod));
 
         // Reframe to the default view only when the displayed volume is for a new
-        // site, so toggling layers or sweeping a slider doesn't yank the view.
-        // Keying off the volume's own reference number (not selectedRef) avoids a
-        // premature reframe against the previous site's axes while its KDE is still
-        // loading — that mismatch was what made the view snap to a wrong angle on
-        // click. The "Reset view" button re-applies the same framing on demand.
+        // site or a new run, so sweeping a slider or toggling a layer doesn't yank
+        // the view. framedRefRef tracks the site the camera is framed for; loadKde
+        // resets it to null on a new run so this fires there too, even when the new
+        // run's first site shares a reference number with the old one. frameMainCamera
+        // is deterministic (it neutralizes orbit momentum), so it lands cleanly even
+        // when this runs while the panel is off-screen after a load.
         const kdeRef = kde.referenceNumber ?? selectedRef;
         if (framedRefRef.current !== kdeRef) {
             frameMainCamera(camera, controls, kde);
             framedRefRef.current = kdeRef;
         } else {
-            // Same site: keep the pivot and clip planes synced to the current
-            // volume without moving the user's camera.
+            // Same site: keep the pivot and clip planes synced to the current volume
+            // without moving the user's camera.
             const radius = axisLength * 4.3 || 1;
             controls.target.copy(meanVec);
             camera.near = radius / 100;
