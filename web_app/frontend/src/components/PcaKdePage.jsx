@@ -837,12 +837,18 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         setSnappedView({ frame: 'cell', index: axisIndex });
     }, [kde, unitCell]);
 
-    // Switch the viewport reference frame (PC ↔ crystal); a frame change invalidates
-    // any snapped axis view, so clear the highlight.
+    // Switch the viewport reference frame (PC ↔ crystal). Reframe to that frame's
+    // default view (its box corner-on) so the newly-oriented box is always well
+    // framed, and clear any snapped axis view.
     const selectFrame = useCallback((frame) => {
         setAxisFrame(frame);
         setSnappedView(null);
-    }, []);
+        const handle = sceneRef.current;
+        if (handle && kde) {
+            const frameAxes = frame === 'crystal' && crystalDisplay ? crystalDisplay.frame : kde.axes;
+            frameMainCamera(handle.camera, handle.controls, kde, frameAxes, mainAspect());
+        }
+    }, [kde, crystalDisplay]);
 
     // Toggle the main viewport between perspective and orthographic projection,
     // preserving the current orientation (the scene handle swaps the camera).
