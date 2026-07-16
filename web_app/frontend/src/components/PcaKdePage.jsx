@@ -1380,9 +1380,22 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                     {/* The InfoBadge is a sibling of the toggle label, not inside it, so the
                         "?" never sits inside the switch's clickable area (an interactive
                         element nested in a <label> makes the toggle click ambiguous). */}
-                    <div className="switch-with-info">
-                        <label className="control switch">
-                            <span className="control-name">Shell</span>
+                    <div className="control switch-with-info">
+                        <span className="control-name">
+                            Shell
+                            <InfoBadge label="About the KDE shell" align="end">
+                                <p>
+                                    Paints the KDE density onto the ellipsoid surface. A near-uniform
+                                    color means the motion is Gaussian; hotter and colder patches mark
+                                    where the real density departs from the harmonic ellipsoid.
+                                </p>
+                                <p>
+                                    It shows the same density as the isosurface from the outside, so the
+                                    two switch off each other.
+                                </p>
+                            </InfoBadge>
+                        </span>
+                        <label className="control switch switch-pill">
                             <input
                                 type="checkbox"
                                 checked={showEllipsoidKde}
@@ -1395,17 +1408,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             />
                             <i className="switch-track" aria-hidden="true" />
                         </label>
-                        <InfoBadge label="About the KDE shell" align="end">
-                            <p>
-                                Paints the KDE density onto the ellipsoid surface. A near-uniform
-                                color means the motion is Gaussian; hotter and colder patches mark
-                                where the real density departs from the harmonic ellipsoid.
-                            </p>
-                            <p>
-                                It shows the same density as the isosurface from the outside, so the
-                                two switch off each other.
-                            </p>
-                        </InfoBadge>
                     </div>
                     <label className="control">
                         <span className="control-name">Colormap</span>
@@ -1452,7 +1454,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
 
                 {/* Isosurface & wall projections — the volume density views (shared colormap) */}
                 <div className="control-group" role="group" aria-label="Isosurface and wall projections">
-                    <label className="control switch">
+                    <div className="control switch-with-info">
                         <span className="control-name">
                             Isosurface
                             <InfoBadge label="About the isosurface">
@@ -1463,21 +1465,23 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                 </p>
                             </InfoBadge>
                         </span>
-                        <input
-                            type="checkbox"
-                            checked={showSurface}
-                            aria-label="Show isosurface"
-                            onChange={(event) => {
-                                const on = event.target.checked;
-                                setShowSurface(on);
-                                // The isosurface is a clean standalone view of the density volume:
-                                // turning it on clears the ellipsoid wireframe and its KDE shell
-                                // (the shell shows the same density, drawn on the surface instead).
-                                if (on) { setShowEllipsoidKde(false); setShowEllipsoid(false); }
-                            }}
-                        />
-                        <i className="switch-track" aria-hidden="true" />
-                    </label>
+                        <label className="control switch switch-pill">
+                            <input
+                                type="checkbox"
+                                checked={showSurface}
+                                aria-label="Show isosurface"
+                                onChange={(event) => {
+                                    const on = event.target.checked;
+                                    setShowSurface(on);
+                                    // The isosurface is a clean standalone view of the density volume:
+                                    // turning it on clears the ellipsoid wireframe and its KDE shell
+                                    // (the shell shows the same density, drawn on the surface instead).
+                                    if (on) { setShowEllipsoidKde(false); setShowEllipsoid(false); }
+                                }}
+                            />
+                            <i className="switch-track" aria-hidden="true" />
+                        </label>
+                    </div>
                     <label className="control">
                         <span className="control-name">Level</span>
                         <input
@@ -1587,7 +1591,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
-                        <span className="pca-legend-item pca-legend-note">walls: PC-plane density projections</span>
                         <a
                             className="pca-legend-credit"
                             href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
@@ -1613,10 +1616,16 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                     </p>
                                 </InfoBadge>
                             </span>
+                            {kde && (
+                                <span className="pca-stats-meta">
+                                    Volume {kde.grid}³ · fit {kde.fitCount.toLocaleString()}/{kde.count.toLocaleString()} · captured mass {numberFormat(kde.mass * 100, 1)}%{Number.isFinite(isoMassLevel) ? ` · iso @ ${isoPercent}% mass` : ''}{kde.browserPcaKde ? ' · browser' : ' · server'}
+                                </span>
+                            )}
                         </h3>
                         <div className="pca-stats-body">
                         {selectedEllipsoid ? (
-                            <>
+                            <div className="pca-stats-grid">
+                                <div className="pca-stats-col pca-stats-col--summary">
                                 {siteTag && (
                                     <p className={`pca-site-tag ${siteTag.clean ? 'is-clean' : 'is-flagged'}`}>
                                         <span className="pca-site-tag-count">{siteTag.count}/{siteTag.per}</span>
@@ -1634,36 +1643,44 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                         </InfoBadge>
                                     </p>
                                 )}
-                                <dl className="pca-stats">
-                                    <div className="pca-stat">
-                                        <dt>U<sub>iso</sub> (Å²)</dt>
-                                        <dd>{numberFormat(selectedEllipsoid.uIso)}</dd>
+                                <div className="pca-matrix-block">
+                                    <div className="pca-matrix-title">
+                                        Summary
+                                        <InfoBadge label="About the summary metrics">
+                                            <p>
+                                                U<sub>iso</sub>/B<sub>iso</sub> are the isotropic
+                                                displacement equivalents (Å²); anisotropy is the ratio of the
+                                                largest to smallest principal amplitude; non-Gaussianity is the
+                                                mean excess kurtosis of the cloud (0 = harmonic/Gaussian,
+                                                positive = anharmonic motion or split sites).
+                                            </p>
+                                        </InfoBadge>
                                     </div>
-                                    <div className="pca-stat">
-                                        <dt>B<sub>iso</sub> (Å²)</dt>
-                                        <dd>{numberFormat(selectedEllipsoid.bIso, 3)}</dd>
+                                    <div className="pca-matrix-scroll">
+                                        <table className="pca-matrix pca-matrix--summary">
+                                            <tbody>
+                                                <tr>
+                                                    <th scope="row">U<sub>iso</sub> (Å²)</th>
+                                                    <td>{numberFormat(selectedEllipsoid.uIso)}</td>
+                                                </tr>
+                                                <tr>
+                                                    <th scope="row">B<sub>iso</sub> (Å²)</th>
+                                                    <td>{numberFormat(selectedEllipsoid.bIso, 3)}</td>
+                                                </tr>
+                                                <tr>
+                                                    <th scope="row">Anisotropy</th>
+                                                    <td>{numberFormat(selectedEllipsoid.anisotropy, 2)}{selectedEllipsoid.degenerate ? ' · degen.' : ''}</td>
+                                                </tr>
+                                                <tr>
+                                                    <th scope="row">Non-Gaussianity</th>
+                                                    <td>{numberFormat(selectedEllipsoid.nonGaussianity ?? kde?.nonGaussianity, 2)}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </div>
-                                    <div className="pca-stat">
-                                        <dt>Anisotropy</dt>
-                                        <dd>{numberFormat(selectedEllipsoid.anisotropy, 2)}{selectedEllipsoid.degenerate ? ' · degenerate' : ''}</dd>
-                                    </div>
-                                    <div className="pca-stat">
-                                        <dt>
-                                            Non-Gaussianity
-                                            <InfoBadge label="About non-Gaussianity" align="end">
-                                                <p>
-                                                    Mean excess kurtosis of the displacement cloud
-                                                    (0 = harmonic/Gaussian). Positive means a peaked,
-                                                    fat-tailed distribution — the KDE isosurface then
-                                                    sits inside the ellipsoid, signalling anharmonic
-                                                    motion or split sites.
-                                                </p>
-                                            </InfoBadge>
-                                        </dt>
-                                        <dd>{numberFormat(selectedEllipsoid.nonGaussianity ?? kde?.nonGaussianity, 2)}</dd>
-                                    </div>
-                                </dl>
-                                <div className="pca-matrices">
+                                </div>
+                                </div>
+                                <div className="pca-stats-col">
                                     <div className="pca-matrix-block">
                                         <div className="pca-matrix-title">
                                             Covariance U (Å²)
@@ -1701,7 +1718,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                             </table>
                                         </div>
                                     </div>
-
+                                </div>
+                                <div className="pca-stats-col pca-stats-col--axes">
                                     <div className="pca-matrix-block">
                                         <div className="pca-matrix-title">
                                             Principal axes
@@ -1754,15 +1772,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                         </div>
                                     </div>
                                 </div>
-                                {kde && (
-                                    <p className="pca-meta">
-                                        Volume {kde.grid}³ · fit {kde.fitCount.toLocaleString()}/{kde.count.toLocaleString()} ·
-                                        captured mass {numberFormat(kde.mass * 100, 1)}%
-                                        {Number.isFinite(isoMassLevel) ? ` · iso @ ${isoPercent}% mass` : ''}
-                                        {kde.browserPcaKde ? ' · browser' : ' · server'}
-                                    </p>
-                                )}
-                            </>
+                            </div>
                         ) : (
                             <p className="pca-meta">{loadingSites ? 'Loading sites…' : 'No site selected.'}</p>
                         )}
