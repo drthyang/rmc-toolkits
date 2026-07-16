@@ -497,9 +497,10 @@
 }
 
 /* ── Side panels: statistics + unit cell ──────────────────────────────────── */
+/* overflow stays visible so the title InfoBadge popovers can drop below the row
+   without being clipped; each table scrolls inside its own .pca-matrix-scroll. */
 .pca-stats-body {
     min-height: 0;
-    overflow-x: auto;
 }
 
 /* The full-width statistics panel lays its content out in three columns —
