@@ -147,13 +147,20 @@
     background: var(--border-strong);
 }
 
-/* A switch paired with a standalone "?" InfoBadge. The badge sits OUTSIDE the
-   toggle's <label> so it never overlaps the switch's clickable area. */
+/* A switch whose text + "?" InfoBadge sit BEFORE the pill, both OUTSIDE the
+   toggle's <label>, so the info mark is never part of the switch's clickable area
+   and the pill is clicked on its own. */
 .switch-with-info {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.55rem;
     min-height: 2.3rem;
+}
+
+/* The pill-only toggle label used inside .switch-with-info. */
+.pca-controls .control.switch.switch-pill {
+    flex: none;
+    gap: 0;
 }
 
 /* Pill toggle switches for boolean options. */
@@ -169,11 +176,6 @@
     height: 100%;
     margin: 0;
     cursor: pointer;
-    /* Sit above the visible pill so a click on the pill hits the checkbox directly
-       and toggles. Without this the click falls through to the <label>, whose
-       associated control is the InfoBadge's <button> (the first labelable child),
-       so clicking the toggle activated the "?" instead of switching. */
-    z-index: 1;
 }
 
 .pca-controls .switch-track {
@@ -211,34 +213,19 @@
     box-shadow: var(--focus-ring);
 }
 
-/* The invisible checkbox (z-index 1) covers the whole label, including the "?"
-   InfoBadge — without this, hovering or clicking the info mark hit the checkbox
-   and toggled the switch. Lift the badge above the overlay so it stays
-   independently hoverable/clickable; toggling still works everywhere else. */
-.pca-controls .control.switch .info-badge {
-    position: relative;
-    z-index: 2;
-}
-
 /* ── Layout ───────────────────────────────────────────────────────────────── */
-/* The 3D viewport takes three-quarters of the width on the left; the displacement
-   statistics and unit cell stack in the remaining quarter, with the viewport
-   spanning both so all four outer edges line up. The statistics row sizes to its
-   content (so the covariance / principal-axes tables are never cut) and the site
-   ellipsoids take the rest; the grid fills the page's leftover height (flex: 1) so
-   the whole view roughly fills a 16:9 screen rather than sprawling wide. */
+/* Displacement statistics span the full width across the top (a 3-column table
+   of summary / covariance / principal axes); below them the 3D viewport and the
+   Site ellipsoids sit side by side at 1:1 and equal height, so the two panels
+   share the leftover page height (flex: 1) and all outer edges line up. */
 .pca-layout {
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
-    /* Equal-height rows so the two side panels (Displacement statistics and Site
-       ellipsoids) match, and their outer edges line up with the viewport. The
-       statistics body scrolls when its tables overrun its half (see
-       .pca-stats-body). */
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
-        "viewport stats"
+        "stats    stats"
         "viewport unitcell";
     gap: 0.85rem;
     align-items: stretch;
@@ -509,87 +496,71 @@
     flex: none;
 }
 
-.pca-legend-note {
-    color: var(--muted);
-    font-weight: 500;
-    font-style: italic;
-    font-variant-numeric: normal;
-}
-
 /* ── Side panels: statistics + unit cell ──────────────────────────────────── */
-/* The statistics content can be taller than its equal-height row; let it scroll
-   inside the panel body so the row height (and the aligned edges) stay fixed. The
-   header sits above this body, so its InfoBadge popover is never clipped here. */
 .pca-stats-body {
-    flex: 1;
     min-height: 0;
-    overflow-y: auto;
-    /* Scroll-shadow affordance: a soft shadow appears at the bottom (or top) edge
-       only while there is more content to scroll in that direction, so the tables
-       hidden below the equal-height fold are discoverable. Cover gradients ride
-       with the content (local); the shadows stay pinned to the box (scroll). */
-    background:
-        linear-gradient(var(--panel-bg) 30%, transparent) center top,
-        linear-gradient(transparent, var(--panel-bg) 70%) center bottom,
-        radial-gradient(farthest-side at 50% 0, rgba(16, 24, 40, 0.14), transparent) center top,
-        radial-gradient(farthest-side at 50% 100%, rgba(16, 24, 40, 0.14), transparent) center bottom;
-    background-repeat: no-repeat;
-    background-size: 100% 1.4rem, 100% 1.4rem, 100% 0.5rem, 100% 0.5rem;
-    background-attachment: local, local, scroll, scroll;
+    overflow-x: auto;
 }
 
-/* Four scalar figures in a 2x2 grid — compact enough for the quarter-width column
-   so the covariance + principal-axes tables sit higher and clear the fold. */
-.pca-stats {
-    margin: 0;
-    padding: 0.4rem 0.35rem;
+/* The full-width statistics panel lays its content out in three columns —
+   SUMMARY, the covariance tensor, and the principal axes. SUMMARY and COVARIANCE
+   share equal 1fr tracks (so they are exactly the same width); the wider
+   principal-axes table (7 columns) gets a bit more. */
+.pca-stats-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 0.75rem;
-    row-gap: 0.1rem;
+    grid-template-columns: 1fr 1fr 1.35fr;
+    column-gap: 2.4rem;
+    align-items: stretch;
+    padding: 0.6rem 0.95rem 0.7rem;
 }
 
-.pca-stat {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 0.5rem;
-    padding: 0.22rem 0.4rem;
+.pca-stats-col {
+    min-width: 0;
+    position: relative;
 }
 
-/* Hairline divider between the two stat rows. */
-.pca-stat:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--border);
+/* Hairline divider centered in the gap to the left of the 2nd and 3rd columns,
+   so it never eats into a column's width. */
+.pca-stats-col:not(:first-child)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -1.2rem;
+    width: 1px;
+    background: var(--border);
 }
 
-/* A normal inline context (not flex) so the U/B iso subscripts drop with
-   vertical-align; an inline-flex dt would lay <sub> out as a flex item and ignore
-   it. The InfoBadge (inline-flex, vertical-align: middle) still aligns inline. */
-.pca-stat dt {
-    color: var(--subtle);
+/* The four summary figures as a single-column label:value list, which lines up
+   row-for-row with the covariance / principal-axes tables beside it. */
+/* The Summary table shares the matrix row rhythm (so all three columns' rows line
+   up); only its label column differs — regular font, uppercase, subtle — so it
+   reads as labels rather than matrix data. */
+.pca-matrix--summary tbody th {
+    font-family: inherit;
     font-size: 0.67rem;
     font-weight: 650;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    color: var(--subtle);
+    white-space: nowrap;
 }
 
-.pca-stat dt sub {
+.pca-matrix--summary tbody th sub {
     font-size: 0.72em;
     letter-spacing: 0;
+    text-transform: none;
+    /* Drop the subscript without letting it stretch the row's line box, so the
+       U/B iso rows stay the same height as the others. */
+    line-height: 0;
+    vertical-align: baseline;
+    position: relative;
+    bottom: -0.18em;
 }
 
-.pca-stat dt .info-badge {
-    margin-left: 0.28rem;
-}
-
-.pca-stat dd {
-    margin: 0;
-    text-align: right;
-    color: var(--text-strong);
-    font-size: 0.86rem;
+.pca-matrix--summary td {
+    font-size: 0.78rem;
     font-weight: 650;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
 }
 
 .pca-meta {
@@ -599,6 +570,18 @@
     color: var(--muted);
     font-size: 0.72rem;
     line-height: 1.4;
+}
+
+/* Run-meta tucked into the statistics card header, top-right (h3 is a flexbox
+   with space-between, so this sits opposite the title). */
+.pca-stats-meta {
+    flex: none;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    letter-spacing: 0;
 }
 
 /* Reconstructed-site copy count (members / one-per-cell expectation). Green when a
@@ -684,7 +667,11 @@
 
 .pca-matrix th,
 .pca-matrix td {
-    padding: 0.13rem 0.3rem;
+    padding: 0.16rem 0.3rem;
+    /* A fixed line box so the header row, data rows, and the Summary rows are all
+       the same height regardless of their font size — the three columns then line
+       up row for row. */
+    line-height: 1rem;
     text-align: right;
     white-space: nowrap;
 }
@@ -800,13 +787,25 @@
         grid-template-columns: 1fr;
         grid-template-rows: auto;
         grid-template-areas:
-            "viewport"
             "stats"
+            "viewport"
             "unitcell";
     }
 
-    .pca-stats-body {
-        overflow-y: visible;
+    /* Stack the three statistics columns and swap the gap dividers for top rules. */
+    .pca-stats-grid {
+        grid-template-columns: 1fr;
+        column-gap: 0;
+        row-gap: 0.6rem;
+    }
+
+    .pca-stats-col:not(:first-child)::before {
+        display: none;
+    }
+
+    .pca-stats-col:not(:first-child) {
+        border-top: 1px solid var(--border);
+        padding-top: 0.6rem;
     }
 
     .pca-structure {
