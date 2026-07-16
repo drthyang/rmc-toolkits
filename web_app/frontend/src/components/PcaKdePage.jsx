@@ -13,6 +13,7 @@ import { marchingCubes } from '../workers/marchingCubes';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
 import SaveMenu from './SaveMenu';
+import { unitCellVectors } from '../pcaCrystalFrame';
 import './PcaKdePage.css';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
@@ -313,6 +314,14 @@ const TRIAD_COLORS = [0xd64545, 0x3fa34d, 0x3f7fd6]; // PC1 red, PC2 green, PC3 
 // they read as the same axes shown by the 3D triad and the viewport legend.
 const PC_CSS_COLORS = ['#d64545', '#3fa34d', '#3f7fd6'];
 
+// Crystallographic-axis triad (the unit-cell edges a, b, c). A deliberately
+// different palette from the PC tricolor so the two frames never read as the same
+// thing, with letters drawn at the tips so a/b/c stay unambiguous even where the
+// colors are close. gold a, teal b, orchid c.
+const CELL_AXIS_COLORS = [0xe0a419, 0x18a3a0, 0xb15ad8];
+const CELL_AXIS_CSS = ['#e0a419', '#18a3a0', '#b15ad8'];
+const CELL_AXIS_LABELS = ['a', 'b', 'c'];
+
 // Wireframe color for the p% thermal-ellipsoid reference cage, chosen from the
 // controls bar. The cage is always drawn transparent, so whatever color is picked
 // it never crowds the KDE shell / isosurface it wraps. The value feeds the 3D
@@ -347,6 +356,120 @@ const buildAxisTriad = (origin, axes, length, radius) => {
         meshes.push(mesh);
     }
     return meshes;
+};
+
+// Crystallographic a/b/c triad: thin rods from `origin` along the unit-cell edge
+// directions (normalised, so all three read at one scale), each in its own color.
+// The rods carry only the cell ORIENTATION in the shared Cartesian frame — the same
+// frame the PCA axes and the density live in — so they line up exactly with the
+// crystal-plane projections. a/b/c are identified by color via the panel legend.
+const buildCrystalAxes = (origin, unitCell, length, radius) => {
+    const rods = [];
+    for (let a = 0; a < 3; a += 1) {
+        const raw = new THREE.Vector3(unitCell[a][0], unitCell[a][1], unitCell[a][2]);
+        if (raw.lengthSq() < 1e-12) continue;
+        const dir = raw.normalize();
+        const rod = new THREE.Mesh(
+            new THREE.CylinderGeometry(radius, radius, length, 10),
+            new THREE.MeshBasicMaterial({ color: CELL_AXIS_COLORS[a] })
+        );
+        rod.position.copy(origin).addScaledVector(dir, length / 2);
+        rod.quaternion.setFromUnitVectors(TRIAD_UP, dir);
+        rods.push(rod);
+    }
+    return rods;
+};
+
+// Orthonormal display frame from the unit cell (Gram–Schmidt): e0 along a, e1 in the
+// a–b plane, e2 = e0×e1. For an orthogonal cell this is exactly (â, b̂, ĉ); for an
+// oblique cell it is a rectangular frame aligned to a, used ONLY to draw the crystal
+// shadow-box and its wall projections (the a/b/c rods and the look-down-a/b/c camera
+// use the true cell edges). Rows are the frame axes, matching the `axes` convention.
+const orthonormalCrystalFrame = (unitCell) => {
+    const norm = (v) => { const n = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / n, v[1] / n, v[2] / n]; };
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const e0 = norm(unitCell[0]);
+    const bDot = dot(unitCell[1], e0);
+    const e1 = norm([unitCell[1][0] - bDot * e0[0], unitCell[1][1] - bDot * e0[1], unitCell[1][2] - bDot * e0[2]]);
+    const e2 = norm(cross(e0, e1));
+    return [e0, e1, e2];
+};
+
+// Project the computed 3D KDE density onto the three planes of the orthonormal frame
+// `frame` (rows e0, e1, e2) by bilinearly splatting each PCA-grid cell's mass into 2D
+// bins of the two in-plane coordinates — the honest shadow of the SAME density the
+// panel shows, re-binned into the crystal frame. `half` is the cube half-width (all
+// axes equal, cubic box). Returns {pc12, pc13, pc23} shaped exactly like the worker's
+// PC-plane projections, so makeProjectionWall / makeProjectionContours draw them as-is.
+const projectDensityOntoFrame = (kde, frame, half, nBins) => {
+    const grid = kde.grid;
+    const axisCoords = kde.axisCoords;
+    const axes = kde.axes;
+    const density = kde.density;
+    const cellVolume = kde.cellVolume || 1;
+    const [e0, e1, e2] = frame;
+    const span = 2 * half || 1;
+    const toBin = (c) => ((c + half) / span) * (nBins - 1);
+    const alloc = () => Array.from({ length: nBins }, () => new Float64Array(nBins));
+    const d01 = alloc();
+    const d02 = alloc();
+    const d12 = alloc();
+    // Bilinear splat of weight w at continuous (u, v) into an accumulator grid.
+    const splat = (acc, u, v, w) => {
+        const u0 = Math.floor(u);
+        const v0 = Math.floor(v);
+        const fu = u - u0;
+        const fv = v - v0;
+        const put = (a, b, m) => { if (a >= 0 && a < nBins && b >= 0 && b < nBins) acc[a][b] += w * m; };
+        put(u0, v0, (1 - fu) * (1 - fv));
+        put(u0, v0 + 1, (1 - fu) * fv);
+        put(u0 + 1, v0, fu * (1 - fv));
+        put(u0 + 1, v0 + 1, fu * fv);
+    };
+    for (let i = 0; i < grid; i += 1) {
+        const px = axisCoords[0][i];
+        for (let j = 0; j < grid; j += 1) {
+            const py = axisCoords[1][j];
+            const base = (i * grid + j) * grid;
+            for (let k = 0; k < grid; k += 1) {
+                const val = density[base + k];
+                if (val <= 0) continue;
+                const pz = axisCoords[2][k];
+                // PCA-frame grid point -> Cartesian offset from the cloud mean.
+                const cx = px * axes[0][0] + py * axes[1][0] + pz * axes[2][0];
+                const cy = px * axes[0][1] + py * axes[1][1] + pz * axes[2][1];
+                const cz = px * axes[0][2] + py * axes[1][2] + pz * axes[2][2];
+                const u0c = toBin(cx * e0[0] + cy * e0[1] + cz * e0[2]);
+                const u1c = toBin(cx * e1[0] + cy * e1[1] + cz * e1[2]);
+                const u2c = toBin(cx * e2[0] + cy * e2[1] + cz * e2[2]);
+                const w = val * cellVolume;
+                splat(d01, u0c, u1c, w);   // integrate out e2 -> e0–e1 plane
+                splat(d02, u0c, u2c, w);   // integrate out e1 -> e0–e2 plane
+                splat(d12, u1c, u2c, w);   // integrate out e0 -> e1–e2 plane
+            }
+        }
+    }
+    const binArea = (span / (nBins - 1)) ** 2 || 1;
+    const finalize = (acc, pair) => {
+        let vmax = 0;
+        const dens = new Array(nBins);
+        for (let a = 0; a < nBins; a += 1) {
+            const row = new Array(nBins);
+            for (let b = 0; b < nBins; b += 1) {
+                const v = acc[a][b] / binArea;
+                row[b] = v;
+                if (v > vmax) vmax = v;
+            }
+            dens[a] = row;
+        }
+        return { density: dens, axes: pair, vmax };
+    };
+    return {
+        pc12: finalize(d01, [0, 1]),
+        pc13: finalize(d02, [0, 2]),
+        pc23: finalize(d12, [1, 2])
+    };
 };
 
 const PROJECTION_META = [
@@ -401,12 +524,13 @@ const placeMainCamera = (camera, controls, kde, dir, up, aspect) => {
     controls.enableDamping = damping;
 };
 
-// Point the main camera down the box body diagonal (+PC1/+PC2/+PC3) at a
-// comfortable distance, so the three min-corner walls sit symmetrically at the
-// back and the whole cube fits corner-on. This is the default framing, applied
-// on a new site and re-applied by the panel's "Reset view" button.
-const frameMainCamera = (camera, controls, kde, aspect = 1) => {
-    const axes = kde.axes;
+// Point the main camera down the box body diagonal at a comfortable distance, so
+// the three min-corner walls sit symmetrically at the back and the whole cube fits
+// corner-on. `frameAxes` (rows) is the frame the shadow box is drawn in — the PCA
+// axes in PC mode, the orthonormal crystal frame in crystal mode — so the default
+// view adapts to whichever box is shown. Applied on a new site and by "Reset view".
+const frameMainCamera = (camera, controls, kde, frameAxes, aspect = 1) => {
+    const axes = frameAxes || kde.axes;
     const dir = new THREE.Vector3(
         axes[0][0] + axes[1][0] + axes[2][0],
         axes[0][1] + axes[1][1] + axes[2][1],
@@ -427,6 +551,29 @@ const frameAlongAxis = (camera, controls, kde, axisIndex, aspect = 1) => {
         axes[axisIndex][0], axes[axisIndex][1], axes[axisIndex][2]
     ).normalize();
     placeMainCamera(camera, controls, kde, dir, axes[VIEW_UP_AXIS[axisIndex]], aspect);
+};
+
+// Screen-up choice when looking down each crystallographic axis (a→c up, b→c up,
+// c→b up), mirroring VIEW_UP_AXIS for the PC frame.
+const CELL_VIEW_UP_AXIS = [2, 2, 1];
+
+// Look straight down crystallographic axis `axisIndex` (a/b/c). The up vector is a
+// neighbouring cell edge with its component along the view direction removed, so an
+// oblique (non-orthogonal) cell still gives a stable, non-degenerate framing.
+const frameAlongCellAxis = (camera, controls, kde, unitCell, axisIndex, aspect = 1) => {
+    const dir = new THREE.Vector3(
+        unitCell[axisIndex][0], unitCell[axisIndex][1], unitCell[axisIndex][2]
+    ).normalize();
+    const upIndex = CELL_VIEW_UP_AXIS[axisIndex];
+    const up = new THREE.Vector3(unitCell[upIndex][0], unitCell[upIndex][1], unitCell[upIndex][2]);
+    up.addScaledVector(dir, -up.dot(dir));   // Gram–Schmidt against the view direction
+    if (up.lengthSq() < 1e-10) {
+        up.set(0, 1, 0);
+        if (Math.abs(up.dot(dir)) > 0.99) up.set(1, 0, 0);
+        up.addScaledVector(dir, -up.dot(dir));
+    }
+    up.normalize();
+    placeMainCamera(camera, controls, kde, dir, [up.x, up.y, up.z], aspect);
 };
 
 export default function PcaKdePage({ directory, localRun, onSitesChange }) {
@@ -464,10 +611,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     const [showSurface, setShowSurface] = useState(false);
     const [showProjections, setShowProjections] = useState(true);
     const [showEllipsoidKde, setShowEllipsoidKde] = useState(true);
+    // The reference frame for the main viewport: 'pc' (principal axes) or 'crystal'
+    // (unit-cell a/b/c). One switch drives the triad, the shadow-box wall projections,
+    // and the camera-snap axes together. Defaults to PC — the native analysis frame.
+    const [axisFrame, setAxisFrame] = useState('pc');
+    // Crystallographic a/b/c gizmo in the Site-ellipsoids (unit-cell) view — on by
+    // default there, since that panel is a structural view where axes belong.
+    const [showCellAxes, setShowCellAxes] = useState(true);
     const [perspective, setPerspective] = useState(true);
-    // Which principal axis the camera is snapped to look down (null = free / the
-    // default diagonal view); drives the highlight on the view-axis buttons.
-    const [viewAxis, setViewAxis] = useState(null);
+    // Which axis the camera is snapped to look down: { frame: 'pc' | 'cell', index }
+    // or null (free / the default diagonal view). Drives the view-button highlight.
+    const [snappedView, setSnappedView] = useState(null);
 
     const workerRef = useRef(null);
     const requestIdRef = useRef(0);
@@ -628,6 +782,27 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         [sites]
     );
 
+    // Unit-cell edge vectors (a, b, c) in the shared Cartesian frame, derived from
+    // the supercell lattice — the crystallographic reference the PCA frame relates
+    // to. null until the sites (and their lattice metadata) have loaded.
+    const unitCell = useMemo(
+        () => (sites?.latticeVectors && sites?.supercell
+            ? unitCellVectors(sites.latticeVectors, sites.supercell)
+            : null),
+        [sites]
+    );
+
+    // Crystal-frame shadow box + wall projections: an orthonormal frame from the unit
+    // cell and the current KDE density re-binned onto its three planes. Used when the
+    // viewport is in crystal mode; recomputed only when the volume or the cell changes.
+    const crystalDisplay = useMemo(() => {
+        if (!kde || !unitCell) return null;
+        const frame = orthonormalCrystalFrame(unitCell);
+        const half = Math.max(...kde.halfWidths);
+        const projections = projectDensityOntoFrame(kde, frame, half, kde.grid);
+        return { frame, halfWidths: [half, half, half], projections };
+    }, [kde, unitCell]);
+
     // Current aspect ratio of the main canvas, needed to size the orthographic
     // frustum when (re)framing.
     const mainAspect = () => {
@@ -640,18 +815,34 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     const resetMainView = useCallback(() => {
         const handle = sceneRef.current;
         if (handle && kde) {
-            frameMainCamera(handle.camera, handle.controls, kde, mainAspect());
-            setViewAxis(null);
+            const frameAxes = axisFrame === 'crystal' && crystalDisplay ? crystalDisplay.frame : kde.axes;
+            frameMainCamera(handle.camera, handle.controls, kde, frameAxes, mainAspect());
+            setSnappedView(null);
         }
-    }, [kde]);
+    }, [kde, axisFrame, crystalDisplay]);
 
     // Snap the camera to look straight down a principal axis (PC1/PC2/PC3).
     const lookAlong = useCallback((axisIndex) => {
         const handle = sceneRef.current;
         if (!handle || !kde) return;
         frameAlongAxis(handle.camera, handle.controls, kde, axisIndex, mainAspect());
-        setViewAxis(axisIndex);
+        setSnappedView({ frame: 'pc', index: axisIndex });
     }, [kde]);
+
+    // Snap the camera to look straight down a crystallographic axis (a/b/c).
+    const lookAlongCell = useCallback((axisIndex) => {
+        const handle = sceneRef.current;
+        if (!handle || !kde || !unitCell) return;
+        frameAlongCellAxis(handle.camera, handle.controls, kde, unitCell, axisIndex, mainAspect());
+        setSnappedView({ frame: 'cell', index: axisIndex });
+    }, [kde, unitCell]);
+
+    // Switch the viewport reference frame (PC ↔ crystal); a frame change invalidates
+    // any snapped axis view, so clear the highlight.
+    const selectFrame = useCallback((frame) => {
+        setAxisFrame(frame);
+        setSnappedView(null);
+    }, []);
 
     // Toggle the main viewport between perspective and orthographic projection,
     // preserving the current orientation (the scene handle swaps the camera).
@@ -686,6 +877,46 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             await saveCanvasAsPng(renderer.domElement, name);
         }
     }, [selectedEllipsoid]);
+
+    // Re-apply the Site-ellipsoids view's default framing (the structure rebuild
+    // stores the cell centre + a fitting radius on the handle). No-op until framed.
+    const resetStructureView = useCallback(() => {
+        const handle = structureSceneRef.current;
+        if (!handle || !handle.center) return;
+        const { camera, controls, center, defaultRadius } = handle;
+        const radius = defaultRadius || 1;
+        controls.target.set(center[0], center[1], center[2]);
+        camera.up.set(0, 1, 0);
+        camera.position.set(center[0] + radius, center[1] + radius * 0.7, center[2] + radius);
+        camera.near = radius / 100;
+        camera.far = radius * 100;
+        camera.updateProjectionMatrix();
+        controls.update();
+    }, []);
+
+    // Export the Site-ellipsoids figure as PNG — same 1× / 3× options as the main
+    // panel (its renderer keeps preserveDrawingBuffer so the frame stays readable).
+    const saveStructureView = useCallback(async (format) => {
+        const handle = structureSceneRef.current;
+        if (!handle) return;
+        const { renderer, scene, camera } = handle;
+        const name = 'PCA_Site_ellipsoids';
+        if (format === 'png3x') {
+            const size = renderer.getSize(new THREE.Vector2());
+            const previousRatio = renderer.getPixelRatio();
+            renderer.setPixelRatio(3);
+            renderer.setSize(size.x, size.y, false);
+            renderer.render(scene, camera);
+            const blob = await new Promise((resolve) => renderer.domElement.toBlob(resolve, 'image/png'));
+            renderer.setPixelRatio(previousRatio);
+            renderer.setSize(size.x, size.y, false);
+            renderer.render(scene, camera);
+            if (blob) downloadBlob(blob, `${sanitizeFilename(name)}.png`);
+        } else {
+            renderer.render(scene, camera);
+            await saveCanvasAsPng(renderer.domElement, name);
+        }
+    }, []);
 
     // Publish the per-site ellipsoid table upward (App → AI Assistant), so the
     // assistant can reason about the thermal displacements once this page has
@@ -737,8 +968,9 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         const surfaceGroup = new THREE.Group();
         const ellipsoidGroup = new THREE.Group();
         const axesGroup = new THREE.Group();
+        const crystalAxesGroup = new THREE.Group();
         const wallsGroup = new THREE.Group();
-        scene.add(wallsGroup, surfaceGroup, ellipsoidGroup, axesGroup);
+        scene.add(wallsGroup, surfaceGroup, ellipsoidGroup, axesGroup, crystalAxesGroup);
 
         let animationId = 0;
         const animate = () => {
@@ -769,7 +1001,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         const resizeObserver = new ResizeObserver(handleResize);
         resizeObserver.observe(mount);
 
-        const handle = { scene, camera, renderer, controls, surfaceGroup, ellipsoidGroup, axesGroup, wallsGroup };
+        const handle = { scene, camera, renderer, controls, surfaceGroup, ellipsoidGroup, axesGroup, crystalAxesGroup, wallsGroup };
 
         // Swap the active camera between perspective and orthographic while keeping
         // the current orientation, distance, and pivot, so the toggle looks like a
@@ -825,13 +1057,13 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     useEffect(() => {
         const handle = sceneRef.current;
         if (!handle || !kde) return;
-        const { surfaceGroup, ellipsoidGroup, axesGroup, wallsGroup, camera, controls } = handle;
+        const { surfaceGroup, ellipsoidGroup, axesGroup, crystalAxesGroup, wallsGroup, camera, controls } = handle;
 
         const dispose = (group) => {
             while (group.children.length) {
                 const child = group.children.pop();
                 child.geometry?.dispose();
-                // Wall planes carry a CanvasTexture that must be released too.
+                // Wall planes and axis-label sprites carry a CanvasTexture to release.
                 child.material?.map?.dispose();
                 child.material?.dispose();
                 group.remove(child);
@@ -840,6 +1072,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         dispose(surfaceGroup);
         dispose(ellipsoidGroup);
         dispose(axesGroup);
+        dispose(crystalAxesGroup);
         dispose(wallsGroup);
 
         const axes = kde.axes;
@@ -848,16 +1081,22 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         const gridN = kde.grid;
         const halfWidths = kde.halfWidths;
 
-        // Density projections on the far walls + a wireframe cage (Maksim
-        // Eremenko's shadow-box layout): the isosurface floats inside a box whose
-        // three back walls show the PC-plane KDE projections.
-        if (showProjections && kde.projections) {
-            wallsGroup.add(makeBoundingBox(axes, mean, halfWidths, 0x8a97a8));
+        // Density projections on the far walls + a wireframe cage (Maksim Eremenko's
+        // shadow-box layout). In crystal mode the box + walls switch to the orthonormal
+        // crystal frame, with the density re-binned onto the a/b/c planes; in PC mode
+        // they stay in the principal-axis frame the volume was computed in.
+        const useCrystalBox = axisFrame === 'crystal' && crystalDisplay;
+        const boxAxes = useCrystalBox ? crystalDisplay.frame : axes;
+        const boxHalfWidths = useCrystalBox ? crystalDisplay.halfWidths : halfWidths;
+        const boxProjections = useCrystalBox ? crystalDisplay.projections : kde.projections;
+        if (showProjections && boxProjections) {
+            wallsGroup.add(makeBoundingBox(boxAxes, mean, boxHalfWidths, 0x8a97a8));
             PROJECTION_META.forEach(({ key }) => {
-                const projection = kde.projections[key];
-                const wall = makeProjectionWall(projection, axes, mean, halfWidths, colormap);
+                const projection = boxProjections[key];
+                if (!projection) return;
+                const wall = makeProjectionWall(projection, boxAxes, mean, boxHalfWidths, colormap);
                 if (wall) wallsGroup.add(wall);
-                const contours = makeProjectionContours(projection, axes, mean, halfWidths, 0xeef3f8);
+                const contours = makeProjectionContours(projection, boxAxes, mean, boxHalfWidths, 0xeef3f8);
                 if (contours) wallsGroup.add(contours);
             });
         }
@@ -931,12 +1170,18 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             ellipsoidGroup.add(mesh);
         }
 
-        // Principal-axis triad (PC1 red, PC2 green, PC3 blue) from the centre out
-        // to the box faces. Thin rods so they read without dominating.
+        // Axis triad for the active frame: the principal axes (PC1 red, PC2 green,
+        // PC3 blue) or the crystallographic a/b/c edges, from the centre out to the
+        // box faces. Thin rods so they read without dominating.
         const axisLength = Math.max(...kde.halfWidths);
         const meanVec = new THREE.Vector3(mean[0], mean[1], mean[2]);
-        buildAxisTriad(meanVec, axes, axisLength, axisLength * 0.012)
-            .forEach((rod) => axesGroup.add(rod));
+        if (axisFrame === 'crystal' && unitCell) {
+            buildCrystalAxes(meanVec, unitCell, axisLength, axisLength * 0.01)
+                .forEach((obj) => crystalAxesGroup.add(obj));
+        } else {
+            buildAxisTriad(meanVec, axes, axisLength, axisLength * 0.012)
+                .forEach((rod) => axesGroup.add(rod));
+        }
 
         // Reframe to the default view only when the displayed volume is for a new
         // site or a new run, so sweeping a slider or toggling a layer doesn't yank
@@ -948,10 +1193,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         const kdeRef = kde.referenceNumber ?? selectedRef;
         if (framedRefRef.current !== kdeRef) {
             const m = mountRef.current;
-            frameMainCamera(camera, controls, kde, m && m.clientHeight ? m.clientWidth / m.clientHeight : 1);
+            const frameAxes = axisFrame === 'crystal' && crystalDisplay ? crystalDisplay.frame : kde.axes;
+            frameMainCamera(camera, controls, kde, frameAxes, m && m.clientHeight ? m.clientWidth / m.clientHeight : 1);
             framedRefRef.current = kdeRef;
-            // A fresh diagonal framing supersedes any snapped PC-axis view.
-            setViewAxis(null);
+            // A fresh diagonal framing supersedes any snapped axis view.
+            setSnappedView(null);
         } else {
             // Same site: keep the pivot and clip planes synced to the current volume
             // without moving the user's camera.
@@ -962,7 +1208,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             camera.updateProjectionMatrix();
             controls.update();
         }
-    }, [kde, isoPercent, colormap, shellColormap, shellContrast, ellipsoidColor, showEllipsoid, showSurface, showProjections, showEllipsoidKde, selectedEllipsoid, selectedRef]);
+    }, [kde, isoPercent, colormap, shellColormap, shellContrast, ellipsoidColor, showEllipsoid, showSurface, showProjections, showEllipsoidKde, axisFrame, crystalDisplay, unitCell, selectedEllipsoid, selectedRef]);
 
     // --- Unit-cell structure scene: one clickable marker per reference site. ---
     useEffect(() => {
@@ -973,7 +1219,9 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(40, width / height, 0.01, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        // preserveDrawingBuffer so the figure can be captured for PNG export at any
+        // time (matches the main viewport's renderer).
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
         renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.setSize(width, height);
         mount.appendChild(renderer.domElement);
@@ -991,8 +1239,9 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         const sitesGroup = new THREE.Group();
         const bondsGroup = new THREE.Group();
         const cellGroup = new THREE.Group();
+        const cellAxesGroup = new THREE.Group();
         const highlightGroup = new THREE.Group();
-        scene.add(cellGroup, bondsGroup, sitesGroup, highlightGroup);
+        scene.add(cellGroup, cellAxesGroup, bondsGroup, sitesGroup, highlightGroup);
 
         // Click (not drag) on a site marker selects that site. A small pointer
         // travel budget separates a click from an orbit drag.
@@ -1046,7 +1295,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         resizeObserver.observe(mount);
 
         structureSceneRef.current = {
-            scene, camera, renderer, controls, sitesGroup, bondsGroup, cellGroup, highlightGroup, framed: false
+            scene, camera, renderer, controls, sitesGroup, bondsGroup, cellGroup, cellAxesGroup, highlightGroup,
+            framed: false, center: null, defaultRadius: 1
         };
 
         return () => {
@@ -1066,12 +1316,14 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     useEffect(() => {
         const handle = structureSceneRef.current;
         if (!handle || !sites) return;
-        const { sitesGroup, bondsGroup, cellGroup, highlightGroup, camera, controls } = handle;
+        const { sitesGroup, bondsGroup, cellGroup, cellAxesGroup, highlightGroup, camera, controls } = handle;
 
         const dispose = (group) => {
             while (group.children.length) {
                 const child = group.children.pop();
                 child.geometry?.dispose();
+                // Axis-label sprites carry a CanvasTexture to release too.
+                child.material?.map?.dispose();
                 child.material?.dispose();
                 group.remove(child);
             }
@@ -1079,6 +1331,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         dispose(sitesGroup);
         dispose(bondsGroup);
         dispose(cellGroup);
+        dispose(cellAxesGroup);
         dispose(highlightGroup);
 
         // Unit-cell vectors = supercell vectors / supercell counts.
@@ -1112,6 +1365,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             new THREE.BufferGeometry().setFromPoints(cellPoints),
             new THREE.LineBasicMaterial({ color: 0x8a97a8, transparent: true, opacity: 0.4 })
         ));
+
+        // Crystallographic a/b/c gizmo at the cell origin corner (opt-in), so the
+        // Site-ellipsoids view is oriented in the crystal frame — same colors as the
+        // main panel's crystal triad, identified by the panel legend. Sized to a
+        // fraction of the shortest edge so it reads as a compact corner widget.
+        if (showCellAxes) {
+            const origin = new THREE.Vector3(...toCartesian([0, 0, 0]));
+            const gizmoLength = 0.5 * edgeLength;
+            buildCrystalAxes(origin, unit, gizmoLength, gizmoLength * 0.035)
+                .forEach((obj) => cellAxesGroup.add(obj));
+        }
 
         const baseRadius = 0.05 * edgeLength;
         const positions = sites.sites.map((site) => ({
@@ -1224,19 +1488,22 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             }
         });
 
-        // Frame the cell once; keep the user's orientation afterwards.
+        // Store the default framing so the panel's "Reset view" can restore it; frame
+        // the cell once, then keep the user's orientation on later rebuilds.
+        const span = Math.max(...unit.map((row) => Math.hypot(...row)));
+        const defaultRadius = span * 1.7 || 1;
+        handle.center = center;
+        handle.defaultRadius = defaultRadius;
         controls.target.set(...center);
         if (!handle.framed) {
-            const span = Math.max(...unit.map((row) => Math.hypot(...row)));
-            const radius = span * 1.7 || 1;
-            camera.position.set(center[0] + radius, center[1] + radius * 0.7, center[2] + radius);
-            camera.near = radius / 100;
-            camera.far = radius * 100;
+            camera.position.set(center[0] + defaultRadius, center[1] + defaultRadius * 0.7, center[2] + defaultRadius);
+            camera.near = defaultRadius / 100;
+            camera.far = defaultRadius * 100;
             camera.updateProjectionMatrix();
             handle.framed = true;
         }
         controls.update();
-    }, [sites, selectedRef, selectedEllipsoid, elementColors]);
+    }, [sites, selectedRef, selectedEllipsoid, elementColors, showCellAxes]);
 
     // Re-fit the site-ellipsoids canvas to its mount whenever the Displacement-
     // statistics panel — which shares this column — changes height. Its content
@@ -1498,6 +1765,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         </select>
                     </label>
                 </div>
+
             </div>
 
             {noRun && (
@@ -1517,6 +1785,29 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             {selectedEllipsoid && (
                                 <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
                             )}
+                            {/* Reference frame: switches the triad, wall projections, and camera-snap
+                                axes together (PC1/PC2/PC3 ↔ a/b/c). */}
+                            <div className="pca-frame-toggle" role="group" aria-label="Reference frame">
+                                <button
+                                    type="button"
+                                    className={axisFrame === 'pc' ? 'is-active' : ''}
+                                    onClick={() => selectFrame('pc')}
+                                    aria-pressed={axisFrame === 'pc'}
+                                    title="Principal-axis (PC) frame"
+                                >
+                                    PC
+                                </button>
+                                <button
+                                    type="button"
+                                    className={axisFrame === 'crystal' ? 'is-active' : ''}
+                                    onClick={() => selectFrame('crystal')}
+                                    aria-pressed={axisFrame === 'crystal'}
+                                    disabled={!unitCell}
+                                    title={unitCell ? 'Crystallographic a/b/c frame' : 'No unit-cell metadata available'}
+                                >
+                                    Crystal
+                                </button>
+                            </div>
                             <button
                                 type="button"
                                 className="pca-reset-view"
@@ -1568,28 +1859,48 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                 </div>
                                 <div className="pca-view-controls pca-view-controls--right">
                                     <div className="pca-view-group" role="group" aria-label="Camera orientation">
-                                        <span className="pca-view-group-label">Along</span>
-                                        {[0, 1, 2].map((axisIndex) => (
-                                            <button
-                                                key={axisIndex}
-                                                type="button"
-                                                className={`pca-view-btn ${viewAxis === axisIndex ? 'is-active' : ''}`}
-                                                onClick={() => lookAlong(axisIndex)}
-                                                aria-pressed={viewAxis === axisIndex}
-                                                title={`Look down PC${axisIndex + 1}`}
-                                            >
-                                                {`PC${axisIndex + 1}`}
-                                            </button>
-                                        ))}
+                                        <span className="pca-view-group-label">{axisFrame === 'crystal' ? 'Cell' : 'PC'}</span>
+                                        {[0, 1, 2].map((axisIndex) => {
+                                            const isCrystal = axisFrame === 'crystal';
+                                            const active = snappedView?.frame === (isCrystal ? 'cell' : 'pc')
+                                                && snappedView?.index === axisIndex;
+                                            return (
+                                                <button
+                                                    key={axisIndex}
+                                                    type="button"
+                                                    className={`pca-view-btn ${isCrystal ? 'pca-view-btn--cell' : ''} ${active ? 'is-active' : ''}`}
+                                                    onClick={() => (isCrystal ? lookAlongCell(axisIndex) : lookAlong(axisIndex))}
+                                                    aria-pressed={active}
+                                                    title={isCrystal
+                                                        ? `Look down the ${CELL_AXIS_LABELS[axisIndex]} axis`
+                                                        : `Look down PC${axisIndex + 1}`}
+                                                >
+                                                    {isCrystal ? CELL_AXIS_LABELS[axisIndex] : axisIndex + 1}
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             </>
                         )}
                     </div>
                     <div className="pca-legend">
-                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
-                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
-                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
+                        {axisFrame === 'crystal' ? (
+                            <span className="pca-legend-item pca-legend-cellaxes">
+                                {CELL_AXIS_LABELS.map((label, i) => (
+                                    <span key={label} className="pca-legend-cellaxis">
+                                        <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
+                                    </span>
+                                ))}
+                                <span className="pca-legend-note">crystal axes</span>
+                            </span>
+                        ) : (
+                            <>
+                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
+                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
+                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
+                            </>
+                        )}
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
                         <a
                             className="pca-legend-credit"
@@ -1783,18 +2094,63 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         <h3>
                             <span className="panel-title-label">
                                 Site ellipsoids
-                                <InfoBadge label="About the site ellipsoids" align="end">
+                                <InfoBadge label="About the site ellipsoids" align="start">
                                     <p>
                                         Every reference site in the average unit cell, drawn as its
                                         calculated thermal ellipsoid and colored by element. Click one to
                                         load its PCA-KDE in the main panel; the selected site is highlighted.
+                                        The <b>a b c</b> button toggles the crystallographic-axis gizmo at
+                                        the cell origin.
                                     </p>
                                 </InfoBadge>
+                            </span>
+                            <span className="panel-title-actions">
+                                <button
+                                    type="button"
+                                    className={`pca-reset-view pca-cell-toggle ${showCellAxes ? 'is-active' : ''}`}
+                                    onClick={() => setShowCellAxes((value) => !value)}
+                                    aria-pressed={showCellAxes}
+                                    title="Show the crystallographic axes (a, b, c)"
+                                >
+                                    <span style={{ color: CELL_AXIS_CSS[0] }}>a</span>
+                                    <span style={{ color: CELL_AXIS_CSS[1] }}>b</span>
+                                    <span style={{ color: CELL_AXIS_CSS[2] }}>c</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="pca-reset-view"
+                                    onClick={resetStructureView}
+                                    disabled={!sites}
+                                    title="Reset the camera to the default view"
+                                >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                        <path d="M3 3v5h5" />
+                                    </svg>
+                                    Reset view
+                                </button>
+                                <SaveMenu
+                                    onSave={saveStructureView}
+                                    options={SAVE_OPTIONS}
+                                    label="Save"
+                                    align="right"
+                                    disabled={!sites}
+                                />
                             </span>
                         </h3>
                         <div className="pca-structure" ref={structureMountRef} />
                         {sites?.elements?.length > 0 && (
                             <div className="pca-legend">
+                                {showCellAxes && (
+                                    <span className="pca-legend-item pca-legend-cellaxes">
+                                        {CELL_AXIS_LABELS.map((label, i) => (
+                                            <span key={label} className="pca-legend-cellaxis">
+                                                <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
+                                            </span>
+                                        ))}
+                                        <span className="pca-legend-note">crystal axes</span>
+                                    </span>
+                                )}
                                 {sites.elements.map((element) => (
                                     <span key={element} className="pca-legend-item">
                                         <i

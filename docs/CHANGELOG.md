@@ -5,6 +5,22 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+PCA Ellipsoid: PC ⟷ crystal reference-frame switch, and Site-ellipsoids crystal axes + reset/save.
+
+- **The main viewport can be viewed in the principal-axis (PC) frame or the crystallographic (a, b, c) frame.**
+  A **Frame** switch (PC | Crystal) in the plot header flips the axis triad, the shadow-box wall projections,
+  the look-down camera buttons, and **Reset view** together — PC1/PC2/PC3 in PC mode, a/b/c in crystal mode. In
+  crystal mode the box + walls switch to an orthonormal frame built from the unit cell and the SAME 3D KDE
+  density is re-binned onto the a/b/c planes (`projectDensityOntoFrame`), so the wall shadows are the honest
+  crystal-plane projections of the displayed density; the a/b/c rods and the look-down-a/b/c camera use the true
+  cell edges, and Reset view frames whichever box is active corner-on. a/b/c are keyed by rod color in the
+  viewport legend (no 3D letter labels). The crystal-frame directions come from `src/pcaCrystalFrame.js`
+  (`unitCellVectors`), which derives the unit-cell vectors in the shared Cartesian basis the PCA axes and
+  density already live in (`src/__tests__/pcaCrystalFrame.test.js`).
+- **The Site ellipsoids panel gains crystallographic axes + reset/save.** An opt-in a/b/c gizmo at the unit-cell
+  origin (its own **a b c** toggle, keyed by color in the panel legend) and **Reset view** + **Save** (PNG,
+  1× / 3×) controls mirroring the main panel.
+
 Old coordinates-only `.rmc6f` files reconstruct thermal-ellipsoid sites; PCA controls regrouped with a shell contrast knob.
 
 - **The oldest `.rmc6f` files (coordinates only) now drive PCA-KDE and Atomic Density.** That format drops the
