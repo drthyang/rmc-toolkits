@@ -352,6 +352,64 @@
     flex: none;
 }
 
+/* Segmented PC / Crystal reference-frame switch, sized to sit in the panel header
+   beside the Reset view / Save chips. */
+.pca-frame-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.13rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    flex: none;
+}
+
+.pca-frame-toggle button {
+    padding: 0.2rem 0.5rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--subtle);
+    font-size: 0.72rem;
+    font-weight: 650;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 140ms ease, color 140ms ease;
+}
+
+.pca-frame-toggle button:hover:not(:disabled):not(.is-active) {
+    color: var(--text-strong);
+}
+
+.pca-frame-toggle button.is-active {
+    background: var(--accent);
+    color: #fff;
+}
+
+.pca-frame-toggle button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.pca-frame-toggle button:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+/* The Site-ellipsoids "a b c" crystal-axis toggle reuses the reset-view chip shell
+   but shows three colored letters; when on it gets a faint wash + stronger border. */
+.pca-cell-toggle {
+    gap: 0.22rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.pca-cell-toggle.is-active {
+    border-color: var(--border-strong);
+    background: color-mix(in srgb, var(--accent) 8%, var(--panel-bg));
+}
+
 /* ── 3D viewport ──────────────────────────────────────────────────────────── */
 .pca-viewport {
     display: flex;
@@ -458,8 +516,20 @@
     color: var(--text-strong);
 }
 
+.pca-view-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
 .pca-view-btn.is-active {
     background: var(--accent);
+    color: #fff;
+}
+
+/* A snapped "Cell" (a/b/c) view gets a warm active tint so it reads as the crystal
+   frame, distinct from the accent-blue used for the PC snaps. */
+.pca-view-btn--cell.is-active {
+    background: #b5842a;
     color: #fff;
 }
 
@@ -494,6 +564,25 @@
     border-radius: 3px;
     border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
     flex: none;
+}
+
+.pca-legend-note {
+    color: var(--muted);
+    font-weight: 500;
+    font-style: italic;
+    font-variant-numeric: normal;
+}
+
+/* Crystal a/b/c legend: three colored letters grouped as one item with a trailing
+   "crystal axes" note, so they read as one frame rather than three loose swatches. */
+.pca-legend-cellaxes {
+    gap: 0.5rem;
+}
+
+.pca-legend-cellaxis {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
 }
 
 /* ── Side panels: statistics + unit cell ──────────────────────────────────── */
@@ -695,7 +784,8 @@
 }
 
 /* The diagonal carries the per-axis variance — lift it out of the off-diagonal
-   covariances with a faint accent wash. */
+   covariances with a faint accent wash. In the crystal-orientation table the same
+   wash marks the closest crystal axis (smallest angle) for each principal axis. */
 .pca-matrix td.is-diagonal {
     font-weight: 700;
     background: color-mix(in srgb, var(--accent) 8%, transparent);
