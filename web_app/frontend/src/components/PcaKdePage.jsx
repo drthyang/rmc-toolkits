@@ -1607,11 +1607,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         <h3>
                             <span className="panel-title-label">
                                 Displacement statistics
-                                <InfoBadge label="About the displacement statistics" align="end">
+                                <InfoBadge label="About the displacement statistics" align="start">
                                     <p>
                                         Anisotropic displacement parameters from the site's cloud
                                         covariance: U<sub>iso</sub>/B<sub>iso</sub> are the isotropic
-                                        equivalents, and the tables below give the covariance tensor
+                                        equivalents, and the columns beside give the covariance tensor
                                         with its principal axes (PCA components) and per-axis amplitudes.
                                     </p>
                                 </InfoBadge>
@@ -1689,7 +1689,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                     The displacement covariance tensor in Cartesian
                                                     (x, y, z) axes — the anisotropic displacement
                                                     parameters. Its eigen-decomposition gives the
-                                                    principal axes below.
+                                                    principal axes beside.
                                                 </p>
                                             </InfoBadge>
                                         </div>
