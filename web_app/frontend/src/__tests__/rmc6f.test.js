@@ -164,9 +164,11 @@ describe('siteDisplacementsFromRmc6f — oblique (monoclinic) cell metric', () =
 const SF6_PATH = new URL('../../../../data/old_rmc6f/rmcsf6_190k.rmc6f', import.meta.url);
 const describeSf6 = existsSync(SF6_PATH) ? describe : describe.skip;
 describeSf6('siteDisplacementsFromRmc6f — real coords-only SF6 file', () => {
-    const text = readFileSync(SF6_PATH, 'utf8');
-
+    // Read inside the test, not at describe scope: describe.skip still runs its
+    // callback during collection, so a describe-level read would ENOENT in CI /
+    // a fresh clone even though the suite is skipped.
     it('reconstructs 2 S sites (27/27) and 2 F shells (162/27)', () => {
+        const text = readFileSync(SF6_PATH, 'utf8');
         const parsed = siteDisplacementsFromRmc6f(text, { clusterThreshold: 1.5 });
         expect(parsed.reconstructed).toBe(true);
         expect(parsed.supercell).toEqual([3, 3, 3]);
