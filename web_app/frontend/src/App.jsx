@@ -283,7 +283,7 @@ function App() {
               <div className="brand-copy">
                 <h1>
                   RMCProfile
-                  <span>Run Monitor</span>
+                  <span>Workbench</span>
                 </h1>
               </div>
             </div>

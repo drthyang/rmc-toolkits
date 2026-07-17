@@ -1,6 +1,6 @@
 # AI Assistant (experimental LLM module)
 
-An experimental layer that connects the RMCProfile Run Monitor to an
+An experimental layer that connects the RMCProfile Workbench to an
 **OpenAI-compatible** LLM — a **local** server the user runs (Ollama or LM
 Studio) or a **cloud** provider (OpenAI, Gemini) via an API key. It demonstrates
 the standard LLM-in-a-data-pipeline pattern end to end, in the browser, with no

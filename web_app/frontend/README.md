@@ -1,6 +1,6 @@
 # rmc-toolkits frontend
 
-React/Vite frontend for the RMCProfile Run Monitor dashboard.
+React/Vite frontend for the RMCProfile Workbench dashboard.
 
 The production build can run in two modes:
 
