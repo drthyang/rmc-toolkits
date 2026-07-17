@@ -25,7 +25,7 @@ subtraction term is held fixed during each fit) until ``(a, b)`` converge.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import numpy as np
@@ -68,6 +68,20 @@ class ScalingConfig:
     correctness); validate the absolute scale externally whenever Qmin is not
     small. ``c2_bins > 0`` switches C2 from pointwise residuals to binned mean
     levels; pointwise (default) is the stable choice on ripple-heavy data.
+
+    Robustness controls: ``robust`` (default on) runs a Huber IRLS loop over
+    the joint fit so isolated outliers cannot drag the closed-form solution;
+    per-point ``sigma`` (pass to :func:`autoscale`) 1/sigma-weights the high-Q
+    rows. ``despike`` (OFF by default) drops narrow rolling-median outliers
+    from the input before any transform — measured to restore clean recovery
+    under detector-glitch spikes (which otherwise ring through the transform
+    into the C2 window, a channel IRLS cannot reject) — but it also flags real
+    Bragg maxima on crystalline data (12% of points on the 59438 benchmark),
+    so enable it only for glitch-type contamination and check the reported
+    ``n_despiked``. ``c1_slope_nuisance`` (experimental) adds a linear tail
+    term absorbing f(Q)/Placzek-like drift in the C1 level estimate; a drift
+    spanning the whole Q range also enters through the transform, which this
+    does not correct.
     """
 
     qmin: float
@@ -87,6 +101,11 @@ class ScalingConfig:
     low_q_correction: bool = True
     c2_weight: float = 1.0
     c2_bins: int = 0
+    robust: bool = True
+    c1_slope_nuisance: bool = False
+    despike: bool = False
+    despike_window: int = 7
+    despike_nsigma: float = 6.0
     max_iter: int = 50
     tol: float = 1.0e-6
     enforce_cutoff: float | None = None
@@ -183,6 +202,19 @@ def _fit_windows(q: np.ndarray, r: np.ndarray, config: ScalingConfig):
     return tail, window
 
 
+_HUBER_C = 1.345  # 95% Gaussian efficiency
+
+
+def _huber_weights(residuals: np.ndarray) -> np.ndarray:
+    """Huber IRLS weights with a MAD scale (1 inside the core, down-weighted tails)."""
+    med = np.median(residuals)
+    scale = 1.4826 * np.median(np.abs(residuals - med))
+    if scale <= 1e-14:
+        return np.ones_like(residuals)
+    z = np.abs(residuals) / scale
+    return np.minimum(1.0, _HUBER_C / np.maximum(z, 1e-14))
+
+
 def _solve_affine(
     q: np.ndarray,
     sq: np.ndarray,
@@ -191,12 +223,20 @@ def _solve_affine(
     tail: np.ndarray,
     window: np.ndarray,
     config: ScalingConfig,
+    sigma: np.ndarray | None = None,
 ) -> tuple[float, float]:
-    """Closed-form LSQ for ``S_eff = a*sq + b - delta_sq`` against C1 and C2.
+    """Closed-form (IRLS-)LSQ for ``S_eff = a*sq + b - delta_sq`` against C1 and C2.
 
-    C1 rows: ``a*sq + b - delta_sq - 1 = 0`` on the tail window.
+    C1 rows: ``a*sq + b - delta_sq - 1 = 0`` on the tail window, optionally
+    1/sigma-weighted, optionally with a slope-nuisance column ``m*(Q - Qbar)``
+    that absorbs a linear tail drift (x-ray f(Q) residuals, Placzek leftovers)
+    so it cannot bias the level.
     C2 rows: ``g_eff(r) = 0`` on the low-r window, where the transform of the
     affine ``S_eff`` decomposes into precomputed basis transforms.
+
+    With ``config.robust`` (default), a short Huber IRLS loop re-weights rows
+    per block (C1 and C2 scaled by their own MAD) so residual Bragg spikes or
+    ripple bursts cannot drag the closed-form solution.
     """
     rw = r[window]
     # Basis transforms on the fit window only (cheap: len(rw) outputs). The
@@ -215,9 +255,18 @@ def _solve_affine(
     denom = 4.0 * np.pi * config.rho0 * rw
     w2 = np.sqrt(config.c2_weight)
 
-    col_a_c1 = sq[tail]
+    col_a_c1 = sq[tail].copy()
     col_b_c1 = np.ones(int(tail.sum()))
     rhs_c1 = 1.0 + delta_sq[tail]
+    q_tail = q[tail]
+    col_m_c1 = q_tail - q_tail.mean()  # slope-nuisance basis (C1 rows only)
+    if sigma is not None:
+        w_sig = 1.0 / np.clip(sigma[tail], 1e-12, None)
+        w_sig = w_sig / w_sig.mean()
+        col_a_c1 = col_a_c1 * w_sig
+        col_b_c1 = col_b_c1 * w_sig
+        col_m_c1 = col_m_c1 * w_sig
+        rhs_c1 = rhs_c1 * w_sig
 
     col_a_c2 = w2 * (g_data + g_one + coef_s0 * sq[0]) / denom
     col_b_c2 = w2 * (g_one + coef_s0) / denom
@@ -234,16 +283,29 @@ def _solve_affine(
             col_a_c2, col_b_c2, rhs_c2, config.c2_bins
         )
 
-    col_a = np.concatenate([col_a_c1, col_a_c2])
-    col_b = np.concatenate([col_b_c1, col_b_c2])
+    n1 = col_a_c1.size
+    columns = [np.concatenate([col_a_c1, col_a_c2])]
+    if config.fit_offset:
+        columns.append(np.concatenate([col_b_c1, col_b_c2]))
+    if config.c1_slope_nuisance:
+        columns.append(np.concatenate([col_m_c1, np.zeros_like(col_a_c2)]))
+    design = np.column_stack(columns)
     rhs = np.concatenate([rhs_c1, rhs_c2])
 
-    if config.fit_offset:
-        design = np.column_stack([col_a, col_b])
-        solution, *_ = np.linalg.lstsq(design, rhs, rcond=None)
-        return float(solution[0]), float(solution[1])
-    solution = float(np.dot(col_a, rhs) / np.dot(col_a, col_a))
-    return solution, 0.0
+    solution, *_ = np.linalg.lstsq(design, rhs, rcond=None)
+    if config.robust:
+        for _ in range(3):
+            residuals = design @ solution - rhs
+            weights = np.ones_like(rhs)
+            weights[:n1] = _huber_weights(residuals[:n1])
+            if rhs.size - n1 >= 4:
+                weights[n1:] = _huber_weights(residuals[n1:])
+            solution, *_ = np.linalg.lstsq(
+                design * weights[:, np.newaxis], rhs * weights, rcond=None
+            )
+    a = float(solution[0])
+    b = float(solution[1]) if config.fit_offset else 0.0
+    return a, b
 
 
 def _pipeline(
@@ -269,12 +331,30 @@ def _low_r_rms(r: np.ndarray, g_filtered: np.ndarray, config: ScalingConfig) -> 
     return float(np.sqrt(np.mean(g_filtered[window] ** 2)))
 
 
-def crop_sq(q: np.ndarray, sq: np.ndarray, config: ScalingConfig):
+def _despike_mask(sq: np.ndarray, window: int, nsigma: float) -> np.ndarray:
+    """Keep-mask dropping narrow outliers vs a rolling median (glitch removal)."""
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    pad = window // 2
+    padded = np.pad(sq, pad, mode="edge")
+    median = np.median(sliding_window_view(padded, window), axis=1)
+    residual = sq - median
+    mad = 1.4826 * np.median(np.abs(residual))
+    return np.abs(residual) <= nsigma * max(mad, 1e-12)
+
+
+def crop_sq(
+    q: np.ndarray,
+    sq: np.ndarray,
+    config: ScalingConfig,
+    sigma: np.ndarray | None = None,
+):
     """Crop to ``(0, qmax]`` ∩ ``[qmin, qmax]``, dropping non-finite rows.
 
     ``Q <= 0`` rows are dropped unconditionally: the S(Q) conversions divide
     by Q, and the analytic low-Q correction already models the omitted
     ``[0, Qmin]`` range, so a Q = 0 point carries no usable information.
+    Returns ``(q, sq, sigma)`` with ``sigma`` cropped alongside (or ``None``).
     """
     q = np.asarray(q, dtype=float)
     sq = np.asarray(sq, dtype=float)
@@ -287,7 +367,15 @@ def crop_sq(q: np.ndarray, sq: np.ndarray, config: ScalingConfig):
     )
     if keep.sum() < 16:
         raise ValueError("fewer than 16 usable S(Q) points after cropping")
-    return q[keep], sq[keep]
+    q, sq = q[keep], sq[keep]
+    if sigma is not None:
+        sigma = np.asarray(sigma, dtype=float)[keep]
+    if config.despike:
+        keep2 = _despike_mask(sq, config.despike_window, config.despike_nsigma)
+        q, sq = q[keep2], sq[keep2]
+        if sigma is not None:
+            sigma = sigma[keep2]
+    return q, sq, sigma
 
 
 def scale_pipeline(
@@ -306,7 +394,13 @@ def scale_pipeline(
     This is the manual-mode entry point (classic stog parity) and the final
     stage of :func:`autoscale`.
     """
-    q, sq = crop_sq(q, sq, config)
+    n_despiked = 0
+    if config.despike:
+        q_ref, _, _ = crop_sq(q, sq, replace(config, despike=False))
+        n_despiked = int(q_ref.size)
+    q, sq, _ = crop_sq(q, sq, config)
+    if config.despike:
+        n_despiked -= int(q.size)
     r = config.r_grid
     sq_scaled = a * sq + b
     sq_filtered, sq_ft, g_filtered = _pipeline(q, sq_scaled, config)
@@ -333,13 +427,15 @@ def scale_pipeline(
             for key in (
                 "qmin", "qmax", "rho0", "b_avg_sq", "b_sq_avg", "r_cutoff", "r0",
                 "fit_offset", "q_tail_frac", "rmax", "nr", "lorch",
-                "low_q_correction", "c2_weight", "c2_bins", "max_iter", "tol",
-                "enforce_cutoff",
+                "low_q_correction", "c2_weight", "c2_bins", "robust",
+                "c1_slope_nuisance", "despike", "despike_window",
+                "despike_nsigma", "max_iter", "tol", "enforce_cutoff",
             )
         },
         "q_tail_window": [config.q_tail_min, config.qmax],
         "r_fit_window": list(config.r_fit_window),
         "n_q_points": int(q.size),
+        "n_despiked": n_despiked,
     }
     return ScalingResult(
         a=a,
@@ -364,14 +460,21 @@ def scale_pipeline(
     )
 
 
-def autoscale(q: np.ndarray, sq: np.ndarray, config: ScalingConfig) -> ScalingResult:
+def autoscale(
+    q: np.ndarray,
+    sq: np.ndarray,
+    config: ScalingConfig,
+    sigma: np.ndarray | None = None,
+) -> ScalingResult:
     """Automatically determine ``(a, b)`` and run the full pipeline.
 
     Self-consistent loop: fit ``(a, b)`` with the Fourier-filter subtraction
     term held fixed, re-run the filter on the corrected data, repeat until the
-    parameters converge (``tol``) or ``max_iter`` is reached.
+    parameters converge (``tol``) or ``max_iter`` is reached. ``sigma``
+    (per-point uncertainties, e.g. the data file's third column) weights the
+    high-Q C1 rows by 1/sigma.
     """
-    q, sq = crop_sq(q, sq, config)
+    q, sq, sigma = crop_sq(q, sq, config, sigma)
     r = config.r_grid
     tail, window = _fit_windows(q, r, config)
 
@@ -384,7 +487,7 @@ def autoscale(q: np.ndarray, sq: np.ndarray, config: ScalingConfig) -> ScalingRe
     iterations = 0
 
     for iterations in range(1, config.max_iter + 1):
-        a, b = _solve_affine(q, sq, delta_sq, r, tail, window, config)
+        a, b = _solve_affine(q, sq, delta_sq, r, tail, window, config, sigma)
         sq_scaled = a * sq + b
         _, sq_ft, g_filtered = _pipeline(q, sq_scaled, config)
         delta_sq = sq_ft - 1.0
