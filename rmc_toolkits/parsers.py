@@ -181,6 +181,206 @@ def read_stog(path: str | Path) -> np.ndarray:
     return np.asarray(rows, dtype=float).T
 
 
+@dataclass(frozen=True)
+class StogInput:
+    """Parsed classic stog/stog_new input file (the 23-line ``stog.inp``).
+
+    ``yoffset``/``yscale`` follow the Fortran convention
+    ``S_scaled = S_raw / yscale + yoffset``; the equivalent multiply-convention
+    correction used by :mod:`rmc_toolkits.scaling` is exposed as ``a``/``b``.
+    """
+
+    n_files: int
+    data_file: str
+    qmin: float
+    qmax: float
+    yoffset: float
+    yscale: float
+    qoffset: float
+    out_sq: str
+    out_gr: str
+    rmax: float
+    nr: int
+    lorch: bool
+    rho0: float
+    yoffset2: float
+    try_again: bool
+    use_filter: bool
+    r_cutoff: float
+    out_ft_sq: str
+    out_ft_gr: str
+    b_avg_sq: float
+    out_rmc_fq: str
+    out_rmc_gr: str
+    out_rmc_dr: str
+    peak_cutoff: float
+    peak_rmin: float
+    peak_rmax: float
+
+    @property
+    def a(self) -> float:
+        return 1.0 / self.yscale
+
+    @property
+    def b(self) -> float:
+        return self.yoffset
+
+
+def _stog_flag(token: str) -> bool:
+    return token.strip().upper().startswith("Y")
+
+
+def read_stog_inp(path: str | Path) -> StogInput:
+    """Parse a classic stog input file (single-dataset, filter-on layout).
+
+    The interactive Fortran program's recorded input layout depends on the
+    answers given; only the canonical layout exercised by the validation
+    example is supported. Variants (multiple files, nonzero Q offset, the
+    "try again" rescale loop, filter disabled) raise ``NotImplementedError``
+    so silent misparses are impossible.
+    """
+    path = Path(path)
+    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+    lines = [line for line in lines if line]
+    if len(lines) < 22:
+        raise ValueError(f"{path} has {len(lines)} non-empty lines; expected >= 22")
+
+    n_files = int(lines[0].split()[0])
+    if n_files != 1:
+        raise NotImplementedError(f"{path}: only single-dataset inputs supported")
+    qmin, qmax = (float(value) for value in lines[2].split()[:2])
+    yoffset, yscale = (float(value) for value in lines[3].split()[:2])
+    if yscale == 0 or not np.isfinite(yscale) or not np.isfinite(yoffset):
+        raise ValueError(
+            f"{path}: invalid yoffset/yscale line {lines[3]!r}; the Fortran "
+            "convention divides by yscale, so it must be finite and nonzero"
+        )
+    qoffset = float(lines[4].split()[0])
+    if qoffset != 0:
+        raise NotImplementedError(f"{path}: nonzero Q offset not supported")
+    yoffset2 = float(lines[11].split()[0])
+    if yoffset2 != 0:
+        raise NotImplementedError(f"{path}: nonzero second y offset not supported")
+    try_again = _stog_flag(lines[12])
+    if try_again:
+        raise NotImplementedError(f"{path}: interactive 'try again' loops not supported")
+    use_filter = _stog_flag(lines[13])
+    if not use_filter:
+        raise NotImplementedError(f"{path}: only filter-enabled inputs supported")
+    peak_cutoff, peak_rmin, peak_rmax = (float(value) for value in lines[21].split()[:3])
+
+    return StogInput(
+        n_files=n_files,
+        data_file=lines[1],
+        qmin=qmin,
+        qmax=qmax,
+        yoffset=yoffset,
+        yscale=yscale,
+        qoffset=qoffset,
+        out_sq=lines[5],
+        out_gr=lines[6],
+        rmax=float(lines[7].split()[0]),
+        nr=int(lines[8].split()[0]),
+        lorch=_stog_flag(lines[9]),
+        rho0=float(lines[10].split()[0]),
+        yoffset2=yoffset2,
+        try_again=try_again,
+        use_filter=use_filter,
+        r_cutoff=float(lines[14].split()[0]),
+        out_ft_sq=lines[15],
+        out_ft_gr=lines[16],
+        b_avg_sq=float(lines[17].split()[0]),
+        out_rmc_fq=lines[18],
+        out_rmc_gr=lines[19],
+        out_rmc_dr=lines[20],
+        peak_cutoff=peak_cutoff,
+        peak_rmin=peak_rmin,
+        peak_rmax=peak_rmax,
+    )
+
+
+def read_stog_xy(path: str | Path) -> np.ndarray:
+    """Robustly read a whitespace-separated STOG-style x/y(/err) data file.
+
+    Skips count headers, stray scalar lines, and text titles; keeps rows whose
+    tokens all parse as floats with at least two columns (``NaN`` tokens are
+    kept, so rebinned files retain their padding rows for the caller to mask).
+    Returns the columns transposed, matching :func:`read_stog`.
+    """
+    groups: dict[int, list[list[float]]] = {}
+    with Path(path).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            try:
+                values = [float(value) for value in parts]
+            except ValueError:
+                continue
+            groups.setdefault(len(values), []).append(values)
+    if not groups:
+        raise ValueError(f"{path} does not contain STOG numeric rows")
+    # Keep the modal column-count group so a stray numeric header line (e.g.
+    # "count  qmin" on one line) cannot become the column template and
+    # silently discard every real data row.
+    rows = max(groups.values(), key=len)
+    return np.asarray(rows, dtype=float).T
+
+
+def read_dat_header(path: str | Path) -> dict[str, object]:
+    """Parse ``KEY :: value`` metadata from an RMCProfile/STOG ``.dat`` header.
+
+    Returns the raw string fields plus parsed conveniences:
+    ``number_density`` (float, from ``NUMBER_DENSITY``) and ``min_distance``
+    (float, the smallest ``MINIMUM_DISTANCES`` entry) when present.
+    """
+    raw: dict[str, str] = {}
+    with Path(path).open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if "::" not in line:
+                continue
+            key, _, value = line.partition("::")
+            raw[key.strip().upper()] = value.strip()
+
+    result: dict[str, object] = {"raw": raw}
+    if "TITLE" in raw:
+        result["title"] = raw["TITLE"]
+    density = raw.get("NUMBER_DENSITY")
+    if density:
+        for token in density.split():
+            try:
+                result["number_density"] = float(token)
+                break
+            except ValueError:
+                continue
+    distances = raw.get("MINIMUM_DISTANCES")
+    if distances:
+        values = []
+        for token in distances.split():
+            try:
+                values.append(float(token))
+            except ValueError:
+                continue
+        if values:
+            result["min_distance"] = min(values)
+    return result
+
+
+def write_stog_xy(path: str | Path, x: np.ndarray, y: np.ndarray, *, title: str = "") -> Path:
+    """Write x/y columns in the classic STOG layout (count, title, rows)."""
+    path = Path(path)
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if x.shape != y.shape:
+        raise ValueError(f"x and y shapes differ: {x.shape} vs {y.shape}")
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write(f"{x.size:>12d}\n")
+        handle.write(f"{title}\n")
+        for xi, yi in zip(x, y):
+            handle.write(f"  {xi:.16E}  {yi:.16E}\n")
+    return path
+
+
 def pdf_index(path: str | Path) -> int:
     match = re.search(r"PDF(\d+)\.csv$", str(path))
     return int(match.group(1)) if match else 0

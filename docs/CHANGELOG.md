@@ -5,6 +5,60 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Auto StoG Phase 1 — automatic total-scattering data scaling engine (`rmc_toolkits.scaling` +
+`rmc_toolkits.transforms`), plus the app rename to **RMCProfile Workbench**.
+
+- **New `rmc_toolkits/transforms.py`**: Keen-2001-convention conversions (S(Q) ⟷ F(Q) ⟷ F_K(Q);
+  g(r) ⟷ G_PDF(r) ⟷ G_K(r) ⟷ D(r)), the trapezoid sine-FT pair, Lorch window, the analytic
+  omitted-low-Q correction (affine-basis form), the classic stog/pystog Fourier filter, and the
+  stog low-r enforcement stage. Discretization validated against pystog 0.6.7 and a complete
+  classic Fortran stog run (`data/stog_tests/stog_59438`, local-only): filter correction and
+  filtered S(Q) agree to ~6e-4 rms; enforced RMC outputs match the Fortran files to 1e-9.
+- **New `rmc_toolkits/scaling.py`**: the auto-scaler. Affine correction `S_corr = a·S + b`
+  (multiply convention; classic stog's `yoffset/yscale` map via `a = 1/yscale`), fitted by a
+  closed-form linear least-squares against the high-Q asymptote (Keen Eq. 21) and the low-r
+  density limit (Eqs. 15/29 in g-space), inside a self-consistent loop with the Fourier filter.
+  Recovers known (a, b) on synthetic data to ~0.3% (the omitted-low-Q correction, on by
+  default, is what makes that possible — 8% bias without it). `diagnostics_summary` reports the
+  honest pre-enforcement residuals and flags datasets whose missing low-Q information makes the
+  absolute scale unrecoverable from self-consistency (the 59438 example is such a case: its
+  filtered outputs violate the Krogh-Moe sum rule ~26× even at the expert's hand scaling).
+- **Parsers**: `StogInput`/`read_stog_inp` (classic 23-line stog.inp, with explicit
+  `NotImplementedError` on unexercised variants), `read_stog_xy` (count-header/NaN-tolerant),
+  `read_dat_header` (`TITLE ::` / `NUMBER_DENSITY ::` / `MINIMUM_DISTANCES ::`), and
+  `write_stog_xy`.
+- **Tests**: `tests/test_transforms.py` + `tests/test_scaling.py` (30 tests): synthetic
+  round-trips and known-scale recovery always run; Fortran-run parity tests skip cleanly when
+  the local example is absent. Full suite: 95 tests green.
+- **New `rmc_toolkits/scattering.py` — Faber-Ziman coefficient calculator**: bound coherent
+  neutron scattering lengths for 89 natural elements (NIST NCNR / Sears 1992; real part for
+  the complex-b absorbers B, Cd, Dy, Eu, Gd, In, Sm), a chemical-formula parser (decimals,
+  parentheses: `"Sr0.5Ba0.5TiO3"`, `"Al2(SO4)3"`), and `faber_ziman()` returning ⟨b⟩² (the
+  stog "Faber-Ziman coefficient") and ⟨b²⟩ in both barns and fm² — the ecosystem mixes units
+  (pystog's argon example is fm²; classic stog inputs are barns). Cross-validated against
+  pystog's argon config (3.644 fm², exact). Per-element overrides support isotopic samples;
+  null-matrix compositions (⟨b⟩ ≈ 0) are rejected with a clear error.
+- **App rename**: "RMCProfile Run Monitor" → **"RMCProfile Workbench"** (header, tab title,
+  READMEs), reflecting the multi-tool scope ahead of the Auto StoG page.
+- **Adversarial review hardening** (15-agent verified review; 11 confirmed findings fixed):
+  Q ≤ 0 grid rows are cropped and `fourier_filter` rejects non-positive grids (NaN poisoning);
+  the omitted-low-Q correction returns exactly zero when data start at Q = 0 (pystog parity —
+  no double counting); the Lorch-branch removable singularity at r = π/Qmax gets its analytic
+  limit; `np.trapezoid` shim for NumPy < 2.0; `nr`/`rmax`/`yscale` validation;
+  `read_stog_xy` picks the modal column count (numeric headers can't eat the data);
+  `fk_to_sq` exported. Most important: the diagnostics flag is now the one-sided
+  `density_limit_satisfied` — verification *demonstrated numerically* that a smooth missing-
+  low-Q deficiency is silently absorbed into a ~9–21% biased scale with all residuals clean,
+  so **False proves the absolute scale is unrecoverable, but True does not certify it**.
+- **Exact Fortran final-step semantics** (from `stog_new3.f90`, located during verification):
+  `first_peak_zero()` implements the real ripple-removal rule — zero g(r) where r ≤ cutoff
+  *and* outside the first-peak window [rmin, rmax] — which degenerates to the flat −⟨b⟩²
+  replacement for the validation example's parameters. The mysterious second stog.inp
+  "yoffset" is the Fortran's global "Add values" knob (`y·(1+vadd)+vadd`); still rejected as
+  unsupported when nonzero.
+- Plan: [STOG_SCALING_PLAN.md](STOG_SCALING_PLAN.md) (build phases, verified math spec,
+  validation results).
+
 ## v0.4.0 — 2026-07-16
 
 PCA Ellipsoid: PC ⟷ crystal reference-frame switch, and Site-ellipsoids crystal axes + reset/save.
