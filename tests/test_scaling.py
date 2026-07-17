@@ -17,6 +17,7 @@ from rmc_toolkits.scaling import (
     ScalingConfig,
     autoscale,
     diagnostics_summary,
+    level_sweep,
     scale_pipeline,
 )
 from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
@@ -87,8 +88,11 @@ class AutoscaleSyntheticTests(unittest.TestCase):
     def test_recovers_scale_with_offset_disabled(self):
         a_true = 2.5
         sq_meas = self.sq_true / a_true
-        # With b frozen at 0 the model is exact, so recovery is tight.
-        result = autoscale(self.q, sq_meas, synthetic_config(fit_offset=False))
+        # Scale-only fitting requires joint mode: in the default sweep mode
+        # the offset is tied to the measured level (b = 1 - a*L), not frozen.
+        result = autoscale(
+            self.q, sq_meas, synthetic_config(c1_mode="joint", fit_offset=False)
+        )
         self.assertEqual(result.b, 0.0)
         self.assertLess(abs(result.a - a_true) / a_true, 0.02)
 
@@ -184,6 +188,68 @@ class AutoscaleSyntheticTests(unittest.TestCase):
         self.assertGreater(result.q[0], 0.0)
         self.assertTrue(np.all(np.isfinite(result.gk)))
         self.assertTrue(np.all(np.isfinite(result.sq_filtered)))
+
+
+class LevelSweepTests(unittest.TestCase):
+    """The criterion-driven two-sided high-Q window search."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.q = np.arange(60, 3001) * 0.01
+        cls.sq_true = synthetic_sq(cls.q)
+
+    def test_recovers_known_level(self):
+        # Corruption (S - b)/a has asymptote (1 - b)/a.
+        a_t, b_t = 4.0, -2.0
+        sq_meas = (self.sq_true - b_t) / a_t
+        result = level_sweep(self.q, sq_meas)
+        self.assertTrue(result.asymptote_found)
+        expected = (1.0 - b_t) / a_t  # 0.75
+        self.assertLess(abs(result.level - expected), 0.01)
+        self.assertGreater(result.n_admissible, 10)
+
+    def test_excludes_dead_tail(self):
+        # Detector rolloff: the tail dies above Q = 24 — any admissible
+        # window must end below the artifact.
+        sq_meas = self.sq_true.copy()
+        bad = self.q > 24.0
+        sq_meas[bad] *= np.exp(-(self.q[bad] - 24.0) / 3.0)
+        result = level_sweep(self.q, sq_meas)
+        self.assertTrue(result.asymptote_found)
+        self.assertLessEqual(result.q_hi, 24.5)
+        self.assertLess(abs(result.level - 1.0), 0.02)
+
+    def test_reports_no_asymptote_on_sloped_data(self):
+        # A uniform slope everywhere: no statistically flat window exists.
+        rng = np.random.default_rng(3)
+        sq_meas = 1.0 + 0.05 * self.q + rng.normal(0, 1e-4, self.q.size)
+        result = level_sweep(self.q, sq_meas)
+        self.assertFalse(result.asymptote_found)
+        self.assertEqual(result.n_admissible, 0)
+
+    def test_sweep_mode_recovery_and_provenance(self):
+        a_t, b_t = 10.0, -9.0
+        sq_meas = (self.sq_true - b_t) / a_t
+        result = autoscale(self.q, sq_meas, synthetic_config())
+        self.assertEqual(result.provenance["c1_mode_effective"], "sweep")
+        self.assertIsNotNone(result.sweep)
+        self.assertLess(abs(result.a - a_t) / a_t, 0.02)
+        # b is tied to the level: b = 1 - a * L.
+        self.assertAlmostEqual(result.b, 1.0 - result.a * result.sweep.level, places=10)
+
+    def test_fz_amplitude_and_concordance_mechanics(self):
+        # With b_sq_avg supplied, the independent Q->0 amplitude and the
+        # concordance diagnostic are reported. The synthetic model is not
+        # compressibility-consistent, so we assert mechanics, not agreement.
+        a_t, b_t = 2.0, -1.0
+        sq_meas = (self.sq_true - b_t) / a_t
+        config = synthetic_config(b_sq_avg=B2)  # monatomic-like: s0_target = 0
+        result = autoscale(self.q, sq_meas, config)
+        self.assertIsNotNone(result.a_fz)
+        summary = diagnostics_summary(result, config)
+        self.assertIn("amplitude_concordance", summary)
+        self.assertIn("amplitudes_concordant", summary)
+        self.assertGreater(summary["a_fz"], 0.0)
 
 
 class StogFileIoTests(unittest.TestCase):

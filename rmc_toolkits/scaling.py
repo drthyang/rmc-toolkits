@@ -69,6 +69,14 @@ class ScalingConfig:
     small. ``c2_bins > 0`` switches C2 from pointwise residuals to binned mean
     levels; pointwise (default) is the stable choice on ripple-heavy data.
 
+    ``c1_mode`` selects the fit architecture. ``"sweep"`` (default) first
+    determines the high-Q level by the criterion-driven two-sided window
+    search (:func:`level_sweep`) and ties the offset to it (``b = 1 - a *
+    level``), leaving the density limit a single amplitude dof — the
+    "shift by the level, then scale" decomposition; ``fit_offset`` is
+    superseded in this mode. ``"joint"`` is the original 2-dof fit (and the
+    fallback when no statistically flat window exists).
+
     Robustness controls: ``robust`` (default on) runs a Huber IRLS loop over
     the joint fit so isolated outliers cannot drag the closed-form solution;
     per-point ``sigma`` (pass to :func:`autoscale`) 1/sigma-weights the high-Q
@@ -102,6 +110,7 @@ class ScalingConfig:
     c2_weight: float = 1.0
     c2_bins: int = 0
     robust: bool = True
+    c1_mode: str = "sweep"
     c1_slope_nuisance: bool = False
     despike: bool = False
     despike_window: int = 7
@@ -111,6 +120,8 @@ class ScalingConfig:
     enforce_cutoff: float | None = None
 
     def __post_init__(self) -> None:
+        if self.c1_mode not in ("sweep", "joint"):
+            raise ValueError(f"c1_mode must be 'sweep' or 'joint', got {self.c1_mode!r}")
         if not np.isfinite(self.rho0) or self.rho0 <= 0:
             raise ValueError(f"rho0 must be finite and positive, got {self.rho0}")
         if not np.isfinite(self.b_avg_sq) or self.b_avg_sq <= 0:
@@ -174,6 +185,8 @@ class ScalingResult:
     d_r_enforced: np.ndarray | None
     low_r_rms: float
     c1_tail_mean: float
+    sweep: LevelSweepResult | None
+    a_fz: float | None
     provenance: dict[str, Any] = field(repr=False)
 
 
@@ -202,6 +215,123 @@ def _fit_windows(q: np.ndarray, r: np.ndarray, config: ScalingConfig):
     return tail, window
 
 
+@dataclass(frozen=True)
+class LevelSweepResult:
+    """Outcome of the two-sided high-Q level sweep.
+
+    ``level`` is the asymptote of the *measured* S(Q) over the optimal window
+    ``(q_lo, q_hi)``; ``level_uncertainty`` is the spread of the level across
+    every admissible window (the honest error bar the community question asks
+    for). ``asymptote_found`` is False when no window has a statistically-zero
+    slope — the data never reach a trustworthy asymptotic regime.
+    """
+
+    level: float
+    level_uncertainty: float
+    q_lo: float
+    q_hi: float
+    slope: float
+    slope_sigma: float
+    asymptote_found: bool
+    n_admissible: int
+
+
+def level_sweep(
+    q: np.ndarray,
+    sq: np.ndarray,
+    *,
+    min_width: float = 3.0,
+    n_grid: int = 80,
+    slope_nsigma: float = 2.0,
+) -> LevelSweepResult:
+    """Determine the high-Q level of S(Q) by a criterion-driven window search.
+
+    Answers "what is high enough Q?" without hand-set tolerances: every
+    candidate window ``[Q1, Q2]`` (both edges swept on an ``n_grid`` grid,
+    width >= ``min_width``) gets an OLS line fit in O(1) via prefix sums. A
+    window is **admissible** iff its slope is statistically zero given the
+    fit's own residual noise (``|slope| < slope_nsigma * sigma_slope``) — the
+    data define "flat", not a tolerance. Among admissible windows the one
+    with the smallest predicted level variance wins (longest, quietest
+    stretch); the level spread across all admissible windows is returned as
+    the uncertainty. End-of-range artifacts (detector rolloff, dead tails)
+    exclude themselves because any window touching them fails admissibility.
+    """
+    q = np.asarray(q, dtype=float)
+    sq = np.asarray(sq, dtype=float)
+    finite = np.isfinite(q) & np.isfinite(sq)
+    q, sq = q[finite], sq[finite]
+    if q.size < 32:
+        raise ValueError("level_sweep needs at least 32 finite points")
+
+    # Prefix sums for O(1) per-window OLS of y = c0 + c1*q.
+    ones = np.concatenate([[0.0], np.cumsum(np.ones_like(q))])
+    sum_q = np.concatenate([[0.0], np.cumsum(q)])
+    sum_q2 = np.concatenate([[0.0], np.cumsum(q * q)])
+    sum_y = np.concatenate([[0.0], np.cumsum(sq)])
+    sum_qy = np.concatenate([[0.0], np.cumsum(q * sq)])
+    sum_y2 = np.concatenate([[0.0], np.cumsum(sq * sq)])
+
+    edges = np.unique(np.linspace(0, q.size - 1, n_grid).astype(int))
+    best = None
+    admissible_levels: list[float] = []
+
+    for ii, i in enumerate(edges[:-1]):
+        for j in edges[ii + 1 :]:
+            if q[j] - q[i] < min_width:
+                continue
+            n = ones[j + 1] - ones[i]
+            sq_sum = sum_q[j + 1] - sum_q[i]
+            sq2 = sum_q2[j + 1] - sum_q2[i]
+            sy = sum_y[j + 1] - sum_y[i]
+            sqy = sum_qy[j + 1] - sum_qy[i]
+            sy2 = sum_y2[j + 1] - sum_y2[i]
+            det = n * sq2 - sq_sum * sq_sum
+            if det <= 0 or n < 24:
+                continue
+            slope = (n * sqy - sq_sum * sy) / det
+            intercept = (sq2 * sy - sq_sum * sqy) / det
+            # Residual variance and standard errors.
+            rss = sy2 - intercept * sy - slope * sqy
+            dof = n - 2
+            sigma2 = max(rss / dof, 0.0)
+            var_slope = sigma2 * n / det
+            qbar = sq_sum / n
+            # Level = fitted value at the window centre; its variance.
+            level = intercept + slope * qbar
+            var_level = sigma2 / n
+            slope_sigma = np.sqrt(max(var_slope, 1e-30))
+            if abs(slope) < slope_nsigma * slope_sigma:
+                admissible_levels.append(level)
+                score = var_level
+                if best is None or score < best[0]:
+                    best = (score, level, q[i], q[j], slope, slope_sigma)
+
+    if best is None:
+        # No statistically flat window: report the least-sloped one honestly.
+        return LevelSweepResult(
+            level=float(np.median(sq[q >= q.max() - min_width])),
+            level_uncertainty=float("nan"),
+            q_lo=float(q.max() - min_width),
+            q_hi=float(q.max()),
+            slope=float("nan"),
+            slope_sigma=float("nan"),
+            asymptote_found=False,
+            n_admissible=0,
+        )
+    _, level, q_lo, q_hi, slope, slope_sigma = best
+    return LevelSweepResult(
+        level=float(level),
+        level_uncertainty=float(np.std(admissible_levels)),
+        q_lo=float(q_lo),
+        q_hi=float(q_hi),
+        slope=float(slope),
+        slope_sigma=float(slope_sigma),
+        asymptote_found=True,
+        n_admissible=len(admissible_levels),
+    )
+
+
 _HUBER_C = 1.345  # 95% Gaussian efficiency
 
 
@@ -224,6 +354,7 @@ def _solve_affine(
     window: np.ndarray,
     config: ScalingConfig,
     sigma: np.ndarray | None = None,
+    level: float | None = None,
 ) -> tuple[float, float]:
     """Closed-form (IRLS-)LSQ for ``S_eff = a*sq + b - delta_sq`` against C1 and C2.
 
@@ -284,13 +415,23 @@ def _solve_affine(
         )
 
     n1 = col_a_c1.size
-    columns = [np.concatenate([col_a_c1, col_a_c2])]
-    if config.fit_offset:
-        columns.append(np.concatenate([col_b_c1, col_b_c2]))
+    stacked_a = np.concatenate([col_a_c1, col_a_c2])
+    stacked_b = np.concatenate([col_b_c1, col_b_c2])
+    rhs = np.concatenate([rhs_c1, rhs_c2])
+
+    if level is not None:
+        # Sweep-anchored mode: the offset is tied to the measured asymptote,
+        # b = 1 - a*level, leaving a single amplitude dof (the user's
+        # "shift by the level, then scale" decomposition).
+        columns = [stacked_a - level * stacked_b]
+        rhs = rhs - stacked_b
+    else:
+        columns = [stacked_a]
+        if config.fit_offset:
+            columns.append(stacked_b)
     if config.c1_slope_nuisance:
         columns.append(np.concatenate([col_m_c1, np.zeros_like(col_a_c2)]))
     design = np.column_stack(columns)
-    rhs = np.concatenate([rhs_c1, rhs_c2])
 
     solution, *_ = np.linalg.lstsq(design, rhs, rcond=None)
     if config.robust:
@@ -304,7 +445,12 @@ def _solve_affine(
                 design * weights[:, np.newaxis], rhs * weights, rcond=None
             )
     a = float(solution[0])
-    b = float(solution[1]) if config.fit_offset else 0.0
+    if level is not None:
+        b = 1.0 - a * float(level)
+    elif config.fit_offset:
+        b = float(solution[1])
+    else:
+        b = 0.0
     return a, b
 
 
@@ -329,6 +475,49 @@ def _low_r_rms(r: np.ndarray, g_filtered: np.ndarray, config: ScalingConfig) -> 
     lo, hi = config.r_fit_window
     window = (r >= lo) & (r <= hi)
     return float(np.sqrt(np.mean(g_filtered[window] ** 2)))
+
+
+def amplitude_from_fz_limit(
+    q: np.ndarray,
+    sq: np.ndarray,
+    level: float,
+    config: ScalingConfig,
+    *,
+    fit_width: float = 1.0,
+) -> float | None:
+    """Independent amplitude estimate from the Q->0 Faber-Ziman limit.
+
+    With the level-anchored model ``S_corr = a (S_meas - level) + 1``, Keen
+    Eq. 21 fixes ``S_corr(0) = 1 - <b^2>/<b>^2``, so
+    ``a_fz = (s0_target - 1) / (S_meas(0) - level)`` where ``S_meas(0)`` is a
+    robust linear extrapolation of the first ``fit_width`` of measured data.
+    Requires ``config.b_sq_avg``; returns None when unavailable or the
+    extrapolation is degenerate. The caller should treat long extrapolations
+    (Qmin >> fit_width) and Bragg-contaminated low-Q regions with suspicion —
+    compare against the density-limit amplitude (``diagnostics_summary``'s
+    concordance) rather than trusting either alone.
+    """
+    if config.b_sq_avg is None:
+        return None
+    s0_target = 1.0 - config.b_sq_avg / config.b_avg_sq
+    head = q <= q[0] + fit_width
+    if head.sum() < 8:
+        return None
+    qc = q[head] - q[head].mean()
+    design = np.column_stack([np.ones_like(qc), qc])
+    weights = np.ones_like(qc)
+    solution = np.array([np.median(sq[head]), 0.0])
+    for _ in range(4):
+        solution, *_ = np.linalg.lstsq(
+            design * weights[:, np.newaxis], sq[head] * weights, rcond=None
+        )
+        residuals = design @ solution - sq[head]
+        weights = _huber_weights(residuals)
+    s_meas_0 = float(solution[0] - solution[1] * q[head].mean())  # value at Q = 0
+    denom = s_meas_0 - level
+    if abs(denom) < 1e-9:
+        return None
+    return float((s0_target - 1.0) / denom)
 
 
 def _despike_mask(sq: np.ndarray, window: int, nsigma: float) -> np.ndarray:
@@ -388,6 +577,8 @@ def scale_pipeline(
     converged: bool = True,
     iterations: int = 0,
     history: tuple[tuple[float, float, float], ...] = (),
+    sweep: LevelSweepResult | None = None,
+    a_fz: float | None = None,
 ) -> ScalingResult:
     """Run the fixed-(a, b) pipeline: scale, filter, convert, (optionally) enforce.
 
@@ -456,6 +647,8 @@ def scale_pipeline(
         d_r_enforced=d_r_enforced,
         low_r_rms=_low_r_rms(r, g_filtered, config),
         c1_tail_mean=float(sq_filtered[tail].mean()),
+        sweep=sweep,
+        a_fz=a_fz,
         provenance=provenance,
     )
 
@@ -478,6 +671,13 @@ def autoscale(
     r = config.r_grid
     tail, window = _fit_windows(q, r, config)
 
+    sweep: LevelSweepResult | None = None
+    level: float | None = None
+    if config.c1_mode == "sweep":
+        sweep = level_sweep(q, sq)
+        if sweep.asymptote_found:
+            level = sweep.level
+
     delta_sq = np.zeros_like(q)
     a_prev = b_prev = np.inf
     a = 1.0
@@ -487,7 +687,7 @@ def autoscale(
     iterations = 0
 
     for iterations in range(1, config.max_iter + 1):
-        a, b = _solve_affine(q, sq, delta_sq, r, tail, window, config, sigma)
+        a, b = _solve_affine(q, sq, delta_sq, r, tail, window, config, sigma, level)
         sq_scaled = a * sq + b
         _, sq_ft, g_filtered = _pipeline(q, sq_scaled, config)
         delta_sq = sq_ft - 1.0
@@ -499,6 +699,10 @@ def autoscale(
             break
         a_prev, b_prev = a, b
 
+    a_fz = None
+    if level is not None:
+        a_fz = amplitude_from_fz_limit(q, sq, level, config)
+
     result = scale_pipeline(
         q,
         sq,
@@ -508,8 +712,19 @@ def autoscale(
         converged=converged,
         iterations=iterations,
         history=tuple(history),
+        sweep=sweep,
+        a_fz=a_fz,
     )
     result.provenance["mode"] = "auto"
+    result.provenance["c1_mode_effective"] = "sweep" if level is not None else "joint"
+    if sweep is not None:
+        result.provenance["level_sweep"] = {
+            "level": sweep.level,
+            "level_uncertainty": sweep.level_uncertainty,
+            "q_window": [sweep.q_lo, sweep.q_hi],
+            "asymptote_found": sweep.asymptote_found,
+            "n_admissible": sweep.n_admissible,
+        }
     return result
 
 
@@ -538,6 +753,21 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
         # scale_pipeline) whenever Qmin is not small.
         "density_limit_satisfied": bool(abs(g_window_mean) < 0.1),
     }
+    if result.sweep is not None:
+        summary["level"] = result.sweep.level
+        summary["level_uncertainty"] = result.sweep.level_uncertainty
+        summary["level_window"] = [result.sweep.q_lo, result.sweep.q_hi]
+        summary["asymptote_found"] = result.sweep.asymptote_found
+    if result.a_fz is not None:
+        # Concordance of the two independent amplitude criteria: the
+        # density-limit amplitude (result.a) vs the Q->0 Faber-Ziman-limit
+        # amplitude. Agreement is evidence the absolute scale is trustworthy;
+        # disagreement quantifies how much the data cannot decide it.
+        summary["a_fz"] = result.a_fz
+        summary["amplitude_concordance"] = float(result.a_fz / result.a)
+        summary["amplitudes_concordant"] = bool(
+            abs(result.a_fz / result.a - 1.0) < 0.1
+        )
     if config.b_sq_avg is not None:
         # Keen Eq. 14 diagnostic: FK(Q->0) -> -<b^2>. Report the lowest-Q value
         # actually measured for comparison (data rarely reach Q ~ 0).

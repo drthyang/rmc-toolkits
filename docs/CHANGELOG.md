@@ -50,6 +50,25 @@ Auto StoG Phase 1 — automatic total-scattering data scaling engine (`rmc_toolk
   `density_limit_satisfied` — verification *demonstrated numerically* that a smooth missing-
   low-Q deficiency is silently absorbed into a ~9–21% biased scale with all residuals clean,
   so **False proves the absolute scale is unrecoverable, but True does not certify it**.
+- **Level sweep — a criterion-driven answer to "what Q is high enough?"** (idea:
+  Tsung-Han Yang). `level_sweep()` searches every candidate high-Q window (both edges swept,
+  O(1) per-window fits via prefix sums); a window is *admissible* iff its slope is
+  statistically zero given its own fit noise (no hand-set tolerance), the minimum-variance
+  admissible window wins, and the level spread across all admissible windows is the honest
+  level uncertainty. End artifacts exclude themselves — the criterion independently
+  rediscovered both experts' hand cuts (FeCoSn: 24.5 vs hand 26 with the rolloff onset
+  caught earlier; PG3: 28.8 vs hand 28). `autoscale` now defaults to the **sweep-anchored
+  architecture** (`c1_mode="sweep"`): offset tied to the measured level (`b = 1 − a·level`),
+  leaving the density limit a single amplitude dof — the "shift by the level, then scale"
+  decomposition, which removes the 2-dof level/amplitude trade-off pathologies and converges
+  ~4× faster. No flat window → `asymptote_found=False` and automatic fallback to the joint
+  fit. Reported in provenance and `diagnostics_summary`.
+- **Dual amplitude criteria with a concordance diagnostic**: alongside the density-limit
+  amplitude, `amplitude_from_fz_limit()` independently estimates the scale from the Q→0
+  Faber-Ziman limit (Keen Eq. 21: `S(0) = 1 − ⟨b²⟩/⟨b⟩²`, robust low-Q extrapolation;
+  requires `b_sq_avg`). `diagnostics_summary` reports both, their ratio, and an
+  `amplitudes_concordant` flag — agreement is evidence the absolute scale is trustworthy;
+  disagreement *quantifies* how much the data cannot decide it (FeCoSn: 12% discord).
 - **Robust high-Q level fitting**: Huber IRLS re-weighting of the joint fit (default on;
   per-block MAD scaling so C1 and C2 are each protected against isolated outliers), optional
   per-point `sigma` 1/σ-weighting of the high-Q rows, an experimental `c1_slope_nuisance`
