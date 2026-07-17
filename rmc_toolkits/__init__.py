@@ -47,10 +47,13 @@ from .parsers import (
 from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_png
 from .scattering import COHERENT_B_FM, FaberZiman, faber_ziman, parse_formula
 from .scaling import (
+    LevelSweepResult,
     ScalingConfig,
     ScalingResult,
+    amplitude_from_fz_limit,
     autoscale,
     diagnostics_summary,
+    level_sweep,
     scale_pipeline,
 )
 from .transforms import (
@@ -78,6 +81,7 @@ __all__ = [
     "CsvSeries",
     "MAX_KDE_FIT_POINTS",
     "MAX_PCA_FIT_POINTS",
+    "LevelSweepResult",
     "PlotResult",
     "Rmc6fAtom",
     "RmcStructure",
@@ -88,6 +92,7 @@ __all__ = [
     "UnitCellPositions",
     "COHERENT_B_FM",
     "FaberZiman",
+    "amplitude_from_fz_limit",
     "autoscale",
     "density_line",
     "diagnostics_summary",
@@ -95,6 +100,7 @@ __all__ = [
     "faber_ziman",
     "first_peak_zero",
     "fk_to_sq",
+    "level_sweep",
     "parse_formula",
     "fourier_filter",
     "fq_to_gpdf",

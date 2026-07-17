@@ -50,6 +50,18 @@ class ParseFormulaTests(unittest.TestCase):
 
 
 class FaberZimanTests(unittest.TestCase):
+    def test_mn3sn_matches_expert_stog_input(self):
+        # The PG3 59438 validation run is Mn3Sn; its stog.inp carries the
+        # expert's hand-computed "Faber-Ziman coefficient" 0.015407 barn.
+        fz = faber_ziman("Mn3Sn")
+        self.assertAlmostEqual(fz.b_avg_sq_barn, 0.015407, places=6)
+        # Near-null contrast: <b^2>/<b>^2 = 13.06, so S(0) -> -12.06 (Keen
+        # Eq. 21) — the physics behind that dataset's unrecoverable scale.
+        self.assertAlmostEqual(fz.b_sq_avg_barn / fz.b_avg_sq_barn, 13.06, places=2)
+        # Mn's negative b makes the Mn-Sn partial weight negative (the
+        # negative first-neighbour peak in the run's G_K(r)).
+        self.assertLess(fz.weights[("Mn", "Sn")], 0.0)
+
     def test_argon_matches_pystog_example(self):
         # pystog's bundled argon config: "<b_coh>^2": 3.644, "<b_tot^2>": 5.435
         # — quoted in fm^2 (b_Ar = 1.909 fm).

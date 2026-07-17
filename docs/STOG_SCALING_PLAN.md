@@ -360,6 +360,18 @@ example"); everything after is surfacing.
   contributions that a constant (a, b) cannot model; label any x-ray use as out of scope until
   a dedicated mode exists.
 
+## 5b. Level-sweep architecture (added 2026-07-17, maintainer's design)
+
+The community question "what Q is high enough for the level?" is answered by a
+criterion-driven two-sided window search (`level_sweep`): admissibility = slope
+statistically zero given the window's own fit noise; optimality = minimum level variance;
+uncertainty = level spread across admissible windows; end artifacts self-exclude
+(independently reproduced both experts' hand cuts on the two validation datasets).
+`autoscale` defaults to the sweep-anchored 1-dof architecture (`b = 1 − a·level`), with the
+Q→0 Faber-Ziman limit as a second, independent amplitude criterion and a concordance
+diagnostic. Next refinement: run the sweep on the *uncropped* data so it can inform the
+Qmax choice itself (currently it operates within the configured [Qmin, Qmax]).
+
 ## 6. Open decisions (for Tsung-Han)
 
 1. **Commit the 59438 example (or a trimmed subset) as a CI fixture?** ~1.7 MB total; it would
