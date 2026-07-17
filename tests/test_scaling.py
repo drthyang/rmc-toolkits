@@ -23,9 +23,13 @@ from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
 
 ROOT = Path(__file__).resolve().parents[1]
 STOG_RUN = ROOT / "data" / "stog_tests" / "stog_59438"
+XRAY_RUN = ROOT / "data" / "stog_tests" / "100K"
 
 requires_stog_run = unittest.skipUnless(
     (STOG_RUN / "stog.inp").exists(), "stog_59438 example run not present"
+)
+requires_xray_run = unittest.skipUnless(
+    (XRAY_RUN / "stog_input.dat").exists(), "FeCoSn 100K x-ray run not present"
 )
 
 RHO0 = 0.05
@@ -105,6 +109,42 @@ class AutoscaleSyntheticTests(unittest.TestCase):
         result = autoscale(self.q, sq_meas, synthetic_config())
         self.assertTrue(result.converged)
         self.assertLess(abs(result.a - 4.0) / 4.0, 0.1)
+
+    def test_sigma_weighting_accepted(self):
+        rng = np.random.default_rng(5)
+        sq_meas = (self.sq_true + 1.0) / 2.0 + rng.normal(0.0, 0.005, self.q.size)
+        sigma = np.full(self.q.size, 0.005)
+        result = autoscale(self.q, sq_meas, synthetic_config(), sigma=sigma)
+        self.assertTrue(result.converged)
+        self.assertLess(abs(result.a - 2.0) / 2.0, 0.05)
+
+    def test_despike_restores_recovery_under_tail_glitches(self):
+        # Detector-glitch spikes ring through the transform into the C2 window
+        # — a channel Huber IRLS cannot reject (measured: ~80% scale error).
+        # Opt-in despiking removes them before any transform and restores
+        # clean recovery. Despike stays OFF by default because it also flags
+        # real Bragg maxima on crystalline data (12% of the 59438 points).
+        rng = np.random.default_rng(7)
+        sq_meas = (self.sq_true + 9.0) / 10.0
+        idx = rng.choice(np.where(self.q > 25.5)[0], 8, replace=False)
+        sq_meas = sq_meas.copy()
+        sq_meas[idx] += 2.0
+
+        spiked = autoscale(self.q, sq_meas, synthetic_config())
+        despiked = autoscale(self.q, sq_meas, synthetic_config(despike=True))
+        self.assertLess(abs(despiked.a - 10.0) / 10.0, 0.02)
+        self.assertLess(
+            abs(despiked.a - 10.0), 0.2 * abs(spiked.a - 10.0)
+        )
+        self.assertGreaterEqual(despiked.provenance["n_despiked"], 8)
+
+    def test_slope_nuisance_config_accepted(self):
+        result = autoscale(
+            self.q, (self.sq_true + 1.0) / 2.0,
+            synthetic_config(c1_slope_nuisance=True),
+        )
+        self.assertTrue(result.converged)
+        self.assertLess(abs(result.a - 2.0) / 2.0, 0.02)
 
     def test_history_and_provenance(self):
         result = autoscale(self.q, (self.sq_true + 1.0) / 2.0, synthetic_config())
@@ -262,6 +302,74 @@ class AutoscaleExampleRunTests(unittest.TestCase):
         np.testing.assert_allclose(
             auto.gk_enforced[below], -self.inp.b_avg_sq, atol=1e-12
         )
+
+
+@requires_xray_run
+class Xray100KTests(unittest.TestCase):
+    """FeCoSn 100 K x-ray run: normalized S(Q) (<b>^2 = 1), Qmin = 0.5.
+
+    Unlike the neutron 59438 case, this dataset CAN satisfy the density limit
+    (low enough Qmin), so the auto-scaler should land near the expert's hand
+    values and the one-sided diagnostic should report True.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.inp = read_stog_inp(XRAY_RUN / "stog_input.dat")
+        data = read_stog_xy(XRAY_RUN / cls.inp.data_file)
+        cls.q, cls.sq = data[0], data[1]
+        cls.config = ScalingConfig(
+            qmin=cls.inp.qmin,
+            qmax=cls.inp.qmax,
+            rho0=cls.inp.rho0,
+            b_avg_sq=cls.inp.b_avg_sq,
+            r_cutoff=cls.inp.r_cutoff,
+            r0=2.4,
+            r_fit_min=1.2,
+            r_fit_max=2.15,
+            rmax=cls.inp.rmax,
+            nr=cls.inp.nr,
+            enforce_cutoff=cls.inp.peak_cutoff,
+        )
+
+    def test_inp_decodes_xray_conventions(self):
+        self.assertAlmostEqual(self.inp.a, 1.0 / 0.9)
+        self.assertAlmostEqual(self.inp.b, -0.111)
+        self.assertAlmostEqual(self.inp.b_avg_sq, 1.0)  # normalized x-ray S(Q)
+        self.assertAlmostEqual(self.inp.rho0, 0.057329)
+        self.assertAlmostEqual(self.inp.peak_cutoff, 1.0)
+
+    def test_manual_parity_with_fortran(self):
+        manual = scale_pipeline(self.q, self.sq, self.config, self.inp.a, self.inp.b)
+        ref = read_stog_xy(XRAY_RUN / "scale.fq")
+        ours = np.interp(ref[0], manual.q, manual.sq_scaled)
+        np.testing.assert_allclose(ours, ref[1], atol=1e-9)
+
+        ft = read_stog_xy(XRAY_RUN / "ft.dat")
+        keep = (ft[0] >= self.inp.qmin) & (ft[0] <= self.inp.qmax)
+        ours_ft = np.interp(ft[0][keep], manual.q, manual.sq_ft)
+        self.assertLess(
+            float(np.sqrt(np.mean((ours_ft - ft[1][keep]) ** 2))), 5e-5
+        )
+
+        gr = read_stog_xy(XRAY_RUN / "scale_ft_rmc.gr")
+        ours_gr = np.interp(gr[0], manual.r, manual.gk_enforced)
+        self.assertLess(float(np.sqrt(np.mean((ours_gr - gr[1]) ** 2))), 2e-3)
+        # x-ray normalized flat level: -<b>^2 = -1 below the 1.0 A cutoff.
+        below = manual.r <= self.inp.peak_cutoff
+        np.testing.assert_allclose(manual.gk_enforced[below], -1.0, atol=1e-12)
+
+    def test_autoscale_succeeds_on_satisfiable_data(self):
+        manual = scale_pipeline(self.q, self.sq, self.config, self.inp.a, self.inp.b)
+        auto = autoscale(self.q, self.sq, self.config)
+        self.assertTrue(auto.converged)
+        self.assertLessEqual(auto.low_r_rms, manual.low_r_rms * 1.001)
+        # Lands in the expert's neighborhood (hand a = 1.111): the density
+        # limit is satisfiable here, unlike the neutron 59438 case.
+        self.assertLess(abs(auto.a - self.inp.a) / self.inp.a, 0.15)
+        self.assertLess(abs(auto.c1_tail_mean - 1.0), 0.02)
+        summary = diagnostics_summary(auto, self.config)
+        self.assertTrue(summary["density_limit_satisfied"])
 
 
 if __name__ == "__main__":

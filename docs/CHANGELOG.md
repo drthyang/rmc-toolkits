@@ -50,6 +50,21 @@ Auto StoG Phase 1 — automatic total-scattering data scaling engine (`rmc_toolk
   `density_limit_satisfied` — verification *demonstrated numerically* that a smooth missing-
   low-Q deficiency is silently absorbed into a ~9–21% biased scale with all residuals clean,
   so **False proves the absolute scale is unrecoverable, but True does not certify it**.
+- **Robust high-Q level fitting**: Huber IRLS re-weighting of the joint fit (default on;
+  per-block MAD scaling so C1 and C2 are each protected against isolated outliers), optional
+  per-point `sigma` 1/σ-weighting of the high-Q rows, an experimental `c1_slope_nuisance`
+  term absorbing linear tail drift in the level estimate, and opt-in rolling-median
+  `despike` for detector-glitch contamination — measured to restore clean 0.3% recovery
+  under tail spikes that otherwise ring through the transform into the low-r window (a
+  channel row re-weighting cannot reject: ~80% scale error without despiking). Despike stays
+  OFF by default because it also flags real Bragg maxima on crystalline data (12% of points
+  on the 59438 benchmark); the dropped count is reported in provenance (`n_despiked`).
+- **Second validation dataset — FeCoSn 100 K x-ray run** (`data/stog_tests/100K`, local):
+  exercises the normalized-S(Q) conventions (⟨b⟩² = 1, flat −1 level, `1.0 0 0`
+  enforcement). Fortran parity to 7.9e−6 rms through the filter stage; the auto-scaler lands
+  within 8% of the expert's hand values and improves the low-r residual by 26% — the
+  density limit is satisfiable here (Qmin = 0.5 Å⁻¹), unlike the neutron 59438 case, and the
+  one-sided diagnostic correctly reports True.
 - **Exact Fortran final-step semantics** (from `stog_new3.f90`, located during verification):
   `first_peak_zero()` implements the real ripple-removal rule — zero g(r) where r ≤ cutoff
   *and* outside the first-peak window [rmin, rmax] — which degenerates to the flat −⟨b⟩²
