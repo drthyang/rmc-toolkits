@@ -5,6 +5,39 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Auto StoG Phases 3–4 — the Flask scaling API and the **Auto StoG** page.
+
+- **`/api/scaling/preview` + `/api/scaling/run`** (`web_app/backend/app.py`): POST endpoints
+  driving the Phase-1 engine server-side. `preview` resolves a classic `stog.inp` or a bare
+  data file (+ overrides; `.dat`-header ρ0/r0 and `formula` defaults mirror the CLI), runs the
+  auto-fit (or a fixed manual scaling) behind a per-(path, mtime, config) LRU cache, and
+  returns the full series (raw/scaled/filtered S(Q), G_K, D(r), enforced variants), theory
+  guide values, diagnostics, and provenance; `{"inspect": true}` is the cheap no-compute form
+  used to pre-fill the page. `run` writes the classic output family through the *same* writer
+  as the CLI (`ft.dat` included) with the no-clobber guard mapped to HTTP 409, outputs
+  restricted to the configured data roots. 5 new backend tests (synthetic run under
+  `results/`; 20-test backend module green).
+- **The Auto StoG tab** (`AutoStogPage.jsx` + CSS): first in the tab row (Dashboard remains
+  the default page), Flask mode only — static mode hides the tab and the page shows a
+  pointer to the local app. Automation-first per the plan: pick a source file (stog.inp
+  pre-fills everything; data files pre-fill from the `.dat` header), one **Auto-scale**
+  button, then a diagnostics readout (a/b beside the stog.inp hand values, convergence +
+  level ± uncertainty, low-r rms, one-sided density-limit verdict, amplitude concordance
+  with a "check ρ₀" hint on discord) over three InteractivePlot charts with theory
+  guide-lines — S(Q) (asymptote + measured level), G_K(r) (−⟨b⟩²), D(r) (−4πρ₀⟨b⟩²r) —
+  the latter two zoomed to the low-r region, enforced curves overlaid when enforcement is
+  on. Advanced panel: r-windows, Lorch/despike/robust/low-Q-correction/σ toggles, sweep vs
+  joint architecture, density vs FZ amplitude criterion, and fixed-(a, b) expert runs.
+  Export card writes the RMCProfile-ready family (default `autoscale/` beside the input,
+  Force required to overwrite, 409 surfaced as a hint). Verified end-to-end against the
+  FeCoSn 199 K run in the live app: page auto-fit reproduces the CLI exactly
+  (a = 1.1839, b = −0.1980, level 1.0120 ± 0.017, concordance 1.06).
+- File browser (`/api/files`) now also lists `*.inp`, `*.sq`, and `*.dat` so scaling
+  sources are pickable.
+- Docs-on-completion pass: ROADMAP Phase 7 "Deferred preprocessing" → **active Auto StoG**
+  feature; AGENTS.md architecture map gains the four scaling modules, the endpoints, and
+  the page. Remaining stretch: plan Phase 5 (static-mode Web-Worker port).
+
 Auto StoG Phases 1–2 — automatic total-scattering data scaling engine (`rmc_toolkits.scaling` +
 `rmc_toolkits.transforms`) and the `rmc-autoscale` CLI, plus the app rename to
 **RMCProfile Workbench**.

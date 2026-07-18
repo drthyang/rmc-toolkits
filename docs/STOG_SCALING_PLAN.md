@@ -320,7 +320,10 @@ publication, it goes under `tests/fixtures/stog_59438/` — open decision (§6).
   skip-if-absent Fortran-run parity.
 - **Phase 3 — Flask API**: `/api/scaling/preview` (arrays for the live view) and
   `/api/scaling/run` (write outputs), following the existing `_resolve_inside_root` guard and
-  per-(path, mtime, params) LRU-cache patterns.
+  per-(path, mtime, params) LRU-cache patterns. **DONE 2026-07-17** — plus an
+  `{"inspect": true}` no-compute form for form pre-fill; `run` shares the CLI writer
+  (identical files, incl. `ft.dat`), maps the no-clobber guard to HTTP 409, and confines
+  outputs to the data roots. 5 backend tests.
 - **Phase 4 — frontend "Auto StoG" page** (decided 2026-07-17): a new tab named **Auto StoG**,
   placed **first** in the tab row (preprocessing precedes monitoring in the real workflow),
   while the app continues to **default to Dashboard** on load (`activePage` stays
@@ -332,7 +335,10 @@ publication, it goes under `tests/fixtures/stog_59438/` — open decision (§6).
   Auto-scale → results with theory guide-lines (1, −⟨b²⟩, −⟨b⟩², −4πρ0⟨b⟩²r) and the
   fit-quality readout (pre-enforcement low-r rms, (a, b), iteration trajectory) → export.
   Backend-mode first; outputs then flow into the existing dashboard via the already-present
-  `"stog"` plot kind.
+  `"stog"` plot kind. **DONE 2026-07-17** — `AutoStogPage.jsx` (+ CSS), tab hidden in
+  static mode; readout adds the density-limit verdict and the amplitude-concordance chip
+  ("check ρ₀" on discord); verified live against the FeCoSn 199 K run (page ≡ CLI:
+  a = 1.1839, b = −0.1980).
 - **Phase 5 (stretch) — static-mode JS port**: the engine is small (sine transforms + a 2×2
   linear solve + the filter, ~300 lines); a Web-Worker port would preserve the browser-first
   privacy guarantee. Decide after Phase 4 usage; until then the page is backend-only (the

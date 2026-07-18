@@ -9,9 +9,11 @@ key files, conventions, and current state. Full chronological history lives in
 
 Post-processing for **RMCProfile** modeling outputs, in three layers. RMCProfile performs atomistic
 configuration optimization under experimental constraints; avoid calling those runs
-"refinements" (Rietveld-style parameter refinement is a different workflow). STOG-related code
-remains as legacy/preprocessing support, but it should not be promoted as a current user-facing app
-feature.
+"refinements" (Rietveld-style parameter refinement is a different workflow). Since 2026-07-17 the
+app also covers the *pre*-processing step: **Auto StoG** (`rmc_toolkits/scaling.py` + the
+`rmc-autoscale` CLI + the Auto StoG tab) automatically scales measured total-scattering S(Q) and
+writes the classic stog/RMCProfile-ready file family — see
+[docs/STOG_SCALING_PLAN.md](docs/STOG_SCALING_PLAN.md) for the verified math and validation record.
 
 1. **`rmc_toolkits/`** — pure-Python package (parsing, plots, KDE). The source of truth; new app
    code should call into this, not the legacy scripts.
@@ -28,12 +30,16 @@ The same React app ships in two runtime modes:
 
 ```
 rmc_toolkits/
-  parsers.py   RMC CSV/log, legacy STOG parsing, .rmc6f metadata + atom iteration, Frac*.txt conversion, structure loading
-  plots.py     plot-kind detection, matplotlib figures, Rwp/chi metrics, PNG serialization
-  kde.py       unit-cell position loading + server-side gaussian_kde slice (+ contours)
-  pca_kde.py   per-site RMC displacement clouds → PCA/thermal-ellipsoid stats + separable 3D KDE volume (source of truth)
+  parsers.py     RMC CSV/log, STOG parsing (incl. stog.inp / STOG xy / .dat headers), .rmc6f metadata + atom iteration, Frac*.txt conversion, structure loading
+  plots.py       plot-kind detection, matplotlib figures, Rwp/chi metrics, PNG serialization
+  kde.py         unit-cell position loading + server-side gaussian_kde slice (+ contours)
+  pca_kde.py     per-site RMC displacement clouds → PCA/thermal-ellipsoid stats + separable 3D KDE volume (source of truth)
+  transforms.py  Keen-2001 conversions, sine-FT pair, Lorch, omitted-low-Q correction, Fourier filter, stog low-r enforcement (pure numpy, no I/O)
+  scaling.py     Auto StoG engine: level sweep, closed-form (a,b) fit, self-consistent filter loop, FZ amplitude mode, diagnostics (no I/O)
+  scattering.py  Faber-Ziman coefficients from a chemical formula (Sears table, 89 elements)
+  scaling_cli.py rmc-autoscale CLI: stog.inp/--data → engine → classic stog output family + provenance JSON (all scaling file I/O)
 
-web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,element) LRU cache for KDE + PCA-KDE
+web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,…) LRU caches for KDE, PCA-KDE, and scaling; /api/scaling/preview|run share the CLI writer
 
 web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly
@@ -48,6 +54,7 @@ web_app/frontend/src/
     components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
   components/
     App.jsx                      shell, run-folder selection, page nav, Live Data
+    AutoStogPage.jsx             Auto StoG tab (Flask mode only): source pick → prefilled params → auto-scale → diagnostics readout + S(Q)/GK/D(r) plots with theory lines → export via /api/scaling/run
     Dashboard.jsx                all-plots run dashboard
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
