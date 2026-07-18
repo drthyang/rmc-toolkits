@@ -77,6 +77,18 @@ class ScalingConfig:
     superseded in this mode. ``"joint"`` is the original 2-dof fit (and the
     fallback when no statistically flat window exists).
 
+    ``amplitude_criterion`` selects what pins the overall amplitude once the
+    level anchors the offset. ``"density"`` (default) fits it against the
+    low-r density limit (C2). ``"fz"`` instead sets it from the Q->0
+    Faber-Ziman limit (Keen Eq. 21) via :func:`amplitude_from_fz_limit` — the
+    "subtract the high-Q level, scale Q=0 onto S(0) = 1 - <b^2>/<b>^2, shift
+    the level back to 1" procedure. It needs ``b_sq_avg``, requires
+    ``c1_mode="sweep"`` (no level, no anchor), involves no self-consistent
+    loop (the criterion is filter-independent), and inherits the caveat that
+    a long Qmin -> 0 extrapolation owns the whole scale; the density-limit
+    residuals in :func:`diagnostics_summary` then act as the independent
+    cross-check.
+
     Robustness controls: ``robust`` (default on) runs a Huber IRLS loop over
     the joint fit so isolated outliers cannot drag the closed-form solution;
     per-point ``sigma`` (pass to :func:`autoscale`) 1/sigma-weights the high-Q
@@ -111,6 +123,7 @@ class ScalingConfig:
     c2_bins: int = 0
     robust: bool = True
     c1_mode: str = "sweep"
+    amplitude_criterion: str = "density"
     c1_slope_nuisance: bool = False
     despike: bool = False
     despike_window: int = 7
@@ -122,6 +135,19 @@ class ScalingConfig:
     def __post_init__(self) -> None:
         if self.c1_mode not in ("sweep", "joint"):
             raise ValueError(f"c1_mode must be 'sweep' or 'joint', got {self.c1_mode!r}")
+        if self.amplitude_criterion not in ("density", "fz"):
+            raise ValueError(
+                "amplitude_criterion must be 'density' or 'fz', "
+                f"got {self.amplitude_criterion!r}"
+            )
+        if self.amplitude_criterion == "fz":
+            if self.b_sq_avg is None:
+                raise ValueError("amplitude_criterion='fz' requires b_sq_avg (<b^2>)")
+            if self.c1_mode != "sweep":
+                raise ValueError(
+                    "amplitude_criterion='fz' requires c1_mode='sweep' "
+                    "(the measured level anchors the offset)"
+                )
         if not np.isfinite(self.rho0) or self.rho0 <= 0:
             raise ValueError(f"rho0 must be finite and positive, got {self.rho0}")
         if not np.isfinite(self.b_avg_sq) or self.b_avg_sq <= 0:
@@ -619,6 +645,7 @@ def scale_pipeline(
                 "qmin", "qmax", "rho0", "b_avg_sq", "b_sq_avg", "r_cutoff", "r0",
                 "fit_offset", "q_tail_frac", "rmax", "nr", "lorch",
                 "low_q_correction", "c2_weight", "c2_bins", "robust",
+                "c1_mode", "amplitude_criterion",
                 "c1_slope_nuisance", "despike", "despike_window",
                 "despike_nsigma", "max_iter", "tol", "enforce_cutoff",
             )
@@ -678,6 +705,39 @@ def autoscale(
         if sweep.asymptote_found:
             level = sweep.level
 
+    if config.amplitude_criterion == "fz":
+        # "Subtract the level, pin Q->0 on the Faber-Ziman limit, shift the
+        # level back to 1": a single closed-form amplitude, no loop — the
+        # criterion does not involve the Fourier filter.
+        if level is None:
+            raise ValueError(
+                "amplitude_criterion='fz': level_sweep found no statistically "
+                "flat high-Q window, so there is no measured level to anchor; "
+                "inspect the tail or use the density-limit fit"
+            )
+        a_fz = amplitude_from_fz_limit(q, sq, level, config)
+        if a_fz is None or not np.isfinite(a_fz) or a_fz <= 0:
+            raise ValueError(
+                "amplitude_criterion='fz': the Q->0 extrapolation is "
+                f"degenerate (a_fz={a_fz}); the data head cannot support the "
+                "Faber-Ziman limit"
+            )
+        result = scale_pipeline(
+            q,
+            sq,
+            config,
+            float(a_fz),
+            float(1.0 - a_fz * level),
+            converged=True,
+            iterations=0,
+            sweep=sweep,
+            a_fz=float(a_fz),
+        )
+        result.provenance["mode"] = "auto"
+        result.provenance["c1_mode_effective"] = "sweep"
+        result.provenance["level_sweep"] = _sweep_provenance(sweep)
+        return result
+
     delta_sq = np.zeros_like(q)
     a_prev = b_prev = np.inf
     a = 1.0
@@ -718,14 +778,18 @@ def autoscale(
     result.provenance["mode"] = "auto"
     result.provenance["c1_mode_effective"] = "sweep" if level is not None else "joint"
     if sweep is not None:
-        result.provenance["level_sweep"] = {
-            "level": sweep.level,
-            "level_uncertainty": sweep.level_uncertainty,
-            "q_window": [sweep.q_lo, sweep.q_hi],
-            "asymptote_found": sweep.asymptote_found,
-            "n_admissible": sweep.n_admissible,
-        }
+        result.provenance["level_sweep"] = _sweep_provenance(sweep)
     return result
+
+
+def _sweep_provenance(sweep: LevelSweepResult) -> dict[str, Any]:
+    return {
+        "level": sweep.level,
+        "level_uncertainty": sweep.level_uncertainty,
+        "q_window": [sweep.q_lo, sweep.q_hi],
+        "asymptote_found": sweep.asymptote_found,
+        "n_admissible": sweep.n_admissible,
+    }
 
 
 def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[str, Any]:
@@ -759,15 +823,18 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
         summary["level_window"] = [result.sweep.q_lo, result.sweep.q_hi]
         summary["asymptote_found"] = result.sweep.asymptote_found
     if result.a_fz is not None:
-        # Concordance of the two independent amplitude criteria: the
-        # density-limit amplitude (result.a) vs the Q->0 Faber-Ziman-limit
-        # amplitude. Agreement is evidence the absolute scale is trustworthy;
-        # disagreement quantifies how much the data cannot decide it.
         summary["a_fz"] = result.a_fz
-        summary["amplitude_concordance"] = float(result.a_fz / result.a)
-        summary["amplitudes_concordant"] = bool(
-            abs(result.a_fz / result.a - 1.0) < 0.1
-        )
+        if config.amplitude_criterion != "fz":
+            # Concordance of the two independent amplitude criteria: the
+            # density-limit amplitude (result.a) vs the Q->0 Faber-Ziman-limit
+            # amplitude. Agreement is evidence the absolute scale is
+            # trustworthy; disagreement quantifies how much the data cannot
+            # decide it. (In fz mode a IS a_fz, so the independent check is
+            # the density-limit residual reported above instead.)
+            summary["amplitude_concordance"] = float(result.a_fz / result.a)
+            summary["amplitudes_concordant"] = bool(
+                abs(result.a_fz / result.a - 1.0) < 0.1
+            )
     if config.b_sq_avg is not None:
         # Keen Eq. 14 diagnostic: FK(Q->0) -> -<b^2>. Report the lowest-Q value
         # actually measured for comparison (data rarely reach Q ~ 0).

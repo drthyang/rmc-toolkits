@@ -383,8 +383,13 @@ uncertainty = level spread across admissible windows; end artifacts self-exclude
 (independently reproduced both experts' hand cuts on the two validation datasets).
 `autoscale` defaults to the sweep-anchored 1-dof architecture (`b = 1 − a·level`), with the
 Q→0 Faber-Ziman limit as a second, independent amplitude criterion and a concordance
-diagnostic. Next refinement: run the sweep on the *uncropped* data so it can inform the
-Qmax choice itself (currently it operates within the configured [Qmin, Qmax]).
+diagnostic. Since 2026-07-17 the FZ limit can also BE the amplitude
+(`amplitude_criterion="fz"` / CLI `--amplitude fz`): level-subtract → pin S(0) → restore the
+level, closed form, ρ0-independent — validated on the FeCoSn 199 K run where it agrees with
+the density amplitude to 4.6% and is immune to ±10% ρ0 errors that shift the density fit
+~1:1 (see `data/stog_tests/robustness_199K.py`). Next refinement: run the sweep on the
+*uncropped* data so it can inform the Qmax choice itself (currently it operates within the
+configured [Qmin, Qmax]).
 
 ## 6. Open decisions (for Tsung-Han)
 

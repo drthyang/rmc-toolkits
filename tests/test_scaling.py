@@ -24,13 +24,26 @@ from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
 
 ROOT = Path(__file__).resolve().parents[1]
 STOG_RUN = ROOT / "data" / "stog_tests" / "stog_59438"
-XRAY_RUN = ROOT / "data" / "stog_tests" / "100K"
+
+
+def _first_existing_run(*names: str) -> Path:
+    candidates = [ROOT / "data" / "stog_tests" / name for name in names]
+    for candidate in candidates:
+        if (candidate / "stog_input.dat").exists():
+            return candidate
+    return candidates[0]
+
+
+# The FeCoSn x-ray series shares one stog parameterization across temperatures
+# (same 0.5-26 window, hand scaling -0.111/0.9, rho0, and 1.0 0 0 enforcement),
+# so any available temperature exercises the same assertions.
+XRAY_RUN = _first_existing_run("100K", "199K")
 
 requires_stog_run = unittest.skipUnless(
     (STOG_RUN / "stog.inp").exists(), "stog_59438 example run not present"
 )
 requires_xray_run = unittest.skipUnless(
-    (XRAY_RUN / "stog_input.dat").exists(), "FeCoSn 100K x-ray run not present"
+    (XRAY_RUN / "stog_input.dat").exists(), "FeCoSn x-ray run not present"
 )
 
 RHO0 = 0.05
@@ -237,6 +250,37 @@ class LevelSweepTests(unittest.TestCase):
         # b is tied to the level: b = 1 - a * L.
         self.assertAlmostEqual(result.b, 1.0 - result.a * result.sweep.level, places=10)
 
+    def test_fz_amplitude_mode_round_trip(self):
+        # amplitude_criterion="fz": subtract the measured level, pin Q->0 on
+        # the Faber-Ziman limit, shift the level back to 1. Choosing b_sq_avg
+        # so the FZ target equals the synthetic's own extrapolated S(0) makes
+        # this a true round trip (affine corruption cancels exactly).
+        head = self.q <= self.q[0] + 1.0
+        _, s_true_0 = np.polyfit(self.q[head], self.sq_true[head], 1)
+        config = synthetic_config(
+            b_sq_avg=B2 * (1.0 - float(s_true_0)), amplitude_criterion="fz"
+        )
+        a_t, b_t = 3.0, -1.5
+        result = autoscale(self.q, (self.sq_true - b_t) / a_t, config)
+        self.assertEqual(result.iterations, 0)  # closed form, no loop
+        self.assertEqual(result.provenance["config"]["amplitude_criterion"], "fz")
+        self.assertLess(abs(result.a - a_t) / a_t, 0.05)
+        self.assertAlmostEqual(result.b, 1.0 - result.a * result.sweep.level, places=10)
+        summary = diagnostics_summary(result, config)
+        self.assertIn("a_fz", summary)
+        # a IS a_fz here: no self-concordance is reported.
+        self.assertNotIn("amplitude_concordance", summary)
+
+    def test_fz_mode_config_validation(self):
+        with self.assertRaises(ValueError):
+            synthetic_config(amplitude_criterion="fz")  # b_sq_avg missing
+        with self.assertRaises(ValueError):
+            synthetic_config(
+                amplitude_criterion="fz", b_sq_avg=B2, c1_mode="joint"
+            )
+        with self.assertRaises(ValueError):
+            synthetic_config(amplitude_criterion="nope")
+
     def test_fz_amplitude_and_concordance_mechanics(self):
         # With b_sq_avg supplied, the independent Q->0 amplitude and the
         # concordance diagnostic are reported. The synthetic model is not
@@ -371,8 +415,8 @@ class AutoscaleExampleRunTests(unittest.TestCase):
 
 
 @requires_xray_run
-class Xray100KTests(unittest.TestCase):
-    """FeCoSn 100 K x-ray run: normalized S(Q) (<b>^2 = 1), Qmin = 0.5.
+class XrayFeCoSnTests(unittest.TestCase):
+    """FeCoSn x-ray run (any available temperature): normalized S(Q), Qmin = 0.5.
 
     Unlike the neutron 59438 case, this dataset CAN satisfy the density limit
     (low enough Qmin), so the auto-scaler should land near the expert's hand

@@ -20,8 +20,23 @@ from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
 ROOT = Path(__file__).resolve().parents[1]
 STOG_RUN = ROOT / "data" / "stog_tests" / "stog_59438"
 
+
+def _first_existing_run(*names: str) -> Path:
+    """Same FeCoSn-series candidate logic as tests/test_scaling.py (kept in sync)."""
+    candidates = [ROOT / "data" / "stog_tests" / name for name in names]
+    for candidate in candidates:
+        if (candidate / "stog_input.dat").exists():
+            return candidate
+    return candidates[0]
+
+
+XRAY_RUN = _first_existing_run("100K", "199K")
+
 requires_stog_run = unittest.skipUnless(
     (STOG_RUN / "stog.inp").exists(), "stog_59438 example run not present"
+)
+requires_xray_run = unittest.skipUnless(
+    (XRAY_RUN / "stog_input.dat").exists(), "FeCoSn x-ray run not present"
 )
 
 RHO0 = 0.05
@@ -202,6 +217,36 @@ class DataModeTests(CliSyntheticBase):
             expected = A_TRUE * np.interp(scaled[0], self.q, self.sq_meas) + B_TRUE
             np.testing.assert_allclose(scaled[1], expected, atol=1e-12)
 
+    def test_fz_amplitude_mode(self):
+        head = self.q <= self.q[0] + 1.0
+        _, s_true_0 = np.polyfit(self.q[head], self.sq_true[head], 1)
+        b_sq_avg = B2 * (1.0 - float(s_true_0))
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "sample.dat"
+            write_stog_xy(data, self.q, self.sq_meas, title="s")
+            base = [
+                "--data", data, "--qmin", "0.6", "--qmax", "30",
+                "--b-avg-sq", B2, "--rho0", RHO0, "--r0", "2.65",
+                "--rmax", "25", "--nr", "1000",
+            ]
+            code, out, err = run_cli(base + ["--b-sq-avg", b_sq_avg, "--amplitude", "fz"])
+            self.assertEqual(code, 0, msg=err)
+            self.assertIn("FZ-limit amplitude", out)
+            payload = json.loads((Path(tmp) / "autoscale" / "sample_provenance.json").read_text())
+            self.assertEqual(payload["provenance"]["config"]["amplitude_criterion"], "fz")
+            self.assertLess(abs(payload["diagnostics"]["a"] - A_TRUE) / A_TRUE, 0.05)
+
+            code, _, err = run_cli(base + ["--amplitude", "fz", "--force"])
+            self.assertEqual(code, 2)
+            self.assertIn("requires <b^2>", err)
+
+            code, _, err = run_cli(
+                base + ["--b-sq-avg", b_sq_avg, "--amplitude", "fz",
+                        "--manual", "--scale", "10", "--force"]
+            )
+            self.assertEqual(code, 2)
+            self.assertIn("cannot be combined", err)
+
     def test_error_cases(self):
         with tempfile.TemporaryDirectory() as tmp:
             data = Path(tmp) / "sample.dat"
@@ -263,6 +308,52 @@ class ExampleRunCliTests(unittest.TestCase):
             interp = np.interp(ref_gr[0], ours_gr[0], ours_gr[1])
             rms = float(np.sqrt(np.mean((interp - ref_gr[1]) ** 2)))
             self.assertLess(rms, 2e-3)
+
+
+@requires_xray_run
+class XrayRunCliTests(unittest.TestCase):
+    """CLI parity + auto-scale against a complete FeCoSn x-ray Fortran run."""
+
+    def test_manual_parity_and_auto_smoke(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _, err = run_cli(
+                [XRAY_RUN / "stog_input.dat", "--manual", "--out-dir", tmp]
+            )
+            self.assertEqual(code, 0, msg=err)
+
+            ours = read_stog_xy(Path(tmp) / "scale.fq")
+            ref = read_stog_xy(XRAY_RUN / "scale.fq")
+            np.testing.assert_allclose(
+                np.interp(ref[0], ours[0], ours[1]), ref[1], atol=1e-8
+            )
+
+            ours_ft = read_stog_xy(Path(tmp) / "scale_ft.sq")
+            ref_ft = read_stog_xy(XRAY_RUN / "scale_ft.sq")
+            rms = float(np.sqrt(np.mean(
+                (np.interp(ref_ft[0], ours_ft[0], ours_ft[1]) - ref_ft[1]) ** 2
+            )))
+            self.assertLess(rms, 1e-3)
+
+            ours_gr = read_stog_xy(Path(tmp) / "scale_ft_rmc.gr")
+            ref_gr = read_stog_xy(XRAY_RUN / "scale_ft_rmc.gr")
+            rms = float(np.sqrt(np.mean(
+                (np.interp(ref_gr[0], ours_gr[0], ours_gr[1]) - ref_gr[1]) ** 2
+            )))
+            self.assertLess(rms, 2e-3)
+            # Normalized x-ray enforcement: flat -1 below the 1.0 A cutoff.
+            below = ours_gr[0] <= 1.0
+            np.testing.assert_allclose(ours_gr[1][below], -1.0, atol=1e-12)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = run_cli([XRAY_RUN / "stog_input.dat", "--out-dir", tmp])
+            self.assertEqual(code, 0, msg=err)
+            payload = json.loads(
+                Path(tmp, "stog_input_provenance.json").read_text()
+            )
+            self.assertTrue(payload["diagnostics"]["converged"])
+            # Hand values are a = 1/0.9, b = -0.111; the auto-fit should land
+            # in that neighborhood on this density-limit-satisfiable dataset.
+            self.assertLess(abs(payload["diagnostics"]["a"] - 1.0 / 0.9) * 0.9, 0.15)
 
 
 if __name__ == "__main__":

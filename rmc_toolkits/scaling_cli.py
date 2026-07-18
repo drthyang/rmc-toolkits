@@ -148,6 +148,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="high-Q architecture: level-sweep anchored (default) or joint 2-dof fit",
     )
     physics.add_argument(
+        "--amplitude",
+        choices=("density", "fz"),
+        default="density",
+        help="amplitude criterion: low-r density limit (default), or 'fz' — "
+        "subtract the measured high-Q level, scale Q->0 onto the Faber-Ziman "
+        "limit S(0) = 1 - <b^2>/<b>^2, shift the level back to 1 "
+        "(requires --b-sq-avg or --formula)",
+    )
+    physics.add_argument(
         "--fit-offset",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -321,6 +330,8 @@ def _build_config(
             )
     if b_avg_sq is None:
         raise CliError("--data mode requires <b>^2: pass --b-avg-sq or --formula")
+    if args.amplitude == "fz" and b_sq_avg is None:
+        raise CliError("--amplitude fz requires <b^2>: pass --b-sq-avg or --formula")
 
     try:
         config = ScalingConfig(
@@ -340,6 +351,7 @@ def _build_config(
             low_q_correction=args.low_q_correction,
             robust=args.robust,
             c1_mode=args.c1_mode,
+            amplitude_criterion=args.amplitude,
             despike=args.despike,
         )
         config.r_fit_window  # validate now, with CLI-error rendering
@@ -547,6 +559,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         targets = _resolve_targets(args, inp, inp_path, data_path)
 
         manual = args.manual or args.scale is not None or args.offset is not None
+        if manual and args.amplitude != "density":
+            raise CliError(
+                "--amplitude selects the auto-fit criterion; it cannot be "
+                "combined with --manual/--scale/--offset"
+            )
         if manual:
             if args.scale is not None:
                 a = args.scale
@@ -566,6 +583,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         summary = diagnostics_summary(result, config)
         summary["c1_mode"] = result.provenance.get("c1_mode_effective", "manual")
+        if not manual and config.amplitude_criterion == "fz":
+            summary["c1_mode"] += ", FZ-limit amplitude"
         payload = {
             "tool": "rmc-autoscale",
             "rmc_toolkits_version": __version__,
