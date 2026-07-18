@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from rmc_toolkits.parsers import read_stog_inp, read_stog_xy
+from rmc_toolkits.parsers import StogInput, read_stog_xy
 from rmc_toolkits.transforms import (
     density_line,
     enforce_low_r,
@@ -30,10 +30,28 @@ from rmc_toolkits.transforms import (
 ROOT = Path(__file__).resolve().parents[1]
 STOG_RUN = ROOT / "data" / "stog_tests" / "stog_59438"
 
-# The classic Fortran stog example run is gitignored with the rest of data/,
-# so sample-backed tests skip rather than fail when it is absent.
+# stog_59438: a complete Fortran stog run of Mn3Sn (POWGEN PG3), local-only and
+# gitignored with the rest of data/. The run's parameters are recovered from its
+# own outputs, so the sample-backed tests need only the rebinned data file, not
+# the interactive stog.inp (reading a real stog.inp is exercised by the x-ray
+# run in tests/test_scaling.py). scale.fq vs the rebinned input pins a = 10,
+# b = -9 and Qmin = 1.0 (its first finite Q; the other Mn3Sn runs start at 0.82),
+# and the flat -<b>^2 stretch of scale_ft_rmc.gr pins b_avg_sq = 0.015407 and the
+# 2.48 A enforcement cutoff. Kept in sync with tests/test_scaling.py.
+STOG_59438 = StogInput(
+    n_files=1, data_file="PG3_59438_SQ_rebin.dat", qmin=1.0, qmax=28.0,
+    yoffset=-9.0, yscale=0.1, qoffset=0.0, out_sq="scale.fq", out_gr="scale.gr",
+    rmax=50.0, nr=5000, lorch=False, rho0=0.063049, yoffset2=0.0,
+    try_again=False, use_filter=True, r_cutoff=1.0, out_ft_sq="scale_ft.sq",
+    out_ft_gr="scale_ft.gr", b_avg_sq=0.015407, out_rmc_fq="scale_ft_rmc.fq",
+    out_rmc_gr="scale_ft_rmc.gr", out_rmc_dr="scale_ft_rmc.dr",
+    peak_cutoff=2.48, peak_rmin=2.65, peak_rmax=3.1,
+)
+
+# Gitignored, so sample-backed tests skip rather than fail when the run is
+# absent; the rebinned data file alone is enough (no stog.inp required).
 requires_stog_run = unittest.skipUnless(
-    (STOG_RUN / "stog.inp").exists(), "stog_59438 example run not present"
+    (STOG_RUN / STOG_59438.data_file).exists(), "stog_59438 example run not present"
 )
 
 RHO0 = 0.05
@@ -215,23 +233,13 @@ class StogRunParityTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.inp = read_stog_inp(STOG_RUN / "stog.inp")
+        cls.inp = STOG_59438
         data = read_stog_xy(STOG_RUN / cls.inp.data_file)
         q, sq = data[0], data[1]
         keep = np.isfinite(sq) & (q >= cls.inp.qmin - 1e-9) & (q <= cls.inp.qmax + 1e-9)
         cls.q, cls.sq_raw = q[keep], sq[keep]
         cls.sq_scaled = cls.inp.a * cls.sq_raw + cls.inp.b
         cls.r = np.arange(1, cls.inp.nr + 1) * (cls.inp.rmax / cls.inp.nr)
-
-    def test_inp_decodes_known_values(self):
-        self.assertEqual(self.inp.qmin, 1.0)
-        self.assertEqual(self.inp.qmax, 28.0)
-        self.assertAlmostEqual(self.inp.a, 10.0)
-        self.assertAlmostEqual(self.inp.b, -9.0)
-        self.assertAlmostEqual(self.inp.rho0, 0.063049)
-        self.assertAlmostEqual(self.inp.b_avg_sq, 0.015407)
-        self.assertAlmostEqual(self.inp.r_cutoff, 1.0)
-        self.assertAlmostEqual(self.inp.peak_cutoff, 2.48)
 
     def test_scaling_reproduces_scale_fq_exactly(self):
         ref = read_stog_xy(STOG_RUN / "scale.fq")

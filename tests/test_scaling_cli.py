@@ -19,6 +19,9 @@ from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
 
 ROOT = Path(__file__).resolve().parents[1]
 STOG_RUN = ROOT / "data" / "stog_tests" / "stog_59438"
+# stog_59438's parameters are recovered from its outputs (see tests/test_scaling.py),
+# so the CLI parity runs in --data mode from the rebinned file -- no stog.inp needed.
+STOG_DATA = "PG3_59438_SQ_rebin.dat"
 
 
 def _first_existing_run(*names: str) -> Path:
@@ -33,7 +36,7 @@ def _first_existing_run(*names: str) -> Path:
 XRAY_RUN = _first_existing_run("100K", "199K")
 
 requires_stog_run = unittest.skipUnless(
-    (STOG_RUN / "stog.inp").exists(), "stog_59438 example run not present"
+    (STOG_RUN / STOG_DATA).exists(), "stog_59438 example run not present"
 )
 requires_xray_run = unittest.skipUnless(
     (XRAY_RUN / "stog_input.dat").exists(), "FeCoSn x-ray run not present"
@@ -295,12 +298,25 @@ class ExampleRunCliTests(unittest.TestCase):
 
     def test_manual_run_matches_fortran_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
+            # Recovered stog_59438 parameters (see tests/test_scaling.py), driven
+            # through --data mode with the run's hand scaling (a = 10, b = -9).
             code, _, err = run_cli(
-                [STOG_RUN / "stog.inp", "--manual", "--out-dir", tmp]
+                [
+                    "--data", STOG_RUN / STOG_DATA,
+                    "--qmin", "1.0", "--qmax", "28.0",
+                    "--rho0", "0.063049", "--b-avg-sq", "0.015407",
+                    "--r-cutoff", "1.0", "--rmax", "50.0", "--nr", "5000",
+                    "--manual", "--scale", "10.0", "--offset", "-9.0",
+                    "--enforce", "--enforce-cutoff", "2.48",
+                    "--peak-window", "2.65", "3.1",
+                    "--out-stem", "scale", "--out-dir", tmp,
+                ]
             )
             self.assertEqual(code, 0, msg=err)
 
-            ours = read_stog_xy(Path(tmp) / "scale.fq")
+            # --out-stem names the scaled S(Q) scale.sq; it holds the same scaled
+            # function as the Fortran scale.fq.
+            ours = read_stog_xy(Path(tmp) / "scale.sq")
             ref = read_stog_xy(STOG_RUN / "scale.fq")
             interp = np.interp(ref[0], ours[0], ours[1])
             np.testing.assert_allclose(interp, ref[1], atol=1e-8)
@@ -311,7 +327,7 @@ class ExampleRunCliTests(unittest.TestCase):
             rms = float(np.sqrt(np.mean((interp - ref_ft[1]) ** 2)))
             self.assertLess(rms, 1e-3)
 
-            ours_gr = read_stog_xy(Path(tmp) / "scale_ft_rmc.gr")
+            ours_gr = read_stog_xy(Path(tmp) / "scale_rmc.gr")
             ref_gr = read_stog_xy(STOG_RUN / "scale_ft_rmc.gr")
             interp = np.interp(ref_gr[0], ours_gr[0], ours_gr[1])
             rms = float(np.sqrt(np.mean((interp - ref_gr[1]) ** 2)))

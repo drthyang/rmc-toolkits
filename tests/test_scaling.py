@@ -9,6 +9,7 @@ import unittest
 import numpy as np
 
 from rmc_toolkits.parsers import (
+    StogInput,
     read_dat_header,
     read_stog_inp,
     read_stog_xy,
@@ -46,8 +47,24 @@ def _first_existing_run(*names: str) -> Path:
 # so any available temperature exercises the same assertions.
 XRAY_RUN = _first_existing_run("100K", "199K")
 
+# stog_59438: a complete Fortran stog run of Mn3Sn (POWGEN PG3), local-only. Its
+# parameters are recovered from the run's own outputs (scale.fq vs the rebinned
+# input pins a = 10, b = -9 and Qmin = 1.0; the flat -<b>^2 stretch of
+# scale_ft_rmc.gr pins b_avg_sq = 0.015407 and the 2.48 A enforcement cutoff),
+# so the sample-backed tests need only the rebinned data file, not the
+# interactive stog.inp. Kept in sync with tests/test_transforms.py.
+STOG_59438 = StogInput(
+    n_files=1, data_file="PG3_59438_SQ_rebin.dat", qmin=1.0, qmax=28.0,
+    yoffset=-9.0, yscale=0.1, qoffset=0.0, out_sq="scale.fq", out_gr="scale.gr",
+    rmax=50.0, nr=5000, lorch=False, rho0=0.063049, yoffset2=0.0,
+    try_again=False, use_filter=True, r_cutoff=1.0, out_ft_sq="scale_ft.sq",
+    out_ft_gr="scale_ft.gr", b_avg_sq=0.015407, out_rmc_fq="scale_ft_rmc.fq",
+    out_rmc_gr="scale_ft_rmc.gr", out_rmc_dr="scale_ft_rmc.dr",
+    peak_cutoff=2.48, peak_rmin=2.65, peak_rmax=3.1,
+)
+
 requires_stog_run = unittest.skipUnless(
-    (STOG_RUN / "stog.inp").exists(), "stog_59438 example run not present"
+    (STOG_RUN / STOG_59438.data_file).exists(), "stog_59438 example run not present"
 )
 requires_xray_run = unittest.skipUnless(
     (XRAY_RUN / "stog_input.dat").exists(), "FeCoSn x-ray run not present"
@@ -381,7 +398,7 @@ class AutoscaleExampleRunTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.inp = read_stog_inp(STOG_RUN / "stog.inp")
+        cls.inp = STOG_59438
         data = read_stog_xy(STOG_RUN / cls.inp.data_file)
         cls.q, cls.sq = data[0], data[1]
         cls.config = ScalingConfig(
