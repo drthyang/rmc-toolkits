@@ -537,12 +537,15 @@ const AutoStogPage = ({ directory, localRun }) => {
     const { series, guides } = preview;
     const level = guides.gkLowR;
     const guideEnd = Math.min(RMAX_DISPLAY, series.r[series.r.length - 1]);
-    const plots = [
-      { label: 'G_K(r) filtered', x: series.r, y: series.gk },
-    ];
-    if (series.gkEnforced) {
-      plots.push({ label: 'Enforced (RMC file)', x: series.r, y: series.gkEnforced });
-    }
+    // The enforced curve (flat -<b>^2 below r0) IS the output that reaches
+    // RMCProfile — show it as the primary series; the ripply pre-enforcement
+    // fit stays one legend click away as the honesty diagnostic.
+    const plots = series.gkEnforced
+      ? [
+        { label: 'G_K(r) output (RMC file)', x: series.r, y: series.gkEnforced },
+        { label: 'Pre-enforcement fit', x: series.r, y: series.gk, defaultHidden: true },
+      ]
+      : [{ label: 'G_K(r) filtered', x: series.r, y: series.gk }];
     plots.push({ label: '−⟨b⟩² theory', x: [0, guideEnd], y: [level, level], role: 'guide' });
     return {
       title: 'G_K(r) — full range',
@@ -558,12 +561,12 @@ const AutoStogPage = ({ directory, localRun }) => {
     if (!preview) return null;
     const { series, guides } = preview;
     const guideEnd = Math.min(RMAX_DISPLAY, series.r[series.r.length - 1]);
-    const plots = [
-      { label: 'D(r)', x: series.r, y: series.dr },
-    ];
-    if (series.drEnforced) {
-      plots.push({ label: 'Enforced (RMC file)', x: series.r, y: series.drEnforced });
-    }
+    const plots = series.drEnforced
+      ? [
+        { label: 'D(r) output (RMC file)', x: series.r, y: series.drEnforced },
+        { label: 'Pre-enforcement fit', x: series.r, y: series.dr, defaultHidden: true },
+      ]
+      : [{ label: 'D(r)', x: series.r, y: series.dr }];
     plots.push({
       label: '−4πρ₀⟨b⟩²r theory',
       x: [0, guideEnd],
