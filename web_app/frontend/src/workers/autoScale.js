@@ -843,6 +843,12 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
       converged = true;
       break;
     }
+    if (result.a <= 0 || concordance <= 0) {
+      // Non-physical density-limit amplitude: the criteria are discordant on
+      // this data (typically missing low-Q structure) and no density can
+      // reconcile them. Stop instead of iterating garbage.
+      break;
+    }
     const rhoNext = Math.min(Math.max(rho * concordance, rhoMin), rhoMax);
     if (rhoNext === rho) break; // pinned at a bound: no progress possible
     rho = rhoNext;

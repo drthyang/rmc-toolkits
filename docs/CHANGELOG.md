@@ -35,6 +35,16 @@ data itself.
   parity (tolerance bounded by the rtol stopping rule, not single-pass precision);
   browser flow verified end-to-end in static mode (upload → estimate 0.060664 →
   auto-scale a = 1.2511, concordance 1.00 → 9-file zip).
+- **Discordant-data guardrails** (found live on the Mn₃Sn neutron runs, whose low-Q
+  hole breaks the density-limit amplitude): `estimate_rho0` stops on non-physical
+  amplitudes instead of iterating to a bound, and an unconverged estimate is *refused*
+  everywhere (CLI error, worker error, page banner) with guidance to set ρ₀ explicitly
+  and use the FZ amplitude — previously the page silently fit with a garbage density
+  (a = −1.02 on PG3_54139). The neutron-vs-x-ray state is now always visible: a chip
+  shows the coefficients in effect and their source, warns when Advanced overrides
+  shadow a typed composition, and a "Reset params" button clears a previous sample's
+  settings. Folder drops report cleanly instead of failing silently. Engine + CLI
+  guard tests (Mn₃Sn-fixture-gated).
 
 **Composition-first Auto StoG** — procedure clarified end-to-end
 ([SCALING_PROCEDURE.md](SCALING_PROCEDURE.md)); the user now provides only the chemical

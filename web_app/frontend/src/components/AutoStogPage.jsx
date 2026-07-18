@@ -287,13 +287,20 @@ const AutoStogPage = () => {
   const ingestFiles = async (fileList) => {
     setError(null);
     const accepted = [];
+    const unreadable = [];
     for (const file of Array.from(fileList || [])) {
       if (isInpCandidate(file.name) || isDataCandidate(file.name)) {
-        accepted.push({ name: file.name, text: await file.text() });
+        try {
+          accepted.push({ name: file.name, text: await file.text() });
+        } catch {
+          unreadable.push(file.name); // e.g. a dropped directory entry
+        }
       }
     }
     if (!accepted.length) {
-      setError('No usable files: upload a rebinned S(Q) (.sq / .fq / .dat, 2–3 columns), optionally with its classic stog.inp.');
+      setError(unreadable.length
+        ? `Could not read ${unreadable.join(', ')} — drop individual files, not a folder.`
+        : 'No usable files: upload a rebinned S(Q) (.sq / .fq / .dat, 2–3 columns), optionally with its classic stog.inp.');
       return;
     }
     const merged = [
@@ -398,6 +405,17 @@ const AutoStogPage = () => {
       const { config } = resolveConfig(form, data.inp, data.header);
       const { payload, transfers } = packedData();
       const result = await postJob({ kind: 'estimateRho0', config, ...payload }, transfers);
+      if (!result.estimate.converged) {
+        setRho0Info(null);
+        throw new Error(
+          'ρ₀ self-consistency did not converge (final concordance '
+          + `${fmt(result.estimate.concordance, 3)}): the density-limit and Q→0 `
+          + 'Faber-Ziman amplitudes disagree at every density — typically data '
+          + 'missing structure below Qmin. Set ρ₀ explicitly (value, data '
+          + 'header, or mass density) and consider the Faber-Ziman Q→0 '
+          + 'amplitude criterion for the scale.'
+        );
+      }
       setRho0Info(result.estimate);
       setForm((current) => ({
         ...current,
@@ -465,18 +483,38 @@ const AutoStogPage = () => {
   const canEstimate = inspect != null
     && (Boolean(form.formula.trim()) || numberOr(form.bSqAvg) !== undefined);
 
-  // Live ⟨b⟩²/⟨b²⟩ + S(0) chip so the composition's role is visible up front.
-  const compositionChip = useMemo(() => {
+  // The coefficients actually in effect (same precedence as resolveConfig:
+  // Advanced overrides beat the composition), so the neutron-vs-x-ray state
+  // is always visible up front — with a warning when overrides silently
+  // shadow a typed composition (the classic stale-session trap).
+  const coefficients = useMemo(() => {
     const formula = form.formula.trim();
-    if (!formula) return null;
-    try {
-      const fz = faberZiman(formula);
-      const s0 = 1 - fz.bSqAvgBarn / fz.bAvgSqBarn;
-      return `⟨b⟩² ${fz.bAvgSqBarn.toPrecision(4)} · ⟨b²⟩ ${fz.bSqAvgBarn.toPrecision(4)} barn · S(0) ${s0.toPrecision(3)}`;
-    } catch {
-      return null; // incomplete formula while typing
+    const overrideBAvgSq = numberOr(form.bAvgSq);
+    const overrideBSqAvg = numberOr(form.bSqAvg);
+    let fz = null;
+    if (formula) {
+      try { fz = faberZiman(formula); } catch { fz = null; /* typing */ }
     }
-  }, [form.formula]);
+    const bAvgSq = overrideBAvgSq ?? (fz ? fz.bAvgSqBarn : undefined);
+    const bSqAvg = overrideBSqAvg ?? (fz ? fz.bSqAvgBarn : undefined);
+    if (bAvgSq === undefined && bSqAvg === undefined) return null;
+    const shadowed = Boolean(fz) && (
+      (overrideBAvgSq !== undefined
+        && Math.abs(overrideBAvgSq - fz.bAvgSqBarn) > 0.02 * Math.abs(fz.bAvgSqBarn))
+      || (overrideBSqAvg !== undefined
+        && Math.abs(overrideBSqAvg - fz.bSqAvgBarn) > 0.02 * Math.abs(fz.bSqAvgBarn))
+    );
+    const source = overrideBAvgSq !== undefined || overrideBSqAvg !== undefined
+      ? 'Advanced overrides'
+      : `${formula} (Sears neutron)`;
+    const parts = [];
+    if (bAvgSq !== undefined) parts.push(`⟨b⟩² ${bAvgSq.toPrecision(4)}`);
+    if (bSqAvg !== undefined) parts.push(`⟨b²⟩ ${bSqAvg.toPrecision(4)}`);
+    if (bAvgSq !== undefined && bSqAvg !== undefined) {
+      parts.push(`S(0) ${(1 - bSqAvg / bAvgSq).toPrecision(3)}`);
+    }
+    return { text: `${parts.join(' · ')} — ${source}`, shadowed, formula };
+  }, [form.formula, form.bAvgSq, form.bSqAvg]);
 
   // ── plot data ────────────────────────────────────────────────────────────
   const RMAX_DISPLAY = 8;
@@ -659,7 +697,16 @@ const AutoStogPage = () => {
             <span>or ρ g/cm³</span>
             <input value={form.massDensity} onChange={setField('massDensity')} inputMode="decimal" />
           </label>
-          {compositionChip && <span className="autostog-chip" title="Computed from the composition (Sears neutron lengths)">{compositionChip}</span>}
+          {coefficients && (
+            <span
+              className={`autostog-chip${coefficients.shadowed ? ' autostog-chip--warn' : ''}`}
+              title={coefficients.shadowed
+                ? `Advanced → Coefficients overrides are in effect and differ from ${coefficients.formula}'s neutron values — clear ⟨b⟩²/⟨b²⟩ to use the composition, or clear the composition if this is x-ray data`
+                : 'Scattering coefficients in effect (barn)'}
+            >
+              {coefficients.shadowed ? '⚠ ' : ''}{coefficients.text}
+            </span>
+          )}
           {rho0Info && (
             <span
               className={`autostog-chip ${rho0Info.extrapolated ? 'autostog-chip--warn' : 'autostog-chip--good'}`}
@@ -698,6 +745,20 @@ const AutoStogPage = () => {
             onClick={() => setAdvancedOpen((open) => !open)}
           >
             Advanced
+          </button>
+          <button
+            type="button"
+            className="autostog-pill"
+            title="Clear every parameter (a new sample's settings should not inherit the previous one's)"
+            onClick={() => {
+              setForm(EMPTY_FORM);
+              setRho0Info(null);
+              setPreview(null);
+              setError(null);
+              if (selectedName) selectSource(selectedName, sources); // re-prefill from the data
+            }}
+          >
+            Reset params
           </button>
         </div>
       </div>
@@ -955,7 +1016,9 @@ const AutoStogPage = () => {
               <span className="autostog-stat-label">Concordance</span>
               <span className="autostog-stat-value">a_fz / a = {fmt(diagnostics.amplitude_concordance, 3)}</span>
               <span className="autostog-stat-sub">
-                {diagnostics.amplitudes_concordant ? 'independent criteria agree' : 'disagree — check ρ₀ / low-Q'}
+                {diagnostics.amplitudes_concordant
+                  ? 'independent criteria agree'
+                  : 'disagree — check ρ₀ / low-Q, or use the Faber-Ziman Q→0 amplitude'}
               </span>
             </div>
           )}

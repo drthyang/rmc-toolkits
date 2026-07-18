@@ -37,6 +37,17 @@ self.onmessage = (event) => {
     let rho0Estimate = null;
     if (wantEstimate) {
       rho0Estimate = estimateRho0(qArr, sqArr, config, sigmaArr);
+      if (!rho0Estimate.converged) {
+        // Never fit with a garbage density: surface the physics instead.
+        throw new Error(
+          'ρ₀ self-consistency did not converge (final concordance '
+          + `${rho0Estimate.concordance.toPrecision(3)}): the density-limit and `
+          + 'Q→0 Faber-Ziman amplitudes disagree at every density — typically '
+          + 'data missing structure below Qmin. Set ρ₀ explicitly (value, '
+          + 'data header, or mass density) and consider the Faber-Ziman Q→0 '
+          + 'amplitude criterion for the scale.'
+        );
+      }
       config = { ...config, rho0: rho0Estimate.rho0 };
     }
     const result = mode === 'manual'

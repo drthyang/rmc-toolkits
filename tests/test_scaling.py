@@ -639,6 +639,15 @@ class Mn3SnNeutronTests(unittest.TestCase):
         # so the absolute scale is NOT recoverable from self-consistency.
         self.assertFalse(summary["density_limit_satisfied"])
 
+    def test_estimate_rho0_fails_honestly(self):
+        # The low-Q hole is O(S(0)) = O(-12): the density-limit amplitude is
+        # broken here, so NO density can reconcile it with the FZ amplitude.
+        # The estimator must report converged=False (callers refuse to adopt)
+        # rather than iterate to a bound and hand back garbage.
+        q, sq = self.data["stog_500K"][0], self.data["stog_500K"][1]
+        est = estimate_rho0(q, sq, self.composition_config())
+        self.assertFalse(est["converged"])
+
     def test_fz_amplitude_uses_the_composition(self):
         # The FZ criterion injects S(0) = 1 - <b^2>/<b>^2 = -12.06 and lands
         # at O(10) amplitudes — the only route consistent across runs (the

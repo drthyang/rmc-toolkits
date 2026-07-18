@@ -429,5 +429,27 @@ class XrayRunCliTests(unittest.TestCase):
             self.assertLess(abs(payload["diagnostics"]["a"] - 1.0 / 0.9) * 0.9, 0.15)
 
 
+MN3SN_500K_DATA = ROOT / "data" / "stog_tests" / "stog_500K" / "PG3_54139_SQ_rebin.dat"
+
+
+@unittest.skipUnless(MN3SN_500K_DATA.exists(), "Mn3Sn PG3 500K run not present")
+class EstimateRho0GuardCliTests(unittest.TestCase):
+    """--estimate-rho0 must refuse data whose criteria are discordant."""
+
+    def test_unconverged_estimate_is_refused(self):
+        # Mn3Sn misses O(S(0)) = O(-12) structure below Qmin: the density-limit
+        # amplitude is broken, no rho0 reconciles it with the FZ amplitude, and
+        # the CLI must error out instead of fitting with a garbage density.
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _, err = run_cli([
+                "--data", MN3SN_500K_DATA, "--qmin", "0.82", "--qmax", "28",
+                "--formula", "Mn3Sn", "--rho0", "0.063049",
+                "--estimate-rho0", "--out-dir", tmp,
+            ])
+            self.assertEqual(code, 2)
+            self.assertIn("did not converge", err)
+            self.assertIn("--amplitude fz", err)
+
+
 if __name__ == "__main__":
     unittest.main()

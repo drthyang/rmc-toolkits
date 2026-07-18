@@ -941,6 +941,12 @@ def estimate_rho0(
         if abs(concordance - 1.0) <= rtol:
             converged = True
             break
+        if result.a <= 0 or concordance <= 0:
+            # The density-limit fit produced a non-physical amplitude: the two
+            # criteria are discordant on this data (typically missing low-Q
+            # structure, cf. the Mn3Sn runs) and no density can reconcile
+            # them. Stop instead of iterating garbage.
+            break
         rho_next = float(np.clip(rho * concordance, rho_min, rho_max))
         if rho_next == rho:  # pinned at a bound: no progress possible
             break

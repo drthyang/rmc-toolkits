@@ -610,6 +610,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "--estimate-rho0 requires <b^2>: pass --b-sq-avg or --formula"
                 )
             rho0_estimate = estimate_rho0(q, sq, config, sigma=sigma)
+            if not rho0_estimate["converged"]:
+                raise CliError(
+                    "rho0 self-consistency did not converge (final concordance "
+                    f"{rho0_estimate['concordance']:.3g}): the density-limit and "
+                    "Q->0 Faber-Ziman amplitudes disagree at every density — "
+                    "typically data missing structure below Qmin. Set rho0 "
+                    "explicitly (--rho0 / --mass-density / data header) and "
+                    "consider '--amplitude fz' for the scale"
+                )
             config = replace(config, rho0=float(rho0_estimate["rho0"]))
             note = (
                 "; long Q->0 extrapolation — treat as a starting point"
