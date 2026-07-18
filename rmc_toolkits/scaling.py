@@ -877,6 +877,88 @@ def _autoscale_pass(
     return result
 
 
+def estimate_rho0(
+    q: np.ndarray,
+    sq: np.ndarray,
+    config: ScalingConfig,
+    sigma: np.ndarray | None = None,
+    *,
+    rtol: float = 1.0e-3,
+    max_iter: int = 8,
+    rho_min: float = 1.0e-4,
+    rho_max: float = 1.0,
+) -> dict[str, Any]:
+    """Self-consistent number density from amplitude-criteria concordance.
+
+    The density-limit criterion determines the amplitude *given* rho0 (the C2
+    rows scale with the density line ``-4 pi rho0 r``), so rho0 and ``a`` are
+    degenerate from low-r alone. The Q->0 Faber-Ziman amplitude
+    (:func:`amplitude_from_fz_limit`) is independent of rho0 — it needs only
+    the composition (``b_sq_avg``) and the measured high-Q level. rho0 is
+    therefore recoverable as the root of
+
+        ``concordance(rho0) = a_fz / a_density(rho0) = 1``
+
+    — the density at which the two independent criteria agree. Since
+    ``a_density`` grows ~linearly with rho0, the fixed-point update
+    ``rho_next = rho0 * concordance`` converges in a few :func:`autoscale`
+    passes.
+
+    Caveats: requires ``config.b_sq_avg`` (without a composition the
+    degeneracy is fundamental) and a statistically flat high-Q level; the
+    returned ``extrapolated`` flag marks data whose Qmin exceeds the FZ fit
+    width — there the Q->0 extrapolation owns the estimate, so treat it as a
+    starting point, not a measurement. ``config.rho0`` seeds the iteration.
+
+    Returns a JSON-friendly dict: ``rho0``, ``converged``, ``iterations``,
+    ``concordance``, ``a_density``, ``a_fz``, ``extrapolated``, and
+    ``history`` rows ``[rho0, a_density, a_fz, concordance]``.
+    """
+    if config.b_sq_avg is None:
+        raise ValueError(
+            "estimate_rho0 requires b_sq_avg (<b^2>): without a composition "
+            "the density and the amplitude are degenerate"
+        )
+    # The FZ amplitude needs the measured level; the density-limit amplitude
+    # is the quantity being matched.
+    work = replace(config, amplitude_criterion="density", c1_mode="sweep")
+    rho = float(np.clip(work.rho0, rho_min, rho_max))
+    history: list[tuple[float, float, float, float]] = []
+    converged = False
+    result = None
+    iterations = 0
+    for iterations in range(1, max_iter + 1):
+        work = replace(work, rho0=rho)
+        result = autoscale(q, sq, work, sigma)
+        if result.a_fz is None or not np.isfinite(result.a_fz) or result.a_fz <= 0:
+            raise ValueError(
+                "estimate_rho0: no usable Faber-Ziman amplitude (no flat "
+                "high-Q level, or a degenerate Q->0 extrapolation) — the "
+                "density cannot be anchored on this data"
+            )
+        concordance = float(result.a_fz / result.a)
+        history.append((rho, float(result.a), float(result.a_fz), concordance))
+        if abs(concordance - 1.0) <= rtol:
+            converged = True
+            break
+        rho_next = float(np.clip(rho * concordance, rho_min, rho_max))
+        if rho_next == rho:  # pinned at a bound: no progress possible
+            break
+        rho = rho_next
+    return {
+        "rho0": history[-1][0],
+        "converged": converged,
+        "iterations": iterations,
+        "concordance": history[-1][3],
+        "a_density": history[-1][1],
+        "a_fz": history[-1][2],
+        # FZ head fit spans ~1 A^-1 from Qmin; beyond that the Q->0
+        # extrapolation is longer than the data it rests on.
+        "extrapolated": bool(config.qmin > 1.0),
+        "history": [list(row) for row in history],
+    }
+
+
 def _sweep_provenance(sweep: LevelSweepResult) -> dict[str, Any]:
     return {
         "level": sweep.level,

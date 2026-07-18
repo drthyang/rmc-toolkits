@@ -33,6 +33,7 @@ import argparse
 import json
 import math
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
@@ -52,6 +53,7 @@ from .scaling import (
     autoscale,
     detect_first_peak_onset,
     diagnostics_summary,
+    estimate_rho0,
     scale_pipeline,
 )
 from .scattering import faber_ziman, number_density_from_mass_density
@@ -119,6 +121,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="sample mass density (g/cm^3); with --formula this converts to "
         "rho0 via N_A (ADDIE convention)",
+    )
+    data.add_argument(
+        "--estimate-rho0",
+        action="store_true",
+        help="self-consistent number density: iterate the density-limit fit "
+        "until its amplitude agrees with the rho0-independent Q->0 "
+        "Faber-Ziman amplitude (requires <b^2> via --b-sq-avg or --formula); "
+        "the estimate replaces rho0 for the run",
     )
     data.add_argument(
         "--b-avg-sq",
@@ -587,6 +597,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "--amplitude selects the auto-fit criterion; it cannot be "
                 "combined with --manual/--scale/--offset"
             )
+
+        rho0_estimate = None
+        if args.estimate_rho0:
+            if manual:
+                raise CliError(
+                    "--estimate-rho0 drives the auto-fit; it cannot be "
+                    "combined with --manual/--scale/--offset"
+                )
+            if config.b_sq_avg is None:
+                raise CliError(
+                    "--estimate-rho0 requires <b^2>: pass --b-sq-avg or --formula"
+                )
+            rho0_estimate = estimate_rho0(q, sq, config, sigma=sigma)
+            config = replace(config, rho0=float(rho0_estimate["rho0"]))
+            note = (
+                "; long Q->0 extrapolation — treat as a starting point"
+                if rho0_estimate["extrapolated"]
+                else ""
+            )
+            print(
+                f"rho0 self-consistency: {rho0_estimate['rho0']:.6f} 1/A^3 "
+                f"(concordance {rho0_estimate['concordance']:.4f}, "
+                f"{rho0_estimate['iterations']} passes{note})"
+            )
+
         if manual:
             if args.scale is not None:
                 a = args.scale
@@ -635,6 +670,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if enforcement is None
             else dict(zip(("cutoff", "peak_rmin", "peak_rmax"), enforcement)),
             "outputs": {key: str(path) for key, path in targets.items()},
+            "rho0_estimate": rho0_estimate,
             "diagnostics": summary,
             "provenance": result.provenance,
         }

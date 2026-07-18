@@ -35,7 +35,7 @@ rmc_toolkits/
   kde.py         unit-cell position loading + server-side gaussian_kde slice (+ contours)
   pca_kde.py     per-site RMC displacement clouds → PCA/thermal-ellipsoid stats + separable 3D KDE volume (source of truth)
   transforms.py  Keen-2001 conversions, sine-FT pair, Lorch, omitted-low-Q correction, Fourier filter, stog low-r enforcement (pure numpy, no I/O)
-  scaling.py     Auto StoG engine: level sweep, closed-form (a,b) fit, self-consistent filter loop, FZ amplitude mode, diagnostics (no I/O)
+  scaling.py     Auto StoG engine: level sweep, closed-form (a,b) fit, self-consistent filter loop, FZ amplitude mode, estimate_rho0 (density from amplitude-criteria concordance), diagnostics (no I/O)
   scattering.py  Faber-Ziman coefficients from a chemical formula (Sears table, 89 elements)
   scaling_cli.py rmc-autoscale CLI: stog.inp/--data → engine → classic stog output family + provenance JSON (all scaling file I/O)
 
@@ -54,7 +54,7 @@ web_app/frontend/src/
     components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
   components/
     App.jsx                      shell, run-folder selection, page nav, Live Data
-    AutoStogPage.jsx             Auto StoG tab (both runtimes): source pick → prefilled params → auto-scale → readout + S(Q)/GK/D(r) plots with guide lines → export (Flask: /api/scaling/run; static: client-side zip)
+    AutoStogPage.jsx             Auto StoG tab — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets w/ descriptions) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
     Dashboard.jsx                all-plots run dashboard
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
@@ -101,6 +101,13 @@ web_app/frontend/src/
   handlers. Drag updates `zCenter` live.
 - **Three.js atom palette** is a Nature-style scheme; each element gets a distinct color shared by
   the slab and 3D views via a legend above them.
+- **rho0 self-consistency is criteria concordance, not a new fit.** The density-limit amplitude
+  depends on rho0 (C2 rows scale with `-4·pi·rho0·r`) — degenerate with the scale from low-r alone;
+  the Q→0 Faber-Ziman amplitude does not (needs only ⟨b²⟩ + the measured level). `estimate_rho0`
+  (scaling.py, JS port in `autoScale.js` — keep in sync) root-finds
+  `a_fz/a_density(rho0) = 1` by fixed-point iteration. It REQUIRES a composition; cross-engine
+  parity of the iterated result is bounded by the rtol stopping rule (~1e-4), not single-pass
+  transform precision.
 - **Backend data-root guard**: relative paths resolve under `RMC_TOOLKITS_DATA_ROOT` (default repo
   root); absolute paths are rejected unless inside the root or a natively-picked folder.
 - **`src/llm/` import boundary**: the AI assistant module receives run data **only as props**

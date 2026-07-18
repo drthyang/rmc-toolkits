@@ -4,11 +4,15 @@
 // Static-mode Auto StoG worker: runs the JS engine off-thread. One message per
 // job: { id, config, mode, a, b, q, sq, sigma, enforcement } -> { id, ok,
 // result | error }. Large arrays travel as transferable Float64Array buffers.
+// kind: 'estimateRho0' runs only the density self-consistency and returns the
+// small estimate dict; a scaling job with estimateRho0: true runs it first and
+// adopts the estimated density for the fit.
 
 import {
   autoscale,
   diagnosticsSummary,
   effectiveS0Target,
+  estimateRho0,
   firstPeakZero,
   fqToGpdf,
   makeConfig,
@@ -16,12 +20,25 @@ import {
 } from './autoScale';
 
 self.onmessage = (event) => {
-  const { id, config: rawConfig, mode, a, b, q, sq, sigma, enforcement } = event.data;
+  const {
+    id, kind, config: rawConfig, mode, a, b, q, sq, sigma, enforcement,
+    estimateRho0: wantEstimate,
+  } = event.data;
   try {
-    const config = makeConfig(rawConfig);
     const qArr = new Float64Array(q);
     const sqArr = new Float64Array(sq);
     const sigmaArr = sigma ? new Float64Array(sigma) : null;
+    if (kind === 'estimateRho0') {
+      const estimate = estimateRho0(qArr, sqArr, makeConfig(rawConfig), sigmaArr);
+      self.postMessage({ id, ok: true, result: { estimate } });
+      return;
+    }
+    let config = makeConfig(rawConfig);
+    let rho0Estimate = null;
+    if (wantEstimate) {
+      rho0Estimate = estimateRho0(qArr, sqArr, config, sigmaArr);
+      config = { ...config, rho0: rho0Estimate.rho0 };
+    }
     const result = mode === 'manual'
       ? scalePipeline(qArr, sqArr, config, a, b, { mode: 'manual' })
       : autoscale(qArr, sqArr, config, sigmaArr);
@@ -83,6 +100,8 @@ self.onmessage = (event) => {
         windowRefined: result.windowRefined,
         rFitWindowUsed: result.rFitWindowUsed,
         enforcement: effectiveEnforcement,
+        rho0Estimate,
+        rho0Used: config.rho0,
         summary,
         q: result.q.buffer,
         sqRaw: result.sqRaw.buffer,

@@ -800,6 +800,66 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
   });
 };
 
+/**
+ * Self-consistent number density from amplitude-criteria concordance
+ * (straight port of scaling.py estimate_rho0 — keep in sync).
+ *
+ * The density-limit amplitude depends on rho0 (the C2 rows scale with the
+ * density line -4*pi*rho0*r); the Q->0 Faber-Ziman amplitude does not (it
+ * needs only the composition <b^2> and the measured high-Q level). rho0 is
+ * therefore the root of concordance(rho0) = aFz / aDensity(rho0) = 1; since
+ * aDensity grows ~linearly with rho0 the fixed-point update
+ * rho *= concordance converges in a few autoscale passes. Requires
+ * config.bSqAvg; `extrapolated` flags data whose Qmin exceeds the FZ fit
+ * width (the estimate is then a starting point, not a measurement).
+ */
+export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
+  rtol = 1e-3, maxIter = 8, rhoMin = 1e-4, rhoMax = 1.0,
+} = {}) => {
+  if (config.bSqAvg == null) {
+    throw new Error(
+      'estimateRho0 requires bSqAvg (<b^2>): without a composition the '
+      + 'density and the amplitude are degenerate'
+    );
+  }
+  let work = { ...config, amplitudeCriterion: 'density', c1Mode: 'sweep' };
+  let rho = Math.min(Math.max(work.rho0, rhoMin), rhoMax);
+  const history = [];
+  let converged = false;
+  let iterations = 0;
+  for (iterations = 1; iterations <= maxIter; iterations += 1) {
+    work = { ...work, rho0: rho };
+    const result = autoscale(qIn, sqIn, work, sigmaIn);
+    if (result.aFz == null || !isNum(result.aFz) || result.aFz <= 0) {
+      throw new Error(
+        'estimateRho0: no usable Faber-Ziman amplitude (no flat high-Q '
+        + 'level, or a degenerate Q->0 extrapolation) — the density cannot '
+        + 'be anchored on this data'
+      );
+    }
+    const concordance = result.aFz / result.a;
+    history.push([rho, result.a, result.aFz, concordance]);
+    if (Math.abs(concordance - 1) <= rtol) {
+      converged = true;
+      break;
+    }
+    const rhoNext = Math.min(Math.max(rho * concordance, rhoMin), rhoMax);
+    if (rhoNext === rho) break; // pinned at a bound: no progress possible
+    rho = rhoNext;
+  }
+  const last = history[history.length - 1];
+  return {
+    rho0: last[0],
+    converged,
+    iterations,
+    concordance: last[3],
+    aDensity: last[1],
+    aFz: last[2],
+    extrapolated: config.qmin > 1.0,
+    history,
+  };
+};
+
 export const diagnosticsSummary = (result, config) => {
   const [lo, hi] = result.rFitWindowUsed || rFitWindow(config);
   let total = 0;

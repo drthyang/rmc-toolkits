@@ -20,6 +20,7 @@ from rmc_toolkits.scaling import (
     autoscale,
     detect_first_peak_onset,
     diagnostics_summary,
+    estimate_rho0,
     level_sweep,
     scale_pipeline,
 )
@@ -158,6 +159,30 @@ class AutoscaleSyntheticTests(unittest.TestCase):
         result = autoscale(self.q, sq_meas, synthetic_config(), sigma=sigma)
         self.assertTrue(result.converged)
         self.assertLess(abs(result.a - 2.0) / 2.0, 0.05)
+
+    def test_estimate_rho0_recovers_density(self):
+        # Self-consistency: the density-limit amplitude depends on rho0, the
+        # FZ Q->0 amplitude does not; their concordance root recovers the
+        # density the data were forward-modeled with — from any seed.
+        sq_meas = (self.sq_true + 4.0) / 5.0
+        head = self.q <= self.q[0] + 1.0
+        _, s_true_0 = np.polyfit(self.q[head], self.sq_true[head], 1)
+        b_sq_avg = B2 * (1.0 - float(s_true_0))
+        for rho_start in (0.02, 0.2):
+            with self.subTest(rho_start=rho_start):
+                est = estimate_rho0(
+                    self.q, sq_meas,
+                    synthetic_config(rho0=rho_start, b_sq_avg=b_sq_avg),
+                )
+                self.assertTrue(est["converged"])
+                self.assertLess(abs(est["rho0"] - RHO0) / RHO0, 0.05)
+                self.assertLess(abs(est["concordance"] - 1.0), 1e-3)
+                self.assertFalse(est["extrapolated"])
+
+    def test_estimate_rho0_requires_composition(self):
+        sq_meas = (self.sq_true + 4.0) / 5.0
+        with self.assertRaisesRegex(ValueError, "b_sq_avg"):
+            estimate_rho0(self.q, sq_meas, synthetic_config())
 
     def test_despike_restores_recovery_under_tail_glitches(self):
         # Detector-glitch spikes ring through the transform into the C2 window
@@ -492,6 +517,16 @@ class XrayFeCoSnTests(unittest.TestCase):
         # x-ray normalized flat level: -<b>^2 = -1 below the 1.0 A cutoff.
         below = manual.r <= self.inp.peak_cutoff
         np.testing.assert_allclose(manual.gk_enforced[below], -1.0, atol=1e-12)
+
+    def test_estimate_rho0_near_hand_value(self):
+        # FeCoSn x-ray, normalized S(Q): <b^2>/<b>^2 = <Z^2>/<Z>^2 = 1.10426.
+        # Seeded far from the answer to prove the estimate is data-driven;
+        # measured 0.0600 vs the hand 0.057329 (within 5%, tolerance 10%).
+        config = replace(self.config, rho0=0.03, b_sq_avg=1.10426)
+        est = estimate_rho0(self.q, self.sq, config)
+        self.assertTrue(est["converged"])
+        self.assertLess(abs(est["rho0"] - 0.057329) / 0.057329, 0.10)
+        self.assertFalse(est["extrapolated"])
 
     def test_autoscale_succeeds_on_satisfiable_data(self):
         manual = scale_pipeline(self.q, self.sq, self.config, self.inp.a, self.inp.b)

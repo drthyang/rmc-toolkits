@@ -401,6 +401,27 @@ the density amplitude to 4.6% and is immune to ±10% ρ0 errors that shift the d
 *uncropped* data so it can inform the Qmax choice itself (currently it operates within the
 configured [Qmin, Qmax]).
 
+## 5c. ρ₀ self-consistency (added 2026-07-18)
+
+The ρ0-robustness study above is exactly the lever that makes the density *recoverable*:
+the density-limit amplitude responds ~1:1 to ρ0 (the C2 rows scale with the density line
+−4πρ0r — a and ρ0 are degenerate from low-r alone), while the FZ amplitude is
+ρ0-independent. `estimate_rho0` (scaling.py; JS port; CLI `--estimate-rho0`) therefore
+solves
+
+    concordance(ρ0) = a_fz / a_density(ρ0) = 1
+
+by fixed-point iteration `ρ ← ρ·concordance` (a_density is ~linear in ρ0, so this is
+Newton-like; 2–4 `autoscale` passes from seeds spanning a 10× range). Preconditions: a
+composition (⟨b²⟩) and a statistically flat level; the `extrapolated` flag marks
+Qmin > the FZ fit width (~1 Å⁻¹), where the Q→0 extrapolation owns the estimate — a
+starting point, not a measurement. Validation: synthetic truth ρ0 = 0.05 recovered to
+0.0510 from seeds 0.02/0.05/0.2; FeCoSn 199 K x-ray → 0.0600 vs the hand 0.057329 (4.7%)
+from seeds 0.03/0.057/0.12. In the workbench, ρ0 resolution is: user value →
+`NUMBER_DENSITY ::` header → mass density + composition → the self-consistent estimate
+(auto-run when the field is empty), making composition + Q window the only required
+inputs.
+
 ## 6. Open decisions (for Tsung-Han)
 
 1. **Commit the 59438 example (or a trimmed subset) as a CI fixture?** ~1.7 MB total; it would
@@ -412,8 +433,10 @@ configured [Qmin, Qmax]).
    both from a chemical formula (NIST/Sears table, 89 elements, formula parser, isotopic
    overrides, barn + fm² units). `ScalingConfig(b_avg_sq=faber_ziman("SrTiO3").b_avg_sq_barn,
    b_sq_avg=...b_sq_avg_barn)`.
-4. **Static-mode stance** for the future page: backend-only (simplest) vs the Phase-5 JS port
-   (preserves the hosted-app privacy story).
+4. ~~Static-mode stance~~ **RESOLVED (2026-07-18)**: the page is fully client-side in BOTH
+   runtimes — page-local uploads → the parity-tested JS worker engine → zip export
+   (preserves the privacy story everywhere and decouples pre-processing from the run
+   folder). The Flask `/api/scaling/*` endpoints remain for API/CLI consumers.
 
 ---
 

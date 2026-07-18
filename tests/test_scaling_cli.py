@@ -258,6 +258,46 @@ class DataModeTests(CliSyntheticBase):
             self.assertEqual(code, 2)
             self.assertIn("cannot be combined", err)
 
+    def test_estimate_rho0_flag(self):
+        head = self.q <= self.q[0] + 1.0
+        _, s_true_0 = np.polyfit(self.q[head], self.sq_true[head], 1)
+        b_sq_avg = B2 * (1.0 - float(s_true_0))
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "sample.dat"
+            write_stog_xy(data, self.q, self.sq_meas, title="s")
+            base = [
+                "--data", data, "--qmin", "0.6", "--qmax", "30",
+                "--b-avg-sq", B2, "--r0", "2.65",
+                "--rmax", "25", "--nr", "1000",
+            ]
+            # Seeded at the wrong density: the estimate must land on RHO0 and
+            # replace the seed for the run (config + provenance record it).
+            code, out, err = run_cli(
+                base + ["--rho0", "0.02", "--b-sq-avg", b_sq_avg, "--estimate-rho0"]
+            )
+            self.assertEqual(code, 0, msg=err)
+            self.assertIn("rho0 self-consistency", out)
+            payload = json.loads(
+                (Path(tmp) / "autoscale" / "sample_provenance.json").read_text()
+            )
+            estimate = payload["rho0_estimate"]
+            self.assertTrue(estimate["converged"])
+            self.assertLess(abs(estimate["rho0"] - RHO0) / RHO0, 0.05)
+            self.assertAlmostEqual(
+                payload["provenance"]["config"]["rho0"], estimate["rho0"]
+            )
+
+            code, _, err = run_cli(base + ["--rho0", "0.02", "--estimate-rho0", "--force"])
+            self.assertEqual(code, 2)
+            self.assertIn("requires <b^2>", err)
+
+            code, _, err = run_cli(
+                base + ["--rho0", "0.02", "--b-sq-avg", b_sq_avg, "--estimate-rho0",
+                        "--manual", "--scale", "10", "--force"]
+            )
+            self.assertEqual(code, 2)
+            self.assertIn("cannot be combined", err)
+
     def test_error_cases(self):
         with tempfile.TemporaryDirectory() as tmp:
             data = Path(tmp) / "sample.dat"
