@@ -51,6 +51,7 @@ const isSupportedFile = (name) => (
     || name.endsWith('.rmc6f')
     || name.startsWith('Frac')
     || /\.(gr|sq|fq)$/i.test(name)
+    || name.endsWith('.inp') // classic stog inputs feed the static Auto StoG page
     || SUPPORTED_NAMES.has(name)
 );
 

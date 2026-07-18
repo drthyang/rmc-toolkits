@@ -163,3 +163,69 @@ def faber_ziman(
         b_sq_avg_fm2=b_sq_avg,
         weights=weights,
     )
+
+
+#: Standard atomic weights (u), generated from the `periodictable` package
+#: (CIAAW values) for exactly the elements in COHERENT_B_FM.
+ATOMIC_MASS_U: dict[str, float] = {
+    "Ag": 107.8682, "Al": 26.98154, "Am": 243.0, "Ar": 39.95, "As": 74.92159,
+    "Au": 196.96657, "B": 10.81, "Ba": 137.327, "Be": 9.01218, "Bi": 208.9804,
+    "Br": 79.904, "C": 12.011, "Ca": 40.078, "Cd": 112.414, "Ce": 140.116,
+    "Cl": 35.45, "Co": 58.93319, "Cr": 51.9961, "Cs": 132.90545, "Cu": 63.546,
+    "Dy": 162.5, "Er": 167.259, "Eu": 151.964, "F": 18.9984, "Fe": 55.845,
+    "Ga": 69.723, "Gd": 157.25, "Ge": 72.63, "H": 1.008, "He": 4.0026,
+    "Hf": 178.486, "Hg": 200.592, "Ho": 164.93033, "I": 126.90447,
+    "In": 114.818, "Ir": 192.217, "K": 39.0983, "Kr": 83.798, "La": 138.90547,
+    "Li": 6.94, "Lu": 174.9668, "Mg": 24.305, "Mn": 54.93804, "Mo": 95.95,
+    "N": 14.007, "Na": 22.98977, "Nb": 92.90637, "Nd": 144.242, "Ne": 20.1797,
+    "Ni": 58.6934, "Np": 237.0, "O": 15.999, "Os": 190.23, "P": 30.97376,
+    "Pa": 231.03588, "Pb": 207.2, "Pd": 106.42, "Pm": 145.0, "Pr": 140.90766,
+    "Pt": 195.084, "Ra": 226.0, "Rb": 85.4678, "Re": 186.207, "Rh": 102.90549,
+    "Ru": 101.07, "S": 32.06, "Sb": 121.76, "Sc": 44.95591, "Se": 78.971,
+    "Si": 28.085, "Sm": 150.36, "Sn": 118.71, "Sr": 87.62, "Ta": 180.94788,
+    "Tb": 158.92535, "Tc": 98.0, "Te": 127.6, "Th": 232.0377, "Ti": 47.867,
+    "Tl": 204.38, "Tm": 168.93422, "U": 238.02891, "V": 50.9415, "W": 183.84,
+    "Xe": 131.293, "Y": 88.90584, "Yb": 173.045, "Zn": 65.38, "Zr": 91.224,
+}
+
+_AVOGADRO_PER_A3 = 6.02214076e23 / 1.0e24  # atoms/mol -> atoms/A^3 factor
+
+
+def molar_mass(composition: str | dict[str, float]) -> tuple[float, float]:
+    """Molar mass (g/mol per formula unit) and atom count of a composition."""
+    counts = parse_formula(composition) if isinstance(composition, str) else dict(composition)
+    total_mass = 0.0
+    total_atoms = 0.0
+    for element, count in counts.items():
+        if element not in ATOMIC_MASS_U:
+            raise ValueError(f"no atomic mass for element {element!r}")
+        total_mass += ATOMIC_MASS_U[element] * count
+        total_atoms += count
+    if total_atoms <= 0:
+        raise ValueError("composition counts must sum to a positive number")
+    return total_mass, total_atoms
+
+
+def number_density_from_mass_density(
+    composition: str | dict[str, float], mass_density_g_cm3: float
+) -> float:
+    """ADDIE-convention conversion: g/cm^3 -> atoms/A^3.
+
+    ``rho0 = rho_mass * (N_A / 1e24) * n_atoms / M`` with ``M`` the molar mass
+    of one formula unit and ``n_atoms`` its atom count (the formula-unit choice
+    cancels). Mirrors ``addie.utilities.math_tools.mass_density2number_density``.
+    """
+    if not mass_density_g_cm3 > 0:
+        raise ValueError(f"mass density must be positive, got {mass_density_g_cm3}")
+    mass, atoms = molar_mass(composition)
+    return mass_density_g_cm3 * _AVOGADRO_PER_A3 * atoms / mass
+
+
+def mass_density_from_number_density(
+    composition: str | dict[str, float], number_density_per_a3: float
+) -> float:
+    """Inverse of :func:`number_density_from_mass_density` (atoms/A^3 -> g/cm^3)."""
+    if not number_density_per_a3 > 0:
+        raise ValueError(f"number density must be positive, got {number_density_per_a3}")
+    mass, atoms = molar_mass(composition)
+    return number_density_per_a3 * mass / atoms / _AVOGADRO_PER_A3

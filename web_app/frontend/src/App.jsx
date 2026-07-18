@@ -6,6 +6,7 @@ import axios from 'axios';
 import Dashboard from './components/Dashboard';
 import StructurePage from './components/StructurePage';
 import PcaKdePage from './components/PcaKdePage';
+import AutoStogPage from './components/AutoStogPage';
 import { AssistantPage } from './llm';
 import API_BASE_URL from './api';
 import {
@@ -25,7 +26,7 @@ const STATUS_TIMEOUT_MS = 15000;
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [visitedPages, setVisitedPages] = useState({ dashboard: true, structure: false, ellipsoids: false, assistant: false });
+  const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, assistant: false });
   // Parsed run context published by the Dashboard, consumed by the AI Assistant page.
   const [assistantRun, setAssistantRun] = useState(null);
   // Per-site PCA ellipsoid table published by the PCA Ellipsoid page (once opened),
@@ -289,6 +290,12 @@ function App() {
             </div>
             <nav className="page-tabs" aria-label="Workspace pages">
               <button
+                className={activePage === 'autostog' ? 'active' : ''}
+                onClick={() => handlePageChange('autostog')}
+              >
+                Auto StoG
+              </button>
+              <button
                 className={activePage === 'dashboard' ? 'active' : ''}
                 onClick={() => handlePageChange('dashboard')}
               >
@@ -418,6 +425,14 @@ function App() {
         </header>
         <SymTolContext.Provider value={symTolState}>
         <div className="workspace-pages">
+          {visitedPages.autostog && (
+            <div
+              className={`workspace-page${activePage === 'autostog' ? ' is-active' : ' is-hidden'}`}
+              aria-hidden={activePage !== 'autostog'}
+            >
+              <AutoStogPage directory={currentDirectory} localRun={localRun} />
+            </div>
+          )}
           {visitedPages.dashboard && (
             <div
               className={`workspace-page${activePage === 'dashboard' ? ' is-active' : ' is-hidden'}`}
