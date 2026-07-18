@@ -366,18 +366,36 @@ def read_dat_header(path: str | Path) -> dict[str, object]:
     return result
 
 
-def write_stog_xy(path: str | Path, x: np.ndarray, y: np.ndarray, *, title: str = "") -> Path:
-    """Write x/y columns in the classic STOG layout (count, title, rows)."""
+def write_stog_xy(
+    path: str | Path,
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    title: str = "",
+    extra: np.ndarray | None = None,
+) -> Path:
+    """Write x/y(/extra) columns in the classic STOG layout (count, title, rows).
+
+    ``extra`` adds a third value column (e.g. the D(r) column of the classic
+    ``scale_ft.gr``).
+    """
     path = Path(path)
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     if x.shape != y.shape:
         raise ValueError(f"x and y shapes differ: {x.shape} vs {y.shape}")
+    if extra is not None:
+        extra = np.asarray(extra, dtype=float)
+        if extra.shape != x.shape:
+            raise ValueError(f"extra column shape differs: {extra.shape} vs {x.shape}")
     with path.open("w", encoding="utf-8") as handle:
         handle.write(f"{x.size:>12d}\n")
         handle.write(f"{title}\n")
-        for xi, yi in zip(x, y):
-            handle.write(f"  {xi:.16E}  {yi:.16E}\n")
+        for index, (xi, yi) in enumerate(zip(x, y)):
+            row = f"  {xi:.16E}  {yi:.16E}"
+            if extra is not None:
+                row += f"  {extra[index]:.16E}"
+            handle.write(row + "\n")
     return path
 
 
