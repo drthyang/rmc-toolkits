@@ -884,7 +884,10 @@ const AutoStogPage = ({ directory, localRun }) => {
             <section className="autostog-card">
               <header>
                 <h3>{gkPlot.title}</h3>
-                <span>fit window {fmt(preview.guides.rFitWindow?.[0], 3)}–{fmt(preview.guides.rFitWindow?.[1], 3)} Å</span>
+                <span>
+                  fit window {fmt(preview.guides.rFitWindow?.[0], 3)}–{fmt(preview.guides.rFitWindow?.[1], 3)} Å
+                  {' · double-click for full amplitude'}
+                </span>
               </header>
               <InteractivePlot file={{ path: 'autostog-gk', name: 'autostog-gk' }} plotData={gkPlot} />
             </section>

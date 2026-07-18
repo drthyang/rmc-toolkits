@@ -151,6 +151,9 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     // Render-time adjustment (not an effect) per the React "adjusting state
     // when a prop changes" pattern.
     const [lastPlotData, setLastPlotData] = useState(null);
+    // With an initialYDomain, double-click toggles out to the full data
+    // extent (and back); without one it just resets zoom as before.
+    const [fullExtent, setFullExtent] = useState(false);
     if (plotData && plotData !== lastPlotData) {
         setLastPlotData(plotData);
         setHidden(new Set((plotData.series || [])
@@ -160,6 +163,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         setYDomain(null);
         setHover(null);
         setDrag(null);
+        setFullExtent(false);
     }
 
     // Measured data first (drawn underneath, first palette color); the
@@ -201,10 +205,11 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         );
         const baseY = niceDomain(allY.length ? allY : visibleSeries.flatMap((series) => series.y));
         // A caller-supplied initial y window (e.g. the Auto StoG low-r zoom)
-        // acts as the un-zoomed default; user zooms still override it.
-        const initialY = effectivePlot?.initialYDomain;
+        // acts as the un-zoomed default; user zooms override it, and
+        // double-click toggles the full data extent.
+        const initialY = fullExtent ? null : effectivePlot?.initialYDomain;
         return { x: currentX, y: yDomain || initialY || baseY, baseX, baseY };
-    }, [visibleSeries, xDomain, yDomain, effectivePlot]);
+    }, [visibleSeries, xDomain, yDomain, effectivePlot, fullExtent]);
 
     // 8:5 (golden-ish) for grid cards, a slim strip for the wide variant.
     const view = wide
@@ -392,11 +397,11 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                     ))}
                 </div>
                 <div className="plot-actions">
-                    {(xDomain || yDomain) && (
+                    {(xDomain || yDomain || fullExtent) && (
                         <button
                             type="button"
                             className="plot-reset"
-                            onClick={() => { setXDomain(null); setYDomain(null); }}
+                            onClick={() => { setXDomain(null); setYDomain(null); setFullExtent(false); }}
                         >
                             Reset zoom
                         </button>
@@ -416,7 +421,14 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                     onPointerCancel={() => setDrag(null)}
                     onPointerLeave={() => setHover(null)}
                     onWheel={zoom}
-                    onDoubleClick={() => { setXDomain(null); setYDomain(null); }}
+                    onDoubleClick={() => {
+                        const atDefault = !xDomain && !yDomain;
+                        setXDomain(null);
+                        setYDomain(null);
+                        if (effectivePlot?.initialYDomain) {
+                            setFullExtent(atDefault ? !fullExtent : false);
+                        }
+                    }}
                 >
                     <defs>
                         <clipPath id={clipId}>
