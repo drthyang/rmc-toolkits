@@ -5,8 +5,52 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
-Auto StoG Phase 1 — automatic total-scattering data scaling engine (`rmc_toolkits.scaling` +
-`rmc_toolkits.transforms`), plus the app rename to **RMCProfile Workbench**.
+Auto StoG Phases 1–2 — automatic total-scattering data scaling engine (`rmc_toolkits.scaling` +
+`rmc_toolkits.transforms`) and the `rmc-autoscale` CLI, plus the app rename to
+**RMCProfile Workbench**.
+
+- **Faber-Ziman amplitude mode** (idea: Tsung-Han Yang): `ScalingConfig(
+  amplitude_criterion="fz")` / CLI `--amplitude fz` implements the "subtract the measured
+  high-Q level, scale Q→0 onto S(0) = 1 − ⟨b²⟩/⟨b⟩², shift the level back to 1" procedure —
+  closed form on top of the level sweep, no self-consistent loop (the criterion is
+  filter-independent), requires ⟨b²⟩. Because it never touches ρ0, it is the natural
+  cross-check for the density-limit amplitude: on the FeCoSn validation data a ±10% ρ0
+  error moves the density amplitude ~1:1 while the fz amplitude is bit-identical, so the
+  concordance diagnostic turns a wrong `NUMBER_DENSITY ::` into a measurable discord. In
+  fz mode `diagnostics_summary` suppresses the (vacuous) self-concordance and the density
+  residuals act as the independent check.
+- **FeCoSn 199 K validation + robustness campaign** (`data/stog_tests/199K`, local; script
+  `data/stog_tests/robustness_199K.py` + results JSON): a third complete classic-Fortran
+  run now validates the stack — manual parity `scale.fq` 6.8e−14 max|Δ|, `ft.dat`/
+  `scale_ft.sq` 2.1e−5 rms, enforced `scale_ft_rmc.gr` 9.6e−5 rms. 63-case perturbation
+  study: affine pre-corruption invariance exact (≤2.6e−11%); recovered scale stable ±3%
+  over Qmax ∈ [18, 28] and Qmin ∈ [0.5, 1.6]; noise graceful (±0.3% at σ = 0.005, ±2.6%
+  at σ = 0.05); spikes −19% unflagged→flagged, `--despike` restores to +4.3%; every
+  catastrophic case (rolloff Qmax, starved Qmin, spikes) raised
+  `density_limit_satisfied=False`. All three auto criteria (sweep+density, joint, fz)
+  land 8–13% above the colleague's hand scaling while improving the honest low-r
+  residual (auto 0.110 vs hand 0.165, −33%), with density/fz concordance 4.6%. The
+  x-ray fixture tests now select the first available FeCoSn run (`100K` or `199K` — same
+  stog parameterization), and a CLI-level x-ray parity test joins the suite. 139 tests.
+- **Auto StoG Phase 2 — the `rmc-autoscale` CLI** (`rmc_toolkits/scaling_cli.py`; console
+  entry via `[project.scripts]`, module form `python -m rmc_toolkits.scaling_cli`): drop-in
+  replacement for an interactive classic-stog session. Reads a classic `stog.inp` — or
+  `--data FILE --qmin --qmax` with `--formula`-computed coefficients (scattering.py) and
+  ρ0/r0 pre-filled from the `.dat` `NUMBER_DENSITY ::`/`MINIMUM_DISTANCES ::` header — and
+  auto-fits (a, b) by default; `--manual` reruns the stog.inp hand scaling and
+  `--scale`/`--offset` fix them explicitly. Writes the seven classic output files (scaled
+  S(Q), unfiltered g−1, filtered S(Q), filtered g−1 + D(r) companion column, and the RMC
+  FK/GK/D(r)) plus a provenance JSON carrying the full configuration, fit history, and
+  `diagnostics_summary`. Safety per plan §5: outputs default into an `autoscale/` directory
+  beside the input and nothing is overwritten without `--force`, so the tool can never
+  silently clobber the real STOG outputs a `stog.inp` sits beside. The RMC files get the
+  exact Fortran `first_peak_zero` enforcement by default in stog.inp mode (`--no-enforce`
+  opts out); the honest pre-enforcement low-r rms is always printed. `write_stog_xy` gains
+  an optional third column for the `scale_ft.gr` layout. The classic fixed-name `ft.dat`
+  Fourier-filter correction is written too (data-grid), so the output family matches a
+  stog/pystog session file-for-file. Tests: `tests/test_scaling_cli.py`
+  (9: synthetic auto/manual/data-mode end-to-end, no-clobber guard, error surfaces,
+  module-entry smoke, skip-if-absent Fortran parity). Full suite: 135 tests green.
 
 - **New `rmc_toolkits/transforms.py`**: Keen-2001-convention conversions (S(Q) ⟷ F(Q) ⟷ F_K(Q);
   g(r) ⟷ G_PDF(r) ⟷ G_K(r) ⟷ D(r)), the trapezoid sine-FT pair, Lorch window, the analytic
