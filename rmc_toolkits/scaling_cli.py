@@ -50,10 +50,11 @@ from .scaling import (
     ScalingConfig,
     ScalingResult,
     autoscale,
+    detect_first_peak_onset,
     diagnostics_summary,
     scale_pipeline,
 )
-from .scattering import faber_ziman
+from .scattering import faber_ziman, number_density_from_mass_density
 from .transforms import (
     first_peak_zero,
     fq_to_gpdf,
@@ -110,7 +111,14 @@ def build_parser() -> argparse.ArgumentParser:
     data.add_argument(
         "--rho0",
         type=float,
-        help="number density (1/A^3); default: NUMBER_DENSITY :: from the data header",
+        help="number density (1/A^3); default: NUMBER_DENSITY :: from the data "
+        "header, else derived from --mass-density + --formula",
+    )
+    data.add_argument(
+        "--mass-density",
+        type=float,
+        help="sample mass density (g/cm^3); with --formula this converts to "
+        "rho0 via N_A (ADDIE convention)",
     )
     data.add_argument(
         "--b-avg-sq",
@@ -307,10 +315,14 @@ def _build_config(
         rho0 = args.rho0
         if rho0 is None:
             rho0 = header.get("number_density")
+        if rho0 is None and args.mass_density is not None:
+            if not (args.formula or "").strip():
+                raise CliError("--mass-density needs --formula to convert to rho0")
+            rho0 = number_density_from_mass_density(args.formula, args.mass_density)
         if rho0 is None:
             raise CliError(
-                "number density unknown: pass --rho0 or use a data file with a "
-                "NUMBER_DENSITY :: header"
+                "number density unknown: pass --rho0, or --mass-density with "
+                "--formula, or use a data file with a NUMBER_DENSITY :: header"
             )
         b_avg_sq = args.b_avg_sq
         r_cutoff = args.r_cutoff if args.r_cutoff is not None else 1.0
@@ -376,9 +388,9 @@ def _resolve_enforcement(
     if cutoff is None and inp is not None:
         cutoff = inp.peak_cutoff
     if cutoff is None:
-        if args.enforce or args.peak_window is not None:
-            raise CliError("enforcement in --data mode requires --enforce-cutoff")
-        return None
+        if args.peak_window is not None:
+            raise CliError("--peak-window requires --enforce-cutoff (or a stog input)")
+        return None  # data mode: resolved post-run from the detected r0
     if args.peak_window is not None:
         peak_rmin, peak_rmax = args.peak_window
     elif inp is not None and args.enforce_cutoff is None:
@@ -440,6 +452,7 @@ def _write_outputs(
         result.r,
         lorch=config.lorch,
         low_q_correction=config.low_q_correction,
+        s0_target=config.effective_s0_target,
     )
     g_unfiltered = gpdf_to_g(result.r, gpdf, config.rho0)
 
@@ -515,6 +528,9 @@ def _print_report(
             "recoverable from this data alone (missing low-Q information); "
             "validate the scale externally"
         )
+    if summary.get("r0_detected") is not None:
+        refined = " (fit window refined)" if summary.get("window_refined") else ""
+        print(f"  r0 (data) : first-shell onset detected at {summary['r0_detected']:.2f} A{refined}")
     if "amplitude_concordance" in summary:
         verdict = "concordant" if summary["amplitudes_concordant"] else "DISCORDANT"
         print(
@@ -587,6 +603,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             result = scale_pipeline(q, sq, config, float(a), float(b))
         else:
             result = autoscale(q, sq, config, sigma=sigma)
+
+        # Data mode without an explicit cutoff: enforce at the data-derived
+        # closest approach (classic-product parity, from physics not a guess).
+        if enforcement is None and args.enforce is not False:
+            r0_detected = result.provenance.get("r0_detected")
+            if r0_detected is None:
+                r0_detected = detect_first_peak_onset(
+                    result.r, result.g_filtered, config.qmax,
+                    search_min=config.r_cutoff + 0.3,
+                )
+                if r0_detected is not None:
+                    result.provenance["r0_detected"] = float(r0_detected)
+            if r0_detected is not None:
+                enforcement = (float(r0_detected),) * 3
 
         summary = diagnostics_summary(result, config)
         summary["c1_mode"] = result.provenance.get("c1_mode_effective", "manual")

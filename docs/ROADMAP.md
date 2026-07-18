@@ -123,11 +123,17 @@ focus.**
 - Presets for common dataset combinations (neutron / x-ray total scattering, combined runs, and
   runs that include RMCProfile EXAFS datasets).
 
-### Deferred preprocessing
+### Preprocessing — Auto StoG (ACTIVE; shipped 2026-07-17)
 
-STOG is a preprocessing/reduction tool, not a modeling or fit engine. Keep STOG-specific scaling and
-Fourier-transform workflows out of the current app surface until there is a dedicated preprocessing
-module with a clear user path.
+The former "deferred preprocessing" precondition — a dedicated preprocessing module with a clear
+user path — is met, so this workflow is now a headline feature rather than a deferred one:
+`rmc_toolkits.scaling`/`transforms`/`scattering` (the auto-scaling engine, validated against three
+complete classic-Fortran stog runs), the `rmc-autoscale` CLI, the `/api/scaling/preview|run`
+endpoints, and the **Auto StoG** tab (first in the tab row; Flask mode) replace the classic stog
+"try again" loop with an automatic physics-anchored fit (high-Q level sweep + low-r density limit,
+with the Faber-Ziman Q→0 limit as an independent amplitude criterion/cross-check). Full plan and
+validation record: [STOG_SCALING_PLAN.md](STOG_SCALING_PLAN.md). Remaining stretch: the
+static-mode Web-Worker port (plan Phase 5) so the hosted dashboard can run it browser-side.
 
 ### Lowering the barrier end-to-end
 

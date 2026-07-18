@@ -45,13 +45,23 @@ from .parsers import (
     write_stog_xy,
 )
 from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_png
-from .scattering import COHERENT_B_FM, FaberZiman, faber_ziman, parse_formula
+from .scattering import (
+    ATOMIC_MASS_U,
+    COHERENT_B_FM,
+    FaberZiman,
+    faber_ziman,
+    mass_density_from_number_density,
+    molar_mass,
+    number_density_from_mass_density,
+    parse_formula,
+)
 from .scaling import (
     LevelSweepResult,
     ScalingConfig,
     ScalingResult,
     amplitude_from_fz_limit,
     autoscale,
+    detect_first_peak_onset,
     diagnostics_summary,
     level_sweep,
     scale_pipeline,
@@ -92,9 +102,14 @@ __all__ = [
     "UnitCellPositions",
     "COHERENT_B_FM",
     "FaberZiman",
+    "ATOMIC_MASS_U",
     "amplitude_from_fz_limit",
     "autoscale",
     "density_line",
+    "detect_first_peak_onset",
+    "mass_density_from_number_density",
+    "molar_mass",
+    "number_density_from_mass_density",
     "diagnostics_summary",
     "enforce_low_r",
     "faber_ziman",

@@ -5,6 +5,134 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Composition-first Auto StoG** — procedure clarified end-to-end
+([SCALING_PROCEDURE.md](SCALING_PROCEDURE.md)); the user now provides only the chemical
+composition + [Qmin, Qmax] (+ a density when the data header has none); validated on three
+new complete Fortran neutron runs (POWGEN Mn₃Sn).
+
+- **The procedure document** (`docs/SCALING_PROCEDURE.md`): the definitive recipe for
+  absolute-scale S(Q)/G(r) — inputs and defaults tables, the Keen-convention function map,
+  the 7-step pipeline, how to read the one-sided density flag and the concordance trust
+  metric, and material-class guidance. Research base: pystog 0.6.7 source (operation order
+  confirmed read → merge → manual scale → transform → filter → Lorch → Keen conversions;
+  no auto-scaler, low-r minimizer an explicit TODO) and ADDIE (density conversions,
+  periodictable molar masses, `<b_coh>^2` hand-off).
+- **Composition-aware omitted-low-Q correction**: the analytic [0, Qmin] correction now
+  extrapolates S(Q) to the composition-derived Keen Eq. 21 target
+  ``S(0) = 1 − ⟨b²⟩/⟨b⟩²`` instead of pystog's solid-state 0 — algebraically a
+  one-line change (``const' = (1 − s0)·const + s0·coef``, still affine in (a, b)). For
+  negative-b compositions this is O(1): Mn₃Sn has ⟨b²⟩/⟨b⟩² = 13.06 → S(0) = −12.06, and
+  the composition-aware target cuts the low-r residual ~40% on the PG3 runs.
+  ``ScalingConfig.s0_target`` (auto from ``b_sq_avg``; pin 0 for classic parity).
+- **Data-derived first-shell r₀** (`detect_first_peak_onset` + a second refinement pass in
+  `autoscale`): the dominant |g| feature's left flank (35% of peak) — |g| because
+  negative-b totals can have an *inverted* first shell; peak-relative because sub-r₀
+  ripples scale with the amplitude. Detected 2.73–2.77 Å on the Mn₃Sn runs and 2.53 Å on
+  FeCoSn (hand-chosen classic cutoffs: 2.40–2.68). Sets the low-r fit window without a
+  structural prior and becomes the default low-r **enforcement cutoff** in data mode
+  (CLI + API + page; explicit `--no-enforce`/`enforce:false` still opts out);
+  `diagnostics_summary` reports `r0_detected`/`window_refined` and the *effective* fit
+  window from provenance.
+- **ADDIE-style density toolkit** (`scattering.py` + JS port): `ATOMIC_MASS_U`
+  (periodictable/CIAAW values for the full element set), `molar_mass`,
+  `number_density_from_mass_density` / inverse (ρ₀ = ρ_m·N_A/10²⁴·n/M). CLI
+  `--mass-density`, API `massDensity`, page "or ρ g/cm³" field. Mn₃Sn check:
+  0.063049 atoms/Å³ ↔ 7.421 g/cm³.
+- **Mn₃Sn neutron validation** (`data/stog_tests/{stog,stog_300K,stog_500K}`, local):
+  three complete Fortran runs; parameters recovered from the outputs to ~1e−12
+  (hand scalings ×2.5/×2.05/×10 — all satisfying b = 1 − a, i.e. the level-anchored
+  decomposition the sweep formalizes; ⟨b⟩² 0.015407 = `faber_ziman("Mn3Sn")` exactly).
+  New `Mn3SnNeutronTests` (+ detection/s0 unit tests): manual filter-stage parity ≤2e−3
+  rms per run, composition/density round trips, first-shell detection, and the headline
+  physics finding — the density limit is degenerate on this material (one-sided flag
+  False, hand values mutually inconsistent by 5×) while the **FZ amplitude injects the
+  composition's S(0) and lands at O(10)** consistently; the procedure doc encodes that
+  decision rule.
+- **Page**: primary bar is now Composition · Qmin · Qmax · ρ₀/mass-density with a live
+  ⟨b⟩²/⟨b²⟩/S(0) chip; ⟨b⟩²/⟨b²⟩ overrides moved to Advanced (x-ray note kept); a
+  collapsible "How Auto StoG works" explainer; a First-shell-r₀ readout card; and
+  **full-range G_K(r) and D(r)** (no 8 Å slice — theory guide lines stay confined to the
+  low-r region; the G_K default y-zoom keeps the −⟨b⟩² level readable, box-zoom for
+  detail). JS engine/worker fully synced (s0-aware correction, detector, two-pass,
+  converters) with new Python-golden parity tests (detection case + Mn₃Sn converters).
+  Verified live on the 300 K run: composition-only inputs → a = 1.309, 7 iterations,
+  r₀ 2.750 Å detected + enforced, density flag red, concordance 7.95 flagged.
+
+Auto StoG page redesign + **Phase 5: the static-mode engine** — the hosted app now runs
+Auto StoG entirely in the browser.
+
+- **Static-mode Auto StoG (plan Phase 5)**: `src/workers/autoScale.js` is a straight JS
+  port of the Python engine — transforms (trapezoid sine FT, Lorch, omitted-low-Q
+  correction, Fourier filter, first-peak zeroing), the level sweep (prefix-sum OLS with
+  numpy `.astype(int)` edge parity), the Huber-IRLS closed-form fit, sweep/joint/FZ
+  amplitude modes, despiking, diagnostics, the stog parsers (`stog.inp`, xy files, `::`
+  headers, Fortran-style writer), and the Faber-Ziman calculator (Sears table + formula
+  parser). `autoScaleWorker.js` runs it off-thread with transferable buffers. **Parity is
+  tested, not assumed**: `tests/generate_autoscale_fixture.py` freezes Python golden
+  numbers into `src/__tests__/fixtures/`, and `autoScale.test.js` (11 vitest tests)
+  asserts the JS fit matches to 1e−6 relative (level sweep to 1e−9, manual pipeline
+  samples to 1e−9). Verified live: the in-browser fit on the FeCoSn 199 K run reproduces
+  the backend exactly (a = 1.1839, b = −0.19804, 3 iterations, level 1.0120 ± 0.017).
+  Static export packs the classic 9-file family into a zip (client-side `writeStogXy`,
+  provenance JSON included); the Auto StoG tab now shows in both runtimes and
+  `browserData.isSupportedFile` admits `.inp`.
+- **Page redesigned on the app's design language, laid out for 16:9** (was hardcoded-hex
+  cards in a narrow sidebar): a PcaKdePage-style horizontal controls bar (SOURCE picker +
+  micro-labeled parameter fields + Auto-scale + Advanced pill), an expandable advanced
+  bar (windows/grid, sweep-vs-joint, density-vs-FZ, toggle pills, fixed-(a, b) expert
+  run), a stat-card readout strip (correction vs hand values, convergence with the
+  per-iteration a-trajectory, high-Q level ± uncertainty, fit quality, density-limit
+  verdict, concordance), then a full-width S(Q) card over side-by-side G_K(r)/D(r)
+  cards — all on `index.css` tokens (borders, shadows, accent, pills, tabular numerals).
+- **InteractivePlot gains guide-line support** (additive; Dashboard untouched): series
+  with `role: 'guide'` render dashed/muted outside the palette rotation and are skipped
+  by hover snapping (dashed legend swatches); `defaultHidden` series start muted;
+  `initialYDomain` sets the un-zoomed default view (used to keep the G_K low-r level
+  readable instead of the first peak); swapping `plotData` now resets zoom/hover/hidden
+  state (previously stale zoom survived a re-fit).
+- **Plot content**: measured-unscaled S(Q) ships default-hidden (one legend click away),
+  the S → 1 asymptote, the measured level (drawn only over its admissible window), and
+  the S(0) Faber-Ziman target marker join S(Q); theory lines −⟨b⟩² and −4πρ₀⟨b⟩²r anchor
+  the G_K/D(r) cards.
+- **Form & workflow**: session persistence (source + all settings survive a reload via
+  sessionStorage), the Formula field is labeled *(neutron)* with an x-ray tooltip, an
+  inline guard disables Auto-scale when FZ mode lacks ⟨b²⟩, and micro-labels no longer
+  pass through `text-transform: uppercase` (which had turned ρ₀ into a capital-rho
+  P-lookalike).
+
+Auto StoG Phases 3–4 — the Flask scaling API and the **Auto StoG** page.
+
+- **`/api/scaling/preview` + `/api/scaling/run`** (`web_app/backend/app.py`): POST endpoints
+  driving the Phase-1 engine server-side. `preview` resolves a classic `stog.inp` or a bare
+  data file (+ overrides; `.dat`-header ρ0/r0 and `formula` defaults mirror the CLI), runs the
+  auto-fit (or a fixed manual scaling) behind a per-(path, mtime, config) LRU cache, and
+  returns the full series (raw/scaled/filtered S(Q), G_K, D(r), enforced variants), theory
+  guide values, diagnostics, and provenance; `{"inspect": true}` is the cheap no-compute form
+  used to pre-fill the page. `run` writes the classic output family through the *same* writer
+  as the CLI (`ft.dat` included) with the no-clobber guard mapped to HTTP 409, outputs
+  restricted to the configured data roots. 5 new backend tests (synthetic run under
+  `results/`; 20-test backend module green).
+- **The Auto StoG tab** (`AutoStogPage.jsx` + CSS): first in the tab row (Dashboard remains
+  the default page), Flask mode only — static mode hides the tab and the page shows a
+  pointer to the local app. Automation-first per the plan: pick a source file (stog.inp
+  pre-fills everything; data files pre-fill from the `.dat` header), one **Auto-scale**
+  button, then a diagnostics readout (a/b beside the stog.inp hand values, convergence +
+  level ± uncertainty, low-r rms, one-sided density-limit verdict, amplitude concordance
+  with a "check ρ₀" hint on discord) over three InteractivePlot charts with theory
+  guide-lines — S(Q) (asymptote + measured level), G_K(r) (−⟨b⟩²), D(r) (−4πρ₀⟨b⟩²r) —
+  the latter two zoomed to the low-r region, enforced curves overlaid when enforcement is
+  on. Advanced panel: r-windows, Lorch/despike/robust/low-Q-correction/σ toggles, sweep vs
+  joint architecture, density vs FZ amplitude criterion, and fixed-(a, b) expert runs.
+  Export card writes the RMCProfile-ready family (default `autoscale/` beside the input,
+  Force required to overwrite, 409 surfaced as a hint). Verified end-to-end against the
+  FeCoSn 199 K run in the live app: page auto-fit reproduces the CLI exactly
+  (a = 1.1839, b = −0.1980, level 1.0120 ± 0.017, concordance 1.06).
+- File browser (`/api/files`) now also lists `*.inp`, `*.sq`, and `*.dat` so scaling
+  sources are pickable.
+- Docs-on-completion pass: ROADMAP Phase 7 "Deferred preprocessing" → **active Auto StoG**
+  feature; AGENTS.md architecture map gains the four scaling modules, the endpoints, and
+  the page. Remaining stretch: plan Phase 5 (static-mode Web-Worker port).
+
 Auto StoG Phases 1–2 — automatic total-scattering data scaling engine (`rmc_toolkits.scaling` +
 `rmc_toolkits.transforms`) and the `rmc-autoscale` CLI, plus the app rename to
 **RMCProfile Workbench**.

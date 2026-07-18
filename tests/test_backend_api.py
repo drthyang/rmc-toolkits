@@ -303,5 +303,148 @@ class BackendApiTests(unittest.TestCase):
         self.assertTrue(payload["slabVertices"])
 
 
+class ScalingApiTests(unittest.TestCase):
+    """Auto StoG endpoints, driven by a synthetic classic-stog run.
+
+    Synthetic model kept in sync with tests/test_scaling_cli.py. The run dir
+    lives under results/ so API paths stay inside the configured data root.
+    """
+
+    RHO0 = 0.05
+    B2 = 0.02
+
+    @classmethod
+    def setUpClass(cls):
+        import numpy as np
+        from rmc_toolkits.parsers import write_stog_xy
+        from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
+
+        backend_app.app.config.update(TESTING=True)
+        cls.client = backend_app.app.test_client()
+
+        cls.run_dir = ROOT / "results" / "scaling_api_test"
+        cls.run_dir.mkdir(parents=True, exist_ok=True)
+        q = np.arange(20, 981) * 0.03
+        r = np.arange(1, 12001) * 0.005
+        onset = 0.5 * (1.0 + np.tanh((r - 2.65) / 0.07))
+        peak = 1.6 * np.exp(-0.5 * ((r - 2.8) / 0.15) ** 2)
+        gpdf = g_to_gpdf(r, onset + peak, cls.RHO0)
+        sq_true = fq_to_sq(q, gpdf_to_fq(r, gpdf, q))
+        cls.sq_meas = (sq_true + 9.0) / 10.0  # true correction a=10, b=-9
+        cls.q = q
+        write_stog_xy(cls.run_dir / "synth.dat", q, cls.sq_meas, title="synthetic")
+        (cls.run_dir / "stog.inp").write_text(
+            "1\nsynth.dat\n0.60 30.0\n-9 0.1\n0\nscale.fq\nscale.gr\n25\n1000\nN\n"
+            "0.05\n0\nN\nY\n1.0\nscale_ft.sq\nscale_ft.gr\n0.02\n"
+            "scale_ft_rmc.fq\nscale_ft_rmc.gr\nscale_ft_rmc.dr\n2.48 2.65 3.1\n"
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+
+        shutil.rmtree(cls.run_dir, ignore_errors=True)
+
+    def test_inspect_reports_inp_and_header(self):
+        response = self.client.post(
+            "/api/scaling/preview",
+            json={"path": "results/scaling_api_test/stog.inp", "inspect": True},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["kind"], "inp")
+        self.assertAlmostEqual(payload["inp"]["a"], 10.0)
+        self.assertAlmostEqual(payload["inp"]["b"], -9.0)
+        self.assertTrue(payload["dataFile"].endswith("synth.dat"))
+
+    def test_preview_auto_fits_and_returns_series(self):
+        response = self.client.post(
+            "/api/scaling/preview",
+            json={"path": "results/scaling_api_test/stog.inp"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["result"]["converged"])
+        self.assertLess(abs(payload["result"]["a"] - 10.0) / 10.0, 0.05)
+        series = payload["series"]
+        self.assertEqual(len(series["q"]), len(series["sqScaled"]))
+        self.assertEqual(len(series["r"]), len(series["gk"]))
+        self.assertAlmostEqual(payload["guides"]["gkLowR"], -self.B2)
+        # stog.inp mode defaults to classic enforcement: flat -<b>^2 below 2.48.
+        self.assertIsNotNone(payload["series"]["gkEnforced"])
+        below = [
+            value
+            for radius, value in zip(series["r"], series["gkEnforced"])
+            if radius <= 2.48
+        ]
+        for value in below[:: max(1, len(below) // 7)]:
+            self.assertAlmostEqual(value, -self.B2, places=10)
+
+    def test_preview_manual_data_mode(self):
+        response = self.client.post(
+            "/api/scaling/preview",
+            json={
+                "path": "results/scaling_api_test/synth.dat",
+                "qmin": 0.6,
+                "qmax": 30,
+                "rho0": self.RHO0,
+                "bAvgSq": self.B2,
+                "r0": 2.65,
+                "mode": "manual",
+                "a": 10.0,
+                "b": -9.0,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["kind"], "data")
+        self.assertEqual(payload["result"]["a"], 10.0)
+        # Data mode auto-enforces at the data-derived first-shell onset
+        # (synthetic model onset ~2.6 A); explicit enforce=False opts out.
+        self.assertIsNotNone(payload["series"]["gkEnforced"])
+        detected = payload["enforcement"]["cutoff"]
+        self.assertGreater(detected, 2.3)
+        self.assertLess(detected, 2.85)
+
+        bare = self.client.post(
+            "/api/scaling/preview",
+            json={
+                "path": "results/scaling_api_test/synth.dat",
+                "qmin": 0.6, "qmax": 30, "rho0": self.RHO0,
+                "bAvgSq": self.B2, "r0": 2.65,
+                "mode": "manual", "a": 10.0, "b": -9.0,
+                "enforce": False,
+            },
+        )
+        self.assertIsNone(bare.get_json()["series"]["gkEnforced"])
+
+    def test_preview_rejects_missing_qmin(self):
+        response = self.client.post(
+            "/api/scaling/preview",
+            json={"path": "results/scaling_api_test/synth.dat", "qmax": 30},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("qmin", response.get_json()["error"])
+
+    def test_run_writes_family_then_conflicts_then_force(self):
+        body = {"path": "results/scaling_api_test/stog.inp", "mode": "manual"}
+        response = self.client.post("/api/scaling/run", json=body)
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        out_dir = Path(payload["outDir"])
+        self.assertEqual(out_dir, self.run_dir / "autoscale")
+        for name in (
+            "scale.fq", "scale_ft.sq", "scale_ft_rmc.gr", "ft.dat",
+            "stog_provenance.json",
+        ):
+            self.assertTrue((out_dir / name).exists(), name)
+
+        conflict = self.client.post("/api/scaling/run", json=body)
+        self.assertEqual(conflict.status_code, 409)
+
+        forced = self.client.post("/api/scaling/run", json={**body, "force": True})
+        self.assertEqual(forced.status_code, 200)
+
+
 if __name__ == "__main__":
     unittest.main()

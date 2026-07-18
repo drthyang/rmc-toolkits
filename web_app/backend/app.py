@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 
+import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 
@@ -34,13 +35,31 @@ from rmc_toolkits.parsers import (
     read_atom_indices,
     read_cell_vectors,
     read_chi,
+    read_dat_header,
     read_exafs_csv,
     read_rmc_csv,
     read_stog,
+    read_stog_inp,
+    read_stog_xy,
     related_r_value_logs,
     write_frac_from_rmc6f,
 )
 from rmc_toolkits.plots import bragg_is_tof, close_plot, detect_plot_kind, make_plot, plot_to_png
+from rmc_toolkits.scaling import (
+    ScalingConfig,
+    autoscale,
+    diagnostics_summary,
+    scale_pipeline,
+)
+from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs identical
+    CliError,
+    _json_safe,
+    _write_outputs,
+    _resolve_targets as _resolve_scaling_targets,
+)
+from rmc_toolkits.scaling import detect_first_peak_onset
+from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_density
+from rmc_toolkits.transforms import first_peak_zero, g_to_gk, gk_to_dr
 
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIST), static_url_path="")
@@ -48,7 +67,10 @@ CORS(app)
 
 DATA_ROOT = Path(os.environ.get("RMC_TOOLKITS_DATA_ROOT", PROJECT_ROOT)).expanduser().resolve()
 SELECTED_DATA_ROOTS: set[Path] = set()
-SUPPORTED_PATTERNS = ("*.csv", "*.log", "*.rmc6f", "Frac*.txt", "scale_ft.*", "stog_input.dat")
+SUPPORTED_PATTERNS = (
+    "*.csv", "*.log", "*.rmc6f", "Frac*.txt", "scale_ft.*", "stog_input.dat",
+    "*.inp", "*.sq", "*.dat",
+)
 MAX_STRUCTURE_POINTS = 1_000_000
 
 
@@ -598,6 +620,395 @@ def pca_kde_endpoint():
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# --- Auto StoG scaling API ---------------------------------------------------
+# Thin HTTP face over rmc_toolkits.scaling; file writing is shared with the
+# rmc-autoscale CLI so API outputs are identical to a CLI/classic-stog session.
+
+
+def _payload_float(payload: dict, key: str) -> float | None:
+    value = payload.get(key)
+    if value in (None, ""):
+        return None
+    return float(value)
+
+
+def _payload_bool(payload: dict, key: str, default: bool) -> bool:
+    value = payload.get(key)
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.lower() in ("1", "true", "yes")
+    return bool(value)
+
+
+def _resolve_scaling_source(payload: dict):
+    """Resolve the request source into (inp, inp_path, data_path, header)."""
+    source = _resolve_inside_root(payload.get("path"))
+    if not source.exists() or not source.is_file():
+        raise FileNotFoundError(f"Source file not found: {source}")
+    kind = (payload.get("kind") or "auto").lower()
+    inp = None
+    inp_path = None
+    looks_like_inp = source.suffix == ".inp" or "input" in source.name.lower()
+    if kind == "inp" or (kind == "auto" and looks_like_inp):
+        try:
+            inp = read_stog_inp(source)
+            inp_path = source
+        except (ValueError, NotImplementedError):
+            if kind == "inp":
+                raise
+    data_path = (source.parent / inp.data_file).resolve() if inp is not None else source
+    if inp is not None and not any(
+        _is_inside_root(data_path, root) for root in (DATA_ROOT, *SELECTED_DATA_ROOTS)
+    ):
+        raise PermissionError("stog input's data file lies outside the configured data roots")
+    if not data_path.exists():
+        raise FileNotFoundError(f"Data file not found: {data_path}")
+    header: dict = {}
+    try:
+        header = read_dat_header(data_path)
+    except OSError:
+        pass
+    return inp, inp_path, data_path, header
+
+
+def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
+    def pick(key: str, fallback):
+        value = _payload_float(payload, key)
+        return fallback if value is None else value
+
+    if inp is not None:
+        qmin = pick("qmin", inp.qmin)
+        qmax = pick("qmax", inp.qmax)
+        rho0 = pick("rho0", inp.rho0)
+        b_avg_sq = pick("bAvgSq", inp.b_avg_sq)
+        r_cutoff = pick("rCutoff", inp.r_cutoff)
+        rmax = pick("rmax", inp.rmax)
+        nr = int(pick("nr", inp.nr))
+        lorch = _payload_bool(payload, "lorch", inp.lorch)
+    else:
+        qmin = _payload_float(payload, "qmin")
+        qmax = _payload_float(payload, "qmax")
+        if qmin is None or qmax is None:
+            raise CliError("data mode requires qmin and qmax")
+        rho0 = _payload_float(payload, "rho0")
+        if rho0 is None:
+            rho0 = header.get("number_density")
+        if rho0 is None:
+            mass_density = _payload_float(payload, "massDensity")
+            formula_raw = (payload.get("formula") or "").strip()
+            if mass_density is not None and formula_raw:
+                rho0 = number_density_from_mass_density(formula_raw, mass_density)
+        if rho0 is None:
+            raise CliError(
+                "number density unknown: set rho0, or massDensity with formula, "
+                "or use a data file with a NUMBER_DENSITY :: header"
+            )
+        b_avg_sq = _payload_float(payload, "bAvgSq")
+        r_cutoff = pick("rCutoff", 1.0)
+        rmax = pick("rmax", 50.0)
+        nr = int(pick("nr", 5000))
+        lorch = _payload_bool(payload, "lorch", False)
+
+    b_sq_avg = _payload_float(payload, "bSqAvg")
+    formula = (payload.get("formula") or "").strip()
+    if formula:
+        coefficients = faber_ziman(formula)
+        if b_sq_avg is None:
+            b_sq_avg = coefficients.b_sq_avg_barn
+        if b_avg_sq is None:
+            b_avg_sq = coefficients.b_avg_sq_barn
+    if b_avg_sq is None:
+        raise CliError("data mode requires <b>^2: set bAvgSq or formula")
+
+    r0 = _payload_float(payload, "r0")
+    if r0 is None and "min_distance" in header:
+        r0 = float(header["min_distance"])
+    if r0 is None and inp is not None:
+        candidate = max(inp.peak_cutoff, inp.peak_rmin)
+        if candidate - 0.25 > float(r_cutoff) + 0.2:
+            r0 = candidate
+
+    config = ScalingConfig(
+        qmin=float(qmin),
+        qmax=float(qmax),
+        rho0=float(rho0),
+        b_avg_sq=float(b_avg_sq),
+        b_sq_avg=None if b_sq_avg is None else float(b_sq_avg),
+        r_cutoff=float(r_cutoff),
+        r0=r0,
+        r_fit_min=_payload_float(payload, "rFitMin"),
+        r_fit_max=_payload_float(payload, "rFitMax"),
+        rmax=float(rmax),
+        nr=nr,
+        lorch=lorch,
+        low_q_correction=_payload_bool(payload, "lowQCorrection", True),
+        robust=_payload_bool(payload, "robust", True),
+        c1_mode=(payload.get("c1Mode") or "sweep").lower(),
+        amplitude_criterion=(payload.get("amplitude") or "density").lower(),
+        despike=_payload_bool(payload, "despike", False),
+    )
+    config.r_fit_window  # validate eagerly with a clean 400
+    return config
+
+
+def _resolve_scaling_enforcement(payload: dict, inp) -> tuple[float, float, float] | None:
+    if _payload_bool(payload, "enforce", inp is not None) is False:
+        return None
+    cutoff = _payload_float(payload, "enforceCutoff")
+    if cutoff is None and inp is not None:
+        cutoff = inp.peak_cutoff
+    if cutoff is None:
+        return None  # data mode: resolved post-run from the detected r0
+    window = payload.get("peakWindow")
+    if isinstance(window, (list, tuple)) and len(window) == 2:
+        peak_rmin, peak_rmax = float(window[0]), float(window[1])
+    elif inp is not None and _payload_float(payload, "enforceCutoff") is None:
+        peak_rmin, peak_rmax = inp.peak_rmin, inp.peak_rmax
+    else:
+        peak_rmin = peak_rmax = cutoff
+    return float(cutoff), peak_rmin, peak_rmax
+
+
+def _resolve_scaling_mode(payload: dict, inp) -> tuple[str, float, float]:
+    mode = (payload.get("mode") or "auto").lower()
+    if mode not in ("auto", "manual"):
+        raise CliError(f"mode must be 'auto' or 'manual', got {mode!r}")
+    a = _payload_float(payload, "a")
+    b = _payload_float(payload, "b")
+    if mode == "manual":
+        if a is None and inp is not None:
+            a = inp.a
+            if b is None:
+                b = inp.b
+        if a is None:
+            raise CliError("manual mode requires a scale 'a' (or a stog input to take it from)")
+        if b is None:
+            b = 0.0
+        return mode, float(a), float(b)
+    return mode, 0.0, 0.0
+
+
+@lru_cache(maxsize=8)
+def _cached_scaling(path_str: str, mtime: float, config: ScalingConfig, mode: str, a: float, b: float, use_sigma: bool):
+    data = read_stog_xy(path_str)
+    q, sq = data[0], data[1]
+    sigma = None
+    if use_sigma and data.shape[0] >= 3:
+        sigma = data[2]
+        usable = np.isfinite(q) & np.isfinite(sq)
+        if not np.all(np.isfinite(sigma[usable])) or np.any(sigma[usable] <= 0):
+            sigma = None
+    if mode == "manual":
+        return scale_pipeline(q, sq, config, a, b)
+    return autoscale(q, sq, config, sigma=sigma)
+
+
+def _scaling_request(payload: dict):
+    inp, inp_path, data_path, header = _resolve_scaling_source(payload)
+    config = _resolve_scaling_config(payload, inp, header)
+    enforcement = _resolve_scaling_enforcement(payload, inp)
+    mode, a, b = _resolve_scaling_mode(payload, inp)
+    use_sigma = _payload_bool(payload, "useSigma", True)
+    result = _cached_scaling(
+        str(data_path), data_path.stat().st_mtime, config, mode, a, b, use_sigma
+    )
+    # No explicit cutoff and enforcement not refused: enforce at the
+    # data-derived closest approach (CLI-mirroring auto default).
+    if enforcement is None and payload.get("enforce") is not False:
+        r0_detected = result.provenance.get("r0_detected")
+        if r0_detected is None:
+            r0_detected = detect_first_peak_onset(
+                result.r, result.g_filtered, config.qmax,
+                search_min=config.r_cutoff + 0.3,
+            )
+            if r0_detected is not None:
+                result.provenance["r0_detected"] = float(r0_detected)
+        if r0_detected is not None:
+            enforcement = (float(r0_detected),) * 3
+    return inp, inp_path, data_path, header, config, enforcement, mode, result
+
+
+def _header_payload(header: dict) -> dict:
+    return {
+        "title": header.get("title"),
+        "numberDensity": header.get("number_density"),
+        "minDistance": header.get("min_distance"),
+    }
+
+
+def _inp_payload(inp) -> dict | None:
+    if inp is None:
+        return None
+    return {
+        "a": inp.a,
+        "b": inp.b,
+        "qmin": inp.qmin,
+        "qmax": inp.qmax,
+        "rho0": inp.rho0,
+        "bAvgSq": inp.b_avg_sq,
+        "rCutoff": inp.r_cutoff,
+        "rmax": inp.rmax,
+        "nr": inp.nr,
+        "lorch": inp.lorch,
+        "dataFile": inp.data_file,
+        "peakCutoff": inp.peak_cutoff,
+        "peakRmin": inp.peak_rmin,
+        "peakRmax": inp.peak_rmax,
+    }
+
+
+@app.route("/api/scaling/preview", methods=["POST"])
+def scaling_preview():
+    try:
+        payload = request.get_json(silent=True) or {}
+        if payload.get("inspect"):
+            inp, inp_path, data_path, header = _resolve_scaling_source(payload)
+            return jsonify(
+                {
+                    "source": str(inp_path or data_path),
+                    "kind": "inp" if inp is not None else "data",
+                    "dataFile": str(data_path),
+                    "inp": _inp_payload(inp),
+                    "header": _header_payload(header),
+                }
+            )
+
+        inp, inp_path, data_path, header, config, enforcement, mode, result = _scaling_request(payload)
+        summary = diagnostics_summary(result, config)
+
+        gk_enforced = dr_enforced = None
+        if enforcement is not None:
+            cutoff, peak_rmin, peak_rmax = enforcement
+            g_final = first_peak_zero(
+                result.r, result.g_filtered,
+                cutoff=cutoff, peak_rmin=peak_rmin, peak_rmax=peak_rmax,
+            )
+            gk_array = g_to_gk(g_final, config.b_avg_sq)
+            gk_enforced = gk_array.tolist()
+            dr_enforced = gk_to_dr(result.r, gk_array, config.rho0).tolist()
+
+        response = {
+            "source": str(inp_path or data_path),
+            "dataFile": str(data_path),
+            "kind": "inp" if inp is not None else "data",
+            "mode": mode,
+            "inp": _inp_payload(inp),
+            "header": _header_payload(header),
+            "result": {
+                "a": result.a,
+                "b": result.b,
+                "converged": result.converged,
+                "iterations": result.iterations,
+                "lowRRms": result.low_r_rms,
+                "c1TailMean": result.c1_tail_mean,
+                "history": [list(item) for item in result.history],
+            },
+            "diagnostics": _json_safe(summary),
+            "provenance": _json_safe(result.provenance),
+            "enforcement": None
+            if enforcement is None
+            else dict(zip(("cutoff", "peakRmin", "peakRmax"), enforcement)),
+            "guides": _json_safe(
+                {
+                    "asymptote": 1.0,
+                    "gkLowR": -config.b_avg_sq,
+                    "drSlope": -4.0 * math.pi * config.rho0 * config.b_avg_sq,
+                    "s0Target": None
+                    if config.b_sq_avg is None
+                    else 1.0 - config.b_sq_avg / config.b_avg_sq,
+                    "qTailMin": config.q_tail_min,
+                    "rFitWindow": summary.get("r_fit_window", list(config.r_fit_window)),
+                    "r0Detected": summary.get("r0_detected"),
+                    "level": None if result.sweep is None else result.sweep.level,
+                    "levelWindow": None
+                    if result.sweep is None
+                    else [result.sweep.q_lo, result.sweep.q_hi],
+                }
+            ),
+            "series": {
+                "q": result.q.tolist(),
+                "sqRaw": ((result.sq_scaled - result.b) / result.a).tolist(),
+                "sqScaled": result.sq_scaled.tolist(),
+                "sqFiltered": result.sq_filtered.tolist(),
+                "r": result.r.tolist(),
+                "gk": result.gk.tolist(),
+                "dr": result.d_r.tolist(),
+                "gkEnforced": gk_enforced,
+                "drEnforced": dr_enforced,
+            },
+        }
+        return jsonify(response)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except (CliError, ValueError, NotImplementedError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/scaling/run", methods=["POST"])
+def scaling_run():
+    try:
+        payload = request.get_json(silent=True) or {}
+        inp, inp_path, data_path, header, config, enforcement, mode, result = _scaling_request(payload)
+        summary = diagnostics_summary(result, config)
+
+        from types import SimpleNamespace
+
+        out_dir = payload.get("outDir")
+        args = SimpleNamespace(
+            out_dir=str(_resolve_inside_root(out_dir)) if out_dir else None,
+            out_stem=(payload.get("outStem") or "").strip() or None,
+            force=_payload_bool(payload, "force", False),
+        )
+        targets = _resolve_scaling_targets(args, inp, inp_path, data_path)
+        for target in targets.values():
+            if not any(
+                _is_inside_root(target.resolve().parent, root) or target.resolve().parent == root
+                for root in (DATA_ROOT, *SELECTED_DATA_ROOTS)
+            ):
+                raise PermissionError("Output directory is outside configured data roots")
+
+        provenance_payload = {
+            "tool": "rmc-autoscale (web API)",
+            "source": str(inp_path or data_path),
+            "data_file": str(data_path),
+            "stog_inp_reference": None if inp is None else {"a": inp.a, "b": inp.b},
+            "enforcement": None
+            if enforcement is None
+            else dict(zip(("cutoff", "peak_rmin", "peak_rmax"), enforcement)),
+            "outputs": {key: str(path) for key, path in targets.items()},
+            "diagnostics": summary,
+            "provenance": result.provenance,
+        }
+        targets["provenance"].parent.mkdir(parents=True, exist_ok=True)
+        _write_outputs(result, config, targets, enforcement, provenance_payload)
+        return jsonify(
+            {
+                "a": result.a,
+                "b": result.b,
+                "mode": mode,
+                "outputs": {key: str(path) for key, path in targets.items()},
+                "outDir": str(targets["provenance"].parent),
+                "diagnostics": _json_safe(summary),
+            }
+        )
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except CliError as exc:
+        status = 409 if "refusing to overwrite" in str(exc) else 400
+        return jsonify({"error": str(exc)}), status
+    except (ValueError, NotImplementedError) as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500

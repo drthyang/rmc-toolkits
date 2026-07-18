@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,11 +17,17 @@ from rmc_toolkits.parsers import (
 from rmc_toolkits.scaling import (
     ScalingConfig,
     autoscale,
+    detect_first_peak_onset,
     diagnostics_summary,
     level_sweep,
     scale_pipeline,
 )
-from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
+from rmc_toolkits.scattering import (
+    faber_ziman,
+    mass_density_from_number_density,
+    number_density_from_mass_density,
+)
+from rmc_toolkits.transforms import first_peak_zero, fq_to_sq, g_to_gpdf, gpdf_to_fq
 
 ROOT = Path(__file__).resolve().parents[1]
 STOG_RUN = ROOT / "data" / "stog_tests" / "stog_59438"
@@ -480,6 +487,169 @@ class XrayFeCoSnTests(unittest.TestCase):
         self.assertLess(abs(auto.c1_tail_mean - 1.0), 0.02)
         summary = diagnostics_summary(auto, self.config)
         self.assertTrue(summary["density_limit_satisfied"])
+
+
+#: Complete Fortran stog runs of Mn3Sn (POWGEN PG3), local-only. Parameters
+#: recovered from the outputs themselves (max residual ~1e-12): hand (a, b)
+#: from scale.fq vs the rebinned input, the enforcement cutoff from the flat
+#: -<b>^2 stretch of scale_ft_rmc.gr.
+MN3SN_RUNS = {
+    "stog": ("PG3_55537_rebin.sq", 2.5, -1.5, 2.60),
+    "stog_300K": ("PG3_55526_SQ_rebin.sq", 2.050021, -1.05, 2.68),
+    "stog_500K": ("PG3_54139_SQ_rebin.dat", 10.0, -9.0, 2.40),
+}
+MN3SN_ROOT = ROOT / "data" / "stog_tests"
+
+requires_mn3sn = unittest.skipUnless(
+    all((MN3SN_ROOT / name / raw).exists() for name, (raw, _, _, _) in MN3SN_RUNS.items()),
+    "Mn3Sn PG3 neutron runs not present",
+)
+
+
+@requires_mn3sn
+class Mn3SnNeutronTests(unittest.TestCase):
+    """Negative-b neutron material: <b^2>/<b>^2 = 13.06, S(0) = -12.06.
+
+    The composition carries the absolute-scale information here: the density
+    limit alone is degenerate (one-sided flag False on every run) and the
+    historical hand scalings are mutually inconsistent (2.5x / 2.05x / 10x
+    for the same material). Classic-parity comparisons keep b_sq_avg unset so
+    the omitted-low-Q correction stays at the Fortran's S(0) = 0 convention.
+    """
+
+    QMIN, QMAX, RHO0, B2 = 0.82, 28.0, 0.063049, 0.015407
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fz = faber_ziman("Mn3Sn")
+        cls.data = {
+            name: read_stog_xy(MN3SN_ROOT / name / raw)
+            for name, (raw, _, _, _) in MN3SN_RUNS.items()
+        }
+
+    def parity_config(self):
+        return ScalingConfig(
+            qmin=self.QMIN, qmax=self.QMAX, rho0=self.RHO0, b_avg_sq=self.B2
+        )
+
+    def composition_config(self, **overrides):
+        return ScalingConfig(
+            qmin=self.QMIN, qmax=self.QMAX, rho0=self.RHO0,
+            b_avg_sq=self.fz.b_avg_sq_barn, b_sq_avg=self.fz.b_sq_avg_barn,
+            **overrides,
+        )
+
+    def test_composition_reproduces_the_stog_coefficients(self):
+        self.assertAlmostEqual(self.fz.b_avg_sq_barn, 0.015407, places=6)
+        self.assertAlmostEqual(self.fz.b_sq_avg_barn, 0.201223, places=5)
+        # ADDIE-convention mass <-> number density round trip.
+        mass_density = mass_density_from_number_density("Mn3Sn", self.RHO0)
+        self.assertAlmostEqual(mass_density, 7.4209, places=3)
+        self.assertAlmostEqual(
+            number_density_from_mass_density("Mn3Sn", mass_density), self.RHO0, places=9
+        )
+
+    def test_manual_parity_with_fortran(self):
+        for name, (_, a, b, cutoff) in MN3SN_RUNS.items():
+            with self.subTest(run=name):
+                q, sq = self.data[name][0], self.data[name][1]
+                manual = scale_pipeline(q, sq, self.parity_config(), a, b)
+
+                ref = read_stog_xy(MN3SN_ROOT / name / "scale_ft.sq")
+                ours = np.interp(ref[0], manual.q, manual.sq_filtered)
+                rms = float(np.sqrt(np.mean((ours - ref[1]) ** 2)))
+                self.assertLess(rms, 2e-3)
+
+                gr = read_stog_xy(MN3SN_ROOT / name / "scale_ft_rmc.gr")
+                enforced = first_peak_zero(
+                    manual.r, manual.g_filtered,
+                    cutoff=cutoff, peak_rmin=0.0, peak_rmax=0.0,
+                )
+                gk = self.B2 * (enforced - 1.0)
+                ours_gr = np.interp(gr[0], manual.r, gk)
+                rms_gr = float(np.sqrt(np.mean((ours_gr - gr[1]) ** 2)))
+                self.assertLess(rms_gr, 5e-3)
+                below = gr[0] <= cutoff - 0.02
+                np.testing.assert_allclose(gr[1][below], -self.B2, atol=1e-6)
+
+    def test_autoscale_composition_only_detects_first_shell(self):
+        q, sq = self.data["stog_300K"][0], self.data["stog_300K"][1]
+        result = autoscale(q, sq, self.composition_config())
+        summary = diagnostics_summary(result, self.composition_config())
+        self.assertTrue(result.converged)
+        # The inverted Mn-Sn first shell sits at ~2.7-2.8 A; detection must
+        # land on its left flank and refine the fit window there.
+        self.assertIsNotNone(summary.get("r0_detected"))
+        self.assertGreater(summary["r0_detected"], 2.4)
+        self.assertLess(summary["r0_detected"], 3.0)
+        self.assertTrue(summary.get("window_refined"))
+        # Honest one-sided verdict: the low-Q hole is O(S(0)) = O(-12) deep,
+        # so the absolute scale is NOT recoverable from self-consistency.
+        self.assertFalse(summary["density_limit_satisfied"])
+
+    def test_fz_amplitude_uses_the_composition(self):
+        # The FZ criterion injects S(0) = 1 - <b^2>/<b>^2 = -12.06 and lands
+        # at O(10) amplitudes — the only route consistent across runs (the
+        # density-limit amplitudes sit at O(1) and the hand values disagree
+        # with each other by 5x).
+        for name in MN3SN_RUNS:
+            with self.subTest(run=name):
+                q, sq = self.data[name][0], self.data[name][1]
+                result = autoscale(
+                    q, sq, self.composition_config(amplitude_criterion="fz")
+                )
+                self.assertGreater(result.a, 5.0)
+                self.assertLess(result.a, 25.0)
+
+
+class DetectionAndDensityTests(unittest.TestCase):
+    """Synthetic checks for the r0 detector and the s0-aware correction."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.q = np.arange(60, 3001) * 0.01
+        cls.sq_true = synthetic_sq(cls.q)
+
+    def test_detects_first_shell_and_refines_window(self):
+        config = synthetic_config(r0=None, r_fit_max=None)
+        result = autoscale(self.q, (self.sq_true + 4.0) / 5.0, config)
+        summary = diagnostics_summary(result, config)
+        onset = summary.get("r0_detected")
+        self.assertIsNotNone(onset)
+        # Synthetic first shell: onset 2.65, peak 2.8.
+        self.assertGreater(onset, 2.3)
+        self.assertLess(onset, 2.85)
+        self.assertLess(abs(result.a - 5.0) / 5.0, 0.03)
+
+    def test_detector_ignores_subcutoff_ripples(self):
+        rng = np.random.default_rng(11)
+        r = np.arange(1, 1001) * 0.01
+        g = 0.3 * np.sin(r * 28.0) * rng.uniform(0.5, 1.0, r.size)
+        peak = 3.0 * np.exp(-0.5 * ((r - 2.8) / 0.12) ** 2)
+        onset = detect_first_peak_onset(r, g + peak, 28.0, search_min=1.3)
+        self.assertIsNotNone(onset)
+        self.assertGreater(onset, 2.3)
+        self.assertLess(onset, 2.8)
+
+    def test_s0_target_changes_only_the_constant_term(self):
+        from rmc_toolkits.transforms import low_q_correction_basis
+
+        q = np.arange(82, 2801) * 0.01
+        r = np.arange(1, 501) * 0.01
+        coef0, const0 = low_q_correction_basis(q, r)
+        coef1, const1 = low_q_correction_basis(q, r, s0_target=-12.06)
+        np.testing.assert_allclose(coef1, coef0, atol=1e-15)
+        np.testing.assert_allclose(
+            const1, (1.0 - (-12.06)) * const0 + (-12.06) * coef0, atol=1e-12
+        )
+
+    def test_effective_s0_target_resolution(self):
+        base = synthetic_config()
+        self.assertEqual(base.effective_s0_target, 0.0)
+        with_b2 = synthetic_config(b_sq_avg=2.0 * B2)
+        self.assertAlmostEqual(with_b2.effective_s0_target, -1.0)
+        pinned = synthetic_config(b_sq_avg=2.0 * B2, s0_target=0.25)
+        self.assertAlmostEqual(pinned.effective_s0_target, 0.25)
 
 
 if __name__ == "__main__":
