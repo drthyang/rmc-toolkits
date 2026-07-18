@@ -8,6 +8,7 @@
 import {
   autoscale,
   diagnosticsSummary,
+  effectiveS0Target,
   firstPeakZero,
   fqToGpdf,
   makeConfig,
@@ -26,6 +27,14 @@ self.onmessage = (event) => {
       : autoscale(qArr, sqArr, config, sigmaArr);
     const summary = diagnosticsSummary(result, config);
 
+    // 'auto' enforcement resolves to the data-derived closest approach.
+    let effectiveEnforcement = enforcement;
+    if (enforcement === 'auto') {
+      effectiveEnforcement = result.r0Detected != null
+        ? { cutoff: result.r0Detected, peakRmin: result.r0Detected, peakRmax: result.r0Detected }
+        : null;
+    }
+
     // Unfiltered g(r) - 1 (the classic scale.gr): recomputed here exactly like
     // the CLI writer does — it is not part of the engine result.
     const fqScaled = new Float64Array(result.q.length);
@@ -35,6 +44,7 @@ self.onmessage = (event) => {
     const gpdfUnfiltered = fqToGpdf(result.q, fqScaled, result.r, {
       lorch: config.lorch,
       lowQCorrection: config.lowQCorrection,
+      s0Target: effectiveS0Target(config),
     });
     const gm1Unfiltered = new Float64Array(result.r.length);
     for (let i = 0; i < result.r.length; i += 1) {
@@ -43,8 +53,8 @@ self.onmessage = (event) => {
 
     let gkEnforced = null;
     let drEnforced = null;
-    if (enforcement) {
-      const gFinal = firstPeakZero(result.r, result.gFiltered, enforcement);
+    if (effectiveEnforcement) {
+      const gFinal = firstPeakZero(result.r, result.gFiltered, effectiveEnforcement);
       gkEnforced = new Float64Array(result.r.length);
       drEnforced = new Float64Array(result.r.length);
       for (let i = 0; i < result.r.length; i += 1) {
@@ -69,6 +79,10 @@ self.onmessage = (event) => {
         nDespiked: result.nDespiked,
         sweep: result.sweep,
         aFz: result.aFz,
+        r0Detected: result.r0Detected,
+        windowRefined: result.windowRefined,
+        rFitWindowUsed: result.rFitWindowUsed,
+        enforcement: effectiveEnforcement,
         summary,
         q: result.q.buffer,
         sqRaw: result.sqRaw.buffer,

@@ -57,7 +57,8 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     _write_outputs,
     _resolve_targets as _resolve_scaling_targets,
 )
-from rmc_toolkits.scattering import faber_ziman
+from rmc_toolkits.scaling import detect_first_peak_onset
+from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_density
 from rmc_toolkits.transforms import first_peak_zero, g_to_gk, gk_to_dr
 
 
@@ -699,7 +700,15 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
         if rho0 is None:
             rho0 = header.get("number_density")
         if rho0 is None:
-            raise CliError("number density unknown: set rho0 or use a data file with a NUMBER_DENSITY :: header")
+            mass_density = _payload_float(payload, "massDensity")
+            formula_raw = (payload.get("formula") or "").strip()
+            if mass_density is not None and formula_raw:
+                rho0 = number_density_from_mass_density(formula_raw, mass_density)
+        if rho0 is None:
+            raise CliError(
+                "number density unknown: set rho0, or massDensity with formula, "
+                "or use a data file with a NUMBER_DENSITY :: header"
+            )
         b_avg_sq = _payload_float(payload, "bAvgSq")
         r_cutoff = pick("rCutoff", 1.0)
         rmax = pick("rmax", 50.0)
@@ -755,9 +764,7 @@ def _resolve_scaling_enforcement(payload: dict, inp) -> tuple[float, float, floa
     if cutoff is None and inp is not None:
         cutoff = inp.peak_cutoff
     if cutoff is None:
-        if payload.get("enforce") is True:
-            raise CliError("enforcement without a stog input requires enforceCutoff")
-        return None
+        return None  # data mode: resolved post-run from the detected r0
     window = payload.get("peakWindow")
     if isinstance(window, (list, tuple)) and len(window) == 2:
         peak_rmin, peak_rmax = float(window[0]), float(window[1])
@@ -811,6 +818,19 @@ def _scaling_request(payload: dict):
     result = _cached_scaling(
         str(data_path), data_path.stat().st_mtime, config, mode, a, b, use_sigma
     )
+    # No explicit cutoff and enforcement not refused: enforce at the
+    # data-derived closest approach (CLI-mirroring auto default).
+    if enforcement is None and payload.get("enforce") is not False:
+        r0_detected = result.provenance.get("r0_detected")
+        if r0_detected is None:
+            r0_detected = detect_first_peak_onset(
+                result.r, result.g_filtered, config.qmax,
+                search_min=config.r_cutoff + 0.3,
+            )
+            if r0_detected is not None:
+                result.provenance["r0_detected"] = float(r0_detected)
+        if r0_detected is not None:
+            enforcement = (float(r0_detected),) * 3
     return inp, inp_path, data_path, header, config, enforcement, mode, result
 
 
@@ -903,7 +923,8 @@ def scaling_preview():
                     if config.b_sq_avg is None
                     else 1.0 - config.b_sq_avg / config.b_avg_sq,
                     "qTailMin": config.q_tail_min,
-                    "rFitWindow": list(config.r_fit_window),
+                    "rFitWindow": summary.get("r_fit_window", list(config.r_fit_window)),
+                    "r0Detected": summary.get("r0_detected"),
                     "level": None if result.sweep is None else result.sweep.level,
                     "levelWindow": None
                     if result.sweep is None

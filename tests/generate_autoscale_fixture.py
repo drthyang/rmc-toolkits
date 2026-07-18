@@ -54,6 +54,9 @@ def main() -> None:
     )
     fz = autoscale(q, sq_meas, fz_config)
 
+    detect_config = ScalingConfig(**{**base, "r0": None, "r_fit_max": None})
+    detected = autoscale(q, sq_meas, detect_config)
+
     manual = scale_pipeline(q, sq_meas, config, A_TRUE, B_TRUE)
     r_sample_idx = [50, 200, 500, 999]   # on the r grid (nr = 1000)
     q_sample_idx = [50, 200, 500, 950]   # on the cropped q grid (961 pts)
@@ -87,6 +90,12 @@ def main() -> None:
                 "nAdmissible": sweep.n_admissible,
             },
             "fz": {"a": fz.a, "b": fz.b},
+            "autoDetect": {
+                "a": detected.a,
+                "r0Detected": detected.provenance.get("r0_detected"),
+                "windowRefined": bool(detected.provenance.get("window_refined", False)),
+                "rFitWindow": list(detected.provenance["r_fit_window"]),
+            },
             "manual": {
                 "lowRRms": manual.low_r_rms,
                 "c1TailMean": manual.c1_tail_mean,

@@ -5,6 +5,59 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Composition-first Auto StoG** — procedure clarified end-to-end
+([SCALING_PROCEDURE.md](SCALING_PROCEDURE.md)); the user now provides only the chemical
+composition + [Qmin, Qmax] (+ a density when the data header has none); validated on three
+new complete Fortran neutron runs (POWGEN Mn₃Sn).
+
+- **The procedure document** (`docs/SCALING_PROCEDURE.md`): the definitive recipe for
+  absolute-scale S(Q)/G(r) — inputs and defaults tables, the Keen-convention function map,
+  the 7-step pipeline, how to read the one-sided density flag and the concordance trust
+  metric, and material-class guidance. Research base: pystog 0.6.7 source (operation order
+  confirmed read → merge → manual scale → transform → filter → Lorch → Keen conversions;
+  no auto-scaler, low-r minimizer an explicit TODO) and ADDIE (density conversions,
+  periodictable molar masses, `<b_coh>^2` hand-off).
+- **Composition-aware omitted-low-Q correction**: the analytic [0, Qmin] correction now
+  extrapolates S(Q) to the composition-derived Keen Eq. 21 target
+  ``S(0) = 1 − ⟨b²⟩/⟨b⟩²`` instead of pystog's solid-state 0 — algebraically a
+  one-line change (``const' = (1 − s0)·const + s0·coef``, still affine in (a, b)). For
+  negative-b compositions this is O(1): Mn₃Sn has ⟨b²⟩/⟨b⟩² = 13.06 → S(0) = −12.06, and
+  the composition-aware target cuts the low-r residual ~40% on the PG3 runs.
+  ``ScalingConfig.s0_target`` (auto from ``b_sq_avg``; pin 0 for classic parity).
+- **Data-derived first-shell r₀** (`detect_first_peak_onset` + a second refinement pass in
+  `autoscale`): the dominant |g| feature's left flank (35% of peak) — |g| because
+  negative-b totals can have an *inverted* first shell; peak-relative because sub-r₀
+  ripples scale with the amplitude. Detected 2.73–2.77 Å on the Mn₃Sn runs and 2.53 Å on
+  FeCoSn (hand-chosen classic cutoffs: 2.40–2.68). Sets the low-r fit window without a
+  structural prior and becomes the default low-r **enforcement cutoff** in data mode
+  (CLI + API + page; explicit `--no-enforce`/`enforce:false` still opts out);
+  `diagnostics_summary` reports `r0_detected`/`window_refined` and the *effective* fit
+  window from provenance.
+- **ADDIE-style density toolkit** (`scattering.py` + JS port): `ATOMIC_MASS_U`
+  (periodictable/CIAAW values for the full element set), `molar_mass`,
+  `number_density_from_mass_density` / inverse (ρ₀ = ρ_m·N_A/10²⁴·n/M). CLI
+  `--mass-density`, API `massDensity`, page "or ρ g/cm³" field. Mn₃Sn check:
+  0.063049 atoms/Å³ ↔ 7.421 g/cm³.
+- **Mn₃Sn neutron validation** (`data/stog_tests/{stog,stog_300K,stog_500K}`, local):
+  three complete Fortran runs; parameters recovered from the outputs to ~1e−12
+  (hand scalings ×2.5/×2.05/×10 — all satisfying b = 1 − a, i.e. the level-anchored
+  decomposition the sweep formalizes; ⟨b⟩² 0.015407 = `faber_ziman("Mn3Sn")` exactly).
+  New `Mn3SnNeutronTests` (+ detection/s0 unit tests): manual filter-stage parity ≤2e−3
+  rms per run, composition/density round trips, first-shell detection, and the headline
+  physics finding — the density limit is degenerate on this material (one-sided flag
+  False, hand values mutually inconsistent by 5×) while the **FZ amplitude injects the
+  composition's S(0) and lands at O(10)** consistently; the procedure doc encodes that
+  decision rule.
+- **Page**: primary bar is now Composition · Qmin · Qmax · ρ₀/mass-density with a live
+  ⟨b⟩²/⟨b²⟩/S(0) chip; ⟨b⟩²/⟨b²⟩ overrides moved to Advanced (x-ray note kept); a
+  collapsible "How Auto StoG works" explainer; a First-shell-r₀ readout card; and
+  **full-range G_K(r) and D(r)** (no 8 Å slice — theory guide lines stay confined to the
+  low-r region; the G_K default y-zoom keeps the −⟨b⟩² level readable, box-zoom for
+  detail). JS engine/worker fully synced (s0-aware correction, detector, two-pass,
+  converters) with new Python-golden parity tests (detection case + Mn₃Sn converters).
+  Verified live on the 300 K run: composition-only inputs → a = 1.309, 7 iterations,
+  r₀ 2.750 Å detected + enforced, density flag red, concordance 7.95 flagged.
+
 Auto StoG page redesign + **Phase 5: the static-mode engine** — the hosted app now runs
 Auto StoG entirely in the browser.
 

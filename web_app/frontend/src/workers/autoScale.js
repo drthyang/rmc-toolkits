@@ -97,7 +97,7 @@ export const lorchWindow = (q, qmax) => {
   return out;
 };
 
-export const lowQCorrectionBasis = (q, r, { lorch = false } = {}) => {
+export const lowQCorrectionBasis = (q, r, { lorch = false, s0Target = 0 } = {}) => {
   const coef = new Float64Array(r.length);
   const constant = new Float64Array(r.length);
   const q0 = q[0];
@@ -135,10 +135,17 @@ export const lowQCorrectionBasis = (q, r, { lorch = false } = {}) => {
       constant[i] = scale * f2;
     }
   }
+  if (s0Target !== 0) {
+    // S(Q) extrapolates linearly to S(0) = s0Target instead of pystog's 0:
+    // only the constant term changes (const' = (1-s0)*const + s0*coef).
+    for (let i = 0; i < r.length; i += 1) {
+      constant[i] = (1 - s0Target) * constant[i] + s0Target * coef[i];
+    }
+  }
   return { coef, constant };
 };
 
-export const fqToGpdf = (q, fq, r, { lorch = false, lowQCorrection = false } = {}) => {
+export const fqToGpdf = (q, fq, r, { lorch = false, lowQCorrection = false, s0Target = 0 } = {}) => {
   let weighted = fq;
   if (lorch) {
     const window = lorchWindow(q, q[q.length - 1]);
@@ -150,18 +157,18 @@ export const fqToGpdf = (q, fq, r, { lorch = false, lowQCorrection = false } = {
   for (let i = 0; i < gpdf.length; i += 1) gpdf[i] *= scale;
   if (lowQCorrection && q[0] !== 0) {
     const s0 = fq[0] / q[0] + 1;
-    const { coef, constant } = lowQCorrectionBasis(q, r, { lorch });
+    const { coef, constant } = lowQCorrectionBasis(q, r, { lorch, s0Target });
     for (let i = 0; i < gpdf.length; i += 1) gpdf[i] += coef[i] * s0 - constant[i];
   }
   return gpdf;
 };
 
-export const fourierFilter = (q, sq, r, { rho0, cutoff, lorch = false, lowQCorrection = false }) => {
+export const fourierFilter = (q, sq, r, { rho0, cutoff, lorch = false, lowQCorrection = false, s0Target = 0 }) => {
   if (q[0] <= 0) throw new Error('fourierFilter requires a strictly positive Q grid');
   const n = q.length;
   const fq = new Float64Array(n);
   for (let i = 0; i < n; i += 1) fq[i] = q[i] * (sq[i] - 1);
-  const gpdf = fqToGpdf(q, fq, r, { lorch, lowQCorrection });
+  const gpdf = fqToGpdf(q, fq, r, { lorch, lowQCorrection, s0Target });
   const g = new Float64Array(r.length);
   for (let i = 0; i < r.length; i += 1) g[i] = gpdf[i] / (4 * Math.PI * rho0 * r[i]) + 1;
 
@@ -180,7 +187,7 @@ export const fourierFilter = (q, sq, r, { rho0, cutoff, lorch = false, lowQCorre
     fqFiltered[i] = fq[i] - fqFt[i];
     sqFiltered[i] = fqFiltered[i] / q[i] + 1;
   }
-  const gpdfFiltered = fqToGpdf(q, fqFiltered, r, { lorch, lowQCorrection });
+  const gpdfFiltered = fqToGpdf(q, fqFiltered, r, { lorch, lowQCorrection, s0Target });
   const gFiltered = new Float64Array(r.length);
   for (let i = 0; i < r.length; i += 1) {
     gFiltered[i] = gpdfFiltered[i] / (4 * Math.PI * rho0 * r[i]) + 1;
@@ -340,6 +347,7 @@ export const defaultConfig = {
   robust: true,
   c1Mode: 'sweep',
   amplitudeCriterion: 'density',
+  s0Target: null,
   despike: false,
   despikeWindow: 7,
   despikeNsigma: 6.0,
@@ -364,6 +372,13 @@ export const makeConfig = (options) => {
   }
   rFitWindow(config); // validate eagerly
   return config;
+};
+
+/** S(0) used by the omitted-low-Q extrapolation (composition-aware default). */
+export const effectiveS0Target = (config) => {
+  if (config.s0Target != null) return config.s0Target;
+  if (config.bSqAvg != null) return 1 - config.bSqAvg / config.bAvgSq;
+  return 0;
 };
 
 export const rGrid = (config) => {
@@ -471,7 +486,10 @@ const solveAffine = (q, sq, deltaSq, r, tailIdx, windowIdx, config, sigma, level
   let coef = new Float64Array(rw.length);
   let constant = new Float64Array(rw.length);
   if (config.lowQCorrection) {
-    ({ coef, constant } = lowQCorrectionBasis(q, rw, { lorch: config.lorch }));
+    ({ coef, constant } = lowQCorrectionBasis(q, rw, {
+      lorch: config.lorch,
+      s0Target: effectiveS0Target(config),
+    }));
   }
   const w2 = Math.sqrt(config.c2Weight);
 
@@ -612,6 +630,7 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
     cutoff: config.rCutoff,
     lorch: config.lorch,
     lowQCorrection: config.lowQCorrection,
+    s0Target: effectiveS0Target(config),
   });
   const gk = new Float64Array(r.length);
   const dr = new Float64Array(r.length);
@@ -649,10 +668,61 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
     nDespiked,
     mode: extras.mode || 'manual',
     c1ModeEffective: extras.c1ModeEffective || 'manual',
+    rFitWindowUsed: rFitWindow(config),
+    r0Detected: extras.r0Detected !== undefined ? extras.r0Detected : null,
+    windowRefined: Boolean(extras.windowRefined),
   };
 };
 
+/** Data-derived closest approach: left flank of the dominant |g| feature. */
+export const detectFirstPeakOnset = (
+  r, g, { searchMin = 1.0, searchMax = 6.0, fraction = 0.35, floor = 0.5 } = {}
+) => {
+  const indices = [];
+  for (let i = 0; i < r.length; i += 1) {
+    if (r[i] >= searchMin && r[i] <= searchMax) indices.push(i);
+  }
+  if (indices.length < 3) return null;
+  let peakIndex = indices[0];
+  for (const i of indices) {
+    if (Math.abs(g[i]) > Math.abs(g[peakIndex])) peakIndex = i;
+  }
+  const peak = Math.abs(g[peakIndex]);
+  if (peak < floor) return null;
+  const level = Math.max(floor, fraction * peak);
+  let index = peakIndex;
+  while (index > indices[0] && Math.abs(g[index]) > level) index -= 1;
+  if (Math.abs(g[index]) > level) return null;
+  return r[index + 1];
+};
+
 export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
+  // Two-pass: when the caller pins neither r0 nor the fit window, the first
+  // pass's g(r) yields a data-derived closest approach and the fit reruns
+  // with the refined low-r window (python engine parity).
+  const result = autoscalePass(qIn, sqIn, config, sigmaIn);
+  const onset = detectFirstPeakOnset(result.r, result.gFiltered, {
+    searchMin: config.rCutoff + 0.3,
+  });
+  if (onset != null) result.r0Detected = onset;
+  const lo = config.rFitMin != null ? config.rFitMin : config.rCutoff + 0.2;
+  if (
+    onset != null
+    && config.r0 == null
+    && config.rFitMax == null
+    && onset - 0.25 > lo
+    && Math.abs((onset - 0.25) - rFitWindow(config)[1]) > 0.05
+  ) {
+    const refined = { ...config, r0: onset };
+    const refinedResult = autoscalePass(qIn, sqIn, refined, sigmaIn);
+    refinedResult.r0Detected = onset;
+    refinedResult.windowRefined = true;
+    return refinedResult;
+  }
+  return result;
+};
+
+const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
   const { q, sq, sigma } = cropSq(qIn, sqIn, config, sigmaIn);
   const r = rGrid(config);
   const { tail, window } = fitWindows(q, r, config);
@@ -731,7 +801,7 @@ export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
 };
 
 export const diagnosticsSummary = (result, config) => {
-  const [lo, hi] = rFitWindow(config);
+  const [lo, hi] = result.rFitWindowUsed || rFitWindow(config);
   let total = 0;
   let count = 0;
   for (let i = 0; i < result.r.length; i += 1) {
@@ -749,10 +819,15 @@ export const diagnosticsSummary = (result, config) => {
     c1_tail_mean: result.c1TailMean,
     low_r_rms_pre_enforcement: result.lowRRms,
     g_window_mean: gWindowMean,
+    r_fit_window: [lo, hi],
     gk_low_r_theory: -config.bAvgSq,
     d_r_low_r_slope_theory: -4 * Math.PI * config.rho0 * config.bAvgSq,
     density_limit_satisfied: Math.abs(gWindowMean) < 0.1,
   };
+  if (result.r0Detected != null) {
+    summary.r0_detected = result.r0Detected;
+    summary.window_refined = Boolean(result.windowRefined);
+  }
   if (result.sweep) {
     summary.level = result.sweep.level;
     summary.level_uncertainty = result.sweep.levelUncertainty;
@@ -907,6 +982,57 @@ export const COHERENT_B_FM = {
   Sr: 7.02, Ta: 6.91, Tb: 7.38, Tc: 6.8, Te: 5.8, Th: 10.31,
   Ti: -3.438, Tl: 8.776, Tm: 7.07, U: 8.417, V: -0.3824, W: 4.86,
   Xe: 4.92, Y: 7.75, Yb: 12.43, Zn: 5.68, Zr: 7.16,
+};
+
+//: Standard atomic weights (u), generated from `periodictable` (CIAAW) for
+//: exactly the COHERENT_B_FM element set (kept in sync with scattering.py).
+export const ATOMIC_MASS_U = {
+  Ag: 107.8682, Al: 26.98154, Am: 243.0, Ar: 39.95, As: 74.92159,
+  Au: 196.96657, B: 10.81, Ba: 137.327, Be: 9.01218, Bi: 208.9804,
+  Br: 79.904, C: 12.011, Ca: 40.078, Cd: 112.414, Ce: 140.116,
+  Cl: 35.45, Co: 58.93319, Cr: 51.9961, Cs: 132.90545, Cu: 63.546,
+  Dy: 162.5, Er: 167.259, Eu: 151.964, F: 18.9984, Fe: 55.845,
+  Ga: 69.723, Gd: 157.25, Ge: 72.63, H: 1.008, He: 4.0026,
+  Hf: 178.486, Hg: 200.592, Ho: 164.93033, I: 126.90447, In: 114.818,
+  Ir: 192.217, K: 39.0983, Kr: 83.798, La: 138.90547, Li: 6.94,
+  Lu: 174.9668, Mg: 24.305, Mn: 54.93804, Mo: 95.95, N: 14.007,
+  Na: 22.98977, Nb: 92.90637, Nd: 144.242, Ne: 20.1797, Ni: 58.6934,
+  Np: 237.0, O: 15.999, Os: 190.23, P: 30.97376, Pa: 231.03588,
+  Pb: 207.2, Pd: 106.42, Pm: 145.0, Pr: 140.90766, Pt: 195.084,
+  Ra: 226.0, Rb: 85.4678, Re: 186.207, Rh: 102.90549, Ru: 101.07,
+  S: 32.06, Sb: 121.76, Sc: 44.95591, Se: 78.971, Si: 28.085,
+  Sm: 150.36, Sn: 118.71, Sr: 87.62, Ta: 180.94788, Tb: 158.92535,
+  Tc: 98.0, Te: 127.6, Th: 232.0377, Ti: 47.867, Tl: 204.38,
+  Tm: 168.93422, U: 238.02891, V: 50.9415, W: 183.84, Xe: 131.293,
+  Y: 88.90584, Yb: 173.045, Zn: 65.38, Zr: 91.224,
+};
+
+const AVOGADRO_PER_A3 = 6.02214076e23 / 1.0e24;
+
+export const molarMass = (composition) => {
+  const counts = typeof composition === 'string' ? parseFormula(composition) : { ...composition };
+  let mass = 0;
+  let atoms = 0;
+  for (const [element, count] of Object.entries(counts)) {
+    if (!(element in ATOMIC_MASS_U)) throw new Error(`no atomic mass for element '${element}'`);
+    mass += ATOMIC_MASS_U[element] * count;
+    atoms += count;
+  }
+  if (!(atoms > 0)) throw new Error('composition counts must sum to a positive number');
+  return { mass, atoms };
+};
+
+/** ADDIE convention: g/cm^3 -> atoms/A^3 (rho0 = rho_m * N_A/1e24 * n/M). */
+export const numberDensityFromMassDensity = (composition, massDensityGCm3) => {
+  if (!(massDensityGCm3 > 0)) throw new Error('mass density must be positive');
+  const { mass, atoms } = molarMass(composition);
+  return massDensityGCm3 * AVOGADRO_PER_A3 * atoms / mass;
+};
+
+export const massDensityFromNumberDensity = (composition, numberDensityPerA3) => {
+  if (!(numberDensityPerA3 > 0)) throw new Error('number density must be positive');
+  const { mass, atoms } = molarMass(composition);
+  return numberDensityPerA3 * mass / atoms / AVOGADRO_PER_A3;
 };
 
 export const parseFormula = (formula) => {

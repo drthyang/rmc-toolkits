@@ -11,6 +11,7 @@ import { buildZip } from '../zipArchive';
 import {
   faberZiman,
   makeConfig,
+  numberDensityFromMassDensity,
   readDatHeader,
   readStogInp,
   readStogXy,
@@ -39,7 +40,7 @@ const fmt = (value, digits = 4) => (
 );
 
 const EMPTY_FORM = {
-  qmin: '', qmax: '', rho0: '', bAvgSq: '', bSqAvg: '', formula: '',
+  qmin: '', qmax: '', rho0: '', massDensity: '', bAvgSq: '', bSqAvg: '', formula: '',
   rCutoff: '', r0: '', rFitMin: '', rFitMax: '', rmax: '', nr: '',
   c1Mode: 'sweep', amplitude: 'density',
   lorch: false, despike: false, robust: true, lowQCorrection: true, useSigma: true,
@@ -88,7 +89,13 @@ const resolveStaticConfig = (form, inp, header) => {
   if (qmin === undefined || qmax === undefined) throw new Error('data mode requires Qmin and Qmax');
   let rho0 = pick(form.rho0, inp ? inp.rho0 : undefined);
   if (rho0 === undefined && header?.numberDensity != null) rho0 = header.numberDensity;
-  if (rho0 === undefined) throw new Error('number density unknown: set ρ₀ or use a data file with a NUMBER_DENSITY :: header');
+  if (rho0 === undefined) {
+    const massDensity = numberOr(form.massDensity);
+    if (massDensity !== undefined && formula) {
+      rho0 = numberDensityFromMassDensity(formula, massDensity);
+    }
+  }
+  if (rho0 === undefined) throw new Error('number density unknown: set ρ₀, or mass density with a composition');
   return makeConfig({
     qmin, qmax, rho0, bAvgSq,
     bSqAvg: bSqAvg === undefined ? null : bSqAvg,
@@ -110,7 +117,7 @@ const resolveStaticConfig = (form, inp, header) => {
 const resolveStaticEnforcement = (form, inp) => {
   if (!form.enforce) return null;
   const cutoff = numberOr(form.enforceCutoff) ?? (inp ? inp.peakCutoff : undefined);
-  if (cutoff === undefined) return null;
+  if (cutoff === undefined) return 'auto'; // worker enforces at the detected r0
   const usingInpWindow = inp && numberOr(form.enforceCutoff) === undefined;
   return {
     cutoff,
@@ -278,6 +285,7 @@ const AutoStogPage = ({ directory, localRun }) => {
     qmin: numberOr(form.qmin),
     qmax: numberOr(form.qmax),
     rho0: numberOr(form.rho0),
+    massDensity: numberOr(form.massDensity),
     bAvgSq: numberOr(form.bAvgSq),
     bSqAvg: numberOr(form.bSqAvg),
     formula: form.formula.trim() || undefined,
@@ -332,7 +340,7 @@ const AutoStogPage = ({ directory, localRun }) => {
           lowRRms: raw.lowRRms, c1TailMean: raw.c1TailMean, history: raw.history,
         },
         diagnostics: raw.summary,
-        enforcement,
+        enforcement: raw.enforcement,
         config,
         guides: {
           asymptote: 1.0,
@@ -341,10 +349,8 @@ const AutoStogPage = ({ directory, localRun }) => {
           s0Target: config.bSqAvg == null ? null : 1 - config.bSqAvg / config.bAvgSq,
           level: raw.sweep ? raw.sweep.level : null,
           levelWindow: raw.sweep ? [raw.sweep.qLo, raw.sweep.qHi] : null,
-          rFitWindow: [
-            config.rFitMin != null ? config.rFitMin : config.rCutoff + 0.2,
-            config.rFitMax != null ? config.rFitMax : (config.r0 != null ? config.r0 - 0.25 : config.rCutoff + 1.2),
-          ],
+          rFitWindow: raw.rFitWindowUsed,
+          r0Detected: raw.r0Detected,
         },
         series: {
           q: arr(raw.q), sqRaw: arr(raw.sqRaw), sqScaled: arr(raw.sqScaled),
@@ -472,6 +478,19 @@ const AutoStogPage = ({ directory, localRun }) => {
     && numberOr(form.bSqAvg) === undefined
     && !form.formula.trim();
 
+  // Live ⟨b⟩²/⟨b²⟩ + S(0) chip so the composition's role is visible up front.
+  const compositionChip = useMemo(() => {
+    const formula = form.formula.trim();
+    if (!formula) return null;
+    try {
+      const fz = faberZiman(formula);
+      const s0 = 1 - fz.bSqAvgBarn / fz.bAvgSqBarn;
+      return `⟨b⟩² ${fz.bAvgSqBarn.toPrecision(4)} · ⟨b²⟩ ${fz.bSqAvgBarn.toPrecision(4)} barn · S(0) ${s0.toPrecision(3)}`;
+    } catch {
+      return null; // incomplete formula while typing
+    }
+  }, [form.formula]);
+
   // ── plot data ────────────────────────────────────────────────────────────
   const RMAX_DISPLAY = 8;
 
@@ -511,67 +530,53 @@ const AutoStogPage = ({ directory, localRun }) => {
     };
   }, [preview]);
 
-  const slicedR = useMemo(() => {
-    if (!preview) return null;
-    const { r } = preview.series;
-    let end = r.length;
-    for (let index = 0; index < r.length; index += 1) {
-      if (r[index] > RMAX_DISPLAY) { end = index; break; }
-    }
-    return { end, r: r.slice(0, end) };
-  }, [preview]);
-
+  // Full-range real-space plots; the theory guide lines only extend over the
+  // low-r region where they mean something (below/around the first shell).
   const gkPlot = useMemo(() => {
-    if (!preview || !slicedR) return null;
+    if (!preview) return null;
     const { series, guides } = preview;
     const level = guides.gkLowR;
+    const guideEnd = Math.min(RMAX_DISPLAY, series.r[series.r.length - 1]);
     const plots = [
-      { label: 'G_K(r) filtered', x: slicedR.r, y: series.gk.slice(0, slicedR.end) },
+      { label: 'G_K(r) filtered', x: series.r, y: series.gk },
     ];
     if (series.gkEnforced) {
-      plots.push({
-        label: 'Enforced (RMC file)',
-        x: slicedR.r,
-        y: series.gkEnforced.slice(0, slicedR.end),
-      });
+      plots.push({ label: 'Enforced (RMC file)', x: series.r, y: series.gkEnforced });
     }
-    plots.push({ label: '−⟨b⟩² theory', x: [0, RMAX_DISPLAY], y: [level, level], role: 'guide' });
+    plots.push({ label: '−⟨b⟩² theory', x: [0, guideEnd], y: [level, level], role: 'guide' });
     return {
-      title: 'G_K(r) — low-r density limit',
+      title: 'G_K(r) — full range',
       xLabel: 'r (Å)',
       yLabel: 'G_K(r)',
       series: plots,
-      // Default zoom keeps the theory level readable instead of the first peak.
+      // Default zoom keeps the theory level readable; box-zoom for detail.
       initialYDomain: [level * 2.1, -level * 3.2],
     };
-  }, [preview, slicedR]);
+  }, [preview]);
 
   const drPlot = useMemo(() => {
-    if (!preview || !slicedR) return null;
+    if (!preview) return null;
     const { series, guides } = preview;
+    const guideEnd = Math.min(RMAX_DISPLAY, series.r[series.r.length - 1]);
     const plots = [
-      { label: 'D(r)', x: slicedR.r, y: series.dr.slice(0, slicedR.end) },
+      { label: 'D(r)', x: series.r, y: series.dr },
     ];
     if (series.drEnforced) {
-      plots.push({
-        label: 'Enforced (RMC file)',
-        x: slicedR.r,
-        y: series.drEnforced.slice(0, slicedR.end),
-      });
+      plots.push({ label: 'Enforced (RMC file)', x: series.r, y: series.drEnforced });
     }
     plots.push({
       label: '−4πρ₀⟨b⟩²r theory',
-      x: [0, RMAX_DISPLAY],
-      y: [0, guides.drSlope * RMAX_DISPLAY],
+      x: [0, guideEnd],
+      y: [0, guides.drSlope * guideEnd],
       role: 'guide',
     });
     return {
-      title: 'D(r) — low-r slope',
+      title: 'D(r) — full range',
       xLabel: 'r (Å)',
       yLabel: 'D(r)',
       series: plots,
     };
-  }, [preview, slicedR]);
+  }, [preview]);
 
   const diagnostics = preview?.diagnostics;
   const reference = preview?.inp;
@@ -612,6 +617,13 @@ const AutoStogPage = ({ directory, localRun }) => {
         </div>
 
         <div className="autostog-cluster">
+          <label
+            className="autostog-field autostog-field--formula"
+            title="Chemical composition (neutron Sears table drives ⟨b⟩², ⟨b²⟩, and the S(0) target; for x-ray data set ⟨b²⟩ in Advanced instead)"
+          >
+            <span>Composition</span>
+            <input value={form.formula} onChange={setField('formula')} placeholder="e.g. Mn3Sn" spellCheck="false" />
+          </label>
           <label className="autostog-field">
             <span>Qmin Å⁻¹</span>
             <input value={form.qmin} onChange={setField('qmin')} inputMode="decimal" />
@@ -620,22 +632,15 @@ const AutoStogPage = ({ directory, localRun }) => {
             <span>Qmax Å⁻¹</span>
             <input value={form.qmax} onChange={setField('qmax')} inputMode="decimal" />
           </label>
-          <label className="autostog-field">
+          <label className="autostog-field" title="Number density in atoms/Å³ (from a NUMBER_DENSITY :: header when present)">
             <span>ρ₀ Å⁻³</span>
-            <input value={form.rho0} onChange={setField('rho0')} inputMode="decimal" />
+            <input value={form.rho0} onChange={setField('rho0')} inputMode="decimal" placeholder="auto" />
           </label>
-          <label className="autostog-field">
-            <span>⟨b⟩² barn</span>
-            <input value={form.bAvgSq} onChange={setField('bAvgSq')} inputMode="decimal" />
+          <label className="autostog-field" title="Alternative to ρ₀: mass density + composition convert via N_A (ADDIE convention)">
+            <span>or ρ g/cm³</span>
+            <input value={form.massDensity} onChange={setField('massDensity')} inputMode="decimal" />
           </label>
-          <label className="autostog-field autostog-field--formula" title="Neutron Sears table — for x-ray data enter ⟨b²⟩ directly">
-            <span>Formula (neutron)</span>
-            <input value={form.formula} onChange={setField('formula')} placeholder="SrTiO3" spellCheck="false" />
-          </label>
-          <label className="autostog-field">
-            <span>⟨b²⟩ barn</span>
-            <input value={form.bSqAvg} onChange={setField('bSqAvg')} inputMode="decimal" placeholder="auto" />
-          </label>
+          {compositionChip && <span className="autostog-chip" title="Computed from the composition (Sears neutron lengths)">{compositionChip}</span>}
         </div>
 
         <div className="autostog-cluster autostog-cluster--actions">
@@ -687,6 +692,14 @@ const AutoStogPage = ({ directory, localRun }) => {
             </label>
           </div>
           <div className="autostog-cluster">
+            <label className="autostog-field" title="Override the composition-derived ⟨b⟩² (needed for x-ray data)">
+              <span>⟨b⟩² barn</span>
+              <input value={form.bAvgSq} onChange={setField('bAvgSq')} inputMode="decimal" placeholder="from composition" />
+            </label>
+            <label className="autostog-field" title="Override the composition-derived ⟨b²⟩">
+              <span>⟨b²⟩ barn</span>
+              <input value={form.bSqAvg} onChange={setField('bSqAvg')} inputMode="decimal" placeholder="from composition" />
+            </label>
             <label className="autostog-field autostog-field--select">
               <span>High-Q</span>
               <select value={form.c1Mode} onChange={setField('c1Mode')}>
@@ -750,15 +763,40 @@ const AutoStogPage = ({ directory, localRun }) => {
 
       {error && <div className="autostog-banner autostog-banner--danger">{error}</div>}
 
+      <details className="autostog-explainer">
+        <summary>How Auto StoG works</summary>
+        <ol>
+          <li><b>Inputs:</b> the composition and your [Qmin, Qmax] window are all that is
+            required. ρ₀ comes from the data header, from mass density (converted via N_A),
+            or your value; every other parameter has a physics-based default.</li>
+          <li><b>Composition →</b> ⟨b⟩², ⟨b²⟩ (Sears neutron lengths) and the Keen Eq. 21
+            target S(0) = 1 − ⟨b²⟩/⟨b⟩², which also anchors the analytic correction for the
+            unmeasured [0, Qmin] range.</li>
+          <li><b>Level sweep:</b> every high-Q window is tested for statistical flatness;
+            the measured level pins the offset (b = 1 − a·level).</li>
+          <li><b>Amplitude:</b> the low-r density limit (g → 0 below the first shell,
+            self-consistent with the Fourier filter), with the Q→0 Faber-Ziman limit as an
+            independent criterion — their concordance is the absolute-scale trust metric.</li>
+          <li><b>r₀ detection:</b> the first coordination shell is located from the data
+            (|g| flank, robust to inverted negative-b shells) and refines the fit window and
+            the classic low-r enforcement cutoff.</li>
+          <li><b>Outputs:</b> the classic stog file family (S(Q), g(r)−1, filtered pair,
+            F<sub>K</sub>(Q), G<sub>K</sub>(r), D(r), ft.dat) + a provenance JSON. Read the
+            flags: a violated density limit means the absolute scale needs the composition
+            (FZ) route or external validation.</li>
+        </ol>
+      </details>
+
       {!preview && !error && (
         <div className="autostog-empty">
           <h2>Automatic total-scattering scaling</h2>
           <p>
-            Pick a classic <code>stog.inp</code> or a rebinned S(Q) file, then hit
-            <b> Auto-scale</b>. The engine determines the scale and offset from the
-            physics — the statistically flat high-Q level and the low-r density limit —
-            replacing the classic stog “try again” loop, and reports the honest fit
-            quality before any enforcement.
+            Pick a classic <code>stog.inp</code> or a rebinned S(Q) file, enter the
+            composition and Q window, then hit <b>Auto-scale</b>. The engine determines the
+            scale and offset from the physics — the statistically flat high-Q level, the
+            low-r density limit, and the composition's Faber-Ziman constraints — replacing
+            the classic stog “try again” loop, and reports the honest fit quality before
+            any enforcement.
             {staticMode && ' Everything runs in your browser; files never leave your device.'}
           </p>
         </div>
@@ -812,6 +850,16 @@ const AutoStogPage = ({ directory, localRun }) => {
                 : 'absolute scale needs external validation'}
             </span>
           </div>
+          {diagnostics.r0_detected != null && (
+            <div className="autostog-stat">
+              <span className="autostog-stat-label">First shell r₀</span>
+              <span className="autostog-stat-value">{fmt(diagnostics.r0_detected, 4)} Å (detected)</span>
+              <span className="autostog-stat-sub">
+                {diagnostics.window_refined ? 'fit window refined to it' : 'window unchanged'}
+                {preview.enforcement ? ` · enforced below ${fmt(preview.enforcement.cutoff ?? preview.enforcement[0], 3)} Å` : ''}
+              </span>
+            </div>
+          )}
           {diagnostics.amplitude_concordance != null && (
             <div className={`autostog-stat ${diagnostics.amplitudes_concordant ? 'is-good' : 'is-warn'}`}>
               <span className="autostog-stat-label">Concordance</span>

@@ -399,7 +399,24 @@ class ScalingApiTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["kind"], "data")
         self.assertEqual(payload["result"]["a"], 10.0)
-        self.assertIsNone(payload["series"]["gkEnforced"])
+        # Data mode auto-enforces at the data-derived first-shell onset
+        # (synthetic model onset ~2.6 A); explicit enforce=False opts out.
+        self.assertIsNotNone(payload["series"]["gkEnforced"])
+        detected = payload["enforcement"]["cutoff"]
+        self.assertGreater(detected, 2.3)
+        self.assertLess(detected, 2.85)
+
+        bare = self.client.post(
+            "/api/scaling/preview",
+            json={
+                "path": "results/scaling_api_test/synth.dat",
+                "qmin": 0.6, "qmax": 30, "rho0": self.RHO0,
+                "bAvgSq": self.B2, "r0": 2.65,
+                "mode": "manual", "a": 10.0, "b": -9.0,
+                "enforce": False,
+            },
+        )
+        self.assertIsNone(bare.get_json()["series"]["gkEnforced"])
 
     def test_preview_rejects_missing_qmin(self):
         response = self.client.post(

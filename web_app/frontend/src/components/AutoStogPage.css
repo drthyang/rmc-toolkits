@@ -220,6 +220,34 @@
   background: var(--danger-soft);
 }
 
+.autostog-explainer {
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  border-radius: 12px;
+  padding: 0.55rem 0.95rem;
+  margin-bottom: 0.85rem;
+  box-shadow: var(--shadow-xs);
+}
+
+.autostog-explainer summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.autostog-explainer ol {
+  margin: 0.6rem 0 0.2rem;
+  padding-left: 1.3rem;
+  max-width: 78ch;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.autostog-explainer li { margin: 0.3rem 0; }
+.autostog-explainer li b { color: var(--text-strong); }
+
 .autostog-empty {
   border: 1px dashed var(--border-strong);
   background: var(--panel-bg);

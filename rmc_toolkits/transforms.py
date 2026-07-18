@@ -133,19 +133,23 @@ def fq_to_gpdf(
     *,
     lorch: bool = False,
     low_q_correction: bool = False,
+    s0_target: float = 0.0,
 ) -> np.ndarray:
     """Forward transform ``G_PDF(r) = (2/pi) integral F(Q) sin(Q r) dQ``.
 
     ``lorch`` applies the Lorch window to ``F(Q)`` before transforming.
     ``low_q_correction`` adds the analytic correction for the omitted
-    ``[0, Qmin]`` range (see :func:`omitted_low_q_correction`).
+    ``[0, Qmin]`` range, extrapolating to ``S(0) = s0_target`` (see
+    :func:`omitted_low_q_correction`).
     """
     q = np.asarray(q, dtype=float)
     fq = np.asarray(fq, dtype=float)
     weighted = fq * lorch_window(q, q[-1]) if lorch else fq
     gpdf = (2.0 / np.pi) * sine_transform(q, weighted, r)
     if low_q_correction:
-        gpdf = gpdf + omitted_low_q_correction(q, fq, r, lorch=lorch)
+        gpdf = gpdf + omitted_low_q_correction(
+            q, fq, r, lorch=lorch, s0_target=s0_target
+        )
     return gpdf
 
 
@@ -159,18 +163,25 @@ def low_q_correction_basis(
     r: np.ndarray,
     *,
     lorch: bool = False,
+    s0_target: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Affine basis of the omitted-low-Q correction on the ``r`` grid.
 
-    The analytic correction assumes ``F(Q)`` extrapolates linearly to zero
-    below the first measured point ``Qmin`` and evaluates to
+    The analytic correction models ``S(Q)`` on the unmeasured ``[0, Qmin]``
+    as a straight line from ``S(0) = s0_target`` to the first measured point,
+    and evaluates to
 
         ``correction(r) = coef_s0(r) * S(Qmin) - const(r)``
 
-    (port of pystog ``Transformer._low_x_correction``, original author
-    Jack Carpenter, in final ``G_PDF`` units). Returning the basis instead of
-    the value keeps the correction affine in a scale/offset applied to S(Q),
-    which the auto-scaler's closed-form solve relies on.
+    (generalization of pystog ``Transformer._low_x_correction``, original
+    author Jack Carpenter, in final ``G_PDF`` units; pystog's form is the
+    ``s0_target = 0`` "solid-state limit" special case). The target enters the
+    constant term only — ``const' = (1 - s0)*const + s0*coef`` — so the
+    correction stays affine in a scale/offset applied to S(Q), which the
+    auto-scaler's closed-form solve relies on. For compositions with strong
+    negative-b cancellation (e.g. Mn3Sn, ``<b^2>/<b>^2`` ~ 13) the Keen
+    Eq. 21 target ``S(0) = 1 - <b^2>/<b>^2`` is O(-10), and using it here
+    instead of 0 removes an O(1) bias in the low-r transform.
     """
     q = np.asarray(q, dtype=float)
     r = np.asarray(r, dtype=float)
@@ -209,7 +220,11 @@ def low_q_correction_basis(
             f2 = (np.sin(v) - v * np.cos(v)) / r**2
         f1 = np.where(r == 0.0, 0.0, f1)
         f2 = np.where(r == 0.0, 0.0, f2)
-    return (2.0 / np.pi) * f1 / q0, (2.0 / np.pi) * f2
+    coef = (2.0 / np.pi) * f1 / q0
+    const = (2.0 / np.pi) * f2
+    if s0_target != 0.0:
+        const = (1.0 - s0_target) * const + s0_target * coef
+    return coef, const
 
 
 def omitted_low_q_correction(
@@ -218,6 +233,7 @@ def omitted_low_q_correction(
     r: np.ndarray,
     *,
     lorch: bool = False,
+    s0_target: float = 0.0,
 ) -> np.ndarray:
     """Analytic ``G_PDF(r)`` contribution of the omitted ``[0, Qmin]`` range.
 
@@ -229,7 +245,7 @@ def omitted_low_q_correction(
     if q[0] == 0:
         return np.zeros_like(np.asarray(r, dtype=float))
     s0 = fq[0] / q[0] + 1.0
-    coef_s0, const = low_q_correction_basis(q, r, lorch=lorch)
+    coef_s0, const = low_q_correction_basis(q, r, lorch=lorch, s0_target=s0_target)
     return coef_s0 * s0 - const
 
 
@@ -246,6 +262,7 @@ def fourier_filter(
     cutoff: float,
     lorch: bool = False,
     low_q_correction: bool = False,
+    s0_target: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Remove unphysical ``r < cutoff`` content from ``S(Q)``.
 
@@ -268,7 +285,9 @@ def fourier_filter(
         )
 
     fq = sq_to_fq(q, sq)
-    gpdf = fq_to_gpdf(q, fq, r, lorch=lorch, low_q_correction=low_q_correction)
+    gpdf = fq_to_gpdf(
+        q, fq, r, lorch=lorch, low_q_correction=low_q_correction, s0_target=s0_target
+    )
     g = gpdf_to_g(r, gpdf, rho0)
 
     section = r <= float(cutoff)
@@ -284,7 +303,8 @@ def fourier_filter(
     fq_filtered = fq - fq_ft
     sq_filtered = fq_to_sq(q, fq_filtered)
     gpdf_filtered = fq_to_gpdf(
-        q, fq_filtered, r, lorch=lorch, low_q_correction=low_q_correction
+        q, fq_filtered, r,
+        lorch=lorch, low_q_correction=low_q_correction, s0_target=s0_target,
     )
     g_filtered = gpdf_to_g(r, gpdf_filtered, rho0)
     return sq_filtered, sq_ft, g_filtered

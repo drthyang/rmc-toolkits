@@ -10,11 +10,14 @@ import { describe, expect, it } from 'vitest';
 import fixture from './fixtures/autoscale_fixture.json';
 import {
   autoscale,
+  detectFirstPeakOnset,
   diagnosticsSummary,
   faberZiman,
   firstPeakZero,
   levelSweep,
   makeConfig,
+  massDensityFromNumberDensity,
+  numberDensityFromMassDensity,
   parseFormula,
   readDatHeader,
   readStogInp,
@@ -94,6 +97,25 @@ describe('autoScale engine parity with the Python engine', () => {
     for (let i = 0; i < result.r.length; i += 1) {
       if (result.r[i] <= 2.48) expect(g[i]).toBe(0);
     }
+  });
+
+  it('two-pass first-shell detection matches Python', () => {
+    const config = makeConfig({ ...fixture.config, r0: null, rFitMax: null });
+    const result = autoscale(Q, SQ, config);
+    const expected = fixture.expected.autoDetect;
+    expect(result.r0Detected).toBeCloseTo(expected.r0Detected, 9);
+    expect(result.windowRefined).toBe(expected.windowRefined);
+    expect(relError(result.a, expected.a)).toBeLessThan(1e-6);
+    expect(result.rFitWindowUsed[1]).toBeCloseTo(expected.rFitWindow[1], 9);
+    expect(detectFirstPeakOnset(result.r, result.gFiltered, { searchMin: 1.3 }))
+      .toBeCloseTo(expected.r0Detected, 9);
+  });
+
+  it('density converters follow the ADDIE convention (Mn3Sn check)', () => {
+    expect(faberZiman('Mn3Sn').bAvgSqBarn).toBeCloseTo(0.015407, 6);
+    const massDensity = massDensityFromNumberDensity('Mn3Sn', 0.063049);
+    expect(massDensity).toBeCloseTo(7.4209, 3);
+    expect(numberDensityFromMassDensity('Mn3Sn', massDensity)).toBeCloseTo(0.063049, 9);
   });
 
   it('rejects invalid configurations like the Python engine', () => {

@@ -53,9 +53,15 @@ class ScalingConfig:
 
     ``low_q_correction`` defaults on: measured data always omit ``[0, Qmin]``,
     and without the analytic correction that omission biases the fitted scale
-    (8% on the synthetic benchmark vs 0.3% with it). Disable only for strict
-    classic-stog parity. ``lorch=True`` additionally damps termination ripples
-    and speeds loop convergence at the cost of real-space resolution.
+    (8% on the synthetic benchmark vs 0.3% with it). The correction
+    extrapolates S(Q) linearly to ``s0_target`` at Q = 0; ``s0_target=None``
+    (default) resolves to the composition-derived Keen Eq. 21 limit
+    ``1 - <b^2>/<b>^2`` when ``b_sq_avg`` is supplied, else to the pystog
+    solid-state 0 — for negative-b compositions (Mn3Sn: S(0) ~ -12) the
+    composition-aware target removes an O(1) low-r bias. Disable the
+    correction only for strict classic-stog parity. ``lorch=True``
+    additionally damps termination ripples and speeds loop convergence at the
+    cost of real-space resolution.
 
     Scope note: the fit recovers the *true* scale only for data that can
     satisfy the physics targets (well-reduced, low enough Qmin). Data missing
@@ -124,6 +130,7 @@ class ScalingConfig:
     robust: bool = True
     c1_mode: str = "sweep"
     amplitude_criterion: str = "density"
+    s0_target: float | None = None
     c1_slope_nuisance: bool = False
     despike: bool = False
     despike_window: int = 7
@@ -158,6 +165,15 @@ class ScalingConfig:
             raise ValueError(f"nr must be a positive integer, got {self.nr}")
         if not np.isfinite(self.rmax) or self.rmax <= 0:
             raise ValueError(f"rmax must be finite and positive, got {self.rmax}")
+
+    @property
+    def effective_s0_target(self) -> float:
+        """S(0) used by the omitted-low-Q extrapolation (see class docstring)."""
+        if self.s0_target is not None:
+            return float(self.s0_target)
+        if self.b_sq_avg is not None:
+            return 1.0 - float(self.b_sq_avg) / float(self.b_avg_sq)
+        return 0.0
 
     @property
     def r_grid(self) -> np.ndarray:
@@ -358,6 +374,47 @@ def level_sweep(
     )
 
 
+def detect_first_peak_onset(
+    r: np.ndarray,
+    g: np.ndarray,
+    qmax: float,  # noqa: ARG001 - kept for signature stability / future ripple use
+    *,
+    search_min: float = 1.0,
+    search_max: float = 6.0,
+    fraction: float = 0.35,
+    floor: float = 0.5,
+) -> float | None:
+    """Data-derived closest-approach r0: the left flank of the first shell.
+
+    Finds the dominant |g| feature in ``[search_min, search_max]`` and walks
+    left until |g| drops below ``max(floor, fraction * peak)``. Peak-relative
+    (not absolute-threshold) because both the physical peak and the sub-r0
+    truncation ripples scale with the fitted amplitude — on missing-low-Q
+    data the ripples can reach O(peak/3), so no fixed threshold separates
+    them, while the dominant coordination shell still towers above them. |g|
+    is used because Faber-Ziman totals of negative-b compositions (e.g.
+    Mn3Sn) can have an *inverted* first shell. Returns None when no feature
+    exceeds ``floor`` or the flank never falls below the level inside the
+    search range (feature not separable from the ripple field).
+    """
+    r = np.asarray(r, dtype=float)
+    g = np.abs(np.asarray(g, dtype=float))
+    selection = np.where((r >= search_min) & (r <= search_max))[0]
+    if selection.size < 3:
+        return None
+    peak_index = int(selection[np.argmax(g[selection])])
+    peak = g[peak_index]
+    if peak < floor:
+        return None
+    level = max(floor, fraction * peak)
+    index = peak_index
+    while index > selection[0] and g[index] > level:
+        index -= 1
+    if g[index] > level:
+        return None  # never dropped below the level inside the search range
+    return float(r[index + 1])
+
+
 _HUBER_C = 1.345  # 95% Gaussian efficiency
 
 
@@ -406,7 +463,9 @@ def _solve_affine(
     # Low-Q correction (affine in S_eff(qmin) = a*sq[0] + b - delta[0]):
     #   + coef_s0*(a*sq[0] + b - delta[0]) - const
     if config.low_q_correction:
-        coef_s0, const = low_q_correction_basis(q, rw, lorch=config.lorch)
+        coef_s0, const = low_q_correction_basis(
+            q, rw, lorch=config.lorch, s0_target=config.effective_s0_target
+        )
     else:
         coef_s0 = const = np.zeros_like(rw)
     denom = 4.0 * np.pi * config.rho0 * rw
@@ -494,6 +553,7 @@ def _pipeline(
         cutoff=config.r_cutoff,
         lorch=config.lorch,
         low_q_correction=config.low_q_correction,
+        s0_target=config.effective_s0_target,
     )
 
 
@@ -645,7 +705,7 @@ def scale_pipeline(
                 "qmin", "qmax", "rho0", "b_avg_sq", "b_sq_avg", "r_cutoff", "r0",
                 "fit_offset", "q_tail_frac", "rmax", "nr", "lorch",
                 "low_q_correction", "c2_weight", "c2_bins", "robust",
-                "c1_mode", "amplitude_criterion",
+                "c1_mode", "amplitude_criterion", "s0_target",
                 "c1_slope_nuisance", "despike", "despike_window",
                 "despike_nsigma", "max_iter", "tol", "enforce_cutoff",
             )
@@ -693,7 +753,42 @@ def autoscale(
     parameters converge (``tol``) or ``max_iter`` is reached. ``sigma``
     (per-point uncertainties, e.g. the data file's third column) weights the
     high-Q C1 rows by 1/sigma.
+
+    When the caller pins neither ``r0`` nor ``r_fit_max``, a second refinement
+    pass runs: the first pass's filtered g(r) yields a data-derived closest
+    approach (:func:`detect_first_peak_onset`), and if that moves the low-r
+    window materially the fit is redone with the detected ``r0``. The result's
+    provenance then carries ``r0_detected`` / ``window_refined`` — this is what
+    lets composition + Q-window be the only required inputs.
     """
+    result = _autoscale_pass(q, sq, config, sigma)
+    onset = detect_first_peak_onset(
+        result.r, result.g_filtered, config.qmax,
+        search_min=config.r_cutoff + 0.3,
+    )
+    if onset is not None:
+        result.provenance["r0_detected"] = float(onset)
+    if (
+        onset is not None
+        and config.r0 is None
+        and config.r_fit_max is None
+        and onset - 0.25 > (config.r_fit_min if config.r_fit_min is not None else config.r_cutoff + 0.2)
+        and abs((onset - 0.25) - config.r_fit_window[1]) > 0.05
+    ):
+        refined = replace(config, r0=float(onset))
+        refined_result = _autoscale_pass(q, sq, refined, sigma)
+        refined_result.provenance["r0_detected"] = float(onset)
+        refined_result.provenance["window_refined"] = True
+        return refined_result
+    return result
+
+
+def _autoscale_pass(
+    q: np.ndarray,
+    sq: np.ndarray,
+    config: ScalingConfig,
+    sigma: np.ndarray | None = None,
+) -> ScalingResult:
     q, sq, sigma = crop_sq(q, sq, config, sigma)
     r = config.r_grid
     tail, window = _fit_windows(q, r, config)
@@ -793,8 +888,19 @@ def _sweep_provenance(sweep: LevelSweepResult) -> dict[str, Any]:
 
 
 def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[str, Any]:
-    """Compact, human-readable fit-quality summary (JSON-friendly)."""
-    lo, hi = config.r_fit_window
+    """Compact, human-readable fit-quality summary (JSON-friendly).
+
+    Coefficients and the low-r window are read from the result's provenance
+    when present, so a window-refined result (see :func:`autoscale`) reports
+    against the window it was actually fitted with, not the caller's original
+    config.
+    """
+    effective = result.provenance.get("config", {})
+    b_avg_sq = float(effective.get("b_avg_sq", config.b_avg_sq))
+    rho0 = float(effective.get("rho0", config.rho0))
+    b_sq_avg = effective.get("b_sq_avg", config.b_sq_avg)
+    amplitude_criterion = effective.get("amplitude_criterion", config.amplitude_criterion)
+    lo, hi = result.provenance.get("r_fit_window", config.r_fit_window)
     window = (result.r >= lo) & (result.r <= hi)
     g_window_mean = float(result.g_filtered[window].mean())
     summary: dict[str, Any] = {
@@ -805,8 +911,9 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
         "c1_tail_mean": result.c1_tail_mean,
         "low_r_rms_pre_enforcement": result.low_r_rms,
         "g_window_mean": g_window_mean,
-        "gk_low_r_theory": -config.b_avg_sq,
-        "d_r_low_r_slope_theory": -4.0 * np.pi * config.rho0 * config.b_avg_sq,
+        "r_fit_window": [float(lo), float(hi)],
+        "gk_low_r_theory": -b_avg_sq,
+        "d_r_low_r_slope_theory": -4.0 * np.pi * rho0 * b_avg_sq,
         # ONE-SIDED diagnostic. False proves the density limit could not be
         # satisfied by any (a, b) — the absolute scale is definitely not
         # recoverable from this data (e.g. severe missing-low-Q structure).
@@ -822,9 +929,12 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
         summary["level_uncertainty"] = result.sweep.level_uncertainty
         summary["level_window"] = [result.sweep.q_lo, result.sweep.q_hi]
         summary["asymptote_found"] = result.sweep.asymptote_found
+    if "r0_detected" in result.provenance:
+        summary["r0_detected"] = result.provenance["r0_detected"]
+        summary["window_refined"] = bool(result.provenance.get("window_refined", False))
     if result.a_fz is not None:
         summary["a_fz"] = result.a_fz
-        if config.amplitude_criterion != "fz":
+        if amplitude_criterion != "fz":
             # Concordance of the two independent amplitude criteria: the
             # density-limit amplitude (result.a) vs the Q->0 Faber-Ziman-limit
             # amplitude. Agreement is evidence the absolute scale is
@@ -835,9 +945,9 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
             summary["amplitudes_concordant"] = bool(
                 abs(result.a_fz / result.a - 1.0) < 0.1
             )
-    if config.b_sq_avg is not None:
+    if b_sq_avg is not None:
         # Keen Eq. 14 diagnostic: FK(Q->0) -> -<b^2>. Report the lowest-Q value
         # actually measured for comparison (data rarely reach Q ~ 0).
         summary["fk_qmin"] = float(result.fk[0])
-        summary["fk_q0_theory"] = -config.b_sq_avg
+        summary["fk_q0_theory"] = -float(b_sq_avg)
     return summary
