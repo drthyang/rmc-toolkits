@@ -46,7 +46,9 @@ Auto StoG Phases 1–2 — automatic total-scattering data scaling engine (`rmc_
   silently clobber the real STOG outputs a `stog.inp` sits beside. The RMC files get the
   exact Fortran `first_peak_zero` enforcement by default in stog.inp mode (`--no-enforce`
   opts out); the honest pre-enforcement low-r rms is always printed. `write_stog_xy` gains
-  an optional third column for the `scale_ft.gr` layout. Tests: `tests/test_scaling_cli.py`
+  an optional third column for the `scale_ft.gr` layout. The classic fixed-name `ft.dat`
+  Fourier-filter correction is written too (data-grid), so the output family matches a
+  stog/pystog session file-for-file. Tests: `tests/test_scaling_cli.py`
   (9: synthetic auto/manual/data-mode end-to-end, no-clobber guard, error surfaces,
   module-entry smoke, skip-if-absent Fortran parity). Full suite: 135 tests green.
 

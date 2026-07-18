@@ -97,9 +97,17 @@ class StogInpModeTests(CliSyntheticBase):
             for name in (
                 "scale.fq", "scale.gr", "scale_ft.sq", "scale_ft.gr",
                 "scale_ft_rmc.fq", "scale_ft_rmc.gr", "scale_ft_rmc.dr",
-                "stog_provenance.json",
+                "ft.dat", "stog_provenance.json",
             ):
                 self.assertTrue((out_dir / name).exists(), name)
+
+            # Classic identity: sq_filtered = sq_scaled - (ft - 1).
+            ft = read_stog_xy(out_dir / "ft.dat")
+            filtered = read_stog_xy(out_dir / "scale_ft.sq")
+            scaled_q = read_stog_xy(out_dir / "scale.fq")
+            np.testing.assert_allclose(
+                filtered[1], scaled_q[1] - (ft[1] - 1.0), atol=1e-10
+            )
 
             payload = json.loads((out_dir / "stog_provenance.json").read_text())
             a, b = payload["diagnostics"]["a"], payload["diagnostics"]["b"]
@@ -331,6 +339,15 @@ class XrayRunCliTests(unittest.TestCase):
             ref_ft = read_stog_xy(XRAY_RUN / "scale_ft.sq")
             rms = float(np.sqrt(np.mean(
                 (np.interp(ref_ft[0], ours_ft[0], ours_ft[1]) - ref_ft[1]) ** 2
+            )))
+            self.assertLess(rms, 1e-3)
+
+            # Classic ft.dat parity on the overlapping (>= Qmin) grid.
+            ours_c = read_stog_xy(Path(tmp) / "ft.dat")
+            ref_c = read_stog_xy(XRAY_RUN / "ft.dat")
+            keep = ref_c[0] >= ours_c[0][0] - 1e-9
+            rms = float(np.sqrt(np.mean(
+                (np.interp(ref_c[0][keep], ours_c[0], ours_c[1]) - ref_c[1][keep]) ** 2
             )))
             self.assertLess(rms, 1e-3)
 

@@ -79,6 +79,10 @@ _OUTPUTS = (
     ("rmc_dr", "_rmc.dr", "D(r) (RMCProfile input)"),
 )
 
+#: Classic fixed-name Fourier-filter correction (stog and pystog both emit it).
+#: Written on the data grid; the Fortran's extra sub-Qmin stub carries no data.
+_FT_NAME = "ft.dat"
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -408,6 +412,7 @@ def _resolve_targets(
         for key, suffix, _ in _OUTPUTS:
             targets[key] = out_dir / f"{stem}{suffix}"
         json_name = f"{stem}_provenance.json"
+    targets["ft_correction"] = out_dir / _FT_NAME
     targets["provenance"] = out_dir / json_name
 
     if not args.force:
@@ -467,6 +472,7 @@ def _write_outputs(
     write_stog_xy(targets["rmc_fq"], result.q, result.fk, title=label)
     write_stog_xy(targets["rmc_gr"], result.r, gk_out, title=label)
     write_stog_xy(targets["rmc_dr"], result.r, dr_out, title=label)
+    write_stog_xy(targets["ft_correction"], result.q, result.sq_ft, title=label)
     with targets["provenance"].open("w", encoding="utf-8") as handle:
         json.dump(_json_safe(payload), handle, indent=2)
         handle.write("\n")
@@ -524,6 +530,7 @@ def _print_report(
     print(f"Outputs -> {targets['provenance'].parent}")
     for key, _, description in _OUTPUTS:
         print(f"  {targets[key].name:<28s} {description}")
+    print(f"  {targets['ft_correction'].name:<28s} Fourier-filter correction (classic ft.dat)")
     print(f"  {targets['provenance'].name:<28s} configuration + fit diagnostics (JSON)")
 
 
