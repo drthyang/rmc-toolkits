@@ -5,8 +5,27 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
-Auto StoG Phase 1 — automatic total-scattering data scaling engine (`rmc_toolkits.scaling` +
-`rmc_toolkits.transforms`), plus the app rename to **RMCProfile Workbench**.
+Auto StoG Phases 1–2 — automatic total-scattering data scaling engine (`rmc_toolkits.scaling` +
+`rmc_toolkits.transforms`) and the `rmc-autoscale` CLI, plus the app rename to
+**RMCProfile Workbench**.
+
+- **Auto StoG Phase 2 — the `rmc-autoscale` CLI** (`rmc_toolkits/scaling_cli.py`; console
+  entry via `[project.scripts]`, module form `python -m rmc_toolkits.scaling_cli`): drop-in
+  replacement for an interactive classic-stog session. Reads a classic `stog.inp` — or
+  `--data FILE --qmin --qmax` with `--formula`-computed coefficients (scattering.py) and
+  ρ0/r0 pre-filled from the `.dat` `NUMBER_DENSITY ::`/`MINIMUM_DISTANCES ::` header — and
+  auto-fits (a, b) by default; `--manual` reruns the stog.inp hand scaling and
+  `--scale`/`--offset` fix them explicitly. Writes the seven classic output files (scaled
+  S(Q), unfiltered g−1, filtered S(Q), filtered g−1 + D(r) companion column, and the RMC
+  FK/GK/D(r)) plus a provenance JSON carrying the full configuration, fit history, and
+  `diagnostics_summary`. Safety per plan §5: outputs default into an `autoscale/` directory
+  beside the input and nothing is overwritten without `--force`, so the tool can never
+  silently clobber the real STOG outputs a `stog.inp` sits beside. The RMC files get the
+  exact Fortran `first_peak_zero` enforcement by default in stog.inp mode (`--no-enforce`
+  opts out); the honest pre-enforcement low-r rms is always printed. `write_stog_xy` gains
+  an optional third column for the `scale_ft.gr` layout. Tests: `tests/test_scaling_cli.py`
+  (9: synthetic auto/manual/data-mode end-to-end, no-clobber guard, error surfaces,
+  module-entry smoke, skip-if-absent Fortran parity). Full suite: 135 tests green.
 
 - **New `rmc_toolkits/transforms.py`**: Keen-2001-convention conversions (S(Q) ⟷ F(Q) ⟷ F_K(Q);
   g(r) ⟷ G_PDF(r) ⟷ G_K(r) ⟷ D(r)), the trapezoid sine-FT pair, Lorch window, the analytic

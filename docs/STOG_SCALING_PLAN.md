@@ -170,6 +170,9 @@ rmc_toolkits/
   scaling.py       NEW — the auto-scale engine: windows, closed-form (a,b) solve, scipy
                    minimizer wrapper, self-consistent loop, diagnostics report dataclass,
                    provenance dict. Calls transforms.py. No file I/O.
+  scaling_cli.py   NEW (Phase 2) — the `rmc-autoscale` command: stog.inp/--data args →
+                   engine → classic output family + provenance JSON. All scaling file
+                   I/O lives here.
   parsers.py       EXTEND — readers: stog.inp, STOG .dat (count-header + 2–3 col + NaN),
                    .dat metadata header (TITLE::, NUMBER_DENSITY::, MINIMUM_DISTANCES:: —
                    same format as the shipped demo GTS_250K.dat); writers: STOG-format
@@ -180,6 +183,7 @@ rmc_toolkits/
 tests/
   test_transforms.py   NEW
   test_scaling.py      NEW
+  test_scaling_cli.py  NEW (Phase 2)
 ```
 
 Public API sketch:
@@ -301,9 +305,19 @@ publication, it goes under `tests/fixtures/stog_59438/` — open decision (§6).
   test suite V1–V4. Pure numpy/scipy; **no new required dependencies**; pystog only as an
   optional dev extra for V5. **DONE 2026-07-17** — 30 new tests, 95-test suite green; see
   §3.1b for the criterion study that shaped the objective.
-- **Phase 2 — CLI**: `python -m rmc_toolkits.scaling <stog.inp|args>` + a `[project.scripts]`
-  console entry (`rmc-autoscale`). Drop-in replacement for the interactive stog session:
-  reads the same `stog.inp`, writes the same six output files + a provenance JSON.
+- **Phase 2 — CLI**: `[project.scripts]` console entry `rmc-autoscale` + module form
+  `python -m rmc_toolkits.scaling_cli`. Drop-in replacement for the interactive stog session:
+  reads the same `stog.inp`, writes the seven declared output files + a provenance JSON.
+  **DONE 2026-07-17** — `rmc_toolkits/scaling_cli.py` (all scaling file I/O lives there; the
+  engine stays I/O-free). Auto-fit is the default; `--manual`/`--scale`/`--offset` give fixed
+  scalings; `--data` mode covers inp-less runs with `--formula` (scattering.py) and
+  `.dat`-header ρ0/r0 defaults. §5's clobber risk closed: outputs default into `autoscale/`
+  beside the input, nothing overwritten without `--force`; RMC outputs get the exact Fortran
+  `first_peak_zero` enforcement by default in stog.inp mode (`--no-enforce` opts out) with the
+  pre-enforcement low-r rms always reported. (The originally sketched
+  `python -m rmc_toolkits.scaling` form is abandoned: the package `__init__` imports that
+  module, so runpy would execute it twice with a scary RuntimeWarning.) 9 CLI tests including
+  skip-if-absent Fortran-run parity.
 - **Phase 3 — Flask API**: `/api/scaling/preview` (arrays for the live view) and
   `/api/scaling/run` (write outputs), following the existing `_resolve_inside_root` guard and
   per-(path, mtime, params) LRU-cache patterns.
