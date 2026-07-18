@@ -289,14 +289,12 @@ function App() {
               </div>
             </div>
             <nav className="page-tabs" aria-label="Workspace pages">
-              {!staticMode && (
-                <button
-                  className={activePage === 'autostog' ? 'active' : ''}
-                  onClick={() => handlePageChange('autostog')}
-                >
-                  Auto StoG
-                </button>
-              )}
+              <button
+                className={activePage === 'autostog' ? 'active' : ''}
+                onClick={() => handlePageChange('autostog')}
+              >
+                Auto StoG
+              </button>
               <button
                 className={activePage === 'dashboard' ? 'active' : ''}
                 onClick={() => handlePageChange('dashboard')}
@@ -432,7 +430,7 @@ function App() {
               className={`workspace-page${activePage === 'autostog' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'autostog'}
             >
-              <AutoStogPage directory={currentDirectory} />
+              <AutoStogPage directory={currentDirectory} localRun={localRun} />
             </div>
           )}
           {visitedPages.dashboard && (

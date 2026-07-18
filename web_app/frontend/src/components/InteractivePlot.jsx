@@ -18,6 +18,10 @@ const CHART_SAVE_OPTIONS = [
 // Series whose label mentions "exp" hold measured data (Experiment, F(Q)_Expt, X_ray_exp_renorm, ...).
 const isExperimental = (label) => /exp/i.test(label);
 
+// Theory/reference lines (series with role: 'guide'): drawn dashed and muted,
+// excluded from the palette rotation and from hover snapping.
+const GUIDE_STROKE = '#98a2b3';
+
 const MARKER_RADIUS = 2.8;
 
 const formatNumber = (value) => {
@@ -142,19 +146,46 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         fetchData();
     }, [file.path, plotData, refreshKey]);
 
+    // Reset view state (zoom, hover, hidden series) when direct plotData is
+    // swapped for a different dataset, honoring per-series defaultHidden flags.
+    // Render-time adjustment (not an effect) per the React "adjusting state
+    // when a prop changes" pattern.
+    const [lastPlotData, setLastPlotData] = useState(null);
+    if (plotData && plotData !== lastPlotData) {
+        setLastPlotData(plotData);
+        setHidden(new Set((plotData.series || [])
+            .filter((entry) => entry.defaultHidden)
+            .map((entry) => entry.label)));
+        setXDomain(null);
+        setYDomain(null);
+        setHover(null);
+        setDrag(null);
+    }
+
     // Measured data first (drawn underneath, first palette color); the
     // calculated curve follows and is drawn on top of the hollow markers.
+    // Guide series draw last (on top, dashed) and never consume palette slots.
     const orderedSeries = useMemo(() => {
         const series = effectivePlot?.series || [];
-        const experimental = series.filter((entry) => isExperimental(entry.label));
-        const calculated = series.filter((entry) => !isExperimental(entry.label));
+        const guides = series.filter((entry) => entry.role === 'guide');
+        const data = series.filter((entry) => entry.role !== 'guide');
+        const experimental = data.filter((entry) => isExperimental(entry.label));
+        const calculated = data.filter((entry) => !isExperimental(entry.label));
         const paired = experimental.length > 0 && calculated.length > 0;
-        const reordered = paired ? [...experimental, ...calculated] : series;
-        return reordered.map((entry, index) => ({
-            ...entry,
-            marker: paired && isExperimental(entry.label),
-            color: palette[index % palette.length]
-        }));
+        const reordered = paired ? [...experimental, ...calculated] : data;
+        return [
+            ...reordered.map((entry, index) => ({
+                ...entry,
+                marker: paired && isExperimental(entry.label),
+                color: entry.color || palette[index % palette.length]
+            })),
+            ...guides.map((entry) => ({
+                ...entry,
+                marker: false,
+                guide: true,
+                color: entry.color || GUIDE_STROKE
+            }))
+        ];
     }, [effectivePlot]);
 
     const visibleSeries = useMemo(() => {
@@ -169,8 +200,11 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
             series.y.filter((_, index) => series.x[index] >= currentX[0] && series.x[index] <= currentX[1])
         );
         const baseY = niceDomain(allY.length ? allY : visibleSeries.flatMap((series) => series.y));
-        return { x: currentX, y: yDomain || baseY, baseX, baseY };
-    }, [visibleSeries, xDomain, yDomain]);
+        // A caller-supplied initial y window (e.g. the Auto StoG low-r zoom)
+        // acts as the un-zoomed default; user zooms still override it.
+        const initialY = effectivePlot?.initialYDomain;
+        return { x: currentX, y: yDomain || initialY || baseY, baseX, baseY };
+    }, [visibleSeries, xDomain, yDomain, effectivePlot]);
 
     // 8:5 (golden-ish) for grid cards, a slim strip for the wide variant.
     const view = wide
@@ -207,10 +241,10 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                 const commands = points.map(([cx, cy]) =>
                     `M ${(cx - r).toFixed(2)} ${cy.toFixed(2)} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 ${-r * 2} 0`
                 );
-                return { label: series.label, color: series.color, marker: true, d: commands.join(' ') };
+                return { label: series.label, color: series.color, marker: true, guide: false, d: commands.join(' ') };
             }
             const d = points.map(([px, py], index) => `${index ? 'L' : 'M'} ${px.toFixed(2)} ${py.toFixed(2)}`).join(' ');
-            return { label: series.label, color: series.color, marker: false, d };
+            return { label: series.label, color: series.color, marker: false, guide: Boolean(series.guide), d };
         });
     }, [visibleSeries, domains, view.left, view.top, plotWidth, plotHeight]);
 
@@ -228,14 +262,15 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const clampPlotY = (y) => Math.max(view.top, Math.min(view.height - view.bottom, y));
 
     const nearestHover = (event) => {
-        if (!effectivePlot || !visibleSeries.length) return;
+        const hoverSeries = visibleSeries.filter((series) => !series.guide);
+        if (!effectivePlot || !hoverSeries.length) return;
         const x = pointerToViewX(event);
         if (x < view.left || x > view.width - view.right) {
             setHover(null);
             return;
         }
         const dataX = xInvert(x);
-        const values = visibleSeries.map((series) => {
+        const values = hoverSeries.map((series) => {
             let best = 0;
             let bestDistance = Infinity;
             series.x.forEach((value, pointIndex) => {
@@ -345,8 +380,12 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                             }}
                         >
                             <span
-                                className={series.marker ? 'swatch-hollow' : ''}
-                                style={series.marker ? { borderColor: series.color } : { background: series.color }}
+                                className={series.marker ? 'swatch-hollow' : series.guide ? 'swatch-guide' : ''}
+                                style={series.marker
+                                    ? { borderColor: series.color }
+                                    : series.guide
+                                        ? { borderColor: series.color }
+                                        : { background: series.color }}
                             />
                             {series.label}
                         </button>
@@ -411,7 +450,9 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                         {seriesShapes.map((series) => (
                             <path
                                 key={series.label}
-                                className={series.marker ? 'series-markers' : 'series-path'}
+                                className={series.marker
+                                    ? 'series-markers'
+                                    : series.guide ? 'series-path series-path--guide' : 'series-path'}
                                 d={series.d}
                                 stroke={series.color}
                             />

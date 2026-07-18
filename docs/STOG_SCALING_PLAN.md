@@ -342,7 +342,11 @@ publication, it goes under `tests/fixtures/stog_59438/` — open decision (§6).
 - **Phase 5 (stretch) — static-mode JS port**: the engine is small (sine transforms + a 2×2
   linear solve + the filter, ~300 lines); a Web-Worker port would preserve the browser-first
   privacy guarantee. Decide after Phase 4 usage; until then the page is backend-only (the
-  first such feature — precedent decision flagged in §6).
+  first such feature — precedent decision flagged in §6). **DONE 2026-07-17** —
+  `src/workers/autoScale.js` (+ worker), Python-golden parity fixtures
+  (`tests/generate_autoscale_fixture.py` → 11 vitest tests, (a, b) to 1e−6), zip export of
+  the classic family, tab visible in both runtimes. §6.4 is thereby resolved: the hosted
+  app keeps the browser-first privacy story.
 - **Docs on completion**: revise ROADMAP Phase 7 "Deferred preprocessing" → active
   preprocessing module (its stated precondition — "a dedicated preprocessing module with a
   clear user path" — is exactly what this builds); update the AGENTS.md architecture map;

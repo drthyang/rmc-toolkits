@@ -1,16 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import InteractivePlot from './InteractivePlot';
 import { isStaticMode } from '../browserData';
+import { downloadBlob, sanitizeFilename } from '../figureExport';
+import { buildZip } from '../zipArchive';
+import {
+  faberZiman,
+  makeConfig,
+  readDatHeader,
+  readStogInp,
+  readStogXy,
+  writeStogXy,
+} from '../workers/autoScale';
 import './AutoStogPage.css';
+
+const STORAGE_KEY = 'autostog-session';
 
 // Files that can seed a scaling session: classic stog inputs first, then data.
 const isInpCandidate = (name) => name.endsWith('.inp') || name === 'stog_input.dat';
-const isDataCandidate = (name) => /\.(sq|fq|dat)$/i.test(name) && !/^(scale|ft\.dat|.*_rmc)/i.test(name);
+const isDataCandidate = (name) => (
+  /\.(sq|fq|dat)$/i.test(name)
+  && !/^(scale[._]|ft\.dat)/i.test(name)
+  && !/_rmc\.(fq|gr|dr)$/i.test(name)
+);
 
 const numberOr = (value) => {
   if (value === '' || value === null || value === undefined) return undefined;
@@ -30,24 +46,135 @@ const EMPTY_FORM = {
   enforce: true, enforceCutoff: '', manualA: '', manualB: '',
 };
 
-const AutoStogPage = ({ directory }) => {
+const OUTPUT_LIST = [
+  ['sq_scaled', 'scaled S(Q)'],
+  ['gr_unfiltered', 'unfiltered g(r)−1'],
+  ['sq_filtered', 'filtered S(Q)'],
+  ['gr_filtered', 'filtered g(r)−1 + D(r)'],
+  ['rmc_fq', 'FK(Q) → RMCProfile'],
+  ['rmc_gr', 'GK(r) → RMCProfile'],
+  ['rmc_dr', 'D(r) → RMCProfile'],
+  ['ft_correction', 'ft.dat correction'],
+  ['provenance', 'provenance JSON'],
+];
+
+// ---------------------------------------------------------------------------
+// Static-mode helpers: resolve config exactly like the Flask backend does.
+// ---------------------------------------------------------------------------
+
+const resolveStaticConfig = (form, inp, header) => {
+  const pick = (formValue, fallback) => {
+    const value = numberOr(formValue);
+    return value === undefined ? fallback : value;
+  };
+  let bAvgSq = numberOr(form.bAvgSq) ?? (inp ? inp.bAvgSq : undefined);
+  let bSqAvg = numberOr(form.bSqAvg);
+  const formula = form.formula.trim();
+  if (formula) {
+    const coefficients = faberZiman(formula);
+    if (bSqAvg === undefined) bSqAvg = coefficients.bSqAvgBarn;
+    if (bAvgSq === undefined) bAvgSq = coefficients.bAvgSqBarn;
+  }
+  if (bAvgSq === undefined) throw new Error('data mode requires ⟨b⟩²: set it or give a formula');
+  const rCutoff = pick(form.rCutoff, inp ? inp.rCutoff : 1.0);
+  let r0 = numberOr(form.r0);
+  if (r0 === undefined && header?.minDistance != null) r0 = header.minDistance;
+  if (r0 === undefined && inp) {
+    const candidate = Math.max(inp.peakCutoff, inp.peakRmin);
+    if (candidate - 0.25 > rCutoff + 0.2) r0 = candidate;
+  }
+  const qmin = pick(form.qmin, inp ? inp.qmin : undefined);
+  const qmax = pick(form.qmax, inp ? inp.qmax : undefined);
+  if (qmin === undefined || qmax === undefined) throw new Error('data mode requires Qmin and Qmax');
+  let rho0 = pick(form.rho0, inp ? inp.rho0 : undefined);
+  if (rho0 === undefined && header?.numberDensity != null) rho0 = header.numberDensity;
+  if (rho0 === undefined) throw new Error('number density unknown: set ρ₀ or use a data file with a NUMBER_DENSITY :: header');
+  return makeConfig({
+    qmin, qmax, rho0, bAvgSq,
+    bSqAvg: bSqAvg === undefined ? null : bSqAvg,
+    rCutoff,
+    r0: r0 === undefined ? null : r0,
+    rFitMin: numberOr(form.rFitMin) ?? null,
+    rFitMax: numberOr(form.rFitMax) ?? null,
+    rmax: pick(form.rmax, inp ? inp.rmax : 50.0),
+    nr: Math.round(pick(form.nr, inp ? inp.nr : 5000)),
+    lorch: Boolean(form.lorch),
+    lowQCorrection: Boolean(form.lowQCorrection),
+    robust: Boolean(form.robust),
+    c1Mode: form.c1Mode,
+    amplitudeCriterion: form.amplitude,
+    despike: Boolean(form.despike),
+  });
+};
+
+const resolveStaticEnforcement = (form, inp) => {
+  if (!form.enforce) return null;
+  const cutoff = numberOr(form.enforceCutoff) ?? (inp ? inp.peakCutoff : undefined);
+  if (cutoff === undefined) return null;
+  const usingInpWindow = inp && numberOr(form.enforceCutoff) === undefined;
+  return {
+    cutoff,
+    peakRmin: usingInpWindow ? inp.peakRmin : cutoff,
+    peakRmax: usingInpWindow ? inp.peakRmax : cutoff,
+  };
+};
+
+const AutoStogPage = ({ directory, localRun }) => {
+  const staticMode = isStaticMode();
   const [files, setFiles] = useState([]);
   const [filesError, setFilesError] = useState(null);
-  const [selectedPath, setSelectedPath] = useState('');
+  const [selectedKey, setSelectedKey] = useState('');
   const [inspect, setInspect] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [preview, setPreview] = useState(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
   const [exportForm, setExportForm] = useState({ outDir: '', outStem: '', force: false });
   const [exportResult, setExportResult] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const workerRef = useRef(null);
+  const jobRef = useRef(0);
+  const staticDataRef = useRef(null); // { q, sq, sigma, inp, header, name }
+  const restoredRef = useRef(false);
 
-  const staticMode = isStaticMode();
-
-  // Candidate files in the selected run folder (header controls the folder).
+  // ── session restore ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (staticMode) return;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
+      if (saved?.form) {
+        setForm((current) => ({ ...current, ...saved.form }));
+        setAdvancedOpen(Boolean(saved.advancedOpen));
+        restoredRef.current = saved.selectedKey || false;
+      }
+    } catch { /* corrupted state: start clean */ }
+  }, []);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ selectedKey, form, advancedOpen })
+      );
+    } catch { /* storage full/blocked: persistence is best-effort */ }
+  }, [selectedKey, form, advancedOpen]);
+
+  useEffect(() => () => workerRef.current?.terminate(), []);
+
+  // ── candidate files ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (staticMode) {
+      const candidates = (localRun?.files || [])
+        .map((file) => ({ name: file.name, key: file.name, sourceFile: file.sourceFile }))
+        .filter((file) => isInpCandidate(file.name) || isDataCandidate(file.name))
+        .sort((left, right) => {
+          const leftInp = isInpCandidate(left.name) ? 0 : 1;
+          const rightInp = isInpCandidate(right.name) ? 0 : 1;
+          return leftInp - rightInp || left.name.localeCompare(right.name);
+        });
+      setFiles(candidates);
+      setFilesError(null);
+      return undefined;
+    }
     let cancelled = false;
     setFilesError(null);
     axios.get(`${API_BASE_URL}/api/files`, { params: { dir: directory || '.' } })
@@ -56,6 +183,7 @@ const AutoStogPage = ({ directory }) => {
         const candidates = (response.data.files || [])
           .filter((item) => item.type === 'file')
           .filter((item) => isInpCandidate(item.name) || isDataCandidate(item.name))
+          .map((item) => ({ name: item.name, key: item.path }))
           .sort((left, right) => {
             const leftInp = isInpCandidate(left.name) ? 0 : 1;
             const rightInp = isInpCandidate(right.name) ? 0 : 1;
@@ -67,7 +195,17 @@ const AutoStogPage = ({ directory }) => {
         if (!cancelled) setFilesError(err.response?.data?.error || 'Could not list the run folder');
       });
     return () => { cancelled = true; };
-  }, [directory, staticMode]);
+  }, [directory, staticMode, localRun]);
+
+  // Re-select the restored source once the candidate list knows it.
+  useEffect(() => {
+    if (!restoredRef.current) return;
+    const wanted = restoredRef.current;
+    if (files.some((file) => file.key === wanted)) {
+      restoredRef.current = false;
+      handleSelect(wanted);
+    }
+  }, [files]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyInspect = (info) => {
     setInspect(info);
@@ -76,37 +214,67 @@ const AutoStogPage = ({ directory }) => {
       ...current,
       qmin: inp ? String(inp.qmin) : current.qmin,
       qmax: inp ? String(inp.qmax) : current.qmax,
-      rho0: inp ? String(inp.rho0) : (header?.numberDensity != null ? String(header.numberDensity) : ''),
+      rho0: inp ? String(inp.rho0) : (header?.numberDensity != null ? String(header.numberDensity) : current.rho0),
       bAvgSq: inp ? String(inp.bAvgSq) : current.bAvgSq,
       rCutoff: inp ? String(inp.rCutoff) : current.rCutoff,
-      r0: header?.minDistance != null ? String(header.minDistance) : '',
+      r0: header?.minDistance != null ? String(header.minDistance) : current.r0,
       rmax: inp ? String(inp.rmax) : current.rmax,
       nr: inp ? String(inp.nr) : current.nr,
       lorch: inp ? Boolean(inp.lorch) : current.lorch,
-      enforce: Boolean(inp),
-      enforceCutoff: inp ? String(inp.peakCutoff) : '',
-      manualA: inp ? String(inp.a) : '',
-      manualB: inp ? String(inp.b) : '',
+      enforce: inp ? true : current.enforce,
+      enforceCutoff: inp ? String(inp.peakCutoff) : current.enforceCutoff,
+      manualA: inp ? String(inp.a) : current.manualA,
+      manualB: inp ? String(inp.b) : current.manualB,
     }));
   };
 
-  const handleSelect = async (path) => {
-    setSelectedPath(path);
+  const handleSelect = async (key) => {
+    setSelectedKey(key);
     setPreview(null);
     setExportResult(null);
     setError(null);
-    if (!path) { setInspect(null); return; }
+    staticDataRef.current = null;
+    if (!key) { setInspect(null); return; }
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/scaling/preview`, { path, inspect: true });
-      applyInspect(response.data);
+      if (staticMode) {
+        const entry = files.find((file) => file.key === key);
+        if (!entry?.sourceFile) throw new Error('File is no longer available — re-select the run folder');
+        const text = await entry.sourceFile.text();
+        let inp = null;
+        let dataText = text;
+        let dataName = entry.name;
+        if (isInpCandidate(entry.name)) {
+          inp = readStogInp(text);
+          const dataEntry = (localRun?.files || []).find((file) => file.name === inp.dataFile);
+          if (!dataEntry?.sourceFile) {
+            throw new Error(`stog input references '${inp.dataFile}' — include it in the selected folder`);
+          }
+          dataText = await dataEntry.sourceFile.text();
+          dataName = inp.dataFile;
+        }
+        const columns = readStogXy(dataText);
+        const header = readDatHeader(dataText);
+        staticDataRef.current = {
+          q: columns[0],
+          sq: columns[1],
+          sigma: columns.length >= 3 ? columns[2] : null,
+          inp,
+          header,
+          name: dataName,
+        };
+        applyInspect({ kind: inp ? 'inp' : 'data', inp, header, dataFile: dataName });
+      } else {
+        const response = await axios.post(`${API_BASE_URL}/api/scaling/preview`, { path: key, inspect: true });
+        applyInspect(response.data);
+      }
     } catch (err) {
       setInspect(null);
-      setError(err.response?.data?.error || 'Could not inspect the selected file');
+      setError(err.response?.data?.error || err.message || 'Could not inspect the selected file');
     }
   };
 
-  const buildParams = () => ({
-    path: selectedPath,
+  const buildApiParams = () => ({
+    path: selectedKey,
     qmin: numberOr(form.qmin),
     qmax: numberOr(form.qmax),
     rho0: numberOr(form.rho0),
@@ -130,50 +298,166 @@ const AutoStogPage = ({ directory }) => {
     enforceCutoff: form.enforce ? numberOr(form.enforceCutoff) : undefined,
   });
 
+  const runStatic = (mode) => new Promise((resolve, reject) => {
+    const data = staticDataRef.current;
+    if (!data) { reject(new Error('Select a source file first')); return; }
+    let config;
+    let enforcement;
+    try {
+      config = resolveStaticConfig(form, data.inp, data.header);
+      enforcement = resolveStaticEnforcement(form, data.inp);
+    } catch (resolveError) { reject(resolveError); return; }
+    if (!workerRef.current) {
+      workerRef.current = new Worker(
+        new URL('../workers/autoScaleWorker.js', import.meta.url),
+        { type: 'module' }
+      );
+    }
+    const worker = workerRef.current;
+    jobRef.current += 1;
+    const id = jobRef.current;
+    const onMessage = (event) => {
+      if (event.data.id !== id) return;
+      worker.removeEventListener('message', onMessage);
+      if (!event.data.ok) { reject(new Error(event.data.error)); return; }
+      const raw = event.data.result;
+      const arr = (buffer) => (buffer ? Array.from(new Float64Array(buffer)) : null);
+      resolve({
+        kind: data.inp ? 'inp' : 'data',
+        mode,
+        inp: data.inp,
+        header: data.header,
+        result: {
+          a: raw.a, b: raw.b, converged: raw.converged, iterations: raw.iterations,
+          lowRRms: raw.lowRRms, c1TailMean: raw.c1TailMean, history: raw.history,
+        },
+        diagnostics: raw.summary,
+        enforcement,
+        config,
+        guides: {
+          asymptote: 1.0,
+          gkLowR: -config.bAvgSq,
+          drSlope: -4 * Math.PI * config.rho0 * config.bAvgSq,
+          s0Target: config.bSqAvg == null ? null : 1 - config.bSqAvg / config.bAvgSq,
+          level: raw.sweep ? raw.sweep.level : null,
+          levelWindow: raw.sweep ? [raw.sweep.qLo, raw.sweep.qHi] : null,
+          rFitWindow: [
+            config.rFitMin != null ? config.rFitMin : config.rCutoff + 0.2,
+            config.rFitMax != null ? config.rFitMax : (config.r0 != null ? config.r0 - 0.25 : config.rCutoff + 1.2),
+          ],
+        },
+        series: {
+          q: arr(raw.q), sqRaw: arr(raw.sqRaw), sqScaled: arr(raw.sqScaled),
+          sqFiltered: arr(raw.sqFiltered), sqFt: arr(raw.sqFt), r: arr(raw.r),
+          gk: arr(raw.gk), dr: arr(raw.dr), fk: arr(raw.fk),
+          gm1Unfiltered: arr(raw.gm1Unfiltered),
+          gkEnforced: arr(raw.gkEnforced), drEnforced: arr(raw.drEnforced),
+        },
+      });
+    };
+    worker.addEventListener('message', onMessage);
+    const q = Float64Array.from(data.q);
+    const sq = Float64Array.from(data.sq);
+    const sigma = form.useSigma && data.sigma ? Float64Array.from(data.sigma) : null;
+    worker.postMessage(
+      {
+        id,
+        config,
+        mode,
+        a: mode === 'manual' ? numberOr(form.manualA) ?? (data.inp ? data.inp.a : undefined) : undefined,
+        b: mode === 'manual' ? numberOr(form.manualB) ?? (data.inp ? data.inp.b : 0) : undefined,
+        q: q.buffer,
+        sq: sq.buffer,
+        sigma: sigma ? sigma.buffer : null,
+        enforcement,
+      },
+      sigma ? [q.buffer, sq.buffer, sigma.buffer] : [q.buffer, sq.buffer]
+    );
+  });
+
   const runScaling = async (mode) => {
-    if (!selectedPath) return;
+    if (!selectedKey) return;
     setRunning(true);
     setError(null);
     setExportResult(null);
     try {
-      const params = buildParams();
-      if (mode === 'manual') {
-        params.mode = 'manual';
-        params.a = numberOr(form.manualA);
-        params.b = numberOr(form.manualB);
+      if (staticMode) {
+        if (mode === 'manual' && numberOr(form.manualA) === undefined && !staticDataRef.current?.inp) {
+          throw new Error('fixed scaling needs a (and optionally b)');
+        }
+        setPreview(await runStatic(mode));
+      } else {
+        const params = buildApiParams();
+        if (mode === 'manual') {
+          params.mode = 'manual';
+          params.a = numberOr(form.manualA);
+          params.b = numberOr(form.manualB);
+        }
+        const response = await axios.post(`${API_BASE_URL}/api/scaling/preview`, params);
+        setPreview(response.data);
       }
-      const response = await axios.post(`${API_BASE_URL}/api/scaling/preview`, params);
-      setPreview(response.data);
     } catch (err) {
       setPreview(null);
-      setError(err.response?.data?.error || 'Scaling failed');
+      setError(err.response?.data?.error || err.message || 'Scaling failed');
     } finally {
       setRunning(false);
     }
   };
 
-  const writeFiles = async (force = exportForm.force) => {
-    if (!selectedPath || !preview) return;
+  const writeFiles = async () => {
+    if (!selectedKey || !preview) return;
     setExporting(true);
     setError(null);
     try {
-      const params = { ...buildParams(), mode: preview.mode };
-      if (preview.mode === 'manual') {
-        params.a = preview.result.a;
-        params.b = preview.result.b;
-      }
-      if (exportForm.outDir.trim()) params.outDir = exportForm.outDir.trim();
-      if (exportForm.outStem.trim()) params.outStem = exportForm.outStem.trim();
-      params.force = force;
-      const response = await axios.post(`${API_BASE_URL}/api/scaling/run`, params);
-      setExportResult(response.data);
-    } catch (err) {
-      const message = err.response?.data?.error || 'Could not write the output files';
-      if (err.response?.status === 409) {
-        setExportResult({ conflict: true, message });
+      if (staticMode) {
+        const { series, result, diagnostics, config, enforcement } = preview;
+        const label = `rmc-autoscale (browser): a=${result.a.toPrecision(8)} b=${result.b.toPrecision(8)}`;
+        const stem = sanitizeFilename(
+          exportForm.outStem.trim() || staticDataRef.current?.name?.replace(/\.[^.]+$/, '') || 'autoscale'
+        );
+        const gm1 = series.gk.map((value) => value / config.bAvgSq);
+        const encoder = new TextEncoder();
+        const entries = [
+          [`${stem}.sq`, writeStogXy(series.q, series.sqScaled, { title: label })],
+          [`${stem}.gr`, writeStogXy(series.r, series.gm1Unfiltered || gm1, { title: label })],
+          [`${stem}_ft.sq`, writeStogXy(series.q, series.sqFiltered, { title: label })],
+          [`${stem}_ft.gr`, writeStogXy(series.r, gm1, {
+            title: label,
+            extra: series.r.map((radius, i) => 4 * Math.PI * config.rho0 * radius * gm1[i]),
+          })],
+          [`${stem}_rmc.fq`, writeStogXy(series.q, series.fk, { title: label })],
+          [`${stem}_rmc.gr`, writeStogXy(series.r, series.gkEnforced || series.gk, { title: label })],
+          [`${stem}_rmc.dr`, writeStogXy(series.r, series.drEnforced || series.dr, { title: label })],
+          ['ft.dat', writeStogXy(series.q, series.sqFt, { title: label })],
+          [`${stem}_provenance.json`, JSON.stringify({
+            tool: 'rmc-autoscale (browser engine)',
+            source: staticDataRef.current?.name,
+            a: result.a,
+            b: result.b,
+            mode: preview.mode,
+            enforcement,
+            config,
+            diagnostics,
+          }, null, 2)],
+        ].map(([name, text]) => ({ name, data: encoder.encode(text) }));
+        downloadBlob(buildZip(entries), `${stem}_autoscale.zip`);
+        setExportResult({ zip: `${stem}_autoscale.zip`, count: entries.length });
       } else {
-        setError(message);
+        const params = { ...buildApiParams(), mode: preview.mode };
+        if (preview.mode === 'manual') {
+          params.a = preview.result.a;
+          params.b = preview.result.b;
+        }
+        if (exportForm.outDir.trim()) params.outDir = exportForm.outDir.trim();
+        if (exportForm.outStem.trim()) params.outStem = exportForm.outStem.trim();
+        params.force = exportForm.force;
+        const response = await axios.post(`${API_BASE_URL}/api/scaling/run`, params);
+        setExportResult(response.data);
       }
+    } catch (err) {
+      const message = err.response?.data?.error || err.message || 'Could not write the output files';
+      if (err.response?.status === 409) setExportResult({ conflict: true, message });
+      else setError(message);
     } finally {
       setExporting(false);
     }
@@ -184,35 +468,48 @@ const AutoStogPage = ({ directory }) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
+  const fzMissing = form.amplitude === 'fz'
+    && numberOr(form.bSqAvg) === undefined
+    && !form.formula.trim();
+
+  // ── plot data ────────────────────────────────────────────────────────────
+  const RMAX_DISPLAY = 8;
+
   const sqPlot = useMemo(() => {
     if (!preview) return null;
     const { series, guides } = preview;
+    const qEnd = series.q[series.q.length - 1];
     const plots = [
-      { label: 'Measured S(Q)', x: series.q, y: series.sqRaw },
       { label: 'Auto-scaled a·S + b', x: series.q, y: series.sqScaled },
       { label: 'Filtered S(Q)', x: series.q, y: series.sqFiltered },
-      {
-        label: 'S → 1 asymptote',
-        x: [series.q[0], series.q[series.q.length - 1]],
-        y: [guides.asymptote, guides.asymptote],
-      },
+      { label: 'Measured (unscaled)', x: series.q, y: series.sqRaw, defaultHidden: true },
+      { label: 'S → 1', x: [series.q[0], qEnd], y: [1, 1], role: 'guide' },
     ];
     if (guides.level != null && guides.levelWindow) {
       plots.push({
-        label: `Measured level ${fmt(guides.level)}`,
+        label: `Level ${fmt(guides.level, 5)}`,
         x: guides.levelWindow,
         y: [guides.level, guides.level],
+        role: 'guide',
+        color: '#4c7df0',
+      });
+    }
+    if (guides.s0Target != null) {
+      plots.push({
+        label: `S(0) FZ target ${fmt(guides.s0Target, 3)}`,
+        x: [series.q[0], Math.min(series.q[0] + 1.5, qEnd)],
+        y: [guides.s0Target, guides.s0Target],
+        role: 'guide',
+        color: '#0c8599',
       });
     }
     return {
-      title: 'S(Q): measured → scaled → filtered',
+      title: 'S(Q) — scaled and filtered',
       xLabel: 'Q (Å^{-1})',
       yLabel: 'S(Q)',
       series: plots,
     };
   }, [preview]);
-
-  const RMAX_DISPLAY = 8;
 
   const slicedR = useMemo(() => {
     if (!preview) return null;
@@ -227,26 +524,25 @@ const AutoStogPage = ({ directory }) => {
   const gkPlot = useMemo(() => {
     if (!preview || !slicedR) return null;
     const { series, guides } = preview;
+    const level = guides.gkLowR;
     const plots = [
       { label: 'G_K(r) filtered', x: slicedR.r, y: series.gk.slice(0, slicedR.end) },
-      {
-        label: 'Theory −⟨b⟩²',
-        x: [0, RMAX_DISPLAY],
-        y: [guides.gkLowR, guides.gkLowR],
-      },
     ];
     if (series.gkEnforced) {
       plots.push({
-        label: 'Enforced (written to RMC files)',
+        label: 'Enforced (RMC file)',
         x: slicedR.r,
         y: series.gkEnforced.slice(0, slicedR.end),
       });
     }
+    plots.push({ label: '−⟨b⟩² theory', x: [0, RMAX_DISPLAY], y: [level, level], role: 'guide' });
     return {
-      title: `G_K(r) low-r region (fit window ${fmt(guides.rFitWindow?.[0], 3)}–${fmt(guides.rFitWindow?.[1], 3)} Å)`,
+      title: 'G_K(r) — low-r density limit',
       xLabel: 'r (Å)',
       yLabel: 'G_K(r)',
       series: plots,
+      // Default zoom keeps the theory level readable instead of the first peak.
+      initialYDomain: [level * 2.1, -level * 3.2],
     };
   }, [preview, slicedR]);
 
@@ -255,172 +551,349 @@ const AutoStogPage = ({ directory }) => {
     const { series, guides } = preview;
     const plots = [
       { label: 'D(r)', x: slicedR.r, y: series.dr.slice(0, slicedR.end) },
-      {
-        label: 'Theory −4πρ₀⟨b⟩²r',
-        x: [0, RMAX_DISPLAY],
-        y: [0, guides.drSlope * RMAX_DISPLAY],
-      },
     ];
     if (series.drEnforced) {
       plots.push({
-        label: 'Enforced (written to RMC files)',
+        label: 'Enforced (RMC file)',
         x: slicedR.r,
         y: series.drEnforced.slice(0, slicedR.end),
       });
     }
+    plots.push({
+      label: '−4πρ₀⟨b⟩²r theory',
+      x: [0, RMAX_DISPLAY],
+      y: [0, guides.drSlope * RMAX_DISPLAY],
+      role: 'guide',
+    });
     return {
-      title: 'D(r) low-r region',
+      title: 'D(r) — low-r slope',
       xLabel: 'r (Å)',
       yLabel: 'D(r)',
       series: plots,
     };
   }, [preview, slicedR]);
 
-  if (staticMode) {
-    return (
-      <div className="autostog-page">
-        <div className="autostog-static-note">
-          <h2>Auto StoG needs the local backend</h2>
-          <p>
-            Automatic S(Q) scaling runs server-side. Start the Flask app
-            (<code>python web_app/backend/app.py</code>) and open this page from there —
-            the hosted static dashboard cannot run it yet.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   const diagnostics = preview?.diagnostics;
   const reference = preview?.inp;
+  const trajectory = useMemo(() => {
+    const history = preview?.result?.history;
+    if (!history?.length || history.length < 2) return null;
+    return history.slice(-6).map((entry) => fmt(entry[0], 5)).join(' → ');
+  }, [preview]);
+
+  const sourceStatus = staticMode && !localRun
+    ? 'Open a run folder (header) to list scaling sources.'
+    : null;
 
   return (
     <div className="autostog-page">
-      <aside className="autostog-sidebar">
-        <section className="autostog-card">
-          <h3>1 · Source</h3>
-          <p className="autostog-hint">
-            Pick a classic <code>stog.inp</code> (everything pre-fills) or a rebinned
-            S(Q) data file from the run folder selected in the header.
-          </p>
+      <div className="autostog-controls">
+        <div className="autostog-cluster autostog-cluster--source">
+          <span className="autostog-label">SOURCE</span>
           <select
-            value={selectedPath}
+            value={selectedKey}
             onChange={(event) => handleSelect(event.target.value)}
             aria-label="Scaling source file"
           >
             <option value="">Select a file…</option>
             {files.map((file) => (
-              <option key={file.path} value={file.path}>
+              <option key={file.key} value={file.key}>
                 {isInpCandidate(file.name) ? `⚙ ${file.name}` : file.name}
               </option>
             ))}
           </select>
-          {filesError && <div className="autostog-error">{filesError}</div>}
-          {inspect && (
-            <div className="autostog-inspect">
-              <span>{inspect.kind === 'inp' ? 'Classic stog input' : 'Data file'}</span>
-              {inspect.kind === 'inp' && (
-                <span>hand a = {fmt(inspect.inp.a)}, b = {fmt(inspect.inp.b)}</span>
-              )}
-              {inspect.header?.title && <span>{inspect.header.title}</span>}
-            </div>
+          {inspect?.kind === 'inp' && (
+            <span className="autostog-chip" title="Hand scaling recorded in the stog input">
+              hand a = {fmt(inspect.inp.a, 4)}, b = {fmt(inspect.inp.b, 4)}
+            </span>
           )}
-        </section>
+          {sourceStatus && <span className="autostog-chip autostog-chip--muted">{sourceStatus}</span>}
+          {filesError && <span className="autostog-chip autostog-chip--danger">{filesError}</span>}
+        </div>
 
-        <section className="autostog-card">
-          <h3>2 · Parameters</h3>
-          <div className="autostog-grid">
-            <label>Qmin (Å⁻¹)<input value={form.qmin} onChange={setField('qmin')} inputMode="decimal" /></label>
-            <label>Qmax (Å⁻¹)<input value={form.qmax} onChange={setField('qmax')} inputMode="decimal" /></label>
-            <label>ρ₀ (Å⁻³)<input value={form.rho0} onChange={setField('rho0')} inputMode="decimal" /></label>
-            <label>⟨b⟩² (barn)<input value={form.bAvgSq} onChange={setField('bAvgSq')} inputMode="decimal" /></label>
-            <label>Formula<input value={form.formula} onChange={setField('formula')} placeholder="e.g. SrTiO3" spellCheck="false" /></label>
-            <label>⟨b²⟩ (barn)<input value={form.bSqAvg} onChange={setField('bSqAvg')} inputMode="decimal" placeholder="from formula" /></label>
-          </div>
-          <details className="autostog-advanced">
-            <summary>Advanced</summary>
-            <div className="autostog-grid">
-              <label>Filter r-cutoff<input value={form.rCutoff} onChange={setField('rCutoff')} inputMode="decimal" /></label>
-              <label>r₀ closest approach<input value={form.r0} onChange={setField('r0')} inputMode="decimal" /></label>
-              <label>Fit window min<input value={form.rFitMin} onChange={setField('rFitMin')} inputMode="decimal" placeholder="auto" /></label>
-              <label>Fit window max<input value={form.rFitMax} onChange={setField('rFitMax')} inputMode="decimal" placeholder="auto" /></label>
-              <label>rmax (Å)<input value={form.rmax} onChange={setField('rmax')} inputMode="decimal" /></label>
-              <label>r points<input value={form.nr} onChange={setField('nr')} inputMode="numeric" /></label>
-              <label>High-Q architecture
-                <select value={form.c1Mode} onChange={setField('c1Mode')}>
-                  <option value="sweep">Level sweep (recommended)</option>
-                  <option value="joint">Joint 2-dof fit</option>
-                </select>
-              </label>
-              <label>Amplitude criterion
-                <select value={form.amplitude} onChange={setField('amplitude')}>
-                  <option value="density">Low-r density limit</option>
-                  <option value="fz">Faber-Ziman Q→0 limit</option>
-                </select>
-              </label>
-            </div>
-            <div className="autostog-checks">
-              <label><input type="checkbox" checked={form.lorch} onChange={setField('lorch')} />Lorch window</label>
-              <label><input type="checkbox" checked={form.lowQCorrection} onChange={setField('lowQCorrection')} />Low-Q correction</label>
-              <label><input type="checkbox" checked={form.robust} onChange={setField('robust')} />Robust (Huber)</label>
-              <label><input type="checkbox" checked={form.despike} onChange={setField('despike')} />Despike glitches</label>
-              <label><input type="checkbox" checked={form.useSigma} onChange={setField('useSigma')} />Use σ column</label>
-              <label><input type="checkbox" checked={form.enforce} onChange={setField('enforce')} />Classic low-r enforcement</label>
-              {form.enforce && (
-                <label className="autostog-inline">Enforce cutoff (Å)
-                  <input value={form.enforceCutoff} onChange={setField('enforceCutoff')} inputMode="decimal" />
-                </label>
-              )}
-            </div>
-            <div className="autostog-manual">
-              <span>Fixed scaling (expert):</span>
-              <label>a<input value={form.manualA} onChange={setField('manualA')} inputMode="decimal" /></label>
-              <label>b<input value={form.manualB} onChange={setField('manualB')} inputMode="decimal" /></label>
-              <button
-                type="button"
-                className="autostog-secondary"
-                disabled={!selectedPath || running}
-                onClick={() => runScaling('manual')}
-              >
-                Run fixed (a, b)
-              </button>
-            </div>
-          </details>
+        <div className="autostog-cluster">
+          <label className="autostog-field">
+            <span>Qmin Å⁻¹</span>
+            <input value={form.qmin} onChange={setField('qmin')} inputMode="decimal" />
+          </label>
+          <label className="autostog-field">
+            <span>Qmax Å⁻¹</span>
+            <input value={form.qmax} onChange={setField('qmax')} inputMode="decimal" />
+          </label>
+          <label className="autostog-field">
+            <span>ρ₀ Å⁻³</span>
+            <input value={form.rho0} onChange={setField('rho0')} inputMode="decimal" />
+          </label>
+          <label className="autostog-field">
+            <span>⟨b⟩² barn</span>
+            <input value={form.bAvgSq} onChange={setField('bAvgSq')} inputMode="decimal" />
+          </label>
+          <label className="autostog-field autostog-field--formula" title="Neutron Sears table — for x-ray data enter ⟨b²⟩ directly">
+            <span>Formula (neutron)</span>
+            <input value={form.formula} onChange={setField('formula')} placeholder="SrTiO3" spellCheck="false" />
+          </label>
+          <label className="autostog-field">
+            <span>⟨b²⟩ barn</span>
+            <input value={form.bSqAvg} onChange={setField('bSqAvg')} inputMode="decimal" placeholder="auto" />
+          </label>
+        </div>
+
+        <div className="autostog-cluster autostog-cluster--actions">
           <button
             type="button"
             className="autostog-primary"
-            disabled={!selectedPath || running}
+            disabled={!selectedKey || running || fzMissing}
             onClick={() => runScaling('auto')}
           >
             {running ? 'Fitting…' : 'Auto-scale'}
           </button>
-        </section>
+          <button
+            type="button"
+            className={`autostog-pill${advancedOpen ? ' is-active' : ''}`}
+            aria-expanded={advancedOpen}
+            onClick={() => setAdvancedOpen((open) => !open)}
+          >
+            Advanced
+          </button>
+        </div>
+      </div>
 
-        {preview && (
-          <section className="autostog-card">
-            <h3>3 · Export</h3>
-            <p className="autostog-hint">
-              Writes the classic stog file family (incl. <code>scale_ft_rmc.*</code> for
-              RMCProfile) plus a provenance JSON. Nothing is overwritten without Force.
-            </p>
-            <label className="autostog-block">Output folder
-              <input
-                value={exportForm.outDir}
-                onChange={(event) => setExportForm((current) => ({ ...current, outDir: event.target.value }))}
-                placeholder="default: autoscale/ beside the input"
-                spellCheck="false"
-              />
+      {advancedOpen && (
+        <div className="autostog-controls autostog-controls--advanced">
+          <div className="autostog-cluster">
+            <label className="autostog-field">
+              <span>Filter r-cut Å</span>
+              <input value={form.rCutoff} onChange={setField('rCutoff')} inputMode="decimal" />
             </label>
-            <label className="autostog-block">Name stem (optional)
-              <input
-                value={exportForm.outStem}
-                onChange={(event) => setExportForm((current) => ({ ...current, outStem: event.target.value }))}
-                placeholder="default: classic names"
-                spellCheck="false"
-              />
+            <label className="autostog-field">
+              <span>r₀ approach Å</span>
+              <input value={form.r0} onChange={setField('r0')} inputMode="decimal" placeholder="auto" />
             </label>
-            <div className="autostog-export-row">
-              <label>
+            <label className="autostog-field">
+              <span>Fit win min</span>
+              <input value={form.rFitMin} onChange={setField('rFitMin')} inputMode="decimal" placeholder="auto" />
+            </label>
+            <label className="autostog-field">
+              <span>Fit win max</span>
+              <input value={form.rFitMax} onChange={setField('rFitMax')} inputMode="decimal" placeholder="auto" />
+            </label>
+            <label className="autostog-field">
+              <span>rmax Å</span>
+              <input value={form.rmax} onChange={setField('rmax')} inputMode="decimal" />
+            </label>
+            <label className="autostog-field">
+              <span>r points</span>
+              <input value={form.nr} onChange={setField('nr')} inputMode="numeric" />
+            </label>
+          </div>
+          <div className="autostog-cluster">
+            <label className="autostog-field autostog-field--select">
+              <span>High-Q</span>
+              <select value={form.c1Mode} onChange={setField('c1Mode')}>
+                <option value="sweep">Level sweep</option>
+                <option value="joint">Joint 2-dof</option>
+              </select>
+            </label>
+            <label className="autostog-field autostog-field--select">
+              <span>Amplitude</span>
+              <select value={form.amplitude} onChange={setField('amplitude')}>
+                <option value="density">Density limit</option>
+                <option value="fz">Faber-Ziman Q→0</option>
+              </select>
+            </label>
+            {fzMissing && (
+              <span className="autostog-chip autostog-chip--danger">FZ needs ⟨b²⟩ or a formula</span>
+            )}
+          </div>
+          <div className="autostog-cluster autostog-cluster--toggles">
+            {[
+              ['lorch', 'Lorch'],
+              ['lowQCorrection', 'Low-Q corr.'],
+              ['robust', 'Robust'],
+              ['despike', 'Despike'],
+              ['useSigma', 'σ column'],
+              ['enforce', 'Enforce low-r'],
+            ].map(([key, label]) => (
+              <label key={key} className={`autostog-toggle${form[key] ? ' is-on' : ''}`}>
+                <input type="checkbox" checked={form[key]} onChange={setField(key)} />
+                {label}
+              </label>
+            ))}
+            {form.enforce && (
+              <label className="autostog-field">
+                <span>Cutoff Å</span>
+                <input value={form.enforceCutoff} onChange={setField('enforceCutoff')} inputMode="decimal" />
+              </label>
+            )}
+          </div>
+          <div className="autostog-cluster autostog-cluster--manual">
+            <span className="autostog-label">FIXED SCALING</span>
+            <label className="autostog-field">
+              <span>a</span>
+              <input value={form.manualA} onChange={setField('manualA')} inputMode="decimal" />
+            </label>
+            <label className="autostog-field">
+              <span>b</span>
+              <input value={form.manualB} onChange={setField('manualB')} inputMode="decimal" />
+            </label>
+            <button
+              type="button"
+              className="autostog-pill"
+              disabled={!selectedKey || running}
+              onClick={() => runScaling('manual')}
+            >
+              Run fixed (a, b)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && <div className="autostog-banner autostog-banner--danger">{error}</div>}
+
+      {!preview && !error && (
+        <div className="autostog-empty">
+          <h2>Automatic total-scattering scaling</h2>
+          <p>
+            Pick a classic <code>stog.inp</code> or a rebinned S(Q) file, then hit
+            <b> Auto-scale</b>. The engine determines the scale and offset from the
+            physics — the statistically flat high-Q level and the low-r density limit —
+            replacing the classic stog “try again” loop, and reports the honest fit
+            quality before any enforcement.
+            {staticMode && ' Everything runs in your browser; files never leave your device.'}
+          </p>
+        </div>
+      )}
+
+      {preview && diagnostics && (
+        <div className="autostog-readout">
+          <div className="autostog-stat">
+            <span className="autostog-stat-label">Correction</span>
+            <span className="autostog-stat-value">a = {fmt(preview.result.a, 5)} · b = {fmt(preview.result.b, 5)}</span>
+            <span className="autostog-stat-sub">
+              {reference
+                ? `hand: a = ${fmt(reference.a, 5)}, b = ${fmt(reference.b, 5)}`
+                : preview.mode === 'manual' ? 'fixed by you' : 'auto-fit'}
+            </span>
+          </div>
+          <div className="autostog-stat">
+            <span className="autostog-stat-label">{preview.mode === 'manual' ? 'Mode' : 'Convergence'}</span>
+            <span className="autostog-stat-value">
+              {preview.mode === 'manual'
+                ? 'fixed (a, b)'
+                : `${preview.result.converged ? '✓' : '✗'} ${preview.result.iterations} iterations`}
+            </span>
+            <span className="autostog-stat-sub">
+              {trajectory ? `a: ${trajectory}` : diagnostics.level != null
+                ? `level ${fmt(diagnostics.level, 5)}${Number.isFinite(diagnostics.level_uncertainty) ? ` ± ${fmt(diagnostics.level_uncertainty, 2)}` : ''}`
+                : ''}
+            </span>
+          </div>
+          {diagnostics.level != null && trajectory && (
+            <div className="autostog-stat">
+              <span className="autostog-stat-label">High-Q level</span>
+              <span className="autostog-stat-value">{fmt(diagnostics.level, 5)}</span>
+              <span className="autostog-stat-sub">
+                {Number.isFinite(diagnostics.level_uncertainty) ? `± ${fmt(diagnostics.level_uncertainty, 2)} · ` : ''}
+                Q ∈ [{fmt(diagnostics.level_window?.[0], 4)}, {fmt(diagnostics.level_window?.[1], 4)}]
+              </span>
+            </div>
+          )}
+          <div className="autostog-stat">
+            <span className="autostog-stat-label">Fit quality</span>
+            <span className="autostog-stat-value">low-r rms {fmt(diagnostics.low_r_rms_pre_enforcement, 3)}</span>
+            <span className="autostog-stat-sub">C1 tail mean {fmt(diagnostics.c1_tail_mean, 5)}</span>
+          </div>
+          <div className={`autostog-stat ${diagnostics.density_limit_satisfied ? 'is-good' : 'is-bad'}`}>
+            <span className="autostog-stat-label">Density limit</span>
+            <span className="autostog-stat-value">{diagnostics.density_limit_satisfied ? 'satisfied' : 'NOT satisfiable'}</span>
+            <span className="autostog-stat-sub">
+              {diagnostics.density_limit_satisfied
+                ? 'necessary, not sufficient'
+                : 'absolute scale needs external validation'}
+            </span>
+          </div>
+          {diagnostics.amplitude_concordance != null && (
+            <div className={`autostog-stat ${diagnostics.amplitudes_concordant ? 'is-good' : 'is-warn'}`}>
+              <span className="autostog-stat-label">Concordance</span>
+              <span className="autostog-stat-value">a_fz / a = {fmt(diagnostics.amplitude_concordance, 3)}</span>
+              <span className="autostog-stat-sub">
+                {diagnostics.amplitudes_concordant ? 'independent criteria agree' : 'disagree — check ρ₀ / low-Q'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {preview && (
+        <div className="autostog-plots">
+          {sqPlot && (
+            <section className="autostog-card autostog-card--span">
+              <header><h3>{sqPlot.title}</h3></header>
+              <InteractivePlot file={{ path: 'autostog-sq', name: 'autostog-sq' }} variant="wide" plotData={sqPlot} />
+            </section>
+          )}
+          {gkPlot && (
+            <section className="autostog-card">
+              <header>
+                <h3>{gkPlot.title}</h3>
+                <span>fit window {fmt(preview.guides.rFitWindow?.[0], 3)}–{fmt(preview.guides.rFitWindow?.[1], 3)} Å</span>
+              </header>
+              <InteractivePlot file={{ path: 'autostog-gk', name: 'autostog-gk' }} plotData={gkPlot} />
+            </section>
+          )}
+          {drPlot && (
+            <section className="autostog-card">
+              <header><h3>{drPlot.title}</h3></header>
+              <InteractivePlot file={{ path: 'autostog-dr', name: 'autostog-dr' }} plotData={drPlot} />
+            </section>
+          )}
+        </div>
+      )}
+
+      {preview && (
+        <div className="autostog-export">
+          <span className="autostog-label">EXPORT</span>
+          {staticMode ? (
+            <>
+              <label className="autostog-field autostog-field--wide">
+                <span>Name stem</span>
+                <input
+                  value={exportForm.outStem}
+                  onChange={(event) => setExportForm((current) => ({ ...current, outStem: event.target.value }))}
+                  placeholder="default: data file stem"
+                  spellCheck="false"
+                />
+              </label>
+              <button type="button" className="autostog-primary" disabled={exporting} onClick={writeFiles}>
+                {exporting ? 'Packing…' : 'Download .zip (RMCProfile files)'}
+              </button>
+              {exportResult?.zip && (
+                <span className="autostog-chip autostog-chip--good">
+                  {exportResult.zip} · {exportResult.count} files
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <label className="autostog-field autostog-field--wide">
+                <span>Output folder</span>
+                <input
+                  value={exportForm.outDir}
+                  onChange={(event) => setExportForm((current) => ({ ...current, outDir: event.target.value }))}
+                  placeholder="default: autoscale/ beside the input"
+                  spellCheck="false"
+                />
+              </label>
+              <label className="autostog-field">
+                <span>Name stem</span>
+                <input
+                  value={exportForm.outStem}
+                  onChange={(event) => setExportForm((current) => ({ ...current, outStem: event.target.value }))}
+                  placeholder="classic names"
+                  spellCheck="false"
+                />
+              </label>
+              <label className={`autostog-toggle${exportForm.force ? ' is-on' : ''}`}>
                 <input
                   type="checkbox"
                   checked={exportForm.force}
@@ -428,117 +901,26 @@ const AutoStogPage = ({ directory }) => {
                 />
                 Force overwrite
               </label>
-              <button
-                type="button"
-                className="autostog-primary"
-                disabled={exporting}
-                onClick={() => writeFiles()}
-              >
+              <button type="button" className="autostog-primary" disabled={exporting} onClick={writeFiles}>
                 {exporting ? 'Writing…' : 'Write RMCProfile files'}
               </button>
-            </div>
-            {exportResult?.conflict && (
-              <div className="autostog-warn">
-                Files already exist. Enable Force overwrite (or set a different folder/stem) and write again.
-              </div>
-            )}
-            {exportResult?.outputs && (
-              <div className="autostog-outputs">
-                <b>Written to {exportResult.outDir}</b>
-                <ul>
-                  {Object.entries(exportResult.outputs).map(([key, path]) => (
-                    <li key={key}><code>{path.split('/').pop()}</code></li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        )}
-      </aside>
-
-      <div className="autostog-main">
-        {error && <div className="autostog-error autostog-banner">{error}</div>}
-        {!preview && !error && (
-          <div className="autostog-empty">
-            <h2>Automatic total-scattering scaling</h2>
-            <p>
-              Pick a source file, then hit <b>Auto-scale</b>. The engine finds the scale and
-              offset from the physics — the high-Q asymptote (level sweep) and the low-r
-              density limit — instead of the classic stog “try again” loop, and shows the
-              honest fit quality before any enforcement.
-            </p>
-          </div>
-        )}
-        {preview && diagnostics && (
-          <div className="autostog-readout">
-            <div className="autostog-stat">
-              <span className="autostog-stat-label">Correction</span>
-              <span className="autostog-stat-value">
-                a = {fmt(preview.result.a, 5)} · b = {fmt(preview.result.b, 5)}
-              </span>
-              {reference && (
-                <span className="autostog-stat-sub">
-                  stog.inp hand: a = {fmt(reference.a, 5)}, b = {fmt(reference.b, 5)}
+              {exportResult?.conflict && (
+                <span className="autostog-chip autostog-chip--warn">
+                  Files exist — enable Force overwrite or change the folder/stem.
                 </span>
               )}
-            </div>
-            <div className="autostog-stat">
-              <span className="autostog-stat-label">{preview.mode === 'manual' ? 'Mode' : 'Convergence'}</span>
-              <span className="autostog-stat-value">
-                {preview.mode === 'manual'
-                  ? 'fixed (a, b)'
-                  : `${preview.result.converged ? '✓' : '✗'} ${preview.result.iterations} iterations`}
-              </span>
-              {diagnostics.level != null && (
-                <span className="autostog-stat-sub">
-                  level {fmt(diagnostics.level, 5)}
-                  {Number.isFinite(diagnostics.level_uncertainty) ? ` ± ${fmt(diagnostics.level_uncertainty, 2)}` : ''}
+              {exportResult?.outputs && (
+                <span className="autostog-chip autostog-chip--good" title={Object.values(exportResult.outputs).join('\n')}>
+                  {Object.keys(exportResult.outputs).length} files → {exportResult.outDir}
                 </span>
               )}
-            </div>
-            <div className="autostog-stat">
-              <span className="autostog-stat-label">Fit quality</span>
-              <span className="autostog-stat-value">low-r rms {fmt(diagnostics.low_r_rms_pre_enforcement, 3)}</span>
-              <span className="autostog-stat-sub">C1 tail mean {fmt(diagnostics.c1_tail_mean, 5)}</span>
-            </div>
-            <div className={`autostog-stat ${diagnostics.density_limit_satisfied ? 'is-good' : 'is-bad'}`}>
-              <span className="autostog-stat-label">Density limit</span>
-              <span className="autostog-stat-value">
-                {diagnostics.density_limit_satisfied ? 'satisfied' : 'NOT satisfiable'}
-              </span>
-              <span className="autostog-stat-sub">
-                {diagnostics.density_limit_satisfied
-                  ? 'necessary, not sufficient — validate the absolute scale'
-                  : 'absolute scale unrecoverable from this data alone'}
-              </span>
-            </div>
-            {diagnostics.amplitude_concordance != null && (
-              <div className={`autostog-stat ${diagnostics.amplitudes_concordant ? 'is-good' : 'is-warn'}`}>
-                <span className="autostog-stat-label">Amplitude concordance</span>
-                <span className="autostog-stat-value">a_fz / a = {fmt(diagnostics.amplitude_concordance, 3)}</span>
-                <span className="autostog-stat-sub">
-                  {diagnostics.amplitudes_concordant ? 'independent criteria agree' : 'criteria disagree — check ρ₀ / low-Q'}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-        {sqPlot && (
-          <div className="autostog-plot">
-            <InteractivePlot file={{ path: 'autostog-sq', name: 'autostog-sq' }} variant="wide" plotData={sqPlot} />
-          </div>
-        )}
-        {gkPlot && (
-          <div className="autostog-plot">
-            <InteractivePlot file={{ path: 'autostog-gk', name: 'autostog-gk' }} variant="wide" plotData={gkPlot} />
-          </div>
-        )}
-        {drPlot && (
-          <div className="autostog-plot">
-            <InteractivePlot file={{ path: 'autostog-dr', name: 'autostog-dr' }} variant="wide" plotData={drPlot} />
-          </div>
-        )}
-      </div>
+            </>
+          )}
+          <span className="autostog-export-note">
+            {OUTPUT_LIST.length} files: {OUTPUT_LIST.map(([, label]) => label).join(' · ')}
+          </span>
+        </div>
+      )}
     </div>
   );
 };

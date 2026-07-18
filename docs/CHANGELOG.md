@@ -5,6 +5,48 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+Auto StoG page redesign + **Phase 5: the static-mode engine** — the hosted app now runs
+Auto StoG entirely in the browser.
+
+- **Static-mode Auto StoG (plan Phase 5)**: `src/workers/autoScale.js` is a straight JS
+  port of the Python engine — transforms (trapezoid sine FT, Lorch, omitted-low-Q
+  correction, Fourier filter, first-peak zeroing), the level sweep (prefix-sum OLS with
+  numpy `.astype(int)` edge parity), the Huber-IRLS closed-form fit, sweep/joint/FZ
+  amplitude modes, despiking, diagnostics, the stog parsers (`stog.inp`, xy files, `::`
+  headers, Fortran-style writer), and the Faber-Ziman calculator (Sears table + formula
+  parser). `autoScaleWorker.js` runs it off-thread with transferable buffers. **Parity is
+  tested, not assumed**: `tests/generate_autoscale_fixture.py` freezes Python golden
+  numbers into `src/__tests__/fixtures/`, and `autoScale.test.js` (11 vitest tests)
+  asserts the JS fit matches to 1e−6 relative (level sweep to 1e−9, manual pipeline
+  samples to 1e−9). Verified live: the in-browser fit on the FeCoSn 199 K run reproduces
+  the backend exactly (a = 1.1839, b = −0.19804, 3 iterations, level 1.0120 ± 0.017).
+  Static export packs the classic 9-file family into a zip (client-side `writeStogXy`,
+  provenance JSON included); the Auto StoG tab now shows in both runtimes and
+  `browserData.isSupportedFile` admits `.inp`.
+- **Page redesigned on the app's design language, laid out for 16:9** (was hardcoded-hex
+  cards in a narrow sidebar): a PcaKdePage-style horizontal controls bar (SOURCE picker +
+  micro-labeled parameter fields + Auto-scale + Advanced pill), an expandable advanced
+  bar (windows/grid, sweep-vs-joint, density-vs-FZ, toggle pills, fixed-(a, b) expert
+  run), a stat-card readout strip (correction vs hand values, convergence with the
+  per-iteration a-trajectory, high-Q level ± uncertainty, fit quality, density-limit
+  verdict, concordance), then a full-width S(Q) card over side-by-side G_K(r)/D(r)
+  cards — all on `index.css` tokens (borders, shadows, accent, pills, tabular numerals).
+- **InteractivePlot gains guide-line support** (additive; Dashboard untouched): series
+  with `role: 'guide'` render dashed/muted outside the palette rotation and are skipped
+  by hover snapping (dashed legend swatches); `defaultHidden` series start muted;
+  `initialYDomain` sets the un-zoomed default view (used to keep the G_K low-r level
+  readable instead of the first peak); swapping `plotData` now resets zoom/hover/hidden
+  state (previously stale zoom survived a re-fit).
+- **Plot content**: measured-unscaled S(Q) ships default-hidden (one legend click away),
+  the S → 1 asymptote, the measured level (drawn only over its admissible window), and
+  the S(0) Faber-Ziman target marker join S(Q); theory lines −⟨b⟩² and −4πρ₀⟨b⟩²r anchor
+  the G_K/D(r) cards.
+- **Form & workflow**: session persistence (source + all settings survive a reload via
+  sessionStorage), the Formula field is labeled *(neutron)* with an x-ray tooltip, an
+  inline guard disables Auto-scale when FZ mode lacks ⟨b²⟩, and micro-labels no longer
+  pass through `text-transform: uppercase` (which had turned ρ₀ into a capital-rho
+  P-lookalike).
+
 Auto StoG Phases 3–4 — the Flask scaling API and the **Auto StoG** page.
 
 - **`/api/scaling/preview` + `/api/scaling/run`** (`web_app/backend/app.py`): POST endpoints

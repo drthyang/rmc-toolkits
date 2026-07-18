@@ -54,7 +54,7 @@ web_app/frontend/src/
     components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
   components/
     App.jsx                      shell, run-folder selection, page nav, Live Data
-    AutoStogPage.jsx             Auto StoG tab (Flask mode only): source pick → prefilled params → auto-scale → diagnostics readout + S(Q)/GK/D(r) plots with theory lines → export via /api/scaling/run
+    AutoStogPage.jsx             Auto StoG tab (both runtimes): source pick → prefilled params → auto-scale → readout + S(Q)/GK/D(r) plots with guide lines → export (Flask: /api/scaling/run; static: client-side zip)
     Dashboard.jsx                all-plots run dashboard
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
@@ -65,6 +65,8 @@ web_app/frontend/src/
     localKdeWorker.js            static-mode KDE worker (GPU-or-CPU density map, contours, slab math)
     gpuKde.js                    WGSL compute-shader density map + shouldUseGpu heuristic + cached device init
     pcaKde.js                    static-mode PCA-KDE engine (JS port of pca_kde.py): 3×3 Jacobi eigensolver, per-site clouds, separable volume + projections
+    autoScale.js                 static-mode Auto StoG engine (JS port of scaling.py + transforms.py + stog parsers + Faber-Ziman); parity-tested against Python goldens (autoScale.test.js)
+    autoScaleWorker.js           off-thread runner for autoScale.js (transferable buffers)
     pcaKdeWorker.js              static-mode PCA-KDE worker (parses clouds once, answers 'sites'/'kde' requests off-thread)
     marchingCubes.js             isosurface extraction over a scalar field (Lorensen-Cline tables) for the Three.js KDE surface
 ```
