@@ -276,3 +276,5 @@ The AGPL is a strong copyleft license: you may use, study, modify, and redistrib
 software, but derivative works must also be released under the AGPLv3. Notably, if you run a
 modified version as a **network service**, you must offer its complete source code to the users
 of that service (AGPL §13). If you use rmc-toolkits in published research, please cite it.
+
+*This project is personal work, developed and maintained in my personal capacity.*
