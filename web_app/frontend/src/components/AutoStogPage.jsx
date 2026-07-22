@@ -86,7 +86,7 @@ const dataExtent = (q, sq, sigma) => {
 // estimate (density-limit vs Q→0 amplitude concordance).
 // ---------------------------------------------------------------------------
 
-const resolveConfig = (form, inp, header) => {
+const resolveConfig = (form, inp, header, mode = 'auto') => {
   const pick = (formValue, fallback) => {
     const value = numberOr(formValue);
     return value === undefined ? fallback : value;
@@ -143,7 +143,10 @@ const resolveConfig = (form, inp, header) => {
     lowQCorrection: Boolean(form.lowQCorrection),
     robust: Boolean(form.robust),
     c1Mode: form.c1Mode,
-    amplitudeCriterion: form.amplitude,
+    // A fixed-(a, b) run never uses the amplitude criterion — force the
+    // validation-free default so a leftover 'fz' selection (which requires
+    // ⟨b²⟩ + sweep mode) cannot spuriously reject a manual run.
+    amplitudeCriterion: mode === 'manual' ? 'density' : form.amplitude,
     despike: Boolean(form.despike),
   });
   return { config, wantEstimate };
@@ -333,7 +336,7 @@ const AutoStogPage = () => {
       if (mode === 'manual' && numberOr(form.manualA) === undefined && !data.inp) {
         throw new Error('fixed scaling needs a (and optionally b)');
       }
-      const { config, wantEstimate } = resolveConfig(form, data.inp, data.header);
+      const { config, wantEstimate } = resolveConfig(form, data.inp, data.header, mode);
       const enforcement = resolveEnforcement(form, data.inp);
       const { payload, transfers } = packedData();
       const raw = await postJob({
@@ -365,6 +368,7 @@ const AutoStogPage = () => {
         result: {
           a: raw.a, b: raw.b, converged: raw.converged, iterations: raw.iterations,
           lowRRms: raw.lowRRms, c1TailMean: raw.c1TailMean, history: raw.history,
+          c1ModeEffective: raw.c1ModeEffective,
         },
         diagnostics: raw.summary,
         enforcement: raw.enforcement,
@@ -434,7 +438,10 @@ const AutoStogPage = () => {
     setError(null);
     try {
       const { series, result, diagnostics, config, enforcement, rho0Estimate } = preview;
-      const label = `rmc-autoscale (browser): a=${result.a.toPrecision(8)} b=${result.b.toPrecision(8)}`;
+      // %g-style minimal decimals to match the CLI's title-line number style;
+      // the "(browser)" marker (vs the CLI's version token) is intentional.
+      const g8 = (value) => String(Number(value.toPrecision(8)));
+      const label = `rmc-autoscale (browser): a=${g8(result.a)} b=${g8(result.b)}`;
       const stem = sanitizeFilename(
         exportStem.trim() || dataRef.current?.name?.replace(/\.[^.]+$/, '') || 'autoscale'
       );
@@ -458,6 +465,19 @@ const AutoStogPage = () => {
           a: result.a,
           b: result.b,
           mode: preview.mode,
+          c1ModeEffective: result.c1ModeEffective ?? null,
+          // The loaded stog.inp's original hand scaling, like the CLI's
+          // stog_inp_reference — without it an auto run's zip could not
+          // report what the expert's values were.
+          stogInpReference: preview.kind === 'inp' && preview.inp
+            ? {
+              a: preview.inp.a,
+              b: preview.inp.b,
+              yscale: preview.inp.yscale,
+              yoffset: preview.inp.yoffset,
+            }
+            : null,
+          history: result.history ?? [],
           enforcement,
           rho0Estimate,
           config,
@@ -672,14 +692,14 @@ const AutoStogPage = () => {
           <span className="autostog-label">SAMPLE</span>
           <label
             className="autostog-field autostog-field--formula"
-            title="Chemical composition (neutron Sears table drives ⟨b⟩², ⟨b²⟩, and the S(0) target; for x-ray data set ⟨b²⟩ in Advanced instead)"
+            title="Chemical composition (neutron Sears table drives ⟨b⟩², ⟨b²⟩, and the S(0) target; for x-ray data set ⟨b⟩² (=1 for normalized data) and ⟨b²⟩ in Advanced instead)"
           >
             <span>Composition</span>
             <input value={form.formula} onChange={setField('formula')} placeholder="e.g. Mn3Sn" spellCheck="false" />
           </label>
           <label
             className="autostog-field"
-            title="Number density in atoms/Å³. Resolved from: your value → NUMBER_DENSITY :: data header → mass density + composition → left empty with a composition, it is estimated self-consistently"
+            title="Number density in atoms/Å³. Resolved from: your value → stog.inp ρ₀ → NUMBER_DENSITY :: data header → mass density + composition → left empty with a composition, it is estimated self-consistently"
           >
             <span>ρ₀ Å⁻³</span>
             <input value={form.rho0} onChange={setField('rho0')} inputMode="decimal" placeholder="auto / estimate" />
@@ -847,7 +867,7 @@ const AutoStogPage = () => {
             <legend>Low-r region</legend>
             <p className="autostog-group-desc">Below the first shell g(r) must vanish — where the density limit is read and outputs are cleaned.</p>
             <div className="autostog-group-fields">
-              <label className="autostog-field" title="Closest interatomic approach. Empty: detected from the data (first-shell flank), or a MINIMUM_DISTANCES :: header">
+              <label className="autostog-field" title="Closest interatomic approach. Empty: taken from a MINIMUM_DISTANCES :: header or the stog.inp peak window, else detected from the data (first-shell flank)">
                 <span>r₀ approach Å</span>
                 <input value={form.r0} onChange={setField('r0')} inputMode="decimal" placeholder="auto" />
               </label>
@@ -887,7 +907,7 @@ const AutoStogPage = () => {
               <button
                 type="button"
                 className="autostog-pill"
-                disabled={!inspect || running}
+                disabled={!inspect || running || estimating}
                 onClick={() => runScaling('manual')}
               >
                 Run fixed (a, b)

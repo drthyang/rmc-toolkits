@@ -35,6 +35,17 @@ data itself.
   parity (tolerance bounded by the rtol stopping rule, not single-pass precision);
   browser flow verified end-to-end in static mode (upload → estimate 0.060664 →
   auto-scale a = 1.2511, concordance 1.00 → 9-file zip).
+- **Correctness review of the page** (multi-agent sweep of every description + flow +
+  export against the engine; 12 findings, 8 confirmed after adversarial verification):
+  manual runs now recover r₀ by detection so a checked "Enforce low-r" with an empty
+  cutoff is honored (was a silent no-op and a CLI-parity break); a fixed-(a, b) run no
+  longer fails the unused FZ-amplitude validation; "Run fixed" gains the missing
+  `estimating` concurrency guard; three tooltips corrected to the code's real resolution
+  orders (ρ₀ chain includes stog.inp above the data header; r₀ is header → stog.inp peak
+  window → detection; x-ray needs ⟨b⟩² = 1 *and* ⟨b²⟩); export title lines use %g-style
+  numbers (the `(browser)` marker vs the CLI's version token is intentional); provenance
+  JSON now records `stogInpReference` (the loaded stog.inp's hand scaling), the fit
+  `history`, and `c1ModeEffective`, matching the CLI payload.
 - **Discordant-data guardrails** (found live on the Mn₃Sn neutron runs, whose low-Q
   hole breaks the density-limit amplitude): `estimate_rho0` stops on non-physical
   amplitudes instead of iterating to a bound, and an unconverged estimate is *refused*

@@ -10,6 +10,7 @@
 
 import {
   autoscale,
+  detectFirstPeakOnset,
   diagnosticsSummary,
   effectiveS0Target,
   estimateRho0,
@@ -53,9 +54,18 @@ self.onmessage = (event) => {
     const result = mode === 'manual'
       ? scalePipeline(qArr, sqArr, config, a, b, { mode: 'manual' })
       : autoscale(qArr, sqArr, config, sigmaArr);
+    // 'auto' enforcement resolves to the data-derived closest approach.
+    // Manual runs skip the two-pass detection inside autoscale, so recover
+    // r0 here exactly like the CLI does (scaling_cli.py post-run detection) —
+    // otherwise a checked "Enforce low-r" would silently become a no-op.
+    if (enforcement === 'auto' && result.r0Detected == null) {
+      const onset = detectFirstPeakOnset(result.r, result.gFiltered, {
+        searchMin: config.rCutoff + 0.3,
+      });
+      if (onset != null) result.r0Detected = onset;
+    }
     const summary = diagnosticsSummary(result, config);
 
-    // 'auto' enforcement resolves to the data-derived closest approach.
     let effectiveEnforcement = enforcement;
     if (enforcement === 'auto') {
       effectiveEnforcement = result.r0Detected != null
