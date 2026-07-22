@@ -35,6 +35,8 @@
 .autostog-controls--advanced {
   background: var(--panel-soft);
   margin-top: -0.35rem;
+  align-items: stretch;
+  gap: 0.6rem 0.75rem;
 }
 
 .autostog-cluster {
@@ -47,6 +49,64 @@
 
 .autostog-cluster--source { flex: 1 1 260px; }
 .autostog-cluster--actions { margin-left: auto; align-items: center; }
+
+/* ── Upload dropzone (page-local file handling; no run-folder coupling) ───── */
+
+.autostog-dropzone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  padding: 0.28rem 0.6rem;
+  background: var(--panel-soft);
+}
+
+.autostog-dropzone.is-drag {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.autostog-dropzone-hint {
+  color: var(--subtle);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* ── Advanced parameter groups: fieldset + one-line description ──────────── */
+
+.autostog-group {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  padding: 0.45rem 0.8rem 0.65rem;
+}
+
+.autostog-group legend {
+  color: var(--text-strong);
+  font-size: 0.74rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  padding: 0 0.35rem;
+}
+
+.autostog-group-desc {
+  margin: 0 0 0.5rem;
+  color: var(--subtle);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  max-width: 44ch;
+}
+
+.autostog-group-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.75rem;
+}
 
 /* Micro-labels: uppercase is written in the literals, not via text-transform —
    transforming would capitalize Greek symbols (rho -> P-lookalike). */
@@ -184,6 +244,15 @@
 }
 
 .autostog-chip--muted { font-weight: 500; white-space: normal; }
+
+/* Long uploaded-file names must truncate inside their cluster, not overlap
+   the neighbouring group's label. */
+.autostog-chip--file {
+  min-width: 0;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .autostog-chip--good {
   color: var(--success);

@@ -15,7 +15,13 @@ from pathlib import Path
 
 import numpy as np
 
-from rmc_toolkits.scaling import ScalingConfig, autoscale, level_sweep, scale_pipeline
+from rmc_toolkits.scaling import (
+    ScalingConfig,
+    autoscale,
+    estimate_rho0,
+    level_sweep,
+    scale_pipeline,
+)
 from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +63,12 @@ def main() -> None:
     detect_config = ScalingConfig(**{**base, "r0": None, "r_fit_max": None})
     detected = autoscale(q, sq_meas, detect_config)
 
+    # Density self-consistency, seeded away from the truth (rho0 = 0.02).
+    est_config = ScalingConfig(
+        **{**base, "rho0": 0.02}, b_sq_avg=float(B2 * (1.0 - s_true_0))
+    )
+    estimate = estimate_rho0(q, sq_meas, est_config)
+
     manual = scale_pipeline(q, sq_meas, config, A_TRUE, B_TRUE)
     r_sample_idx = [50, 200, 500, 999]   # on the r grid (nr = 1000)
     q_sample_idx = [50, 200, 500, 950]   # on the cropped q grid (961 pts)
@@ -90,6 +102,12 @@ def main() -> None:
                 "nAdmissible": sweep.n_admissible,
             },
             "fz": {"a": fz.a, "b": fz.b},
+            "rho0Estimate": {
+                "rho0": estimate["rho0"],
+                "converged": estimate["converged"],
+                "iterations": estimate["iterations"],
+                "concordance": estimate["concordance"],
+            },
             "autoDetect": {
                 "a": detected.a,
                 "r0Detected": detected.provenance.get("r0_detected"),

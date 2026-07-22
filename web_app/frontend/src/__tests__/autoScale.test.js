@@ -12,6 +12,7 @@ import {
   autoscale,
   detectFirstPeakOnset,
   diagnosticsSummary,
+  estimateRho0,
   faberZiman,
   firstPeakZero,
   levelSweep,
@@ -70,6 +71,25 @@ describe('autoScale engine parity with the Python engine', () => {
     expect(relError(result.a, fixture.expected.fz.a)).toBeLessThan(1e-6);
     expect(relError(result.b, fixture.expected.fz.b)).toBeLessThan(1e-6);
     expect(result.b).toBeCloseTo(1 - result.a * result.sweep.level, 10);
+  });
+
+  it('rho0 self-consistency matches Python and recovers the density', () => {
+    const config = makeConfig({
+      ...fixture.config,
+      rho0: 0.02, // seeded away from the truth, like the Python golden
+      bSqAvg: fixture.fzBSqAvg,
+    });
+    const estimate = estimateRho0(Q, SQ, config);
+    const expected = fixture.expected.rho0Estimate;
+    expect(estimate.converged).toBe(expected.converged);
+    expect(estimate.iterations).toBe(expected.iterations);
+    // The fixed-point iteration compounds summation-order float noise, so
+    // cross-engine agreement is bounded by the rtol=1e-3 stopping rule, not
+    // by single-pass transform precision.
+    expect(relError(estimate.rho0, expected.rho0)).toBeLessThan(1e-4);
+    expect(Math.abs(estimate.concordance - 1)).toBeLessThan(1.5e-3);
+    expect(relError(estimate.rho0, fixture.config.rho0)).toBeLessThan(0.05); // truth
+    expect(() => estimateRho0(Q, SQ, baseConfig())).toThrow(/bSqAvg/);
   });
 
   it('manual pipeline matches Python sampled outputs', () => {

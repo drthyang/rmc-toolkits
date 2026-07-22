@@ -430,7 +430,9 @@ function App() {
               className={`workspace-page${activePage === 'autostog' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'autostog'}
             >
-              <AutoStogPage directory={currentDirectory} localRun={localRun} />
+              {/* Auto StoG is pre-processing: page-local uploads, independent
+                  of the run folder the post-processing pages share. */}
+              <AutoStogPage />
             </div>
           )}
           {visitedPages.dashboard && (
