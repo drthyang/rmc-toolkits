@@ -5,6 +5,58 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Auto StoG independence + ρ₀ self-consistency** (2026-07-18) — the page is now true
+pre-processing, decoupled from the run folder, and the number density can come from the
+data itself.
+
+- **ρ₀ self-consistency** (`estimate_rho0` in `scaling.py`, JS port in `autoScale.js`,
+  CLI `--estimate-rho0`): the density-limit amplitude depends on ρ₀ (C2 rows scale with
+  the density line −4πρ₀r) — degenerate with the scale from low-r alone — while the Q→0
+  Faber-Ziman amplitude needs only ⟨b²⟩ + the measured level. ρ₀ is recovered as the root
+  of `a_fz/a_density(ρ₀) = 1` by fixed-point iteration (`ρ ← ρ·concordance`, 2–4
+  `autoscale` passes). Requires a composition; `extrapolated` flags Qmin beyond the FZ fit
+  width. Validated: synthetic truth 0.05 recovered within 2% from seeds 0.02–0.2; FeCoSn
+  x-ray 199 K gives 0.0600 vs the hand 0.057329 (<5%) from any seed. ρ₀ resolution order
+  is now: value → `NUMBER_DENSITY ::` header → mass density + composition →
+  self-consistent estimate (auto-run when ρ₀ is left empty; explicit "Estimate ρ₀" button
+  too) — so composition + Q window are the only required inputs.
+- **Auto StoG page decoupled from the run folder** (`AutoStogPage.jsx`): pre-processing
+  now has page-local file handling — an upload/dropzone (S(Q) ± stog.inp, multi-file;
+  stog output files filtered out) replaces the shared run-folder listing, and the page is
+  fully client-side in BOTH runtimes (worker engine + zip export; the Flask
+  `/api/scaling/*` endpoints stay for API/CLI use but the page no longer calls them).
+  Q window prefills from the data's finite extent; `App.jsx` passes no props.
+- **Parameters grouped with descriptions**: the Advanced panel is five fieldsets, each
+  with a one-line purpose and per-field tooltips — *Amplitude & offset* (High-Q mode,
+  amplitude criterion, Robust/σ/Despike), *Coefficients* (⟨b⟩², ⟨b²⟩ x-ray overrides),
+  *Transform* (r-cut, grid, Lorch, low-Q corr.), *Low-r region* (r₀, fit window,
+  enforcement), *Fixed scaling* (a, b).
+- Tests: `estimate_rho0` synthetic + x-ray + CLI coverage (Python), fixture-backed JS
+  parity (tolerance bounded by the rtol stopping rule, not single-pass precision);
+  browser flow verified end-to-end in static mode (upload → estimate 0.060664 →
+  auto-scale a = 1.2511, concordance 1.00 → 9-file zip).
+- **Correctness review of the page** (multi-agent sweep of every description + flow +
+  export against the engine; 12 findings, 8 confirmed after adversarial verification):
+  manual runs now recover r₀ by detection so a checked "Enforce low-r" with an empty
+  cutoff is honored (was a silent no-op and a CLI-parity break); a fixed-(a, b) run no
+  longer fails the unused FZ-amplitude validation; "Run fixed" gains the missing
+  `estimating` concurrency guard; three tooltips corrected to the code's real resolution
+  orders (ρ₀ chain includes stog.inp above the data header; r₀ is header → stog.inp peak
+  window → detection; x-ray needs ⟨b⟩² = 1 *and* ⟨b²⟩); export title lines use %g-style
+  numbers (the `(browser)` marker vs the CLI's version token is intentional); provenance
+  JSON now records `stogInpReference` (the loaded stog.inp's hand scaling), the fit
+  `history`, and `c1ModeEffective`, matching the CLI payload.
+- **Discordant-data guardrails** (found live on the Mn₃Sn neutron runs, whose low-Q
+  hole breaks the density-limit amplitude): `estimate_rho0` stops on non-physical
+  amplitudes instead of iterating to a bound, and an unconverged estimate is *refused*
+  everywhere (CLI error, worker error, page banner) with guidance to set ρ₀ explicitly
+  and use the FZ amplitude — previously the page silently fit with a garbage density
+  (a = −1.02 on PG3_54139). The neutron-vs-x-ray state is now always visible: a chip
+  shows the coefficients in effect and their source, warns when Advanced overrides
+  shadow a typed composition, and a "Reset params" button clears a previous sample's
+  settings. Folder drops report cleanly instead of failing silently. Engine + CLI
+  guard tests (Mn₃Sn-fixture-gated).
+
 **Composition-first Auto StoG** — procedure clarified end-to-end
 ([SCALING_PROCEDURE.md](SCALING_PROCEDURE.md)); the user now provides only the chemical
 composition + [Qmin, Qmax] (+ a density when the data header has none); validated on three

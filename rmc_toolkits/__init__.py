@@ -63,6 +63,7 @@ from .scaling import (
     autoscale,
     detect_first_peak_onset,
     diagnostics_summary,
+    estimate_rho0,
     level_sweep,
     scale_pipeline,
 )
@@ -112,6 +113,7 @@ __all__ = [
     "number_density_from_mass_density",
     "diagnostics_summary",
     "enforce_low_r",
+    "estimate_rho0",
     "faber_ziman",
     "first_peak_zero",
     "fk_to_sq",

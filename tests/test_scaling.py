@@ -9,6 +9,7 @@ import unittest
 import numpy as np
 
 from rmc_toolkits.parsers import (
+    StogInput,
     read_dat_header,
     read_stog_inp,
     read_stog_xy,
@@ -19,6 +20,7 @@ from rmc_toolkits.scaling import (
     autoscale,
     detect_first_peak_onset,
     diagnostics_summary,
+    estimate_rho0,
     level_sweep,
     scale_pipeline,
 )
@@ -46,8 +48,24 @@ def _first_existing_run(*names: str) -> Path:
 # so any available temperature exercises the same assertions.
 XRAY_RUN = _first_existing_run("100K", "199K")
 
+# stog_59438: a complete Fortran stog run of Mn3Sn (POWGEN PG3), local-only. Its
+# parameters are recovered from the run's own outputs (scale.fq vs the rebinned
+# input pins a = 10, b = -9 and Qmin = 1.0; the flat -<b>^2 stretch of
+# scale_ft_rmc.gr pins b_avg_sq = 0.015407 and the 2.48 A enforcement cutoff),
+# so the sample-backed tests need only the rebinned data file, not the
+# interactive stog.inp. Kept in sync with tests/test_transforms.py.
+STOG_59438 = StogInput(
+    n_files=1, data_file="PG3_59438_SQ_rebin.dat", qmin=1.0, qmax=28.0,
+    yoffset=-9.0, yscale=0.1, qoffset=0.0, out_sq="scale.fq", out_gr="scale.gr",
+    rmax=50.0, nr=5000, lorch=False, rho0=0.063049, yoffset2=0.0,
+    try_again=False, use_filter=True, r_cutoff=1.0, out_ft_sq="scale_ft.sq",
+    out_ft_gr="scale_ft.gr", b_avg_sq=0.015407, out_rmc_fq="scale_ft_rmc.fq",
+    out_rmc_gr="scale_ft_rmc.gr", out_rmc_dr="scale_ft_rmc.dr",
+    peak_cutoff=2.48, peak_rmin=2.65, peak_rmax=3.1,
+)
+
 requires_stog_run = unittest.skipUnless(
-    (STOG_RUN / "stog.inp").exists(), "stog_59438 example run not present"
+    (STOG_RUN / STOG_59438.data_file).exists(), "stog_59438 example run not present"
 )
 requires_xray_run = unittest.skipUnless(
     (XRAY_RUN / "stog_input.dat").exists(), "FeCoSn x-ray run not present"
@@ -141,6 +159,30 @@ class AutoscaleSyntheticTests(unittest.TestCase):
         result = autoscale(self.q, sq_meas, synthetic_config(), sigma=sigma)
         self.assertTrue(result.converged)
         self.assertLess(abs(result.a - 2.0) / 2.0, 0.05)
+
+    def test_estimate_rho0_recovers_density(self):
+        # Self-consistency: the density-limit amplitude depends on rho0, the
+        # FZ Q->0 amplitude does not; their concordance root recovers the
+        # density the data were forward-modeled with — from any seed.
+        sq_meas = (self.sq_true + 4.0) / 5.0
+        head = self.q <= self.q[0] + 1.0
+        _, s_true_0 = np.polyfit(self.q[head], self.sq_true[head], 1)
+        b_sq_avg = B2 * (1.0 - float(s_true_0))
+        for rho_start in (0.02, 0.2):
+            with self.subTest(rho_start=rho_start):
+                est = estimate_rho0(
+                    self.q, sq_meas,
+                    synthetic_config(rho0=rho_start, b_sq_avg=b_sq_avg),
+                )
+                self.assertTrue(est["converged"])
+                self.assertLess(abs(est["rho0"] - RHO0) / RHO0, 0.05)
+                self.assertLess(abs(est["concordance"] - 1.0), 1e-3)
+                self.assertFalse(est["extrapolated"])
+
+    def test_estimate_rho0_requires_composition(self):
+        sq_meas = (self.sq_true + 4.0) / 5.0
+        with self.assertRaisesRegex(ValueError, "b_sq_avg"):
+            estimate_rho0(self.q, sq_meas, synthetic_config())
 
     def test_despike_restores_recovery_under_tail_glitches(self):
         # Detector-glitch spikes ring through the transform into the C2 window
@@ -381,7 +423,7 @@ class AutoscaleExampleRunTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.inp = read_stog_inp(STOG_RUN / "stog.inp")
+        cls.inp = STOG_59438
         data = read_stog_xy(STOG_RUN / cls.inp.data_file)
         cls.q, cls.sq = data[0], data[1]
         cls.config = ScalingConfig(
@@ -475,6 +517,16 @@ class XrayFeCoSnTests(unittest.TestCase):
         # x-ray normalized flat level: -<b>^2 = -1 below the 1.0 A cutoff.
         below = manual.r <= self.inp.peak_cutoff
         np.testing.assert_allclose(manual.gk_enforced[below], -1.0, atol=1e-12)
+
+    def test_estimate_rho0_near_hand_value(self):
+        # FeCoSn x-ray, normalized S(Q): <b^2>/<b>^2 = <Z^2>/<Z>^2 = 1.10426.
+        # Seeded far from the answer to prove the estimate is data-driven;
+        # measured 0.0600 vs the hand 0.057329 (within 5%, tolerance 10%).
+        config = replace(self.config, rho0=0.03, b_sq_avg=1.10426)
+        est = estimate_rho0(self.q, self.sq, config)
+        self.assertTrue(est["converged"])
+        self.assertLess(abs(est["rho0"] - 0.057329) / 0.057329, 0.10)
+        self.assertFalse(est["extrapolated"])
 
     def test_autoscale_succeeds_on_satisfiable_data(self):
         manual = scale_pipeline(self.q, self.sq, self.config, self.inp.a, self.inp.b)
@@ -586,6 +638,15 @@ class Mn3SnNeutronTests(unittest.TestCase):
         # Honest one-sided verdict: the low-Q hole is O(S(0)) = O(-12) deep,
         # so the absolute scale is NOT recoverable from self-consistency.
         self.assertFalse(summary["density_limit_satisfied"])
+
+    def test_estimate_rho0_fails_honestly(self):
+        # The low-Q hole is O(S(0)) = O(-12): the density-limit amplitude is
+        # broken here, so NO density can reconcile it with the FZ amplitude.
+        # The estimator must report converged=False (callers refuse to adopt)
+        # rather than iterate to a bound and hand back garbage.
+        q, sq = self.data["stog_500K"][0], self.data["stog_500K"][1]
+        est = estimate_rho0(q, sq, self.composition_config())
+        self.assertFalse(est["converged"])
 
     def test_fz_amplitude_uses_the_composition(self):
         # The FZ criterion injects S(0) = 1 - <b^2>/<b>^2 = -12.06 and lands

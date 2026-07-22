@@ -19,6 +19,9 @@ from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
 
 ROOT = Path(__file__).resolve().parents[1]
 STOG_RUN = ROOT / "data" / "stog_tests" / "stog_59438"
+# stog_59438's parameters are recovered from its outputs (see tests/test_scaling.py),
+# so the CLI parity runs in --data mode from the rebinned file -- no stog.inp needed.
+STOG_DATA = "PG3_59438_SQ_rebin.dat"
 
 
 def _first_existing_run(*names: str) -> Path:
@@ -33,7 +36,7 @@ def _first_existing_run(*names: str) -> Path:
 XRAY_RUN = _first_existing_run("100K", "199K")
 
 requires_stog_run = unittest.skipUnless(
-    (STOG_RUN / "stog.inp").exists(), "stog_59438 example run not present"
+    (STOG_RUN / STOG_DATA).exists(), "stog_59438 example run not present"
 )
 requires_xray_run = unittest.skipUnless(
     (XRAY_RUN / "stog_input.dat").exists(), "FeCoSn x-ray run not present"
@@ -255,6 +258,46 @@ class DataModeTests(CliSyntheticBase):
             self.assertEqual(code, 2)
             self.assertIn("cannot be combined", err)
 
+    def test_estimate_rho0_flag(self):
+        head = self.q <= self.q[0] + 1.0
+        _, s_true_0 = np.polyfit(self.q[head], self.sq_true[head], 1)
+        b_sq_avg = B2 * (1.0 - float(s_true_0))
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "sample.dat"
+            write_stog_xy(data, self.q, self.sq_meas, title="s")
+            base = [
+                "--data", data, "--qmin", "0.6", "--qmax", "30",
+                "--b-avg-sq", B2, "--r0", "2.65",
+                "--rmax", "25", "--nr", "1000",
+            ]
+            # Seeded at the wrong density: the estimate must land on RHO0 and
+            # replace the seed for the run (config + provenance record it).
+            code, out, err = run_cli(
+                base + ["--rho0", "0.02", "--b-sq-avg", b_sq_avg, "--estimate-rho0"]
+            )
+            self.assertEqual(code, 0, msg=err)
+            self.assertIn("rho0 self-consistency", out)
+            payload = json.loads(
+                (Path(tmp) / "autoscale" / "sample_provenance.json").read_text()
+            )
+            estimate = payload["rho0_estimate"]
+            self.assertTrue(estimate["converged"])
+            self.assertLess(abs(estimate["rho0"] - RHO0) / RHO0, 0.05)
+            self.assertAlmostEqual(
+                payload["provenance"]["config"]["rho0"], estimate["rho0"]
+            )
+
+            code, _, err = run_cli(base + ["--rho0", "0.02", "--estimate-rho0", "--force"])
+            self.assertEqual(code, 2)
+            self.assertIn("requires <b^2>", err)
+
+            code, _, err = run_cli(
+                base + ["--rho0", "0.02", "--b-sq-avg", b_sq_avg, "--estimate-rho0",
+                        "--manual", "--scale", "10", "--force"]
+            )
+            self.assertEqual(code, 2)
+            self.assertIn("cannot be combined", err)
+
     def test_error_cases(self):
         with tempfile.TemporaryDirectory() as tmp:
             data = Path(tmp) / "sample.dat"
@@ -295,12 +338,25 @@ class ExampleRunCliTests(unittest.TestCase):
 
     def test_manual_run_matches_fortran_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
+            # Recovered stog_59438 parameters (see tests/test_scaling.py), driven
+            # through --data mode with the run's hand scaling (a = 10, b = -9).
             code, _, err = run_cli(
-                [STOG_RUN / "stog.inp", "--manual", "--out-dir", tmp]
+                [
+                    "--data", STOG_RUN / STOG_DATA,
+                    "--qmin", "1.0", "--qmax", "28.0",
+                    "--rho0", "0.063049", "--b-avg-sq", "0.015407",
+                    "--r-cutoff", "1.0", "--rmax", "50.0", "--nr", "5000",
+                    "--manual", "--scale", "10.0", "--offset", "-9.0",
+                    "--enforce", "--enforce-cutoff", "2.48",
+                    "--peak-window", "2.65", "3.1",
+                    "--out-stem", "scale", "--out-dir", tmp,
+                ]
             )
             self.assertEqual(code, 0, msg=err)
 
-            ours = read_stog_xy(Path(tmp) / "scale.fq")
+            # --out-stem names the scaled S(Q) scale.sq; it holds the same scaled
+            # function as the Fortran scale.fq.
+            ours = read_stog_xy(Path(tmp) / "scale.sq")
             ref = read_stog_xy(STOG_RUN / "scale.fq")
             interp = np.interp(ref[0], ours[0], ours[1])
             np.testing.assert_allclose(interp, ref[1], atol=1e-8)
@@ -311,7 +367,7 @@ class ExampleRunCliTests(unittest.TestCase):
             rms = float(np.sqrt(np.mean((interp - ref_ft[1]) ** 2)))
             self.assertLess(rms, 1e-3)
 
-            ours_gr = read_stog_xy(Path(tmp) / "scale_ft_rmc.gr")
+            ours_gr = read_stog_xy(Path(tmp) / "scale_rmc.gr")
             ref_gr = read_stog_xy(STOG_RUN / "scale_ft_rmc.gr")
             interp = np.interp(ref_gr[0], ours_gr[0], ours_gr[1])
             rms = float(np.sqrt(np.mean((interp - ref_gr[1]) ** 2)))
@@ -371,6 +427,28 @@ class XrayRunCliTests(unittest.TestCase):
             # Hand values are a = 1/0.9, b = -0.111; the auto-fit should land
             # in that neighborhood on this density-limit-satisfiable dataset.
             self.assertLess(abs(payload["diagnostics"]["a"] - 1.0 / 0.9) * 0.9, 0.15)
+
+
+MN3SN_500K_DATA = ROOT / "data" / "stog_tests" / "stog_500K" / "PG3_54139_SQ_rebin.dat"
+
+
+@unittest.skipUnless(MN3SN_500K_DATA.exists(), "Mn3Sn PG3 500K run not present")
+class EstimateRho0GuardCliTests(unittest.TestCase):
+    """--estimate-rho0 must refuse data whose criteria are discordant."""
+
+    def test_unconverged_estimate_is_refused(self):
+        # Mn3Sn misses O(S(0)) = O(-12) structure below Qmin: the density-limit
+        # amplitude is broken, no rho0 reconciles it with the FZ amplitude, and
+        # the CLI must error out instead of fitting with a garbage density.
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _, err = run_cli([
+                "--data", MN3SN_500K_DATA, "--qmin", "0.82", "--qmax", "28",
+                "--formula", "Mn3Sn", "--rho0", "0.063049",
+                "--estimate-rho0", "--out-dir", tmp,
+            ])
+            self.assertEqual(code, 2)
+            self.assertIn("did not converge", err)
+            self.assertIn("--amplitude fz", err)
 
 
 if __name__ == "__main__":
