@@ -5,6 +5,14 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Auto StoG tab hidden** (2026-07-23) — the page is not behaving correctly yet, so it is
+gated out of the UI while the work continues offline. `App.jsx` gains a `SHOW_AUTO_STOG`
+constant (currently `false`) guarding the nav button and the page mount; with it off the
+page is unreachable, since `activePage` defaults to `dashboard` and that button was the
+only route to it. Nothing was removed — `AutoStogPage.jsx`, `workers/autoScale*.js`,
+`rmc_toolkits.scaling`, the `rmc-autoscale` CLI, and `/api/scaling/*` are untouched, and
+their tests still run. Flip the constant to restore the tab.
+
 **Auto StoG independence + ρ₀ self-consistency** (2026-07-18) — the page is now true
 pre-processing, decoupled from the run folder, and the number density can come from the
 data itself.
