@@ -23,6 +23,8 @@ import './App.css';
 
 const REPO_URL = 'https://github.com/drthyang/rmc-toolkits';
 const STATUS_TIMEOUT_MS = 15000;
+// Auto StoG is still under development; flip to true to expose the tab again.
+const SHOW_AUTO_STOG = false;
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
@@ -289,12 +291,14 @@ function App() {
               </div>
             </div>
             <nav className="page-tabs" aria-label="Workspace pages">
-              <button
-                className={activePage === 'autostog' ? 'active' : ''}
-                onClick={() => handlePageChange('autostog')}
-              >
-                Auto StoG
-              </button>
+              {SHOW_AUTO_STOG && (
+                <button
+                  className={activePage === 'autostog' ? 'active' : ''}
+                  onClick={() => handlePageChange('autostog')}
+                >
+                  Auto StoG
+                </button>
+              )}
               <button
                 className={activePage === 'dashboard' ? 'active' : ''}
                 onClick={() => handlePageChange('dashboard')}
@@ -425,7 +429,7 @@ function App() {
         </header>
         <SymTolContext.Provider value={symTolState}>
         <div className="workspace-pages">
-          {visitedPages.autostog && (
+          {SHOW_AUTO_STOG && visitedPages.autostog && (
             <div
               className={`workspace-page${activePage === 'autostog' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'autostog'}
