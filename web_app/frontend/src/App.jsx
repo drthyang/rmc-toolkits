@@ -322,7 +322,7 @@ function App() {
                 className={activePage === 'orientation' ? 'active' : ''}
                 onClick={() => handlePageChange('orientation')}
               >
-                Orientation
+                Displacement Directions
               </button>
               <button
                 className={activePage === 'assistant' ? 'active' : ''}
