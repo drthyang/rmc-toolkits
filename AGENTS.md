@@ -63,8 +63,8 @@ web_app/frontend/src/
     PlotViewer.jsx               PNG plot rendering + metadata
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
     PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections; unit-cell picker via SiteStructurePanel
-    OrientationPage.jsx          Orientation tab (own workspace page — not a PCA product): site dropdown + sphere panel (wide left) + SiteStructurePanel (right), 16:9-bounded height
-    OrientationView.jsx          hex-binned orientation sphere (Three.js flat-shaded cells, amplitude relief), per-cell hover readout, fixed-angle a/b/c | PC1/2/3 mini-view column left of the sphere (click to snap), colorbar + asymmetry/significance strip
+    OrientationPage.jsx          Orientation tab (own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9
+    OrientationView.jsx          renders display:contents → its two panels drop into the page grid: the Axis-views mini panel (three fixed-angle a/b/c | PC1/2/3 views, click to snap) and the sphere panel (flat-shaded Goldberg cells, amplitude relief, only the selected frame's axis rods, header Crystal|PCA toggle + Reset + Save, per-cell hover, colorbar + asymmetry/significance strip)
     SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages
     sceneAxes.js                 shared axis palettes (PC tricolor, a/b/c) + triad/rod builders for every Three.js panel
     FileExplorer.jsx             file navigation

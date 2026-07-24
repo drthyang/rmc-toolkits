@@ -32,6 +32,19 @@ hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invis
   `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
   parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
   behavior, API + worker routing.
+- **Orientation page — three-panel layout + PCA-page design parity** (2026-07-24, same
+  branch): the page now matches the PCA Ellipsoid page's conventions — all options live
+  in the top controls bar, and the header actions (Crystal|PCA frame toggle, Reset view,
+  Save) sit in each panel's own header. Three equal-height panels in one grid at
+  **3 : 6.5 : 6.5** — Axis views (the fixed-angle mini column, now its own panel) :
+  sphere : site picker; `OrientationView` renders `display:contents` so its two panels
+  drop straight into the grid. Panel height is viewport-clamped
+  (`calc(100vh − 17.75rem)`) so the three fill a 16:9 screen down to the footer with zero
+  scroll (verified 1600×900). The mini views zoom out (camera pushed to 5.6×) so a
+  fully-inflated relief surface never clips the pane edges, and the main sphere's default
+  view is pulled back too. The axis rods now show **only the selected coordinate frame**
+  (a/b/c in Crystal, PC1/2/3 in PCA) — the mini views, main sphere, and legend all show
+  one system at a time instead of overlaying both.
 - **Orientation page 16:9 layout + shared site picker** (2026-07-24, same branch): the
   clickable Site-ellipsoids unit-cell picker is extracted from PcaKdePage into
   `SiteStructurePanel.jsx` (axis palettes/builders into `sceneAxes.js`) and now sits on

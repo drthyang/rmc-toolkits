@@ -2,11 +2,16 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // Displacement-orientation sphere: the solid-angle histogram of a site's
-// displacement *directions* (u = Δr/|Δr|), hex-binned on a Goldberg tiling and
-// color-mapped on the unit sphere. Rendered as a tab of the PCA Ellipsoid main
-// panel, sharing the page's site picker; the engine lives in
-// workers/orientation.js (browser) and /api/pca/orientation (Flask), and this
-// component only fetches, renders, and reads out.
+// displacement directions (u = Δr/|Δr|), hex-binned on a Goldberg tiling and
+// color-mapped on the unit sphere. The engine lives in workers/orientation.js
+// (browser) and /api/pca/orientation (Flask); this component fetches, renders,
+// and reads out. Options are owned by the host page (OrientationPage) and
+// arrive as props, following the PCA page's design logic: controls in the
+// page's top bar, panel actions (frame toggle, Reset, Save) in the header.
+//
+// The root renders with display:contents, so its two panels — the fixed-angle
+// mini-view column and the main sphere — sit directly in the page's
+// three-column grid next to the site picker.
 //
 // What to look for that the ellipsoid cannot show: discrete spots (hop sites),
 // and a +u/−u imbalance (static off-centring / odd anharmonicity) — the map is
@@ -16,7 +21,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { COLORMAP_NAMES } from '../colormaps';
 import {
     buildCellMesh,
     buildCellOutline,
@@ -28,32 +32,20 @@ import {
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
 import SaveMenu from './SaveMenu';
+import {
+    CELL_AXIS_COLORS,
+    CELL_AXIS_CSS,
+    CELL_AXIS_LABELS,
+    PC_CSS_COLORS,
+    TRIAD_COLORS,
+    TRIAD_UP
+} from './sceneAxes';
 import './PcaKdePage.css';
 
 const SAVE_OPTIONS = [
     { id: 'png', label: 'Standard PNG', hint: '1×' },
     { id: 'png3x', label: 'High quality PNG', hint: '3×' }
 ];
-
-// Manual resolution choices (geodesic frequency ν → 10ν²+2 cells). 'auto' asks
-// the engine for recommended_frequency, the ~12-points-per-cell guard against
-// reading Poisson confetti as structure.
-const FREQUENCY_OPTIONS = ['auto', 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
-
-const WEIGHT_OPTIONS = [
-    { value: 'count', label: 'Count' },
-    { value: 'amplitude', label: '|Δr|' },
-    { value: 'amplitude2', label: '|Δr|²' }
-];
-
-// Same axis palettes as the density view, so PC1/PC2/PC3 and a/b/c read as the
-// same objects across the two tabs.
-const TRIAD_COLORS = [0xd64545, 0x3fa34d, 0x3f7fd6];
-const PC_CSS_COLORS = ['#d64545', '#3fa34d', '#3f7fd6'];
-const CELL_AXIS_COLORS = [0xe0a419, 0x18a3a0, 0xb15ad8];
-const CELL_AXIS_CSS = ['#e0a419', '#18a3a0', '#b15ad8'];
-const CELL_AXIS_LABELS = ['a', 'b', 'c'];
-const TRIAD_UP = new THREE.Vector3(0, 1, 0);
 
 const numberFormat = (value, digits = 2) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -85,24 +77,21 @@ export default function OrientationView({
     selectedRef,
     selectedEllipsoid,
     clusterThreshold,
-    unitCell
+    unitCell,
+    frequency,
+    weight,
+    frame,
+    onFrameChange,
+    smoothing,
+    minQuantile,
+    colormap,
+    relief,
+    showOutline,
+    showAxes
 }) {
     const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
-
-    const [frequency, setFrequency] = useState('auto');
-    const [weight, setWeight] = useState('count');
-    const [frame, setFrame] = useState('cartesian');
-    const [smoothing, setSmoothing] = useState(0);
-    const [minQuantile, setMinQuantile] = useState(0);
-    const [colormap, setColormap] = useState('viridis');
-    // Amplitude relief: 0 keeps the unit sphere; higher values bulge each cell
-    // radially by its mean |Δr| relative to the site average, so shape (how far
-    // atoms move this way) and color (how often) carry independent information.
-    const [relief, setRelief] = useState(0.5);
-    const [showOutline, setShowOutline] = useState(true);
-    const [showAxes, setShowAxes] = useState(true);
     // Hovered cell readout: { cell, x, y } in canvas-local coordinates.
     const [hover, setHover] = useState(null);
 
@@ -196,7 +185,9 @@ export default function OrientationView({
             up.addScaledVector(dir, -up.dot(dir));   // Gram–Schmidt for oblique cells
             if (up.lengthSq() < 1e-10) up.set(0, 1, 0);
             camera.up.copy(up.normalize());
-            camera.position.copy(dir).multiplyScalar(3.6);
+            // Far enough back that a fully-inflated relief surface (radius
+            // clamped at 2.2) never clips the pane edges.
+            camera.position.copy(dir).multiplyScalar(5.6);
             camera.aspect = width / paneHeight;
             camera.updateProjectionMatrix();
             camera.lookAt(0, 0, 0);
@@ -236,7 +227,7 @@ export default function OrientationView({
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 100);
-        camera.position.set(1.9, 1.4, 1.9);
+        camera.position.set(2.5, 1.85, 2.5);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
         renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.setSize(width, height);
@@ -296,9 +287,9 @@ export default function OrientationView({
 
         sceneRef.current = { scene, camera, renderer, controls, meshGroup, outlineGroup, axesGroup };
 
-        // Mini-view strip: its own small renderer (a second context) with three
-        // scissored viewports sharing the SAME scene; three.js uploads GPU
-        // resources per renderer, so cross-renderer scene sharing is safe.
+        // Mini-view column: its own small renderer (a second context) with
+        // three scissored viewports sharing the SAME scene; three.js uploads
+        // GPU resources per renderer, so cross-renderer scene sharing is safe.
         const miniMount = miniMountRef.current;
         let miniResizeObserver = null;
         if (miniMount) {
@@ -317,10 +308,9 @@ export default function OrientationView({
             renderer.domElement.removeEventListener('pointermove', onPointerMove);
             renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
             controls.dispose();
-            // Unlike the density canvas (kept mounted via CSS), this component
-            // unmounts on every tab switch — release the last-built geometries
-            // and force the GL context loss, or repeated Density↔Orientation
-            // toggles pile up GPU buffers and live WebGL contexts until GC.
+            // This component unmounts with its page — release the last-built
+            // geometries and force the GL context loss so repeated page visits
+            // can never pile up GPU buffers and live WebGL contexts.
             [meshGroup, outlineGroup, axesGroup].forEach((group) => {
                 while (group.children.length) {
                     const child = group.children.pop();
@@ -390,17 +380,20 @@ export default function OrientationView({
         }
 
         if (showAxes) {
-            // Principal axes: the engine reports the PCA rotation it used, so in
-            // the PCA frame the axes are the view's own x/y/z (identity).
-            const pcAxes = frame === 'pca'
-                ? [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-                : result.pcaAxes || [];
-            buildAxisRods(pcAxes, TRIAD_COLORS, 0.006, 2.7).forEach((rod) => axesGroup.add(rod));
-            // Crystallographic a/b/c (normalized directions) in the Cartesian
-            // frame only — in the PCA frame they would need the same rotation and
-            // read as clutter over an already-rotated map.
-            if (frame === 'cartesian' && unitCell) {
-                buildAxisRods(unitCell, CELL_AXIS_COLORS, 0.0045, 2.35).forEach((rod) => axesGroup.add(rod));
+            // Only the SELECTED coordinate frame's axes, so the sphere and the
+            // fixed-angle mini views show one system at a time (no overlaid
+            // second frame). PCA frame: PC1/2/3 = the view's own x/y/z. Crystal
+            // frame: the a/b/c edges; with no cell metadata, fall back to the
+            // site's PC axes so there is still a reference triad.
+            if (frame === 'pca') {
+                buildAxisRods([[1, 0, 0], [0, 1, 0], [0, 0, 1]], TRIAD_COLORS, 0.006, 2.7)
+                    .forEach((rod) => axesGroup.add(rod));
+            } else if (unitCell) {
+                buildAxisRods(unitCell, CELL_AXIS_COLORS, 0.0045, 2.35)
+                    .forEach((rod) => axesGroup.add(rod));
+            } else {
+                buildAxisRods(result.pcaAxes || [], TRIAD_COLORS, 0.006, 2.7)
+                    .forEach((rod) => axesGroup.add(rod));
             }
         }
 
@@ -414,7 +407,7 @@ export default function OrientationView({
         const { camera, controls } = handle;
         controls.target.set(0, 0, 0);
         camera.up.set(0, 1, 0);
-        camera.position.set(1.9, 1.4, 1.9);
+        camera.position.set(2.5, 1.85, 2.5);
         camera.updateProjectionMatrix();
         controls.update();
     }, []);
@@ -454,126 +447,14 @@ export default function OrientationView({
     // reset could carry an index from the previous, larger tiling.
     const hoverCell = hover && result && hover.cell < result.cellCount ? hover.cell : null;
 
+    // display:contents root — the two panels below are direct grid items of the
+    // page's 3 : 6.5 : 6.5 layout, next to the site picker panel.
     return (
-        <div className="orient-view">
-            <div className="pca-controls orient-controls">
-                <div className="control-group" role="group" aria-label="Orientation histogram options">
-                    <label className="control">
-                        <span className="control-name">
-                            Resolution
-                            <InfoBadge label="About the sphere resolution">
-                                <p>
-                                    Geodesic frequency ν of the hex tiling (10ν² + 2 cells — hexagons
-                                    plus the 12 pentagons every hexagonal tiling of a sphere must
-                                    contain). Auto targets ~12 displacements per cell, the guard
-                                    against reading Poisson noise as structure.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <select
-                            value={frequency}
-                            onChange={(event) => setFrequency(event.target.value === 'auto' ? 'auto' : Number(event.target.value))}
-                            aria-label="Sphere resolution"
-                        >
-                            {FREQUENCY_OPTIONS.map((option) => (
-                                <option key={option} value={option}>
-                                    {option === 'auto'
-                                        ? `Auto${result && frequency === 'auto' ? ` (ν=${result.frequency})` : ''}`
-                                        : `ν=${option} (${10 * option * option + 2})`}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">
-                            Weight
-                            <InfoBadge label="About the weighting">
-                                <p>
-                                    Count: every atom votes once — the orientation distribution
-                                    proper. |Δr| / |Δr|²: longer displacements vote more; the |Δr|²
-                                    map is the angular decomposition of the mean-square displacement
-                                    the U tensor summarizes.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <select value={weight} onChange={(event) => setWeight(event.target.value)} aria-label="Cell weighting">
-                            {WEIGHT_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">
-                            Min |Δr|
-                            <InfoBadge label="About the amplitude cutoff">
-                                <p>
-                                    Drops the shortest displacements before binning (quantile of
-                                    |Δr|). A near-zero displacement has a direction dominated by
-                                    noise, which dilutes a real pattern toward uniform.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <input
-                            type="range" min="0" max="0.5" step="0.05"
-                            value={minQuantile}
-                            onChange={(event) => setMinQuantile(Number(event.target.value))}
-                            aria-label="Minimum displacement quantile"
-                        />
-                        <span className="control-value">{Math.round(minQuantile * 100)}%</span>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Smoothing</span>
-                        <input
-                            type="range" min="0" max="4" step="1"
-                            value={smoothing}
-                            onChange={(event) => setSmoothing(Number(event.target.value))}
-                            aria-label="Neighbour smoothing passes"
-                        />
-                        <span className="control-value">{smoothing}×</span>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">
-                            Relief
-                            <InfoBadge label="About the amplitude relief">
-                                <p>
-                                    Bulges the sphere radially by each cell's mean |Δr| relative to
-                                    the site average — directions where atoms move farther stick
-                                    out, shorter ones dent in. Color (how often) and shape (how far)
-                                    then carry independent information. 0% keeps a perfect sphere.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <input
-                            type="range" min="0" max="1" step="0.05"
-                            value={relief}
-                            onChange={(event) => setRelief(Number(event.target.value))}
-                            aria-label="Amplitude relief strength"
-                        />
-                        <span className="control-value">{Math.round(relief * 100)}%</span>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Colormap</span>
-                        <select value={colormap} onChange={(event) => setColormap(event.target.value)} aria-label="Sphere colormap">
-                            {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
-                        </select>
-                    </label>
-                    <label className="control switch">
-                        <span className="control-name">Cell borders</span>
-                        <input type="checkbox" checked={showOutline} onChange={(event) => setShowOutline(event.target.checked)} aria-label="Show cell borders" />
-                        <i className="switch-track" aria-hidden="true" />
-                    </label>
-                    <label className="control switch">
-                        <span className="control-name">Axes</span>
-                        <input type="checkbox" checked={showAxes} onChange={(event) => setShowAxes(event.target.checked)} aria-label="Show axis rods" />
-                        <i className="switch-track" aria-hidden="true" />
-                    </label>
-                </div>
-            </div>
-
-            <div className="orient-body">
-                {/* Fixed-angle views down each frame axis (a/b/c, or PC1/2/3 in
-                    the PCA frame), stacked left of the main view. Click one to
-                    snap the main camera to that angle. */}
+        <>
+            <div className="pca-panel orient-mini-panel">
+                <h3>
+                    <span className="panel-title-label">Axis views</span>
+                </h3>
                 <div className="orient-multiview" ref={miniMountRef}>
                     {[0, 1, 2].map((axisIndex) => (
                         <button
@@ -590,153 +471,164 @@ export default function OrientationView({
                         </button>
                     ))}
                 </div>
-                <div className="pca-canvas orient-canvas" ref={mountRef}>
-                {loading && <div className="pca-badge">Computing…</div>}
-                {error && <div className="pca-badge is-error">{error}</div>}
-                <div className="pca-view-controls pca-view-controls--left">
-                    <div className="pca-view-group" role="group" aria-label="Direction frame">
-                        <button
-                            type="button"
-                            className={`pca-view-btn ${frame === 'cartesian' ? 'is-active' : ''}`}
-                            onClick={() => setFrame('cartesian')}
-                            aria-pressed={frame === 'cartesian'}
-                            title="Crystal Cartesian frame"
-                        >
-                            Crystal
-                        </button>
-                        <button
-                            type="button"
-                            className={`pca-view-btn ${frame === 'pca' ? 'is-active' : ''}`}
-                            onClick={() => setFrame('pca')}
-                            aria-pressed={frame === 'pca'}
-                            title="This site's principal-axis frame (PC1 = x)"
-                        >
-                            PCA
-                        </button>
-                    </div>
-                </div>
-                <div className="pca-view-controls pca-view-controls--right">
-                    <div className="pca-view-group" role="group" aria-label="View actions">
-                        <button
-                            type="button"
-                            className="pca-view-btn"
-                            onClick={resetView}
-                            title="Reset the camera to the default view"
-                        >
-                            Reset
-                        </button>
-                    </div>
-                    <SaveMenu
-                        onSave={saveView}
-                        options={SAVE_OPTIONS}
-                        label="Save"
-                        align="right"
-                        disabled={!result}
-                    />
-                </div>
-                {hoverCell != null && result && (
-                    <div className="orient-tooltip" style={{ left: hover.x + 14, top: hover.y + 12 }}>
-                        <div>{formatDirection(result.centers[hoverCell])}</div>
-                        <div>{numberFormat(result.enhancement[hoverCell], 2)}× isotropic</div>
-                        <div>
-                            {result.counts[hoverCell]} atoms · z = {numberFormat(result.zScore[hoverCell], 1)}
-                        </div>
-                        {result.cellMeanAmplitude?.[hoverCell] > 0 && (
-                            <div>⟨|Δr|⟩ = {numberFormat(result.cellMeanAmplitude[hoverCell], 3)} Å</div>
-                        )}
-                    </div>
-                )}
-                </div>
             </div>
 
-            {result && (
-                <>
-                    <div className="orient-colorbar-row">
-                        <span className="orient-colorbar-label">0</span>
-                        <div className="orient-colorbar" style={{ background: gradient }}>
-                            {result.vmax > 1 && (
-                                <i
-                                    className="orient-colorbar-marker"
-                                    style={{ left: `${(100 / result.vmax).toFixed(2)}%` }}
-                                    title="1× = isotropic"
-                                />
+            <div className="pca-panel pca-viewport orient-main-panel">
+                <h3>
+                    <span className="panel-title-label">
+                        {selectedEllipsoid
+                            ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber} — displacement directions`
+                            : 'Displacement directions'}
+                    </span>
+                    <span className="panel-title-actions">
+                        {selectedEllipsoid && (
+                            <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
+                        )}
+                        {/* Direction frame: crystal Cartesian vs this site's principal
+                            axes — mirrors the PCA page's PC | Crystal header toggle. */}
+                        <div className="pca-frame-toggle" role="group" aria-label="Direction frame">
+                            <button
+                                type="button"
+                                className={frame === 'cartesian' ? 'is-active' : ''}
+                                onClick={() => onFrameChange('cartesian')}
+                                aria-pressed={frame === 'cartesian'}
+                                title="Crystal Cartesian frame"
+                            >
+                                Crystal
+                            </button>
+                            <button
+                                type="button"
+                                className={frame === 'pca' ? 'is-active' : ''}
+                                onClick={() => onFrameChange('pca')}
+                                aria-pressed={frame === 'pca'}
+                                title="This site's principal-axis frame (PC1 = x)"
+                            >
+                                PCA
+                            </button>
+                        </div>
+                        <button
+                            type="button"
+                            className="pca-reset-view"
+                            onClick={resetView}
+                            disabled={!result}
+                            title="Reset the camera to the default view"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                <path d="M3 3v5h5" />
+                            </svg>
+                            Reset view
+                        </button>
+                        <SaveMenu
+                            onSave={saveView}
+                            options={SAVE_OPTIONS}
+                            label="Save"
+                            align="right"
+                            disabled={!result}
+                        />
+                    </span>
+                </h3>
+                <div className="pca-canvas orient-canvas" ref={mountRef}>
+                    {loading && <div className="pca-badge">Computing…</div>}
+                    {error && <div className="pca-badge is-error">{error}</div>}
+                    {hoverCell != null && result && (
+                        <div className="orient-tooltip" style={{ left: hover.x + 14, top: hover.y + 12 }}>
+                            <div>{formatDirection(result.centers[hoverCell])}</div>
+                            <div>{numberFormat(result.enhancement[hoverCell], 2)}× isotropic</div>
+                            <div>
+                                {result.counts[hoverCell]} atoms · z = {numberFormat(result.zScore[hoverCell], 1)}
+                            </div>
+                            {result.cellMeanAmplitude?.[hoverCell] > 0 && (
+                                <div>⟨|Δr|⟩ = {numberFormat(result.cellMeanAmplitude[hoverCell], 3)} Å</div>
                             )}
                         </div>
-                        <span className="orient-colorbar-label">{numberFormat(result.vmax, 1)}× isotropic</span>
-                    </div>
-                    <div className="orient-summary">
-                        <span className="orient-stat">
-                            <b>{result.cellCount}</b> cells (ν={result.frequency}, 12 pentagons)
-                        </span>
-                        <span className="orient-stat">
-                            <b>{result.usedPoints.toLocaleString()}</b>/{result.totalPoints.toLocaleString()} vectors
-                            {result.rejectedPoints > 0 ? ` (${result.rejectedPoints} below cutoff)` : ''}
-                        </span>
-                        <span className="orient-stat">
-                            peak <b>{numberFormat(result.peakEnhancement, 2)}×</b> at {formatDirection(result.peakDirection)}
-                            {' '}(z = {numberFormat(result.peakZScore, 1)})
-                        </span>
-                        <span className="orient-stat">
-                            anisotropy <b>{numberFormat(result.orientationAnisotropy, 2)}</b>
-                            <InfoBadge label="About the orientation anisotropy" align="end">
-                                <p>
-                                    3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 0 for an isotropic
-                                    direction distribution, 2 for a perfect single axis. Resolution
-                                    independent (computed from the vectors, not the bins).
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <span className={`orient-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
-                            ± asymmetry <b>{numberFormat(result.antipodalAsymmetry, 2)}</b>
-                            {' '}<span className="orient-stat-null">(noise floor {numberFormat(result.antipodalAsymmetryNull, 2)})</span>
-                            <InfoBadge label="About the antipodal asymmetry" align="end">
-                                <p>
-                                    The +u vs −u imbalance, Σ|n(u) − n(−u)| / N over antipodal cell
-                                    pairs: 0 for an inversion-symmetric cloud, 1 for a fully
-                                    one-sided one. The thermal ellipsoid is blind to this — a value
-                                    well above the Poisson noise floor is real off-centring or
-                                    odd-order anharmonicity.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <span className="orient-stat">
-                            map significance <b>{numberFormat(result.significance, 1)}σ</b>
-                            <InfoBadge label="About the map significance" align="end">
-                                <p>
-                                    RMS of the per-cell Poisson z-scores against the isotropic null:
-                                    ≈1 means the pattern is consistent with pure counting noise;
-                                    well above 1 means real directional structure.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                    </div>
-                    <div className="pca-legend">
-                        {frame === 'pca' ? (
-                            <>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[0] }} /> PC1</span>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[1] }} /> PC2</span>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[2] }} /> PC3</span>
-                            </>
-                        ) : (
-                            <>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[0] }} /> PC1</span>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[1] }} /> PC2</span>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[2] }} /> PC3</span>
-                                {unitCell && CELL_AXIS_LABELS.map((label, i) => (
+                    )}
+                </div>
+
+                {result && (
+                    <>
+                        <div className="orient-colorbar-row">
+                            <span className="orient-colorbar-label">0</span>
+                            <div className="orient-colorbar" style={{ background: gradient }}>
+                                {result.vmax > 1 && (
+                                    <i
+                                        className="orient-colorbar-marker"
+                                        style={{ left: `${(100 / result.vmax).toFixed(2)}%` }}
+                                        title="1× = isotropic"
+                                    />
+                                )}
+                            </div>
+                            <span className="orient-colorbar-label">{numberFormat(result.vmax, 1)}× isotropic</span>
+                        </div>
+                        <div className="orient-summary">
+                            <span className="orient-stat">
+                                <b>{result.cellCount}</b> cells (ν={result.frequency}, 12 pentagons)
+                            </span>
+                            <span className="orient-stat">
+                                <b>{result.usedPoints.toLocaleString()}</b>/{result.totalPoints.toLocaleString()} vectors
+                                {result.rejectedPoints > 0 ? ` (${result.rejectedPoints} below cutoff)` : ''}
+                            </span>
+                            <span className="orient-stat">
+                                peak <b>{numberFormat(result.peakEnhancement, 2)}×</b> at {formatDirection(result.peakDirection)}
+                                {' '}(z = {numberFormat(result.peakZScore, 1)})
+                            </span>
+                            <span className="orient-stat">
+                                anisotropy <b>{numberFormat(result.orientationAnisotropy, 2)}</b>
+                                <InfoBadge label="About the orientation anisotropy" align="end">
+                                    <p>
+                                        3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 0 for an isotropic
+                                        direction distribution, 2 for a perfect single axis. Resolution
+                                        independent (computed from the vectors, not the bins).
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                            <span className={`orient-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
+                                ± asymmetry <b>{numberFormat(result.antipodalAsymmetry, 2)}</b>
+                                {' '}<span className="orient-stat-null">(noise floor {numberFormat(result.antipodalAsymmetryNull, 2)})</span>
+                                <InfoBadge label="About the antipodal asymmetry" align="end">
+                                    <p>
+                                        The +u vs −u imbalance, Σ|n(u) − n(−u)| / N over antipodal cell
+                                        pairs: 0 for an inversion-symmetric cloud, 1 for a fully
+                                        one-sided one. The thermal ellipsoid is blind to this — a value
+                                        well above the Poisson noise floor is real off-centring or
+                                        odd-order anharmonicity.
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                            <span className="orient-stat">
+                                map significance <b>{numberFormat(result.significance, 1)}σ</b>
+                                <InfoBadge label="About the map significance" align="end">
+                                    <p>
+                                        RMS of the per-cell Poisson z-scores against the isotropic null:
+                                        ≈1 means the pattern is consistent with pure counting noise;
+                                        well above 1 means real directional structure.
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                        </div>
+                        <div className="pca-legend">
+                            {frame === 'cartesian' && unitCell ? (
+                                CELL_AXIS_LABELS.map((label, i) => (
                                     <span key={label} className="pca-legend-item">
                                         <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
                                     </span>
-                                ))}
-                            </>
-                        )}
-                        <span className="pca-legend-note">
-                            {result.weight === 'count' ? 'direction distribution' : `weighted by ${result.weight === 'amplitude' ? '|Δr|' : '|Δr|²'}`}
-                            {result.smoothing > 0 ? ` · smoothed ${result.smoothing}×` : ''}
-                            {result.browserOrientation ? ' · browser' : ' · server'}
-                        </span>
-                    </div>
-                </>
-            )}
-        </div>
+                                ))
+                            ) : (
+                                ['PC1', 'PC2', 'PC3'].map((label, i) => (
+                                    <span key={label} className="pca-legend-item">
+                                        <i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[i] }} /> {label}
+                                    </span>
+                                ))
+                            )}
+                            <span className="pca-legend-note">
+                                {result.weight === 'count' ? 'direction distribution' : `weighted by ${result.weight === 'amplitude' ? '|Δr|' : '|Δr|²'}`}
+                                {result.smoothing > 0 ? ` · smoothed ${result.smoothing}×` : ''}
+                                {result.browserOrientation ? ' · browser' : ' · server'}
+                            </span>
+                        </div>
+                    </>
+                )}
+            </div>
+        </>
     );
 }
