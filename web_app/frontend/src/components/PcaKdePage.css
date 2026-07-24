@@ -1080,11 +1080,16 @@
     border-bottom: 0;
 }
 
-/* Hover: a translucent dark overlay that slightly DIMS the pane (the sphere
-   stays visible through it), rather than a light/white wash. Uses the same dark
-   ink as the cell outlines so it reads as a dim, not a color cast. */
-.orient-multiview-zone:hover {
-    background: color-mix(in srgb, #10151c 14%, transparent);
+/* Hover: a translucent dark scrim that visibly DIMS the pane (the sphere stays
+   readable through it), so a hovered axis view recedes/darkens. Two things had
+   to be right here: (1) the extra `.orient-multiview` raises specificity above
+   the global `button:hover` rule (index.css), which otherwise paints an opaque
+   near-white `var(--panel-raised)`; (2) over the LIGHT panel background a weak
+   dark overlay (~16%) just greys toward white and reads as a light wash, so the
+   scrim must be strong enough (~38%) to actually darken. */
+.orient-multiview .orient-multiview-zone:hover {
+    background: color-mix(in srgb, #0b0f16 38%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 .orient-multiview-zone:focus-visible {
