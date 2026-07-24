@@ -90,7 +90,7 @@ export default function OrientationPage({ directory, localRun }) {
                                     Each reference site (an RMCProfile reference number) is one
                                     crystallographic position. Only the <em>directions</em> of its
                                     per-atom displacements are analysed here — the amplitude enters
-                                    solely through the optional weighting and the relief.
+                                    solely through the optional weighting and the amplitude height.
                                 </p>
                             </InfoBadge>
                         </span>
@@ -220,13 +220,14 @@ export default function OrientationPage({ directory, localRun }) {
                 <div className="control-group" role="group" aria-label="Appearance">
                     <label className="control">
                         <span className="control-name">
-                            Relief
-                            <InfoBadge label="About the amplitude relief">
+                            Amplitude height
+                            <InfoBadge label="About the amplitude height">
                                 <p>
-                                    Bulges the sphere radially by each cell's mean |Δr| relative to
-                                    the site average — directions where atoms move farther stick
-                                    out, shorter ones dent in. Color (how often) and shape (how far)
-                                    then carry independent information. 0% keeps a perfect sphere.
+                                    Raises the sphere surface radially by each cell's mean |Δr|
+                                    relative to the site average — directions where atoms move
+                                    farther stick out, shorter ones dent in, like a relief map.
+                                    Color (how often) and height (how far) then carry independent
+                                    information. 0% keeps a perfect sphere.
                                 </p>
                             </InfoBadge>
                         </span>
@@ -234,7 +235,7 @@ export default function OrientationPage({ directory, localRun }) {
                             type="range" min="0" max="1" step="0.05"
                             value={relief}
                             onChange={(event) => setRelief(Number(event.target.value))}
-                            aria-label="Amplitude relief strength"
+                            aria-label="Amplitude height"
                         />
                         <span className="control-value">{Math.round(relief * 100)}%</span>
                     </label>
@@ -252,7 +253,7 @@ export default function OrientationPage({ directory, localRun }) {
                                     Stretches the color scale about the isotropic level (1× = chance):
                                     higher values push cells away from the isotropic tone so faint
                                     lobes and depletions stand out, lower values flatten toward it.
-                                    The colorbar tracks the same transfer. Shape (relief) and
+                                    The colorbar tracks the same transfer. Surface height and
                                     significance are unaffected.
                                 </p>
                             </InfoBadge>
