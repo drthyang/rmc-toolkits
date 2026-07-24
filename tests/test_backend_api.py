@@ -303,6 +303,84 @@ class BackendApiTests(unittest.TestCase):
         self.assertTrue(payload["slabVertices"])
 
 
+class OrientationApiTests(unittest.TestCase):
+    """Displacement-direction histogram endpoint, on a synthetic one-site run.
+
+    The run dir lives under results/ so API paths stay inside the data root.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import numpy as np
+
+        backend_app.app.config.update(TESTING=True)
+        cls.client = backend_app.app.test_client()
+
+        cls.run_dir = ROOT / "results" / "orientation_api_test"
+        cls.run_dir.mkdir(parents=True, exist_ok=True)
+        rng = np.random.default_rng(2)
+        supercell = (6, 6, 6)
+        sigma = np.array([0.03, 0.01, 0.01])  # lobe along x
+        lines = [
+            "Supercell dimensions 6 6 6",
+            "Lattice vectors (Ang):",
+            "48.0 0.0 0.0",
+            "0.0 48.0 0.0",
+            "0.0 0.0 48.0",
+            "Atoms:",
+        ]
+        atom = 0
+        for ix in range(supercell[0]):
+            for iy in range(supercell[1]):
+                for iz in range(supercell[2]):
+                    atom += 1
+                    coord = np.array([ix, iy, iz]) / supercell + rng.normal(size=3) * sigma
+                    lines.append(
+                        f"{atom} Nb [1] {coord[0]:.10f} {coord[1]:.10f} {coord[2]:.10f} "
+                        f"1 {ix} {iy} {iz}"
+                    )
+        (cls.run_dir / "synthetic.rmc6f").write_text("\n".join(lines), encoding="utf-8")
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+
+        shutil.rmtree(cls.run_dir, ignore_errors=True)
+
+    def test_orientation_endpoint_returns_histogram(self):
+        response = self.client.get(
+            "/api/pca/orientation",
+            query_string={
+                "dir": "results/orientation_api_test",
+                "referenceNumber": 1,
+                "frequency": 4,
+                "geometry": "false",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["referenceNumber"], 1)
+        self.assertEqual(payload["element"], "Nb")
+        self.assertEqual(payload["cellCount"], 162)
+        self.assertEqual(payload["totalPoints"], 216)
+        self.assertEqual(len(payload["enhancement"]), 162)
+        self.assertNotIn("polygons", payload)
+        # The cloud was drawn 3x wider along x: the lobe must sit there.
+        self.assertGreater(abs(payload["peakDirection"][0]), 0.8)
+
+    def test_orientation_endpoint_rejects_bad_weight(self):
+        response = self.client.get(
+            "/api/pca/orientation",
+            query_string={
+                "dir": "results/orientation_api_test",
+                "referenceNumber": 1,
+                "weight": "nope",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+
+
 class ScalingApiTests(unittest.TestCase):
     """Auto StoG endpoints, driven by a synthetic classic-stog run.
 
