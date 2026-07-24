@@ -32,6 +32,12 @@ hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invis
   `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
   parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
   behavior, API + worker routing.
+- **Renamed the nav tab "Orientation" → "Displacement Directions"** (2026-07-24, same
+  branch): clearer, and the direct direction-counterpart to "PCA Ellipsoid" (amplitude /
+  shape). The internal route key stays `orientation`. Also: the Axis-views hover now
+  darkens with a real ~38% scrim (a weak dark overlay over the light panel just greyed
+  toward white, and the global `button:hover` had out-specified it), and the a/b/c
+  labels are larger.
 - **Orientation controls: contrast knob + defaults** (2026-07-24, same branch): new
   **Contrast** slider (0.5–3×) applies a symmetric color gain about the isotropic level
   (`colorCoordinate` in `orientationSphere.js`: `t = clamp(pivot + contrast·(v/vmax −
