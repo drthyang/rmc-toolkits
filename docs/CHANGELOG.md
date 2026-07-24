@@ -32,6 +32,17 @@ hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invis
   `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
   parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
   behavior, API + worker routing.
+- **Orientation controls: contrast knob + defaults** (2026-07-24, same branch): new
+  **Contrast** slider (0.5–3×) applies a symmetric color gain about the isotropic level
+  (`colorCoordinate` in `orientationSphere.js`: `t = clamp(pivot + contrast·(v/vmax −
+  pivot))`, `pivot = 1/vmax`), so faint lobes and depletions stand out; contrast = 1 is
+  exactly the old linear mapping (backward compatible), and `colorbarGradient` paints
+  each stop through the identical transfer so the bar and the sphere always agree
+  (unit-tested). Defaults changed to **ν = 10** (was Auto) and **2× smoothing** (was 0)
+  for a legible out-of-the-box map, and the smoothing slider now reaches **12×** (was 4).
+  The redundant "N cells (ν=…) / N vectors" summary line is removed (both are already in
+  the Resolution control and the panel header). Axis-views hover is now a translucent
+  accent tint + ring instead of a near-white wash.
 - **Orientation page — three-panel layout + PCA-page design parity** (2026-07-24, same
   branch): the page now matches the PCA Ellipsoid page's conventions — all options live
   in the top controls bar, and the header actions (Crystal|PCA frame toggle, Reset view,
