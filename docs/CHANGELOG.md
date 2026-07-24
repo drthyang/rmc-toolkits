@@ -32,6 +32,15 @@ hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invis
   `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
   parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
   behavior, API + worker routing.
+- **Orientation promoted to its own workspace page** (2026-07-24, same branch): the
+  histogram is not a PCA product, so the Density | Orientation tab coupling is gone —
+  `OrientationPage.jsx` is a top-level nav page with its own site picker, and the PCA
+  Ellipsoid page is back to its pre-tab layout. The shared plumbing (text loading,
+  worker/API routing, sites table, selected site) moved to the `useSiteCloud` hook with
+  one app-lifetime worker, so both pages share the parse cache. The sphere view gains
+  **three fixed-angle mini views** (down a/b/c, or PC1/2/3 in the PCA frame): one extra
+  scissored renderer re-rendered only on scene changes (static cameras, no per-frame
+  cost); clicking a mini snaps the main camera to that axis view.
 - **Amplitude relief** (2026-07-24, same branch): the engines report
   `cellMeanAmplitude` — the mean |Δr| of each cell's movers (smoothing applies to the
   numerator/denominator sums, not the ratio; empty cells report 0) — and the sphere gains

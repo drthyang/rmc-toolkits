@@ -45,7 +45,8 @@ web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,…) LRU c
 web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly
   colormaps.js                   colormap LUTs for the KDE canvas
-  orientationSphere.js           pure helpers for the orientation sphere (cell mesh/outline typed arrays, colorbar gradient) — unit-tested, no Three.js
+  orientationSphere.js           pure helpers for the orientation sphere (cell mesh/outline typed arrays, relief radii, colorbar gradient) — unit-tested, no Three.js
+  useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages)
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
   llm/                           experimental AI assistant — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini); see its README
     context/                     dashboard state → compact LLM context JSON (symmetry + per-site displacements, pair correlations, char budget)
@@ -61,8 +62,9 @@ web_app/frontend/src/
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
-    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, main panel with Density | Orientation tabs (Three.js isosurface + ellipsoid + wall projections, and the orientation sphere), clickable unit-cell structure
-    OrientationView.jsx          Orientation tab of the PCA Ellipsoid main panel: hex-binned sphere (Three.js flat-shaded cells), per-cell hover readout, colorbar + asymmetry/significance strip
+    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections + clickable unit-cell structure
+    OrientationPage.jsx          Orientation tab (own workspace page — not a PCA product): site picker + OrientationView
+    OrientationView.jsx          hex-binned orientation sphere (Three.js flat-shaded cells, amplitude relief), per-cell hover readout, fixed-angle a/b/c | PC1/2/3 mini views (click to snap), colorbar + asymmetry/significance strip
     FileExplorer.jsx             file navigation
   workers/
     localKdeWorker.js            static-mode KDE worker (GPU-or-CPU density map, contours, slab math)

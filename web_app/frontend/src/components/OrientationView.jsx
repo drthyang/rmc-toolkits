@@ -108,8 +108,26 @@ export default function OrientationView({
 
     const mountRef = useRef(null);
     const sceneRef = useRef(null);
+    // Fixed-angle mini views (down each of the three frame axes): one extra
+    // renderer with scissored viewports, re-rendered only when the scene
+    // changes — the cameras never move, so there is no per-frame cost.
+    const miniMountRef = useRef(null);
+    const miniRef = useRef(null);
     const resultRef = useRef(null);
     resultRef.current = result;
+
+    // The three axes the mini views (and their labels) follow: the site's own
+    // frame when the map is drawn in PCA coordinates (identity = PC1/2/3),
+    // otherwise the crystallographic a/b/c edges when the cell is known, with
+    // plain x/y/z as the fallback.
+    const miniAxes = useMemo(() => {
+        if (frame === 'pca' || !unitCell) {
+            return { axes: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], labels: frame === 'pca' ? ['PC1', 'PC2', 'PC3'] : ['x', 'y', 'z'], colors: frame === 'pca' ? PC_CSS_COLORS : ['#8a97a8', '#8a97a8', '#8a97a8'] };
+        }
+        return { axes: unitCell, labels: CELL_AXIS_LABELS, colors: CELL_AXIS_CSS };
+    }, [frame, unitCell]);
+    const miniAxesRef = useRef(miniAxes);
+    miniAxesRef.current = miniAxes;
 
     // --- Fetch the histogram whenever the site or an option changes. ----------
     useEffect(() => {
@@ -150,6 +168,61 @@ export default function OrientationView({
         load();
         return () => { cancelled = true; };
     }, [requestPca, ready, selectedRef, frequency, weight, frame, smoothing, minQuantile, clusterThreshold]);
+
+    // Render the three fixed-angle views into the scissored mini renderer. The
+    // cameras are static, so this runs only on scene rebuilds and resizes; it
+    // reads refs, never state, so one stable callback serves every caller.
+    const renderMinis = useCallback(() => {
+        const handle = sceneRef.current;
+        const mini = miniRef.current;
+        const mount = miniMountRef.current;
+        if (!handle || !mini || !mount) return;
+        const width = mount.clientWidth;
+        const height = mount.clientHeight;
+        if (!width || !height) return;
+        const { renderer, camera } = mini;
+        renderer.setSize(width, height);
+        const paneWidth = Math.floor(width / 3);
+        renderer.setScissorTest(true);
+        const { axes } = miniAxesRef.current;
+        // Screen-up convention matching the density page's snap views: down
+        // axis 1 or 2 the third axis points up, down axis 3 the second does.
+        const upIndex = [2, 2, 1];
+        for (let i = 0; i < 3; i += 1) {
+            const dir = new THREE.Vector3(axes[i][0], axes[i][1], axes[i][2]).normalize();
+            const up = new THREE.Vector3(axes[upIndex[i]][0], axes[upIndex[i]][1], axes[upIndex[i]][2]);
+            up.addScaledVector(dir, -up.dot(dir));   // Gram–Schmidt for oblique cells
+            if (up.lengthSq() < 1e-10) up.set(0, 1, 0);
+            camera.up.copy(up.normalize());
+            camera.position.copy(dir).multiplyScalar(3.1);
+            camera.aspect = paneWidth / height;
+            camera.updateProjectionMatrix();
+            camera.lookAt(0, 0, 0);
+            renderer.setViewport(i * paneWidth, 0, paneWidth, height);
+            renderer.setScissor(i * paneWidth, 0, paneWidth, height);
+            renderer.render(handle.scene, camera);
+        }
+        renderer.setScissorTest(false);
+    }, []);
+
+    // Snap the main camera to look down one of the frame axes (the same view a
+    // mini shows), keeping the sphere centred.
+    const snapMain = useCallback((axisIndex) => {
+        const handle = sceneRef.current;
+        if (!handle) return;
+        const { camera, controls } = handle;
+        const { axes } = miniAxesRef.current;
+        const upIndex = [2, 2, 1];
+        const dir = new THREE.Vector3(axes[axisIndex][0], axes[axisIndex][1], axes[axisIndex][2]).normalize();
+        const up = new THREE.Vector3(axes[upIndex[axisIndex]][0], axes[upIndex[axisIndex]][1], axes[upIndex[axisIndex]][2]);
+        up.addScaledVector(dir, -up.dot(dir));
+        if (up.lengthSq() < 1e-10) up.set(0, 1, 0);
+        controls.target.set(0, 0, 0);
+        camera.up.copy(up.normalize());
+        camera.position.copy(dir).multiplyScalar(3.05);
+        camera.updateProjectionMatrix();
+        controls.update();
+    }, []);
 
     // --- Three.js scene: build once. ------------------------------------------
     useEffect(() => {
@@ -220,6 +293,21 @@ export default function OrientationView({
 
         sceneRef.current = { scene, camera, renderer, controls, meshGroup, outlineGroup, axesGroup };
 
+        // Mini-view strip: its own small renderer (a second context) with three
+        // scissored viewports sharing the SAME scene; three.js uploads GPU
+        // resources per renderer, so cross-renderer scene sharing is safe.
+        const miniMount = miniMountRef.current;
+        let miniResizeObserver = null;
+        if (miniMount) {
+            const miniRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+            miniRenderer.setPixelRatio(window.devicePixelRatio || 1);
+            miniRenderer.domElement.className = 'orient-multiview-canvas';
+            miniMount.appendChild(miniRenderer.domElement);
+            miniRef.current = { renderer: miniRenderer, camera: new THREE.PerspectiveCamera(45, 1, 0.01, 100) };
+            miniResizeObserver = new ResizeObserver(() => renderMinis());
+            miniResizeObserver.observe(miniMount);
+        }
+
         return () => {
             cancelAnimationFrame(animationId);
             resizeObserver.disconnect();
@@ -242,8 +330,16 @@ export default function OrientationView({
             renderer.forceContextLoss();
             if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
             sceneRef.current = null;
+            miniResizeObserver?.disconnect();
+            const mini = miniRef.current;
+            if (mini) {
+                mini.renderer.dispose();
+                mini.renderer.forceContextLoss();
+                if (mini.renderer.domElement.parentNode === miniMount) miniMount.removeChild(mini.renderer.domElement);
+                miniRef.current = null;
+            }
         };
-    }, []);
+    }, [renderMinis]);
 
     // --- Rebuild the sphere mesh when the histogram or display options change. -
     useEffect(() => {
@@ -304,7 +400,10 @@ export default function OrientationView({
                 buildAxisRods(unitCell, CELL_AXIS_COLORS, 0.0045, 2.35).forEach((rod) => axesGroup.add(rod));
             }
         }
-    }, [result, colormap, relief, showOutline, showAxes, frame, unitCell]);
+
+        // The scene just changed; refresh the static fixed-angle mini views.
+        renderMinis();
+    }, [result, colormap, relief, showOutline, showAxes, frame, unitCell, renderMinis]);
 
     const resetView = useCallback(() => {
         const handle = sceneRef.current;
@@ -524,6 +623,25 @@ export default function OrientationView({
                         )}
                     </div>
                 )}
+            </div>
+
+            {/* Fixed-angle views down each frame axis (a/b/c, or PC1/2/3 in the
+                PCA frame). Click one to snap the main camera to that view. */}
+            <div className="orient-multiview" ref={miniMountRef}>
+                {[0, 1, 2].map((axisIndex) => (
+                    <button
+                        key={axisIndex}
+                        type="button"
+                        className="orient-multiview-zone"
+                        style={{ left: `${(axisIndex * 100) / 3}%` }}
+                        onClick={() => snapMain(axisIndex)}
+                        title={`Snap the main view to look down ${miniAxes.labels[axisIndex]}`}
+                    >
+                        <span className="orient-multiview-label" style={{ color: miniAxes.colors[axisIndex] }}>
+                            {miniAxes.labels[axisIndex]}
+                        </span>
+                    </button>
+                ))}
             </div>
 
             {result && (
