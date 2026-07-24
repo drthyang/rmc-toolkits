@@ -32,6 +32,15 @@ hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invis
   `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
   parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
   behavior, API + worker routing.
+- **UI: Orientation tab** in the PCA Ellipsoid main panel (`OrientationView.jsx` +
+  `orientationSphere.js` pure helpers, unit-tested), sharing the page's site picker.
+  Density | Orientation tabs in the panel header (the density canvas hides via CSS, never
+  unmounts — its once-mounted scene effect survives tab switches). Flat-shaded Goldberg
+  cells colored by enhancement, cell borders, PC1/2/3 + a/b/c axis rods, Crystal ↔ PCA
+  frame toggle, per-cell hover readout (direction, ×isotropic, count, z), colorbar with a
+  1× tick, and a summary strip: cells/ν, used vectors, peak (+z), orientation anisotropy,
+  ± asymmetry vs its Poisson floor (flagged red when > 3× floor), map significance.
+  Verified live in both runtimes (Flask `data/RMC`, browser Demo run).
 
 **Auto StoG tab hidden** (2026-07-23) — the page is not behaving correctly yet, so it is
 gated out of the UI while the work continues offline. `App.jsx` gains a `SHOW_AUTO_STOG`

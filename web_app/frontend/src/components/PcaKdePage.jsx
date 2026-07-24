@@ -12,6 +12,7 @@ import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { marchingCubes } from '../workers/marchingCubes';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
+import OrientationView from './OrientationView';
 import SaveMenu from './SaveMenu';
 import { unitCellVectors } from '../pcaCrystalFrame';
 import './PcaKdePage.css';
@@ -622,6 +623,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     // Which axis the camera is snapped to look down: { frame: 'pc' | 'cell', index }
     // or null (free / the default diagonal view). Drives the view-button highlight.
     const [snappedView, setSnappedView] = useState(null);
+    // Main-panel tab: 'density' (KDE volume + ellipsoid) or 'orientation' (the
+    // hex-binned sphere of displacement directions). The density canvas stays
+    // mounted (hidden) on the orientation tab so its once-mounted scene effect
+    // and camera state survive tab switches.
+    const [viewMode, setViewMode] = useState('density');
 
     const workerRef = useRef(null);
     const requestIdRef = useRef(0);
@@ -691,7 +697,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                 worker.postMessage({ id, kind, text: rmc6fText, ...params });
             });
         }
-        const endpoint = kind === 'sites' ? '/api/pca/sites' : '/api/pca/kde';
+        const endpoint = { sites: '/api/pca/sites', orientation: '/api/pca/orientation' }[kind] ?? '/api/pca/kde';
         return axios
             .get(`${API_BASE_URL}${endpoint}`, { params: { dir: directory || '.', ...params } })
             .then((response) => response.data);
@@ -1578,32 +1584,36 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             ))}
                         </select>
                     </label>
-                    <label className="control">
-                        <span className="control-name">Grid</span>
-                        <select value={grid} onChange={(event) => setGrid(Number(event.target.value))} aria-label="Grid size">
-                            {GRID_OPTIONS.map((value) => <option key={value} value={value}>{`${value}³`}</option>)}
-                        </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Bandwidth</span>
-                        <select value={bw} onChange={(event) => setBw(event.target.value)} aria-label="Bandwidth rule">
-                            {BW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Box</span>
-                        <input
-                            type="range" min="2" max="5" step="0.5"
-                            value={extent} onChange={(event) => setExtent(Number(event.target.value))}
-                            aria-label="Box half-width in sigma"
-                        />
-                        <span className="control-value">{extent.toFixed(1)}σ</span>
-                    </label>
-                    <label className="control switch">
-                        <span className="control-name">Projections</span>
-                        <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} aria-label="Show wall projections" />
-                        <i className="switch-track" aria-hidden="true" />
-                    </label>
+                    {viewMode === 'density' && (
+                        <>
+                            <label className="control">
+                                <span className="control-name">Grid</span>
+                                <select value={grid} onChange={(event) => setGrid(Number(event.target.value))} aria-label="Grid size">
+                                    {GRID_OPTIONS.map((value) => <option key={value} value={value}>{`${value}³`}</option>)}
+                                </select>
+                            </label>
+                            <label className="control">
+                                <span className="control-name">Bandwidth</span>
+                                <select value={bw} onChange={(event) => setBw(event.target.value)} aria-label="Bandwidth rule">
+                                    {BW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </select>
+                            </label>
+                            <label className="control">
+                                <span className="control-name">Box</span>
+                                <input
+                                    type="range" min="2" max="5" step="0.5"
+                                    value={extent} onChange={(event) => setExtent(Number(event.target.value))}
+                                    aria-label="Box half-width in sigma"
+                                />
+                                <span className="control-value">{extent.toFixed(1)}σ</span>
+                            </label>
+                            <label className="control switch">
+                                <span className="control-name">Projections</span>
+                                <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} aria-label="Show wall projections" />
+                                <i className="switch-track" aria-hidden="true" />
+                            </label>
+                        </>
+                    )}
                     {sites?.reconstructed && (
                         <label className="control">
                             <span className="control-name">
@@ -1631,6 +1641,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
 
                 {/* Ellipsoid — the wireframe reference and the KDE density painted on it
                     (two aspects of the same surface, so they share one control group). */}
+                {viewMode === 'density' && (
                 <div className="control-group" role="group" aria-label="Ellipsoid and density shell">
                     <label className="control switch">
                         <span className="control-name">Wireframe</span>
@@ -1724,8 +1735,10 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         <span className="control-value">{shellContrast.toFixed(1)}×</span>
                     </label>
                 </div>
+                )}
 
                 {/* Isosurface & wall projections — the volume density views (shared colormap) */}
+                {viewMode === 'density' && (
                 <div className="control-group" role="group" aria-label="Isosurface and wall projections">
                     <div className="control switch-with-info">
                         <span className="control-name">
@@ -1771,6 +1784,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         </select>
                     </label>
                 </div>
+                )}
 
             </div>
 
@@ -1791,52 +1805,84 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             {selectedEllipsoid && (
                                 <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
                             )}
-                            {/* Reference frame: switches the triad, wall projections, and camera-snap
-                                axes together (PC1/PC2/PC3 ↔ a/b/c). */}
-                            <div className="pca-frame-toggle" role="group" aria-label="Reference frame">
+                            {/* Main-panel tabs: the KDE density volume vs the hex-binned
+                                sphere of displacement directions. Both read the same site
+                                from the shared picker. */}
+                            <div className="pca-frame-toggle" role="group" aria-label="Main panel view">
                                 <button
                                     type="button"
-                                    className={axisFrame === 'pc' ? 'is-active' : ''}
-                                    onClick={() => selectFrame('pc')}
-                                    aria-pressed={axisFrame === 'pc'}
-                                    title="Principal-axis (PC) frame"
+                                    className={viewMode === 'density' ? 'is-active' : ''}
+                                    onClick={() => setViewMode('density')}
+                                    aria-pressed={viewMode === 'density'}
+                                    title="KDE density volume + thermal ellipsoid"
                                 >
-                                    PC
+                                    Density
                                 </button>
                                 <button
                                     type="button"
-                                    className={axisFrame === 'crystal' ? 'is-active' : ''}
-                                    onClick={() => selectFrame('crystal')}
-                                    aria-pressed={axisFrame === 'crystal'}
-                                    disabled={!unitCell}
-                                    title={unitCell ? 'Crystallographic a/b/c frame' : 'No unit-cell metadata available'}
+                                    className={viewMode === 'orientation' ? 'is-active' : ''}
+                                    onClick={() => setViewMode('orientation')}
+                                    aria-pressed={viewMode === 'orientation'}
+                                    title="Solid-angle distribution of displacement directions"
                                 >
-                                    Crystal
+                                    Orientation
                                 </button>
                             </div>
-                            <button
-                                type="button"
-                                className="pca-reset-view"
-                                onClick={resetMainView}
-                                disabled={!kde}
-                                title="Reset the camera to the default view"
-                            >
-                                <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                                    <path d="M3 3v5h5" />
-                                </svg>
-                                Reset view
-                            </button>
-                            <SaveMenu
-                                onSave={saveMainView}
-                                options={SAVE_OPTIONS}
-                                label="Save"
-                                align="right"
-                                disabled={!kde}
-                            />
+                            {viewMode === 'density' && (
+                                <>
+                                    {/* Reference frame: switches the triad, wall projections, and camera-snap
+                                        axes together (PC1/PC2/PC3 ↔ a/b/c). */}
+                                    <div className="pca-frame-toggle" role="group" aria-label="Reference frame">
+                                        <button
+                                            type="button"
+                                            className={axisFrame === 'pc' ? 'is-active' : ''}
+                                            onClick={() => selectFrame('pc')}
+                                            aria-pressed={axisFrame === 'pc'}
+                                            title="Principal-axis (PC) frame"
+                                        >
+                                            PC
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={axisFrame === 'crystal' ? 'is-active' : ''}
+                                            onClick={() => selectFrame('crystal')}
+                                            aria-pressed={axisFrame === 'crystal'}
+                                            disabled={!unitCell}
+                                            title={unitCell ? 'Crystallographic a/b/c frame' : 'No unit-cell metadata available'}
+                                        >
+                                            Crystal
+                                        </button>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="pca-reset-view"
+                                        onClick={resetMainView}
+                                        disabled={!kde}
+                                        title="Reset the camera to the default view"
+                                    >
+                                        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                            <path d="M3 3v5h5" />
+                                        </svg>
+                                        Reset view
+                                    </button>
+                                    <SaveMenu
+                                        onSave={saveMainView}
+                                        options={SAVE_OPTIONS}
+                                        label="Save"
+                                        align="right"
+                                        disabled={!kde}
+                                    />
+                                </>
+                            )}
                         </span>
                     </h3>
-                    <div className="pca-canvas" ref={mountRef}>
+                    {/* The density canvas is hidden (not unmounted) on the orientation tab:
+                        its Three.js scene is created by a once-mounted effect, and the
+                        AGENTS gotcha applies — a conditionally-rendered mount would leave
+                        that effect pointing at nothing. display:none keeps the scene and
+                        camera state alive; the ResizeObserver refits it on return. */}
+                    <div className="pca-canvas" ref={mountRef} style={viewMode === 'density' ? undefined : { display: 'none' }}>
                         {(loadingKde || loadingSites) && <div className="pca-badge">Computing…</div>}
                         {kdeError && <div className="pca-badge is-error">{kdeError}</div>}
                         {kde && (
@@ -1890,33 +1936,45 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             </>
                         )}
                     </div>
-                    <div className="pca-legend">
-                        {axisFrame === 'crystal' ? (
-                            <span className="pca-legend-item pca-legend-cellaxes">
-                                {CELL_AXIS_LABELS.map((label, i) => (
-                                    <span key={label} className="pca-legend-cellaxis">
-                                        <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
-                                    </span>
-                                ))}
-                                <span className="pca-legend-note">crystal axes</span>
-                            </span>
-                        ) : (
-                            <>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
-                            </>
-                        )}
-                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
-                        <a
-                            className="pca-legend-credit"
-                            href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            Analysis after Maksim Eremenko&rsquo;s PCA_KDE
-                        </a>
-                    </div>
+                    {viewMode === 'density' && (
+                        <div className="pca-legend">
+                            {axisFrame === 'crystal' ? (
+                                <span className="pca-legend-item pca-legend-cellaxes">
+                                    {CELL_AXIS_LABELS.map((label, i) => (
+                                        <span key={label} className="pca-legend-cellaxis">
+                                            <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
+                                        </span>
+                                    ))}
+                                    <span className="pca-legend-note">crystal axes</span>
+                                </span>
+                            ) : (
+                                <>
+                                    <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
+                                    <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
+                                    <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
+                                </>
+                            )}
+                            <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                            <a
+                                className="pca-legend-credit"
+                                href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                Analysis after Maksim Eremenko&rsquo;s PCA_KDE
+                            </a>
+                        </div>
+                    )}
+                    {viewMode === 'orientation' && (
+                        <OrientationView
+                            requestPca={requestPca}
+                            ready={!localFile || Boolean(rmc6fText)}
+                            selectedRef={selectedRef}
+                            selectedEllipsoid={selectedEllipsoid}
+                            clusterThreshold={clusterThreshold}
+                            unitCell={unitCell}
+                        />
+                    )}
                 </div>
 
                 <div className="pca-side">
