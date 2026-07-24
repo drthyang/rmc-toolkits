@@ -182,7 +182,9 @@ export default function OrientationView({
         if (!width || !height) return;
         const { renderer, camera } = mini;
         renderer.setSize(width, height);
-        const paneWidth = Math.floor(width / 3);
+        // Panes stack vertically (axis 0 on top). WebGL viewport y runs from
+        // the bottom, so pane i sits at y = height - (i + 1) * paneHeight.
+        const paneHeight = Math.floor(height / 3);
         renderer.setScissorTest(true);
         const { axes } = miniAxesRef.current;
         // Screen-up convention matching the density page's snap views: down
@@ -194,12 +196,13 @@ export default function OrientationView({
             up.addScaledVector(dir, -up.dot(dir));   // Gram–Schmidt for oblique cells
             if (up.lengthSq() < 1e-10) up.set(0, 1, 0);
             camera.up.copy(up.normalize());
-            camera.position.copy(dir).multiplyScalar(3.1);
-            camera.aspect = paneWidth / height;
+            camera.position.copy(dir).multiplyScalar(3.6);
+            camera.aspect = width / paneHeight;
             camera.updateProjectionMatrix();
             camera.lookAt(0, 0, 0);
-            renderer.setViewport(i * paneWidth, 0, paneWidth, height);
-            renderer.setScissor(i * paneWidth, 0, paneWidth, height);
+            const y = height - (i + 1) * paneHeight;
+            renderer.setViewport(0, y, width, paneHeight);
+            renderer.setScissor(0, y, width, paneHeight);
             renderer.render(handle.scene, camera);
         }
         renderer.setScissorTest(false);
@@ -567,7 +570,27 @@ export default function OrientationView({
                 </div>
             </div>
 
-            <div className="pca-canvas orient-canvas" ref={mountRef}>
+            <div className="orient-body">
+                {/* Fixed-angle views down each frame axis (a/b/c, or PC1/2/3 in
+                    the PCA frame), stacked left of the main view. Click one to
+                    snap the main camera to that angle. */}
+                <div className="orient-multiview" ref={miniMountRef}>
+                    {[0, 1, 2].map((axisIndex) => (
+                        <button
+                            key={axisIndex}
+                            type="button"
+                            className="orient-multiview-zone"
+                            style={{ top: `${(axisIndex * 100) / 3}%` }}
+                            onClick={() => snapMain(axisIndex)}
+                            title={`Snap the main view to look down ${miniAxes.labels[axisIndex]}`}
+                        >
+                            <span className="orient-multiview-label" style={{ color: miniAxes.colors[axisIndex] }}>
+                                {miniAxes.labels[axisIndex]}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+                <div className="pca-canvas orient-canvas" ref={mountRef}>
                 {loading && <div className="pca-badge">Computing…</div>}
                 {error && <div className="pca-badge is-error">{error}</div>}
                 <div className="pca-view-controls pca-view-controls--left">
@@ -623,25 +646,7 @@ export default function OrientationView({
                         )}
                     </div>
                 )}
-            </div>
-
-            {/* Fixed-angle views down each frame axis (a/b/c, or PC1/2/3 in the
-                PCA frame). Click one to snap the main camera to that view. */}
-            <div className="orient-multiview" ref={miniMountRef}>
-                {[0, 1, 2].map((axisIndex) => (
-                    <button
-                        key={axisIndex}
-                        type="button"
-                        className="orient-multiview-zone"
-                        style={{ left: `${(axisIndex * 100) / 3}%` }}
-                        onClick={() => snapMain(axisIndex)}
-                        title={`Snap the main view to look down ${miniAxes.labels[axisIndex]}`}
-                    >
-                        <span className="orient-multiview-label" style={{ color: miniAxes.colors[axisIndex] }}>
-                            {miniAxes.labels[axisIndex]}
-                        </span>
-                    </button>
-                ))}
+                </div>
             </div>
 
             {result && (

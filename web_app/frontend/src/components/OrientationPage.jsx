@@ -7,10 +7,12 @@
 // page; the two share only the site picker, provided by the useSiteCloud hook
 // (same data plumbing, same worker parse cache).
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { isStaticMode } from '../browserData';
+import { buildElementColors } from '../atomColors';
 import InfoBadge from './InfoBadge';
 import OrientationView from './OrientationView';
+import SiteStructurePanel from './SiteStructurePanel';
 import useSiteCloud from '../useSiteCloud';
 import './PcaKdePage.css';
 
@@ -39,6 +41,11 @@ export default function OrientationPage({ directory, localRun }) {
 
     const staticMode = isStaticMode();
     const noRun = staticMode && !localFile;
+
+    const elementColors = useMemo(
+        () => buildElementColors(sites?.elements ?? []),
+        [sites]
+    );
 
     return (
         <div className="pca-page">
@@ -99,27 +106,38 @@ export default function OrientationPage({ directory, localRun }) {
             )}
             {sitesError && <p className="pca-error-banner">{sitesError}</p>}
 
-            <div className="pca-panel pca-viewport orient-page-panel">
-                <h3>
-                    <span className="panel-title-label">
-                        {selectedEllipsoid
-                            ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber} — displacement directions`
-                            : 'Displacement directions'}
-                    </span>
-                    <span className="panel-title-actions">
-                        {selectedEllipsoid && (
-                            <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
-                        )}
-                        {loadingSites && <span className="panel-title-count">Loading sites…</span>}
-                    </span>
-                </h3>
-                <OrientationView
-                    requestPca={requestPca}
-                    ready={ready}
+            {/* 16:9 layout: the sphere (with its mini-view column) fills the wide
+                left cell; the clickable Site-ellipsoids picker sits to the right. */}
+            <div className="orient-page-layout">
+                <div className="pca-panel pca-viewport orient-page-panel">
+                    <h3>
+                        <span className="panel-title-label">
+                            {selectedEllipsoid
+                                ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber} — displacement directions`
+                                : 'Displacement directions'}
+                        </span>
+                        <span className="panel-title-actions">
+                            {selectedEllipsoid && (
+                                <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
+                            )}
+                            {loadingSites && <span className="panel-title-count">Loading sites…</span>}
+                        </span>
+                    </h3>
+                    <OrientationView
+                        requestPca={requestPca}
+                        ready={ready}
+                        selectedRef={selectedRef}
+                        selectedEllipsoid={selectedEllipsoid}
+                        clusterThreshold={clusterThreshold}
+                        unitCell={unitCell}
+                    />
+                </div>
+                <SiteStructurePanel
+                    sites={sites}
                     selectedRef={selectedRef}
+                    onSelectSite={setSelectedRef}
                     selectedEllipsoid={selectedEllipsoid}
-                    clusterThreshold={clusterThreshold}
-                    unitCell={unitCell}
+                    elementColors={elementColors}
                 />
             </div>
 

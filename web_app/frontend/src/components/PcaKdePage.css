@@ -1026,19 +1026,38 @@
     flex-direction: column;
 }
 
+/* The sphere row: fixed-angle mini views stacked in a column on the left,
+   the main canvas filling the rest. Height is bounded so the whole page —
+   site bar, controls, sphere, readouts — fits a 16:9 monitor without
+   scrolling; the viewport-based clamp tracks the window. */
+.orient-body {
+    display: flex;
+    /* Self-sized (no grow/shrink): the row's height comes from the viewport
+       clamp alone, so a zero-height flex ancestor can never collapse it and
+       the panel simply grows around it. */
+    flex: none;
+    height: clamp(20rem, calc(100vh - 30.5rem), 44rem);
+}
+
 /* Fixed-angle mini views (down a/b/c or PC1/2/3): one scissored canvas with
-   three click-to-snap zones overlaid, one per third. */
+   three click-to-snap zones stacked vertically, one per third. */
 .orient-multiview {
     position: relative;
-    /* All children are absolutely positioned (zero min-content height), so
-       without flex:none the column layout would shrink this strip away. */
+    /* All children are absolutely positioned (zero min-content size), so
+       without flex:none the row layout would shrink this column away. */
     flex: none;
-    height: 7.5rem;
-    border-top: 1px solid var(--border);
+    width: 9.5rem;
+    border-right: 1px solid var(--border);
     background:
         radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
         var(--canvas-bg);
     overflow: hidden;
+}
+
+.orient-canvas {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
 }
 
 .orient-multiview-canvas {
@@ -1053,12 +1072,12 @@
 .orient-multiview-zone {
     position: absolute;
     z-index: 1;
-    top: 0;
-    bottom: 0;
-    width: 33.334%;
+    left: 0;
+    right: 0;
+    height: 33.334%;
     padding: 0.35rem 0.5rem;
     border: 0;
-    border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
     background: transparent;
     cursor: pointer;
     display: flex;
@@ -1067,7 +1086,7 @@
 }
 
 .orient-multiview-zone:last-child {
-    border-right: 0;
+    border-bottom: 0;
 }
 
 .orient-multiview-zone:hover {
@@ -1084,4 +1103,43 @@
     font-weight: 700;
     font-family: var(--font-mono);
     text-shadow: 0 0 4px var(--canvas-bg);
+}
+
+/* Orientation page grid: sphere panel wide left, site picker right. The
+   unitcell panel's grid-area (named for the PCA page's layout) is neutralized
+   here so it auto-places into the second column. */
+.orient-page-layout {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
+    gap: 0.85rem;
+    align-items: stretch;
+}
+
+.orient-page-layout .pca-viewport,
+.orient-page-layout .pca-unitcell-panel {
+    /* Both panels carry named grid-areas for the PCA page's layout; here they
+       auto-place (DOM order): sphere left, site picker right. */
+    grid-area: auto;
+}
+
+/* The picker canvas fills the panel next to the (height-bounded) sphere. */
+.orient-page-layout .pca-structure {
+    flex: 1 1 auto;
+    min-height: 16rem;
+}
+
+@media (max-width: 1100px) {
+    .orient-page-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .orient-body {
+        height: clamp(18rem, 55vh, 30rem);
+    }
+
+    .orient-multiview {
+        width: 7rem;
+    }
 }
