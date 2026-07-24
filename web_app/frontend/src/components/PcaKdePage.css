@@ -1080,12 +1080,11 @@
     border-bottom: 0;
 }
 
-/* Hover: a translucent accent tint (the sphere stays visible through it) plus
-   an inset ring for affordance — not the near-white wash a low-alpha fill reads
-   as over the light canvas. */
+/* Hover: a translucent dark overlay that slightly DIMS the pane (the sphere
+   stays visible through it), rather than a light/white wash. Uses the same dark
+   ink as the cell outlines so it reads as a dim, not a color cast. */
 .orient-multiview-zone:hover {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, #10151c 14%, transparent);
 }
 
 .orient-multiview-zone:focus-visible {
@@ -1094,10 +1093,10 @@
 }
 
 .orient-multiview-label {
-    font-size: 0.72rem;
+    font-size: 1rem;
     font-weight: 700;
     font-family: var(--font-mono);
-    text-shadow: 0 0 4px var(--canvas-bg);
+    text-shadow: 0 0 4px var(--canvas-bg), 0 0 4px var(--canvas-bg);
 }
 
 /* Below the three-up width, stack: sphere first (tall), then site picker, then
