@@ -5,6 +5,113 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Displacement-orientation engine (hex-binned sphere)** (2026-07-24) — new engine for the
+distribution of displacement *directions* per site: `u = Δr/|Δr|` binned in solid angle on
+a Goldberg polyhedron (the dual of a frequency-ν geodesic icosahedron — hexagons plus the
+12 pentagons any hexagonal tiling of a sphere must carry; 10ν²+2 cells), each cell's count
+divided by its exactly-computed solid angle. Complements the ellipsoid view: discrete
+hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invisible in U.
+
+- `rmc_toolkits/orientation.py` (source of truth) + `workers/orientation.js` (static-mode
+  port, keep in sync): tiling construction with derived (not hard-coded) icosahedron faces
+  and combinatorial-key merging, O(1) direction→cell lookup (gnomonic seed + greedy walk,
+  brute-force-verified), exact centrosymmetric antipode map.
+- Histogram options: auto resolution via `recommended_frequency` (over-binning guard,
+  ~12 pts/cell), weights `count | amplitude | amplitude2` (the latter's angular map is the
+  decomposition of ⟨u²⟩), amplitude cutoffs (absolute + quantile — near-zero |Δr| has
+  noise for a direction), mass-conserving neighbour smoothing, `cartesian | pca` frame
+  (PCA axes shared with the ellipsoid engine via the same canonicalization). The map is
+  deliberately never antipodally folded: the +u/−u imbalance is the signal.
+- Outputs: `enhancement = 4π·density` (1 = isotropic, reads as "N× more likely than
+  chance"), per-cell Poisson `zScore` vs the isotropic null (smoothing never feeds the
+  z), `antipodalAsymmetry` = Σ_pairs|n(u)−n(−u)|/N with its Poisson noise floor
+  `antipodalAsymmetryNull` (inversion asymmetry U is blind to), orientation tensor
+  ⟨u uᵀ⟩ + eigenvalues + `orientationAnisotropy` (3λ₁−1), cell polygons for rendering.
+- Wiring: `/api/pca/orientation` (Flask), `{kind: 'orientation'}` in `pcaKdeWorker.js`,
+  package exports. Tests: `tests/test_orientation.py` and
+  `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
+  parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
+  behavior, API + worker routing.
+- **Renamed the nav tab "Orientation" → "Displacement Directions"** (2026-07-24, same
+  branch): clearer, and the direct direction-counterpart to "PCA Ellipsoid" (amplitude /
+  shape). The internal route key stays `orientation`. Also: the Axis-views hover now
+  darkens with a real ~38% scrim (a weak dark overlay over the light panel just greyed
+  toward white, and the global `button:hover` had out-specified it), and the a/b/c
+  labels are larger.
+- **Orientation controls: contrast knob + defaults** (2026-07-24, same branch): new
+  **Contrast** slider (0.5–3×) applies a symmetric color gain about the isotropic level
+  (`colorCoordinate` in `orientationSphere.js`: `t = clamp(pivot + contrast·(v/vmax −
+  pivot))`, `pivot = 1/vmax`), so faint lobes and depletions stand out; contrast = 1 is
+  exactly the old linear mapping (backward compatible), and `colorbarGradient` paints
+  each stop through the identical transfer so the bar and the sphere always agree
+  (unit-tested). Defaults changed to **ν = 10** (was Auto) and **2× smoothing** (was 0)
+  for a legible out-of-the-box map, and the smoothing slider now reaches **12×** (was 4).
+  The redundant "N cells (ν=…) / N vectors" summary line is removed (both are already in
+  the Resolution control and the panel header). Axis-views hover is now a translucent
+  accent tint + ring instead of a near-white wash.
+- **Orientation page — three-panel layout + PCA-page design parity** (2026-07-24, same
+  branch): the page now matches the PCA Ellipsoid page's conventions — all options live
+  in the top controls bar, and the header actions (Crystal|PCA frame toggle, Reset view,
+  Save) sit in each panel's own header. Three equal-height panels in one grid at
+  **3 : 6.5 : 6.5** — Axis views (the fixed-angle mini column, now its own panel) :
+  sphere : site picker; `OrientationView` renders `display:contents` so its two panels
+  drop straight into the grid. Panel height is viewport-clamped
+  (`calc(100vh − 17.75rem)`) so the three fill a 16:9 screen down to the footer with zero
+  scroll (verified 1600×900). The mini views zoom out (camera pushed to 5.6×) so a
+  fully-inflated relief surface never clips the pane edges, and the main sphere's default
+  view is pulled back too. The axis rods now show **only the selected coordinate frame**
+  (a/b/c in Crystal, PC1/2/3 in PCA) — the mini views, main sphere, and legend all show
+  one system at a time instead of overlaying both.
+- **Orientation page 16:9 layout + shared site picker** (2026-07-24, same branch): the
+  clickable Site-ellipsoids unit-cell picker is extracted from PcaKdePage into
+  `SiteStructurePanel.jsx` (axis palettes/builders into `sceneAxes.js`) and now sits on
+  the Orientation page too — sphere panel wide left, picker right
+  (`.orient-page-layout` grid; the panels' named grid-areas from the PCA layout are
+  neutralized there). The fixed-angle mini views moved from a bottom row to a **column
+  left of the sphere** (scissor panes stacked vertically; WebGL y counts from the
+  bottom). The sphere row height is viewport-clamped (`calc(100vh − 30.5rem)`, self-sized
+  `flex: none` so a zero-height flex ancestor can't collapse it) — on a 16:9 monitor the
+  whole page (site bar, controls, sphere + minis + picker, readouts, footer) fits with
+  zero scroll, verified at 1600×900.
+- **Orientation promoted to its own workspace page** (2026-07-24, same branch): the
+  histogram is not a PCA product, so the Density | Orientation tab coupling is gone —
+  `OrientationPage.jsx` is a top-level nav page with its own site picker, and the PCA
+  Ellipsoid page is back to its pre-tab layout. The shared plumbing (text loading,
+  worker/API routing, sites table, selected site) moved to the `useSiteCloud` hook with
+  one app-lifetime worker, so both pages share the parse cache. The sphere view gains
+  **three fixed-angle mini views** (down a/b/c, or PC1/2/3 in the PCA frame): one extra
+  scissored renderer re-rendered only on scene changes (static cameras, no per-frame
+  cost); clicking a mini snaps the main camera to that axis view.
+- **Amplitude relief** (2026-07-24, same branch): the engines report
+  `cellMeanAmplitude` — the mean |Δr| of each cell's movers (smoothing applies to the
+  numerator/denominator sums, not the ratio; empty cells report 0) — and the sphere gains
+  a **Relief** slider that bulges each cell radially by its mean |Δr| relative to the
+  site average. Color (how often) and shape (how far) carry independent information.
+  Shared polygon vertices average their cells' factors so the relief surface is
+  crack-free (unit-tested); cell borders follow the surface; the hover readout adds
+  ⟨|Δr|⟩.
+- **Adversarial review pass** (multi-agent, 2026-07-24) — confirmed findings fixed:
+  auto-resolution rounding divergence (Python `round()` is half-to-even, JS used
+  `Math.round` half-up — at exactly 774 surviving points the two engines picked
+  different tilings; JS now rounds half-to-even and both suites pin
+  `recommendedFrequency(774) == 2`); stale hover index could crash the tooltip when a
+  resolution change shrank the tiling (hover now resets with each result + bounds
+  check); OrientationView unmount leaked its geometries and a WebGL context per tab
+  switch (groups disposed + `forceContextLoss` in the scene cleanup); the
+  density-integrates-to-one tests were circular (areas cancel by construction) and are
+  replaced by a Monte-Carlo cross-check that assignment Voronoi fractions × 4π
+  reproduce the analytic polygon areas. Greedy-walk assignment verified exact against
+  brute force at ν = 24/40/64 (0/20000 mismatches, all centers self-assign).
+- **UI: Orientation tab** in the PCA Ellipsoid main panel (`OrientationView.jsx` +
+  `orientationSphere.js` pure helpers, unit-tested), sharing the page's site picker.
+  Density | Orientation tabs in the panel header (the density canvas hides via CSS, never
+  unmounts — its once-mounted scene effect survives tab switches). Flat-shaded Goldberg
+  cells colored by enhancement, cell borders, PC1/2/3 + a/b/c axis rods, Crystal ↔ PCA
+  frame toggle, per-cell hover readout (direction, ×isotropic, count, z), colorbar with a
+  1× tick, and a summary strip: cells/ν, used vectors, peak (+z), orientation anisotropy,
+  ± asymmetry vs its Poisson floor (flagged red when > 3× floor), map significance.
+  Verified live in both runtimes (Flask `data/RMC`, browser Demo run).
+
 **Auto StoG tab hidden** (2026-07-23) — the page is not behaving correctly yet, so it is
 gated out of the UI while the work continues offline. `App.jsx` gains a `SHOW_AUTO_STOG`
 constant (currently `false`) guarding the nav button and the page mount; with it off the

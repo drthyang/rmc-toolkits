@@ -912,3 +912,218 @@
         padding: 0.9rem;
     }
 }
+
+/* --- Orientation sphere tab ------------------------------------------------ */
+
+/* ── Orientation page ──────────────────────────────────────────────────────── */
+/* Three equal-height panels in one row: axis views : sphere : site picker =
+   3 : 6.5 : 6.5. Height-bounded so the whole page (top controls, panels,
+   footer) fits a 16:9 monitor without scrolling; the clamp tracks the window. */
+.orient-layout {
+    /* Self-sized (not flex:1): the height clamp is authoritative, so a
+       flex-grow can't stretch the row past what fits and cause page scroll. */
+    flex: none;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 6.5fr) minmax(0, 6.5fr);
+    gap: 0.85rem;
+    align-items: stretch;
+    /* Fill the page height below the top controls bar: the subtracted amount is
+       header + controls + footer + padding, so the three panels reach nearly to
+       the footer on a 16:9 screen without introducing page scroll. */
+    height: clamp(20rem, calc(100vh - 17.75rem), 60rem);
+}
+
+/* OrientationView renders with display:contents, so its two panels (the mini
+   column and the sphere) drop straight into the grid; the site picker's named
+   grid-area from the PCA layout is neutralized so it takes the third column. */
+.orient-mini-panel,
+.orient-main-panel,
+.orient-layout .pca-unitcell-panel {
+    grid-area: auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.orient-main-panel .orient-canvas {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.orient-layout .pca-structure {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Per-cell hover readout following the pointer. */
+.orient-tooltip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    padding: 0.35rem 0.55rem;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--canvas-bg) 90%, transparent);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-xs);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    line-height: 1.5;
+    color: var(--text-strong);
+    white-space: nowrap;
+}
+
+/* Colorbar strip: 0 -> vmax enhancement, with a tick at 1x (isotropic). */
+.orient-colorbar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.9rem 0.1rem;
+    background: var(--panel-bg);
+    border-top: 1px solid var(--border);
+}
+
+.orient-colorbar {
+    position: relative;
+    flex: 1 1 auto;
+    height: 0.6rem;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+}
+
+.orient-colorbar-marker {
+    position: absolute;
+    top: -0.15rem;
+    bottom: -0.15rem;
+    width: 2px;
+    background: var(--text-strong);
+    opacity: 0.8;
+}
+
+.orient-colorbar-label {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+/* Summary readouts: cells, used vectors, peak, anisotropy, asymmetry, significance. */
+.orient-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 1.1rem;
+    padding: 0.45rem 0.9rem;
+    background: var(--panel-bg);
+    font-size: 0.76rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.orient-stat b {
+    color: var(--text-strong);
+    font-weight: 650;
+}
+
+.orient-stat-null {
+    color: var(--subtle);
+}
+
+/* A significant +u/-u imbalance is the headline finding of this view. */
+.orient-stat.is-flagged {
+    color: var(--danger);
+}
+
+.orient-stat.is-flagged b {
+    color: var(--danger);
+}
+
+/* Axis-views mini panel: three fixed-angle views stacked vertically, one
+   scissored canvas with a click-to-snap zone over each third. */
+.orient-multiview {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    background:
+        radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
+        var(--canvas-bg);
+    overflow: hidden;
+    border-radius: 0 0 12px 12px;
+}
+
+.orient-multiview-canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    /* The renderer canvas is appended after the zone buttons; keep it below
+       them so the labels stay visible and clicks reach the snap zones. */
+    z-index: 0;
+}
+
+.orient-multiview-zone {
+    position: absolute;
+    z-index: 1;
+    left: 0;
+    right: 0;
+    height: 33.334%;
+    padding: 0.35rem 0.5rem;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+}
+
+.orient-multiview-zone:last-child {
+    border-bottom: 0;
+}
+
+/* Hover: a translucent dark scrim that visibly DIMS the pane (the sphere stays
+   readable through it), so a hovered axis view recedes/darkens. Two things had
+   to be right here: (1) the extra `.orient-multiview` raises specificity above
+   the global `button:hover` rule (index.css), which otherwise paints an opaque
+   near-white `var(--panel-raised)`; (2) over the LIGHT panel background a weak
+   dark overlay (~16%) just greys toward white and reads as a light wash, so the
+   scrim must be strong enough (~38%) to actually darken. */
+.orient-multiview .orient-multiview-zone:hover {
+    background: color-mix(in srgb, #0b0f16 38%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.orient-multiview-zone:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring) inset;
+}
+
+.orient-multiview-label {
+    font-size: 1rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    text-shadow: 0 0 4px var(--canvas-bg), 0 0 4px var(--canvas-bg);
+}
+
+/* Below the three-up width, stack: sphere first (tall), then site picker, then
+   the axis views as a short row-height panel. */
+@media (max-width: 1200px) {
+    .orient-layout {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
+    .orient-mini-panel {
+        order: 3;
+        height: 12rem;
+    }
+
+    .orient-main-panel {
+        order: 1;
+        height: clamp(20rem, 55vh, 34rem);
+    }
+
+    .orient-layout .pca-unitcell-panel {
+        order: 2;
+        height: clamp(18rem, 45vh, 30rem);
+    }
+}

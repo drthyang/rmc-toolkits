@@ -3,11 +3,13 @@
 
 // Static-mode worker for the PCA / thermal-ellipsoid KDE. It parses the loaded
 // `.rmc6f` file into per-site displacement clouds once (cached by content), then
-// answers two request kinds off the main thread:
+// answers three request kinds off the main thread:
 //   { kind: 'sites' }  -> anisotropic displacement tensors for every site
 //   { kind: 'kde', referenceNumber | element, ...options } -> one PCA-KDE volume
-// mirroring the Flask /api/pca/sites and /api/pca/kde endpoints so both runtime
-// modes present the identical shape to the UI.
+//   { kind: 'orientation', referenceNumber | element, ...options } -> hex-binned
+//     solid-angle histogram of the displacement directions
+// mirroring the Flask /api/pca/sites, /api/pca/kde and /api/pca/orientation
+// endpoints so both runtime modes present the identical shape to the UI.
 
 import {
     DEFAULT_CLUSTER_THRESHOLD,
@@ -15,6 +17,7 @@ import {
     siteEllipsoids,
     sitePcaKde
 } from './pcaKde.js';
+import { siteOrientationHistogram } from './orientation.js';
 
 // Parsing the whole configuration into clouds is the expensive part, so cache it
 // and re-parse only when the .rmc6f text itself changes. The key MUST come from
@@ -67,6 +70,20 @@ export const handlePcaMessage = async (data, getText) => {
 
     if (kind === 'sites') {
         return summarizeSites(parsed, probability);
+    }
+
+    if (kind === 'orientation') {
+        return siteOrientationHistogram(parsed, {
+            referenceNumber: data.referenceNumber ?? null,
+            element: data.element ?? null,
+            frequency: data.frequency ?? null,
+            weight: data.weight ?? 'count',
+            minAmplitude: data.minAmplitude ?? 0,
+            minAmplitudeQuantile: data.minAmplitudeQuantile ?? 0,
+            smoothing: data.smoothing ?? 0,
+            frame: data.frame ?? 'cartesian',
+            geometry: data.geometry ?? true
+        });
     }
 
     return sitePcaKde(parsed, {

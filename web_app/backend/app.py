@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 FRONTEND_DIST = PROJECT_ROOT / "web_app" / "frontend" / "dist"
 
 from rmc_toolkits.kde import UnitCellPositions, load_unit_cell_positions, oriented_kde_slice
+from rmc_toolkits.orientation import site_orientation_histogram
 from rmc_toolkits.pca_kde import (
     SiteDisplacements,
     cached_site_displacements,
@@ -612,6 +613,49 @@ def pca_kde_endpoint():
             cubic_box=request.args.get("cubicBox", "false").lower() in ("1", "true", "yes"),
             probability=float(request.args.get("probability", 0.5)),
             projections=request.args.get("projections", "true").lower() in ("1", "true", "yes"),
+        )
+        result["source"] = str(rmc6f_path)
+        return jsonify(result)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/pca/orientation", methods=["GET"])
+def pca_orientation_endpoint():
+    """Hex-binned solid-angle histogram of one site's displacement directions.
+
+    Same site selection as /api/pca/kde (referenceNumber, or element for pooled
+    sites); the binning and output are documented in rmc_toolkits.orientation.
+    """
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+        sites = _cached_site_displacements(rmc6f_path)
+
+        reference_raw = request.args.get("referenceNumber")
+        reference_number = int(reference_raw) if reference_raw not in (None, "") else None
+        element = request.args.get("element") or None
+        if element in ("", "all"):
+            element = None
+
+        frequency_raw = request.args.get("frequency")
+        result = site_orientation_histogram(
+            sites,
+            reference_number=reference_number,
+            element=element,
+            frequency=int(frequency_raw) if frequency_raw not in (None, "") else None,
+            weight=request.args.get("weight", "count"),
+            min_amplitude=float(request.args.get("minAmplitude", 0.0)),
+            min_amplitude_quantile=float(request.args.get("minAmplitudeQuantile", 0.0)),
+            smoothing=int(request.args.get("smoothing", 0)),
+            frame=request.args.get("frame", "cartesian"),
+            geometry=request.args.get("geometry", "true").lower() in ("1", "true", "yes"),
         )
         result["source"] = str(rmc6f_path)
         return jsonify(result)

@@ -1,0 +1,631 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
+// Displacement-orientation sphere: the solid-angle histogram of a site's
+// displacement directions (u = Δr/|Δr|), hex-binned on a Goldberg tiling and
+// color-mapped on the unit sphere. The engine lives in workers/orientation.js
+// (browser) and /api/pca/orientation (Flask); this component fetches, renders,
+// and reads out. Options are owned by the host page (OrientationPage) and
+// arrive as props, following the PCA page's design logic: controls in the
+// page's top bar, panel actions (frame toggle, Reset, Save) in the header.
+//
+// The root renders with display:contents, so its two panels — the fixed-angle
+// mini-view column and the main sphere — sit directly in the page's
+// three-column grid next to the site picker.
+//
+// What to look for that the ellipsoid cannot show: discrete spots (hop sites),
+// and a +u/−u imbalance (static off-centring / odd anharmonicity) — the map is
+// never antipodally folded, and the asymmetry readout flags a real imbalance
+// against its Poisson noise floor.
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import {
+    buildCellMesh,
+    buildCellOutline,
+    colorbarGradient,
+    formatDirection,
+    reliefFactors,
+    vertexRadii
+} from '../orientationSphere';
+import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
+import InfoBadge from './InfoBadge';
+import SaveMenu from './SaveMenu';
+import {
+    CELL_AXIS_COLORS,
+    CELL_AXIS_CSS,
+    CELL_AXIS_LABELS,
+    PC_CSS_COLORS,
+    TRIAD_COLORS,
+    TRIAD_UP
+} from './sceneAxes';
+import './PcaKdePage.css';
+
+const SAVE_OPTIONS = [
+    { id: 'png', label: 'Standard PNG', hint: '1×' },
+    { id: 'png3x', label: 'High quality PNG', hint: '3×' }
+];
+
+const numberFormat = (value, digits = 2) =>
+    Number.isFinite(value) ? value.toFixed(digits) : '—';
+
+// Thin axis rods through the sphere centre along ±dir (both signs, since a
+// direction map has no preferred end of an axis), one mesh per sign.
+const buildAxisRods = (axes, colors, radius, length) => {
+    const rods = [];
+    axes.forEach((axis, index) => {
+        const dir = new THREE.Vector3(axis[0], axis[1], axis[2]);
+        if (dir.lengthSq() < 1e-12) return;
+        dir.normalize();
+        for (const sign of [1, -1]) {
+            const rod = new THREE.Mesh(
+                new THREE.CylinderGeometry(radius, radius, length, 10),
+                new THREE.MeshBasicMaterial({ color: colors[index], transparent: true, opacity: 0.9 })
+            );
+            rod.position.copy(dir.clone().multiplyScalar(sign * length / 2));
+            rod.quaternion.setFromUnitVectors(TRIAD_UP, dir.clone().multiplyScalar(sign));
+            rods.push(rod);
+        }
+    });
+    return rods;
+};
+
+export default function OrientationView({
+    requestPca,
+    ready,
+    selectedRef,
+    selectedEllipsoid,
+    clusterThreshold,
+    unitCell,
+    frequency,
+    weight,
+    frame,
+    onFrameChange,
+    smoothing,
+    minQuantile,
+    colormap,
+    contrast,
+    relief,
+    showOutline,
+    showAxes
+}) {
+    const [result, setResult] = useState(null);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(false);
+    // Hovered cell readout: { cell, x, y } in canvas-local coordinates.
+    const [hover, setHover] = useState(null);
+
+    const mountRef = useRef(null);
+    const sceneRef = useRef(null);
+    // Fixed-angle mini views (down each of the three frame axes): one extra
+    // renderer with scissored viewports, re-rendered only when the scene
+    // changes — the cameras never move, so there is no per-frame cost.
+    const miniMountRef = useRef(null);
+    const miniRef = useRef(null);
+    const resultRef = useRef(null);
+    resultRef.current = result;
+
+    // The three axes the mini views (and their labels) follow: the site's own
+    // frame when the map is drawn in PCA coordinates (identity = PC1/2/3),
+    // otherwise the crystallographic a/b/c edges when the cell is known, with
+    // plain x/y/z as the fallback.
+    const miniAxes = useMemo(() => {
+        if (frame === 'pca' || !unitCell) {
+            return { axes: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], labels: frame === 'pca' ? ['PC1', 'PC2', 'PC3'] : ['x', 'y', 'z'], colors: frame === 'pca' ? PC_CSS_COLORS : ['#8a97a8', '#8a97a8', '#8a97a8'] };
+        }
+        return { axes: unitCell, labels: CELL_AXIS_LABELS, colors: CELL_AXIS_CSS };
+    }, [frame, unitCell]);
+    const miniAxesRef = useRef(miniAxes);
+    miniAxesRef.current = miniAxes;
+
+    // --- Fetch the histogram whenever the site or an option changes. ----------
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            if (!ready || selectedRef == null) { setResult(null); return; }
+            setLoading(true);
+            setError(null);
+            try {
+                const data = await requestPca('orientation', {
+                    referenceNumber: selectedRef,
+                    frequency: frequency === 'auto' ? null : frequency,
+                    weight,
+                    frame,
+                    smoothing,
+                    minAmplitudeQuantile: minQuantile,
+                    clusterThreshold,
+                    geometry: true
+                });
+                if (!cancelled) {
+                    // A hover index from the previous tiling may be out of range
+                    // for the new one (fewer cells) — clear it with the result.
+                    setHover(null);
+                    setResult(data);
+                }
+            } catch (requestError) {
+                if (cancelled) return;
+                // A cluster-distance change can transiently request a re-numbered
+                // site (same self-healing race as the KDE volume); keep the current
+                // sphere rather than surfacing it.
+                if (/Unknown reference number/i.test(requestError.message || '')) return;
+                setResult(null);
+                setError(requestError.message);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+        load();
+        return () => { cancelled = true; };
+    }, [requestPca, ready, selectedRef, frequency, weight, frame, smoothing, minQuantile, clusterThreshold]);
+
+    // Render the three fixed-angle views into the scissored mini renderer. The
+    // cameras are static, so this runs only on scene rebuilds and resizes; it
+    // reads refs, never state, so one stable callback serves every caller.
+    const renderMinis = useCallback(() => {
+        const handle = sceneRef.current;
+        const mini = miniRef.current;
+        const mount = miniMountRef.current;
+        if (!handle || !mini || !mount) return;
+        const width = mount.clientWidth;
+        const height = mount.clientHeight;
+        if (!width || !height) return;
+        const { renderer, camera } = mini;
+        renderer.setSize(width, height);
+        // Panes stack vertically (axis 0 on top). WebGL viewport y runs from
+        // the bottom, so pane i sits at y = height - (i + 1) * paneHeight.
+        const paneHeight = Math.floor(height / 3);
+        renderer.setScissorTest(true);
+        const { axes } = miniAxesRef.current;
+        // Screen-up convention matching the density page's snap views: down
+        // axis 1 or 2 the third axis points up, down axis 3 the second does.
+        const upIndex = [2, 2, 1];
+        for (let i = 0; i < 3; i += 1) {
+            const dir = new THREE.Vector3(axes[i][0], axes[i][1], axes[i][2]).normalize();
+            const up = new THREE.Vector3(axes[upIndex[i]][0], axes[upIndex[i]][1], axes[upIndex[i]][2]);
+            up.addScaledVector(dir, -up.dot(dir));   // Gram–Schmidt for oblique cells
+            if (up.lengthSq() < 1e-10) up.set(0, 1, 0);
+            camera.up.copy(up.normalize());
+            // Far enough back that a fully-inflated relief surface (radius
+            // clamped at 2.2) never clips the pane edges.
+            camera.position.copy(dir).multiplyScalar(5.6);
+            camera.aspect = width / paneHeight;
+            camera.updateProjectionMatrix();
+            camera.lookAt(0, 0, 0);
+            const y = height - (i + 1) * paneHeight;
+            renderer.setViewport(0, y, width, paneHeight);
+            renderer.setScissor(0, y, width, paneHeight);
+            renderer.render(handle.scene, camera);
+        }
+        renderer.setScissorTest(false);
+    }, []);
+
+    // Snap the main camera to look down one of the frame axes (the same view a
+    // mini shows), keeping the sphere centred.
+    const snapMain = useCallback((axisIndex) => {
+        const handle = sceneRef.current;
+        if (!handle) return;
+        const { camera, controls } = handle;
+        const { axes } = miniAxesRef.current;
+        const upIndex = [2, 2, 1];
+        const dir = new THREE.Vector3(axes[axisIndex][0], axes[axisIndex][1], axes[axisIndex][2]).normalize();
+        const up = new THREE.Vector3(axes[upIndex[axisIndex]][0], axes[upIndex[axisIndex]][1], axes[upIndex[axisIndex]][2]);
+        up.addScaledVector(dir, -up.dot(dir));
+        if (up.lengthSq() < 1e-10) up.set(0, 1, 0);
+        controls.target.set(0, 0, 0);
+        camera.up.copy(up.normalize());
+        camera.position.copy(dir).multiplyScalar(3.05);
+        camera.updateProjectionMatrix();
+        controls.update();
+    }, []);
+
+    // --- Three.js scene: build once. ------------------------------------------
+    useEffect(() => {
+        const mount = mountRef.current;
+        if (!mount) return undefined;
+        const width = mount.clientWidth || 640;
+        const height = mount.clientHeight || 520;
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, width / height, 0.01, 100);
+        camera.position.set(2.5, 1.85, 2.5);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
+        renderer.setSize(width, height);
+        mount.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.12;
+        controls.enablePan = false;
+
+        const meshGroup = new THREE.Group();
+        const outlineGroup = new THREE.Group();
+        const axesGroup = new THREE.Group();
+        scene.add(meshGroup, outlineGroup, axesGroup);
+
+        // Raycast picking for the per-cell hover readout. Only re-renders React
+        // when the hovered cell changes, so orbiting stays smooth.
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let lastCell = null;
+        const onPointerMove = (event) => {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            const hit = raycaster.intersectObjects(meshGroup.children, false)[0];
+            const cell = hit ? hit.object.userData.triangleCell[hit.faceIndex] : null;
+            if (cell !== lastCell) {
+                lastCell = cell;
+                setHover(cell == null ? null : { cell, x: event.clientX - rect.left, y: event.clientY - rect.top });
+            } else if (cell != null) {
+                setHover({ cell, x: event.clientX - rect.left, y: event.clientY - rect.top });
+            }
+        };
+        const onPointerLeave = () => { lastCell = null; setHover(null); };
+        renderer.domElement.addEventListener('pointermove', onPointerMove);
+        renderer.domElement.addEventListener('pointerleave', onPointerLeave);
+
+        let animationId = 0;
+        const animate = () => {
+            controls.update();
+            renderer.render(scene, camera);
+            animationId = requestAnimationFrame(animate);
+        };
+        animate();
+
+        const handleResize = () => {
+            const w = mount.clientWidth || width;
+            const h = mount.clientHeight || height;
+            if (w === 0 || h === 0) return;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+        };
+        const resizeObserver = new ResizeObserver(handleResize);
+        resizeObserver.observe(mount);
+
+        sceneRef.current = { scene, camera, renderer, controls, meshGroup, outlineGroup, axesGroup };
+
+        // Mini-view column: its own small renderer (a second context) with
+        // three scissored viewports sharing the SAME scene; three.js uploads
+        // GPU resources per renderer, so cross-renderer scene sharing is safe.
+        const miniMount = miniMountRef.current;
+        let miniResizeObserver = null;
+        if (miniMount) {
+            const miniRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+            miniRenderer.setPixelRatio(window.devicePixelRatio || 1);
+            miniRenderer.domElement.className = 'orient-multiview-canvas';
+            miniMount.appendChild(miniRenderer.domElement);
+            miniRef.current = { renderer: miniRenderer, camera: new THREE.PerspectiveCamera(45, 1, 0.01, 100) };
+            miniResizeObserver = new ResizeObserver(() => renderMinis());
+            miniResizeObserver.observe(miniMount);
+        }
+
+        return () => {
+            cancelAnimationFrame(animationId);
+            resizeObserver.disconnect();
+            renderer.domElement.removeEventListener('pointermove', onPointerMove);
+            renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
+            controls.dispose();
+            // This component unmounts with its page — release the last-built
+            // geometries and force the GL context loss so repeated page visits
+            // can never pile up GPU buffers and live WebGL contexts.
+            [meshGroup, outlineGroup, axesGroup].forEach((group) => {
+                while (group.children.length) {
+                    const child = group.children.pop();
+                    child.geometry?.dispose();
+                    child.material?.dispose();
+                    group.remove(child);
+                }
+            });
+            renderer.dispose();
+            renderer.forceContextLoss();
+            if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
+            sceneRef.current = null;
+            miniResizeObserver?.disconnect();
+            const mini = miniRef.current;
+            if (mini) {
+                mini.renderer.dispose();
+                mini.renderer.forceContextLoss();
+                if (mini.renderer.domElement.parentNode === miniMount) miniMount.removeChild(mini.renderer.domElement);
+                miniRef.current = null;
+            }
+        };
+    }, [renderMinis]);
+
+    // --- Rebuild the sphere mesh when the histogram or display options change. -
+    useEffect(() => {
+        const handle = sceneRef.current;
+        if (!handle) return;
+        const { meshGroup, outlineGroup, axesGroup } = handle;
+        const dispose = (group) => {
+            while (group.children.length) {
+                const child = group.children.pop();
+                child.geometry?.dispose();
+                child.material?.dispose();
+                group.remove(child);
+            }
+        };
+        dispose(meshGroup);
+        dispose(outlineGroup);
+        dispose(axesGroup);
+        if (!result?.polygons) return;
+
+        // Amplitude relief: per-cell radial factors from the mean |Δr| of each
+        // cell's movers, averaged at shared polygon vertices so the surface
+        // stays crack-free while every cell keeps its flat color.
+        const radii = relief > 0 && result.cellMeanAmplitude
+            ? vertexRadii(result.polygons, reliefFactors(result.cellMeanAmplitude, result.meanAmplitude, relief))
+            : null;
+
+        const mesh = buildCellMesh(result.polygons, result.enhancement, colormap, result.vmax, radii, contrast);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(mesh.colors, 3));
+        geometry.computeVertexNormals();
+        const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.FrontSide });
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.userData.triangleCell = mesh.triangleCell;
+        meshGroup.add(sphere);
+
+        if (showOutline) {
+            const outline = buildCellOutline(result.polygons, 1.002, radii);
+            const outlineGeometry = new THREE.BufferGeometry();
+            outlineGeometry.setAttribute('position', new THREE.BufferAttribute(outline, 3));
+            outlineGroup.add(new THREE.LineSegments(
+                outlineGeometry,
+                new THREE.LineBasicMaterial({ color: 0x10151c, transparent: true, opacity: 0.35 })
+            ));
+        }
+
+        if (showAxes) {
+            // Only the SELECTED coordinate frame's axes, so the sphere and the
+            // fixed-angle mini views show one system at a time (no overlaid
+            // second frame). PCA frame: PC1/2/3 = the view's own x/y/z. Crystal
+            // frame: the a/b/c edges; with no cell metadata, fall back to the
+            // site's PC axes so there is still a reference triad.
+            if (frame === 'pca') {
+                buildAxisRods([[1, 0, 0], [0, 1, 0], [0, 0, 1]], TRIAD_COLORS, 0.006, 2.7)
+                    .forEach((rod) => axesGroup.add(rod));
+            } else if (unitCell) {
+                buildAxisRods(unitCell, CELL_AXIS_COLORS, 0.0045, 2.35)
+                    .forEach((rod) => axesGroup.add(rod));
+            } else {
+                buildAxisRods(result.pcaAxes || [], TRIAD_COLORS, 0.006, 2.7)
+                    .forEach((rod) => axesGroup.add(rod));
+            }
+        }
+
+        // The scene just changed; refresh the static fixed-angle mini views.
+        renderMinis();
+    }, [result, colormap, contrast, relief, showOutline, showAxes, frame, unitCell, renderMinis]);
+
+    const resetView = useCallback(() => {
+        const handle = sceneRef.current;
+        if (!handle) return;
+        const { camera, controls } = handle;
+        controls.target.set(0, 0, 0);
+        camera.up.set(0, 1, 0);
+        camera.position.set(2.5, 1.85, 2.5);
+        camera.updateProjectionMatrix();
+        controls.update();
+    }, []);
+
+    const saveView = useCallback(async (format) => {
+        const handle = sceneRef.current;
+        if (!handle) return;
+        const { renderer, scene, camera } = handle;
+        const name = selectedEllipsoid
+            ? `Orientation_${selectedEllipsoid.element}_site${selectedEllipsoid.referenceNumber}`
+            : 'Orientation_sphere';
+        if (format === 'png3x') {
+            const size = renderer.getSize(new THREE.Vector2());
+            const previousRatio = renderer.getPixelRatio();
+            renderer.setPixelRatio(3);
+            renderer.setSize(size.x, size.y, false);
+            renderer.render(scene, camera);
+            const blob = await new Promise((resolve) => renderer.domElement.toBlob(resolve, 'image/png'));
+            renderer.setPixelRatio(previousRatio);
+            renderer.setSize(size.x, size.y, false);
+            renderer.render(scene, camera);
+            if (blob) downloadBlob(blob, `${sanitizeFilename(name)}.png`);
+        } else {
+            renderer.render(scene, camera);
+            await saveCanvasAsPng(renderer.domElement, name);
+        }
+    }, [selectedEllipsoid]);
+
+    const gradient = useMemo(
+        () => colorbarGradient(colormap, 24, contrast, result?.vmax ?? 1),
+        [colormap, contrast, result]
+    );
+
+    // A real inversion asymmetry: well above what Poisson noise alone produces.
+    const asymmetrySignificant = result
+        ? result.antipodalAsymmetry > 3 * result.antipodalAsymmetryNull
+        : false;
+
+    // Bounds-guarded: a raycast fired between a resolution change and the hover
+    // reset could carry an index from the previous, larger tiling.
+    const hoverCell = hover && result && hover.cell < result.cellCount ? hover.cell : null;
+
+    // display:contents root — the two panels below are direct grid items of the
+    // page's 3 : 6.5 : 6.5 layout, next to the site picker panel.
+    return (
+        <>
+            <div className="pca-panel orient-mini-panel">
+                <h3>
+                    <span className="panel-title-label">Axis views</span>
+                </h3>
+                <div className="orient-multiview" ref={miniMountRef}>
+                    {[0, 1, 2].map((axisIndex) => (
+                        <button
+                            key={axisIndex}
+                            type="button"
+                            className="orient-multiview-zone"
+                            style={{ top: `${(axisIndex * 100) / 3}%` }}
+                            onClick={() => snapMain(axisIndex)}
+                            title={`Snap the main view to look down ${miniAxes.labels[axisIndex]}`}
+                        >
+                            <span className="orient-multiview-label" style={{ color: miniAxes.colors[axisIndex] }}>
+                                {miniAxes.labels[axisIndex]}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="pca-panel pca-viewport orient-main-panel">
+                <h3>
+                    <span className="panel-title-label">
+                        {selectedEllipsoid
+                            ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber} — displacement directions`
+                            : 'Displacement directions'}
+                    </span>
+                    <span className="panel-title-actions">
+                        {selectedEllipsoid && (
+                            <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
+                        )}
+                        {/* Direction frame: crystal Cartesian vs this site's principal
+                            axes — mirrors the PCA page's PC | Crystal header toggle. */}
+                        <div className="pca-frame-toggle" role="group" aria-label="Direction frame">
+                            <button
+                                type="button"
+                                className={frame === 'cartesian' ? 'is-active' : ''}
+                                onClick={() => onFrameChange('cartesian')}
+                                aria-pressed={frame === 'cartesian'}
+                                title="Crystal Cartesian frame"
+                            >
+                                Crystal
+                            </button>
+                            <button
+                                type="button"
+                                className={frame === 'pca' ? 'is-active' : ''}
+                                onClick={() => onFrameChange('pca')}
+                                aria-pressed={frame === 'pca'}
+                                title="This site's principal-axis frame (PC1 = x)"
+                            >
+                                PCA
+                            </button>
+                        </div>
+                        <button
+                            type="button"
+                            className="pca-reset-view"
+                            onClick={resetView}
+                            disabled={!result}
+                            title="Reset the camera to the default view"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                <path d="M3 3v5h5" />
+                            </svg>
+                            Reset view
+                        </button>
+                        <SaveMenu
+                            onSave={saveView}
+                            options={SAVE_OPTIONS}
+                            label="Save"
+                            align="right"
+                            disabled={!result}
+                        />
+                    </span>
+                </h3>
+                <div className="pca-canvas orient-canvas" ref={mountRef}>
+                    {loading && <div className="pca-badge">Computing…</div>}
+                    {error && <div className="pca-badge is-error">{error}</div>}
+                    {hoverCell != null && result && (
+                        <div className="orient-tooltip" style={{ left: hover.x + 14, top: hover.y + 12 }}>
+                            <div>{formatDirection(result.centers[hoverCell])}</div>
+                            <div>{numberFormat(result.enhancement[hoverCell], 2)}× isotropic</div>
+                            <div>
+                                {result.counts[hoverCell]} atoms · z = {numberFormat(result.zScore[hoverCell], 1)}
+                            </div>
+                            {result.cellMeanAmplitude?.[hoverCell] > 0 && (
+                                <div>⟨|Δr|⟩ = {numberFormat(result.cellMeanAmplitude[hoverCell], 3)} Å</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {result && (
+                    <>
+                        <div className="orient-colorbar-row">
+                            <span className="orient-colorbar-label">0</span>
+                            <div className="orient-colorbar" style={{ background: gradient }}>
+                                {result.vmax > 1 && (
+                                    <i
+                                        className="orient-colorbar-marker"
+                                        style={{ left: `${(100 / result.vmax).toFixed(2)}%` }}
+                                        title="1× = isotropic"
+                                    />
+                                )}
+                            </div>
+                            <span className="orient-colorbar-label">{numberFormat(result.vmax, 1)}× isotropic</span>
+                        </div>
+                        <div className="orient-summary">
+                            <span className="orient-stat">
+                                peak <b>{numberFormat(result.peakEnhancement, 2)}×</b> at {formatDirection(result.peakDirection)}
+                                {' '}(z = {numberFormat(result.peakZScore, 1)})
+                            </span>
+                            <span className="orient-stat">
+                                anisotropy <b>{numberFormat(result.orientationAnisotropy, 2)}</b>
+                                <InfoBadge label="About the orientation anisotropy" align="end">
+                                    <p>
+                                        3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 0 for an isotropic
+                                        direction distribution, 2 for a perfect single axis. Resolution
+                                        independent (computed from the vectors, not the bins).
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                            <span className={`orient-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
+                                ± asymmetry <b>{numberFormat(result.antipodalAsymmetry, 2)}</b>
+                                {' '}<span className="orient-stat-null">(noise floor {numberFormat(result.antipodalAsymmetryNull, 2)})</span>
+                                <InfoBadge label="About the antipodal asymmetry" align="end">
+                                    <p>
+                                        The +u vs −u imbalance, Σ|n(u) − n(−u)| / N over antipodal cell
+                                        pairs: 0 for an inversion-symmetric cloud, 1 for a fully
+                                        one-sided one. The thermal ellipsoid is blind to this — a value
+                                        well above the Poisson noise floor is real off-centring or
+                                        odd-order anharmonicity.
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                            <span className="orient-stat">
+                                map significance <b>{numberFormat(result.significance, 1)}σ</b>
+                                <InfoBadge label="About the map significance" align="end">
+                                    <p>
+                                        RMS of the per-cell Poisson z-scores against the isotropic null:
+                                        ≈1 means the pattern is consistent with pure counting noise;
+                                        well above 1 means real directional structure.
+                                    </p>
+                                </InfoBadge>
+                            </span>
+                        </div>
+                        <div className="pca-legend">
+                            {frame === 'cartesian' && unitCell ? (
+                                CELL_AXIS_LABELS.map((label, i) => (
+                                    <span key={label} className="pca-legend-item">
+                                        <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
+                                    </span>
+                                ))
+                            ) : (
+                                ['PC1', 'PC2', 'PC3'].map((label, i) => (
+                                    <span key={label} className="pca-legend-item">
+                                        <i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[i] }} /> {label}
+                                    </span>
+                                ))
+                            )}
+                            <span className="pca-legend-note">
+                                {result.weight === 'count' ? 'direction distribution' : `weighted by ${result.weight === 'amplitude' ? '|Δr|' : '|Δr|²'}`}
+                                {result.smoothing > 0 ? ` · smoothed ${result.smoothing}×` : ''}
+                                {result.browserOrientation ? ' · browser' : ' · server'}
+                            </span>
+                        </div>
+                    </>
+                )}
+            </div>
+        </>
+    );
+}

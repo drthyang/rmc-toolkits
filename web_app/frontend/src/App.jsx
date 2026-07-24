@@ -6,6 +6,7 @@ import axios from 'axios';
 import Dashboard from './components/Dashboard';
 import StructurePage from './components/StructurePage';
 import PcaKdePage from './components/PcaKdePage';
+import OrientationPage from './components/OrientationPage';
 import AutoStogPage from './components/AutoStogPage';
 import { AssistantPage } from './llm';
 import API_BASE_URL from './api';
@@ -28,7 +29,7 @@ const SHOW_AUTO_STOG = false;
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, assistant: false });
+  const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, orientation: false, assistant: false });
   // Parsed run context published by the Dashboard, consumed by the AI Assistant page.
   const [assistantRun, setAssistantRun] = useState(null);
   // Per-site PCA ellipsoid table published by the PCA Ellipsoid page (once opened),
@@ -318,6 +319,12 @@ function App() {
                 PCA Ellipsoid
               </button>
               <button
+                className={activePage === 'orientation' ? 'active' : ''}
+                onClick={() => handlePageChange('orientation')}
+              >
+                Displacement Directions
+              </button>
+              <button
                 className={activePage === 'assistant' ? 'active' : ''}
                 onClick={() => handlePageChange('assistant')}
               >
@@ -467,6 +474,16 @@ function App() {
               aria-hidden={activePage !== 'ellipsoids'}
             >
               <PcaKdePage directory={currentDirectory} localRun={localRun} theme="light" onSitesChange={setPcaSites} />
+            </div>
+          )}
+          {visitedPages.orientation && (
+            <div
+              className={`workspace-page${activePage === 'orientation' ? ' is-active' : ' is-hidden'}`}
+              aria-hidden={activePage !== 'orientation'}
+            >
+              {/* Displacement-direction histogram — independent of the PCA page
+                  (shares only the site picker via useSiteCloud). */}
+              <OrientationPage directory={currentDirectory} localRun={localRun} />
             </div>
           )}
           {visitedPages.assistant && (

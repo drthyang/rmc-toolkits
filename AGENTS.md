@@ -34,6 +34,7 @@ rmc_toolkits/
   plots.py       plot-kind detection, matplotlib figures, Rwp/chi metrics, PNG serialization
   kde.py         unit-cell position loading + server-side gaussian_kde slice (+ contours)
   pca_kde.py     per-site RMC displacement clouds → PCA/thermal-ellipsoid stats + separable 3D KDE volume (source of truth)
+  orientation.py displacement-direction distribution: Goldberg (hex + 12 pentagon) sphere tiling, solid-angle histogram, enhancement/z-score, orientation tensor (source of truth)
   transforms.py  Keen-2001 conversions, sine-FT pair, Lorch, omitted-low-Q correction, Fourier filter, stog low-r enforcement (pure numpy, no I/O)
   scaling.py     Auto StoG engine: level sweep, closed-form (a,b) fit, self-consistent filter loop, FZ amplitude mode, estimate_rho0 (density from amplitude-criteria concordance), diagnostics (no I/O)
   scattering.py  Faber-Ziman coefficients from a chemical formula (Sears table, 89 elements)
@@ -44,6 +45,8 @@ web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,…) LRU c
 web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly
   colormaps.js                   colormap LUTs for the KDE canvas
+  orientationSphere.js           pure helpers for the orientation sphere (cell mesh/outline typed arrays, relief radii, colorbar gradient) — unit-tested, no Three.js
+  useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages)
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
   llm/                           experimental AI assistant — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini); see its README
     context/                     dashboard state → compact LLM context JSON (symmetry + per-site displacements, pair correlations, char budget)
@@ -59,7 +62,11 @@ web_app/frontend/src/
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
-    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections + clickable unit-cell structure
+    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections; unit-cell picker via SiteStructurePanel
+    OrientationPage.jsx          Orientation tab (own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9
+    OrientationView.jsx          renders display:contents → its two panels drop into the page grid: the Axis-views mini panel (three fixed-angle a/b/c | PC1/2/3 views, click to snap) and the sphere panel (flat-shaded Goldberg cells, amplitude relief, only the selected frame's axis rods, header Crystal|PCA toggle + Reset + Save, per-cell hover, colorbar + asymmetry/significance strip)
+    SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages
+    sceneAxes.js                 shared axis palettes (PC tricolor, a/b/c) + triad/rod builders for every Three.js panel
     FileExplorer.jsx             file navigation
   workers/
     localKdeWorker.js            static-mode KDE worker (GPU-or-CPU density map, contours, slab math)
@@ -67,7 +74,8 @@ web_app/frontend/src/
     pcaKde.js                    static-mode PCA-KDE engine (JS port of pca_kde.py): 3×3 Jacobi eigensolver, per-site clouds, separable volume + projections
     autoScale.js                 static-mode Auto StoG engine (JS port of scaling.py + transforms.py + stog parsers + Faber-Ziman); parity-tested against Python goldens (autoScale.test.js)
     autoScaleWorker.js           off-thread runner for autoScale.js (transferable buffers)
-    pcaKdeWorker.js              static-mode PCA-KDE worker (parses clouds once, answers 'sites'/'kde' requests off-thread)
+    orientation.js               static-mode displacement-orientation engine (JS port of orientation.py: Goldberg hex+pentagon sphere tiling, solid-angle histogram)
+    pcaKdeWorker.js              static-mode PCA-KDE worker (parses clouds once, answers 'sites'/'kde'/'orientation' requests off-thread)
     marchingCubes.js             isosurface extraction over a scalar field (Lorensen-Cline tables) for the Three.js KDE surface
 ```
 
@@ -92,6 +100,15 @@ web_app/frontend/src/
   the *supercell* boundary (only that edge wraps), mean-subtracted per reference site, then mapped to
   Cartesian Å through the full supercell `latticeVectors`. Clouds pooled by element are meaningful
   because each site is already centered on its own average position.
+- **Orientation histogram bins are hexes + exactly 12 pentagons, area-normalized.** A sphere cannot
+  be tiled by hexagons alone (Euler), so `orientation.py` uses a Goldberg polyhedron (10ν²+2 cells)
+  and divides every count by the cell's exact solid angle — never plot raw counts, or the 12
+  pentagons print the icosahedron onto the map. `enhancement = 4π·density` is 1 for an isotropic
+  site; `zScore` comes from raw counts only (never after smoothing). The map is deliberately
+  **never antipodally folded** — the +u/−u imbalance (off-centring, odd anharmonicity) is the
+  signal the ellipsoid cannot show; `antipodalAsymmetry` (vs its Poisson `…Null` floor) quantifies
+  it. `workers/orientation.js` is a straight port — keep the two in sync, same construction order
+  so cell indices agree.
 - **`StructurePage.jsx` canvases render conditionally** (`{structure && (...)}`). Effects that attach
   listeners to those canvases must depend on `structure` (or the canvas ref), not `[]` — otherwise
   they run at mount before the canvas exists and never attach. (This was the slab-drag bug, fixed
@@ -180,7 +197,9 @@ containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
    and three PC-plane projections. Verified in both runtimes. Possible follow-ups: element-pooled
    clouds in the picker (the engine already supports `element=`), a per-site ellipsoid overlay in
    the main structure view, PNG/CSV export of the volume, and letting the user compare two sites
-   side by side. Reference: Maksim Eremenko's PCA_KDE utilities at
+   side by side. The displacement-*orientation* view (hex-binned sphere; `orientation.py` +
+   `workers/orientation.js` + `/api/pca/orientation` + worker kind `'orientation'`, UI as the
+   **Orientation** tab of the main panel in `OrientationView.jsx`) landed 2026-07-24. Reference: Maksim Eremenko's PCA_KDE utilities at
    <https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.
