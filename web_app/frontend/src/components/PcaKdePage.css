@@ -912,3 +912,110 @@
         padding: 0.9rem;
     }
 }
+
+/* --- Orientation sphere tab ------------------------------------------------ */
+
+/* The orientation view fills the main viewport column: its own compact controls
+   row, the sphere canvas, then colorbar + summary + legend strips. */
+.orient-view {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Reuses the page's .pca-controls styling but sits inside the panel, above the
+   canvas, so the orientation options live next to the sphere they drive. */
+.orient-controls {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    border-bottom: 1px solid var(--border);
+    box-shadow: none;
+    background: var(--panel-bg);
+}
+
+.orient-canvas {
+    min-height: 24rem;
+}
+
+/* Per-cell hover readout following the pointer. */
+.orient-tooltip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    padding: 0.35rem 0.55rem;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--canvas-bg) 90%, transparent);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-xs);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    line-height: 1.5;
+    color: var(--text-strong);
+    white-space: nowrap;
+}
+
+/* Colorbar strip: 0 -> vmax enhancement, with a tick at 1x (isotropic). */
+.orient-colorbar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.9rem 0.1rem;
+    background: var(--panel-bg);
+    border-top: 1px solid var(--border);
+}
+
+.orient-colorbar {
+    position: relative;
+    flex: 1 1 auto;
+    height: 0.6rem;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+}
+
+.orient-colorbar-marker {
+    position: absolute;
+    top: -0.15rem;
+    bottom: -0.15rem;
+    width: 2px;
+    background: var(--text-strong);
+    opacity: 0.8;
+}
+
+.orient-colorbar-label {
+    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+/* Summary readouts: cells, used vectors, peak, anisotropy, asymmetry, significance. */
+.orient-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 1.1rem;
+    padding: 0.45rem 0.9rem;
+    background: var(--panel-bg);
+    font-size: 0.76rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.orient-stat b {
+    color: var(--text-strong);
+    font-weight: 650;
+}
+
+.orient-stat-null {
+    color: var(--subtle);
+}
+
+/* A significant +u/-u imbalance is the headline finding of this view. */
+.orient-stat.is-flagged {
+    color: var(--danger);
+}
+
+.orient-stat.is-flagged b {
+    color: var(--danger);
+}

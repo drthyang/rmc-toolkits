@@ -45,6 +45,7 @@ web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,…) LRU c
 web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly
   colormaps.js                   colormap LUTs for the KDE canvas
+  orientationSphere.js           pure helpers for the orientation sphere (cell mesh/outline typed arrays, colorbar gradient) — unit-tested, no Three.js
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
   llm/                           experimental AI assistant — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini); see its README
     context/                     dashboard state → compact LLM context JSON (symmetry + per-site displacements, pair correlations, char budget)
@@ -60,7 +61,8 @@ web_app/frontend/src/
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
-    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections + clickable unit-cell structure
+    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, main panel with Density | Orientation tabs (Three.js isosurface + ellipsoid + wall projections, and the orientation sphere), clickable unit-cell structure
+    OrientationView.jsx          Orientation tab of the PCA Ellipsoid main panel: hex-binned sphere (Three.js flat-shaded cells), per-cell hover readout, colorbar + asymmetry/significance strip
     FileExplorer.jsx             file navigation
   workers/
     localKdeWorker.js            static-mode KDE worker (GPU-or-CPU density map, contours, slab math)
@@ -191,9 +193,9 @@ containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page.
    and three PC-plane projections. Verified in both runtimes. Possible follow-ups: element-pooled
    clouds in the picker (the engine already supports `element=`), a per-site ellipsoid overlay in
    the main structure view, PNG/CSV export of the volume, and letting the user compare two sites
-   side by side. The displacement-*orientation* engine (hex-binned sphere; `orientation.py` +
-   `workers/orientation.js` + `/api/pca/orientation` + worker kind `'orientation'`) landed
-   2026-07-24 — UI (color-mapped sphere on the PCA Ellipsoid page) still pending. Reference: Maksim Eremenko's PCA_KDE utilities at
+   side by side. The displacement-*orientation* view (hex-binned sphere; `orientation.py` +
+   `workers/orientation.js` + `/api/pca/orientation` + worker kind `'orientation'`, UI as the
+   **Orientation** tab of the main panel in `OrientationView.jsx`) landed 2026-07-24. Reference: Maksim Eremenko's PCA_KDE utilities at
    <https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.
