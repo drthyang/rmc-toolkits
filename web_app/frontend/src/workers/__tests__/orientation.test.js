@@ -132,14 +132,58 @@ describe('recommendedFrequency', () => {
         expect(recommendedFrequency(100)).toBeLessThanOrEqual(recommendedFrequency(10000));
         expect(recommendedFrequency(0)).toBe(MIN_FREQUENCY);
     });
+
+    it('matches the Python engine at exact values, incl. the half-even boundary', () => {
+        // Shared verbatim with tests/test_orientation.py. 774 points put the
+        // sqrt at exactly 2.5: Python's round() is half-to-even (nu=2), and
+        // the port must match it, not Math.round's half-up 3 — otherwise the
+        // browser and server render different tilings for the same data.
+        expect(recommendedFrequency(774)).toBe(2);
+        expect(recommendedFrequency(300)).toBe(2);
+        expect(recommendedFrequency(12000)).toBe(10);
+    });
 });
 
 describe('orientationHistogram', () => {
-    it('integrates the density to one over the sphere', () => {
-        const cloud = gaussianCloud(20000, 1, [0.1, 0.1, 0.1]);
-        const result = orientationHistogram(cloud, { frequency: 8 });
-        const integral = result.density.reduce((sum, value, cell) => sum + value * result.areas[cell], 0);
-        expect(integral).toBeCloseTo(1, 9);
+    it('has polygon areas matching the assignment Voronoi regions (Monte Carlo)', () => {
+        // Non-circular normalization check: the fraction of uniform random
+        // directions assigned to each cell, times 4*pi, must reproduce the
+        // analytic solid angle the density is divided by. (sum(density*areas)
+        // is identically 1 by construction and would test nothing.)
+        const gauss = makeRng(17);
+        const tiling = goldbergTiling(2);
+        const counts = new Array(tiling.cellCount).fill(0);
+        const total = 60000;
+        const directions = [];
+        for (let i = 0; i < total; i += 1) directions.push([gauss(), gauss(), gauss()]);
+        assignCells(tiling, directions).forEach((cell) => { counts[cell] += 1; });
+        counts.forEach((count, cell) => {
+            const monteCarlo = (count / total) * 4 * Math.PI;
+            // ~1400 hits per cell -> ~2.7% Poisson noise; 15% is >5 sigma.
+            expect(Math.abs(monteCarlo - tiling.areas[cell]) / tiling.areas[cell]).toBeLessThan(0.15);
+        });
+    });
+
+    it('reports per-cell mean amplitude for the relief', () => {
+        // +/-x one-sided populations with ~4x different travel distances.
+        const gauss = makeRng(23);
+        const cloud = [];
+        for (let i = 0; i < 4000; i += 1) {
+            cloud.push([Math.abs(gauss()) * 0.05 + 0.35, gauss() * 0.004, gauss() * 0.004]);
+        }
+        for (let i = 0; i < 4000; i += 1) {
+            cloud.push([-(Math.abs(gauss()) * 0.012 + 0.09), gauss() * 0.004, gauss() * 0.004]);
+        }
+        const result = orientationHistogram(cloud, { frequency: 4 });
+        const tiling = goldbergTiling(4);
+        const plusCell = assignCells(tiling, [[1, 0, 0]])[0];
+        const minusCell = assignCells(tiling, [[-1, 0, 0]])[0];
+        expect(result.cellMeanAmplitude[plusCell]).toBeGreaterThan(3 * result.cellMeanAmplitude[minusCell]);
+        expect(result.cellMeanAmplitude[plusCell]).toBeCloseTo(0.39, 1);
+        result.counts.forEach((count, cell) => {
+            if (count === 0) expect(result.cellMeanAmplitude[cell]).toBe(0);
+            expect(Number.isFinite(result.cellMeanAmplitude[cell])).toBe(true);
+        });
     });
 
     it('is flat for an isotropic cloud', () => {

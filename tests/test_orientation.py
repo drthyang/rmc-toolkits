@@ -153,6 +153,15 @@ class RecommendedFrequencyTests(unittest.TestCase):
         per_cell = 12000 / cells
         self.assertGreater(per_cell, 6)  # never wildly over-binned
 
+    def test_exact_values_pin_cross_engine_parity(self):
+        # Hard-coded expectations shared verbatim with the JS suite, so the
+        # browser and server always pick the same tiling for the same data.
+        # 774 points put the sqrt at exactly 2.5: Python rounds half to even
+        # (nu=2), and the JS port must match, not Math.round's half-up 3.
+        self.assertEqual(recommended_frequency(774), 2)
+        self.assertEqual(recommended_frequency(300), 2)
+        self.assertEqual(recommended_frequency(12000), 10)
+
 
 class HistogramTests(unittest.TestCase):
     def _isotropic(self, n=20000, seed=0):
@@ -163,10 +172,22 @@ class HistogramTests(unittest.TestCase):
         rng = np.random.default_rng(seed)
         return rng.normal(size=(n, 3)) * np.asarray(sigma)
 
-    def test_density_integrates_to_one(self):
-        result = orientation_histogram(self._isotropic(), frequency=8)
-        integral = float(np.sum(np.asarray(result["density"]) * np.asarray(result["areas"])))
-        self.assertAlmostEqual(integral, 1.0, places=9)
+    def test_polygon_areas_match_assignment_voronoi(self):
+        # The normalization divides by _spherical_polygon_areas, and the honesty
+        # of the whole map rests on those analytic areas matching the regions
+        # assign_cells actually routes directions into. Cross-check them by
+        # Monte Carlo: the fraction of uniform random directions landing in a
+        # cell, times 4*pi, must reproduce the cell's analytic solid angle.
+        # (A plain sum(density * areas) == 1 check would be circular -- density
+        # is defined by dividing by these same areas.)
+        rng = np.random.default_rng(17)
+        directions = rng.normal(size=(200000, 3))
+        tiling = goldberg_tiling(3)
+        cells = assign_cells(tiling, directions)
+        fractions = np.bincount(cells, minlength=tiling.cell_count) / directions.shape[0]
+        monte_carlo_areas = fractions * 4.0 * np.pi
+        # Per-cell Poisson noise is ~1/sqrt(200000/92) = 2%; 12% is >5 sigma.
+        np.testing.assert_allclose(monte_carlo_areas, tiling.areas, rtol=0.12)
 
     def test_isotropic_cloud_is_flat(self):
         result = orientation_histogram(self._isotropic(), frequency=8)
@@ -223,6 +244,45 @@ class HistogramTests(unittest.TestCase):
         # Smoothing lowers the peak but cannot move the lobe.
         self.assertLess(smooth["peakEnhancement"], raw["peakEnhancement"])
         self.assertGreater(abs(np.asarray(smooth["peakDirection"])[0]), 0.85)
+
+    def test_cell_mean_amplitude_tracks_per_direction_travel(self):
+        # Two one-sided populations along +/-x with 4x different amplitudes:
+        # the relief quantity must read each direction's own mean |dr|, and an
+        # empty direction (+/-z here is populated, but a sparse tiling cell far
+        # from x may be empty) must report 0, not NaN.
+        rng = np.random.default_rng(23)
+        plus = np.abs(rng.normal(size=(4000, 1))) * 0.05 + 0.35
+        minus = -(np.abs(rng.normal(size=(4000, 1))) * 0.012 + 0.09)
+        lateral = rng.normal(size=(8000, 2)) * 0.004
+        cloud = np.column_stack([np.vstack([plus, minus]), lateral])
+        result = orientation_histogram(cloud, frequency=4)
+        tiling = goldberg_tiling(4)
+        mean_amplitude = np.asarray(result["cellMeanAmplitude"])
+        plus_cell = assign_cells(tiling, np.array([[1.0, 0.0, 0.0]]))[0]
+        minus_cell = assign_cells(tiling, np.array([[-1.0, 0.0, 0.0]]))[0]
+        self.assertGreater(mean_amplitude[plus_cell], 3.0 * mean_amplitude[minus_cell])
+        self.assertAlmostEqual(mean_amplitude[plus_cell], 0.39, delta=0.05)
+        # Empty cells report exactly 0 and stay finite.
+        counts = np.asarray(result["counts"])
+        self.assertTrue(np.all(mean_amplitude[counts == 0] == 0.0))
+        self.assertTrue(np.all(np.isfinite(mean_amplitude)))
+
+    def test_cell_mean_amplitude_smoothing_stays_bounded(self):
+        # Smoothing the ratio's numerator and denominator (not the ratio) keeps
+        # every smoothed mean inside the raw data's amplitude range.
+        rng = np.random.default_rng(29)
+        cloud = rng.normal(size=(5000, 3)) * np.array([0.4, 0.1, 0.1])
+        result = orientation_histogram(cloud, frequency=5, smoothing=2)
+        mean_amplitude = np.asarray(result["cellMeanAmplitude"])
+        amplitudes = np.linalg.norm(cloud, axis=1)
+        self.assertTrue(np.all(mean_amplitude <= amplitudes.max() + 1e-12))
+        self.assertTrue(np.all(mean_amplitude >= 0.0))
+        # Diffusion populates the neighbourhood: far fewer zero cells than raw.
+        raw = orientation_histogram(cloud, frequency=5, smoothing=0)
+        self.assertLess(
+            np.sum(np.asarray(result["cellMeanAmplitude"]) == 0.0),
+            max(np.sum(np.asarray(raw["cellMeanAmplitude"]) == 0.0), 1),
+        )
 
     def test_amplitude_weighting_changes_the_map(self):
         # Two populations: many small displacements along x, few large along z.

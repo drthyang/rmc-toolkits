@@ -21,7 +21,9 @@ import {
     buildCellMesh,
     buildCellOutline,
     colorbarGradient,
-    formatDirection
+    formatDirection,
+    reliefFactors,
+    vertexRadii
 } from '../orientationSphere';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
@@ -95,6 +97,10 @@ export default function OrientationView({
     const [smoothing, setSmoothing] = useState(0);
     const [minQuantile, setMinQuantile] = useState(0);
     const [colormap, setColormap] = useState('viridis');
+    // Amplitude relief: 0 keeps the unit sphere; higher values bulge each cell
+    // radially by its mean |Δr| relative to the site average, so shape (how far
+    // atoms move this way) and color (how often) carry independent information.
+    const [relief, setRelief] = useState(0.5);
     const [showOutline, setShowOutline] = useState(true);
     const [showAxes, setShowAxes] = useState(true);
     // Hovered cell readout: { cell, x, y } in canvas-local coordinates.
@@ -123,7 +129,12 @@ export default function OrientationView({
                     clusterThreshold,
                     geometry: true
                 });
-                if (!cancelled) setResult(data);
+                if (!cancelled) {
+                    // A hover index from the previous tiling may be out of range
+                    // for the new one (fewer cells) — clear it with the result.
+                    setHover(null);
+                    setResult(data);
+                }
             } catch (requestError) {
                 if (cancelled) return;
                 // A cluster-distance change can transiently request a re-numbered
@@ -215,7 +226,20 @@ export default function OrientationView({
             renderer.domElement.removeEventListener('pointermove', onPointerMove);
             renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
             controls.dispose();
+            // Unlike the density canvas (kept mounted via CSS), this component
+            // unmounts on every tab switch — release the last-built geometries
+            // and force the GL context loss, or repeated Density↔Orientation
+            // toggles pile up GPU buffers and live WebGL contexts until GC.
+            [meshGroup, outlineGroup, axesGroup].forEach((group) => {
+                while (group.children.length) {
+                    const child = group.children.pop();
+                    child.geometry?.dispose();
+                    child.material?.dispose();
+                    group.remove(child);
+                }
+            });
             renderer.dispose();
+            renderer.forceContextLoss();
             if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
             sceneRef.current = null;
         };
@@ -239,7 +263,14 @@ export default function OrientationView({
         dispose(axesGroup);
         if (!result?.polygons) return;
 
-        const mesh = buildCellMesh(result.polygons, result.enhancement, colormap, result.vmax);
+        // Amplitude relief: per-cell radial factors from the mean |Δr| of each
+        // cell's movers, averaged at shared polygon vertices so the surface
+        // stays crack-free while every cell keeps its flat color.
+        const radii = relief > 0 && result.cellMeanAmplitude
+            ? vertexRadii(result.polygons, reliefFactors(result.cellMeanAmplitude, result.meanAmplitude, relief))
+            : null;
+
+        const mesh = buildCellMesh(result.polygons, result.enhancement, colormap, result.vmax, radii);
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(mesh.colors, 3));
@@ -250,7 +281,7 @@ export default function OrientationView({
         meshGroup.add(sphere);
 
         if (showOutline) {
-            const outline = buildCellOutline(result.polygons);
+            const outline = buildCellOutline(result.polygons, 1.002, radii);
             const outlineGeometry = new THREE.BufferGeometry();
             outlineGeometry.setAttribute('position', new THREE.BufferAttribute(outline, 3));
             outlineGroup.add(new THREE.LineSegments(
@@ -273,7 +304,7 @@ export default function OrientationView({
                 buildAxisRods(unitCell, CELL_AXIS_COLORS, 0.0045, 2.35).forEach((rod) => axesGroup.add(rod));
             }
         }
-    }, [result, colormap, showOutline, showAxes, frame, unitCell]);
+    }, [result, colormap, relief, showOutline, showAxes, frame, unitCell]);
 
     const resetView = useCallback(() => {
         const handle = sceneRef.current;
@@ -317,7 +348,9 @@ export default function OrientationView({
         ? result.antipodalAsymmetry > 3 * result.antipodalAsymmetryNull
         : false;
 
-    const hoverCell = hover && result ? hover.cell : null;
+    // Bounds-guarded: a raycast fired between a resolution change and the hover
+    // reset could carry an index from the previous, larger tiling.
+    const hoverCell = hover && result && hover.cell < result.cellCount ? hover.cell : null;
 
     return (
         <div className="orient-view">
@@ -397,6 +430,26 @@ export default function OrientationView({
                         <span className="control-value">{smoothing}×</span>
                     </label>
                     <label className="control">
+                        <span className="control-name">
+                            Relief
+                            <InfoBadge label="About the amplitude relief">
+                                <p>
+                                    Bulges the sphere radially by each cell's mean |Δr| relative to
+                                    the site average — directions where atoms move farther stick
+                                    out, shorter ones dent in. Color (how often) and shape (how far)
+                                    then carry independent information. 0% keeps a perfect sphere.
+                                </p>
+                            </InfoBadge>
+                        </span>
+                        <input
+                            type="range" min="0" max="1" step="0.05"
+                            value={relief}
+                            onChange={(event) => setRelief(Number(event.target.value))}
+                            aria-label="Amplitude relief strength"
+                        />
+                        <span className="control-value">{Math.round(relief * 100)}%</span>
+                    </label>
+                    <label className="control">
                         <span className="control-name">Colormap</span>
                         <select value={colormap} onChange={(event) => setColormap(event.target.value)} aria-label="Sphere colormap">
                             {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -466,6 +519,9 @@ export default function OrientationView({
                         <div>
                             {result.counts[hoverCell]} atoms · z = {numberFormat(result.zScore[hoverCell], 1)}
                         </div>
+                        {result.cellMeanAmplitude?.[hoverCell] > 0 && (
+                            <div>⟨|Δr|⟩ = {numberFormat(result.cellMeanAmplitude[hoverCell], 3)} Å</div>
+                        )}
                     </div>
                 )}
             </div>

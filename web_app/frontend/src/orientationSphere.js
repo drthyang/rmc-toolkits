@@ -19,6 +19,49 @@ const clamp01 = (t) => (t < 0 ? 0 : t > 1 ? 1 : t);
  */
 export const colorCoordinate = (value, vmax) => (vmax > 0 ? clamp01(value / vmax) : 0);
 
+// Stable identity for a polygon vertex. Vertices are triangle circumcenters
+// shared by (up to) three cells, but that identity is lost through the worker /
+// JSON boundary, so key on rounded coordinates: bit-identical sources agree
+// exactly, and 1e-9 rounding cannot merge distinct circumcenters (the closest
+// pair at the maximum frequency is ~1e-2 apart).
+const vertexKey = (v) => `${v[0].toFixed(9)},${v[1].toFixed(9)},${v[2].toFixed(9)}`;
+
+/**
+ * Per-cell radial scale factors for the amplitude relief: `1 + relief *
+ * (cellMean/globalMean − 1)`, clamped, so a cell whose movers travel the
+ * average distance stays on the unit sphere, farther-moving directions bulge
+ * out and shorter ones dent in. Empty cells (mean 0) sit at the neutral 1.
+ */
+export const reliefFactors = (cellMeanAmplitude, globalMean, relief, clampLow = 0.3, clampHigh = 2.2) => (
+    cellMeanAmplitude.map((mean) => {
+        if (!(mean > 0) || !(globalMean > 0)) return 1;
+        const factor = 1 + relief * (mean / globalMean - 1);
+        return factor < clampLow ? clampLow : factor > clampHigh ? clampHigh : factor;
+    })
+);
+
+/**
+ * Per-vertex radius map for a relief surface. Each polygon vertex is shared by
+ * up to three cells; averaging their relief factors at the shared vertex keeps
+ * the surface continuous (crack-free) while every cell stays one flat color.
+ * Returns a Map from vertexKey to radius.
+ */
+export const vertexRadii = (polygons, factors) => {
+    const sums = new Map();
+    polygons.forEach((polygon, cell) => {
+        polygon.forEach((vertex) => {
+            const key = vertexKey(vertex);
+            const entry = sums.get(key);
+            if (entry) { entry.total += factors[cell]; entry.count += 1; } else {
+                sums.set(key, { total: factors[cell], count: 1 });
+            }
+        });
+    });
+    const radii = new Map();
+    sums.forEach((entry, key) => { radii.set(key, entry.total / entry.count); });
+    return radii;
+};
+
 /**
  * Triangle-fan mesh for every tiling cell, flat-colored by its value.
  *
@@ -26,9 +69,10 @@ export const colorCoordinate = (value, vmax) => (vmax > 0 ? clamp01(value / vmax
  * per cell, CCW from outside); `values` one number per cell (enhancement).
  * Vertices are duplicated per cell so each cell is a single flat color -- the
  * crisp hex-bin look -- and `triangleCell` maps every triangle (in order) back
- * to its cell for raycast picking.
+ * to its cell for raycast picking. `radii` (a vertexRadii Map) optionally
+ * displaces each vertex radially for the amplitude relief.
  */
-export const buildCellMesh = (polygons, values, colormap, vmax) => {
+export const buildCellMesh = (polygons, values, colormap, vmax, radii = null) => {
     let triangles = 0;
     polygons.forEach((polygon) => { triangles += polygon.length - 2; });
     const positions = new Float32Array(triangles * 9);
@@ -45,9 +89,10 @@ export const buildCellMesh = (polygons, values, colormap, vmax) => {
             const base = t * 9;
             const fan = [polygon[0], polygon[i], polygon[i + 1]];
             for (let v = 0; v < 3; v += 1) {
-                positions[base + 3 * v] = fan[v][0];
-                positions[base + 3 * v + 1] = fan[v][1];
-                positions[base + 3 * v + 2] = fan[v][2];
+                const scale = radii ? radii.get(vertexKey(fan[v])) ?? 1 : 1;
+                positions[base + 3 * v] = fan[v][0] * scale;
+                positions[base + 3 * v + 1] = fan[v][1] * scale;
+                positions[base + 3 * v + 2] = fan[v][2] * scale;
                 colors[base + 3 * v] = r;
                 colors[base + 3 * v + 1] = g;
                 colors[base + 3 * v + 2] = b;
@@ -63,9 +108,10 @@ export const buildCellMesh = (polygons, values, colormap, vmax) => {
  * Line-segment positions tracing every cell boundary, radially inflated so the
  * outlines sit just above the mesh and never z-fight it. Interior edges are
  * shared by two cells and drawn twice -- harmless for a line overlay and far
- * simpler than deduplicating.
+ * simpler than deduplicating. `radii` matches buildCellMesh so the borders
+ * follow the relief surface.
  */
-export const buildCellOutline = (polygons, inflate = 1.002) => {
+export const buildCellOutline = (polygons, inflate = 1.002, radii = null) => {
     let edges = 0;
     polygons.forEach((polygon) => { edges += polygon.length; });
     const positions = new Float32Array(edges * 6);
@@ -74,13 +120,15 @@ export const buildCellOutline = (polygons, inflate = 1.002) => {
         for (let i = 0; i < polygon.length; i += 1) {
             const a = polygon[i];
             const b = polygon[(i + 1) % polygon.length];
+            const scaleA = (radii ? radii.get(vertexKey(a)) ?? 1 : 1) * inflate;
+            const scaleB = (radii ? radii.get(vertexKey(b)) ?? 1 : 1) * inflate;
             const base = e * 6;
-            positions[base] = a[0] * inflate;
-            positions[base + 1] = a[1] * inflate;
-            positions[base + 2] = a[2] * inflate;
-            positions[base + 3] = b[0] * inflate;
-            positions[base + 4] = b[1] * inflate;
-            positions[base + 5] = b[2] * inflate;
+            positions[base] = a[0] * scaleA;
+            positions[base + 1] = a[1] * scaleA;
+            positions[base + 2] = a[2] * scaleA;
+            positions[base + 3] = b[0] * scaleB;
+            positions[base + 4] = b[1] * scaleB;
+            positions[base + 5] = b[2] * scaleB;
             e += 1;
         }
     });
