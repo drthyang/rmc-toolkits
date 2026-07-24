@@ -62,9 +62,11 @@ web_app/frontend/src/
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
     PlotViewer.jsx               PNG plot rendering + metadata
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
-    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections + clickable unit-cell structure
-    OrientationPage.jsx          Orientation tab (own workspace page — not a PCA product): site picker + OrientationView
-    OrientationView.jsx          hex-binned orientation sphere (Three.js flat-shaded cells, amplitude relief), per-cell hover readout, fixed-angle a/b/c | PC1/2/3 mini views (click to snap), colorbar + asymmetry/significance strip
+    PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections; unit-cell picker via SiteStructurePanel
+    OrientationPage.jsx          Orientation tab (own workspace page — not a PCA product): site dropdown + sphere panel (wide left) + SiteStructurePanel (right), 16:9-bounded height
+    OrientationView.jsx          hex-binned orientation sphere (Three.js flat-shaded cells, amplitude relief), per-cell hover readout, fixed-angle a/b/c | PC1/2/3 mini-view column left of the sphere (click to snap), colorbar + asymmetry/significance strip
+    SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages
+    sceneAxes.js                 shared axis palettes (PC tricolor, a/b/c) + triad/rod builders for every Three.js panel
     FileExplorer.jsx             file navigation
   workers/
     localKdeWorker.js            static-mode KDE worker (GPU-or-CPU density map, contours, slab math)

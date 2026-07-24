@@ -32,6 +32,17 @@ hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invis
   `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
   parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
   behavior, API + worker routing.
+- **Orientation page 16:9 layout + shared site picker** (2026-07-24, same branch): the
+  clickable Site-ellipsoids unit-cell picker is extracted from PcaKdePage into
+  `SiteStructurePanel.jsx` (axis palettes/builders into `sceneAxes.js`) and now sits on
+  the Orientation page too — sphere panel wide left, picker right
+  (`.orient-page-layout` grid; the panels' named grid-areas from the PCA layout are
+  neutralized there). The fixed-angle mini views moved from a bottom row to a **column
+  left of the sphere** (scissor panes stacked vertically; WebGL y counts from the
+  bottom). The sphere row height is viewport-clamped (`calc(100vh − 30.5rem)`, self-sized
+  `flex: none` so a zero-height flex ancestor can't collapse it) — on a 16:9 monitor the
+  whole page (site bar, controls, sphere + minis + picker, readouts, footer) fits with
+  zero scroll, verified at 1600×900.
 - **Orientation promoted to its own workspace page** (2026-07-24, same branch): the
   histogram is not a PCA product, so the Density | Orientation tab coupling is gone —
   `OrientationPage.jsx` is a top-level nav page with its own site picker, and the PCA
