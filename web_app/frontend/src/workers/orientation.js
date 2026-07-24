@@ -393,6 +393,19 @@ export const assignCells = (tiling, directions) => (
     directions.map((direction) => assignOne(tiling, normalize(direction)))
 );
 
+// Round half to even (banker's rounding) -- what Python's round() does. The
+// auto-resolution must round identically in both engines or the browser and
+// server pick different tilings for the same data at exact .5 boundaries
+// (e.g. 774 surviving points puts the sqrt at exactly 2.5: half-even gives
+// nu=2, Math.round would give 3).
+const roundHalfEven = (value) => {
+    const floor = Math.floor(value);
+    const remainder = value - floor;
+    if (remainder > 0.5) return floor + 1;
+    if (remainder < 0.5) return floor;
+    return floor % 2 === 0 ? floor : floor + 1;
+};
+
 /**
  * Largest frequency whose cells still average `targetPerCell` points -- the
  * over-binning guard. Mirrors `recommended_frequency`.
@@ -400,7 +413,7 @@ export const assignCells = (tiling, directions) => (
 export const recommendedFrequency = (nPoints, { targetPerCell = DEFAULT_TARGET_PER_CELL, maxFrequency = 24 } = {}) => {
     if (!(nPoints > 0)) return MIN_FREQUENCY;
     const cells = Math.max(12, nPoints / Math.max(Math.trunc(targetPerCell), 1));
-    const frequency = Math.round(Math.sqrt(Math.max(cells - 2, 10) / 10));
+    const frequency = roundHalfEven(Math.sqrt(Math.max(cells - 2, 10) / 10));
     return Math.min(Math.max(frequency, MIN_FREQUENCY), Math.min(maxFrequency, MAX_FREQUENCY));
 };
 
@@ -529,14 +542,32 @@ export const orientationHistogram = (vectors, options = {}) => {
 
     const counts = new Float64Array(cellCount);
     let mass = new Float64Array(cellCount);
+    // Mean |dr| of the atoms that moved into each cell -- the radial-relief
+    // quantity (independent of the color weighting, so shape and color carry
+    // separate information). Smoothing applies to the numerator and denominator
+    // sums, not the ratio, so a smoothed relief stays the mean of the same
+    // smoothed population the color shows.
+    let amplitudeSumCell = new Float64Array(cellCount);
     directions.forEach((direction, index) => {
         const cell = assignOne(tiling, direction);
         counts[cell] += 1;
         mass[cell] += weights[index];
+        amplitudeSumCell[cell] += keptAmplitude[index];
     });
+    let countField = Float64Array.from(counts);
 
     if (smoothing > 0) {
-        mass = Float64Array.from(smooth(Array.from(mass), tiling.neighbors, Math.trunc(smoothing)));
+        const passes = Math.trunc(smoothing);
+        mass = Float64Array.from(smooth(Array.from(mass), tiling.neighbors, passes));
+        amplitudeSumCell = Float64Array.from(smooth(Array.from(amplitudeSumCell), tiling.neighbors, passes));
+        countField = Float64Array.from(smooth(Array.from(countField), tiling.neighbors, passes));
+    }
+
+    const cellMeanAmplitude = new Array(cellCount);
+    for (let cell = 0; cell < cellCount; cell += 1) {
+        cellMeanAmplitude[cell] = countField[cell] > 1e-12
+            ? amplitudeSumCell[cell] / Math.max(countField[cell], 1e-12)
+            : 0;
     }
 
     let totalMass = 0;
@@ -633,6 +664,7 @@ export const orientationHistogram = (vectors, options = {}) => {
         emptyFraction: emptyCells / cellCount,
         meanAmplitude: amplitudeSum / used,
         rmsAmplitude: Math.sqrt(amplitudeSquares / used),
+        cellMeanAmplitude,
         antipodalAsymmetry,
         antipodalAsymmetryNull,
         orientationTensor: tensor,

@@ -32,6 +32,26 @@ hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invis
   `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
   parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
   behavior, API + worker routing.
+- **Amplitude relief** (2026-07-24, same branch): the engines report
+  `cellMeanAmplitude` — the mean |Δr| of each cell's movers (smoothing applies to the
+  numerator/denominator sums, not the ratio; empty cells report 0) — and the sphere gains
+  a **Relief** slider that bulges each cell radially by its mean |Δr| relative to the
+  site average. Color (how often) and shape (how far) carry independent information.
+  Shared polygon vertices average their cells' factors so the relief surface is
+  crack-free (unit-tested); cell borders follow the surface; the hover readout adds
+  ⟨|Δr|⟩.
+- **Adversarial review pass** (multi-agent, 2026-07-24) — confirmed findings fixed:
+  auto-resolution rounding divergence (Python `round()` is half-to-even, JS used
+  `Math.round` half-up — at exactly 774 surviving points the two engines picked
+  different tilings; JS now rounds half-to-even and both suites pin
+  `recommendedFrequency(774) == 2`); stale hover index could crash the tooltip when a
+  resolution change shrank the tiling (hover now resets with each result + bounds
+  check); OrientationView unmount leaked its geometries and a WebGL context per tab
+  switch (groups disposed + `forceContextLoss` in the scene cleanup); the
+  density-integrates-to-one tests were circular (areas cancel by construction) and are
+  replaced by a Monte-Carlo cross-check that assignment Voronoi fractions × 4π
+  reproduce the analytic polygon areas. Greedy-walk assignment verified exact against
+  brute force at ν = 24/40/64 (0/20000 mismatches, all centers self-assign).
 - **UI: Orientation tab** in the PCA Ellipsoid main panel (`OrientationView.jsx` +
   `orientationSphere.js` pure helpers, unit-tested), sharing the page's site picker.
   Density | Orientation tabs in the panel header (the density canvas hides via CSS, never

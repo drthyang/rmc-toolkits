@@ -8,7 +8,9 @@ import {
     buildCellOutline,
     colorCoordinate,
     colorbarGradient,
-    formatDirection
+    formatDirection,
+    reliefFactors,
+    vertexRadii
 } from '../orientationSphere.js';
 import { orientationHistogram, goldbergTiling } from '../workers/orientation.js';
 import { sampleColormap } from '../colormaps.js';
@@ -83,6 +85,53 @@ describe('buildCellOutline', () => {
         for (let v = 0; v < outline.length; v += 3) {
             const norm = Math.hypot(outline[v], outline[v + 1], outline[v + 2]);
             expect(norm).toBeCloseTo(1.01, 5);
+        }
+    });
+});
+
+describe('amplitude relief', () => {
+    it('maps mean amplitudes to clamped radial factors with a neutral empty cell', () => {
+        const factors = reliefFactors([0.2, 0.1, 0, 0.9], 0.2, 1);
+        expect(factors[0]).toBeCloseTo(1, 12);      // at the site average
+        expect(factors[1]).toBeCloseTo(0.5, 12);    // half the average travel
+        expect(factors[2]).toBe(1);                 // empty cell stays neutral
+        expect(factors[3]).toBe(2.2);               // clamped at the ceiling
+        // relief = 0 flattens everything back onto the unit sphere.
+        reliefFactors([0.2, 0.1, 0, 0.9], 0.2, 0).forEach((factor) => expect(factor).toBe(1));
+    });
+
+    it('produces a crack-free relief surface (shared vertices share one radius)', () => {
+        const tiling = goldbergTiling(3);
+        const polygons = tiling.polygons.map((polygon, cell) => polygon.slice(0, tiling.sizes[cell]));
+        // Strongly varying per-cell factors, so a per-cell (non-averaged)
+        // radius would guarantee mismatches at shared vertices.
+        const factors = polygons.map((_, cell) => 0.5 + (cell % 7) * 0.2);
+        const radii = vertexRadii(polygons, factors);
+        const mesh = buildCellMesh(polygons, factors, 'viridis', 2, radii);
+        // Group every emitted vertex by its (pre-scale) direction; all copies
+        // across cells must land at the identical radius.
+        const byDirection = new Map();
+        for (let v = 0; v < mesh.positions.length; v += 3) {
+            const norm = Math.hypot(mesh.positions[v], mesh.positions[v + 1], mesh.positions[v + 2]);
+            const key = [mesh.positions[v] / norm, mesh.positions[v + 1] / norm, mesh.positions[v + 2] / norm]
+                .map((value) => value.toFixed(6)).join(',');
+            if (!byDirection.has(key)) byDirection.set(key, norm);
+            expect(norm).toBeCloseTo(byDirection.get(key), 9);
+        }
+        // And the radii genuinely vary (this is a relief, not a sphere).
+        const norms = [...byDirection.values()];
+        expect(Math.max(...norms) - Math.min(...norms)).toBeGreaterThan(0.2);
+    });
+
+    it('keeps the outline on the relief surface', () => {
+        const tiling = goldbergTiling(2);
+        const polygons = tiling.polygons.map((polygon, cell) => polygon.slice(0, tiling.sizes[cell]));
+        const factors = polygons.map(() => 1.5);
+        const radii = vertexRadii(polygons, factors);
+        const outline = buildCellOutline(polygons, 1.01, radii);
+        for (let v = 0; v < outline.length; v += 3) {
+            const norm = Math.hypot(outline[v], outline[v + 1], outline[v + 2]);
+            expect(norm).toBeCloseTo(1.5 * 1.01, 5);
         }
     });
 });

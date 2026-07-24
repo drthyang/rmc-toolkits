@@ -560,7 +560,9 @@ def orientation_histogram(
         Poisson significance of the raw counts against the isotropic null;
         ``antipodalAsymmetry`` is ``sum_pairs |n(u) - n(-u)| / N`` (0 for an
         inversion-symmetric cloud, 1 for a fully one-sided one), with
-        ``antipodalAsymmetryNull`` the level pure Poisson noise would produce.
+        ``antipodalAsymmetryNull`` the level pure Poisson noise would produce;
+        ``cellMeanAmplitude`` is the mean ``|dr|`` (Angstrom) of the atoms that
+        moved into each cell (0 for empty cells) -- the radial-relief quantity.
     """
     vectors = np.asarray(vectors, dtype=float)
     if vectors.ndim != 2 or vectors.shape[1] != 3:
@@ -611,8 +613,22 @@ def orientation_histogram(
     counts = np.bincount(cells, minlength=cell_count)
     mass = np.bincount(cells, weights=weights, minlength=cell_count)
 
+    # Mean |dr| of the atoms that moved into each cell -- the radial-relief
+    # quantity (independent of the color weighting, so shape and color carry
+    # separate information). Smoothing is applied to the numerator and
+    # denominator sums, not the ratio, so a smoothed relief stays the mean of
+    # the same smoothed population the color shows.
+    amplitude_sum = np.bincount(cells, weights=kept_amplitude, minlength=cell_count)
+    count_field = counts.astype(float)
+
     if smoothing > 0:
         mass = _smooth(mass, tiling.neighbors, smoothing)
+        amplitude_sum = _smooth(amplitude_sum, tiling.neighbors, smoothing)
+        count_field = _smooth(count_field, tiling.neighbors, smoothing)
+
+    cell_mean_amplitude = np.where(
+        count_field > 1e-12, amplitude_sum / np.maximum(count_field, 1e-12), 0.0
+    )
 
     total_mass = float(mass.sum())
     if total_mass <= 0:
@@ -674,6 +690,7 @@ def orientation_histogram(
         "emptyFraction": float((counts == 0).mean()),
         "meanAmplitude": float(kept_amplitude.mean()),
         "rmsAmplitude": float(np.sqrt((kept_amplitude**2).mean())),
+        "cellMeanAmplitude": cell_mean_amplitude.tolist(),
         "antipodalAsymmetry": antipodal_asymmetry,
         "antipodalAsymmetryNull": antipodal_asymmetry_null,
         "orientationTensor": tensor.tolist(),
