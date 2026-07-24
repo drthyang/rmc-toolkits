@@ -137,11 +137,27 @@ describe('amplitude relief', () => {
 });
 
 describe('colorCoordinate', () => {
-    it('scales 0..vmax into 0..1 and clamps', () => {
+    it('scales 0..vmax into 0..1 and clamps (contrast 1 = plain linear)', () => {
         expect(colorCoordinate(0, 2)).toBe(0);
         expect(colorCoordinate(1, 2)).toBe(0.5);
         expect(colorCoordinate(3, 2)).toBe(1);
         expect(colorCoordinate(1, 0)).toBe(0);
+    });
+
+    it('pivots the contrast gain about the isotropic level (enhancement 1)', () => {
+        const vmax = 4;
+        const pivot = 1 / vmax; // the isotropic enhancement's color coordinate
+        // The isotropic level is the fixed point of the gain for any contrast.
+        expect(colorCoordinate(1, vmax, 0.5)).toBeCloseTo(pivot, 12);
+        expect(colorCoordinate(1, vmax, 3)).toBeCloseTo(pivot, 12);
+        // >1 pushes a super-isotropic cell higher, a sub-isotropic cell lower.
+        const superBase = 2 / vmax;
+        expect(colorCoordinate(2, vmax, 2)).toBeCloseTo(pivot + 2 * (superBase - pivot), 12);
+        expect(colorCoordinate(2, vmax, 2)).toBeGreaterThan(colorCoordinate(2, vmax, 1));
+        expect(colorCoordinate(0.5, vmax, 2)).toBeLessThan(colorCoordinate(0.5, vmax, 1));
+        // Clamped to [0, 1] even at high contrast.
+        expect(colorCoordinate(vmax, vmax, 3)).toBe(1);
+        expect(colorCoordinate(0, vmax, 3)).toBe(0);
     });
 });
 
@@ -151,6 +167,23 @@ describe('colorbarGradient', () => {
         expect(gradient.startsWith('linear-gradient(to right, ')).toBe(true);
         expect(gradient.match(/rgb\(/g)).toHaveLength(5);
         expect(gradient).toContain('100.0%');
+    });
+
+    it('tracks the cell color transfer under contrast (bar and sphere agree)', () => {
+        const vmax = 5;
+        const contrast = 2.4;
+        // Each stop's color must equal what a cell of that enhancement gets.
+        const gradient = colorbarGradient('viridis', 10, contrast, vmax);
+        const colors = [...gradient.matchAll(/rgb\((\d+), (\d+), (\d+)\) ([\d.]+)%/g)];
+        expect(colors).toHaveLength(11);
+        colors.forEach((match) => {
+            const percent = Number(match[4]);
+            const enhancement = (percent / 100) * vmax;
+            const expected = sampleColormap('viridis', colorCoordinate(enhancement, vmax, contrast));
+            expect(Number(match[1])).toBe(expected[0]);
+            expect(Number(match[2])).toBe(expected[1]);
+            expect(Number(match[3])).toBe(expected[2]);
+        });
     });
 });
 

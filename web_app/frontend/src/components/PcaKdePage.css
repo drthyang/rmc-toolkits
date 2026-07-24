@@ -1080,8 +1080,12 @@
     border-bottom: 0;
 }
 
+/* Hover: a translucent accent tint (the sphere stays visible through it) plus
+   an inset ring for affordance — not the near-white wash a low-alpha fill reads
+   as over the light canvas. */
 .orient-multiview-zone:hover {
-    background: color-mix(in srgb, var(--accent) 7%, transparent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .orient-multiview-zone:focus-visible {

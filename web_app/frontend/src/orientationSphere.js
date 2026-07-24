@@ -13,11 +13,20 @@ import { getLut, sampleColormap } from './colormaps';
 const clamp01 = (t) => (t < 0 ? 0 : t > 1 ? 1 : t);
 
 /**
- * Color coordinate (0..1) for one cell value. The scale runs 0 -> vmax so the
- * isotropic reference (enhancement = 1) keeps a stable position on the bar
- * whenever vmax is comparable, rather than being stretched per-frame.
+ * Color coordinate (0..1) for one cell value.
+ *
+ * The base scale runs 0 -> vmax. `contrast` is a symmetric gain applied about
+ * the isotropic level (enhancement = 1, the physically meaningful pivot): >1
+ * pushes cells away from the isotropic tone so faint lobes and depletions stand
+ * out, <1 flattens toward it. Contrast = 1 is the plain linear `value / vmax`,
+ * so callers that omit it (and the colorbar at contrast 1) are unchanged.
  */
-export const colorCoordinate = (value, vmax) => (vmax > 0 ? clamp01(value / vmax) : 0);
+export const colorCoordinate = (value, vmax, contrast = 1) => {
+    if (!(vmax > 0)) return 0;
+    const base = clamp01(value / vmax);
+    const pivot = clamp01(1 / vmax); // where the isotropic enhancement sits
+    return clamp01(pivot + contrast * (base - pivot));
+};
 
 // Stable identity for a polygon vertex. Vertices are triangle circumcenters
 // shared by (up to) three cells, but that identity is lost through the worker /
@@ -70,9 +79,10 @@ export const vertexRadii = (polygons, factors) => {
  * Vertices are duplicated per cell so each cell is a single flat color -- the
  * crisp hex-bin look -- and `triangleCell` maps every triangle (in order) back
  * to its cell for raycast picking. `radii` (a vertexRadii Map) optionally
- * displaces each vertex radially for the amplitude relief.
+ * displaces each vertex radially for the amplitude relief; `contrast` is the
+ * color gain about the isotropic level (see `colorCoordinate`).
  */
-export const buildCellMesh = (polygons, values, colormap, vmax, radii = null) => {
+export const buildCellMesh = (polygons, values, colormap, vmax, radii = null, contrast = 1) => {
     let triangles = 0;
     polygons.forEach((polygon) => { triangles += polygon.length - 2; });
     const positions = new Float32Array(triangles * 9);
@@ -81,7 +91,7 @@ export const buildCellMesh = (polygons, values, colormap, vmax, radii = null) =>
 
     let t = 0;
     polygons.forEach((polygon, cell) => {
-        const rgb = sampleColormap(colormap, colorCoordinate(values[cell], vmax));
+        const rgb = sampleColormap(colormap, colorCoordinate(values[cell], vmax, contrast));
         const r = rgb[0] / 255;
         const g = rgb[1] / 255;
         const b = rgb[2] / 255;
@@ -136,16 +146,23 @@ export const buildCellOutline = (polygons, inflate = 1.002, radii = null) => {
 };
 
 /**
- * CSS linear-gradient string sampling a colormap left (0) to right (vmax),
- * for the legend colorbar under the sphere.
+ * CSS linear-gradient string for the legend colorbar under the sphere. The bar's
+ * x-axis is enhancement 0 -> vmax; each stop is painted with the SAME color
+ * transfer the cells use (`colorCoordinate` with the given `contrast`/`vmax`),
+ * so the bar and the sphere always agree. Contrast = 1 gives the plain linear
+ * ramp, so a caller passing only (colormap, stops) is unchanged.
  */
-export const colorbarGradient = (colormap, stops = 24) => {
+export const colorbarGradient = (colormap, stops = 24, contrast = 1, vmax = 1) => {
     const lut = getLut(colormap);
     const last = lut.length / 3 - 1;
     const parts = [];
     for (let s = 0; s <= stops; s += 1) {
-        const index = Math.round((s / stops) * last) * 3;
-        const percent = ((s / stops) * 100).toFixed(1);
+        const base = s / stops;
+        // The bar spans 0..vmax, so the enhancement at this stop is base * vmax;
+        // feed it through the identical cell transfer.
+        const t = colorCoordinate(base * vmax, vmax, contrast);
+        const index = Math.round(t * last) * 3;
+        const percent = (base * 100).toFixed(1);
         parts.push(`rgb(${lut[index]}, ${lut[index + 1]}, ${lut[index + 2]}) ${percent}%`);
     }
     return `linear-gradient(to right, ${parts.join(', ')})`;

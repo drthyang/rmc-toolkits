@@ -43,12 +43,15 @@ export default function OrientationPage({ directory, localRun }) {
     const [clusterThreshold, setClusterThreshold] = useState(DEFAULT_CLUSTER_THRESHOLD);
 
     // Histogram + display options (owned here, in the top controls bar).
-    const [frequency, setFrequency] = useState('auto');
+    // Default ν=10 (1002 cells) + 2× smoothing gives a legible map on a
+    // typical ~1000-copy site out of the box.
+    const [frequency, setFrequency] = useState(10);
     const [weight, setWeight] = useState('count');
     const [frame, setFrame] = useState('cartesian');
-    const [smoothing, setSmoothing] = useState(0);
+    const [smoothing, setSmoothing] = useState(2);
     const [minQuantile, setMinQuantile] = useState(0);
     const [colormap, setColormap] = useState('viridis');
+    const [contrast, setContrast] = useState(1);
     const [relief, setRelief] = useState(0.5);
     const [showOutline, setShowOutline] = useState(true);
     const [showAxes, setShowAxes] = useState(true);
@@ -192,9 +195,19 @@ export default function OrientationPage({ directory, localRun }) {
                         <span className="control-value">{Math.round(minQuantile * 100)}%</span>
                     </label>
                     <label className="control">
-                        <span className="control-name">Smoothing</span>
+                        <span className="control-name">
+                            Smoothing
+                            <InfoBadge label="About smoothing">
+                                <p>
+                                    Neighbour-diffusion passes over the cell graph (mass-conserving):
+                                    each pass shares part of every cell's count with its neighbours,
+                                    trading resolution for a smoother, lower-noise map. The z-scores
+                                    and significance always come from the raw, unsmoothed counts.
+                                </p>
+                            </InfoBadge>
+                        </span>
                         <input
-                            type="range" min="0" max="4" step="1"
+                            type="range" min="0" max="12" step="1"
                             value={smoothing}
                             onChange={(event) => setSmoothing(Number(event.target.value))}
                             aria-label="Neighbour smoothing passes"
@@ -231,6 +244,27 @@ export default function OrientationPage({ directory, localRun }) {
                             {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
                         </select>
                     </label>
+                    <label className="control">
+                        <span className="control-name">
+                            Contrast
+                            <InfoBadge label="About the contrast">
+                                <p>
+                                    Stretches the color scale about the isotropic level (1× = chance):
+                                    higher values push cells away from the isotropic tone so faint
+                                    lobes and depletions stand out, lower values flatten toward it.
+                                    The colorbar tracks the same transfer. Shape (relief) and
+                                    significance are unaffected.
+                                </p>
+                            </InfoBadge>
+                        </span>
+                        <input
+                            type="range" min="0.5" max="3" step="0.1"
+                            value={contrast}
+                            onChange={(event) => setContrast(Number(event.target.value))}
+                            aria-label="Color contrast"
+                        />
+                        <span className="control-value">{contrast.toFixed(1)}×</span>
+                    </label>
                     <label className="control switch">
                         <span className="control-name">Cell borders</span>
                         <input type="checkbox" checked={showOutline} onChange={(event) => setShowOutline(event.target.checked)} aria-label="Show cell borders" />
@@ -265,6 +299,7 @@ export default function OrientationPage({ directory, localRun }) {
                     smoothing={smoothing}
                     minQuantile={minQuantile}
                     colormap={colormap}
+                    contrast={contrast}
                     relief={relief}
                     showOutline={showOutline}
                     showAxes={showAxes}

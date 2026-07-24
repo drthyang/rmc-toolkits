@@ -85,6 +85,7 @@ export default function OrientationView({
     smoothing,
     minQuantile,
     colormap,
+    contrast,
     relief,
     showOutline,
     showAxes
@@ -359,7 +360,7 @@ export default function OrientationView({
             ? vertexRadii(result.polygons, reliefFactors(result.cellMeanAmplitude, result.meanAmplitude, relief))
             : null;
 
-        const mesh = buildCellMesh(result.polygons, result.enhancement, colormap, result.vmax, radii);
+        const mesh = buildCellMesh(result.polygons, result.enhancement, colormap, result.vmax, radii, contrast);
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
         geometry.setAttribute('color', new THREE.BufferAttribute(mesh.colors, 3));
@@ -399,7 +400,7 @@ export default function OrientationView({
 
         // The scene just changed; refresh the static fixed-angle mini views.
         renderMinis();
-    }, [result, colormap, relief, showOutline, showAxes, frame, unitCell, renderMinis]);
+    }, [result, colormap, contrast, relief, showOutline, showAxes, frame, unitCell, renderMinis]);
 
     const resetView = useCallback(() => {
         const handle = sceneRef.current;
@@ -436,7 +437,10 @@ export default function OrientationView({
         }
     }, [selectedEllipsoid]);
 
-    const gradient = useMemo(() => colorbarGradient(colormap), [colormap]);
+    const gradient = useMemo(
+        () => colorbarGradient(colormap, 24, contrast, result?.vmax ?? 1),
+        [colormap, contrast, result]
+    );
 
     // A real inversion asymmetry: well above what Poisson noise alone produces.
     const asymmetrySignificant = result
@@ -561,13 +565,6 @@ export default function OrientationView({
                             <span className="orient-colorbar-label">{numberFormat(result.vmax, 1)}× isotropic</span>
                         </div>
                         <div className="orient-summary">
-                            <span className="orient-stat">
-                                <b>{result.cellCount}</b> cells (ν={result.frequency}, 12 pentagons)
-                            </span>
-                            <span className="orient-stat">
-                                <b>{result.usedPoints.toLocaleString()}</b>/{result.totalPoints.toLocaleString()} vectors
-                                {result.rejectedPoints > 0 ? ` (${result.rejectedPoints} below cutoff)` : ''}
-                            </span>
                             <span className="orient-stat">
                                 peak <b>{numberFormat(result.peakEnhancement, 2)}×</b> at {formatDirection(result.peakDirection)}
                                 {' '}(z = {numberFormat(result.peakZScore, 1)})
