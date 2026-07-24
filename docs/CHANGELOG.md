@@ -5,6 +5,34 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Displacement-orientation engine (hex-binned sphere)** (2026-07-24) — new engine for the
+distribution of displacement *directions* per site: `u = Δr/|Δr|` binned in solid angle on
+a Goldberg polyhedron (the dual of a frequency-ν geodesic icosahedron — hexagons plus the
+12 pentagons any hexagonal tiling of a sphere must carry; 10ν²+2 cells), each cell's count
+divided by its exactly-computed solid angle. Complements the ellipsoid view: discrete
+hop-sites and antipodal asymmetry (odd anharmonicity) are visible here and invisible in U.
+
+- `rmc_toolkits/orientation.py` (source of truth) + `workers/orientation.js` (static-mode
+  port, keep in sync): tiling construction with derived (not hard-coded) icosahedron faces
+  and combinatorial-key merging, O(1) direction→cell lookup (gnomonic seed + greedy walk,
+  brute-force-verified), exact centrosymmetric antipode map.
+- Histogram options: auto resolution via `recommended_frequency` (over-binning guard,
+  ~12 pts/cell), weights `count | amplitude | amplitude2` (the latter's angular map is the
+  decomposition of ⟨u²⟩), amplitude cutoffs (absolute + quantile — near-zero |Δr| has
+  noise for a direction), mass-conserving neighbour smoothing, `cartesian | pca` frame
+  (PCA axes shared with the ellipsoid engine via the same canonicalization). The map is
+  deliberately never antipodally folded: the +u/−u imbalance is the signal.
+- Outputs: `enhancement = 4π·density` (1 = isotropic, reads as "N× more likely than
+  chance"), per-cell Poisson `zScore` vs the isotropic null (smoothing never feeds the
+  z), `antipodalAsymmetry` = Σ_pairs|n(u)−n(−u)|/N with its Poisson noise floor
+  `antipodalAsymmetryNull` (inversion asymmetry U is blind to), orientation tensor
+  ⟨u uᵀ⟩ + eigenvalues + `orientationAnisotropy` (3λ₁−1), cell polygons for rendering.
+- Wiring: `/api/pca/orientation` (Flask), `{kind: 'orientation'}` in `pcaKdeWorker.js`,
+  package exports. Tests: `tests/test_orientation.py` and
+  `workers/__tests__/orientation.test.js` — tiling invariants, brute-force assignment
+  parity, isotropic flatness, lobe recovery, one-sided asymmetry detection, weight/frame
+  behavior, API + worker routing.
+
 **Auto StoG tab hidden** (2026-07-23) — the page is not behaving correctly yet, so it is
 gated out of the UI while the work continues offline. `App.jsx` gains a `SHOW_AUTO_STOG`
 constant (currently `false`) guarding the nav button and the page mount; with it off the
