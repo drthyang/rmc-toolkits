@@ -915,28 +915,46 @@
 
 /* --- Orientation sphere tab ------------------------------------------------ */
 
-/* The orientation view fills the main viewport column: its own compact controls
-   row, the sphere canvas, then colorbar + summary + legend strips. */
-.orient-view {
+/* ── Orientation page ──────────────────────────────────────────────────────── */
+/* Three equal-height panels in one row: axis views : sphere : site picker =
+   3 : 6.5 : 6.5. Height-bounded so the whole page (top controls, panels,
+   footer) fits a 16:9 monitor without scrolling; the clamp tracks the window. */
+.orient-layout {
+    /* Self-sized (not flex:1): the height clamp is authoritative, so a
+       flex-grow can't stretch the row past what fits and cause page scroll. */
+    flex: none;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 6.5fr) minmax(0, 6.5fr);
+    gap: 0.85rem;
+    align-items: stretch;
+    /* Fill the page height below the top controls bar: the subtracted amount is
+       header + controls + footer + padding, so the three panels reach nearly to
+       the footer on a 16:9 screen without introducing page scroll. */
+    height: clamp(20rem, calc(100vh - 17.75rem), 60rem);
+}
+
+/* OrientationView renders with display:contents, so its two panels (the mini
+   column and the sphere) drop straight into the grid; the site picker's named
+   grid-area from the PCA layout is neutralized so it takes the third column. */
+.orient-mini-panel,
+.orient-main-panel,
+.orient-layout .pca-unitcell-panel {
+    grid-area: auto;
+    min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
+}
+
+.orient-main-panel .orient-canvas {
     flex: 1 1 auto;
     min-height: 0;
 }
 
-/* Reuses the page's .pca-controls styling but sits inside the panel, above the
-   canvas, so the orientation options live next to the sphere they drive. */
-.orient-controls {
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-    border-bottom: 1px solid var(--border);
-    box-shadow: none;
-    background: var(--panel-bg);
-}
-
-.orient-canvas {
-    min-height: 24rem;
+.orient-layout .pca-structure {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 /* Per-cell hover readout following the pointer. */
@@ -1020,44 +1038,17 @@
     color: var(--danger);
 }
 
-/* Standalone Orientation page: the viewport panel spans the full width. */
-.orient-page-panel {
-    display: flex;
-    flex-direction: column;
-}
-
-/* The sphere row: fixed-angle mini views stacked in a column on the left,
-   the main canvas filling the rest. Height is bounded so the whole page —
-   site bar, controls, sphere, readouts — fits a 16:9 monitor without
-   scrolling; the viewport-based clamp tracks the window. */
-.orient-body {
-    display: flex;
-    /* Self-sized (no grow/shrink): the row's height comes from the viewport
-       clamp alone, so a zero-height flex ancestor can never collapse it and
-       the panel simply grows around it. */
-    flex: none;
-    height: clamp(20rem, calc(100vh - 30.5rem), 44rem);
-}
-
-/* Fixed-angle mini views (down a/b/c or PC1/2/3): one scissored canvas with
-   three click-to-snap zones stacked vertically, one per third. */
+/* Axis-views mini panel: three fixed-angle views stacked vertically, one
+   scissored canvas with a click-to-snap zone over each third. */
 .orient-multiview {
     position: relative;
-    /* All children are absolutely positioned (zero min-content size), so
-       without flex:none the row layout would shrink this column away. */
-    flex: none;
-    width: 9.5rem;
-    border-right: 1px solid var(--border);
+    flex: 1 1 auto;
+    min-height: 0;
     background:
         radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
         var(--canvas-bg);
     overflow: hidden;
-}
-
-.orient-canvas {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
+    border-radius: 0 0 12px 12px;
 }
 
 .orient-multiview-canvas {
@@ -1105,41 +1096,26 @@
     text-shadow: 0 0 4px var(--canvas-bg);
 }
 
-/* Orientation page grid: sphere panel wide left, site picker right. The
-   unitcell panel's grid-area (named for the PCA page's layout) is neutralized
-   here so it auto-places into the second column. */
-.orient-page-layout {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
-    gap: 0.85rem;
-    align-items: stretch;
-}
-
-.orient-page-layout .pca-viewport,
-.orient-page-layout .pca-unitcell-panel {
-    /* Both panels carry named grid-areas for the PCA page's layout; here they
-       auto-place (DOM order): sphere left, site picker right. */
-    grid-area: auto;
-}
-
-/* The picker canvas fills the panel next to the (height-bounded) sphere. */
-.orient-page-layout .pca-structure {
-    flex: 1 1 auto;
-    min-height: 16rem;
-}
-
-@media (max-width: 1100px) {
-    .orient-page-layout {
+/* Below the three-up width, stack: sphere first (tall), then site picker, then
+   the axis views as a short row-height panel. */
+@media (max-width: 1200px) {
+    .orient-layout {
         grid-template-columns: 1fr;
+        height: auto;
     }
 
-    .orient-body {
-        height: clamp(18rem, 55vh, 30rem);
+    .orient-mini-panel {
+        order: 3;
+        height: 12rem;
     }
 
-    .orient-multiview {
-        width: 7rem;
+    .orient-main-panel {
+        order: 1;
+        height: clamp(20rem, 55vh, 34rem);
+    }
+
+    .orient-layout .pca-unitcell-panel {
+        order: 2;
+        height: clamp(18rem, 45vh, 30rem);
     }
 }

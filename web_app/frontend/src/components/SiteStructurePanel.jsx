@@ -28,7 +28,7 @@ const SAVE_OPTIONS = [
     { id: 'png3x', label: 'High quality PNG', hint: '3×' }
 ];
 
-export default function SiteStructurePanel({ sites, selectedRef, onSelectSite, selectedEllipsoid, elementColors }) {
+export default function SiteStructurePanel({ sites, selectedRef, onSelectSite, selectedEllipsoid, elementColors, loadingSites = false }) {
     // Crystallographic a/b/c gizmo at the cell origin — on by default, since
     // this is a structural view where axes belong.
     const [showCellAxes, setShowCellAxes] = useState(true);
@@ -404,6 +404,7 @@ export default function SiteStructurePanel({ sites, selectedRef, onSelectSite, s
                     </InfoBadge>
                 </span>
                 <span className="panel-title-actions">
+                    {loadingSites && <span className="panel-title-count">Loading…</span>}
                     <button
                         type="button"
                         className={`pca-reset-view pca-cell-toggle ${showCellAxes ? 'is-active' : ''}`}
