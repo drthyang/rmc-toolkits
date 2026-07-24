@@ -1019,3 +1019,69 @@
 .orient-stat.is-flagged b {
     color: var(--danger);
 }
+
+/* Standalone Orientation page: the viewport panel spans the full width. */
+.orient-page-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Fixed-angle mini views (down a/b/c or PC1/2/3): one scissored canvas with
+   three click-to-snap zones overlaid, one per third. */
+.orient-multiview {
+    position: relative;
+    /* All children are absolutely positioned (zero min-content height), so
+       without flex:none the column layout would shrink this strip away. */
+    flex: none;
+    height: 7.5rem;
+    border-top: 1px solid var(--border);
+    background:
+        radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
+        var(--canvas-bg);
+    overflow: hidden;
+}
+
+.orient-multiview-canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    /* The renderer canvas is appended after the zone buttons; keep it below
+       them so the labels stay visible and clicks reach the snap zones. */
+    z-index: 0;
+}
+
+.orient-multiview-zone {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    bottom: 0;
+    width: 33.334%;
+    padding: 0.35rem 0.5rem;
+    border: 0;
+    border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+}
+
+.orient-multiview-zone:last-child {
+    border-right: 0;
+}
+
+.orient-multiview-zone:hover {
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.orient-multiview-zone:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring) inset;
+}
+
+.orient-multiview-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    text-shadow: 0 0 4px var(--canvas-bg);
+}
