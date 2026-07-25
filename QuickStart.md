@@ -1,7 +1,7 @@
 # QuickStart
 
 Use `rmc-toolkits` to inspect RMCProfile run folders with interactive plots, model information,
-KDE slices, and a 3D structure view.
+KDE slices, thermal ellipsoids, displacement-direction maps, and a 3D structure view.
 
 ## 1. Open The Hosted Dashboard
 
@@ -34,6 +34,9 @@ After loading, use:
 - `PCA Ellipsoid` for per-site thermal ellipsoids: pick a site (from the list or by clicking an atom
   in the unit-cell view) to see its PCA displacement ellipsoid, the 3D KDE isosurface with density
   projected on the box walls, and a non-Gaussianity readout.
+- `Displacement Directions` for where atoms move rather than how far: the site's displacement
+  directions binned on a hex-tiled sphere, highlighting preferred hop directions and ±u asymmetry
+  the ellipsoid can't show.
 
 ## 3. Live Data (Auto-Refresh)
 
