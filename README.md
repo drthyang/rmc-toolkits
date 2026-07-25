@@ -11,69 +11,45 @@ installing anything.
 ### ▶️ Open the app — [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
 
 1. Visit the link above.
-2. Click **Select Folder** and choose your RMCProfile run directory.
-3. Your plots, KDE slices, ellipsoid and displacement-direction analyses, symmetry summary, and
-   folded 3D structure render in your browser.
+2. Click **Select Folder** and choose your RMCProfile run directory — or press **Demo** for a
+   bundled example run.
+3. Everything renders in your browser.
 
 🔒 **Your raw run files never leave your device.** They are read and rendered entirely in your
-browser and are never uploaded to rmc-toolkits or any project server — a private, secure way to
-monitor an RMC modeling run. (Your browser's picker may say “Upload”, but nothing is sent
-anywhere.)[^cloud-llm-privacy]
+browser and are never uploaded to rmc-toolkits or any project server. (Your browser's picker may
+say “Upload”, but nothing is sent anywhere.)[^cloud-llm-privacy]
 
 ⚡ **Live monitoring** auto-refreshes charts as new files are written, in Chromium browsers (Chrome,
 Edge, Arc, Opera).
 
-📖 **New here?** Start with [QuickStart.md](QuickStart.md). Want server-side features or a Python
-API? See [Run locally](#run-locally-optional) and [Python package usage](#python-package-usage).
-
-## What's Inside
-
-- **Web app (`web_app/`)** — a React/Vite single-page app for the hosted, no-install dashboard. An
-  **optional** Flask backend adds server-side file browsing, `.rmc6f` conversion, and
-  reference-grade SciPy KDE for local or self-hosted use.
-- **Python package (`rmc_toolkits/`)** — reusable parsing, plotting, `.rmc6f` conversion, folded
-  structure loading, SciPy KDE, per-site PCA ellipsoid, and displacement-direction histogram
-  helpers for RMCProfile outputs, including RMCProfile EXAFS dataset CSVs.
-- **Legacy scripts (`src/`)** — original standalone CLI/desktop research scripts.
+📖 **New here?** Start with [QuickStart.md](QuickStart.md). Everything else — local/self-hosted
+setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE.md).
 
 ## Features
 
-- **Run dashboard** — auto-detects supported RMCProfile files and renders browser-native SVG
-  charts for PDFs/G(r), S(Q), Bragg profiles, R-value logs, partials, and RMCProfile EXAFS dataset
-  Q/R CSVs.
-- **Interactive plots and export** — hover readouts, legend toggles, drag-to-zoom, per-chart PNG/SVG
-  export, and a *Save all figures* `.zip`; KDE, slab, and 3D panels export PNG at native or 3×
-  resolution.
-- **Live Data** — auto-refreshes charts as your RMC modeling run writes new files. The hosted app
-  uses the File System Access API in Chromium browsers; the optional Flask backend watches folders
-  server-side.
-- **Atomic Density workspace** — reads folded `.rmc6f` structures, summarizes the model, draws KDE
-  density slices, shows a slab-in-cell projection, and renders a Three.js unit-cell view. Drag the
-  highlighted slab band to move the slice position directly.
-- **Browser KDE with fallback** — computes density maps in a Web Worker, using WebGPU when available
-  and falling back automatically to CPU. The optional backend keeps the reference SciPy KDE path for
-  local use.
-- **PCA Ellipsoid (thermal ellipsoids)** — per-site PCA over RMC displacement clouds gives the
-  anisotropic displacement tensor (thermal ellipsoid) and a 3D Gaussian-KDE isosurface with the
-  density projected onto the box walls (contours included), a per-site non-Gaussianity (excess
-  kurtosis) readout, and a clickable unit-cell structure view for picking sites. The KDE is sampled
-  in the PCA frame so it factorizes and runs in the browser (or the optional backend). PCA and KDE
-  are standard tools; this analysis-and-visualization approach follows
-  Maksim Eremenko's [PCA_KDE utilities](https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE)
-  and reimplements it independently.
-- **Displacement Directions** — maps where atoms move, not just how far: per-site displacement
-  directions binned in solid angle on a hex-tiled sphere and shaded by enhancement over an
-  isotropic cloud — the direction-space counterpart to the PCA ellipsoid. Discrete hop directions
-  and ±u antipodal asymmetry (odd anharmonicity) stand out here even though the U tensor is blind
-  to them. Controls cover weighting, amplitude cutoffs, smoothing, amplitude relief, contrast, and
-  crystal/PCA frames, with fixed-angle a/b/c mini views.
-- **Symmetry analysis** — a client-side, FINDSYM-like *Detected SG* panel reports space group, point
-  group, operation count, and tolerance-dependent changes from the folded structure.
-- **AI Assistant (beta)** — optional chat over the loaded run with a local LLM by default (Ollama or
-  LM Studio) or an opt-in cloud model (OpenAI, Gemini). It sends compact run context such as Rwp,
-  ln(χ²), symmetry, and pair-correlation cues; raw files are not uploaded to
-  rmc-toolkits.[^cloud-llm-privacy] See
-  [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md) for setup.
+- **Run dashboard** — auto-detects RMCProfile outputs (PDF/G(r), S(Q), Bragg profiles, partials,
+  EXAFS Q/R CSVs, R-value logs) and renders interactive charts with hover readouts, drag-to-zoom,
+  and PNG/SVG/`.zip` export.
+- **Live Data** — charts auto-refresh while your run writes new files: client-side in Chromium
+  browsers, or server-side through the optional Flask backend.
+- **Atomic Density** — KDE density slices (WebGPU with automatic CPU fallback), a draggable
+  slab-in-cell projection, and a Three.js folded unit-cell view of `.rmc6f` structures.
+- **PCA Ellipsoid** — per-site thermal ellipsoids from the RMC displacement clouds: anisotropic
+  displacement tensor, 3D KDE isosurface with wall projections, and non-Gaussianity readouts.
+  Follows Maksim Eremenko's
+  [PCA_KDE utilities](https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE)
+  (independent reimplementation).
+- **Displacement Directions** — the direction-space counterpart to the ellipsoid: displacement
+  directions binned in solid angle on a hex-tiled sphere reveal discrete hop directions and ±u
+  asymmetry that the U tensor cannot see.
+- **Symmetry analysis** — a client-side, FINDSYM-like panel reports the detected space group and
+  how it changes with tolerance.
+- **AI Assistant (beta)** — chat about the loaded run with a local LLM (Ollama, LM Studio) or an
+  opt-in cloud model (OpenAI, Gemini). Only compact run context is sent, never raw
+  files.[^cloud-llm-privacy] Setup:
+  [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md).
+- **Python package (`rmc_toolkits/`)** — the same parsing, plotting, KDE, PCA-ellipsoid, and
+  displacement-direction analyses as a reusable library, plus `.rmc6f` conversion helpers.
 
 [^cloud-llm-privacy]: If you opt into a cloud LLM, the compact summarized run context used for
     assistant responses is sent directly to the cloud LLM server you selected. Raw run files are not
@@ -98,190 +74,49 @@ bundled demo run as a table, with LaTeX math such as Rwp and χ² rendered inlin
 
 ![AI Assistant summarizing a run as tables](assets/rmc-toolkits-assistant.gif)
 
-## Repository Layout
+## Run It Locally (optional)
 
-| Path | Purpose |
-| --- | --- |
-| `rmc_toolkits/` | Reusable package: parsing, plots, KDE. |
-| `web_app/backend/app.py` | Flask API server with data-root guarding. |
-| `web_app/frontend/` | React + Vite single-page app. |
-| `src/` | Original standalone CLI/desktop scripts. |
-| `web_app/frontend/public/demo/` | Bundled GaTa₄Se₈ 250 K demo run (the app's **Demo** button). |
-| `tests/` | `unittest` suite for the package and backend. |
-| `docs/` | Changelog, roadmap, architecture notes. |
-
-## Setup
-
-> Only needed to run the Flask backend, use the Python package, or develop locally. **To just use
-> the dashboard, open the [hosted app](https://drthyang.github.io/rmc-toolkits/) — nothing to install.**
+The hosted app needs no install. Run the Flask backend when you want server-side file browsing,
+`.rmc6f` conversion, reference-grade SciPy KDE, or to self-host on a network:
 
 ```bash
-# Python (from repo root)
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r web_app/backend/requirements.txt   # web app
-pip install -e .                                   # rmc_toolkits package (editable)
-
-# Frontend (Node 20.19+ or 22.12+, for Vite 7)
-cd web_app/frontend
-npm install
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r web_app/backend/requirements.txt && pip install -e .
+(cd web_app/frontend && npm install && npm run build)   # Node 20.19+ or 22.12+
+python web_app/backend/app.py                           # http://127.0.0.1:5000/
 ```
 
-## Run Locally (optional)
+Ports, data roots, dev servers, Docker/GitHub Pages deployment, the backend API, and supported
+file patterns are covered in [docs/REFERENCE.md](docs/REFERENCE.md).
 
-Most users don't need this — the [hosted app](https://drthyang.github.io/rmc-toolkits/) covers
-monitoring and visualization entirely in the browser. Run the Flask backend only when you want
-server-side file browsing, `.rmc6f` conversion, reference-grade SciPy KDE, or to self-host on a
-network.
-
-Build the frontend once, then serve it from Flask:
-
-```bash
-cd web_app/frontend && npm run build && cd ../..
-source .venv/bin/activate
-python web_app/backend/app.py        # http://127.0.0.1:5000/
-```
-
-On macOS, port 5000 may be taken by AirPlay Receiver — use another port:
-
-```bash
-RMC_TOOLKITS_PORT=5050 python web_app/backend/app.py
-```
-
-By default the backend only serves paths under the repo root. To browse another data root:
-
-```bash
-RMC_TOOLKITS_DATA_ROOT=/absolute/path/to/data python web_app/backend/app.py
-```
-
-In the app, use `Select Folder` to pick a run folder and toggle `Live Data` for auto-refresh.
-
-### Frontend development
-
-```bash
-cd web_app/frontend
-VITE_API_BASE_URL=http://localhost:5050 npm run dev   # http://localhost:5173/
-```
-
-## Hosting The Dashboard
-
-Two ways to deploy:
-
-- **GitHub Pages (static)** — how the public app at
-  [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/) is served, and the
-  recommended way to share it. Users select a local run folder in the browser; data stays on their
-  machine, no Python server required. Plot parsing, `.rmc6f` model summaries, the slab view,
-  browser-side KDE (WebGPU + CPU fallback), and the 3D view all run client-side. Live Data works in
-  Chromium browsers (Chrome, Edge, Arc, Opera) via the File System Access API. Deployed automatically
-  from `main` by `.github/workflows/pages.yml`.
-- **Flask web service** — full-featured: server-side file browsing, structure sampling, conversion,
-  SciPy KDE, and Live Data. The included `Dockerfile` builds the frontend and serves it via
-  Flask/Gunicorn:
-
-  ```bash
-  docker build -t rmc-toolkits-dashboard .
-  docker run --rm -p 5000:5000 rmc-toolkits-dashboard
-  ```
-
-  For a public deployment (Render, Fly.io, Railway, a VPS), the container honors the provider's
-  `PORT` and falls back to `5000`. Set `RMC_TOOLKITS_DATA_ROOT` to expose your run folders.
-
-To test the static build locally:
-
-```bash
-cd web_app/frontend
-VITE_STATIC_MODE=true VITE_BASE_PATH=/ npm run build
-npm run preview
-```
-
-## Python Package Usage
+## Python Package
 
 ```python
-from rmc_toolkits import (
-    detect_plot_kind, kde_slice, load_unit_cell_positions,
-    make_plot, plot_to_png, read_exafs_csv, read_structure, write_frac_from_rmc6f,
-)
+from rmc_toolkits import kde_slice, load_unit_cell_positions, make_plot, plot_to_png
 
 demo = "web_app/frontend/public/demo"  # bundled GaTa4Se8 250 K example run
 
-frac_path = write_frac_from_rmc6f(f"{demo}/GTS_250K.rmc6f", overwrite=True)
-structure = read_structure(demo)
-
 positions = load_unit_cell_positions(f"{demo}/GTS_250K.rmc6f", element="Ga")
-payload = kde_slice(
+density = kde_slice(
     positions.positions,
     z_center=0.5 * positions.cell_lengths[2],
     dz=0.08 * positions.cell_lengths[2],
     xlim=(0.0, float(positions.cell_lengths[0])),
     ylim=(0.0, float(positions.cell_lengths[1])),
 )
-
 png_bytes = plot_to_png(make_plot(f"{demo}/GTS_250K_FQ1.csv"))
 ```
 
-Lower-level parser helpers are also exported: `read_rmc_csv`, `read_exafs_csv`, `read_chi`,
-`read_atom_indices`, `read_cell_vectors`, `iter_rmc6f_atoms`, `frac_lines_from_rmc6f`, `rwp`.
+Full usage, parser helpers, and the legacy CLI scripts:
+[docs/REFERENCE.md](docs/REFERENCE.md#python-package-usage).
 
-## Backend API
+## Documentation
 
-All endpoints are under `/api`. Relative paths resolve under `RMC_TOOLKITS_DATA_ROOT`; absolute
-paths are rejected unless inside the configured root or a folder selected via the native picker.
-
-| Method & path | Description |
-| --- | --- |
-| `GET /api/health` | Service status and active data root. |
-| `GET /api/files?dir=data` | Directory listing with detected `plotKind` values. |
-| `POST /api/dialog/folder` | Open a native folder picker; register it as an allowed root. |
-| `GET /api/plot?path=...` | Render one supported file as a PNG. |
-| `GET /api/plot/metadata?path=...` | Plot kind, title, and metrics (`rwp`, `final_chi_r`). |
-| `GET /api/plot/data?path=...` | Parsed plot series and normalized axis labels for SVG rendering. |
-| `POST /api/convert/frac` | Convert `.rmc6f` → `Frac_coord_<stem>.txt`. |
-| `GET /api/structure?dir=...&maxPoints=1000000` | Folded atom positions, counts, lattice. |
-| `GET /api/kde/slice?dir=...&element=Ga&z=0.5&dz=0.08` | KDE density grid, contours, slab counts. |
-
-## Supported File Patterns
-
-- Real-space PDF/G(r): `*_FT_XFQ1.csv`, `*PDF*.csv`
-- Reciprocal-space S(Q): `*_FQ1.csv`, `*_SQ1.csv`
-- RMCProfile EXAFS dataset outputs: `*-EXAFS-*_Q_OUTPUT.csv` (`k` vs `χ(k) k²`) and
-  `*-EXAFS-*_R_OUTPUT.csv` (`r` vs Fourier-transform components)
-- Bragg profiles: `*_bragg.csv`
-- R-value logs: `*.log`
-- Structure files: `*.rmc6f`, `Frac*.txt`
-
-Most RMCProfile CSV parsers expect first-row labels followed by numeric rows. RMCProfile EXAFS
-dataset Q-output files may include a descriptive title row before the column header;
-`read_exafs_csv` handles that layout.
-
-## Legacy CLI Scripts
-
-```bash
-pip install numpy matplotlib scipy seaborn
-python src/RMC_plot.py --dir web_app/frontend/public/demo [--save --no-show]
-python src/RMC_KDE.py [--el Mn]
-python src/RMC_3D.py            # needs mayavi
-```
-
-`RMC_KDE.py` and `RMC_3D.py` expect `Frac*.txt` plus `.rmc6f` in the working directory.
-
-## Tests
-
-```bash
-source .venv/bin/activate
-MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
-
-# Frontend unit tests (vitest — AI assistant module)
-cd web_app/frontend && npm test
-```
-
-## Status
-
-The reusable Python package, hosted dashboard, optional Flask API, RMCProfile plot handling,
-server-side/browser KDE paths, symmetry panel, PCA ellipsoid and displacement-directions
-analyses, AI assistant, and Three.js viewer are in place.
-Current priorities: richer run summaries, export/report workflows, and refactoring the legacy
-scripts into thin wrappers around `rmc_toolkits`. See [docs/ROADMAP.md](docs/ROADMAP.md) for the
-full plan and [docs/CHANGELOG.md](docs/CHANGELOG.md) for history.
+- [QuickStart.md](QuickStart.md) — guided tour of the hosted app, including AI-assistant setup.
+- [docs/REFERENCE.md](docs/REFERENCE.md) — repository layout, setup, self-hosting, backend API,
+  supported file patterns, package usage, legacy CLI scripts, tests.
+- [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md) — plans and history.
+- [AGENTS.md](AGENTS.md) — architecture notes and contributor onboarding.
 
 ## License
 
