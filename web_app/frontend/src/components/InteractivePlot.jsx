@@ -5,6 +5,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
+import { niceDomain } from '../plotDomain';
 import SaveMenu from './SaveMenu';
 import './InteractivePlot.css';
 
@@ -54,19 +55,6 @@ const formatTick = (value, step, axisMax) => {
     if (magnitude >= 1e6) return `${(value / 1e6).toFixed(decimalsForStep(step / 1e6))}M`;
     if (magnitude >= 1e4) return `${(value / 1e3).toFixed(decimalsForStep(step / 1e3))}k`;
     return value.toFixed(decimalsForStep(step));
-};
-
-const niceDomain = (values) => {
-    const finite = values.filter(Number.isFinite);
-    if (!finite.length) return [0, 1];
-    let min = Math.min(...finite);
-    let max = Math.max(...finite);
-    if (min === max) {
-        min -= 1;
-        max += 1;
-    }
-    const pad = (max - min) * 0.05;
-    return [min - pad, max + pad];
 };
 
 // Round ticks at 1/2/5 x 10^n steps, clipped to the domain.
