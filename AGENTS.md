@@ -83,6 +83,12 @@ web_app/frontend/src/
 
 - **`z` / `dz` are cell-edge fractions** at the API/slider boundary, converted to Ångström inside
   `kde.py`. Keep that contract when touching KDE code.
+- **Rwp is `None`/`null` when it is undefined, never `0`.** `rwp()` exists twice — `parsers.py`
+  (source of truth) and `browserData.js` (static-mode port) — and the two must agree exactly; keep
+  them in sync. It sums only the points where *both* the observed and fitted columns are finite
+  (a masked region reaches the readers as NaN), and returns the unavailable sentinel for the two
+  degenerate cases: no such point, and a zero denominator. Neither is a fit quality, and `0` in
+  that slot reads as a *perfect* one — the dashboard chip renders the sentinel as "—".
 - **KDE fit is subsampled to 6000 slab points** (deterministic pseudo-random, to avoid RMC
   atom-order aliasing). Static-mode KDE is a *visualization* path — the server-side SciPy
   `gaussian_kde` is the reference for publication values.

@@ -102,6 +102,45 @@ class ParserTests(unittest.TestCase):
 
         self.assertAlmostEqual(value, np.sqrt(6.0 / 36.0))
 
+    def test_rwp_is_none_when_observed_is_all_nan(self):
+        # A NaN denominator must not collapse to 0.0 — a caller would show that
+        # as a perfect fit over data that is entirely absent.
+        value = rwp(
+            np.array([0.0, 1.0, 2.0]),
+            np.array([np.nan, np.nan, np.nan]),
+            np.array([1.0, 2.0, 3.0]),
+        )
+
+        self.assertIsNone(value)
+
+    def test_rwp_is_none_when_the_denominator_is_zero(self):
+        value = rwp(
+            np.array([0.0, 1.0, 2.0]),
+            np.array([0.0, 0.0, 0.0]),
+            np.array([1.0, 2.0, 3.0]),
+        )
+
+        self.assertIsNone(value)
+
+    def test_rwp_uses_only_points_finite_in_both_series(self):
+        # Finite pairs: (3, 4) and (4, 4) — denom 9 + 16, residual 1 + 0.
+        value = rwp(
+            np.array([0.0, 1.0, 2.0, 3.0]),
+            np.array([3.0, np.nan, 4.0, 4.0]),
+            np.array([4.0, 5.0, np.nan, 4.0]),
+        )
+
+        self.assertAlmostEqual(value, 0.2)
+
+    def test_rwp_is_none_when_no_point_is_finite_in_both_series(self):
+        value = rwp(
+            np.array([0.0, 1.0]),
+            np.array([np.nan, 2.0]),
+            np.array([1.0, np.nan]),
+        )
+
+        self.assertIsNone(value)
+
     @requires_sample
     def test_read_rmc6f_metadata_and_atom_indices(self):
         atom_indices = read_atom_indices(DATA / "GNSe.rmc6f")

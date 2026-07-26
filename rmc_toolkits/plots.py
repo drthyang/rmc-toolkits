@@ -24,7 +24,8 @@ class PlotResult:
     figure: plt.Figure
     kind: str
     title: str
-    metrics: dict[str, float] = field(default_factory=dict)
+    # An entry may be None when the metric is not defined for the data (see rwp).
+    metrics: dict[str, float | None] = field(default_factory=dict)
 
 
 def detect_plot_kind(path: str | Path) -> str | None:
@@ -72,7 +73,7 @@ def _series_plot(
     if len(series.data) < 2:
         raise ValueError(f"{path} needs at least two numeric columns")
 
-    metrics: dict[str, float] = {}
+    metrics: dict[str, float | None] = {}
     if calculate_rwp and len(series.data) >= 3:
         metrics["rwp"] = rwp(series.data[0], series.data[1], series.data[2])
 

@@ -235,3 +235,41 @@ describe('run-control fit-function labels on Dashboard plots', () => {
         expect(plotMetadataFromFile(gr).title).toBe('D(r)');
     });
 });
+
+// Rwp comes from an S(Q) CSV's second and third columns (observed, fitted).
+// A column can hold non-numeric text ("nan" in a masked region), which the CSV
+// reader carries through as NaN.
+const rwpFromRows = (rows) => plotDataFromText({
+    plotKind: 'neutron_sq',
+    name: 'PMN_SQ1.csv',
+    text: ['Q,observed,fitted', ...rows].join('\n')
+}).metrics.rwp;
+
+describe('Rwp metric', () => {
+    it('normalizes the residual by the observed column', () => {
+        // observed [2, 4, 4] vs fitted [1, 5, 6]: residual 1 + 1 + 4, denom 36.
+        // Same case as test_rwp_uses_observed_series_as_denominator in Python.
+        expect(rwpFromRows(['0,2,1', '1,4,5', '2,4,6'])).toBeCloseTo(Math.sqrt(6 / 36), 12);
+    });
+
+    it('is null, not 0, when the observed column is entirely NaN', () => {
+        // The regression: NaN denominator through a falsy guard reported 0.000,
+        // which the dashboard chip showed as a perfect fit over absent data.
+        expect(rwpFromRows(['0,nan,1', '1,nan,2', '2,nan,3'])).toBeNull();
+    });
+
+    it('is null when the observed column is entirely zero', () => {
+        // A zero denominator is a genuinely undefined Rwp, not a perfect one.
+        expect(rwpFromRows(['0,0,1', '1,0,2', '2,0,3'])).toBeNull();
+    });
+
+    it('uses only the points where both observed and fitted are finite', () => {
+        // Finite pairs: (3, 4) and (4, 4) — denom 9 + 16, residual 1 + 0.
+        // The NaN rows drop out from either side.
+        expect(rwpFromRows(['0,3,4', '1,nan,5', '2,4,nan', '3,4,4'])).toBeCloseTo(0.2, 12);
+    });
+
+    it('is null when every row has NaN on one side or the other', () => {
+        expect(rwpFromRows(['0,nan,1', '1,2,nan'])).toBeNull();
+    });
+});

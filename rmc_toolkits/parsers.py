@@ -404,12 +404,28 @@ def pdf_index(path: str | Path) -> int:
     return int(match.group(1)) if match else 0
 
 
-def rwp(x: np.ndarray, observed: np.ndarray, fitted: np.ndarray) -> float:
-    denom = float(np.sum(observed * observed))
-    if denom == 0:
-        return 0.0
-    residual = fitted - observed
-    return float(np.sqrt(np.sum(residual * residual) / denom))
+def rwp(x: np.ndarray, observed: np.ndarray, fitted: np.ndarray) -> float | None:
+    """Weighted profile residual of ``fitted`` against ``observed``.
+
+    Returns ``None`` — not ``0.0`` — for the two degenerate cases, so a caller
+    can report the metric as unavailable instead of as a perfect fit: no finite
+    ``(observed, fitted)`` pair (e.g. an all-NaN column), and a zero denominator,
+    which offers no scale to normalize the residual against. Mirrors ``rwp()`` in
+    ``web_app/frontend/src/browserData.js``.
+    """
+    observed = np.asarray(observed, dtype=float)
+    fitted = np.asarray(fitted, dtype=float)
+    paired = np.isfinite(observed) & np.isfinite(fitted)
+    if not paired.any():
+        return None
+
+    obs = observed[paired]
+    denom = float(np.dot(obs, obs))
+    if denom == 0.0:
+        return None
+
+    residual = fitted[paired] - obs
+    return float(np.sqrt(float(np.dot(residual, residual)) / denom))
 
 
 def read_atom_indices(rmc6f_path: str | Path) -> dict[str, list[int]]:

@@ -5,6 +5,22 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Rwp reports "unavailable" instead of a fake perfect fit** (2026-07-25) — `rwp()` returned `0`
+whenever its denominator was falsy. For an observed column that is entirely NaN (a fully masked
+dataset) the denominator is NaN, `!NaN` is `true`, and the dashboard chip showed `Rwp 0.000` — read
+as a perfect fit over data that isn't there. A genuinely zero denominator collapsed to the same `0`.
+
+- Both implementations now sum only the points where the observed *and* fitted values are finite,
+  and return `None` / `null` for the two degenerate cases (no finite pair, zero denominator).
+  `rmc_toolkits/parsers.py` stays the source of truth; `browserData.js` is the static-mode port —
+  keep them in sync (see AGENTS.md). `PlotResult.metrics` is now `dict[str, float | None]`, so
+  `/api/plot/metadata` serializes the sentinel as JSON `null`, matching static mode.
+- `Dashboard.jsx` renders the sentinel as `Rwp —` via a single shared `renderRwpChip` helper (the
+  two chip sites had duplicated the formatting). The assistant's run context already skipped
+  non-finite Rwp values, so it drops the dataset's `rwp` key as before.
+- Tests: all-NaN observed, partially-NaN columns on either side, and a zero-denominator column, in
+  both `tests/test_parsers.py` and `src/__tests__/browserData.test.js`.
+
 **Displacement-orientation engine (hex-binned sphere)** (2026-07-24) — new engine for the
 distribution of displacement *directions* per site: `u = Δr/|Δr|` binned in solid angle on
 a Goldberg polyhedron (the dual of a frequency-ν geodesic icosahedron — hexagons plus the

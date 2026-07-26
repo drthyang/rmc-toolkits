@@ -88,6 +88,19 @@ const combineRValueFiles = (rValueFiles) => {
     };
 };
 
+// The metric is present but null when Rwp is undefined for the data (an observed
+// column with no finite values, or one that is entirely zero). Show a dash there:
+// a number in that slot reads as a fit quality, and 0.000 reads as a perfect one.
+const renderRwpChip = (meta) => {
+    const value = meta?.metrics?.rwp;
+    if (value === undefined) return null;
+    return (
+        <span className="rwp-chip">
+            Rwp {Number.isFinite(value) ? Number(value).toPrecision(4) : '—'}
+        </span>
+    );
+};
+
 const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData = false, onRunContextChange }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
@@ -497,9 +510,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                             <span className="plot-card-source" title={file.path}>{file.name}</span>
                         )}
                     </div>
-                    {meta?.metrics?.rwp !== undefined && (
-                        <span className="rwp-chip">Rwp {Number(meta.metrics.rwp).toPrecision(4)}</span>
-                    )}
+                    {renderRwpChip(meta)}
                 </div>
                 {renderPlotBody(file)}
                 {renderDashboardError(`plot:${file.path}:${file.parseError}`, file.parseError)}
@@ -523,9 +534,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                     </div>
                     <div className="plot-card-header-actions">
                         <WatchdogBadge rValueFile={rValueFile} />
-                        {meta?.metrics?.rwp !== undefined && (
-                            <span className="rwp-chip">Rwp {Number(meta.metrics.rwp).toPrecision(4)}</span>
-                        )}
+                        {renderRwpChip(meta)}
                         <button
                             type="button"
                             className="panel-toggle"

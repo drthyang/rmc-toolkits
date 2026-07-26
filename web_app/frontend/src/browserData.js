@@ -298,11 +298,25 @@ const readStog = (text, name) => {
     return transpose(rows);
 };
 
+// Rwp normalizes the fit residual by the observed signal, so it exists only when
+// the observed column carries finite, non-zero data. Two degenerate cases return
+// null rather than a number: no finite (observed, fitted) pair at all — a column
+// of NaN would otherwise make the denominator NaN, and a falsy guard reports that
+// as a perfect 0.000 — and a zero denominator, which offers no scale to normalize
+// against. Callers render null as a dash. Mirrors rwp() in rmc_toolkits/parsers.py.
 const rwp = (x, observed, fitted) => {
     void x;
-    const denom = observed.reduce((sum, value) => sum + value * value, 0);
-    if (!denom) return 0;
-    const residual = fitted.reduce((sum, value, index) => sum + (value - observed[index]) ** 2, 0);
+    let denom = 0;
+    let residual = 0;
+    let pairs = 0;
+    observed.forEach((value, index) => {
+        const fit = fitted[index];
+        if (!Number.isFinite(value) || !Number.isFinite(fit)) return;
+        denom += value * value;
+        residual += (fit - value) ** 2;
+        pairs += 1;
+    });
+    if (!pairs || denom === 0) return null;
     return Math.sqrt(residual / denom);
 };
 
