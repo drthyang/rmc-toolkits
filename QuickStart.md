@@ -116,3 +116,10 @@ Then open:
 - `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv` for RMCProfile EXAFS dataset Q-space and
   R-space outputs.
 - `*_bragg.csv` for Bragg profiles.
+
+## Want the math?
+
+Every number on every page — how a density map is smoothed, how the space group is decided, how
+S(Q) is put on absolute scale, what the AI assistant sends and where — is written up, formula by
+formula and anchored to the function that implements it, in
+[docs/ALGORITHMS.md](docs/ALGORITHMS.md). The approximations and limitations are listed there too.

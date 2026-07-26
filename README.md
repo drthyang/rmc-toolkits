@@ -74,6 +74,54 @@ bundled demo run as a table, with LaTeX math such as Rwp and χ² rendered inlin
 
 ![AI Assistant summarizing a run as tables](assets/rmc-toolkits-assistant.gif)
 
+## The Math Under the Hood
+
+Nothing here is a black box. [docs/ALGORITHMS.md](docs/ALGORITHMS.md) is a code-anchored account of
+**every operation each page performs on your data** — each step naming the file and function that
+runs it, with the approximations stated rather than buried. The signature equations, one per
+analysis page:
+
+**Fit residual** — the chip on each dashboard chart, computed from a file's 2nd and 3rd columns:
+
+$$R=\sqrt{\frac{\sum_i\bigl(y^{(3)}_i-y^{(2)}_i\bigr)^2}{\sum_i\bigl(y^{(2)}_i\bigr)^2}}$$
+
+Labelled "Rwp", but **unweighted** — and since RMCProfile writes these CSVs as
+`(x, calculated, experimental)`, the denominator is the *calculated* curve. It is therefore not the
+crystallographic $R_\mathrm{wp}$; recompute from the columns before quoting it in a paper. Points
+where either column is non-finite are skipped, and if none remain — or the denominator is zero —
+the chip reads **—** instead of a number.
+→ [derivation](docs/algorithms/run-dashboard.md#step-5--compute-the-numbers)
+
+**Atomic density** — a 2-D Gaussian KDE over the supercell folded into one unit cell, with
+bandwidth $\mathbf H$ scaled from the sample covariance $\mathbf C$ (SciPy's convention):
+
+$$\rho(\mathbf p)=\frac{\kappa}{n}\sum_{i=1}^{n}\frac{\exp\!\left[-\tfrac12(\mathbf p-\mathbf p_i)^{\!\top}\mathbf H^{-1}(\mathbf p-\mathbf p_i)\right]}{2\pi\sqrt{\det\mathbf H}},\qquad \mathbf H=f^2\mathbf C$$
+
+$\kappa$ corrects for the neighbour images tiled around the cell to restore periodicity.
+→ [derivation](docs/algorithms/structure.md#step-6--the-gaussian-kernel-bandwidth-matrix-and-normalization)
+
+**Thermal ellipsoids** — the anisotropic displacement tensor is the displacement covariance, and the
+drawn surface is its $\chi^2$ probability ellipsoid:
+
+$$U_{ab}=\frac{1}{n-1}\sum_n u_{na}u_{nb},\qquad\text{semi-axes } k(p)\,\sigma_a,\quad k(p)=\sqrt{F^{-1}_{\chi^2_3}(p)}$$
+
+The crystallographic 50 % convention is $k=1.5382$. $U$ is Cartesian — there is no conversion to
+$U_\mathrm{cif}$ or $\beta_{ij}$ anywhere.
+→ [derivation](docs/algorithms/pca-ellipsoid.md#step-3--covariance-and-eigen-decomposition)
+
+**Displacement directions** — amplitude discarded, directions binned in solid angle on a Goldberg
+sphere of $10\nu^2+2$ cells, each count divided by that cell's *exact* solid angle $\Omega_m$:
+
+$$\mathbf u_i=\frac{\Delta\mathbf r_i}{\lVert\Delta\mathbf r_i\rVert},\qquad \rho_m=\frac{M_m}{\bigl(\sum_{m'}M_{m'}\bigr)\Omega_m},\qquad \mathcal E_m=4\pi\rho_m$$
+
+The plotted enhancement $\mathcal E$ is dimensionless: 1 is isotropic, and 1.8 means "this direction
+is 1.8× more likely than chance".
+→ [derivation](docs/algorithms/displacement-directions.md#step-6--the-histogram)
+
+The Python package is the reference implementation; the browser workers are hand-written ports of
+it. Which port is parity-tested against Python goldens — and which is only pinned to its own
+in-language reference — is stated per engine, along with the measured tolerances.
+
 ## Run It Locally (optional)
 
 The hosted app needs no install. Run the Flask backend when you want server-side file browsing,
@@ -113,6 +161,9 @@ Full usage, parser helpers, and the legacy CLI scripts:
 ## Documentation
 
 - [QuickStart.md](QuickStart.md) — guided tour of the hosted app, including AI-assistant setup.
+- [docs/ALGORITHMS.md](docs/ALGORITHMS.md) — **the math**: a code-anchored account of every
+  operation each page performs on your data, so you can audit how a plot, density map, symmetry
+  label, scaled dataset, or direction map was produced — including the approximations.
 - [docs/REFERENCE.md](docs/REFERENCE.md) — repository layout, setup, self-hosting, backend API,
   supported file patterns, package usage, legacy CLI scripts, tests.
 - [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md) — plans and history.

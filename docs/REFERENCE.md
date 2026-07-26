@@ -2,7 +2,9 @@
 
 Everything beyond [using the hosted app](https://drthyang.github.io/rmc-toolkits/): running the
 dashboard locally, self-hosting, the Python package, the backend API, and supported file formats.
-For a guided tour of the app itself, start with [QuickStart.md](../QuickStart.md).
+For a guided tour of the app itself, start with [QuickStart.md](../QuickStart.md); for the
+mathematics behind each page — every formula, default, and approximation, anchored to the code —
+see [ALGORITHMS.md](ALGORITHMS.md).
 
 ## Repository Layout
 
@@ -15,6 +17,7 @@ For a guided tour of the app itself, start with [QuickStart.md](../QuickStart.md
 | `src/` | Original standalone CLI/desktop scripts. |
 | `tests/` | `unittest` suite for the package and backend. |
 | `docs/` | Changelog, roadmap, architecture notes. |
+| `docs/ALGORITHMS.md` + `docs/algorithms/` | Per-page math reference: every operation, anchored to the code. |
 
 ## Setup
 
