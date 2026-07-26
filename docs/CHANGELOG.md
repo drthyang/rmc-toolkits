@@ -5,6 +5,25 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Algorithms and math reference** (2026-07-26) — `docs/ALGORITHMS.md` plus seven per-page documents
+under `docs/algorithms/`: a code-anchored account of every mathematical operation each page performs
+on the user's data, so a reader can audit how a plot, density map, symmetry label, scaled dataset or
+direction map was produced. ~16 000 lines.
+
+- The hub carries a page index, a pipeline diagram, a table of *where* each computation runs (Python
+  package / Flask route / browser worker), and a consolidated list of every limitation and
+  approximation, each linking to the section that explains it. `algorithms/notation.md` reconciles
+  the symbol table across sections and lists the symbol *collisions* rather than merging them.
+- Two conventions the reference commits to: **the code wins** wherever document and source disagree,
+  and *reference-grade* (the float64 Python path) is distinguished from *visualization-grade* (the
+  browser ports), with measured cross-engine tolerances quoted — and the gaps named where no such
+  test exists (`pcaKde.js` and `orientation.js` are pinned to their own in-language references, not
+  to Python; `localKdeWorker.js` has no numerical reference test at all).
+- README gains a "Math Under the Hood" section with the signature equation per analysis page — fit
+  residual, 2-D Gaussian KDE, ADP tensor with its $\chi^2$ probability ellipsoid, solid-angle
+  enhancement — each with the caveat that makes the number honest. QuickStart, REFERENCE and AGENTS
+  point at the reference from their own entry points.
+
 **Rwp reports "unavailable" instead of a fake perfect fit** (2026-07-25) — `rwp()` returned `0`
 whenever its denominator was falsy. For an observed column that is entirely NaN (a fully masked
 dataset) the denominator is NaN, `!NaN` is `true`, and the dashboard chip showed `Rwp 0.000` — read
