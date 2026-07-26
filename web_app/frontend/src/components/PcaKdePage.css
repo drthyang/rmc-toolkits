@@ -593,15 +593,24 @@
 }
 
 /* The full-width statistics panel lays its content out in three columns —
-   SUMMARY, the covariance tensor, and the principal axes. SUMMARY and COVARIANCE
+   SUMMARY, the covariance tensor, and the principal axes — plus the crystal
+   orientation when the file carries lattice metadata. SUMMARY and COVARIANCE
    share equal 1fr tracks (so they are exactly the same width); the wider
-   principal-axes table (7 columns) gets a bit more. */
+   principal-axes table (7 columns) gets a bit more, and the crystal-orientation
+   table (3 angles + [u v w]) a shade less than that. */
 .pca-stats-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1.35fr;
     column-gap: 2.4rem;
     align-items: stretch;
     padding: 0.6rem 0.95rem 0.7rem;
+}
+
+/* Four tracks and a tighter gap, sized so every table still fits without an
+   inner scrollbar down to a 1280-wide laptop screen. */
+.pca-stats-grid.has-crystal {
+    grid-template-columns: 0.85fr 1fr 1.35fr 1.25fr;
+    column-gap: 1.6rem;
 }
 
 .pca-stats-col {
@@ -619,6 +628,11 @@
     left: -1.2rem;
     width: 1px;
     background: var(--border);
+}
+
+/* Keep the dividers centered in the four-column layout's narrower gap. */
+.pca-stats-grid.has-crystal .pca-stats-col:not(:first-child)::before {
+    left: -0.8rem;
 }
 
 /* The four summary figures as a single-column label:value list, which lines up
@@ -791,8 +805,20 @@
     background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-.pca-matrix--axes tbody th {
+.pca-matrix--axes tbody th,
+.pca-matrix--crystal tbody th {
     color: var(--text-strong);
+}
+
+/* The [u v w] direction is one bracketed token, not three numbers to compare down
+   the column — center it (header included) rather than right-align its closing
+   bracket, and keep it a shade quieter than the angles beside it. */
+.pca-matrix--crystal .pca-uvw {
+    text-align: center;
+}
+
+.pca-matrix--crystal td.pca-uvw {
+    color: var(--muted);
 }
 
 .pca-matrix--axes abbr {
@@ -883,8 +909,11 @@
             "unitcell";
     }
 
-    /* Stack the three statistics columns and swap the gap dividers for top rules. */
-    .pca-stats-grid {
+    /* Stack the statistics columns and swap the gap dividers for top rules. The
+       four-column variant needs saying explicitly — a media query adds no
+       specificity, so `.has-crystal` would otherwise keep its own template. */
+    .pca-stats-grid,
+    .pca-stats-grid.has-crystal {
         grid-template-columns: 1fr;
         column-gap: 0;
         row-gap: 0.6rem;

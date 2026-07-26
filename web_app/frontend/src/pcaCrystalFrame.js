@@ -99,6 +99,9 @@ export const unitCellVectors = (latticeVectors, supercell) => {
 
 const RAD_TO_DEG = 180 / Math.PI;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+// Sign flip that keeps a zero component at +0, so a negated direction never
+// prints as "−0" in the UI.
+const negate = (v) => (v === 0 ? 0 : -v);
 
 /**
  * Transformation matrices between the crystallographic (fractional a/b/c) frame
@@ -169,4 +172,31 @@ export const principalAxisOrientation = (pcaAxes, unitCell) => {
         fracToPca: transforms.fracToPca,
         pcaToFrac: transforms.pcaToFrac
     };
+};
+
+/**
+ * `principalAxisOrientation` folded to one canonical representative per axis, for
+ * reporting. An eigenvector's sign is arbitrary — v and −v are the same principal
+ * direction — and negating an axis sends every angle θ → 180 − θ and [u v w] →
+ * [−u −v −w]. Of the ± pair this returns the one whose closest crystal axis is the
+ * ACUTE one, so `dominant.angleDeg` is literally the smallest angle to that axis and
+ * [u v w] points along it, which is how a direction is quoted. Angles to the other
+ * two axes and the direction flip with it, so a row stays internally consistent.
+ *
+ * @returns {Array|null} the same per-axis entries as `principalAxisOrientation`,
+ *   sign-canonicalized; null when the cell is singular.
+ */
+export const crystalOrientationRows = (pcaAxes, unitCell) => {
+    const orientation = principalAxisOrientation(pcaAxes, unitCell);
+    if (!orientation) return null;
+    return orientation.perAxis.map((axis) => {
+        if (axis.cosines[axis.dominant.index] >= 0) return axis;
+        const anglesDeg = axis.anglesDeg.map((deg) => 180 - deg);
+        return {
+            cosines: axis.cosines.map(negate),
+            anglesDeg,
+            crystalDirection: axis.crystalDirection.map(negate),
+            dominant: { ...axis.dominant, angleDeg: anglesDeg[axis.dominant.index] }
+        };
+    });
 };

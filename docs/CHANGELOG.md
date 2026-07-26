@@ -21,6 +21,30 @@ as a perfect fit over data that isn't there. A genuinely zero denominator collap
 - Tests: all-NaN observed, partially-NaN columns on either side, and a zero-denominator column, in
   both `tests/test_parsers.py` and `src/__tests__/browserData.test.js`.
 
+**PCA Ellipsoid: principal axes in the crystallographic frame** (2026-07-25) — the Displacement
+statistics panel gains a fourth column, **Crystal orientation**: for every principal axis, its angle
+to the unit-cell edges a, b, c (the closest one shaded, same accent wash the covariance diagonal
+uses) and the crystallographic direction `[u v w]` it runs along. `src/pcaCrystalFrame.js` had
+computed all of this since v0.4.0 but nothing imported it — only `unitCellVectors` was wired up, so
+the app knew which lattice direction each displacement axis pointed along and never said so.
+
+- Angles are between Cartesian directions (both frames already share one Cartesian basis), so they
+  are well defined for any cell, oblique or not. `[u v w] = M⁻ᵀ·axis`, normalised so the largest
+  component is 1, is a **direct-lattice** direction — in an oblique cell it is not normal to the
+  like-indexed (h k l) plane. The panel's InfoBadge says both, since the distinction is easy to
+  misread off a table of numbers.
+- An eigenvector's sign is arbitrary (v and −v are one axis), so the new
+  `crystalOrientationRows` reports the member of the ± pair whose closest crystal axis is the
+  *acute* one — angles and `[u v w]` flip together, keeping each row internally consistent, and
+  "dominant" then literally means smallest angle. Unit-tested in `pcaCrystalFrame.test.js`
+  (already-acute rows untouched, a 170°-from-a axis reported as 10° with the direction negated, no
+  obtuse dominant angle for an oblique cell, singular cell → null).
+- The column appears only when the file carries lattice metadata; the statistics grid then switches
+  to four tracks (`.has-crystal`, sized to avoid inner scrollbars down to a 1280-wide screen) and
+  still stacks to one column below 980 px.
+- Also: the header wordmark centers "WORKBENCH" under "RMCProfile" instead of leaving it flush-left,
+  so the two lines read as one lockup.
+
 **Displacement-orientation engine (hex-binned sphere)** (2026-07-24) — new engine for the
 distribution of displacement *directions* per site: `u = Δr/|Δr|` binned in solid angle on
 a Goldberg polyhedron (the dual of a frequency-ν geodesic icosahedron — hexagons plus the

@@ -35,7 +35,8 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
 - **Atomic Density** — KDE density slices (WebGPU with automatic CPU fallback), a draggable
   slab-in-cell projection, and a Three.js folded unit-cell view of `.rmc6f` structures.
 - **PCA Ellipsoid** — per-site thermal ellipsoids from the RMC displacement clouds: anisotropic
-  displacement tensor, 3D KDE isosurface with wall projections, and non-Gaussianity readouts.
+  displacement tensor, 3D KDE isosurface with wall projections, non-Gaussianity readouts, and each
+  principal axis's angles to a/b/c with the crystallographic direction [u v w] it runs along.
   Follows Maksim Eremenko's
   [PCA_KDE utilities](https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE)
   (independent reimplementation).

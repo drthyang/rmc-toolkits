@@ -10,7 +10,8 @@ import {
     invert3,
     unitCellVectors,
     crystalPcaTransforms,
-    principalAxisOrientation
+    principalAxisOrientation,
+    crystalOrientationRows
 } from '../pcaCrystalFrame.js';
 
 const IDENTITY = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -158,5 +159,63 @@ describe('principalAxisOrientation', () => {
         expect(perAxis[0].crystalDirection[0]).toBeCloseTo(0, 6);
         expect(perAxis[0].crystalDirection[1]).toBeCloseTo(0, 6);
         expect(perAxis[0].crystalDirection[2]).toBeCloseTo(1, 6);
+    });
+});
+
+describe('crystalOrientationRows', () => {
+    const cubic = [[8, 0, 0], [0, 8, 0], [0, 0, 8]];
+
+    it('leaves an already-acute axis untouched', () => {
+        const t = Math.PI / 6;
+        const axes = [
+            [Math.cos(t), Math.sin(t), 0],
+            [-Math.sin(t), Math.cos(t), 0],
+            [0, 0, 1]
+        ];
+        const rows = crystalOrientationRows(axes, cubic);
+        expect(rows[0].anglesDeg[0]).toBeCloseTo(30, 6);
+        expect(rows[0].dominant.label).toBe('a');
+        expect(rows[0].crystalDirection[0]).toBeCloseTo(1, 6);
+    });
+
+    it('flips an axis that points away from its closest crystal axis', () => {
+        // PC1 sits 170° from a (i.e. 10° from −a); the reported representative is
+        // the one 10° from +a, with every angle and [u v w] flipped to match.
+        const t = (170 * Math.PI) / 180;
+        const axes = [
+            [Math.cos(t), Math.sin(t), 0],
+            [-Math.sin(t), Math.cos(t), 0],
+            [0, 0, 1]
+        ];
+        const raw = principalAxisOrientation(axes, cubic).perAxis[0];
+        expect(raw.anglesDeg[0]).toBeCloseTo(170, 6);
+        expect(raw.crystalDirection[0]).toBeCloseTo(-1, 6);
+
+        const row = crystalOrientationRows(axes, cubic)[0];
+        expect(row.anglesDeg[0]).toBeCloseTo(10, 6);
+        expect(row.anglesDeg[1]).toBeCloseTo(180 - raw.anglesDeg[1], 6);
+        expect(row.dominant.label).toBe('a');
+        expect(row.dominant.angleDeg).toBeCloseTo(10, 6);
+        // The direction is the exact negative of the raw one — same line, opposite sense.
+        row.crystalDirection.forEach((v, i) => expect(v).toBeCloseTo(-raw.crystalDirection[i], 9));
+        // A zero component stays +0 through the flip rather than becoming −0.
+        expect(Object.is(row.crystalDirection[2], -0)).toBe(false);
+    });
+
+    it('never reports an obtuse angle to the closest crystal axis', () => {
+        // A monoclinic cell and an orthonormal triad whose three axes all lean the
+        // "wrong" way: whatever the eigenvector signs, the dominant angle comes back
+        // as the acute member of the ± pair.
+        const beta = (110 * Math.PI) / 180;
+        const unitMono = [[5.1, 0, 0], [0, 7.3, 0], [6.2 * Math.cos(beta), 0, 6.2 * Math.sin(beta)]];
+        const axes = [[-0.8, 0.6, 0], [0, 0, -1], [-0.6, -0.8, 0]];
+        crystalOrientationRows(axes, unitMono).forEach((row) => {
+            expect(row.dominant.angleDeg).toBeLessThanOrEqual(90);
+            expect(row.dominant.angleDeg).toBeCloseTo(row.anglesDeg[row.dominant.index], 9);
+        });
+    });
+
+    it('returns null for a collapsed cell', () => {
+        expect(crystalOrientationRows(IDENTITY, [[8, 0, 0], [0, 8, 0], [0, 0, 0]])).toBeNull();
     });
 });

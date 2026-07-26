@@ -33,7 +33,8 @@ After loading, use:
   highlighted band in the `Slab In Cell` panel to move the slice position directly.
 - `PCA Ellipsoid` for per-site thermal ellipsoids: pick a site (from the list or by clicking an atom
   in the unit-cell view) to see its PCA displacement ellipsoid, the 3D KDE isosurface with density
-  projected on the box walls, and a non-Gaussianity readout.
+  projected on the box walls, a non-Gaussianity readout, and — under `Crystal orientation` — the
+  angle from each principal axis to a, b, c plus the `[u v w]` direction it points along.
 - `Displacement Directions` for where atoms move rather than how far: the site's displacement
   directions binned on a hex-tiled sphere, highlighting preferred hop directions and ±u asymmetry
   the ellipsoid can't show.

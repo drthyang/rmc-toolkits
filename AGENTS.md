@@ -49,6 +49,7 @@ web_app/frontend/src/
   browserData.js                 static-mode local file parsing + run assembly
   colormaps.js                   colormap LUTs for the KDE canvas
   orientationSphere.js           pure helpers for the orientation sphere (cell mesh/outline typed arrays, relief radii, colorbar gradient) — unit-tested, no Three.js
+  pcaCrystalFrame.js             pure crystallographic-frame math (3×3 algebra, unit-cell vectors from the supercell lattice, fractional ⟷ PCA transforms, per-PC angles to a/b/c + [u v w]) — unit-tested, no Three.js
   useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages)
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
   llm/                           experimental AI assistant — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini); see its README
@@ -118,6 +119,13 @@ web_app/frontend/src/
   signal the ellipsoid cannot show; `antipodalAsymmetry` (vs its Poisson `…Null` floor) quantifies
   it. `workers/orientation.js` is a straight port — keep the two in sync, same construction order
   so cell indices agree.
+- **Principal axes in the crystal frame: angles are Cartesian, `[u v w]` is fractional.** The PCA
+  axes and the unit-cell vectors live in the same Cartesian basis, so ∠a/∠b/∠c (`pcaCrystalFrame.js`)
+  are honest angles between directions for any cell, oblique included. `[u v w] = M⁻ᵀ·axis` is a
+  *direct-lattice* direction — in an oblique cell it is NOT normal to the like-indexed (h k l) plane,
+  so never present it as one. An eigenvector's sign is arbitrary, so a direction and its negative are
+  the same axis: `crystalOrientationRows` picks the sense that makes the closest crystal axis acute,
+  and the PCA Ellipsoid table shows that representative.
 - **`StructurePage.jsx` canvases render conditionally** (`{structure && (...)}`). Effects that attach
   listeners to those canvases must depend on `structure` (or the canvas ref), not `[]` — otherwise
   they run at mount before the canvas exists and never attach. (This was the slab-drag bug, fixed

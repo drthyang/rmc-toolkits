@@ -22,6 +22,7 @@ import {
     buildCrystalAxes
 } from './sceneAxes';
 import useSiteCloud from '../useSiteCloud';
+import { crystalOrientationRows } from '../pcaCrystalFrame';
 import './PcaKdePage.css';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
@@ -40,6 +41,10 @@ const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercen
 
 const numberFormat = (value, digits = 4) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
+
+// One component of a [u v w] direction. Components that round to zero print as a
+// clean 0.00 (never "-0.00"), so a direction along a cell axis reads as [1 0 0].
+const uvwFormat = (value) => numberFormat(Math.abs(value) < 5e-3 ? 0 : value, 2);
 
 // Cartesian point for a PCA-frame grid vertex (fractional grid indices) given the
 // engine's per-axis coordinate arrays, principal axes (rows), and cloud mean.
@@ -631,6 +636,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     const elementColors = useMemo(
         () => buildElementColors(sites?.elements ?? []),
         [sites]
+    );
+
+    // Where each principal axis points in the crystal: its angle to a, b, c and the
+    // crystallographic direction [u v w] it runs along. Both the PCA axes and the
+    // cell vectors are already in the shared Cartesian frame, so this is exact.
+    // null when the file carries no lattice metadata — the column is then dropped.
+    const crystalOrientation = useMemo(
+        () => (selectedEllipsoid && unitCell
+            ? crystalOrientationRows(selectedEllipsoid.axes, unitCell)
+            : null),
+        [selectedEllipsoid, unitCell]
     );
 
     // Crystal-frame shadow box + wall projections: an orthonormal frame from the unit
@@ -1413,8 +1429,9 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                     <p>
                                         Anisotropic displacement parameters from the site's cloud
                                         covariance: U<sub>iso</sub>/B<sub>iso</sub> are the isotropic
-                                        equivalents, and the columns beside give the covariance tensor
-                                        with its principal axes (PCA components) and per-axis amplitudes.
+                                        equivalents, and the columns beside give the covariance tensor,
+                                        its principal axes (PCA components) with per-axis amplitudes,
+                                        and where those axes point in the crystallographic frame.
                                     </p>
                                 </InfoBadge>
                             </span>
@@ -1426,7 +1443,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         </h3>
                         <div className="pca-stats-body">
                         {selectedEllipsoid ? (
-                            <div className="pca-stats-grid">
+                            <div className={`pca-stats-grid${crystalOrientation ? ' has-crystal' : ''}`}>
                                 <div className="pca-stats-col pca-stats-col--summary">
                                 {siteTag && (
                                     <p className={`pca-site-tag ${siteTag.clean ? 'is-clean' : 'is-flagged'}`}>
@@ -1574,6 +1591,79 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                         </div>
                                     </div>
                                 </div>
+                                {crystalOrientation && (
+                                    <div className="pca-stats-col pca-stats-col--crystal">
+                                        <div className="pca-matrix-block">
+                                            <div className="pca-matrix-title">
+                                                Crystal orientation
+                                                <InfoBadge label="About the crystal orientation" align="end">
+                                                    <p>
+                                                        Where each principal axis points in the
+                                                        crystal. ∠a/∠b/∠c are the angles to the
+                                                        unit-cell edges — angles between Cartesian
+                                                        directions, so they are well defined for
+                                                        any cell, oblique or not; the shaded one is
+                                                        the closest crystal axis.
+                                                    </p>
+                                                    <p>
+                                                        [u v w] is the fractional crystallographic
+                                                        direction the axis runs along (scaled so the
+                                                        largest component is 1). In an oblique cell
+                                                        it is <em>not</em> generally normal to the
+                                                        like-indexed (h k l) plane — that is the
+                                                        reciprocal lattice's job.
+                                                    </p>
+                                                    <p>
+                                                        An eigenvector's sign is arbitrary, so a
+                                                        direction and its negative are the same axis:
+                                                        each row is reported as the sense that makes
+                                                        the closest crystal axis acute.
+                                                    </p>
+                                                </InfoBadge>
+                                            </div>
+                                            <div className="pca-matrix-scroll">
+                                                <table className="pca-matrix pca-matrix--crystal">
+                                                    <thead>
+                                                        <tr>
+                                                            <th aria-hidden="true" />
+                                                            {CELL_AXIS_LABELS.map((label, i) => (
+                                                                <th key={label} scope="col">
+                                                                    ∠<span style={{ color: CELL_AXIS_CSS[i] }}>{label}</span>
+                                                                </th>
+                                                            ))}
+                                                            <th scope="col" className="pca-uvw">[u v w]</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {crystalOrientation.map((row, i) => (
+                                                            <tr key={i}>
+                                                                <th scope="row">
+                                                                    <span
+                                                                        className="pca-pc-dot"
+                                                                        style={{ background: PC_CSS_COLORS[i] }}
+                                                                        aria-hidden="true"
+                                                                    />
+                                                                    PC{i + 1}
+                                                                </th>
+                                                                {row.anglesDeg.map((deg, j) => (
+                                                                    <td
+                                                                        key={j}
+                                                                        className={j === row.dominant.index ? 'is-diagonal' : ''}
+                                                                    >
+                                                                        {numberFormat(deg, 1)}°
+                                                                    </td>
+                                                                ))}
+                                                                <td className="pca-uvw">
+                                                                    [{row.crystalDirection.map(uvwFormat).join(' ')}]
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <p className="pca-meta">{loadingSites ? 'Loading sites…' : 'No site selected.'}</p>
