@@ -331,16 +331,6 @@ function App() {
                 AI Assistant
               </button>
             </nav>
-            <button
-              type="button"
-              className={`demo-button${demoActive ? ' is-active' : ''}`}
-              onClick={handleToggleDemo}
-              disabled={localLoading}
-              aria-pressed={demoActive}
-              title={demoActive ? 'Clear the demo dataset' : 'Load a bundled GaTa4Se8 250 K example run'}
-            >
-              {localLoading ? 'Loading…' : 'Demo'}
-            </button>
           </div>
           <div className="header-actions">
           {fsAccess ? (
@@ -431,6 +421,16 @@ function App() {
               </form>
             </div>
           )}
+          <button
+            type="button"
+            className={`demo-button${demoActive ? ' is-active' : ''}`}
+            onClick={handleToggleDemo}
+            disabled={localLoading}
+            aria-pressed={demoActive}
+            title={demoActive ? 'Clear the demo dataset' : 'Load a bundled GaTa4Se8 250 K example run'}
+          >
+            {localLoading ? 'Loading…' : 'Demo'}
+          </button>
           </div>
           {renderBrowseStatus()}
         </header>

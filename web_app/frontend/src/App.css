@@ -51,9 +51,9 @@
   min-width: 0;
 }
 
-/* Right cluster: Live Data + the run-folder field, pushed to the far edge and
-   grouped together (they are the data-source controls). The Demo toggle sits
-   with the nav in the left cluster, just after the last page tab. */
+/* Right cluster: Live Data + the run-folder field + the Demo toggle, pushed to
+   the far edge and grouped together (they are all data-source controls). Demo
+   comes last so it sits beside Select Folder, the other way to load a run. */
 .header-actions {
   display: flex;
   flex-wrap: wrap;
@@ -465,8 +465,9 @@
     text-overflow: ellipsis;
   }
 
-  /* Stacked header: the left cluster is brand → tabs → Demo (full-width), and the
-     right cluster drops the Live Data toggle + run-folder field below it. */
+  /* Stacked header: the left cluster is brand → tabs, and the right cluster
+     stacks the Live Data toggle, the run-folder field and Demo below it, each a
+     full-width row. */
   .header-actions {
     margin-left: 0;
     flex-direction: column;
