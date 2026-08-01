@@ -322,6 +322,6 @@ following, grouped by module:
 | Tests | [`tests/`](../tests) and `web_app/frontend/src/**/__tests__/` |
 | Project docs consulted | [AGENTS.md](../AGENTS.md), [README.md](../README.md), [QuickStart.md](../QuickStart.md), [REFERENCE.md](REFERENCE.md), [STOG_SCALING_PLAN.md](STOG_SCALING_PLAN.md), [SCALING_PROCEDURE.md](SCALING_PROCEDURE.md), [CHANGELOG.md](CHANGELOG.md) |
 
-This reference describes the repository at commit **`73ce357`** on branch **`main`**. Line-number
+This reference describes the repository at commit **`79f7c60`** on branch **`main`**. Line-number
 citations are pointers into the source as it stood at that commit, not permanent addresses; function
 names and file paths are the durable part of every citation.

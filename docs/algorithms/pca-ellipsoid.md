@@ -1062,7 +1062,7 @@ current owner of each module, including the shared hook
 `sites`/`kde` payload shapes used below.
 
 > **Not the Displacement Directions page.** The app has a nav tab of that name (renamed from
-> "Orientation" in commit `b36e543`); it is documented in the sibling
+> "Orientation" in commit `bf039be`); it is documented in the sibling
 > [Displacement Directions](displacement-directions.md) reference. That page asks a *different*
 > question of the same clouds — the
 > solid-angle distribution of the individual displacement vectors, hex-binned on a Goldberg sphere,
