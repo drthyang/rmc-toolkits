@@ -42,6 +42,8 @@ rmc_toolkits/
   scaling.py     Auto StoG engine: level sweep, closed-form (a,b) fit, self-consistent filter loop, FZ amplitude mode, estimate_rho0 (density from amplitude-criteria concordance), diagnostics (no I/O)
   scattering.py  Faber-Ziman coefficients from a chemical formula (Sears table, 89 elements)
   scaling_cli.py rmc-autoscale CLI: stog.inp/--data → engine → classic stog output family + provenance JSON (all scaling file I/O)
+  triplets.py    bond-angle (triplet) distribution engine, RMCProfile triplets-style: A-B-C with B central, per-bond length windows, linked-cell periodic search with explicit image shifts (triclinic-safe), exact per-bin sin(θ) correction (source of truth; engine-only — no route/port/UI yet)
+  triplets_cli.py rmc-triplets CLI: .rmc6f or run folder → angle histogram CSV (+ optional PNG plot / raw-angle dump)
 
 web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,…) LRU caches for KDE, PCA-KDE, and scaling; /api/scaling/preview|run share the CLI writer
 

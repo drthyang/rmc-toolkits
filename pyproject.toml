@@ -30,6 +30,7 @@ test = ["tomli; python_version < '3.11'"]
 
 [project.scripts]
 rmc-autoscale = "rmc_toolkits.scaling_cli:main"
+rmc-triplets = "rmc_toolkits.triplets_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/drthyang/rmc-toolkits"

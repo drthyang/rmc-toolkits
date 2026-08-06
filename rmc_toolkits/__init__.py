@@ -53,6 +53,11 @@ from .parsers import (
     write_stog_xy,
 )
 from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_png
+from .triplets import (
+    BondAngleDistribution,
+    bond_angle_distribution,
+    bond_angles_from_rmc6f,
+)
 from .scattering import (
     ATOMIC_MASS_U,
     COHERENT_B_FM,
@@ -97,6 +102,9 @@ from .transforms import (
 
 __all__ = [
     "__version__",
+    "BondAngleDistribution",
+    "bond_angle_distribution",
+    "bond_angles_from_rmc6f",
     "CsvSeries",
     "MAX_KDE_FIT_POINTS",
     "MAX_PCA_FIT_POINTS",
