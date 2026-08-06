@@ -5,6 +5,45 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Bond-angle (triplet) distribution engine + `rmc-triplets` CLI** (2026-08-05) —
+`rmc_toolkits/triplets.py` (source of truth, module docstring is the math reference) +
+`rmc_toolkits/triplets_cli.py`, following RMCProfile's `triplets_new_bonds_sinth` workflow: pick an
+A–B–C triplet with **B the central atom**, bound the A–B and B–C bond lengths (inclusive windows),
+and histogram the angle at B. Engine-only by design — offline validation comes before any Flask
+route, browser port, or page.
+
+- Neighbours come from a linked-cell search that carries **explicit periodic-image shifts** instead
+  of assuming minimum-image: exact for any cell shape (triclinic included) and for boxes smaller
+  than the cutoff, where several images of one atom are genuine distinct neighbours. Equivalent
+  ends (same element + window) count each unordered bond pair once — an octahedron gives C(6,2)=15
+  angles; distinct windows count ordered 1→2/2→3 assignments minus the bond-with-itself
+  combinations. All pair formation is vectorized (ragged group cartesian products, no per-atom
+  Python loop): the 52 000-atom GaNb₄Se₈ box runs in well under a second per triplet.
+- Three curves per histogram: raw `counts`; `density` (per-degree, unit integral); and
+  `sin_corrected` — the count fraction over the *exact* isotropic bin fraction
+  `(cosθ₁−cosθ₂)/2`, i.e. the "sinth" normalization computed from the bin integral rather than
+  `1/sin(θ_center)`, so the 0°/180° bins stay finite and an isotropic configuration reads flat 1.0.
+- `rmc-triplets` (console script; `python -m rmc_toolkits.triplets_cli`) takes an `.rmc6f` or a run
+  folder, writes a commented CSV (angle, counts, density, sin-corrected) plus an optional PNG and
+  raw-angle dump, and prints bond counts, mean lengths, per-central coordination and angle stats.
+  Existing outputs are never overwritten without `--force` (the `rmc-autoscale` convention).
+- A 14-agent adversarial review (brute-force refutation over ~175 randomized/hand-built
+  configurations) confirmed the periodic geometry and counting; its three surviving minor findings
+  are fixed: zero-length pairs are never bonds (`rmin=0` + bitwise-coincident atoms used to send a
+  0/0 NaN angle past the histogram), the CLI reports unwritable outputs and truncated `.rmc6f`
+  headers as clean errors instead of tracebacks, and overwrites now require `--force`.
+- `tests/test_triplets.py` (27 tests): exact geometry fixtures (octahedron 12×90°+3×180°), bonds
+  through the periodic wall, multi-image bonds in a box smaller than the window, self-image bonds
+  of the central element, wrap invariance, **exact agreement with a brute-force all-images
+  reference in a skewed triclinic cell**, isotropic sin-correction flatness, normalization and
+  validation errors, loader parity, CLI end-to-end. Numpy-on-Accelerate note: large `(P,3)@(3,3)`
+  matmuls emit spurious divide/overflow warnings on Apple silicon, so the engine uses `einsum` for
+  the displacement→Cartesian map (bit-identical result, no BLAS warning path).
+- Physics check on `data/5K_try1` (GaNb₄Se₈): Se–Ga–Se with a 2.1–2.7 Å window peaks at 109.4°
+  with 3.99 Se per Ga (GaSe₄ tetrahedra); Se–Nb–Se with 2.2–2.9 Å shows the distorted-octahedron
+  splitting (~76/88/104/160°) at 5.78 Se per Nb. Next steps when validation settles: Flask route,
+  `workers/` port (parity-tested), and a page.
+
 **Algorithms and math reference** (2026-07-26) — `docs/ALGORITHMS.md` plus seven per-page documents
 under `docs/algorithms/`: a code-anchored account of every mathematical operation each page performs
 on the user's data, so a reader can audit how a plot, density map, symmetry label, scaled dataset or

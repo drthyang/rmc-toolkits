@@ -128,6 +128,7 @@ chart on the Dashboard — `isDashboardPlotFile` in `Dashboard.jsx` drops every 
 | Per-site clouds, ADP, separable 3-D KDE | `pca_kde.py` | `/api/pca/sites`, `/api/pca/kde` | `workers/pcaKde.js`, `workers/pcaKdeWorker.js` |
 | Isosurface extraction | — | — | `workers/marchingCubes.js` (**browser only**) |
 | Orientation histogram on the Goldberg sphere | `orientation.py` | `/api/pca/orientation` | `workers/orientation.js` |
+| Bond-angle (triplet) distribution | `triplets.py` (`rmc-triplets` CLI) | — (engine-only, no route yet) | — (no port yet; pre-UI validation stage) |
 | `.rmc6f` atoms + lattice → folded unit cell | `parsers.py` (`read_cell_vectors`, `read_atom_indices`, `iter_rmc6f_atoms`) | `/api/structure` (site-stratified subsample, `MAX_STRUCTURE_POINTS`) | `browserData.js` → `structureFromRmc6f()` (atom lines via `parseAtomLine()` in `rmc6f.js`), run off the main thread by `workers/localStructureWorker.js` (instantiated in `Dashboard.jsx` and `StructurePage.jsx`) |
 | PCA↔crystal frame algebra | — | — | `pcaCrystalFrame.js` — `unitCellVectors()` is on the **production UI path** (imported by `useSiteCloud.js`; drives the crystal-frame axis rods, the shadow box and the axis-framing cameras in `PcaKdePage.jsx`); `crystalPcaTransforms` / `principalAxisOrientation` are exercised **only by unit tests** |
 | Assistant context, pair correlations, convergence heuristics | — | — | `src/llm/` (**browser only**; the backend is never involved in an assistant request) |
@@ -277,6 +278,32 @@ architecture, `--lorch/--no-lorch`, `--robust/--no-robust`, `--despike`,
 `--low-q-correction/--no-low-q-correction` and `--sigma/--no-sigma` control the conditioning, and
 `--out-dir`/`--out-stem`/`--force` control the written family. `--estimate-rho0` requires
 $\langle b^2\rangle$ (via `--b-sq-avg` or `--formula`) and has **no** HTTP counterpart.
+
+### `rmc-triplets` CLI (bond-angle distribution, engine-only for now)
+
+Console entry point installed by `pip install -e .`
+([`rmc_toolkits/triplets_cli.py`](../rmc_toolkits/triplets_cli.py); module form
+`python -m rmc_toolkits.triplets_cli`). Nothing is overwritten without `--force`. The RMCProfile
+`triplets`-style workflow: name an A–B–C
+triplet with **B the central atom**, bound the two bond lengths (inclusive windows, Å), and
+histogram the angle at B over $[0°, 180°]$.
+
+```bash
+rmc-triplets --help
+rmc-triplets data/5K_try1 --triplet Se Nb Se --bond12 2.2 2.9 --plot se_nb_se.png
+rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --bin-width 0.5
+```
+
+The engine (`rmc_toolkits/triplets.py`, module docstring is the math reference) finds neighbours
+with a linked-cell search carrying **explicit periodic-image shifts** — exact for any cell shape,
+triclinic included, and for boxes smaller than the cutoff, where multiple images of one atom are
+genuine distinct neighbours (`tests/test_triplets.py` pins exact agreement with a brute-force
+all-images reference). The CSV carries three curves: raw `counts`; `density`, a per-degree
+probability density with unit integral; and `sin_corrected`, the count fraction divided by the
+*exact* isotropic bin fraction $(\cos\theta_1-\cos\theta_2)/2$ — the `sinth` normalization computed
+from the bin integral rather than $1/\sin\theta_c$, so the 0° and 180° bins stay finite. Equivalent
+ends (same element, same window) count each unordered bond pair once; distinct windows count
+ordered (1→2, 2→3) assignments. Engine-only for now: no Flask route, browser port, or page yet.
 
 ### Test suites
 
