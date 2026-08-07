@@ -1,0 +1,123 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
+
+   Local Geometry page layout. Controls, panels, hints and the segmented
+   toggle reuse PcaKdePage.css; only the page grid, the result chips and the
+   window inputs are specific to this page. */
+
+.geom-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 0.9rem;
+    align-items: start;
+}
+
+@media (max-width: 1100px) {
+    .geom-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.geom-side {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    min-width: 0;
+}
+
+.geom-plot {
+    padding: 0.4rem 0.6rem 0.6rem;
+}
+
+.geom-empty {
+    margin: 0;
+    padding: 1.4rem 0.9rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+/* Paired min–max inputs inside one control. */
+.geom-window {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--subtle);
+}
+
+.geom-window input {
+    width: 4.4rem;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    color: var(--text-strong);
+    font: inherit;
+    font-size: 0.85rem;
+}
+
+.geom-window input:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+}
+
+/* The central-atom select carries the accent ring so B reads as special. */
+.geom-central {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft, rgba(37, 99, 235, 0.12));
+}
+
+.geom-compute {
+    align-self: flex-end;
+    padding: 0.45rem 1.2rem;
+    border: 0;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.geom-compute:hover:not(:disabled) {
+    background: var(--accent-strong);
+}
+
+.geom-compute:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Result summary chips between the controls and the panels. */
+.geom-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 0 0 0.9rem;
+}
+
+.geom-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    box-shadow: var(--shadow-xs);
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.geom-chip strong {
+    color: var(--text-strong);
+    font-variant-numeric: tabular-nums;
+}
+
+.geom-chip-name {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.65rem;
+    font-weight: 650;
+    color: var(--subtle);
+}
