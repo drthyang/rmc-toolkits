@@ -6,34 +6,93 @@
    window inputs are specific to this page. */
 
 .geom-layout {
+    /* Same 16:9 discipline as .orient-layout: the clamp is authoritative, so
+       the row fills the viewport below header + controls + chips without
+       introducing page scroll, and both columns stretch to the same height —
+       the hero card's bottom edge aligns with the side column's. */
+    flex: none;
+    min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     gap: 0.9rem;
-    align-items: start;
-}
-
-@media (max-width: 1100px) {
-    .geom-layout {
-        grid-template-columns: minmax(0, 1fr);
-    }
+    align-items: stretch;
+    height: clamp(24rem, calc(100vh - 19.5rem), 56rem);
 }
 
 .geom-side {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    /* The two side cards split the column height exactly in half. */
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.9rem;
     min-width: 0;
+    min-height: 0;
 }
 
+.geom-layout .pca-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* The plots fill whatever height their card has: the SVG keeps its own
+   coordinate system (pointer math goes through getScreenCTM) and letterboxes
+   the drawing, so clamped cards stay interactive and undistorted. */
 .geom-plot {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
     padding: 0.4rem 0.6rem 0.6rem;
 }
 
+.geom-plot .interactive-plot {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.geom-plot .interactive-plot .plot-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+}
+
+.geom-plot .interactive-plot svg {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    aspect-ratio: auto;
+}
+
 .geom-empty {
-    margin: 0;
+    margin: auto;
     padding: 1.4rem 0.9rem;
     color: var(--muted);
     font-size: 0.85rem;
+}
+
+/* Below 16:9-ish desktop widths the grid stacks and every plot returns to
+   its natural 8:5 aspect — the viewport clamp only makes sense side-by-side. */
+@media (max-width: 1100px) {
+    .geom-layout {
+        grid-template-columns: minmax(0, 1fr);
+        height: auto;
+    }
+
+    .geom-side {
+        grid-template-rows: none;
+    }
+
+    .geom-plot .interactive-plot .plot-stage {
+        flex: none;
+        display: block;
+    }
+
+    .geom-plot .interactive-plot svg {
+        flex: none;
+        aspect-ratio: 8 / 5;
+    }
 }
 
 /* Paired min–max inputs inside one control. */
