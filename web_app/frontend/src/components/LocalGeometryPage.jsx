@@ -159,7 +159,13 @@ export default function LocalGeometryPage({ directory, localRun }) {
     const [structure, setStructure] = useState(null);
     const structureWorkerRef = useRef(null);
     const structureRequestRef = useRef(0);
-    useEffect(() => () => structureWorkerRef.current?.terminate(), []);
+    // Null the ref on terminate: StrictMode's dev double-mount runs this
+    // cleanup between the two mounts, and a ref still holding the terminated
+    // worker would make the second mount post requests into a dead worker.
+    useEffect(() => () => {
+        structureWorkerRef.current?.terminate();
+        structureWorkerRef.current = null;
+    }, []);
     useEffect(() => {
         let cancelled = false;
         if (localRun) {
