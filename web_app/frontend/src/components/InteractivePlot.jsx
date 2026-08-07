@@ -199,10 +199,28 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         return { x: currentX, y: yDomain || initialY || baseY, baseX, baseY };
     }, [visibleSeries, xDomain, yDomain, effectivePlot, fullExtent]);
 
+    const yTicks = niceTicks(domains.y, wide ? 4 : 6);
+    const xTicks = niceTicks(domains.x, wide ? 11 : 7);
+    const yAxisMax = Math.max(...yTicks.ticks.map(Math.abs), 0);
+    const xAxisMax = Math.max(...xTicks.ticks.map(Math.abs), 0);
+
+    // The default left margin fits ~3-character y ticks beside the rotated
+    // axis label (the historical look). Wider ticks — e.g. counts like 7000 —
+    // push the plot area right by one 14.5px tabular digit per extra
+    // character, so they never run into the label.
+    const widestYTick = Math.max(
+        ...yTicks.ticks.map((tick) => formatTick(tick, yTicks.step, yAxisMax).length),
+        1
+    );
+    // 8.7px per extra 14.5px tabular digit, plus a fixed 6px of breathing
+    // room once padding engages (the default margin fits 3 characters with
+    // no slack left over).
+    const leftPad = widestYTick > 3 ? (widestYTick - 3) * 8.7 + 6 : 0;
+
     // 8:5 (golden-ish) for grid cards, a slim strip for the wide variant.
     const view = wide
-        ? { width: 1440, height: 320, left: 64, right: 20, top: 18, bottom: 58 }
-        : { width: 720, height: 450, left: 60, right: 18, top: 16, bottom: 58 };
+        ? { width: 1440, height: 320, left: 64 + leftPad, right: 20, top: 18, bottom: 58 }
+        : { width: 720, height: 450, left: 60 + leftPad, right: 18, top: 16, bottom: 58 };
     const plotWidth = view.width - view.left - view.right;
     const plotHeight = view.height - view.top - view.bottom;
 
@@ -210,11 +228,6 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const yScale = (y) => view.top + plotHeight - ((y - domains.y[0]) / (domains.y[1] - domains.y[0] || 1)) * plotHeight;
     const xInvert = (px) => domains.x[0] + ((px - view.left) / plotWidth) * (domains.x[1] - domains.x[0]);
     const yInvert = (py) => domains.y[0] + ((view.top + plotHeight - py) / plotHeight) * (domains.y[1] - domains.y[0]);
-
-    const yTicks = niceTicks(domains.y, wide ? 4 : 6);
-    const xTicks = niceTicks(domains.x, wide ? 11 : 7);
-    const yAxisMax = Math.max(...yTicks.ticks.map(Math.abs), 0);
-    const xAxisMax = Math.max(...xTicks.ticks.map(Math.abs), 0);
 
     // Geometry is memoized so hover re-renders skip rebuilding the (large)
     // marker paths; only domain or series changes recompute them.
