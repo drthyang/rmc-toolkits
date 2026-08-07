@@ -16,7 +16,9 @@
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
     gap: 0.9rem;
     align-items: stretch;
-    height: clamp(24rem, calc(100vh - 19.5rem), 56rem);
+    /* Overhead includes the Model information + Detected SG cards (~12.5rem
+       with margin) above the controls-bar/chips stack. */
+    height: clamp(24rem, calc(100vh - 32.25rem), 56rem);
 }
 
 .geom-side {

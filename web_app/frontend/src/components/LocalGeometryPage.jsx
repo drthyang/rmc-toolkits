@@ -18,9 +18,14 @@ import API_BASE_URL from '../api';
 import { isStaticMode, readAndParseLocalPlotFile } from '../browserData';
 import InfoBadge from './InfoBadge';
 import InteractivePlot from './InteractivePlot';
+import ModelSummary from './ModelSummary';
 import useSiteCloud from '../useSiteCloud';
 import './PcaKdePage.css';
 import './LocalGeometryPage.css';
+
+// Same cap as StructurePage/Dashboard: the Model information + Detected SG
+// cards need the full basis and counts, and parsing is worker-side anyway.
+const STRUCTURE_MAX_POINTS = 1000000;
 
 const DEGREES = '°';
 const ANGSTROM = 'Å';
@@ -145,6 +150,61 @@ export default function LocalGeometryPage({ directory, localRun }) {
             if (runEpoch.current === epoch) setComputing(false);
         }
     }, [requestPca, end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth]);
+
+    // --- Structure for the Model information / Detected SG cards. -----------
+    // Same source as the Dashboard and Atomic Density pages: a local run's
+    // .rmc6f parses in the structure worker (both runtimes); a typed backend
+    // directory asks /api/structure. ModelSummary then renders the model card
+    // and, when the payload carries a basis, the Detected SG card.
+    const [structure, setStructure] = useState(null);
+    const structureWorkerRef = useRef(null);
+    const structureRequestRef = useRef(0);
+    useEffect(() => () => structureWorkerRef.current?.terminate(), []);
+    useEffect(() => {
+        let cancelled = false;
+        if (localRun) {
+            if (localRun.structure) {
+                setStructure(localRun.structure);
+                return undefined;
+            }
+            if (!localRun.structureFile) {
+                setStructure(null);
+                return undefined;
+            }
+            if (!structureWorkerRef.current) {
+                structureWorkerRef.current = new Worker(
+                    new URL('../workers/localStructureWorker.js', import.meta.url),
+                    { type: 'module' }
+                );
+            }
+            const worker = structureWorkerRef.current;
+            const id = structureRequestRef.current + 1;
+            structureRequestRef.current = id;
+            setStructure(null);
+            const onMessage = (event) => {
+                if (event.data.id !== id) return;
+                worker.removeEventListener('message', onMessage);
+                if (!cancelled) setStructure(event.data.error ? null : event.data.result);
+            };
+            worker.addEventListener('message', onMessage);
+            worker.postMessage({ id, file: localRun.structureFile, maxPoints: STRUCTURE_MAX_POINTS });
+            return () => {
+                cancelled = true;
+                worker.removeEventListener('message', onMessage);
+            };
+        }
+        if (isStaticMode()) {
+            setStructure(null);
+            return undefined;
+        }
+        axios
+            .get(`${API_BASE_URL}/api/structure`, {
+                params: { dir: directory || '.', maxPoints: STRUCTURE_MAX_POINTS }
+            })
+            .then((response) => { if (!cancelled) setStructure(response.data); })
+            .catch(() => { if (!cancelled) setStructure(null); });
+        return () => { cancelled = true; };
+    }, [localRun, directory, datasetKey]);
 
     // --- Partial g(r) for the window helper. ---------------------------------
     // The run's PDFpartials.csv (when present) shows where the first
@@ -387,6 +447,11 @@ export default function LocalGeometryPage({ directory, localRun }) {
 
             {noRun && (
                 <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to analyse bond angles.</p>
+            )}
+            {structure && (
+                <div className="geom-model">
+                    <ModelSummary structure={structure} />
+                </div>
             )}
             {(sitesError || resultError) && <p className="pca-error-banner">{sitesError || resultError}</p>}
             {!noRun && !result && !resultError && !sitesError && (

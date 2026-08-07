@@ -314,6 +314,12 @@ function App() {
                 Atomic Density
               </button>
               <button
+                className={activePage === 'geometry' ? 'active' : ''}
+                onClick={() => handlePageChange('geometry')}
+              >
+                Local Geometry
+              </button>
+              <button
                 className={activePage === 'ellipsoids' ? 'active' : ''}
                 onClick={() => handlePageChange('ellipsoids')}
               >
@@ -324,12 +330,6 @@ function App() {
                 onClick={() => handlePageChange('orientation')}
               >
                 Displacement Directions
-              </button>
-              <button
-                className={activePage === 'geometry' ? 'active' : ''}
-                onClick={() => handlePageChange('geometry')}
-              >
-                Local Geometry
               </button>
               <button
                 className={activePage === 'assistant' ? 'active' : ''}
