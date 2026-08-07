@@ -32,7 +32,10 @@ const brickStyle = (nSpace, maxOps) => {
     };
 };
 
-const ModelSummary = ({ structure }) => {
+// `showSymmetry={false}` renders the model card alone — pages that want the
+// structure facts without the Detected SG card (Local Geometry) opt out, and
+// the symmetry finder is skipped entirely rather than computed and hidden.
+const ModelSummary = ({ structure, showSymmetry = true }) => {
     // Tolerance is shared via context (kept across page switches); fall back to
     // local state if no provider is present.
     const sharedSymTol = useContext(SymTolContext);
@@ -41,8 +44,14 @@ const ModelSummary = ({ structure }) => {
 
     // Symmetry finder (FINDSYM-like): space group + Wyckoff orbits at `symTol`,
     // plus the full symmetry-vs-tolerance ladder. Runs client-side, no backend.
-    const symmetry = useMemo(() => describeSymmetry(structure, symTol), [structure, symTol]);
-    const ladder = useMemo(() => toleranceLadder(structure, 1.0), [structure]);
+    const symmetry = useMemo(
+        () => (showSymmetry ? describeSymmetry(structure, symTol) : null),
+        [structure, symTol, showSymmetry]
+    );
+    const ladder = useMemo(
+        () => (showSymmetry ? toleranceLadder(structure, 1.0) : []),
+        [structure, showSymmetry]
+    );
     const maxOps = ladder.length ? Math.max(...ladder.map((b) => b.nSpace)) : 1;
 
     // Brick widths are NOT the raw tolerance range — the full-symmetry rung holds

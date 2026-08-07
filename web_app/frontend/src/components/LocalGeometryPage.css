@@ -13,14 +13,16 @@
     flex: none;
     min-height: 0;
     display: grid;
-    /* Three equal panels: angle distribution | lengths + partial PDF |
-       folded unit cell — the PCA/Orientation column discipline. */
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* Four full-height columns — stacking the two small plots halved their
+       height with card chrome, so each gets its own column instead: the
+       angle hero widest, the 3D unit cell (fine when narrow) the slimmest. */
+    grid-template-columns:
+        minmax(0, 1.15fr) minmax(0, 0.95fr) minmax(0, 0.95fr) minmax(0, 0.75fr);
     gap: 0.9rem;
     align-items: stretch;
-    /* Overhead includes the Model information + Detected SG cards and the
-       Triplet result card above the controls-bar stack. */
-    height: clamp(24rem, calc(100vh - 33.75rem), 56rem);
+    /* Overhead includes the Model information and Triplet result cards
+       above the controls-bar stack. */
+    height: clamp(24rem, calc(100vh - 28.5rem), 56rem);
 }
 
 /* The unit-cell panel is placed by a named grid-area on the PCA page; reset
@@ -37,13 +39,14 @@
     min-height: 0;
 }
 
-.geom-side {
-    display: grid;
-    /* The two side cards split the column height exactly in half. */
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 0.9rem;
-    min-width: 0;
-    min-height: 0;
+/* The slim unit-cell column can't fit the title beside all three header
+   actions — let them wrap under the title instead of colliding with it. */
+.geom-layout .pca-unitcell-panel h3 {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+    height: auto;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
 }
 
 .geom-layout .pca-panel {
@@ -96,10 +99,6 @@
     .geom-layout {
         grid-template-columns: minmax(0, 1fr);
         height: auto;
-    }
-
-    .geom-side {
-        grid-template-rows: none;
     }
 
     /* Stacked mode has no clamped row height, so the unit-cell canvas needs

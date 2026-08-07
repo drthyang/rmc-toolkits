@@ -390,11 +390,11 @@ export default function LocalGeometryPage({ directory, localRun }) {
 
     return (
         <div className="pca-page">
-            {/* Model information + Detected SG first, exactly as the Dashboard
-                and Atomic Density pages present them; controls follow. */}
+            {/* Model information first, as on the Dashboard; the Detected SG
+                card stays on the Dashboard/Atomic Density pages only. */}
             {structure && (
                 <div className="geom-model">
-                    <ModelSummary structure={structure} />
+                    <ModelSummary structure={structure} showSymmetry={false} />
                 </div>
             )}
             <div className="pca-controls">
@@ -600,8 +600,7 @@ export default function LocalGeometryPage({ directory, localRun }) {
                     </div>
                 </div>
 
-                <div className="geom-side">
-                    <div className="pca-panel">
+                <div className="pca-panel">
                         <h3>
                             <span className="panel-title-label">Bond lengths in window</span>
                             {result?.lengths12 && (
@@ -617,8 +616,9 @@ export default function LocalGeometryPage({ directory, localRun }) {
                                 ? <InteractivePlot file={{ path: `geometry:lengths:${datasetKey}`, name: 'bond-lengths' }} plotData={lengthsPlot} />
                                 : <p className="geom-empty">Compute to see the length histogram.</p>}
                         </div>
-                    </div>
-                    <div className="pca-panel">
+                </div>
+
+                <div className="pca-panel">
                         <h3>
                             <span className="panel-title-label">
                                 Partial PDF
@@ -644,7 +644,6 @@ export default function LocalGeometryPage({ directory, localRun }) {
                                     </p>
                                 )}
                         </div>
-                    </div>
                 </div>
 
                 {/* The folded average unit cell, exactly as on the PCA and
