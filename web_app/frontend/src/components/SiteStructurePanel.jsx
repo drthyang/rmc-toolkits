@@ -28,7 +28,19 @@ const SAVE_OPTIONS = [
     { id: 'png3x', label: 'High quality PNG', hint: '3×' }
 ];
 
-export default function SiteStructurePanel({ sites, selectedRef, onSelectSite, selectedEllipsoid, elementColors, loadingSites = false }) {
+export default function SiteStructurePanel({
+    sites,
+    selectedRef,
+    onSelectSite,
+    selectedEllipsoid,
+    elementColors,
+    loadingSites = false,
+    // Optional detected-bond overlay (Local Geometry page): when given,
+    // replaces the heuristic nearest-neighbour bonds with the analysis' own
+    // bonds — [{ elements: [A, B], window: [rmin, rmax], color: 0xRRGGBB }],
+    // matched on the average site positions with periodic images included.
+    bondSets = null
+}) {
     // Crystallographic a/b/c gizmo at the cell origin — on by default, since
     // this is a structural view where axes belong.
     const [showCellAxes, setShowCellAxes] = useState(true);
@@ -225,29 +237,88 @@ export default function SiteStructurePanel({ sites, selectedRef, onSelectSite, s
             : baseRadius;
         const ellipsoidScale = baseRadius / (meanRms || baseRadius);
 
-        // --- Bonds: thin lines between in-cell atoms only (no periodic images, so
-        // nothing is drawn outside the box). The cutoff tracks the nearest-
-        // neighbour distance so it adapts to the material. -----------------------
-        let nearest = Infinity;
-        for (let i = 0; i < positions.length; i += 1) {
-            for (let j = i + 1; j < positions.length; j += 1) {
-                const d = positions[i].pos.distanceTo(positions[j].pos);
-                if (d > 0.4 && d < nearest) nearest = d;
+        if (bondSets?.length) {
+            // --- Detected bonds: the analysis' own bond windows, matched on the
+            // average site positions with periodic images (a stick may reach a
+            // neighbour cell's image just outside the box — that is the real
+            // coordination). Sticks touching the selected site stay bright;
+            // the rest recede so a full network reads as texture, not clutter.
+            const stickRadius = 0.012 * edgeLength;
+            const cylinder = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
+            const up = new THREE.Vector3(0, 1, 0);
+            const fracOf = new Map(sites.sites.map((site) => [site.referenceNumber, site.siteFractional]));
+            bondSets.forEach((set) => {
+                const [elementA, elementB] = set.elements;
+                const sameElement = elementA === elementB;
+                const [rmin, rmax] = set.window;
+                const dim = new THREE.MeshPhongMaterial({
+                    color: set.color, transparent: true, opacity: 0.3, shininess: 12
+                });
+                const bright = new THREE.MeshPhongMaterial({
+                    color: set.color, transparent: true, opacity: 0.95, shininess: 30
+                });
+                positions.forEach((from) => {
+                    if (from.el !== elementA) return;
+                    const fromFrac = fracOf.get(from.ref);
+                    positions.forEach((to) => {
+                        if (to.el !== elementB) return;
+                        const toFrac = fracOf.get(to.ref);
+                        for (let mx = -1; mx <= 1; mx += 1) {
+                            for (let my = -1; my <= 1; my += 1) {
+                                for (let mz = -1; mz <= 1; mz += 1) {
+                                    const inCell = mx === 0 && my === 0 && mz === 0;
+                                    if (inCell && to.ref === from.ref) continue;
+                                    // Same-element in-cell pairs would double-draw.
+                                    if (sameElement && inCell && to.ref < from.ref) continue;
+                                    const delta = [
+                                        toFrac[0] + mx - fromFrac[0],
+                                        toFrac[1] + my - fromFrac[1],
+                                        toFrac[2] + mz - fromFrac[2]
+                                    ];
+                                    const cart = toCartesian(delta);
+                                    const length = Math.hypot(...cart);
+                                    if (length < rmin || length > rmax || length === 0) continue;
+                                    const direction = new THREE.Vector3(...cart);
+                                    const touched = from.ref === selectedRef || (inCell && to.ref === selectedRef);
+                                    const stick = new THREE.Mesh(
+                                        cylinder,
+                                        selectedRef == null || touched ? bright : dim
+                                    );
+                                    stick.scale.set(stickRadius, length, stickRadius);
+                                    stick.quaternion.setFromUnitVectors(up, direction.clone().normalize());
+                                    stick.position.copy(from.pos).addScaledVector(direction, 0.5);
+                                    bondsGroup.add(stick);
+                                }
+                            }
+                        }
+                    });
+                });
+            });
+        } else {
+            // --- Fallback bonds: thin lines between in-cell atoms only (no
+            // periodic images, so nothing is drawn outside the box). The cutoff
+            // tracks the nearest-neighbour distance so it adapts to the material.
+            let nearest = Infinity;
+            for (let i = 0; i < positions.length; i += 1) {
+                for (let j = i + 1; j < positions.length; j += 1) {
+                    const d = positions[i].pos.distanceTo(positions[j].pos);
+                    if (d > 0.4 && d < nearest) nearest = d;
+                }
             }
-        }
-        const cutoff = Math.min(3.4, Math.max(2.0, nearest * 1.3));
-        const bondPoints = [];
-        for (let i = 0; i < positions.length; i += 1) {
-            for (let j = i + 1; j < positions.length; j += 1) {
-                const d = positions[i].pos.distanceTo(positions[j].pos);
-                if (d > 0.4 && d <= cutoff) bondPoints.push(positions[i].pos, positions[j].pos);
+            const cutoff = Math.min(3.4, Math.max(2.0, nearest * 1.3));
+            const bondPoints = [];
+            for (let i = 0; i < positions.length; i += 1) {
+                for (let j = i + 1; j < positions.length; j += 1) {
+                    const d = positions[i].pos.distanceTo(positions[j].pos);
+                    if (d > 0.4 && d <= cutoff) bondPoints.push(positions[i].pos, positions[j].pos);
+                }
             }
-        }
-        if (bondPoints.length) {
-            bondsGroup.add(new THREE.LineSegments(
-                new THREE.BufferGeometry().setFromPoints(bondPoints),
-                new THREE.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.7 })
-            ));
+            if (bondPoints.length) {
+                bondsGroup.add(new THREE.LineSegments(
+                    new THREE.BufferGeometry().setFromPoints(bondPoints),
+                    new THREE.LineBasicMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.7 })
+                ));
+            }
         }
 
         // --- Atoms: spheres colored by element. Unselected atoms are translucent
@@ -331,7 +402,7 @@ export default function SiteStructurePanel({ sites, selectedRef, onSelectSite, s
             handle.framed = true;
         }
         controls.update();
-    }, [sites, selectedRef, selectedEllipsoid, elementColors, showCellAxes]);
+    }, [sites, selectedRef, selectedEllipsoid, elementColors, showCellAxes, bondSets]);
 
     // Re-fit the canvas to its mount whenever sibling panels sharing the column
     // change height: content lands in stages, each collapsing the shared row a
@@ -401,6 +472,14 @@ export default function SiteStructurePanel({ sites, selectedRef, onSelectSite, s
                             select it; the selected site is highlighted. The <b>a b c</b>{' '}
                             button toggles the crystallographic-axis gizmo at the cell origin.
                         </p>
+                        {bondSets?.length ? (
+                            <p>
+                                The sticks are the analysis' <em>detected bonds</em>: average
+                                site pairs whose distance falls inside the bond window,
+                                periodic images included. Bonds of the selected site stay
+                                bright; the rest recede.
+                            </p>
+                        ) : null}
                     </InfoBadge>
                 </span>
                 <span className="panel-title-actions">

@@ -13,12 +13,28 @@
     flex: none;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    /* Three equal panels: angle distribution | lengths + partial PDF |
+       folded unit cell — the PCA/Orientation column discipline. */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.9rem;
     align-items: stretch;
-    /* Overhead includes the Model information + Detected SG cards (~12.5rem
-       with margin) above the controls-bar/chips stack. */
-    height: clamp(24rem, calc(100vh - 32.25rem), 56rem);
+    /* Overhead includes the Model information + Detected SG cards and the
+       Triplet result card above the controls-bar stack. */
+    height: clamp(24rem, calc(100vh - 33.75rem), 56rem);
+}
+
+/* The unit-cell panel is placed by a named grid-area on the PCA page; reset
+   it to auto flow here so it takes the third column (same reset + fill rules
+   orient-layout carries). */
+.geom-layout .pca-unitcell-panel {
+    grid-area: auto;
+    min-width: 0;
+    min-height: 0;
+}
+
+.geom-layout .pca-structure {
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .geom-side {
@@ -86,6 +102,12 @@
         grid-template-rows: none;
     }
 
+    /* Stacked mode has no clamped row height, so the unit-cell canvas needs
+       its own; matches the plots' stacked footprint. */
+    .geom-layout .pca-unitcell-panel {
+        min-height: 26rem;
+    }
+
     .geom-plot .interactive-plot .plot-stage {
         flex: none;
         display: block;
@@ -149,36 +171,5 @@
     cursor: default;
 }
 
-/* Result summary chips between the controls and the panels. */
-.geom-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-    margin: 0 0 0.9rem;
-}
-
-.geom-chip {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.35rem;
-    padding: 0.35rem 0.7rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel-bg);
-    box-shadow: var(--shadow-xs);
-    font-size: 0.8rem;
-    color: var(--muted);
-}
-
-.geom-chip strong {
-    color: var(--text-strong);
-    font-variant-numeric: tabular-nums;
-}
-
-.geom-chip-name {
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.65rem;
-    font-weight: 650;
-    color: var(--subtle);
-}
+/* The Triplet result presentation reuses the Model information card's
+   .model-summary / .model-stats classes — no page-specific styles needed. */

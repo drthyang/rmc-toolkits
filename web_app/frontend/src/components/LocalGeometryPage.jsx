@@ -16,9 +16,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { isStaticMode, readAndParseLocalPlotFile } from '../browserData';
+import { buildElementColors } from '../atomColors';
 import InfoBadge from './InfoBadge';
 import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
+import SiteStructurePanel from './SiteStructurePanel';
 import useSiteCloud from '../useSiteCloud';
 import './PcaKdePage.css';
 import './LocalGeometryPage.css';
@@ -60,10 +62,21 @@ const useDebounced = (value, delay = 400) => {
 };
 
 export default function LocalGeometryPage({ directory, localRun }) {
-    const { sites, sitesError, requestPca, localFile, ready, datasetKey } =
-        useSiteCloud({ directory, localRun });
+    const {
+        sites,
+        sitesError,
+        loadingSites,
+        selectedRef,
+        setSelectedRef,
+        selectedEllipsoid,
+        requestPca,
+        localFile,
+        ready,
+        datasetKey
+    } = useSiteCloud({ directory, localRun });
 
     const elements = useMemo(() => sites?.elements ?? [], [sites]);
+    const elementColors = useMemo(() => buildElementColors(sites?.elements ?? []), [sites]);
 
     // Triplet selection: A–B–C with B central. Initialized per dataset once
     // the element list arrives; RMCProfile-style, ends default to the last
@@ -362,8 +375,28 @@ export default function LocalGeometryPage({ directory, localRun }) {
 
     const windowLabel = (window) => `${formatNumber(window[0])}–${formatNumber(window[1])} ${ANGSTROM}`;
 
+    // Detected-bond overlay for the unit-cell panel: the computed windows,
+    // A–B in the app accent, B–C in amber when the windows are distinct.
+    const bondSets = useMemo(() => {
+        if (!result) return null;
+        const sets = [
+            { elements: [result.triplet[0], result.triplet[1]], window: result.bond12, color: 0x2563eb }
+        ];
+        if (!result.sharedEnds) {
+            sets.push({ elements: [result.triplet[1], result.triplet[2]], window: result.bond23, color: 0xd97706 });
+        }
+        return sets;
+    }, [result]);
+
     return (
         <div className="pca-page">
+            {/* Model information + Detected SG first, exactly as the Dashboard
+                and Atomic Density pages present them; controls follow. */}
+            {structure && (
+                <div className="geom-model">
+                    <ModelSummary structure={structure} />
+                </div>
+            )}
             <div className="pca-controls">
                 <div className="control-group" role="group" aria-label="Triplet">
                     <label className="control">
@@ -454,11 +487,6 @@ export default function LocalGeometryPage({ directory, localRun }) {
             {noRun && (
                 <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to analyse bond angles.</p>
             )}
-            {structure && (
-                <div className="geom-model">
-                    <ModelSummary structure={structure} />
-                </div>
-            )}
             {(sitesError || resultError) && <p className="pca-error-banner">{sitesError || resultError}</p>}
             {!noRun && !result && !resultError && !sitesError && (
                 <p className="pca-hint">
@@ -468,29 +496,72 @@ export default function LocalGeometryPage({ directory, localRun }) {
             )}
 
             {result && (
-                <div className="geom-chips" role="status">
-                    <span className="geom-chip">
-                        <span className="geom-chip-name">Central atoms</span>
-                        <strong>{result.apexCount.toLocaleString()}</strong> {result.triplet[1]}
-                    </span>
-                    <span className="geom-chip">
-                        <span className="geom-chip-name">Bonds {windowLabel(result.bond12)}</span>
-                        <strong>{result.lengths12.count.toLocaleString()}</strong>
-                        {result.lengths12.meanLength != null && ` mean ${formatNumber(result.lengths12.meanLength, 3)} ${ANGSTROM}`}
-                    </span>
-                    {coordinationSummary && (
-                        <span className="geom-chip">
-                            <span className="geom-chip-name">Coordination</span>
-                            <strong>{formatNumber(coordinationSummary.mean)}</strong>
-                            {` per ${result.triplet[1]} · ${coordinationSummary.mode}-fold ${formatNumber(coordinationSummary.modeShare, 1)}%`}
-                        </span>
-                    )}
-                    <span className="geom-chip">
-                        <span className="geom-chip-name">Angles</span>
-                        <strong>{result.angleCount.toLocaleString()}</strong>
-                        {result.meanAngle != null &&
-                            ` mean ${formatNumber(result.meanAngle, 1)}${DEGREES} ± ${formatNumber(result.stdAngle, 1)}${DEGREES}`}
-                    </span>
+                <div className="model-cards" role="status">
+                    {/* Same presentation as the Model information card: labeled
+                        columns, not badges. */}
+                    <section className="model-summary" aria-label="Triplet result">
+                        <h2 className="model-summary-title">
+                            Triplet result
+                            <span className="model-summary-source">
+                                {`${result.triplet.join('–')} · ${windowLabel(result.bond12)}`}
+                            </span>
+                        </h2>
+                        <dl className="model-stats">
+                            <div className="model-stat">
+                                <dt>Central atoms</dt>
+                                <dd>
+                                    {result.apexCount.toLocaleString()}
+                                    <span className="model-stat-sub">{result.triplet[1]}</span>
+                                </dd>
+                            </div>
+                            <div className="model-stat">
+                                <dt>{result.sharedEnds ? 'Bonds' : 'Bonds A–B'}</dt>
+                                <dd>
+                                    {result.lengths12.count.toLocaleString()}
+                                    {result.lengths12.meanLength != null && (
+                                        <span className="model-stat-sub">
+                                            mean {formatNumber(result.lengths12.meanLength, 3)} {ANGSTROM}
+                                        </span>
+                                    )}
+                                </dd>
+                            </div>
+                            {!result.sharedEnds && result.lengths23 && (
+                                <div className="model-stat">
+                                    <dt>Bonds B–C</dt>
+                                    <dd>
+                                        {result.lengths23.count.toLocaleString()}
+                                        {result.lengths23.meanLength != null && (
+                                            <span className="model-stat-sub">
+                                                mean {formatNumber(result.lengths23.meanLength, 3)} {ANGSTROM}
+                                            </span>
+                                        )}
+                                    </dd>
+                                </div>
+                            )}
+                            {coordinationSummary && (
+                                <div className="model-stat">
+                                    <dt>Coordination</dt>
+                                    <dd>
+                                        {formatNumber(coordinationSummary.mean)}
+                                        <span className="model-stat-sub">
+                                            {`per ${result.triplet[1]} · ${coordinationSummary.mode}-fold ${formatNumber(coordinationSummary.modeShare, 1)}%`}
+                                        </span>
+                                    </dd>
+                                </div>
+                            )}
+                            <div className="model-stat">
+                                <dt>Angles</dt>
+                                <dd>
+                                    {result.angleCount.toLocaleString()}
+                                    {result.meanAngle != null && (
+                                        <span className="model-stat-sub">
+                                            {`mean ${formatNumber(result.meanAngle, 1)}${DEGREES} ± ${formatNumber(result.stdAngle, 1)}${DEGREES}`}
+                                        </span>
+                                    )}
+                                </dd>
+                            </div>
+                        </dl>
+                    </section>
                 </div>
             )}
 
@@ -510,7 +581,8 @@ export default function LocalGeometryPage({ directory, localRun }) {
                             </InfoBadge>
                         </span>
                         <span className="panel-title-actions">
-                            {result && <span className="panel-title-count">{result.angleCount.toLocaleString()} angles</span>}
+                            {/* The angle count lives in the Triplet result card;
+                                the 1/3-width header only fits the toggle. */}
                             <div className="pca-frame-toggle" role="group" aria-label="Angle normalization">
                                 <button type="button" className={angleView === 'sin' ? 'is-active' : ''} onClick={() => setAngleView('sin')}>
                                     sin-corrected
@@ -549,12 +621,12 @@ export default function LocalGeometryPage({ directory, localRun }) {
                     <div className="pca-panel">
                         <h3>
                             <span className="panel-title-label">
-                                Window helper
-                                <InfoBadge label="About the window helper">
+                                Partial PDF
+                                <InfoBadge label="About the partial PDF">
                                     <p>
                                         The A{'–'}B partial pair distribution from the run's{' '}
-                                        <code>PDFpartials.csv</code>. Set the window to bracket the
-                                        first-shell peak; the dashed guides track the current
+                                        <code>PDFpartials.csv</code>. Set the bond window to bracket
+                                        the first-shell peak; the dashed guides track the current
                                         A{'–'}B bounds.
                                     </p>
                                 </InfoBadge>
@@ -574,6 +646,18 @@ export default function LocalGeometryPage({ directory, localRun }) {
                         </div>
                     </div>
                 </div>
+
+                {/* The folded average unit cell, exactly as on the PCA and
+                    Orientation pages — click a site to highlight it. */}
+                <SiteStructurePanel
+                    sites={sites}
+                    selectedRef={selectedRef}
+                    onSelectSite={setSelectedRef}
+                    selectedEllipsoid={selectedEllipsoid}
+                    elementColors={elementColors}
+                    loadingSites={loadingSites}
+                    bondSets={bondSets}
+                />
             </div>
 
             <footer className="app-footer">
