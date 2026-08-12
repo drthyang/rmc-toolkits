@@ -5,6 +5,69 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Non-symmorphic space groups are named correctly; Wyckoff letters for all 230** (2026-08-06) —
+the *Detected SG* panel reported the **symmorphic parent** of every group with a screw axis or
+glide plane. The operations were always right; only the naming step threw the translation parts
+away, so diamond came back as Fm-3m rather than Fd-3m, a Pnma structure as Pmmm, an a⁰a⁰c⁻ tilted
+perovskite as I4/mmm rather than I4/mcm, and hcp as P6/mmm. Since octahedral-tilt phases are almost
+all non-symmorphic (I4/mcm, Pnma, R-3c, Imma), this hit the common RMC case.
+
+- New `spaceGroupSymbol.js`: splits each operation into its **intrinsic translation**,
+  `(1/n)·Σ Rᵏ·t`, the projection of `t` onto the invariant subspace of `R`. It is
+  origin-independent, which is what makes it a reliable element label — non-zero along the axis
+  means a screw `n_m`, non-zero in the mirror plane means a glide `a/b/c/n/d/e`. The symbol is
+  assembled positionally over each crystal system's symmetry directions. Handedness comes from
+  `det[axis, v, R·v]`, so the enantiomorphic pairs (4₁/4₃, 3₁/3₂, 6₁/6₅, 6₂/6₄) stay distinct.
+- New `spaceGroupTable.js`: all 230 groups, replacing a 64-number symmorphic-only table. Pre-2002
+  spellings (Cmca → Cmce) resolve to the same number.
+- The builder **proposes ranked candidates and the table disposes**, rather than committing to one
+  spelling. Necessary because H–M plane priority (m > e > a > b > c > n > d) is not always the
+  answer: I-centring puts both b- and c-glides in the same plane of I4/mcm, where ITA writes `c`.
+  Non-standard axis settings are searched the same way — a structure handed over in the Pbnm
+  setting is reported as Pnma.
+- **R centering is detected** (obverse *and* reverse). `CENTERING_SETS` had only F/I/A/B/C, so a
+  rhombohedral structure reported `P`; R-3m came out as P-3m1 — wrong centering, and order 12
+  claimed for a group with 36 operations. The `R3`/`R-3m` rows of the old number table and the
+  `trig: 'PR'` entry in `ALLOWED_CENTERING` had been unreachable.
+- A symbol is only built from elements the positions can place. A subgroup part-way up the
+  tolerance ladder keeps its cubic parent's axes, putting its 3-fold along ⟨111⟩ where the
+  hexagonal-axes positions expect [001]; that used to emit the meaningless `P2m`, and now falls
+  back to the crystal class (`P3m`). A symbol merely in a non-standard setting (`Pn` for #7) is
+  still shown as-is. Naming also runs only for operation sets that close, so the ladder no longer
+  pays for it on partial mid-transition sets.
+- **Wyckoff letters for all 230 groups**, up from four (216/225/229/221). New `wyckoff.js` +
+  `wyckoffTable.js` (1724 positions, packed one string per group). Multiplicity and site symmetry
+  alone are often ambiguous — Pm-3m has both 3c and 3d at multiplicity 3 with site symmetry 4/mmm —
+  so ties are broken on the position's coordinate form, tested against every member of the orbit
+  because the detected representative is whichever atom came first, not the one International
+  Tables prints. That fixes cubic SrTiO₃, whose oxygen orbit previously matched both and got no
+  letter; it is now 3c. A letter is still withheld when nothing fits uniquely, since the finder
+  never shifts the origin to the standard setting.
+- Knock-on fix: diamond used to be identified as #225 and was therefore handed **Fm-3m Wyckoff
+  letters for an Fd-3m structure**. It now resolves to #227 and gets that group's own letters.
+- **First tests for the symmetry code** — there were none, and the one test mentioning a space
+  group hard-codes `F-43m` as an LLM-context fixture without ever running the finder. 736 new
+  tests across `__tests__/symmetry.test.js` and `__tests__/wyckoff.test.js`, built on **all 230
+  space groups** given by ITA generators in `__tests__/fixtures/spaceGroups.js`. Each group is
+  asserted three ways: its generator closure reproduces the general-position multiplicity, its
+  symbol is built correctly from exact operations, and the finder recovers it end-to-end from a
+  structure made by expanding a generic point. Every tabulated Wyckoff position is re-derived from
+  the group's own operations at test time, so the committed data cannot drift from the symmetry it
+  claims to describe. Plus an integration test over the bundled 52 000-atom demo model
+  (GaTa₄Se₈ → F-43m, Ga 4c / Ta 16e / Se 16e ×2), and unit tests for intrinsic translations, glide
+  letters, screw handedness, centering, the ladder, and site orbits.
+- All reference data was generated, then **kept only where it verified computationally**: the 230
+  symbols come from two independent passes that agreed on every entry; each generator set was
+  accepted only when its closure size matched (crystal-class order) × (centring multiplicity); each
+  Wyckoff position only when its coordinate expanded to exactly the stated multiplicity. That check
+  rejected 7 wrong positions — for P222₁ the proposed 2-fold site `x,0,0` lies on no axis and
+  expands to 4 points, not 2.
+- Known limitation, pinned by test rather than hidden: **I222/I2₁2₁2₁ and I23/I2₁3 cannot be told
+  apart.** I centring gives both members of each pair the same element types along the same
+  directions (every pure 2-fold has a 2₁ screw half a cell away), and they differ only in where
+  those axes sit relative to one another — which needs the origin-aware matching this finder does
+  not do. It reports I222 and I23.
+
 **Bond-angle (triplet) distribution engine + `rmc-triplets` CLI** (2026-08-05) —
 `rmc_toolkits/triplets.py` (source of truth, module docstring is the math reference) +
 `rmc_toolkits/triplets_cli.py`, following RMCProfile's `triplets_new_bonds_sinth` workflow: pick an

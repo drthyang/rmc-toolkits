@@ -18,10 +18,19 @@
 //   2. For each R, the space-group translations t are found from atom images:
 //      t = frac(b) − R·frac(a0) for candidate partners b (same element), kept when
 //      {R|t} maps every atom onto a same-element atom within `tol` (cartesian Å).
+//   3. The operations are named by spaceGroupSymbol.js, which reads the screw/glide
+//      part of each t, and looked up in the 230-group table of spaceGroupTable.js.
+//
+// What this still does NOT do, and FINDSYM does: no cell reduction or primitive-cell
+// search (A_conv is taken as given), no origin shift or transformation to a standard
+// setting beyond an axis permutation, and no idealized/symmetrized structure output.
 //
 // Fractional coords are COLUMN vectors here: x' = R·x + t. Lattice rows: A = [a1,a2,a3].
 // NOTE: entries in {-1,0,1} cover the standard conventional settings (cubic,
 // tetragonal, orthorhombic, hexagonal, rhombohedral-in-hex, monoclinic, triclinic).
+
+import { hmSymbolInStandardSetting, POINT_GROUP_SYSTEM } from './spaceGroupSymbol.js';
+import { isStandardSymbol, spaceGroupNumber, canonicalSymbol } from './spaceGroupTable.js';
 
 /** Determinant of a 3×3 matrix (rows). */
 export function det3(m) {
@@ -173,8 +182,12 @@ export function classifyOperations(ops, tolFrac = 0.02) {
   }
   const centering = matchCentering(centerings);
   const pointGroup = pointGroupOf([...rotMap.values()]);
-  const sg = spaceGroupHM(centering, pointGroup);
-  return { centering, pointGroup, spaceGroup: sg.symbol, spaceGroupNumber: sg.number, nSpace: ops.length, nPoint: rotMap.size, nTrans: transSeen.size };
+  const base = { centering, pointGroup, nSpace: ops.length, nPoint: rotMap.size, nTrans: transSeen.size };
+  // Naming reads every operation's screw/glide part, so it is the expensive step and
+  // meaningless for a partial mid-transition set — only a closed group gets a symbol.
+  const sg = isValidGroup(base) ? spaceGroupHM(centering, pointGroup, ops)
+    : { symbol: (centering || 'P') + pointGroup, number: null };
+  return { ...base, spaceGroup: sg.symbol, spaceGroupNumber: sg.number };
 }
 
 const POINT_GROUP_ORDER = {
@@ -184,16 +197,12 @@ const POINT_GROUP_ORDER = {
   '622': 12, '6mm': 12, '-6m2': 12, '6/mmm': 24,
   '23': 12, 'm-3': 24, '432': 24, '-43m': 24, 'm-3m': 48,
 };
-// point group → crystal system → centerings that system allows.
-const PG_SYSTEM = {
-  '1': 'tri', '-1': 'tri', '2': 'mono', 'm': 'mono', '2/m': 'mono',
-  '222': 'orth', 'mm2': 'orth', 'mmm': 'orth',
-  '4': 'tet', '-4': 'tet', '4/m': 'tet', '422': 'tet', '4mm': 'tet', '-42m': 'tet', '4/mmm': 'tet',
-  '3': 'trig', '-3': 'trig', '32': 'trig', '3m': 'trig', '-3m': 'trig',
-  '6': 'hex', '-6': 'hex', '6/m': 'hex', '622': 'hex', '6mm': 'hex', '-6m2': 'hex', '6/mmm': 'hex',
-  '23': 'cub', 'm-3': 'cub', '432': 'cub', '-43m': 'cub', 'm-3m': 'cub',
+// Centerings each crystal system allows. The point group → system map lives in
+// spaceGroupSymbol.js, which needs it to pick symmetry directions.
+const ALLOWED_CENTERING = {
+  triclinic: 'P', monoclinic: 'PC', orthorhombic: 'PCIFAB', tetragonal: 'PI',
+  trigonal: 'PR', hexagonal: 'P', cubic: 'PFI',
 };
-const ALLOWED_CENTERING = { tri: 'P', mono: 'PC', orth: 'PCIFAB', tet: 'PI', trig: 'PR', hex: 'P', cub: 'PFI' };
 // A classified op set is a real space group only if (a) it closes: the op count
 // equals point-group order × the actual number of pure translations (partial
 // mid-transition sets don't — and a tiled supercell has extra translations, so we
@@ -202,7 +211,7 @@ const ALLOWED_CENTERING = { tri: 'P', mono: 'PC', orth: 'PCIFAB', tet: 'PI', tri
 function isValidGroup(cls) {
   const pg = POINT_GROUP_ORDER[cls.pointGroup] || 0;
   if (pg === 0 || cls.nSpace !== pg * (cls.nTrans || 1)) return false;
-  return (ALLOWED_CENTERING[PG_SYSTEM[cls.pointGroup]] || 'P').includes(cls.centering);
+  return (ALLOWED_CENTERING[POINT_GROUP_SYSTEM[cls.pointGroup]] || 'P').includes(cls.centering);
 }
 
 /**
@@ -264,15 +273,19 @@ export function spaceGroupAtTolerance(A, basis, tol = 0.2, metricTol = 1e-2) {
 }
 
 // Match a set of fractional centering translations against the Bravais centerings.
-const CENTERING_SETS = {
-  F: [[0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0]],
-  I: [[0.5, 0.5, 0.5]],
-  A: [[0, 0.5, 0.5]], B: [[0.5, 0, 0.5]], C: [[0.5, 0.5, 0]],
-};
+// Ordered list rather than an object because R appears twice: a rhombohedral lattice
+// on hexagonal axes may be described in either the obverse or the reverse setting.
+const CENTERING_SETS = [
+  ['F', [[0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0]]],
+  ['I', [[0.5, 0.5, 0.5]]],
+  ['R', [[2 / 3, 1 / 3, 1 / 3], [1 / 3, 2 / 3, 2 / 3]]],   // obverse
+  ['R', [[1 / 3, 2 / 3, 1 / 3], [2 / 3, 1 / 3, 2 / 3]]],   // reverse
+  ['A', [[0, 0.5, 0.5]]], ['B', [[0.5, 0, 0.5]]], ['C', [[0.5, 0.5, 0]]],
+];
 function matchCentering(translations, tol = 0.1) {
   const has = (v) => translations.some(t => Math.abs(((t[0] - v[0] + 0.5) % 1) - 0.5) < tol
     && Math.abs(((t[1] - v[1] + 0.5) % 1) - 0.5) < tol && Math.abs(((t[2] - v[2] + 0.5) % 1) - 0.5) < tol);
-  for (const [letter, vecs] of Object.entries(CENTERING_SETS)) if (vecs.every(has)) return letter;
+  for (const [letter, vecs] of CENTERING_SETS) if (vecs.every(has)) return letter;
   return 'P';
 }
 
@@ -282,8 +295,9 @@ function matchCentering(translations, tol = 0.1) {
  * invariants): proper (det +1) trace 3,2,1,0,−1 → 1,6,4,3,2-fold; improper
  * (det −1) trace −3,1,−1,0,−2 → inversion, mirror m, −4, −3, −6. The point group
  * is then fixed by (crystal system, order, has-inversion, which proper folds).
- * Symmorphic H–M = centering letter + point-group symbol (correct for GaTa4Se8
- * F-43m and most cases; non-symmorphic screw/glide refinement is a follow-up). */
+ * The full H–M symbol comes from spaceGroupSymbol.js, which reads each operation's
+ * screw/glide component so non-symmorphic groups are named as themselves (Pnma,
+ * I4/mcm, Fd-3m) rather than as their symmorphic parent. */
 
 export function classifyRotation(R) {
   const d = det3(R), t = R[0][0] + R[1][1] + R[2][2];
@@ -327,26 +341,21 @@ export function pointGroupOf(rotations) {
   return inv ? '-1' : '1';                               // triclinic
 }
 
-// Symmorphic space-group number for centering + point group (common groups).
-const SG_NUMBER = {
-  'P1': 1, 'P-1': 2, 'P2': 3, 'C2': 5, 'Pm': 6, 'Cm': 8, 'P2/m': 10, 'C2/m': 12,
-  'P222': 16, 'C222': 21, 'A222': 21, 'B222': 21, 'F222': 22, 'I222': 23,
-  'Pmm2': 25, 'Fmm2': 42, 'Imm2': 44,
-  'Pmmm': 47, 'Cmmm': 65, 'Ammm': 65, 'Bmmm': 65, 'Fmmm': 69, 'Immm': 71,
-  'P4': 75, 'P-4': 81, 'P4/m': 83, 'P422': 89, 'P4mm': 99, 'P-42m': 111, 'P4/mmm': 123,
-  'I4': 79, 'I-4': 82, 'I4/m': 87, 'I422': 97, 'I4mm': 107, 'I-42m': 121, 'I4/mmm': 139,
-  'Cmm2': 35, 'Amm2': 38, 'Bmm2': 38,
-  'P3': 143, 'P-3': 147, 'P32': 149, 'P3m': 156, 'P-3m': 162, 'R3': 146, 'R-3m': 166,
-  'P6': 168, 'P-6': 174, 'P6/m': 175, 'P622': 177, 'P6mm': 183, 'P-6m2': 187, 'P6/mmm': 191,
-  'P23': 195, 'F23': 196, 'I23': 197, 'Pm-3': 200, 'Fm-3': 202, 'Im-3': 204,
-  'P432': 207, 'F432': 209, 'I432': 211, 'P-43m': 215, 'F-43m': 216, 'I-43m': 217,
-  'Pm-3m': 221, 'Fm-3m': 225, 'Im-3m': 229,
-};
-
-// Combine centering letter + point group into the (symmorphic) H–M symbol + number.
-export function spaceGroupHM(centering, pointGroup) {
-  const symbol = (centering || 'P') + pointGroup;
-  return { symbol, number: SG_NUMBER[symbol] || null };
+/**
+ * Hermann–Mauguin symbol + ITA number for a detected group.
+ *
+ * With the operations in hand this reads their screw and glide components and names
+ * the actual space group (Pnma, I4/mcm, Fd-3m). Without them it can only fall back to
+ * centering + point group, which is the symmorphic parent of the real group.
+ */
+export function spaceGroupHM(centering, pointGroup, ops) {
+  if (!ops || !ops.length) {
+    const symbol = (centering || 'P') + pointGroup;
+    return { symbol, number: spaceGroupNumber(symbol), standard: false };
+  }
+  const found = hmSymbolInStandardSetting(ops, centering || 'P', pointGroup, isStandardSymbol);
+  const symbol = canonicalSymbol(found.symbol) ?? found.symbol;   // Cmca → Cmce
+  return { symbol, number: spaceGroupNumber(found.symbol), standard: found.standard };
 }
 
 /**
@@ -396,50 +405,5 @@ export function siteOrbits(A, basis, ops, tol = 0.1) {
     .sort((a, b) => b.size - a.size);
 }
 
-// ── Wyckoff letters (common groups; letter omitted when not confident) ───────
-// [letter, multiplicity, site symmetry, fixed-coord or null (free position)].
-const WYCKOFF = {
-  216: [ // F-43m
-    ['a', 4, '-43m', [0, 0, 0]], ['b', 4, '-43m', [0.5, 0.5, 0.5]],
-    ['c', 4, '-43m', [0.25, 0.25, 0.25]], ['d', 4, '-43m', [0.75, 0.75, 0.75]],
-    ['e', 16, '3m', null], ['i', 96, '1', null],
-  ],
-  225: [ // Fm-3m
-    ['a', 4, 'm-3m', [0, 0, 0]], ['b', 4, 'm-3m', [0.5, 0.5, 0.5]],
-    ['c', 8, '-43m', [0.25, 0.25, 0.25]], ['f', 32, '3m', null], ['l', 192, '1', null],
-  ],
-  229: [ // Im-3m
-    ['a', 2, 'm-3m', [0, 0, 0]], ['b', 6, '4/mmm', [0, 0.5, 0.5]],
-    ['c', 8, '-3m', [0.25, 0.25, 0.25]], ['f', 16, '3m', null], ['l', 96, '1', null],
-  ],
-  221: [ // Pm-3m
-    ['a', 1, 'm-3m', [0, 0, 0]], ['b', 1, 'm-3m', [0.5, 0.5, 0.5]],
-    ['c', 3, '4/mmm', [0, 0.5, 0.5]], ['d', 3, '4/mmm', [0.5, 0, 0]],
-    ['g', 8, '3m', null], ['n', 48, '1', null],
-  ],
-};
-const CEN_VECS = {
-  P: [[0, 0, 0]], I: [[0, 0, 0], [0.5, 0.5, 0.5]],
-  F: [[0, 0, 0], [0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0]],
-  C: [[0, 0, 0], [0.5, 0.5, 0]], A: [[0, 0, 0], [0, 0.5, 0.5]], B: [[0, 0, 0], [0.5, 0, 0.5]],
-};
-
-/**
- * Wyckoff letter for an orbit (multiplicity + site symmetry + representative),
- * or null when not confidently determined (unlisted group, non-standard setting,
- * or ambiguous). Special positions are matched modulo the centering.
- */
-export function wyckoffLetter(sgNumber, centering, mult, site, rep) {
-  const table = WYCKOFF[sgNumber];
-  if (!table) return null;
-  const cands = table.filter(p => p[1] === mult && p[2] === site);
-  if (cands.length === 1 && !cands[0][3]) return cands[0][0];   // unique free position
-  const cens = CEN_VECS[centering] || CEN_VECS.P;
-  const hit = cands.filter(p => p[3] && cens.some(c => {
-    const near = (a, b) => { const d = ((a - b) % 1 + 1.5) % 1 - 0.5; return Math.abs(d) < 0.15; };
-    return near(rep[0], p[3][0] + c[0]) && near(rep[1], p[3][1] + c[1]) && near(rep[2], p[3][2] + c[2]);
-  }));
-  if (hit.length === 1) return hit[0][0];
-  if (cands.length === 1) return cands[0][0];
-  return null;
-}
+// Wyckoff letters live in wyckoff.js, which matches an orbit's multiplicity and site
+// symmetry against the tabulated positions of the detected group.

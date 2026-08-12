@@ -7,13 +7,17 @@
 // pure symmetry finder (symmetry.js): builds the conventional cell + basis and
 // returns a space-group description + tolerance ladder for the UI.
 
-import { spaceGroupAtTolerance, symmetryLadder, siteOrbits, wyckoffLetter } from './symmetry';
+import { spaceGroupAtTolerance, symmetryLadder, siteOrbits } from './symmetry.js';
+import { assignWyckoffLetters } from './wyckoff.js';
 
 /** Conventional unit cell A_conv (rows, Å) = supercell lattice / supercell dims. */
 export function conventionalCell(structure) {
   const { latticeVectors, supercell } = structure;
   return latticeVectors.map((row, i) => row.map((v) => v / Math.max(supercell[i], 1)));
 }
+
+/** Mean cell edge (Å), for converting a cartesian tolerance into cell fractions. */
+const meanEdge = (A) => A.reduce((sum, row) => sum + Math.hypot(row[0], row[1], row[2]), 0) / 3;
 
 /**
  * Space group of a parsed structure at a cartesian tolerance `tol` (Å):
@@ -25,12 +29,14 @@ export function describeSymmetry(structure, tol = 0.2) {
   if (!structure?.basis?.length || !structure?.latticeVectors) return null;
   const A = conventionalCell(structure);
   const sg = spaceGroupAtTolerance(A, structure.basis, tol);   // always a valid group
-  const orbits = siteOrbits(A, structure.basis, sg.ops, tol).map((o) => ({
+  const found = siteOrbits(A, structure.basis, sg.ops, tol);
+  const letters = assignWyckoffLetters(sg.spaceGroupNumber, found, structure.basis, tol / meanEdge(A));
+  const orbits = found.map((o, i) => ({
     element: o.element,
     size: o.size,
     site: o.site,
     rep: o.rep,
-    wyckoff: wyckoffLetter(sg.spaceGroupNumber, sg.centering, o.size, o.site, o.rep),
+    wyckoff: letters[i],
     // Indices into structure.basis, so callers can aggregate per-site data
     // (e.g. rms displacements) over each orbit's member sites.
     members: o.index,
