@@ -13,6 +13,7 @@ from rmc_toolkits.parsers import (
     read_atom_indices,
     read_cell_vectors,
     read_chi,
+    read_moves_metadata,
     read_exafs_csv,
     read_rmc_csv,
     read_structure,
@@ -230,6 +231,51 @@ class OldFormatRmc6fTests(unittest.TestCase):
         # reference numbers and the trailing cell indices come from the line end
         self.assertEqual([atom["reference_number"] for atom in atoms], [1, 1, 2, 2])
         np.testing.assert_array_equal(atoms[3]["cell_indices"], [1, 1, 1])
+
+
+MOVES_RMC6F = """(Version 6f format configuration file)
+Number of moves generated:           1560869
+Number of moves tried:               1555187
+Number of moves accepted:            183014
+Accumulated time (s) in running loop: 56103452.49
+Number of atoms:                     4
+Supercell dimensions:                2  2  2
+Lattice vectors (Ang):
+  10.000000   0.000000   0.000000
+   0.000000  10.000000   0.000000
+   0.000000   0.000000  10.000000
+Atoms:
+       1   Pb  0.010  0.010  0.010     1   0   0   0
+Number of moves generated:           999999
+"""
+
+
+class MovesMetadataTests(unittest.TestCase):
+    def _write(self, text: str) -> Path:
+        path = Path(tempfile.mkdtemp()) / "moves.rmc6f"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_reads_all_counters(self):
+        moves = read_moves_metadata(self._write(MOVES_RMC6F))
+        self.assertEqual(moves["generated"], 1560869.0)
+        self.assertEqual(moves["tried"], 1555187.0)
+        self.assertEqual(moves["accepted"], 183014.0)
+        self.assertAlmostEqual(moves["accumulatedTimeS"], 56103452.49)
+
+    def test_scans_only_the_header(self):
+        # The decoy line after "Atoms:" must not win — the body of a real
+        # configuration is megabytes long and is never searched.
+        moves = read_moves_metadata(self._write(MOVES_RMC6F))
+        self.assertEqual(moves["generated"], 1560869.0)
+
+    def test_returns_none_when_no_counters_present(self):
+        self.assertIsNone(read_moves_metadata(self._write(OLD_FORMAT_RMC6F)))
+
+    def test_omits_only_the_missing_counters(self):
+        partial = "(Version 6f format configuration file)\nNumber of moves generated:  120\nAtoms:\n"
+        moves = read_moves_metadata(self._write(partial))
+        self.assertEqual(moves, {"generated": 120.0})
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from rmc_toolkits.parsers import (
     iter_rmc6f_atoms,
     read_atom_indices,
     read_cell_vectors,
+    read_moves_metadata,
     read_chi,
     read_dat_header,
     read_exafs_csv,
@@ -422,6 +423,7 @@ def structure():
         rmc6f_path = _find_rmc6f(target)
         lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
         atom_indices = read_atom_indices(rmc6f_path)
+        moves = read_moves_metadata(rmc6f_path)
 
         atoms = list(iter_rmc6f_atoms(rmc6f_path))
         sampled, stride = _sample_atoms_by_site(atoms, max_points)
@@ -456,6 +458,7 @@ def structure():
                 "atomIndices": atom_indices,
                 "supercell": supercell.tolist(),
                 "latticeVectors": lattice_vectors.tolist(),
+                "moves": moves,
                 "points": points,
             }
         )

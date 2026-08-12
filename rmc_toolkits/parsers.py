@@ -471,6 +471,38 @@ def read_cell_vectors(rmc6f_path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     return lattice_vectors, supercell
 
 
+_MOVE_COUNTERS = {
+    "generated": re.compile(r"Number of moves generated:\s*([\d.]+)"),
+    "tried": re.compile(r"Number of moves tried:\s*([\d.]+)"),
+    "accepted": re.compile(r"Number of moves accepted:\s*([\d.]+)"),
+    "accumulatedTimeS": re.compile(r"Accumulated time \(s\)[^:]*:\s*([\d.]+)"),
+}
+
+
+def read_moves_metadata(rmc6f_path: str | Path) -> dict[str, float] | None:
+    """Run-history counters from a `.rmc6f` header.
+
+    How many moves the run generated / tried / accepted, plus the accumulated running
+    time. Taken together with the atom count these gauge sampling sufficiency — the
+    raw totals mean little without the box size.
+
+    Only the header is scanned, so this stays cheap on multi-megabyte configurations.
+    Returns ``None`` when the file carries none of the counters; individual missing
+    counters are simply absent from the mapping. Keys are camelCase to match the JSON
+    the frontend already receives from the browser-side parser.
+    """
+    text = Path(rmc6f_path).read_text(encoding="utf-8", errors="replace")
+    marker = text.find("Atoms:")
+    header = text[: marker if marker > 0 else 4000]
+
+    moves: dict[str, float] = {}
+    for key, pattern in _MOVE_COUNTERS.items():
+        match = pattern.search(header)
+        if match:
+            moves[key] = float(match.group(1))
+    return moves or None
+
+
 def iter_rmc6f_atoms(rmc6f_path: str | Path) -> Iterator[Rmc6fAtom]:
     """Yield atom records from an RMCProfile `.rmc6f` file."""
     in_atoms = False
