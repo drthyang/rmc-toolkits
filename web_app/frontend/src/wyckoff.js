@@ -27,7 +27,6 @@ import { WYCKOFF_DATA } from './wyckoffTable.js';
 const parsedCache = new Map();
 
 const fraction = (s) => (s.includes('/') ? Number(s.split('/')[0]) / Number(s.split('/')[1]) : Number(s));
-const wrap = (v) => { const y = ((v % 1) + 1) % 1; return y > 1 - 1e-9 ? 0 : y; };
 
 /** Parse a coordinate form ("x,1/4,z") into { R, t }, so the point is R·(x,y,z) + t. */
 export function parseCoordinateForm(text) {
