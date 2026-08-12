@@ -44,7 +44,10 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
   directions binned in solid angle on a hex-tiled sphere reveal discrete hop directions and ±u
   asymmetry that the U tensor cannot see.
 - **Symmetry analysis** — a client-side, FINDSYM-like panel reports the detected space group and
-  how it changes with tolerance.
+  how it changes with tolerance. Screw axes and glide planes are read from each operation's
+  translation part, so non-symmorphic groups are named as themselves (Pnma, I4/mcm, Fd-3m),
+  resolved against all 230 groups with Wyckoff letters per orbit. Unlike FINDSYM it takes the cell
+  as given — no cell search, origin shift, or idealized structure.
 - **AI Assistant (beta)** — chat about the loaded run with a local LLM (Ollama, LM Studio) or an
   opt-in cloud model (OpenAI, Gemini). Only compact run context is sent, never raw
   files.[^cloud-llm-privacy] Setup:

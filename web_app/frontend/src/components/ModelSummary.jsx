@@ -134,14 +134,20 @@ const ModelSummary = ({ structure }) => {
                             <p>
                                 The average (reference) site positions from the <code>.rmc6f</code> model
                                 are tested for the symmetry operations {'{R | t}'} that map them onto
-                                themselves within a position tolerance (Å). The matching operations are
-                                classified into a centering and point group, giving the Hermann–Mauguin
-                                symbol and number.
+                                themselves within a position tolerance (Å). Each matching operation is
+                                split into a rotation and a translation part, so screw axes and glide
+                                planes are named as such, giving the Hermann–Mauguin symbol and number.
                             </p>
                             <p>
                                 It runs entirely in your browser — no fitting or external service.
                                 Loosening the tolerance admits more operations, so higher symmetry
                                 appears; the ladder shows which space group holds over each tolerance range.
+                            </p>
+                            <p>
+                                Unlike FINDSYM this does not search for a smaller or differently-shaped
+                                cell: the unit cell is taken from the <code>.rmc6f</code> supercell as
+                                given, and the symbol is reported in that setting (up to an axis
+                                permutation), with no origin shift or idealized structure.
                             </p>
                         </InfoBadge>
                     </h2>
