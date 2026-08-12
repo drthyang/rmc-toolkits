@@ -132,6 +132,23 @@
     letter-spacing: 0.01em;
 }
 
+/* Move counters sit apart from the structural stats: the first one takes the free
+   space so the group is flushed to the right edge, and their text is right-aligned
+   with it. `margin-left: auto` only pushes when there is room left on the line, so a
+   narrow card still wraps them normally. */
+.model-stat:not(.model-stat-moves) + .model-stat-moves {
+    margin-left: auto;
+}
+
+.model-stat-moves {
+    justify-items: end;
+    text-align: right;
+}
+
+.model-stat-moves:last-child {
+    padding-right: 0;
+}
+
 /* ── Detected SG card — reuses .model-stats, plus the ladder cell ───────────── */
 .sym-orbits {
     display: flex;

@@ -3,6 +3,7 @@
 
 import React, { useContext, useMemo, useState } from 'react';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
+import { moveRatios } from '../moveStats';
 import { SymTolContext } from '../symTolContext';
 import InfoBadge from './InfoBadge';
 import './ModelSummary.css';
@@ -77,7 +78,8 @@ const ModelSummary = ({ structure }) => {
             supercell: structure.supercell,
             cellLengths,
             angles,
-            elementEntries
+            elementEntries,
+            moves: moveRatios(structure.moves, structure.totalAtoms)
         };
     }, [structure]);
 
@@ -123,6 +125,37 @@ const ModelSummary = ({ structure }) => {
                             )}
                         </dd>
                     </div>
+                    {/* Move counters per atom — the raw totals mean little without the
+                        box size. Absent for configurations whose header omits them. */}
+                    {summary.moves?.generatedPerAtom !== undefined && (
+                        <div className="model-stat model-stat-moves">
+                            <dt>Generated / atom</dt>
+                            <dd title={`${formatNumber(summary.moves.generated, 0)} moves generated over ${formatNumber(summary.totalAtoms, 0)} atoms`}>
+                                {formatNumber(summary.moves.generatedPerAtom, 1)}
+                                <span className="model-stat-sub">{formatNumber(summary.moves.generated, 0)} moves</span>
+                            </dd>
+                        </div>
+                    )}
+                    {summary.moves?.acceptedPerAtom !== undefined && (
+                        <div className="model-stat model-stat-moves">
+                            <dt>Accepted / atom</dt>
+                            <dd title={`${formatNumber(summary.moves.accepted, 0)} moves accepted over ${formatNumber(summary.totalAtoms, 0)} atoms`}>
+                                {formatNumber(summary.moves.acceptedPerAtom, 2)}
+                                <span className="model-stat-sub">{formatNumber(summary.moves.accepted, 0)} moves</span>
+                            </dd>
+                        </div>
+                    )}
+                    {summary.moves?.acceptedPerGenerated !== undefined && (
+                        <div className="model-stat model-stat-moves">
+                            <dt>Accepted / generated</dt>
+                            <dd title="Acceptance ratio: accepted moves as a fraction of those generated">
+                                {formatNumber(summary.moves.acceptedPerGenerated, 3)}
+                                <span className="model-stat-sub">
+                                    {formatNumber(summary.moves.acceptedPerGenerated * 100, 1)}% accepted
+                                </span>
+                            </dd>
+                        </div>
+                    )}
                 </dl>
             </section>
 
