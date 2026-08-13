@@ -5,6 +5,23 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+## v0.5.0 — 2026-08-13
+
+Two new analysis pages, correct space-group naming, and the math reference.
+
+- **Local Geometry** — bond-angle (triplet) distributions in the app, in both runtimes, on the new
+  `rmc_toolkits.triplets` engine and its `rmc-triplets` CLI.
+- **Displacement Directions** — the hex-binned orientation sphere.
+- **Auto StoG** — composition-first absolute scaling, ρ₀ self-consistency and the `rmc-autoscale`
+  CLI. The engine and CLI ship; the tab stays hidden until the page behaves.
+- **Symmetry** — non-symmorphic groups named as themselves against all 230, with Wyckoff letters
+  per orbit, plus the first tests for the symmetry code.
+- **[docs/ALGORITHMS.md](ALGORITHMS.md)** — a code-anchored account of every operation each page
+  performs, with seven per-page derivations.
+- **PCA Ellipsoid** — principal axes reported in the crystallographic frame.
+- Fixes: Rwp reports "unavailable" rather than a fake perfect fit; the ρ₀ fixture tolerance is
+  per dataset.
+
 **Auto StoG: `test_estimate_rho0_near_hand_value` failed on the 100 K dataset** (2026-08-13) —
 the x-ray fixture tests select the first available FeCoSn run (`100K` or `199K`), on the
 stated grounds that the two share a stog parameterization. True for every assertion in

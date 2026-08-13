@@ -6,3 +6,7 @@ __pycache__/
 *.pyc
 *.egg-info/
 node_modules/
+.pytest_cache/
+# Scratch run dirs written by tests/test_backend_api.py, which points the
+# backend's data root at the repo root.
+results/

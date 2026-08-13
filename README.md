@@ -5,8 +5,8 @@
 
 A **browser-first dashboard** for inspecting **RMCProfile** modeling run folders. Open the hosted
 app, select a run directory, and review plots, model information, atomic-density KDE slices, PCA
-thermal ellipsoids, displacement-direction maps, symmetry, and 3D structure views without
-installing anything.
+thermal ellipsoids, displacement-direction maps, bond-angle distributions, symmetry, and 3D
+structure views without installing anything.
 
 ### ▶️ Open the app — [drthyang.github.io/rmc-toolkits](https://drthyang.github.io/rmc-toolkits/)
 
@@ -43,6 +43,10 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
 - **Displacement Directions** — the direction-space counterpart to the ellipsoid: displacement
   directions binned in solid angle on a hex-tiled sphere reveal discrete hop directions and ±u
   asymmetry that the U tensor cannot see.
+- **Local Geometry** — bond-angle distributions the RMCProfile `triplets` way: name an A–B–C
+  triplet with **B central**, bracket the bond lengths against the run's partial g(r), and get the
+  angle histogram over the periodic configuration with coordination statistics. The folded unit
+  cell shows the detected bonds over the measured atom cloud.
 - **Symmetry analysis** — a client-side, FINDSYM-like panel reports the detected space group and
   how it changes with tolerance. Screw axes and glide planes are read from each operation's
   translation part, so non-symmorphic groups are named as themselves (Pnma, I4/mcm, Fd-3m),
@@ -121,6 +125,18 @@ $$\mathbf u_i=\frac{\Delta\mathbf r_i}{\lVert\Delta\mathbf r_i\rVert},\qquad \rh
 The plotted enhancement $\mathcal E$ is dimensionless: 1 is isotropic, and 1.8 means "this direction
 is 1.8× more likely than chance".
 → [derivation](docs/algorithms/displacement-directions.md#step-6--the-histogram)
+
+**Bond angles** — the angle at the central atom B of every A–B–C triplet whose two bonds fall
+inside their windows, divided by the *exact* isotropic fraction of each bin rather than by
+$1/\sin\theta_c$:
+
+$$\theta=\arccos\frac{\mathbf r_{BA}\cdot\mathbf r_{BC}}{\lVert\mathbf r_{BA}\rVert\lVert\mathbf r_{BC}\rVert},\qquad S_k=\frac{N_k/N}{\bigl(\cos\theta_k-\cos\theta_{k+1}\bigr)/2}$$
+
+Taking the bin integral keeps the 0° and 180° bins finite, where $1/\sin\theta_c$ diverges. $S=1$ is
+randomly oriented bonds, so a peak above 1 is real structure. Neighbours are found by a linked-cell
+search carrying explicit periodic-image shifts — exact for triclinic cells and for boxes smaller
+than the cutoff.
+→ [derivation](docs/ALGORITHMS.md#bond-angle-triplet-distribution--the-local-geometry-page-and-the-rmc-triplets-cli)
 
 The Python package is the reference implementation; the browser workers are hand-written ports of
 it. Which port is parity-tested against Python goldens — and which is only pinned to its own
