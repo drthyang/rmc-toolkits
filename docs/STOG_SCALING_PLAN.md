@@ -416,7 +416,10 @@ Newton-like; 2–4 `autoscale` passes from seeds spanning a 10× range). Precond
 composition (⟨b²⟩) and a statistically flat level; the `extrapolated` flag marks
 Qmin > the FZ fit width (~1 Å⁻¹), where the Q→0 extrapolation owns the estimate — a
 starting point, not a measurement. Validation: synthetic truth ρ0 = 0.05 recovered to
-0.0510 from seeds 0.02/0.05/0.2; FeCoSn 199 K x-ray → 0.0600 vs the hand 0.057329 (4.7%)
+0.0510 from seeds 0.02/0.05/0.2; FeCoSn 199 K x-ray → 0.0600 vs the hand 0.057329 (4.7%),
+100 K → 0.0640 (11.7%) — the distance from a hand value is a property of the measured
+S(Q), not of the code, so the fixture tolerance is per temperature; both are
+seed-independent to <0.1%
 from seeds 0.03/0.057/0.12. In the workbench, ρ0 resolution is: user value →
 `NUMBER_DENSITY ::` header → mass density + composition → the self-consistent estimate
 (auto-run when the field is empty), making composition + Q window the only required

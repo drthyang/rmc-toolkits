@@ -5,6 +5,29 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Auto StoG: `test_estimate_rho0_near_hand_value` failed on the 100 K dataset** (2026-08-13) —
+the x-ray fixture tests select the first available FeCoSn run (`100K` or `199K`), on the
+stated grounds that the two share a stog parameterization. True for every assertion in
+that class except one: how closely `estimate_rho0` reproduces the expert's hand density is
+a property of the measured S(Q), not of the parameterization. The 4.7 % figure recorded
+here and in the plan was measured on **199 K**; on **100 K** the estimate lands at 0.0640 Å⁻³,
+11.7 % from the hand 0.057329 — over the hardcoded 10 % bound. Anyone holding only the
+100 K run saw a red suite, and CI never caught it because both datasets are gitignored and
+the test skips.
+
+- Not an algorithm fault: on 100 K the estimate converges to 0.064033 ± 0.00002 from seeds
+  spanning 0.02–0.20, concordance → 1 to 10⁻⁵ in 2–3 iterations, `extrapolated=False`. It
+  is the correct root of `a_fz/a_density(ρ₀) = 1` for that data. `scaling.py` is unchanged.
+- The tolerance is now per run (199 K 10 %, 100 K 13 %) rather than one bound covering
+  both — a shared ~13 % bound would stop the test noticing a regression on 199 K.
+- New `test_estimate_rho0_is_seed_independent` asserts the part that does *not* depend on
+  which temperature is on disk: seeds spanning a 10× range must agree to <1 %. A
+  seed-dependent answer would mean the fixed-point iteration is terminating on its seed
+  rather than on the data, which no tolerance on the hand value would catch.
+- Both figures are now documented (`docs/algorithms/auto-stog.md` Step 10, plan §ρ₀); the
+  100 K entry previously recorded scale accuracy but never ρ₀, since `estimate_rho0`
+  postdates it.
+
 **Non-symmorphic space groups are named correctly; Wyckoff letters for all 230** (2026-08-06) —
 the *Detected SG* panel reported the **symmorphic parent** of every group with a screw axis or
 glide plane. The operations were always right; only the naming step threw the translation parts
