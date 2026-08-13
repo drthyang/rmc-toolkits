@@ -5,6 +5,20 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+**Local Geometry algorithm reference** (2026-08-13) — new
+[algorithms/local-geometry.md](algorithms/local-geometry.md), completing the per-page set: every
+analysis page now has its own code-anchored derivation document. Engine section: inputs and the
+half-up bin-count rule, folding + image bookkeeping, the linked-cell search with the
+strictly-more-than-$(q-1)$-thicknesses covering argument, bond admission (inclusive windows,
+zero-length exclusion, self-image rule), the two pairing rules, the three normalizations (with
+why the bin-integral `sinth` stays finite at 0°/180°), the summary payload, the app-boundary
+caps, and the CLI. Page section: seeding, the epoch guard, the `fit` plot variant, the
+partial-g(r) helper rules (curves by bond type, guides by window role, palette-matched colors),
+and the folded-cell bond view — including the caveat that its sticks are average-structure
+bonds, not instantaneous ones. Parity is quoted from the golden-fixture tests (exact integer
+counts; 1e-9 / 1e-7 / 1e-5 float tiers) rather than asserted. `ALGORITHMS.md` index row and the
+README's bond-angle derivation link now point at it.
+
 ## v0.5.0 — 2026-08-13
 
 Two new analysis pages, correct space-group naming, and the math reference.

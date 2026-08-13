@@ -43,7 +43,7 @@ written.
 | **Atomic Density** *(the nav label; this reference calls the page **Structure**, and the page heading itself reads "KDE And Folded Unit Cell")* | Supercell folded into one cell: the 2-D Gaussian KDE slice (CPU + WGSL), contours and colour mapping, the Slab In Cell projection, and the Three.js folded unit-cell view | [Structure](algorithms/structure.md) |
 | **PCA Ellipsoid** | Per-site displacement clouds: covariance, eigen-decomposition, ADP readouts, $\chi^2$ probability ellipsoid, separable 3-D Gaussian KDE + marching-cubes isosurface, wall projections, excess kurtosis, and the PCA↔crystal frame algebra | [PCA Ellipsoid](algorithms/pca-ellipsoid.md) |
 | **Displacement Directions** | Directions only, amplitude discarded: Goldberg (hex + 12 pentagon) sphere tiling, exact solid-angle histogram, enhancement/$z$-score, antipodal asymmetry, orientation tensor, and the sphere/axis-view rendering | [Displacement Directions](algorithms/displacement-directions.md) |
-| **Local Geometry** | Bond angles at a central atom over the periodic configuration: linked-cell neighbour search with explicit image shifts, the three angle curves (counts, per-degree density, exact sin-corrected), bond-length histograms and coordination statistics | [§ Bond-angle (triplet) distribution](#bond-angle-triplet-distribution--the-local-geometry-page-and-the-rmc-triplets-cli) — no per-page document yet |
+| **Local Geometry** | Bond angles at a central atom over the periodic configuration: linked-cell neighbour search with explicit image shifts, the three angle curves (counts, per-degree density, exact sin-corrected), bond-length histograms, coordination statistics, and the page's partial-g(r) helper and folded-cell bond view | [Local Geometry](algorithms/local-geometry.md) |
 | **AI Assistant** | The run context built *before* any model call: cell/composition, symmetry orbits, per-site PCA summary, average-structure neighbour distances, $g(r)$ peak extraction, residuals, convergence heuristics, character budget — and exactly what leaves the device | [AI Assistant](algorithms/ai-assistant.md) |
 
 ---
@@ -281,6 +281,10 @@ architecture, `--lorch/--no-lorch`, `--robust/--no-robust`, `--despike`,
 $\langle b^2\rangle$ (via `--b-sq-avg` or `--formula`) and has **no** HTTP counterpart.
 
 ### Bond-angle (triplet) distribution — the Local Geometry page and the `rmc-triplets` CLI
+
+> Full derivation, parity data and page reference:
+> [algorithms/local-geometry.md](algorithms/local-geometry.md). This section keeps the CLI
+> summary.
 
 Console entry point installed by `pip install -e .`
 ([`rmc_toolkits/triplets_cli.py`](../rmc_toolkits/triplets_cli.py); module form

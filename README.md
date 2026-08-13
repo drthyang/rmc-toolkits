@@ -136,7 +136,7 @@ Taking the bin integral keeps the 0° and 180° bins finite, where $1/\sin\theta
 randomly oriented bonds, so a peak above 1 is real structure. Neighbours are found by a linked-cell
 search carrying explicit periodic-image shifts — exact for triclinic cells and for boxes smaller
 than the cutoff.
-→ [derivation](docs/ALGORITHMS.md#bond-angle-triplet-distribution--the-local-geometry-page-and-the-rmc-triplets-cli)
+→ [derivation](docs/algorithms/local-geometry.md#step-6--the-histogram-and-its-three-normalizations)
 
 The Python package is the reference implementation; the browser workers are hand-written ports of
 it. Which port is parity-tested against Python goldens — and which is only pinned to its own
