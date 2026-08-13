@@ -51,6 +51,26 @@
     aspect-ratio: 1440 / 320;
 }
 
+/* 'fit' derives its viewBox from the stage, so the stage must take its size
+   from the card rather than from an aspect ratio — otherwise the two chase
+   each other. The svg stretches to the stage instead of using a percentage
+   height, which would resolve against an indefinite flex height and collapse. */
+.interactive-plot--fit .plot-stage {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.interactive-plot--fit svg {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    height: auto;
+    align-self: stretch;
+    aspect-ratio: auto;
+}
+
 .plot-bg {
     fill: var(--plot-bg);
 }

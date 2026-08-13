@@ -39,7 +39,11 @@ export default function SiteStructurePanel({
     // replaces the heuristic nearest-neighbour bonds with the analysis' own
     // bonds — [{ elements: [A, B], window: [rmin, rmax], color: 0xRRGGBB }],
     // matched on the average site positions with periodic images included.
-    bondSets = null
+    bondSets = null,
+    // Card heading. The ellipsoids are the subject on the PCA and Orientation
+    // pages; where bondSets are supplied the sticks are, so that page names it
+    // for them instead.
+    title = 'Site ellipsoids'
 }) {
     // Crystallographic a/b/c gizmo at the cell origin — on by default, since
     // this is a structural view where axes belong.
@@ -464,7 +468,7 @@ export default function SiteStructurePanel({
         <div className="pca-panel pca-unitcell-panel">
             <h3>
                 <span className="panel-title-label">
-                    Site ellipsoids
+                    {title}
                     <InfoBadge label="About the site ellipsoids" align="start">
                         <p>
                             Every reference site in the average unit cell, drawn as its

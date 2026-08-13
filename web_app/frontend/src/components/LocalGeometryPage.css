@@ -13,11 +13,11 @@
     flex: none;
     min-height: 0;
     display: grid;
-    /* Four full-height columns — stacking the two small plots halved their
-       height with card chrome, so each gets its own column instead: the
-       angle hero widest, the 3D unit cell (fine when narrow) the slimmest. */
-    grid-template-columns:
-        minmax(0, 1.15fr) minmax(0, 0.95fr) minmax(0, 0.95fr) minmax(0, 0.75fr);
+    /* Three equal columns: angle distribution, partial g(r), folded cell. An
+       earlier column held a histogram of the bond lengths inside the window —
+       dropped as redundant, since it was the same first-shell peak the partial
+       g(r) already plots, only clipped to the window. */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.9rem;
     align-items: stretch;
     /* Overhead includes the Model information and Triplet result cards
@@ -55,6 +55,24 @@
     min-height: 0;
 }
 
+/* The two plot cards must hand their plots identically sized boxes, or the
+   same data reads at two different aspect ratios side by side. Their columns
+   are already equal, so it comes down to the chrome above each stage: pin the
+   header height (one title is long enough to wrap, the other is not) and
+   reserve two legend rows in both (only the partial PDF's legend wraps, once
+   the split adds a second pair of guides). */
+.geom-layout > .pca-panel:not(.pca-unitcell-panel) > h3 {
+    height: 2.6rem;
+    min-height: 2.6rem;
+    align-items: center;
+}
+
+.geom-plot .interactive-plot .plot-toolbar {
+    min-height: 3.6rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
 /* The plots fill whatever height their card has: the SVG keeps its own
    coordinate system (pointer math goes through getScreenCTM) and letterboxes
    the drawing, so clamped cards stay interactive and undistorted. */
@@ -79,10 +97,16 @@
     display: flex;
 }
 
+/* Both plots run the 'fit' variant, which sizes its viewBox from the stage.
+   The svg takes its height by stretching in the flex stage, not from a
+   percentage: the stage's own height is flex-derived, so a percentage would
+   resolve against an indefinite height and collapse the box to zero. */
 .geom-plot .interactive-plot svg {
     flex: 1 1 auto;
+    min-width: 0;
     min-height: 0;
     height: auto;
+    align-self: stretch;
     aspect-ratio: auto;
 }
 

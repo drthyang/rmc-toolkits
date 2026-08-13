@@ -107,9 +107,49 @@ worker-or-API routing as the PCA pages via `useSiteCloud`.
 - `LocalGeometryPage.jsx` follows the PCA/Orientation page pattern (top controls bar, `pca-panel`
   cards, InfoBadges): triplet selects seeded per dataset (ends = most abundant element, central =
   next), inclusive windows with an optional distinct B–C window, result chips (bonds, mean length,
-  coordination mode share, mean angle), a sin-corrected|density toggle on the hero plot, bond-length
-  step histograms, and a window helper that plots the run's A–B partial g(r) (`PDFpartials.csv`,
-  both modes) with dashed guides at the current bounds, cropped to the first-shell region.
+  coordination mode share, mean angle), a sin-corrected|density toggle on the hero plot, and a
+  window helper that plots the run's partial g(r) (`PDFpartials.csv`, both modes) with dashed
+  guides at the current bounds, cropped to the first-shell region. Three equal-width full-height
+  columns: angle distribution, partial g(r), folded unit cell. An earlier fourth column held a
+  histogram of the bond lengths inside the window — dropped as redundant, since it was the same
+  first-shell peak the partial g(r) already plots, only clipped to the window and without the
+  surrounding context that makes the guides worth reading. The engine still returns those
+  histograms; the result chips report their counts and mean length.
+- **The partial-PDF helper carries both bonds of the triplet.** A second curve is drawn whenever
+  A–B and B–C are different bond *types* — Ga–Ta–Se brackets a Ga-Ta and a Ta-Se shell, Se–Ta–Se
+  only ever has one, and the pair is looked up in either label order. That is independent of the
+  **distinct B–C** switch, which governs the *windows* rather than the curves: with it off one pair
+  of guides covers both bonds, with it on each window gets its own pair, labelled `A–B`/`B–C` by
+  role — the pair names would be identical for a same-element triplet, whose two windows still sit
+  on one shared curve. The first-shell crop widens to clear whichever window reaches further.
+  Two windows also take the two curve colors (`plotPalette.js`, new module: a component file that
+  also exports constants breaks Fast Refresh). Guides consume no palette slot, so shell N is
+  `PLOT_PALETTE[N]` — each window is drawn in the color of the shell it brackets, and a lone window
+  keeps the neutral guide stroke since there is nothing to tell it apart from.
+- **The 3D panel is the folded unit cell, not site ellipsoids** (`FoldedCellPanel.jsx`): every atom
+  folded back into one cell as a point cloud, the same view the Atomic Density page shows, so the
+  spread around a site is the measured thermal cloud rather than a fitted ellipsoid. The detected
+  bonds are drawn over it as thin transparent lines (`LineSegments`, opacity 0.45) instead of
+  opaque cylinders, so a full coordination network reads as a framework without hiding the cloud.
+  Bond matching is unchanged — average site pairs inside the window, periodic images included.
+  `SiteStructurePanel` keeps its ellipsoid view for the PCA and Orientation pages and gains a
+  `title` prop rather than being renamed for one caller.
+- **`InteractivePlot` gains an opt-in `fit` variant** that takes its `viewBox` from the rendered box
+  (ResizeObserver, rounded to whole pixels) instead of a fixed 8:5 or 1440×320 aspect. The fixed
+  aspect letterboxed inside a card of any other shape — the two plots here filled 52–57% of their
+  cards, the rest dead space. Under `fit` one user unit is one CSS pixel, so margins keep their
+  physical size and tick density follows the box (~1 y tick / 70px, 1 x tick / 95px, clamped);
+  measured fill is now 100%. Opt-in because it needs a caller that gives the plot a definite
+  height: the fixed variants are untouched and every other page renders exactly as before.
+- Both plots are handed **identically sized boxes** so the same data does not read at two aspect
+  ratios side by side. Equal columns are not enough on their own — it is the chrome above each
+  stage that differs, so the card header is pinned to one height (one title wraps, the other does
+  not) and two legend rows are reserved in both (only the partial PDF's legend wraps, once the
+  split adds a second pair of guides). Measured: 492×363 in both, viewBox matching.
+- The bond-angle normalization note is rewritten. It previously led with the correction rather than
+  the thing being corrected; it now defines **density** first, states plainly that random bonds do
+  *not* give a flat line there (fewer ways to form an angle near 0°/180° than near 90°), and only
+  then explains that **sin-corrected** divides that factor out so flat 1 means random.
 - Verified live in both runtimes: Flask + `data/5K_try1` Se–Ga–Se gives 4.00 Se/Ga (4-fold 100.0%)
   at 109.4° ± 3.5°; static Demo (GaTa₄Se₈ 250 K) Se–Ta–Se gives 5.95 Se/Ta (6-fold 95.8%) with the
   split-octahedron distribution. Backend: `TripletsApiTests` (octahedron: exact 12×90° + 3×180°,

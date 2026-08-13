@@ -17,10 +17,11 @@ import axios from 'axios';
 import API_BASE_URL from '../api';
 import { isStaticMode, readAndParseLocalPlotFile } from '../browserData';
 import { buildElementColors } from '../atomColors';
+import { PLOT_PALETTE } from '../plotPalette';
 import InfoBadge from './InfoBadge';
 import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
-import SiteStructurePanel from './SiteStructurePanel';
+import FoldedCellPanel from './FoldedCellPanel';
 import useSiteCloud from '../useSiteCloud';
 import './PcaKdePage.css';
 import './LocalGeometryPage.css';
@@ -31,20 +32,6 @@ const STRUCTURE_MAX_POINTS = 1000000;
 
 const DEGREES = '°';
 const ANGSTROM = 'Å';
-
-// Outline of a histogram as a step polyline (InteractivePlot draws lines
-// only): duplicated x at every bin edge, level y across each bin.
-const stepSeries = (binCenters, counts) => {
-    if (!binCenters?.length) return { x: [], y: [] };
-    const width = binCenters.length > 1 ? binCenters[1] - binCenters[0] : 1;
-    const x = [];
-    const y = [];
-    binCenters.forEach((center, index) => {
-        x.push(center - width / 2, center + width / 2);
-        y.push(counts[index], counts[index]);
-    });
-    return { x, y };
-};
 
 const formatNumber = (value, digits = 2) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -66,9 +53,6 @@ export default function LocalGeometryPage({ directory, localRun }) {
         sites,
         sitesError,
         loadingSites,
-        selectedRef,
-        setSelectedRef,
-        selectedEllipsoid,
         requestPca,
         localFile,
         ready,
@@ -266,14 +250,24 @@ export default function LocalGeometryPage({ directory, localRun }) {
         return () => { cancelled = true; };
     }, [localRun, directory, datasetKey]);
 
-    const partialSeries = useMemo(() => {
-        if (!partials || !end1 || !apex) return null;
+    // PDFpartials.csv labels a pair in one order only, so try both.
+    const findPartial = useCallback((a, b) => {
+        if (!partials || !a || !b) return null;
         return (
-            partials.series?.find((series) => series.label === `${end1}-${apex}`) ??
-            partials.series?.find((series) => series.label === `${apex}-${end1}`) ??
+            partials.series?.find((series) => series.label === `${a}-${b}`) ??
+            partials.series?.find((series) => series.label === `${b}-${a}`) ??
             null
         );
-    }, [partials, end1, apex]);
+    }, [partials]);
+
+    const partialSeries = useMemo(() => findPartial(end1, apex), [findPartial, end1, apex]);
+    // A second curve whenever the two bonds are different types: Ga–Ta–Se has
+    // a Ga-Ta and a Ta-Se shell to bracket, Se–Ta–Se only ever has the one.
+    // Independent of the window split — the shells differ either way.
+    const partialCurve23 = useMemo(() => {
+        const found = findPartial(apex, end2);
+        return found && found !== partialSeries ? found : null;
+    }, [findPartial, apex, end2, partialSeries]);
 
     // --- Plot data (memoized: a new object identity resets plot view state). --
     const anglePlot = useMemo(() => {
@@ -293,68 +287,73 @@ export default function LocalGeometryPage({ directory, localRun }) {
         };
     }, [result, angleView]);
 
-    const lengthsPlot = useMemo(() => {
-        if (!result) return null;
-        const series = [];
-        const first = stepSeries(result.lengths12.binCenters, result.lengths12.counts);
-        series.push({
-            label: result.sharedEnds
-                ? `${result.triplet[0]}-${result.triplet[1]}`
-                : `${result.triplet[0]}-${result.triplet[1]} (1-2)`,
-            x: first.x,
-            y: first.y
-        });
-        if (result.lengths23) {
-            const second = stepSeries(result.lengths23.binCenters, result.lengths23.counts);
-            series.push({
-                label: `${result.triplet[1]}-${result.triplet[2]} (2-3)`,
-                x: second.x,
-                y: second.y
-            });
-        }
-        return {
-            title: `bond lengths in window`,
-            xLabel: `length (${ANGSTROM})`,
-            yLabel: 'bonds',
-            series
-        };
-    }, [result]);
-
     // Guides follow the inputs after a typing pause, so the plot (whose view
     // state resets on every plotData identity change) stays stable per key.
     const guideMin = useDebounced(r12Min);
     const guideMax = useDebounced(r12Max);
+    const guide23Min = useDebounced(r23Min);
+    const guide23Max = useDebounced(r23Max);
     const helperPlot = useMemo(() => {
         if (!partialSeries) return null;
         // The helper is about choosing the first-shell window, so show the
         // short-range part only — beyond it nothing informs a bond window.
-        const limit = Math.max(6, Number(guideMax) * 2 || 0);
-        const cut = partialSeries.x.findIndex((value) => value > limit);
-        const end = cut === -1 ? partialSeries.x.length : cut;
-        const shell = {
-            label: partialSeries.label,
-            x: partialSeries.x.slice(0, end),
-            y: partialSeries.y.slice(0, end)
+        // With two windows on screen the crop has to clear the further one.
+        const furthest = split23
+            ? Math.max(Number(guideMax) || 0, Number(guide23Max) || 0)
+            : Number(guideMax) || 0;
+        const limit = Math.max(6, furthest * 2);
+        const crop = (series) => {
+            const cut = series.x.findIndex((value) => value > limit);
+            const end = cut === -1 ? series.x.length : cut;
+            return {
+                label: series.label,
+                x: series.x.slice(0, end),
+                y: series.y.slice(0, end)
+            };
         };
-        const max = shell.y.reduce((acc, value) => Math.max(acc, value), 0) || 1;
-        const guides = [
-            { label: `rmin ${guideMin}`, value: Number(guideMin) },
-            { label: `rmax ${guideMax}`, value: Number(guideMax) }
-        ]
+        // One curve per distinct bond type; same-type triplets draw it once, or
+        // the series label would be duplicated.
+        const shells = [crop(partialSeries)];
+        if (partialCurve23) shells.push(crop(partialCurve23));
+        const max = shells.reduce(
+            (acc, shell) => shell.y.reduce((inner, value) => Math.max(inner, value), acc),
+            0
+        ) || 1;
+        // The windows are what the split governs: off, both bonds use the A–B
+        // bounds and one pair of guides covers them. Labelled by role, not by
+        // pair — with the same element at both ends the pair names would match.
+        // Two windows also get the two curve colors (guides take no palette
+        // slot, so shell N is PLOT_PALETTE[N]): where the bonds are different
+        // types each window is then the color of the shell it brackets. A lone
+        // window keeps the neutral guide stroke — there is nothing to tell apart.
+        const windows = split23
+            ? [
+                { prefix: 'A–B ', min: guideMin, max: guideMax, color: PLOT_PALETTE[0] },
+                { prefix: 'B–C ', min: guide23Min, max: guide23Max, color: PLOT_PALETTE[1] }
+            ]
+            : [{ prefix: '', min: guideMin, max: guideMax, color: undefined }];
+        const guides = windows
+            .flatMap((window) => [
+                { label: `${window.prefix}rmin ${window.min}`, value: Number(window.min), color: window.color },
+                { label: `${window.prefix}rmax ${window.max}`, value: Number(window.max), color: window.color }
+            ])
             .filter((guide) => Number.isFinite(guide.value))
             .map((guide) => ({
                 label: guide.label,
                 x: [guide.value, guide.value],
                 y: [0, max],
-                role: 'guide'
+                role: 'guide',
+                color: guide.color
             }));
         return {
-            title: `${partialSeries.label} partial g(r)`,
+            title: partialCurve23
+                ? `${partialSeries.label} and ${partialCurve23.label} partial g(r)`
+                : `${partialSeries.label} partial g(r)`,
             xLabel: `r (${ANGSTROM})`,
             yLabel: 'g(r)',
-            series: [shell, ...guides]
+            series: [...shells, ...guides]
         };
-    }, [partialSeries, guideMin, guideMax]);
+    }, [partialSeries, partialCurve23, split23, guideMin, guideMax, guide23Min, guide23Max]);
 
     // Coordination summary: "5.78 per B — 6-fold 82.8%".
     const coordinationSummary = useMemo(() => {
@@ -572,17 +571,23 @@ export default function LocalGeometryPage({ directory, localRun }) {
                             {result ? `${result.triplet.join('–')} bond-angle distribution` : 'Bond-angle distribution'}
                             <InfoBadge label="About the two normalizations">
                                 <p>
-                                    Sin-corrected divides each bin by the exact isotropic reference
-                                    (flat 1 = random directions) — the RMCProfile{' '}
-                                    <code>sinth</code> view, which keeps angles near 180{DEGREES}{' '}
-                                    from being suppressed by geometry. Density is the raw per-degree
-                                    probability with unit integral.
+                                    <b>Density</b> — the raw distribution: probability per degree,
+                                    area 1. Note that randomly oriented bonds do <em>not</em> give a
+                                    flat line here. There are simply fewer ways to form an angle near
+                                    0{DEGREES} or 180{DEGREES} than near 90{DEGREES}, so the geometry
+                                    alone bows the curve.
+                                </p>
+                                <p>
+                                    <b>Sin-corrected</b> — divides that geometric factor out. Random
+                                    bonds now read as a flat 1, anything above it is real structure,
+                                    and a peak near 180{DEGREES} is no longer flattened. This is
+                                    RMCProfile's <code>sinth</code> view.
                                 </p>
                             </InfoBadge>
                         </span>
                         <span className="panel-title-actions">
                             {/* The angle count lives in the Triplet result card;
-                                the 1/3-width header only fits the toggle. */}
+                                the header only carries the toggle. */}
                             <div className="pca-frame-toggle" role="group" aria-label="Angle normalization">
                                 <button type="button" className={angleView === 'sin' ? 'is-active' : ''} onClick={() => setAngleView('sin')}>
                                     sin-corrected
@@ -595,27 +600,9 @@ export default function LocalGeometryPage({ directory, localRun }) {
                     </h3>
                     <div className="geom-plot">
                         {anglePlot
-                            ? <InteractivePlot file={{ path: `geometry:angles:${datasetKey}`, name: anglePlot.title }} plotData={anglePlot} />
+                            ? <InteractivePlot file={{ path: `geometry:angles:${datasetKey}`, name: anglePlot.title }} plotData={anglePlot} variant="fit" />
                             : <p className="geom-empty">No distribution yet.</p>}
                     </div>
-                </div>
-
-                <div className="pca-panel">
-                        <h3>
-                            <span className="panel-title-label">Bond lengths in window</span>
-                            {result?.lengths12 && (
-                                <span className="panel-title-count">
-                                    {result.sharedEnds
-                                        ? `${result.lengths12.count.toLocaleString()} bonds`
-                                        : `${result.lengths12.count.toLocaleString()} + ${result.lengths23.count.toLocaleString()} bonds`}
-                                </span>
-                            )}
-                        </h3>
-                        <div className="geom-plot">
-                            {lengthsPlot
-                                ? <InteractivePlot file={{ path: `geometry:lengths:${datasetKey}`, name: 'bond-lengths' }} plotData={lengthsPlot} />
-                                : <p className="geom-empty">Compute to see the length histogram.</p>}
-                        </div>
                 </div>
 
                 <div className="pca-panel">
@@ -627,15 +614,23 @@ export default function LocalGeometryPage({ directory, localRun }) {
                                         The A{'–'}B partial pair distribution from the run's{' '}
                                         <code>PDFpartials.csv</code>. Set the bond window to bracket
                                         the first-shell peak; the dashed guides track the current
-                                        A{'–'}B bounds.
+                                        A{'–'}B bounds. With <b>distinct B{'–'}C</b> on, the B{'–'}C
+                                        partial is plotted alongside it with its own pair of guides,
+                                        so both windows can be set against their own shell.
                                     </p>
                                 </InfoBadge>
                             </span>
-                            {partialSeries && <span className="panel-title-count">{partialSeries.label}</span>}
+                            {partialSeries && (
+                                <span className="panel-title-count">
+                                    {partialCurve23
+                                        ? `${partialSeries.label} · ${partialCurve23.label}`
+                                        : partialSeries.label}
+                                </span>
+                            )}
                         </h3>
                         <div className="geom-plot">
                             {helperPlot
-                                ? <InteractivePlot file={{ path: `geometry:partial:${datasetKey}`, name: 'partial-gr' }} plotData={helperPlot} />
+                                ? <InteractivePlot file={{ path: `geometry:partial:${datasetKey}`, name: 'partial-gr' }} plotData={helperPlot} variant="fit" />
                                 : (
                                     <p className="geom-empty">
                                         {partialsLoading
@@ -646,15 +641,14 @@ export default function LocalGeometryPage({ directory, localRun }) {
                         </div>
                 </div>
 
-                {/* The folded average unit cell, exactly as on the PCA and
-                    Orientation pages — click a site to highlight it. */}
-                <SiteStructurePanel
+                {/* The Atomic Density page's folded cell — the atom cloud, not
+                    fitted ellipsoids — with the detected bonds over it. */}
+                <FoldedCellPanel
+                    title="Detected bonds"
+                    structure={structure}
                     sites={sites}
-                    selectedRef={selectedRef}
-                    onSelectSite={setSelectedRef}
-                    selectedEllipsoid={selectedEllipsoid}
                     elementColors={elementColors}
-                    loadingSites={loadingSites}
+                    loading={loadingSites}
                     bondSets={bondSets}
                 />
             </div>
