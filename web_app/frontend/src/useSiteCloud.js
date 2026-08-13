@@ -82,7 +82,11 @@ export default function useSiteCloud({ directory, localRun, probability = 0.5, c
                 worker.postMessage({ id, kind, text: rmc6fText, ...params });
             });
         }
-        const endpoint = { sites: '/api/pca/sites', orientation: '/api/pca/orientation' }[kind] ?? '/api/pca/kde';
+        const endpoint = {
+            sites: '/api/pca/sites',
+            orientation: '/api/pca/orientation',
+            triplets: '/api/triplets'
+        }[kind] ?? '/api/pca/kde';
         return axios
             .get(`${API_BASE_URL}${endpoint}`, { params: { dir: directory || '.', ...params } })
             .then((response) => response.data);

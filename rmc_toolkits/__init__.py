@@ -57,7 +57,9 @@ from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_
 from .triplets import (
     BondAngleDistribution,
     bond_angle_distribution,
+    bond_angle_summary,
     bond_angles_from_rmc6f,
+    cached_bond_angle_summary,
 )
 from .scattering import (
     ATOMIC_MASS_U,
@@ -105,7 +107,9 @@ __all__ = [
     "__version__",
     "BondAngleDistribution",
     "bond_angle_distribution",
+    "bond_angle_summary",
     "bond_angles_from_rmc6f",
+    "cached_bond_angle_summary",
     "CsvSeries",
     "MAX_KDE_FIT_POINTS",
     "MAX_PCA_FIT_POINTS",

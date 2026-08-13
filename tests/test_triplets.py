@@ -9,7 +9,11 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
-from rmc_toolkits.triplets import bond_angle_distribution, bond_angles_from_rmc6f
+from rmc_toolkits.triplets import (
+    bond_angle_distribution,
+    bond_angle_summary,
+    bond_angles_from_rmc6f,
+)
 from rmc_toolkits.triplets_cli import main as triplets_main
 
 
@@ -320,6 +324,22 @@ class IsotropicReferenceTests(unittest.TestCase):
 
 
 class HistogramConventionTests(unittest.TestCase):
+    def test_bin_count_rounds_half_up_like_the_js_port(self):
+        # 180/8 = 22.5 exactly: banker's rounding would give 22 bins while
+        # JavaScript's Math.round gives 23 — the engines must agree, so the
+        # rule is floor(x + 0.5) in both (see _bin_count).
+        positions = place([[5.0, 5.0, 5.0], [6.0, 5.0, 5.0], [5.0, 6.0, 5.0]])
+        for width, expected in [(8.0, 23), (40.0, 5), (1.0, 180)]:
+            result = bond_angle_distribution(
+                positions,
+                ["Nb", "Se", "Se"],
+                CUBIC_10,
+                triplet=("Se", "Nb", "Se"),
+                bond12=(0.5, 1.5),
+                bin_width=width,
+            )
+            self.assertEqual(result.counts.size, expected, f"width {width}")
+
     def test_bin_width_rounds_to_exact_tiling(self):
         positions = place([[5.0, 5.0, 5.0], [6.0, 5.0, 5.0], [5.0, 6.0, 5.0]])
         result = bond_angle_distribution(
@@ -352,6 +372,58 @@ class HistogramConventionTests(unittest.TestCase):
         self.assertAlmostEqual(
             result.sin_corrected[bin_index], 1.0 / fractions[bin_index], places=9
         )
+
+
+class SummaryTests(unittest.TestCase):
+    """The JSON payload agrees with the dataclass result and its own totals."""
+
+    LATTICE = np.array([[6.0, 0.0, 0.0], [3.0, 5.0, 0.0], [1.0, 1.0, 7.0]])
+
+    def _configuration(self):
+        rng = np.random.default_rng(11)
+        positions = rng.uniform(size=(40, 3))
+        elements = ["Se" if value < 0.6 else "Nb" for value in rng.uniform(size=40)]
+        return positions, elements
+
+    def test_summary_matches_distribution(self):
+        positions, elements = self._configuration()
+        kwargs = dict(triplet=("Se", "Nb", "Nb"), bond12=(1.0, 3.0), bond23=(1.5, 3.4))
+        summary = bond_angle_summary(positions, elements, self.LATTICE, **kwargs)
+        result = bond_angle_distribution(positions, elements, self.LATTICE, **kwargs)
+        np.testing.assert_array_equal(summary["counts"], result.counts)
+        np.testing.assert_allclose(summary["density"], result.density)
+        np.testing.assert_allclose(summary["sinCorrected"], result.sin_corrected)
+        self.assertEqual(summary["angleCount"], result.angle_count)
+        self.assertEqual(summary["apexCount"], result.apex_count)
+        self.assertEqual(summary["lengths12"]["count"], result.bond12_count)
+        self.assertEqual(summary["lengths23"]["count"], result.bond23_count)
+        self.assertAlmostEqual(summary["lengths12"]["meanLength"], result.mean_length12)
+        self.assertFalse(summary["sharedEnds"])
+
+    def test_summary_internal_totals(self):
+        positions, elements = self._configuration()
+        summary = bond_angle_summary(
+            positions, elements, self.LATTICE, triplet=("Se", "Nb", "Se"), bond12=(1.0, 3.2)
+        )
+        self.assertTrue(summary["sharedEnds"])
+        self.assertIsNone(summary["lengths23"])
+        # Length-histogram bins tile the window, so their counts sum to the
+        # bond count; the coordination histogram partitions the apex atoms.
+        self.assertEqual(sum(summary["lengths12"]["counts"]), summary["lengths12"]["count"])
+        self.assertEqual(sum(summary["coordination"]), summary["apexCount"])
+        expected_pairs = sum(
+            count * n * (n - 1) // 2 for n, count in enumerate(summary["coordination"])
+        )
+        self.assertEqual(summary["angleCount"], expected_pairs)
+
+    def test_summary_is_json_safe(self):
+        import json
+
+        positions, elements = self._configuration()
+        summary = bond_angle_summary(
+            positions, elements, self.LATTICE, triplet=("Se", "Nb", "Se"), bond12=(1.0, 3.2)
+        )
+        json.dumps(summary)  # raises on any lingering numpy type
 
 
 class ValidationTests(unittest.TestCase):

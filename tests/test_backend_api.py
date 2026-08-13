@@ -381,6 +381,148 @@ class OrientationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class TripletsApiTests(unittest.TestCase):
+    """Bond-angle summary endpoint, on a synthetic octahedron run.
+
+    The run dir lives under results/ so API paths stay inside the data root.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        backend_app.app.config.update(TESTING=True)
+        cls.client = backend_app.app.test_client()
+
+        cls.run_dir = ROOT / "results" / "triplets_api_test"
+        cls.run_dir.mkdir(parents=True, exist_ok=True)
+        # One NbO6 octahedron (2 Angstrom bonds) in a 20 Angstrom box.
+        positions = [
+            ("Nb", 0.5, 0.5, 0.5),
+            ("O", 0.6, 0.5, 0.5), ("O", 0.4, 0.5, 0.5),
+            ("O", 0.5, 0.6, 0.5), ("O", 0.5, 0.4, 0.5),
+            ("O", 0.5, 0.5, 0.6), ("O", 0.5, 0.5, 0.4),
+        ]
+        lines = [
+            "Supercell dimensions 1 1 1",
+            "Lattice vectors (Ang):",
+            "20.0 0.0 0.0",
+            "0.0 20.0 0.0",
+            "0.0 0.0 20.0",
+            "Atoms:",
+        ]
+        for index, (element, x, y, z) in enumerate(positions, start=1):
+            lines.append(f"{index} {element} [1] {x:.6f} {y:.6f} {z:.6f} {index} 0 0 0")
+        (cls.run_dir / "synthetic.rmc6f").write_text("\n".join(lines), encoding="utf-8")
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+
+        shutil.rmtree(cls.run_dir, ignore_errors=True)
+
+    def test_triplets_endpoint_returns_summary(self):
+        response = self.client.get(
+            "/api/triplets",
+            query_string={
+                "dir": "results/triplets_api_test",
+                "end1": "O",
+                "apex": "Nb",
+                "end2": "O",
+                "r12Min": 1.0,
+                "r12Max": 3.0,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["triplet"], ["O", "Nb", "O"])
+        self.assertEqual(payload["angleCount"], 15)
+        self.assertEqual(payload["apexCount"], 1)
+        self.assertEqual(payload["lengths12"]["count"], 6)
+        self.assertAlmostEqual(payload["lengths12"]["meanLength"], 2.0, places=9)
+        self.assertIsNone(payload["lengths23"])
+        self.assertTrue(payload["sharedEnds"])
+        self.assertEqual(payload["coordination"], [0, 0, 0, 0, 0, 0, 1])
+        self.assertEqual(sum(payload["counts"]), 15)
+        # 12 right angles + 3 straight ones, 1-degree bins.
+        self.assertEqual(payload["counts"][90], 12)
+        self.assertEqual(payload["counts"][179], 3)
+        self.assertIn("source", payload)
+
+    def test_triplets_endpoint_missing_window_is_400(self):
+        response = self.client.get(
+            "/api/triplets",
+            query_string={"dir": "results/triplets_api_test", "end1": "O", "apex": "Nb", "end2": "O"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("r12Min", response.get_json()["error"])
+
+    def test_triplets_endpoint_half_specified_bond23_is_400(self):
+        response = self.client.get(
+            "/api/triplets",
+            query_string={
+                "dir": "results/triplets_api_test",
+                "end1": "O", "apex": "Nb", "end2": "O",
+                "r12Min": 1.0, "r12Max": 3.0, "r23Min": 1.0,
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("r23Max", response.get_json()["error"])
+
+    def test_triplets_endpoint_caps_rmax_and_bin_width(self):
+        base = {
+            "dir": "results/triplets_api_test",
+            "end1": "O", "apex": "Nb", "end2": "O",
+            "r12Min": 1.0, "r12Max": 3.0,
+        }
+        capped = self.client.get("/api/triplets", query_string={**base, "r12Max": 40.0})
+        self.assertEqual(capped.status_code, 400)
+        self.assertIn("capped", capped.get_json()["error"])
+        tiny = self.client.get("/api/triplets", query_string={**base, "binWidth": 0.001})
+        self.assertEqual(tiny.status_code, 400)
+        self.assertIn("capped", tiny.get_json()["error"])
+
+    def test_triplets_endpoint_normalizes_element_case(self):
+        response = self.client.get(
+            "/api/triplets",
+            query_string={
+                "dir": "results/triplets_api_test",
+                "end1": "o", "apex": "NB", "end2": " O ",
+                "r12Min": 1.0, "r12Max": 3.0,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["triplet"], ["O", "Nb", "O"])
+
+    def test_triplets_endpoint_unknown_element_is_400(self):
+        response = self.client.get(
+            "/api/triplets",
+            query_string={
+                "dir": "results/triplets_api_test",
+                "end1": "Se",
+                "apex": "Nb",
+                "end2": "Se",
+                "r12Min": 1.0,
+                "r12Max": 3.0,
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("available", response.get_json()["error"])
+
+    def test_triplets_endpoint_outside_root_is_403(self):
+        response = self.client.get(
+            "/api/triplets",
+            query_string={
+                "dir": "/private/tmp",
+                "end1": "O",
+                "apex": "Nb",
+                "end2": "O",
+                "r12Min": 1.0,
+                "r12Max": 3.0,
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+
+
 class ScalingApiTests(unittest.TestCase):
     """Auto StoG endpoints, driven by a synthetic classic-stog run.
 

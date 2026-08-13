@@ -691,7 +691,16 @@ export const siteDisplacementsFromRmc6f = (text, { clusterThreshold = DEFAULT_CL
         ? sitesByReferenceNumber(tagged, latticeVectors, supercell)
         : sitesByClustering(atoms, latticeVectors, supercell, clusterThreshold);
 
-    return { referenceNumbers, sites, latticeVectors, supercell, reconstructed: !useReferenceNumbers };
+    // Per-atom element + supercell-fraction coordinate, in file order. The
+    // site extraction above discards absolute positions, but the triplets
+    // (bond-angle) request needs every atom's identity and position; keeping
+    // them here rides the same parse cache with no second pass over the text.
+    const atomList = {
+        elements: atoms.map((atom) => atom.element),
+        fractional: atoms.map((atom) => atom.coords)
+    };
+
+    return { referenceNumbers, sites, latticeVectors, supercell, reconstructed: !useReferenceNumbers, atomList };
 };
 
 /** Anisotropic displacement tensor + ellipsoid for every site, in one pass. */

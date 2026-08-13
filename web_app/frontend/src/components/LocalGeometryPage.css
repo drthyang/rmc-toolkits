@@ -1,0 +1,198 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
+
+   Local Geometry page layout. Controls, panels, hints and the segmented
+   toggle reuse PcaKdePage.css; only the page grid, the result chips and the
+   window inputs are specific to this page. */
+
+.geom-layout {
+    /* Same 16:9 discipline as .orient-layout: the clamp is authoritative, so
+       the row fills the viewport below header + controls + chips without
+       introducing page scroll, and both columns stretch to the same height —
+       the hero card's bottom edge aligns with the side column's. */
+    flex: none;
+    min-height: 0;
+    display: grid;
+    /* Three equal columns: angle distribution, partial g(r), folded cell. An
+       earlier column held a histogram of the bond lengths inside the window —
+       dropped as redundant, since it was the same first-shell peak the partial
+       g(r) already plots, only clipped to the window. */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+    align-items: stretch;
+    /* Overhead includes the Model information and Triplet result cards
+       above the controls-bar stack. */
+    height: clamp(24rem, calc(100vh - 28.5rem), 56rem);
+}
+
+/* The unit-cell panel is placed by a named grid-area on the PCA page; reset
+   it to auto flow here so it takes the third column (same reset + fill rules
+   orient-layout carries). */
+.geom-layout .pca-unitcell-panel {
+    grid-area: auto;
+    min-width: 0;
+    min-height: 0;
+}
+
+.geom-layout .pca-structure {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* The slim unit-cell column can't fit the title beside all three header
+   actions — let them wrap under the title instead of colliding with it. */
+.geom-layout .pca-unitcell-panel h3 {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+    height: auto;
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+}
+
+.geom-layout .pca-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* The two plot cards must hand their plots identically sized boxes, or the
+   same data reads at two different aspect ratios side by side. Their columns
+   are already equal, so it comes down to the chrome above each stage: pin the
+   header height (one title is long enough to wrap, the other is not) and
+   reserve two legend rows in both (only the partial PDF's legend wraps, once
+   the split adds a second pair of guides). */
+.geom-layout > .pca-panel:not(.pca-unitcell-panel) > h3 {
+    height: 2.6rem;
+    min-height: 2.6rem;
+    align-items: center;
+}
+
+.geom-plot .interactive-plot .plot-toolbar {
+    min-height: 3.6rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+/* The plots fill whatever height their card has: the SVG keeps its own
+   coordinate system (pointer math goes through getScreenCTM) and letterboxes
+   the drawing, so clamped cards stay interactive and undistorted. */
+.geom-plot {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    padding: 0.4rem 0.6rem 0.6rem;
+}
+
+.geom-plot .interactive-plot {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.geom-plot .interactive-plot .plot-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+}
+
+/* Both plots run the 'fit' variant, which sizes its viewBox from the stage.
+   The svg takes its height by stretching in the flex stage, not from a
+   percentage: the stage's own height is flex-derived, so a percentage would
+   resolve against an indefinite height and collapse the box to zero. */
+.geom-plot .interactive-plot svg {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+    align-self: stretch;
+    aspect-ratio: auto;
+}
+
+.geom-empty {
+    margin: auto;
+    padding: 1.4rem 0.9rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+/* Below 16:9-ish desktop widths the grid stacks and every plot returns to
+   its natural 8:5 aspect — the viewport clamp only makes sense side-by-side. */
+@media (max-width: 1100px) {
+    .geom-layout {
+        grid-template-columns: minmax(0, 1fr);
+        height: auto;
+    }
+
+    /* Stacked mode has no clamped row height, so the unit-cell canvas needs
+       its own; matches the plots' stacked footprint. */
+    .geom-layout .pca-unitcell-panel {
+        min-height: 26rem;
+    }
+
+    .geom-plot .interactive-plot .plot-stage {
+        flex: none;
+        display: block;
+    }
+
+    .geom-plot .interactive-plot svg {
+        flex: none;
+        aspect-ratio: 8 / 5;
+    }
+}
+
+/* Paired min–max inputs inside one control. */
+.geom-window {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--subtle);
+}
+
+.geom-window input {
+    width: 4.4rem;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    color: var(--text-strong);
+    font: inherit;
+    font-size: 0.85rem;
+}
+
+.geom-window input:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+}
+
+/* The central-atom select carries the accent ring so B reads as special. */
+.geom-central {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft, rgba(37, 99, 235, 0.12));
+}
+
+.geom-compute {
+    align-self: flex-end;
+    padding: 0.45rem 1.2rem;
+    border: 0;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.geom-compute:hover:not(:disabled) {
+    background: var(--accent-strong);
+}
+
+.geom-compute:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* The Triplet result presentation reuses the Model information card's
+   .model-summary / .model-stats classes — no page-specific styles needed. */

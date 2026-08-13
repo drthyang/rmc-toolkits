@@ -63,11 +63,19 @@ and map to Cartesian angstrom through the row-vector product
 ``x_cart = frac @ lattice_vectors``, matching ``pca_kde.py``. Element symbols
 are matched after ``str.capitalize()``, the same normalization
 ``parsers.iter_rmc6f_atoms`` applies.
+
+Cross-engine caveat: ``workers/triplets.js`` reproduces this module's
+histograms exactly for every tested configuration, but transcendental libm
+functions (``acos``) may differ by 1 ulp between platforms, so a
+*bitwise-ideal* geometry (an undisplaced average configuration whose cosine
+lands exactly on a bin edge, e.g. cos = 0.5) can shift one count into the
+neighbouring bin between engines. Real RMC configurations never hit this.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from itertools import product
 from pathlib import Path
 from typing import Sequence
@@ -127,6 +135,17 @@ def _validate_window(name: str, window: Sequence[float]) -> tuple[float, float]:
     if rmin < 0 or rmax <= rmin:
         raise ValueError(f"{name} needs 0 <= rmin < rmax, got ({rmin}, {rmax})")
     return rmin, rmax
+
+
+def _bin_count(bin_width: float) -> int:
+    """Bin count for a requested width: round half UP, not half to even.
+
+    ``floor(x + 0.5)`` matches JavaScript's ``Math.round`` exactly, so the
+    browser port builds the same number of bins for every width -- Python's
+    banker's ``round()`` would disagree at exact .5 ratios (e.g. 8-degree
+    bins: 180 / 8 = 22.5 -> 23 bins in both engines, not 22 vs 23).
+    """
+    return max(1, int(np.floor(180.0 / bin_width + 0.5)))
 
 
 def _perpendicular_widths(lattice_vectors: np.ndarray) -> np.ndarray:
@@ -317,27 +336,29 @@ def _pair_angles(
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
 
 
-def bond_angle_distribution(
+@dataclass(frozen=True)
+class _TripletCore:
+    """Shared mid-stage state between the public result builders."""
+
+    triplet: tuple[str, str, str]
+    window12: tuple[float, float]
+    window23: tuple[float, float]
+    shared_ends: bool
+    apex_count: int
+    bonds12: _Bonds
+    bonds23: _Bonds
+    angles: np.ndarray
+
+
+def _triplet_core(
     fractional: np.ndarray,
     elements: Sequence[str],
     lattice_vectors: np.ndarray,
-    *,
     triplet: Sequence[str],
     bond12: Sequence[float],
-    bond23: Sequence[float] | None = None,
-    bin_width: float = 1.0,
-    collect_angles: bool = False,
-) -> BondAngleDistribution:
-    """Histogram the A--B--C bond angles of a periodic configuration.
-
-    ``fractional`` are supercell-fraction coordinates (N, 3); ``elements`` the
-    matching symbols; ``lattice_vectors`` the (3, 3) supercell rows in
-    angstrom. ``triplet`` is ``(A, B, C)`` with **B the central atom**;
-    ``bond12`` bounds the A--B length and ``bond23`` the B--C length
-    (inclusive; ``None`` reuses ``bond12``). ``bin_width`` is in degrees --
-    the bin count is ``round(180 / bin_width)``, so widths that do not divide
-    180 are adjusted to the nearest exact tiling.
-    """
+    bond23: Sequence[float] | None,
+) -> _TripletCore:
+    """Validate inputs, find both bond sets, and form every angle."""
     fractional = np.asarray(fractional, dtype=float)
     if fractional.ndim != 2 or fractional.shape[1] != 3:
         raise ValueError(f"fractional must be (N, 3), got {fractional.shape}")
@@ -356,9 +377,6 @@ def bond_angle_distribution(
     end1, apex, end2 = (str(symbol).strip().capitalize() for symbol in triplet)
     window12 = _validate_window("bond12", bond12)
     window23 = window12 if bond23 is None else _validate_window("bond23", bond23)
-    bin_width = float(bin_width)
-    if not (np.isfinite(bin_width) and 0 < bin_width <= 180):
-        raise ValueError(f"bin_width must be in (0, 180], got {bin_width}")
 
     symbol_array = np.asarray(symbols)
     available = sorted(set(symbols))
@@ -399,7 +417,46 @@ def bond_angle_distribution(
         )
     angles = _pair_angles(bonds12, bonds23, apex_rows.size, shared_ends)
 
-    nbins = max(1, int(round(180.0 / bin_width)))
+    return _TripletCore(
+        triplet=(end1, apex, end2),
+        window12=window12,
+        window23=window23,
+        shared_ends=shared_ends,
+        apex_count=int(apex_rows.size),
+        bonds12=bonds12,
+        bonds23=bonds23,
+        angles=angles,
+    )
+
+
+def bond_angle_distribution(
+    fractional: np.ndarray,
+    elements: Sequence[str],
+    lattice_vectors: np.ndarray,
+    *,
+    triplet: Sequence[str],
+    bond12: Sequence[float],
+    bond23: Sequence[float] | None = None,
+    bin_width: float = 1.0,
+    collect_angles: bool = False,
+) -> BondAngleDistribution:
+    """Histogram the A--B--C bond angles of a periodic configuration.
+
+    ``fractional`` are supercell-fraction coordinates (N, 3); ``elements`` the
+    matching symbols; ``lattice_vectors`` the (3, 3) supercell rows in
+    angstrom. ``triplet`` is ``(A, B, C)`` with **B the central atom**;
+    ``bond12`` bounds the A--B length and ``bond23`` the B--C length
+    (inclusive; ``None`` reuses ``bond12``). ``bin_width`` is in degrees --
+    the bin count is ``round(180 / bin_width)``, so widths that do not divide
+    180 are adjusted to the nearest exact tiling.
+    """
+    bin_width = float(bin_width)
+    if not (np.isfinite(bin_width) and 0 < bin_width <= 180):
+        raise ValueError(f"bin_width must be in (0, 180], got {bin_width}")
+    core = _triplet_core(fractional, elements, lattice_vectors, triplet, bond12, bond23)
+    angles, bonds12, bonds23 = core.angles, core.bonds12, core.bonds23
+
+    nbins = _bin_count(bin_width)
     width = 180.0 / nbins
     edges = np.linspace(0.0, 180.0, nbins + 1)
     counts, _ = np.histogram(angles, bins=nbins, range=(0.0, 180.0))
@@ -425,9 +482,9 @@ def bond_angle_distribution(
     mean23 = float(np.mean(bonds23.lengths)) if bonds23.lengths.size else None
 
     return BondAngleDistribution(
-        triplet=(end1, apex, end2),
-        bond12=window12,
-        bond23=window23,
+        triplet=core.triplet,
+        bond12=core.window12,
+        bond23=core.window23,
         bin_edges=edges,
         bin_centers=(edges[:-1] + edges[1:]) / 2.0,
         counts=counts,
@@ -436,12 +493,125 @@ def bond_angle_distribution(
         angle_count=int(angles.size),
         mean_angle=mean_angle,
         std_angle=std_angle,
-        apex_count=int(apex_rows.size),
+        apex_count=core.apex_count,
         bond12_count=int(bonds12.lengths.size),
         bond23_count=int(bonds23.lengths.size),
         mean_length12=mean12,
         mean_length23=mean23,
         angles=angles if collect_angles else None,
+    )
+
+
+# Bond-length histogram resolution inside each window, used by the summary
+# payload. Fixed count (not width) so any window renders at the same detail.
+LENGTH_BINS = 40
+
+
+def bond_angle_summary(
+    fractional: np.ndarray,
+    elements: Sequence[str],
+    lattice_vectors: np.ndarray,
+    *,
+    triplet: Sequence[str],
+    bond12: Sequence[float],
+    bond23: Sequence[float] | None = None,
+    bin_width: float = 1.0,
+) -> dict:
+    """JSON-safe payload for the app: angles + bond lengths + coordination.
+
+    One engine pass feeding every panel of the Local Geometry page. The dict
+    (camelCase keys, plain lists/scalars) is the payload contract shared by
+    the Flask ``/api/triplets`` route and the browser worker's ``triplets``
+    request -- keep ``workers/triplets.js`` in sync with any change here.
+    """
+    bin_width = float(bin_width)
+    if not (np.isfinite(bin_width) and 0 < bin_width <= 180):
+        raise ValueError(f"bin_width must be in (0, 180], got {bin_width}")
+    core = _triplet_core(fractional, elements, lattice_vectors, triplet, bond12, bond23)
+
+    nbins = _bin_count(bin_width)
+    width = 180.0 / nbins
+    edges = np.linspace(0.0, 180.0, nbins + 1)
+    counts, _ = np.histogram(core.angles, bins=nbins, range=(0.0, 180.0))
+    total = int(counts.sum())
+    edges_rad = np.radians(edges)
+    isotropic = (np.cos(edges_rad[:-1]) - np.cos(edges_rad[1:])) / 2.0
+    density = counts / (total * width) if total else np.zeros(nbins)
+    sin_corrected = (counts / total) / isotropic if total else np.zeros(nbins)
+
+    def length_histogram(bonds: _Bonds, window: tuple[float, float]) -> dict:
+        length_counts, length_edges = np.histogram(
+            bonds.lengths, bins=LENGTH_BINS, range=window
+        )
+        return {
+            "binCenters": ((length_edges[:-1] + length_edges[1:]) / 2.0).tolist(),
+            "counts": length_counts.tolist(),
+            "count": int(bonds.lengths.size),
+            "meanLength": float(np.mean(bonds.lengths)) if bonds.lengths.size else None,
+        }
+
+    coordination = np.bincount(
+        np.bincount(core.bonds12.center_pos, minlength=core.apex_count)
+    )
+
+    angles = core.angles
+    return {
+        "triplet": list(core.triplet),
+        "bond12": list(core.window12),
+        "bond23": list(core.window23),
+        "sharedEnds": core.shared_ends,
+        "binWidth": width,
+        "binCenters": ((edges[:-1] + edges[1:]) / 2.0).tolist(),
+        "counts": counts.tolist(),
+        "density": density.tolist(),
+        "sinCorrected": sin_corrected.tolist(),
+        "angleCount": int(angles.size),
+        "meanAngle": float(np.mean(angles)) if angles.size else None,
+        "stdAngle": float(np.std(angles)) if angles.size else None,
+        "apexCount": core.apex_count,
+        "lengths12": length_histogram(core.bonds12, core.window12),
+        # Shared ends reuse the window-1 bonds, so the page shows one histogram.
+        "lengths23": None if core.shared_ends else length_histogram(core.bonds23, core.window23),
+        # coordination[n] = how many central atoms have exactly n window-1 bonds.
+        "coordination": coordination.tolist(),
+    }
+
+
+@lru_cache(maxsize=16)
+def cached_bond_angle_summary(
+    path: str,
+    mtime: float,
+    end1: str,
+    apex: str,
+    end2: str,
+    r12_min: float,
+    r12_max: float,
+    r23_min: float,
+    r23_max: float,
+    bin_width: float,
+) -> dict:
+    """``bond_angle_summary`` of an ``.rmc6f`` file, memoized for API callers.
+
+    Keyed on (path, mtime) plus every parameter, mirroring
+    ``pca_kde.cached_site_displacements``. Windows arrive resolved (bond23
+    defaults applied by the caller) so equal windows hit one cache entry.
+    """
+    lattice_vectors, _ = read_cell_vectors(path)
+    coords: list[np.ndarray] = []
+    elements: list[str] = []
+    for atom in iter_rmc6f_atoms(path):
+        coords.append(atom["coords"])
+        elements.append(atom["element"])
+    if not coords:
+        raise ValueError(f"{path} does not contain any atoms")
+    return bond_angle_summary(
+        np.asarray(coords, dtype=float),
+        elements,
+        lattice_vectors,
+        triplet=(end1, apex, end2),
+        bond12=(r12_min, r12_max),
+        bond23=(r23_min, r23_max),
+        bin_width=bin_width,
     )
 
 

@@ -7,6 +7,7 @@ import Dashboard from './components/Dashboard';
 import StructurePage from './components/StructurePage';
 import PcaKdePage from './components/PcaKdePage';
 import OrientationPage from './components/OrientationPage';
+import LocalGeometryPage from './components/LocalGeometryPage';
 import AutoStogPage from './components/AutoStogPage';
 import { AssistantPage } from './llm';
 import API_BASE_URL from './api';
@@ -29,7 +30,7 @@ const SHOW_AUTO_STOG = false;
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, orientation: false, assistant: false });
+  const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, orientation: false, geometry: false, assistant: false });
   // Parsed run context published by the Dashboard, consumed by the AI Assistant page.
   const [assistantRun, setAssistantRun] = useState(null);
   // Per-site PCA ellipsoid table published by the PCA Ellipsoid page (once opened),
@@ -313,6 +314,12 @@ function App() {
                 Atomic Density
               </button>
               <button
+                className={activePage === 'geometry' ? 'active' : ''}
+                onClick={() => handlePageChange('geometry')}
+              >
+                Local Geometry
+              </button>
+              <button
                 className={activePage === 'ellipsoids' ? 'active' : ''}
                 onClick={() => handlePageChange('ellipsoids')}
               >
@@ -484,6 +491,16 @@ function App() {
               {/* Displacement-direction histogram — independent of the PCA page
                   (shares only the site picker via useSiteCloud). */}
               <OrientationPage directory={currentDirectory} localRun={localRun} />
+            </div>
+          )}
+          {visitedPages.geometry && (
+            <div
+              className={`workspace-page${activePage === 'geometry' ? ' is-active' : ' is-hidden'}`}
+              aria-hidden={activePage !== 'geometry'}
+            >
+              {/* Bond-angle (triplet) distribution + bond-length/coordination
+                  statistics — the RMCProfile `triplets` workflow. */}
+              <LocalGeometryPage directory={currentDirectory} localRun={localRun} />
             </div>
           )}
           {visitedPages.assistant && (

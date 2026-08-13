@@ -6,10 +6,11 @@ import axios from 'axios';
 import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
 import { niceDomain } from '../plotDomain';
+import { GUIDE_STROKE, PLOT_PALETTE } from '../plotPalette';
 import SaveMenu from './SaveMenu';
 import './InteractivePlot.css';
 
-const palette = ['#1f6fd6', '#e8590c', '#099268', '#d6336c', '#6741d9', '#66a80f', '#0c8599', '#e67700'];
+const palette = PLOT_PALETTE;
 
 const CHART_SAVE_OPTIONS = [
     { id: 'png', label: 'PNG image', hint: '.png' },
@@ -19,9 +20,9 @@ const CHART_SAVE_OPTIONS = [
 // Series whose label mentions "exp" hold measured data (Experiment, F(Q)_Expt, X_ray_exp_renorm, ...).
 const isExperimental = (label) => /exp/i.test(label);
 
-// Theory/reference lines (series with role: 'guide'): drawn dashed and muted,
-// excluded from the palette rotation and from hover snapping.
-const GUIDE_STROKE = '#98a2b3';
+// Theory/reference lines (series with role: 'guide') are drawn dashed and
+// muted, and are excluded from the palette rotation and from hover snapping. A
+// caller may set an explicit `color` to tie one to the series it belongs to.
 
 const MARKER_RADIUS = 2.8;
 
@@ -93,6 +94,30 @@ const AxisLabel = ({ label, x, y, textAnchor = 'middle', rotate = false }) => {
 
 const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const wide = variant === 'wide';
+    // 'fit' takes its viewBox from the rendered box instead of a fixed aspect,
+    // so the drawing fills the card rather than letterboxing inside it. Opt-in:
+    // it only suits callers that give the plot a definite height.
+    const fit = variant === 'fit';
+    const stageRef = useRef(null);
+    const [stageSize, setStageSize] = useState(null);
+    useEffect(() => {
+        if (!fit) return undefined;
+        const node = stageRef.current;
+        if (!node) return undefined;
+        const observer = new ResizeObserver(([entry]) => {
+            const { width, height } = entry.contentRect;
+            // Round to whole pixels: sub-pixel churn would rebuild the viewBox
+            // (and every tick label) on any reflow.
+            setStageSize((current) => {
+                const next = { width: Math.round(width), height: Math.round(height) };
+                return current && current.width === next.width && current.height === next.height
+                    ? current
+                    : next;
+            });
+        });
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [fit]);
     const [plot, setPlot] = useState(null);
     const [error, setError] = useState(null);
     const [hidden, setHidden] = useState(() => new Set());
@@ -199,10 +224,51 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         return { x: currentX, y: yDomain || initialY || baseY, baseX, baseY };
     }, [visibleSeries, xDomain, yDomain, effectivePlot, fullExtent]);
 
-    // 8:5 (golden-ish) for grid cards, a slim strip for the wide variant.
-    const view = wide
-        ? { width: 1440, height: 320, left: 64, right: 20, top: 18, bottom: 58 }
-        : { width: 720, height: 450, left: 60, right: 18, top: 16, bottom: 58 };
+    // Under 'fit' the box is whatever the card gives, so tick density follows
+    // it — roughly one y tick per 70px and one x tick per 95px, clamped to the
+    // range the fixed variants use. A short card otherwise crams in six y ticks.
+    const fitted = fit && stageSize?.width && stageSize?.height ? stageSize : null;
+    const clampTicks = (value, low, high) => Math.max(low, Math.min(high, Math.round(value)));
+    const yTicks = niceTicks(
+        domains.y,
+        fitted ? clampTicks(fitted.height / 70, 3, 8) : wide ? 4 : 6
+    );
+    const xTicks = niceTicks(
+        domains.x,
+        fitted ? clampTicks(fitted.width / 95, 4, 12) : wide ? 11 : 7
+    );
+    const yAxisMax = Math.max(...yTicks.ticks.map(Math.abs), 0);
+    const xAxisMax = Math.max(...xTicks.ticks.map(Math.abs), 0);
+
+    // The default left margin fits ~3-character y ticks beside the rotated
+    // axis label (the historical look). Wider ticks — e.g. counts like 7000 —
+    // push the plot area right by one 14.5px tabular digit per extra
+    // character, so they never run into the label.
+    const widestYTick = Math.max(
+        ...yTicks.ticks.map((tick) => formatTick(tick, yTicks.step, yAxisMax).length),
+        1
+    );
+    // 8.7px per extra 14.5px tabular digit, plus a fixed 6px of breathing
+    // room once padding engages (the default margin fits 3 characters with
+    // no slack left over).
+    const leftPad = widestYTick > 3 ? (widestYTick - 3) * 8.7 + 6 : 0;
+
+    // 8:5 (golden-ish) for grid cards, a slim strip for the wide variant, the
+    // measured box for 'fit'. Under 'fit' one user unit is one CSS pixel, so
+    // the margins below stay the same physical size they are elsewhere; before
+    // the first measurement it falls back to the 8:5 box.
+    const view = fit && stageSize?.width && stageSize?.height
+        ? {
+            width: stageSize.width,
+            height: stageSize.height,
+            left: 60 + leftPad,
+            right: 18,
+            top: 16,
+            bottom: 58
+        }
+        : wide
+            ? { width: 1440, height: 320, left: 64 + leftPad, right: 20, top: 18, bottom: 58 }
+            : { width: 720, height: 450, left: 60 + leftPad, right: 18, top: 16, bottom: 58 };
     const plotWidth = view.width - view.left - view.right;
     const plotHeight = view.height - view.top - view.bottom;
 
@@ -210,11 +276,6 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const yScale = (y) => view.top + plotHeight - ((y - domains.y[0]) / (domains.y[1] - domains.y[0] || 1)) * plotHeight;
     const xInvert = (px) => domains.x[0] + ((px - view.left) / plotWidth) * (domains.x[1] - domains.x[0]);
     const yInvert = (py) => domains.y[0] + ((view.top + plotHeight - py) / plotHeight) * (domains.y[1] - domains.y[0]);
-
-    const yTicks = niceTicks(domains.y, wide ? 4 : 6);
-    const xTicks = niceTicks(domains.x, wide ? 11 : 7);
-    const yAxisMax = Math.max(...yTicks.ticks.map(Math.abs), 0);
-    const xAxisMax = Math.max(...xTicks.ticks.map(Math.abs), 0);
 
     // Geometry is memoized so hover re-renders skip rebuilding the (large)
     // marker paths; only domain or series changes recompute them.
@@ -355,7 +416,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const hoverOnLeftHalf = hover && hover.px < view.width / 2;
 
     return (
-        <div className={`interactive-plot${wide ? ' interactive-plot--wide' : ''}`}>
+        <div className={`interactive-plot${wide ? ' interactive-plot--wide' : ''}${fit ? ' interactive-plot--fit' : ''}`}>
             <div className="plot-toolbar">
                 <div className="plot-legend">
                     {orderedSeries.map((series) => (
@@ -397,7 +458,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                     <SaveMenu onSave={saveFigure} options={CHART_SAVE_OPTIONS} label="Save" align="right" />
                 </div>
             </div>
-            <div className="plot-stage">
+            <div className="plot-stage" ref={stageRef}>
                 <svg
                     ref={svgRef}
                     viewBox={`0 0 ${view.width} ${view.height}`}

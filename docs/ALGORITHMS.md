@@ -128,7 +128,7 @@ chart on the Dashboard — `isDashboardPlotFile` in `Dashboard.jsx` drops every 
 | Per-site clouds, ADP, separable 3-D KDE | `pca_kde.py` | `/api/pca/sites`, `/api/pca/kde` | `workers/pcaKde.js`, `workers/pcaKdeWorker.js` |
 | Isosurface extraction | — | — | `workers/marchingCubes.js` (**browser only**) |
 | Orientation histogram on the Goldberg sphere | `orientation.py` | `/api/pca/orientation` | `workers/orientation.js` |
-| Bond-angle (triplet) distribution | `triplets.py` (`rmc-triplets` CLI) | — (engine-only, no route yet) | — (no port yet; pre-UI validation stage) |
+| Bond-angle (triplet) distribution | `triplets.py` (`rmc-triplets` CLI; `bond_angle_summary` is the payload contract) | `/api/triplets` | `workers/triplets.js` (parity-tested vs Python goldens), UI in `LocalGeometryPage.jsx` |
 | `.rmc6f` atoms + lattice → folded unit cell | `parsers.py` (`read_cell_vectors`, `read_atom_indices`, `iter_rmc6f_atoms`) | `/api/structure` (site-stratified subsample, `MAX_STRUCTURE_POINTS`) | `browserData.js` → `structureFromRmc6f()` (atom lines via `parseAtomLine()` in `rmc6f.js`), run off the main thread by `workers/localStructureWorker.js` (instantiated in `Dashboard.jsx` and `StructurePage.jsx`) |
 | PCA↔crystal frame algebra | — | — | `pcaCrystalFrame.js` — `unitCellVectors()` is on the **production UI path** (imported by `useSiteCloud.js`; drives the crystal-frame axis rods, the shadow box and the axis-framing cameras in `PcaKdePage.jsx`); `crystalPcaTransforms` / `principalAxisOrientation` are exercised **only by unit tests** |
 | Assistant context, pair correlations, convergence heuristics | — | — | `src/llm/` (**browser only**; the backend is never involved in an assistant request) |

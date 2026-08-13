@@ -31,6 +31,7 @@ from rmc_toolkits.pca_kde import (
     site_ellipsoids,
     site_pca_kde,
 )
+from rmc_toolkits.triplets import cached_bond_angle_summary
 from rmc_toolkits.parsers import (
     iter_rmc6f_atoms,
     read_atom_indices,
@@ -616,6 +617,64 @@ def pca_kde_endpoint():
             cubic_box=request.args.get("cubicBox", "false").lower() in ("1", "true", "yes"),
             probability=float(request.args.get("probability", 0.5)),
             projections=request.args.get("projections", "true").lower() in ("1", "true", "yes"),
+        )
+        result["source"] = str(rmc6f_path)
+        return jsonify(result)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/triplets", methods=["GET"])
+def triplets_endpoint():
+    """Bond-angle (triplet) summary of the run's configuration.
+
+    Params: end1/apex/end2 (elements, apex central), r12Min/r12Max and the
+    optional r23Min/r23Max windows (angstrom, inclusive), binWidth (degrees).
+    Payload shape is defined by rmc_toolkits.triplets.bond_angle_summary and
+    mirrored by the browser worker's 'triplets' request; both boundaries cap
+    rmax at 15 A and binWidth at >= 0.05 deg (the engine itself is
+    unrestricted for library/CLI use) so one request cannot blow up the
+    stencil volume or the response size.
+    """
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+
+        def window(min_key, max_key, fallback=None):
+            raw_min, raw_max = request.args.get(min_key), request.args.get(max_key)
+            missing = [key for key, raw in ((min_key, raw_min), (max_key, raw_max)) if raw in (None, "")]
+            if len(missing) == 2 and fallback is not None:
+                return fallback
+            if missing:
+                raise ValueError(f"{min_key}/{max_key} are required together; missing {missing[0]}")
+            bounds = float(raw_min), float(raw_max)
+            if bounds[1] > 15.0:
+                raise ValueError(f"{max_key} is capped at 15 A for API requests, got {bounds[1]}")
+            return bounds
+
+        window12 = window("r12Min", "r12Max")
+        window23 = window("r23Min", "r23Max", fallback=window12)
+        bin_width = float(request.args.get("binWidth", 1.0))
+        if bin_width < 0.05:
+            raise ValueError(f"binWidth is capped at >= 0.05 deg for API requests, got {bin_width}")
+        result = dict(
+            cached_bond_angle_summary(
+                str(rmc6f_path),
+                rmc6f_path.stat().st_mtime,
+                # Normalized here so 'se' and 'Se' share one cache entry.
+                request.args.get("end1", "").strip().capitalize(),
+                request.args.get("apex", "").strip().capitalize(),
+                request.args.get("end2", "").strip().capitalize(),
+                *window12,
+                *window23,
+                bin_width,
+            )
         )
         result["source"] = str(rmc6f_path)
         return jsonify(result)

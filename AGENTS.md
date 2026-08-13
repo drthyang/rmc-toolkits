@@ -42,7 +42,7 @@ rmc_toolkits/
   scaling.py     Auto StoG engine: level sweep, closed-form (a,b) fit, self-consistent filter loop, FZ amplitude mode, estimate_rho0 (density from amplitude-criteria concordance), diagnostics (no I/O)
   scattering.py  Faber-Ziman coefficients from a chemical formula (Sears table, 89 elements)
   scaling_cli.py rmc-autoscale CLI: stog.inp/--data → engine → classic stog output family + provenance JSON (all scaling file I/O)
-  triplets.py    bond-angle (triplet) distribution engine, RMCProfile triplets-style: A-B-C with B central, per-bond length windows, linked-cell periodic search with explicit image shifts (triclinic-safe), exact per-bin sin(θ) correction (source of truth; engine-only — no route/port/UI yet)
+  triplets.py    bond-angle (triplet) distribution engine, RMCProfile triplets-style: A-B-C with B central, per-bond length windows, linked-cell periodic search with explicit image shifts (triclinic-safe), exact per-bin sin(θ) correction; bond_angle_summary is the JSON payload contract shared by /api/triplets and workers/triplets.js (source of truth)
   triplets_cli.py rmc-triplets CLI: .rmc6f or run folder → angle histogram CSV (+ optional PNG plot / raw-angle dump)
 
 web_app/backend/app.py    Flask API; data-root guard; per-(path,mtime,…) LRU caches for KDE, PCA-KDE, and scaling; /api/scaling/preview|run share the CLI writer
@@ -70,6 +70,7 @@ web_app/frontend/src/
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
     PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections; unit-cell picker via SiteStructurePanel
     OrientationPage.jsx          Orientation tab (own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9
+    LocalGeometryPage.jsx        Local Geometry tab (beside Atomic Density): triplet + window controls, Model information + Detected SG cards (same ModelSummary/structure sources as Dashboard/StructurePage; SG browser-only per the basis mode gap), result chips, angle-distribution panel (sin-corrected|density toggle), bond-length step histogram, partial-g(r) window helper; 16:9 viewport-clamped grid with flush card edges; compute-on-demand via useSiteCloud requestPca('triplets') → worker or /api/triplets
     OrientationView.jsx          renders display:contents → its two panels drop into the page grid: the Axis-views mini panel (three fixed-angle a/b/c | PC1/2/3 views, click to snap) and the sphere panel (flat-shaded Goldberg cells, amplitude relief, only the selected frame's axis rods, header Crystal|PCA toggle + Reset + Save, per-cell hover, colorbar + asymmetry/significance strip)
     SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages
     sceneAxes.js                 shared axis palettes (PC tricolor, a/b/c) + triad/rod builders for every Three.js panel
@@ -81,6 +82,7 @@ web_app/frontend/src/
     autoScale.js                 static-mode Auto StoG engine (JS port of scaling.py + transforms.py + stog parsers + Faber-Ziman); parity-tested against Python goldens (autoScale.test.js)
     autoScaleWorker.js           off-thread runner for autoScale.js (transferable buffers)
     orientation.js               static-mode displacement-orientation engine (JS port of orientation.py: Goldberg hex+pentagon sphere tiling, solid-angle histogram)
+    triplets.js                  static-mode bond-angle engine (port of triplets.py; parity-tested against Python goldens in triplets_fixture.json — regenerate with tests/generate_triplets_fixture.py)
     pcaKdeWorker.js              static-mode PCA-KDE worker (parses clouds once, answers 'sites'/'kde'/'orientation' requests off-thread)
     marchingCubes.js             isosurface extraction over a scalar field (Lorensen-Cline tables) for the Three.js KDE surface
 ```
