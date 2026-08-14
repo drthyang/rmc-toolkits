@@ -3,23 +3,7 @@
 Chronological record of notable changes, newest first. For current architecture and conventions see
 [AGENTS.md](../AGENTS.md); for forward plans see [ROADMAP.md](ROADMAP.md).
 
-## Unreleased
-
-**Local Geometry algorithm reference** (2026-08-13) — new
-[algorithms/local-geometry.md](algorithms/local-geometry.md), completing the per-page set: every
-analysis page now has its own code-anchored derivation document. Engine section: inputs and the
-half-up bin-count rule, folding + image bookkeeping, the linked-cell search with the
-strictly-more-than-$(q-1)$-thicknesses covering argument, bond admission (inclusive windows,
-zero-length exclusion, self-image rule), the two pairing rules, the three normalizations (with
-why the bin-integral `sinth` stays finite at 0°/180°), the summary payload, the app-boundary
-caps, and the CLI. Page section: seeding, the epoch guard, the `fit` plot variant, the
-partial-g(r) helper rules (curves by bond type, guides by window role, palette-matched colors),
-and the folded-cell bond view — including the caveat that its sticks are average-structure
-bonds, not instantaneous ones. Parity is quoted from the golden-fixture tests (exact integer
-counts; 1e-9 / 1e-7 / 1e-5 float tiers) rather than asserted. `ALGORITHMS.md` index row and the
-README's bond-angle derivation link now point at it.
-
-## v0.5.0 — 2026-08-13
+## v0.5.0 — 2026-08-14
 
 Two new analysis pages, correct space-group naming, and the math reference.
 
@@ -35,6 +19,32 @@ Two new analysis pages, correct space-group naming, and the math reference.
 - **PCA Ellipsoid** — principal axes reported in the crystallographic frame.
 - Fixes: Rwp reports "unavailable" rather than a fake perfect fit; the ρ₀ fixture tolerance is
   per dataset.
+
+**Local Geometry: folded-cell canvas overflowed the page on retina displays** (2026-08-14) —
+`FoldedCellPanel` resized its renderer with `setSize(width, height, false)`, which skips styling
+the canvas, and `.pca-structure` gives the canvas no CSS size of its own — so the canvas laid out
+at its attribute size, CSS size × devicePixelRatio, twice its panel on a 2× display, and the
+oversized canvas wrecked the whole tab's layout. Plain `setSize(width, height)` now lets three.js
+style the canvas, as `SiteStructurePanel` always has. Also fixed in passing: the panel's *Reset
+view* called `controls.reset()` with no saved state, snapping the camera to its construction
+position at the origin (inside the cell); the rebuild now ends with `controls.saveState()` so
+reset restores the framed view of the current data. The v0.5.0 tag was re-cut onto this fix's
+merge commit; the original 2026-08-13 tag, which pointed at the release-notes commit and so
+predated both this fix and the algorithm reference, was deleted before anything referenced it.
+
+**Local Geometry algorithm reference** (2026-08-13) — new
+[algorithms/local-geometry.md](algorithms/local-geometry.md), completing the per-page set: every
+analysis page now has its own code-anchored derivation document. Engine section: inputs and the
+half-up bin-count rule, folding + image bookkeeping, the linked-cell search with the
+strictly-more-than-$(q-1)$-thicknesses covering argument, bond admission (inclusive windows,
+zero-length exclusion, self-image rule), the two pairing rules, the three normalizations (with
+why the bin-integral `sinth` stays finite at 0°/180°), the summary payload, the app-boundary
+caps, and the CLI. Page section: seeding, the epoch guard, the `fit` plot variant, the
+partial-g(r) helper rules (curves by bond type, guides by window role, palette-matched colors),
+and the folded-cell bond view — including the caveat that its sticks are average-structure
+bonds, not instantaneous ones. Parity is quoted from the golden-fixture tests (exact integer
+counts; 1e-9 / 1e-7 / 1e-5 float tiers) rather than asserted. `ALGORITHMS.md` index row and the
+README's bond-angle derivation link now point at it.
 
 **Auto StoG: `test_estimate_rho0_near_hand_value` failed on the 100 K dataset** (2026-08-13) —
 the x-ray fixture tests select the first available FeCoSn run (`100K` or `199K`), on the

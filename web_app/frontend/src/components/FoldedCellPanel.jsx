@@ -86,7 +86,10 @@ const FoldedCellPanel = ({
             if (!width || !height) return;
             camera.aspect = width / height;
             camera.updateProjectionMatrix();
-            renderer.setSize(width, height, false);
+            // Let setSize style the canvas too: .pca-structure gives it no CSS
+            // size, so without the style it would lay out at attribute size
+            // (CSS × pixelRatio) and overflow the panel on retina displays.
+            renderer.setSize(width, height);
         };
         resize();
         const observer = new ResizeObserver(resize);
@@ -256,6 +259,10 @@ const FoldedCellPanel = ({
         camera.far = radius * 100;
         camera.updateProjectionMatrix();
         controls.update();
+        // Snapshot this framing as what "Reset view" restores — without it,
+        // controls.reset() would return the camera to its construction state
+        // at the origin.
+        controls.saveState();
         handle.resize();
     }, [structure, sites, bondSets, elementColors, showCellAxes]);
 
