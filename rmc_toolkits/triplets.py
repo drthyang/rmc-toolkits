@@ -519,7 +519,7 @@ def bond_angle_summary(
 ) -> dict:
     """JSON-safe payload for the app: angles + bond lengths + coordination.
 
-    One engine pass feeding every panel of the Local Geometry page. The dict
+    One engine pass feeding every panel of the Bond Geometry page. The dict
     (camelCase keys, plain lists/scalars) is the payload contract shared by
     the Flask ``/api/triplets`` route and the browser worker's ``triplets``
     request -- keep ``workers/triplets.js`` in sync with any change here.

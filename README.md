@@ -43,7 +43,7 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
 - **Displacement Directions** — the direction-space counterpart to the ellipsoid: displacement
   directions binned in solid angle on a hex-tiled sphere reveal discrete hop directions and ±u
   asymmetry that the U tensor cannot see.
-- **Local Geometry** — bond-angle distributions the RMCProfile `triplets` way: name an A–B–C
+- **Bond Geometry** — bond-angle distributions the RMCProfile `triplets` way: name an A–B–C
   triplet with **B central**, bracket the bond lengths against the run's partial g(r), and get the
   angle histogram over the periodic configuration with coordination statistics. The folded unit
   cell shows the detected bonds over the measured atom cloud.
@@ -136,7 +136,7 @@ Taking the bin integral keeps the 0° and 180° bins finite, where $1/\sin\theta
 randomly oriented bonds, so a peak above 1 is real structure. Neighbours are found by a linked-cell
 search carrying explicit periodic-image shifts — exact for triclinic cells and for boxes smaller
 than the cutoff.
-→ [derivation](docs/algorithms/local-geometry.md#step-6--the-histogram-and-its-three-normalizations)
+→ [derivation](docs/algorithms/bond-geometry.md#step-6--the-histogram-and-its-three-normalizations)
 
 The Python package is the reference implementation; the browser workers are hand-written ports of
 it. Which port is parity-tested against Python goldens — and which is only pinned to its own

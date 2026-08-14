@@ -1,16 +1,16 @@
-# Local Geometry — algorithm reference
+# Bond Geometry — algorithm reference
 
 > Part of the [Algorithms and Math Reference](../ALGORITHMS.md). Every step is anchored to the source; if this document and the code disagree, **the code wins**.
 
 Bond angles the RMCProfile `triplets` way: name an A–B–C triplet with **B the central atom**,
 bound the two bond lengths, and histogram the angle at B over every triplet in the periodic
 configuration — exactly, images included, nothing subsampled. The engine section covers the
-neighbour search and the three normalizations; the page section covers what the Local Geometry
+neighbour search and the three normalizations; the page section covers what the Bond Geometry
 tab adds on top of the payload (it computes no geometry of its own).
 
 ## Contents
 
-- [Local Geometry — the triplet engine](#local-geometry--the-triplet-engine)
+- [Bond Geometry — the triplet engine](#bond-geometry--the-triplet-engine)
   - [What this page shows](#what-this-page-shows)
   - [Step 1 — Inputs, validation, and element matching](#step-1--inputs-validation-and-element-matching)
   - [Step 2 — Folding and the image bookkeeping](#step-2--folding-and-the-image-bookkeeping)
@@ -24,7 +24,7 @@ tab adds on top of the payload (it computes no geometry of its own).
   - [Parameters and defaults](#parameters-and-defaults)
   - [Parity: Python engine vs JavaScript port](#parity-python-engine-vs-javascript-port)
   - [Caveats](#caveats)
-- [Local Geometry — the page](#local-geometry--the-page)
+- [Bond Geometry — the page](#bond-geometry--the-page)
   - [What the page owns](#what-the-page-owns)
   - [Step 1 — Triplet seeding](#step-1--triplet-seeding)
   - [Step 2 — The compute request and the epoch guard](#step-2--the-compute-request-and-the-epoch-guard)
@@ -37,12 +37,12 @@ tab adds on top of the payload (it computes no geometry of its own).
 
 ---
 
-## Local Geometry — the triplet engine
+## Bond Geometry — the triplet engine
 
 ### What this page shows
 
-The **Local Geometry** tab (component
-[LocalGeometryPage.jsx](../../web_app/frontend/src/components/LocalGeometryPage.jsx)) answers:
+The **Bond Geometry** tab (component
+[BondGeometryPage.jsx](../../web_app/frontend/src/components/BondGeometryPage.jsx)) answers:
 
 > At every B atom, what angle do its A and C neighbours subtend — and how is that distributed
 > over the whole configuration?
@@ -360,11 +360,11 @@ engines. Real RMC configurations — displaced by construction — never hit thi
 
 ---
 
-## Local Geometry — the page
+## Bond Geometry — the page
 
 ### What the page owns
 
-[LocalGeometryPage.jsx](../../web_app/frontend/src/components/LocalGeometryPage.jsx) renders one
+[BondGeometryPage.jsx](../../web_app/frontend/src/components/BondGeometryPage.jsx) renders one
 controls bar (triplet selects, windows, `Distinct B–C` switch, bin width, **Compute**), the
 model-information card (same `ModelSummary` as the Dashboard, symmetry card omitted), a
 `Triplet result` chip strip, and three equal-width panels: the angle distribution, the
@@ -406,7 +406,7 @@ this plot and the partial-$g(r)$ helper render through
 whole pixels) instead of the fixed 8:5 aspect, one user unit = one CSS pixel, and tick density
 follows the box (~1 y-tick per 70 px, ~1 x-tick per 95 px, clamped). The two cards are handed
 identically sized boxes — pinned header height, two reserved legend rows
-([LocalGeometryPage.css](../../web_app/frontend/src/components/LocalGeometryPage.css)) — so the
+([BondGeometryPage.css](../../web_app/frontend/src/components/BondGeometryPage.css)) — so the
 two figures always share one aspect ratio.
 
 ### Step 5 — The partial-g(r) window helper
