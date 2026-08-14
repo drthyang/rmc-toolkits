@@ -35,7 +35,7 @@ export default function SiteStructurePanel({
     selectedEllipsoid,
     elementColors,
     loadingSites = false,
-    // Optional detected-bond overlay (Local Geometry page): when given,
+    // Optional detected-bond overlay (Bond Geometry page): when given,
     // replaces the heuristic nearest-neighbour bonds with the analysis' own
     // bonds — [{ elements: [A, B], window: [rmin, rmax], color: 0xRRGGBB }],
     // matched on the average site positions with periodic images included.

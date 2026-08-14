@@ -33,7 +33,7 @@ const brickStyle = (nSpace, maxOps) => {
 };
 
 // `showSymmetry={false}` renders the model card alone — pages that want the
-// structure facts without the Detected SG card (Local Geometry) opt out, and
+// structure facts without the Detected SG card (Bond Geometry) opt out, and
 // the symmetry finder is skipped entirely rather than computed and hidden.
 const ModelSummary = ({ structure, showSymmetry = true }) => {
     // Tolerance is shared via context (kept across page switches); fall back to

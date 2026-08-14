@@ -279,7 +279,7 @@ const lengthHistogram = (perCenter, [lo, hi]) => {
 };
 
 /**
- * The Local Geometry payload: angle histogram (counts / per-degree density /
+ * The Bond Geometry payload: angle histogram (counts / per-degree density /
  * exact sin-corrected), bond-length histograms per window, and the
  * coordination distribution — mirrors rmc_toolkits.triplets.bond_angle_summary.
  * `collectAngles: true` adds `sortedAngles` (degrees) for tests.

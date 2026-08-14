@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Local Geometry page: bond-angle (triplet) distribution plus the bond-length
+// Bond Geometry page: bond-angle (triplet) distribution plus the bond-length
 // and coordination statistics that fall out of the same neighbour search —
 // the RMCProfile `triplets` workflow. Pick an A–B–C triplet with B central,
 // bound the two bond lengths, and Compute histograms the angle at B.
@@ -24,7 +24,7 @@ import ModelSummary from './ModelSummary';
 import FoldedCellPanel from './FoldedCellPanel';
 import useSiteCloud from '../useSiteCloud';
 import './PcaKdePage.css';
-import './LocalGeometryPage.css';
+import './BondGeometryPage.css';
 
 // Same cap as StructurePage/Dashboard: the Model information + Detected SG
 // cards need the full basis and counts, and parsing is worker-side anyway.
@@ -48,7 +48,7 @@ const useDebounced = (value, delay = 400) => {
     return debounced;
 };
 
-export default function LocalGeometryPage({ directory, localRun }) {
+export default function BondGeometryPage({ directory, localRun }) {
     const {
         sites,
         sitesError,

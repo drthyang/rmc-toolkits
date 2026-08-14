@@ -43,7 +43,7 @@ written.
 | **Atomic Density** *(the nav label; this reference calls the page **Structure**, and the page heading itself reads "KDE And Folded Unit Cell")* | Supercell folded into one cell: the 2-D Gaussian KDE slice (CPU + WGSL), contours and colour mapping, the Slab In Cell projection, and the Three.js folded unit-cell view | [Structure](algorithms/structure.md) |
 | **PCA Ellipsoid** | Per-site displacement clouds: covariance, eigen-decomposition, ADP readouts, $\chi^2$ probability ellipsoid, separable 3-D Gaussian KDE + marching-cubes isosurface, wall projections, excess kurtosis, and the PCA↔crystal frame algebra | [PCA Ellipsoid](algorithms/pca-ellipsoid.md) |
 | **Displacement Directions** | Directions only, amplitude discarded: Goldberg (hex + 12 pentagon) sphere tiling, exact solid-angle histogram, enhancement/$z$-score, antipodal asymmetry, orientation tensor, and the sphere/axis-view rendering | [Displacement Directions](algorithms/displacement-directions.md) |
-| **Local Geometry** | Bond angles at a central atom over the periodic configuration: linked-cell neighbour search with explicit image shifts, the three angle curves (counts, per-degree density, exact sin-corrected), bond-length histograms, coordination statistics, and the page's partial-g(r) helper and folded-cell bond view | [Local Geometry](algorithms/local-geometry.md) |
+| **Bond Geometry** | Bond angles at a central atom over the periodic configuration: linked-cell neighbour search with explicit image shifts, the three angle curves (counts, per-degree density, exact sin-corrected), bond-length histograms, coordination statistics, and the page's partial-g(r) helper and folded-cell bond view | [Bond Geometry](algorithms/bond-geometry.md) |
 | **AI Assistant** | The run context built *before* any model call: cell/composition, symmetry orbits, per-site PCA summary, average-structure neighbour distances, $g(r)$ peak extraction, residuals, convergence heuristics, character budget — and exactly what leaves the device | [AI Assistant](algorithms/ai-assistant.md) |
 
 ---
@@ -129,7 +129,7 @@ chart on the Dashboard — `isDashboardPlotFile` in `Dashboard.jsx` drops every 
 | Per-site clouds, ADP, separable 3-D KDE | `pca_kde.py` | `/api/pca/sites`, `/api/pca/kde` | `workers/pcaKde.js`, `workers/pcaKdeWorker.js` |
 | Isosurface extraction | — | — | `workers/marchingCubes.js` (**browser only**) |
 | Orientation histogram on the Goldberg sphere | `orientation.py` | `/api/pca/orientation` | `workers/orientation.js` |
-| Bond-angle (triplet) distribution | `triplets.py` (`rmc-triplets` CLI; `bond_angle_summary` is the payload contract) | `/api/triplets` | `workers/triplets.js` (parity-tested vs Python goldens), UI in `LocalGeometryPage.jsx` |
+| Bond-angle (triplet) distribution | `triplets.py` (`rmc-triplets` CLI; `bond_angle_summary` is the payload contract) | `/api/triplets` | `workers/triplets.js` (parity-tested vs Python goldens), UI in `BondGeometryPage.jsx` |
 | `.rmc6f` atoms + lattice → folded unit cell | `parsers.py` (`read_cell_vectors`, `read_atom_indices`, `iter_rmc6f_atoms`) | `/api/structure` (site-stratified subsample, `MAX_STRUCTURE_POINTS`) | `browserData.js` → `structureFromRmc6f()` (atom lines via `parseAtomLine()` in `rmc6f.js`), run off the main thread by `workers/localStructureWorker.js` (instantiated in `Dashboard.jsx` and `StructurePage.jsx`) |
 | PCA↔crystal frame algebra | — | — | `pcaCrystalFrame.js` — `unitCellVectors()` is on the **production UI path** (imported by `useSiteCloud.js`; drives the crystal-frame axis rods, the shadow box and the axis-framing cameras in `PcaKdePage.jsx`); `crystalPcaTransforms` / `principalAxisOrientation` are exercised **only by unit tests** |
 | Assistant context, pair correlations, convergence heuristics | — | — | `src/llm/` (**browser only**; the backend is never involved in an assistant request) |
@@ -280,10 +280,10 @@ architecture, `--lorch/--no-lorch`, `--robust/--no-robust`, `--despike`,
 `--out-dir`/`--out-stem`/`--force` control the written family. `--estimate-rho0` requires
 $\langle b^2\rangle$ (via `--b-sq-avg` or `--formula`) and has **no** HTTP counterpart.
 
-### Bond-angle (triplet) distribution — the Local Geometry page and the `rmc-triplets` CLI
+### Bond-angle (triplet) distribution — the Bond Geometry page and the `rmc-triplets` CLI
 
 > Full derivation, parity data and page reference:
-> [algorithms/local-geometry.md](algorithms/local-geometry.md). This section keeps the CLI
+> [algorithms/bond-geometry.md](algorithms/bond-geometry.md). This section keeps the CLI
 > summary.
 
 Console entry point installed by `pip install -e .`
@@ -310,7 +310,7 @@ from the bin integral rather than $1/\sin\theta_c$, so the 0° and 180° bins st
 ends (same element, same window) count each unordered bond pair once; distinct windows count
 ordered (1→2, 2→3) assignments.
 
-The same engine backs the **Local Geometry** page, through the Flask `/api/triplets` route
+The same engine backs the **Bond Geometry** page, through the Flask `/api/triplets` route
 (lru-cached on path+mtime+params) and, in the browser, through `workers/triplets.js` — a
 line-for-line port parity-tested against Python goldens (exact integer histograms, 1e-9 float
 agreement). `bond_angle_summary` is the payload contract shared by all three. The page adds a

@@ -7,7 +7,7 @@ import Dashboard from './components/Dashboard';
 import StructurePage from './components/StructurePage';
 import PcaKdePage from './components/PcaKdePage';
 import OrientationPage from './components/OrientationPage';
-import LocalGeometryPage from './components/LocalGeometryPage';
+import BondGeometryPage from './components/BondGeometryPage';
 import AutoStogPage from './components/AutoStogPage';
 import { AssistantPage } from './llm';
 import API_BASE_URL from './api';
@@ -317,7 +317,7 @@ function App() {
                 className={activePage === 'geometry' ? 'active' : ''}
                 onClick={() => handlePageChange('geometry')}
               >
-                Local Geometry
+                Bond Geometry
               </button>
               <button
                 className={activePage === 'ellipsoids' ? 'active' : ''}
@@ -500,7 +500,7 @@ function App() {
             >
               {/* Bond-angle (triplet) distribution + bond-length/coordination
                   statistics — the RMCProfile `triplets` workflow. */}
-              <LocalGeometryPage directory={currentDirectory} localRun={localRun} />
+              <BondGeometryPage directory={currentDirectory} localRun={localRun} />
             </div>
           )}
           {visitedPages.assistant && (

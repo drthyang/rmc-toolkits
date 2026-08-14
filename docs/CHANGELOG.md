@@ -7,7 +7,7 @@ Chronological record of notable changes, newest first. For current architecture 
 
 Two new analysis pages, correct space-group naming, and the math reference.
 
-- **Local Geometry** — bond-angle (triplet) distributions in the app, in both runtimes, on the new
+- **Bond Geometry** — bond-angle (triplet) distributions in the app, in both runtimes, on the new
   `rmc_toolkits.triplets` engine and its `rmc-triplets` CLI.
 - **Displacement Directions** — the hex-binned orientation sphere.
 - **Auto StoG** — composition-first absolute scaling, ρ₀ self-consistency and the `rmc-autoscale`
@@ -19,6 +19,18 @@ Two new analysis pages, correct space-group naming, and the math reference.
 - **PCA Ellipsoid** — principal axes reported in the crystallographic frame.
 - Fixes: Rwp reports "unavailable" rather than a fake perfect fit; the ρ₀ fixture tolerance is
   per dataset.
+
+**"Local Geometry" renamed to "Bond Geometry"** (2026-08-14) — the tab shipped in this release
+under the name *Local Geometry*, which is generic: in the PDF/total-scattering sense every
+analysis page here is local structure, so the name didn't say what distinguishes this one. The
+page is bond angles, bond lengths, coordination and detected bonds — bond geometry — and the tab,
+component (`BondGeometryPage.jsx`/`.css`), algorithm reference
+([algorithms/bond-geometry.md](algorithms/bond-geometry.md)) and every cross-reference now carry
+that name. The internal page key stays `geometry`, and the engine keeps its RMCProfile-rooted
+`triplets` naming (`rmc_toolkits.triplets`, `rmc-triplets`, `/api/triplets`,
+`workers/triplets.js`) — the rename is presentation-layer only. Entries below predating the
+rename keep their original titles; the tag was re-cut so v0.5.0 ships the tab under its final
+name.
 
 **Local Geometry: folded-cell canvas overflowed the page on retina displays** (2026-08-14) —
 `FoldedCellPanel` resized its renderer with `setSize(width, height, false)`, which skips styling
@@ -33,7 +45,8 @@ merge commit; the original 2026-08-13 tag, which pointed at the release-notes co
 predated both this fix and the algorithm reference, was deleted before anything referenced it.
 
 **Local Geometry algorithm reference** (2026-08-13) — new
-[algorithms/local-geometry.md](algorithms/local-geometry.md), completing the per-page set: every
+[algorithms/bond-geometry.md](algorithms/bond-geometry.md) (created as `local-geometry.md`,
+renamed with the tab), completing the per-page set: every
 analysis page now has its own code-anchored derivation document. Engine section: inputs and the
 half-up bin-count rule, folding + image bookkeeping, the linked-cell search with the
 strictly-more-than-$(q-1)$-thicknesses covering argument, bond admission (inclusive windows,
