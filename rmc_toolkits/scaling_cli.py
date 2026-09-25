@@ -693,8 +693,9 @@ def _print_report(
         print(
             f"  WARNING   : rmax = {config.rmax if config is not None else float('nan'):g} A "
             f"exceeds the aliasing limit pi/dQ = {summary['r_alias_limit']:.4g} A of the "
-            "S(Q) grid: G(r)/D(r) beyond it are folded (negated mirror) images — "
-            "lower --rmax, or use finer-binned data"
+            "coarsest S(Q) step: G(r)/D(r) beyond it are folded (a negated mirror image "
+            "on a uniform grid) or corrupted by coarse steps (log binning, despike gaps) "
+            "— lower --rmax, or use finer, uniformly binned data"
         )
     if summary.get("r0_detected") is not None:
         refined = " (fit window refined)" if summary.get("window_refined") else ""

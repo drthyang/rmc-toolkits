@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import fixture from './fixtures/autoscale_fixture.json';
 import { aliasLimit, diagnosticsSummary, fqToGpdf, makeConfig, scalePipeline } from '../workers/autoScale';
 
-describe('aliasing limit π/ΔQ', () => {
+describe('aliasing limit π/max(ΔQ)', () => {
   it('the transform folds a 20 Å shell to 2π/ΔQ − 20 Å, inverted', () => {
     const q = Float64Array.from({ length: 296 }, (_, i) => 0.1 * (i + 5));
     const fq = Float64Array.from(q, (value) => Math.exp(-0.5 * (0.1 * value) ** 2) * Math.sin(20 * value));
@@ -35,5 +35,32 @@ describe('aliasing limit π/ΔQ', () => {
       expect(summary.r_alias_limit).toBeCloseTo(Math.PI / 0.03, 6);
       expect(summary.rmax_beyond_alias_limit).toBe(beyond);
     });
+  });
+
+  // 1.0 review: the coarsest step sets the limit, not the median (mirrors
+  // tests/test_stog_b_alias.py::NonUniformGridTests).
+  it('a log-binned grid is limited by its coarse high-Q steps', () => {
+    const qList = [];
+    for (let i = 0; i < 1030; i += 1) {
+      const value = 0.5 * 1.004 ** i;
+      if (value <= 30) qList.push(value);
+    }
+    const q = Float64Array.from(qList);
+    let widest = 0;
+    for (let i = 1; i < q.length; i += 1) widest = Math.max(widest, q[i] - q[i - 1]);
+    expect(aliasLimit(q)).toBeCloseTo(Math.PI / widest, 9);
+    expect(aliasLimit(q)).toBeLessThan(27); // the median step would give 203 Å
+    const sq = Float64Array.from(q, (value) => 1 + 0.2 * Math.sin(2.5 * value) * Math.exp(-0.01 * value * value));
+    const config = makeConfig({ ...fixture.config, qmin: 0.5, qmax: 30, rmax: 50, nr: 2000 });
+    const summary = diagnosticsSummary(scalePipeline(q, sq, config, 1, 0), config);
+    expect(summary.r_alias_limit).toBeLessThan(27);
+    expect(summary.rmax_beyond_alias_limit).toBe(true);
+  });
+
+  it('a despike gap lowers the limit to π over the gap', () => {
+    const q = Float64Array.from({ length: 2751 }, (_, i) => 0.01 * (i + 50));
+    expect(aliasLimit(q)).toBeCloseTo(Math.PI / 0.01, 6);
+    const gapped = q.filter((_, i) => i < 1000 || i >= 1012); // one 0.13-wide gap
+    expect(aliasLimit(gapped)).toBeCloseTo(Math.PI / 0.13, 6);
   });
 });

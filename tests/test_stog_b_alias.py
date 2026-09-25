@@ -66,5 +66,58 @@ class AliasTests(unittest.TestCase):
         self.assertIn("exceeds the aliasing limit pi/dQ = 31.42 A", out.getvalue())
 
 
+def log_binned_shells():
+    """A log-binned grid (dQ/Q = 0.004, Q 0.5-30) and F(Q) with shells at 2.5 and 20 A."""
+    q = 0.5 * 1.004 ** np.arange(1030)
+    q = q[q <= 30.0]
+    fq = np.exp(-0.5 * (0.08 * q) ** 2) * np.sin(2.5 * q) + 0.3 * np.exp(
+        -0.5 * (0.05 * q) ** 2
+    ) * np.sin(20.0 * q)
+    return q, fq
+
+
+class NonUniformGridTests(unittest.TestCase):
+    """The limit is set by the coarsest step, not the median (1.0 review).
+
+    pi/median(dQ) = 203 A on the log-binned grid, while its coarse high-Q
+    steps (dQ = 0.119) already fail beyond pi/dQ_max = 26.4 A: against a
+    0.001-spaced transform the error jumps from < 0.004 below 25 A to 0.07-0.09
+    at 30-50 A, where the true |G| <= 0.016. r_max = 50 was not flagged.
+    """
+
+    def test_log_binned_grid_limit_is_pi_over_the_coarsest_step(self):
+        q, fq = log_binned_shells()
+        limit = alias_limit(q)
+        self.assertAlmostEqual(limit, np.pi / np.diff(q).max(), places=9)
+        self.assertLess(limit, 27.0)
+        r = np.arange(1, 5001) * 0.01
+        q_ref = np.arange(0.5, 30.0005, 0.001)
+        fq_ref = np.exp(-0.5 * (0.08 * q_ref) ** 2) * np.sin(2.5 * q_ref) + 0.3 * np.exp(
+            -0.5 * (0.05 * q_ref) ** 2
+        ) * np.sin(20.0 * q_ref)
+        error = np.abs(fq_to_gpdf(q, fq, r) - fq_to_gpdf(q_ref, fq_ref, r))
+        self.assertLess(error[r < 0.95 * limit].max(), 0.005)
+        self.assertGreater(error[(r > 30) & (r <= 50)].max(), 0.05)
+
+    def test_summary_flags_rmax_50_on_the_log_grid(self):
+        q, _ = log_binned_shells()
+        _, sq = coarse_model()
+        sq = np.interp(q, np.arange(6, 295) * 0.1, sq)
+        config = ScalingConfig(qmin=0.5, qmax=30.0, rho0=0.05, b_avg_sq=0.02, rmax=50.0, nr=5000)
+        summary = diagnostics_summary(scale_pipeline(q, sq, config, 1.0, 0.0), config)
+        self.assertLess(summary["r_alias_limit"], 27.0)
+        self.assertTrue(summary["rmax_beyond_alias_limit"])
+
+    def test_despike_gaps_lower_the_limit(self):
+        # Despiking deletes rows; the trapezoid then spans each gap with one
+        # chord. On Mn3Sn 59438 (dQ = 0.01, despike on) the widest gap is 0.13,
+        # and beyond pi/0.13 = 24 A the chords' error is 25-40 % rms of G(r).
+        q = np.arange(50, 2801) * 0.01
+        keep = np.ones(q.size, bool)
+        keep[1000:1012] = False  # one 0.13-wide gap
+        self.assertAlmostEqual(alias_limit(q), np.pi / 0.01, places=6)
+        self.assertAlmostEqual(alias_limit(q[keep]), np.pi / 0.13, places=6)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1381,10 +1381,20 @@ Caveats:
   $r_\mathrm{max} = 50$ Å) but only 31.4 Å at $\Delta Q = 0.1$ Å⁻¹ — where a shell at 20 Å
   reappears, inverted and at full amplitude, at 42.8 Å. (Before 1.0 this page gave the period
   $2\pi/\Delta Q$ and called $r_\mathrm{max} = 50$ Å safe at $\Delta Q = 0.1$ — 2× too generous.)
-  Both engines now report `r_alias_limit` $= \pi/\mathrm{median}(\Delta Q)$ of the cropped grid
-  (`scaling.alias_limit` / JS `aliasLimit`, in the provenance and the diagnostics summary) and
-  flag `rmax_beyond_alias_limit`; the CLI prints a WARNING and the page an *Aliasing* card.
-  Tests: `tests/test_stog_b_alias.py`, `src/__tests__/autoScaleAlias.test.js`.
+  Both engines now report `r_alias_limit` $= \pi/\max(\Delta Q)$ of the cropped (and despiked)
+  grid that is transformed (`scaling.alias_limit` / JS `aliasLimit`, in the provenance and the
+  diagnostics summary) and flag `rmax_beyond_alias_limit`; the CLI prints a WARNING and the page
+  an *Aliasing* card. **The coarsest step, not the median, sets the limit** on a non-uniform grid:
+  beyond $\pi/\Delta Q_i$ the trapezoid chord over step $i$ no longer follows $\sin(Qr)$. A
+  log-binned grid ($\Delta Q/Q = 0.004$, $Q$ 0.5–30 Å⁻¹, 1026 points) has
+  $\pi/\mathrm{median}(\Delta Q) = 203$ Å but $\pi/\max(\Delta Q) = 26.4$ Å, and against a
+  0.001-spaced transform its $G(r)$ error jumps from < 0.004 below 25 Å to 0.07–0.09 at 30–50 Å
+  (true $|G| \le 0.016$ there; shells at 2.5 and 20 Å) — the earlier median-based limit did
+  not flag $r_\mathrm{max} = 50$. Despiking leaves the same kind of coarse step (see *Caveats*,
+  *Despiking*): on Mn₃Sn 59438 ($\Delta Q = 0.01$, $Q$ 0.82–28 Å⁻¹) its widest gap is 0.13 Å⁻¹, so the limit drops
+  from 314 to 24 Å, and beyond it the gap chords' error is 25–40 % rms of $G(r)$ (4 % at 5–10 Å).
+  All the repo's measured data are uniform ($\Delta Q = 0.01$), so without despiking the limit is
+  unchanged (314 Å). Tests: `tests/test_stog_b_alias.py`, `src/__tests__/autoScaleAlias.test.js`.
 
 ---
 
@@ -2135,11 +2145,14 @@ test suite (whose committed thresholds are the looser 2×10⁻³ above).
   structure at the grid scale is interpolation, not information. Likewise $r_\mathrm{max}$ must
   stay below the aliasing limit $\pi/\Delta Q$ (314 Å at $\Delta Q = 0.01$ Å⁻¹, but only 31.4 Å
   at $\Delta Q = 0.1$ Å⁻¹, where the default 50 Å already folds); coarse-$\Delta Q$ data wrap, and
-  the engines flag it (`rmax_beyond_alias_limit`, Step 2).
+  the engines flag it (`rmax_beyond_alias_limit`, Step 2). On a non-uniform grid the **coarsest**
+  step counts ($\pi/\max\Delta Q$).
 - **Despiking, if enabled, deletes measured points.** It is OFF by default, but when on it
   removes rows from the array that is then integrated — 12% of points on the crystalline 59438
   benchmark, i.e. real Bragg maxima — and leaves gaps the trapezoid rule bridges with one wide
-  panel. Check the reported `n_despiked` before trusting a despiked run.
+  panel. Check the reported `n_despiked` before trusting a despiked run. The widest gap also sets
+  `r_alias_limit` (Step 2): 0.13 Å⁻¹ on 59438, i.e. 24 Å, so a despiked run at $r_\mathrm{max} = 50$
+  is flagged — correctly, since the gap chords corrupt $G(r)$ beyond it.
 - **`transforms.py`'s defaults are not the app's defaults.** The reference API is uncorrected and
   un-windowed (`low_q_correction=False`, `s0_target=0.0`, `lorch=False`); the ON policy is a
   `ScalingConfig`/`defaultConfig` decision. Numbers reproduced by calling the reference API

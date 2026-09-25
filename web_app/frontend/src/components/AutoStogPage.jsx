@@ -1064,7 +1064,7 @@ const AutoStogPage = () => {
               <span className="autostog-stat-label">Aliasing</span>
               <span className="autostog-stat-value">r &gt; {fmt(diagnostics.r_alias_limit, 3)} Å folded</span>
               <span className="autostog-stat-sub">
-                r_max exceeds π/ΔQ of the S(Q) grid: G(r) beyond it is a mirror image — lower r_max
+                r_max exceeds π/ΔQ of the coarsest S(Q) step: G(r) beyond it is a mirror image (uniform grid) or corrupted by coarse steps (log binning, despike gaps) — lower r_max
               </span>
             </div>
           )}

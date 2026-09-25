@@ -967,18 +967,23 @@ def crop_sq(
 
 
 def alias_limit(q: np.ndarray) -> float:
-    """Largest r the trapezoid sine transform resolves without folding: ``pi / dQ``.
+    """Largest r the trapezoid sine transform resolves: ``pi / max(dQ)``.
 
     On a grid ``Q_i = Q_0 + i dQ`` the kernel ``sin(Q_i r)`` at
     ``r' = 2 pi/dQ - r`` differs from the one at ``r`` only by sign (up to the
     constant phase), so G(r) beyond ``pi/dQ`` is a negated mirror image of the
     structure below it (a shell at 20 A reappears inverted at 42.8 A for
-    dQ = 0.1). ``dQ`` is the median spacing of the (cropped) grid.
+    dQ = 0.1). On a non-uniform grid the coarsest step sets the limit: beyond
+    ``pi/dQ`` a step's trapezoid chord no longer follows ``sin(Q r)``. A
+    log-binned grid (dQ/Q = 0.004 to Q = 30) fails beyond 26 A although its
+    median step gives 203 A, and the gaps despiking leaves (0.13 wide on the
+    Mn3Sn 59438 run) corrupt G(r) beyond 24 A (25-40 % rms). ``dQ`` is taken
+    over the (cropped, despiked) grid that is transformed.
     """
     q = np.asarray(q, dtype=float)
     if q.size < 2:
         return float("inf")
-    return float(np.pi / np.median(np.diff(q)))
+    return float(np.pi / np.max(np.diff(q)))
 
 
 def scale_pipeline(
@@ -1615,7 +1620,8 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
         summary["fit_failure"] = result.provenance["fit_failure"]
     r_alias = result.provenance.get("r_alias_limit")
     if r_alias is not None:
-        # G(r) beyond pi/dQ is a folded (negated mirror) image, not structure.
+        # G(r) beyond pi/max(dQ) is folded (a negated mirror image on a
+        # uniform grid) or corrupted by coarse steps — not structure.
         summary["r_alias_limit"] = float(r_alias)
         summary["rmax_beyond_alias_limit"] = bool(
             float(effective.get("rmax", config.rmax)) > float(r_alias)

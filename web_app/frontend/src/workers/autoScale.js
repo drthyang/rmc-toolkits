@@ -941,15 +941,16 @@ export const amplitudeFromFzLimit = (q, sq, level, config, { fitWidth = FZ_FIT_W
 };
 
 /**
- * Largest r the trapezoid sine transform resolves without folding, π / dQ
- * with dQ the median spacing (port of scaling.alias_limit): beyond it G(r) is a
- * negated mirror image of the structure below.
+ * Largest r the trapezoid sine transform resolves, π / max(dQ) (port of
+ * scaling.alias_limit): beyond it G(r) is a negated mirror image on a uniform
+ * grid; on a non-uniform one (log binning, despike gaps) the coarsest step's
+ * chord no longer follows sin(Q r).
  */
 export const aliasLimit = (q) => {
   if (q.length < 2) return Infinity;
-  const steps = [];
-  for (let i = 1; i < q.length; i += 1) steps.push(q[i] - q[i - 1]);
-  return Math.PI / median(steps);
+  let widest = -Infinity;
+  for (let i = 1; i < q.length; i += 1) widest = Math.max(widest, q[i] - q[i - 1]);
+  return Math.PI / widest;
 };
 
 export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
