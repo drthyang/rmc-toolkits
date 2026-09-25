@@ -60,6 +60,9 @@ MAX_WINDOW_REFITS = 4
 RHO0_PHYSICAL_RANGE = (0.005, 0.25)
 #: Width (A^-1) of the low-Q head the Faber-Ziman Q->0 extrapolation is fitted on.
 FZ_FIT_WIDTH = 1.0
+#: Relative rounding slack of the <b^2> >= <b>^2 (Cauchy-Schwarz) check: a
+#: single-element sample has <b^2> = <b>^2 exactly, i.e. S(0) = 0.
+B_SQ_RTOL = 1.0e-9
 
 
 @dataclass(frozen=True)
@@ -68,8 +71,10 @@ class ScalingConfig:
 
     ``b_avg_sq`` is ``<b>^2 = (sum_i c_i b_i)^2`` in barns — the classic stog
     input's "Faber-Ziman coefficient" line. ``b_sq_avg`` is the *different*
-    number ``<b^2> = sum_i c_i b_i^2`` (Keen Eq. 14 Q->0 limit), used only for
-    diagnostics when provided.
+    number ``<b^2> = sum_i c_i b_i^2`` (Keen Eq. 14 Q->0 limit). The two must
+    come from one source (same radiation, same units): ``b_sq_avg < b_avg_sq``
+    — an S(0) = 1 - <b^2>/<b>^2 > 0 no composition can have (Cauchy-Schwarz) —
+    raises ``ValueError``.
 
     ``low_q_correction`` defaults on: measured data always omit ``[0, Qmin]``,
     and without the analytic correction that omission biases the fitted scale
@@ -179,6 +184,19 @@ class ScalingConfig:
             raise ValueError(f"rho0 must be finite and positive, got {self.rho0}")
         if not np.isfinite(self.b_avg_sq) or self.b_avg_sq <= 0:
             raise ValueError(f"b_avg_sq must be finite and positive, got {self.b_avg_sq}")
+        if self.b_sq_avg is not None:
+            if not np.isfinite(self.b_sq_avg) or self.b_sq_avg <= 0:
+                raise ValueError(f"b_sq_avg must be finite and positive, got {self.b_sq_avg}")
+            if self.b_sq_avg < self.b_avg_sq * (1.0 - B_SQ_RTOL):
+                raise ValueError(
+                    f"<b^2> = {self.b_sq_avg:.6g} barn is smaller than <b>^2 = "
+                    f"{self.b_avg_sq:.6g} barn, so S(0) = 1 - <b^2>/<b>^2 = "
+                    f"{1.0 - self.b_sq_avg / self.b_avg_sq:.4g} > 0, which is impossible "
+                    "(<b^2> >= <b>^2, Cauchy-Schwarz): the two coefficients must come "
+                    "from the same source (same radiation and units) — e.g. normalized "
+                    "x-ray data need <b>^2 = 1 with <b^2> = <Z^2>/<Z>^2, not a neutron "
+                    "composition's <b^2>"
+                )
         if self.qmax <= self.qmin:
             raise ValueError("qmax must exceed qmin")
         if int(self.nr) != self.nr or self.nr <= 0:

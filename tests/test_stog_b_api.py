@@ -85,6 +85,19 @@ class ScalingApiStogBTests(unittest.TestCase):
         self.assertIn("auto-fit failed", response.get_json()["error"])
         self.assertFalse(out.exists() and any(out.iterdir()))
 
+    def test_formula_b_sq_avg_is_not_paired_with_another_b_avg_sq(self):
+        # x-ray style <b>^2 = 1 with a (neutron) formula: CLI parity, no mixed pair.
+        body = self.body("desc.dat", bAvgSq=1.0, formula="FeCoSn")
+        response = self.client.post("/api/scaling/preview", json=body)
+        self.assertEqual(response.status_code, 200, response.get_json())
+        config = response.get_json()["provenance"]["config"]
+        self.assertEqual(config["b_avg_sq"], 1.0)
+        self.assertIsNone(config["b_sq_avg"])
+        impossible = self.body("desc.dat", bAvgSq=1.0, bSqAvg=0.5)
+        response = self.client.post("/api/scaling/preview", json=impossible)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Cauchy-Schwarz", response.get_json()["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

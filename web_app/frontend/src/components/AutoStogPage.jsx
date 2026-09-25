@@ -12,12 +12,12 @@ import InteractivePlot from './InteractivePlot';
 import { downloadBlob, sanitizeFilename } from '../figureExport';
 import { buildZip } from '../zipArchive';
 import {
-  faberZiman,
   makeConfig,
   numberDensityFromMassDensity,
   readDatHeader,
   readStogInp,
   readStogXy,
+  resolveCoefficients,
   resolveEnforcementDescriptor,
   rho0NonConvergenceMessage,
   stogInpClosestApproach,
@@ -95,14 +95,13 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
     const value = numberOr(formValue);
     return value === undefined ? fallback : value;
   };
-  let bAvgSq = numberOr(form.bAvgSq) ?? (inp ? inp.bAvgSq : undefined);
-  let bSqAvg = numberOr(form.bSqAvg);
   const formula = form.formula.trim();
-  if (formula) {
-    const coefficients = faberZiman(formula);
-    if (bSqAvg === undefined) bSqAvg = coefficients.bSqAvgBarn;
-    if (bAvgSq === undefined) bAvgSq = coefficients.bAvgSqBarn;
-  }
+  // One consistent source for ⟨b⟩² and ⟨b²⟩ (scaling_cli.resolve_coefficients).
+  const { bAvgSq, bSqAvg } = resolveCoefficients({
+    bAvgSq: numberOr(form.bAvgSq) ?? (inp ? inp.bAvgSq : undefined),
+    bSqAvg: numberOr(form.bSqAvg),
+    formula,
+  });
   if (bAvgSq === undefined) throw new Error('⟨b⟩² unknown: give a composition, or set it under Advanced → Coefficients');
   const rCutoff = pick(form.rCutoff, inp ? inp.rCutoff : 1.0);
   let r0 = numberOr(form.r0);
@@ -498,23 +497,23 @@ const AutoStogPage = () => {
     && numberOr(form.bSqAvg) === undefined
     && !form.formula.trim();
 
-  const canEstimate = inspect != null
-    && (Boolean(form.formula.trim()) || numberOr(form.bSqAvg) !== undefined);
-
-  // The coefficients actually in effect (same precedence as resolveConfig:
-  // Advanced overrides beat the composition), so the neutron-vs-x-ray state
-  // is always visible up front — with a warning when overrides silently
-  // shadow a typed composition (the classic stale-session trap).
+  // The coefficients actually in effect (resolveCoefficients, the rule
+  // resolveConfig and the CLI use: overrides beat the composition, and the
+  // composition's ⟨b²⟩ is never paired with a ⟨b⟩² from another source), so
+  // the neutron-vs-x-ray state is always visible up front — with a warning
+  // when overrides shadow a typed composition (the classic stale-session trap)
+  // or when the composition's ⟨b²⟩ was left out.
   const coefficients = useMemo(() => {
     const formula = form.formula.trim();
     const overrideBAvgSq = numberOr(form.bAvgSq);
     const overrideBSqAvg = numberOr(form.bSqAvg);
-    let fz = null;
-    if (formula) {
-      try { fz = faberZiman(formula); } catch { fz = null; /* typing */ }
+    let resolved;
+    try {
+      resolved = resolveCoefficients({ bAvgSq: overrideBAvgSq, bSqAvg: overrideBSqAvg, formula });
+    } catch {
+      resolved = resolveCoefficients({ bAvgSq: overrideBAvgSq, bSqAvg: overrideBSqAvg, formula: '' }); // typing
     }
-    const bAvgSq = overrideBAvgSq ?? (fz ? fz.bAvgSqBarn : undefined);
-    const bSqAvg = overrideBSqAvg ?? (fz ? fz.bSqAvgBarn : undefined);
+    const { bAvgSq, bSqAvg, fz, dropped } = resolved;
     if (bAvgSq === undefined && bSqAvg === undefined) return null;
     const shadowed = Boolean(fz) && (
       (overrideBAvgSq !== undefined
@@ -528,11 +527,16 @@ const AutoStogPage = () => {
     const parts = [];
     if (bAvgSq !== undefined) parts.push(`⟨b⟩² ${bAvgSq.toPrecision(4)}`);
     if (bSqAvg !== undefined) parts.push(`⟨b²⟩ ${bSqAvg.toPrecision(4)}`);
+    if (dropped) parts.push(`⟨b²⟩ not set (${formula}'s would mix sources)`);
     if (bAvgSq !== undefined && bSqAvg !== undefined) {
       parts.push(`S(0) ${(1 - bSqAvg / bAvgSq).toPrecision(3)}`);
     }
-    return { text: `${parts.join(' · ')} — ${source}`, shadowed, formula };
+    return {
+      text: `${parts.join(' · ')} — ${source}`, shadowed, formula, dropped, bSqAvg,
+    };
   }, [form.formula, form.bAvgSq, form.bSqAvg]);
+
+  const canEstimate = inspect != null && coefficients?.bSqAvg !== undefined;
 
   // ── plot data ────────────────────────────────────────────────────────────
   const RMAX_DISPLAY = 8;
@@ -717,12 +721,14 @@ const AutoStogPage = () => {
           </label>
           {coefficients && (
             <span
-              className={`autostog-chip${coefficients.shadowed ? ' autostog-chip--warn' : ''}`}
-              title={coefficients.shadowed
-                ? `Advanced → Coefficients overrides are in effect and differ from ${coefficients.formula}'s neutron values — clear ⟨b⟩²/⟨b²⟩ to use the composition, or clear the composition if this is x-ray data`
-                : 'Scattering coefficients in effect (barn)'}
+              className={`autostog-chip${coefficients.shadowed || coefficients.dropped ? ' autostog-chip--warn' : ''}`}
+              title={coefficients.dropped
+                ? `⟨b⟩² ${fmt(coefficients.dropped.bAvgSq, 4)} of ${coefficients.formula} differs from the ⟨b⟩² in effect, so its ⟨b²⟩ ${fmt(coefficients.dropped.bSqAvg, 4)} is not used (a pair from two sources fabricates the S(0) target) — set ⟨b²⟩ under Advanced → Coefficients (⟨Z²⟩/⟨Z⟩² for normalized x-ray data), or clear ⟨b⟩² to use the composition`
+                : coefficients.shadowed
+                  ? `Advanced → Coefficients overrides are in effect and differ from ${coefficients.formula}'s neutron values — clear ⟨b⟩²/⟨b²⟩ to use the composition, or clear the composition if this is x-ray data`
+                  : 'Scattering coefficients in effect (barn)'}
             >
-              {coefficients.shadowed ? '⚠ ' : ''}{coefficients.text}
+              {coefficients.shadowed || coefficients.dropped ? '⚠ ' : ''}{coefficients.text}
             </span>
           )}
           {rho0Info && (

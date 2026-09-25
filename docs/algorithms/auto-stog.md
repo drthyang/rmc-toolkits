@@ -946,21 +946,33 @@ x-ray workflow is entirely manual, documented in the UI tooltips and
   $f(0) = Z$), which is what supplies the $S(0)$ target and the FZ amplitude;
 - leave the composition field empty, or accept the warning chip.
 
-The page guards the classic stale-session trap (Step 1's `sessionStorage` persistence is what
-creates it): if a composition *and* an Advanced override are both present and disagree by more
-than **2 %**, the coefficients chip turns into a warning ("⚠ … Advanced overrides"). The CLI
-prints an analogous warning to stderr and keeps the configured value — but **the two tests are
-not equivalent**:
+**One source for the pair (all three front ends).** $\langle b\rangle^2$ and $\langle b^2\rangle$
+only mean something together: their ratio is the $S(0)$ target, the FZ amplitude and the
+$\rho_0$ estimate. `scaling_cli.resolve_coefficients` (used by the CLI and the Flask API) and its
+port `resolveCoefficients` (the page) therefore apply one rule: explicit values win; a composition
+fills what is missing, but its $\langle b^2\rangle$ is paired with a $\langle b\rangle^2$ from
+elsewhere (`--b-avg-sq` / `bAvgSq` / Advanced override, or a `stog.inp` line 18) **only when the two
+$\langle b\rangle^2$ agree within 2 %** (`COEFFICIENT_RTOL`) — then the composition's ratio
+$\langle b^2\rangle/\langle b\rangle^2$ is kept on the configured $\langle b\rangle^2$ scale.
+When they disagree, the configured $\langle b\rangle^2$ belongs to another radiation or
+normalization (1 for normalized x-ray data) and $\langle b^2\rangle$ stays **unset**: the CLI
+prints a warning naming both values in effect and the unused one, the page marks the chip
+"⟨b²⟩ not set", and the $Q\to0$ criteria (`--amplitude fz`, `--estimate-rho0`, the page's
+automatic estimate) then refuse with "requires <b^2>" until $\langle b^2\rangle$ is given
+explicitly. Before 1.0 the Sears $\langle b^2\rangle$ was silently paired with the x-ray
+$\langle b\rangle^2 = 1$: FeCoSn got $S(0) = +0.55$, a false "DISCORDANT" verdict and, with
+`--estimate-rho0`, a "converged" density 60 % low. Independently, `ScalingConfig` / `makeConfig`
+reject $\langle b^2\rangle < \langle b\rangle^2$ — $S(0) > 0$, impossible by Cauchy–Schwarz — with
+a message naming both values (`B_SQ_RTOL = 1e-9` slack; a monatomic sample has $S(0) = 0$ exactly).
+The CLI report prints the coefficients in effect and the $S(0)$ target on its `coeffs` line.
+Tests: `tests/test_stog_b_coefficients.py`, `src/__tests__/autoScaleCoefficients.test.js`,
+`tests/test_stog_b_api.py`.
 
-| | Browser (`AutoStogPage.jsx`, `coefficients` memo) | CLI (`scaling_cli.py::_build_config`) |
-| --- | --- | --- |
-| Quantities checked | **both** $\langle b\rangle^2$ and $\langle b^2\rangle$ | **$\langle b\rangle^2$ only** — a contradictory $\langle b^2\rangle$ override is never flagged |
-| Test | $\lvert x_\mathrm{override} - x_\mathrm{fz}\rvert > 0.02\,\lvert x_\mathrm{fz}\rvert$ (relative to the **composition** value) | $\lvert \langle b\rangle^2_\mathrm{fz} - \langle b\rangle^2_\mathrm{config}\rvert > 0.02\,\lvert \langle b\rangle^2_\mathrm{config}\rvert$ (relative to the **configured** value) |
-| When it can fire | whenever a parseable composition and an override coexist | only when `--formula` is combined with an already-resolved $\langle b\rangle^2$ — i.e. `--b-avg-sq` **or** a `stog.inp` line 18 |
-
-Because the denominators differ, the two disagree near the boundary. The CLI's version also
-fires in `stog.inp` mode, comparing `--formula` against the `.inp`'s hand-entered line-17 value.
-The Flask API performs neither check.
+The page also guards the classic stale-session trap (Step 1's `sessionStorage` persistence is
+what creates it): if a composition *and* an Advanced override are both present and disagree by
+more than **2 %** (relative to the composition value, for $\langle b\rangle^2$ and
+$\langle b^2\rangle$ separately), the coefficients chip turns into a warning
+("⚠ … Advanced overrides").
 
 The only nod to x-ray/Placzek drift in the engine is the Python-only, experimental
 `c1_slope_nuisance` flag (an extra $m\,(Q - \bar Q)$ column on the C1 rows). It is **not** in the
@@ -1049,7 +1061,7 @@ provenance JSON).
 | $\rho_0$ estimate `rtol`, `max_iter`, bounds | `1e-3`, `8`, `[0.005, 0.25]` (`RHO0_PHYSICAL_RANGE`) | hard-coded | Å⁻³; each iteration is a full `autoscale` (Step 8 window placement included) |
 | $\rho_0$ seed when unresolved | `0.05` | browser only | Å⁻³ |
 | $\rho_0$ write-back rounding | 5 significant digits | browser only | run uses the unrounded value |
-| formula-vs-override warning threshold | 2 % (of the *composition* value in the browser, of the *configured* value in the CLI) | browser chip ($\langle b\rangle^2$ and $\langle b^2\rangle$) + CLI stderr ($\langle b\rangle^2$ only) | — |
+| formula-vs-configured $\langle b\rangle^2$ agreement (`COEFFICIENT_RTOL`) | 2 % of the configured value | decides whether the composition's $\langle b^2\rangle$ may be paired (CLI, API, page); the page's override chip also flags a 2 % disagreement of either coefficient with the composition | — |
 
 ### Python ↔ JavaScript parity for Step 0
 
@@ -3334,7 +3346,8 @@ returns `None`); ≥8 points in the FZ head; ≥4 C2 rows for C2 IRLS re-weighti
 **Configuration validation** (all raise *before* any math, in `ScalingConfig.__post_init__` /
 `makeConfig`): `c1_mode ∈ {sweep, joint}`; `amplitude_criterion ∈ {density, fz}`; `fz` requires
 `b_sq_avg` **and** `c1_mode="sweep"`; $\rho_0$ finite and $>0$; $\langle b\rangle^2$ finite and
-$>0$; `qmax > qmin`; `nr` a positive integer; `rmax` finite and $>0$. `r_fit_window` raises
+$>0$; $\langle b^2\rangle$, when set, finite, $>0$ and $\ge \langle b\rangle^2(1 - 10^{-9})$ (no
+$S(0) > 0$, Cauchy–Schwarz); `qmax > qmin`; `nr` a positive integer; `rmax` finite and $>0$. `r_fit_window` raises
 "empty low-r fit window" whenever the upper edge $\le$ the lower edge — the JS `makeConfig`
 evaluates this eagerly at construction, the Python property only when first accessed (the CLI
 touches `config.r_fit_window` deliberately so the error renders as a CLI error).
@@ -3704,9 +3717,12 @@ and the run mode (`'auto'` / `'manual'`).
 
 **Operation** (`resolveConfig(form, inp, header, mode)`), in this exact order:
 
-1. **Coefficients.** $\langle b\rangle^2 \leftarrow$ form → `inp.bAvgSq`;
-   $\langle b^2\rangle \leftarrow$ form. If a composition string is present,
-   `faberZiman(formula)` fills whichever is still undefined:
+1. **Coefficients** (`resolveCoefficients`, the CLI/API rule — see Step 0's x-ray note).
+   $\langle b\rangle^2 \leftarrow$ form → `inp.bAvgSq`; $\langle b^2\rangle \leftarrow$ form. If a
+   composition string is present, `faberZiman(formula)` fills a missing $\langle b\rangle^2$, and a
+   missing $\langle b^2\rangle$ only when the $\langle b\rangle^2$ in effect agrees with the
+   composition's within 2 % (keeping the composition's ratio); otherwise $\langle b^2\rangle$
+   stays unset. The composition values are
    $$\langle b\rangle^2 = \Big(\sum_i c_i b_i\Big)^2,\qquad
      \langle b^2\rangle = \sum_i c_i b_i^2,$$
    with $c_i$ the atom fractions from `parseFormula()` (supports decimals and parentheses,
@@ -4288,14 +4304,15 @@ floating-point noise):
    `autoscalePass()` passes `s0Target: effectiveS0Target(config)` to the per-iteration filter
    exactly like Python's `_pipeline()`; with a composition the page's $(a,b)$ matches the CLI to
    round-off (before, 2 % apart on the Mn₃Sn 59438 run).
-7. **The "shadowed coefficients" check.** The browser flags
-   $|\mathrm{override} - \mathrm{fz}| > 0.02\,|\mathrm{fz}|$ — relative to the **Sears** value —
-   independently for $\langle b\rangle^2$ **and** $\langle b^2\rangle$, as a persistent ⚠ chip.
-   The CLI (`scaling_cli.py`) tests
-   `abs(coefficients.b_avg_sq_barn - b_avg_sq) > 0.02 * abs(b_avg_sq)` — relative to the
-   **configured** value — on $\langle b\rangle^2$ **only**, and emits a one-line `stderr`
-   warning. The same numbers can therefore be flagged in one engine and not the other, and a
-   shadowed $\langle b^2\rangle$ is never reported by the CLI at all.
+7. **The "shadowed coefficients" check.** Which coefficients are *used* is the same rule in
+   both (`resolve_coefficients` / `resolveCoefficients`: the composition's $\langle b^2\rangle$ is
+   paired only with an agreeing $\langle b\rangle^2$). How a disagreement is *reported* differs:
+   the browser flags $|\mathrm{override} - \mathrm{fz}| > 0.02\,|\mathrm{fz}|$ — relative to the
+   **Sears** value — independently for $\langle b\rangle^2$ **and** $\langle b^2\rangle$, as a
+   persistent ⚠ chip (plus "⟨b²⟩ not set" when the composition's was left out); the CLI prints a
+   `stderr` warning naming the values in effect whenever the composition's $\langle b\rangle^2$
+   differs from the configured one by > 2 % of the **configured** value, and its report's
+   `coeffs` line always shows the pair and $S(0)$ target in effect.
 8. **Mass density with no composition.** The page's `resolveConfig()` converts only when
    *both* are present (`if (massDensity !== undefined && formula)`); otherwise it silently
    ignores the typed mass density and falls through to the 0.05 seed + self-consistent

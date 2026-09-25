@@ -296,6 +296,67 @@ def _load_dataset(data_path: Path, use_sigma: bool):
     return q, sq, sigma
 
 
+#: <b>^2 values closer than this (relative) are the same scattering-length set.
+COEFFICIENT_RTOL = 0.02
+
+
+def resolve_coefficients(
+    *,
+    b_avg_sq: Optional[float],
+    b_avg_sq_source: Optional[str],
+    b_sq_avg: Optional[float],
+    formula: Optional[str],
+) -> "dict[str, Any]":
+    """<b>^2 and <b^2> from ONE consistent source (CLI and scaling API).
+
+    Explicit values win. A ``formula`` (Sears neutron table) fills what is
+    missing, but its <b^2> is paired with a <b>^2 from elsewhere (``stog.inp``
+    or an explicit value) only when the two <b>^2 agree within
+    :data:`COEFFICIENT_RTOL` — then the formula's ratio <b^2>/<b>^2 (the S(0)
+    target) is kept on the configured <b>^2 scale. Otherwise the configured
+    <b>^2 belongs to another radiation or normalization (e.g. <b>^2 = 1 for
+    normalized x-ray data) and mixing would fabricate an S(0) target, so
+    <b^2> stays unset (pass it explicitly). Returns ``{"b_avg_sq", "b_sq_avg",
+    "b_avg_sq_source", "b_sq_avg_source", "warnings"}``.
+    """
+    warnings: list[str] = []
+    b_sq_avg_source = "explicit" if b_sq_avg is not None else None
+    formula = (formula or "").strip()
+    if formula:
+        coefficients = faber_ziman(formula)
+        if b_avg_sq is None:
+            b_avg_sq, b_avg_sq_source = coefficients.b_avg_sq_barn, f"formula {formula}"
+        agree = abs(coefficients.b_avg_sq_barn - b_avg_sq) <= COEFFICIENT_RTOL * abs(b_avg_sq)
+        if b_sq_avg is None:
+            if agree:
+                ratio = coefficients.b_sq_avg_barn / coefficients.b_avg_sq_barn
+                b_sq_avg, b_sq_avg_source = b_avg_sq * ratio, f"formula {formula}"
+            else:
+                warnings.append(
+                    f"<b>^2 from formula {formula} = {coefficients.b_avg_sq_barn:.6f} "
+                    f"barn differs from the {b_avg_sq_source} value {b_avg_sq:.6f} "
+                    "barn; using <b>^2 = "
+                    f"{b_avg_sq:.6f} barn and NOT the formula's <b^2> = "
+                    f"{coefficients.b_sq_avg_barn:.6f} barn (a pair from two sources "
+                    "fabricates the S(0) target) — pass <b^2> explicitly (--b-sq-avg; "
+                    "<Z^2>/<Z>^2 for normalized x-ray data) for the Q->0 criteria"
+                )
+        elif not agree:
+            warnings.append(
+                f"<b>^2 from formula {formula} = {coefficients.b_avg_sq_barn:.6f} "
+                f"barn differs from the {b_avg_sq_source} value {b_avg_sq:.6f} barn; "
+                f"using <b>^2 = {b_avg_sq:.6f} barn and the explicit <b^2> = "
+                f"{b_sq_avg:.6f} barn"
+            )
+    return {
+        "b_avg_sq": b_avg_sq,
+        "b_sq_avg": b_sq_avg,
+        "b_avg_sq_source": b_avg_sq_source,
+        "b_sq_avg_source": b_sq_avg_source,
+        "warnings": warnings,
+    }
+
+
 def refuse_failed_fit(result: ScalingResult) -> None:
     """Raise :class:`CliError` when an auto-fit returned a non-physical scale.
 
@@ -387,24 +448,29 @@ def _build_config(
         nr = args.nr if args.nr is not None else 5000
         lorch = bool(args.lorch)
 
-    b_sq_avg = args.b_sq_avg
-    if args.formula:
-        coefficients = faber_ziman(args.formula)
-        if b_sq_avg is None:
-            b_sq_avg = coefficients.b_sq_avg_barn
-        if b_avg_sq is None:
-            b_avg_sq = coefficients.b_avg_sq_barn
-        elif abs(coefficients.b_avg_sq_barn - b_avg_sq) > 0.02 * abs(b_avg_sq):
-            print(
-                f"warning: <b>^2 from --formula {args.formula} = "
-                f"{coefficients.b_avg_sq_barn:.6f} barn differs from the "
-                f"configured {b_avg_sq:.6f} barn; keeping the configured value",
-                file=sys.stderr,
-            )
+    if args.b_avg_sq is not None:
+        b_avg_sq_source = "--b-avg-sq"
+    elif inp is not None:
+        b_avg_sq_source = "stog.inp"
+    else:
+        b_avg_sq_source = None
+    try:
+        resolved = resolve_coefficients(
+            b_avg_sq=b_avg_sq, b_avg_sq_source=b_avg_sq_source,
+            b_sq_avg=args.b_sq_avg, formula=args.formula,
+        )
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+    for warning in resolved["warnings"]:
+        print(f"warning: {warning}", file=sys.stderr)
+    b_avg_sq, b_sq_avg = resolved["b_avg_sq"], resolved["b_sq_avg"]
     if b_avg_sq is None:
         raise CliError("--data mode requires <b>^2: pass --b-avg-sq or --formula")
     if args.amplitude == "fz" and b_sq_avg is None:
-        raise CliError("--amplitude fz requires <b^2>: pass --b-sq-avg or --formula")
+        raise CliError(
+            "--amplitude fz requires <b^2>: pass --b-sq-avg, or --formula when "
+            "<b>^2 also comes from it"
+        )
 
     try:
         config = ScalingConfig(
@@ -557,11 +623,19 @@ def _print_report(
     enforcement: Optional[tuple[float, float, float]],
     n_points: int,
     enforcement_note: Optional[str] = None,
+    config: Optional[ScalingConfig] = None,
 ) -> None:
     mode = "manual (fixed a, b)" if manual else f"auto ({summary.get('c1_mode', 'fit')})"
     print(f"Auto StoG (rmc-toolkits {__version__})")
     print(f"  mode      : {mode}")
     print(f"  data      : {n_points} S(Q) points used")
+    if config is not None:
+        # The coefficients actually in effect (after --formula / stog.inp /
+        # explicit-value resolution), with the S(0) target they imply.
+        pair = f"<b>^2 = {config.b_avg_sq:.6g} barn, <b^2> = " + (
+            "not set" if config.b_sq_avg is None else f"{config.b_sq_avg:.6g} barn"
+        )
+        print(f"  coeffs    : {pair}, S(0) target = {config.effective_s0_target:.4g}")
     line = f"  result    : a = {result.a:.6g}, b = {result.b:.6g}"
     if reference is not None and not manual:
         line += f"   [stog.inp hand values: a = {reference[0]:.6g}, b = {reference[1]:.6g}]"
@@ -669,7 +743,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
             if config.b_sq_avg is None:
                 raise CliError(
-                    "--estimate-rho0 requires <b^2>: pass --b-sq-avg or --formula"
+                    "--estimate-rho0 requires <b^2>: pass --b-sq-avg, or --formula "
+                    "when <b>^2 also comes from it"
                 )
             rho0_estimate = estimate_rho0(q, sq, config, sigma=sigma)
             if not rho0_estimate["converged"]:
@@ -797,6 +872,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             result, summary, targets, reference, manual, enforcement,
             n_points=int(result.provenance["n_q_points"]),
             enforcement_note=auto_note,
+            config=config,
         )
         return 0
     except CliError as exc:

@@ -364,6 +364,48 @@ export const MAX_WINDOW_REFITS = 4;
 export const RHO0_PHYSICAL_RANGE = [0.005, 0.25];
 /** Width (Å⁻¹) of the low-Q head the Faber-Ziman extrapolation is fitted on (scaling.FZ_FIT_WIDTH). */
 export const FZ_FIT_WIDTH = 1.0;
+/** Rounding slack of the <b^2> >= <b>^2 check (scaling.B_SQ_RTOL). */
+export const B_SQ_RTOL = 1e-9;
+/** <b>^2 values closer than this (relative) are the same scattering-length set (scaling_cli.COEFFICIENT_RTOL). */
+export const COEFFICIENT_RTOL = 0.02;
+
+/**
+ * <b>^2 and <b^2> from ONE consistent source (port of
+ * scaling_cli.resolve_coefficients — same rule): explicit values win; a
+ * formula fills what is missing, but its <b^2> is paired with a <b>^2 from
+ * elsewhere (a stog.inp or an override) only when the two <b>^2 agree within
+ * COEFFICIENT_RTOL — then the formula's ratio <b^2>/<b>^2 is kept on the
+ * configured scale. Otherwise <b^2> stays unset (`dropped` carries the
+ * formula's pair) rather than fabricating an S(0) target from two sources.
+ */
+export const resolveCoefficients = ({ bAvgSq, bSqAvg, formula }) => {
+  let outBAvgSq = bAvgSq ?? undefined;
+  let outBSqAvg = bSqAvg ?? undefined;
+  let fromFormula = { bAvgSq: false, bSqAvg: false };
+  let dropped = null;
+  let disagree = false;
+  const name = (formula || '').trim();
+  let fz = null;
+  if (name) {
+    fz = faberZiman(name);
+    if (outBAvgSq === undefined) {
+      outBAvgSq = fz.bAvgSqBarn;
+      fromFormula = { ...fromFormula, bAvgSq: true };
+    }
+    disagree = Math.abs(fz.bAvgSqBarn - outBAvgSq) > COEFFICIENT_RTOL * Math.abs(outBAvgSq);
+    if (outBSqAvg === undefined) {
+      if (!disagree) {
+        outBSqAvg = outBAvgSq * (fz.bSqAvgBarn / fz.bAvgSqBarn);
+        fromFormula = { ...fromFormula, bSqAvg: true };
+      } else {
+        dropped = { bAvgSq: fz.bAvgSqBarn, bSqAvg: fz.bSqAvgBarn };
+      }
+    }
+  }
+  return {
+    bAvgSq: outBAvgSq, bSqAvg: outBSqAvg, fz, fromFormula, dropped, disagree,
+  };
+};
 
 export const defaultConfig = {
   qmin: NaN,
@@ -397,6 +439,21 @@ export const makeConfig = (options) => {
   const config = { ...defaultConfig, ...options };
   if (!isNum(config.rho0) || config.rho0 <= 0) throw new Error(`rho0 must be finite and positive, got ${config.rho0}`);
   if (!isNum(config.bAvgSq) || config.bAvgSq <= 0) throw new Error(`bAvgSq must be finite and positive, got ${config.bAvgSq}`);
+  if (config.bSqAvg != null) {
+    if (!isNum(config.bSqAvg) || config.bSqAvg <= 0) throw new Error(`bSqAvg must be finite and positive, got ${config.bSqAvg}`);
+    if (config.bSqAvg < config.bAvgSq * (1 - B_SQ_RTOL)) {
+      // scaling.ScalingConfig parity: S(0) = 1 - <b^2>/<b>^2 > 0 is impossible.
+      throw new Error(
+        `<b^2> = ${fmtP(config.bSqAvg, 6)} barn is smaller than <b>^2 = `
+        + `${fmtP(config.bAvgSq, 6)} barn, so S(0) = 1 - <b^2>/<b>^2 = `
+        + `${fmtP(1 - config.bSqAvg / config.bAvgSq, 4)} > 0, which is impossible `
+        + '(<b^2> >= <b>^2, Cauchy-Schwarz): the two coefficients must come '
+        + 'from the same source (same radiation and units) — e.g. normalized '
+        + 'x-ray data need <b>^2 = 1 with <b^2> = <Z^2>/<Z>^2, not a neutron '
+        + "composition's <b^2>"
+      );
+    }
+  }
   if (!(config.qmax > config.qmin)) throw new Error('qmax must exceed qmin');
   if (!Number.isInteger(config.nr) || config.nr <= 0) throw new Error(`nr must be a positive integer, got ${config.nr}`);
   if (!isNum(config.rmax) || config.rmax <= 0) throw new Error(`rmax must be finite and positive, got ${config.rmax}`);

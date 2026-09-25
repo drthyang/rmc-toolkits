@@ -60,6 +60,7 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     _write_outputs,
     _resolve_targets as _resolve_scaling_targets,
     refuse_failed_fit,
+    resolve_coefficients,
     stog_inp_closest_approach,
 )
 from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset
@@ -823,14 +824,20 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
         nr = int(pick("nr", 5000))
         lorch = _payload_bool(payload, "lorch", False)
 
-    b_sq_avg = _payload_float(payload, "bSqAvg")
-    formula = (payload.get("formula") or "").strip()
-    if formula:
-        coefficients = faber_ziman(formula)
-        if b_sq_avg is None:
-            b_sq_avg = coefficients.b_sq_avg_barn
-        if b_avg_sq is None:
-            b_avg_sq = coefficients.b_avg_sq_barn
+    # One consistent source for <b>^2 and <b^2> (CLI parity): a formula's <b^2>
+    # is never paired with a <b>^2 from another radiation/normalization.
+    if _payload_float(payload, "bAvgSq") is not None:
+        b_avg_sq_source = "bAvgSq"
+    elif inp is not None:
+        b_avg_sq_source = "stog.inp"
+    else:
+        b_avg_sq_source = None
+    resolved = resolve_coefficients(
+        b_avg_sq=b_avg_sq, b_avg_sq_source=b_avg_sq_source,
+        b_sq_avg=_payload_float(payload, "bSqAvg"),
+        formula=payload.get("formula"),
+    )
+    b_avg_sq, b_sq_avg = resolved["b_avg_sq"], resolved["b_sq_avg"]
     if b_avg_sq is None:
         raise CliError("data mode requires <b>^2: set bAvgSq or formula")
 

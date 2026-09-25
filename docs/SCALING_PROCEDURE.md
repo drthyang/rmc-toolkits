@@ -128,7 +128,9 @@ the manual "try again" scale loop replaced by physics:
 - **Qmin**: as low as the reduction allows; the correction handles the rest. Cutting real
   low-Q information (Qmin ≳ 1.5–2) starves the density limit (flagged).
 - **X-ray data**: the Sears table is neutron — set ⟨b⟩² (usually 1 for normalized S(Q))
-  and ⟨b²⟩ = ⟨Z²⟩/⟨Z⟩² explicitly (f(0) = Z).
+  and ⟨b²⟩ = ⟨Z²⟩/⟨Z⟩² explicitly (f(0) = Z). A composition given alongside (e.g. for the
+  mass-density conversion) never supplies ⟨b²⟩ to a ⟨b⟩² from another source: the pair must
+  come from one source, and ⟨b²⟩ < ⟨b⟩² (S(0) > 0) is refused.
 - **Isotopic samples**: per-element b overrides are supported in the library
   (`faber_ziman(..., b_overrides_fm=...)`).
 - ρ₀ sanity: the implied mass density is shown; Mn₃Sn's 0.063049 atoms/Å³ ↔ 7.42 g/cm³.
