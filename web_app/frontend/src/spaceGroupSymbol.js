@@ -764,6 +764,38 @@ function derivedBases(ops, translations, pointGroup, A) {
   return out;
 }
 
+// Pairs whose members have the same element types along the same directions: the I
+// centering turns each 2-fold into a 2_1 half a cell away and back. [symmorphic, other]
+const LOCATION_PAIRS = [['I222', 'I2_12_12_1'], ['I23', 'I2_13']];
+
+/**
+ * Whether the 2-fold rotations along a, b and c (standard setting, diagonal R) have a
+ * common fixed point — true for I222 and I23, whose 2-folds meet at the origin, false for
+ * I2_12_12_1 and I2_13, whose 2-folds never meet. A pure (non-screw) 2-fold along axis i,
+ * {R|t} with t_i ≡ 0, fixes the line 2p_j ≡ t_j (j ≠ i); lines along a and b meet the one
+ * along c at a common point iff their translations agree mod 1 on the shared components.
+ * Independent of the origin.
+ */
+export function twoFoldsMeet(ops, tol = 0.05) {
+  const pure = [0, 1, 2].map((i) => ops.filter(({ R, t }) => R.every((row, r) => row.every((v, c) => v === (r === c ? (r === i ? 1 : -1) : 0)))
+    && Math.abs(cyc(t[i])) <= tol));
+  const agree = (u, v) => Math.abs(cyc(u - v)) <= tol;
+  for (const ox of pure[0]) {
+    for (const oy of pure[1]) {
+      if (!agree(ox.t[2], oy.t[2])) continue;
+      for (const oz of pure[2]) if (agree(ox.t[1], oz.t[1]) && agree(oy.t[0], oz.t[0])) return true;
+    }
+  }
+  return false;
+}
+
+// The member of a location-degenerate pair the operations actually form.
+function resolveLocationPair(symbol, ops) {
+  const pair = LOCATION_PAIRS.find((p) => p.includes(symbol));
+  if (!pair) return symbol;
+  return twoFoldsMeet(ops) ? pair[0] : pair[1];
+}
+
 /**
  * H–M symbol for a closed group, searching cells until one is conventional.
  *
@@ -813,7 +845,9 @@ export function hmSymbolInStandardSetting(ops, centering, pointGroup, classOf, {
     if (!setting || !allowed.includes(setting.letter)) return null;
     if (!elementsFitSetting(setting.ops, pointGroup)) return null;
     for (const cand of hmSymbolCandidates(setting.ops, setting.letter, pointGroup)) {
-      if (classOf(cand) === pointGroup && cand.startsWith(setting.letter)) return { symbol: cand, setting };
+      if (classOf(cand) === pointGroup && cand.startsWith(setting.letter)) {
+        return { symbol: resolveLocationPair(cand, setting.ops), setting };
+      }
     }
     return null;
   };

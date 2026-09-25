@@ -19,12 +19,8 @@ const named = (structure, tol = 0.02) => {
     return { spaceGroup: found.spaceGroup, spaceGroupNumber: found.spaceGroupNumber };
 };
 
-// I222/I2_12_12_1 and I23/I2_13 share their element types; see symmetry.test.js.
-const LOCATION_DEGENERATE = new Set([24, 199]);
-
 describe('every fixture group in every axis order', () => {
-    const cases = SPACE_GROUP_FIXTURES.filter((f) => !LOCATION_DEGENERATE.has(f.number));
-    it.each(cases)('$symbol (#$number) is named correctly or not at all', (fixture) => {
+    it.each(SPACE_GROUP_FIXTURES)('$symbol (#$number) is named correctly or not at all', (fixture) => {
         const base = structureFor(fixture);
         for (const [name, M] of Object.entries(AXIS_SETTINGS)) {
             const found = named(redescribe(base, M));
@@ -70,6 +66,18 @@ describe('centred and non-conventional cells', () => {
     it('names R-3m bismuth given on rhombohedral axes', () => {
         const rhombohedral = [[2 / 3, 1 / 3, 1 / 3], [-1 / 3, 1 / 3, 1 / 3], [-1 / 3, -2 / 3, 1 / 3]];
         expect(named(redescribe(STRUCTURES.bismuth(), rhombohedral))).toEqual({ spaceGroup: 'R-3m', spaceGroupNumber: 166 });
+    });
+
+    it('tells I2_12_12_1 from I222 and I2_13 from I23 at any origin', () => {
+        // Same element types, different arrangement: only I222 and I23 have a point where
+        // the three 2-folds meet. An origin shift must not change the answer.
+        for (const [number, symbol] of [[23, 'I222'], [24, 'I2_12_12_1'], [197, 'I23'], [199, 'I2_13']]) {
+            const base = structureFor(SPACE_GROUP_FIXTURES.find((f) => f.number === number));
+            for (const shift of [[0, 0, 0], [0.13, 0.29, 0.41]]) {
+                const moved = redescribe(base, AXIS_SETTINGS.abc, shift);
+                expect(named(moved), `${symbol} shifted ${shift}`).toEqual({ spaceGroup: symbol, spaceGroupNumber: number });
+            }
+        }
     });
 });
 

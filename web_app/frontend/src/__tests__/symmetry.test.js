@@ -158,15 +158,15 @@ describe('fixture integrity', () => {
     });
 });
 
-// Two pairs of groups this finder cannot separate, and the partner it settles on.
+// Two pairs of groups whose SYMBOL CANDIDATES cannot separate them.
 //
 // I222/I2_12_12_1 and I23/I2_13 contain the SAME element types along the same directions:
 // the I centring turns every pure 2-fold into a 2_1 screw half a cell away and vice versa,
-// so both members of each pair have both. What distinguishes them is where those axes sit
-// RELATIVE to one another, which naming from element types alone cannot see — telling them
-// apart needs origin-aware matching against the tabulated groups, which this finder does
-// not attempt. Pinned here rather than skipped so the limitation stays visible and any
-// change in it fails loudly.
+// so both members of each pair have both, and the first recognised candidate is the
+// symmorphic one. What distinguishes them is where the axes sit relative to one another —
+// the three 2-folds of I222 meet in a point, those of I2_12_12_1 do not — which
+// spaceGroupHM checks (end-to-end tests below). Pinned here so the candidate list's
+// behaviour stays visible.
 const LOCATION_DEGENERATE = new Map([[24, 'I222'], [199, 'I23']]);
 
 describe('Hermann–Mauguin symbols from exact operations', () => {
@@ -186,11 +186,6 @@ describe('space-group detection end to end', () => {
         const { A, basis } = structureFor(fixture);
         const found = spaceGroupAtTolerance(A, basis, 0.05);
         expect(found.nSpace).toBe(fixture.multiplicity);
-        const degenerate = LOCATION_DEGENERATE.get(fixture.number);
-        if (degenerate) {
-            expect(found.spaceGroup).toBe(degenerate);
-            return;
-        }
         expect(found.spaceGroup).toBe(fixture.symbol);
         expect(found.spaceGroupNumber).toBe(fixture.number);
     });

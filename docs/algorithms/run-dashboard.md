@@ -2940,19 +2940,25 @@ setting**, which the RMC cell need not be:
    shown with that group's ITA number.
 
 Checked on all 230 groups (the test fixtures) in all six axis orders: every group is named
-correctly except the two location-degenerate pairs of Step 10(g).
+correctly (the two location-degenerate pairs by Step 10g).
 
 **Code**: `symmetry.js` → `classifyOperations()`, `classifyRotation()`, `pointGroupOf()`,
 `spaceGroupHM()`, `classLabel()`, `lowerBoundLabel()`, `POINT_GROUP_ORDER`; `spaceGroupSymbol.js` →
 `intrinsicTranslation()`, `classifyElement()`, `centeringOfOps()`, `bravaisCentering()`,
 `applySetting()`, `derivedBases()`, `elementsFitSetting()`, `hmSymbolCandidates()`,
-`hmSymbolInStandardSetting()`, `allLatticeOpsTested()`, `transformOps()`; `spaceGroupTable.js` →
+`hmSymbolInStandardSetting()`, `allLatticeOpsTested()`, `twoFoldsMeet()`, `transformOps()`;
+`spaceGroupTable.js` →
 `SPACE_GROUPS`, `spaceGroupNumber()`, `pointGroupOfSymbol()`, `canonicalSymbol()`.
 
-**(g) Location-degenerate pairs.** I222/I2₁2₁2₁ (Nos. 23/24) and I23/I2₁3 (Nos. 197/199) contain the
-same element types along the same directions (the I centering turns every 2-fold into a 2₁ half a
-cell away and vice versa); they differ only in where the axes sit. Named from element types alone,
-both members of each pair read as the symmorphic one.
+**(g) Location-degenerate pairs** (`twoFoldsMeet()`, `resolveLocationPair()`). I222/I2₁2₁2₁
+(Nos. 23/24) and I23/I2₁3 (Nos. 197/199) contain the same element types along the same directions
+(the I centering turns every 2-fold into a 2₁ half a cell away and vice versa), so the symbol
+candidates cannot separate them; they differ in where the axes sit. In the standard setting a pure
+2-fold along axis $i$, $\{R|\mathbf t\}$ with $t_i\equiv0$, fixes the line $2p_j \equiv t_j$ ($j\ne i$); the
+2-folds along $a$, $b$, $c$ have a common point iff, for some choice of one pure 2-fold per axis,
+their translations agree mod 1 on the shared components. They meet in I222 and I23 and never in
+I2₁2₁2₁ and I2₁3, whatever the origin. Before 1.0 both members of each pair were reported as the
+symmorphic one (with its number).
 
 #### Step 11. Group closure: the largest closed group at each threshold
 
