@@ -48,6 +48,7 @@ rmc_toolkits/
 web_app/backend/app.py    Flask API; data-root guard; `_number()` numeric-parameter validation (bad input → 400); StrictJSONProvider (NaN → null in data series) + `_strict_result_response()` / `_require_finite_scaling()` (a non-finite computed result → 400); file-signature LRU caches (`_FileCache` keyed on `_file_signature()` = (st_mtime_ns, st_ctime_ns, st_size, st_ino); a torn read is never cached → 409) for KDE, PCA, triplets and scaling; /api/scaling/preview|run share the CLI writer
 
 web_app/frontend/src/
+  App.jsx                        shell, run-folder selection, page nav, Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop)
   browserData.js                 static-mode local file parsing + run assembly (chooseStructureFile mirrors parsers.find_run_configuration, code-point tie-breaks)
   rmc6f.js                       shared .rmc6f atom-line grammar + parse report (classifyAtomLine, parseRmc6fAtoms, readRmc6fCellVectors) — mirror of parsers.py; keep in sync
   plotDomain.js                  one-pass axis domains, null-tolerant hover search (nearestFiniteIndex), plot payload checks
@@ -69,7 +70,6 @@ web_app/frontend/src/
     useAssistant.js              shared hook: settings, connection probe/auto-connect, run context
     components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
   components/
-    App.jsx                      shell, run-folder selection, page nav, Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop)
     AutoStogPage.jsx             Auto StoG tab — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets w/ descriptions) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
     Dashboard.jsx                all-plots run dashboard
     ModelSummary.jsx             Model information + Detected SG cards (parse warning, move counters, tolerance ladder)
