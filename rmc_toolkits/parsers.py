@@ -35,8 +35,10 @@ class Rmc6fAtom(TypedDict):
     element: str
     type_label: str
     coords: np.ndarray
-    reference_number: int
-    cell_indices: np.ndarray
+    # None only for legacy coords-only lines (``iter_rmc6f_atoms(...,
+    # include_coords_only=True)``); always set for the full layout.
+    reference_number: int | None
+    cell_indices: np.ndarray | None
 
 
 def read_rmc_csv(path: str | Path) -> CsvSeries:
@@ -476,23 +478,194 @@ def fit_rwp(labels: list[str], data: np.ndarray) -> float | None:
     return rwp(data[0], observed=data[experimental], fitted=data[calculated])
 
 
+# --- .rmc6f atom-line grammar --------------------------------------------------
+#
+# One grammar, shared verbatim with ``web_app/frontend/src/rmc6f.js`` (keep the
+# two in sync). An atom line is ``id element [label] <data>`` where
+#
+#   id       a non-negative integer (the atom number);
+#   element  a token starting with a letter (normalized ``str.capitalize()``);
+#   label    optional: a bracket group (``[1]``, or split as ``[ 1]``) or one
+#            non-numeric token;
+#   data     exactly 7 tokens  ``x y z ref cx cy cz``   (full layout), or
+#            exactly 3 tokens  ``x y z``                (legacy coords-only).
+#
+# Numbers accept Fortran ``D`` exponents. ``ref`` must be a positive integer and
+# each cell index an integer in [0, N_i) (N from the ``Supercell`` header line,
+# when known). A line whose layout is valid but whose coordinates are non-finite
+# (NaN, Inf, or Fortran ``****`` overflow) is skipped and counted separately;
+# every other line after the ``Atoms`` marker that fits no layout is counted as
+# unparsed. Nothing is guessed from the end of the line any more: an extra
+# trailing field used to shift every column silently in the browser.
+
+_RMC6F_NUMBER_RE = re.compile(r"^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eEdD][+-]?\d+)?$")
+_RMC6F_NON_FINITE_RE = re.compile(r"^(?:[+-]?(?:nan|inf|infinity)|\*+)$", re.IGNORECASE)
+_RMC6F_INTEGER_RE = re.compile(r"^[+-]?\d+$")
+_RMC6F_ELEMENT_RE = re.compile(r"^[A-Za-z]")
+_RMC6F_ATOMS_MARKER_RE = re.compile(r"^\s*atoms\b", re.IGNORECASE)
+_RMC6F_DECLARED_ATOMS_RE = re.compile(r"^\s*Number of atoms\s*:\s*(\d+)", re.IGNORECASE)
+
+
+def parse_fortran_number(token: str) -> float | None:
+    """A numeric token of an RMCProfile text file as a float, Fortran-aware.
+
+    Accepts plain/``E``/``D`` exponent forms (``0.117D-03``); returns ``nan`` for
+    an explicit non-finite token (``NaN``, ``Inf``, ``Infinity``, or the all-``*``
+    field Fortran prints on overflow) and ``None`` for anything that is not a
+    number. Mirrors ``parseFortranNumber()`` in ``rmc6f.js``.
+    """
+    if _RMC6F_NUMBER_RE.match(token):
+        return float(token.replace("D", "E").replace("d", "e"))
+    if _RMC6F_NON_FINITE_RE.match(token):
+        return float("nan")
+    return None
+
+
+def is_rmc6f_atoms_marker(line: str) -> bool:
+    """True for the line that opens the atom list: ``Atoms:``, ``Atoms :``,
+    ``atoms:``, ``Atoms (fractional coordinates):`` … (case-insensitive)."""
+    return bool(_RMC6F_ATOMS_MARKER_RE.match(line))
+
+
+@dataclass
+class Rmc6fParseReport:
+    """What an ``.rmc6f`` atom section held, line by line.
+
+    ``declared_atoms`` is the header's ``Number of atoms:`` (``None`` if absent);
+    ``atom_lines`` counts the non-blank lines after the ``Atoms`` marker. Each of
+    them is exactly one of: a full-layout atom (``parsed_atoms``), a legacy
+    coords-only atom (``coords_only_atoms``), a line skipped for non-finite
+    coordinates (``non_finite_lines``) or an unparsed line (``invalid_lines``).
+    Mirrors the ``report`` of ``parseRmc6fAtoms()`` in ``rmc6f.js``.
+    """
+
+    has_atoms_section: bool = False
+    declared_atoms: int | None = None
+    atom_lines: int = 0
+    parsed_atoms: int = 0
+    coords_only_atoms: int = 0
+    non_finite_lines: int = 0
+    invalid_lines: int = 0
+    first_invalid_line: str | None = None
+    first_non_finite_line: str | None = None
+
+    @property
+    def accepted_atoms(self) -> int:
+        return self.parsed_atoms + self.coords_only_atoms
+
+    def warning(self) -> str | None:
+        """The human-readable problem list, or ``None`` for a clean atom section."""
+        problems: list[str] = []
+        if self.declared_atoms is not None and self.accepted_atoms != self.declared_atoms:
+            problems.append(
+                f"parsed {self.accepted_atoms} of {self.declared_atoms} atoms declared in the header"
+            )
+        if self.invalid_lines:
+            problems.append(
+                f"{self.invalid_lines} of {self.atom_lines} atom lines unparsed "
+                f"(first: '{self.first_invalid_line}')"
+            )
+        if self.non_finite_lines:
+            problems.append(
+                f"{self.non_finite_lines} atom lines skipped for non-finite coordinates "
+                f"(first: '{self.first_non_finite_line}')"
+            )
+        return "; ".join(problems) or None
+
+    def to_dict(self) -> dict[str, object]:
+        """camelCase mapping, the same keys the browser parser reports."""
+        return {
+            "declaredAtoms": self.declared_atoms,
+            "atomLines": self.atom_lines,
+            "parsedAtoms": self.parsed_atoms,
+            "coordsOnlyAtoms": self.coords_only_atoms,
+            "nonFiniteLines": self.non_finite_lines,
+            "invalidLines": self.invalid_lines,
+            "firstInvalidLine": self.first_invalid_line,
+            "firstNonFiniteLine": self.first_non_finite_line,
+        }
+
+
+def _rmc6f_integer(token: str) -> int | None:
+    return int(token) if _RMC6F_INTEGER_RE.match(token) else None
+
+
+def classify_rmc6f_atom_line(
+    parts: list[str],
+    supercell: np.ndarray | None = None,
+) -> tuple[str, Rmc6fAtom | None]:
+    """Classify one whitespace-split atom line: ``(kind, atom)``.
+
+    ``kind`` is ``"atom"`` (full layout), ``"coords"`` (legacy coords-only; the
+    record's ``reference_number``/``cell_indices`` are ``None``), ``"non_finite"``
+    (a valid layout with a NaN/Inf/``****`` coordinate; ``atom`` is ``None``) or
+    ``"invalid"``. See the grammar comment above; mirrors ``classifyAtomLine()``
+    in ``rmc6f.js``.
+    """
+    if len(parts) < 5:
+        return "invalid", None
+    atom_number = _rmc6f_integer(parts[0])
+    if atom_number is None or atom_number < 0 or not _RMC6F_ELEMENT_RE.match(parts[1]):
+        return "invalid", None
+    element = parts[1].capitalize()
+
+    index = 2
+    label_tokens: list[str] = []
+    if parts[index].startswith("["):
+        while index < len(parts):
+            label_tokens.append(parts[index])
+            index += 1
+            if label_tokens[-1].endswith("]"):
+                break
+        else:
+            return "invalid", None
+    elif parse_fortran_number(parts[index]) is None:
+        label_tokens.append(parts[index])
+        index += 1
+    data = parts[index:]
+    if len(data) not in (3, 7):
+        return "invalid", None
+
+    coords = [parse_fortran_number(token) for token in data[:3]]
+    if any(value is None for value in coords):
+        return "invalid", None
+    record: Rmc6fAtom = {
+        "atom_number": atom_number,
+        "element": element,
+        "type_label": " ".join(label_tokens),
+        "coords": np.asarray(coords, dtype=float),
+        "reference_number": None,
+        "cell_indices": None,
+    }
+    if len(data) == 7:
+        reference = _rmc6f_integer(data[3])
+        cells = [_rmc6f_integer(token) for token in data[4:7]]
+        if reference is None or reference < 1 or any(cell is None for cell in cells):
+            return "invalid", None
+        for axis, cell in enumerate(cells):
+            limit = supercell[axis] if supercell is not None else None
+            if cell < 0 or (limit is not None and np.isfinite(limit) and limit >= 1 and cell >= limit):
+                return "invalid", None
+        record["reference_number"] = reference
+        record["cell_indices"] = np.asarray(cells, dtype=int)
+    if not np.all(np.isfinite(record["coords"])):
+        return "non_finite", None
+    return ("atom" if len(data) == 7 else "coords"), record
+
+
 def read_atom_indices(rmc6f_path: str | Path) -> dict[str, list[int]]:
-    lines = Path(rmc6f_path).read_text(encoding="utf-8", errors="replace").splitlines()
-    start = next((idx for idx, line in enumerate(lines) if line.split()[:1] == ["Atoms:"]), None)
-    if start is None:
-        raise ValueError(f"{rmc6f_path} does not contain an Atoms section")
+    """Distinct reference numbers per element over the full-layout atom lines.
 
+    Built from :func:`iter_rmc6f_atoms` so the site table and the atom list can
+    never disagree (it used to read ``parts[-4]`` of any line, and reported cell
+    indices as "sites" when a line carried an extra field).
+    """
+    report = Rmc6fParseReport()
     atom_indices: dict[str, set[int]] = {}
-    for line in lines[start + 1 :]:
-        parts = line.split()
-        if len(parts) < 5:
-            continue
-        try:
-            atom_index = int(parts[-4])
-        except ValueError:
-            continue
-        atom_indices.setdefault(parts[1], set()).add(atom_index)
-
+    for atom in iter_rmc6f_atoms(rmc6f_path, report=report):
+        atom_indices.setdefault(atom["element"], set()).add(int(atom["reference_number"]))
+    if not report.has_atoms_section:
+        raise ValueError(f"{rmc6f_path} does not contain an Atoms section")
     return {atom: sorted(indices) for atom, indices in atom_indices.items()}
 
 
@@ -540,8 +713,8 @@ def read_moves_metadata(rmc6f_path: str | Path) -> dict[str, float] | None:
     the frontend already receives from the browser-side parser.
     """
     text = Path(rmc6f_path).read_text(encoding="utf-8", errors="replace")
-    marker = text.find("Atoms:")
-    header = text[: marker if marker > 0 else 4000]
+    marker = re.search(r"^[ \t]*atoms\b", text, re.IGNORECASE | re.MULTILINE)
+    header = text[: marker.start() if marker and marker.start() > 0 else 4000]
 
     moves: dict[str, float] = {}
     for key, pattern in _MOVE_COUNTERS.items():
@@ -551,39 +724,83 @@ def read_moves_metadata(rmc6f_path: str | Path) -> dict[str, float] | None:
     return moves or None
 
 
-def iter_rmc6f_atoms(rmc6f_path: str | Path) -> Iterator[Rmc6fAtom]:
-    """Yield atom records from an RMCProfile `.rmc6f` file."""
+def iter_rmc6f_atoms(
+    rmc6f_path: str | Path,
+    *,
+    include_coords_only: bool = False,
+    report: Rmc6fParseReport | None = None,
+) -> Iterator[Rmc6fAtom]:
+    """Yield atom records from an RMCProfile ``.rmc6f`` file.
+
+    Lines follow the grammar documented above :func:`classify_rmc6f_atom_line`
+    (identical to the browser parser). By default only full-layout atoms are
+    yielded, so ``reference_number`` and ``cell_indices`` are always set;
+    ``include_coords_only=True`` also yields legacy ``id element [label] x y z``
+    atoms, with those two fields ``None`` (enough for position-only consumers such
+    as bond angles). Lines with non-finite coordinates are never yielded. Pass a
+    :class:`Rmc6fParseReport` as ``report`` to learn what was skipped and whether
+    the count matches the header's ``Number of atoms:``.
+    """
+    if report is None:
+        report = Rmc6fParseReport()
+    supercell: np.ndarray | None = None
     in_atoms = False
     with Path(rmc6f_path).open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             parts = line.split()
             if not parts:
                 continue
-            if parts[0] == "Atoms:":
-                in_atoms = True
-                continue
             if not in_atoms:
+                if is_rmc6f_atoms_marker(line):
+                    in_atoms = True
+                    report.has_atoms_section = True
+                    continue
+                declared = _RMC6F_DECLARED_ATOMS_RE.match(line)
+                if declared:
+                    report.declared_atoms = int(declared.group(1))
+                elif parts[0] == "Supercell" and len(parts) >= 3:
+                    values = [parse_fortran_number(token) for token in parts[-3:]]
+                    if all(value is not None for value in values):
+                        supercell = np.asarray(values, dtype=float)
                 continue
-            # Index from the END so both the current format (with a bracketed type
-            # label between the element and coordinates) and older files that omit
-            # it parse: the reference number and three cell indices are always the
-            # last four fields, the fractional coordinates the three before them.
-            #   current:  id element [type] x y z ref cellx celly cellz  (10 fields)
-            #   older:    id element        x y z ref cellx celly cellz  ( 9 fields)
-            n = len(parts)
-            if n < 9:
-                continue
-            try:
-                yield {
-                    "atom_number": int(parts[0]),
-                    "element": parts[1].capitalize(),
-                    "type_label": " ".join(parts[2 : n - 7]),
-                    "coords": np.asarray(parts[n - 7 : n - 4], dtype=float),
-                    "reference_number": int(parts[n - 4]),
-                    "cell_indices": np.asarray(parts[n - 3 : n], dtype=int),
-                }
-            except ValueError:
-                continue
+            report.atom_lines += 1
+            kind, atom = classify_rmc6f_atom_line(parts, supercell)
+            if kind == "atom":
+                report.parsed_atoms += 1
+                yield atom
+            elif kind == "coords":
+                report.coords_only_atoms += 1
+                if include_coords_only:
+                    yield atom
+            elif kind == "non_finite":
+                report.non_finite_lines += 1
+                if report.first_non_finite_line is None:
+                    report.first_non_finite_line = line.strip()
+            else:
+                report.invalid_lines += 1
+                if report.first_invalid_line is None:
+                    report.first_invalid_line = line.strip()
+
+
+def parse_rmc6f_atoms(
+    rmc6f_path: str | Path,
+    *,
+    include_coords_only: bool = True,
+) -> tuple[list[Rmc6fAtom], Rmc6fParseReport]:
+    """All atoms of an ``.rmc6f`` file plus the :class:`Rmc6fParseReport`.
+
+    Raises ``ValueError`` when the file has no ``Atoms`` section, or when not a
+    single atom line could be parsed (naming what was found instead of letting a
+    caller report an empty model).
+    """
+    report = Rmc6fParseReport()
+    atoms = list(iter_rmc6f_atoms(rmc6f_path, include_coords_only=include_coords_only, report=report))
+    if not report.has_atoms_section:
+        raise ValueError(f"{rmc6f_path} does not contain an Atoms section")
+    if not atoms:
+        detail = report.warning() or "the Atoms section is empty"
+        raise ValueError(f"{rmc6f_path}: no atoms could be parsed — {detail}")
+    return atoms, report
 
 
 def frac_lines_from_rmc6f(rmc6f_path: str | Path) -> list[str]:

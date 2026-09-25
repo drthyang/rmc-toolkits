@@ -88,6 +88,17 @@ const combineRValueFiles = (rValueFiles) => {
     };
 };
 
+// A structure read that came back short of the header's `Number of atoms:` —
+// on a Live Data poll that is a configuration RMCProfile is still writing.
+const isIncompleteStructure = (structure) => {
+    const report = structure?.parseReport;
+    if (!report || !Number.isFinite(report.declaredAtoms)) return false;
+    return (report.parsedAtoms || 0) + (report.coordsOnlyAtoms || 0) < report.declaredAtoms;
+};
+
+const INCOMPLETE_STRUCTURE_NOTICE = 'The structure file is shorter than its header declares (it may still be '
+    + 'being written); the model summary keeps the previous complete read until it finishes.';
+
 // The metric is present but null when Rwp is undefined for the data (an observed
 // column with no finite values, or one that is entirely zero). Show a dash there:
 // a number in that slot reads as a fit quality, and 0.000 reads as a perfect one.
@@ -106,6 +117,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
     const [structureError, setStructureError] = useState(null);
+    // Set while a Live Data re-read of the structure came back incomplete and
+    // the previous complete summary is being kept on screen.
+    const [structureNotice, setStructureNotice] = useState(null);
+    const structureRef = useRef(null);
     // Parsed <stem>.dat run-control settings (static mode) for the AI assistant.
     const [runSettings, setRunSettings] = useState(null);
     const settingsSigRef = useRef('');
@@ -127,6 +142,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     useEffect(() => {
         filesRef.current = files;
     }, [files]);
+
+    useEffect(() => {
+        structureRef.current = structure;
+    }, [structure]);
 
     const loadServerDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
         if (!silent) setLoading(true);
@@ -166,10 +185,18 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
                     params: { dir: directory || '.', maxPoints: 100 }
                 });
-                setStructure(structureResponse.data);
+                // A silent (Live Data) re-read that lands mid-write keeps the
+                // previous complete model instead of flashing a short count.
+                if (silent && structureRef.current && isIncompleteStructure(structureResponse.data)) {
+                    setStructureNotice(INCOMPLETE_STRUCTURE_NOTICE);
+                } else {
+                    setStructure(structureResponse.data);
+                    setStructureNotice(null);
+                }
                 setStructureError(null);
             } catch (structureErr) {
                 setStructure(null);
+                setStructureNotice(null);
                 setStructureError(structureErr.response?.data?.error || 'No model structure detected');
             }
         } catch (err) {
@@ -202,6 +229,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                         .map((file) => [file.path, plotMetadataFromFile(file)])
                 ));
                 setStructure(null);
+                setStructureNotice(null);
                 setStructureError(localRun.structureFile ? 'Loading structure summary...' : localRun.structureError || 'No model structure detected');
                 setError(null);
                 setLoading(true);
@@ -271,7 +299,14 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                         setStructureError(event.data.error);
                         return;
                     }
+                    // Live Data poll that caught the .rmc6f mid-write: keep the
+                    // previous complete summary rather than a short composition.
+                    if (sameRun && structureRef.current && isIncompleteStructure(event.data.result)) {
+                        setStructureNotice(INCOMPLETE_STRUCTURE_NOTICE);
+                        return;
+                    }
                     setStructure(event.data.result);
+                    setStructureNotice(null);
                     setStructureError(null);
                 };
                 structureWorker.onerror = () => {
@@ -304,6 +339,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         setFiles([]);
         setMetadata({});
         setStructure(null);
+        setStructureNotice(null);
         setStructureError(null);
         setError(null);
         setLoading(false);
@@ -631,6 +667,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
             {renderDashboardError(`dashboard:${error}`, error)}
 
             {localStatus && <div className="dashboard-local-status">{localStatus}</div>}
+
+            {structureNotice && <div className="dashboard-local-status" role="status">{structureNotice}</div>}
 
             <ModelSummary structure={structure} />
 

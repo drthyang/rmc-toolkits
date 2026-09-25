@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import { parseAtomLine } from './rmc6f.js';
+import { LINE_BREAK, parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from './rmc6f.js';
 
 const SUPPORTED_NAMES = new Set(['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq', 'stog_input.dat']);
 
@@ -119,7 +119,7 @@ export const parseRunSettings = (text) => {
     };
     let block = null;   // { type: 'flags' } | { type: 'dataset', entry }
     let matchedAnything = false;
-    for (const rawLine of text.split(/\r?\n/)) {
+    for (const rawLine of text.split(LINE_BREAK)) {
         const line = rawLine.trim();
         if (!line) continue;
         if (line.startsWith('>')) {
@@ -236,7 +236,7 @@ const parseNumberRows = (lines, startIndex = 0, separator = /\s+/) => {
 const transpose = (rows) => rows[0].map((_, index) => rows.map((row) => row[index]));
 
 const readRmcCsv = (text, name) => {
-    const lines = text.split(/\r?\n/).filter((line) => line.trim());
+    const lines = text.split(LINE_BREAK).filter((line) => line.trim());
     if (!lines.length) throw new Error(`${name} is empty`);
     const labels = lines[0].split(',').map((label) => label.trim());
     const rows = lines.slice(1).map((line, index) => {
@@ -261,7 +261,7 @@ const numericCsvValues = (line) => {
 };
 
 const readExafsCsv = (text, name) => {
-    const lines = text.split(/\r?\n/);
+    const lines = text.split(LINE_BREAK);
     const dataStart = lines.findIndex((line) => numericCsvValues(line));
     if (dataStart <= 0) {
         throw new Error(`${name} does not contain an EXAFS column header and numeric rows`);
@@ -282,7 +282,7 @@ const readExafsCsv = (text, name) => {
 
 const readChi = (text) => {
     const chiR = [];
-    text.split(/\r?\n/).slice(2).forEach((line) => {
+    text.split(LINE_BREAK).slice(2).forEach((line) => {
         const parts = line.trim().split(/\s+/).filter(Boolean);
         if (parts.length >= 2) {
             const value = Number(parts[parts.length - 1]);
@@ -293,7 +293,7 @@ const readChi = (text) => {
 };
 
 const readStog = (text, name) => {
-    const rows = parseNumberRows(text.split(/\r?\n/), 2);
+    const rows = parseNumberRows(text.split(LINE_BREAK), 2);
     if (!rows.length) throw new Error(`${name} does not contain STOG numeric rows`);
     return transpose(rows);
 };
@@ -478,7 +478,9 @@ export const plotDataFromText = (file) => {
 // time. With the atom count these gauge sampling sufficiency (accepted moves
 // per atom), so they feed the AI assistant's run context.
 const readMovesMetadata = (text) => {
-    const header = text.slice(0, text.indexOf('Atoms:') > 0 ? text.indexOf('Atoms:') : 4000);
+    // Same case-insensitive Atoms-marker rule as the atom parser (rmc6f.js).
+    const marker = text.search(/^[ \t]*atoms\b/im);
+    const header = text.slice(0, marker > 0 ? marker : 4000);
     const grab = (pattern) => {
         const match = pattern.exec(header);
         return match ? Number(match[1]) : null;
@@ -492,45 +494,28 @@ const readMovesMetadata = (text) => {
     return Object.values(moves).some(Number.isFinite) ? moves : null;
 };
 
-const readCellVectors = (text) => {
-    const lines = text.split(/\r?\n/);
-    let latticeVectors = null;
-    let supercell = null;
-    lines.forEach((line, index) => {
-        const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (!parts.length) return;
-        if (parts[0] === 'Supercell') supercell = parts.slice(-3).map(Number);
-        if (parts[0] === 'Lattice') {
-            latticeVectors = [lines[index + 1], lines[index + 2], lines[index + 3]]
-                .map((row) => row.trim().split(/\s+/).map(Number));
-        }
-    });
-    if (!latticeVectors || !supercell) throw new Error('Missing lattice or supercell metadata');
-    return { latticeVectors, supercell };
-};
-
 // Circular mean of an angle-like quantity in [0,1): averages the box copies of a
 // site's within-cell fraction so a boundary-wrapping site (≈0 ≡ 1) lands on the
 // true position, and thermal displacement in a single snapshot averages out.
 const TWO_PI = 2 * Math.PI;
 
 export const structureFromRmc6f = (file, maxPoints = 100) => {
-    const { latticeVectors, supercell } = readCellVectors(file.text);
+    const name = file.path || file.name || 'structure file';
+    const { latticeVectors, supercell } = readRmc6fCellVectors(file.text, name);
+    // Shared line grammar with the Python parser (rmc6f.js ⟷ parsers.py): every
+    // accepted line is validated, and what was skipped is reported rather than
+    // silently yielding a short (or zero) atom count.
+    const { atoms: parsedAtoms, report } = parseRmc6fAtoms(file.text);
+    const parseWarning = rmc6fParseWarning(report);
+    if (!report.hasAtomsSection) throw new Error(`${name} does not contain an Atoms section`);
+    if (!parsedAtoms.length) {
+        throw new Error(`${name}: no atoms could be parsed — ${parseWarning || 'the Atoms section is empty'}`);
+    }
     const counts = {};
     const atomIndices = {};
     const atoms = [];
     const rnAcc = new Map();   // referenceNumber -> { element, sc:[3], ss:[3] } for the circular-mean basis
-    let inAtoms = false;
-    file.text.split(/\r?\n/).forEach((line) => {
-        const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (!parts.length) return;
-        if (parts[0] === 'Atoms:') {
-            inAtoms = true;
-            return;
-        }
-        if (!inAtoms) return;
-        const atom = parseAtomLine(parts);
-        if (!atom) return;
+    parsedAtoms.forEach((atom) => {
         const { referenceNumber, element, coords, cellIndices } = atom;
         counts[element] = (counts[element] || 0) + 1;
         atoms.push({ element, referenceNumber, coords, cellIndices });
@@ -607,7 +592,18 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
         latticeVectors,
         basis,
         points,
-        moves: readMovesMetadata(file.text)
+        moves: readMovesMetadata(file.text),
+        parseReport: {
+            declaredAtoms: report.declaredAtoms,
+            atomLines: report.atomLines,
+            parsedAtoms: report.parsedAtoms,
+            coordsOnlyAtoms: report.coordsOnlyAtoms,
+            nonFiniteLines: report.nonFiniteLines,
+            invalidLines: report.invalidLines,
+            firstInvalidLine: report.firstInvalidLine,
+            firstNonFiniteLine: report.firstNonFiniteLine
+        },
+        parseWarning
     };
 };
 

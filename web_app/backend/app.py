@@ -36,8 +36,7 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import cached_bond_angle_summary
 from rmc_toolkits.parsers import (
-    iter_rmc6f_atoms,
-    read_atom_indices,
+    parse_rmc6f_atoms,
     read_cell_vectors,
     read_moves_metadata,
     read_chi,
@@ -252,13 +251,15 @@ def _sample_atoms_by_site(atoms: list[dict], max_points: int) -> tuple[list[dict
     if len(atoms) <= max_points:
         return atoms, 1
 
-    by_reference: dict[int, list[dict]] = {}
+    # Legacy coords-only atoms carry no reference number; they form one group
+    # (key None), sorted after the numbered sites.
+    by_reference: dict[int | None, list[dict]] = {}
     for atom in atoms:
         by_reference.setdefault(atom["reference_number"], []).append(atom)
 
     quota = max(1, max_points // len(by_reference))
     sampled: list[dict] = []
-    for reference_number in sorted(by_reference):
+    for reference_number in sorted(by_reference, key=lambda ref: (ref is None, ref or 0)):
         group = by_reference[reference_number]
         stride = max(1, len(group) // quota)
         sampled.extend(group[::stride][:quota])
@@ -475,18 +476,26 @@ def structure():
         max_points = max(100, min(int(request.args.get("maxPoints", MAX_STRUCTURE_POINTS)), MAX_STRUCTURE_POINTS))
         rmc6f_path = _find_rmc6f(target)
         lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
-        atom_indices = read_atom_indices(rmc6f_path)
         moves = read_moves_metadata(rmc6f_path)
 
-        atoms = list(iter_rmc6f_atoms(rmc6f_path))
+        # Same line grammar as the browser parser (rmc6f.js): full-layout and
+        # legacy coords-only atoms both count; non-finite / unparsed lines are
+        # reported, and zero parsed atoms is an error naming what was found.
+        atoms, parse_report = parse_rmc6f_atoms(rmc6f_path, include_coords_only=True)
+        index_sets: dict[str, set[int]] = {}
+        for atom in atoms:
+            if atom["reference_number"] is not None:
+                index_sets.setdefault(atom["element"], set()).add(int(atom["reference_number"]))
+        atom_indices = {element: sorted(indices) for element, indices in index_sets.items()}
         sampled, stride = _sample_atoms_by_site(atoms, max_points)
         points = []
         counts: dict[str, int] = {}
         for atom in atoms:
             counts[atom["element"]] = counts.get(atom["element"], 0) + 1
         for atom in sampled:
-            reduced = atom["coords"] - (atom["cell_indices"] / supercell)
-            unit_cell = (reduced * supercell) % 1.0
+            # Fold the box coordinate into one unit cell; subtracting the cell
+            # index first only removes an integer, so coords-only atoms fold too.
+            unit_cell = (atom["coords"] * supercell) % 1.0
             points.append(
                 {
                     "element": atom["element"],
@@ -512,6 +521,8 @@ def structure():
                 "supercell": supercell.tolist(),
                 "latticeVectors": lattice_vectors.tolist(),
                 "moves": moves,
+                "parseReport": parse_report.to_dict(),
+                "parseWarning": parse_report.warning(),
                 "points": points,
             }
         )

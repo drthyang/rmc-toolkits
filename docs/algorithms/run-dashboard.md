@@ -1005,9 +1005,9 @@ as a per-card alert and is corrected on the next poll.
   and `NaN` handling in **all four** readers (raise vs `NaN` vs silently-dropped rows), including
   which line becomes the EXAFS header; blank-line handling and error line numbers in the CSV reader;
   the `.rmc6f` fallback pick; whether hidden logs are excluded
-  from the combined R-value curve; the atom-sampling strategy; the presence of `basis`/`moves` in
-  the structure payload; and element-name normalization (`parts[1].capitalize()` in Python vs the
-  raw token in the browser, so `SE`/`se`/`Se` merge in Flask and may not in the browser).
+  from the combined R-value curve; the atom-sampling strategy; and the presence of `basis` in
+  the structure payload. (The `.rmc6f` atom-line grammar, element-name normalization and the parse
+  report are shared — Model summary, Part A Step 2.)
 * **The repository's reference run folders are not in the repository.** `data/` is gitignored, so
   examples such as `scale_ft_rmc.fq` cannot be reproduced from a clean clone; the reproducible run
   is [web_app/frontend/public/demo/](../../web_app/frontend/public/demo/).
@@ -2392,8 +2392,12 @@ run's output files:
 - the line whose first token is `Lattice` → the **next three lines**, each split on whitespace and
   parsed as numbers, become the rows of $L$ (Å).
 
-If either is missing the parse throws `Missing lattice or supercell metadata` and no summary is
-shown. Note that the last `Supercell`/`Lattice` occurrence in the file wins (the loop overwrites).
+If either is missing the parse throws `<file> is missing lattice or supercell metadata` (the Python
+wording; the browser error names the file too) and no summary is shown. Note that the last
+`Supercell`/`Lattice` occurrence in the file wins (the loop overwrites). The shared reader is
+`rmc6f.js` → `readRmc6fCellVectors(text, name)`; every browser reader splits lines on
+`LINE_BREAK = /\r\n|\r|\n/`, so a file with bare-CR line endings (which Python's universal newlines
+always read) no longer throws in the browser.
 
 **No numeric validation.** `readCellVectors` checks only that the two *markers* exist. The three
 lattice rows are read as `row.trim().split(/\s+/).map(Number)` with no `filter(Boolean)`, no length
@@ -2406,26 +2410,59 @@ damage is contained rather than silent-but-wrong: `cartDist` returns `NaN` for e
 `mappingResidual` rejects every candidate and the card degrades to `P1` / No. 1 / **0 operations**
 with an empty ladder, while the Model information card prints `NaN` cell edges. Nothing is raised.
 
-**Code**: `browserData.js` → `readCellVectors()`; Python equivalent
+**Code**: `rmc6f.js` → `readRmc6fCellVectors()`; Python equivalent
 `rmc_toolkits/parsers.py` → `read_cell_vectors()` uses the identical rule (`parts[-3:]` and the
 three following lines) and the two agree exactly.
 
 #### Step 2. Per-atom parsing, element counts, and reference sites
 
-`structureFromRmc6f(file, maxPoints = 100)` walks the lines after the `Atoms:` marker and hands each
-whitespace-split line to `parseAtomLine()` in
-[`rmc6f.js`](../../web_app/frontend/src/rmc6f.js). That function indexes **from the end** of the line so
-that any number of label columns between the element and the coordinates is tolerated:
+`structureFromRmc6f(file, maxPoints = 100)` hands the text to `parseRmc6fAtoms()` in
+[`rmc6f.js`](../../web_app/frontend/src/rmc6f.js), which implements **one atom-line grammar shared
+verbatim with Python** (`parsers.py` → `classify_rmc6f_atom_line()` / `iter_rmc6f_atoms()`):
 
-- $\ge 9$ fields ("full" format): the last four fields are the reference number and the three cell
-  indices $(c_1,c_2,c_3)$; the three before them are the fractional box coordinates.
-- 5–6 fields ("coords-only", oldest format): the last three fields are the coordinates;
-  `referenceNumber` and `cellIndices` come back `null`.
-- 7–8 fields, or non-finite numbers → `null` (line skipped).
+- **Section.** Atom lines are the non-blank lines after the first line matching `/^\s*atoms\b/i`
+  (`Atoms:`, `Atoms :`, `atoms:`, `Atoms (fractional coordinates):` …). Before it, the header's
+  `Number of atoms:` (the *declared* count) and `Supercell` line are read.
+- **Line layout**, anchored from the **front** — `id element [label] <data>`:
+  `id` a non-negative integer; `element` a token starting with a letter, normalized like Python's
+  `str.capitalize()` (`SE`/`se` → `Se`, in both runtimes); an optional label — a bracket group
+  (`[1]`, or split as `[ 1]`) or one non-numeric token; then `<data>` of **exactly 7** tokens
+  `x y z ref cx cy cz` (full layout) or **exactly 3** tokens `x y z` (legacy coords-only;
+  `referenceNumber`/`cellIndices` come back `null`).
+- **Numbers** accept Fortran `D` exponents (`0.743D-01`); `NaN`, `Inf`, `Infinity` and an all-`*`
+  Fortran overflow field are *non-finite*; anything else is not a number.
+- **Validation of every accepted line:** `ref` a positive integer, each cell index an integer in
+  $[0, N_i)$ ($N$ from the `Supercell` line), coordinates finite.
+- **Outcome per line:** a full atom, a coords-only atom, *skipped for non-finite coordinates*, or
+  *unparsed* (no layout fits, or validation failed). Nothing is inferred by indexing from the end of
+  the line any more: until 2026-09 the browser read the last seven fields, so one extra trailing
+  field shifted every column (y, z became x, y; a cell index became the reference number) with every
+  value still finite, while Python dropped the same lines and its `read_atom_indices()` reported cell
+  indices as "sites".
+
+The per-line outcomes are counted in a **parse report** — `{declaredAtoms, atomLines, parsedAtoms,
+coordsOnlyAtoms, nonFiniteLines, invalidLines, firstInvalidLine, firstNonFiniteLine}`, identical keys
+from `structureFromRmc6f` and from Flask `/api/structure` (`Rmc6fParseReport.to_dict()`) — and
+`rmc6fParseWarning()` / `Rmc6fParseReport.warning()` turn it into one sentence (same wording in both
+runtimes), e.g. `parsed 31196 of 52000 atoms declared in the header; 1 of 31197 atom lines unparsed
+(first: '…')` or `2 atom lines skipped for non-finite coordinates (first: '…')`. It is returned as
+`structure.parseWarning` (`null` when clean) and shown on the Model information card as a
+**Parse warning** cell (full sentence in the tooltip). **Zero parsed atoms is an error**, not an
+empty card: the browser throws `<file>: no atoms could be parsed — <warning>` and Flask answers the
+same message; a file with no Atoms marker fails with `<file> does not contain an Atoms section` in
+both. On a **Live Data** re-read that comes back short of the declared count (a configuration
+RMCProfile is still writing), the Dashboard keeps the previous complete summary and says so
+(`Dashboard.jsx` → `isIncompleteStructure()`), in both runtimes.
+
+The grammar is pinned on 17 variants of a real configuration (CRLF, bare CR, tabs, BOM, no label,
+split label, E and D exponents, trailing blank lines, three marker spellings, upper-case elements,
+an extra trailing field, a trailing `M: 2.5` pair, a label-without-reference line, coords-only),
+plus truncation, non-finite and index-validation cases, with the same expectations in
+`tests/test_parsers_rmc6f_grammar.py` and `__tests__/rmc6fGrammar.test.js`.
 
 From this:
 
-$$\texttt{totalAtoms} = \#\{\text{parsed atom lines}\},\qquad
+$$\texttt{totalAtoms} = \#\{\text{full + coords-only atoms}\},\qquad
 \texttt{elementCounts}[e] = \#\{\text{atoms with element } e\}$$
 
 $$\texttt{atomIndices}[e] = \{\, \text{distinct reference numbers of element } e \,\}\ \text{(sorted ascending)}$$
@@ -2472,34 +2509,27 @@ symmetry finder** — those use all atoms / all reference sites.
 additionally clamps the request to $[100, 10^6]$ (`app.py`, `MAX_STRUCTURE_POINTS = 1_000_000`) and
 samples *per reference site* (`_sample_atoms_by_site()`) rather than by a flat stride.
 
-The `.rmc6f` header's declared `Number of atoms:` is parsed for nothing and is **not** validated
-against the number of atom lines actually read (listed as a known issue in
-[AGENTS.md](../../AGENTS.md)).
+The `.rmc6f` header's declared `Number of atoms:` is compared with the atoms actually accepted
+(the parse report above); a mismatch is reported, never silently shown as the atom count.
 
-**Code**: `browserData.js` → `structureFromRmc6f()`; `rmc6f.js` → `parseAtomLine()`.
+**Code**: `browserData.js` → `structureFromRmc6f()`; `rmc6f.js` → `parseRmc6fAtoms()`,
+`classifyAtomLine()`, `parseAtomLine()`, `parseFortranNumber()`, `rmc6fParseWarning()`.
 
-**Python counterpart** (`rmc_toolkits/parsers.py`), used only in Flask mode — it differs from the JS
-parser in two ways, not one:
-
-- `iter_rmc6f_atoms()` uses the same index-from-the-end rule **for the ≥ 9-field full format only**:
-  it hard-rejects shorter lines (`n = len(parts); if n < 9: continue`). The 5–6-field "coords-only"
-  form that `parseAtomLine` tolerates yields **zero atoms** in Flask mode, so an old file that gives
-  a full Model information card in browser mode gives an empty one through `/api/structure`.
-- It **capitalizes** the element token (`parts[1].capitalize()`, which also lowercases the tail:
-  `SE → Se`) while the JavaScript parser keeps it verbatim. Element identity is compared by exact
-  string equality downstream, so a file mixing `SE` and `Se` is two species in browser mode and one
-  in Flask mode. Worse, the sibling function `read_atom_indices()` — which produces the `atomIndices`
-  in the same response — does **not** capitalize and accepts `len(parts) >= 5` with `int(parts[-4])`.
-  A file written with upper-case tokens therefore returns `elementCounts` keyed `Se` and
-  `atomIndices` keyed `SE`, and the card shows the element row with **no** "N sites" sub-label while
-  the "Total atoms" sub-label still counts those sites.
+**Python counterpart** (`rmc_toolkits/parsers.py`), used in Flask mode: `/api/structure` calls
+`parse_rmc6f_atoms(path, include_coords_only=True)`, the same grammar and report, so both runtimes
+count the same atoms (coords-only included) under the same element names, and `atomIndices` is built
+from the same accepted full-layout lines (`read_atom_indices()` now reuses `iter_rmc6f_atoms()`).
+`iter_rmc6f_atoms()` itself yields **only full-layout atoms by default** — its records promise an
+integer `reference_number` and `cell_indices` to the PCA and Frac-conversion consumers — and yields
+the coords-only records (with those two fields `None`) when called with `include_coords_only=True`;
+pass `report=Rmc6fParseReport()` to receive the counts.
 
 #### Step 2b. Run counters from the header (`readMovesMetadata`)
 
 `structureFromRmc6f` also calls `readMovesMetadata(file.text)` and returns the result as
-`structure.moves`. It slices the header —
-`text.slice(0, text.indexOf('Atoms:') > 0 ? text.indexOf('Atoms:') : 4000)`, i.e. a 4000-character
-fallback when the marker is absent or at index 0 — and applies four regexes:
+`structure.moves`. It slices the header up to the Atoms marker (the same case-insensitive
+`/^[ \t]*atoms\b/im` rule as the atom parser), with a 4000-character fallback when the marker is
+absent or at index 0, and applies four regexes:
 `Number of moves generated:`, `… tried:`, `… accepted:` (each `([\d.]+)`) and
 `Accumulated time \(s\)[^:]*:\s*([\d.]+)`. Each field is `Number(match[1])` or `null`, and the whole
 object collapses to `null` unless at least one value is finite.
