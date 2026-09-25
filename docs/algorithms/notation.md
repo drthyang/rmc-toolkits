@@ -455,6 +455,23 @@ result carries `browserPcaKde: true`). §4 Step 0 gives the same split for Auto 
 that the AI Assistant has **no** Python counterpart at all — the Flask backend is never involved in
 an assistant request.
 
+**One configuration per view (Live Data).** A page's numbers must all come from the *same*
+`.rmc6f`. A browser-loaded run is a snapshot: the worker parses the text it was handed, and
+static-mode Live Data hands every page a new `localRun` when the folder changes. A typed backend
+directory is different — every `/api/*` request reads the file **currently on disk**, so a page
+that kept its first response (the site table, the slab points) while later requests (a slider
+move, a site click) went to a newly saved configuration would mix two configurations in one view.
+In Flask mode `App.jsx` therefore checks the `.rmc6f` entries of `/api/files` (once per folder,
+then on every Live Data poll, `WATCH_INTERVAL_MS`) and, when their `fileSignature()` changes,
+bumps `configEpoch`; the Atomic Density, Bond Geometry, PCA Ellipsoid and Displacement Directions
+pages are keyed on it, so they remount and re-read everything from the new file (their view
+settings reset). **Limitation:** with Live Data *off*, nothing is polled — a configuration saved
+while you are on an analysis page is picked up by that page's *next* request only, so reload the
+folder (or switch Live Data on, which re-checks at once) before comparing numbers across a save.
+On the server side the parsed-file caches are keyed on a full file signature and never keep a
+parse of a file that changed while it was read (see the backend API notes in
+[REFERENCE.md](../REFERENCE.md)).
+
 #### 3d. "Reference-grade" vs "visualization-grade"
 
 The phrase is the app's own (§8: the in-app `InfoBadge` and the `local-density-note` both read
