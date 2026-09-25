@@ -262,7 +262,33 @@ window well inside the app's 15 Å cap needed tens to hundreds of GB in Flask an
 
 Angles are binned uniformly over $[0°, 180°]$ into $K = \max(1,\lfloor 180/w_\text{req} +
 0.5\rfloor)$ bins of realized width $w = 180/K$ (a requested width that does not divide 180 is
-adjusted to the nearest exact tiling). Alongside the raw `counts` $N_k$ the result carries:
+adjusted to the nearest exact tiling).
+
+**Bin membership** (`_angle_bins`; `angleBin` in the port). Bins are half-open,
+$[\theta_k, \theta_{k+1})$ with $\theta_k = k\,w$ (the `linspace` values), the last one closed
+at 180° — numpy.histogram's convention, written out identically in both engines. Every edge is a
+multiple of $w$, so for the usual widths (1, 0.5, 2, 3, 5 …) **every symmetry angle of an
+undisplaced configuration sits exactly on an edge** — 60/90/120/180° of an ideal perovskite or
+fcc lattice, the Nb₄ tetrahedron's 60°, a CIF-built RMCProfile start configuration — and float
+noise puts the computed angle a few ulp (~$10^{-13}$°) either side of it. Left alone, that noise
+split one symmetry class between two bins in an arbitrary ratio that changed under a rigid shift
+of the configuration, and differently in the two engines (numpy's `arccos` and V8's
+`Math.acos` differ by 1 ulp on ~17% of inputs: `arccos(0.5)` gives 59.99999999999999°, V8
+60.00000000000001°). On a 3×3×3 ideal SrTiO₃, O–Sr–O at 1° bins came out
+`{59: 354, 60: 294, …}` in Python and `{59: 273, 60: 375, …}` in JS. So an angle within
+`EDGE_SNAP_DEG` $= 10^{-9}$° of an edge is binned **as exactly on it**:
+
+$$k^\ast = \lfloor \theta / w + \tfrac12 \rfloor,\qquad
+\lvert \theta - k^\ast w \rvert < 10^{-9}° \;\Rightarrow\; \text{bin } \min(k^\ast, K-1),$$
+
+i.e. into the bin the edge starts. A symmetry class then lands whole in one bin, deterministic
+and identical in both engines. The tolerance is four orders of magnitude above the noise and
+far below any bin width or real displacement (an angle $10^{-7}$° below an edge still bins
+below it). Only the binning snaps: `meanAngle`, `stdAngle` and raw angles keep the computed
+values. On displaced RMC configurations nothing changes (the 5 K sample and its AVERAGE file
+bin identically to `np.histogram`).
+
+Alongside the raw `counts` $N_k$ the result carries:
 
 **`density`** — a per-degree probability density with unit integral over $[0,180]$:
 
@@ -364,6 +390,7 @@ rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --b
 | `SEARCH_CHUNK` | $2^{20}$ | candidate pairs examined per search block and stencil offset (~100 MB) |
 | `MAX_CELLS_PER_AXIS` | 64 | linked-cell resolution cap per lattice direction |
 | `REACH_HEADROOM` | $10^{-9}$ | relative headroom on the layer reach against float rounding |
+| `EDGE_SNAP_DEG` | $10^{-9}$° | an angle this close to a bin edge bins as exactly on it (Step 6); Python and JS constants must be equal |
 | `LENGTH_BINS` | 40 | bond-length histogram bins per window (summary payload only) |
 | App-boundary caps | $r_\mathrm{max}\le15$ Å, angles ≤ `APP_MAX_ANGLES`, `binWidth` ≥ 0.05° | Flask route and worker only; engine and CLI unrestricted |
 
@@ -372,13 +399,16 @@ rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --b
 [workers/triplets.js](../../web_app/frontend/src/workers/triplets.js) is a line-for-line port of
 the Python engine, and the parity is pinned by golden fixtures rather than claimed:
 [tests/generate_triplets_fixture.py](../../tests/generate_triplets_fixture.py) evaluates the
-Python engine on two constructed configurations and writes
+Python engine on four constructed configurations (and records the shared constants
+`APP_MAX_ANGLES` and `EDGE_SNAP_DEG`, which the port must equal) and writes
 [triplets_fixture.json](../../web_app/frontend/src/__tests__/fixtures/triplets_fixture.json),
 which [workers/\_\_tests\_\_/triplets.test.js](../../web_app/frontend/src/workers/__tests__/triplets.test.js)
 replays against the port:
 
 | Fixture case | What it exercises |
 |---|---|
+| `ideal-perovskite` — undisplaced SrTiO₃ 3×3×3, fractions $(i+x)/3$; O–Ti–O, O–Sr–O, O–O–O and Sr–Ti–O (distinct windows) at 1°, 0.5° and 5° | symmetry angles exactly on bin edges (the edge snap); TiO₆ octahedra |
+| `ideal-fcc` — undisplaced Cu 3×3×3 conventional cells; Cu–Cu–Cu at 1° and 3° | the case where every 60° angle used to change bin between engines |
 | `random-triclinic` — 48 atoms, seeded RNG, lattice $[[6,0,0],[3,5,0],[1,1,7]]$; five specs: shared ends, different ends with distinct windows, B = A = C, and A = C with overlapping distinct windows (twice) | general triclinic geometry, both counting rules, 5°, 3° and 2° bins |
 | `small-box-images` — 3 atoms in a 4 Å cube with windows reaching 3.5 Å | multiple periodic images of one atom as distinct neighbours |
 
@@ -406,10 +436,15 @@ self-image bonds, and the same-element distinct-window rule (continuity at touch
 one count per overlap triplet, disjoint shells). The backend route's caps and error paths
 are covered by `TripletsApiTests` in [tests/test_backend_api.py](../../tests/test_backend_api.py).
 
-**The one documented residual divergence:** libm and V8 `acos` may differ by 1 ulp, so a
-*bitwise-ideal* geometry whose cosine lands exactly on a bin edge (e.g. $\cos\theta = 0.5$ in an
-undisplaced average configuration) can shift one count into the neighbouring bin between
-engines. Real RMC configurations — displaced by construction — never hit this.
+**No residual divergence on ideal geometries.** Bond vectors, lengths and cosines are computed
+in the same evaluation order in both engines (bitwise identical); only `acos` differs, by at
+most 1 ulp, and the edge snap of Step 6 makes that difference invisible to the histogram. An
+angle whose two engine values straddle an edge by more than float noise but less than
+$10^{-9}$° away from it is measure-zero. Beyond the fixture, the Flask and worker paths were
+compared on a CIF-built ideal GaNb₄Se₈ start configuration, the 5 K sample and its AVERAGE file
+(21 specs): identical counts, coordination and length histograms. `IdealConfigurationTests`
+pins the Python side (one bin per symmetry class at 1°, 0.5°, 5°; rigid-shift invariance; exact
+numpy.histogram agreement off the edges).
 
 ### Caveats
 

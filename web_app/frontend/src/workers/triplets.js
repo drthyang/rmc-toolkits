@@ -26,11 +26,14 @@
 // bin's count fraction by the exact isotropic fraction (cosθ₁ − cosθ₂)/2,
 // flat 1.0 for random directions and finite at 0°/180°.
 //
-// Cross-engine caveat (also noted in triplets.py): libm acos can differ from
-// Math.acos by 1 ulp, so a bitwise-ideal geometry whose cosine lands exactly
-// on a bin edge (e.g. cos = 0.5 in an undisplaced average configuration) can
-// shift one count into the neighbouring bin between the two engines. Element
-// symbols are ASCII, where the capitalize below matches str.capitalize().
+// Bin edges (also documented in triplets.py): an undisplaced configuration
+// puts every symmetry angle (60/90/120° …) exactly on a bin edge up to float
+// noise, and libm acos and Math.acos differ by 1 ulp on ~17% of inputs. So an
+// angle within EDGE_SNAP_DEG of an edge is binned as exactly on it — into the
+// bin that edge starts — identically in both engines: a symmetry class lands
+// whole in one bin whatever the rounding. Only binning snaps; statistics and
+// raw angles keep the computed values. Element symbols are ASCII, where the
+// capitalize below matches str.capitalize().
 
 export const MAX_CELLS_PER_AXIS = 64;
 export const LENGTH_BINS = 40;
@@ -43,6 +46,11 @@ const REACH_HEADROOM = 1e-9;
 // the neighbour search. The engine itself is unrestricted unless the caller
 // passes `maxAngles` (the worker's 'triplets' handler does).
 export const APP_MAX_ANGLES = 50_000_000;
+
+// Angles closer than this to a bin edge bin as exactly on it (mirrors
+// EDGE_SNAP_DEG in triplets.py): far above float noise in an angle (~1e-13°),
+// far below any bin width or real displacement.
+export const EDGE_SNAP_DEG = 1e-9;
 
 const capitalize = (symbol) => {
   const text = String(symbol).trim();
@@ -82,6 +90,15 @@ const histogramIndex = (x, lo, hi, n) => {
   if (x < edge(index)) index -= 1;
   else if (index !== n - 1 && x >= edge(index + 1)) index += 1;
   return index;
+};
+
+// Angle bin with the edge snap (mirrors _angle_bins): an angle within
+// EDGE_SNAP_DEG of an edge goes to the bin that edge starts (180° to the
+// last bin); any other angle bins exactly as numpy.histogram would.
+const angleBin = (angle, nbins, width) => {
+  const nearest = Math.floor(angle / width + 0.5);
+  if (Math.abs(angle - nearest * width) < EDGE_SNAP_DEG) return Math.min(nearest, nbins - 1);
+  return histogramIndex(angle, 0, 180, nbins);
 };
 
 const cross = (a, b) => [
@@ -433,7 +450,7 @@ export const bondAngleSummary = (fractional, elements, latticeVectors, options =
   let mean = 0;
   let m2 = 0;
   forEachAngle(core, (angle) => {
-    counts[histogramIndex(angle, 0, 180, nbins)] += 1;
+    counts[angleBin(angle, nbins, width)] += 1;
     total += 1;
     const delta = angle - mean;
     mean += delta / total;

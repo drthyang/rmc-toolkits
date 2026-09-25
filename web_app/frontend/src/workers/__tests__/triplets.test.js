@@ -6,7 +6,7 @@
 // tests/generate_triplets_fixture.py, plus self-contained geometry checks.
 
 import { describe, expect, it } from 'vitest';
-import { APP_MAX_ANGLES, bondAngleSummary } from '../triplets';
+import { APP_MAX_ANGLES, EDGE_SNAP_DEG, bondAngleSummary } from '../triplets';
 import fixture from '../../__tests__/fixtures/triplets_fixture.json';
 
 const runSpec = (testCase, spec) =>
@@ -69,6 +69,29 @@ describe('Python parity (triplets_fixture.json)', () => {
       });
     }
   }
+});
+
+describe('bin edges (ideal geometries)', () => {
+  it('the snap tolerance is the Python engine\'s EDGE_SNAP_DEG', () => {
+    expect(EDGE_SNAP_DEG).toBe(fixture.edgeSnapDeg);
+  });
+
+  const threeAtoms = (degrees) => {
+    const theta = (degrees * Math.PI) / 180;
+    return [[0.5, 0.5, 0.5], [0.6, 0.5, 0.5], [0.5 + 0.1 * Math.cos(theta), 0.5 + 0.1 * Math.sin(theta), 0.5]];
+  };
+  const cubic = [[10, 0, 0], [0, 10, 0], [0, 0, 10]];
+  const binOf = (degrees) => bondAngleSummary(threeAtoms(degrees), ['Nb', 'Se', 'Se'], cubic, {
+    triplet: ['Se', 'Nb', 'Se'], bond12: [0.5, 1.5]
+  }).counts.findIndex((count) => count > 0);
+
+  it('an angle a few ulp off an edge bins on the edge; a real offset does not', () => {
+    expect(binOf(60)).toBe(60);
+    expect(binOf(60 - 1e-12)).toBe(60);
+    expect(binOf(60 + 1e-12)).toBe(60);
+    expect(binOf(60 - 1e-7)).toBe(59);
+    expect(binOf(180)).toBe(179);
+  });
 });
 
 describe('work budget (maxAngles)', () => {

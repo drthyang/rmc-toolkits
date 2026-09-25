@@ -79,12 +79,19 @@ and map to Cartesian angstrom through the row-vector product
 are matched after ``str.capitalize()``, the same normalization
 ``parsers.iter_rmc6f_atoms`` applies.
 
-Cross-engine caveat: ``workers/triplets.js`` reproduces this module's
-histograms exactly for every tested configuration, but transcendental libm
-functions (``acos``) may differ by 1 ulp between platforms, so a
-*bitwise-ideal* geometry (an undisplaced average configuration whose cosine
-lands exactly on a bin edge, e.g. cos = 0.5) can shift one count into the
-neighbouring bin between engines. Real RMC configurations never hit this.
+Bin edges and ideal geometries: bins are half-open ``[edge_k, edge_k+1)``
+(the last one closed at 180 deg), numpy's convention. Edges are multiples of
+``180 / nbins``, so every symmetry angle of an undisplaced configuration
+(60, 90, 120 deg ... -- an RMCProfile start configuration built from a CIF)
+sits exactly on one, and float noise puts its computed value a few ulp
+either side. An angle within ``EDGE_SNAP_DEG`` (1e-9 deg) of an edge is
+therefore binned as if exactly on it -- into the bin that edge starts -- so
+a symmetry class lands whole in one bin, whatever the rounding, a rigid
+shift of the configuration, or the platform's ``acos`` (numpy's and V8's
+differ by 1 ulp on ~17% of inputs). ``workers/triplets.js`` applies the same
+rule, and the two engines then agree bin for bin on ideal geometries too.
+Only the binning snaps; means, standard deviations and raw angles keep the
+computed values.
 """
 
 from __future__ import annotations
@@ -118,6 +125,12 @@ REACH_HEADROOM = 1e-9
 # sample). Library and CLI callers are unrestricted (``max_angles=None``).
 # Mirrored as APP_MAX_ANGLES in workers/triplets.js -- keep the two equal.
 APP_MAX_ANGLES = 50_000_000
+
+# Angles closer than this to a bin edge are binned as exactly on it (see the
+# module docstring). Far above float noise in an angle (~1e-13 deg) and far
+# below any meaningful bin width or real displacement. Mirrored as
+# EDGE_SNAP_DEG in workers/triplets.js.
+EDGE_SNAP_DEG = 1e-9
 
 # Streaming chunk: the bond pairs formed at once while histogramming. Peak
 # pairing memory is ~100 B per pair, so ~25 MB here, whatever the angle count.
@@ -167,6 +180,27 @@ def _validate_window(name: str, window: Sequence[float]) -> tuple[float, float]:
     if rmin < 0 or rmax <= rmin:
         raise ValueError(f"{name} needs 0 <= rmin < rmax, got ({rmin}, {rmax})")
     return rmin, rmax
+
+
+def _angle_bins(angles: np.ndarray, nbins: int) -> np.ndarray:
+    """Bin index of each angle (degrees) over [0, 180] in ``nbins`` bins.
+
+    Exactly numpy.histogram's uniform-bin assignment -- a truncated first
+    guess corrected against the ``linspace`` edge values, half-open bins, the
+    last one closed at 180 -- written out as ``histogramIndex`` in the JS
+    port, plus the edge snap: an angle within ``EDGE_SNAP_DEG`` of an edge
+    goes to the bin that edge starts (180 to the last bin).
+    """
+    width = 180.0 / nbins
+    edges = np.linspace(0.0, 180.0, nbins + 1)
+    index = np.floor(angles * (nbins / 180.0)).astype(np.int64)
+    np.clip(index, 0, nbins - 1, out=index)
+    index -= angles < edges[index]
+    index += (angles >= edges[index + 1]) & (index != nbins - 1)
+    nearest = np.floor(angles / width + 0.5)
+    snap = np.abs(angles - nearest * width) < EDGE_SNAP_DEG
+    index[snap] = np.minimum(nearest[snap].astype(np.int64), nbins - 1)
+    return index
 
 
 def _bin_count(bin_width: float) -> int:
@@ -504,8 +538,7 @@ def _stream_angles(pairing: _Pairing, nbins: int, collect: bool) -> _AngleHistog
         start = stop
         if angles.size == 0:
             continue
-        chunk_counts, _ = np.histogram(angles, bins=nbins, range=(0.0, 180.0))
-        counts += chunk_counts
+        counts += np.bincount(_angle_bins(angles, nbins), minlength=nbins)
         size = int(angles.size)
         chunk_mean = float(np.mean(angles))
         chunk_m2 = float(np.sum((angles - chunk_mean) ** 2))

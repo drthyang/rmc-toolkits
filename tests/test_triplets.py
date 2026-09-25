@@ -373,6 +373,102 @@ class IsotropicReferenceTests(unittest.TestCase):
         np.testing.assert_allclose(result.sin_corrected, 1.0, atol=0.05)
 
 
+def ideal_perovskite(cells=3, a=3.905, shift=0.0):
+    """Undisplaced cubic SrTiO3 supercell (fractions (i + x) / n, as a CIF-built
+    RMCProfile start configuration stores them): every angle is a symmetry
+    angle, 60/90/120/180 deg up to float noise."""
+    basis = [("Sr", (0, 0, 0)), ("Ti", (0.5, 0.5, 0.5)), ("O", (0.5, 0.5, 0)),
+             ("O", (0.5, 0, 0.5)), ("O", (0, 0.5, 0.5))]
+    positions, elements = [], []
+    for i, j, k in product(range(cells), repeat=3):
+        for element, (x, y, z) in basis:
+            positions.append([(i + x) / cells + shift, (j + y) / cells + shift, (k + z) / cells + shift])
+            elements.append(element)
+    return np.asarray(positions), elements, np.diag([a * cells] * 3)
+
+
+class IdealConfigurationTests(unittest.TestCase):
+    """Symmetry angles sit exactly on bin edges; float noise must not split them.
+
+    triplets.physics.6, numerics.12, parity.24, numerics.30: an undisplaced
+    configuration puts each symmetry angle a few ulp either side of an edge,
+    so a whole symmetry class used to split between two bins -- differently
+    per engine (libm vs V8 acos) and under a rigid shift.
+    """
+
+    def test_each_symmetry_angle_lands_in_one_bin(self):
+        positions, elements, lattice = ideal_perovskite()
+        for width in (1.0, 0.5, 5.0):
+            result = bond_angle_distribution(
+                positions, elements, lattice, triplet=("O", "Sr", "O"),
+                bond12=(2.0, 3.0), bin_width=width,
+            )
+            occupied = {round(float(result.bin_edges[k]), 6): int(c)
+                        for k, c in enumerate(result.counts) if c}
+            # Half-open bins: an exact edge angle belongs to the bin it starts;
+            # 180 deg to the last bin.
+            last = round(180.0 - float(result.bin_edges[1]), 6)
+            self.assertEqual(
+                occupied, {60.0: 648, 90.0: 324, 120.0: 648, last: 162}, f"width {width}"
+            )
+
+    def test_rigid_shift_changes_nothing(self):
+        reference = None
+        for shift in (0.0, 0.001, 0.0123, 0.5):
+            positions, elements, lattice = ideal_perovskite(shift=shift)
+            counts = bond_angle_distribution(
+                positions, elements, lattice, triplet=("O", "O", "O"), bond12=(2.0, 3.0)
+            ).counts
+            if reference is None:
+                reference = counts
+            np.testing.assert_array_equal(counts, reference, f"shift {shift}")
+
+    def test_summary_bins_like_the_distribution(self):
+        positions, elements, lattice = ideal_perovskite()
+        kwargs = dict(triplet=("O", "Sr", "O"), bond12=(2.0, 3.0))
+        summary = bond_angle_summary(positions, elements, lattice, **kwargs)
+        result = bond_angle_distribution(positions, elements, lattice, **kwargs)
+        self.assertEqual(summary["counts"], result.counts.tolist())
+
+    def test_bins_match_numpy_histogram_off_the_edges(self):
+        from rmc_toolkits.triplets import _angle_bins
+
+        rng = np.random.default_rng(1)
+        for nbins in (1, 7, 23, 180, 3600):
+            edges = np.linspace(0.0, 180.0, nbins + 1)
+            angles = np.concatenate([
+                rng.uniform(0.0, 180.0, 5000),
+                np.nextafter(edges, -np.inf)[1:],  # one ulp below each edge
+                edges[1:-1] + 1e-6,                # just above, beyond the snap
+                [0.0, 180.0],
+            ])
+            angles = np.clip(angles, 0.0, 180.0)
+            expected, _ = np.histogram(angles, bins=nbins, range=(0.0, 180.0))
+            ulp_below = np.nextafter(edges, -np.inf)[1:]
+            snapped = np.isin(angles, ulp_below[:-1])
+            # Away from the edges: numpy's assignment, exactly.
+            got = np.bincount(_angle_bins(angles[~snapped], nbins), minlength=nbins)
+            reference, _ = np.histogram(angles[~snapped], bins=nbins, range=(0.0, 180.0))
+            np.testing.assert_array_equal(got, reference, f"nbins {nbins}")
+            # One ulp below an interior edge: snapped up into that edge's bin.
+            np.testing.assert_array_equal(
+                _angle_bins(ulp_below[:-1], nbins), np.arange(1, nbins)
+            )
+            self.assertEqual(int(expected.sum()), angles.size)
+
+    def test_snap_is_limited_to_float_noise(self):
+        # 1e-7 deg off an edge is a real (if tiny) displacement, not noise:
+        # it bins by its value, below the edge.
+        theta = math.radians(60.0 - 1e-7)
+        positions = place(
+            [[5.0, 5.0, 5.0], [6.0, 5.0, 5.0], [5.0 + math.cos(theta), 5.0 + math.sin(theta), 5.0]]
+        )
+        result = bond_angle_distribution(
+            positions, ["Nb", "Se", "Se"], CUBIC_10, triplet=("Se", "Nb", "Se"), bond12=(0.5, 1.5)
+        )
+        self.assertEqual(int(np.flatnonzero(result.counts)[0]), 59)
+
+
 class HistogramConventionTests(unittest.TestCase):
     def test_bin_count_rounds_half_up_like_the_js_port(self):
         # 180/8 = 22.5 exactly: banker's rounding would give 22 bins while
