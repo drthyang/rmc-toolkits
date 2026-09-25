@@ -334,21 +334,17 @@ displacement. Non-finite entries are filtered out; if none survive, the two keys
 **Where $u_m$ comes from** (`structureFromRmc6f()` in `browserData.js` — upstream of this module, but
 the number is meaningless without it). `structure.basis` holds **one entry per reference-site number**
 (the circular-mean position of every atom sharing that reference number), not one entry per atom. For
-reference site $s$ with $N_c$ copies (atoms), axis $i$, and within-unit-cell fraction
-$w_i = \operatorname{frac}(x_i N_i)$, the circular resultant and circular standard deviation are
+reference site $s$ with $N_c$ copies (atoms), each copy's within-unit-cell fraction
+$w_i = \operatorname{frac}(x_i N_i)$ is offset from the site's circular mean $\bar w_i$, wrapped to the
+nearest image, and mapped to Cartesian Å through the unit-cell vectors $\mathbf a_i = \mathbf L_i / N_i$:
 
-$$\bar R_i = \frac{1}{N_c}\left\lVert \left(\textstyle\sum \cos 2\pi w_i,\ \sum \sin 2\pi w_i\right)\right\rVert,
-\qquad \sigma_i^{\mathrm{frac}} = \frac{\sqrt{-2\ln \bar R_i}}{2\pi},$$
+$$\Delta\mathbf r = \sum_{i=1}^{3} d_i\,\mathbf a_i,\qquad
+u_s = \sqrt{\langle|\Delta\mathbf r|^2\rangle - |\langle\Delta\mathbf r\rangle|^2},$$
 
-and the site's scalar displacement is the quadrature sum converted to Å with the conventional-cell edge
-lengths:
-
-$$u_s = \sqrt{\sum_{i=1}^{3}\left(\sigma_i^{\mathrm{frac}}\, a_i\right)^2}, \qquad a_i = \lVert\mathbf L_i\rVert / N_i .$$
-
-Axes with $\bar R_i \ge 1$ (a single atom, or zero spread) contribute nothing; $\bar R_i$ is floored at $10^{-6}$.
-This is a **single-snapshot** spread: it mixes static disorder with thermal motion, and it uses edge
-lengths rather than the full metric tensor, so for a strongly non-orthogonal cell the Å conversion is an
-approximation.
+the square root of the trace of the site's Cartesian displacement covariance ($=\sqrt{3U_\mathrm{iso}}$),
+which uses the **full metric** and is the same for any setting of the same cell (run-dashboard.md, Model
+summary Part A Step 5). This is a **single-snapshot** spread: it mixes static disorder with thermal
+motion.
 
 **Ordering and truncation.** Sites are sorted by `mean_disp_A` **descending** (sites with no
 displacement sort last, treated as $-1$), then truncated to `MAX_SITES = 12` with `sites_omitted`
@@ -1052,9 +1048,8 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   the instantaneous configuration. For an element with a single basis site, the A–A entry degenerates to
   the shortest conventional-cell lattice translation — a lattice repeat, not a bond — and nothing in the
   context flags it.
-- **`mean_disp_A` / `max_disp_A` mix static disorder with thermal motion** and are derived from a
-  single-snapshot circular standard deviation, converted to Å with cell *edge lengths* — an approximation
-  for non-orthogonal cells.
+- **`mean_disp_A` / `max_disp_A` mix static disorder with thermal motion**: they are the single-snapshot
+  rms displacement of each reference site about its mean (Cartesian, through the full cell metric).
 - **The whole `symmetry` block is tolerance-dependent, and the tolerance is a live UI control.** Space
   group, point group, operation count, residual, and the entire orbit partition (hence which sites exist
   and how their displacements are averaged) change with the shared "Detected SG" tolerance. Only

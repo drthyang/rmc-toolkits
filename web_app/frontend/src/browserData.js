@@ -632,15 +632,7 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
     });
 
     // One representative site per reference number (its circular-mean fraction) —
-    // the (element, fractional) basis the symmetry finder consumes. The same
-    // accumulators also give the spread about that mean for free: the resultant
-    // length R = |Σ(cos,sin)|/n yields the circular std √(−2 ln R) per axis,
-    // which scaled to Å is the site's rms displacement (dispA) — the
-    // local-distortion signal (static disorder + thermal motion) that the AI
-    // assistant's run context aggregates per Wyckoff orbit.
-    const cellEdgeA = latticeVectors.map((row, i) => (
-        Math.sqrt(row.reduce((sum, value) => sum + value * value, 0)) / Math.max(supercell[i], 1)
-    ));
+    // the (element, fractional) basis the symmetry finder consumes.
     const basis = [...rnAcc.entries()]
         .sort(([a], [b]) => a - b)
         .map(([referenceNumber, acc]) => ({
@@ -650,13 +642,42 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
                 const a = Math.atan2(acc.ss[i], acc.sc[i]) / TWO_PI;
                 return a - Math.floor(a);
             }),
-            dispA: Math.sqrt([0, 1, 2].reduce((sum, i) => {
-                const resultant = Math.hypot(acc.sc[i], acc.ss[i]) / acc.n;
-                if (resultant >= 1) return sum;   // zero spread (or a single atom)
-                const sigmaFrac = Math.sqrt(-2 * Math.log(Math.max(resultant, 1e-6))) / TWO_PI;
-                return sum + (sigmaFrac * cellEdgeA[i]) ** 2;
-            }, 0))
+            dispA: 0
         }));
+
+    // The site's rms displacement about that mean (dispA) — the local-distortion
+    // signal (static disorder + thermal motion) that the AI assistant's run context
+    // aggregates per Wyckoff orbit. A second pass maps each copy's within-cell
+    // offset from the site mean (wrapped to the nearest image) to Cartesian Å
+    // through the unit-cell vectors a_i = L_i / N_i, so the full metric enters:
+    //   dr = Σ_i d_i a_i,   dispA = √(⟨|dr|²⟩ − |⟨dr⟩|²)  = √(trace of the Cartesian covariance)
+    // (= √(3·U_iso) of the PCA page). Per-axis spreads times edge lengths treated
+    // the axes as orthogonal and overstated hexagonal / rhombohedral cells by 10–23%.
+    const unitVectors = latticeVectors.map((row, i) => row.map((value) => value / Math.max(supercell[i], 1)));
+    const siteIndex = new Map(basis.map((site, index) => [site.referenceNumber, index]));
+    const spread = basis.map(() => ({ n: 0, sum: [0, 0, 0], sumSq: 0 }));
+    atoms.forEach(({ referenceNumber, coords }) => {
+        if (referenceNumber === null) return;
+        const index = siteIndex.get(referenceNumber);
+        const mean = basis[index].frac;
+        const dr = [0, 0, 0];
+        for (let i = 0; i < 3; i++) {
+            const wf = ((coords[i] * supercell[i]) % 1 + 1) % 1;
+            let d = wf - mean[i];
+            d -= Math.round(d);
+            for (let k = 0; k < 3; k++) dr[k] += d * unitVectors[i][k];
+        }
+        const acc = spread[index];
+        acc.n += 1;
+        for (let k = 0; k < 3; k++) acc.sum[k] += dr[k];
+        acc.sumSq += dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+    });
+    basis.forEach((site, index) => {
+        const { n, sum, sumSq } = spread[index];
+        if (!n) return;
+        const meanSq = (sum[0] ** 2 + sum[1] ** 2 + sum[2] ** 2) / (n * n);
+        site.dispA = Math.sqrt(Math.max(sumSq / n - meanSq, 0));
+    });
 
     const stride = Math.max(1, Math.ceil(atoms.length / maxPoints));
     const points = atoms.filter((_, index) => index % stride === 0).slice(0, maxPoints).map((atom) => {

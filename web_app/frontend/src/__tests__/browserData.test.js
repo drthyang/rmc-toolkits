@@ -42,9 +42,10 @@ describe('structureFromRmc6f site displacement (dispA)', () => {
         expect(site.frac[0]).toBeCloseTo(0.5, 6);
         expect(site.frac[1]).toBeCloseTo(0.25, 6);
         expect(site.frac[2]).toBeCloseTo(0.75, 6);
-        // Two points at ±0.02 in cell fraction on a 10 Å edge: circular std
-        // √(−2 ln cos(2πδ))/2π · 10 ≈ 0.2003 Å; y and z contribute zero.
-        expect(site.dispA).toBeCloseTo(0.2003, 3);
+        // Two points at ±0.02 in cell fraction on a 10 Å edge: offsets ±0.2 Å
+        // about the mean, so the rms displacement is 0.2 Å (y and z add zero).
+        // (The former circular-std estimate gave √(−2 ln cos 2πδ)/2π · 10 ≈ 0.2003.)
+        expect(site.dispA).toBeCloseTo(0.2, 12);
     });
 
     it('reports zero displacement for coincident copies', () => {

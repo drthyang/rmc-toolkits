@@ -2625,7 +2625,7 @@ grouping — a French locale renders 10.532 Å as `10,532`.
 duplicated verbatim in
 [`llm/context/runContext.js`](../../web_app/frontend/src/llm/context/runContext.js) →
 `structureContext()` (deliberate duplication — the `src/llm/` module is not allowed to import from
-the host app, per [AGENTS.md](../../AGENTS.md)), and again in `browserData.js` as `cellEdgeA`.
+the host app, per [AGENTS.md](../../AGENTS.md)), and the same division by `max(N_i, 1)` gives the unit-cell vectors of the `dispA` pass in `browserData.js` (`unitVectors`).
 
 #### Step 4. Cell angles
 
@@ -2666,7 +2666,7 @@ modulus, since `%` is a sign-following remainder).
 
 **Supercell guard inconsistency.** This fold uses the **raw** `supercell[i]`, whereas every other use
 of the multiplicity divides by `Math.max(supercell[i], 1)` — the card's cell lengths
-(`ModelSummary.jsx`), `cellEdgeA` in `browserData.js`, and `conventionalCell()` in
+(`ModelSummary.jsx`), `unitVectors` (the `dispA` pass) in `browserData.js`, and `conventionalCell()` in
 `symmetryModel.js`. Since `readCellVectors` never validates that the three `Supercell` tokens are
 positive integers, a header declaring `0` (or a non-integer) yields a *guarded*, finite conventional
 edge on that axis while collapsing every atom's $w_i$ to 0 — a one-site basis and a spurious
@@ -2683,20 +2683,27 @@ A circular (not arithmetic) mean is required so that a site straddling the cell 
 by `structureFromRmc6f site displacement (dispA) › handles a boundary-wrapping site (mean at 0 ≡ 1)`
 in [`__tests__/browserData.test.js`](../../web_app/frontend/src/__tests__/browserData.test.js).
 
-The same accumulators give the per-site spread for free. With resultant length
-$\bar R_i = \big|\sum_c(\cos,\sin)\big| / N_c$ over the $N_c$ copies, the circular standard
-deviation in cell fractions is $\sigma_i^{\mathrm{frac}} = \sqrt{-2\ln \bar R_i}\,/\,2\pi$ (with $\bar R_i$ floored
-at $10^{-6}$, and $\sigma_i^{\mathrm{frac}}$ taken as 0 when $\bar R_i\ge1$, i.e. a single copy or zero spread), and
+The per-site spread comes from a **second pass** over the atoms. Each copy's within-cell offset from
+its site mean is wrapped to the nearest image, $d_i = w_i - \bar w_i - \operatorname{round}(w_i - \bar w_i)$,
+and mapped to Cartesian Å through the conventional-cell vectors $\mathbf a_i = \mathbf L_i / N_i$,
+$\Delta\mathbf r = \sum_i d_i\,\mathbf a_i$, so the **full metric** enters. The site's rms displacement is
 
-$$u_s \;\equiv\; \texttt{dispA} = \sqrt{\sum_{i=1}^{3}\big(\sigma_i^{\mathrm{frac}} \, a_i\big)^2}\ \ [\text{Å}]$$
+$$u_s \;\equiv\; \texttt{dispA} = \sqrt{\big\langle |\Delta\mathbf r|^2\big\rangle - \big|\langle\Delta\mathbf r\rangle\big|^2}
+= \sqrt{\operatorname{tr} C_\mathrm{cart}}\ \ [\text{Å}]$$
+
+— the square root of the trace of the site's Cartesian displacement covariance (population
+normalization), i.e. $\sqrt{3\,U_\mathrm{iso}}$ in the PCA page's terms, independent of the cell
+setting. Until 2026-09 it was $\sqrt{\sum_i(\sigma_i^{\mathrm{frac}} a_i)^2}$ with a per-axis circular
+standard deviation $\sigma_i^{\mathrm{frac}}$ and edge **lengths** $a_i$, which drops the metric
+cross-terms: for an isotropic cloud it read +10 % in a hexagonal cell and +23 % for fcc in its 60°
+rhombohedral primitive cell (the same crystal gave different values in different settings); on the
+orthogonal demo run the two agree within 0.2 %. `__tests__/dispMetric.test.js` pins the new value
+against a directly computed Cartesian rms for hexagonal, rhombohedral and cubic cells.
 
 This rms displacement is **not shown on the card**; it is consumed by the AI-assistant context
-(`runContext.js` → `symmetryContext()` aggregates `mean_disp_A` / `max_disp_A` per Wyckoff orbit).
-Two approximations are worth naming: (i) $\sigma_i^{\mathrm{frac}} a_i$ multiplies a fractional spread by an edge
-*length*, which ignores the metric cross-terms and is therefore exact only for orthogonal axes;
-(ii) the circular-std formula is the von-Mises/wrapped-normal relation, exact only for a wrapped
-Gaussian. The unit test pins the value for a two-copy $\pm0.02$-fraction case on a 10 Å edge at
-$0.2003$ Å.
+(`runContext.js` → `symmetryContext()` aggregates `mean_disp_A` / `max_disp_A` per Wyckoff orbit). It is
+a **single-snapshot** spread: static disorder and thermal motion together. The unit test pins the
+two-copy $\pm0.02$-fraction case on a 10 Å edge at exactly $0.2$ Å.
 
 Sites are keyed by reference number and emitted **sorted by reference number**, as
 `{ el, referenceNumber, frac, dispA }`. Per the early return above, an oldest-format file yields an
