@@ -141,19 +141,21 @@ def main():
              tag = f"G(r) (neutron{'' if x in (0,1) else f' #{x}'})"
              plot_data(fpath, plot_title_suffix, r'r ($\mathrm{\AA}$)', 'data', args, calc_rwp=True, rwp_label_prefix=tag)
 
-    # Reciprocal space S(Q) - X-ray
-    fname_x = glob.glob(os.path.join(input_dir, '*_FQ1.csv'))
-    if fname_x:
-        labels, _ = read_csv(fname_x[0]) # Read just to get label if needed, but we can just use generic
-        xlabel = labels[0].strip() if labels else r'Q ($\mathrm{\AA^{-1}}$)'
-        plot_data(fname_x[0], 'S(Q) (x-ray)', xlabel, 'data', args, calc_rwp=True, rwp_label_prefix="S(Q) (x-ray):")
+    # Reciprocal space fits. RMCProfile writes F(Q) into *_FQ1.csv (header
+    # F(Q)_RMC, F(Q)_Expt; -> 0 at high Q), not S(Q): title each file by the
+    # function its own header names, else by its name (FQ -> F(Q), SQ -> S(Q)).
+    def _function_title(labels, default):
+        match = next((re.search(r'([A-Za-z])\(([QqRr])\)', label) for label in labels[1:]
+                      if re.search(r'([A-Za-z])\(([QqRr])\)', label)), None)
+        return f"{match.group(1)}({match.group(2)})" if match else default
 
-    # Reciprocal space S(Q) - Neutron
-    fname_n = glob.glob(os.path.join(input_dir, '*_SQ1.csv'))
-    if fname_n:
-        labels, _ = read_csv(fname_n[0])
-        xlabel = labels[0].strip() if labels else r'Q ($\mathrm{\AA^{-1}}$)'
-        plot_data(fname_n[0], 'S(Q) (neutron)', xlabel, 'data', args, calc_rwp=True, rwp_label_prefix="S(Q) (neutron):")
+    for pattern, default in (('*_FQ1.csv', 'F(Q)'), ('*_SQ1.csv', 'S(Q)')):
+        fnames_q = glob.glob(os.path.join(input_dir, pattern))
+        if fnames_q:
+            labels, _ = read_csv(fnames_q[0])
+            xlabel = labels[0].strip() if labels else r'Q ($\mathrm{\AA^{-1}}$)'
+            title = _function_title(labels, default)
+            plot_data(fnames_q[0], title, xlabel, title, args, calc_rwp=True, rwp_label_prefix=f"{title}:")
 
     # BRAGG
     fnames = sorted(set(glob.glob(os.path.join(input_dir, '*_bragg.csv'))
