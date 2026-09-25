@@ -498,17 +498,52 @@ const FAMILY_ALLOWS = {
 const elementType = (e) => (e.kind === 'mirror' || e.kind === 'glide' ? 'm'
   : e.kind === 'rotoinversion' ? `-${e.order}` : `${e.order}`);
 
+// Rotation-matrix entries that are zero in every operation of a conventional cell
+// ([row, column]; column j of R is the image of basis vector j). The unique axis of a
+// monoclinic cell (b) and the principal axis of a tetragonal, trigonal or hexagonal one (c)
+// are perpendicular to the other two basis vectors, so R maps that axis onto itself and the
+// other two into their own plane. Orthorhombic rotations are diagonal and cubic ones signed
+// permutations (checked separately).
+const BLOCK_ZEROS = {
+  monoclinic: [[0, 1], [1, 0], [1, 2], [2, 1]],
+  tetragonal: [[0, 2], [1, 2], [2, 0], [2, 1]],
+  trigonal: [[0, 2], [1, 2], [2, 0], [2, 1]],
+  hexagonal: [[0, 2], [1, 2], [2, 0], [2, 1]],
+};
+
+/**
+ * Whether every rotation has the block form of a conventional cell of `system`. The
+ * element directions alone do not show it: on the primitive cell ((a+b)/2, b, c) of a
+ * C-monoclinic lattice the 2-fold still runs along the second basis vector, and on
+ * ((a+b+c)/2, (−a+b+c)/2, c) of an I-tetragonal one the 4-fold along the third, but the
+ * other basis vectors lean on the axis and the cell is primitive where the conventional one
+ * is centred — named there, C2 reads P2 (No. 3) and I4 reads P4 (No. 75), with the P
+ * group's Wyckoff letters.
+ */
+function conventionalForm(ops, system) {
+  const zeros = BLOCK_ZEROS[system];
+  return ops.every(({ R }) => {
+    if (zeros) return zeros.every(([i, j]) => R[i][j] === 0);
+    if (system === 'orthorhombic') return !R[0][1] && !R[0][2] && !R[1][0] && !R[1][2] && !R[2][0] && !R[2][1];
+    if (system === 'cubic') return R.every((row) => row.filter((v) => v !== 0).length === 1);
+    return true;
+  });
+}
+
 /**
  * Whether the operations are in a conventional setting of their crystal system: every
- * symmetry element lies along a direction family of the system that may carry an element
- * of its type (FAMILY_ALLOWS), with a monoclinic unique axis along b. Stronger than
- * coversAllElements, which only asks that the direction belong to SOME family. Only a set
- * that passes can be named positionally.
+ * rotation has the conventional block form (conventionalForm — the unique or principal
+ * axis perpendicular to the other basis vectors) and every symmetry element lies along a
+ * direction family of the system that may carry an element of its type (FAMILY_ALLOWS),
+ * with a monoclinic unique axis along b. Stronger than coversAllElements, which only asks
+ * that the direction belong to SOME family. Only a set that passes can be named
+ * positionally, and its centring letter read from its pure translations.
  */
 export function elementsFitSetting(ops, pointGroup) {
   const system = POINT_GROUP_SYSTEM[pointGroup];
   if (!system) return false;
   if (system === 'triclinic') return true;
+  if (!conventionalForm(ops, system)) return false;
   const elements = [];
   for (const { R, t } of ops) {
     const e = classifyElement(R, t);
@@ -873,14 +908,28 @@ function derivedBases(ops, translations, pointGroup, A) {
       if (b && v1 && v2) {
         const combos = [];
         for (let p = -1; p <= 1; p++) for (let q = -1; q <= 1; q++) if (p || q) combos.push([p, q]);
+        // Shortest (a, c) first, then a non-acute β: the reduced cell choice, so the Wyckoff
+        // letters are those of the conventional cell whenever it is among the ones that name
+        // the group. (Several cell choices spell P2_1/c, and they label the four inversion
+        // centres differently: 2b in one is 2d in another.)
+        const cart = (v) => [0, 1, 2].map((k) => v[0] * A[0][k] + v[1] * A[1][k] + v[2] * A[2][k]);
+        const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+        const cells = [];
         for (const [p1, q1] of combos) {
           for (const [p2, q2] of combos) {
             if (Math.abs(p1 * q2 - q1 * p2) !== 1) continue;
             const a = [0, 1, 2].map((i) => p1 * v1[i] + q1 * v2[i]);
             const c = [0, 1, 2].map((i) => p2 * v1[i] + q2 * v2[i]);
-            out.push(det3f(columns(a, b, c)) > 0 ? columns(a, b, c) : columns(a, neg(b), c));
+            const ac = cart(a), cc = cart(c);
+            cells.push({
+              Q: det3f(columns(a, b, c)) > 0 ? columns(a, b, c) : columns(a, neg(b), c),
+              size: dot(ac, ac) + dot(cc, cc),
+              acute: dot(ac, cc) > 1e-9 ? 1 : 0,
+            });
           }
         }
+        cells.sort((p, q) => (Math.abs(p.size - q.size) > 1e-9 * (p.size + q.size) ? p.size - q.size : p.acute - q.acute));
+        for (const { Q } of cells) out.push(Q);
       }
     }
   }

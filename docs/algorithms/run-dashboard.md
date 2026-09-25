@@ -2943,7 +2943,7 @@ Every other group is named in a **standard setting**, which the RMC cell need no
    of each coset (`cosetElements()`, $\boldsymbol\ell\in\{-1,0,1\}^3$) and the short-symbol rules
    pick the highest-priority one per position (rotation before screw, $m$ before glides). Before 1.0
    the held representative decided: a noisy $\{E, 2_{[100]}\}$ subgroup of $P6_3/mmc$ read `P2_1`
-   No. 4 instead of `P2` No. 3.
+   No. 4 (it is `C2` No. 5 — item 2: its conventional cell is the orthohexagonal C cell).
 2. **Candidate cells** (`hmSymbolInStandardSetting()`). The group is re-expressed (`applySetting()`:
    $R' = Q^{-1}RQ$, $\mathbf t' = Q^{-1}\mathbf t$, and the new cell's translations $Q^{-1}(\mathbb Z^3 + T)$
    mod 1) in a sequence of cells $Q$ (columns = new basis vectors in the old fractional basis), and
@@ -2962,7 +2962,10 @@ Every other group is named in a **standard setting**, which the RMC cell need no
      lattice vector $\perp c$, $b = 3\cdot a$; orthorhombic — the three 2-fold axes / mirror normals
      in all six orders; monoclinic — $b$ on the unique axis and $(a, c)$ every unimodular pair from
      the two shortest lattice vectors $\perp b$ (covers the cell choices, e.g. I2/a → C2/c, and
-     P2₁/n → P2₁/c). "Perpendicular" and "along" are decided by the rotations themselves
+     P2₁/n → P2₁/c), tried shortest $|a|^2+|c|^2$ first and then non-acute β — the reduced cell
+     choice, so where several cell choices spell the symbol the letters are those of the reduced
+     cell (the cell choices $a' = a + kc$ of P2₁/c swap which inversion centres are 2b and 2d).
+     "Perpendicular" and "along" are decided by the rotations themselves
      ($R\mathbf v = \pm\mathbf v$, $\sum_k R^k\mathbf v = 0$), exactly, not by the metric.
 
    The new cell's translation set is $\mathbb Z^3 + T$ modulo $Q\mathbb Z^3$, generated mod 1 from
@@ -2971,9 +2974,25 @@ Every other group is named in a **standard setting**, which the RMC cell need no
    right-handed, every rotation is an integer matrix in it, its translation set is exactly a
    Bravais centering (Step 10c) that a
    standard setting of the system uses (monoclinic P, C; orthorhombic P, A, C, I, F; tetragonal P,
-   I; trigonal P, R obverse; hexagonal P; cubic P, I, F), and every element lies along a direction
-   family that may carry its type (`elementsFitSetting()`: a tetragonal 4-fold only on [001], cubic
-   3-folds only on $\langle111\rangle$, …). Because derived cells use the full translation lattice,
+   I; trigonal P, R obverse; hexagonal P; cubic P, I, F), every rotation has the **block form** of a
+   conventional cell (`elementsFitSetting()` → `conventionalForm()`: the monoclinic $b$, or the
+   tetragonal / trigonal / hexagonal $c$, is perpendicular to the other two basis vectors, so $R$
+   maps it onto $\pm$ itself and the other two into their own plane — $R_{01}=R_{10}=R_{12}=R_{21}=0$,
+   resp. $R_{02}=R_{12}=R_{20}=R_{21}=0$; orthorhombic rotations diagonal, cubic ones signed
+   permutations), and every element lies along a direction family that may carry its type
+   (`elementsFitSetting()`: a tetragonal 4-fold only on [001], cubic 3-folds only on
+   $\langle111\rangle$, …). The element directions alone do not show that a cell is conventional:
+   on the primitive cell $((\mathbf a+\mathbf b)/2, \mathbf b, \mathbf c)$ of a C-monoclinic lattice
+   the 2-fold still runs along the second basis vector, and on
+   $((\mathbf a+\mathbf b+\mathbf c)/2, (-\mathbf a+\mathbf b+\mathbf c)/2, \mathbf c)$ of an I-tetragonal
+   one the 4-fold along the third, but the other vectors lean on the axis and the cell's pure
+   translations are primitive where the conventional cell's are centred. Before the block-form
+   check (and on 0.x) C2, Cm, Cc, C2/m, C2/c read `P2` No. 3 … `P2/c` No. 13, I4, I-4, I4/m
+   `P4` No. 75, `P-4` No. 81, `P4/m` No. 83, and R3, R-3 `P3` No. 143, `P-3` No. 147 on such cells,
+   with the P group's Wyckoff letters; and every monoclinic rung of a hexagonal or trigonal ladder
+   was a P group — a 2-fold along $a_\text{hex}$ (or a mirror normal to it) of a P-hexagonal lattice
+   has the orthohexagonal C lattice, so noisy wurtzite's `Pm` is `Cm` No. 8 and bismuth's
+   `P2`, `P2/m` are `C2` No. 5, `C2/m` No. 12. Because derived cells use the full translation lattice,
    a supercell of the true cell is named in the true cell (CsCl in a $2\times2\times2$ cell: `Pm-3m`), and
    a subgroup that keeps its parent's centering is named in its own conventional cell (Ga shifted
    along [111] in the F-cubic lacunar spinel: `R3m` on hexagonal axes; tetragonally strained
@@ -3009,7 +3028,11 @@ Checked on all 230 groups (the test fixtures) in all six axis orders, and on fou
 and with 0.005 Å noise): every group is named correctly (the two location-degenerate pairs by
 Step 10g). Before 1.0, 753 of those 839 oblique descriptions got another group's number (rutile on
 a 60° cell: `Cmmm` No. 65), because the Step 7 scan missed the rotations that need entries of
-magnitude 2 there.
+magnitude 2 there. The centred groups above on their primitive axis-keeping cells get the
+conventional description's number and Wyckoff labels, and no P-named rung of the noisy
+trigonal/hexagonal fixture ladders hides a centring (an independent check: along the principal
+axis, the axial part $\tfrac1n\sum_k R^k\mathbf g$ of every lattice vector $\mathbf g$ is itself a
+lattice vector; `symmetryHiddenCentring.test.js`).
 
 **Code**: `symmetry.js` → `classifyOperations()`, `classifyRotation()`, `pointGroupOf()`,
 `spaceGroupHM()`, `classLabel()`, `lowerBoundLabel()`, `POINT_GROUP_ORDER`; `spaceGroupSymbol.js` →
@@ -3394,7 +3417,10 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
   a noisy lacunar spinel) and class-consistent symbols; `symmetryRepresentatives.test.js` checks
   that a symbol does not depend on the lattice representative of a translation, and that every
   noisy trigonal, hexagonal and cubic subgroup is named after a group with the same element types
-  per coset (rotation or screw, mirror or glide); `symmetryDuplicates.test.js` checks that of two
+  per coset (rotation or screw, mirror or glide); `symmetryHiddenCentring.test.js` names the
+  centred groups C2 … C2/c, I4 … I4/m, R3 and R-3 on primitive cells that keep the axis as a basis
+  vector (with the conventional description's Wyckoff labels) and checks that no P-named rung of a
+  noisy trigonal or hexagonal ladder hides a centring; `symmetryDuplicates.test.js` checks that of two
   near-duplicate operations the better-fitting one is kept, so the ladder reaches the group the
   headline finds whatever the site order;
   `symmetryWyckoff.test.js` and `wyckoff.test.js` check every Wyckoff row against its group's

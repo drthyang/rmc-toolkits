@@ -7,8 +7,9 @@
 // onto an axis or plane in a FRACTION of its period, representatives differ in kind: the
 // [100] 2-fold of a hexagonal cell and the 2_1 half a cell away, a cubic [111] 3-fold
 // and a 3_1, a mirror on a tetragonal diagonal and an n-glide. The symbol must not depend
-// on which one was held: a noisy hexagonal subgroup {E, 2[100]} was named P2_1 (No. 4)
-// instead of P2 (No. 3), and P6_3/mmc subgroups P2_1/m (No. 11) instead of P2/m (No. 10).
+// on which one was held: a noisy hexagonal subgroup {E, 2[100]} was named P2_1 (No. 4) or
+// P2 (No. 3) by the representative — it is C2 (No. 5), whose orthohexagonal C cell holds
+// the 2 and the 2_1 alike (symmetryHiddenCentring.test.js has the centring side).
 
 import { describe, it, expect } from 'vitest';
 
@@ -94,11 +95,14 @@ describe('noisy subgroups are named after the elements they hold', () => {
     const byNumber = new Map(SPACE_GROUP_FIXTURES.map((f) => [f.number, f]));
     const trigonalToCubic = SPACE_GROUP_FIXTURES.filter((f) => f.number >= 143);
 
-    it('names the {E, 2[100]} subgroup of noisy P6_3/mmc P2, not P2_1', () => {
+    it('names the {E, 2[100]} subgroup of noisy P6_3/mmc C2 (No. 5), not P2 or P2_1', () => {
+        // A 2-fold along a_hex of a P-hexagonal lattice: the conventional monoclinic cell is
+        // the orthohexagonal (a, a+2b, c) cell, C-centred, twice the hexagonal volume.
         const s = withNoise(structureFor(byNumber.get(194)), 0.01, 2);
         const found = spaceGroupAtTolerance(s.A, s.basis, 0.03);
         expect(found.nSpace).toBe(2);
-        expect(found).toMatchObject({ spaceGroup: 'P2', spaceGroupNumber: 3 });
+        expect(found).toMatchObject({ spaceGroup: 'C2', spaceGroupNumber: 5 });
+        expect(found.setting.ratio).toBeCloseTo(2, 9);
     });
 
     it.each([[0.01, 0.03], [0.01, 0.045], [0.02, 0.08]])('σ = %f Å at τ = %f Å: every named trigonal, hexagonal and cubic subgroup', { timeout: 60000 }, (sigma, tol) => {
