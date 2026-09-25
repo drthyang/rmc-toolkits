@@ -6,7 +6,7 @@
 // tests/generate_triplets_fixture.py, plus self-contained geometry checks.
 
 import { describe, expect, it } from 'vitest';
-import { APP_MAX_ANGLES, EDGE_SNAP_DEG, bondAngleSummary } from '../triplets';
+import { APP_MAX_ANGLES, EDGE_SNAP_DEG, WINDOW_TOL, bondAngleSummary } from '../triplets';
 import fixture from '../../__tests__/fixtures/triplets_fixture.json';
 
 const runSpec = (testCase, spec) =>
@@ -76,6 +76,20 @@ describe('Python parity (triplets_fixture.json)', () => {
 describe('bin edges (ideal geometries)', () => {
   it('the snap tolerance is the Python engine\'s EDGE_SNAP_DEG', () => {
     expect(EDGE_SNAP_DEG).toBe(fixture.edgeSnapDeg);
+  });
+
+  it('the window tolerance is the Python engine\'s WINDOW_TOL; a bound on a shell keeps it', () => {
+    expect(WINDOW_TOL).toBe(fixture.windowTol);
+    // Simple cubic, 10^3 atoms at spacing 3 Å, rmax typed as exactly 3.
+    const grid = [];
+    for (let i = 0; i < 10; i += 1) for (let j = 0; j < 10; j += 1) for (let k = 0; k < 10; k += 1) {
+      grid.push([i / 10, j / 10, k / 10]);
+    }
+    const result = bondAngleSummary(grid, grid.map(() => 'Cu'), [[30, 0, 0], [0, 30, 0], [0, 0, 30]], {
+      triplet: ['Cu', 'Cu', 'Cu'], bond12: [1.5, 3]
+    });
+    expect(result.lengths12.uniqueBonds).toBe(3000);
+    expect(result.lengths12.counts.reduce((acc, value) => acc + value, 0)).toBe(6000);
   });
 
   const threeAtoms = (degrees) => {

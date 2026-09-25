@@ -253,6 +253,14 @@ class BondCountTests(unittest.TestCase):
         self.assertEqual(mixed["lengths12"]["uniqueBonds"], 6)
         self.assertEqual(mixed["lengths23"]["uniqueBonds"], mixed["lengths23"]["count"])
 
+    def test_window_tolerance_is_float_noise_only(self):
+        # 1e-7 A outside a bound is a real distance: not a bond.
+        positions = place([[5.0, 5.0, 5.0], [6.0, 5.0, 5.0], [5.0, 6.0 + 1e-7, 5.0]])
+        result = bond_angle_distribution(
+            positions, ["Nb", "Se", "Se"], CUBIC_10, triplet=("Se", "Nb", "Se"), bond12=(0.5, 1.0)
+        )
+        self.assertEqual(result.bond12_count, 1)
+
     def test_self_image_bonds_pair_up(self):
         # One atom, its six face images in a 3 A cube: three physical bonds
         # (to +a and -a are the same periodic bond), six B-centred vectors.
@@ -531,6 +539,22 @@ class IdealConfigurationTests(unittest.TestCase):
                 _angle_bins(ulp_below[:-1], nbins), np.arange(1, nbins)
             )
             self.assertEqual(int(expected.sum()), angles.size)
+
+    def test_bonds_exactly_on_a_window_bound_are_inside(self):
+        # Windows are inclusive; on an ideal lattice a bound typed exactly at
+        # a shell distance used to keep that shell by rounding luck (2400 of
+        # 3000 simple-cubic bonds at rmax = a, 150 of 375 in another cell).
+        for a, cells in ((3.0, 10), (3.9, 5), (2.5, 6)):
+            grid = np.array(list(product(range(cells), repeat=3)), float) / cells
+            lattice = np.diag([a * cells] * 3)
+            for window in ((0.5 * a, a), (a, 1.2 * a)):
+                summary = bond_angle_summary(
+                    grid, ["Cu"] * len(grid), lattice, triplet=("Cu", "Cu", "Cu"), bond12=window
+                )
+                lengths = summary["lengths12"]
+                self.assertEqual(lengths["uniqueBonds"], 3 * len(grid), (a, window))
+                # The length histogram still accounts for every bond.
+                self.assertEqual(sum(lengths["counts"]), lengths["count"], (a, window))
 
     def test_snap_is_limited_to_float_noise(self):
         # 1e-7 deg off an edge is a real (if tiny) displacement, not noise:

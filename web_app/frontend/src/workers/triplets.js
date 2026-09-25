@@ -49,6 +49,11 @@ const REACH_HEADROOM = 1e-9;
 // passes `maxAngles` (the worker's 'triplets' handler does).
 export const APP_MAX_ANGLES = 50_000_000;
 
+// Distances within this many Å of a window bound count as on it — inside,
+// since windows are inclusive (mirrors WINDOW_TOL in triplets.py): an ideal
+// shell at exactly a typed bound is kept whole, not by rounding luck.
+export const WINDOW_TOL = 1e-9;
+
 // Angles closer than this to a bin edge bin as exactly on it (mirrors
 // EDGE_SNAP_DEG in triplets.py): far above float noise in an angle (~1e-13°),
 // far below any bin width or real displacement.
@@ -158,8 +163,9 @@ const visitNeighbors = (wrapped, centerRows, candidateRows, lattice, windows, vi
     (buckets[flat] ??= []).push(row);
   }
 
-  const loSq = windows.map(([lo]) => lo * lo);
-  const hiSq = windows.map(([, hi]) => hi * hi);
+  // Inclusive bounds, widened by WINDOW_TOL against float noise.
+  const loSq = windows.map(([lo]) => Math.max(lo - WINDOW_TOL, 0) ** 2);
+  const hiSq = windows.map(([, hi]) => (hi + WINDOW_TOL) ** 2);
   const nWindows = windows.length;
   for (let center = 0; center < centerRows.length; center += 1) {
     const centerRow = centerRows[center];
@@ -424,7 +430,9 @@ const lengthHistogram = (perCenter, [lo, hi], homonuclear) => {
     for (const bond of bonds) {
       total += 1;
       sum += bond.length;
-      counts[histogramIndex(bond.length, lo, hi, LENGTH_BINS)] += 1;
+      // Clipped into the window (a bond admitted by WINDOW_TOL just outside
+      // a bound goes to the edge bin), exactly as the Python engine.
+      counts[histogramIndex(Math.min(Math.max(bond.length, lo), hi), lo, hi, LENGTH_BINS)] += 1;
     }
   }
   const binCenters = Array.from(

@@ -23,6 +23,7 @@ import numpy as np
 from rmc_toolkits.triplets import (
     APP_MAX_ANGLES,
     EDGE_SNAP_DEG,
+    WINDOW_TOL,
     bond_angle_distribution,
     bond_angle_summary,
 )
@@ -114,6 +115,9 @@ def case_ideal_fcc() -> dict:
         "specs": [
             {"triplet": ["Cu", "Cu", "Cu"], "bond12": [2.3, 2.8], "bond23": None, "binWidth": 1.0},
             {"triplet": ["Cu", "Cu", "Cu"], "bond12": [2.3, 2.8], "bond23": None, "binWidth": 3.0},
+            # Upper bound typed exactly at the nearest-neighbour distance a/sqrt(2):
+            # inclusive, so all 12 neighbours of every atom count.
+            {"triplet": ["Cu", "Cu", "Cu"], "bond12": [2.0, a / 2**0.5], "bond23": None, "binWidth": 1.0},
         ],
     }
 
@@ -181,6 +185,8 @@ def main() -> None:
         "appMaxAngles": APP_MAX_ANGLES,
         # The bin-edge snap; the JS port's EDGE_SNAP_DEG must match.
         "edgeSnapDeg": EDGE_SNAP_DEG,
+        # The inclusive-bound tolerance; the JS port's WINDOW_TOL must match.
+        "windowTol": WINDOW_TOL,
         "cases": [
             evaluate(case_random_triclinic()),
             evaluate(case_small_box_images()),

@@ -28,6 +28,10 @@ in which case multiple images of the same atom are genuine distinct
 neighbours. Bond windows are inclusive at both ends: ``rmin <= r <= rmax`` --
 except that a pair at exactly zero length (bitwise-coincident atoms under
 ``rmin = 0``) is never a bond, since a zero vector subtends no angle.
+"Inclusive" holds for ideal geometries too: a distance within
+``WINDOW_TOL`` (1e-9 A) of a bound counts as on it, so a bound typed exactly
+at an ideal shell distance keeps the whole shell instead of whichever bonds
+float rounding happens to leave inside.
 
 A bond vector is ``((f_cand - f_center) + m) @ L``: the fractional difference
 is taken *before* the integer image shift ``m`` is added, so the vector from
@@ -149,6 +153,12 @@ REACH_HEADROOM = 1e-9
 # sample). Library and CLI callers are unrestricted (``max_angles=None``).
 # Mirrored as APP_MAX_ANGLES in workers/triplets.js -- keep the two equal.
 APP_MAX_ANGLES = 50_000_000
+
+# Distances within this many angstrom of a window bound count as on it
+# (inside: windows are inclusive). Far above float noise in a length
+# (~1e-13 A) and far below any real displacement. Mirrored as WINDOW_TOL in
+# workers/triplets.js.
+WINDOW_TOL = 1e-9
 
 # Angles closer than this to a bin edge are binned as exactly on it (see the
 # module docstring). Far above float noise in an angle (~1e-13 deg) and far
@@ -340,7 +350,10 @@ def _neighbor_bonds(
 
     center_cells = cell_of(frac_centers)
     n_centers = frac_centers.shape[0]
-    bounds_sq = [(lo * lo, hi * hi) for lo, hi in windows]
+    # Inclusive bounds, widened by WINDOW_TOL against float noise.
+    bounds_sq = [
+        (max(lo - WINDOW_TOL, 0.0) ** 2, (hi + WINDOW_TOL) ** 2) for lo, hi in windows
+    ]
     n_patterns = 1 << len(windows)
     pattern_weights = 1 << np.arange(len(windows))
     patterns = np.zeros((n_centers, n_patterns), dtype=np.int64) if count_only else None
@@ -868,8 +881,10 @@ def bond_angle_summary(
     edges, density, sin_corrected = _normalized(histogram.counts, nbins)
 
     def length_histogram(bonds: _Bonds, window: tuple[float, float], unique: int) -> dict:
+        # Clipped into the window: a bond admitted by WINDOW_TOL just outside
+        # a bound belongs to the edge bin, so the histogram totals ``count``.
         length_counts, length_edges = np.histogram(
-            bonds.lengths, bins=LENGTH_BINS, range=window
+            np.clip(bonds.lengths, *window), bins=LENGTH_BINS, range=window
         )
         return {
             "binCenters": ((length_edges[:-1] + length_edges[1:]) / 2.0).tolist(),

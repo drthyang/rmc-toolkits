@@ -196,14 +196,20 @@ window-membership pattern — the exact counting pass of Step 8.
 
 A candidate pair with squared distance $d^2$ survives iff
 
-$$r_\mathrm{min}^2 \le d^2 \le r_\mathrm{max}^2
+$$\max(r_\mathrm{min} - \varepsilon, 0)^2 \le d^2 \le (r_\mathrm{max} + \varepsilon)^2
 \quad\text{and}\quad d^2 > 0
-\quad\text{and not}\quad(\text{same row} \wedge \mathbf m = \mathbf 0).$$
+\quad\text{and not}\quad(\text{same row} \wedge \mathbf m = \mathbf 0),
+\qquad \varepsilon = \texttt{WINDOW\_TOL} = 10^{-9}\ \text{Å}.$$
 
 Three deliberate choices:
 
 - **Windows are inclusive at both ends** — read the bounds off the partial $g(r)$ and atoms at
-  exactly the bound count.
+  exactly the bound count. $\varepsilon$ makes that true for ideal geometries as well: a bound
+  typed exactly at an ideal shell distance used to keep whichever bonds float rounding left
+  inside (2400 of 3000 simple-cubic bonds at $r_\mathrm{max} = a$; a bond of exactly 1 Å dropped
+  from a 0.5–1 Å window). $\varepsilon$ is four orders above the rounding noise of a length and
+  far below any real distance difference (a bond $10^{-7}$ Å outside is still outside). The
+  bond-length histograms clip admitted lengths into the window, so they still total `count`.
 - **A zero-length pair is never a bond, even under `rmin = 0`.** Bitwise-coincident atoms have
   no direction; admitting the pair would put a $0/0$ NaN into every angle it joins
   (`CoincidentAtomTests`).
@@ -457,6 +463,7 @@ rmc-triplets data/5K_try1 --triplet Nb Nb Nb --bond12 2.6 3.4 --dump-angles nb_a
 | `SEARCH_CHUNK` | $2^{20}$ | candidate pairs examined per search block and stencil offset (~100 MB) |
 | `MAX_CELLS_PER_AXIS` | 64 | linked-cell resolution cap per lattice direction |
 | `REACH_HEADROOM` | $10^{-9}$ | relative headroom on the layer reach against float rounding |
+| `WINDOW_TOL` | $10^{-9}$ Å | a distance this close to a window bound counts as on it (inside); Python and JS constants must be equal |
 | `EDGE_SNAP_DEG` | $10^{-9}$° | an angle this close to a bin edge bins as exactly on it (Step 6); Python and JS constants must be equal |
 | `LENGTH_BINS` | 40 | bond-length histogram bins per window (summary payload only) |
 | App-boundary caps | $r_\mathrm{max}\le15$ Å, angles ≤ `APP_MAX_ANGLES`, `binWidth` ≥ 0.05° | Flask route and worker only; engine and CLI unrestricted |
@@ -521,8 +528,18 @@ numpy.histogram agreement off the edges).
   of B; the C-side coordination is not reported.
 - **The realized bin width may differ from the request** (nearest exact tiling of 180°). The
   payload reports the realized width; the CSV bin centers are authoritative.
-- **Inclusive windows mean boundary atoms count.** Two runs whose $g(r)$ peak touches the bound
-  can differ by exactly the boundary population — intentional, but worth knowing when comparing.
+- **Inclusive windows mean boundary atoms count** (to within `WINDOW_TOL` = $10^{-9}$ Å). Two
+  runs whose $g(r)$ peak touches the bound can differ by exactly the boundary population —
+  intentional, but worth knowing when comparing.
+- **Ideal geometries are handled by two tolerances, both $10^{-9}$** — a distance that close to
+  a window bound is on it, an angle that close to a bin edge is on it. They exist only to make
+  float noise irrelevant; neither moves a real configuration's numbers.
+- **App requests are refused above $5\times10^7$ angles** (`APP_MAX_ANGLES`, exact count, before
+  any work on angles). Library and CLI calls are unrestricted; wide windows there cost time,
+  not memory, unless the raw angle list is requested.
+- **`count` vs `uniqueBonds`.** `lengths.count` (and `bond12_count`) counts B-centred bond
+  vectors — twice the physical bonds when the end element is the central one; `uniqueBonds`
+  counts each bond once. The coordination numbers are per B and use the B-centred count.
 - **The engine reports geometry, not chemistry.** A "bond" is a distance window and nothing
   else; there is no bond-valence, electronegativity, or connectivity analysis.
 
