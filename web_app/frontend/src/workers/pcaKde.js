@@ -33,30 +33,90 @@ import { parseAtomLine } from '../rmc6f.js';
 const EIGENVALUE_FLOOR_RATIO = 1e-8;
 const DEGENERATE_RATIO = 1e-6;
 
-// Chi-square(3) inverse-CDF sampled on a fine grid, so the ellipsoid scale for a
-// given enclosed probability needs no special-function library. k = sqrt(q).
-const CHI2_3_TABLE = [
-    [0.10, 0.5843744], [0.20, 1.0051740], [0.30, 1.4236522], [0.40, 1.8691684],
-    [0.50, 2.3659739], [0.6827, 3.5058779], [0.70, 3.6648530], [0.80, 4.6415889],
-    [0.90, 6.2513886], [0.95, 7.8147279], [0.99, 11.3448667], [0.9973, 14.1560750]
-];
+// --- Chi-square(3) quantile ------------------------------------------------------
+// The squared Mahalanobis radius of a 3D Gaussian is chi-square with 3 degrees of
+// freedom, whose CDF has the closed form F(x) = erf(sqrt(x/2)) - sqrt(2x/pi) e^(-x/2)
+// = P(3/2, x/2), the regularised lower incomplete gamma function. It is evaluated
+// here without cancellation -- by its positive series below t = a + 1 and by the
+// continued fraction of the complement Q above (Numerical Recipes gser/gcf) -- and
+// inverted by safeguarded Newton, so k(p) = sqrt(F^-1(p)) equals the server's
+// sqrt(scipy.stats.chi2.ppf(p, 3)) to ~1e-15 (pinned at 1e-10 by the tests).
+const GAMMA_A = 1.5;
+const LOG_GAMMA_A = Math.log(Math.sqrt(Math.PI) / 2);   // ln Gamma(3/2)
 
-export const probabilityScale = (probability) => {
+// { lower: F(x), upper: 1 - F(x) }, each computed directly (never as 1 - tiny).
+const chiSquare3Tails = (x) => {
+    if (!(x > 0)) return { lower: 0, upper: 1 };
+    const t = x / 2;
+    const prefactor = Math.exp(-t + GAMMA_A * Math.log(t) - LOG_GAMMA_A);
+    if (t < GAMMA_A + 1) {
+        // P(a, t) = e^-t t^a / Gamma(a) * sum_k t^k / (a (a+1) ... (a+k)), all terms positive.
+        let term = 1 / GAMMA_A;
+        let sum = term;
+        let ap = GAMMA_A;
+        for (let k = 0; k < 1000; k += 1) {
+            ap += 1;
+            term *= t / ap;
+            sum += term;
+            if (term <= sum * 1e-17) break;
+        }
+        const lower = prefactor * sum;
+        return { lower, upper: 1 - lower };
+    }
+    // Q(a, t) by the modified-Lentz continued fraction.
+    const TINY = 1e-300;
+    let b = t + 1 - GAMMA_A;
+    let c = 1 / TINY;
+    let d = 1 / b;
+    let h = d;
+    for (let i = 1; i < 1000; i += 1) {
+        const an = -i * (i - GAMMA_A);
+        b += 2;
+        d = an * d + b;
+        if (Math.abs(d) < TINY) d = TINY;
+        c = b + an / c;
+        if (Math.abs(c) < TINY) c = TINY;
+        d = 1 / d;
+        const delta = d * c;
+        h *= delta;
+        if (Math.abs(delta - 1) <= 1e-16) break;
+    }
+    const upper = prefactor * h;
+    return { lower: 1 - upper, upper };
+};
+
+/** Exact chi-square(3) quantile F^-1(p), 0 < p < 1 (scipy.stats.chi2.ppf(p, 3)). */
+export const chiSquare3Quantile = (probability) => {
     const p = Number(probability);
     if (!(p > 0 && p < 1)) throw new Error('probability must lie strictly between 0 and 1');
-    const table = CHI2_3_TABLE;
-    if (p <= table[0][0]) return Math.sqrt(table[0][1]);
-    if (p >= table[table.length - 1][0]) return Math.sqrt(table[table.length - 1][1]);
-    for (let i = 1; i < table.length; i += 1) {
-        if (p <= table[i][0]) {
-            const [p0, q0] = table[i - 1];
-            const [p1, q1] = table[i];
-            const t = (p - p0) / (p1 - p0);
-            return Math.sqrt(q0 + t * (q1 - q0));
-        }
+    const q = 1 - p;   // exact for p >= 1/2 (Sterbenz); used only there
+    // Residual F(x) - p from whichever tail keeps full relative precision.
+    const residual = (x) => {
+        const { lower, upper } = chiSquare3Tails(x);
+        return p <= 0.5 ? lower - p : q - upper;
+    };
+    let lo = 0;
+    let hi = 1;
+    while (residual(hi) < 0 && hi < 1e4) { lo = hi; hi *= 2; }
+    let x = 0.5 * (lo + hi);
+    for (let iter = 0; iter < 300; iter += 1) {
+        const r = residual(x);
+        if (r === 0) break;
+        if (r > 0) hi = x; else lo = x;
+        const density = Math.sqrt(x / (2 * Math.PI)) * Math.exp(-x / 2);
+        let next = x - r / density;
+        // Safeguard: fall back to bisection whenever Newton leaves the bracket.
+        if (!(next > lo && next < hi)) next = 0.5 * (lo + hi);
+        const step = Math.abs(next - x);
+        x = next;
+        if (step <= 4e-16 * x || hi - lo <= 4e-16 * hi) break;
     }
-    return Math.sqrt(table[table.length - 1][1]);
+    return x;
 };
+
+// Ellipsoid scale factor k such that k*sigma encloses `probability`:
+// k = sqrt(chi2_3^-1(p)), 1.5381722 at the crystallographic 50% convention.
+export const probabilityScale = (probability) => Math.sqrt(chiSquare3Quantile(probability));
 
 // Symmetric 3x3 eigendecomposition by cyclic Jacobi rotation. Robust for the
 // near-degenerate clouds (flat or linear disorder) that trip analytic formulas,

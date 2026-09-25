@@ -70,7 +70,7 @@ estimator.
 | Engine | [`rmc_toolkits/pca_kde.py`](../../rmc_toolkits/pca_kde.py) (source of truth) | [`web_app/frontend/src/workers/pcaKde.js`](../../web_app/frontend/src/workers/pcaKde.js) |
 | Entry points | `/api/pca/sites`, `/api/pca/kde` in [`web_app/backend/app.py`](../../web_app/backend/app.py) | `pcaKdeWorker.js` messages `{kind:'sites'}` / `{kind:'kde'}` |
 | Eigensolver | `numpy.linalg.eigh` (LAPACK) | 3×3 cyclic **Jacobi** (`jacobiEigenSymmetric`) |
-| $\chi^2$ quantile | `scipy.stats.chi2.ppf` | 12-point table + linear interpolation |
+| $\chi^2$ quantile | `scipy.stats.chi2.ppf` | exact inverse of the closed-form CDF (`chiSquare3Quantile`, Newton) |
 | Contraction | BLAS `dgemm` via `numpy` | hand-rolled triple loop with a reused buffer |
 | Site reconstruction for old files | **not implemented** | fold-and-cluster fallback (`sitesByClustering`) |
 
@@ -451,34 +451,28 @@ rejects $p\notin(0,1)$. The crystallographic 50% convention gives
 $k(0.5)=\sqrt{2.3659739}=1.5381722$, asserted to 5 places by
 `ProbabilityScaleTests::test_fifty_percent_is_crystallographic_constant`.
 
-**JavaScript** (`probabilityScale()`) has no special-function library, so it interpolates a 12-point
-table of $F^{-1}_{\chi^2_3}$ **linearly in $q=k^2$**, clamping outside the table:
+**JavaScript** (`probabilityScale()` → `chiSquare3Quantile()`) inverts the closed-form
+$\chi^2_3$ CDF,
 
-```
-p : 0.10 0.20 0.30 0.40 0.50 0.6827 0.70 0.80 0.90 0.95 0.99 0.9973
-q : .584 1.005 1.424 1.869 2.366 3.5059 3.665 4.642 6.251 7.815 11.345 14.156
-```
+$$F(x)=\mathrm{erf}\!\big(\sqrt{x/2}\big)-\sqrt{2x/\pi}\,e^{-x/2}=P\big(\tfrac32,\tfrac x2\big),\qquad
+f(x)=\sqrt{x/2\pi}\,e^{-x/2},$$
 
-Consequences a reader should know:
+by safeguarded Newton iteration (bracket $[0,2^m]$, bisection whenever a Newton step leaves the
+bracket, stop at a relative step of $4\times10^{-16}$). $F$ and its complement are evaluated by
+`chiSquare3Tails()` without cancellation: the positive series of the regularised incomplete gamma
+function $P(a,t)$ below $t=a+1$ and the modified-Lentz continued fraction of $Q(a,t)=1-P$ above it
+(Numerical Recipes `gser`/`gcf`, $a=\tfrac32$, $t=x/2$); the residual is taken from the lower tail for
+$p\le\tfrac12$ and from the upper tail (with the exact $1-p$) above, so both ends keep full relative
+precision. The result equals `scipy.stats.chi2.ppf(p, 3)` to $\sim10^{-15}$;
+`pcaKdeProbabilityScale.test.js` pins it at $10^{-10}$ against scipy on $p=0.01,0.02,\dots,0.99$ plus
+0.6827, 0.995, 0.9973 and 0.999, and checks monotonicity out to $p=10^{-12}$ and $1-10^{-12}$.
 
-- At the tabulated probabilities the JS values match SciPy to ~7 significant figures — **except the
-  $p=0.6827$ node**, whose tabulated $q=3.5058779$ differs from `chi2.ppf(0.6827, 3) = 3.5268222`;
-  that is a $-0.30\%$ error in $k$ at the "1σ" preset.
-- Between nodes the interpolation error has **both signs**. $q(p)=F^{-1}_{\chi^2_3}(p)$ has
-  $q''=-f'(q)/f(q)^3$, and the $\chi^2_3$ density peaks at $x=1$, so $q$ is convex only above
-  $p=F_{\chi^2_3}(1)\approx0.199$ and **concave below it**. On the UI's slider grid (0.10–0.99, step
-  0.01):
-  - Above $p\approx0.20$ the chords lie above the curve, so interpolation **over**estimates. Worst
-    case $p=0.97$: JS $k=3.0951$ vs true $2.9912$, i.e. $+3.5\%$ in every semi-axis. Other examples:
-    $p=0.85$ $+1.2\%$, $p=0.75$ $+0.55\%$, $p=0.60$ $+0.74\%$.
-  - In the concave stretch $p=0.11$–$0.19$ it **under**estimates, by up to $-0.21\%$ at $p=0.13$.
-  - The low $p=0.6827$ node above additionally drags its two neighbouring segments below truth:
-    $p=0.67$ $-0.04\%$, $p=0.68$ $-0.24\%$, $p=0.69$ $-0.16\%$.
-- The default $p=0.5$, and $0.10/0.20/0.30/0.40/0.70/0.80/0.90/0.95/0.99$, are exact nodes.
-
-So the ellipsoid drawn in the browser at a non-tabulated probability can be a few percent too large
-(and, in the low-$p$ and near-$0.6827$ stretches, a fraction of a percent too small). The server path
-has no such error.
+*History.* Before 1.0 the browser interpolated a 12-node table linearly in $q=k^2$, clamping outside
+$[0.10, 0.9973]$. $q(p)$ is convex above $p\approx0.2$, so the chords overestimated — up to
+$+3.5\%$ in every semi-axis at $p=0.97$ ($+1.2\%$ at 0.85) — and the $p=0.6827$ node held
+$q=3.5058779$ instead of $3.5268222$ ($-0.30\%$ in $k$). The drawn ellipsoid and the KDE shell sampled
+on it therefore differed between the static and the Flask app at every non-node slider value; they
+now agree.
 
 The scale factor multiplies only the **drawn** ellipsoid (`semiAxes`); no other quantity depends on
 it.
@@ -1005,8 +999,7 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    clouds.
 4. **The two engines are not proven equal to each other.** Each is pinned against its own reference.
    There is no golden-file parity test between `pca_kde.py` and `pcaKde.js`. The known systematic
-   differences are the $\chi^2$ quantile table (up to $+3.5\%$ on the ellipsoid semi-axes at
-   $p=0.97$, exact at the tabulated $p$, and $-0.30\%$ at the 0.6827 node), the different
+   differences are the different
    subsample draws above 20 000 points, and the **different kurtosis guard floors** (Step 12), which
    bind only for a literally zero-width axis. Eigenvector signs follow the same canonicalisation rule
    in both engines (with one unreachable difference in how the handedness flip is written — next
@@ -1775,7 +1768,7 @@ defaults". The table below lists only what this section owns.
   (Step 11). It never appears in a UI panel, and it exists only in the browser structure parser.
 - **Where the numbers themselves come from is the previous section's problem.** The estimator
   choices that set the *magnitudes* — the subsample cap and the two engines' different draws, the
-  browser's Jacobi solver and its interpolated $\chi^2_3$ quantile, the KDE bandwidth broadening,
+  browser's Jacobi solver, the KDE bandwidth broadening,
   the display magnification of the Site-ellipsoids markers — are all documented in "PCA Ellipsoid
   page", Caveats. None of them changes a *direction*, except through the eigenframe of a
   subsampled cloud.
