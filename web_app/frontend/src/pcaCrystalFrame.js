@@ -22,6 +22,8 @@
 // This is a pure module (no three.js / DOM) so the geometry can be unit-tested
 // against hand-derived cases.
 
+import { sampleFieldTrilinear } from './workers/marchingCubes.js';
+
 // --- 3×3 linear algebra (rows-of-arrays) -------------------------------------
 
 const dot3 = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
@@ -199,4 +201,93 @@ export const crystalOrientationRows = (pcaAxes, unitCell) => {
             dominant: { ...axis.dominant, angleDeg: anglesDeg[axis.dominant.index] }
         };
     });
+};
+
+// --- KDE marginals on the crystal-frame planes -----------------------------------
+
+/**
+ * Project a PCA-frame KDE volume onto the three planes of an orthonormal display
+ * frame (rows e0, e1, e2 in Cartesian, e.g. `orthonormalCrystalFrame`): for every
+ * texel (u, v) of a plane, integrate the density along the remaining frame axis,
+ *
+ *   rho_uv(u, v) = ∫ rho(u e_i + v e_j + t e_k) dt,
+ *
+ * the marginal of the SAME volume the page shows. The line is clipped to the
+ * sampled PCA box (outside it the KDE is below the box's truncation mass and is
+ * not extrapolated), and integrated by the trapezoid rule with at least two steps
+ * per grid cell along every PCA axis, sampling the volume by trilinear
+ * interpolation. Unlike splatting grid nodes into 2D bins, the samples do not
+ * beat against the texel lattice, so no moiré appears when the PCA axes are
+ * rotated against the frame. Error against the exact analytic marginal is set by
+ * the trilinear interpolation of the volume: ~1% of the peak (L1 < 1%, max
+ * relative error ~3% where rho > 10% of the peak) at grid 40, ~3% of the peak at
+ * grid 24 (pinned in pcaCrystalFrame.test.js).
+ *
+ * @param {object} kde  - the pcaKdeVolume / pca_kde_volume payload (grid, axisCoords,
+ *   halfWidths, axes, density in C order over PC1, PC2, PC3).
+ * @param {number[][]} frame - orthonormal display frame, rows e0, e1, e2.
+ * @param {number} half - half-width of the square wall grids (Å).
+ * @param {number} nBins - texels per wall edge.
+ * @returns {{pc12, pc13, pc23}} walls on the e0–e1, e0–e2, e1–e2 planes, each
+ *   `{density[u][v] (Å⁻²), axes, extent, vmax}` like the engine's PC projections.
+ */
+export const projectVolumeOntoFrame = (kde, frame, half, nBins) => {
+    const { grid, axisCoords, axes, density } = kde;
+    const halfWidths = kde.halfWidths;
+    const delta = [0, 1, 2].map((a) => (axisCoords[a][1] - axisCoords[a][0]) || 1);
+    // Frame axes expressed in the PCA frame (q = P·r).
+    const E = frame.map((row) => matVec3(axes, row));
+    const n = Math.max(2, Math.round(nBins));
+    const texel = (2 * half) / (n - 1);
+
+    const plane = (i, j, k) => {
+        const d = E[k];
+        // PCA-grid cells crossed per unit length along e_k: sets the step count.
+        const rate = Math.max(...[0, 1, 2].map((c) => Math.abs(d[c]) / delta[c]));
+        const rows = new Array(n);
+        let vmax = 0;
+        for (let a = 0; a < n; a += 1) {
+            const row = new Array(n);
+            const u = -half + a * texel;
+            for (let b = 0; b < n; b += 1) {
+                const v = -half + b * texel;
+                const q0 = [0, 1, 2].map((c) => u * E[i][c] + v * E[j][c]);
+                // Clip the line q0 + t d to the sampled box |q_c| <= halfWidths[c].
+                let lo = -Infinity;
+                let hi = Infinity;
+                for (let c = 0; c < 3 && lo < hi; c += 1) {
+                    if (Math.abs(d[c]) < 1e-15) {
+                        if (Math.abs(q0[c]) > halfWidths[c]) { lo = 1; hi = 0; }
+                        continue;
+                    }
+                    const t1 = (-halfWidths[c] - q0[c]) / d[c];
+                    const t2 = (halfWidths[c] - q0[c]) / d[c];
+                    lo = Math.max(lo, Math.min(t1, t2));
+                    hi = Math.min(hi, Math.max(t1, t2));
+                }
+                let integral = 0;
+                if (hi > lo) {
+                    const steps = Math.max(2, Math.ceil((hi - lo) * rate * 2));
+                    const h = (hi - lo) / steps;
+                    for (let s = 0; s <= steps; s += 1) {
+                        const t = lo + s * h;
+                        const value = sampleFieldTrilinear(
+                            density, grid, grid, grid,
+                            (q0[0] + t * d[0] + halfWidths[0]) / delta[0],
+                            (q0[1] + t * d[1] + halfWidths[1]) / delta[1],
+                            (q0[2] + t * d[2] + halfWidths[2]) / delta[2]
+                        );
+                        if (Number.isFinite(value)) integral += (s === 0 || s === steps ? 0.5 : 1) * value;
+                    }
+                    integral *= h;
+                }
+                row[b] = integral;
+                if (integral > vmax) vmax = integral;
+            }
+            rows[a] = row;
+        }
+        return { density: rows, axes: [i, j], extent: [-half, half, -half, half], vmax };
+    };
+
+    return { pc12: plane(0, 1, 2), pc13: plane(0, 2, 1), pc23: plane(1, 2, 0) };
 };

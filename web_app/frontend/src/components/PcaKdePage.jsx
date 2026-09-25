@@ -22,7 +22,7 @@ import {
     buildCrystalAxes
 } from './sceneAxes';
 import useSiteCloud from '../useSiteCloud';
-import { crystalOrientationRows } from '../pcaCrystalFrame';
+import { crystalOrientationRows, projectVolumeOntoFrame } from '../pcaCrystalFrame';
 import './PcaKdePage.css';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
@@ -389,82 +389,6 @@ const orthonormalCrystalFrame = (unitCell) => {
     return [e0, e1, e2];
 };
 
-// Project the computed 3D KDE density onto the three planes of the orthonormal frame
-// `frame` (rows e0, e1, e2) by bilinearly splatting each PCA-grid cell's mass into 2D
-// bins of the two in-plane coordinates — the honest shadow of the SAME density the
-// panel shows, re-binned into the crystal frame. `half` is the cube half-width (all
-// axes equal, cubic box). Returns {pc12, pc13, pc23} shaped exactly like the worker's
-// PC-plane projections, so makeProjectionWall / makeProjectionContours draw them as-is.
-const projectDensityOntoFrame = (kde, frame, half, nBins) => {
-    const grid = kde.grid;
-    const axisCoords = kde.axisCoords;
-    const axes = kde.axes;
-    const density = kde.density;
-    const cellVolume = kde.cellVolume || 1;
-    const [e0, e1, e2] = frame;
-    const span = 2 * half || 1;
-    const toBin = (c) => ((c + half) / span) * (nBins - 1);
-    const alloc = () => Array.from({ length: nBins }, () => new Float64Array(nBins));
-    const d01 = alloc();
-    const d02 = alloc();
-    const d12 = alloc();
-    // Bilinear splat of weight w at continuous (u, v) into an accumulator grid.
-    const splat = (acc, u, v, w) => {
-        const u0 = Math.floor(u);
-        const v0 = Math.floor(v);
-        const fu = u - u0;
-        const fv = v - v0;
-        const put = (a, b, m) => { if (a >= 0 && a < nBins && b >= 0 && b < nBins) acc[a][b] += w * m; };
-        put(u0, v0, (1 - fu) * (1 - fv));
-        put(u0, v0 + 1, (1 - fu) * fv);
-        put(u0 + 1, v0, fu * (1 - fv));
-        put(u0 + 1, v0 + 1, fu * fv);
-    };
-    for (let i = 0; i < grid; i += 1) {
-        const px = axisCoords[0][i];
-        for (let j = 0; j < grid; j += 1) {
-            const py = axisCoords[1][j];
-            const base = (i * grid + j) * grid;
-            for (let k = 0; k < grid; k += 1) {
-                const val = density[base + k];
-                if (val <= 0) continue;
-                const pz = axisCoords[2][k];
-                // PCA-frame grid point -> Cartesian offset from the cloud mean.
-                const cx = px * axes[0][0] + py * axes[1][0] + pz * axes[2][0];
-                const cy = px * axes[0][1] + py * axes[1][1] + pz * axes[2][1];
-                const cz = px * axes[0][2] + py * axes[1][2] + pz * axes[2][2];
-                const u0c = toBin(cx * e0[0] + cy * e0[1] + cz * e0[2]);
-                const u1c = toBin(cx * e1[0] + cy * e1[1] + cz * e1[2]);
-                const u2c = toBin(cx * e2[0] + cy * e2[1] + cz * e2[2]);
-                const w = val * cellVolume;
-                splat(d01, u0c, u1c, w);   // integrate out e2 -> e0–e1 plane
-                splat(d02, u0c, u2c, w);   // integrate out e1 -> e0–e2 plane
-                splat(d12, u1c, u2c, w);   // integrate out e0 -> e1–e2 plane
-            }
-        }
-    }
-    const binArea = (span / (nBins - 1)) ** 2 || 1;
-    const finalize = (acc, pair) => {
-        let vmax = 0;
-        const dens = new Array(nBins);
-        for (let a = 0; a < nBins; a += 1) {
-            const row = new Array(nBins);
-            for (let b = 0; b < nBins; b += 1) {
-                const v = acc[a][b] / binArea;
-                row[b] = v;
-                if (v > vmax) vmax = v;
-            }
-            dens[a] = row;
-        }
-        return { density: dens, axes: pair, extent: [-half, half, -half, half], vmax };
-    };
-    return {
-        pc12: finalize(d01, [0, 1]),
-        pc13: finalize(d02, [0, 2]),
-        pc23: finalize(d12, [1, 2])
-    };
-};
-
 const PROJECTION_META = [
     { key: 'pc12', label: 'PC1 – PC2' },
     { key: 'pc13', label: 'PC1 – PC3' },
@@ -702,15 +626,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     }, [kde, selectedEllipsoid, showEllipsoidKde]);
 
     // Crystal-frame shadow box + wall projections: an orthonormal frame from the unit
-    // cell and the current KDE density re-binned onto its three planes. Used when the
-    // viewport is in crystal mode; recomputed only when the volume or the cell changes.
+    // cell and the marginals of the current KDE volume on its three planes (line
+    // integrals through the volume, projectVolumeOntoFrame). The frame is always
+    // available (the camera framing needs it); the walls are computed only while the
+    // viewport is in crystal mode.
     const crystalDisplay = useMemo(() => {
         if (!kde || !unitCell) return null;
         const frame = orthonormalCrystalFrame(unitCell);
         const half = Math.max(...kde.halfWidths);
-        const projections = projectDensityOntoFrame(kde, frame, half, kde.grid);
+        const projections = axisFrame === 'crystal' ? projectVolumeOntoFrame(kde, frame, half, kde.grid) : null;
         return { frame, halfWidths: [half, half, half], projections };
-    }, [kde, unitCell]);
+    }, [kde, unitCell, axisFrame]);
 
     // Current aspect ratio of the main canvas, needed to size the orthographic
     // frustum when (re)framing.

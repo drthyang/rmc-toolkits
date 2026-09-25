@@ -94,7 +94,7 @@ became its own page; the pieces below are the current owners of each concern.
 | [`components/PcaKdePage.jsx`](../../web_app/frontend/src/components/PcaKdePage.jsx) | the KDE request, the main three.js viewport (isosurface, shell, walls, cameras), the statistics panel, the controls |
 | [`components/SiteStructurePanel.jsx`](../../web_app/frontend/src/components/SiteStructurePanel.jsx) | the unit-cell Site-ellipsoids picker (Step 14), shared with the Displacement Directions page |
 | [`components/sceneAxes.js`](../../web_app/frontend/src/components/sceneAxes.js) | the PC and a/b/c colour palettes and the `buildAxisTriad` / `buildCrystalAxes` rod builders, shared by every panel |
-| [`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js) | the crystal-frame algebra (Step 13): `unitCellVectors` (via `useSiteCloud.js`) and `crystalOrientationRows` → `principalAxisOrientation` → `crystalPcaTransforms` (the *Crystal orientation* table in `PcaKdePage.jsx`) |
+| [`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js) | the crystal-frame algebra (Step 13): `unitCellVectors` (via `useSiteCloud.js`) and `crystalOrientationRows` → `principalAxisOrientation` → `crystalPcaTransforms` (the *Crystal orientation* table in `PcaKdePage.jsx`), and `projectVolumeOntoFrame` (the crystal-frame walls, Step 10b) |
 
 Which engine runs is **not** decided by the runtime mode alone. The decision lives in
 [`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js) → `requestPca(kind, params)`, not in the
@@ -811,7 +811,7 @@ emitted as two segments without a saddle-point disambiguation, so a saddle may b
 "wrong" way). Lines are drawn at $-1.05\,w_t$ (just inside the wall) with `renderOrder = 2` so the
 translucent wall cannot paint over them.
 
-#### 10b. Crystal-frame walls — re-binned, not analytic
+#### 10b. Crystal-frame walls — line integrals through the volume
 
 When the *Frame* switch is set to **Crystal**, `orthonormalCrystalFrame()` (in `PcaKdePage.jsx`)
 builds a Gram–Schmidt orthonormal frame from the unit cell —
@@ -822,46 +822,49 @@ look-down-a/b/c cameras use the true (possibly oblique) cell edges. What its thr
 not mean for an oblique cell, and its missing singularity guard, are covered in "Principal axes in
 the crystallographic frame", Step 9b.
 
-`projectDensityOntoFrame(kde, frame, half, nBins)` then re-bins the *same* sampled volume. For every
-**grid node** $(i,j,k)$ — `axisCoords` are `linspace(-w_a, +w_a, G)`, so the samples are nodes, with
-the first and last sitting exactly on the box faces, **not** voxel centres — it maps the node to a
-Cartesian offset $\mathbf{c}$ from the cloud mean through `axes`, takes the three in-frame
-coordinates $\mathbf{c}\cdot\mathbf{e}_t$, converts each to a continuous bin coordinate
+`projectVolumeOntoFrame(kde, frame, half, nBins)` (in
+[`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js)) computes the marginal of the
+*same* sampled volume on each frame plane. For the $\mathbf{e}_i$–$\mathbf{e}_j$ plane and every
+texel $(u,v)$ of an $n_\mathrm{bins}\times n_\mathrm{bins}$ grid on $[-\texttt{half},\texttt{half}]^2$
+($\texttt{half}=\max_a w_a$, $n_\mathrm{bins}=G$),
 
-$$\texttt{toBin}(c)=\frac{c+\texttt{half}}{\texttt{span}}\,(n_\mathrm{bins}-1),\qquad
-\texttt{half}=\max_a w_a,\ \ \texttt{span}=2\,\texttt{half},\ \ n_\mathrm{bins}=G,$$
+$$\rho^{(ij)}(u,v)=\int\rho\big(u\,\mathbf{e}_i+v\,\mathbf{e}_j+t\,\mathbf{e}_k\big)\,dt\qquad[\text{Å}^{-2}],$$
 
-and **bilinearly splats** the weight $w=\rho_{ijk}\Delta V$ into three 2D accumulators (the
-$\mathbf{e}_0$–$\mathbf{e}_1$, $\mathbf{e}_0$–$\mathbf{e}_2$ and $\mathbf{e}_1$–$\mathbf{e}_2$
-planes, integrating out the remaining axis). Nodes with $\rho\le0$ are skipped. Each accumulator is
-finally divided by $\texttt{binArea}=(\texttt{span}/(n_\mathrm{bins}-1))^2$ to give a surface density
-in Å⁻². Three defensive fallbacks guard the arithmetic: `cellVolume || 1`, `span || 1`,
-`binArea || 1`. So:
+with the line expressed in the PCA frame, clipped to the sampled box $\lvert q_a\rvert\le w_a$ (outside
+it the volume has no samples and is **not** extrapolated), and integrated by the trapezoid rule with
+at least two steps per grid cell along every PCA axis, each sample a trilinear interpolation of the
+volume (`sampleFieldTrilinear`). So:
 
-- these walls are a **numerical** projection of the discretised volume, whereas the PC walls are the
-  analytic marginal;
-- density that falls outside $\pm\max_a w_a$ in the crystal frame is silently dropped. The PCA
-  sampling box's corners reach up to $\lVert\mathbf w\rVert\le\sqrt3\max_a w_a$ along a crystal
-  direction, so corner cells can be lost. At the default `extent = 4` those corners carry a
-  negligible fraction of the mass, but the crystal-frame walls do not integrate to the same total
-  as the PC-frame ones;
-- the bilinear splat adds a small smoothing of order one bin, so the crystal walls read blockier and
-  slightly more diffuse than the PC ones;
-- $\Delta V$ is the **node-spacing product** $(2w_a/(G-1))^3$, so $\sum\rho\,\Delta V$ is a
-  node-sampled Riemann sum in which the edge nodes are over-weighted by roughly $2\times$ per axis —
-  the same convention `mass` uses in both engines (Step 8), but not a cell-centred quadrature.
+- the walls are a **quadrature** of the discretised volume, whereas the PC walls are the analytic
+  marginal. Their error is the trilinear interpolation error of the volume: against the exact 2D
+  marginal of the KDE, $\lesssim1\%$ of the peak in L1 and $\lesssim3\%$ maximum relative error where
+  $\rho>10\%$ of the peak at $G=40$ (PCs rotated 0°/30°/45° against the frame, and a thin
+  $\sigma_1/\sigma_3=15$ cloud), and $\lesssim3\%$ L1 / 4% of the peak at the coarsest UI grid $G=24$ —
+  pinned by `pcaCrystalFrameProjection.test.js`, which also checks that each wall carries the
+  volume's captured mass to 2%;
+- density outside the sampled PCA box is absent from both the volume and the walls, and texels whose
+  line misses the box are 0. The PC box's corners reach up to $\sqrt3\max_a w_a$ along a crystal
+  direction, beyond the wall grid's $\pm\texttt{half}$, but at the default `extent = 4` the density
+  there is negligible.
+
+*History.* Before 1.0 `projectDensityOntoFrame` (in the page) **splatted** every grid node's mass
+$\rho_{ijk}\Delta V$ bilinearly into 2D bins of the node spacing. When the PCA axes are rotated
+against the frame the projected node lattice beats against the bin lattice: a periodic moiré of
+stripes and lobes, up to 21% (audit, cubic volume) or 6–9% (per-axis volume) maximum error at 30–45°
+and 15–22% at $G=24$ or for thin clouds — visible structure that is not in the data.
 
 The crystal-frame projections are shaped exactly like the PC ones (`{pc12, pc13, pc23}` with
-`density`, `axes`, `vmax`), so the same wall/contour builders draw them unchanged — including the
-same per-plane `vmax` normalisation and the same relative contour fractions. Two naming traps: the
-keys stay `pc12`/`pc13`/`pc23` in crystal mode, where they actually mean the
+`density`, `axes`, `extent`, `vmax`), so the same wall/contour builders draw them unchanged —
+including the same per-plane `vmax` normalisation and the same relative contour fractions. Two
+naming traps: the keys stay `pc12`/`pc13`/`pc23` in crystal mode, where they actually mean the
 $\mathbf{e}_0$–$\mathbf{e}_1$, $\mathbf{e}_0$–$\mathbf{e}_2$ and $\mathbf{e}_1$–$\mathbf{e}_2$
 planes; and `kde.cellVolume` is the KDE grid's node-spacing volume (Å³), not the crystallographic
 unit-cell volume.
 
-**Cost.** `crystalDisplay` is an $O(G^3)$ **main-thread** `useMemo` keyed on `[kde, unitCell]` only —
-not on `axisFrame`. It therefore re-runs for every new volume even while the viewport is in PC mode,
-where its result is unused.
+**Cost.** $3G^2$ lines of at most $\sim2\sqrt3\,G$ samples each — a few milliseconds per plane at
+$G=40$ — on the **main thread**, inside the `crystalDisplay` `useMemo` keyed on
+`[kde, unitCell, axisFrame]`; the walls are computed only while the viewport is in crystal mode
+(the frame itself, needed for camera framing, always is).
 
 ---
 
@@ -1026,7 +1029,7 @@ Two facts this page depends on:
    (Step 4b; next section, Step 8). The transformation matrices themselves (`fracToPca`,
    `pcaToFrac`) and the direction cosines are computed on that path but not printed. What the
    *Crystal* frame toggle changes is separate: the drawn axis triad, the shadow-box orientation and
-   its re-binned wall projections (Step 10b), and the camera-snap directions — all built from
+   its line-integral wall projections (Step 10b), and the camera-snap directions — all built from
    `unitCell` and `orthonormalCrystalFrame()` inside the page. The next section, Step 10, lists
    what is displayed and what is not.
 
@@ -1192,8 +1195,8 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
 10. **Wall projections are per-plane normalised** (each texture is `density/vmax` of its own plane)
     and their contour levels are fixed fractions of that plane's peak — they are **not** enclosed-mass
     contours and are not comparable between walls. The crystal-frame walls are additionally a
-    bilinear re-binning of the sampled volume that discards density outside the cube half-width, so
-    they do not carry the same total as the PC-frame analytic marginals.
+    quadrature of the sampled volume (line integrals with trilinear interpolation, ~1% of the peak
+    at $G=40$), not the analytic marginal the PC walls are.
 11. **The drawn ellipsoid mixes two computations.** `semiAxes` come from the sites table (full cloud,
     unfloored eigenvalues) while the orientation and centre come from the KDE result (possibly
     subsampled, floored eigenvalues). They coincide whenever the cloud has at most 20 000 copies, and
@@ -1725,11 +1728,11 @@ $\mathbf e_1$–$\mathbf e_2$ face is the plane perpendicular to $a$, not the $b
 #### 9c. What gets drawn on the frame's three faces (pointer)
 
 The density painted on the crystal-mode shadow box is the *same* KDE volume as in PC mode,
-re-binned onto the three faces of the frame above by `projectDensityOntoFrame` — a bilinear splat
-of each grid node's mass into 2D accumulators, divided by the bin area. The algorithm, its
-node-sampled (not cell-centred) quadrature, the density it silently drops outside the cube
-half-width, the per-plane `vmax` normalisation, the wall/contour constants and the main-thread cost
-are all in the previous section, Step 10b.
+integrated along the third frame axis onto the three faces of the frame above by
+`projectVolumeOntoFrame` — line integrals through the volume with trilinear interpolation. The
+algorithm, its error bound against the exact marginal, what happens outside the sampled box, the
+per-plane `vmax` normalisation, the wall/contour constants and the main-thread cost are all in the
+previous section, Step 10b.
 
 Two things belong here because they are statements about the **frame**, not about the density:
 
