@@ -353,8 +353,12 @@ class PeakSignificanceTests(unittest.TestCase):
                 orientation_histogram(_isotropic_units(rng, n), frequency=10, smoothing=2, geometry=False)
                 for _ in range(150)
             ]
-            significance = np.array([v["peakSignificance"] for v in values])
-            local = np.array([v["peakZScore"] for v in values])
+            significance = np.array([v["peakSignificance"] for v in values], dtype=float)
+            local = np.array([v["peakZScore"] for v in values], dtype=float)
+            # review:3 -- a NaN (or missing) field would make every rate check
+            # below pass vacuously; require real numbers first.
+            self.assertTrue(np.isfinite(significance).all(), msg=f"N={n}")
+            self.assertTrue(np.isfinite(local).all(), msg=f"N={n}")
             # The old readout: most noise maps printed a >= 3 sigma peak.
             self.assertGreater(np.mean(local >= 3), 0.5)
             # The calibrated one: <= 2.3% expected above 2 sigma (Sidak is
@@ -799,7 +803,8 @@ class AnisotropyNullTests(unittest.TestCase):
             expected = values[0]["orientationAnisotropyNull"]
             self.assertAlmostEqual(expected, 9.0 / np.sqrt(10.0 * np.pi * n), places=12)
             self.assertLess(abs(anisotropy.mean() / expected - 1.0), 0.1, msg=f"N={n}")
-            significance = np.array([v["orientationAnisotropySignificance"] for v in values])
+            significance = np.array([v["orientationAnisotropySignificance"] for v in values], dtype=float)
+            self.assertTrue(np.isfinite(significance).all(), msg=f"N={n}")
             self.assertLessEqual(np.mean(significance > 2), 0.05, msg=f"N={n}")
             self.assertLessEqual(np.mean(significance > 3), 0.015, msg=f"N={n}")
 

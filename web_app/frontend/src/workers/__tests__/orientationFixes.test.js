@@ -429,9 +429,19 @@ describe('peak significance (look-elsewhere-corrected Poisson tail)', () => {
             significance.push(result.peakSignificance);
             local.push(result.peakZScore);
         }
+        // review:3 -- a missing or NaN field makes every `> 2` count below
+        // false, so the rate checks alone pass vacuously (they did on main).
+        expect(significance.every(Number.isFinite)).toBe(true);
+        expect(local.every(Number.isFinite)).toBe(true);
         expect(local.filter((value) => value >= 3).length / local.length).toBeGreaterThan(0.5);
         expect(significance.filter((value) => value > 2).length / significance.length).toBeLessThanOrEqual(0.05);
         expect(significance.filter((value) => value > 3).length).toBeLessThanOrEqual(1);
+    });
+
+    it('reads a real lobe as significant (positive control)', () => {
+        const result = orientationHistogram(goldenCloud(), { frequency: 6, geometry: false });
+        expect(result.peakSignificance).toBeGreaterThan(5);
+        expect(result.peakPValue).toBeLessThan(1e-6);
     });
 });
 
@@ -618,9 +628,11 @@ describe('antipodal asymmetry null (conditional binomial split)', () => {
         for (let k = 0; k < 60; k += 1) {
             const rod = isotropicUnits(gauss, 1000).map(([x, y, z]) => [x * 0.2, y * 0.03, z * 0.03]);
             const result = orientationHistogram(rod, { frequency: 10, geometry: false });
+            expect(typeof result.antipodalAsymmetrySignificant).toBe('boolean');
             if (result.antipodalAsymmetrySignificant) flagged += 1;
             zValues.push(result.antipodalAsymmetryZ);
         }
+        expect(zValues.every(Number.isFinite)).toBe(true);
         expect(flagged).toBeLessThanOrEqual(1);
         expect(Math.abs(zValues.reduce((sum, value) => sum + value, 0) / zValues.length)).toBeLessThan(0.4);
     });
@@ -692,6 +704,7 @@ describe('orientation anisotropy null (Bingham test)', () => {
             const result = orientationHistogram(isotropicUnits(gauss, 216), { frequency: 2, geometry: false });
             anisotropy.push(result.orientationAnisotropy);
             expected = result.orientationAnisotropyNull;
+            expect(Number.isFinite(result.orientationAnisotropySignificance)).toBe(true);
             if (result.orientationAnisotropySignificance > 2) above2 += 1;
         }
         expect(expected).toBeCloseTo(9 / Math.sqrt(10 * Math.PI * 216), 12);
