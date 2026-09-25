@@ -313,34 +313,48 @@ over-binning guard:
 
 ```python
 def recommended_frequency(n_points, *, target_per_cell=12, max_frequency=24):
-    cells = max(12.0, n_points / target_per_cell)
-    frequency = round(sqrt(max(cells - 2.0, 10.0) / 10.0))
-    return clip(frequency, MIN_FREQUENCY, min(max_frequency, MAX_FREQUENCY))
+    # largest nu in [1, cap] with target * (10 nu^2 + 2) <= N  (a floor)
+    cap = min(max_frequency, MAX_FREQUENCY)
+    nu = clip(floor(sqrt(max(N / target - 2, 0) / 10)), 1, cap)   # seed
+    while nu < cap and target * (10 (nu+1)^2 + 2) <= N: nu += 1     # exact
+    while nu > 1   and target * (10 nu^2 + 2)     >  N: nu -= 1     # boundary
+    return nu
 ```
 
-i.e. invert $C = 10\nu^2 + 2$ at the cell count that gives `DEFAULT_TARGET_PER_CELL = 12`
-points per cell:
+i.e. the **largest** $\nu$ whose cells still average at least `DEFAULT_TARGET_PER_CELL = 12`
+points:
 
-$$\nu_{\text{rec}} \;=\; \operatorname{round}\!\left(\sqrt{\frac{\max\!\big(N/12,\,12\big) - 2}{10}}\,\right),
-\qquad \text{clipped to } [1, 24] .$$
+$$\nu_{\text{rec}} \;=\; \max\Big\{\nu \in [1,\, 24] \;:\; 12\,(10\nu^2 + 2) \le N\Big\}
+\quad(\text{or } 1 \text{ when the set is empty}).$$
 
-**Where the floors bite.** `cells` is pinned at 12 for every $N \le 144$, and the inner
-$\max(\cdot, 10)$ pins the radicand at 1, so $\nu_{\text{rec}} = 1$ there. Rounding then holds
-$\nu = 1$ well past that: measured transition points are
+The float `sqrt` only seeds the search; the boundary is settled by the integer comparison
+`target * (10 nu^2 + 2) <= N`, which is exact in both engines, so the browser and the server pick
+the same tiling for the same data without any rounding-mode subtleties.
 
-| $N$ range | Auto $\nu$ | cells |
-|---|---|---|
-| $\le 293$ | **1** | 12 (the dodecahedron) |
-| 294 – 774 | 2 | 42 |
-| 775 – 1493 | 3 | 92 |
-| 1494 – 2454 | 4 | 162 |
-| 2455 – 3653 | 5 | 252 |
-| $\ge 10\,854$ | $\ge 10$ | $\ge 1002$ |
+**It is a floor, not a rounding.** Before the 1.0 audit the code *rounded* $\sqrt{(N/12 - 2)/10}$
+to the nearest integer (half-to-even), which contradicted the docstring's "largest frequency whose
+cells still average `target_per_cell` points": at the rounding boundaries the average occupancy
+dropped to $12\,((\nu - \tfrac12)/\nu)^2$ — 7.0 per cell at $N = 294$ ($\nu = 2$), 8.4 at
+$N = 775$. The floor makes the docstring true: every Auto map averages $\ge 12$ per cell, except
+at the dodecahedron floor below.
+
+**Where the floor bites.** $\nu = 1$ (the 12-cell dodecahedron, `MIN_FREQUENCY`) is returned for
+every $N < 12 \cdot 42 = 504$, including $N < 144$ where even the dodecahedron averages fewer
+than 12 points — there is no coarser tiling. Transition points (exact, from the rule above):
+
+| $N$ range | Auto $\nu$ | cells | points / cell |
+|---|---|---|---|
+| $\le 503$ | **1** | 12 (the dodecahedron) | $< 42$ |
+| 504 – 1103 | 2 | 42 | 12.0 – 26.3 |
+| 1104 – 1943 | 3 | 92 | 12.0 – 21.1 |
+| 1944 – 3023 | 4 | 162 | 12.0 – 18.7 |
+| 3024 – 4343 | 5 | 252 | 12.0 – 17.2 |
+| $\ge 12\,024$ | $\ge 10$ | $\ge 1002$ | $\ge 12$ |
 
 Two consequences. **Auto can pick a resolution the manual control cannot**: the dropdown starts
 at $\nu = 2$, so $\nu = 1$ is reachable only through Auto. And a typical site with a few hundred
-copies gets $\nu = 1$ or 2 from Auto — twelve or forty-two cells — against the UI's fixed default
-of $\nu = 10$ (1002 cells). That gap is the whole content of caveat 7.
+to a thousand copies gets $\nu = 1$ or 2 from Auto — twelve or forty-two cells — against the UI's
+fixed default of $\nu = 10$ (1002 cells). That gap is the whole content of caveat 7.
 
 **Why 12.** At $n$ points per cell the fractional Poisson noise on an isotropic map is
 $1/\sqrt{n}$; $n = 12$ gives $\approx 29\%$ cell-to-cell scatter. That is small enough that a
@@ -351,11 +365,10 @@ The map becomes Poisson confetti — and confetti on a sphere looks exactly like
 eye. This is the single easiest way to over-read this kind of plot, which is also why `zScore`
 and `significance` are computed and displayed.
 
-**Rounding is load-bearing for cross-runtime agreement.** Python's `round()` is round-half-to-
-even. At exactly 774 surviving points the square root is exactly 2.5, so Python gives $\nu = 2$
-while a naive `Math.round` would give 3 — two different tilings for the same data in the two
-runtimes. The JS port therefore implements `roundHalfEven` explicitly, and *both* test suites
-pin the same three values (`recommendedFrequency(774) == 2`, `(300) == 2`, `(12000) == 10`).
+**Pinned in both suites.** `tests/test_orientation.py` and `orientation.test.js` pin
+`recommendedFrequency(774) == 2`, `(300) == 1`, `(12000) == 9`; `tests/test_orientation_fixes.py`
+and `orientationFixes.test.js` share the full boundary table (503 → 1, 504 → 2, 1103 → 2,
+1104 → 3, 12023 → 9, 12024 → 10, …) verbatim.
 
 Bounds: `MIN_FREQUENCY = 1` ([orientation.py:85](../../rmc_toolkits/orientation.py)),
 `MAX_FREQUENCY = 64` (line 86, $C = 40\,962$ cells). `recommended_frequency` never exceeds 24 on
@@ -1128,7 +1141,7 @@ those reconstructed sites do to *this* page's numbers.
 | `MAX_FREQUENCY` | 64 | — | 40 962 cells; 0.25 s (Py) / 0.11 s (JS) to tessellate |
 | `NEGLIGIBLE_AMPLITUDE` | $10^{-9}$ | Å | always-on floor; below it a direction is round-off |
 | `SMOOTHING_ALPHA` | 0.5 | — | fraction of mass a cell exports per pass |
-| `DEFAULT_TARGET_PER_CELL` | 12 | points/cell | auto-resolution target ($\approx 29\%$ Poisson scatter) |
+| `DEFAULT_TARGET_PER_CELL` | 12 | points/cell | auto-resolution floor: Auto averages $\ge 12$ per cell ($\le 29\%$ Poisson scatter) |
 | `recommended_frequency(max_frequency=)` | 24 | — | auto-resolution never exceeds this |
 | greedy-walk cap | 8 | rounds | measured need: 1 |
 
@@ -1192,7 +1205,7 @@ independently computed in each language — not a shared-golden parity suite.
 | Every centre self-assigns | $\nu = 7$ | $\nu = 7$ |
 | Unnormalised input accepted | yes | — |
 | **Monte-Carlo area cross-check** (assignment Voronoi fractions × $4\pi$ = analytic $\Omega_m$) | 200 000 dirs, $\nu = 3$, rtol 12 % | 60 000 dirs, $\nu = 2$, tol 15 % |
-| `recommendedFrequency` at 774 / 300 / 12000 = 2 / 2 / 10 | **pinned** | **pinned (shared verbatim)** |
+| `recommendedFrequency` at 774 / 300 / 12000 = 2 / 1 / 9, plus the exact boundary table | **pinned** | **pinned (shared verbatim)** |
 | Isotropic cloud: $\langle\mathcal{E}\rangle \approx 1$, significance < 1.5, \|anisotropy\| < 0.05 | 20 000 pts, $\nu=8$ | same |
 | Lobed cloud peaks on the long axis, $\mathcal{E}_{\text{peak}} > 2$, significance > 3 | yes | yes |
 | One-sided cloud: peak > 4× its antipode, $\mathcal{A} > 0.5$ and $> 3\mathcal{A}_{\text{null}}$ | yes | yes |
@@ -1214,8 +1227,7 @@ independently computed in each language — not a shared-golden parity suite.
 **What is *not* covered, and where the two could diverge.**
 
 - **No cross-engine golden test exists.** Nothing in CI compares Python output to JS output for
-  the same input. `recommendedFrequency(774|300|12000)` are the only values pinned in both
-  suites. In particular, if the two ever enumerated the icosahedron, its faces, the geodesic
+  the same input. The `recommendedFrequency` boundary table is pinned in both suites. In particular, if the two ever enumerated the icosahedron, its faces, the geodesic
   lattice, or the angular ordering in a different order, `centers[i]` would mean different cells
   in the two runtimes and **both suites would still pass** — every assertion above is
   index-agnostic. (Contrast [autoScale.js](../../web_app/frontend/src/workers/autoScale.js), which
@@ -1255,8 +1267,8 @@ independently computed in each language — not a shared-golden parity suite.
 - **Two places the tolerances already differ.** The $\sum\Omega_m = 4\pi$ assertion is a mixed
   absolute+relative bound in Python (`np.isclose`'s default `atol = 1e-8` is included) and purely
   relative in JS — see §4.6. And the eigensolvers differ, as above.
-- **Deliberately identical, easy to break:** the half-to-even rounding in `recommendedFrequency`
-  (§3), the stable tie-break in the largest-remainder lattice rounding, the strict `< 0` face
+- **Deliberately identical, easy to break:** the exact integer boundary test in
+  `recommendedFrequency` (§3), the stable tie-break in the largest-remainder lattice rounding, the strict `< 0` face
   winding test (§4.1), the relative adjacency tolerance $10^{-9}\max(\ell, 1)$ (§4.1), the
   first-maximum tie-break in the face `argmax`, the `argmin |n|` choice of tangent reference axis,
   and the 8-round walk cap. Each of these is a place where an "obvious simplification" in one
@@ -1302,7 +1314,7 @@ independently computed in each language — not a shared-golden parity suite.
 7. **Over-binning is still possible on purpose — and it silently disables the asymmetry flag.**
    The UI defaults to a fixed $\nu = 10$, not to Auto, so a site with only a few hundred copies is
    over-binned out of the box (1002 cells, $< 1$ point per cell); Auto would have picked $\nu = 1$
-   or 2 for the same data (§3). The 2× default smoothing hides this visually. Worse, because
+   (a few hundred copies) or 2 (~1000 copies) for the same data (§3). The 2× default smoothing hides this visually. Worse, because
    $\mathcal{A} \le 1$ while $\mathcal{A}_{\text{null}} = \sqrt{C/\pi N}$ is not bounded, the
    `A > 3·null` red flag **cannot fire at all** unless $N > 9C/\pi$ — 2 871 copies at $\nu = 10$
    (§7). A perfectly one-sided 216-point site at the default resolution reports
@@ -1393,7 +1405,7 @@ recalled in one line where the display depends on it.
 | Flask API | a **typed backend directory** (`?dir=…`), no local file loaded | `GET /api/pca/orientation` in [app.py](../../web_app/backend/app.py) → `site_orientation_histogram` in [orientation.py](../../rmc_toolkits/orientation.py) | Python, source of truth |
 
 The two engines are written to agree cell-for-cell (same construction order, so cell indices match;
-`recommendedFrequency` was fixed to round half-to-even like Python's `round()`). Everything in *this*
+`recommendedFrequency` settles its boundary with the same exact integer test as Python). Everything in *this*
 section — mesh, relief, colours, cameras, picker — is browser-side JavaScript/Three.js in both
 modes; the backend never renders anything for this page.
 
@@ -2487,7 +2499,7 @@ reads only `polygons`, `enhancement`, `vmax`, `cellMeanAmplitude`, `meanAmplitud
 
 | Field | What it is | Why its absence matters |
 | --- | --- | --- |
-| `recommendedFrequency` | the ν the ~12-per-cell guard would choose | With **Auto** selected the resolution control just reads "Auto" and no panel shows the ν or cell count that was actually used. The 2026-07-24 changelog removed the "N cells (ν=…)" summary line as "already in the Resolution control" — true for a manual ν, **false for Auto**. |
+| `recommendedFrequency` | the ν the ≥ 12-per-cell guard would choose | With **Auto** selected the resolution control just reads "Auto" and no panel shows the ν or cell count that was actually used. The 2026-07-24 changelog removed the "N cells (ν=…)" summary line as "already in the Resolution control" — true for a manual ν, **false for Auto**. |
 | `usedPoints`, `rejectedPoints`, `amplitudeCutoff` | vectors surviving the `Min \|Δr\|` cut, and the Å threshold that quantile resolved to | The header prints `selectedEllipsoid.count` — **all** atoms at the site — so raising `Min \|Δr\|` changes the map without changing the displayed atom count, and the resolved Å cutoff is never shown. |
 | `orientationTensor`, `orientationEigenvalues`, `orientationAxes` | $\langle \mathbf u\mathbf u^{\mathsf T}\rangle$, its eigenvalues, its canonicalised axes | Only the scalar $3\lambda_1 - 1$ is shown. The tensor's *axes* go through the same `_eigen_decomposition` as the site's PCA axes and are therefore directly comparable to them (engine section, Step 8) — and are never drawn or tabulated. The Woodcock girdle-vs-rod reading the three eigenvalues support is unavailable in the UI for the same reason. |
 | `density`, `mass`, `areas`, `expected`, `sizes`, `antipode`, `neighbors` | per-cell engine internals | `neighbors` is requested (via `geometry: true`) and transferred on every request, then discarded. |
@@ -2539,7 +2551,7 @@ destructure.
 | Vertex key rounding | 9 decimals | `vertexKey`, `orientationSphere.js:36` |
 | Negligible amplitude | $10^{-9}$ Å, strict `>` | `NEGLIGIBLE_AMPLITUDE`, `workers/orientation.js:26` |
 | Engine frequency bounds | `MIN_FREQUENCY = 1`, `MAX_FREQUENCY = 64` (UI reaches only 2–24) | `workers/orientation.js:24-25` |
-| Auto-frequency cap | `maxFrequency = 24`, `targetPerCell = 12` | `recommendedFrequency`, `workers/orientation.js:413` |
+| Auto-frequency cap | `maxFrequency = 24`, `targetPerCell = 12` (a floor on the average occupancy) | `recommendedFrequency`, `workers/orientation.js` |
 | LUT | 5 anchors → 256-entry `Uint8ClampedArray`, index clamped to `[0, 255]`, unknown name → viridis | `colormaps.js:27-57` |
 | Outline inflation | 1.002 | `OrientationView` call site |
 | Outline material | `0x10151c`, opacity 0.35 | `OrientationView` |
@@ -2584,9 +2596,9 @@ destructure.
 
 **1. The shipped default resolution over-bins by the engine's own criterion — and that silently
 disables one readout.** The `Resolution` default is ν = 10 (1002 cells), chosen for a legible picture
-together with the 2× smoothing default. The engine's own guard, `recommendedFrequency`, targets ~12
-points per cell; for a typical site with ~1000 copies (one per unit cell of a 10×10×10 supercell) it
-returns **ν = 3** (92 cells). At ν = 10 the expected count per cell is ≈ 1. Three consequences:
+together with the 2× smoothing default. The engine's own guard, `recommendedFrequency`, keeps at least
+12 points per cell; for a typical site with ~1000 copies (one per unit cell of a 10×10×10 supercell) it
+returns **ν = 2** (42 cells). At ν = 10 the expected count per cell is ≈ 1. Three consequences:
 
 * The colour field is only legible because of the smoothing; the raw map at ~1 count/cell is Poisson
   confetti. Turning smoothing to 0 at the default ν shows that directly.
@@ -2652,8 +2664,8 @@ neither `reconstructed` nor `copiesPerCell`.
 
 **6. Nothing on this page is a publication number.** The map is a visualisation of a binned, usually
 smoothed histogram. The Python `orientation.py` is the source of truth; the browser port is asserted
-to agree (same construction order, half-to-even rounding of the auto frequency, brute-force-verified
-assignment), but the browser path is a *visualisation* path in the same sense as the static-mode KDE.
+to agree (same construction order, the same exact boundary test for the auto frequency,
+brute-force-verified assignment), but the browser path is a *visualisation* path in the same sense as the static-mode KDE.
 If a number is going into a paper, re-derive it from the package.
 
 **7. Frames.** In the Crystal frame the sphere lives in the shared Cartesian Å basis — **not** in

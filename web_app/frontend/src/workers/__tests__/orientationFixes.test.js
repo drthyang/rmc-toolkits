@@ -78,3 +78,26 @@ describe('non-finite input', () => {
         expect(recommendedFrequency(1000, { maxFrequency: MIN_FREQUENCY })).toBe(MIN_FREQUENCY);
     });
 });
+
+// orientation.physics.10/.25, orientation.numerics.30 — shared verbatim with
+// RECOMMENDED_FREQUENCY_PINS in tests/test_orientation_fixes.py.
+const RECOMMENDED_FREQUENCY_PINS = [
+    [0, 1], [294, 1], [300, 1], [503, 1], [504, 2], [774, 2], [1000, 2], [1103, 2],
+    [1104, 3], [12000, 9], [12023, 9], [12024, 10], [10000000, 24]
+];
+
+describe('recommendedFrequency floors to the target occupancy', () => {
+    it('never drops below 12 points per cell (except at the dodecahedron floor)', () => {
+        for (let n = 1; n < 20000; n += 7) {
+            const frequency = recommendedFrequency(n);
+            if (frequency > MIN_FREQUENCY) expect(n / (10 * frequency * frequency + 2)).toBeGreaterThanOrEqual(12);
+            if (frequency < 24) expect(n / (10 * (frequency + 1) ** 2 + 2)).toBeLessThan(12);
+        }
+    });
+
+    it('matches the Python pins', () => {
+        RECOMMENDED_FREQUENCY_PINS.forEach(([n, expected]) => expect(recommendedFrequency(n)).toBe(expected));
+        expect(recommendedFrequency(1000, { targetPerCell: 5 })).toBe(4);
+        expect(recommendedFrequency(5000, { maxFrequency: 3 })).toBe(3);
+    });
+});

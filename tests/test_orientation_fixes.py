@@ -71,5 +71,49 @@ class NonFiniteInputTests(unittest.TestCase):
         self.assertEqual(recommended_frequency(1000, max_frequency=MIN_FREQUENCY), MIN_FREQUENCY)
 
 
+# Shared verbatim with orientationFixes.test.js: (N, recommended frequency).
+# The boundaries sit exactly where 12 * (10 nu^2 + 2) == N.
+RECOMMENDED_FREQUENCY_PINS = [
+    (0, 1),
+    (294, 1),
+    (300, 1),
+    (503, 1),
+    (504, 2),
+    (774, 2),
+    (1000, 2),
+    (1103, 2),
+    (1104, 3),
+    (12000, 9),
+    (12023, 9),
+    (12024, 10),
+    (10_000_000, 24),
+]
+
+
+class RecommendedFrequencyFloorTests(unittest.TestCase):
+    """orientation.physics.10/.25, orientation.numerics.30.
+
+    The docstring promised the largest frequency whose cells still average
+    target_per_cell points, but the code rounded to the nearest frequency and
+    returned cells averaging as few as 7 points (N=294 -> nu=2, 42 cells).
+    """
+
+    def test_never_drops_below_the_target_occupancy(self):
+        for n in range(1, 20000, 7):
+            frequency = recommended_frequency(n)
+            cells = 10 * frequency**2 + 2
+            if frequency > MIN_FREQUENCY:
+                self.assertGreaterEqual(n / cells, 12, msg=f"N={n} nu={frequency}")
+            if frequency < 24:
+                finer = 10 * (frequency + 1) ** 2 + 2
+                self.assertLess(n / finer, 12, msg=f"N={n}: nu+1 would still hold 12/cell")
+
+    def test_pinned_values_shared_with_the_js_engine(self):
+        for n, expected in RECOMMENDED_FREQUENCY_PINS:
+            self.assertEqual(recommended_frequency(n), expected, msg=f"N={n}")
+        self.assertEqual(recommended_frequency(1000, target_per_cell=5), 4)
+        self.assertEqual(recommended_frequency(5000, max_frequency=3), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

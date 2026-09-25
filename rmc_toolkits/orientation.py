@@ -96,7 +96,8 @@ SMOOTHING_ALPHA = 0.5
 
 # Counts per cell that make a map worth looking at: at n per cell the Poisson
 # noise on an isotropic map is 1/sqrt(n), so 12 gives ~29% cell-to-cell scatter
-# -- enough to see a 1.5x lobe, not enough to invent one.
+# -- enough to see a 1.5x lobe, not enough to invent one. recommended_frequency
+# floors to it: the auto resolution averages at least this many per cell.
 DEFAULT_TARGET_PER_CELL = 12
 
 WEIGHTS = ("count", "amplitude", "amplitude2")
@@ -472,6 +473,12 @@ def recommended_frequency(
 ) -> int:
     """Largest frequency whose cells still average ``target_per_cell`` points.
 
+    Returns the largest ``nu`` in ``[MIN_FREQUENCY, max_frequency]`` with
+    ``n_points / (10*nu**2 + 2) >= target_per_cell`` -- a floor, so the average
+    occupancy never drops below the target. The one exception is the bottom
+    of the range: fewer than ``12 * target_per_cell`` points still get the
+    12-cell dodecahedron (``MIN_FREQUENCY``), the coarsest tiling there is.
+
     Over-binning is the failure mode of this kind of plot: push the resolution
     past the data and every cell holds 0 or 1 points, the map turns into Poisson
     confetti, and the confetti looks like structure. Callers should use this as
@@ -482,11 +489,19 @@ def recommended_frequency(
         raise ValueError(f"max_frequency must be a finite number >= {MIN_FREQUENCY}")
     if not np.isfinite(float(n_points)):
         raise ValueError("n_points must be a finite number")
+    cap = min(int(max_frequency), MAX_FREQUENCY)
     if n_points <= 0:
         return MIN_FREQUENCY
-    cells = max(12.0, float(n_points) / target)
-    frequency = int(round(np.sqrt(max(cells - 2.0, 10.0) / 10.0)))
-    return int(np.clip(frequency, MIN_FREQUENCY, min(max_frequency, MAX_FREQUENCY)))
+    # Seed from the continuous inverse of C = 10 nu^2 + 2, then settle the
+    # boundary with the exact comparison target * C <= N (integer-valued, so
+    # it is exact in both engines and immune to sqrt round-off).
+    seed = int(np.floor(np.sqrt(max(float(n_points) / target - 2.0, 0.0) / 10.0)))
+    frequency = min(max(seed, MIN_FREQUENCY), cap)
+    while frequency < cap and target * (10 * (frequency + 1) ** 2 + 2) <= n_points:
+        frequency += 1
+    while frequency > MIN_FREQUENCY and target * (10 * frequency**2 + 2) > n_points:
+        frequency -= 1
+    return int(frequency)
 
 
 def _validated_target(target_per_cell) -> int:

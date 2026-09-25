@@ -401,22 +401,12 @@ const validatedTarget = (targetPerCell) => {
     return Math.trunc(value);
 };
 
-// Round half to even (banker's rounding) -- what Python's round() does. The
-// auto-resolution must round identically in both engines or the browser and
-// server pick different tilings for the same data at exact .5 boundaries
-// (e.g. 774 surviving points puts the sqrt at exactly 2.5: half-even gives
-// nu=2, Math.round would give 3).
-const roundHalfEven = (value) => {
-    const floor = Math.floor(value);
-    const remainder = value - floor;
-    if (remainder > 0.5) return floor + 1;
-    if (remainder < 0.5) return floor;
-    return floor % 2 === 0 ? floor : floor + 1;
-};
-
 /**
  * Largest frequency whose cells still average `targetPerCell` points -- the
- * over-binning guard. Mirrors `recommended_frequency`.
+ * over-binning guard, a floor (the average occupancy never drops below the
+ * target, except that fewer than 12 * targetPerCell points still get the
+ * 12-cell dodecahedron). Mirrors `recommended_frequency`, including the exact
+ * integer boundary test, so both engines pick the same tiling.
  */
 export const recommendedFrequency = (nPoints, { targetPerCell = DEFAULT_TARGET_PER_CELL, maxFrequency = 24 } = {}) => {
     const target = validatedTarget(targetPerCell);
@@ -424,10 +414,13 @@ export const recommendedFrequency = (nPoints, { targetPerCell = DEFAULT_TARGET_P
         throw new Error(`maxFrequency must be a finite number >= ${MIN_FREQUENCY}`);
     }
     if (!Number.isFinite(Number(nPoints))) throw new Error('nPoints must be a finite number');
+    const cap = Math.min(Math.trunc(Number(maxFrequency)), MAX_FREQUENCY);
     if (!(nPoints > 0)) return MIN_FREQUENCY;
-    const cells = Math.max(12, nPoints / target);
-    const frequency = roundHalfEven(Math.sqrt(Math.max(cells - 2, 10) / 10));
-    return Math.min(Math.max(frequency, MIN_FREQUENCY), Math.min(maxFrequency, MAX_FREQUENCY));
+    const seed = Math.floor(Math.sqrt(Math.max(nPoints / target - 2, 0) / 10));
+    let frequency = Math.min(Math.max(seed, MIN_FREQUENCY), cap);
+    while (frequency < cap && target * (10 * (frequency + 1) ** 2 + 2) <= nPoints) frequency += 1;
+    while (frequency > MIN_FREQUENCY && target * (10 * frequency * frequency + 2) > nPoints) frequency -= 1;
+    return frequency;
 };
 
 // --- histogram ----------------------------------------------------------------
