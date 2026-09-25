@@ -124,7 +124,7 @@ computed values.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from itertools import product
 from pathlib import Path
@@ -209,6 +209,9 @@ class BondAngleDistribution:
     # found from both ends), else bond12_count. Same for window 2 with C.
     unique_bonds12: int
     unique_bonds23: int
+    # What the .rmc6f atom section skipped (Rmc6fParseReport.warning()), set
+    # only by the file loaders; None for a clean file or in-memory input.
+    parse_warning: str | None = None
 
 
 def _validate_window(name: str, window: Sequence[float]) -> tuple[float, float]:
@@ -927,13 +930,17 @@ def bond_angle_summary(
     }
 
 
-def _read_configuration(path: str | Path) -> tuple[np.ndarray, list[str], np.ndarray]:
-    """Every atom's element and supercell-fraction position.
+def _read_configuration(
+    path: str | Path,
+) -> tuple[np.ndarray, list[str], np.ndarray, str | None]:
+    """Every atom's element and supercell-fraction position, plus the parse warning.
 
     Bond angles need only those two, so legacy coords-only lines count too --
     the same atom set as the browser worker (``parseRmc6fAtoms`` keeps both
-    layouts). Non-finite and unparsed lines are skipped by the shared grammar;
-    no atom at all is a ``ValueError`` naming what was found.
+    layouts). Non-finite and unparsed lines are skipped by the shared grammar
+    and reported through the returned ``Rmc6fParseReport.warning()`` (``None``
+    for a clean atom section); no atom at all is a ``ValueError`` naming what
+    was found.
     """
     lattice_vectors, _ = read_cell_vectors(path)
     coords: list[np.ndarray] = []
@@ -947,7 +954,43 @@ def _read_configuration(path: str | Path) -> tuple[np.ndarray, list[str], np.nda
             "the Atoms section is empty" if report.has_atoms_section else "there is no Atoms section"
         )
         raise ValueError(f"{path}: no atoms could be parsed — {detail}")
-    return np.asarray(coords, dtype=float), elements, lattice_vectors
+    return np.asarray(coords, dtype=float), elements, lattice_vectors, report.warning()
+
+
+def bond_angle_summary_from_file(
+    path: str | Path,
+    end1: str,
+    apex: str,
+    end2: str,
+    r12_min: float,
+    r12_max: float,
+    r23_min: float,
+    r23_max: float,
+    bin_width: float,
+    max_angles: int | None = None,
+) -> dict:
+    """``bond_angle_summary`` of an ``.rmc6f`` file, read afresh on every call.
+
+    The payload of ``/api/triplets`` and of the browser worker's ``triplets``
+    request, plus ``parseWarning``: the atom lines the shared ``.rmc6f``
+    grammar skipped (non-finite coordinates, unparsed lines, a count short of
+    the header's), or ``None``. Windows arrive resolved (bond23 defaults
+    applied by the caller). Callers that cache it must key the cache on the
+    file's content signature, as ``app.py``'s ``_TRIPLETS_CACHE`` does.
+    """
+    coords, elements, lattice_vectors, parse_warning = _read_configuration(path)
+    summary = bond_angle_summary(
+        coords,
+        elements,
+        lattice_vectors,
+        triplet=(end1, apex, end2),
+        bond12=(r12_min, r12_max),
+        bond23=(r23_min, r23_max),
+        bin_width=bin_width,
+        max_angles=max_angles,
+    )
+    summary["parseWarning"] = parse_warning
+    return summary
 
 
 @lru_cache(maxsize=16)
@@ -964,23 +1007,19 @@ def cached_bond_angle_summary(
     bin_width: float,
     max_angles: int | None = None,
 ) -> dict:
-    """``bond_angle_summary`` of an ``.rmc6f`` file, memoized for API callers.
+    """:func:`bond_angle_summary_from_file`, memoized for library callers.
 
-    Keyed on (path, mtime) plus every parameter, mirroring
-    ``pca_kde.cached_site_displacements``. Windows arrive resolved (bond23
-    defaults applied by the caller) so equal windows hit one cache entry.
-    A refused (over-budget) request raises and is therefore never cached.
+    Keyed on (path, ``mtime``) plus every parameter, mirroring
+    ``pca_kde.cached_site_displacements``. ``mtime`` is whatever the CALLER
+    passes: the file is not re-stat'ed here, so a caller that passes a stale
+    value (or a coarse mtime that a quick rewrite does not change) gets the
+    previous configuration's result. For files that change while they are
+    served (Live Data), call the uncached :func:`bond_angle_summary_from_file`
+    under a cache keyed on the full file signature, as ``app.py`` does. A
+    refused (over-budget) request raises and is therefore never cached.
     """
-    coords, elements, lattice_vectors = _read_configuration(path)
-    return bond_angle_summary(
-        coords,
-        elements,
-        lattice_vectors,
-        triplet=(end1, apex, end2),
-        bond12=(r12_min, r12_max),
-        bond23=(r23_min, r23_max),
-        bin_width=bin_width,
-        max_angles=max_angles,
+    return bond_angle_summary_from_file(
+        path, end1, apex, end2, r12_min, r12_max, r23_min, r23_max, bin_width, max_angles
     )
 
 
@@ -994,10 +1033,14 @@ def bond_angles_from_rmc6f(
     collect_angles: bool = False,
     max_angles: int | None = None,
 ) -> BondAngleDistribution:
-    """Run ``bond_angle_distribution`` on an ``.rmc6f`` configuration file."""
+    """Run ``bond_angle_distribution`` on an ``.rmc6f`` configuration file.
+
+    ``parse_warning`` of the result names the atom lines the shared grammar
+    skipped (``None`` for a clean file).
+    """
     rmc6f_path = Path(rmc6f_path)
-    coords, elements, lattice_vectors = _read_configuration(rmc6f_path)
-    return bond_angle_distribution(
+    coords, elements, lattice_vectors, parse_warning = _read_configuration(rmc6f_path)
+    result = bond_angle_distribution(
         coords,
         elements,
         lattice_vectors,
@@ -1008,3 +1051,4 @@ def bond_angles_from_rmc6f(
         collect_angles=collect_angles,
         max_angles=max_angles,
     )
+    return replace(result, parse_warning=parse_warning)

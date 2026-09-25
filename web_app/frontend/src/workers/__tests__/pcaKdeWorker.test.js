@@ -108,6 +108,16 @@ describe('pcaKdeWorker surfaces the .rmc6f parse report', () => {
         const orientation = await handlePcaMessage(
             { kind: 'orientation', referenceNumber: 1, frequency: 3, geometry: false }, async () => text);
         expect(orientation.parseWarning).toBe(sites.parseWarning);
+
+        // ...and in the bond-angle summary, as /api/triplets returns it
+        // (bond_angle_summary_from_file).
+        const triplets = await handlePcaMessage(
+            { kind: 'triplets', end1: 'Se', apex: 'Se', end2: 'Se', r12Min: 7, r12Max: 9 }, async () => text);
+        expect(triplets.parseWarning).toBe(sites.parseWarning);
+        const clean = await handlePcaMessage(
+            { kind: 'triplets', end1: 'Se', apex: 'Se', end2: 'Se', r12Min: 7, r12Max: 9 },
+            async () => buildRmc6f(['Se'], { seed: 12 }));
+        expect(clean.parseWarning).toBeNull();
     });
 
     it('reads any Atoms-marker spelling and bare-CR files like the Dashboard parser', async () => {

@@ -386,7 +386,7 @@ class TripletsWorkBudgetTests(_ValidationCase):
     """Integration guard: once the backend has a triplets work budget, the route
     must forward it to the engine AND key its cache on it.
 
-    /api/triplets calls the uncached engine body under the file-signature cache
+    /api/triplets calls the uncached bond_angle_summary_from_file under the file-signature cache
     with one ``params`` tuple that is both the cache key and the argument list;
     a budget left out of that tuple would silently fall back to the engine's
     unrestricted default (``max_angles=None``).

@@ -119,7 +119,7 @@ export const handlePcaMessage = async (data, getText) => {
                 throw new Error(`${key} is capped at 15 A, got ${raw}`);
             }
         }
-        return bondAngleSummary(
+        const summary = bondAngleSummary(
             parsed.atomList.fractional,
             parsed.atomList.elements,
             parsed.latticeVectors,
@@ -131,6 +131,9 @@ export const handlePcaMessage = async (data, getText) => {
                 maxAngles: APP_MAX_ANGLES
             }
         );
+        // Atom lines the shared .rmc6f grammar skipped, or null -- the same
+        // text as /api/triplets' parseWarning (bond_angle_summary_from_file).
+        return { ...summary, parseWarning: parsed.parseWarning ?? null };
     }
 
     if (kind === 'orientation') {

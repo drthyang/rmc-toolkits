@@ -291,6 +291,10 @@ def main(argv: list[str] | None = None) -> int:
 
     label = "-".join(result.triplet)
     print(f"configuration: {config}")
+    if result.parse_warning:
+        # Atom lines the shared .rmc6f grammar skipped: the histogram covers
+        # the atoms that remain, so say so instead of reporting a short model.
+        print(f"rmc-triplets: warning: {result.parse_warning}", file=sys.stderr)
     print(f"triplet:       {label} (central {result.triplet[1]})")
     for name, unique, directed, mean in (
         ("bonds 1-2", result.unique_bonds12, result.bond12_count, result.mean_length12),

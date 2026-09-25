@@ -312,6 +312,38 @@ class StructureEndpointReportTests(unittest.TestCase):
         self.assertEqual(payload["parseReport"]["nonFiniteLines"], 1)
         self.assertIn("non-finite", payload["parseWarning"])
 
+    def test_bond_angles_carry_the_parse_warning_in_the_api_and_the_cli(self):
+        # The skipped line is named in /api/triplets' payload (as the browser
+        # worker's triplets response does) and on the rmc-triplets stderr.
+        import contextlib
+        import io
+
+        from rmc_toolkits.triplets_cli import main as triplets_main
+
+        lines = list(ATOM_LINES)
+        tokens = lines[0].split()
+        tokens[5] = "NaN"
+        lines[0] = "   ".join(tokens)
+        path = _write(self.directory, "run", _with_atoms(lines))
+        query = {"end1": "Ga", "apex": "Ga", "end2": "Ga", "r12Min": 6.0, "r12Max": 8.5}
+        response = self.client.get("/api/triplets", query_string={"dir": str(self.directory), **query})
+        self.assertEqual(response.status_code, 200)
+        warning = response.get_json()["parseWarning"]
+        self.assertIn(f"1 atom lines skipped for non-finite coordinates (first: '{lines[0].strip()}')", warning)
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = triplets_main([
+                str(path), "--triplet", "Ga", "Ga", "Ga", "--bond12", "6.0", "8.5",
+                "--output", str(self.directory / "angles.csv"),
+            ])
+        self.assertEqual(code, 0)
+        self.assertIn(f"rmc-triplets: warning: {warning}", stderr.getvalue())
+
+        _write(self.directory, "run", _with_atoms(ATOM_LINES))
+        clean = self.client.get("/api/triplets", query_string={"dir": str(self.directory), **query})
+        self.assertIsNone(clean.get_json()["parseWarning"])
+
 
 if __name__ == "__main__":
     unittest.main()

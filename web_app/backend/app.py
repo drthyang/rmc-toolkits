@@ -34,7 +34,7 @@ from rmc_toolkits.pca_kde import (
     site_ellipsoids,
     site_pca_kde,
 )
-from rmc_toolkits.triplets import APP_MAX_ANGLES, cached_bond_angle_summary
+from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
 from rmc_toolkits.parsers import (
     parse_rmc6f_atoms,
     read_cell_vectors,
@@ -985,16 +985,15 @@ def triplets_endpoint():
             bin_width,
             TRIPLETS_MAX_ANGLES,
         )
-        # The library function's own lru_cache is keyed on the caller's mtime;
-        # call the uncached body (__wrapped__, which ignores that key) under
-        # the file-signature cache instead. `params` is both that cache key and
-        # the engine's argument list, so every engine argument -- a work budget
-        # included -- belongs in it (TripletsWorkBudgetTests guards this).
+        # The uncached file entry point, memoized under the file-signature
+        # cache. `params` is both that cache key and the engine's argument
+        # list, so every engine argument -- a work budget included -- belongs
+        # in it (TripletsWorkBudgetTests guards this).
         result = dict(
             _TRIPLETS_CACHE.get(
                 rmc6f_path,
                 params,
-                lambda: cached_bond_angle_summary.__wrapped__(str(rmc6f_path), None, *params),
+                lambda: bond_angle_summary_from_file(str(rmc6f_path), *params),
             )
         )
         result["source"] = str(rmc6f_path)
