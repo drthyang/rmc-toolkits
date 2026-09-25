@@ -125,5 +125,66 @@ class FzConditioningTests(unittest.TestCase):
                     self.assertIs(summary["a_fz_reliable"], reliable)
 
 
+class ReliableIsNotSufficientTests(unittest.TestCase):
+    """reliable=True only says the denominator is statistically resolved (1.0 review).
+
+    On two of the three 'good' Mn3Sn runs the reliable-flagged a_fz still
+    drifts ~45 % with Qmin (a systematic head bias), so the CLI says what else
+    to check whenever it reports a reliable a_fz.
+    """
+
+    def run_cli(self, amplitude):
+        q, sq, b_sq_avg = model()
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "clean.sq"
+            write_stog_xy(data, q, sq)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main([
+                    "--data", str(data), "--qmin", "0.6", "--qmax", "30", "--rho0", str(RHO0),
+                    "--b-avg-sq", str(B2), "--b-sq-avg", str(b_sq_avg), "--r0", "2.5",
+                    "--r-fit-min", "1.2", "--rmax", "25", "--nr", "1000",
+                    "--amplitude", amplitude, "--out-dir", str(Path(tmp) / "out"),
+                ])
+        self.assertEqual(code, 0, err.getvalue())
+        return out.getvalue()
+
+    def test_cli_qualifies_a_reliable_a_fz(self):
+        for amplitude in ("fz", "density"):
+            with self.subTest(amplitude=amplitude):
+                out = self.run_cli(amplitude)
+                self.assertIn("Q->0 amplitude", out)
+                self.assertIn("necessary, not sufficient", out)
+                self.assertIn("--qmin", out)
+                self.assertNotIn("ill-conditioned", out)
+
+    @unittest.skipUnless(
+        all((MN3SN / name).exists() for name in ("stog", "stog_500K")),
+        "Mn3Sn PG3 runs not present",
+    )
+    def test_reliable_a_fz_still_drifts_with_qmin(self):
+        fz = faber_ziman("Mn3Sn")
+        runs = {"stog": "PG3_55537_rebin.sq", "stog_500K": "PG3_54139_SQ_rebin.dat"}
+        for name, raw in runs.items():
+            q, sq = read_stog_xy(MN3SN / name / raw)[:2]
+            values = []
+            for qmin in (0.82, 1.02, 1.05):
+                cfg = ScalingConfig(
+                    qmin=qmin, qmax=28.0, rho0=0.063049, b_avg_sq=fz.b_avg_sq_barn,
+                    b_sq_avg=fz.b_sq_avg_barn,
+                )
+                crop = q >= qmin
+                sweep = level_sweep(q[crop & (q <= 28.0)], sq[crop & (q <= 28.0)])
+                fit = fz_limit_fit(
+                    q[crop & (q <= 28.0)], sq[crop & (q <= 28.0)], sweep.level, cfg,
+                    level_uncertainty=sweep.level_uncertainty,
+                )
+                with self.subTest(run=name, qmin=qmin):
+                    self.assertTrue(fit["reliable"])
+                values.append(fit["a_fz"])
+            with self.subTest(run=name):  # 55537: 11.0 -> 6.2; 54139: 16.3 -> 23.7
+                self.assertGreater(max(values) / min(values), 1.4)
+
+
 if __name__ == "__main__":
     unittest.main()

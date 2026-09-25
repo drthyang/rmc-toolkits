@@ -1050,6 +1050,16 @@ const AutoStogPage = () => {
               </span>
             </div>
           )}
+          {diagnostics.a_fz_reliable === true && (
+            <div className="autostog-stat">
+              <span className="autostog-stat-label">Q→0 amplitude</span>
+              <span className="autostog-stat-value">a_fz {fmt(diagnostics.a_fz, 4)} (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</span>
+              <span className="autostog-stat-sub">
+                resolved from its error — necessary, not sufficient: a biased low-Q head passes too; re-run at a few Q_min to check a_fz is stable
+                {diagnostics.amplitude_concordance != null ? ' · see also the concordance' : ''}
+              </span>
+            </div>
+          )}
           {diagnostics.a_fz_reliable === false && (
             <div className="autostog-stat is-warn">
               <span className="autostog-stat-label">Q→0 amplitude</span>

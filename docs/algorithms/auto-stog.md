@@ -3110,9 +3110,11 @@ and `estimate_rho0` reports `a_fz_reliable` for its anchor. Measured over $Q_\ma
 **`a_fz_reliable = True` is necessary, not sufficient.** The flag is statistical — it catches a
 denominator lost in the scatter of the head, not a systematic head bias: over the same
 $Q_\mathrm{min}$ range the 55537 run's $a_\mathrm{fz}$ drifts 11 → 6 at 8–15 % and the 500 K
-(54139) run's 16 → 26 at 9–18 %, a ≈ 45 % drift with every point flagged reliable. Check that
+(54139) run's 16 → 26 at 9–18 %, a factor 1.6–1.8 with every point flagged reliable. Check that
 $a_\mathrm{fz}$ is stable against $Q_\mathrm{min}$ (re-run at a few values) and that it is concordant
-with the density-limit amplitude and with other runs of the same material before trusting it.
+with the density-limit amplitude and with other runs of the same material before trusting it —
+the CLI prints this caveat next to every reliable $a_\mathrm{fz}$ (*Q->0 amplitude* line) and the
+page shows it on a *Q→0 amplitude* card.
 Tests: `tests/test_stog_b_fz_conditioning.py`, `tests/test_stog_b_fz_se_calibration.py`,
 `src/__tests__/autoScaleFzConditioning.test.js`.
 

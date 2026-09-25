@@ -713,6 +713,16 @@ def _print_report(
             f"  amplitude concordance: a_fz/a = "
             f"{summary['amplitude_concordance']:.3f} ({verdict})"
         )
+    if summary.get("a_fz_reliable") is True:
+        # The flag is statistical: a systematic head bias passes it (Mn3Sn
+        # 55537 / 54139: reliable a_fz drifting 11 -> 6 / 16 -> 24 with Qmin).
+        also = "; see also the concordance above" if "amplitude_concordance" in summary else ""
+        print(
+            f"  Q->0 amplitude: a_fz = {summary['a_fz']:.4g} (relative error "
+            f"{summary['a_fz_rel_se']:.0%}, resolved) — necessary, not sufficient: a biased "
+            f"low-Q head passes too; re-run at a few --qmin values to check a_fz is "
+            f"stable{also}"
+        )
     if summary.get("a_fz_reliable") is False:
         use = "the concordance" if "amplitude_concordance" in summary else "it as the scale"
         print(

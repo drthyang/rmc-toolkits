@@ -119,8 +119,16 @@ the manual "try again" scale loop replaced by physics:
   pin S(0) → restore-level construction) gives a = 10–16 on the 55537/55526/54139 runs —
   but only when its Q→0 extrapolation is well conditioned. On run 59438 the Bragg-dominated
   head extrapolates to within noise of the level: a_fz = 74 (Qmin 0.82), 91 (1.0), 512 (1.05),
-  flagged `a_fz_reliable = False` (relative error 29–168 %). Trust an FZ scale only when the
-  report shows it reliable, and check it against the other runs / an external density.
+  flagged `a_fz_reliable = False` (relative error 29–168 %). **`a_fz_reliable = True` is
+  necessary, not sufficient**: the flag only says S_meas(0) − level is resolved from its
+  statistical error, and a systematically biased low-Q head passes it. On two of the three
+  runs above the reliable-flagged a_fz still drifts with Qmin — 55537: 11.0 → 6.1, 54139
+  (500 K): 16.3 → 23.7 over Qmin 0.82–1.05 in 0.01 steps (Qmax 28), every value flagged
+  reliable (relative error 8–14 % and 9–15 %); only 55526 (300 K) is stable (10.3–10.9).
+  Before trusting an FZ scale, re-run at a few Qmin values and check a_fz is stable, check the
+  concordance with the density-limit amplitude, and compare it with other runs of the
+  material / an external density. The CLI and the page print this caveat next to every
+  reliable a_fz.
 - The RMC-ready files satisfy the Keen limits *by construction* (enforcement); judge fit
   quality only on the reported pre-enforcement numbers.
 
