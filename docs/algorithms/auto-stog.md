@@ -1546,15 +1546,25 @@ $v_\mp = Q_0(r \mp a_L)$:
 $$f_1(r) = \frac{1}{2a_L}\left[\frac{v_-\sin v_- + \cos v_- - 1}{(r-a_L)^2} - \frac{v_+\sin v_+ + \cos v_+ - 1}{(r+a_L)^2}\right],\qquad
 f_2(r) = \frac{1}{2a_L}\left[\frac{\sin v_-}{r-a_L} - \frac{\sin v_+}{r+a_L}\right]$$
 
-These have a **removable singularity at $r = a_L = \pi/Q_\mathrm{max}$**, patched with the
-analytic limits ($\lim_{k\to0}(kc\sin kc + \cos kc - 1)/k^2 = c^2/2$ and
-$\lim_{k\to 0}\sin(kc)/k = c$, with $c = Q_0$):
+Written this way they have a removable singularity at $r = a_L = \pi/Q_\mathrm{max}$ and, worse,
+evaluate $\cos v_- - 1$ by subtraction: for small $v_-$ the rounding error is $\sim 10^{-16}/v_-^2$
+relative, amplified again by the $(r-a_L)$ vs $(r+a_L)$ difference. Before 1.0 the code patched only
+$|r - a_L| \le 10^{-9}\max(1, a_L)$ with the analytic limit, so grid points $10^{-9}$–$10^{-6}$ Å
+from $a_L$ — which ordinary $Q_\mathrm{max}$ values put on the default 0.01 Å grid (e.g.
+$|r - a_L| = 2.6\cdot10^{-7}$ Å at $r = 0.11$ for $Q_\mathrm{max} = 28.56$) — got coefficients off by
+up to ~80× or with the wrong sign, a one-point spike in the Lorch-filtered $g(r)$ below the
+cutoff. Both engines now evaluate the identical, cancellation-free form
 
-$$f_1(a_L) = \frac{1}{2a_L}\left[\frac{Q_0^2}{2} - \frac{v_a \sin v_a + \cos v_a - 1}{(2a_L)^2}\right],\qquad
-f_2(a_L) = \frac{1}{2a_L}\left[Q_0 - \frac{\sin v_a}{2a_L}\right], \qquad v_a = 2a_LQ_0$$
+$$f_1 = \frac{Q_0^2}{2a_L}\big[h(v_-) - h(v_+)\big],\qquad
+f_2 = \frac{Q_0}{2a_L}\big[\mathrm{sinc}(v_-) - \mathrm{sinc}(v_+)\big],\qquad
+h(v) = \frac{v\sin v + \cos v - 1}{v^2} = \mathrm{sinc}(v) - \tfrac12\,\mathrm{sinc}^2(v/2)$$
 
-applied wherever $|r - a_L| \le 10^{-9}\max(1, a_L)$ (Python `np.isclose(..., rtol=0.0,
-atol=1e-9*max(1.0, a))`; JS the same explicit bound).
+($\mathrm{sinc}(v) = \sin v/v$, 1 at 0; $\cos v - 1 = -2\sin^2(v/2)$), which is regular at
+$r = a_L$ ($h(0) = 1/2$) and needs no patch (`transforms._sinc` / `_sinc_head`, JS `sinc` /
+`sincHead`). Agreement with adaptive quadrature of the defining integrals is ≤ 1e-12 relative
+over $|r - a_L| \in [10^{-9}, 10^{-5}]$, at $r = a_L$, and on the default grid for
+$Q_\mathrm{max} \in \{22.44, 26.18, 28.56, 39.27, 44.88, 52.36\}$ Å⁻¹
+(`tests/test_stog_b_lorch_basis.py`, `src/__tests__/autoScaleLorchBasis.test.js`).
 
 #### Edge cases and defaults
 
@@ -1562,12 +1572,10 @@ atol=1e-9*max(1.0, a))`; JS the same explicit bound).
   `omitted_low_q_correction` returns zeros): data that start at $Q=0$ omit nothing, and the
   $[0, q_1]$ panel is already inside the trapezoid sum. This is stated as pystog parity
   ($F_1 = F_2 = 0$).
-- $f_1, f_2$ are forced to 0 at $r = 0$ **in the non-Lorch branch only** (both are $O(r)$ there
-  anyway): Python `np.where(r == 0, 0.0, ...)` after an `errstate` guard, JS `continue` on
-  `ri === 0`. **The Lorch branch has no $r = 0$ guard in either engine** — its only patch is the
-  removable singularity at $r = a_L$. This is harmless on the shipped grid, which starts at
-  $\Delta r$, but `low_q_correction_basis` / `lowQCorrectionBasis` are public functions that
-  accept an arbitrary $r$ array and are unprotected there.
+- $f_1, f_2$ are 0 at $r = 0$ in both branches (both are $O(r)$ there): the non-Lorch branch
+  forces it (Python `np.where(r == 0, 0.0, ...)` after an `errstate` guard, JS `continue` on
+  `ri === 0`); the Lorch branch needs no guard — $(r - a_L)^2 = a_L^2 \ne 0$ there, and the
+  sinc form returns exactly 0 by symmetry ($h$ and sinc are even).
 - **Two different default policies, one layer apart.** `transforms.py`'s own signatures default
   `lorch=False`, `low_q_correction=False`, `s0_target=0.0` — every entry point
   (`fq_to_gpdf`, `low_q_correction_basis`, `fourier_filter`) is **uncorrected and un-windowed by
@@ -1590,7 +1598,8 @@ $\texttt{omitted\_low\_q\_correction} = \mathrm{coef}\cdot s_0 - \mathrm{const}$
 `test_low_q_correction_zero_when_data_start_at_zero` requires *exact* zeros (`atol=0.0`) when
 `q[0] == 0`;
 `test_low_q_correction_lorch_finite_at_singular_r` requires finiteness at $r = \pi/Q_\mathrm{max}$
-and that the patched value is bracketed by its two neighbours;
+and that the value there is bracketed by its two neighbours; `tests/test_stog_b_lorch_basis.py`
+checks the whole band $|r - a_L| \in [10^{-9}, 10^{-5}]$ against quadrature to 1e-11;
 `test_low_q_correction_improves_truncated_transform` truncates the synthetic data at 0.9 Å⁻¹ and
 requires the corrected low-$r$ rms to beat the uncorrected one;
 `tests/test_scaling.py::DetectionAndDensityTests::test_s0_target_changes_only_the_constant_term`
@@ -1943,7 +1952,6 @@ Everything else:
 | `prominence`, `major`, `strong_prominence` (peak onset) | 2.0, 0.5, 4.0 | — | same | first-shell peak / ripple-field ratios: 2× when the peak is ≥ 50 % of the range maximum (`major`), 4× alone |
 | `ONSET_TOLERANCE`, `MAX_WINDOW_REFITS` | 0.15, 4 | Å, — | `scaling.py` / `autoScale.js` constants | automatic window placement: a refit confirms the onset its window was built from within 0.15 Å; at most 4 confirming refits |
 | `_SINE_CHUNK` | 512 | output points | `transforms.py` line 40 | memory bound only; no numerical effect |
-| Lorch singularity tolerance | $10^{-9}\max(1, a_L)$ | Å | `low_q_correction_basis` | switches to the analytic limit at $r = a_L = \pi/Q_\mathrm{max}$ |
 | $Q_\mathrm{max}$ for Lorch | `q[-1]` | Å⁻¹ | implicit | last *supplied* point, not `config.qmax` |
 | $Q_0$ for the low-$Q$ correction | `q[0]` | Å⁻¹ | implicit | first *finite measured* point, not `config.qmin` |
 | `RMAX_DISPLAY` | 8 | Å | `AutoStogPage.jsx` | length of the plotted theory guide lines only; no effect on exports |
@@ -1960,7 +1968,7 @@ All `stog.inp` line numbers above are **1-based indices into the file's non-empt
 | --- | --- | --- | --- |
 | Quadrature rule | `np.trapezoid` on a chunked kernel matrix | sequential trapezoid loop | Same rule; **summation order differs** (NumPy pairwise vs JS sequential), so results differ at float-rounding level only |
 | Lorch window | `lorch_window` | `lorchWindow` | Identical formula and $Q=0$ guard |
-| Low-$Q$ basis (both branches, singular patch) | `low_q_correction_basis` | `lowQCorrectionBasis` | Identical formulas, identical tolerance |
+| Low-$Q$ basis (both branches; Lorch in the cancellation-free sinc form) | `low_q_correction_basis` | `lowQCorrectionBasis` | Identical formulas |
 | Forward transform | `fq_to_gpdf` | `fqToGpdf` | Identical |
 | Backward transform | `gpdf_to_fq` (alias of `sine_transform`) | no alias; `sineTransform` called directly | Identical operation |
 | Fourier filter (the function) | `fourier_filter` | `fourierFilter` | Identical formulas; section selected by mask vs prefix scan (equivalent for ascending $r$) |
@@ -2603,17 +2611,14 @@ With `lorch=True`, writing $a_L = \pi/Q_{N-1}$ (the *last cropped data point*, n
 $v_\mp = Q_0(r \mp a_L)$:
 
 $$f_1 = \frac{1}{2a_L}\left[\frac{v_-\sin v_- + \cos v_- - 1}{(r-a_L)^2}
-- \frac{v_+\sin v_+ + \cos v_+ - 1}{(r+a_L)^2}\right],\qquad
-f_2 = \frac{1}{2a_L}\left[\frac{\sin v_-}{r-a_L} - \frac{\sin v_+}{r+a_L}\right].$$
+- \frac{v_+\sin v_+ + \cos v_+ - 1}{(r+a_L)^2}\right]
+= \frac{Q_0^2}{2a_L}\big[h(v_-) - h(v_+)\big],\qquad
+f_2 = \frac{1}{2a_L}\left[\frac{\sin v_-}{r-a_L} - \frac{\sin v_+}{r+a_L}\right]
+= \frac{Q_0}{2a_L}\big[\mathrm{sinc}\,v_- - \mathrm{sinc}\,v_+\big],$$
 
-At the removable singularity $r = a_L = \pi/Q_{N-1}$ the code substitutes the analytic limits, with
-$v_a = 2a_LQ_0$:
-
-$$f_1^{\lim} = \frac{1}{2a_L}\left[\frac{Q_0^2}{2} - \frac{v_a\sin v_a + \cos v_a - 1}{(2a_L)^2}\right],
-\qquad
-f_2^{\lim} = \frac{1}{2a_L}\left[Q_0 - \frac{\sin v_a}{2a_L}\right],$$
-
-selected wherever $|r - a_L| \le 10^{-9}\max(1, a_L)$ (`atol` in both engines).
+with $h(v) = \mathrm{sinc}(v) - \tfrac12\mathrm{sinc}^2(v/2)$; the code evaluates the right-hand,
+cancellation-free forms, which are regular at $r = a_L = \pi/Q_{N-1}$ (no patch; see the
+transform section).
 
 The code stores the correction as $\mathrm{coef}\cdot S(Q_0) - \mathrm{const}$ with
 $\mathrm{const} = (1-s_0)\mathrm{const}_0 + s_0\,\mathrm{coef}$ — algebraically identical, and

@@ -107,6 +107,11 @@ export const sineTransform = (x, y, xout) => {
   return out;
 };
 
+/** sin(v)/v with the limit 1 at v = 0 (transforms._sinc). */
+const sinc = (v) => (v === 0 ? 1 : Math.sin(v) / v);
+/** (v sin v + cos v - 1)/v^2 = sinc(v) - sinc(v/2)^2 / 2, cancellation-free (transforms._sinc_head). */
+const sincHead = (v) => sinc(v) - 0.5 * sinc(0.5 * v) ** 2;
+
 export const lorchWindow = (q, qmax) => {
   const out = new Float64Array(q.length);
   for (let i = 0; i < q.length; i += 1) {
@@ -124,23 +129,16 @@ export const lowQCorrectionBasis = (q, r, { lorch = false, s0Target = 0 } = {}) 
   if (q0 === 0) return { coef, constant };
   const scale = 2 / Math.PI;
   if (lorch) {
+    // Cancellation-free form (transforms.low_q_correction_basis): with
+    // v = q0 (r -/+ a), sin(v)/(r-a) = q0 sinc(v) and
+    // (v sin v + cos v - 1)/(r-a)^2 = q0^2 [sinc(v) - sinc(v/2)^2 / 2]
+    // (cos v - 1 = -2 sin^2(v/2)); no removable singularity at r = a, no patch.
     const a = Math.PI / q[q.length - 1];
-    const vpa = 2 * a * q0;
-    const f1Lim = ((q0 * q0) / 2 - (vpa * Math.sin(vpa) + Math.cos(vpa) - 1) / ((2 * a) * (2 * a))) / (2 * a);
-    const f2Lim = (q0 - Math.sin(vpa) / (2 * a)) / (2 * a);
-    const atol = 1e-9 * Math.max(1, a);
     for (let i = 0; i < r.length; i += 1) {
-      const ri = r[i];
-      if (Math.abs(ri - a) <= atol) {
-        coef[i] = scale * (f1Lim / q0);
-        constant[i] = scale * f2Lim;
-        continue;
-      }
-      const vm = q0 * (ri - a);
-      const vp = q0 * (ri + a);
-      const f1 = ((vm * Math.sin(vm) + Math.cos(vm) - 1) / ((ri - a) * (ri - a))
-        - (vp * Math.sin(vp) + Math.cos(vp) - 1) / ((ri + a) * (ri + a))) / (2 * a);
-      const f2 = (Math.sin(vm) / (ri - a) - Math.sin(vp) / (ri + a)) / (2 * a);
+      const vm = q0 * (r[i] - a);
+      const vp = q0 * (r[i] + a);
+      const f1 = (q0 * q0 * (sincHead(vm) - sincHead(vp))) / (2 * a);
+      const f2 = (q0 * (sinc(vm) - sinc(vp))) / (2 * a);
       coef[i] = scale * (f1 / q0);
       constant[i] = scale * f2;
     }

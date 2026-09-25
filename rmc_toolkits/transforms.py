@@ -120,6 +120,17 @@ def density_line(r: np.ndarray, rho0: float, b_avg_sq: float) -> np.ndarray:
     return -4.0 * np.pi * float(rho0) * float(b_avg_sq) * np.asarray(r, dtype=float)
 
 
+def _sinc(v: np.ndarray) -> np.ndarray:
+    """``sin(v)/v`` with the limit 1 at v = 0 (unnormalized sinc)."""
+    v = np.asarray(v, dtype=float)
+    return np.divide(np.sin(v), v, out=np.ones_like(v), where=v != 0)
+
+
+def _sinc_head(v: np.ndarray) -> np.ndarray:
+    """``(v sin v + cos v - 1)/v^2 = sinc(v) - sinc(v/2)^2 / 2``, cancellation-free (1/2 at 0)."""
+    return _sinc(v) - 0.5 * _sinc(0.5 * np.asarray(v, dtype=float)) ** 2
+
+
 def lorch_window(q: np.ndarray, qmax: float) -> np.ndarray:
     """Lorch modification ``sin(pi Q/Qmax) / (pi Q/Qmax)`` (pystog-compatible)."""
     x = np.pi * np.asarray(q, dtype=float) / float(qmax)
@@ -217,26 +228,19 @@ def low_q_correction_basis(
 
     v = q0 * r
     if lorch:
+        # With the Lorch window M(Q) = sin(aQ)/(aQ), a = pi/qmax, the integrals
+        # split into cos((r -/+ a) Q) terms. Written with v = Q0 (r -/+ a) as
+        #   sin(v)/(r-a) = Q0 sinc(v),
+        #   (v sin v + cos v - 1)/(r-a)^2 = Q0^2 [sinc(v) - sinc(v/2)^2 / 2]
+        # (cos v - 1 = -2 sin^2(v/2)) they carry no subtraction of O(1) terms
+        # and no removable singularity at r = a, so no patch is needed: the
+        # previous (cos v - 1)/(r - a)^2 form lost every digit within ~1e-6 A of
+        # pi/qmax (a sign-flipped coefficient at r = 0.11 for qmax = 28.56).
         a = np.pi / q[-1]
         vm = q0 * (r - a)
         vp = q0 * (r + a)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            f1 = (
-                (vm * np.sin(vm) + np.cos(vm) - 1.0) / (r - a) ** 2
-                - (vp * np.sin(vp) + np.cos(vp) - 1.0) / (r + a) ** 2
-            ) / (2.0 * a)
-            f2 = (np.sin(vm) / (r - a) - np.sin(vp) / (r + a)) / (2.0 * a)
-        # Analytic limits at the removable singularity r == pi/qmax.
-        singular = np.isclose(r, a, rtol=0.0, atol=1e-9 * max(1.0, a))
-        if np.any(singular):
-            vp_a = 2.0 * a * q0
-            f1_lim = (
-                q0**2 / 2.0
-                - (vp_a * np.sin(vp_a) + np.cos(vp_a) - 1.0) / (2.0 * a) ** 2
-            ) / (2.0 * a)
-            f2_lim = (q0 - np.sin(vp_a) / (2.0 * a)) / (2.0 * a)
-            f1 = np.where(singular, f1_lim, f1)
-            f2 = np.where(singular, f2_lim, f2)
+        f1 = q0**2 * (_sinc_head(vm) - _sinc_head(vp)) / (2.0 * a)
+        f2 = q0 * (_sinc(vm) - _sinc(vp)) / (2.0 * a)
     else:
         with np.errstate(divide="ignore", invalid="ignore"):
             f1 = (2.0 * v * np.sin(v) - (v * v - 2.0) * np.cos(v) - 2.0) / r**3
