@@ -1233,6 +1233,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
             cancelAnimationFrame(frameId);
             controls.dispose();
             renderer.dispose();
+            // dispose() frees GPU resources but not the WebGL context itself;
+            // without this, scene rebuilds and remounts pile up contexts until the browser drops
+            // the oldest ('Too many active WebGL contexts').
+            renderer.forceContextLoss();
             slabGeometry.dispose();
             slabMaterial.dispose();
             cellEdgeGeometry.dispose();

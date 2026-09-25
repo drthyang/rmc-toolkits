@@ -847,6 +847,10 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             resizeObserver.disconnect();
             controls.dispose();
             renderer.dispose();
+            // dispose() frees GPU resources but not the WebGL context itself;
+            // without this, scene rebuilds and remounts pile up contexts until the browser drops
+            // the oldest ('Too many active WebGL contexts').
+            renderer.forceContextLoss();
             if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
             sceneRef.current = null;
         };
