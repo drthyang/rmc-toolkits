@@ -1006,6 +1006,67 @@ def rmc6f_problem(path: str | Path) -> str | None:
     return None
 
 
+# RMCProfile output names that carry the run's stem, with their priority
+# (lower wins). Mirrors runStemFromOutputName() in browserData.js, so a run
+# folder resolves to one configuration in the web app (both runtimes) and the
+# CLIs alike.
+_RUN_OUTPUT_PATTERNS = (
+    (0, re.compile(r"^(.+)-\d{2,}\.log$")),
+    (1, re.compile(r"^(.+)-EXAFS-.+_[QR]_OUTPUT\.csv$")),
+    (1, re.compile(r"^(.+)_FT_XFQ\d+\.csv$")),
+    (1, re.compile(r"^(.+)_[FS]Q\d+\.csv$")),
+    (1, re.compile(r"^(.+)_bragg(?:_.+)?\.csv$")),
+    (1, re.compile(r"^(.+)_PDF(?:partials|\d+)?\.csv$")),
+    (2, re.compile(r"^Frac_coord_(.+)\.txt$")),
+)
+
+
+def run_stem_from_output_name(name: str) -> tuple[int, str] | None:
+    """``(priority, stem)`` of an RMCProfile output file name, or ``None``.
+
+    ``<stem>-NN.log`` names the run most reliably (priority 0), then the fit
+    and partial CSVs (1), then ``Frac_coord_<stem>.txt`` (2).
+    """
+    for priority, pattern in _RUN_OUTPUT_PATTERNS:
+        match = pattern.match(name)
+        if match:
+            return priority, match.group(1)
+    return None
+
+
+def find_run_configuration(directory: str | Path) -> Path:
+    """The ``.rmc6f`` of a run folder: the one rule for the web app and the CLIs.
+
+    A run folder often holds more than one configuration -- e.g. the input
+    supercell ``<compound>.rmc6f`` beside the refined ``<compound>_5K.rmc6f``.
+    The run's own outputs (``<stem>-NN.log``, ``<stem>_PDFpartials.csv`` ...)
+    name the refined one: the ``.rmc6f`` whose stem matches the
+    highest-priority output wins (ties by lower-cased output name); with no
+    match, the first by name. A 0-byte or marker-less candidate (left by a
+    killed run, see :func:`rmc6f_problem`) never hides a usable one; with no
+    usable candidate at all the same rule still names one, so the caller's
+    reader can report what is wrong with it. Mirrors ``chooseStructureFile()``
+    in browserData.js.
+    """
+    directory = Path(directory)
+    all_rmc6f = sorted(directory.glob("*.rmc6f"))
+    if not all_rmc6f:
+        raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    rmc6f_files = [path for path in all_rmc6f if rmc6f_problem(path) is None] or all_rmc6f
+    by_stem = {path.stem: path for path in rmc6f_files}
+    output_stems: list[tuple[int, str, str]] = []
+    for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
+        if not item.is_file():
+            continue
+        match = run_stem_from_output_name(item.name)
+        if match:
+            output_stems.append((match[0], item.name.lower(), match[1]))
+    for _, _, stem in sorted(output_stems):
+        if stem in by_stem:
+            return by_stem[stem]
+    return rmc6f_files[0]
+
+
 def _structure_pair(directory: Path, frac_path, rmc6f_path) -> tuple[Path, Path]:
     """The (Frac*.txt, .rmc6f) pair of ONE configuration for :func:`read_structure`."""
     frac_files = sorted(directory.glob("Frac*.txt"))

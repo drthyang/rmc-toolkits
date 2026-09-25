@@ -10,7 +10,6 @@ import json
 import math
 import os
 import platform
-import re
 import shutil
 import subprocess
 import sys
@@ -36,6 +35,7 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
 from rmc_toolkits.parsers import (
+    find_run_configuration,
     parse_rmc6f_atoms,
     read_cell_vectors,
     read_moves_metadata,
@@ -225,47 +225,13 @@ def _file_payload(path: Path, kind: str = "file") -> dict[str, object]:
     return payload
 
 
-def _run_stem_from_output_name(name: str) -> tuple[int, str] | None:
-    patterns = (
-        (0, r"^(.+)-\d{2,}\.log$"),
-        (1, r"^(.+)-EXAFS-.+_[QR]_OUTPUT\.csv$"),
-        (1, r"^(.+)_FT_XFQ\d+\.csv$"),
-        (1, r"^(.+)_[FS]Q\d+\.csv$"),
-        (1, r"^(.+)_bragg(?:_.+)?\.csv$"),
-        (1, r"^(.+)_PDF(?:partials|\d+)?\.csv$"),
-        (2, r"^Frac_coord_(.+)\.txt$"),
-    )
-    for priority, pattern in patterns:
-        match = re.match(pattern, name)
-        if match:
-            return priority, match.group(1)
-    return None
-
-
 def _find_rmc6f(directory: Path) -> Path:
+    """The run's configuration: the ``.rmc6f`` itself, or the one
+    :func:`rmc_toolkits.parsers.find_run_configuration` picks in a folder --
+    the rule rmc-triplets and the browser chooser apply too."""
     if directory.is_file() and directory.suffix == ".rmc6f":
         return directory
-    all_rmc6f = sorted(directory.glob("*.rmc6f"))
-    if not all_rmc6f:
-        raise FileNotFoundError(f"No .rmc6f file found in {directory}")
-    # A 0-byte or marker-less configuration (e.g. left by a killed run) must not
-    # hide the valid ones beside it: skip it and fall through to the next match.
-    # With no usable candidate at all the stem rule still names one, and the
-    # caller's reader reports what is wrong with it (see _require_usable_rmc6f).
-    rmc6f_files = [path for path in all_rmc6f if rmc6f_problem(path) is None] or all_rmc6f
-    rmc6f_by_stem = {path.stem: path for path in rmc6f_files}
-    output_stems: list[tuple[int, str, str]] = []
-    for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
-        if not item.is_file():
-            continue
-        stem_match = _run_stem_from_output_name(item.name)
-        if stem_match:
-            priority, stem = stem_match
-            output_stems.append((priority, item.name.lower(), stem))
-    for _, _, stem in sorted(output_stems):
-        if stem in rmc6f_by_stem:
-            return rmc6f_by_stem[stem]
-    return rmc6f_files[0]
+    return find_run_configuration(directory)
 
 
 def _require_usable_rmc6f(rmc6f_path: Path, target: Path) -> None:

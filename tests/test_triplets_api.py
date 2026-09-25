@@ -122,6 +122,26 @@ class RunConfigurationParityTests(unittest.TestCase):
                     resolve_config(run), backend_app._find_rmc6f(run), layout
                 )
 
+    def test_an_unusable_stem_match_is_skipped_by_both(self):
+        # One shared rule (parsers.find_run_configuration): a 0-byte
+        # configuration left by a killed run never hides the usable one --
+        # the CLI used to pick it and fail on it.
+        import tempfile
+
+        from rmc_toolkits.triplets_cli import resolve_config
+
+        stub = "(Version 6f format configuration file)\nAtoms:\n1 Se [1] 0.1 0.1 0.1 1 0 0 0\n"
+        with tempfile.TemporaryDirectory() as scratch:
+            run = Path(scratch)
+            for name, text in (("new_x.rmc6f", ""), ("new_y.rmc6f", stub),
+                               ("Frac_coord_new_x.txt", "h\n"), ("Frac_coord_new_y.txt", "h\n")):
+                (run / name).write_text(text, encoding="utf-8")
+            self.assertEqual(resolve_config(run), run / "new_y.rmc6f")
+            self.assertEqual(backend_app._find_rmc6f(run), run / "new_y.rmc6f")
+            # A file path is taken as given by both.
+            self.assertEqual(backend_app._find_rmc6f(run / "new_x.rmc6f"), run / "new_x.rmc6f")
+            self.assertEqual(resolve_config(run / "new_x.rmc6f"), run / "new_x.rmc6f")
+
 
 if __name__ == "__main__":
     unittest.main()
