@@ -86,16 +86,21 @@ the manual "try again" scale loop replaced by physics:
    refit with a ≤ 0 stops the run (a fit with a ≤ 0 is never returned). If no shell is
    confirmed, or a confirmed one leaves < 0.1 Å of window (bonds shorter than ~1.75 Å at
    the default r_cut = 1.0: Si–O, P–O, B–O, C–O), the run stops with the r_cut to use
-   instead of fitting across the shell. Detected onsets: 2.62–2.77 Å on all four Mn₃Sn
-   runs (Qmin 0.82 or 1.0), 2.53 Å for FeCoSn — the flank of the first peak, i.e. *above*
-   the hand-chosen classic cutoffs 2.40–2.68 Å, which sit below it.
+   instead of fitting across the shell. Confirmed onsets, composition-only, over Qmin 0.82
+   and 1.0 × Qmax 24–30: 2.67–2.75 Å on the four Mn₃Sn runs (window top 2.42–2.50 Å, a > 0
+   in every returned fit), except the PG3_55537 run at (Qmin, Qmax) = (0.82, 25), (1.0, 24)
+   and (1.0, 25), which stops ("could not locate the first coordination shell": both trial
+   scales ≈ 0, the density limit is degenerate there — use `--amplitude fz` or pin r₀);
+   2.52–2.53 Å for FeCoSn 199 K (Qmin 0.5/1.0 × Qmax 22–26). These are flank points of the
+   first peak, i.e. *above* the hand-chosen classic cutoffs 2.40–2.68 Å, which sit below it.
 6. **Independent cross-check**: `a_fz` from the Q→0 Faber-Ziman limit (level-subtracted
    head extrapolated to S(0)). Concordance `a_fz/a ≈ 1` is the absolute-scale trust
    metric; discord quantifies what the data cannot decide (and flags a wrong ρ₀ ~1:1).
 7. **Outputs**: scaled S(Q), unfiltered g−1, filtered S(Q)/g−1(+D), and the
    RMCProfile-ready `F_K(Q)`, `G_K(r)`, `D(r)` — with classic low-r enforcement applied
    below the first shell (automatic cutoff = min(foot, onset − 0.25 Å): 2.49 Å on Mn₃Sn
-   59438 vs the expert's 2.48; the first-shell coordination number is preserved to
+   59438 at Qmin 1.0 / Qmax 28 vs the expert's 2.48, 2.42–2.50 Å on the four Mn₃Sn runs
+   over Qmin 0.82/1.0 × Qmax 24–30; the first-shell coordination number is preserved to
    ≤ 0.3 %; flags and pre-enforcement residuals reported) — plus a provenance JSON.
 
 ## 4. Reading the verdicts — when is the scale actually absolute?

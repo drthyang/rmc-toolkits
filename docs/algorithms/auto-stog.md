@@ -1850,9 +1850,11 @@ number over $[2.0, 3.2]$ Å changes by ≤ 0.3 % for $\sigma$ = 0.08–0.15 Å, 
 Lorch on/off — the pre-1.0 cutoff at the onset removed 6–9 % (`tests/test_stog_a_enforcement.py`;
 only very sharp shells at low $Q_\max$, $Q_\max\sigma \lesssim 1.6$, lose up to ~2 % — their
 termination side lobes carry that share of the band-limited peak). On the real runs the automatic
-cutoff lands at 2.49 Å on Mn₃Sn 59438 (expert `rmccut` 2.48 Å, first peak 2.65–3.1 Å), 2.37–2.52 Å
-on the other Mn₃Sn runs (Qmin 0.82 or 1.0; expert cutoffs 2.40–2.68 Å) and 2.28 Å on FeCoSn 199 K (flank of the 2.64 Å shell kept; the expert
-enforced only to 1.0 Å). Classic stog leaves `_rmc.fq` untouched, and so does this: with the
+cutoff lands at 2.49 Å on Mn₃Sn 59438 at $Q_\min$ 1.0 / $Q_\max$ 28 (expert `rmccut` 2.48 Å,
+first peak 2.65–3.1 Å), at 2.42–2.50 Å on all four Mn₃Sn runs over $Q_\min$ 0.82/1.0 × $Q_\max$
+24–30 (composition-only; expert cutoffs 2.40–2.68 Å; the three PG3_55537 configurations that stop
+in Step 8 excluded) and at 2.27–2.28 Å on FeCoSn 199 K over $Q_\min$ 0.5/1.0 × $Q_\max$ 22–26
+(flank of the 2.64 Å shell kept; the expert enforced only to 1.0 Å). Classic stog leaves `_rmc.fq` untouched, and so does this: with the
 cutoff at the foot the two RMC datasets differ only by the removed sub-shell ripples.
 
 #### Parity in the browser, and two undocumented branches
@@ -2894,11 +2896,29 @@ annotates it. In FZ mode the amplitude does not depend on the window: one pass, 
 window is refined to $[lo, \mathrm{onset}-0.25]$ when the shell leaves room (no error otherwise,
 `window_refined` absent).
 
-Validated (scratch bench, true $a$ = 5 or 10): SrTiO₃, ReO₃, Ni supercells 0.0–0.2 %; SrTiO₃ /
-rutile / weak-first-shell Gaussian-shell models 0.3–3.6 %; the Mn₃Sn and FeCoSn runs unchanged
-(same detected onsets and windows as the pre-1.0 two-pass on those data); Si–O (1.61 Å), P–O,
-B–O and β-cristobalite fail loudly at $r_\mathrm{cut} = 1.0$ and succeed with
-$r_\mathrm{cut} = 0.6$–$0.8$ (Si–O, P–O, SiO₂ supercell within 1–3 %).
+Validated (scratch bench and tests; true $a$ = 10 for the models, measured = (S + 9)/10):
+
+- SrTiO₃ and ReO₃ 6³ supercells (`tests/test_stog_a_window.py` models, $Q_\min$ 0.5):
+  $Q_\max$ 22–30 within 1.8 % of the true scale (window top 1.46–1.56 Å, below Ti–O 1.95 /
+  Re–O 1.875 Å); $Q_\max$ 20: SrTiO₃ −5.3 %, ReO₃ −1.8 %.
+- Gaussian-shell glasses at $r_\mathrm{cut}$ = 1.0 ($Q_\max$ 20 / 25 / 30): Si–O (1.61 Å) stops
+  with the confirmed-shell advice "lower r_cutoff to ≤ 0.95 Å" at $Q_\max$ 25/30 and with "could
+  not locate" at 20 (the shell falls in the reference zone); B–O (1.37 Å) and P–O (1.53 Å) stop
+  with "could not locate" or the conditional short-shell error. At $r_\mathrm{cut}$ = 0.7 they
+  return windows below the shell: Si–O $a$ = 8.3–9.4, P–O 7.5–9.0, B–O 5.9–6.9 (only 0.1 Å of
+  window below a 1.37 Å bond) — a short bond leaves a short, ripple-dominated window, so pin r0
+  or lower $r_\mathrm{cut}$ further there.
+- The four Mn₃Sn POWGEN runs, 56 configurations ($Q_\min$ 0.82 and 1.0 × $Q_\max$ 24–30,
+  composition-only): every returned fit has $a > 0$, confirmed onset 2.67–2.75 Å and window top
+  2.42–2.50 Å (the inverted Mn–Sn shell spans 2.65–3.1 Å), and the density limit is flagged
+  **unsatisfied** in all of them — the honest verdict for data whose low-$Q$ hole is $O(S(0))$ deep
+  (Step 11). 53 return; the 3 that raise are the PG3_55537 run at $(Q_\min, Q_\max)$ = (0.82, 25),
+  (1.0, 24), (1.0, 25), where both trial scales are $\approx 0$ ($|a| \le 0.26$, the positive one
+  $\le 0.022$): the density limit is degenerate there and "could not locate" is the right answer.
+  The first 1.0 loop returned $a < 0$ in 7 of the 14 59438 configurations and raised in 3 with
+  wrong $r_\mathrm{cut}$ advice, and raised in 9 of the 14 PG3_55537 ones.
+- FeCoSn 199 K (x-ray, $Q_\min$ 0.5 and 1.0 × $Q_\max$ 22–26): onset 2.52–2.53 Å, window
+  $[1.2, 2.27\text{–}2.28]$ Å, $a$ = 1.18–1.20, density limit satisfied.
 
 Tests: `tests/test_stog_a_window.py` (models), `tests/test_stog_a_placement.py` (the loop on
 scripted passes — ripple dropped, $a \le 0$ refit refused, lower shell uncovered, budget, the
@@ -2908,10 +2928,9 @@ $Q_\min \times Q_\max$ grid with `RMC_TOOLKITS_FULL_SWEEP=1`, ~5 min). JS parity
 the scripted passes through `placeLowRWindow()` and compares outcomes, refit order and error
 numbers).
 
-Measured detections quoted in [SCALING_PROCEDURE.md](../SCALING_PROCEDURE.md): 2.62–2.77 Å on all
-four Mn₃Sn runs (Qmin 0.82 or 1.0; the pre-1.0 argmax detector gave 3.19–3.49 Å at Qmin 1.0) and
-2.53 Å for FeCoSn. These are first-peak *flank* points; the hand-chosen classic cutoffs (2.40–2.68 Å)
-sit below them.
+Measured detections quoted in [SCALING_PROCEDURE.md](../SCALING_PROCEDURE.md) come from these
+sweeps. They are first-peak *flank* points; the hand-chosen classic cutoffs (2.40–2.68 Å) sit
+below them.
 `tests/test_scaling.py` → `test_detects_first_shell_and_refines_window` (synthetic onset 2.65, peak
 2.80) and `test_autoscale_composition_only_detects_first_shell` (real Mn₃Sn) pin the behaviour.
 
