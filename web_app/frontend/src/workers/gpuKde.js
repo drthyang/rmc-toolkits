@@ -11,11 +11,15 @@
 // It is a drop-in accelerator, not a replacement: computeDensityGpu returns the
 // same grid x grid array the CPU loop produces, or null/throws when WebGPU is
 // unavailable or fails. The caller (localKdeWorker.js) falls back to the JS loop
-// in those cases, so devices without WebGPU behave exactly as before.
+// in those cases, which evaluates the same kernel in float64.
 
-const KDE_WGSL = `
+// The kernel lane carries exactly the fields the CPU loop in localKdeWorker.js
+// uses: the whitening matrix W = L^-1 of H = f^2 C (w00, w10, w11; L is the lower
+// Cholesky factor, as in scipy's gaussian_kde) and the normalizer. Both paths
+// evaluate normalizer * sum exp(-0.5 |W (p - p_i)|^2) with the same e > -60 cut.
+export const KDE_WGSL = `
 struct Params {
-    inv    : vec4<f32>,   // inv00, inv01, inv11, normalizer
+    kern   : vec4<f32>,   // w00, w10, w11, normalizer
     origin : vec4<f32>,   // xMin, yMin, xStep, yStep
     dims   : vec4<u32>,   // grid, sampleCount, pad, pad
 };
@@ -38,14 +42,47 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
         let s = samples[i];
         let dx = gx - s.x;
         let dy = gy - s.y;
-        let e = -0.5 * (P.inv.x * dx * dx + 2.0 * P.inv.y * dx * dy + P.inv.z * dy * dy);
+        let w0 = P.kern.x * dx;
+        let w1 = P.kern.y * dx + P.kern.z * dy;
+        let e = -0.5 * (w0 * w0 + w1 * w1);
         if (e > -60.0) {
             sum = sum + exp(e);
         }
     }
-    density[gid.y * grid + gid.x] = sum * P.inv.w;
+    density[gid.y * grid + gid.x] = sum * P.kern.w;
 }
 `;
+
+// Uniform block for KDE_WGSL: three vec4 lanes (48 bytes). Packing into vec4s
+// sidesteps uniform alignment rules; the dims lane is read through a Uint32 view
+// of the same buffer. Exported so tests can emulate the shader on exactly the
+// float32 values the GPU receives.
+export const packKdeParams = ({ kernel, grid, xMin, yMin, xStep, yStep, sampleCount }) => {
+    const paramData = new ArrayBuffer(48);
+    const paramFloats = new Float32Array(paramData);
+    const paramUints = new Uint32Array(paramData);
+    paramFloats[0] = kernel.w00;
+    paramFloats[1] = kernel.w10;
+    paramFloats[2] = kernel.w11;
+    paramFloats[3] = kernel.normalizer;
+    paramFloats[4] = xMin;
+    paramFloats[5] = yMin;
+    paramFloats[6] = xStep;
+    paramFloats[7] = yStep;
+    paramUints[8] = grid;
+    paramUints[9] = sampleCount;
+    return paramData;
+};
+
+// Samples: tightly-packed [x0, y0, x1, y1, ...] -> array<vec2<f32>> (8-byte stride).
+export const packKdeSamples = (samples) => {
+    const sampleData = new Float32Array(samples.length * 2);
+    for (let i = 0; i < samples.length; i += 1) {
+        sampleData[2 * i] = samples[i][0];
+        sampleData[2 * i + 1] = samples[i][1];
+    }
+    return sampleData;
+};
 
 // GPU setup, buffer uploads, and the mapAsync readback round-trip carry a fixed
 // per-call cost; below this many work units (cells x samples) the JS loop wins.
@@ -89,33 +126,14 @@ export const computeDensityGpu = async ({ samples, kernel, grid, xMin, yMin, xSt
     const { device, pipeline } = gpu;
     const sampleCount = samples.length;
 
-    // Samples: tightly-packed [x0, y0, x1, y1, ...] -> array<vec2<f32>> (8-byte stride).
-    const sampleData = new Float32Array(sampleCount * 2);
-    for (let i = 0; i < sampleCount; i += 1) {
-        sampleData[2 * i] = samples[i][0];
-        sampleData[2 * i + 1] = samples[i][1];
-    }
+    const sampleData = packKdeSamples(samples);
     const sampleBuffer = device.createBuffer({
         size: Math.max(sampleData.byteLength, 16),
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     });
     device.queue.writeBuffer(sampleBuffer, 0, sampleData);
 
-    // Params: three vec4 lanes (48 bytes). Packing into vec4s sidesteps uniform
-    // alignment rules; the dims lane is read through a Uint32 view of the same buffer.
-    const paramData = new ArrayBuffer(48);
-    const paramFloats = new Float32Array(paramData);
-    const paramUints = new Uint32Array(paramData);
-    paramFloats[0] = kernel.inv00;
-    paramFloats[1] = kernel.inv01;
-    paramFloats[2] = kernel.inv11;
-    paramFloats[3] = kernel.normalizer;
-    paramFloats[4] = xMin;
-    paramFloats[5] = yMin;
-    paramFloats[6] = xStep;
-    paramFloats[7] = yStep;
-    paramUints[8] = grid;
-    paramUints[9] = sampleCount;
+    const paramData = packKdeParams({ kernel, grid, xMin, yMin, xStep, yStep, sampleCount });
     const paramBuffer = device.createBuffer({
         size: paramData.byteLength,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
