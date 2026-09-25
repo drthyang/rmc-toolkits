@@ -125,6 +125,18 @@ class AutoEnforcementCoordinationTests(unittest.TestCase):
         self.assertGreater(first_shell_foot(r, g, 2.25), 1.97)
 
 
+class CliEnforcementHelpTests(unittest.TestCase):
+    def test_help_describes_the_default_enforcement(self):
+        from rmc_toolkits.scaling_cli import build_parser
+
+        text = " ".join(build_parser().format_help().split())
+        # Pre-fix: "(default: on in stog.inp mode, off in --data mode)", while
+        # data mode actually enforced automatically.
+        self.assertNotIn("off in --data mode", text)
+        self.assertIn("foot of the detected first shell", text)
+        self.assertIn("--no-enforce to disable", text)
+
+
 class PinnedR0EnforcementTests(unittest.TestCase):
     """A given closest approach (--r0, MINIMUM_DISTANCES, stog.inp) is never overridden upward."""
 

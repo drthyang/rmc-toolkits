@@ -23,8 +23,11 @@ Safety: outputs default into an ``autoscale/`` directory next to the input, and
 nothing is ever overwritten without ``--force`` — so the tool cannot silently
 clobber the real STOG outputs a ``stog.inp`` typically sits beside. Classic
 low-r enforcement (the Fortran's final ripple removal) is applied to the RMC
-files by default in ``stog.inp`` mode for parity; the honest *pre*-enforcement
-low-r residual is always reported.
+files by default: at the ``stog.inp`` cutoff/first-peak window in ``stog.inp``
+mode (parity), at ``--enforce-cutoff`` when given, and otherwise at the foot of
+the detected first shell (:func:`rmc_toolkits.scaling.auto_enforcement_cutoff`,
+never above a given r0); ``--no-enforce`` disables it. The honest
+*pre*-enforcement low-r residual is always reported.
 """
 
 from __future__ import annotations
@@ -224,10 +227,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--enforce",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Fortran-stog final ripple removal on the RMC files "
-        "(default: on in stog.inp mode, off in --data mode)",
+        help="Fortran-stog final ripple removal on the RMC files (default: on — "
+        "at --enforce-cutoff when given, else the stog.inp cutoff and "
+        "first-peak window, else automatically at the foot of the detected "
+        "first shell, below its rising flank and never above a given r0; "
+        "--no-enforce to disable)",
     )
-    enforce.add_argument("--enforce-cutoff", type=float, help="enforcement r cutoff (A)")
+    enforce.add_argument(
+        "--enforce-cutoff",
+        type=float,
+        help="enforcement r cutoff (A); overrides the stog.inp / automatic cutoff",
+    )
     enforce.add_argument(
         "--peak-window",
         type=float,

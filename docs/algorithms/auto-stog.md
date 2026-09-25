@@ -677,7 +677,11 @@ How the triple is resolved (`AutoStogPage.jsx::resolveEnforcement`,
 `scaling_cli.py::_resolve_enforcement`, `app.py::_resolve_scaling_enforcement`):
 
 - `cutoff`: form **Cutoff** / `--enforce-cutoff` → `stog.inp` line 22 `peak_cutoff` → `'auto'`,
-  which the worker (and the CLI's post-run block) resolves to the **detected $r_0$**.
+  which the worker (and the CLI's / API's post-run block) resolves to the **foot of the detected
+  first shell**, capped at a given $r_0$ (`auto_enforcement_cutoff`, Step 9). Enforcement is **on
+  by default in every mode** (CLI `--enforce/--no-enforce` default `None` = on; `rmc-autoscale
+  --help` states this precedence); only `--no-enforce` / an unchecked box / `enforce: false`
+  turns it off.
 - `peak_rmin`, `peak_rmax`: taken from the `.inp` **only** when the user supplied no explicit
   cutoff. A user-typed cutoff, and the `'auto'` path, both collapse the window to
   `peak_rmin = peak_rmax = cutoff` — a flat replacement of everything below the cutoff.
