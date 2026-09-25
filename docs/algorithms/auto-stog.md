@@ -1366,10 +1366,11 @@ Caveats:
   oversampled** and neighbouring $r$ points are strongly correlated. Lorch (Step 4) makes the
   true resolution coarser still.
 - **Aliasing: the transform resolves only $r < \pi/\Delta Q$.** On a uniform grid
-  $Q_i = Q_0 + i\,\Delta Q$ the kernel satisfies $\sin(Q_i(2\pi/\Delta Q - r)) = \pm\sin(Q_i r)$
-  with a sign fixed by the phase, so the trapezoid sum obeys $G(2\pi/\Delta Q - r) = -G(r)$ (for
-  the grids here): the output beyond $\pi/\Delta Q$ is a **negated mirror image** of the structure
-  below it, not new structure. That is 314 Å at $\Delta Q = 0.01$ Å⁻¹ (safe for
+  $Q_i = Q_0 + i\,\Delta Q$ the kernel satisfies
+  $\sin(Q_i(2\pi/\Delta Q - r)) = \sin(2\pi Q_0/\Delta Q - Q_i r)$, i.e. $-\sin(Q_i r)$ when $Q_0$
+  is a multiple of $\Delta Q$ (the usual rebinned grids), so the trapezoid sum obeys
+  $G(2\pi/\Delta Q - r) = -G(r)$: the output beyond $\pi/\Delta Q$ is a **negated mirror image**
+  of the structure below it (phase-shifted for other $Q_0$), not new structure. That is 314 Å at $\Delta Q = 0.01$ Å⁻¹ (safe for
   $r_\mathrm{max} = 50$ Å) but only 31.4 Å at $\Delta Q = 0.1$ Å⁻¹ — where a shell at 20 Å
   reappears, inverted and at full amplitude, at 42.8 Å. (Before 1.0 this page gave the period
   $2\pi/\Delta Q$ and called $r_\mathrm{max} = 50$ Å safe at $\Delta Q = 0.1$ — 2× too generous.)
