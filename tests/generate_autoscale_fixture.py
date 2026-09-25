@@ -10,6 +10,7 @@ whenever the engine's math changes:
     .venv/bin/python tests/generate_autoscale_fixture.py
 """
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import re
@@ -263,6 +264,13 @@ def main() -> None:
             "r0Detected": result.provenance.get("r0_detected"),
         })
 
+    # Opt-in despike: the model with noise and 12 tail glitches. Both engines
+    # despike ONCE and fit, write and count the same point set.
+    rng = np.random.default_rng(3)
+    sq_glitch = sq_meas + rng.normal(0.0, 2e-3, q.size)
+    sq_glitch[rng.choice(np.where(q > 20)[0], 12, replace=False)] += 0.3
+    despiked = autoscale(q, sq_glitch, replace(config, despike=True))
+
     manual = scale_pipeline(q, sq_meas, config, A_TRUE, B_TRUE)
     r_sample_idx = [50, 200, 500, 999]   # on the r grid (nr = 1000)
     q_sample_idx = [50, 200, 500, 950]   # on the cropped q grid (961 pts)
@@ -297,6 +305,15 @@ def main() -> None:
             },
             "fz": {"a": fz.a, "b": fz.b},
             "autoComposition": composition_cases,
+            "despike": {
+                "sqMeas": sq_glitch.tolist(),
+                "a": despiked.a,
+                "b": despiked.b,
+                "iterations": despiked.iterations,
+                "nq": int(despiked.q.size),
+                "nDespiked": int(despiked.provenance["n_despiked"]),
+                "lowRRms": despiked.low_r_rms,
+            },
             "rho0Estimate": {
                 "rho0": estimate["rho0"],
                 "converged": estimate["converged"],

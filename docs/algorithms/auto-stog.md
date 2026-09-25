@@ -865,30 +865,18 @@ transform.
    median of absolute residuals about **zero**, not about the residual median.
 4. Keep-mask $|d_i| \le n_\sigma \max(\mathrm{MAD}, 10^{-12})$ with `despike_nsigma = 6.0`.
 
-**Python despikes twice in the auto path; JS despikes once — the engines diverge whenever
-`despike=True`.** Despiking lives inside `crop_sq`, and the Python auto path calls `crop_sq`
-twice: `_autoscale_pass` rebinds `q, sq, sigma = crop_sq(q, sq, config, sigma)` and then hands
-those **already cropped-and-despiked** arrays to `scale_pipeline`, which calls `crop_sq` again.
-The second pass recomputes the rolling median and the MAD on cleaned data, so the MAD is
-smaller, the $6\sigma$ bound is tighter, and additional points are dropped. The JS
-`autoscalePass` instead calls `scalePipeline(qIn, sqIn, …)` with the **original** arrays, so the
-crop+despike is recomputed identically and exactly one despike pass is applied. Two consequences:
-
-- with `despike=True` the two engines return **different point sets**, so cross-engine parity
-  holds only for `despike=False` (the default, and the only setting the parity fixtures cover);
-- in Python the arrays written to the output files (`q`, `sq_scaled`, `fk`, …) are a strict
-  *subset* of the arrays the fit actually used.
-
-**`n_despiked` / `nDespiked` is not the total in either engine.** Python computes it inside
-`scale_pipeline` as (points before *that* despike) − (points after it), so in the **auto** path
-it counts only the extra points removed by the redundant second pass and therefore
-**under-reports**; it is the true count only in the manual path (`scale_pipeline` called
-directly). In the browser, `cropSq` computes `nDespiked` and `autoScaleWorker.js` returns it —
-but `AutoStogPage.jsx` never reads it: `setPreview` copies only
-`{a, b, converged, iterations, lowRRms, c1TailMean, history, c1ModeEffective}`, nothing renders
-it, and `writeFiles` omits it from the exported provenance JSON. **There is currently no way for
-a browser user to see how many points despiking removed**; the count is only visible from the
-CLI/API provenance, with the auto-path caveat above.
+**Both engines despike exactly once.** Despiking lives inside `crop_sq` / `cropSq`. The auto
+pass (`_autoscale_pass` / `autoscalePass`) crops and despikes for the fit, then hands
+`scale_pipeline` / `scalePipeline` the **raw** input arrays, which re-crop and re-despike them
+identically (the mask is deterministic), so the fit, the written arrays (`q`, `sq_scaled`, `fk`,
+…) and the fit diagnostics all describe the same single-pass point set. `n_despiked` /
+`nDespiked` = (points after the crop) − (points after the despike) is therefore the true number
+removed. (Before the 1.0 audit the Python auto path passed the already-despiked arrays on, so it
+despiked twice — 2308 vs 2136 points written on the Mn₃Sn 59438 run, and `n_despiked` counted only
+the second pass: 172 of 565 removed.) The page shows the count on the *Fit quality* card when
+despike is on and writes `nDespiked` / `nQPoints` to the exported provenance JSON; the CLI/API
+write `n_despiked` / `n_q_points`. The golden fixture's `despike` case (model + noise + 12 tail
+glitches) asserts cross-engine agreement on $(a,b)$, the point count and `nDespiked = 12`.
 
 **Why it is off by default:** despiking measurably restores clean scale recovery under
 detector-glitch spikes — which otherwise ring through the sine transform into the low-$r$ fit
@@ -896,9 +884,11 @@ window, a channel the Huber IRLS re-weighting cannot reject — but it **also fl
 maxima on crystalline data**: the `ScalingConfig` docstring (and a test comment) record 12 % of
 points on the 59438 benchmark, a figure no test or artifact in this repo reproduces. Enable it
 only for glitch-type contamination.
-Test: `tests/test_scaling.py::test_despike_restores_recovery_under_tail_glitches` asserts only
-that the despiked fit recovers $a$ to 2 %, beats the spiked fit by ≥ 5×, and reports
-`n_despiked >= 8`.
+Tests: `tests/test_scaling.py::test_despike_restores_recovery_under_tail_glitches` asserts that
+the despiked fit recovers $a$ to 2 %, beats the spiked fit by ≥ 5×, and reports
+`n_despiked >= 8`; `tests/test_stog_b_despike.py` asserts that the written grid is the fitted
+single-pass grid and that `n_despiked` is the whole single-pass count (exactly the 12 injected
+glitches on a noisy model; 393 on the Mn₃Sn 59438 run).
 
 **Code:** `scaling.py` → `_despike_mask()` (uses `numpy.lib.stride_tricks.sliding_window_view`),
 called from `crop_sq()`; JS `autoScale.js` → `despikeKeepMask()` (explicit clamped-index buffer).
@@ -1067,8 +1057,8 @@ provenance JSON).
 | `.dat` header | `read_dat_header` | `readDatHeader` | matches on realistic headers; diverges on `nan`/`inf` tokens (Python accepts, JS skips), on underscore vs hex literals, on an empty `TITLE ::`, and on file decoding — see Step 3 |
 | Q crop | `crop_sq` | `cropSq` | exact |
 | Despike mask | `_despike_mask` | `despikeKeepMask` | exact for odd windows; even windows differ (NumPy raises) |
-| Despike **pipeline** | applied **twice** in the auto path | applied **once** | **divergent** whenever `despike=True` — see Step 11 |
-| `n_despiked` reporting | honest only in manual mode | computed and returned, then dropped by the page | neither is trustworthy end-to-end |
+| Despike **pipeline** | applied **once** (fit and outputs on the same point set) | applied **once** | identical (golden `despike` case) |
+| `n_despiked` reporting | true single-pass count in the provenance | `nDespiked` on the *Fit quality* card and in the exported provenance | identical |
 | σ validity gate | CLI/API drop a broken column | **absent** in the browser page | divergent — see Step 12 |
 | Config validation | `ScalingConfig.__post_init__` | `makeConfig` | same checks, same messages in spirit, except that JS's `!(qmax > qmin)` also rejects NaN $Q$ bounds that Python's `qmax <= qmin` lets through; both evaluate the low-$r$ fit window eagerly in the shipping paths |
 | Enforcement | `first_peak_zero` in `_write_outputs` | `firstPeakZero` in the worker | same function; the browser cannot reach the `.inp` peak window (Step 9) |
@@ -1108,12 +1098,10 @@ without a composition-derived $S(0)$ target), level to 1e-9, sampled $G_K(r)$/fi
   The self-consistent estimate is not a substitute for a measured density when
   $Q_\mathrm{min} \gtrsim 1$ Å⁻¹ (it is flagged `extrapolated` there), and it refuses to run
   without $\langle b^2\rangle$.
-- **Despiking is not a general cleanup, and its accounting is unreliable.** It removes narrow
-  rolling-median outliers, which on crystalline data includes genuine Bragg peaks. It is off by
-  default. When on: the Python auto path despikes twice and reports only the second pass's
-  count, the browser reports nothing at all, the two engines no longer produce the same point
-  set, and the 16-point floor is not re-checked afterwards (Steps 10–11). Treat `n_despiked` as
-  a lower bound, and prefer the CLI in manual mode if you need the real number.
+- **Despiking is not a general cleanup.** It removes narrow rolling-median outliers, which on
+  crystalline data includes genuine Bragg peaks. It is off by default. When on, check the
+  reported `n_despiked` / `nDespiked` (both engines report the true single-pass count); the
+  16-point floor is not re-checked after the despike (Steps 10–11).
 - **The browser's σ handling is less defensive than the CLI's** (Step 12). A partially invalid
   uncertainty column gives NaN weights (from NaN σ) or a single row with a $10^{12}$ weight
   (from a zero or negative σ) instead of being dropped. Either clean the column or turn the
@@ -2330,23 +2318,20 @@ class docstring records 12 % of points removed on the crystalline POWGEN 59438 b
 median returns $n+1$ values against $n$ points and `_despike_mask` dies with a numpy broadcast error;
 JS clamps indices instead and silently uses an off-centre window. (Verified on both.)
 
-**What `n_despiked` actually counts — a defect worth knowing.** In `autoscale()` the data are
-despiked **twice**. `_autoscale_pass()` calls `crop_sq()` (which despikes) and hands those
-*already-despiked* arrays to `scale_pipeline()`, which crops and despikes them **again** and computes
-`n_despiked` from that second pass. Measured on the repo's own despike fixture (synthetic + 8
-injected spikes, `despike_window=7`, `despike_nsigma=6.0`): 2941 points survive the crop, the first
-pass removes **107**, the second removes a further **75**, and `result.provenance["n_despiked"]`
-reports **75** — neither the total removed nor the number of injected spikes. A second consequence:
-the fit runs on singly-despiked data while the published arrays come from doubly-despiked data, so
-they can sit on slightly different $Q$ grids. The JS engine does not do this (`autoscalePass()`
-passes the *raw* arrays to `scalePipeline()`), so it despikes once and its `nDespiked` is the true
-count — see [parity](#python--javascript-parity-1) item 6.
+**What `n_despiked` counts.** The data are despiked **once**: `_autoscale_pass()` crops and
+despikes for the fit and hands the *raw* arrays to `scale_pipeline()`, which recomputes the same
+single pass, so the fit and the published arrays share one $Q$ grid and `n_despiked` is the
+number that pass removed (JS identical — `autoscalePass()` passes the raw arrays to
+`scalePipeline()`). On the repo's own despike fixture (synthetic + 8 injected spikes,
+`despike_window=7`, `despike_nsigma=6.0`) 2941 points survive the crop and the pass removes
+**107** (the 8 spikes plus model points the tight MAD flags). Before the 1.0 audit Python
+despiked twice here and reported only the second pass's 75 — see
+[parity](#python--javascript-parity-1) item 6.
 
 `tests/test_scaling.py` → `test_despike_restores_recovery_under_tail_glitches` asserts that **at
-least 8 points are dropped** (`n_despiked >= 8` — a loose lower bound on the total, not an assertion
-that the 8 injected spikes were identified; the actual reported value on that fixture is 75), that
-the recovered scale returns to within 2 % of truth, and that the residual scale error is ≤ 20 % of
-the un-despiked run's.
+least 8 points are dropped** (`n_despiked >= 8`, a lower bound), that the recovered scale returns
+to within 2 % of truth, and that the residual scale error is ≤ 20 % of the un-despiked run's;
+`tests/test_stog_b_despike.py` pins the single pass (written grid = fitted grid, exact count).
 
 **Code:** `rmc_toolkits/scaling.py` → `crop_sq()`, `_despike_mask()`; JS `cropSq()`,
 `despikeKeepMask()`.
@@ -3247,15 +3232,12 @@ Genuine implementation differences:
 5. **`np.linspace(...).astype(int)` emulation.** JS reproduces the sweep's edge grid with
    `Math.trunc(k*(n-1)/(nGrid-1))`. This matches numpy's truncation on the tested data; a rare
    floating-point tie could in principle shift one edge index by 1.
-6. **Despike scope — the engines fit and report on different datasets when `despike=True`.**
-   Python's `_autoscale_pass()` hands `scale_pipeline()` the *already cropped and despiked* arrays,
-   so the rolling-median filter runs **twice** and `provenance["n_despiked"]` counts only the second
-   application (Step 1d: 107 then 75 on the repo's fixture, 75 reported). The JS `autoscalePass()`
-   calls `scalePipeline(qIn, sqIn, …)` with the **raw** input arrays, so JS despikes once and
-   `nDespiked` is the true count. Published `sq_filtered`/`gk`/`low_r_rms`/`c1_tail_mean` and the
-   despike counts are therefore **not comparable between engines** with despiking on, and the "the
-   number actually removed" reading of `n_despiked` holds only for JS. The parity fixture does not
-   exercise this — `despike` is off in it.
+6. **Despike scope — one pass in both engines (fixed in 1.0).** Both auto passes hand the
+   pipeline the **raw** input arrays, so the rolling-median filter runs once, the published
+   `sq_filtered`/`gk`/`low_r_rms`/`c1_tail_mean` come from the fitted point set, and
+   `n_despiked`/`nDespiked` is the true count (Step 1d: 107 on the repo's fixture). Before, Python
+   despiked twice (107 then 75, 75 reported) and the engines disagreed by up to 35 % in $a$ on
+   Mn₃Sn 59438 through first-shell detection. The golden `despike` case covers it.
 7. **Diagnostics inputs.** Python's `diagnostics_summary` reads `result.provenance["config"]`; JS's
    reads the caller's `config` for $\langle b\rangle^2$, $\rho_0$, $\langle b^2\rangle$ and
    `amplitudeCriterion` (window from `result.rFitWindowUsed`). See Step 12.

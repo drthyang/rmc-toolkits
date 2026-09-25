@@ -368,6 +368,9 @@ const AutoStogPage = () => {
           a: raw.a, b: raw.b, converged: raw.converged, iterations: raw.iterations,
           lowRRms: raw.lowRRms, c1TailMean: raw.c1TailMean, history: raw.history,
           c1ModeEffective: raw.c1ModeEffective,
+          // Points the (opt-in) despike removed — the check the docs ask for
+          // before trusting a despiked run (CLI provenance n_despiked).
+          nDespiked: raw.nDespiked ?? 0, nQ: raw.q ? raw.q.byteLength / 8 : null,
         },
         diagnostics: raw.summary,
         enforcement: raw.enforcement,
@@ -470,6 +473,8 @@ const AutoStogPage = () => {
             }
             : null,
           history: result.history ?? [],
+          nQPoints: result.nQ,
+          nDespiked: result.nDespiked,
           enforcement,
           rho0Estimate,
           config,
@@ -1003,7 +1008,10 @@ const AutoStogPage = () => {
           <div className="autostog-stat">
             <span className="autostog-stat-label">Fit quality</span>
             <span className="autostog-stat-value">low-r rms {fmt(diagnostics.low_r_rms_pre_enforcement, 3)}</span>
-            <span className="autostog-stat-sub">C1 tail mean {fmt(diagnostics.c1_tail_mean, 5)}</span>
+            <span className="autostog-stat-sub">
+              C1 tail mean {fmt(diagnostics.c1_tail_mean, 5)}
+              {preview.config.despike ? ` · despike removed ${preview.result.nDespiked} of ${preview.result.nDespiked + (preview.result.nQ ?? 0)} points` : ''}
+            </span>
           </div>
           <div className={`autostog-stat ${diagnostics.density_limit_satisfied ? 'is-good' : 'is-bad'}`}>
             <span className="autostog-stat-label">Density limit</span>

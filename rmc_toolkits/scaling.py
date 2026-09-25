@@ -1114,6 +1114,11 @@ def _autoscale_pass(
     config: ScalingConfig,
     sigma: np.ndarray | None = None,
 ) -> ScalingResult:
+    # scale_pipeline crops (and despikes) its input itself, so it gets the RAW
+    # arrays: handing it the already-despiked ones despiked twice, and the
+    # written files and n_despiked then described a smaller point set than the
+    # one fitted (JS parity: autoscalePass passes qIn/sqIn).
+    q_raw, sq_raw = q, sq
     q, sq, sigma = crop_sq(q, sq, config, sigma)
     r = config.r_grid
     tail, window = _fit_windows(q, r, config)
@@ -1143,8 +1148,8 @@ def _autoscale_pass(
                 "Faber-Ziman limit"
             )
         result = scale_pipeline(
-            q,
-            sq,
+            q_raw,
+            sq_raw,
             config,
             float(a_fz),
             float(1.0 - a_fz * level),
@@ -1184,8 +1189,8 @@ def _autoscale_pass(
         a_fz = amplitude_from_fz_limit(q, sq, level, config)
 
     result = scale_pipeline(
-        q,
-        sq,
+        q_raw,
+        sq_raw,
         config,
         a,
         b,
