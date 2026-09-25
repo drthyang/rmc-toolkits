@@ -18,6 +18,7 @@ import numpy as np
 from rmc_toolkits.scaling import (
     ScalingConfig,
     autoscale,
+    detect_first_peak_onset,
     estimate_rho0,
     level_sweep,
     scale_pipeline,
@@ -36,6 +37,36 @@ def synthetic_g(r):
     onset = 0.5 * (1.0 + np.tanh((r - 2.65) / 0.07))
     peak = 1.6 * np.exp(-0.5 * ((r - 2.8) / 0.15) ** 2)
     return onset + peak
+
+
+def _gauss(r, centre, sigma):
+    return np.exp(-0.5 * ((r - centre) / sigma) ** 2)
+
+
+def _continuum(r, start):
+    return 0.5 * (1.0 + np.tanh((r - start) / 0.08))
+
+
+def detector_cases() -> dict:
+    """First-shell detector parity cases (same models as tests/test_stog_a_detection.py)."""
+    r = np.arange(1, 801) * 0.01
+    ripple = 0.9 * np.sin(2 * np.pi * (r - 1.3) / 0.24) * ((r > 1.3) & (r < 2.55))
+    profiles = {
+        "invertedFirst": -2.8 * _gauss(r, 1.95, 0.07) + 10.0 * _gauss(r, 2.76, 0.09)
+        + _continuum(r, 3.4),
+        "weakFirst": 0.6 * _gauss(r, 2.1, 0.08) + 5.6 * _gauss(r, 2.9, 0.09)
+        + _continuum(r, 3.6),
+        "rippleField": ripple - 3.7 * _gauss(r, 2.84, 0.06) + 1.8 * _gauss(r, 4.0, 0.08)
+        + _continuum(r, 4.4),
+        "shellAtSearchStart": 6.0 * _gauss(r, 1.37, 0.045) + 3.0 * _gauss(r, 2.4, 0.08)
+        + _continuum(r, 3.0),
+    }
+    cases = []
+    for name, g in profiles.items():
+        for qmax in (28.0, 0.0):
+            onset = detect_first_peak_onset(r, g, qmax, search_min=1.3)
+            cases.append({"name": name, "qmax": qmax, "g": g.tolist(), "onset": onset})
+    return {"r": r.tolist(), "searchMin": 1.3, "cases": cases}
 
 
 def main() -> None:
@@ -114,6 +145,7 @@ def main() -> None:
                 "windowRefined": bool(detected.provenance.get("window_refined", False)),
                 "rFitWindow": list(detected.provenance["r_fit_window"]),
             },
+            "detector": detector_cases(),
             "manual": {
                 "lowRRms": manual.low_r_rms,
                 "c1TailMean": manual.c1_tail_mean,

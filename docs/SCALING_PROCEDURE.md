@@ -73,11 +73,14 @@ the manual "try again" scale loop replaced by physics:
    form (the sine transform is affine in (a, b)), inside a self-consistent loop with the
    **Fourier filter** (r < cutoff content removed and re-transformed; ft.dat is that
    correction). Converges in ~3–7 iterations.
-5. **r₀ detection**: the dominant first-shell |g| feature is located and its left flank
-   (35% of peak height) taken as the data's closest approach — |g| because negative-b
-   compositions can have an *inverted* first shell — then the fit window is refined and
-   the fit re-run once. Detected values: 2.73–2.77 Å across the Mn₃Sn runs, 2.53 Å for
-   FeCoSn (matching the hand-chosen classic cutoffs 2.40–2.68).
+5. **r₀ detection**: the *first* coordination shell — the smallest-r |g| feature that
+   stands out of the ripple field below it, not the tallest one — is located and its left
+   flank (35% of its own height) taken as the data's first-shell onset. |g| because
+   negative-b pairs give *inverted* shells (Ti–O in titanates, Mn–Sn in Mn₃Sn), often
+   weaker than the second shell. The fit window is then refined to end 0.25 Å below the
+   onset and the fit re-run. Detected onsets: 2.62–2.77 Å on all four Mn₃Sn runs (Qmin 0.82
+   or 1.0), 2.53 Å for FeCoSn — the flank of the first peak, i.e. *above* the hand-chosen
+   classic cutoffs 2.40–2.68 Å, which sit below it.
 6. **Independent cross-check**: `a_fz` from the Q→0 Faber-Ziman limit (level-subtracted
    head extrapolated to S(0)). Concordance `a_fz/a ≈ 1` is the absolute-scale trust
    metric; discord quantifies what the data cannot decide (and flags a wrong ρ₀ ~1:1).

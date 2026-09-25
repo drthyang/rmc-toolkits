@@ -937,9 +937,10 @@ const AutoStogPage = () => {
           <li><b>ρ₀ self-consistency:</b> the density-limit amplitude depends on ρ₀, the
             FZ amplitude does not — iterating ρ₀ until they agree recovers the density
             from the data (needs a composition; long Q→0 extrapolations are flagged).</li>
-          <li><b>r₀ detection:</b> the first coordination shell is located from the data
-            (|g| flank, robust to inverted negative-b shells) and refines the fit window and
-            the classic low-r enforcement cutoff.</li>
+          <li><b>r₀ detection:</b> the first coordination shell — the smallest-r feature that
+            stands out of the ripples, of either sign (inverted negative-b shells count) — is
+            located from the data and refines the fit window and the classic low-r
+            enforcement cutoff.</li>
           <li><b>Outputs:</b> the classic stog file family (S(Q), g(r)−1, filtered pair,
             F<sub>K</sub>(Q), G<sub>K</sub>(r), D(r), ft.dat) + a provenance JSON. Read the
             flags: a violated density limit means the absolute scale needs the composition

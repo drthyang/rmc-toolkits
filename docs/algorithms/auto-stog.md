@@ -48,7 +48,7 @@ Pre-processing: putting a measured total-scattering $S(Q)$ on absolute scale and
   - [Step 5 — The closed-form affine solve](#step-5--the-closed-form-affine-solve)
   - [Step 6 — Huber IRLS robust re-weighting](#step-6--huber-irls-robust-re-weighting)
   - [Step 7 — The self-consistent loop with the Fourier filter](#step-7--the-self-consistent-loop-with-the-fourier-filter)
-  - [Step 8 — $r_0$ detection from the first-shell $|g|$ flank, and the refinement pass](#step-8--r_0-detection-from-the-first-shell-g-flank-and-the-refinement-pass)
+  - [Step 8 — $r_0$ detection: the first shell's $|g|$ flank, and the refinement pass](#step-8--r_0-detection-the-first-shells-g-flank-and-the-refinement-pass)
   - [Step 9 — The alternative amplitude: the $Q\to 0$ Faber-Ziman criterion](#step-9--the-alternative-amplitude-the-qto-0-faber-ziman-criterion)
   - [Step 10 — `estimate_rho0`: the density from criteria concordance](#step-10--estimate_rho0-the-density-from-criteria-concordance)
   - [Step 11 — Final pipeline and outputs](#step-11--final-pipeline-and-outputs)
@@ -1783,23 +1783,20 @@ constant:
 
 1. Restrict to the search window $[\,$`search_min`$,\,$`search_max`$\,]$. Defaults are
    $[1.0, 6.0]$ Å, but **every caller passes `search_min = r_cutoff + 0.3`** (= 1.3 Å at the
-   default $r_\mathrm{cut}$) — `autoscale()`, `scaling_cli.py`, and `autoScaleWorker.js` alike.
-   Fewer than 3 points in the window → `None`.
-2. Take the maximum of $|g|$ in that window. **Absolute value**, because Faber-Ziman totals of
-   negative-$b$ compositions (Mn₃Sn) can have an *inverted* first shell.
-3. Reject if that peak $<$ `floor` $= 0.5$ → `None`.
-4. Threshold `level` $= \max(0.5,\ 0.35 \times \mathrm{peak})$ (`fraction = 0.35`). Peak-relative
-   because sub-$r_0$ truncation ripples scale with the fitted amplitude — the docstring notes
-   they can reach $O(\mathrm{peak}/3)$ on missing-low-$Q$ data, so no fixed threshold separates
-   them.
-5. Walk left from the peak index while $|g| >$ `level`; return `r[index + 1]`, the first grid
-   point at or above the crossing. If $|g|$ never drops below `level` inside the window →
-   `None`.
+   default $r_\mathrm{cut}$) and the config's $Q_\max$ — `autoscale()`, `scaling_cli.py`,
+   `app.py` and `autoScaleWorker.js` alike. Fewer than 3 points in the window, or
+   $\max|g| <$ `floor` $= 0.5$ → `None`.
+2. Scan the local maxima of $|g|$ upward from `search_min` $+ 2\pi/Q_\max$ and take the **first**
+   that stands out of the ripple field below it (≥ 3× its ripple level, or ≥ 2× and ≥ 35 % of the
+   range maximum) — see [Step 8 of the Auto-scaling page](#step-8--r_0-detection-the-first-shells-g-flank-and-the-refinement-pass)
+   for the exact rules. **Absolute value**, so an *inverted* first shell (negative-$b$ pairs:
+   Ti–O, Mn–Sn) counts.
+3. Walk left from that shell's maximum while $|g| > \max(0.5,\ 0.35 \times |g_\mathrm{peak}|)$;
+   `r[index + 1]` is the onset (the search edge if the flank never drops that far).
 
-The `qmax` parameter is accepted but unused (`# noqa: ARG001`, kept for signature stability); the
-JS port does not take it at all. **All five constants are heuristics, and no test pins their
-sensitivity** — there is no test that perturbs `fraction`, `floor`, or the search bounds and
-checks how $r_0$ moves.
+All thresholds are relative to the data's own peaks and ripples. The regression tests in
+`tests/test_stog_a_detection.py` pin the behaviour on weak-first, inverted-first, ripple-field and
+shell-at-the-search-edge profiles and on the real Mn₃Sn 59438 run.
 
 #### Parity in the browser, and two undocumented branches
 
@@ -1880,10 +1877,11 @@ Everything else:
 | `despike_nsigma` | 6.0 | MAD units | same | keep threshold $\lvert\varepsilon\rvert \le n\sigma\max(\mathrm{MAD}, 10^{-12})$ |
 | minimum surviving points | 16 | points | `crop_sq` / `cropSq` (hard-coded) | fewer → `ValueError`; checked **before** despiking |
 | `enforce_cutoff` | `None` (Python engine) | Å | `ScalingConfig`; CLI/page default to `stog.inp` `peak_cutoff` or the detected $r_0$ | low-$r$ hard replacement (Python engine: always `enforce_low_r`) |
-| `search_min` (peak onset) | 1.0 default, **1.3** in practice ($r_\mathrm{cut} + 0.3$) | Å | `detect_first_peak_onset`; every caller overrides | lower bound of the $r_0$ search |
+| `search_min` (peak onset) | 1.0 default, **1.3** in practice ($r_\mathrm{cut} + 0.3$) | Å | `detect_first_peak_onset`; every caller overrides | lower bound of the $r_0$ search; candidates start $2\pi/Q_\max$ above it (reference zone) |
 | `search_max` (peak onset) | 6.0 | Å | same | upper bound of the $r_0$ search |
-| `fraction` (peak onset) | 0.35 | — | same | flank threshold $=\max(\mathrm{floor}, \mathrm{fraction}\times\mathrm{peak})$ |
+| `fraction` (peak onset) | 0.35 | — | same | "major feature" share of the range maximum, and the flank threshold $\max(\mathrm{floor}, \mathrm{fraction}\times\lvert g_\mathrm{peak}\rvert)$ |
 | `floor` (peak onset) | 0.5 | — | same | minimum $\lvert g\rvert$ for a feature to count as the first shell |
+| `prominence`, `strong_prominence` (peak onset) | 2.0, 3.0 | — | same | first-shell peak / ripple-field ratios (2× with the major-feature test, 3× alone) |
 | `_SINE_CHUNK` | 512 | output points | `transforms.py` line 40 | memory bound only; no numerical effect |
 | Lorch singularity tolerance | $10^{-9}\max(1, a_L)$ | Å | `low_q_correction_basis` | switches to the analytic limit at $r = a_L = \pi/Q_\mathrm{max}$ |
 | $Q_\mathrm{max}$ for Lorch | `q[-1]` | Å⁻¹ | implicit | last *supplied* point, not `config.qmax` |
@@ -1909,7 +1907,7 @@ All `stog.inp` line numbers above are **1-based indices into the file's non-empt
 | Filter **call inside the auto loop** | `_pipeline` passes `s0_target=config.effective_s0_target` | `autoscale` omits `s0Target` → default `0` | **Differs** whenever $s_0^\mathrm{target}\neq0$ (i.e. whenever a composition supplies $\langle b^2\rangle$); the fed-back $\Delta S$ and hence the fitted $(a,b)$ diverge. See Step 7 |
 | Filter call in the final pipeline | `_pipeline` (same) | `scalePipeline` **does** pass `s0Target` | Identical |
 | Crop + despike | `crop_sq` / `_despike_mask` | `cropSq` / `despikeKeepMask` | Identical rule, constants and ordering |
-| Peak-onset detection | `detect_first_peak_onset` | `detectFirstPeakOnset` | Identical heuristics and all five constants; JS drops the unused `qmax` argument |
+| Peak-onset detection | `detect_first_peak_onset` | `detectFirstPeakOnset` | Identical rules and constants; `qmax` is a positional argument in Python and an option (default 0) in JS — every caller passes it. Exact parity on the golden detector cases |
 | Algebraic conversions | named functions | inlined at call sites | Identical arithmetic |
 | `enforce_low_r` | present, and the **only** function `scale_pipeline` calls | **absent** | Equivalent behaviour via `firstPeakZero` with a degenerate peak window — but see Step 9: the general window is reachable only from the CLI and the browser |
 | `density_line` | present | **absent** | Value recomputed inline in `diagnosticsSummary` |
@@ -2725,32 +2723,50 @@ JSON.
 
 ---
 
-### Step 8 — $r_0$ detection from the first-shell $|g|$ flank, and the refinement pass
+### Step 8 — $r_0$ detection: the first shell's $|g|$ flank, and the refinement pass
 
 **Why:** the low-$r$ fit window needs an upper edge below the first coordination shell. Requiring the
 user to know $r_0$ would defeat "composition + $Q$ window are the only required inputs".
 
-**Operation** (`detect_first_peak_onset()`): within a search range
-$[\texttt{search\_min}, \texttt{search\_max}]$ — called from `autoscale()` with
-`search_min = r_cutoff + 0.3` (default
-1.3 Å) and `search_max = 6.0` Å — **return `None` immediately if fewer than 3 $r$-grid points fall
-inside that range**; otherwise find the index of the maximum of $|g_\mathrm{filtered}|$. If that
-peak height is below `floor = 0.5` return `None`. Otherwise set the flank level
+**Operation** (`detect_first_peak_onset()`): the first coordination shell is the **smallest-$r$**
+feature of $g(r)$ that stands out of the ripple field below it — *not* the tallest feature. Within
+a search range $[\texttt{search\_min}, \texttt{search\_max}]$ — called with
+`search_min = r_cutoff + 0.3` (default 1.3 Å) and `search_max = 6.0` Å — **return `None` if fewer
+than 3 $r$-grid points fall inside it, or if $\max|g|$ over it is below `floor = 0.5`**. Then scan
+the local maxima of $|g_\mathrm{filtered}|$ upward, starting one termination-ripple period
+$2\pi/Q_\max$ above `search_min` (the first period is a *reference zone* only, so every candidate
+has at least one ripple crest below it). For a candidate maximum $p$ with $|g_p| \ge$ `floor`:
 
-$$\ell = \max\big(\texttt{floor},\ \texttt{fraction}\times\mathrm{peak}\big),\qquad
-\texttt{fraction} = 0.35,\ \texttt{floor} = 0.5,$$
+- its **lobe start** $s$ is the nearest local minimum of $|g|$ to its left (a sign change of $g$ is
+  one);
+- its **ripple level** is $\rho = \max |g|$ over $[\texttt{search\_min}, r_s]$;
+- it is **the first shell** when
+  $|g_p| \ge 3\rho$ (`strong_prominence`: it towers over everything below it, however weak it is
+  next to later shells) **or** $|g_p| \ge 2\rho$ (`prominence`) **and**
+  $|g_p| \ge 0.35\,\max|g|$ (`fraction`: a major feature of the range).
 
-walk left from the peak while $|g| > \ell$, and return the $r$ of the **last point still above**
-$\ell$ (`r[index + 1]` after the walk). If the walk hits the left edge of the search range without
-dropping below $\ell$, return `None` ("feature not separable from the ripple field").
+The onset is taken on that shell's own flank: with
+$\ell = \max(\texttt{floor}, \texttt{fraction}\times|g_p|)$, walk left from $p$ while $|g| > \ell$
+and return the $r$ of the **last point still above** $\ell$ (`r[index + 1]`), or `r[search_min]`
+when the flank is still above $\ell$ at the search edge. No qualifying maximum → `None`.
 
-Two deliberate design choices:
+Design choices:
 
-- **Peak-relative, not absolute.** Both the physical peak and the sub-$r_0$ truncation ripples scale
-  with the fitted amplitude; on missing-low-$Q$ data ripples can reach $\sim$ peak/3, so no fixed
-  threshold separates them, while the dominant shell still towers above.
-- **$|g|$, not $g$.** Faber-Ziman totals of negative-$b$ compositions (Mn₃Sn) have an *inverted*
-  first shell.
+- **First, not strongest.** A weak or *inverted* first shell is routinely smaller than the second:
+  Ti–O ($b_\mathrm{Ti} < 0$) in SrTiO₃ is $-2.8$ against $+10$ for the Sr–O/O–O shell; Mn₃Sn's
+  inverted Mn–Sn shell sits below a comparable second shell. The pre-1.0 detector took
+  $\arg\max|g|$ and walked left from it, so it returned the *second* shell's flank (SrTiO₃: 2.6 Å
+  instead of 1.85 Å; the Mn₃Sn 59438 run: 3.49 Å instead of ~2.74 Å) and the low-$r$ window and the
+  auto enforcement then covered the real first shell.
+- **Peak/ripple ratios, not absolute thresholds.** Both the physical shells and the sub-$r_0$
+  truncation ripples scale with the fitted amplitude; on the Mn₃Sn first passes the ripple crests
+  reach 20–27 % of the first shell (and a positive Gibbs/Mn–Mn lobe right below it reaches ~45 %),
+  which the 2×/3× prominence rules reject while the shell (2.2–3.9× its ripple field) is accepted.
+- **Reference zone.** A candidate rising straight from the search edge would have no ripple field to
+  be judged against; skipping the first $2\pi/Q_\max$ guarantees one. A real shell inside the zone
+  inflates the ripple level of everything after it, so the result is `None`, never a later shell.
+- **$|g|$, not $g$.** Below the first shell $g \to 0$; a shell of either sign departs from that
+  level.
 
 **The refinement pass.** `autoscale()` runs `_autoscale_pass()` once, detects the onset, records it
 as `provenance["r0_detected"]`, and re-runs the entire fit with `r0 = onset` **only if all** of:
@@ -2760,14 +2776,18 @@ $|(\mathrm{onset}-0.25) - r_\mathrm{fit,max}^\mathrm{current}| > 0.05$ Å. The r
 self-consistent loops. Note this happens for **both** amplitude criteria — the FZ branch is not
 exempt (Step 9).
 
-Measured detections quoted in [SCALING_PROCEDURE.md](../SCALING_PROCEDURE.md): 2.73–2.77 Å across the
-Mn₃Sn runs and 2.53 Å for FeCoSn, against hand-chosen classic cutoffs of 2.40–2.68 Å.
+Measured detections quoted in [SCALING_PROCEDURE.md](../SCALING_PROCEDURE.md): 2.62–2.77 Å on all
+four Mn₃Sn runs (Qmin 0.82 or 1.0; the pre-1.0 argmax detector gave 3.19–3.49 Å at Qmin 1.0) and
+2.53 Å for FeCoSn. These are first-peak *flank* points; the hand-chosen classic cutoffs (2.40–2.68 Å)
+sit below them.
 `tests/test_scaling.py` → `test_detects_first_shell_and_refines_window` (synthetic onset 2.65, peak
 2.80) and `test_autoscale_composition_only_detects_first_shell` (real Mn₃Sn) pin the behaviour.
 
 **Code:** `detect_first_peak_onset()`, `autoscale()`; JS `detectFirstPeakOnset()`, `autoscale()`.
-The Python signature keeps an unused `qmax` positional argument (`# noqa: ARG001`); the JS port
-drops it.
+`qmax` sets the reference-zone width $2\pi/Q_\max$ (Python: positional argument; JS: the `qmax`
+option, default 0 = no zone — every caller passes the config's $Q_\max$). Parity is exact on the
+golden detector cases (`expected.detector` in the fixture, `autoScaleFirstShell.test.js`); the
+regression tests are `tests/test_stog_a_detection.py`.
 
 ---
 
@@ -3139,7 +3159,7 @@ Genuine implementation differences:
 | `enforce_cutoff` | `None` | Å | classic low-$r$ enforcement (page default: **on**, cutoff auto) |
 | `use_sigma` (page only) | `true` | — | σ column used automatically when present; weights C1 rows only |
 | `level_sweep`: `min_width`, `n_grid`, `slope_nsigma` | 3.0, 80, 2.0 | Å⁻¹, count, σ | **not configurable** |
-| `detect_first_peak_onset`: `search_min`, `search_max`, `fraction`, `floor` | `r_cutoff+0.3`, 6.0, 0.35, 0.5 | Å, Å, —, $\lvert g\rvert$ | **not configurable** |
+| `detect_first_peak_onset`: `search_min`, `search_max`, `fraction`, `floor`, `prominence`, `strong_prominence` | `r_cutoff+0.3`, 6.0, 0.35, 0.5, 2.0, 3.0 | Å, Å, —, $\lvert g\rvert$, —, — | **not configurable** |
 | `amplitude_from_fz_limit`: `fit_width` | 1.0 | Å⁻¹ | head extrapolation span, ≥8 points |
 | `estimate_rho0`: `rtol`, `max_iter`, `rho_min`, `rho_max` | 1e-3, 8, 1e-4, 1.0 | —, count, Å⁻³, Å⁻³ | fixed-point root-find |
 | diagnostic thresholds | $\lvert$`g_window_mean`$\rvert<0.1$; $\lvert a_\mathrm{fz}/a - 1\rvert<0.1$; UI coefficient-shadowing warning at 2 % | — | one-sided / concordance verdicts |

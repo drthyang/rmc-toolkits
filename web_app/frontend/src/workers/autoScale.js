@@ -674,26 +674,52 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
   };
 };
 
-/** Data-derived closest approach: left flank of the dominant |g| feature. */
+/**
+ * Data-derived closest approach: the rising flank of the FIRST shell (port of
+ * scaling.detect_first_peak_onset — keep in sync). The first local maximum of
+ * |g| beyond a one-ripple-period reference zone (2π/qmax above searchMin) that
+ * stands out of the ripple field below it (max |g| from searchMin to its lobe
+ * start) by strongProminence, or by prominence while being a major feature
+ * (>= fraction of the range maximum); either sign, so inverted shells count.
+ */
 export const detectFirstPeakOnset = (
-  r, g, { searchMin = 1.0, searchMax = 6.0, fraction = 0.35, floor = 0.5 } = {}
+  r, g, {
+    searchMin = 1.0, searchMax = 6.0, fraction = 0.35, floor = 0.5,
+    prominence = 2.0, strongProminence = 3.0, qmax = 0,
+  } = {}
 ) => {
-  const indices = [];
+  let first = -1;
+  let last = -1;
   for (let i = 0; i < r.length; i += 1) {
-    if (r[i] >= searchMin && r[i] <= searchMax) indices.push(i);
+    if (r[i] >= searchMin && r[i] <= searchMax) {
+      if (first < 0) first = i;
+      last = i;
+    }
   }
-  if (indices.length < 3) return null;
-  let peakIndex = indices[0];
-  for (const i of indices) {
-    if (Math.abs(g[i]) > Math.abs(g[peakIndex])) peakIndex = i;
+  if (first < 0 || last - first + 1 < 3) return null;
+  const a = new Float64Array(r.length);
+  for (let i = 0; i < r.length; i += 1) a[i] = Math.abs(g[i]);
+  let globalMax = -Infinity;
+  for (let i = first; i <= last; i += 1) if (a[i] > globalMax) globalMax = a[i];
+  if (globalMax < floor) return null;
+  const zoneEnd = searchMin + (qmax > 0 ? (2 * Math.PI) / qmax : 0);
+  for (let index = first + 1; index < last; index += 1) {
+    const peak = a[index];
+    if (r[index] < zoneEnd || peak < floor) continue;
+    if (!(peak >= a[index - 1] && peak > a[index + 1])) continue;
+    let start = index;
+    while (start > first && a[start - 1] < a[start]) start -= 1;
+    let ripple = -Infinity;
+    for (let i = first; i <= start; i += 1) if (a[i] > ripple) ripple = a[i];
+    if (!(peak >= strongProminence * ripple
+      || (peak >= prominence * ripple && peak >= fraction * globalMax))) continue;
+    const level = Math.max(floor, fraction * peak);
+    let onset = index;
+    while (onset > first && a[onset] > level) onset -= 1;
+    if (a[onset] > level) return r[first]; // the flank reaches below the search range
+    return r[onset + 1];
   }
-  const peak = Math.abs(g[peakIndex]);
-  if (peak < floor) return null;
-  const level = Math.max(floor, fraction * peak);
-  let index = peakIndex;
-  while (index > indices[0] && Math.abs(g[index]) > level) index -= 1;
-  if (Math.abs(g[index]) > level) return null;
-  return r[index + 1];
+  return null;
 };
 
 export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
@@ -703,6 +729,7 @@ export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
   const result = autoscalePass(qIn, sqIn, config, sigmaIn);
   const onset = detectFirstPeakOnset(result.r, result.gFiltered, {
     searchMin: config.rCutoff + 0.3,
+    qmax: config.qmax,
   });
   if (onset != null) result.r0Detected = onset;
   const lo = config.rFitMin != null ? config.rFitMin : config.rCutoff + 0.2;

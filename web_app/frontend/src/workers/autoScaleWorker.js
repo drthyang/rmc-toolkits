@@ -61,6 +61,7 @@ self.onmessage = (event) => {
     if (enforcement === 'auto' && result.r0Detected == null) {
       const onset = detectFirstPeakOnset(result.r, result.gFiltered, {
         searchMin: config.rCutoff + 0.3,
+        qmax: config.qmax,
       });
       if (onset != null) result.r0Detected = onset;
     }

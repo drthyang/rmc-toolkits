@@ -127,7 +127,7 @@ describe('autoScale engine parity with the Python engine', () => {
     expect(result.windowRefined).toBe(expected.windowRefined);
     expect(relError(result.a, expected.a)).toBeLessThan(1e-6);
     expect(result.rFitWindowUsed[1]).toBeCloseTo(expected.rFitWindow[1], 9);
-    expect(detectFirstPeakOnset(result.r, result.gFiltered, { searchMin: 1.3 }))
+    expect(detectFirstPeakOnset(result.r, result.gFiltered, { searchMin: 1.3, qmax: fixture.config.qmax }))
       .toBeCloseTo(expected.r0Detected, 9);
   });
 

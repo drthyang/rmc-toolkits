@@ -383,36 +383,77 @@ def detect_first_peak_onset(
     search_max: float = 6.0,
     fraction: float = 0.35,
     floor: float = 0.5,
+    prominence: float = 2.0,
+    strong_prominence: float = 3.0,
 ) -> float | None:
-    """Data-derived closest-approach r0: the left flank of the first shell.
+    """Data-derived closest-approach r0: the rising flank of the FIRST shell.
 
-    Finds the dominant |g| feature in ``[search_min, search_max]`` and walks
-    left until |g| drops below ``max(floor, fraction * peak)``. Peak-relative
-    (not absolute-threshold) because both the physical peak and the sub-r0
-    truncation ripples scale with the fitted amplitude — on missing-low-Q
-    data the ripples can reach O(peak/3), so no fixed threshold separates
-    them, while the dominant coordination shell still towers above them. |g|
-    is used because Faber-Ziman totals of negative-b compositions (e.g.
-    Mn3Sn) can have an *inverted* first shell. Returns None when no feature
-    exceeds ``floor`` or the flank never falls below the level inside the
-    search range (feature not separable from the ripple field).
+    The first coordination shell is the smallest-r feature of g(r) that stands
+    out of the ripple field below it — not the tallest feature in the range: a
+    weak or *inverted* first shell (negative Faber-Ziman weight, e.g. Ti-O in
+    titanates, Mn-Sn in Mn3Sn) is routinely smaller than the second shell.
+    |g| is used because below the first shell g -> 0 and a shell of either
+    sign departs from that level.
+
+    The local maxima of |g| in ``[search_min + 2 pi / qmax, search_max]`` are
+    scanned upward (the first termination-ripple period above ``search_min``
+    is a reference zone only, so every candidate has at least one ripple crest
+    below it to be judged against). Each has a *lobe start* — the nearest
+    local minimum of |g| to its left (a sign change of g is one) — and a
+    *ripple level* ``ripple = max |g|`` over ``[search_min, lobe start]``, the
+    field it must stand out of. A maximum is the first shell when
+    ``|g| >= floor`` and either
+
+    - ``|g| >= strong_prominence * ripple`` (it towers over everything below
+      it, however weak it is next to later shells), or
+    - ``|g| >= prominence * ripple`` and ``|g| >= fraction * max|g|`` over the
+      search range (a major feature that clearly exceeds the ripples).
+
+    Peak/ripple ratios rather than absolute thresholds, because the physical
+    shells and the sub-r0 truncation ripples both scale with the fitted
+    amplitude (on missing-low-Q data the ripples reach O(peak/4)). A real
+    shell inside the reference zone inflates the ripple level, so the later
+    shells are rejected too and the result is None rather than a later shell.
+    The onset is taken on the accepted shell's own flank: walk left from its
+    maximum until |g| drops to ``max(floor, fraction * |g_peak|)`` and return
+    the next grid point (``r`` at ``search_min`` if the flank never drops that
+    far inside the range). Returns None when no maximum qualifies.
     """
     r = np.asarray(r, dtype=float)
-    g = np.abs(np.asarray(g, dtype=float))
+    a = np.abs(np.asarray(g, dtype=float))
     selection = np.where((r >= search_min) & (r <= search_max))[0]
     if selection.size < 3:
         return None
-    peak_index = int(selection[np.argmax(g[selection])])
-    peak = g[peak_index]
-    if peak < floor:
+    first, last = int(selection[0]), int(selection[-1])
+    global_max = float(a[first : last + 1].max())
+    if global_max < floor:
         return None
-    level = max(floor, fraction * peak)
-    index = peak_index
-    while index > selection[0] and g[index] > level:
-        index -= 1
-    if g[index] > level:
-        return None  # never dropped below the level inside the search range
-    return float(r[index + 1])
+    # Reference zone: one termination-ripple period above the search start is
+    # never a candidate, so every candidate's ripple field holds >= one crest.
+    zone_end = float(search_min) + (2.0 * np.pi / float(qmax) if qmax > 0 else 0.0)
+    for index in range(first + 1, last):
+        peak = a[index]
+        if r[index] < zone_end or peak < floor:
+            continue
+        if not (peak >= a[index - 1] and peak > a[index + 1]):
+            continue
+        start = index
+        while start > first and a[start - 1] < a[start]:
+            start -= 1
+        ripple = float(a[first : start + 1].max())
+        if not (
+            peak >= strong_prominence * ripple
+            or (peak >= prominence * ripple and peak >= fraction * global_max)
+        ):
+            continue
+        level = max(floor, fraction * peak)
+        onset = index
+        while onset > first and a[onset] > level:
+            onset -= 1
+        if a[onset] > level:
+            return float(r[first])  # the flank reaches below the search range
+        return float(r[onset + 1])
+    return None
 
 
 _HUBER_C = 1.345  # 95% Gaussian efficiency
