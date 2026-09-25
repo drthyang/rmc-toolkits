@@ -157,17 +157,27 @@ parse: a parse of a file that changed while it was being read is never cached �
 under the new signature, and if the file changes again (a writer still busy) the request fails
 with **409** and a "changed while it was being read" message instead of returning a torn result.
 
-| Method & path | Description |
-| --- | --- |
-| `GET /api/health` | Service status and active data root. |
-| `GET /api/files?dir=data` | Directory listing with detected `plotKind` values. |
-| `POST /api/dialog/folder` | Open a native folder picker; register it as an allowed root. |
-| `GET /api/plot?path=...` | Render one supported file as a PNG. |
-| `GET /api/plot/metadata?path=...` | Plot kind, title, and metrics (`rwp`, `final_chi_r`). |
-| `GET /api/plot/data?path=...` | Parsed plot series and normalized axis labels for SVG rendering. |
-| `POST /api/convert/frac` | Convert `.rmc6f` → `Frac_coord_<stem>.txt`. |
-| `GET /api/structure?dir=...&maxPoints=1000000` | Folded atom positions, counts, lattice. |
-| `GET /api/kde/slice?dir=...&element=Ga&z=0.5&dz=0.08` | KDE density grid, contours, slab counts. |
+The table lists all 15 routes. A `dir` parameter names a run folder (the backend picks its
+`.rmc6f` by output-stem match, else the first alphabetically); `path` names one file. Booleans in
+query strings are true for `1`/`true`/`yes`. Defaults are in parentheses.
+
+| Method & path | Parameters (default; accepted range) | Returns |
+| --- | --- | --- |
+| `GET /api/health` | — | `status`, active `dataRoot`. |
+| `GET /api/files` | `dir` (`.`) | Sub-folders plus files matching the supported patterns: `name`, `path`, `type`, `plotKind`, `modified` (`st_mtime`, seconds), `size` (bytes). Live Data polls this. |
+| `POST /api/dialog/folder` | JSON `dir` (`.`): where the native picker opens | `path`, `name` of the chosen folder, which becomes an allowed data root; 400 when cancelled. |
+| `GET /api/plot` | `path` | One supported file rendered as a PNG. |
+| `GET /api/plot/metadata` | `path` | `kind`, `title`, `metrics` (`rwp`, `final_chi_r`). |
+| `GET /api/plot/data` | `path` | Metadata plus `xLabel`, `yLabel` and `series` (`label`, `x`, `y`) for the SVG plots; 400 for an unsupported file. |
+| `POST /api/convert/frac` | JSON `path` (a `.rmc6f`), `outputPath` (next to the source), `overwrite` (false) | `path`, `name` of the written `Frac_coord_<stem>.txt`; 409 if it exists and `overwrite` is false. |
+| `GET /api/structure` | `dir`; `maxPoints` (1 000 000; integer, clamped to [100, 1 000 000]) | Atoms folded into one unit cell (sampled per site above `maxPoints`), `totalAtoms`, `elementCounts`, `atomIndices`, `supercell`, `latticeVectors`, and the `.rmc6f` move counters `moves` (`generated`, `tried`, `accepted`, `accumulatedTimeS`) when the header has them. |
+| `GET /api/kde/slice` | `dir`; `element` (all); `orientation` `a`/`b`/`c` (`c`), any other value = custom normal `nx`, `ny`, `nz` (0, 0, 1; finite, not all zero); `z` (0.5; finite, clamped to [0, 1]); `dz` (0.08; 0 < dz ≤ 1); `bw` (0.03; > 0, SciPy `gaussian_kde` scalar factor); `grid` (120; integer, clamped to [16, 400]); `levels` (8; integer in [0, 64]); `log` (false) | Density grid, `extent`, contour polylines, `slabCount`, `fitCount`, slab/plane geometry. **`z` and `dz` are fractions of the unit cube's projection range along the slice normal** (equal to cell-edge fractions only for the `a`/`b`/`c` presets); the slab, bandwidth and grid stay in fractional coordinates, with no conversion to Å. The KDE fit uses at most 6000 slab points. |
+| `GET /api/pca/sites` | `dir`; `probability` (0.5; 0 < p < 1) | Per-site displacement tensor and thermal ellipsoid table (`sites`), `referenceNumbers`, `elements`, `totalAtoms`, `latticeVectors`, `supercell`. |
+| `GET /api/pca/kde` | `dir`; `referenceNumber` (integer) or `element` (pools that element's sites; neither pools every atom); `bw` (`scott`; `scott`, `silverman` or a number > 0); `bwScale` (1.0; > 0); `grid` (48; integer, clamped to [8, 128]); `extent` (3.0; > 0, box half-width in kernel-broadened σ); `cubicBox` (false); `probability` (0.5; 0 < p < 1); `projections` (true) | PCA frame, ellipsoid, and the separable 3D KDE volume (+ three wall projections), with the captured `mass`. |
+| `GET /api/pca/orientation` | `dir`; `referenceNumber` or `element` as above; `frequency` (auto: the recommended value; integer in [1, 64]); `weight` (`count`; `count`, `amplitude`, `amplitude2`); `minAmplitude` (0 Å; ≥ 0); `minAmplitudeQuantile` (0; in [0, 1)); `smoothing` (0; integer in [0, 64]); `frame` (`cartesian`; or `pca`); `geometry` (true: include cell polygons) | Goldberg-cell histogram of displacement directions: `enhancement`, `zScore`, antipodal asymmetry, peak direction. |
+| `GET /api/triplets` | `dir`; `end1`, `apex`, `end2` (elements, case-insensitive; `apex` is the central atom); `r12Min` + `r12Max` (required, Å, inclusive; `r12Max` ≤ 15); `r23Min` + `r23Max` (optional pair, default = the 1-2 window; `r23Max` ≤ 15); `binWidth` (1.0°; ≥ 0.05) | Bond-angle histogram, bond-length statistics, coordination histogram (payload of `triplets.bond_angle_summary`). The 15 Å and 0.05° caps are API limits; the engine itself is unrestricted. |
+| `POST /api/scaling/preview` | JSON `path` (a `stog.inp` or an S(Q) data file); `kind` (`auto`; `inp`, `data`); `inspect` (false: only parse the source). Overrides (all finite numbers): `qmin`, `qmax`, `rho0`, `bAvgSq`, `bSqAvg`, `formula`, `massDensity`, `rCutoff` (data mode 1.0), `rmax` (data mode 50), `nr` (data mode 5000; integer), `lorch` (data mode false), `r0`, `rFitMin`, `rFitMax`, `lowQCorrection` (true), `robust` (true), `c1Mode` (`sweep`), `amplitude` (`density`), `despike` (false), `useSigma` (true); `mode` (`auto`; `manual` takes `a`, finite and non-zero, and `b` (0), falling back to the `stog.inp` values); low-r enforcement controls `enforce`, `enforceCutoff`, `peakWindow` ([rmin, rmax]) — defaults in [auto-stog.md](algorithms/auto-stog.md) | Fitted `a`, `b`, convergence history, diagnostics, provenance, plot guides, and the S(Q)/G_K(r)/D(r) series (+ low-r–enforced versions). A `stog.inp` supplies every value not overridden; data mode requires `qmin`, `qmax`, a density (`rho0`, `massDensity` + `formula`, or a `NUMBER_DENSITY ::` header) and ⟨b⟩² (`bAvgSq` or `formula`). |
+| `POST /api/scaling/run` | As `preview`, plus `outDir` (`<source folder>/autoscale`), `outStem`, `force` (false) | Writes the classic stog file family + `stog_provenance.json` (the `rmc-autoscale` CLI writer); returns `a`, `b`, `outputs`, `outDir`, diagnostics. 409 when an output exists and `force` is false. |
 
 ## Supported File Patterns
 
