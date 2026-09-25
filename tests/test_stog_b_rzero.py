@@ -62,8 +62,6 @@ class RZeroTests(unittest.TestCase):
         fq = sq_to_fq(q, sq)
         h = 0.002
         for options in OPTIONS:
-            if options["low_q_correction"] and not options["lorch"]:
-                continue  # its closed form cancels at r ~ 1e-3; the moments are exact
             with self.subTest(**options):
                 g = fq_to_gpdf(q, fq, np.array([h, 2 * h, 4 * h]), **options)
                 s1 = (8 * g[0] - g[1]) / (6 * h)

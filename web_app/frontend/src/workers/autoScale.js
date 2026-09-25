@@ -107,6 +107,26 @@ export const sineTransform = (x, y, xout) => {
   return out;
 };
 
+/** Below this |v| = |Q0 r| the unwindowed low-Q moments use their Taylor series (transforms._SERIES_V). */
+const SERIES_V = 0.5;
+const SERIES_TERMS = 9;
+
+/**
+ * K(v) = ∫₀¹ t² sin(vt) dt and J(v) = ∫₀¹ t sin(vt) dt for small |v|
+ * (transforms._moment_series, same terms and order).
+ */
+const momentSeries = (v) => {
+  let k = 0;
+  let j = 0;
+  let power = v; // (-1)^n v^(2n+1) / (2n+1)!
+  for (let n = 0; n < SERIES_TERMS; n += 1) {
+    k += power / (2 * n + 4);
+    j += power / (2 * n + 3);
+    power = (-power * v * v) / ((2 * n + 2) * (2 * n + 3));
+  }
+  return [k, j];
+};
+
 /** sin(v)/v with the limit 1 at v = 0 (transforms._sinc). */
 const sinc = (v) => (v === 0 ? 1 : Math.sin(v) / v);
 /** (v sin v + cos v - 1)/v^2 = sinc(v) - sinc(v/2)^2 / 2, cancellation-free (transforms._sinc_head). */
@@ -147,8 +167,18 @@ export const lowQCorrectionBasis = (q, r, { lorch = false, s0Target = 0 } = {}) 
       const ri = r[i];
       if (ri === 0) continue;
       const v = q0 * ri;
-      const f1 = (2 * v * Math.sin(v) - (v * v - 2) * Math.cos(v) - 2) / (ri * ri * ri);
-      const f2 = (Math.sin(v) - v * Math.cos(v)) / (ri * ri);
+      let f1;
+      let f2;
+      if (Math.abs(v) < SERIES_V) {
+        // Taylor series of the moments (transforms._moment_series): the closed
+        // forms below cancel O(1) terms down to O(v^3).
+        const [k, j] = momentSeries(v);
+        f1 = q0 * q0 * q0 * k;
+        f2 = q0 * q0 * j;
+      } else {
+        f1 = (2 * v * Math.sin(v) - (v * v - 2) * Math.cos(v) - 2) / (ri * ri * ri);
+        f2 = (Math.sin(v) - v * Math.cos(v)) / (ri * ri);
+      }
       coef[i] = scale * (f1 / q0);
       constant[i] = scale * f2;
     }

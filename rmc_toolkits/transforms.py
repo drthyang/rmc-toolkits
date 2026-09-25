@@ -120,6 +120,29 @@ def density_line(r: np.ndarray, rho0: float, b_avg_sq: float) -> np.ndarray:
     return -4.0 * np.pi * float(rho0) * float(b_avg_sq) * np.asarray(r, dtype=float)
 
 
+#: Below this |v| = |Q0 r| the unwindowed low-Q moments use their Taylor series.
+_SERIES_V = 0.5
+_SERIES_TERMS = 9
+
+
+def _moment_series(v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """``K(v) = int_0^1 t^2 sin(vt) dt`` and ``J(v) = int_0^1 t sin(vt) dt`` for small |v|.
+
+    ``K = sum_n (-1)^n v^(2n+1) / ((2n+1)! (2n+4))``,
+    ``J = sum_n (-1)^n v^(2n+1) / ((2n+1)! (2n+3))`` (9 terms: < 1e-20 relative
+    for |v| < 0.5).
+    """
+    v = np.asarray(v, dtype=float)
+    k_sum = np.zeros_like(v)
+    j_sum = np.zeros_like(v)
+    power = v.copy()  # (-1)^n v^(2n+1) / (2n+1)!
+    for n in range(_SERIES_TERMS):
+        k_sum += power / (2 * n + 4)
+        j_sum += power / (2 * n + 3)
+        power = -power * v * v / ((2 * n + 2) * (2 * n + 3))
+    return k_sum, j_sum
+
+
 def _sinc(v: np.ndarray) -> np.ndarray:
     """``sin(v)/v`` with the limit 1 at v = 0 (unnormalized sinc)."""
     v = np.asarray(v, dtype=float)
@@ -242,11 +265,20 @@ def low_q_correction_basis(
         f1 = q0**2 * (_sinc_head(vm) - _sinc_head(vp)) / (2.0 * a)
         f2 = q0 * (_sinc(vm) - _sinc(vp)) / (2.0 * a)
     else:
+        # f1 = int_0^Q0 Q^2 sin(Qr) dQ = Q0^3 K(v), f2 = int_0^Q0 Q sin(Qr) dQ
+        # = Q0^2 J(v), v = Q0 r. The closed forms cancel O(1) terms down to
+        # O(v^3): below |v| = 0.5 the Taylor series is used instead (they were
+        # wrong by 100 % or more for v < ~1e-3, e.g. Q0 = 0.01 on a 0.01 A grid).
+        small = np.abs(v) < _SERIES_V
         with np.errstate(divide="ignore", invalid="ignore"):
             f1 = (2.0 * v * np.sin(v) - (v * v - 2.0) * np.cos(v) - 2.0) / r**3
             f2 = (np.sin(v) - v * np.cos(v)) / r**2
-        f1 = np.where(r == 0.0, 0.0, f1)
-        f2 = np.where(r == 0.0, 0.0, f2)
+        if np.any(small):
+            k_series, j_series = _moment_series(v[small])
+            f1 = np.where(small, 0.0, f1)
+            f2 = np.where(small, 0.0, f2)
+            f1[small] = q0**3 * k_series
+            f2[small] = q0**2 * j_series
     coef = (2.0 / np.pi) * f1 / q0
     const = (2.0 / np.pi) * f2
     if s0_target != 0.0:

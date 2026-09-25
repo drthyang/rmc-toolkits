@@ -1497,6 +1497,14 @@ with the two closed-form moment integrals
 $$f_1(r) = \int_0^{Q_0}\! Q^2 \sin(Qr)\,dQ = \frac{2v\sin v - (v^2-2)\cos v - 2}{r^3},\qquad
 f_2(r) = \int_0^{Q_0}\! Q \sin(Qr)\,dQ = \frac{\sin v - v\cos v}{r^2},\qquad v \equiv Q_0 r$$
 
+The closed forms cancel $O(1)$ terms down to $O(v^4)$ / $O(v^3)$, so for $|v| < 0.5$ both engines
+evaluate the Taylor series instead (`transforms._moment_series`, JS `momentSeries`, 9 terms):
+$f_1 = Q_0^3 \sum_n (-1)^n v^{2n+1}/[(2n+1)!\,(2n+4)]$,
+$f_2 = Q_0^2 \sum_n (-1)^n v^{2n+1}/[(2n+1)!\,(2n+3)]$. Before 1.0 the closed forms were used
+everywhere and were wrong by 100 % or more for $v \lesssim 10^{-3}$ ($Q_0 = 0.01$ Å⁻¹ on the
+0.01 Å grid, or fine $r$ grids) — tiny in absolute terms, since both moments vanish as $r \to 0$;
+now ≤ 1e-12 from quadrature at every $v$ (`tests/test_stog_b_lowq_series.py`).
+
 #### How the code stores it (why it is an affine *basis*)
 
 `low_q_correction_basis()` returns the pair

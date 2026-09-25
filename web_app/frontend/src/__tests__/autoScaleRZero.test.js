@@ -37,7 +37,7 @@ describe('fourierFilter with r = 0 in the grid', () => {
 
   it('gpdfSlopeAtZero is the derivative of fqToGpdf at 0 (Richardson)', () => {
     const fq = Float64Array.from(Q, (q, i) => q * (SQ[i] - 1));
-    OPTIONS.filter((options) => options.lorch || !options.lowQCorrection).forEach((options) => {
+    OPTIONS.forEach((options) => {
       const h = 0.002;
       const g = fqToGpdf(Q, fq, Float64Array.from([h, 2 * h, 4 * h]), options);
       const s1 = (8 * g[0] - g[1]) / (6 * h);
