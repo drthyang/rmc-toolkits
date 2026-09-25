@@ -1115,7 +1115,13 @@ def _resolve_scaling_source(payload: dict):
     return inp, inp_path, data_path, header
 
 
-def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
+def _resolve_scaling_config(payload: dict, inp, header: dict) -> tuple[ScalingConfig, list[str]]:
+    """The run's ScalingConfig and the coefficient warnings the CLI prints.
+
+    The warnings are ``resolve_coefficients``' (e.g. a formula's <b^2> left
+    unused because its <b>^2 disagrees with the configured one); the CLI
+    prints them to stderr, the API returns them as ``warnings``.
+    """
     def pick(key: str, fallback, **rules):
         value = _payload_float(payload, key, **rules)
         return fallback if value is None else value
@@ -1196,7 +1202,7 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
         despike=_payload_bool(payload, "despike", False),
     )
     config.r_fit_window  # validate eagerly with a clean 400
-    return config
+    return config, list(resolved["warnings"])
 
 
 def _scaling_enforce_flag(payload: dict) -> bool | None:
@@ -1289,7 +1295,7 @@ def _compute_scaling(path_str: str, config: ScalingConfig, mode: str, a: float, 
 
 def _scaling_request(payload: dict):
     inp, inp_path, data_path, header = _resolve_scaling_source(payload)
-    config = _resolve_scaling_config(payload, inp, header)
+    config, warnings = _resolve_scaling_config(payload, inp, header)
     enforce_flag = _scaling_enforce_flag(payload)
     enforcement = _resolve_scaling_enforcement(payload, inp, enforce_flag)
     mode, a, b = _resolve_scaling_mode(payload, inp)
@@ -1316,7 +1322,7 @@ def _scaling_request(payload: dict):
         )
         if cutoff is not None:
             enforcement = (cutoff,) * 3
-    return inp, inp_path, data_path, header, config, enforcement, mode, result
+    return inp, inp_path, data_path, header, config, enforcement, mode, result, warnings
 
 
 def _header_payload(header: dict) -> dict:
@@ -1364,7 +1370,9 @@ def scaling_preview():
                 }
             )
 
-        inp, inp_path, data_path, header, config, enforcement, mode, result = _scaling_request(payload)
+        inp, inp_path, data_path, header, config, enforcement, mode, result, warnings = (
+            _scaling_request(payload)
+        )
         summary = diagnostics_summary(result, config)
 
         gk_enforced = dr_enforced = None
@@ -1385,6 +1393,8 @@ def scaling_preview():
             "mode": mode,
             "inp": _inp_payload(inp),
             "header": _header_payload(header),
+            # Coefficient warnings (resolve_coefficients), as the CLI prints them.
+            "warnings": warnings,
             "result": {
                 "a": result.a,
                 "b": result.b,
@@ -1445,7 +1455,9 @@ def scaling_preview():
 def scaling_run():
     try:
         payload = request.get_json(silent=True) or {}
-        inp, inp_path, data_path, header, config, enforcement, mode, result = _scaling_request(payload)
+        inp, inp_path, data_path, header, config, enforcement, mode, result, warnings = (
+            _scaling_request(payload)
+        )
         if mode == "auto":
             refuse_failed_fit(result)  # a <= 0 never becomes RMCProfile input (CLI parity)
         summary = diagnostics_summary(result, config)
@@ -1488,6 +1500,7 @@ def scaling_run():
                 "outputs": {key: str(path) for key, path in targets.items()},
                 "outDir": str(targets["provenance"].parent),
                 "diagnostics": _json_safe(summary),
+                "warnings": warnings,
             }
         )
     except PermissionError as exc:

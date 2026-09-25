@@ -93,6 +93,15 @@ class ScalingApiStogBTests(unittest.TestCase):
         config = response.get_json()["provenance"]["config"]
         self.assertEqual(config["b_avg_sq"], 1.0)
         self.assertIsNone(config["b_sq_avg"])
+        # The dropped <b^2> is said, as the CLI prints it (integration item 4).
+        (warning,) = response.get_json()["warnings"]
+        self.assertIn("NOT the formula's <b^2>", warning)
+        out = f"{REL}/out_mixed"
+        run = self.client.post("/api/scaling/run", json={**body, "outDir": out})
+        self.assertEqual(run.status_code, 200, run.get_json())
+        self.assertEqual(run.get_json()["warnings"], [warning])
+        clean = self.client.post("/api/scaling/preview", json=self.body("desc.dat"))
+        self.assertEqual(clean.get_json()["warnings"], [])
         impossible = self.body("desc.dat", bAvgSq=1.0, bSqAvg=0.5)
         response = self.client.post("/api/scaling/preview", json=impossible)
         self.assertEqual(response.status_code, 400)

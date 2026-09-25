@@ -982,7 +982,8 @@ $\langle b\rangle^2$ agree within 2 %** (`COEFFICIENT_RTOL`) — then the compos
 $\langle b^2\rangle/\langle b\rangle^2$ is kept on the configured $\langle b\rangle^2$ scale.
 When they disagree, the configured $\langle b\rangle^2$ belongs to another radiation or
 normalization (1 for normalized x-ray data) and $\langle b^2\rangle$ stays **unset**: the CLI
-prints a warning naming both values in effect and the unused one, the page marks the chip
+prints a warning naming both values in effect and the unused one (the API returns the same text in
+its `warnings` array, since 1.0), the page marks the chip
 "⟨b²⟩ not set", and the $Q\to0$ criteria (`--amplitude fz`, `--estimate-rho0`, the page's
 automatic estimate) then refuse with "requires <b^2>" until $\langle b^2\rangle$ is given
 explicitly. Before 1.0 the Sears $\langle b^2\rangle$ was silently paired with the x-ray
