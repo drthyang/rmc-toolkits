@@ -151,6 +151,15 @@ of label columns between element and coordinates is tolerated:
 Lines with fewer than 9 whitespace-separated fields are **silently skipped** by the Python parser.
 The browser parser `web_app/frontend/src/rmc6f.js` → `parseAtomLine()` additionally accepts the old
 5–6-field coordinates-only form, returning `referenceNumber = null` and `cellIndices = null`.
+**Non-finite coordinates.** Python's `iter_rmc6f_atoms` accepts `NaN`/`inf` tokens, and one such
+coordinate used to poison its site's mean and fail the *batched* eigensolve for every site
+(`LinAlgError: Eigenvalues did not converge`, an HTTP 500 for the whole page).
+`load_site_displacements()` now raises a `ValueError` naming the atom and its reference site
+(`/api/pca/sites` returns it as a 400), and `site_ellipsoids()` refuses a `SiteDisplacements` whose
+cloud is non-finite, naming the sites. The browser parser (`rmc6f.js` → `parseAtomLine()`) instead
+drops such a line silently, so the static app still shows that site with one copy fewer; making the
+two *parsers* agree is outside this engine.
+
 Element symbols are normalised identically in both engines — Python's `str.capitalize()` in
 `iter_rmc6f_atoms`, and `capitalizeElement()` in `siteDisplacementsFromRmc6f()` (`SE` → `Se`) — so
 a site and its pooling carry the same label in either runtime.
@@ -539,6 +548,13 @@ of $10^4$) without visibly moving a well-conditioned site. The pre-floor ratio i
 $\lambda_1\le0$, which a round-off covariance passes, so an average configuration drew a
 $10^{-14}$ Å "cloud" with $v_\mathrm{max}\approx10^{42}$ Å⁻³; fewer than 4 points raises *"a 3D KDE
 needs at least four points"*.
+
+**Input validation.** `pca_kde_volume()` / `pcaKdeVolume()` reject non-finite points
+(*"displacement cloud contains non-finite coordinates"*) and require `extent`, `bw_scale` and a
+numeric `bw` to be positive **and finite**, and `grid` finite. Before 1.0 the checks were `<= 0`,
+which NaN passes: a NaN `extent`, `bwScale` or `bw` returned an all-NaN volume that Flask serialised
+as bare `NaN` tokens (HTTP 200, invalid JSON for `JSON.parse`), and JS accepted `Infinity`. Both
+routes now answer a bad parameter with HTTP 400.
 
 **Box half-widths.** The KDE convolves the cloud with the kernel, so the *estimate*'s variance along
 axis $a$ is $\lambda_a+h_a^2=\lambda_a(1+f^2)$. The sampling box is sized on that broadened width:

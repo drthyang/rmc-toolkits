@@ -307,5 +307,45 @@ class MixedOccupancySiteTests(unittest.TestCase):
         self.assertEqual(entry["element"], "Co")
 
 
+class NonFiniteInputTests(unittest.TestCase):
+    """pca.parity.6 / parity.23 / parity.27 / numerics.37.
+
+    NaN/inf passed every ``<= 0`` guard: a NaN extent, bw_scale or bw returned
+    an all-NaN volume (HTTP 200 with bare NaN tokens), and one NaN coordinate
+    failed the whole batched eigensolve with 'Eigenvalues did not converge'.
+    """
+
+    def setUp(self):
+        self.cloud = np.random.default_rng(3).normal(size=(300, 3)) * 0.1
+
+    def test_non_finite_points_are_rejected(self):
+        for bad in (np.nan, np.inf):
+            cloud = self.cloud.copy()
+            cloud[17, 1] = bad
+            with self.assertRaisesRegex(ValueError, "non-finite"):
+                pca_kde_volume(cloud, grid=8)
+
+    def test_non_finite_parameters_are_rejected(self):
+        for kwargs in ({"extent": np.nan}, {"extent": np.inf}, {"bw_scale": np.nan},
+                       {"bw_scale": np.inf}, {"bw": np.nan}, {"bw": np.inf}, {"grid": np.nan}):
+            with self.subTest(**{k: str(v) for k, v in kwargs.items()}):
+                with self.assertRaises(ValueError):
+                    pca_kde_volume(self.cloud, **{"grid": 8, **kwargs})
+
+    def test_a_nan_coordinate_names_the_atom(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "nan.rmc6f"
+            supercell = (4, 4, 4)
+            lines = wrapped_site_lines((0.25, 0.25, 0.25), 0.06, supercell=supercell,
+                                       cell_edge=8.0, seed=1)
+            parts = lines[9].split()
+            parts[3] = "NaN"
+            lines[9] = " ".join(parts)
+            write_rmc6f(path, lines, supercell=supercell,
+                        lattice=np.diag(np.asarray(supercell, dtype=float) * 8.0))
+            with self.assertRaisesRegex(ValueError, "atom 10 .*non-finite"):
+                load_site_displacements(path)
+
+
 if __name__ == "__main__":
     unittest.main()

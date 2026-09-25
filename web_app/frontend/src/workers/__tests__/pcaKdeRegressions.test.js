@@ -296,3 +296,25 @@ describe('mixed-occupancy sites (pca.parity.4 / numerics.17 / parity.20 / parity
         expect(entry.element).toBe('Co');
     });
 });
+
+describe('non-finite inputs (pca.parity.6 / parity.23 / parity.27 / numerics.37)', () => {
+    const gauss = makeGauss(3);
+    const cloud = () => Array.from({ length: 300 }, () => [0.1 * gauss(), 0.1 * gauss(), 0.1 * gauss()]);
+
+    it('rejects non-finite points with a clear message', () => {
+        for (const bad of [Number.NaN, Infinity]) {
+            const points = cloud();
+            points[17][1] = bad;
+            expect(() => pcaKdeVolume(points, { grid: 8 })).toThrow(/non-finite/);
+        }
+    });
+
+    it('rejects non-finite parameters', () => {
+        const points = cloud();
+        const cases = [{ extent: Number.NaN }, { extent: Infinity }, { bwScale: Number.NaN },
+            { bwScale: Infinity }, { bw: Number.NaN }, { bw: Infinity }, { grid: Number.NaN }];
+        cases.forEach((options) => {
+            expect(() => pcaKdeVolume(points, { grid: 8, ...options })).toThrow();
+        });
+    });
+});

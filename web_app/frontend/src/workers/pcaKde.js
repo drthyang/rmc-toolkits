@@ -283,7 +283,7 @@ const shapeStatistics = (points, mean, axes, eigenvalues) => {
 
 const bandwidthFactor = (method, count, dimensions) => {
     if (typeof method === 'number') {
-        if (!(method > 0)) throw new Error('numeric bandwidth must be positive');
+        if (!(Number.isFinite(method) && method > 0)) throw new Error('numeric bandwidth must be a positive finite number');
         return method;
     }
     const name = String(method).toLowerCase();
@@ -428,9 +428,15 @@ export const pcaKdeVolume = (points, options = {}) => {
     if (!Array.isArray(points) || points.length < 4) {
         throw new Error('a 3D KDE needs at least four points');
     }
+    if (!points.every((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]) && Number.isFinite(point[2]))) {
+        throw new Error('displacement cloud contains non-finite coordinates');
+    }
+    // NaN fails every `> 0` test but Infinity passes it, so each parameter is
+    // checked for finiteness too (as pca_kde_volume does).
+    if (!Number.isFinite(Number(gridOption))) throw new Error('grid must be a finite number');
     const grid = Math.max(8, Math.min(Math.round(gridOption), 128));
-    if (!(bwScale > 0)) throw new Error('bwScale must be positive');
-    if (!(extent > 0)) throw new Error('extent must be positive');
+    if (!(Number.isFinite(bwScale) && bwScale > 0)) throw new Error('bwScale must be a positive finite number');
+    if (!(Number.isFinite(extent) && extent > 0)) throw new Error('extent must be a positive finite number');
 
     const total = points.length;
     const fit = subsample(points, maxFitPoints, rngSeed);

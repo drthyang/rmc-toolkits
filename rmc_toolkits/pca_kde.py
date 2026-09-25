@@ -193,6 +193,13 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
     references: list[int] = []
     elements: list[str] = []
     for atom in iter_rmc6f_atoms(rmc6f_path):
+        if not np.all(np.isfinite(atom["coords"])):
+            # One NaN/inf coordinate would poison its site's mean and fail the
+            # batched eigensolve for every site; name the atom instead.
+            raise ValueError(
+                f"{rmc6f_path.name}: atom {atom['atom_number']} (reference site "
+                f"{atom['reference_number']}) has a non-finite coordinate"
+            )
         coords.append(atom["coords"])
         cells.append(atom["cell_indices"])
         references.append(atom["reference_number"])
@@ -358,6 +365,10 @@ def site_ellipsoids(
     site_index = sites.site_index
     site_count = sites.reference_numbers.size
     counts = sites.counts.astype(float)
+    finite_rows = np.isfinite(displacements).all(axis=1)
+    if not finite_rows.all():
+        bad = sorted({int(sites.reference_numbers[i]) for i in site_index[~finite_rows]})
+        raise ValueError(f"displacement cloud contains non-finite coordinates (reference sites {bad})")
 
     covariance = np.zeros((site_count, 3, 3))
     for a in range(3):
@@ -492,8 +503,8 @@ def _bandwidth_factor(method: str | float, count: int, dimensions: int) -> float
     """SciPy's ``gaussian_kde`` covariance factor for ``count`` unweighted points."""
     if isinstance(method, (int, float)) and not isinstance(method, bool):
         factor = float(method)
-        if factor <= 0:
-            raise ValueError("numeric bandwidth must be positive")
+        if not (np.isfinite(factor) and factor > 0):
+            raise ValueError("numeric bandwidth must be a positive finite number")
         return factor
 
     name = str(method).lower()
@@ -614,13 +625,20 @@ def pca_kde_volume(
         raise ValueError("points must be a numeric array with shape (N, 3)")
     if points.shape[0] < 4:
         raise ValueError("a 3D KDE needs at least four points")
+    if not np.isfinite(points).all():
+        raise ValueError("displacement cloud contains non-finite coordinates")
 
+    # NaN passes every `<= 0` test, so each parameter is checked for finiteness
+    # too -- otherwise a NaN extent returns an all-NaN volume, not an error.
+    if not np.isfinite(float(grid)):
+        raise ValueError("grid must be a finite number")
     grid = int(max(8, min(int(grid), 128)))
     bw_scale = float(bw_scale)
-    if bw_scale <= 0:
-        raise ValueError("bw_scale must be positive")
-    if extent <= 0:
-        raise ValueError("extent must be positive")
+    if not (np.isfinite(bw_scale) and bw_scale > 0):
+        raise ValueError("bw_scale must be a positive finite number")
+    extent = float(extent)
+    if not (np.isfinite(extent) and extent > 0):
+        raise ValueError("extent must be a positive finite number")
 
     total = int(points.shape[0])
     fit = _subsample(points, int(max_fit_points), rng_seed)

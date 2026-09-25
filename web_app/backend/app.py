@@ -590,6 +590,10 @@ def pca_sites_endpoint():
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        # Bad input (a non-finite coordinate, probability outside (0, 1)): a
+        # clear 400 naming the problem, not a 500.
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
