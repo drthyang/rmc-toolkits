@@ -138,7 +138,9 @@ const bodyDiagonalCloud = (copies = 200, length = 0.1) => {
 };
 
 // Shared verbatim with AXIS_CELLS_NU3 in tests/test_orientation_fixes.py.
-const AXIS_CELLS_NU3 = [36, 15, 16, 86, 71, 62];
+// +x and +y are exact two-way ties at nu = 3; since review:4 they go to the
+// lower index of the pair (35, 14; previously 36, 15 by the walk's path).
+const AXIS_CELLS_NU3 = [35, 14, 16, 85, 70, 62];
 
 describe('centrosymmetric tie-break', () => {
     it('keeps an exactly centrosymmetric axis cloud at zero asymmetry', () => {
@@ -173,6 +175,106 @@ describe('centrosymmetric tie-break', () => {
         const tiling = goldbergTiling(3);
         expect(assignCells(tiling, [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]]))
             .toEqual(AXIS_CELLS_NU3);
+    });
+});
+
+// <111>, <100> and <110> (26 directions), in the order of _special_directions
+// in tests/test_orientation_fixes.py.
+const specialDirections = () => {
+    const signs = [1, -1];
+    const directions = [];
+    signs.forEach((a) => signs.forEach((b) => signs.forEach((c) => directions.push([a, b, c]))));
+    for (let axis = 0; axis < 3; axis += 1) {
+        signs.forEach((sign) => {
+            const v = [0, 0, 0];
+            v[axis] = sign;
+            directions.push(v);
+        });
+    }
+    [[0, 1], [0, 2], [1, 2]].forEach(([i, j]) => signs.forEach((a) => signs.forEach((b) => {
+        const v = [0, 0, 0];
+        v[i] = a;
+        v[j] = b;
+        directions.push(v);
+    })));
+    return directions;
+};
+
+// Brute-force reference for the tie rule over all cells: fold into the
+// canonical hemisphere, take the lowest index within `tolerance` of the best
+// dot product, map folded directions back through the antipode table.
+const lowestIndexRule = (tiling, directions, tolerance = 1e-12) => directions.map((direction) => {
+    const length = Math.hypot(direction[0], direction[1], direction[2]);
+    const u = direction.map((value) => value / length);
+    const flip = u[0] < 0 || (u[0] === 0 && (u[1] < 0 || (u[1] === 0 && u[2] < 0)));
+    const w = flip ? u.map((value) => -value) : u;
+    const dots = tiling.centers.map((c) => c[0] * w[0] + c[1] * w[1] + c[2] * w[2]);
+    const best = Math.max(...dots);
+    const cell = dots.findIndex((value) => value >= best - tolerance);
+    return flip ? tiling.antipode[cell] : cell;
+});
+
+// Shared verbatim with SPECIAL_DIRECTION_CELLS in tests/test_orientation_fixes.py.
+const SPECIAL_DIRECTION_CELLS = {
+    1: [0, 1, 2, 6, 5, 9, 11, 10, 2, 9, 1, 11, 0, 10, 1, 8, 3, 11, 2, 6, 5, 9, 0, 7, 4, 10],
+    2: [1, 16, 10, 26, 15, 27, 39, 38, 18, 40, 8, 34, 9, 30, 2, 24, 7, 35, 5, 17, 14, 29, 0, 21, 11, 31],
+    3: [5, 43, 49, 77, 28, 56, 83, 91, 35, 85, 14, 70, 16, 62, 6, 47, 57, 89, 7, 45, 26, 68, 1, 40, 75, 80],
+    4: [6, 71, 81, 130, 48, 98, 145, 159, 59, 148, 23, 120, 29, 104, 8, 79, 96, 155, 12, 76, 43, 115,
+        1, 68, 128, 137],
+    10: [33, 405, 460, 761, 257, 561, 858, 983, 320, 880, 110, 690, 155, 590, 287, 525, 919, 927, 128,
+        635, 223, 656, 77, 377, 736, 792],
+    11: [37, 485, 551, 915, 306, 673, 1033, 1193, 381, 1061, 128, 830, 182, 710, 343, 633, 1110, 1119,
+        152, 765, 268, 788, 90, 454, 887, 954]
+};
+// Shared verbatim with WELL_MODEL_PEAKS in tests/test_orientation_fixes.py.
+// Before the tie rule Python put the nu=2 peak at [0.5, 0.309, 0.809] and JS
+// at [0.309, 0.809, 0.5].
+const WELL_MODEL_PEAKS = {
+    2: { peakCell: 1, peakDirection: [0.3090169943749474, 0.8090169943749473, 0.5], occupiedCells: 8 },
+    4: { peakCell: 6, peakDirection: [0.42532540417601994, 0.5877852522924731, 0.6881909602355868], occupiedCells: 8 }
+};
+
+// Atoms on the eight <111> wells: 30 at +[111], 30 at -[111], 20 at each other.
+const wellModel = (length = 0.1) => {
+    const rows = [];
+    specialDirections().slice(0, 8).forEach((direction) => {
+        const weight = Math.abs(direction[0] + direction[1] + direction[2]) === 3 ? 30 : 20;
+        for (let k = 0; k < weight; k += 1) rows.push(direction.map((value) => value * length / Math.sqrt(3)));
+    });
+    return rows;
+};
+
+// review:4
+describe('exact tie resolution (lowest index)', () => {
+    it('resolves <111>, <100> and <110> by the lowest-index rule at every frequency', () => {
+        const directions = specialDirections();
+        for (const frequency of [...Array.from({ length: 30 }, (_, i) => i + 1), 38]) {
+            const tiling = goldbergTiling(frequency);
+            expect(assignCells(tiling, directions), `nu=${frequency}`).toEqual(lowestIndexRule(tiling, directions));
+        }
+    });
+
+    it('resolves Voronoi vertices (three-way ties) by the same rule', () => {
+        for (const frequency of [3, 5, 10]) {
+            const tiling = goldbergTiling(frequency);
+            const vertices = tiling.polygons.flatMap((polygon) => polygon);
+            expect(assignCells(tiling, vertices), `nu=${frequency}`).toEqual(lowestIndexRule(tiling, vertices));
+        }
+    });
+
+    it('matches the Python pins for the special directions', () => {
+        Object.entries(SPECIAL_DIRECTION_CELLS).forEach(([frequency, expected]) => {
+            expect(assignCells(goldbergTiling(Number(frequency)), specialDirections()), `nu=${frequency}`).toEqual(expected);
+        });
+    });
+
+    it('gives an 8-well <111> model the same peak as the Python engine', () => {
+        Object.entries(WELL_MODEL_PEAKS).forEach(([frequency, expected]) => {
+            const result = orientationHistogram(wellModel(), { frequency: Number(frequency), geometry: false });
+            expect(result.peakCell, `nu=${frequency}`).toBe(expected.peakCell);
+            result.peakDirection.forEach((value, i) => expect(Math.abs(value - expected.peakDirection[i])).toBeLessThan(1e-12));
+            expect(result.counts.filter((count) => count > 0).length).toBe(expected.occupiedCells);
+        });
     });
 });
 

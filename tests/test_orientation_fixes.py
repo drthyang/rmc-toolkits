@@ -181,7 +181,138 @@ class CentrosymmetricTieBreakTests(unittest.TestCase):
 
 
 # Cells of +x, +y, +z, -x, -y, -z at nu = 3 (the -u cells are the antipodes).
-AXIS_CELLS_NU3 = [36, 15, 16, 86, 71, 62]
+# +x and +y are exact two-way ties there; since review:4 they go to the lower
+# index of the pair (35, 14; previously 36, 15 by the walk's path).
+AXIS_CELLS_NU3 = [35, 14, 16, 85, 70, 62]
+
+
+def _special_directions():
+    """<111>, <100> and <110> (26 directions), in the order the JS suite uses."""
+    signs = (1.0, -1.0)
+    directions = [[a, b, c] for a in signs for b in signs for c in signs]
+    for axis in range(3):
+        for sign in signs:
+            v = [0.0, 0.0, 0.0]
+            v[axis] = sign
+            directions.append(v)
+    for i, j in ((0, 1), (0, 2), (1, 2)):
+        for a in signs:
+            for b in signs:
+                v = [0.0, 0.0, 0.0]
+                v[i], v[j] = a, b
+                directions.append(v)
+    return np.asarray(directions)
+
+
+def _lowest_index_rule(tiling, directions, tolerance=1e-12):
+    """Brute-force reference for the tie rule, over all cells.
+
+    Fold into the canonical hemisphere (first non-zero component positive),
+    take the lowest cell index whose centre is within ``tolerance`` of the
+    best dot product, and map folded directions back through the antipode.
+    """
+    u = directions / np.linalg.norm(directions, axis=1, keepdims=True)
+    x, y, z = u[:, 0], u[:, 1], u[:, 2]
+    flip = (x < 0) | ((x == 0) & ((y < 0) | ((y == 0) & (z < 0))))
+    folded = np.where(flip[:, None], -u, u)
+    dots = folded @ tiling.centers.T
+    tied = dots >= dots.max(axis=1, keepdims=True) - tolerance
+    cells = np.argmax(tied, axis=1)  # first True = lowest index
+    return np.where(flip, tiling.antipode[cells], cells)
+
+
+class ExactTieResolutionTests(unittest.TestCase):
+    """review:4.
+
+    The centrosymmetric fold made each engine inversion-equivariant, but a
+    direction on a Voronoi edge or vertex -- <111> when 3 does not divide nu,
+    some <110> -- still landed in whichever tied cell the greedy walk reached
+    first, which depends on last-bit round-off that differs between NumPy and
+    V8: <111> went to different cells in the two engines at 18 of 31
+    frequencies, <110> at 9, and an 8-well <111> model had a different peak
+    direction in Flask and in the browser. Ties are now resolved
+    combinatorially: the lowest cell index among the cells within
+    ASSIGN_TIE_TOL of the best dot product.
+    """
+
+    def test_special_directions_follow_the_lowest_index_rule(self):
+        directions = _special_directions()
+        for frequency in list(range(1, 31)) + [38]:
+            tiling = goldberg_tiling(frequency)
+            np.testing.assert_array_equal(
+                assign_cells(tiling, directions),
+                _lowest_index_rule(tiling, directions),
+                err_msg=f"nu={frequency}",
+            )
+
+    def test_voronoi_vertices_follow_the_lowest_index_rule(self):
+        # Every polygon vertex is equidistant from three cell centres.
+        for frequency in (3, 5, 10):
+            tiling = goldberg_tiling(frequency)
+            vertices = tiling.polygons.reshape(-1, 3)
+            np.testing.assert_array_equal(
+                assign_cells(tiling, vertices),
+                _lowest_index_rule(tiling, vertices),
+                err_msg=f"nu={frequency}",
+            )
+
+    def test_generic_directions_are_the_plain_nearest_cell(self):
+        rng = np.random.default_rng(12)
+        directions = rng.normal(size=(20000, 3))
+        tiling = goldberg_tiling(10)
+        unit = directions / np.linalg.norm(directions, axis=1, keepdims=True)
+        np.testing.assert_array_equal(
+            assign_cells(tiling, directions), np.argmax(unit @ tiling.centers.T, axis=1)
+        )
+
+    def test_special_direction_cells_pinned_for_cross_engine_parity(self):
+        directions = _special_directions()
+        for frequency, expected in SPECIAL_DIRECTION_CELLS.items():
+            self.assertEqual(
+                assign_cells(goldberg_tiling(frequency), directions).tolist(), expected,
+                msg=f"nu={frequency}",
+            )
+
+    def test_well_model_peak_is_engine_independent(self):
+        # The reviewer's 8-well <111> model (weights 30 / 6 x 20 / 30).
+        for frequency, expected in WELL_MODEL_PEAKS.items():
+            result = orientation_histogram(_well_model(), frequency=frequency, geometry=False)
+            self.assertEqual(result["peakCell"], expected["peakCell"], msg=f"nu={frequency}")
+            np.testing.assert_allclose(result["peakDirection"], expected["peakDirection"], atol=1e-12)
+            self.assertEqual(
+                int(np.count_nonzero(result["counts"])), expected["occupiedCells"], msg=f"nu={frequency}"
+            )
+
+
+def _well_model(length=0.1):
+    """Atoms on the eight <111> wells: 30 at +[111], 30 at -[111], 20 at each other."""
+    rows = []
+    for direction in _special_directions()[:8]:
+        weight = 30 if abs(direction.sum()) == 3 else 20
+        rows.append(np.repeat(direction[None, :] * length / np.sqrt(3.0), weight, axis=0))
+    return np.vstack(rows)
+
+
+# Shared verbatim with orientationFixes.test.js: cells of _special_directions()
+# (8 x <111>, 6 x <100>, 12 x <110>).
+SPECIAL_DIRECTION_CELLS = {
+    1: [0, 1, 2, 6, 5, 9, 11, 10, 2, 9, 1, 11, 0, 10, 1, 8, 3, 11, 2, 6, 5, 9, 0, 7, 4, 10],
+    2: [1, 16, 10, 26, 15, 27, 39, 38, 18, 40, 8, 34, 9, 30, 2, 24, 7, 35, 5, 17, 14, 29, 0, 21, 11, 31],
+    3: [5, 43, 49, 77, 28, 56, 83, 91, 35, 85, 14, 70, 16, 62, 6, 47, 57, 89, 7, 45, 26, 68, 1, 40, 75, 80],
+    4: [6, 71, 81, 130, 48, 98, 145, 159, 59, 148, 23, 120, 29, 104, 8, 79, 96, 155, 12, 76, 43, 115,
+        1, 68, 128, 137],
+    10: [33, 405, 460, 761, 257, 561, 858, 983, 320, 880, 110, 690, 155, 590, 287, 525, 919, 927, 128,
+         635, 223, 656, 77, 377, 736, 792],
+    11: [37, 485, 551, 915, 306, 673, 1033, 1193, 381, 1061, 128, 830, 182, 710, 343, 633, 1110, 1119,
+         152, 765, 268, 788, 90, 454, 887, 954],
+}
+# Shared verbatim with orientationFixes.test.js. Before the tie rule Python
+# put the nu=2 peak at [0.5, 0.309, 0.809] and JS at [0.309, 0.809, 0.5].
+WELL_MODEL_PEAKS = {
+    2: {"peakCell": 1, "peakDirection": [0.3090169943749474, 0.8090169943749473, 0.5], "occupiedCells": 8},
+    4: {"peakCell": 6, "peakDirection": [0.42532540417601994, 0.5877852522924731, 0.6881909602355868],
+        "occupiedCells": 8},
+}
 
 
 # Shared verbatim with orientationFixes.test.js:

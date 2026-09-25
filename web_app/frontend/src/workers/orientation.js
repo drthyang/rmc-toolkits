@@ -33,6 +33,12 @@ export const DEFAULT_TARGET_PER_CELL = 12;
 // Relative tolerance of the tied-peak rule (lowest index within it of the
 // maximum wins). Mirrors PEAK_TIE_RTOL.
 export const PEAK_TIE_RTOL = 1e-9;
+// Exact Voronoi ties (a direction's best dot product shared, to within this
+// absolute tolerance, by other cells) go to the lowest cell index, the same
+// combinatorial rule as the Python engine, instead of to whichever tied cell
+// the greedy walk reached first (last-bit round-off, engine-dependent).
+// Mirrors ASSIGN_TIE_TOL.
+export const ASSIGN_TIE_TOL = 1e-12;
 // Tail probabilities are floored here before conversion to a normal deviate,
 // so |z| <= 37.04 and no infinity reaches the payload. Mirrors
 // SIGNIFICANCE_TAIL_FLOOR.
@@ -567,7 +573,22 @@ const assignOne = (tiling, direction) => {
         if (next === current) break;
         current = next;
     }
-    return current;
+
+    // Exact ties: every cell equidistant with `current` is its neighbour, so
+    // the lowest index within ASSIGN_TIE_TOL of the best dot among the cell
+    // and its neighbours is the tie rule, independent of the walk's path.
+    const around = neighbors[current];
+    let bestDot = dot(centers[current], direction);
+    for (let k = 0; k < around.length; k += 1) {
+        if (around[k] >= 0) bestDot = Math.max(bestDot, dot(centers[around[k]], direction));
+    }
+    const tieFloor = bestDot - ASSIGN_TIE_TOL;
+    let chosen = dot(centers[current], direction) >= tieFloor ? current : Infinity;
+    for (let k = 0; k < around.length; k += 1) {
+        const candidate = around[k];
+        if (candidate >= 0 && candidate < chosen && dot(centers[candidate], direction) >= tieFloor) chosen = candidate;
+    }
+    return chosen;
 };
 
 // --- tiling construction (cached) ---------------------------------------------
@@ -685,7 +706,8 @@ const oppositeHemisphere = (u) => (
 // assign(-u) === antipode[assign(u)] for every u, including exact Voronoi
 // ties (the crystal axes at odd nu, <111> when 3 does not divide nu), which a
 // first-maximum tie-break would otherwise resolve non-antipodally and make a
-// centrosymmetric cloud read as one-sided. Mirrors `assign_cells`.
+// centrosymmetric cloud read as one-sided. Within the resolved hemisphere a
+// tie goes to the lowest cell index (assignOne). Mirrors `assign_cells`.
 const assignCell = (tiling, u) => (
     oppositeHemisphere(u)
         ? tiling.antipode[assignOne(tiling, [-u[0], -u[1], -u[2]])]

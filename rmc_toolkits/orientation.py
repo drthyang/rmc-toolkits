@@ -53,8 +53,9 @@ the cell's own exactly-computed solid angle, which removes the pentagon
 artefact that otherwise prints the parent icosahedron onto the map.
 
 Cell boundaries are the spherical Voronoi diagram of the cell centres: a
-direction is assigned to the cell whose centre it is nearest to, and the
-polygon drawn for that cell is the exact region of directions that land in it.
+direction is assigned to the cell whose centre it is nearest to (an exact tie
+to the lowest cell index, see :func:`assign_cells`), and the polygon drawn for
+that cell is the exact region of directions that land in it.
 Assignment is O(1) per point, not O(cells): the icosahedral face is found by a
 ray/cone test, inverted through the (linear) gnomonic map to a lattice index,
 then a greedy walk on the cell-adjacency graph fixes the small distortion the
@@ -124,6 +125,16 @@ DEFAULT_TARGET_PER_CELL = 12
 # plain argmax would pick the peak by round-off; 1e-9 is far above that
 # (~1e-15) and far below any physical difference. The lowest index wins.
 PEAK_TIE_RTOL = 1e-9
+
+# A direction whose best dot product with a cell centre is shared, to within
+# this absolute tolerance, by other cells sits on a Voronoi edge or vertex
+# (<111> when 3 does not divide nu, some <110>, the axes at odd nu). Such exact
+# ties go to the lowest cell index -- a combinatorial rule both engines apply
+# identically -- instead of to whichever tied cell the greedy walk reached
+# first, which depends on last-bit round-off (~1e-16) that differs between
+# NumPy and JS. 1e-12 is far above that and far below the dot-product gap of
+# any direction more than ~1e-10 rad from a cell boundary.
+ASSIGN_TIE_TOL = 1e-12
 
 # Every significance readout is a tail probability p converted to the
 # equivalent one-sided standard-normal deviate z (P(Z >= z) = p). Tail
@@ -437,7 +448,16 @@ def _assign(
         if not improved.any():
             break
         current = np.where(improved, safe_neighbors[current, pick], current)
-    return current
+
+    # Exact ties: every cell equidistant with the one the walk stopped at is
+    # its neighbour (they share the Voronoi edge or vertex), so the lowest
+    # index within ASSIGN_TIE_TOL of the best dot among the cell and its
+    # neighbours is the tie rule, independent of the walk's path.
+    candidates = np.concatenate([current[:, None], safe_neighbors[current]], axis=1)
+    dots = np.einsum("nkd,nd->nk", centers[candidates], directions)
+    dots[:, 1:] = np.where(valid[current], dots[:, 1:], -np.inf)
+    tied = dots >= dots.max(axis=1, keepdims=True) - ASSIGN_TIE_TOL
+    return np.where(tied, candidates, np.iinfo(np.int64).max).min(axis=1)
 
 
 @lru_cache(maxsize=8)
@@ -539,6 +559,10 @@ def assign_cells(tiling: SphereTiling, directions: np.ndarray) -> np.ndarray:
     not antipodes -- an exactly centrosymmetric cloud then reads as maximally
     one-sided. Only one hemisphere is therefore resolved directly; the other
     is mapped through the (exact, involutive) antipode table.
+
+    Within the resolved hemisphere a tie goes to the lowest cell index among
+    the cells whose centres are within ``ASSIGN_TIE_TOL`` of the best dot
+    product, so both engines resolve it the same way.
     """
     directions = _normalize(np.atleast_2d(np.asarray(directions, dtype=float)))
     flip = _opposite_hemisphere(directions)

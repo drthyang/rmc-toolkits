@@ -775,7 +775,39 @@ ties included, and an exactly centrosymmetric cloud has $n_m = n_{\text{antipode
 cell. Away from ties the nearest centre is unique and the fold changes nothing (verified: zero of
 312 000 real-data assignments changed, both GaNb₄Se₈ runs at $\nu \in \{2, 3, 10\}$). Both suites
 assert the equivariance on random directions plus every tie family, and pin the $\pm$axis cells at
-$\nu = 3$ (`[36, 15, 16, 86, 71, 62]`) verbatim across engines.
+$\nu = 3$ verbatim across engines (`[35, 14, 16, 85, 70, 62]` since (e); `[36, 15, 16, 86, 71, 62]`
+before it).
+
+**(e) Exact ties go to the lowest cell index, the same cell in both engines.** The fold makes each
+engine inversion-equivariant. Within the resolved hemisphere, though, the walk still left a tied
+direction in whichever tied cell it reached first, and that depends on last-bit round-off in the
+dot products, which differs between NumPy and V8. Before the review of the 1.0 fixes,
+$\langle 111\rangle$ went to different cells in the two engines at 18 of the 31 frequencies
+$\nu = 1$–30 and 38 (1, 2, 4, 5, 7, 8, 11, 13, 14, 16, 17, 19, 20, 23, 26, 28, 29, 38), and
+$\langle 110\rangle$ at 9 (3, 4, 10, 11, 12, 18, 19, 25, 26). An 8-well $\langle 111\rangle$ model
+therefore had its $\nu = 2$ peak at $[0.5, 0.309, 0.809]$ in Flask and at $[0.309, 0.809, 0.5]$ in
+the browser. Every cell equidistant with the walked-to cell $m$ shares its Voronoi edge or vertex,
+so it is one of $m$'s neighbours $N(m)$. After the walk both engines therefore return
+
+$$m_{\text{walk}}(\mathbf{u}) \;=\; \min\Big\{\,k \in \{m\} \cup N(m) \;:\;
+\mathbf{u}\cdot\mathbf{c}_k \;\ge\; \max_{j \in \{m\} \cup N(m)} \mathbf{u}\cdot\mathbf{c}_j - \texttt{ASSIGN\_TIE\_TOL}\Big\},
+\qquad \texttt{ASSIGN\_TIE\_TOL} = 10^{-12},$$
+
+that is, the lowest index among the near-equal candidates. $10^{-12}$ is four orders above the
+cross-engine round-off. It moves only directions within about $10^{-11}$ rad of a cell boundary.
+
+Measured results:
+
+- Zero of 624 000 real-data assignments changed (both GaNb₄Se₈ runs at
+  $\nu \in \{1, 2, 3, 5, 10, 24\}$), and Python and JS agree on all 624 000.
+- Python and JS now assign all 26 $\langle 100\rangle$/$\langle 110\rangle$/$\langle 111\rangle$
+  directions identically at every $\nu = 1$–30 and 38.
+- Both suites check the rule against a brute-force scan over all cells: for those 26 directions at
+  all 31 frequencies, and for every Voronoi vertex (a three-way tie) at $\nu \in \{3, 5, 10\}$.
+- Both suites pin, verbatim, the 26 directions' cells at $\nu \in \{1, 2, 3, 4, 10, 11\}$ and the
+  well model's peak at $\nu \in \{2, 4\}$ (`SPECIAL_DIRECTION_CELLS`, `WELL_MODEL_PEAKS`).
+- $+\hat{x}$ and $+\hat{y}$ at $\nu = 3$ are two-way ties. They moved to the lower index of each
+  pair, which is why the pinned axis cells changed.
 
 **Two entry points, one of which normalises and folds.** `assign_cells` / `assignCells` (the
 public wrapper) calls `_normalize` first and applies the hemisphere fold of (d), so callers may
@@ -1461,6 +1493,7 @@ those reconstructed sites do to *this* page's numbers.
 | `NEGLIGIBLE_AMPLITUDE` | $10^{-9}$ | Å | always-on floor; below it a direction is round-off |
 | `SMOOTHING_ALPHA` | 0.5 | — | fraction of mass a cell exports per pass |
 | `PEAK_TIE_RTOL` | $10^{-9}$ | — | cells within this relative distance of the maximum enhancement tie; the lowest index is `peakCell` |
+| `ASSIGN_TIE_TOL` | $10^{-12}$ | dot product | cells within this of a direction's best dot product are tied; the lowest index gets it (Step 5 (e)) |
 | `MAP_TEST_MIN_PAIRS` | 0.1 | expected coincident pairs | below it the map test reports no p-value / deviate (§6.3) |
 | `DEFAULT_TARGET_PER_CELL` | 12 | points/cell | auto-resolution floor: Auto averages $\ge 12$ per cell ($\le 29\%$ Poisson scatter) |
 | `recommended_frequency(max_frequency=)` | 24 | — | auto-resolution never exceeds this |
@@ -1553,7 +1586,8 @@ independently computed in each language — not a shared-golden parity suite.
   would still pass. [tests/test_orientation_fixes.py](../../tests/test_orientation_fixes.py) and
   [orientationFixes.test.js](../../web_app/frontend/src/workers/__tests__/orientationFixes.test.js)
   therefore share **pinned values verbatim**: the `recommendedFrequency` boundary table, the
-  $\pm$axis cells at $\nu = 3$, `neighbors` checksums at $\nu \in \{4,6,10,38\}$ and two $\nu = 38$
+  $\pm$axis cells at $\nu = 3$, the cells of the 26 $\langle 100\rangle$/$\langle 110\rangle$/$\langle 111\rangle$
+  directions at six frequencies and an 8-well model's peak (Step 5 (e)), `neighbors` checksums at $\nu \in \{4,6,10,38\}$ and two $\nu = 38$
   polygon starts, and — on an RNG-free "golden cloud" (a Fibonacci-spiral sphere plus a tight
   lobe, built identically in both languages) — `peakCell`, the whole peak test, the map test
   (including its exact null SD, skewness and expected pairs), the antipodal null and the Bingham
@@ -1657,12 +1691,16 @@ independently computed in each language — not a shared-golden parity suite.
    The changelog records only the unqualified phrase "brute-force-verified", without naming
    frequencies. The walk is also hard-capped at 8 rounds, so a hypothetical pathological tiling
    would silently return a near-nearest cell rather than fail.
-6. **Boundary ties are resolved by rule, centrosymmetrically.** A direction exactly equidistant
-   from two centres lands in whichever the walk reaches first — but only one hemisphere is resolved
-   that way and the other is its exact antipodal image (Step 5 (d)), so ties can never manufacture
-   a $+\mathbf{u}/-\mathbf{u}$ imbalance. Ties are measure-zero for real (noisy) data but *not* for
-   idealised inputs: the crystal axes are exact ties at odd $\nu$. It is also why the brute-force
-   parity tests assert $> 99.99\%$ rather than 100 %.
+6. **Boundary ties are resolved by rule: lowest index, centrosymmetrically.** A direction exactly
+   equidistant from two or three centres lands in the lowest-index tied cell of the resolved
+   hemisphere (Step 5 (e)). The other hemisphere is its exact antipodal image (Step 5 (d)). Ties
+   therefore never manufacture a $+\mathbf{u}/-\mathbf{u}$ imbalance, and Flask and the browser
+   resolve them identically. Ties are measure-zero for real (noisy) data but *not* for idealised
+   inputs: the crystal axes at odd $\nu$, $\langle 111\rangle$ whenever 3 does not divide $\nu$,
+   and $\langle 110\rangle$ at some $\nu$. Which tied cell wins is a convention, so for an
+   idealised well model the per-cell counts, and the reported peak cell, reflect it. The
+   brute-force parity tests on random directions assert $> 99.99\%$ rather than 100 %, which
+   leaves a margin for directions within $10^{-12}$ of a boundary.
 7. **Over-binning is still possible on purpose — it costs power, not calibration.**
    The UI defaults to a fixed $\nu = 10$, not to Auto, so a site with only a few hundred copies is
    over-binned out of the box (1002 cells, $< 1$ point per cell); Auto would have picked $\nu = 1$
