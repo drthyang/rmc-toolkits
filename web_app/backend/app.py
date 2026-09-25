@@ -16,8 +16,6 @@ import subprocess
 import sys
 import threading
 
-import json
-
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from flask.json.provider import DefaultJSONProvider
