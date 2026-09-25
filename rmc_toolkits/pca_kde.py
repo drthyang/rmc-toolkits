@@ -61,7 +61,7 @@ from pathlib import Path
 import numpy as np
 from scipy.stats import chi2
 
-from .parsers import iter_rmc6f_atoms, read_cell_vectors
+from .parsers import Rmc6fParseReport, iter_rmc6f_atoms, read_cell_vectors
 
 # Cap on the number of cloud points fed to the KDE (the ADP table never
 # subsamples). A site in an n x n x n box has n^3 copies, so this binds for
@@ -118,6 +118,11 @@ class SiteDisplacements:
     *majority* species (ties to the alphabetically first), ``element_counts`` its
     full composition, and ``atom_elements`` every row's own species -- element
     pooling selects atoms by the latter, never by the site label.
+
+    ``parse_warning`` is the atom section's problem list
+    (:meth:`Rmc6fParseReport.warning`), e.g. atom lines skipped for non-finite
+    coordinates, or ``None`` for a clean file; the API and the pages show it,
+    so a dropped atom is never silent.
     """
 
     reference_numbers: np.ndarray  # (S,) RMCProfile reference number per site
@@ -131,6 +136,7 @@ class SiteDisplacements:
     unit_vectors: np.ndarray  # (3, 3) single-cell vectors (Angstrom)
     atom_elements: np.ndarray | None = None  # (N,) each row's own species
     element_counts: tuple[dict[str, int], ...] | None = None  # (S,) composition per site
+    parse_warning: str | None = None  # Rmc6fParseReport.warning() of the atom section
 
     @property
     def species(self) -> list[str]:
@@ -186,6 +192,13 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
     site's centre only a genuine displacement of half a supercell could fold.
     Subtracting each site's mean offset then leaves the displacement about the
     average structure.
+
+    Atoms are read with the shared ``.rmc6f`` grammar (:func:`iter_rmc6f_atoms`,
+    the browser's ``parseRmc6fAtoms``): a line with a non-finite coordinate is
+    skipped -- one NaN would otherwise poison its site's mean -- and counted,
+    and the report's warning naming the first such line is returned as
+    ``parse_warning``. No parseable full-layout atom at all is a ``ValueError``
+    that says what was found.
     """
     rmc6f_path = Path(rmc6f_path)
     lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
@@ -195,21 +208,22 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
     cells: list[np.ndarray] = []
     references: list[int] = []
     elements: list[str] = []
-    for atom in iter_rmc6f_atoms(rmc6f_path):
-        if not np.all(np.isfinite(atom["coords"])):
-            # One NaN/inf coordinate would poison its site's mean and fail the
-            # batched eigensolve for every site; name the atom instead.
-            raise ValueError(
-                f"{rmc6f_path.name}: atom {atom['atom_number']} (reference site "
-                f"{atom['reference_number']}) has a non-finite coordinate"
-            )
+    report = Rmc6fParseReport()
+    for atom in iter_rmc6f_atoms(rmc6f_path, report=report):
         coords.append(atom["coords"])
         cells.append(atom["cell_indices"])
         references.append(atom["reference_number"])
         elements.append(atom["element"])
 
     if not coords:
-        raise ValueError(f"{rmc6f_path} does not contain any atoms")
+        detail = report.warning() or (
+            f"{report.coords_only_atoms} coordinate-only atom lines carry no reference "
+            "site or cell indices"
+            if report.coords_only_atoms
+            else "the Atoms section is empty" if report.has_atoms_section
+            else "there is no Atoms section"
+        )
+        raise ValueError(f"{rmc6f_path}: no atoms could be parsed — {detail}")
 
     coords_array = np.asarray(coords, dtype=float)
     cells_array = np.asarray(cells, dtype=float)
@@ -248,6 +262,7 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
         unit_vectors=unit_vectors,
         atom_elements=atom_elements,
         element_counts=element_counts,
+        parse_warning=report.warning(),
     )
 
 

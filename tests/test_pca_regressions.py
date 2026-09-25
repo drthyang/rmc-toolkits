@@ -333,19 +333,55 @@ class NonFiniteInputTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     pca_kde_volume(self.cloud, **{"grid": 8, **kwargs})
 
-    def test_a_nan_coordinate_names_the_atom(self):
+    def test_a_nan_coordinate_is_skipped_and_the_warning_names_the_line(self):
+        # Integrated 1.0 rule (parsers group, both runtimes): a .rmc6f atom line
+        # with a non-finite coordinate is skipped and counted, never silently --
+        # SiteDisplacements.parse_warning names the first such line (the
+        # browser worker's parseWarning carries the same text).
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "nan.rmc6f"
             supercell = (4, 4, 4)
             lines = wrapped_site_lines((0.25, 0.25, 0.25), 0.06, supercell=supercell,
                                        cell_edge=8.0, seed=1)
+            clean = load_site_displacements(_written(Path(tmp) / "clean.rmc6f", lines, supercell))
+            self.assertIsNone(clean.parse_warning)
+
             parts = lines[9].split()
             parts[3] = "NaN"
             lines[9] = " ".join(parts)
-            write_rmc6f(path, lines, supercell=supercell,
-                        lattice=np.diag(np.asarray(supercell, dtype=float) * 8.0))
-            with self.assertRaisesRegex(ValueError, "atom 10 .*non-finite"):
-                load_site_displacements(path)
+            sites = load_site_displacements(_written(path, lines, supercell))
+            self.assertEqual(int(sites.counts.sum()), 64 - 1)
+            self.assertTrue(np.all(np.isfinite(sites.displacements)))
+            self.assertEqual(
+                sites.parse_warning,
+                f"1 atom lines skipped for non-finite coordinates (first: '{lines[9]}')",
+            )
+            self.assertIn("'10 Se [1] NaN ", sites.parse_warning)
+            # The skipped atom does not move the site: its mean is that of the
+            # other 63 copies, so the ADP differs from the clean file only by
+            # one atom's worth.
+            self.assertLess(
+                abs(site_ellipsoids(sites)[0]["uIso"] - site_ellipsoids(clean)[0]["uIso"])
+                / site_ellipsoids(clean)[0]["uIso"],
+                0.1,
+            )
+
+    def test_no_parseable_atom_is_an_error_that_says_why(self):
+        with TemporaryDirectory() as tmp:
+            supercell = (2, 2, 2)
+            lines = wrapped_site_lines((0.25, 0.25, 0.25), 0.06, supercell=supercell,
+                                       cell_edge=8.0, seed=1)
+            lines = [" ".join(line.split()[:3] + ["inf"] + line.split()[4:]) for line in lines]
+            with self.assertRaisesRegex(
+                ValueError, "no atoms could be parsed — 8 atom lines skipped for non-finite"
+            ):
+                load_site_displacements(_written(Path(tmp) / "all_nan.rmc6f", lines, supercell))
+
+
+def _written(path, lines, supercell):
+    write_rmc6f(path, lines, supercell=supercell,
+                lattice=np.diag(np.asarray(supercell, dtype=float) * 8.0))
+    return path
 
 
 class CubicDisplayBoxTests(unittest.TestCase):

@@ -904,6 +904,24 @@
     font-size: 0.86rem;
 }
 
+/* Atom lines the .rmc6f parser skipped (non-finite coordinates, unparsed
+   lines): the model is still shown, so a warning, not an error. */
+.pca-warning-banner {
+    margin: 0 0 0.85rem;
+    padding: 0.55rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+    border-radius: 12px;
+    background: var(--panel-soft);
+    color: var(--text);
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+
+.pca-warning-banner strong {
+    color: var(--danger);
+    font-weight: 600;
+}
+
 /* Maksim's method credit, right-aligned in the legend strip below the plot. */
 .pca-legend-credit {
     margin-left: auto;

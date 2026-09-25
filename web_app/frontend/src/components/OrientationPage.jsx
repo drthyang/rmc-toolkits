@@ -287,6 +287,12 @@ export default function OrientationPage({ directory, localRun }) {
                 <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to view displacement orientations.</p>
             )}
             {sitesError && <p className="pca-error-banner">{sitesError}</p>}
+            {!sitesError && sites?.parseWarning && (
+                <p className="pca-warning-banner" role="status">
+                    <strong>Atoms skipped while reading the structure file:</strong> {sites.parseWarning}.
+                    The sites below are built from the remaining atoms.
+                </p>
+            )}
 
             {/* Three equal-height panels: axis views : sphere : site picker = 3 : 6.5 : 6.5. */}
             <div className="orient-layout">

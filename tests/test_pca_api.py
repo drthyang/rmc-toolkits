@@ -89,12 +89,31 @@ class PcaApiTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 400)
                     self.assertIn("finite", strict_json(response)["error"])
 
-    def test_a_nan_coordinate_is_a_clear_400(self):
-        # pca.parity.6 / parity.23 / parity.27
+    def test_a_nan_coordinate_is_skipped_and_surfaced(self):
+        # pca.parity.6 / parity.23 / parity.27, integrated 1.0 rule: the line
+        # is skipped and counted in both runtimes, and the PCA routes carry the
+        # parse warning naming it (the browser worker's parseWarning is the
+        # same text), so the dropped atom is never silent.
+        self._write_cloud()
+        clean = self.client.get("/api/pca/sites", query_string={"dir": str(self.run_dir)})
+        self.assertEqual(clean.status_code, 200)
+        self.assertIn("parseWarning", strict_json(clean))
+        self.assertIsNone(strict_json(clean)["parseWarning"])
+
         self._write_cloud(nan_line=9)
         response = self.client.get("/api/pca/sites", query_string={"dir": str(self.run_dir)})
-        self.assertEqual(response.status_code, 400)
-        self.assertRegex(strict_json(response)["error"], "atom 10 .*non-finite")
+        self.assertEqual(response.status_code, 200)
+        payload = strict_json(response)
+        self.assertEqual(payload["totalAtoms"], 63)
+        self.assertRegex(
+            payload["parseWarning"],
+            r"^1 atom lines skipped for non-finite coordinates \(first: '10 Se \[1\] NaN ",
+        )
+
+        orientation = self.client.get("/api/pca/orientation", query_string={
+            "dir": str(self.run_dir), "referenceNumber": 1, "frequency": 3, "geometry": "false"})
+        self.assertEqual(orientation.status_code, 200)
+        self.assertEqual(strict_json(orientation)["parseWarning"], payload["parseWarning"])
 
     def test_invalid_probability_is_a_400(self):
         self._write_cloud()

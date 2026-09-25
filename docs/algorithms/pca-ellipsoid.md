@@ -136,32 +136,40 @@ followed by three rows, and an `Atoms:` section.
 
 **Header.** `rmc_toolkits/parsers.py` → `read_cell_vectors()` takes the last three tokens of the
 `Supercell` line as $\mathbf{N}$ and the three lines after `Lattice` as the rows of $\mathsf{L}$
-(Å). The JS twin is `pcaKde.js` → `readCellVectors()`; both scan the whole file and keep the *last*
+(Å). The JS twin is `rmc6f.js` → `readRmc6fCellVectors()` (its error names the file); both scan the whole file and keep the *last*
 match. Unit-cell vectors are $\mathsf{A}_{i\cdot} = \mathsf{L}_{i\cdot}/N_i$
 (`SiteDisplacements.unit_vectors`; JS `pcaCrystalFrame.js` → `unitCellVectors()`).
 
-**Atom lines.** `parsers.py` → `iter_rmc6f_atoms()` indexes from the *end* of the line, so any number
-of label columns between element and coordinates is tolerated:
+**Atom lines.** Both engines read atoms with the one shared `.rmc6f` grammar: `parsers.py` →
+`iter_rmc6f_atoms()` (`classify_rmc6f_atom_line()`) and its mirror `rmc6f.js` → `parseRmc6fAtoms()`
+(`classifyAtomLine()`), which `siteDisplacementsFromRmc6f()` calls since 1.0 (it used to split lines
+itself and recognise only the exact `Atoms:` token):
 
 ```
-… x y z ref cellx celly cellz     ← last 4 fields are ref + cell indices,
-                                     the 3 before them are the coordinates
+id element [label] x y z ref cellx celly cellz    ← full layout (7 data fields)
+id element [label] x y z                          ← legacy coordinates-only form
 ```
 
-Lines with fewer than 9 whitespace-separated fields are **silently skipped** by the Python parser.
-The browser parser `web_app/frontend/src/rmc6f.js` → `parseAtomLine()` additionally accepts the old
-5–6-field coordinates-only form, returning `referenceNumber = null` and `cellIndices = null`.
-**Non-finite coordinates.** Python's `iter_rmc6f_atoms` accepts `NaN`/`inf` tokens, and one such
-coordinate used to poison its site's mean and fail the *batched* eigensolve for every site
-(`LinAlgError: Eigenvalues did not converge`, an HTTP 500 for the whole page).
-`load_site_displacements()` now raises a `ValueError` naming the atom and its reference site
-(`/api/pca/sites` returns it as a 400), and `site_ellipsoids()` refuses a `SiteDisplacements` whose
-cloud is non-finite, naming the sites. The browser parser (`rmc6f.js` → `parseAtomLine()`) instead
-drops such a line silently, so the static app still shows that site with one copy fewer; making the
-two *parsers* agree is outside this engine.
+A line is a full-layout atom, a coordinates-only atom (`referenceNumber = null`,
+`cellIndices = null`; the PCA engine groups such files by clustering, Python's by reference number
+only), **skipped for non-finite coordinates**, or unparsed (e.g. a cell index outside the declared
+supercell). The counts are compared with the header's `Number of atoms:`.
+
+**Non-finite coordinates.** A `NaN`/`inf`/`****` coordinate would poison its site's mean and fail
+the *batched* eigensolve for every site (before 1.0: `LinAlgError: Eigenvalues did not converge`,
+an HTTP 500 for the whole page). Since 1.0 both parsers skip such a line and count it — the same
+rule in both runtimes — and it is **never silent**: `load_site_displacements()` stores the report's
+warning (`Rmc6fParseReport.warning()`, e.g. *"1 atom lines skipped for non-finite coordinates
+(first: '10 Se [1] NaN …')"*) as `SiteDisplacements.parse_warning`, `/api/pca/sites` and
+`/api/pca/orientation` return it as `parseWarning` (`null` for a clean file), the browser worker's
+`sites` and `orientation` responses carry the same text from `rmc6fParseWarning()`, and the PCA
+Ellipsoid and Displacement Directions pages show it above the panels. A file with no parseable
+atom at all is a `ValueError` (HTTP 400) *"no atoms could be parsed — …"* naming what was found.
+`site_ellipsoids()` still refuses a `SiteDisplacements` whose cloud is non-finite, naming the sites
+(a guard for library callers that build one by hand).
 
 Element symbols are normalised identically in both engines — Python's `str.capitalize()` in
-`iter_rmc6f_atoms`, and `capitalizeElement()` in `siteDisplacementsFromRmc6f()` (`SE` → `Se`) — so
+`iter_rmc6f_atoms`, and the same rule in `rmc6f.js` → `classifyAtomLine()` (`SE` → `Se`) — so
 a site and its pooling carry the same label in either runtime.
 
 **The displacement convention** (`pca_kde.py` → `load_site_displacements()`; JS

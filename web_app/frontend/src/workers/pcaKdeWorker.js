@@ -43,10 +43,10 @@ const textSignature = (text) => {
 // The clustering threshold changes the reconstructed sites of an old (coords-only)
 // file, so it is part of the cache key; for files with real site columns it is inert
 // and every threshold hits the same cached parse.
-const parseCached = (text, clusterThreshold) => {
+const parseCached = (text, clusterThreshold, name) => {
     const key = `${textSignature(text)}@${clusterThreshold}`;
     if (cache.key !== key || !cache.parsed) {
-        cache = { key, parsed: siteDisplacementsFromRmc6f(text, { clusterThreshold }) };
+        cache = { key, parsed: siteDisplacementsFromRmc6f(text, { clusterThreshold, name }) };
     }
     return cache.parsed;
 };
@@ -65,14 +65,19 @@ const summarizeSites = (parsed, probability) => {
         // file lacked site/cell columns; the UI shows the threshold knob + count/N.
         reconstructed: Boolean(parsed.reconstructed),
         probability,
-        sites: ellipsoids
+        sites: ellipsoids,
+        // Atom lines the shared .rmc6f grammar skipped (non-finite coordinates,
+        // unparsed lines, a header count mismatch), or null -- the same text as
+        // /api/pca/sites' parseWarning.
+        parseWarning: parsed.parseWarning ?? null
     };
 };
 
 export const handlePcaMessage = async (data, getText) => {
     const { kind = 'kde', probability = 0.5, clusterThreshold = DEFAULT_CLUSTER_THRESHOLD } = data;
     const text = await getText();
-    const parsed = parseCached(text, clusterThreshold);
+    const name = data.file?.name || data.file?.sourceFile?.name || 'structure file';
+    const parsed = parseCached(text, clusterThreshold, name);
 
     if (kind === 'sites') {
         return summarizeSites(parsed, probability);
@@ -132,7 +137,7 @@ export const handlePcaMessage = async (data, getText) => {
         // ''/'all' mean "every site pooled", normalised to null exactly as the
         // Flask route does, so both transports return the same payload shape.
         const element = data.element === '' || data.element === 'all' ? null : data.element ?? null;
-        return siteOrientationHistogram(parsed, {
+        const histogram = siteOrientationHistogram(parsed, {
             referenceNumber: data.referenceNumber ?? null,
             element,
             frequency: data.frequency ?? null,
@@ -143,6 +148,8 @@ export const handlePcaMessage = async (data, getText) => {
             frame: data.frame ?? 'cartesian',
             geometry: data.geometry ?? true
         });
+        // As /api/pca/orientation: the parse warning rides along.
+        return { ...histogram, parseWarning: parsed.parseWarning ?? null };
     }
 
     return sitePcaKde(parsed, {

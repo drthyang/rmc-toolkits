@@ -26,7 +26,7 @@
 // makes a 48^3 volume interactive in a browser worker; the contraction itself
 // is the same estimator scipy.stats.gaussian_kde defines, to round-off.
 
-import { parseAtomLine } from '../rmc6f.js';
+import { parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from '../rmc6f.js';
 
 // --- Linear algebra on 3x3 symmetric matrices --------------------------------
 
@@ -570,23 +570,6 @@ export const pcaKdeVolume = (points, options = {}) => {
 
 // --- Site extraction ----------------------------------------------------------
 
-const readCellVectors = (text) => {
-    const lines = text.split(/\r?\n/);
-    let latticeVectors = null;
-    let supercell = null;
-    lines.forEach((line, index) => {
-        const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (!parts.length) return;
-        if (parts[0] === 'Supercell') supercell = parts.slice(-3).map(Number);
-        if (parts[0] === 'Lattice') {
-            latticeVectors = [lines[index + 1], lines[index + 2], lines[index + 3]]
-                .map((row) => row.trim().split(/\s+/).map(Number));
-        }
-    });
-    if (!latticeVectors || !supercell) throw new Error('Missing lattice or supercell metadata');
-    return { latticeVectors, supercell };
-};
-
 /**
  * Parse an `.rmc6f` file into per-site Cartesian displacement clouds. Each
  * atom's offset from its own box copy is `coords - cellIndices / supercell`,
@@ -598,13 +581,6 @@ const readCellVectors = (text) => {
 // that carries no reference-site or cell columns. Chosen below typical bond lengths
 // but well above thermal spread, so genuine sites separate; exposed as a UI knob.
 export const DEFAULT_CLUSTER_THRESHOLD = 1.5;
-
-// Element symbols as Python's str.capitalize() normalises them in iter_rmc6f_atoms
-// ('SE' -> 'Se'), so both engines label and pool the same species.
-const capitalizeElement = (symbol) => {
-    const text = String(symbol);
-    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
-};
 
 // Code-point string order (Python's default), never locale-dependent.
 const byCodePoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -854,20 +830,25 @@ const sitesByClustering = (atoms, latticeVectors, supercell, thresholdA) => {
  * carry the reference-site and cell columns are grouped by reference number; older
  * files that carry only coordinates are reconstructed by folding into one unit cell
  * and clustering (see `sitesByClustering`), and the result is flagged `reconstructed`.
+ *
+ * Atoms come from the shared `.rmc6f` grammar (`parseRmc6fAtoms` in rmc6f.js, the
+ * mirror of Python's iter_rmc6f_atoms): element symbols are capitalized as
+ * Python's str.capitalize() does, a line with a non-finite coordinate is skipped
+ * and counted, and `parseWarning` (rmc6fParseWarning, the same text as
+ * Rmc6fParseReport.warning()) names it -- null for a clean file -- so the pages
+ * can show it. No parseable atom at all is an error that says what was found.
  */
-export const siteDisplacementsFromRmc6f = (text, { clusterThreshold = DEFAULT_CLUSTER_THRESHOLD } = {}) => {
-    const { latticeVectors, supercell } = readCellVectors(text);
-    const atoms = [];
-    let inAtoms = false;
-    text.split(/\r?\n/).forEach((line) => {
-        const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (!parts.length) return;
-        if (parts[0] === 'Atoms:') { inAtoms = true; return; }
-        if (!inAtoms) return;
-        const atom = parseAtomLine(parts);
-        if (atom) atoms.push({ ...atom, element: capitalizeElement(atom.element) });
-    });
-    if (atoms.length === 0) throw new Error('No atoms found in structure');
+export const siteDisplacementsFromRmc6f = (text, {
+    clusterThreshold = DEFAULT_CLUSTER_THRESHOLD, name = 'structure file'
+} = {}) => {
+    const { latticeVectors, supercell } = readRmc6fCellVectors(text, name);
+    const { atoms, report } = parseRmc6fAtoms(text);
+    const parseWarning = rmc6fParseWarning(report);
+    if (atoms.length === 0) {
+        const detail = parseWarning
+            ?? (report.hasAtomsSection ? 'the Atoms section is empty' : 'there is no Atoms section');
+        throw new Error(`${name}: no atoms could be parsed — ${detail}`);
+    }
 
     // Choose the path by majority so a single malformed line can't flip a normal,
     // site-tagged file onto the reconstruction path: if most atoms carry reference
@@ -888,7 +869,16 @@ export const siteDisplacementsFromRmc6f = (text, { clusterThreshold = DEFAULT_CL
         fractional: atoms.map((atom) => atom.coords)
     };
 
-    return { referenceNumbers, sites, latticeVectors, supercell, reconstructed: !useReferenceNumbers, atomList };
+    return {
+        referenceNumbers,
+        sites,
+        latticeVectors,
+        supercell,
+        reconstructed: !useReferenceNumbers,
+        atomList,
+        parseReport: report,
+        parseWarning
+    };
 };
 
 /** Anisotropic displacement tensor + ellipsoid for every site, in one pass. */

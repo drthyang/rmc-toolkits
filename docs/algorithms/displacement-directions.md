@@ -227,10 +227,11 @@ and failed with LAPACK's `Eigenvalues did not converge`, while the JS port silen
 `NaN` `pcaAxes` (cartesian) or crashed in the cell assignment with a `TypeError` (pca frame, or an
 `inf` component). Both engines now reject the input by name. A corrupt displacement is a data error,
 not something to be quietly counted into `rejectedPoints` next to the physically meaningful
-amplitude cut. (The `.rmc6f` parsers differ upstream of this: the browser parser skips an atom line
-with a non-finite coordinate, the Python parser keeps it and its `NaN` then poisons the whole site
-mean — so the same corrupt file renders in the browser without that atom but is a 400 with the
-message above on the Flask route. That divergence belongs to the parsers, not to this engine.)
+amplitude cut. (Upstream of this, since 1.0 both `.rmc6f` parsers skip an atom line with a
+non-finite coordinate and count it, so the same corrupt file gives the same site without that atom
+in both runtimes; the `parseWarning` of `/api/pca/orientation` and of the worker's `orientation`
+response names the skipped line, and the page shows it —
+[pca-ellipsoid.md](pca-ellipsoid.md), *Non-finite coordinates*.)
 
 The last is unreachable through the ordinary path — every surviving $a_i > 10^{-9}$ Å, so every
 weight is strictly positive — but it guards a caller who reaches the function directly.

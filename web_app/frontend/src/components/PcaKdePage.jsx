@@ -1301,6 +1301,12 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                 <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to view thermal ellipsoids.</p>
             )}
             {sitesError && <p className="pca-error-banner">{sitesError}</p>}
+            {!sitesError && sites?.parseWarning && (
+                <p className="pca-warning-banner" role="status">
+                    <strong>Atoms skipped while reading the structure file:</strong> {sites.parseWarning}.
+                    The sites below are built from the remaining atoms.
+                </p>
+            )}
 
             <div className="pca-layout">
                 <div className="pca-panel pca-viewport">

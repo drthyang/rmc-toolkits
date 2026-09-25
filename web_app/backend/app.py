@@ -865,6 +865,10 @@ def pca_sites_endpoint():
                 "supercell": sites.supercell.tolist(),
                 "probability": probability,
                 "sites": ellipsoids,
+                # Atom lines the shared .rmc6f grammar skipped (non-finite
+                # coordinates, unparsed lines, a header count mismatch), or
+                # null for a clean file -- a dropped atom is never silent.
+                "parseWarning": sites.parse_warning,
             }
         )
     except PermissionError as exc:
@@ -872,8 +876,8 @@ def pca_sites_endpoint():
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
-        # Bad input (a non-finite coordinate, probability outside (0, 1)): a
-        # clear 400 naming the problem, not a 500.
+        # Bad input (no parseable atom, probability outside (0, 1)): a clear
+        # 400 naming the problem, not a 500.
         return jsonify({"error": str(exc)}), 400
     except SourceChangedError as exc:
         return jsonify({"error": str(exc)}), 409
@@ -1044,6 +1048,7 @@ def pca_orientation_endpoint():
             geometry=request.args.get("geometry", "true").lower() in ("1", "true", "yes"),
         )
         result["source"] = str(rmc6f_path)
+        result["parseWarning"] = sites.parse_warning
         return _strict_result_response(result)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
