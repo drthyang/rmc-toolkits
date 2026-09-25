@@ -32,9 +32,9 @@ The second moment of each site's displacement cloud: anisotropic displacement pa
   - [Step 5 — Unit-cell vectors in the shared Cartesian basis](#step-5--unit-cell-vectors-in-the-shared-cartesian-basis)
   - [Step 6 — Frame transforms between fractional and PCA coordinates](#step-6--frame-transforms-between-fractional-and-pca-coordinates)
   - [Step 7 — Orientation of each principal axis against $a$, $b$, $c$](#step-7--orientation-of-each-principal-axis-against-a-b-c)
-  - [Step 8 — How much of this the statistics panel prints: none of it](#step-8--how-much-of-this-the-statistics-panel-prints-none-of-it)
+  - [Step 8 — What the statistics panel prints: the Crystal orientation table](#step-8--what-the-statistics-panel-prints-the-crystal-orientation-table)
   - [Step 9 — What the UI shows in 3D: the PC ↔ Crystal frame switch](#step-9--what-the-ui-shows-in-3d-the-pc--crystal-frame-switch)
-  - [Step 10 — Computed but not currently displayed](#step-10--computed-but-not-currently-displayed)
+  - [Step 10 — What is displayed, and what is computed but not](#step-10--what-is-displayed-and-what-is-computed-but-not)
   - [Step 11 — A different displacement measure: `dispA`](#step-11--a-different-displacement-measure-dispa)
   - [Parameters and defaults](#parameters-and-defaults-1)
   - [Caveats — what this is not](#caveats--what-this-is-not-1)
@@ -94,7 +94,7 @@ became its own page; the pieces below are the current owners of each concern.
 | [`components/PcaKdePage.jsx`](../../web_app/frontend/src/components/PcaKdePage.jsx) | the KDE request, the main three.js viewport (isosurface, shell, walls, cameras), the statistics panel, the controls |
 | [`components/SiteStructurePanel.jsx`](../../web_app/frontend/src/components/SiteStructurePanel.jsx) | the unit-cell Site-ellipsoids picker (Step 14), shared with the Displacement Directions page |
 | [`components/sceneAxes.js`](../../web_app/frontend/src/components/sceneAxes.js) | the PC and a/b/c colour palettes and the `buildAxisTriad` / `buildCrystalAxes` rod builders, shared by every panel |
-| [`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js) | the crystal-frame algebra (Step 13; only `unitCellVectors` is wired in) |
+| [`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js) | the crystal-frame algebra (Step 13): `unitCellVectors` (via `useSiteCloud.js`) and `crystalOrientationRows` → `principalAxisOrientation` → `crystalPcaTransforms` (the *Crystal orientation* table in `PcaKdePage.jsx`) |
 
 Which engine runs is **not** decided by the runtime mode alone. The decision lives in
 [`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js) → `requestPca(kind, params)`, not in the
@@ -445,9 +445,17 @@ Beside it a *Covariance U (Å²)* table prints $\mathbf{U}$ as a $3\times3$ Cart
 decimals. The *Summary* block prints $U_\mathrm{iso}$ (4), $B_\mathrm{iso}$ (3), anisotropy (2) and
 non-Gaussianity (2); the anisotropy cell appends `· degen.` when the `degenerate` flag is set, and
 non-Gaussianity falls back to the KDE result's `nonGaussianity` when the site record lacks one.
-Non-finite values render as an em dash (`numberFormat` returns `'—'`). The axis directions are
-printed as **Cartesian components only** — no angle to a crystal axis and no $[uvw]$ appears
-anywhere; see Step 13.
+Non-finite values render as an em dash (`numberFormat` returns `'—'`).
+
+A fourth column, *Crystal orientation*, prints where each principal axis points in the crystal:
+∠a/∠b/∠c, the angles to the unit-cell edges (1 decimal, degrees, the closest edge shaded), and the
+direct-lattice direction $[u\,v\,w]$ it runs along (2 decimals, largest component $\pm1$, components
+with $\lvert\cdot\rvert<5\times10^{-3}$ printed as `0.00`, never `-0.00`, by `uvwFormat`). Each row is
+the sign-canonical representative from `crystalOrientationRows()` — the sense that makes the closest
+edge acute. The column is omitted when the payload carries no lattice metadata or the cell is
+singular, and a row is dimmed when its axis is not resolved (Step 12b). The algebra, the sign fold
+and what $[u\,v\,w]$ does and does not mean are in "Principal axes in the crystallographic frame",
+Steps 7–8.
 
 The panel heading carries a metadata line, rendered exactly as
 
@@ -1003,15 +1011,16 @@ Two facts this page depends on:
    — the clouds were mapped through the supercell lattice $\mathsf{L}$ (Step 1) and the unit-cell
    vectors are that same lattice divided by the supercell counts — so a dot product between a
    principal axis and a cell edge is immediately meaningful and the relations are exact.
-2. **Only `unitCellVectors` is wired into the running app**, and it is imported by
-   [`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js) (not by `PcaKdePage.jsx`, which
-   receives the resulting `unitCell` from the hook). `crystalPcaTransforms` and
-   `principalAxisOrientation` are fully implemented and unit-tested but imported only by
-   `pcaCrystalFrame.test.js`, so **no transformation matrix, direction cosine or $[uvw]$ is rendered
-   anywhere in the current UI**. What the *Crystal* frame toggle actually changes is the drawn axis
-   triad, the shadow-box orientation and its re-binned wall projections (Step 10b), and the
-   camera-snap directions — all built from `unitCell` and `orthonormalCrystalFrame()` inside the page
-   itself. The next section, Step 10, enumerates exactly what is missing.
+2. **Two entry points are wired into the running app.** `unitCellVectors` is imported by
+   [`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js), which hands the resulting
+   `unitCell` to the page; and `PcaKdePage.jsx` imports `crystalOrientationRows`, which calls
+   `principalAxisOrientation` → `crystalPcaTransforms`, to render the *Crystal orientation* table
+   (Step 4b; next section, Step 8). The transformation matrices themselves (`fracToPca`,
+   `pcaToFrac`) and the direction cosines are computed on that path but not printed. What the
+   *Crystal* frame toggle changes is separate: the drawn axis triad, the shadow-box orientation and
+   its re-binned wall projections (Step 10b), and the camera-snap directions — all built from
+   `unitCell` and `orthonormalCrystalFrame()` inside the page. The next section, Step 10, lists
+   what is displayed and what is not.
 
 ---
 
@@ -1193,9 +1202,10 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
 14. **The Site-ellipsoids markers are magnified by a per-configuration constant**, not drawn at a
     probability level. Shapes and orientations are exact; absolute sizes are not, and changing the
     site set rescales every marker at once (Step 14).
-15. **The site picker shows no direction information**, and neither does the statistics panel: axes
-    are printed as Cartesian components only. Angles to $a$/$b$/$c$ and $[uvw]$ indices are computed
-    by `pcaCrystalFrame.js` but rendered nowhere (Step 13).
+15. **Directions appear only in the statistics panel.** The site picker carries no direction
+    information; the panel prints the Cartesian axis components and, in the *Crystal orientation*
+    column, the angles to $a$/$b$/$c$ and $[u\,v\,w]$ of the sign-canonical representative
+    (Step 4b). An unresolved axis's orientation is sampling noise and is dimmed.
 
 
 ## Principal axes in the crystallographic frame
@@ -1236,8 +1246,9 @@ current owner of each module, including the shared hook
 The crystal-frame geometry itself — cell vectors, frame transforms, direction cosines — lives in a
 pure-JavaScript module,
 [`web_app/frontend/src/pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js), with no
-Python counterpart. **Two of its three exported analyses are not wired into the UI**; see
-[Computed but not currently displayed](#step-10--computed-but-not-currently-displayed).
+Python counterpart. The page's *Crystal orientation* table uses it through `crystalOrientationRows`
+(Step 8); what is displayed and what is only computed is listed in
+[Step 10](#step-10--what-is-displayed-and-what-is-computed-but-not).
 
 #### Notation used in this section
 
@@ -1572,9 +1583,10 @@ $$\text{dominant}(i)=\arg\max_j\bigl\lvert\cos\theta_{ij}\bigr\rvert,$$
 
 reported as `{ index, label: 'a'|'b'|'c', angleDeg }` where `angleDeg` is $\theta_{ij}$ for that
 $j$. Because the **absolute value** of the cosine is compared, a direction and its negative are
-treated as the same axis: an axis at $170°$ to $b$ is "closest to $b$", and the reported
-`angleDeg` is then $170°$, not $10°$. Ties (two equal $\lvert\cos\rvert$) resolve to the lowest
-index by the strict `>` in the scan.
+treated as the same axis: an axis at $170°$ to $b$ is "closest to $b$", and
+`principalAxisOrientation` then reports `angleDeg` $=170°$. The page never shows that raw value — it
+goes through `crystalOrientationRows` (Step 8), which prints the $10°$ representative. Ties (two
+equal $\lvert\cos\rvert$) resolve to the lowest index by the strict `>` in the scan.
 
 **Code:** `principalAxisOrientation` in
 [`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js). Tests assert $0°/90°$ and
@@ -1596,25 +1608,46 @@ conflated:
 
 ---
 
-### Step 8 — How much of this the statistics panel prints: none of it
+### Step 8 — What the statistics panel prints: the Crystal orientation table
 
 The *Displacement statistics* panel and the site picker are specified in the previous section
-(Step 4b and Step 14 respectively) — columns, formulas, decimal places, the metadata line. What
-matters here is what they contain **as direction information**, and the answer is: only raw
-Cartesian components.
+(Step 4b and Step 14 respectively) — columns, formulas, decimal places, the metadata line. As
+**direction information** the panel carries two things:
 
 - The *Principal axes* table prints $\hat{\mathbf e}_i$ as $x,y,z$ to 3 decimals, i.e. the axis as
-  a unit vector **in the `.rmc6f` Cartesian frame**. It is not expressed in $a$, $b$, $c$.
-- No angle to a crystal axis, no $[u\,v\,w]$, no `dominant` label and no $a$/$b$/$c$ magnitude is
-  printed anywhere in the panel. Everything Step 7 computes is absent from the UI (Step 10).
-- The site picker labels carry element, $U_\mathrm{iso}$ and, for reconstructed files, the
-  copies-per-cell ratio — no direction content.
-- The *Covariance $U$* table prints $C$ in the same Cartesian frame, with no conversion to the
-  crystallographic $U^{ij}$ basis anywhere in the app.
+  a unit vector **in the `.rmc6f` Cartesian frame**.
+- The *Crystal orientation* table (`PcaKdePage.jsx`, `crystalOrientation` memo) prints, per
+  principal axis, the angles ∠a/∠b/∠c to the unit-cell edges and the direction $[u\,v\,w]$ — the
+  output of `crystalOrientationRows(selectedEllipsoid.axes, unitCell)`.
 
-So the only direction a user can read off numerically is a Cartesian triple whose relation to the
-cell must be worked out by hand, with $M$ from Step 5 and the contraction of Step 7b. The one
-direction comparison the app does offer is visual: the PC ↔ Crystal frame switch of Step 9.
+`crystalOrientationRows` is `principalAxisOrientation` (Step 7) folded to **one representative per
+axis**. An eigenvector's sign is arbitrary (Step 3), and negating an axis sends every angle
+$\theta\to180°-\theta$, every cosine to its negative and $[u\,v\,w]\to[-u\,-v\,-w]$. Of the $\pm$ pair
+it returns the sense whose **closest crystal edge is acute** (`cosines[dominant] >= 0`), flipping
+the cosines, angles and $[u\,v\,w]$ together so a row stays internally consistent (the `negate`
+helper keeps a zero at $+0$), and recomputes `dominant.angleDeg` from the flipped angles. So the
+shaded cell is always the smallest angle ($\le90°$) and $[u\,v\,w]$ points along it — how a
+direction is quoted. It returns `null` when `principalAxisOrientation` does (non-array axes, a falsy
+or singular cell), and the page then omits the column; it is also omitted when `unitCell` is `null`
+(no lattice metadata) or `axes` is `null` (a zero-spread site).
+
+Formatting in the table: angles `numberFormat(deg, 1)` + `°`, the closest edge's cell shaded
+(`is-diagonal`); $[u\,v\,w]$ through `uvwFormat`, 2 decimals, largest component exactly $\pm1$,
+$\lvert v\rvert<5\times10^{-3}$ printed as `0.00`. A row whose axis is not resolved from a neighbour
+(`axisResolved`, previous section Step 12b) is dimmed and italic, with a tooltip saying its
+direction is sampling noise.
+
+- The site picker labels carry element (or composition), $U_\mathrm{iso}$ and, for reconstructed
+  files, the copies-per-cell ratio — no direction content.
+- The *Covariance $U$* table prints $C$ in the same Cartesian frame, with no conversion to the
+  crystallographic $U^{ij}$ basis anywhere in the app (the conversion is given in the previous
+  section, Step 4b).
+
+`pcaCrystalFrame.test.js` → `crystalOrientationRows` pins the fold: an already-acute axis is left
+untouched; an axis $170°$ from $a$ is reported as the $10°$ representative with every angle
+$\theta\to180°-\theta$ and $[u\,v\,w]$ exactly negated (a zero component staying $+0$); in a
+$\beta=110°$ monoclinic cell the dominant angle is never obtuse and equals that edge's printed angle;
+and a collapsed cell returns `null`.
 
 ### Step 9 — What the UI shows in 3D: the PC ↔ Crystal frame switch
 
@@ -1741,32 +1774,29 @@ line is well defined) and is flagged by `degenerate` at $\lambda_3/\lambda_1<10^
 between two non-zero eigenvalues, which makes the axes inside that pair individually meaningless,
 is flagged per axis by `axisResolved` (previous section, Step 12b).
 
-### Step 10 — Computed but not currently displayed
+### Step 10 — What is displayed, and what is computed but not
 
-**`crystalPcaTransforms` and `principalAxisOrientation` are not reachable from the UI.** A
-repository-wide search for their identifiers finds them defined in
-[`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js), used by each other, and
-imported **only** by
-[`pcaCrystalFrame.test.js`](../../web_app/frontend/src/__tests__/pcaCrystalFrame.test.js).
+The module's application importers are
+[`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js), which calls `unitCellVectors` inside
+the `unitCell` `useMemo` as `unitCellVectors(sites.latticeVectors, sites.supercell)` (guarded by
+`sites?.latticeVectors && sites?.supercell`), and `PcaKdePage.jsx`, which calls
+`crystalOrientationRows` → `principalAxisOrientation` → `crystalPcaTransforms`. Because
+`useSiteCloud` is the shared hook for **both** the PCA Ellipsoid page and the Displacement Directions
+page, both receive the same `unitCell`.
 
-The module's only importer in application code is
-[`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js) line 17, which imports
-`unitCellVectors` alone and calls it inside the `unitCell` `useMemo` (lines 130–135) as
-`unitCellVectors(sites.latticeVectors, sites.supercell)`, guarded by
-`sites?.latticeVectors && sites?.supercell`. Because `useSiteCloud` is the shared hook for
-**both** the PCA Ellipsoid page and the Displacement Directions page, `PcaKdePage.jsx` receives the
-resulting `unitCell` from the hook and never imports the module itself. (Before the hook was
-extracted the import sat in `PcaKdePage.jsx`; the set of used exports is unchanged.)
+**Displayed** (PCA Ellipsoid page, *Crystal orientation* table, Step 8): the angle $\theta_{ij}$
+between each principal axis and $a$, $b$, $c$; the closest edge (shaded); the $[u\,v\,w]$ direction —
+all for the acute-sense representative.
 
-Concretely, **the app does not currently display**:
+**Computed but not displayed:**
 
-- any direction cosine or angle $\theta_{ij}$ between a principal axis and $a$, $b$, or $c$;
-- any $[u\,v\,w]$ crystallographic direction for a principal axis;
-- the "closest crystal axis" (`dominant`) label;
+- the direction cosines themselves (only their angles are printed);
 - the `fracToPca` / `pcaToFrac` matrices;
-- `cellLengths` (the panel prints no $a$, $b$, $c$ magnitudes).
+- `cellLengths` (the panel prints no $a$, $b$, $c$ magnitudes);
+- the raw, un-folded `principalAxisOrientation` output (an axis at $170°$ to $b$ — the table shows
+  $10°$).
 
-The AI-assistant run context does not carry them either. `pcaContext` in
+The AI-assistant run context carries none of them. `pcaContext` in
 [`runContext.js`](../../web_app/frontend/src/llm/context/runContext.js) emits per site only
 `ref`, `element`, `U_iso_A2`, `rms_axes_A`, `anisotropy` (documented there as `rms1/rms3`),
 `non_gaussianity`, and `degenerate` — **no axis directions at all**. The model therefore never
@@ -1778,10 +1808,9 @@ sorts by `non_gaussianity` then `U_iso_A2` descending, and emits at most `MAX_SI
 appending `sites_omitted` with the remainder. On a 52-site run the assistant is shown 12 sites,
 not 52. (`symmetryContext` applies the same cap; see Step 11.)
 
-Everything in Step 7 is implemented and unit-tested; it is simply not surfaced. What a user can
-observe about direction today is (a) the Cartesian components in the Principal axes table and
-(b) the visual comparison enabled by the PC ↔ Crystal switch. This document makes no claim about
-whether that will change.
+What a user can observe about direction today is therefore (a) the Cartesian components in the
+Principal axes table, (b) the Crystal orientation table, and (c) the visual comparison enabled by
+the PC ↔ Crystal switch.
 
 ### Step 11 — A different displacement measure: `dispA`
 
@@ -1904,10 +1933,11 @@ defaults". The table below lists only what this section owns.
   no $\kappa$ and dims their crystal-orientation row. The `degenerate` flag catches only the extreme case
   ($\lambda_3/\max(\lambda_1,10^{-30})<10^{-6}$), not the far more common near-tie between
   $\lambda_1$ and $\lambda_2$. Check the printed $\lambda$ column before reading a direction.
-- **The app shows no crystal-frame direction today.** As stated in Step 10,
-  `principalAxisOrientation` and `crystalPcaTransforms` are exercised only by unit tests. Angles
-  to $a$/$b$/$c$, $[u\,v\,w]$ indices, and the fractional↔PCA matrices are computed nowhere in
-  the running application.
+- **The crystal-frame direction the app shows is a folded representative.** The *Crystal
+  orientation* table prints angles to $a$/$b$/$c$ and $[u\,v\,w]$ for the sense of each axis that
+  makes its closest edge acute (`crystalOrientationRows`, Step 8); the opposite sense is the same
+  axis. The fractional↔PCA matrices are computed but not shown (Step 10), and an unresolved axis's
+  row is sampling noise (dimmed).
 - **$[u\,v\,w]$ is not $(hkl)$.** Even when it is displayed elsewhere or computed by hand from
   `pcaToFrac`: unless the cell metric is isotropic, the lattice direction $[u\,v\,w]$ is not
   perpendicular to the lattice plane $(u\,v\,w)$, and $[u\,v\,w]$ is not a unit vector.
