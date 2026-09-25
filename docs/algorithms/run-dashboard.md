@@ -3159,18 +3159,24 @@ Flask mode the equivalent work happens server-side in Python). The **symmetry fi
 `describeSymmetry` / `toleranceLadder`) is the part that runs **synchronously on the main thread**
 inside `useMemo`, unlike the KDE and PCA-KDE paths, which use Web Workers.
 
-Two further costs are worth naming: `findSpaceGroupOps` internally runs a full `classifyOperations`
-whose result both `symmetryLadder` and `spaceGroupAtTolerance` **discard** (they re-classify from
-`full.ops` themselves); and the $3^9$ `latticePointOps` scan is re-run on **every** pass with no
-memoisation across the 2–3 passes per structure. Cost:
+**Cost and the basis cap.** The $3^9$ lattice scan (Step 7) is repeated on every pass. The
+partner search of Steps 9 and 14 uses a **cell list** (`partnerIndex()`): same-element sites are
+binned on a fractional grid whose bins are at least $r\,|\mathbf b_i|$ wide ($r$ = the matching
+radius, $\mathbf b_i$ = reciprocal vectors), so an image only visits its own and the neighbouring
+bins; each seed costs about $N$ times a few neighbours instead of $N\cdot\bar N_e$. Measured on a
+random two-species basis (Node, one pass each): 2000 sites — `describeSymmetry` ≈ 0.1 s and the
+ladder ≈ 0.1 s; 4000 sites ≈ 0.4 s + 0.2 s (before 1.0: 1.8 s + 5.3 s at 2000 sites, quadratic).
+The closure walk (Step 11) adds $O(n\cdot\text{generators})$ product look-ups per group growth for
+$n$ operations, plus the quadratic elimination only up to 256 operations; a $2\times2\times2$ supercell
+of rocksalt (1536 operations) with noise takes ≈ 0.8 s per pass.
 
-$$O\big(3^9\big)\ \text{for the point-op scan}\ +\ O\big(|P|\cdot n_\mathrm{ref}\cdot N \cdot \bar N_e\big)$$
-
-with $|P|\le 48$ the holohedry order, $n_\mathrm{ref}$ the site multiplicity of the rarest element,
-$N$ the basis size (sites per conventional cell), and $\bar N_e$ the mean number of same-element
-sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
-
----
+Because all of it is synchronous on the main thread, `symmetryModel.js` refuses a basis of more than
+**`MAX_SYMMETRY_SITES` = 2000** sites: `describeSymmetry` returns
+`{ skipped: true, spaceGroup: 'not analysed', pointGroup: '<N> sites > 2000 limit', nSpace: '—',
+orbits: [], reason }` (the card shows the first two as headline and subtitle), and
+`toleranceLadder` returns no bricks. A box whose `.rmc6f` declares a $1\times1\times1$ supercell with
+one reference number per atom (a glass, an imported P1 configuration) reaches this; it is not a
+unit-cell configuration, and a symmetry search on it would only ever return `P1`.
 
 ### Parameters and defaults — model summary and symmetry
 
@@ -3198,6 +3204,8 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 | brick fill span | `ModelSummary.jsx` `brickStyle()` | `12 %`–`86 %` accent | — | $P = 12 + 74\lambda$ with $\lambda=\ln n/\ln n_{\max}$, and $\lambda = 0$ when $n_{\max}\le1$ |
 | widest-brick width | `ModelSummary.jsx` `brickWidth()` | `34 %` | — | remaining `66 %` split evenly |
 | search space | `latticePointOps()` | $3^9=19\,683$ | — | 6960 have $\lvert\det R\rvert=1$ |
+| `MAX_SYMMETRY_SITES` | `symmetryModel.js` | `2000` | sites | larger bases are not analysed (`skipped: true`), and the ladder is empty |
+| `ELIMINATION_MAX_OPS` | `symmetry.js` | `256` | operations | the quadratic elimination of Step 11 runs only up to this many candidate operations |
 
 ### Caveats / what this is not
 

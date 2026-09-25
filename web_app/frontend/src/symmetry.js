@@ -158,10 +158,50 @@ function offset(from, to, A) {
   return { d, dist: Math.hypot(c0, c1, c2) };
 }
 
-// Map every site through {R|t} and pair its image with the nearest same-element site.
-// Returns null as soon as one image has no partner within `radius` Å; otherwise the mean
-// fractional offset (partner − image) over all sites and the worst Cartesian distance.
-function matchImages(R, t, basis, byEl, A, radius) {
+/**
+ * Same-element sites binned on a fractional grid, so the partner search only visits the
+ * bins an image within `radius` Å can reach. A component-wise minimum-image distance
+ * d ≤ radius bounds every fractional component by radius·|b_i| (b_i = column i of A⁻¹,
+ * the reciprocal vector), so with bins at least that wide the bin of the image and its
+ * ±1 neighbours (cyclically) hold every candidate. Fewer than 3 bins along an axis → one.
+ * `near(el, p)` returns the candidate sites for an image p.
+ */
+function partnerIndex(byEl, A, radius) {
+  const Ainv = inv3(A);
+  const n = [0, 1, 2].map((i) => {
+    const k = Math.floor(1 / (radius * Math.hypot(Ainv[0][i], Ainv[1][i], Ainv[2][i])));
+    return k >= 3 ? Math.min(k, 48) : 1;
+  });
+  const bins = new Map();
+  const cellOf = (p, i) => Math.min(n[i] - 1, Math.floor(wrap01(p[i]) * n[i]));
+  for (const [el, sites] of byEl) {
+    const cells = Array.from({ length: n[0] * n[1] * n[2] }, () => []);
+    for (const s of sites) cells[cellOf(s.frac, 0) + n[0] * (cellOf(s.frac, 1) + n[1] * cellOf(s.frac, 2))].push(s);
+    bins.set(el, cells);
+  }
+  const span = n.map((k) => (k === 1 ? [0] : [-1, 0, 1]));
+  const out = [];
+  return {
+    near(el, p) {
+      const cells = bins.get(el);
+      if (!cells) return [];
+      if (cells.length === 1) return cells[0];
+      out.length = 0;
+      const c0 = cellOf(p, 0), c1 = cellOf(p, 1), c2 = cellOf(p, 2);
+      for (const d2 of span[2]) for (const d1 of span[1]) for (const d0 of span[0]) {
+        const i0 = (c0 + d0 + n[0]) % n[0], i1 = (c1 + d1 + n[1]) % n[1], i2 = (c2 + d2 + n[2]) % n[2];
+        for (const s of cells[i0 + n[0] * (i1 + n[1] * i2)]) out.push(s);
+      }
+      return out;
+    },
+  };
+}
+
+// Map every site through {R|t} and pair its image with the nearest same-element site
+// (candidates from `index.near`, see partnerIndex). Returns null as soon as one image has
+// no partner within `radius` Å; otherwise the mean fractional offset (partner − image)
+// over all sites and the worst Cartesian distance.
+function matchImages(R, t, basis, index, A, radius) {
   const mean = [0, 0, 0];
   let worst = 0;
   for (const s of basis) {
@@ -169,7 +209,7 @@ function matchImages(R, t, basis, byEl, A, radius) {
     img[0] += t[0]; img[1] += t[1]; img[2] += t[2];
     let best = Infinity;
     let bestD = null;
-    for (const o of byEl.get(s.el)) {
+    for (const o of index.near(s.el, img)) {
       const { d, dist } = offset(img, o.frac, A);
       if (dist < best) { best = dist; bestD = d; }
     }
@@ -188,13 +228,13 @@ function matchImages(R, t, basis, byEl, A, radius) {
 // most four passes); the residual is the worst site's distance at the final translation. The seed is paired within 2·tol, since it can be off by the noise of the
 // two atoms that defined it, but the refined operation must fit within tol. `!(x <= tol)`
 // also rejects NaN (an unparseable lattice).
-function refineOperation(R, t0, basis, byEl, A, tol) {
+function refineOperation(R, t0, basis, index, A, tol) {
   let t = t0.slice();
-  let m = matchImages(R, t, basis, byEl, A, 2 * tol);
+  let m = matchImages(R, t, basis, index, A, 2 * tol);
   for (let pass = 0; pass < 4 && m; pass++) {
     const moved = Math.abs(m.shift[0]) + Math.abs(m.shift[1]) + Math.abs(m.shift[2]);
     t = [wrap01(t[0] + m.shift[0]), wrap01(t[1] + m.shift[1]), wrap01(t[2] + m.shift[2])];
-    m = matchImages(R, t, basis, byEl, A, 2 * tol);
+    m = matchImages(R, t, basis, index, A, 2 * tol);
     if (moved < 1e-12) break;
   }
   if (!m || !(m.worst <= tol)) return null;
@@ -234,6 +274,7 @@ function detectOperations(A, basis, tol, latticeTol) {
   let refEl = basis[0].el;
   for (const [el, arr] of byEl) if (arr.length < byEl.get(refEl).length) refEl = el;
   const refAtom = byEl.get(refEl)[0];
+  const index = partnerIndex(byEl, A, 2 * tol);
 
   for (const { R, strain } of pointOps) {
     const Ra0 = applyR(R, refAtom.frac);
@@ -241,7 +282,7 @@ function detectOperations(A, basis, tol, latticeTol) {
     for (const cand of byEl.get(refEl)) {
       const seed = [wrap01(cand.frac[0] - Ra0[0]), wrap01(cand.frac[1] - Ra0[1]), wrap01(cand.frac[2] - Ra0[2])];
       if (tSeen.some(u => cartDist(u, seed, A) < tol)) continue;   // an accepted op already covers this seed
-      const op = refineOperation(R, seed, basis, byEl, A, tol);
+      const op = refineOperation(R, seed, basis, index, A, tol);
       if (!op) continue;
       if (tSeen.some(u => cartDist(u, op.t, A) < tol)) continue;   // same op reached from another seed
       tSeen.push(op.t);
@@ -714,14 +755,15 @@ export function siteOrbits(A, basis, ops, tol = 0.1) {
   const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
 
   const byEl = new Map();
-  basis.forEach((s, i) => { if (!byEl.has(s.el)) byEl.set(s.el, []); byEl.get(s.el).push(i); });
+  basis.forEach((s, i) => { if (!byEl.has(s.el)) byEl.set(s.el, []); byEl.get(s.el).push({ frac: s.frac, i }); });
+  const index = partnerIndex(byEl, A, tol);
 
   for (const { R, t } of ops) {
     for (let i = 0; i < n; i++) {
       const img = applyR(R, basis[i].frac);
       img[0] = wrap01(img[0] + t[0]); img[1] = wrap01(img[1] + t[1]); img[2] = wrap01(img[2] + t[2]);
       let best = -1, bestD = tol;
-      for (const j of byEl.get(basis[i].el)) { const d = cartDist(img, basis[j].frac, A); if (d < bestD) { bestD = d; best = j; } }
+      for (const o of index.near(basis[i].el, img)) { const d = cartDist(img, o.frac, A); if (d < bestD) { bestD = d; best = o.i; } }
       if (best >= 0) union(i, best);
     }
   }

@@ -10,6 +10,16 @@
 import { spaceGroupAtTolerance, symmetryLadder, siteOrbits } from './symmetry.js';
 import { assignWyckoffLetters } from './wyckoff.js';
 
+/**
+ * Largest average-structure basis the finder analyses. It runs synchronously on the main
+ * thread (ModelSummary's useMemo), and a box with one reference site per atom — a glass,
+ * or an imported configuration declared as a 1×1×1 supercell — is not a unit-cell
+ * configuration anyway; above this the card says so instead of freezing the page.
+ */
+export const MAX_SYMMETRY_SITES = 2000;
+
+const tooLarge = (structure) => structure.basis.length > MAX_SYMMETRY_SITES;
+
 /** Conventional unit cell A_conv (rows, Å) = supercell lattice / supercell dims. */
 export function conventionalCell(structure) {
   const { latticeVectors, supercell } = structure;
@@ -63,6 +73,24 @@ function lettersInSetting(sg, found, basis, A, tol) {
  */
 export function describeSymmetry(structure, tol = 0.2) {
   if (!structure?.basis?.length || !structure?.latticeVectors) return null;
+  if (tooLarge(structure)) {
+    const n = structure.basis.length;
+    // Rendered as-is by the card: spaceGroup is the headline, pointGroup its subtitle.
+    return {
+      skipped: true,
+      reason: `The average structure has ${n} reference sites; symmetry detection runs in the browser `
+        + `and is limited to ${MAX_SYMMETRY_SITES} sites (a box with one reference site per atom is not `
+        + 'a unit-cell configuration).',
+      spaceGroup: 'not analysed',
+      spaceGroupNumber: null,
+      pointGroup: `${n} sites > ${MAX_SYMMETRY_SITES} limit`,
+      centering: null,
+      nSpace: '—',
+      nPoint: 0,
+      maxResidual: 0,
+      orbits: [],
+    };
+  }
   const A = conventionalCell(structure);
   const sg = spaceGroupAtTolerance(A, structure.basis, tol);   // always a closed group
   const found = siteOrbits(A, structure.basis, sg.ops, tol);
@@ -91,7 +119,7 @@ export function describeSymmetry(structure, tol = 0.2) {
 
 /** Symmetry-vs-tolerance ladder (bricks tight→loose) for the structure. */
 export function toleranceLadder(structure, tolMax = 1.0) {
-  if (!structure?.basis?.length || !structure?.latticeVectors) return [];
+  if (!structure?.basis?.length || !structure?.latticeVectors || tooLarge(structure)) return [];
   return symmetryLadder(conventionalCell(structure), structure.basis, tolMax);
 }
 
