@@ -693,9 +693,13 @@ const sitesByReferenceNumber = (atoms, latticeVectors, supercell) => {
 
 // Periodic single-linkage clustering of unit-cell fractional points by minimum-image
 // Cartesian distance. A uniform grid with bins at least `thresholdA` wide bounds each
-// point's neighbour search to its own and adjacent bins (wrapped), so this stays near
-// linear even when a large supercell folds thousands of atoms into one cell. Returns
-// arrays of point indices, one per cluster.
+// point's neighbour search to its own and adjacent bins (wrapped). All copies of a
+// site fold into the same few bins, so the candidate pairs still grow as copies^2;
+// what keeps that affordable is testing a pair's distance (a 27-image loop) only
+// when the two points are not yet in the same cluster -- a cheap union-find lookup
+// that is true for almost every pair once a site has linked up, and that cannot
+// change the result (the union would be a no-op). Returns arrays of point indices,
+// one per cluster.
 const clusterPeriodic = (points, unitVec, thresholdA) => {
     const n = points.length;
     const parent = Array.from({ length: n }, (_, i) => i);
@@ -727,26 +731,34 @@ const clusterPeriodic = (points, unitVec, thresholdA) => {
     });
 
     const thr2 = thresholdA * thresholdA;
-    // Minimum-image distance under the FULL unit-cell metric. Per-axis reduction gives
-    // the primary image, then the 27 neighbouring images are searched for the true
-    // minimum: an oblique cell's closest copy can be diagonal, which per-axis rounding
-    // alone would miss. For an orthogonal cell the primary image always wins.
-    const dist2 = (a, b) => {
-        const f = [0, 1, 2].map((i) => { const d = a[i] - b[i]; return d - Math.round(d); });
-        let best = Infinity;
-        for (let ix = -1; ix <= 1; ix += 1) {
-            for (let iy = -1; iy <= 1; iy += 1) {
-                for (let iz = -1; iz <= 1; iz += 1) {
-                    const d0 = f[0] + ix; const d1 = f[1] + iy; const d2 = f[2] + iz;
+    // Is the minimum-image distance under the FULL unit-cell metric below the
+    // threshold? Per-axis reduction gives the primary image. For an orthogonal cell
+    // (edges mutually perpendicular) |sum d_i a_i|^2 = sum d_i^2 |a_i|^2, so that
+    // primary image IS the closest copy and one evaluation decides. An oblique
+    // cell's closest copy can be diagonal, which per-axis rounding alone would miss,
+    // so the 27 neighbouring images are searched -- stopping at the first within
+    // the threshold, since only the yes/no answer is used.
+    const orthogonal = [[0, 1], [0, 2], [1, 2]].every(([i, j]) => (
+        Math.abs(dot(unitVec[i], unitVec[j])) <= 1e-12 * norm(unitVec[i]) * norm(unitVec[j])
+    ));
+    const within = (a, b) => {
+        let f0 = a[0] - b[0]; f0 -= Math.round(f0);
+        let f1 = a[1] - b[1]; f1 -= Math.round(f1);
+        let f2 = a[2] - b[2]; f2 -= Math.round(f2);
+        const lo = orthogonal ? 0 : -1;
+        const hi = orthogonal ? 0 : 1;
+        for (let ix = lo; ix <= hi; ix += 1) {
+            for (let iy = lo; iy <= hi; iy += 1) {
+                for (let iz = lo; iz <= hi; iz += 1) {
+                    const d0 = f0 + ix; const d1 = f1 + iy; const d2 = f2 + iz;
                     const x = d0 * unitVec[0][0] + d1 * unitVec[1][0] + d2 * unitVec[2][0];
                     const y = d0 * unitVec[0][1] + d1 * unitVec[1][1] + d2 * unitVec[2][1];
                     const z = d0 * unitVec[0][2] + d1 * unitVec[1][2] + d2 * unitVec[2][2];
-                    const s = x * x + y * y + z * z;
-                    if (s < best) best = s;
+                    if (x * x + y * y + z * z < thr2) return true;
                 }
             }
         }
-        return best;
+        return false;
     };
     points.forEach((uf, idx) => {
         const b = binOf(uf);
@@ -764,7 +776,9 @@ const clusterPeriodic = (points, unitVec, thresholdA) => {
                     seen.add(key);
                     const bucket = buckets.get(key);
                     if (!bucket) continue;
-                    bucket.forEach((j) => { if (j > idx && dist2(uf, points[j]) < thr2) union(idx, j); });
+                    bucket.forEach((j) => {
+                        if (j > idx && find(idx) !== find(j) && within(uf, points[j])) union(idx, j);
+                    });
                 }
             }
         }

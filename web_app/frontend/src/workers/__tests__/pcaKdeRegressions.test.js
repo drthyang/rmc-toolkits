@@ -343,3 +343,69 @@ describe('cubic box is a display box only (pca.numerics.14 / numerics.32 / physi
         expect(plain.boxHalfWidths).toEqual(plain.halfWidths);
     });
 });
+
+describe('coordinates-only site reconstruction (pca.numerics.19)', () => {
+    // Brute-force periodic single linkage (every pair, 27 images) as the reference
+    // the binned, short-circuited clustering must reproduce exactly.
+    const bruteForceSites = (text, threshold) => {
+        const lines = text.split('\n');
+        const supercell = lines[0].trim().split(/\s+/).slice(-3).map(Number);
+        const lattice = lines.slice(2, 5).map((row) => row.trim().split(/\s+/).map(Number));
+        const unit = lattice.map((row, i) => row.map((v) => v / supercell[i]));
+        const atoms = lines.slice(6).filter(Boolean).map((line) => {
+            const p = line.trim().split(/\s+/);
+            return { element: p[1], uf: p.slice(-3).map(Number).map((v, i) => (((v * supercell[i]) % 1) + 1) % 1) };
+        });
+        const parent = atoms.map((_, i) => i);
+        const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+        for (let a = 0; a < atoms.length; a += 1) {
+            for (let b = a + 1; b < atoms.length; b += 1) {
+                if (atoms[a].element !== atoms[b].element) continue;
+                const f = [0, 1, 2].map((i) => { const d = atoms[a].uf[i] - atoms[b].uf[i]; return d - Math.round(d); });
+                let best = Infinity;
+                for (let ix = -1; ix <= 1; ix += 1) for (let iy = -1; iy <= 1; iy += 1) for (let iz = -1; iz <= 1; iz += 1) {
+                    const d = [f[0] + ix, f[1] + iy, f[2] + iz];
+                    const c = [0, 1, 2].map((k) => d[0] * unit[0][k] + d[1] * unit[1][k] + d[2] * unit[2][k]);
+                    best = Math.min(best, c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+                }
+                if (best < threshold * threshold) parent[find(a)] = find(b);
+            }
+        }
+        const sizes = new Map();
+        atoms.forEach((_, i) => { const r = find(i); sizes.set(r, (sizes.get(r) || 0) + 1); });
+        return [...sizes.values()].sort((x, y) => x - y);
+    };
+
+    const coordsOnly = (lattice, supercell, sites, sigma, seed) => {
+        const gauss = makeGauss(seed);
+        const lines = [`Supercell dimensions ${supercell.join(' ')}`, 'Lattice vectors (Ang):',
+            ...lattice.map((row) => row.join(' ')), 'Atoms:'];
+        let atom = 1;
+        sites.forEach(([element, frac]) => {
+            for (let ix = 0; ix < supercell[0]; ix += 1) for (let iy = 0; iy < supercell[1]; iy += 1) for (let iz = 0; iz < supercell[2]; iz += 1) {
+                const cell = [ix, iy, iz];
+                const coord = [0, 1, 2].map((i) => ((((cell[i] + frac[i] + sigma * gauss()) / supercell[i]) % 1) + 1) % 1);
+                lines.push(`${atom} ${element} ${coord.map((v) => v.toFixed(8)).join(' ')}`);
+                atom += 1;
+            }
+        });
+        return lines.join('\n');
+    };
+
+    const cases = [
+        ['orthogonal', [[20, 0, 0], [0, 20, 0], [0, 0, 20]]],
+        ['oblique', [[20, 0, 0], [6, 19, 0], [-5, 4, 18]]]
+    ];
+    cases.forEach(([name, lattice]) => {
+        it(`matches brute-force single linkage in an ${name} cell`, () => {
+            const sites = [['Se', [0.1, 0.1, 0.1]], ['Se', [0.35, 0.1, 0.1]], ['Se', [0.97, 0.5, 0.02]], ['Ga', [0.1, 0.12, 0.1]]];
+            const text = coordsOnly(lattice, [4, 4, 4], sites, 0.01, 21);
+            for (const threshold of [0.6, 1.5, 3.0]) {
+                const parsed = siteDisplacementsFromRmc6f(text, { clusterThreshold: threshold });
+                expect(parsed.reconstructed).toBe(true);
+                const counts = parsed.sites.map((site) => site.count).sort((x, y) => x - y);
+                expect(counts).toEqual(bruteForceSites(text, threshold));
+            }
+        });
+    });
+});

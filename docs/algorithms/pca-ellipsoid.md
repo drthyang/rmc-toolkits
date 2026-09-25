@@ -259,8 +259,16 @@ a strict `tagged.length > atoms.length / 2`, so an exact half also falls through
    full unit-cell metric (`clusterPeriodic`), with a union–find over a uniform bin grid. Bins are
    sized by each axis's *perpendicular* width (cell volume ÷ opposite-face area), so a fractional
    step of $1/\mathrm{bins}$ always spans at least the threshold even for an oblique cell; the
-   minimum-image distance searches all 27 neighbouring images because an oblique cell's nearest copy
-   can be diagonal;
+   minimum-image test searches the 27 neighbouring images because an oblique cell's nearest copy
+   can be diagonal (for an orthogonal cell the per-axis primary image is exactly the closest copy, so
+   one evaluation decides), and it stops at the first image within the threshold. All copies of a
+   site fold into the same few bins, so candidate pairs grow as (copies)², not linearly; a pair is
+   distance-tested only when its two points are not already in one cluster (a union-find lookup —
+   a no-op union skipped, the result unchanged; `pcaKdeRegressions.test.js` checks it against
+   brute-force single linkage in orthogonal and oblique cells). On the 52 000-atom 5 K run stripped
+   to coordinates this cut reconstruction from 8.3 s to 2.4 s at 1.5 Å and from 24 s to 3.8 s at the
+   slider's 2.5 Å (0.4 Å: 2.6 s → 0.4 s); it is still super-linear, and every slider step re-runs it
+   on the shared worker;
 3. unwrap each cluster about its **circular mean** per axis
    ($\bar{u}=\arg(\sum e^{2\pi i u})/2\pi$) rather than about an arbitrary member, so a wide cluster
    (e.g. an orientationally disordered rotor shell) is not split;
