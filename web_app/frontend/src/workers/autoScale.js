@@ -182,22 +182,61 @@ export const fqToGpdf = (q, fq, r, { lorch = false, lowQCorrection = false, s0Ta
   return gpdf;
 };
 
+/**
+ * dG_PDF/dr at r = 0 of fqToGpdf with the same options (port of
+ * transforms.gpdf_slope_at_zero): the trapezoid moment (2/π) Σ Q F(Q) M(Q)
+ * plus the omitted-low-Q correction's coef'(0) S(Q0) - const'(0).
+ */
+export const gpdfSlopeAtZero = (q, fq, { lorch = false, lowQCorrection = false, s0Target = 0 } = {}) => {
+  requireIncreasing(q, 'Q');
+  const n = q.length;
+  const window = lorch ? lorchWindow(q, q[n - 1]) : null;
+  let total = 0;
+  for (let i = 1; i < n; i += 1) {
+    const prev = fq[i - 1] * (window ? window[i - 1] : 1) * q[i - 1];
+    const current = fq[i] * (window ? window[i] : 1) * q[i];
+    total += (q[i] - q[i - 1]) * (current + prev) * 0.5;
+  }
+  let slope = (2 / Math.PI) * total;
+  if (lowQCorrection && q[0] !== 0) {
+    const q0 = q[0];
+    let f1;
+    let f2;
+    if (lorch) {
+      const a = Math.PI / q[n - 1];
+      const x = a * q0;
+      f1 = (2 * x * Math.sin(x) - (x * x - 2) * Math.cos(x) - 2) / a ** 4;
+      f2 = (Math.sin(x) - x * Math.cos(x)) / a ** 3;
+    } else {
+      f1 = q0 ** 4 / 4;
+      f2 = q0 ** 3 / 3;
+    }
+    const coef = (2 / Math.PI) * (f1 / q0);
+    let constant = (2 / Math.PI) * f2;
+    if (s0Target !== 0) constant = (1 - s0Target) * constant + s0Target * coef;
+    slope += coef * (fq[0] / q0 + 1) - constant;
+  }
+  return slope;
+};
+
 export const fourierFilter = (q, sq, r, { rho0, cutoff, lorch = false, lowQCorrection = false, s0Target = 0 }) => {
   requireIncreasing(q, 'Q');
   requireIncreasing(r, 'r');
   if (q[0] <= 0) throw new Error('fourierFilter requires a strictly positive Q grid');
+  if (r.length && r[0] < 0) throw new Error('fourierFilter requires a non-negative r grid');
   const n = q.length;
   const fq = new Float64Array(n);
   for (let i = 0; i < n; i += 1) fq[i] = q[i] * (sq[i] - 1);
-  const gpdf = fqToGpdf(q, fq, r, { lorch, lowQCorrection, s0Target });
-  const g = new Float64Array(r.length);
-  for (let i = 0; i < r.length; i += 1) g[i] = gpdf[i] / (4 * Math.PI * rho0 * r[i]) + 1;
+  const options = { lorch, lowQCorrection, s0Target };
+  const gpdf = fqToGpdf(q, fq, r, options);
 
   let sectionEnd = 0;
   while (sectionEnd < r.length && r[sectionEnd] <= cutoff) sectionEnd += 1;
   const rSection = r.subarray ? r.subarray(0, sectionEnd) : r.slice(0, sectionEnd);
+  // 4π ρ0 r g(r) = G_PDF + 4π ρ0 r: no division by r, so r = 0 is harmless
+  // (transforms.fourier_filter).
   const ySection = new Float64Array(sectionEnd);
-  for (let i = 0; i < sectionEnd; i += 1) ySection[i] = 4 * Math.PI * rho0 * r[i] * g[i];
+  for (let i = 0; i < sectionEnd; i += 1) ySection[i] = gpdf[i] + 4 * Math.PI * rho0 * r[i];
   const fqFt = sineTransform(rSection, ySection, q);
 
   const sqFt = new Float64Array(n);
@@ -208,10 +247,17 @@ export const fourierFilter = (q, sq, r, { rho0, cutoff, lorch = false, lowQCorre
     fqFiltered[i] = fq[i] - fqFt[i];
     sqFiltered[i] = fqFiltered[i] / q[i] + 1;
   }
-  const gpdfFiltered = fqToGpdf(q, fqFiltered, r, { lorch, lowQCorrection, s0Target });
+  const gpdfFiltered = fqToGpdf(q, fqFiltered, r, options);
   const gFiltered = new Float64Array(r.length);
+  let gAtZero = null;
   for (let i = 0; i < r.length; i += 1) {
-    gFiltered[i] = gpdfFiltered[i] / (4 * Math.PI * rho0 * r[i]) + 1;
+    if (r[i] === 0) {
+      // Continuous extension g(0) = 1 + G_PDF'(0)/(4π ρ0), not 0/0.
+      if (gAtZero === null) gAtZero = 1 + gpdfSlopeAtZero(q, fqFiltered, options) / (4 * Math.PI * rho0);
+      gFiltered[i] = gAtZero;
+    } else {
+      gFiltered[i] = gpdfFiltered[i] / (4 * Math.PI * rho0 * r[i]) + 1;
+    }
   }
   return { sqFiltered, sqFt, gFiltered };
 };

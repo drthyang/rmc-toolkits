@@ -301,6 +301,12 @@ def fourier_filter(
     Returns ``(sq_filtered, sq_ft, g_filtered)`` where ``sq_ft`` is the
     S(Q)-convention correction section (the classic stog ``ft.dat``), so that
     ``sq_filtered = sq - (sq_ft - 1)``.
+
+    The ``r`` grid must be strictly increasing and non-negative; it may start
+    at ``r = 0``: the section integrand ``4 pi rho0 r g`` is evaluated as
+    ``G_PDF + 4 pi rho0 r`` (no division by r), and ``g_filtered`` at ``r = 0``
+    is the continuous extension ``1 + G_PDF'(0) / (4 pi rho0)`` of the
+    computed g(r) (:func:`gpdf_slope_at_zero`), not ``0/0``.
     """
     q = _increasing_grid(q, "Q")
     sq = np.asarray(sq, dtype=float)
@@ -310,31 +316,75 @@ def fourier_filter(
             "fourier_filter requires a strictly positive Q grid (the S(Q) "
             "conversions divide by Q); crop Q <= 0 first"
         )
+    if r.size and r[0] < 0:
+        raise ValueError("fourier_filter requires a non-negative r grid")
 
+    options = dict(lorch=lorch, low_q_correction=low_q_correction, s0_target=s0_target)
     fq = sq_to_fq(q, sq)
-    gpdf = fq_to_gpdf(
-        q, fq, r, lorch=lorch, low_q_correction=low_q_correction, s0_target=s0_target
-    )
-    g = gpdf_to_g(r, gpdf, rho0)
+    gpdf = fq_to_gpdf(q, fq, r, **options)
 
     section = r <= float(cutoff)
     # pystog shifts the section by +1 and re-derives G_PDF, which reduces to
-    # transforming 4 pi rho0 r * g(r) over the section.
+    # transforming 4 pi rho0 r * g(r) = G_PDF + 4 pi rho0 r over the section
+    # (the identity needs no division by r, so r = 0 is harmless).
     fq_ft = gpdf_to_fq(
         r[section],
-        4.0 * np.pi * float(rho0) * r[section] * g[section],
+        gpdf[section] + 4.0 * np.pi * float(rho0) * r[section],
         q,
     )
     sq_ft = fq_to_sq(q, fq_ft)
 
     fq_filtered = fq - fq_ft
     sq_filtered = fq_to_sq(q, fq_filtered)
-    gpdf_filtered = fq_to_gpdf(
-        q, fq_filtered, r,
-        lorch=lorch, low_q_correction=low_q_correction, s0_target=s0_target,
-    )
-    g_filtered = gpdf_to_g(r, gpdf_filtered, rho0)
+    gpdf_filtered = fq_to_gpdf(q, fq_filtered, r, **options)
+    at_zero = r == 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        g_filtered = gpdf_to_g(r, gpdf_filtered, rho0)
+    if np.any(at_zero):
+        slope = gpdf_slope_at_zero(q, fq_filtered, **options)
+        g_filtered[at_zero] = 1.0 + slope / (4.0 * np.pi * float(rho0))
     return sq_filtered, sq_ft, g_filtered
+
+
+def gpdf_slope_at_zero(
+    q: np.ndarray,
+    fq: np.ndarray,
+    *,
+    lorch: bool = False,
+    low_q_correction: bool = False,
+    s0_target: float = 0.0,
+) -> float:
+    """``d G_PDF / dr`` at ``r = 0`` of :func:`fq_to_gpdf` (same options).
+
+    ``G_PDF(r)`` is odd in r, so ``g = G_PDF/(4 pi rho0 r) + 1`` extends
+    continuously to ``g(0) = 1 + G_PDF'(0)/(4 pi rho0)``. The derivative of the
+    trapezoid sine transform is the trapezoid moment ``(2/pi) sum Q F(Q) M(Q)``
+    (``sin(Qr)/r -> Q``); the omitted-low-Q correction contributes
+    ``coef'(0) S(Q0) - const'(0)`` in closed form (``(2/pi) Q0^3/4`` and
+    ``(2/pi) Q0^3/3`` unwindowed; the Lorch moments of ``sin(aQ)/(aQ)``
+    otherwise).
+    """
+    q = _increasing_grid(q, "Q")
+    fq = np.asarray(fq, dtype=float)
+    weighted = fq * lorch_window(q, q[-1]) if lorch else fq
+    slope = (2.0 / np.pi) * float(_trapezoid(weighted * q, x=q))
+    if low_q_correction and q[0] != 0:
+        q0 = float(q[0])
+        if lorch:
+            a = np.pi / float(q[-1])
+            x = a * q0
+            # (1/a) int_0^Q0 Q^k sin(aQ) dQ for k = 2 (coef) and k = 1 (const).
+            f1 = (2.0 * x * np.sin(x) - (x * x - 2.0) * np.cos(x) - 2.0) / a**4
+            f2 = (np.sin(x) - x * np.cos(x)) / a**3
+        else:
+            f1 = q0**4 / 4.0
+            f2 = q0**3 / 3.0
+        coef = (2.0 / np.pi) * f1 / q0
+        const = (2.0 / np.pi) * f2
+        if s0_target != 0.0:
+            const = (1.0 - s0_target) * const + s0_target * coef
+        slope += coef * (fq[0] / q0 + 1.0) - const
+    return slope
 
 
 def enforce_low_r(

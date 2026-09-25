@@ -1261,9 +1261,10 @@ docstring only). Nothing in the repo resolves the conflict — see the Caveats.
 **Code** — [`rmc_toolkits/transforms.py`](../../rmc_toolkits/transforms.py):
 `sq_to_fq()`, `fq_to_sq()`, `sq_to_fk()`, `fk_to_sq()`, `g_to_gpdf()`, `gpdf_to_g()`,
 `g_to_gk()`, `gk_to_g()`, `gk_to_dr()`, `density_line()`.
-The inversions divide by $Q$ and by $4\pi\rho_0 r$ respectively, so both require strictly
-positive grids — enforced upstream: `crop_sq()` in [`scaling.py`](../../rmc_toolkits/scaling.py)
-drops $Q \le 0$ unconditionally, and the $r$ grid starts at $\Delta r$, never $0$ (Step 2).
+The inversions divide by $Q$ and by $4\pi\rho_0 r$ respectively, so the pointwise functions
+require strictly positive grids: `crop_sq()` in [`scaling.py`](../../rmc_toolkits/scaling.py) drops
+$Q \le 0$ unconditionally, and `r_grid` starts at $\Delta r$ (Step 2). `fourier_filter` itself
+never divides by $r$ where it matters and accepts a grid starting at $r = 0$ (Step 7).
 
 In JavaScript these conversions are **not** separate exported functions; they are inlined at
 their call sites in [`autoScale.js`](../../web_app/frontend/src/workers/autoScale.js)
@@ -1642,27 +1643,39 @@ back-transforms exactly that artifact into $Q$ space and subtracts it.
 **Procedure** (verbatim order of `fourier_filter()`):
 
 1. Reject the call if `q[0] <= 0` (`ValueError` / JS `Error`) — the $S \leftrightarrow F$
-   conversions divide by $Q$.
+   conversions divide by $Q$ — if either grid is not strictly increasing (Step 4), or if the $r$
+   grid starts below 0. An $r$ grid that **starts at 0** is accepted.
 2. $F(Q) = Q[S(Q)-1]$.
 3. $G_\mathrm{PDF}(r)$ by the Step-6 forward transform (Lorch, low-$Q$ correction and
-   $s_0^\mathrm{target}$ as passed in — see the divergence note below for the one call site where
-   the JS engine passes a different $s_0^\mathrm{target}$ than Python), then
-   $g(r) = G_\mathrm{PDF}/(4\pi\rho_0 r) + 1$.
+   $s_0^\mathrm{target}$ as passed in).
 4. Select the section $\{r : r \le r_\mathrm{cut}\}$ and back-transform the **removed** content,
 
-   $$F_\mathrm{ft}(Q) = \int_{\Delta r}^{r_\mathrm{cut}} 4\pi\rho_0\, r\, g(r)\,\sin(Qr)\,dr$$
+   $$F_\mathrm{ft}(Q) = \int_{r_0}^{r_\mathrm{cut}} 4\pi\rho_0\, r\, g(r)\,\sin(Qr)\,dr
+   = \int_{r_0}^{r_\mathrm{cut}} \big[G_\mathrm{PDF}(r) + 4\pi\rho_0 r\big]\sin(Qr)\,dr$$
+
+   evaluated in the right-hand form — no division by $r$, so a grid starting at $r_0 = 0$ is
+   harmless (before 1.0 the code formed $g = G/(4\pi\rho_0 r) + 1$ first: $0/0$ at $r = 0$, and that
+   NaN reached every output $Q$ — 100 % NaN `sq_filtered`/`sq_ft`/`g_filtered` for a
+   `np.linspace(0, rmax, n)` grid);
 
    which is precisely the change in $G_\mathrm{PDF}$ caused by setting $g \to 0$ on the section:
    $4\pi\rho_0 r(g-1) \to -4\pi\rho_0 r$, a difference of $4\pi\rho_0 r g$. (The code comment
    describes the same thing as "pystog shifts the section by +1 and re-derives $G_\mathrm{PDF}$".)
    This back-transform uses **no Lorch window and no low-$Q$ correction**, and its lower limit is
-   $\Delta r$, so the $[0, \Delta r]$ panel is dropped — negligible because the integrand
-   $\propto r\,g(r)$ vanishes at the origin, but it is a genuine (tiny) discretization choice.
+   the first grid point — $\Delta r$ for `r_grid`, so the $[0, \Delta r]$ panel is dropped
+   (negligible because the integrand $\propto r\,g(r)$ vanishes at the origin, but a genuine,
+   tiny discretization choice; a grid from 0 includes it).
 5. $S_\mathrm{ft}(Q) = F_\mathrm{ft}(Q)/Q + 1$ — **this array is the classic `ft.dat` file**
    (written by `scaling_cli.py::_write_outputs` as `targets["ft_correction"]`).
 6. $F_\mathrm{filt} = F - F_\mathrm{ft}$, $\;S_\mathrm{filt} = F_\mathrm{filt}/Q + 1$.
 7. Re-run the Step-6 forward transform on $F_\mathrm{filt}$ (Lorch + low-$Q$ correction again,
-   the latter now using $S_\mathrm{filt}(Q_0)$) and convert to $g_\mathrm{filt}(r)$.
+   the latter now using $S_\mathrm{filt}(Q_0)$) and convert to $g_\mathrm{filt}(r)$. At $r = 0$
+   (when the grid has it) $g_\mathrm{filt}$ is the continuous extension
+   $1 + G_\mathrm{PDF}'(0)/(4\pi\rho_0)$ — $G_\mathrm{PDF}$ is odd in $r$ — with the exact derivative
+   of the discrete transform (`gpdf_slope_at_zero` / `gpdfSlopeAtZero`: the trapezoid moment
+   $(2/\pi)\sum Q\,F(Q)\,M(Q)$ plus the correction's closed-form $\mathrm{coef}'(0)S(Q_0) -
+   \mathrm{const}'(0)$), not $0/0$. Tests: `tests/test_stog_b_rzero.py`,
+   `src/__tests__/autoScaleRZero.test.js`.
 
 #### The `ft.dat` oracle relation
 
