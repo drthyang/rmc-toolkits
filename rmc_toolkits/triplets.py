@@ -33,13 +33,17 @@ Angle counting
 --------------
 For each central B atom the A-bond list and the C-bond list are combined:
 
-- If the two ends are equivalent (same element, same window) each *unordered*
-  pair of distinct bonds contributes one angle, so an octahedron's six bonds
-  give the expected ``C(6, 2) = 15`` angles (12 x 90 deg + 3 x 180 deg).
-- Otherwise every (A-bond, C-bond) combination contributes one angle, minus
-  the combinations where both bonds reach the *same atom in the same periodic
-  image* -- the degenerate zero-degree "angle" of a bond with itself, which
-  arises when A and C name the same element with overlapping windows.
+- If A and C name the same element, every angle is one physical triplet
+  ``{x, B, y}``: each *unordered* pair of distinct bonds (distinct atom
+  images) contributes one angle when one bond lies in the A--B window and the
+  other in the B--C window, under either assignment. With equal windows that
+  is every unordered pair, so an octahedron's six bonds give the expected
+  ``C(6, 2) = 15`` angles (12 x 90 deg + 3 x 180 deg). The rule is continuous
+  in the windows: moving a bound changes the count only by the triplets whose
+  bonds cross it (an earlier ordered rule counted every overlap triplet twice
+  as soon as the two windows differed by any amount).
+- Otherwise every (A-bond, C-bond) combination contributes one angle; A and C
+  atoms are then always distinct atoms.
 
 Histogram conventions
 ---------------------
@@ -187,6 +191,17 @@ class _Bonds:
     image: np.ndarray  # (P, 3) int
     vectors: np.ndarray  # (P, 3) Cartesian angstrom, center -> candidate
     lengths: np.ndarray  # (P,)
+    member: np.ndarray  # (P, W) bool: which of the searched windows hold it
+
+    def subset(self, mask: np.ndarray) -> "_Bonds":
+        return _Bonds(
+            center_pos=self.center_pos[mask],
+            candidate_row=self.candidate_row[mask],
+            image=self.image[mask],
+            vectors=self.vectors[mask],
+            lengths=self.lengths[mask],
+            member=self.member[mask],
+        )
 
 
 def _neighbor_bonds(
@@ -195,10 +210,14 @@ def _neighbor_bonds(
     frac_candidates: np.ndarray,
     candidate_rows: np.ndarray,
     lattice_vectors: np.ndarray,
-    rmin: float,
-    rmax: float,
+    windows: Sequence[tuple[float, float]],
 ) -> _Bonds:
-    """Linked-cell periodic neighbour search with explicit image shifts."""
+    """Linked-cell periodic neighbour search with explicit image shifts.
+
+    One pass serves every window in ``windows``: a pair is kept when it falls
+    in at least one of them, and ``member[:, w]`` records window ``w``.
+    """
+    rmax = max(window[1] for window in windows)
     widths = _perpendicular_widths(lattice_vectors)
     cells = np.minimum(
         np.maximum(1, np.floor(widths / rmax).astype(int)), MAX_CELLS_PER_AXIS
@@ -219,7 +238,7 @@ def _neighbor_bonds(
 
     center_cells = cell_of(frac_centers)
     n_centers = frac_centers.shape[0]
-    rmin_sq, rmax_sq = rmin * rmin, rmax * rmax
+    bounds_sq = [(lo * lo, hi * hi) for lo, hi in windows]
 
     found: list[tuple[np.ndarray, ...]] = []
     offsets = product(*(range(-int(k), int(k) + 1) for k in reach))
@@ -247,10 +266,14 @@ def _neighbor_bonds(
         # of finite values (results are correct; einsum skips that path).
         vectors = np.einsum("ij,jk->ik", delta, lattice_vectors)
         dist_sq = np.einsum("ij,ij->i", vectors, vectors)
+        member = np.stack(
+            [(dist_sq >= lo_sq) & (dist_sq <= hi_sq) for lo_sq, hi_sq in bounds_sq],
+            axis=1,
+        )
         # The lower bound is exclusive at exactly zero even when rmin == 0: a
         # zero-length pair (bitwise-coincident atoms) has no direction, and
         # admitting it would put a 0/0 NaN in every angle it joins.
-        keep = (dist_sq >= rmin_sq) & (dist_sq <= rmax_sq) & (dist_sq > 0)
+        keep = member.any(axis=1) & (dist_sq > 0)
         # A center is never its own neighbour in the unshifted image; other
         # images of the same atom are genuine neighbours and stay.
         keep &= ~(
@@ -266,6 +289,7 @@ def _neighbor_bonds(
                 image[center_rep[keep]],
                 vectors[keep],
                 np.sqrt(dist_sq[keep]),
+                member[keep],
             )
         )
 
@@ -277,6 +301,7 @@ def _neighbor_bonds(
             image=np.empty((0, 3), dtype=int),
             vectors=np.empty((0, 3)),
             lengths=np.empty(0),
+            member=np.empty((0, len(windows)), dtype=bool),
         )
     columns = [np.concatenate(parts) for parts in zip(*found)]
     return _Bonds(*columns)
@@ -285,24 +310,23 @@ def _neighbor_bonds(
 def _sort_by_center(bonds: _Bonds, n_centers: int) -> tuple[_Bonds, np.ndarray, np.ndarray]:
     """Bonds reordered by central atom, with per-center group sizes/starts."""
     order = np.argsort(bonds.center_pos, kind="stable")
-    sorted_bonds = _Bonds(
-        center_pos=bonds.center_pos[order],
-        candidate_row=bonds.candidate_row[order],
-        image=bonds.image[order],
-        vectors=bonds.vectors[order],
-        lengths=bonds.lengths[order],
-    )
+    sorted_bonds = bonds.subset(order)
     sizes = np.bincount(bonds.center_pos, minlength=n_centers)
     starts = np.concatenate(([0], np.cumsum(sizes)[:-1]))
     return sorted_bonds, sizes, starts
 
 
 def _pair_angles(
-    bonds12: _Bonds, bonds23: _Bonds, n_centers: int, shared_ends: bool
+    bonds12: _Bonds, bonds23: _Bonds, n_centers: int, same_end: bool
 ) -> np.ndarray:
-    """Angles (degrees) at each center between its window-1 and window-2 bonds."""
+    """Angles (degrees) at each center between its window-1 and window-2 bonds.
+
+    ``same_end``: A and C are one element, ``bonds12`` is the single search
+    over both windows (``bonds23`` is ignored) and its ``member`` columns say
+    which window each bond is in -- first column A--B, last column B--C.
+    """
     first, sizes1, starts1 = _sort_by_center(bonds12, n_centers)
-    if shared_ends:
+    if same_end:
         second, sizes2, starts2 = first, sizes1, starts1
     else:
         second, sizes2, starts2 = _sort_by_center(bonds23, n_centers)
@@ -316,18 +340,13 @@ def _pair_angles(
     i = starts1[group] + rank // sizes2[group]
     j = starts2[group] + rank % sizes2[group]
 
-    if shared_ends:
-        # One list paired with itself: keep the strict upper triangle so each
-        # unordered pair of distinct bonds counts once.
-        keep = i < j
-    else:
-        # Two lists: drop the self-angle a bond makes with itself when both
-        # windows catch the same atom in the same periodic image.
-        keep = ~(
-            (first.candidate_row[i] == second.candidate_row[j])
-            & np.all(first.image[i] == second.image[j], axis=1)
-        )
-    i, j = i[keep], j[keep]
+    if same_end:
+        # One list paired with itself: the strict upper triangle makes each
+        # unordered pair of distinct bond images count once, and the pair is
+        # a triplet when either assignment puts one bond in each window.
+        in12, in23 = first.member[:, 0], first.member[:, -1]
+        keep = (i < j) & ((in12[i] & in23[j]) | (in23[i] & in12[j]))
+        i, j = i[keep], j[keep]
     if i.size == 0:
         return np.empty(0)
 
@@ -345,8 +364,8 @@ class _TripletCore:
     window23: tuple[float, float]
     shared_ends: bool
     apex_count: int
-    bonds12: _Bonds
-    bonds23: _Bonds
+    bonds12: _Bonds  # the A--B window's bonds
+    bonds23: _Bonds  # the B--C window's bonds
     angles: np.ndarray
 
 
@@ -395,27 +414,31 @@ def _triplet_core(
     wrapped = fractional - np.floor(fractional)
 
     apex_rows = selections[apex]
-    shared_ends = end1 == end2 and window12 == window23
-    bonds12 = _neighbor_bonds(
-        wrapped[apex_rows],
-        apex_rows,
-        wrapped[selections[end1]],
-        selections[end1],
-        lattice_vectors,
-        *window12,
-    )
-    if shared_ends:
-        bonds23 = bonds12
-    else:
-        bonds23 = _neighbor_bonds(
+    same_end = end1 == end2
+    shared_ends = same_end and window12 == window23
+
+    def search(end: str, windows: list[tuple[float, float]]) -> _Bonds:
+        return _neighbor_bonds(
             wrapped[apex_rows],
             apex_rows,
-            wrapped[selections[end2]],
-            selections[end2],
+            wrapped[selections[end]],
+            selections[end],
             lattice_vectors,
-            *window23,
+            windows,
         )
-    angles = _pair_angles(bonds12, bonds23, apex_rows.size, shared_ends)
+
+    if same_end:
+        # One search over both windows: each bond image appears once, tagged
+        # with the window(s) it falls in, so pairing can count each physical
+        # triplet once however the two windows overlap.
+        both = search(end1, [window12] if shared_ends else [window12, window23])
+        angles = _pair_angles(both, both, apex_rows.size, True)
+        bonds12 = both.subset(both.member[:, 0])
+        bonds23 = bonds12 if shared_ends else both.subset(both.member[:, -1])
+    else:
+        bonds12 = search(end1, [window12])
+        bonds23 = search(end2, [window23])
+        angles = _pair_angles(bonds12, bonds23, apex_rows.size, False)
 
     return _TripletCore(
         triplet=(end1, apex, end2),

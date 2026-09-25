@@ -41,6 +41,10 @@ def case_random_triclinic() -> dict:
             {"triplet": ["Se", "Nb", "Se"], "bond12": [1.0, 3.4], "bond23": None, "binWidth": 5.0},
             {"triplet": ["Se", "Nb", "Nb"], "bond12": [1.0, 3.0], "bond23": [1.5, 3.4], "binWidth": 5.0},
             {"triplet": ["Se", "Se", "Se"], "bond12": [1.0, 3.2], "bond23": None, "binWidth": 2.0},
+            # Same end element, overlapping distinct windows: each physical
+            # triplet counts once under either window assignment.
+            {"triplet": ["Se", "Nb", "Se"], "bond12": [1.0, 3.0], "bond23": [1.5, 3.4], "binWidth": 5.0},
+            {"triplet": ["Se", "Se", "Se"], "bond12": [1.0, 3.0], "bond23": [2.0, 3.4], "binWidth": 3.0},
         ],
     }
 

@@ -13,10 +13,12 @@
 // one atom are genuine distinct neighbours. A pair at exactly zero length
 // (bitwise-coincident atoms under rmin = 0) is never a bond.
 //
-// Angle counting mirrors the Python engine: equivalent ends (same element,
-// same window) count each unordered pair of distinct bonds once; distinct
-// windows count ordered (1→2, 2→3) assignments minus the combinations where
-// both bonds reach the same atom in the same periodic image.
+// Angle counting mirrors the Python engine: when A and C are the same
+// element, each unordered pair of distinct bond images {x, y} is one physical
+// triplet, counted once when either assignment puts one bond in the A–B
+// window and the other in the B–C window (with equal windows: every unordered
+// pair) — continuous in the windows, so nudging a bound never doubles the
+// count. Different end elements count every (A-bond, C-bond) combination.
 //
 // The summary payload (bondAngleSummary) is the contract shared with the
 // Flask /api/triplets route — camelCase keys, plain arrays — so the page
@@ -97,10 +99,12 @@ const perpendicularWidths = (lattice) => {
   return areas.map((area) => volume / area);
 };
 
-// All (center, candidate image) bonds whose length falls inside one window,
-// grouped per center (mirrors _neighbor_bonds; grouping replaces the numpy
-// sort-by-center step). Each bond: { row, ix, iy, iz, vx, vy, vz, length }.
-const neighborBonds = (wrapped, centerRows, candidateRows, lattice, rmin, rmax) => {
+// All (center, candidate image) bonds whose length falls inside at least one
+// of `windows`, grouped per center (mirrors _neighbor_bonds; grouping replaces
+// the numpy sort-by-center step). Each bond: { row, ix, iy, iz, vx, vy, vz,
+// length, member } with bit w of `member` set when window w holds it.
+const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => {
+  const rmax = Math.max(...windows.map((window) => window[1]));
   const widths = perpendicularWidths(lattice);
   const cells = widths.map((width) =>
     Math.min(Math.max(1, Math.floor(width / rmax)), MAX_CELLS_PER_AXIS)
@@ -120,8 +124,7 @@ const neighborBonds = (wrapped, centerRows, candidateRows, lattice, rmin, rmax) 
     (buckets[flat] ??= []).push(row);
   }
 
-  const rminSq = rmin * rmin;
-  const rmaxSq = rmax * rmax;
+  const boundsSq = windows.map(([lo, hi]) => [lo * lo, hi * hi]);
   const perCenter = new Array(centerRows.length);
   for (let center = 0; center < centerRows.length; center += 1) {
     const centerRow = centerRows[center];
@@ -157,8 +160,13 @@ const neighborBonds = (wrapped, centerRows, candidateRows, lattice, rmin, rmax) 
             const distSq = vx * vx + vy * vy + vz * vz;
             // Lower bound exclusive at exactly zero even when rmin == 0: a
             // zero-length pair has no direction (mirrors the Python engine).
-            if (distSq < rminSq || distSq > rmaxSq || !(distSq > 0)) continue;
-            bonds.push({ row, ix, iy, iz, vx, vy, vz, length: Math.sqrt(distSq) });
+            if (!(distSq > 0)) continue;
+            let member = 0;
+            boundsSq.forEach(([loSq, hiSq], window) => {
+              if (distSq >= loSq && distSq <= hiSq) member |= 1 << window;
+            });
+            if (!member) continue;
+            bonds.push({ row, ix, iy, iz, vx, vy, vz, length: Math.sqrt(distSq), member });
           }
         }
       }
@@ -213,26 +221,39 @@ const tripletCore = (fractional, elements, latticeVectors, { triplet, bond12, bo
   const wrapped = fractional.map((row) => row.map((value) => value - Math.floor(value)));
 
   const apexRows = selections.get(apex);
-  const sharedEnds = end1 === end2
+  const sameEnd = end1 === end2;
+  const sharedEnds = sameEnd
     && window12[0] === window23[0] && window12[1] === window23[1];
-  const bonds12 = neighborBonds(wrapped, apexRows, selections.get(end1), lattice, ...window12);
-  const bonds23 = sharedEnds
-    ? bonds12
-    : neighborBonds(wrapped, apexRows, selections.get(end2), lattice, ...window23);
+
+  // Same end element: one search over both windows, each bond image once,
+  // tagged with its window(s) (bit 1 = A–B, bit 2 = B–C; one window = bit 1).
+  // Different end elements: one search per end.
+  const both = sameEnd
+    ? neighborBonds(wrapped, apexRows, selections.get(end1), lattice,
+      sharedEnds ? [window12] : [window12, window23])
+    : null;
+  const bit23 = sharedEnds ? 1 : 2;
+  const bonds12 = sameEnd
+    ? both.map((bonds) => bonds.filter((bond) => bond.member & 1))
+    : neighborBonds(wrapped, apexRows, selections.get(end1), lattice, [window12]);
+  const bonds23 = sameEnd
+    ? (sharedEnds ? bonds12 : both.map((bonds) => bonds.filter((bond) => bond.member & bit23)))
+    : neighborBonds(wrapped, apexRows, selections.get(end2), lattice, [window23]);
 
   const angles = [];
   for (let center = 0; center < apexRows.length; center += 1) {
-    const first = bonds12[center];
-    const second = bonds23[center];
+    const first = sameEnd ? both[center] : bonds12[center];
+    const second = sameEnd ? both[center] : bonds23[center];
     for (let i = 0; i < first.length; i += 1) {
       const one = first[i];
-      // Shared ends: strict upper triangle of one list, so each unordered
-      // pair of distinct bonds counts once. Distinct windows: every (1→2,
-      // 2→3) combination minus a bond paired with its own atom-image.
-      for (let j = sharedEnds ? i + 1 : 0; j < second.length; j += 1) {
+      // Same end element: strict upper triangle of the one list, so each
+      // unordered pair of distinct bond images counts once, kept when either
+      // assignment puts one bond in each window. Otherwise every (A-bond,
+      // C-bond) combination.
+      for (let j = sameEnd ? i + 1 : 0; j < second.length; j += 1) {
         const two = second[j];
-        if (!sharedEnds
-          && one.row === two.row && one.ix === two.ix && one.iy === two.iy && one.iz === two.iz) {
+        if (sameEnd
+          && !(((one.member & 1) && (two.member & bit23)) || ((one.member & bit23) && (two.member & 1)))) {
           continue;
         }
         const cosine = (one.vx * two.vx + one.vy * two.vy + one.vz * two.vz)

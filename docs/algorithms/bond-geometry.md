@@ -100,9 +100,11 @@ coerce a missing bound to `rmin = 0` where Python's `float()` raises.
 
 Two flags fall out of the spec before any geometry runs:
 
-- `shared_ends` — true iff A and C are the same element **and** the two windows are equal. It
-  selects between the two counting rules of Step 5 and lets the B–C search be skipped entirely
-  (`bonds23 = bonds12`).
+- `same_end` — true iff A and C are the same element. It selects between the two counting rules
+  of Step 5, and it makes the engine run **one** neighbour search over both windows (each bond
+  tagged with the window(s) it falls in) instead of one search per end.
+- `shared_ends` — `same_end` **and** equal windows. The B–C bond list is then the A–B list
+  (`bonds23 = bonds12`), and the payload reports it as `sharedEnds` (one length histogram).
 - The bin count for a requested width (Step 6) is fixed here too:
   `_bin_count = max(1, floor(180/w + 0.5))` — **round half up**, matching JavaScript's
   `Math.round` exactly. Python's banker's `round()` would disagree at exact-.5 ratios (an
@@ -195,18 +197,28 @@ $\mathbf m$, Cartesian vector, length) — the `_Bonds` container.
 
 ### Step 5 — Pairing bonds into angles
 
-`_pair_angles` sorts both bond lists by central atom (stable sort, so order is deterministic)
+`_pair_angles` sorts the bond lists by central atom (stable sort, so order is deterministic)
 and forms the per-center pairing:
 
-- **Shared ends** (`shared_ends = True`; one list paired with itself): keep the strict upper
-  triangle $i < j$, so each *unordered* pair of distinct bonds counts once. An octahedrally
-  coordinated B with six bonds gives exactly $\binom{6}{2} = 15$ angles — $12\times 90° +
-  3\times 180°$ (`OctahedronTests`, and the same invariant asserted from the JS side).
-- **Distinct ends or windows**: every (A-bond, C-bond) combination counts — *ordered* (1→2, 2→3)
-  assignments — **minus** combinations where both bonds reach the same atom row in the same
-  image $\mathbf m$: the degenerate zero-degree "angle" of a bond with itself, which arises when
-  A and C name the same element with overlapping windows
-  (`SameElementDistinctWindowTests`).
+- **Same end element** (`same_end`, A = C): the one search of Step 1 lists every bond image
+  $x$ once, with flags $x \in w_{12}$ and $x \in w_{23}$. The list is paired with itself over the
+  strict upper triangle $i < j$, so each *unordered* pair of distinct bond images — one physical
+  triplet $\{x, B, y\}$ — is considered once, and it contributes one angle iff
+  $$(x \in w_{12} \wedge y \in w_{23}) \;\vee\; (y \in w_{12} \wedge x \in w_{23}).$$
+  With equal windows that is every unordered pair: an octahedrally coordinated B with six bonds
+  gives exactly $\binom{6}{2} = 15$ angles — $12\times 90° + 3\times 180°$ (`OctahedronTests`,
+  and the same invariant asserted from the JS side). With distinct windows the rule is
+  **continuous**: moving a bound changes the count only by the triplets whose bonds cross it,
+  and at $w_{23} \to w_{12}$ it reduces to the shared-window count
+  (`SameElementDistinctWindowTests`). Disjoint windows (short vs long bonds) pair each short
+  bond with each long one once. A bond is never paired with itself, since $i < j$.
+- **Different end elements** (A ≠ C): every (A-bond, C-bond) combination counts; the A and C
+  atoms are necessarily different atoms.
+
+> Before 1.0 the same-element/distinct-window case counted *ordered* (1→2, 2→3) assignments, so
+> a triplet whose two bonds both lay in the overlap of the windows counted twice, and nudging a
+> B–C bound by $10^{-4}$ Å off the A–B one doubled every count (223 651 → 447 317 Se–Nb–Se
+> angles on the 5 K sample). The unordered rule counts each physical triplet once.
 
 The angle is then
 
@@ -300,7 +312,7 @@ rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --b
 |---|---|---|
 | `triplet` (A, B, C) | — (required) | element symbols, B central; matched after `capitalize()` |
 | `bond12` | — (required) | inclusive A–B window (Å), $0 \le r_\mathrm{min} < r_\mathrm{max}$ |
-| `bond23` | `None` → `bond12` | inclusive B–C window; equal ends + equal windows ⇒ unordered counting |
+| `bond23` | `None` → `bond12` | inclusive B–C window; A = C ⇒ unordered counting of each triplet once (Step 5) |
 | `bin_width` | `1.0`° | requested width; realized width is $180/\max(1,\lfloor 180/w+0.5\rfloor)$ |
 | `collect_angles` | `False` | `bond_angle_distribution` only: keep the raw angle list |
 | `MAX_CELLS_PER_AXIS` | 64 | linked-cell resolution cap per lattice direction |
@@ -320,7 +332,7 @@ replays against the port:
 
 | Fixture case | What it exercises |
 |---|---|
-| `random-triclinic` — 48 atoms, seeded RNG, lattice $[[6,0,0],[3,5,0],[1,1,7]]$; three specs incl. shared ends, distinct windows, and B = A = C | general triclinic geometry, both counting rules, 5° and 2° bins |
+| `random-triclinic` — 48 atoms, seeded RNG, lattice $[[6,0,0],[3,5,0],[1,1,7]]$; five specs: shared ends, different ends with distinct windows, B = A = C, and A = C with overlapping distinct windows (twice) | general triclinic geometry, both counting rules, 5°, 3° and 2° bins |
 | `small-box-images` — 3 atoms in a 4 Å cube with windows reaching 3.5 Å | multiple periodic images of one atom as distinct neighbours |
 
 Measured agreement, asserted per bin and per statistic:
@@ -337,7 +349,8 @@ The Python engine itself is pinned to a brute-force all-images reference over a 
 span on random triclinic configurations (`TriclinicBruteForceTests` in
 [tests/test_triplets.py](../../tests/test_triplets.py)), plus the constructed invariants:
 octahedron counting, bonds through the periodic wall, wrap invariance, zero-length exclusion,
-self-image bonds, and ordered-counting degeneracies. The backend route's caps and error paths
+self-image bonds, and the same-element distinct-window rule (continuity at touching windows,
+one count per overlap triplet, disjoint shells). The backend route's caps and error paths
 are covered by `TripletsApiTests` in [tests/test_backend_api.py](../../tests/test_backend_api.py).
 
 **The one documented residual divergence:** libm and V8 `acos` may differ by 1 ulp, so a

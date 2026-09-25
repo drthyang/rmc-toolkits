@@ -49,15 +49,21 @@ def brute_force_angles(fractional, elements, lattice, triplet, window12, window2
                     bonds1.append((j, tuple(image), vector, length))
                 if other == end2 and window23[0] <= length <= window23[1]:
                     bonds2.append((j, tuple(image), vector, length))
-        if end1 == end2 and tuple(window12) == tuple(window23):
-            pairs = [(bonds1[i], bonds1[j]) for i, j in combinations(range(len(bonds1)), 2)]
-        else:
+        if end1 == end2:
+            # Same end element: one physical triplet {x, B, y} per unordered
+            # pair of distinct bond images, kept when either assignment puts
+            # one bond in each window (all pairs when the windows are equal).
+            in12 = {(bond[0], bond[1]) for bond in bonds1}
+            in23 = {(bond[0], bond[1]) for bond in bonds2}
+            union = {(bond[0], bond[1]): bond for bond in bonds1 + bonds2}
+            keys = sorted(union)
             pairs = [
-                (one, two)
-                for one in bonds1
-                for two in bonds2
-                if not (one[0] == two[0] and one[1] == two[1])
+                (union[x], union[y])
+                for x, y in combinations(keys, 2)
+                if (x in in12 and y in in23) or (y in in12 and x in in23)
             ]
+        else:
+            pairs = [(one, two) for one in bonds1 for two in bonds2]
         for one, two in pairs:
             cosine = np.dot(one[2], two[2]) / (one[3] * two[3])
             angles.append(math.degrees(math.acos(max(-1.0, min(1.0, cosine)))))
@@ -238,10 +244,10 @@ class SameElementDistinctWindowTests(unittest.TestCase):
         self.assertEqual(result.bond23_count, 1)
         self.assertEqual(result.angle_count, 0)
 
-    def test_overlapping_windows_use_ordered_counting(self):
-        # Both neighbours fall in both windows: the A-B-C convention counts the
-        # (1->2, 2->3) assignment both ways, so the same geometric angle
-        # appears twice. This documents the ordered-counting convention.
+    def test_overlapping_windows_count_each_triplet_once(self):
+        # Both neighbours fall in both windows. {Se, Nb, Se'} is one physical
+        # triplet, so it counts once -- not once per (1->2, 2->3) assignment,
+        # which used to double every overlap triplet (triplets.physics.21).
         theta = math.radians(120.0)
         positions = place(
             [[5.0, 5.0, 5.0], [6.0, 5.0, 5.0], [5.0 + math.cos(theta), 5.0 + math.sin(theta), 5.0]]
@@ -255,8 +261,46 @@ class SameElementDistinctWindowTests(unittest.TestCase):
             bond23=(0.6, 1.6),
             collect_angles=True,
         )
-        self.assertEqual(result.angle_count, 2)
-        np.testing.assert_allclose(result.angles, [120.0, 120.0], atol=1e-9)
+        self.assertEqual(result.angle_count, 1)
+        np.testing.assert_allclose(result.angles, [120.0], atol=1e-9)
+
+    def test_count_is_continuous_as_the_windows_meet(self):
+        # Nudging the B-C bound by 1e-4 A past every bond must not change a
+        # thing: the distinct-window rule reduces to the shared-window one.
+        center = np.array([5.0, 5.0, 5.0])
+        offsets = np.array(
+            [[2, 0, 0], [-2, 0, 0], [0, 2, 0], [0, -2, 0], [0, 0, 2], [0, 0, -2]],
+            dtype=float,
+        )
+        positions = place(np.vstack([center, center + offsets]))
+        kwargs = dict(triplet=("O", "Nb", "O"), bond12=(1.0, 3.0), bin_width=5.0)
+        shared = bond_angle_distribution(positions, ["Nb"] + ["O"] * 6, CUBIC_10, **kwargs)
+        nudged = bond_angle_distribution(
+            positions, ["Nb"] + ["O"] * 6, CUBIC_10, bond23=(1.0, 3.0001), **kwargs
+        )
+        self.assertEqual(shared.angle_count, 15)
+        self.assertEqual(nudged.angle_count, 15)
+        np.testing.assert_array_equal(nudged.counts, shared.counts)
+
+    def test_disjoint_windows_pair_across_shells(self):
+        # Short and long Nb-Se bonds (1 A and 2 A): with disjoint windows only
+        # short-long pairs qualify, each counted once.
+        positions = place(
+            [[5.0, 5.0, 5.0], [6.0, 5.0, 5.0], [5.0, 6.0, 5.0], [3.0, 5.0, 5.0], [5.0, 5.0, 7.0]]
+        )
+        result = bond_angle_distribution(
+            positions,
+            ["Nb", "Se", "Se", "Se", "Se"],
+            CUBIC_10,
+            triplet=("Se", "Nb", "Se"),
+            bond12=(0.5, 1.5),
+            bond23=(1.5, 2.5),
+            collect_angles=True,
+        )
+        self.assertEqual(result.bond12_count, 2)
+        self.assertEqual(result.bond23_count, 2)
+        self.assertEqual(result.angle_count, 4)
+        np.testing.assert_allclose(np.sort(result.angles), [90.0, 90.0, 90.0, 180.0], atol=1e-9)
 
 
 class TriclinicBruteForceTests(unittest.TestCase):
@@ -300,6 +344,12 @@ class TriclinicBruteForceTests(unittest.TestCase):
 
     def test_same_element_everywhere(self):
         self.assert_matches_brute_force(("Se", "Se", "Se"), (1.0, 3.2), None)
+
+    def test_same_end_element_distinct_windows(self):
+        self.assert_matches_brute_force(("Se", "Nb", "Se"), (1.0, 3.0), (1.5, 3.4))
+
+    def test_same_element_everywhere_distinct_windows(self):
+        self.assert_matches_brute_force(("Se", "Se", "Se"), (1.0, 3.0), (2.0, 3.4))
 
 
 class IsotropicReferenceTests(unittest.TestCase):

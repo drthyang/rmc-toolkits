@@ -106,6 +106,27 @@ describe('geometry invariants', () => {
     expect(result.sortedAngles[0]).toBeCloseTo(180, 9);
   });
 
+  it('same-element ends: a 1e-4 A window nudge does not double the count', () => {
+    // triplets.physics.21: {x, B, y} is one physical triplet whichever window
+    // each bond is assigned to, so distinct-but-touching windows must agree
+    // with the shared-window count.
+    const fractional = [
+      [0.5, 0.5, 0.5],
+      [0.7, 0.5, 0.5], [0.3, 0.5, 0.5],
+      [0.5, 0.7, 0.5], [0.5, 0.3, 0.5],
+      [0.5, 0.5, 0.7], [0.5, 0.5, 0.3]
+    ];
+    const elements = ['Nb', 'O', 'O', 'O', 'O', 'O', 'O'];
+    const base = { triplet: ['O', 'Nb', 'O'], bond12: [1, 3], binWidth: 5 };
+    const shared = bondAngleSummary(fractional, elements, cubic, base);
+    const nudged = bondAngleSummary(fractional, elements, cubic, { ...base, bond23: [1, 3.0001] });
+    expect(shared.angleCount).toBe(15);
+    expect(nudged.sharedEnds).toBe(false);
+    expect(nudged.angleCount).toBe(15);
+    expect(nudged.counts).toEqual(shared.counts);
+    expect(nudged.lengths23.count).toBe(6);
+  });
+
   it('rejects an unknown element with the available list', () => {
     expect(() =>
       bondAngleSummary([[0.5, 0.5, 0.5]], ['Nb'], cubic, {
