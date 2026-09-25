@@ -599,5 +599,96 @@ GOLDEN_ASYMMETRY = {
 }
 
 
+class AnisotropyNullTests(unittest.TestCase):
+    """orientation.physics.9/.24, orientation.numerics.27.
+
+    orientationAnisotropy = 3 lambda_1 - 1 was described as '0 for an isotropic
+    distribution', but the largest eigenvalue of a finite sample tensor is
+    biased upward (0.11 +/- 0.04 for 216 isotropic copies) and no noise
+    reference was reported. The engines now report the isotropic expectation
+    9 / sqrt(10 pi N_eff) and Bingham's test S = (15 N_eff / 2) sum (l_i - 1/3)^2
+    ~ chi^2_5, with its p-value and normal deviate.
+    """
+
+    def test_isotropic_expectation_matches_monte_carlo(self):
+        rng = np.random.default_rng(21)
+        for n in (216, 1000):
+            values = [
+                orientation_histogram(_isotropic_units(rng, n), frequency=2, geometry=False)
+                for _ in range(200)
+            ]
+            anisotropy = np.array([v["orientationAnisotropy"] for v in values])
+            expected = values[0]["orientationAnisotropyNull"]
+            self.assertAlmostEqual(expected, 9.0 / np.sqrt(10.0 * np.pi * n), places=12)
+            self.assertLess(abs(anisotropy.mean() / expected - 1.0), 0.1, msg=f"N={n}")
+            significance = np.array([v["orientationAnisotropySignificance"] for v in values])
+            self.assertLessEqual(np.mean(significance > 2), 0.05, msg=f"N={n}")
+            self.assertLessEqual(np.mean(significance > 3), 0.015, msg=f"N={n}")
+
+    def test_bingham_statistic_and_p_value(self):
+        from scipy.stats import chi2, norm
+
+        rng = np.random.default_rng(22)
+        vectors = rng.normal(size=(500, 3)) * np.array([0.12, 0.1, 0.1])
+        for weight in ("count", "amplitude2"):
+            result = orientation_histogram(vectors, frequency=3, weight=weight, geometry=False)
+            amplitude = np.linalg.norm(vectors, axis=1)
+            w = np.ones(500) if weight == "count" else amplitude**2
+            n_eff = w.sum() ** 2 / (w * w).sum()
+            self.assertAlmostEqual(result["orientationEffectivePoints"] / n_eff, 1.0, places=12)
+            eigenvalues = np.asarray(result["orientationEigenvalues"])
+            statistic = 7.5 * n_eff * float(np.sum((eigenvalues - 1.0 / 3.0) ** 2))
+            self.assertAlmostEqual(result["orientationBinghamStatistic"] / statistic, 1.0, places=9)
+            p = chi2.sf(statistic, 5)
+            self.assertAlmostEqual(result["orientationBinghamPValue"] / p, 1.0, places=8)
+            self.assertAlmostEqual(result["orientationAnisotropySignificance"], norm.isf(p), places=7)
+
+    def test_a_modest_harmonic_anisotropy_is_detected(self):
+        # sigma ratio 1.25 at 1000 copies: the old map RMS read '1.0 sigma'.
+        rng = np.random.default_rng(23)
+        vectors = rng.normal(size=(1000, 3)) * np.array([0.125, 0.1, 0.1])
+        result = orientation_histogram(vectors, frequency=10, smoothing=2, geometry=False)
+        self.assertGreater(result["orientationAnisotropySignificance"], 4.0)
+        self.assertGreater(result["orientationAnisotropy"], 3 * result["orientationAnisotropyNull"])
+
+    def test_golden_values_shared_with_the_js_engine(self):
+        assert_golden(self, GOLDEN_ANISOTROPY)
+        weighted = orientation_histogram(
+            golden_cloud(), frequency=6, smoothing=1, weight="amplitude2", geometry=False
+        )
+        for key, value in GOLDEN_ANISOTROPY_AMPLITUDE2.items():
+            self.assertLess(abs(weighted[key] - value), 1e-9 * max(1.0, abs(value)), msg=key)
+
+
+# Shared verbatim with GOLDEN_ANISOTROPY in orientationFixes.test.js.
+GOLDEN_ANISOTROPY = {
+    (6, 1, 60): {"orientationAnisotropy": 0.12495614840544977, "orientationEffectivePoints": 960.0,
+                 "orientationAnisotropyNull": 0.05182412242070032,
+                 "orientationBinghamStatistic": 18.73684781045718,
+                 "orientationBinghamPValue": 0.0021515346560243643,
+                 "orientationAnisotropySignificance": 2.855045282725758},
+    (10, 2, 0): {"orientationEffectivePoints": 900.0, "orientationAnisotropyNull": 0.05352372348458313,
+                 "orientationBinghamPValue": 0.9999999999999987,
+                 "orientationAnisotropySignificance": -7.9084691847240896},
+    (4, 0, 400): {"orientationAnisotropy": 0.6150392816231949, "orientationEffectivePoints": 1300.0,
+                  "orientationAnisotropyNull": 0.04453442987940475,
+                  "orientationBinghamStatistic": 614.6941425286471,
+                  "orientationBinghamPValue": 1.3514132534260834e-130,
+                  "orientationAnisotropySignificance": 24.286800999672977},
+    (2, 0, 6): {"orientationAnisotropy": 0.013271734268148538, "orientationEffectivePoints": 906.0,
+                "orientationAnisotropyNull": 0.05334619820786263,
+                "orientationBinghamStatistic": 0.19947859577278887,
+                "orientationBinghamPValue": 0.9991194624727917,
+                "orientationAnisotropySignificance": -3.127820820781734},
+}
+GOLDEN_ANISOTROPY_AMPLITUDE2 = {
+    "orientationEffectivePoints": 725.3165446406116,
+    "orientationAnisotropyNull": 0.05962162122187657,
+    "orientationBinghamStatistic": 129.85364394492348,
+    "orientationBinghamPValue": 2.5564292957448824e-26,
+    "orientationAnisotropySignificance": 10.549388830489368,
+}
+
+
 if __name__ == "__main__":
     unittest.main()

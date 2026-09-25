@@ -1115,7 +1115,45 @@ The scalar summary reported is
 
 $$\texttt{orientationAnisotropy} = 3\lambda_1 - 1 \in [0, 2],$$
 
-0 for a uniform sphere, 2 for a perfect single axis.
+2 for a perfect single axis — and 0 for a uniform sphere **only as $N \to \infty$**.
+
+**Finite-sample bias and the isotropic expectation.** The largest eigenvalue of a *sample* tensor
+is biased upward, so a finite isotropic cloud always reads $3\lambda_1 - 1 > 0$. For uniform
+$\mathbf{u}$, $\sqrt{N}(\mathbf{T} - \mathbf{I}/3)$ tends to a traceless GOE matrix with
+off-diagonal variance $\operatorname{Var}(u_xu_y) = 1/15$ (and diagonal variance $4/45$). The
+mean largest eigenvalue of the $3\times3$ GOE with unit off-diagonal variance is
+$3\sqrt{3/(2\pi)}$ (a closed form of the eigenvalue-gap integral), so
+
+$$\operatorname{E}\big[3\lambda_1 - 1\big]_{\text{isotropic}} \;\simeq\;
+\frac{3}{\sqrt{15}}\cdot\frac{3\sqrt{3/(2\pi)}}{\sqrt{N_{\text{eff}}}}
+\;=\; \frac{9}{\sqrt{10\pi\,N_{\text{eff}}}} \;=\; \frac{1.6057}{\sqrt{N_{\text{eff}}}}
+\qquad (\texttt{orientationAnisotropyNull};\ \texttt{ISOTROPIC\_ANISOTROPY\_SCALE} = 9/\sqrt{10\pi}),$$
+
+with $N_{\text{eff}} = (\sum_i w_i)^2 / \sum_i w_i^2$ (`orientationEffectivePoints`; $= N$ for
+`count`). Measured means over 4 000 isotropic clouds: 0.232 vs 0.227 ($N = 50$), 0.111 vs 0.109
+(216), 0.0512 vs 0.0508 (1000), 0.0160 vs 0.0161 (10 000). Before the 1.0 audit the UI and this
+page said "0 for an isotropic direction distribution" with no reference, so an isotropic 216-copy
+site's 0.11 read as an 11 % preferred axis; on the real GaNb₄Se₈ runs the median site reads 0.08–0.09
+against an isotropic expectation of 0.05.
+
+**Bingham's test of isotropy.** The calibrated statistic on the same tensor is
+
+$$S \;=\; \frac{15\,N_{\text{eff}}}{2}\sum_i\Big(\lambda_i - \frac13\Big)^2
+\;=\; 7.5\,N_{\text{eff}}\,\big\lVert \mathbf{T} - \tfrac13\operatorname{tr}(\mathbf{T})\,\mathbf{I}\big\rVert_F^2
+\;\sim\; \chi^2_5 \ \text{under isotropy}$$
+
+(`orientationBinghamStatistic`), evaluated from the deviatoric Frobenius norm so it does not depend
+on the eigensolver; `orientationBinghamPValue` $= Q(\tfrac52, \tfrac S2)$ and
+`orientationAnisotropySignificance` is its one-sided normal deviate. With weights the effective size
+is exact for weights independent of direction. Measured on isotropic clouds (4 000 per $N$,
+$N \in \{50, 216, 1000, 10\,000\}$): $\bar S = 4.97$–$5.08$, $P(> 2\sigma)$ = 1.9–2.5 % and
+$P(> 3\sigma)$ = 0.03–0.27 % for both `count` and `amplitude2` weights (nominal 2.28 % / 0.135 %).
+Because it pools the whole distribution into five degrees of freedom it is far more powerful
+against smooth, harmonic anisotropy than the 1001-cell map test: a site with a 1.25 : 1 : 1
+$\sigma$ ratio and 1000 copies reads $> 4\sigma$ here while its map is indistinguishable from
+noise, and on the real 5 K run the Nb site 5 (anisotropy 0.19) is a $5.7\sigma$ departure from
+isotropy ($p = 5\times10^{-9}$) with `mapSignificance` 1.0. 20 of 52 (5 K) and 13 of 52 (250 K)
+sites exceed 3σ at the UI defaults.
 
 **Exact identity worth knowing.** With `weight="amplitude2"` and no amplitude cut,
 
@@ -1230,7 +1268,11 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `antipodalAsymmetrySignificant` | bool | — | $z > $ `ASYMMETRY_FLAG_SIGMA` $= 3$ | yes (red flag) |
 | `orientationTensor`, `orientationEigenvalues` | 3×3 / 3 | req / — | §8 | no |
 | `orientationAxes` | 3×3, rows | **req** | §8 — PCA-frame axes when `frame="pca"` | no |
-| `orientationAnisotropy` | dimensionless | — | $3\lambda_1 - 1$ | yes |
+| `orientationAnisotropy` | dimensionless | — | $3\lambda_1 - 1$ (biased upward for finite $N$, §8) | yes |
+| `orientationEffectivePoints` | float | — | $N_{\text{eff}} = (\sum w)^2/\sum w^2$ | no |
+| `orientationAnisotropyNull` | dimensionless | — | isotropic expectation $9/\sqrt{10\pi N_{\text{eff}}}$ (§8) | yes |
+| `orientationBinghamStatistic`, `orientationBinghamPValue` | float / probability | — | Bingham's $S \sim \chi^2_5$ and its upper tail (§8) | no |
+| `orientationAnisotropySignificance` | $\sigma$ | — | one-sided normal deviate of the Bingham $p$ | yes |
 | `peakCell`, `peakEnhancement` | int / float | — | tie-tolerant argmax over the **smoothed** enhancement: the lowest index within a relative `PEAK_TIE_RTOL = 1e-9` of the maximum | `peakEnhancement` only |
 | `peakTieCount` | int | — | number of cells within `PEAK_TIE_RTOL` of the maximum (1 = unique peak) | yes, as "(1 of k equal cells)" when $k > 1$ |
 | `peakDirection` | unit vector | **req** | `centers[peakCell]` | yes |
@@ -1394,8 +1436,9 @@ independently computed in each language — not a shared-golden parity suite.
   therefore share **pinned values verbatim**: the `recommendedFrequency` boundary table, the
   $\pm$axis cells at $\nu = 3$, `neighbors` checksums at $\nu \in \{4,6,10,38\}$ and two $\nu = 38$
   polygon starts, and — on an RNG-free "golden cloud" (a Fibonacci-spiral sphere plus a tight
-  lobe, built identically in both languages) — `peakCell`, the whole peak test, the map test and
-  the antipodal null at several $(\nu, \text{smoothing})$ settings, to $10^{-9}$ relative. The
+  lobe, built identically in both languages) — `peakCell`, the whole peak test, the map test, the
+  antipodal null and the Bingham anisotropy test (both `count` and `amplitude2` weights) at
+  several $(\nu, \text{smoothing})$ settings, to $10^{-9}$ relative. The
   JS special functions are additionally pinned against `scipy.special` values.
 - **Measured for this document, they do agree.** Running both engines on identical inputs on the
   dev machine: at $\nu = 4$, `centers`, `areas`, `sizes`, `antipode` and even the *per-cell
@@ -2175,7 +2218,7 @@ isotropic expectation.
 | Readout | Engine field | Definition | Format |
 | --- | --- | --- | --- |
 | `peak N.NN× at [x, y, z] · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakTieCount`, `peakSignificance` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction; and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 1.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
-| `anisotropy N.NN` | `orientationAnisotropy` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue. $T = I/3$ for a uniform sphere, so the value is **0 for isotropic, 2 for a perfect single axis**. Computed from the vectors, not the bins, so it is resolution-independent. | 2 dp |
+| `anisotropy N.NN (isotropic ≈ N.NN) · N.Nσ` | `orientationAnisotropy`, `orientationAnisotropyNull`, `orientationAnisotropySignificance` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue: **2 for a perfect single axis, and 0 for isotropy only as $N \to \infty$** — a finite isotropic sample reads $\approx 1.6/\sqrt{N_{\text{eff}}}$, printed in brackets; the σ is Bingham's $\chi^2_5$ test of isotropy on the same tensor (engine §8). Computed from the vectors, not the bins, so it is resolution-independent. Until the 1.0 audit the InfoBadge said "0 for an isotropic direction distribution" and no reference was shown | 2 dp, σ 1 dp |
 | `± asymmetry N.NN (symmetric null N.NN ± N.NN) · N.Nσ` | `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`, `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The null is its exact mean ± SD if every antipodal pair's atoms had split at random between $\pm\mathbf u$ (same pair totals, engine §7), and $z = (\mathcal{A} - \text{null})/\text{SD}$. Until the 1.0 audit the slot printed "(noise floor $\sqrt{C/\pi N}$)", an isotropic Gaussian-limit mean that could exceed 1 | values 2 dp, σ 1 dp |
 | `map significance N.Nσ` | `mapSignificance` (InfoBadge also prints `mapChiSquare`, `mapDegreesOfFreedom`) | Pearson's $X^2 = \sum_c z_c^2$, $z_c = (n_c - e_c)/\sqrt{e_c}$, against $\chi^2_{C-1}$, as a one-sided normal deviate (engine §6.3); "not significant" when $\le 0$. Until the 1.0 audit this slot printed the RMS of $z_c$ with a σ unit, whose noise value is $1 \pm 1/\sqrt{2C}$ — "1.4σ" for a cloud with every atom in one hemisphere | σ 1 dp |
 
@@ -2685,7 +2728,8 @@ canvas alone:
 The engines return considerably more than this page shows. From the orientation response, the UI
 reads only `polygons`, `enhancement`, `vmax`, `cellMeanAmplitude`, `meanAmplitude`, `centers`,
 `counts`, `zScore`, `cellCount`, `peakEnhancement`, `peakDirection`, `peakSignificance`, `peakTieCount`,
-`orientationAnisotropy`, `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`,
+`orientationAnisotropy`, `orientationAnisotropyNull`, `orientationAnisotropySignificance`,
+`antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`,
 `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant`, `mapSignificance`, `mapChiSquare`,
 `mapDegreesOfFreedom`, `weight`,
 `smoothing`, `browserOrientation`, and `pcaAxes` (fallback rods only). **Never rendered anywhere:**

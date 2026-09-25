@@ -37,6 +37,9 @@ export const SIGNIFICANCE_TAIL_FLOOR = 1e-300;
 // Antipodal-asymmetry flag: A > null mean + this many null SDs. Mirrors
 // ASYMMETRY_FLAG_SIGMA.
 export const ASYMMETRY_FLAG_SIGMA = 3;
+// Isotropic expectation of 3*lambda1 - 1 is this / sqrt(N_eff) to leading
+// order (9 / sqrt(10 pi)). Mirrors ISOTROPIC_ANISOTROPY_SCALE.
+export const ISOTROPIC_ANISOTROPY_SCALE = 9 / Math.sqrt(10 * Math.PI);
 
 const WEIGHTS = ['count', 'amplitude', 'amplitude2'];
 const FRAMES = ['cartesian', 'pca'];
@@ -881,6 +884,22 @@ export const orientationHistogram = (vectors, options = {}) => {
     }
     const tensorDecomposition = eigenDecomposition(tensor);
 
+    // Bingham's test of uniformity: S = 7.5 n_eff |T - tr(T)/3 I|_F^2 ~ chi^2_5,
+    // n_eff = (sum w)^2 / sum w^2. Mirrors the Python engine.
+    let weightSquares = 0;
+    weights.forEach((w) => { weightSquares += w * w; });
+    const effectivePoints = weightSum * weightSum / weightSquares;
+    const traceThird = (tensor[0][0] + tensor[1][1] + tensor[2][2]) / 3;
+    let deviatorSquares = 0;
+    for (let a = 0; a < 3; a += 1) {
+        for (let b = 0; b < 3; b += 1) {
+            const value = tensor[a][b] - (a === b ? traceThird : 0);
+            deviatorSquares += value * value;
+        }
+    }
+    const binghamStatistic = 7.5 * effectivePoints * deviatorSquares;
+    const binghamTails = regularizedGamma(2.5, binghamStatistic / 2);
+
     let vmin = Infinity;
     let vmax = -Infinity;
     let emptyCells = 0;
@@ -950,6 +969,11 @@ export const orientationHistogram = (vectors, options = {}) => {
         orientationEigenvalues: tensorDecomposition.eigenvalues,
         orientationAxes: tensorDecomposition.axes,
         orientationAnisotropy: 3 * tensorDecomposition.eigenvalues[0] - 1,
+        orientationEffectivePoints: effectivePoints,
+        orientationAnisotropyNull: ISOTROPIC_ANISOTROPY_SCALE / Math.sqrt(effectivePoints),
+        orientationBinghamStatistic: binghamStatistic,
+        orientationBinghamPValue: binghamTails.upper,
+        orientationAnisotropySignificance: normalDeviate(binghamTails.upper, binghamTails.lower),
         peakCell: peak,
         peakTieCount,
         peakDirection: tiling.centers[peak],

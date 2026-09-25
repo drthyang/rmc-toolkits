@@ -514,3 +514,60 @@ describe('antipodal asymmetry null (conditional binomial split)', () => {
         expect(result.antipodalAsymmetryNull).toBe(1);
     });
 });
+
+// orientation.physics.9/.24, orientation.numerics.27 — shared verbatim with
+// GOLDEN_ANISOTROPY in tests/test_orientation_fixes.py.
+const GOLDEN_ANISOTROPY = [
+    [6, 1, 60, { orientationAnisotropy: 0.12495614840544977, orientationEffectivePoints: 960.0,
+        orientationAnisotropyNull: 0.05182412242070032,
+        orientationBinghamStatistic: 18.73684781045718,
+        orientationBinghamPValue: 0.0021515346560243643,
+        orientationAnisotropySignificance: 2.855045282725758 }],
+    [10, 2, 0, { orientationEffectivePoints: 900.0, orientationAnisotropyNull: 0.05352372348458313,
+        orientationBinghamPValue: 0.9999999999999987,
+        orientationAnisotropySignificance: -7.9084691847240896 }],
+    [4, 0, 400, { orientationAnisotropy: 0.6150392816231949, orientationEffectivePoints: 1300.0,
+        orientationAnisotropyNull: 0.04453442987940475,
+        orientationBinghamStatistic: 614.6941425286471,
+        orientationBinghamPValue: 1.3514132534260834e-130,
+        orientationAnisotropySignificance: 24.286800999672977 }],
+    [2, 0, 6, { orientationAnisotropy: 0.013271734268148538, orientationEffectivePoints: 906.0,
+        orientationAnisotropyNull: 0.05334619820786263,
+        orientationBinghamStatistic: 0.19947859577278887,
+        orientationBinghamPValue: 0.9991194624727917,
+        orientationAnisotropySignificance: -3.127820820781734 }]
+];
+const GOLDEN_ANISOTROPY_AMPLITUDE2 = {
+    orientationEffectivePoints: 725.3165446406116,
+    orientationAnisotropyNull: 0.05962162122187657,
+    orientationBinghamStatistic: 129.85364394492348,
+    orientationBinghamPValue: 2.5564292957448824e-26,
+    orientationAnisotropySignificance: 10.549388830489368
+};
+
+describe('orientation anisotropy null (Bingham test)', () => {
+    it('matches the Python golden values', () => {
+        assertGolden(GOLDEN_ANISOTROPY);
+        const weighted = orientationHistogram(goldenCloud(), { frequency: 6, smoothing: 1, weight: 'amplitude2', geometry: false });
+        Object.entries(GOLDEN_ANISOTROPY_AMPLITUDE2).forEach(([key, value]) => {
+            expect(Math.abs(weighted[key] - value), key).toBeLessThanOrEqual(1e-9 * Math.max(1, Math.abs(value)));
+        });
+    });
+
+    it('reports the isotropic expectation and stays calibrated on noise', () => {
+        const gauss = makeRng(21);
+        const anisotropy = [];
+        let above2 = 0;
+        let expected = 0;
+        for (let k = 0; k < 120; k += 1) {
+            const result = orientationHistogram(isotropicUnits(gauss, 216), { frequency: 2, geometry: false });
+            anisotropy.push(result.orientationAnisotropy);
+            expected = result.orientationAnisotropyNull;
+            if (result.orientationAnisotropySignificance > 2) above2 += 1;
+        }
+        expect(expected).toBeCloseTo(9 / Math.sqrt(10 * Math.PI * 216), 12);
+        const mean = anisotropy.reduce((sum, value) => sum + value, 0) / anisotropy.length;
+        expect(Math.abs(mean / expected - 1)).toBeLessThan(0.12);
+        expect(above2 / anisotropy.length).toBeLessThanOrEqual(0.06);
+    });
+});

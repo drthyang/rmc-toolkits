@@ -123,6 +123,13 @@ SIGNIFICANCE_TAIL_FLOOR = 1e-300
 # more than this many null standard deviations.
 ASYMMETRY_FLAG_SIGMA = 3.0
 
+# Isotropic expectation of orientationAnisotropy = 3 lambda_1 - 1 is
+# ISOTROPIC_ANISOTROPY_SCALE / sqrt(N_eff) to leading order: sqrt(N) (T - I/3)
+# tends to a traceless GOE matrix with off-diagonal variance 1/15, whose mean
+# largest eigenvalue is 3 sqrt(3 / (2 pi)) / sqrt(15), so 3 E[lambda_1] - 1 ->
+# 9 / sqrt(10 pi N) = 1.6057 / sqrt(N).
+ISOTROPIC_ANISOTROPY_SCALE = 9.0 / np.sqrt(10.0 * np.pi)
+
 WEIGHTS = ("count", "amplitude", "amplitude2")
 FRAMES = ("cartesian", "pca")
 
@@ -863,6 +870,19 @@ def orientation_histogram(
     # resolution independent.
     tensor = (directions * weights[:, None]).T @ directions / weights.sum()
     tensor_eigenvalues, tensor_axes = _eigen_decomposition(tensor)
+
+    # Bingham's test of uniformity on the tensor: S = (15 n / 2) sum_i
+    # (lambda_i - 1/3)^2 ~ chi^2_5 for isotropic directions. With weights the
+    # sample size is the effective n = (sum w)^2 / sum w^2 (exact for weights
+    # independent of direction). Evaluated from the deviatoric part's
+    # Frobenius norm, so it does not depend on the eigensolver.
+    effective_points = float(weights.sum() ** 2 / np.sum(weights * weights))
+    deviator = tensor - np.trace(tensor) / 3.0 * np.eye(3)
+    bingham_statistic = float(7.5 * effective_points * np.sum(deviator * deviator))
+    bingham_p_value = float(gammaincc(2.5, bingham_statistic / 2.0))
+    anisotropy_significance = _normal_deviate(
+        bingham_p_value, float(gammainc(2.5, bingham_statistic / 2.0))
+    )
     # Tie-tolerant argmax (lowest index within PEAK_TIE_RTOL of the maximum),
     # identical in both engines -- see PEAK_TIE_RTOL.
     tied = np.flatnonzero(enhancement >= enhancement.max() * (1.0 - PEAK_TIE_RTOL))
@@ -920,9 +940,18 @@ def orientation_histogram(
         "orientationTensor": tensor.tolist(),
         "orientationEigenvalues": tensor_eigenvalues.tolist(),
         "orientationAxes": tensor_axes.tolist(),
-        # 3*t1 - 1: 0 for a uniform sphere, 2 for a perfect single axis. A
-        # scalar summary of how much the cloud prefers one direction at all.
+        # 3*t1 - 1: 2 for a perfect single axis; it tends to 0 for a uniform
+        # sphere only as N grows (finite samples are biased upward, see
+        # orientationAnisotropyNull). A scalar summary of how much the cloud
+        # prefers one axis at all.
         "orientationAnisotropy": float(3.0 * tensor_eigenvalues[0] - 1.0),
+        # What an isotropic site of this (effective) size reads, and Bingham's
+        # calibrated test of isotropy (statistic, p-value, normal deviate).
+        "orientationEffectivePoints": effective_points,
+        "orientationAnisotropyNull": float(ISOTROPIC_ANISOTROPY_SCALE / np.sqrt(effective_points)),
+        "orientationBinghamStatistic": bingham_statistic,
+        "orientationBinghamPValue": bingham_p_value,
+        "orientationAnisotropySignificance": anisotropy_significance,
         "peakCell": peak,
         # Number of cells tied for the maximum (1 = a unique peak).
         "peakTieCount": int(tied.size),

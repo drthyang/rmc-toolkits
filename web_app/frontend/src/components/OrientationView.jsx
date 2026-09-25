@@ -593,11 +593,18 @@ export default function OrientationView({
                             </span>
                             <span className="orient-stat">
                                 anisotropy <b>{numberFormat(result.orientationAnisotropy, 2)}</b>
+                                {' '}<span className="orient-stat-null">
+                                    (isotropic ≈ {numberFormat(result.orientationAnisotropyNull, 2)})
+                                </span>
+                                {' '}· <b>{sigmaFormat(result.orientationAnisotropySignificance)}</b>
                                 <InfoBadge label="About the orientation anisotropy" align="end">
                                     <p>
-                                        3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 0 for an isotropic
-                                        direction distribution, 2 for a perfect single axis. Resolution
-                                        independent (computed from the vectors, not the bins).
+                                        3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 2 for a perfect single
+                                        axis, and 0 for an isotropic site only in the limit of many
+                                        atoms — a finite isotropic sample reads about 1.6/√N (shown in
+                                        brackets). The σ is Bingham&apos;s test of isotropy on the same
+                                        tensor (χ² with 5 degrees of freedom). Resolution independent
+                                        (computed from the vectors, not the bins).
                                     </p>
                                 </InfoBadge>
                             </span>
