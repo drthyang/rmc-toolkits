@@ -62,6 +62,7 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     refuse_failed_fit,
     resolve_coefficients,
     stog_inp_closest_approach,
+    usable_sigma,
 )
 from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset
 from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_density
@@ -940,10 +941,7 @@ def _cached_scaling(path_str: str, mtime: float, config: ScalingConfig, mode: st
     q, sq = data[0], data[1]
     sigma = None
     if use_sigma and data.shape[0] >= 3:
-        sigma = data[2]
-        usable = np.isfinite(q) & np.isfinite(sq)
-        if not np.all(np.isfinite(sigma[usable])) or np.any(sigma[usable] <= 0):
-            sigma = None
+        sigma = usable_sigma(q, sq, data[2])  # shared CLI/page guard
     if mode == "manual":
         return scale_pipeline(q, sq, config, a, b)
     return autoscale(q, sq, config, sigma=sigma)

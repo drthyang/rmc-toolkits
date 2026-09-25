@@ -20,6 +20,7 @@ import {
   makeConfig,
   rho0NonConvergenceMessage,
   scalePipeline,
+  usableSigma,
 } from './autoScale';
 
 self.onmessage = (event) => {
@@ -30,7 +31,9 @@ self.onmessage = (event) => {
   try {
     const qArr = new Float64Array(q);
     const sqArr = new Float64Array(sq);
-    const sigmaArr = sigma ? new Float64Array(sigma) : null;
+    // CLI/API parity: a σ column with any zero / negative / non-finite value on
+    // a usable row is dropped as a whole (the page also warns about it).
+    const sigmaArr = sigma ? usableSigma(qArr, sqArr, new Float64Array(sigma)).sigma : null;
     if (kind === 'estimateRho0') {
       const estimate = estimateRho0(qArr, sqArr, makeConfig(rawConfig), sigmaArr);
       self.postMessage({ id, ok: true, result: { estimate } });

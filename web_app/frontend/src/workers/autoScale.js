@@ -518,6 +518,21 @@ const despikeKeepMask = (sq, window, nsigma) => {
   return keep;
 };
 
+/**
+ * The σ column only when it is clean (scaling_cli.usable_sigma — the CLI/API
+ * guard): if any row with finite Q and S has a non-finite or non-positive σ,
+ * the whole column is dropped (a zero σ would get a 1e12 weight and one NaN σ
+ * turns every weight NaN). Returns { sigma: sigma | null, nBad }.
+ */
+export const usableSigma = (q, sq, sigma) => {
+  if (!sigma) return { sigma: null, nBad: 0 };
+  let nBad = 0;
+  for (let i = 0; i < q.length; i += 1) {
+    if (isNum(q[i]) && isNum(sq[i]) && !(isNum(sigma[i]) && sigma[i] > 0)) nBad += 1;
+  }
+  return { sigma: nBad ? null : sigma, nBad };
+};
+
 const fmtQ = (value) => String(Number(value.toPrecision(6)));
 
 /**

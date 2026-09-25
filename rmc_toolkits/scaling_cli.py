@@ -281,6 +281,21 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def usable_sigma(q: np.ndarray, sq: np.ndarray, sigma: Optional[np.ndarray]):
+    """The sigma column only when clean, else None (CLI, API; JS ``usableSigma``).
+
+    Any non-finite or non-positive sigma on a row with finite Q and S drops the
+    whole column: a zero sigma would get a 1e12 weight and one NaN sigma turns
+    every weight NaN, so a broken uncertainty column must not poison the fit.
+    """
+    if sigma is None:
+        return None
+    usable = np.isfinite(q) & np.isfinite(sq)
+    if not np.all(np.isfinite(sigma[usable])) or np.any(sigma[usable] <= 0):
+        return None
+    return sigma
+
+
 def _load_dataset(data_path: Path, use_sigma: bool):
     """Read (q, sq, sigma) from a STOG-style data file; sigma only when clean."""
     if not data_path.exists():
@@ -289,10 +304,7 @@ def _load_dataset(data_path: Path, use_sigma: bool):
     q, sq = columns[0], columns[1]
     sigma = None
     if use_sigma and columns.shape[0] >= 3:
-        sigma = columns[2]
-        usable = np.isfinite(q) & np.isfinite(sq)
-        if not np.all(np.isfinite(sigma[usable])) or np.any(sigma[usable] <= 0):
-            sigma = None  # a broken uncertainty column must not poison the fit
+        sigma = usable_sigma(q, sq, columns[2])
     return q, sq, sigma
 
 

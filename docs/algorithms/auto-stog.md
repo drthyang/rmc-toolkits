@@ -918,19 +918,17 @@ $$w_i = \frac{1/\max(\sigma_i, 10^{-12})}{\overline{\left(1/\max(\sigma, 10^{-12
 Toggle: **σ column** in the Advanced panel (default on) / `--sigma/--no-sigma` (default on) /
 `useSigma` in the API payload. σ never affects the low-$r$ (C2) rows.
 
-Note $\max(\sigma, 10^{-12})$ is a **lower clamp, not a rejection**. A zero or negative σ — common
-filler in reduced files — is clamped to $10^{-12}$ and produces a weight of order $10^{12}$. That
-single row then dominates the entire C1 block and effectively pins the high-$Q$ level to it: no
-NaN, no error, just a silently distorted fit.
-
-**Divergence — the browser skips the CLI's validity gate.** `scaling_cli.py::_load_dataset` and
-`app.py::_cached_scaling` both drop the σ column entirely if any σ on a usable row is
-non-finite or $\le 0$ ("a broken uncertainty column must not poison the fit"), so the Python
-front-ends proceed unweighted rather than distorted. `AutoStogPage.jsx` takes `columns[2]` as-is
-when it exists, and `cropSq` masks σ only on the finiteness of $Q$ and $S$. In the browser,
-therefore, a σ column with `NaN` on rows where $S$ is finite produces `NaN` weights and a
-failed/garbage solve, and a σ column with zeros or negatives produces the $10^{12}$-weight
-distortion above — neither is reported.
+Note $\max(\sigma, 10^{-12})$ inside the engines is a **lower clamp, not a rejection**: a zero or
+negative σ — common filler in reduced files — would get a weight of order $10^{12}$ and pin the
+high-$Q$ level to that one row, and one `NaN` σ turns every weight `NaN`. So every front end
+applies the same **validity gate** before the engine sees σ: `scaling_cli.usable_sigma` (CLI
+`_load_dataset`, API `_cached_scaling`) and its port `usableSigma` (the page's `selectSource` /
+`dataExtent`, and again in `autoScaleWorker.js`) drop the whole σ column if any σ on a row with
+finite $Q$ and $S$ is non-finite or $\le 0$ ("a broken uncertainty column must not poison the
+fit"); the fit then runs unweighted. The page says so on the file chip ("σ ignored (invalid)",
+with the bad-row count in its tooltip). Before 1.0 the page forwarded the column as-is: one zero
+σ gave a negative scale and one `NaN` σ NaN arrays on the Mn₃Sn 59438 data, where the CLI gave
+the normal result. Tests: `tests/test_stog_b_sigma.py`, `src/__tests__/autoScaleSigma.test.js`.
 
 #### X-ray / electron data
 
@@ -1078,7 +1076,7 @@ provenance JSON).
 | Despike mask | `_despike_mask` | `despikeKeepMask` | exact for odd windows; even windows differ (NumPy raises) |
 | Despike **pipeline** | applied **once** (fit and outputs on the same point set) | applied **once** | identical (golden `despike` case) |
 | `n_despiked` reporting | true single-pass count in the provenance | `nDespiked` on the *Fit quality* card and in the exported provenance | identical |
-| σ validity gate | CLI/API drop a broken column | **absent** in the browser page | divergent — see Step 12 |
+| σ validity gate | `usable_sigma` (CLI/API) drops a broken column | `usableSigma` (page + worker) drops it too | identical — see Step 12 |
 | Config validation | `ScalingConfig.__post_init__` | `makeConfig` | same checks, same messages in spirit, except that JS's `!(qmax > qmin)` also rejects NaN $Q$ bounds that Python's `qmax <= qmin` lets through; both evaluate the low-$r$ fit window eagerly in the shipping paths |
 | Enforcement | `first_peak_zero` in `_write_outputs` | `firstPeakZero` in the worker | same function; the browser cannot reach the `.inp` peak window (Step 9) |
 
@@ -1123,10 +1121,9 @@ without a composition-derived $S(0)$ target), level to 1e-9, sampled $G_K(r)$/fi
   crystalline data includes genuine Bragg peaks. It is off by default. When on, check the
   reported `n_despiked` / `nDespiked` (both engines report the true single-pass count); the
   16-point floor is not re-checked after the despike (Steps 10–11).
-- **The browser's σ handling is less defensive than the CLI's** (Step 12). A partially invalid
-  uncertainty column gives NaN weights (from NaN σ) or a single row with a $10^{12}$ weight
-  (from a zero or negative σ) instead of being dropped. Either clean the column or turn the
-  **σ column** toggle off.
+- **A partially invalid σ column is ignored, not repaired** (Step 12): any zero, negative or
+  non-finite σ on a usable row makes every front end fit unweighted. Clean the column if the
+  weighting matters.
 - **Typos in the form are silently ignored, not rejected** (Step 9). An unparseable number is
   indistinguishable from an empty field, so a mistyped $\rho_0$ or $Q$ bound quietly falls through to
   the next fallback. Verify the resolved values in the provenance JSON.
@@ -3658,9 +3655,10 @@ was actually used. *Code:* `AutoStogPage.jsx` → `numberOr()`.
 - *Robust* (`robust`, default **on**) — 3 passes of Huber IRLS re-weighting (MAD scale,
   $c = 1.345$) applied per residual block inside `solveAffine()`.
 - *σ column* (`useSigma`, default **on**) — page-level, not a config key: it decides whether
-  the third data column is transferred to the worker at all. When present, the high-$Q$ (C1)
-  rows are weighted by $1/\max(\sigma_i,10^{-12})$, normalized to unit mean over the tail
-  block.
+  the third data column is transferred to the worker at all. When present and valid
+  (`usableSigma`: no zero, negative or non-finite σ on a usable row — else the column is
+  ignored, as in the CLI), the high-$Q$ (C1) rows are weighted by $1/\max(\sigma_i,10^{-12})$,
+  normalized to unit mean over the tail block.
 - *Despike* (`despike`, default **off**) — drops rolling-median outliers before any
   transform: window 7 points, threshold $6\times$ MAD ($1.4826\times$ median absolute
   residual). Honest warning carried in the tooltip and the engine docstring: it also flags
@@ -4280,11 +4278,9 @@ Everything this page runs also exists in Python. The parity contract is pinned b
 Genuine behavioural differences between this page and the `rmc-autoscale` CLI (not
 floating-point noise):
 
-1. **σ-column validation.** The CLI (`_load_dataset()`) and the API (`_cached_scaling()`)
-   *discard* the whole σ column if any σ is non-finite or ≤ 0 on the usable rows. The page
-   does not: `packedData()` forwards column 3 as-is whenever "σ column" is ticked, and a
-   `NaN` there propagates into the weighted C1 rows. Untick "σ column" if the third column of
-   your file is not a clean uncertainty.
+1. **σ-column validation — no longer a difference.** The CLI, the API and (since 1.0) the page
+   all *discard* the whole σ column if any σ is non-finite or ≤ 0 on the usable rows
+   (`usable_sigma` / `usableSigma`); the page shows "σ ignored (invalid)" on the file chip.
 2. **Estimate + manual.** The CLI refuses `--estimate-rho0` together with
    `--manual/--scale/--offset`. The page permits it: a fixed-$(a,b)$ run with an empty $\rho_0$ and
    a composition will seed 0.05, run the estimator (which internally does density-limit auto

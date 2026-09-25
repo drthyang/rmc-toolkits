@@ -21,6 +21,7 @@ import {
   resolveEnforcementDescriptor,
   rho0NonConvergenceMessage,
   stogInpClosestApproach,
+  usableSigma,
   writeStogXy,
 } from '../workers/autoScale';
 import './AutoStogPage.css';
@@ -80,7 +81,10 @@ const dataExtent = (q, sq, sigma) => {
       count += 1;
     }
   }
-  return { qlo, qhi, count, hasSigma: Boolean(sigma) };
+  // The CLI/API σ guard: a column with any zero / negative / non-finite σ on a
+  // usable row is ignored as a whole (never a 1e12 weight or NaN fit).
+  const { nBad } = usableSigma(q, sq, sigma);
+  return { qlo, qhi, count, hasSigma: Boolean(sigma), sigmaBad: nBad };
 };
 
 // ---------------------------------------------------------------------------
@@ -258,9 +262,10 @@ const AutoStogPage = () => {
       }
       const columns = readStogXy(dataText);
       const header = readDatHeader(dataText);
-      const sigma = columns.length >= 3 ? columns[2] : null;
+      const rawSigma = columns.length >= 3 ? columns[2] : null;
+      const { sigma } = usableSigma(columns[0], columns[1], rawSigma);
       dataRef.current = { q: columns[0], sq: columns[1], sigma, inp, header, name: dataName };
-      const extent = dataExtent(columns[0], columns[1], sigma);
+      const extent = dataExtent(columns[0], columns[1], rawSigma);
       setInspect({ kind: inp ? 'inp' : 'data', inp, header, dataFile: dataName, extent });
       setForm((current) => ({
         ...current,
@@ -676,11 +681,11 @@ const AutoStogPage = () => {
           {inspect?.extent && (
             <span
               className="autostog-chip autostog-chip--file"
-              title={`${inspect.dataFile}: ${inspect.extent.count} points, Q ${fmt(inspect.extent.qlo, 3)}–${fmt(inspect.extent.qhi, 4)} Å⁻¹${inspect.extent.hasSigma ? ', σ column present' : ''}`}
+              title={`${inspect.dataFile}: ${inspect.extent.count} points, Q ${fmt(inspect.extent.qlo, 3)}–${fmt(inspect.extent.qhi, 4)} Å⁻¹${inspect.extent.hasSigma ? (inspect.extent.sigmaBad ? `, σ column IGNORED: ${inspect.extent.sigmaBad} usable rows have a zero, negative or non-finite σ (the fit is unweighted, as in the CLI)` : ', σ column present') : ''}`}
             >
               {inspect.dataFile}: {inspect.extent.count} pts
               · Q {fmt(inspect.extent.qlo, 3)}–{fmt(inspect.extent.qhi, 4)} Å⁻¹
-              {inspect.extent.hasSigma ? ' · σ' : ''}
+              {inspect.extent.hasSigma ? (inspect.extent.sigmaBad ? ' · σ ignored (invalid)' : ' · σ') : ''}
             </span>
           )}
           {inspect?.kind === 'inp' && (
