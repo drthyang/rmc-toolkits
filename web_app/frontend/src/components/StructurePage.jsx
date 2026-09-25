@@ -9,8 +9,8 @@ import API_BASE_URL from '../api';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
-import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
-import { isInSlab } from '../workers/slabSelection';
+import { canvasToPngBlob, downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
+import { isInSlab, millerPlaneFileLabel, millerPlaneLabel } from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
 import SaveMenu from './SaveMenu';
 import InfoBadge from './InfoBadge';
@@ -53,9 +53,11 @@ const NORMAL_OPTIONS = [
     { value: 'a', label: 'a' },
     { value: 'b', label: 'b' },
     { value: 'c', label: 'c' },
-    { value: 'custom', label: 'Custom' }
+    { value: 'custom', label: 'Plane (hkl)' }
 ];
-const CUSTOM_DIRECTION_LABELS = ['a', 'b', 'c'];
+// The custom slice is a lattice-plane family (h k l), not a direction [h k l]:
+// see millerPlaneLabel() in workers/slabSelection.js.
+const CUSTOM_DIRECTION_LABELS = ['h', 'k', 'l'];
 
 // KDE/3D panels are raster, so they export as PNG at native or 3x resolution.
 const PANEL_SAVE_OPTIONS = [
@@ -94,7 +96,8 @@ const makeSliceConfig = (sliceDirection, customDirection) => {
     const { u, v } = makeFreePlaneBasis(normal);
     return {
         key: 'custom',
-        label: `[${customDirection.map((value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })).join(' ')}]`,
+        label: millerPlaneLabel(customDirection),
+        fileLabel: millerPlaneFileLabel(customDirection),
         normal,
         u,
         v,
@@ -559,6 +562,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
 
     // Native PNG reads the live canvas; "png3x" re-renders the same drawing onto
     // a 3x offscreen canvas so the export is genuinely higher-resolution.
+    // `name` is used as the file name as given (see sliceFileName), so the
+    // Miller-index parentheses of a custom plane survive.
+    const savePngAs = async (canvas, name) => {
+        downloadBlob(await canvasToPngBlob(canvas), `${name}.png`);
+    };
     const save2dPanel = async (canvas, drawFn, name, minW, minH, format) => {
         if (!canvas) return;
         if (format === 'png3x') {
@@ -572,11 +580,17 @@ const StructurePage = ({ directory, localRun, theme }) => {
             const ctx = off.getContext('2d');
             ctx.setTransform(scale, 0, 0, scale, 0, 0);
             drawFn(ctx, width, height);
-            await saveCanvasAsPng(off, name);
+            await savePngAs(off, name);
         } else {
-            await saveCanvasAsPng(canvas, name);
+            await savePngAs(canvas, name);
         }
     };
+    // `KDE_Slice_c`, or `KDE_Slice_(1_1_0)` for a custom (h k l) plane.
+    const sliceFileName = (prefix) => (
+        sliceConfig.fileLabel
+            ? `${sanitizeFilename(prefix)}_${sliceConfig.fileLabel}`
+            : sanitizeFilename(`${prefix}_${sliceConfig.label}`)
+    );
 
     // Re-render the three.js scene at a higher pixel ratio, capture, then restore.
     const captureModelBlob = (scale) => new Promise((resolve) => {
@@ -598,8 +612,8 @@ const StructurePage = ({ directory, localRun, theme }) => {
         }, 'image/png');
     });
 
-    const saveKdeSlice = (format) => save2dPanel(canvasRef.current, drawKdeSlice, `KDE_Slice_${sliceConfig.label}`, 320, 260, format);
-    const saveSlab = (format) => save2dPanel(slabCanvasRef.current, drawSlab, `Slab_In_Cell_${sliceConfig.label}`, 220, 260, format);
+    const saveKdeSlice = (format) => save2dPanel(canvasRef.current, drawKdeSlice, sliceFileName('KDE_Slice'), 320, 260, format);
+    const saveSlab = (format) => save2dPanel(slabCanvasRef.current, drawSlab, sliceFileName('Slab_In_Cell'), 220, 260, format);
     const saveModel = async (format) => {
         if (format === 'png3x') {
             const blob = await captureModelBlob(3);
@@ -1253,15 +1267,18 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             </span>
                         </label>
                         {sliceDirection === 'custom' && (
-                            <label className="control custom-direction">
-                                <span className="control-name">Direction</span>
+                            <label
+                                className="control custom-direction"
+                                title="Miller indices of the lattice planes to slice along: the slab normal is h a* + k b* + l c*, which differs from the direction [h k l] in a non-orthogonal cell"
+                            >
+                                <span className="control-name">Plane (h k l)</span>
                                 {customDirection.map((value, index) => (
                                     <input
                                         key={CUSTOM_DIRECTION_LABELS[index]}
                                         type="number"
                                         step="0.1"
                                         value={value}
-                                        aria-label={`Direction ${CUSTOM_DIRECTION_LABELS[index]}`}
+                                        aria-label={`Miller index ${CUSTOM_DIRECTION_LABELS[index]}`}
                                         onChange={(event) => updateCustomDirection(index, event.target.value)}
                                     />
                                 ))}

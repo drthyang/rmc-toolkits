@@ -90,7 +90,7 @@ the canvas both read *"The Flask app uses SciPy KDE for reference-grade values"*
 | $\mathbf{L}$ | $3\times3$ matrix of supercell lattice vectors (rows) from the `Lattice vectors` block | Å |
 | $\mathbf{A}$, rows $\mathbf{a},\mathbf{b},\mathbf{c}$ | unit-cell matrix; row $j$ is $\mathbf{L}_j$ divided by $N_j$ | Å |
 | $\mathbf{x}_i = (x_i,y_i,z_i)$ | atom $i$ folded into one unit cell | dimensionless, $\in[0,1)$ |
-| $\mathbf{h} = (h,k,l)$ | user-chosen slice normal, entered as three numbers in *fractional index* space | dimensionless |
+| $\mathbf{h} = (h,k,l)$ | Miller indices of the sliced plane family, entered as three numbers (*Plane (h k l)*) | dimensionless |
 | $\hat{\mathbf{h}}$ | $\mathbf{h}/\lVert\mathbf{h}\rVert_2$ | dimensionless |
 | $\hat{\mathbf{u}},\hat{\mathbf{v}}$ | in-plane axes, orthonormal *in fractional space* | dimensionless |
 | $d_i = \mathbf{x}_i\!\cdot\!\hat{\mathbf{h}}$ | depth of atom $i$ along the slice normal | dimensionless |
@@ -228,8 +228,8 @@ per-element counts.
 
 ### Step 2 — Choose the slice plane: normal, in-plane axes, depth coordinate
 
-**Inputs.** The *Normal* control (`a`, `b`, `c`, or `Custom` with three numbers, default
-`[1, 1, 0]`); default direction is `c`.
+**Inputs.** The *Normal* control (`a`, `b`, `c`, or *Plane (hkl)* with three numbers labelled
+*h*, *k*, *l*, default $(1\,1\,0)$); default `c`.
 
 **Math.** The presets are defined once on each side and agree exactly:
 
@@ -245,9 +245,21 @@ Everything downstream works in **fractional index space**: the code treats the u
 unit cube $[0,1]^3$ and takes ordinary Euclidean dot products of fractional triples. The consequence
 is crystallographically clean and worth stating explicitly: the set
 $\{\mathbf{x} : \mathbf{x}\cdot\mathbf{h} = \mathrm{const}\}$ with $\mathbf{h}=(h,k,l)$ is exactly the
-family of lattice planes with **Miller indices $(hkl)$**. So the *Custom* direction box is a Miller
-index triple, not a real-space vector; preset `a` slices the $(100)$ planes, and `[1 1 0]` slices
-the $(110)$ planes, for any cell metric including triclinic.
+family of lattice planes with **Miller indices $(hkl)$**. So the custom input is a Miller index
+triple, not a real-space vector; preset `a` slices the $(100)$ planes, and $(1\,1\,0)$ slices the
+$(110)$ planes, for any cell metric including triclinic. The slab's real-space normal is
+$h\mathbf{a}^*+k\mathbf{b}^*+l\mathbf{c}^*$, which differs from the direction
+$[hkl]=h\mathbf{a}+k\mathbf{b}+l\mathbf{c}$ in any non-orthogonal cell (by 30° for $h=(1,0,0)$ in a
+hexagonal cell, 20° for $(0\,0\,1)$ in a monoclinic cell with $\beta=110°$).
+
+**The UI says so.** Before 1.0 the input was headed *Direction*, its boxes were labelled `a`, `b`,
+`c`, and the value was printed in square brackets — `[1 1 0]` on the canvas and in the exported file
+names — which is the notation for the real-space direction and invited slicing perpendicular to a
+different vector. It is now the *Plane (h k l)* control (boxes `h`, `k`, `l`, with a tooltip on the
+reciprocal-vector normal) and is printed as `(1 1 0)`: `millerPlaneLabel()` /
+`millerPlaneFileLabel()` in `workers/slabSelection.js`, pinned by
+`workers/__tests__/millerPlane.test.js`. A true $[uvw]$ mode (converting a real-space direction to its
+plane normal through the metric, $\mathbf{h}\propto\mathbf{G}[uvw]$) is not offered.
 
 The normal is normalized in that same fractional space,
 $\hat{\mathbf{h}} = \mathbf{h}/\lVert\mathbf{h}\rVert_2$, which sets only the *scale* of the depth
@@ -269,14 +281,14 @@ orientation on the SciPy path than on the browser path.** The a/b/c presets are 
 
 #### Zero and near-zero custom directions (the two runtimes disagree)
 
-The three *Direction* inputs are `type="number"` and `updateCustomDirection()` coerces with
+The three *Plane (h k l)* inputs are `type="number"` and `updateCustomDirection()` coerces with
 `Number(value)`, so **clearing a box yields 0** (`Number('') === 0`). Clearing all three gives
 $\mathbf{h}=(0,0,0)$, and the two runtimes handle a zero vector completely differently:
 
 * **JavaScript** — `normalize(vector, fallback)` returns the fallback when
   $\lVert\mathbf{v}\rVert \le 10^{-9}$. `makeSliceConfig()` calls
   `normalize(customDirection, [0, 0, 1])`, so a zero direction **silently becomes a c-slice**, with
-  the label still reading `[0 0 0]`. `makeFreePlaneBasis()` carries two further fallbacks
+  the label still reading `(0 0 0)`. `makeFreePlaneBasis()` carries two further fallbacks
   ($[0,1,0]$ for $\hat{\mathbf{u}}$, $[0,0,1]$ for $\hat{\mathbf{v}}$), but for a unit input normal
   the Gram–Schmidt residual is never shorter than $\sqrt{1-0.85^2}\approx0.53$, so those two are
   unreachable in practice.
@@ -1331,7 +1343,7 @@ fused multiply-adds.
 | --- | --- | --- | --- | --- | --- |
 | Element | select | `all` | elements found in the file | — | Flask: `load_unit_cell_positions(element=)` server-side; browser: the `points` `useMemo` client-side |
 | Normal $\mathbf{h}$ | menu | `c` = $(0,0,1)$ | `a`, `b`, `c`, `Custom` | Miller indices $(hkl)$, dimensionless | `SLICE_PRESETS` / `SLICE_ORIENTATIONS` |
-| Custom direction | 3 number inputs | `[1, 1, 0]` | any (step 0.1) | Miller indices, dimensionless | `StructurePage.jsx` → `customDirection`; zero vector → silent $(0,0,1)$ |
+| Plane (h k l) | 3 number inputs | $(1\,1\,0)$ | any (step 0.1) | Miller indices, dimensionless | `StructurePage.jsx` → `customDirection`; zero vector → silent $(0,0,1)$ |
 | Slice centre $z_c$ | range slider | auto-set to densest of 50 depth bins; state default 0.5 | 0 – 1, step 0.001 | fraction of depth span $\Delta_d$ | slider; Python clamps to $[0,1]$ |
 | Thickness $\Delta z$ | range slider | **0.08** | 0.01 – 0.5, step 0.01 | fraction of depth span $\Delta_d$ | slider; Python floors at $10^{-12}$ |
 | Bandwidth $f$ | range slider | **0.03** | 0.005 – 0.15, step 0.005 | dimensionless covariance factor | slider; both runtimes use it as given and decline a non-finite or non-positive value (`bandwidth` message) |
@@ -1419,7 +1431,7 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
    perceptually uniform.
 8. **Everything geometric happens in fractional space.** The kernel is Euclidean-isotropic in
    fractional coordinates and therefore anisotropic in Å for any non-cubic cell; the custom
-   "direction" is a Miller index triple $(hkl)$, not a real-space vector; and the slab thickness in
+   plane is a Miller index triple $(hkl)$ (and labelled as one), not a real-space vector; and the slab thickness in
    Å must be reconstructed by hand as $\Delta z(|h|+|k|+|l|)d_{hkl}$.
 9. **The slider auto-jumps.** Changing the element filter or the normal — including typing a single
    digit into a custom-direction box — re-runs the 50-bin "densest layer" search and overwrites $z_c$.
@@ -1790,9 +1802,9 @@ Conversion from a fractional triple to Å (or to normalized scene units) is
 
 ### Step 3 — Defining the slice: normal, in-plane basis, depth range
 
-**Inputs:** the `Normal` control (`a`, `b`, `c`, or `Custom` with three numeric fields, default
-$[1,1,0]$). **Output:** `sliceConfig = { key, label, normal, u, v, uLabel, vLabel, range }`, built by
-`makeSliceConfig()`.
+**Inputs:** the `Normal` control (`a`, `b`, `c`, or *Plane (hkl)* with three numeric fields
+$h,k,l$, default $(1\,1\,0)$). **Output:** `sliceConfig = { key, label, normal, u, v, uLabel, vLabel,
+range }` (plus `fileLabel` for a custom plane), built by `makeSliceConfig()`.
 
 #### 3a. Presets
 
@@ -1833,7 +1845,7 @@ $\propto \hat{\mathbf{h}}$. So the two axes genuinely span the crystallographic 
 > **Degenerate input.** The same `normalize(customDirection, [0,0,1])` fallback applies to the
 > **normal itself**: entering all zeros (clearing a field of the number input yields `Number('') = 0`)
 > silently reverts the view to the **c-axis slice** while the panel label, built from the raw
-> `customDirection`, still reads `[0 0 0]`. `updateCustomDirection` stores `Number(event.target.value)`
+> `customDirection`, still reads `(0 0 0)`. `updateCustomDirection` stores `Number(event.target.value)`
 > with no finiteness check; the `length ≤ 1e-9` guard would not catch a NaN component either, though a
 > `type="number"` input reports `''` (hence `0`) rather than `NaN` for unparseable text, so the
 > all-zero case is the reachable one.
@@ -2386,18 +2398,17 @@ and `png3x` (labelled 3×).
 > "3×" options are then only a 1.5× increase in linear resolution over what was on screen. On a 3×
 > phone display the 2D "1×" export is 3× while the 3D "1×" export is still 2×.
 
-File names are `KDE_Slice_<normal label>.png`, `Slab_In_Cell_<normal label>.png`, and
-`Folded_Unit_Cell.png`, passed through `sanitizeFilename()`, which (i) unwraps LaTeX-style
+File names are `KDE_Slice_<normal>.png`, `Slab_In_Cell_<normal>.png`, and `Folded_Unit_Cell.png`.
+For a preset the name is passed through `sanitizeFilename()`, which (i) unwraps LaTeX-style
 superscripts `^{…}` → `…`, (ii) collapses every run of characters outside `[A-Za-z0-9_.-]` to a
 single `_`, (iii) strips leading/trailing `_`, and (iv) returns the literal `figure` if nothing
-survives.
-
-The normal label for a custom direction is built with
-`Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })`, so both the on-canvas label and
-the filename are **locale-dependent**: `KDE_Slice_[1 1 0]` is written as `KDE_Slice__1_1_0.png` (note
-the doubled underscore — the `_` before `[` is itself a word character and is not absorbed into the
-run), a direction component of 1.5 gives `Slab_In_Cell__1.5_1_0.png` in an en-US locale but
-`Slab_In_Cell__1_5_1_0.png` where the decimal separator is a comma.
+survives: `KDE_Slice_c.png`. For a custom plane `sliceFileName()` appends
+`millerPlaneFileLabel()` after sanitizing the prefix, so the Miller parentheses survive and the
+indices are **locale-independent** (rounded to 0.01, `.` as the decimal point):
+`KDE_Slice_(1_1_0).png`, `Slab_In_Cell_(1.5_1_0).png`. The on-canvas label `(1 1 0)` still uses
+`Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })`, so a component of 1.5 reads
+`1,5` where the decimal separator is a comma. (Before 1.0 the custom label was `[1 1 0]` and the
+file `KDE_Slice__1_1_0.png`, locale-dependent.)
 
 ---
 
@@ -2407,7 +2418,7 @@ run), a direction component of 1.5 gives `Slab_In_Cell__1.5_1_0.png` in an en-US
 | --- | --- | --- | --- | --- |
 | `selectedElement` | `StructurePage.jsx` state | `all` | `all` + elements found in the file | — |
 | `sliceDirection` | state / `NORMAL_OPTIONS` | `c` | `a`, `b`, `c`, `custom` | — |
-| `customDirection` | state | `[1, 1, 0]` | any 3 reals (number inputs, step 0.1); all-zero ⇒ `[0,0,1]` | components on the fractional axes |
+| `customDirection` | state | `[1, 1, 0]` | any 3 reals (number inputs, step 0.1); all-zero ⇒ `[0,0,1]` | Miller indices $(h\,k\,l)$ of the sliced planes |
 | `zCenter` ($z_c$) | state + auto-centre effect | 0.5, then the densest of 50 depth bins | 0–1, slider step 0.001 | fraction of $\Delta_d$ |
 | `thickness` ($\Delta z$) | state | 0.08 | 0.01–0.5, step 0.01 | fraction of $\Delta_d$ |
 | `bandwidth` | state | 0.03 | 0.005–0.15, step 0.005 | SciPy `bw_method` factor (dimensionless) |
@@ -2498,8 +2509,8 @@ run), a direction component of 1.5 gives `Slab_In_Cell__1.5_1_0.png` in an en-US
 - **The band drag only clamps the centre.** The slab is never wrapped, so at $z_c = 0$ or $1$ only
   half its nominal thickness contains atoms; and because the hit test uses the clipped band, the
   grabbable region shrinks near the cell faces and is ~2 px tall at $\Delta z = 0.01$.
-- **Entering an all-zero custom direction silently gives the c-axis slice**, while the panel label
-  still reads `[0 0 0]`.
+- **Entering an all-zero custom plane silently gives the c-axis slice**, while the panel label
+  still reads `(0 0 0)`.
 - **Slice position and thickness are fractions of the projection range, not of a cell edge.** For a
   custom normal the range is longer than 1 (e.g. $\sqrt2$ for $[1,1,0]$), so a thickness of 0.08 is
   $0.08\sqrt2$ in depth units, and its physical value in Å depends on the cell.
