@@ -86,27 +86,46 @@ def _well_conditioned(covariance: np.ndarray) -> bool:
 
 
 # Warnings attached to a drawn map (``warnings`` in the payload, as
-# {"code", "message"}); the worker returns the same codes and strings.
+# {"code", "message"}); the worker returns the same codes and strings, in the
+# same order.
 KERNEL_SUBGRID_RATIO = 0.5
+# A drawn map whose grid-summed linear density (sum of the nodes times the grid
+# cell area, the map's "mass") is below this holds only the tails of kernels
+# that fall between the grid nodes: round-off, not atoms. A resolved map's mass
+# is about 1 (the density is normalised per source atom); the most aliased
+# drawn case of the parity fixture still has 0.13, the GaNb4Se8 AVERAGE Nb
+# layer at bw = 0.03 has 2e-18. The worker uses the same constant.
+UNRESOLVED_MASS_LIMIT = 1e-6
 KDE_WARNINGS = {
     "subgrid": (
         "The kernel is narrower than half a grid step along its minor axis, so the map is "
         "aliased: peak values, contours and the integrated density depend on the grid size. "
         "Raise the bandwidth or the grid."
     ),
+    "unresolved": (
+        "The kernel falls between the grid nodes: the grid holds less than a millionth of "
+        "the slab's density, so the map is round-off and is neither contoured nor drawn. "
+        "Raise the bandwidth or the grid."
+    ),
 }
 
 
-def _kernel_warnings(kernel: dict, grid_step: float) -> list[dict]:
-    """``subgrid`` when the minor kernel sigma is below ``KERNEL_SUBGRID_RATIO`` grid steps.
+def _kernel_warnings(kernel: dict, grid_step: float, grid_mass: float) -> list[dict]:
+    """``subgrid`` and ``unresolved`` diagnostics for a drawn map.
 
-    A Gaussian sampled at spacing h keeps its integral to ~1 % while
-    sigma >= h/2; below that most atoms fall between nodes and the few that land
-    on one spike, so the drawn map is set by the grid, not the atoms.
+    ``subgrid`` when the minor kernel sigma is below ``KERNEL_SUBGRID_RATIO``
+    grid steps: a Gaussian sampled at spacing h keeps its integral to ~1 %
+    while sigma >= h/2; below that most atoms fall between nodes and the few
+    that land on one spike, so the drawn map is set by the grid, not the atoms.
+    ``unresolved`` when ``grid_mass`` (the linear map summed times the cell
+    area) is below ``UNRESOLVED_MASS_LIMIT``: no node sees an atom at all.
     """
+    warnings = []
     if kernel["sigmaMinor"] < KERNEL_SUBGRID_RATIO * grid_step:
-        return [{"code": "subgrid", "message": KDE_WARNINGS["subgrid"]}]
-    return []
+        warnings.append({"code": "subgrid", "message": KDE_WARNINGS["subgrid"]})
+    if not grid_mass >= UNRESOLVED_MASS_LIMIT:
+        warnings.append({"code": "unresolved", "message": KDE_WARNINGS["unresolved"]})
+    return warnings
 
 
 def _valid_bandwidth(bw) -> bool:
@@ -670,19 +689,19 @@ def kde_slice(
                     density *= slab_total / slab_count
                 fit_count = int(slab.shape[0])
                 kernel = _kernel_summary(kde.covariance, kde.cho_cov)
-                grid_step = max(
-                    (float(xlim[1]) - float(xlim[0])) / (grid - 1),
-                    (float(ylim[1]) - float(ylim[0])) / (grid - 1),
-                )
-                warnings = _kernel_warnings(kernel, grid_step)
+                x_step = (float(xlim[1]) - float(xlim[0])) / (grid - 1)
+                y_step = (float(ylim[1]) - float(ylim[0])) / (grid - 1)
+                grid_mass = float(np.sum(density)) * x_step * y_step
+                warnings = _kernel_warnings(kernel, max(x_step, y_step), grid_mass)
                 message = None
 
-    # Contour only a map with positive density, tested on the linear values:
-    # after log10 a smooth field whose peak is <= 1 per unit fractional area
-    # (common for oblique slices at bw >= 0.1) has a negative maximum and must
-    # still be contoured. The worker's guard is equivalent (its vmax > vmin is
-    # false only for the all-zero grid of a declined slab).
-    has_density = bool(np.nanmax(density) > 0) if density.size else False
+    # Contour a drawn map whose grid resolves the atoms, judged on the linear
+    # values: after log10 a smooth field whose peak is <= 1 per unit fractional
+    # area (common for oblique slices at bw >= 0.1) has a negative maximum and
+    # must still be contoured, while a map of kernel tails between the nodes
+    # (``unresolved``) must not be, in either scale. The worker applies the
+    # same rule.
+    has_density = kernel is not None and not any(warning["code"] == "unresolved" for warning in warnings)
     if log:
         density = np.log10(density + 1e-12)
 

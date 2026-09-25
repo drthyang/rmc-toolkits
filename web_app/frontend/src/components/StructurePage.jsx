@@ -769,7 +769,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
         ];
         const density = kde?.density;
         const grid = kde?.grid || 0;
-        if (density && grid > 0 && kde.vmax > kde.vmin) {
+        // An `unresolved` map is kernel tails between the grid nodes; stretching
+        // the per-slice colour scale over it would paint round-off as structure.
+        const unresolved = kde?.warnings?.some((warning) => warning.code === 'unresolved');
+        if (density && grid > 0 && kde.vmax > kde.vmin && !unresolved) {
             const lut = getLut(colormap);
             const offscreen = document.createElement('canvas');
             offscreen.width = grid;

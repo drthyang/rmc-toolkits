@@ -124,6 +124,10 @@ def synthetic_cases() -> list[dict]:
     cases.append(_synthetic("two-positions", pair, 0.5, 0.08, 0.03))
     cases.append(_synthetic("three-atoms", [[0.3, 0.4, 0.5], [0.6, 0.7, 0.5], [0.4, 0.5, 0.5]], 0.5, 0.08, 0.03))
     cases.append(_synthetic("zero-bandwidth", site[:20], 0.5, 0.08, 0.0))
+    # Two sites on y = 0.5, midway between node rows: the needle kernel misses
+    # every node, the map is tails only (grid mass ~7e-12), flagged `unresolved`.
+    between = [(x0 + dx, 0.5 + dy, 0.5) for x0 in (0.2, 0.8) for dx in (-0.01, 0.01) for dy in (-0.01, 0.01)]
+    cases.append(_synthetic("unresolved-needle", between, 0.5, 0.08, 0.076))
     return cases
 
 

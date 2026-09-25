@@ -171,12 +171,19 @@ export const KDE_MESSAGES = {
 };
 
 // Warnings attached to a drawn map, as { code, message }: the same codes,
-// strings and threshold as kde.py (KDE_WARNINGS, KERNEL_SUBGRID_RATIO). A
-// Gaussian sampled at spacing h keeps its integral to ~1 % while sigma >= h/2.
+// strings, thresholds and order as kde.py (KDE_WARNINGS, KERNEL_SUBGRID_RATIO,
+// UNRESOLVED_MASS_LIMIT). `subgrid`: a Gaussian sampled at spacing h keeps its
+// integral to ~1 % while sigma >= h/2. `unresolved`: the grid-summed linear
+// density (nodes times the cell area; about 1 for a resolved map) is below the
+// limit, so the map is the tails of kernels that fall between the nodes.
 export const KERNEL_SUBGRID_RATIO = 0.5;
+export const UNRESOLVED_MASS_LIMIT = 1e-6;
 export const KDE_WARNINGS = {
     subgrid: 'The kernel is narrower than half a grid step along its minor axis, so the map is '
         + 'aliased: peak values, contours and the integrated density depend on the grid size. '
+        + 'Raise the bandwidth or the grid.',
+    unresolved: 'The kernel falls between the grid nodes: the grid holds less than a millionth of '
+        + 'the slab\'s density, so the map is round-off and is neither contoured nor drawn. '
         + 'Raise the bandwidth or the grid.'
 };
 
@@ -434,6 +441,8 @@ export const computeKde = async (payload) => {
         thickness
     });
     const grid = Math.max(16, Math.min(Number(gridSize) || 120, 260));
+    const xStep = (xMax - xMin) / Math.max(grid - 1, 1);
+    const yStep = (yMax - yMin) / Math.max(grid - 1, 1);
     let density = null;
     let fitCount = 0;
     let kernelInfo = null;
@@ -466,8 +475,6 @@ export const computeKde = async (payload) => {
                 sigmaMinor: kernel.sigmaMinor,
                 sigmaMajor: kernel.sigmaMajor
             };
-            const xStep = (xMax - xMin) / Math.max(grid - 1, 1);
-            const yStep = (yMax - yMin) / Math.max(grid - 1, 1);
             warnings = kernelWarnings(kernel, Math.max(xStep, yStep));
             const args = { samples, kernel, grid, xMin, yMin, xStep, yStep };
 
@@ -493,18 +500,24 @@ export const computeKde = async (payload) => {
         density = Array.from({ length: grid }, () => new Array(grid).fill(0));
     }
 
-    // Contours need positive density, judged on the linear values (as kde.py
-    // does): a log map whose peak is below 1 is still contoured.
-    let linearMax = -Infinity;
+    // Contour a drawn map whose grid resolves the atoms, judged on the linear
+    // values (as kde.py does): a log map whose peak is below 1 is still
+    // contoured, a map of kernel tails between the nodes is not.
+    let linearSum = 0;
     let vmin = Infinity;
     let vmax = -Infinity;
     for (let y = 0; y < grid; y += 1) {
         for (let x = 0; x < grid; x += 1) {
-            linearMax = Math.max(linearMax, density[y][x]);
+            linearSum += density[y][x];
             if (logScale) density[y][x] = Math.log10(density[y][x] + 1e-12);
             vmin = Math.min(vmin, density[y][x]);
             vmax = Math.max(vmax, density[y][x]);
         }
+    }
+    let resolved = false;
+    if (kernelInfo) {
+        resolved = linearSum * xStep * yStep >= UNRESOLVED_MASS_LIMIT;
+        if (!resolved) warnings.push({ code: 'unresolved', message: KDE_WARNINGS.unresolved });
     }
 
     const depthSpan = range[1] - range[0] || 1;
@@ -525,7 +538,7 @@ export const computeKde = async (payload) => {
         warnings,
         vmin: Number.isFinite(vmin) ? vmin : 0,
         vmax: Number.isFinite(vmax) ? vmax : 0,
-        contours: linearMax > 0 ? extractContours({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax }) : [],
+        contours: resolved ? extractContours({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax }) : [],
         center: zCenter,
         thickness,
         normal,

@@ -831,7 +831,9 @@ overlay prints the kernel's principal $\sigma$ in Å (`kernelSigmaAngstrom()` in
 $\mathbf{M}\mathbf{H}\mathbf{M}^\top$ are those of $\mathbf{H}\mathbf{G}$, $\mathbf{G}=\mathbf{M}^\top\mathbf{M}$);
 both engines attach a `subgrid` warning (`KDE_WARNINGS`) when $\sigma_{\min}$ is below half the larger
 grid step (`KERNEL_SUBGRID_RATIO = 0.5`: a Gaussian sampled at spacing $h$ keeps its integral to
-~1 % while $\sigma\ge h/2$); and the page adds a note when the kernel is more than 3 : 1 in Å
+~1 % while $\sigma\ge h/2$), and an `unresolved` warning when the kernel misses the grid nodes
+altogether (the map is then neither contoured nor painted, Step 9); and the page adds a note when
+the kernel is more than 3 : 1 in Å
 (`KERNEL_ANISOTROPY_NOTE`) saying that elongation along its long axis is an artefact. Read blob
 shapes against the printed kernel, and take displacement shapes from the
 [PCA Ellipsoid](pca-ellipsoid.md) page, which fits each site's cloud directly. A kernel that is a
@@ -938,7 +940,7 @@ slab that must be drawn) pin Python; `workers/__tests__/localKdeKernel.test.js` 
 kernel to an in-test brute force ($<10^{-9}$ of the peak, including needle and single-site kernels)
 and its decline rules; the synthetic cases of the parity fixture (`single-site`, `two-site-needle`,
 `collinear`, `collinear-to-round-off`, `near-collinear`, `two-positions`, `three-atoms`,
-`zero-bandwidth`) pin the two runtimes to each other.
+`zero-bandwidth`, `unresolved-needle`) pin the two runtimes to each other.
 
 **Code.** `rmc_toolkits/kde.py` → `KDE_MESSAGES`, `COVARIANCE_CONDITION_LIMIT`, `_valid_bandwidth()`,
 `_well_conditioned()`, `_kernel_summary()`, `_source_atom_rows()`, `_FixedCovarianceKDE` (with
@@ -1147,12 +1149,26 @@ Both produce the same *set* of crossing points; the browser version can connect 
 indistinguishable at typical grid sizes (segments are ~1 px), but the browser contour data is not
 suitable for extracting a closed iso-line.
 
-**Whether to contour is decided on the linear density, in both runtimes.** `kde_slice()` records
-`has_density = nanmax(density) > 0` *before* the log transform and calls `_contour_segments()` only
-then; the worker records `linearMax` in the same pass that applies the log and calls
-`extractContours()` only when `linearMax > 0` (its own `vmax > vmin` guard then only rejects a flat
-grid). A declined slab (all-zero grid) therefore has no contours in either mode, and a drawn map has
-its levels in either mode.
+**Whether to contour is decided on the linear density, in both runtimes.** Both engines sum the
+*linear* map before the log transform — `kde_slice()` as `grid_mass = sum(density)·Δu·Δv`, the worker
+as `linearSum` in the same pass that applies the log — and contour only a drawn map whose mass
+reaches `UNRESOLVED_MASS_LIMIT` $=10^{-6}$ (`has_density` / `resolved`). A declined slab
+therefore has no contours in either mode, a resolved map has its levels in either mode, and an
+`unresolved` map (below) has none in either mode.
+
+**An unresolved map is flagged, not drawn.** The mass of a resolved map is about 1 (the density is
+normalised per source atom; 0.24–1.18 on oblique sections, Step 6), and every drawn case of the
+parity fixture has at least 0.13, the most aliased two-site needle at $G=32$. A needle kernel can
+instead miss every grid node: on the GaNb₄Se₈ `5KAVERAGE` Nb layer ($z_c=0.15$, $\Delta z=0.08$,
+$f=0.03$, $G=120$) $\sigma_{\min}=1.4\times10^{-6}$, the linear peak is $1.2\times10^{-14}$ and the
+mass $1.8\times10^{-18}$, where a real map peaks at $10^2$–$10^3$. Before 1.0 both runtimes stretched
+the per-slice colour scale over that round-off and drew eight contour levels through it. Now both
+engines append the `unresolved` warning (after `subgrid`, which such a kernel always has too) when the
+mass is below the limit, draw no contours, and `drawKdeSlice()` skips painting a map that carries
+it; the payload still holds the density, unchanged. A map that underflows to all zeros is flagged the
+same way. Pinned by `tests/test_kde_unresolved.py` and `workers/__tests__/unresolvedMap.test.js`
+(a synthetic two-site needle between the node rows, fully underflowed and resolved variants, and the
+`5KAVERAGE` layer when `data/` is present) and by the `unresolved-needle` case of the parity fixture.
 
 Before 1.0 the Python guard was `density.max() <= 0` applied **after** the log transform, so any map
 whose peak linear density was $\le 1$ per unit fractional area lost every contour on the SciPy path
@@ -1168,9 +1184,10 @@ plane mapper used for the cell outline, at `lineWidth = 1`, in a theme-dependent
 (`rgba(21,34,50,0.72)` in light theme, `rgba(230,236,244,0.76)` in dark). The *Contours* switch is a
 pure client-side toggle — turning it off does not recompute anything.
 
-**Code.** `rmc_toolkits/kde.py` → `_contour_segments()` and the `has_density` guard in `kde_slice()`;
-`localKdeWorker.js` → `extractContours()` and the `linearMax` guard in `computeKde()`;
-`StructurePage.jsx` → `drawKdeSlice()` contour loop.
+**Code.** `rmc_toolkits/kde.py` → `_contour_segments()`, `UNRESOLVED_MASS_LIMIT`,
+`_kernel_warnings()` and the `has_density` guard in `kde_slice()`; `localKdeWorker.js` →
+`extractContours()`, `UNRESOLVED_MASS_LIMIT` and the `resolved` guard in `computeKde()`;
+`StructurePage.jsx` → `drawKdeSlice()` contour loop and its `unresolved` paint gate.
 
 ---
 
@@ -1194,12 +1211,15 @@ the reader must know:
 
 #### An empty canvas says why
 
-The draw gate is `density && grid > 0 && kde.vmax > kde.vmin`. When it fails the canvas prints
+The draw gate is `density && grid > 0 && kde.vmax > kde.vmin` and no `unresolved` warning (Step 9).
+When it fails the canvas prints
 `"Computing KDE..."` while a request is in flight, `"No atoms in this slab"` when `slabCount = 0`, and
 `"No density drawn for this slab"` when the slab has atoms but the estimator declined it (Step 6); in
 that case the payload's `message` — the same string from either runtime — is shown under the canvas
 (`kde-message-note`). The overlay still prints `"{slabCount} atoms in slab (fit 0)"`, and
-`fitCount = 0` with a non-zero `slabCount` always means "declined", never "empty".
+`fitCount = 0` with a non-zero `slabCount` always means "declined", never "empty". An `unresolved`
+map (Step 9) also prints `"No density drawn for this slab"`, with a non-zero fit count and the
+`unresolved` warning under the canvas.
 
 **The colormaps are 5-anchor approximations.** [`colormaps.js`](../../web_app/frontend/src/colormaps.js)
 defines five maps — `viridis`, `magma`, `seismic`, `reds`, `greys` (default **viridis**) — each as a
@@ -1390,7 +1410,7 @@ the distinct element labels before assigning colours) shown in the legend **belo
 | `density`, `extent`, `grid`, `bw`, `log`, `slabCount`, `fitCount`, `vmin`, `vmax`, `contours` | ✓ | ✓ | same meaning (`bw` is `null` when the bandwidth was rejected) |
 | `kernel` | ✓ | ✓ | $\mathbf{H}$ as `covariance` (in-plane fractional²) plus its principal `sigmaMinor`/`sigmaMajor`; `null` when declined |
 | `message` | ✓ | ✓ | why no density was drawn (Step 6), the same string in both; `null` when drawn |
-| `warnings` | ✓ | ✓ | `[{code, message}]` about a drawn map — `subgrid` when the kernel is narrower than half a grid step (Step 6); `[]` otherwise |
+| `warnings` | ✓ | ✓ | `[{code, message}]` about a drawn map, in this order — `subgrid` when the kernel is narrower than half a grid step (Step 6), `unresolved` when the grid holds less than $10^{-6}$ of the density (Step 9); `[]` otherwise |
 | `center`, `thickness` | ✓ | ✓ | the raw slider fractions in **both** — this is what the UI reads |
 | `normal`, `uVector`, `vVector`, `planeVertices`, `planePolygon` | ✓ | ✓ | `uVector`/`vVector` differ for custom normals (Step 2) |
 | `z`, `dz` | ✓ | ✓ | the slider fractions in both (since 1.0; see below) |
@@ -1439,6 +1459,7 @@ Added for 1.0:
 | `workers/__tests__/kdeParity.test.js` | **cross-runtime**: the worker reproduces the Python golden — demo run, GaNb₄Se₈ run (skipped when `data/` is absent), synthetic slabs — to $10^{-6}$ of the peak, with identical `slabCount`, `fitCount`, kernel and `message` |
 | `workers/__tests__/localKdeKernel.test.js` | the worker's kernel equals an in-test brute-force $f^2\mathbf{C}$ mixture; its rank test and decline rules |
 | `workers/__tests__/gpuKdeEmulation.test.js` | the WGSL shader, replayed in float32 on the packed buffers, against the CPU loop |
+| `tests/test_kde_unresolved.py` / `workers/__tests__/unresolvedMap.test.js` | a kernel that misses every grid node is flagged `unresolved` and draws no contours in either scale, a fully underflowed map too, the same layer at a wider bandwidth is not flagged, a declined slab carries no warning, and the `5KAVERAGE` Nb layer needle is flagged (skipped without `data/`) |
 | `tests/test_kde_scipy_compat.py` | `_FixedCovarianceKDE` hands the supplied kernel to every SciPy evaluator (the ≥ 1.10 one it runs on, plus in-test replicas of the pre-1.10 `inv_cov` path and the pure-Python `_norm_factor` path); `inv_cov` is $\mathbf{H}^{-1}$ and reading it leaves $\mathbf{C}$ alone; the construction check accepts an $O(\kappa\varepsilon)$ disagreement on a needle and rejects a $10^{-3}$ one; a SciPy that cannot evaluate the kernel declines with `engine` in `kde_slice()` and over `/api/kde/slice` (HTTP 200) |
 | `tests/test_kde_bandwidth_source.py` / `workers/__tests__/kdeBandwidthSource.test.js` | $\mathbf{C}$ is the covariance of the folded source atoms, unchanged across a thickness or bandwidth margin step, across subsample seeds, and for depth-wrapped atoms (plus the real Ga layer in Python); `_FixedCovarianceKDE` sums SciPy's Gaussian with the supplied covariance and raises if SciPy stops honouring it |
 | `tests/test_kde_contours.py` / `workers/__tests__/logContours.test.js` | log scale keeps all eight contours on an oblique disordered slice whose log peak is negative; a declined slab has none |
@@ -1562,9 +1583,11 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
     and its accumulator. Structurally identical to the CPU loop, numerically equal to about
     $10^{-6}$–$10^{-5}$ relative ($2\times10^{-4}$ for a needle kernel) in a float32 emulation of the
     shader — fine for a picture, not a bit-for-bit guarantee, and no test runs a real GPU.
-11. **Contours need a positive linear density, nothing more.** Log scale changes the levels (equally
+11. **Contours need a resolved linear density, nothing more.** Log scale changes the levels (equally
     spaced in $\log_{10}\rho$), never whether contours are drawn; before 1.0 the Flask path dropped
-    all of them whenever the peak density was below 1 per unit fractional area.
+    all of them whenever the peak density was below 1 per unit fractional area. A map whose kernel
+    misses every grid node (grid mass $<10^{-6}$, flagged `unresolved`) is neither contoured nor
+    painted, in both runtimes (Step 9).
 12. **The periodic wrap is exact only out to the margin $m$.** Images farther than $m$ from the cube
     are discarded, which truncates a cell-filling slab's kernel at $\approx10\sigma$ at the defaults
     and $\approx6\sigma$ at $f=0.15$ (Step 3). This applies to the SciPy path too.
