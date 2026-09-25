@@ -316,29 +316,24 @@ gated on `wantAssistantData`, i.e. it stays idle until the user opens the AI Ass
 
 Used for `xpdf`, `npdf`, `pdf_partials`, `xray_sq`, `neutron_sq`, `bragg`.
 
-* Line 1 is the header; labels = comma-split, whitespace-stripped, **empties preserved**.
+* Lines are split on `\r\n|\r|\n`; **blank lines are ignored**, and the first non-blank line is the
+  header; labels = comma-split, whitespace-stripped, **empties preserved**.
 * Every subsequent line is comma-split, stripped, and **empty fields are dropped** (this is what
   lets RMCProfile's trailing-comma data rows, e.g. `GTS_250K_PDFpartials.csv`, parse against a
   header that has no trailing comma).
 * A row whose surviving field count ≠ the label count raises
-  `"<path> line <n> has <k> values; expected <m>"`.
+  `"<path> line <n> has <k> values; expected <m>"`, with `<n>` the **true file line** in both runtimes.
+* Every cell goes through `parse_fortran_number()` / `parseFortranNumber()`: a number (`E` or Fortran
+  `D` exponent) is kept, an explicit non-finite token (`NaN`, `Inf`, `Infinity`, `****`) becomes `NaN`
+  — a masked region — and anything else raises `"<path> line <n>: '<cell>' is not a number"`.
 * Result is `np.asarray(rows, float).T` — column 0 is x, columns 1… are the y series.
 
-**Blank-line handling differs, and it moves the header.** The JavaScript reader pre-filters *all*
-blank/whitespace-only lines (`text.split(/\r?\n/).filter((line) => line.trim())`) and then takes
-element 0 as the header; Python takes `lines[0]` of the raw file. A file with a leading blank line
-therefore gets its real header in the browser and a **blank header (label count 1)** in Flask. The
-same pre-filter shifts the error message's line number: Python enumerates true file lines
-(`enumerate(lines[1:], start=2)`) while JavaScript reports `index + 2` over the blank-filtered
-array. The message text is identical; **the line number is the true file line in Python and the
-index among non-blank lines in JavaScript**, so the two disagree on any file containing blank lines.
-
-**Python/JS discrepancy on non-numeric tokens:** Python calls `float(value)` and lets a `ValueError`
-propagate, so a stray non-numeric row **fails the whole file**. JavaScript calls `Number(value)`,
-which yields `NaN` silently; the SVG renderer then drops non-finite points at draw time
-(`Number.isFinite` guard in `InteractivePlot.jsx` → `seriesShapes`). The same file can therefore
-plot in static mode and error in Flask mode — and, as 5a shows, produce a *misleading metric* rather
-than an error.
+**Both runtimes apply these rules identically** (`read_rmc_csv()` ⟷ `readRmcCsv()`). Until 2026-09
+they did not: the browser pre-filtered blank lines while Python took the raw first line as the header
+(a leading blank line gave a one-label header in Flask), the browser numbered error lines among
+non-blank lines, and a stray non-numeric cell failed the whole file in Python but became a silent
+`NaN` in the browser. Pinned by `tests/test_parsers.py::test_read_rmc_csv_cell_rules_match_the_browser`
+and the matching block in `plotParity.test.js`.
 
 **For this reader only,** both runtimes accept the literal token `NaN` as a number and neither masks
 it before computing metrics (see 5a). That is not true of the other three readers: see 4b, 4c
@@ -366,11 +361,11 @@ first line is already numeric (`data_start == 0`) is rejected — there would be
 `tests/test_parsers.py::test_read_exafs_csv_skips_q_output_title_row` and
 `…accepts_r_output_header`.
 
-**"Fully numeric" is defined differently in the two runtimes.** Python's `_numeric_csv_values()`
-uses `float()`, which accepts `NaN` and `Inf`; JavaScript's `numericCsvValues()` requires
-`parsed.every(Number.isFinite)`, which rejects them. A row of `NaN`s is therefore numeric to Python
-and non-numeric to JavaScript, so the same EXAFS file can pick a **different line as the header**
-and keep a **different number of rows** in the two runtimes.
+**"Fully numeric" is one rule in both runtimes.** `_numeric_csv_values()` / `numericCsvValues()` accept
+a row only when every cell passes `parse_fortran_number()` / `parseFortranNumber()` — a number, or an
+explicit non-finite token kept as `NaN` — so a NaN-masked row is a data row in both, the same line
+becomes the header, and both keep the same rows. (Python used `float()` and JavaScript demanded finite
+values until 2026-09, so a masked row was data to one and a header candidate to the other.)
 
 Typical columns: Q-space `k, calculated, experiment`; R-space
 `r, Re_Calc, Im_Calc, Mod_Calc, Re_Ex, Im_Ex, Mod_Ex`. Every column after the first is drawn as its
@@ -1062,21 +1057,29 @@ per-card alert until the next poll.
   deployment** (`isStaticMode()`, four branches — a dev server without `VITE_API_BASE_URL` uses the
   JavaScript parsers). They agree on detection rules 1–9, on the Rwp formula for clean numeric data
   (to floating-point round-off) *and* on its degenerate cases (5a), on the χ² clamp, and on the
-  log-combination order. They differ on:
-  the `stog` rule (any `.gr/.sq/.fq` vs three fixed names); the file-listing patterns; non-numeric
-  and `NaN` handling in **all four** readers (raise vs `NaN` vs silently-dropped rows), including
-  which line becomes the EXAFS header; blank-line handling and error line numbers in the CSV reader;
-  the `.rmc6f` fallback pick; whether hidden logs are excluded
+  log-combination order, and — since 2026-09 — on the CSV, EXAFS and `.log` readers' cell, row and
+  line rules (4a, 4b, 4d), the function labels (Step 6) and the Rwp column roles (5a). That agreement
+  is pinned for layouts no real run on hand covers (neutron `*_PDFn` / `*_SQn`, ToF and Q `*_bragg`,
+  EXAFS Q/R, partials; NaN-masked regions, CRLF, trailing commas, a leading blank line, E-notation)
+  by a golden of the **Flask** payloads, `web_app/frontend/src/__tests__/fixtures/plot_parity_fixture.json`
+  (regenerate with `python tests/generate_plot_parity_fixture.py`), which `plotParity.test.js` holds
+  the browser to and `tests/test_parsers_plot_payload.py` keeps current, checking each case's R-factor
+  against the column roles it was built with. They still differ on:
+  the `stog` rule (any `.gr/.sq/.fq` vs three fixed names); the file-listing patterns; `NaN` handling
+  in the STOG reader (4c); the `.rmc6f` fallback pick; whether hidden logs are excluded
   from the combined R-value curve; the atom-sampling strategy; and the presence of `basis` in
   the structure payload. (The `.rmc6f` atom-line grammar, element-name normalization and the parse
   report are shared — Model summary, Part A Step 2.)
 * **The repository's reference run folders are not in the repository.** `data/` is gitignored, so
   examples such as `scale_ft_rmc.fq` cannot be reproduced from a clean clone; the reproducible run
   is [web_app/frontend/public/demo/](../../web_app/frontend/public/demo/).
-* **Sample-backed tests skip in CI.** The GNSe reference dataset is likewise gitignored, so the
-  assertions that pin real-file shapes, `Rwp > 0`, and `final_chi_r ≈ 0.00405`
-  (`tests/test_plots.py`) do not run on CI — only the synthetic-fixture and pure-logic tests do
-  (`AGENTS.md`, "Current known issues").
+* **The GNSe-backed tests skip in CI, but the committed demo run is tested.** The GNSe reference
+  dataset is gitignored, so the assertions that pin `final_chi_r ≈ 0.00405` etc. do not run on CI.
+  Their counterparts run on the committed demo run (`web_app/frontend/public/demo/GTS_250K.*`) in
+  `tests/test_parsers_demo_run.py` and `__tests__/demoRun.test.js` — CSV shapes, the Rwp of the F(Q)
+  and xPDF fits, the three-restart log concatenation and final χ², the `.rmc6f` composition, sites and
+  move counters, Frac conversion, `read_structure`, and the Flask files/plot/structure/convert
+  endpoints — with every expected value read from the files by independent code.
 * **The matplotlib rendering path is effectively dead UI.** `PlotViewer.jsx` and `FileExplorer.jsx`
   are not mounted; `GET /api/plot` still works as an API. Its axis labels, its STOG reference line,
   and its unclamped `np.log(chi_r)` differ from what the dashboard draws — but its
@@ -1240,9 +1243,8 @@ matplotlib path.
 The two agree on structure, series ordering, and (with the exceptions below) axis-label strings and
 metrics.
 
-- **Non-numeric CSV cells.** `read_rmc_csv` (Python) calls `float(value)` and raises, so the request
-  fails with an error message. `readRmcCsv` (JS) uses `values.map(Number)`, which yields `NaN`
-  silently; those points are then dropped at draw time (Step 7) and the polyline bridges the gap.
+- **Non-numeric CSV cells — now the same.** Both readers keep `NaN`/`Inf`/`****` as masked `NaN`
+  cells (dropped at draw time, Step 7) and raise on any other non-number, naming the true file line.
 - **R-value log clamp.** Every producer (both interactive ones and matplotlib `_chi_plot()`) uses
   the same $\ln\max(\chi,10^{-12})$ (`chi_history_ln()`), so a zero entry is $-27.63$ everywhere and
   a non-finite one is a gap everywhere.
@@ -1254,13 +1256,8 @@ metrics.
   falls back to) and the bare file name for the title (from `_stog_plot`). The same file therefore
   shows y-label `D(r)` / heading `D(r)` in static mode but y-label `G(r)` / heading `scale_ft.gr` in
   Flask mode.
-- **CSV line numbering in error messages.** `readRmcCsv` (JS) filters blank lines *before* numbering
-  rows, so its reported "line N" counts non-blank lines; `read_rmc_csv` (Python) numbers against the
-  raw file. The EXAFS readers agree (both number against the raw line list).
-- **EXAFS data-row detection.** `readExafsCsv` (JS) locates the first data row by requiring
-  `Number.isFinite` on every token; `read_exafs_csv` (Python) uses `float()` in a `try/except`.
-  Tokens Python accepts as non-finite floats (`inf`, `nan`) make a row "numeric" for Python but not
-  for JS, which can shift the detected header line.
+- **CSV line numbering and EXAFS data-row detection — now the same** (Parsing, 4a/4b): true file
+  line numbers, and one "fully numeric" rule, in both runtimes.
 - **Strict column count (both).** Every data row must have exactly `len(labels)` values or the read
   raises — a hard failure, not a skipped row. In static mode this surfaces as the card's parse
   error; in Flask mode as a 500 from `/api/plot/data`.

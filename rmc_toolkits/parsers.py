@@ -41,25 +41,40 @@ class Rmc6fAtom(TypedDict):
     cell_indices: np.ndarray | None
 
 
-def read_rmc_csv(path: str | Path) -> CsvSeries:
-    path = Path(path)
-    with path.open("r", encoding="utf-8") as handle:
-        lines = handle.readlines()
+def _csv_cell(value: str, path: Path, line_number: int) -> float:
+    number = parse_fortran_number(value)
+    if number is None:
+        raise ValueError(f"{path} line {line_number}: {value!r} is not a number")
+    return number
 
-    if not lines:
+
+def read_rmc_csv(path: str | Path) -> CsvSeries:
+    """Read an RMCProfile fit/partials CSV: a header line, then numeric rows.
+
+    Blank lines are ignored (the header is the first non-blank line) and
+    empty fields are dropped, so trailing-comma rows parse. Every cell must be
+    a number (``E``/``D`` exponents) or an explicit non-finite token (``NaN``,
+    ``Inf``, ``****``), which is kept as ``NaN`` — a masked region; anything
+    else raises, naming the true file line. Mirrors ``readRmcCsv()`` in
+    browserData.js.
+    """
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    numbered = [(number, line) for number, line in enumerate(_LINE_BREAK_RE.split(text), start=1) if line.strip()]
+    if not numbered:
         raise ValueError(f"{path} is empty")
 
-    labels = [label.strip() for label in lines[0].split(",")]
+    labels = [label.strip() for label in numbered[0][1].split(",")]
     rows: list[list[float]] = []
     expected_columns = len(labels)
-    for line_number, line in enumerate(lines[1:], start=2):
+    for line_number, line in numbered[1:]:
         values = [value.strip() for value in line.split(",") if value.strip()]
         if values:
             if len(values) != expected_columns:
                 raise ValueError(
                     f"{path} line {line_number} has {len(values)} values; expected {expected_columns}"
                 )
-            rows.append([float(value) for value in values])
+            rows.append([_csv_cell(value, path, line_number) for value in values])
 
     if not rows:
         raise ValueError(f"{path} does not contain numeric rows")
@@ -72,13 +87,13 @@ def _csv_values(line: str) -> list[str]:
 
 
 def _numeric_csv_values(line: str) -> list[float] | None:
+    """The row's numbers, or ``None`` unless EVERY cell is a number or an explicit
+    non-finite token (the same rule as ``numericCsvValues()`` in browserData.js)."""
     values = _csv_values(line)
     if not values:
         return None
-    try:
-        return [float(value) for value in values]
-    except ValueError:
-        return None
+    numbers = [parse_fortran_number(value) for value in values]
+    return None if any(number is None for number in numbers) else numbers
 
 
 def read_exafs_csv(path: str | Path) -> CsvSeries:
@@ -89,8 +104,8 @@ def read_exafs_csv(path: str | Path) -> CsvSeries:
     are detected by scanning for the first fully numeric CSV row.
     """
     path = Path(path)
-    lines = path.read_text(encoding="utf-8").splitlines()
-    if not lines:
+    lines = _LINE_BREAK_RE.split(path.read_text(encoding="utf-8"))
+    if not any(line.strip() for line in lines):
         raise ValueError(f"{path} is empty")
 
     data_start = None

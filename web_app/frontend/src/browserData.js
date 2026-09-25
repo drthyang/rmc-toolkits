@@ -260,17 +260,28 @@ const parseNumberRows = (lines, startIndex = 0, separator = /\s+/) => {
 
 const transpose = (rows) => rows[0].map((_, index) => rows.map((row) => row[index]));
 
+// An RMCProfile fit/partials CSV: a header line, then numeric rows. Blank lines
+// are ignored (the header is the first non-blank line) and empty fields dropped,
+// so trailing-comma rows parse. Every cell must be a number (E/D exponents) or an
+// explicit non-finite token (NaN, Inf, ****), kept as NaN — a masked region;
+// anything else throws, naming the true file line. Mirrors read_rmc_csv().
 const readRmcCsv = (text, name) => {
-    const lines = text.split(LINE_BREAK).filter((line) => line.trim());
+    const lines = text.split(LINE_BREAK)
+        .map((line, index) => ({ line, number: index + 1 }))
+        .filter(({ line }) => line.trim());
     if (!lines.length) throw new Error(`${name} is empty`);
-    const labels = lines[0].split(',').map((label) => label.trim());
-    const rows = lines.slice(1).map((line, index) => {
+    const labels = lines[0].line.split(',').map((label) => label.trim());
+    const rows = lines.slice(1).map(({ line, number }) => {
         const values = line.split(',').map((value) => value.trim()).filter(Boolean);
         if (!values.length) return null;
         if (values.length !== labels.length) {
-            throw new Error(`${name} line ${index + 2} has ${values.length} values; expected ${labels.length}`);
+            throw new Error(`${name} line ${number} has ${values.length} values; expected ${labels.length}`);
         }
-        return values.map(Number);
+        return values.map((value) => {
+            const parsed = parseFortranNumber(value);
+            if (parsed === null) throw new Error(`${name} line ${number}: '${value}' is not a number`);
+            return parsed;
+        });
     }).filter(Boolean);
     if (!rows.length) throw new Error(`${name} does not contain numeric rows`);
     return { labels, data: transpose(rows) };
@@ -278,11 +289,13 @@ const readRmcCsv = (text, name) => {
 
 const csvValues = (line) => line.split(',').map((value) => value.trim()).filter(Boolean);
 
+// The row's numbers, or null unless EVERY cell is a number or an explicit
+// non-finite token (NaN rows are data). Same rule as _numeric_csv_values().
 const numericCsvValues = (line) => {
     const values = csvValues(line);
     if (!values.length) return null;
-    const parsed = values.map(Number);
-    return parsed.every(Number.isFinite) ? parsed : null;
+    const parsed = values.map(parseFortranNumber);
+    return parsed.some((value) => value === null) ? null : parsed;
 };
 
 const readExafsCsv = (text, name) => {

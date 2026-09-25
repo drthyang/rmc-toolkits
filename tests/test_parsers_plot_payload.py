@@ -11,6 +11,8 @@ files in web_app/frontend/src/__tests__/plotLabels.test.js.
 
 from __future__ import annotations
 
+import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -26,6 +28,9 @@ os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "rmc_too
 Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
 
 import app as backend_app  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import generate_plot_parity_fixture as parity  # noqa: E402
 
 
 class PlotLabelApiTests(unittest.TestCase):
@@ -64,6 +69,45 @@ class PlotLabelApiTests(unittest.TestCase):
             path.write_text("2\ntitle\n0.5 -0.9\n1.0 -0.5\n", encoding="utf-8")
             payload = self._data(path)
         self.assertEqual(payload["yLabel"], "F(Q)")
+
+
+class PlotParityFixtureTests(unittest.TestCase):
+    """Non-x-ray RMCProfile layouts: the committed Flask golden the browser is held to."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.committed = json.loads(parity.OUT.read_text(encoding="utf-8"))["cases"]
+
+    def test_committed_fixture_matches_the_current_flask_payloads(self):
+        regenerated = json.loads(json.dumps(parity.flask_payloads(), ensure_ascii=False))
+        self.assertEqual(
+            regenerated,
+            self.committed,
+            "plot_parity_fixture.json is stale: run `python tests/generate_plot_parity_fixture.py`",
+        )
+
+    def test_rwp_column_roles_match_the_construction(self):
+        # Independent of both implementations: the case records which column is the
+        # calculation and which the experiment; compute R = ||calc-expt|| / ||expt||
+        # over the rows finite in both, straight from the text.
+        for case in self.committed:
+            if case["truth"] is None:
+                continue
+            with self.subTest(name=case["name"]):
+                rows = []
+                for line in case["text"].splitlines():
+                    cells = [cell.strip() for cell in line.split(",") if cell.strip()]
+                    if not cells:
+                        continue
+                    try:
+                        rows.append([float(cell) for cell in cells])
+                    except ValueError:
+                        continue
+                calc = [row[case["truth"]["calculated"]] for row in rows]
+                expt = [row[case["truth"]["experimental"]] for row in rows]
+                pairs = [(c, e) for c, e in zip(calc, expt) if math.isfinite(c) and math.isfinite(e)]
+                expected = math.sqrt(sum((c - e) ** 2 for c, e in pairs) / sum(e * e for _, e in pairs))
+                self.assertAlmostEqual(case["expected"]["metrics"]["rwp"], expected, places=12)
 
 
 if __name__ == "__main__":

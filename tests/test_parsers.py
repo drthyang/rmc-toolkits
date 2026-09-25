@@ -86,6 +86,36 @@ class ParserTests(unittest.TestCase):
         self.assertAlmostEqual(float(chi_q[0]), 0.00541)
         self.assertAlmostEqual(float(chi_r[-1]), 0.00405)
 
+    def test_read_rmc_csv_cell_rules_match_the_browser(self):
+        # One rule in both runtimes: blank lines are skipped (a leading blank line
+        # does not become the header), NaN / Inf / **** are masked cells (NaN), and
+        # a non-numeric cell raises with the TRUE file line (the browser used to
+        # read it silently as NaN and number lines among non-blank ones).
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "run_FQ1.csv"
+            path.write_text("\nQ, F(Q)_RMC, F(Q)_Expt\n\n1.0, NaN, 0.5\n2.0, ****, 1.5D-01\n", encoding="utf-8")
+            series = read_rmc_csv(path)
+            self.assertEqual(series.labels, ["Q", "F(Q)_RMC", "F(Q)_Expt"])
+            self.assertTrue(np.isnan(series.data[1]).all())
+            np.testing.assert_allclose(series.data[2], [0.5, 0.15])
+
+            path.write_text("Q, a, b\n\n1.0, 2.0, 3.0\n2.0, abc, 3.0\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "line 4: 'abc' is not a number"):
+                read_rmc_csv(path)
+
+    def test_read_exafs_csv_keeps_masked_rows(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "Nb-EXAFS-1_Q_OUTPUT.csv"
+            path.write_text(
+                " EXAFS #1,   chi(k)*k^2\n      k , calculated , experiment\n"
+                " 3.3 , -0.3 , -0.2\n 3.35 , -0.6 , NaN\n 3.4 , -0.5 , -0.4\n",
+                encoding="utf-8",
+            )
+            series = read_exafs_csv(path)
+        self.assertEqual(series.labels, ["k", "calculated", "experiment"])
+        self.assertEqual(series.data.shape, (3, 3))
+        self.assertTrue(np.isnan(series.data[2, 1]))
+
     def test_related_r_value_logs_use_numeric_suffix_order(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             directory = Path(tmpdir)
