@@ -2899,15 +2899,16 @@ window is refined to $[lo, \mathrm{onset}-0.25]$ when the shell leaves room (no 
 Validated (scratch bench and tests; true $a$ = 10 for the models, measured = (S + 9)/10):
 
 - SrTiO₃ and ReO₃ 6³ supercells (`tests/test_stog_a_window.py` models, $Q_\min$ 0.5):
-  $Q_\max$ 22–30 within 1.8 % of the true scale (window top 1.46–1.56 Å, below Ti–O 1.95 /
+  $Q_\max$ 22–30 within 1.3 % of the true scale (window top 1.46–1.56 Å, below Ti–O 1.95 /
   Re–O 1.875 Å); $Q_\max$ 20: SrTiO₃ −5.3 %, ReO₃ −1.8 %.
 - Gaussian-shell glasses at $r_\mathrm{cut}$ = 1.0 ($Q_\max$ 20 / 25 / 30): Si–O (1.61 Å) stops
   with the confirmed-shell advice "lower r_cutoff to ≤ 0.95 Å" at $Q_\max$ 25/30 and with "could
   not locate" at 20 (the shell falls in the reference zone); B–O (1.37 Å) and P–O (1.53 Å) stop
   with "could not locate" or the conditional short-shell error. At $r_\mathrm{cut}$ = 0.7 they
-  return windows below the shell: Si–O $a$ = 8.3–9.4, P–O 7.5–9.0, B–O 5.9–6.9 (only 0.1 Å of
-  window below a 1.37 Å bond) — a short bond leaves a short, ripple-dominated window, so pin r0
-  or lower $r_\mathrm{cut}$ further there.
+  return windows below the shell: Si–O $a$ = 8.3–9.4, P–O 7.5–9.0, B–O 5.9–6.9 at $Q_\max$
+  25/30 (only 0.1 Å of window below a 1.37 Å bond; B–O at $Q_\max$ 20 stops with "could not
+  locate") — a short bond leaves a short, ripple-dominated window, so pin r0 or lower
+  $r_\mathrm{cut}$ further there.
 - The four Mn₃Sn POWGEN runs, 56 configurations ($Q_\min$ 0.82 and 1.0 × $Q_\max$ 24–30,
   composition-only): every returned fit has $a > 0$, confirmed onset 2.67–2.75 Å and window top
   2.42–2.50 Å (the inverted Mn–Sn shell spans 2.65–3.1 Å), and the density limit is flagged
@@ -2918,7 +2919,8 @@ Validated (scratch bench and tests; true $a$ = 10 for the models, measured = (S 
   The first 1.0 loop returned $a < 0$ in 7 of the 14 59438 configurations and raised in 3 with
   wrong $r_\mathrm{cut}$ advice, and raised in 9 of the 14 PG3_55537 ones.
 - FeCoSn 199 K (x-ray, $Q_\min$ 0.5 and 1.0 × $Q_\max$ 22–26): onset 2.52–2.53 Å, window
-  $[1.2, 2.27\text{–}2.28]$ Å, $a$ = 1.18–1.20, density limit satisfied.
+  $[1.2, 2.27\text{–}2.28]$ Å, $a$ = 1.17–1.20 ($\rho_0$ 0.057329, $\langle b\rangle^2 = 1$),
+  density limit satisfied.
 
 Tests: `tests/test_stog_a_window.py` (models), `tests/test_stog_a_placement.py` (the loop on
 scripted passes — ripple dropped, $a \le 0$ refit refused, lower shell uncovered, budget, the
