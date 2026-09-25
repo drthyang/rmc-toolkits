@@ -65,6 +65,21 @@ describe('pcaKdeWorker cache is content-addressed', () => {
         expect(second.referenceNumbers).toEqual(first.referenceNumbers);
     });
 
+    it("kde requests read ''/'all' as no element filter, as /api/pca/kde does", async () => {
+        // Every site pooled, tagged with no element -- not a pseudo-element
+        // named '' or 'all' (the Flask route normalises both to None).
+        const dataset = buildRmc6f(['Ga', 'Se'], { seed: 9 });
+        const request = (element) => handlePcaMessage(
+            { kind: 'kde', element, grid: 12, projections: false }, async () => dataset);
+        const pooled = await request(null);
+        expect(pooled.element).toBeUndefined();
+        for (const element of ['', 'all']) {
+            const result = await request(element);
+            expect(result.element).toBeUndefined();
+            expect(result.count).toBe(pooled.count);
+        }
+    });
+
     it('kde requests also follow the current dataset', async () => {
         const datasetA = buildRmc6f(['Ga'], { seed: 7 });
         const datasetB = buildRmc6f(['Nb'], { seed: 8 });

@@ -155,9 +155,12 @@ export const handlePcaMessage = async (data, getText) => {
         return { ...histogram, parseWarning: parsed.parseWarning ?? null };
     }
 
+    // ''/'all' mean "every site pooled" -> null, as /api/pca/kde normalises
+    // them (and the orientation branch above), so both transports agree.
+    const element = data.element === '' || data.element === 'all' ? null : data.element ?? null;
     return sitePcaKde(parsed, {
         referenceNumber: data.referenceNumber ?? null,
-        element: data.element ?? null,
+        element,
         bw: data.bw ?? 'scott',
         bwScale: data.bwScale ?? 1,
         grid: data.grid ?? 48,
