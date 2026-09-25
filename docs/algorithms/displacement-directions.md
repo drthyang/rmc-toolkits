@@ -516,6 +516,20 @@ ascending — counter-clockwise seen from outside. Python does this with one sta
 `np.lexsort((angle, owners))`; JS sorts each owner's list with a stable comparator. Ties (which
 do not occur for distinct circumcentres) fall back to incidence order in both.
 
+**The cycle's starting element is combinatorial, not angular.** The sorted list is a cyclic
+order, and where it *starts* is decided by the atan2 branch cut at $\pm\pi$. For many cells one
+neighbour centre lies exactly on the $-\mathbf{e}_1$ ray, so its $\mathbf{e}_2$ component is pure
+$\pm 10^{-17}$ round-off whose sign differs between NumPy and V8 (their centres differ in the last
+ulp): one engine sorted it at $+\pi$ (last), the other at $-\pi$ (first). Before the 1.0 audit
+that rotated 185 of the 1002 exported `neighbors` rows at $\nu = 10$ (76/362 at $\nu = 6$,
+2317/14442 at $\nu = 38$) and started two $\nu = 38$ polygons on a different vertex. No displayed
+number changed, but the payloads disagreed element by element. `_angular_order` / `angularOrder`
+now rotate every cycle to start at its **smallest integer key** — the neighbour's cell index for
+`neighbors`, the incident triangle's index for `polygons` — which is identical in both engines.
+The CCW orientation is untouched (a rotation, not a re-sort), and both suites pin a checksum of the
+`neighbors` table at $\nu \in \{4, 6, 10, 38\}$ plus the two $\nu = 38$ polygon start vertices
+verbatim.
+
 `polygons` is stored padded to six vertices; a pentagon repeats its last vertex, and `sizes`
 carries the true count (5 or 6). The JSON returned to the browser is trimmed back to `sizes`.
 
@@ -1260,7 +1274,9 @@ independently computed in each language — not a shared-golden parity suite.
   *is* parity-tested against committed Python goldens.)
 - **Measured for this document, they do agree.** Running both engines on identical inputs on the
   dev machine: at $\nu = 4$, `centers`, `areas`, `sizes`, `antipode` and even the *per-cell
-  polygon vertex order* match to $\le 9\times 10^{-16}$; on a shared 3000-point cloud at
+  polygon vertex order* match to $\le 9\times 10^{-16}$ (and, since the canonical cycle start of
+  §4.5, `neighbors` is identical and `polygons` agree to $\le 2\times10^{-14}$ at every
+  $\nu \le 38$ tested); on a shared 3000-point cloud at
   $\nu = 6$, `smoothing=2`, in both frames and both weightings, `counts` and `peakCell` are
   bit-identical and every float field agrees to $\le 3\times 10^{-13}$
   (`enhancement`, `zScore`, `density`, `cellMeanAmplitude`, `pcaAxes`, `orientationTensor`,

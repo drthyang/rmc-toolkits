@@ -180,5 +180,58 @@ class CentrosymmetricTieBreakTests(unittest.TestCase):
 AXIS_CELLS_NU3 = [36, 15, 16, 86, 71, 62]
 
 
+# Shared verbatim with orientationFixes.test.js:
+# sum over cells c and slots k of (k+1) * (neighbors[c][k]+1) * (c % 97 + 1).
+NEIGHBOR_CHECKSUMS = {4: 13107810, 6: 68604861, 10: 524199205, 38: 108147532718}
+# First polygon vertex of the two nu = 38 cells whose start used to differ.
+POLYGON_STARTS_NU38 = {
+    2052: [0.008313449390497447, 0.01625704168659895, 0.9998332836802503],
+    4275: [0.9998332836802503, 0.00831344939049745, -0.016257041686598955],
+}
+
+
+def neighbor_checksum(neighbors):
+    neighbors = np.asarray(neighbors)
+    cells = np.arange(neighbors.shape[0])
+    weights = (np.arange(6) + 1)[None, :] * ((cells % 97) + 1)[:, None]
+    return int((weights * (neighbors + 1)).sum())
+
+
+class CanonicalCyclicOrderTests(unittest.TestCase):
+    """orientation.parity.17.
+
+    Each cell's neighbours (and polygon vertices) were sorted by atan2 about
+    the cell centre; a neighbour on the -e1 ray sits at +pi in one engine and
+    -pi in the other (a 1e-17 round-off sign), so the exported ``neighbors``
+    rows were cyclically rotated between Python and JS (185 of 1002 rows at
+    nu=10), and two polygons at nu=38 started on a different vertex.
+    """
+
+    def test_neighbor_rows_start_at_their_smallest_index(self):
+        for frequency in (3, 6, 10):
+            tiling = goldberg_tiling(frequency)
+            for row in tiling.neighbors:
+                valid = row[row >= 0]
+                self.assertEqual(valid[0], valid.min())
+
+    def test_neighbor_checksums_pinned_for_cross_engine_parity(self):
+        for frequency, expected in NEIGHBOR_CHECKSUMS.items():
+            self.assertEqual(neighbor_checksum(goldberg_tiling(frequency).neighbors), expected)
+
+    def test_polygon_starts_pinned_for_cross_engine_parity(self):
+        tiling = goldberg_tiling(38)
+        for cell, vertex in POLYGON_STARTS_NU38.items():
+            np.testing.assert_allclose(tiling.polygons[cell, 0], vertex, atol=1e-12)
+
+    def test_cycle_is_still_counter_clockwise(self):
+        tiling = goldberg_tiling(6)
+        for cell in range(tiling.cell_count):
+            size = tiling.sizes[cell]
+            polygon = tiling.polygons[cell, :size]
+            for i in range(size):
+                turn = np.cross(polygon[i], polygon[(i + 1) % size]) @ tiling.centers[cell]
+                self.assertGreater(turn, 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

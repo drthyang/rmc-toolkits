@@ -276,11 +276,19 @@ def _tangent_basis(normals: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return e1, e2
 
 
-def _angular_order(centers: np.ndarray, owners: np.ndarray, points: np.ndarray):
+def _angular_order(
+    centers: np.ndarray, owners: np.ndarray, points: np.ndarray, keys: np.ndarray
+):
     """Sort (owner, point) incidences counter-clockwise about each owner's centre.
 
     Returns the incidence order plus each entry's rank within its own owner, so
     callers can scatter into a padded (C, 6) table with one vectorized pass.
+
+    The CCW cycle is then rotated to start at the entry with the smallest
+    integer ``key`` (unique per owner). The raw atan2 start is not reproducible:
+    a neighbour lying on the -e1 ray has an e2 component of +/-1e-17 round-off,
+    so one engine sorts it at +pi (last) and the other at -pi (first). The
+    combinatorial start makes the exported tables identical across engines.
     """
     e1, e2 = _tangent_basis(centers)
     local = points - centers[owners] * (points * centers[owners]).sum(1, keepdims=True)
@@ -290,6 +298,13 @@ def _angular_order(centers: np.ndarray, owners: np.ndarray, points: np.ndarray):
     degree = np.bincount(ordered_owners, minlength=centers.shape[0])
     start = np.concatenate([[0], np.cumsum(degree)[:-1]])
     rank = np.arange(ordered_owners.size) - start[ordered_owners]
+    ordered_keys = np.asarray(keys)[order]
+    smallest = np.full(centers.shape[0], np.iinfo(np.int64).max, dtype=np.int64)
+    np.minimum.at(smallest, ordered_owners, ordered_keys)
+    first = ordered_keys == smallest[ordered_owners]
+    shift = np.zeros(centers.shape[0], dtype=np.int64)
+    shift[ordered_owners[first]] = rank[first]
+    rank = (rank - shift[ordered_owners]) % np.maximum(degree[ordered_owners], 1)
     return order, rank, degree
 
 
@@ -402,7 +417,7 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
 
     owners = triangles.reshape(-1)  # each triangle contributes to its 3 vertices
     incident = np.repeat(np.arange(triangles.shape[0]), 3)
-    order, rank, degree = _angular_order(centers, owners, circumcenters[incident])
+    order, rank, degree = _angular_order(centers, owners, circumcenters[incident], incident)
     # Exactly 12 pentagons, everything else hexagonal. At nu = 1 the tiling is
     # the dodecahedron: all 12 cells are pentagons and no hexagons exist.
     if int((degree == 5).sum()) != 12 or not np.isin(degree, (5, 6)).all():
@@ -419,7 +434,9 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
     # with no dedup needed.
     edge_from = triangles[:, [0, 1, 2]].reshape(-1)
     edge_to = triangles[:, [1, 2, 0]].reshape(-1)
-    edge_order, edge_rank, edge_degree = _angular_order(centers, edge_from, centers[edge_to])
+    edge_order, edge_rank, edge_degree = _angular_order(
+        centers, edge_from, centers[edge_to], edge_to
+    )
     if not np.array_equal(edge_degree, degree):
         raise RuntimeError("cell adjacency disagrees with the dual polygon degrees")
     neighbors = np.full((cell_count, 6), -1, dtype=int)

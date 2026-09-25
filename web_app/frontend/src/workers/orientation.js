@@ -199,11 +199,15 @@ const tangentBasis = (normal) => {
 };
 
 // Sort each cell's incident items counter-clockwise about the cell centre.
-// `entries` is an array of {owner, point, payload}; returns per-owner payload
-// lists in CCW order. Mirrors `_angular_order`.
+// `entries` is an array of {owner, point, payload, key}; returns per-owner
+// payload lists in CCW order, each cycle rotated to start at its smallest
+// integer `key` (unique per owner). The raw atan2 start is not reproducible
+// across engines -- an item on the -e1 ray sits at +pi or -pi depending on a
+// 1e-17 round-off sign -- so the combinatorial start is what keeps the
+// exported tables identical. Mirrors `_angular_order`.
 const angularOrder = (centers, entries) => {
     const byOwner = centers.map(() => []);
-    entries.forEach(({ owner, point, payload }) => {
+    entries.forEach(({ owner, point, payload, key }) => {
         const center = centers[owner];
         const { e1, e2 } = tangentBasis(center);
         const radial = dot(point, center);
@@ -212,9 +216,14 @@ const angularOrder = (centers, entries) => {
             point[1] - center[1] * radial,
             point[2] - center[2] * radial
         ];
-        byOwner[owner].push({ angle: Math.atan2(dot(local, e2), dot(local, e1)), payload });
+        byOwner[owner].push({ angle: Math.atan2(dot(local, e2), dot(local, e1)), payload, key });
     });
-    return byOwner.map((list) => list.sort((a, b) => a.angle - b.angle).map((item) => item.payload));
+    return byOwner.map((list) => {
+        list.sort((a, b) => a.angle - b.angle);
+        let start = 0;
+        for (let i = 1; i < list.length; i += 1) if (list[i].key < list[start].key) start = i;
+        return [...list.slice(start), ...list.slice(0, start)].map((item) => item.payload);
+    });
 };
 
 // Solid angle of a spherical polygon (unit vertices) by a signed triangle fan,
@@ -317,7 +326,7 @@ export const goldbergTiling = (frequency = 8) => {
     const polygonEntries = [];
     triangles.forEach((triangle, t) => {
         triangle.forEach((owner) => {
-            polygonEntries.push({ owner, point: circumcenters[t], payload: circumcenters[t] });
+            polygonEntries.push({ owner, point: circumcenters[t], payload: circumcenters[t], key: t });
         });
     });
     const polygonsRagged = angularOrder(centers, polygonEntries);
@@ -334,9 +343,9 @@ export const goldbergTiling = (frequency = 8) => {
     // Directed edges: each ordered pair occurs exactly once over CCW triangles.
     const edgeEntries = [];
     triangles.forEach(([a, b, c]) => {
-        edgeEntries.push({ owner: a, point: centers[b], payload: b });
-        edgeEntries.push({ owner: b, point: centers[c], payload: c });
-        edgeEntries.push({ owner: c, point: centers[a], payload: a });
+        edgeEntries.push({ owner: a, point: centers[b], payload: b, key: b });
+        edgeEntries.push({ owner: b, point: centers[c], payload: c, key: c });
+        edgeEntries.push({ owner: c, point: centers[a], payload: a, key: a });
     });
     const neighborsRagged = angularOrder(centers, edgeEntries);
     if (neighborsRagged.some((row, cell) => row.length !== sizes[cell])) {

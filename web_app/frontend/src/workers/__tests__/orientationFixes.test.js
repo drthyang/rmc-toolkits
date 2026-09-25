@@ -165,3 +165,43 @@ describe('centrosymmetric tie-break', () => {
             .toEqual(AXIS_CELLS_NU3);
     });
 });
+
+// orientation.parity.17 — cyclic neighbour / polygon order must not depend on
+// the atan2 branch cut. Shared verbatim with tests/test_orientation_fixes.py.
+const NEIGHBOR_CHECKSUMS = { 4: 13107810, 6: 68604861, 10: 524199205, 38: 108147532718 };
+const POLYGON_STARTS_NU38 = {
+    2052: [0.008313449390497447, 0.01625704168659895, 0.9998332836802503],
+    4275: [0.9998332836802503, 0.00831344939049745, -0.016257041686598955]
+};
+
+const neighborChecksum = (neighbors) => {
+    let total = 0;
+    neighbors.forEach((row, cell) => {
+        row.forEach((neighbor, slot) => { total += (slot + 1) * (neighbor + 1) * ((cell % 97) + 1); });
+    });
+    return total;
+};
+
+describe('canonical cyclic order', () => {
+    it('starts every neighbour row at its smallest index', () => {
+        for (const frequency of [3, 6, 10]) {
+            goldbergTiling(frequency).neighbors.forEach((row) => {
+                const valid = row.filter((value) => value >= 0);
+                expect(valid[0]).toBe(Math.min(...valid));
+            });
+        }
+    });
+
+    it('matches the Python neighbour checksums', () => {
+        Object.entries(NEIGHBOR_CHECKSUMS).forEach(([frequency, expected]) => {
+            expect(neighborChecksum(goldbergTiling(Number(frequency)).neighbors)).toBe(expected);
+        });
+    });
+
+    it('matches the Python polygon start vertices', () => {
+        const tiling = goldbergTiling(38);
+        Object.entries(POLYGON_STARTS_NU38).forEach(([cell, vertex]) => {
+            vertex.forEach((value, axis) => expect(tiling.polygons[Number(cell)][0][axis]).toBeCloseTo(value, 12));
+        });
+    });
+});
