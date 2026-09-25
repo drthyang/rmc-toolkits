@@ -38,7 +38,7 @@ Defaults (all overridable, none normally touched):
 | Low-Q correction | ON, extrapolating to the **composition-derived S(0)** | §3 step 2 — this is load-bearing (53% scale bias without it on real data) |
 | Robust re-weighting | Huber IRLS ON | isolated Bragg/ripple outliers cannot drag the fit |
 | Lorch window | OFF | resolution first; turn on for ripple-heavy display |
-| Low-r enforcement | ON at the detected r₀ (stog.inp cutoffs when present) | classic-product parity; the *pre*-enforcement residual is always reported |
+| Low-r enforcement | ON at the foot of the detected first shell — min(foot, onset − 0.25 Å), below its rising flank — (stog.inp / explicit cutoffs when present) | classic-product parity without removing first-shell signal; the *pre*-enforcement residual is always reported |
 
 ## 2. The functions (Keen 2001 conventions)
 
@@ -90,8 +90,10 @@ the manual "try again" scale loop replaced by physics:
    head extrapolated to S(0)). Concordance `a_fz/a ≈ 1` is the absolute-scale trust
    metric; discord quantifies what the data cannot decide (and flags a wrong ρ₀ ~1:1).
 7. **Outputs**: scaled S(Q), unfiltered g−1, filtered S(Q)/g−1(+D), and the
-   RMCProfile-ready `F_K(Q)`, `G_K(r)`, `D(r)` — with classic low-r enforcement applied at
-   r₀ (flags and pre-enforcement residuals reported) — plus a provenance JSON.
+   RMCProfile-ready `F_K(Q)`, `G_K(r)`, `D(r)` — with classic low-r enforcement applied
+   below the first shell (automatic cutoff = min(foot, onset − 0.25 Å): 2.49 Å on Mn₃Sn
+   59438 vs the expert's 2.48; the first-shell coordination number is preserved to
+   ≤ 0.3 %; flags and pre-enforcement residuals reported) — plus a provenance JSON.
 
 ## 4. Reading the verdicts — when is the scale actually absolute?
 

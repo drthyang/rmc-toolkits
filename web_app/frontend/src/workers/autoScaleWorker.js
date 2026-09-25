@@ -9,6 +9,7 @@
 // adopts the estimated density for the fit.
 
 import {
+  autoEnforcementCutoff,
   autoscale,
   detectFirstPeakOnset,
   diagnosticsSummary,
@@ -54,9 +55,9 @@ self.onmessage = (event) => {
     const result = mode === 'manual'
       ? scalePipeline(qArr, sqArr, config, a, b, { mode: 'manual' })
       : autoscale(qArr, sqArr, config, sigmaArr);
-    // 'auto' enforcement resolves to the data-derived closest approach.
-    // Manual runs skip the two-pass detection inside autoscale, so recover
-    // r0 here exactly like the CLI does (scaling_cli.py post-run detection) —
+    // 'auto' enforcement is anchored on the data-derived first shell. Manual
+    // runs skip the detection inside autoscale, so recover the onset here
+    // exactly like the CLI does (scaling_cli.py post-run detection) —
     // otherwise a checked "Enforce low-r" would silently become a no-op.
     if (enforcement === 'auto' && result.r0Detected == null) {
       const onset = detectFirstPeakOnset(result.r, result.gFiltered, {
@@ -67,10 +68,19 @@ self.onmessage = (event) => {
     }
     const summary = diagnosticsSummary(result, config);
 
+    // 'auto' enforces at the FOOT of the first shell (below its rising flank,
+    // so no first-shell signal leaves the RMC files) — scaling_cli parity.
     let effectiveEnforcement = enforcement;
     if (enforcement === 'auto') {
-      effectiveEnforcement = result.r0Detected != null
-        ? { cutoff: result.r0Detected, peakRmin: result.r0Detected, peakRmax: result.r0Detected }
+      const cutoff = autoEnforcementCutoff(result.r, result.gFiltered, config, result.r0Detected);
+      effectiveEnforcement = cutoff != null
+        ? {
+          cutoff,
+          peakRmin: cutoff,
+          peakRmax: cutoff,
+          source: 'auto (first-shell foot)',
+          firstShellOnset: result.r0Detected,
+        }
         : null;
     }
 

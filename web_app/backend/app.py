@@ -60,7 +60,7 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     _write_outputs,
     _resolve_targets as _resolve_scaling_targets,
 )
-from rmc_toolkits.scaling import detect_first_peak_onset
+from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset
 from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_density
 from rmc_toolkits.transforms import first_peak_zero, g_to_gk, gk_to_dr
 
@@ -924,8 +924,8 @@ def _scaling_request(payload: dict):
     result = _cached_scaling(
         str(data_path), data_path.stat().st_mtime, config, mode, a, b, use_sigma
     )
-    # No explicit cutoff and enforcement not refused: enforce at the
-    # data-derived closest approach (CLI-mirroring auto default).
+    # No explicit cutoff and enforcement not refused: enforce automatically
+    # at the foot of the first shell (CLI-mirroring auto default).
     if enforcement is None and payload.get("enforce") is not False:
         r0_detected = result.provenance.get("r0_detected")
         if r0_detected is None:
@@ -935,8 +935,11 @@ def _scaling_request(payload: dict):
             )
             if r0_detected is not None:
                 result.provenance["r0_detected"] = float(r0_detected)
-        if r0_detected is not None:
-            enforcement = (float(r0_detected),) * 3
+        cutoff = auto_enforcement_cutoff(
+            result.r, result.g_filtered, config, onset=r0_detected
+        )
+        if cutoff is not None:
+            enforcement = (cutoff,) * 3
     return inp, inp_path, data_path, header, config, enforcement, mode, result
 
 

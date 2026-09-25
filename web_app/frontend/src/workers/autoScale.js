@@ -729,6 +729,46 @@ export const detectFirstPeakOnset = (
   return null;
 };
 
+/**
+ * Foot of the first shell (port of scaling.first_shell_foot): walk left from
+ * the onset while |g| keeps decreasing and g keeps the shell's sign; stop at
+ * the first local minimum of |g|, or return the point just across a sign
+ * change.
+ */
+export const firstShellFoot = (r, g, onset) => {
+  let index = 0;
+  let best = Infinity;
+  for (let i = 0; i < r.length; i += 1) {
+    const distance = Math.abs(r[i] - onset);
+    if (distance < best) {
+      best = distance;
+      index = i;
+    }
+  }
+  const sign = Math.sign(g[index]);
+  while (index > 0) {
+    if (Math.sign(g[index - 1]) !== sign) return r[index - 1];
+    if (Math.abs(g[index - 1]) >= Math.abs(g[index])) break;
+    index -= 1;
+  }
+  return r[index];
+};
+
+/**
+ * Automatic low-r enforcement cutoff (port of scaling.auto_enforcement_cutoff):
+ * min(foot of the first shell, onset - R0_WINDOW_MARGIN) — below the rising
+ * flank, never on it. onset defaults to detectFirstPeakOnset on g; null when
+ * no first shell is detected.
+ */
+export const autoEnforcementCutoff = (r, g, config, onset = null) => {
+  let anchor = onset;
+  if (anchor == null) {
+    anchor = detectFirstPeakOnset(r, g, { searchMin: config.rCutoff + 0.3, qmax: config.qmax });
+  }
+  if (anchor == null) return null;
+  return Math.min(firstShellFoot(r, g, anchor), anchor - R0_WINDOW_MARGIN);
+};
+
 const detectOnset = (result, config) => detectFirstPeakOnset(result.r, result.gFiltered, {
   searchMin: config.rCutoff + 0.3,
   qmax: config.qmax,

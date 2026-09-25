@@ -660,7 +660,7 @@ given"):
 | $r_0$ | form → **header `MINIMUM_DISTANCES`** → `stog.inp` $\max(\text{peak\_cutoff}, \text{peak\_rmin})$, but only if $r_0 - 0.25 > r_\mathrm{cut} + 0.2$ | `None` → detected from the data after the first pass |
 | `rmax`, `nr` | form → `stog.inp` | 50.0 Å, 5000 points |
 | Lorch | form → `stog.inp` flag | off |
-| enforcement `(cutoff, peak_rmin, peak_rmax)` | resolved *outside* the config — see below | `'auto'` → the detected $r_0$ |
+| enforcement `(cutoff, peak_rmin, peak_rmax)` | resolved *outside* the config — see below | `'auto'` → the foot of the first shell, $\min(\text{foot}, \text{onset} - 0.25)$ |
 
 **Enforcement is a triple, and it does not travel in the config.** `ScalingConfig.enforce_cutoff`
 exists and drives `transforms.enforce_low_r` (a hard $G_K(r) = -\langle b\rangle^2$ for all
@@ -1022,7 +1022,7 @@ provenance JSON).
 | `c2_bins` | `0` (pointwise) | **Python only** | — |
 | `c1_slope_nuisance` | `False` | **Python only**, experimental | — |
 | `max_iter`, `tol` | `50`, `1e-6` | Python/JS config only | self-consistent loop |
-| enforcement `(cutoff, peak_rmin, peak_rmax)` | browser default "Enforce low-r" ON → `'auto'` (detected $r_0$) | form Cutoff / `--enforce-cutoff` + `--peak-window` / `stog.inp` line 22 | Å; resolved *outside* the config, applied with `first_peak_zero` |
+| enforcement `(cutoff, peak_rmin, peak_rmax)` | browser default "Enforce low-r" ON → `'auto'` (first-shell foot) | form Cutoff / `--enforce-cutoff` + `--peak-window` / `stog.inp` line 22 | Å; resolved *outside* the config, applied with `first_peak_zero` |
 | `enforce_cutoff` (config field) | `None` | **library only** — never set by the CLI, the API or the browser | Å; drives `enforce_low_r` |
 | min. usable points after crop | `16` (checked *before* despiking) | hard-coded | both engines |
 | min. finite points for the level sweep | `32` (window ≥ 24 pts, ≥ 3 Å⁻¹ wide) | hard-coded | the binding limit in the default `sweep` mode |
@@ -1779,12 +1779,13 @@ run. Only the CLI and the browser reach the general semantics.
 
 #### How the enforcement boundary is chosen in `'auto'` mode
 
-`'auto'` resolves the cutoff to a **data-derived** closest approach from
-`detect_first_peak_onset()` ([`scaling.py`](../../rmc_toolkits/scaling.py); ported verbatim as
-`detectFirstPeakOnset()` in [`autoScale.js`](../../web_app/frontend/src/workers/autoScale.js)).
-Because Step 9's headline caveat is that the Keen limits become true *by construction* below that
-boundary, the boundary's provenance is part of the transparency story. The procedure, with every
-constant:
+`'auto'` resolves the cutoff to the **foot of the first coordination shell**, anchored on the
+data-derived first-shell onset from `detect_first_peak_onset()`
+([`scaling.py`](../../rmc_toolkits/scaling.py); ported as `detectFirstPeakOnset()` in
+[`autoScale.js`](../../web_app/frontend/src/workers/autoScale.js)), by
+`auto_enforcement_cutoff()` / `autoEnforcementCutoff()`. Because Step 9's headline caveat is that
+the Keen limits become true *by construction* below that boundary, the boundary's provenance is
+part of the transparency story. The onset detection, with every constant:
 
 1. Restrict to the search window $[\,$`search_min`$,\,$`search_max`$\,]$. Defaults are
    $[1.0, 6.0]$ Å, but **every caller passes `search_min = r_cutoff + 0.3`** (= 1.3 Å at the
@@ -1803,13 +1804,34 @@ All thresholds are relative to the data's own peaks and ripples. The regression 
 `tests/test_stog_a_detection.py` pin the behaviour on weak-first, inverted-first, ripple-field and
 shell-at-the-search-edge profiles and on the real Mn₃Sn 59438 run.
 
+**The onset is a point ~35 % up the shell's rising flank — never the cutoff itself.** Enforcement
+zeroes $g$ for every $r \le$ cutoff, so the cutoff must sit below the whole flank:
+
+$$\text{cutoff} = \min\bigl(\text{foot},\ \text{onset} - 0.25\bigr),$$
+
+where `first_shell_foot()` walks left from the onset while $|g|$ keeps decreasing and $g$ keeps the
+shell's sign, stopping at the first local minimum of $|g|$ (or the point just across a sign
+change), and $0.25$ Å is `R0_WINDOW_MARGIN` — the same margin that separates the density-limit
+window from the onset, so the automatic enforcement never asserts $g = 0$ above the region the fit
+itself treated as $g = 0$. Sharp shells are bounded by the margin, broad ones by the foot. Measured
+(exact synthetic $S(Q)$ from $Q = 0.01$, one Gaussian shell at 2.8 Å): the first-shell coordination
+number over $[2.0, 3.2]$ Å changes by ≤ 0.3 % for $\sigma$ = 0.08–0.15 Å, $Q_\max$ = 26/40 Å⁻¹,
+Lorch on/off — the pre-1.0 cutoff at the onset removed 6–9 % (`tests/test_stog_a_enforcement.py`;
+only very sharp shells at low $Q_\max$, $Q_\max\sigma \lesssim 1.6$, lose up to ~2 % — their
+termination side lobes carry that share of the band-limited peak). On the real runs the automatic
+cutoff lands at 2.49 Å on Mn₃Sn 59438 (expert `rmccut` 2.48 Å, first peak 2.65–3.1 Å), 2.37–2.52 Å
+on the other Mn₃Sn runs (Qmin 0.82 or 1.0; expert cutoffs 2.40–2.68 Å) and 2.28 Å on FeCoSn 199 K (flank of the 2.64 Å shell kept; the expert
+enforced only to 1.0 Å). Classic stog leaves `_rmc.fq` untouched, and so does this: with the
+cutoff at the foot the two RMC datasets differ only by the removed sub-shell ripples.
+
 #### Parity in the browser, and two undocumented branches
 
 `autoScale.js` ports only `firstPeakZero`. `autoScaleWorker.js` obtains the flat-replacement
-behaviour by passing a degenerate window, `{cutoff: r0, peakRmin: r0, peakRmax: r0}`, when
-enforcement is set to `'auto'` — the boolean then collapses to $r \le r_0$, identical to
-`enforce_low_r`. The same convention is used by the CLI (`scaling_cli.py`,
-`enforcement = (float(r0_detected),) * 3`). Two control-flow branches on the page deserve
+behaviour by passing a degenerate window, `{cutoff: c, peakRmin: c, peakRmax: c}` with
+`c = autoEnforcementCutoff(...)`, when enforcement is set to `'auto'` — the boolean then collapses
+to $r \le c$, identical to `enforce_low_r`. The same convention is used by the CLI and the API
+(`enforcement = (cutoff,) * 3`); the enforcement record carries `source: "auto (first-shell
+foot)"` (the page's also `firstShellOnset`). Two control-flow branches on the page deserve
 stating:
 
 - **`'auto'` enforcement is not guaranteed to happen.** The worker first tries to recover `r0`
@@ -1881,7 +1903,7 @@ Everything else:
 | `despike_window` | 7 | points | same | rolling-median width (edge-padded) |
 | `despike_nsigma` | 6.0 | MAD units | same | keep threshold $\lvert\varepsilon\rvert \le n\sigma\max(\mathrm{MAD}, 10^{-12})$ |
 | minimum surviving points | 16 | points | `crop_sq` / `cropSq` (hard-coded) | fewer → `ValueError`; checked **before** despiking |
-| `enforce_cutoff` | `None` (Python engine) | Å | `ScalingConfig`; CLI/page default to `stog.inp` `peak_cutoff` or the detected $r_0$ | low-$r$ hard replacement (Python engine: always `enforce_low_r`) |
+| `enforce_cutoff` | `None` (Python engine) | Å | `ScalingConfig`; CLI/page default to `stog.inp` `peak_cutoff` or the first-shell foot (`auto_enforcement_cutoff`) | low-$r$ hard replacement (Python engine: always `enforce_low_r`) |
 | `search_min` (peak onset) | 1.0 default, **1.3** in practice ($r_\mathrm{cut} + 0.3$) | Å | `detect_first_peak_onset`; every caller overrides | lower bound of the $r_0$ search; candidates start $2\pi/Q_\max$ above it (reference zone) |
 | `search_max` (peak onset) | 6.0 | Å | same | upper bound of the $r_0$ search |
 | `fraction` (peak onset) | 0.35 | — | same | "major feature" share of the range maximum, and the flank threshold $\max(\mathrm{floor}, \mathrm{fraction}\times\lvert g_\mathrm{peak}\rvert)$ |
@@ -3006,14 +3028,15 @@ Which triple they use is **not** simply "the detected $r_0$" — an explicit cut
 | --- | --- |
 | CLI with a `stog.inp` and no `--enforce-cutoff` | the inp's own `(peak_cutoff, peak_rmin, peak_rmax)` — genuinely the general Fortran semantics |
 | CLI `--enforce-cutoff C` (optionally `--peak-window lo hi`) | `(C, lo, hi)`, or `(C, C, C)` without a peak window |
-| CLI `--data` mode, no explicit cutoff, enforcement not disabled | the detected $r_0$, as $(r_0, r_0, r_0)$ from the post-run detection |
+| CLI `--data` mode, no explicit cutoff, enforcement not disabled | the first-shell foot $c = \min(\text{foot}, \text{onset} - 0.25)$, as $(c, c, c)$ (`auto_enforcement_cutoff`) |
 | Page: cutoff field filled | `(C, C, C)` |
 | Page: cutoff blank, `stog.inp` loaded | the inp's `(peak_cutoff, peak_rmin, peak_rmax)` |
-| Page: cutoff blank, no inp (`enforcement: 'auto'`) | the detected $r_0$, as $(r_0, r_0, r_0)$ |
+| Page: cutoff blank, no inp (`enforcement: 'auto'`) | the first-shell foot $c$, as $(c, c, c)$ (`autoEnforcementCutoff`) |
 
-In the degenerate `(r_0, r_0, r_0)` case the predicate `(r >= peak_rmax) | (r <= peak_rmin)` is true
+In the degenerate `(c, c, c)` case the predicate `(r >= peak_rmax) | (r <= peak_rmin)` is true
 for **every** $r \le$ cutoff, so `first_peak_zero` **collapses exactly to `enforce_low_r`**:
-$g \equiv 0$, hence $G_K \equiv -\langle b\rangle^2$, for all $r \le r_0$. The general two-sided form
+$g \equiv 0$, hence $G_K \equiv -\langle b\rangle^2$, for all $r \le c$ — the foot of the first
+shell, not its onset. The general two-sided form
 only does something different when a real peak window is supplied. Note also that the page ships
 **Enforce low-r checked by default** (`EMPTY_FORM.enforce = true`), and that a manual run reaches
 this code with `r0Detected` recovered by the worker's own `detectFirstPeakOnset()` call (Step 2).

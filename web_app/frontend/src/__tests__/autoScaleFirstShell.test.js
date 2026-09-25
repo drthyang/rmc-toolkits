@@ -7,17 +7,23 @@
 
 import { describe, expect, it } from 'vitest';
 import fixture from './fixtures/autoscale_fixture.json';
-import { autoscale, detectFirstPeakOnset, makeConfig } from '../workers/autoScale';
+import {
+  autoEnforcementCutoff,
+  autoscale,
+  detectFirstPeakOnset,
+  firstShellFoot,
+  makeConfig,
+} from '../workers/autoScale';
 
 const relError = (value, reference) => Math.abs(value - reference) / Math.abs(reference);
 
 describe('first-shell detector parity with scaling.detect_first_peak_onset', () => {
-  const { r, searchMin, cases } = fixture.expected.detector;
+  const { r, searchMin, profiles, cases } = fixture.expected.detector;
   const rArr = Float64Array.from(r);
 
-  cases.forEach(({ name, qmax, g, onset }) => {
+  cases.forEach(({ name, qmax, onset }) => {
     it(`${name} (qmax ${qmax})`, () => {
-      const got = detectFirstPeakOnset(rArr, Float64Array.from(g), { searchMin, qmax });
+      const got = detectFirstPeakOnset(rArr, Float64Array.from(profiles[name]), { searchMin, qmax });
       if (onset === null) expect(got).toBeNull();
       else expect(got).toBe(onset);
     });
@@ -51,6 +57,20 @@ describe('low-r window placement parity with scaling.autoscale', () => {
       // Ti-O at 1.95 A: the window ends below it and the scale is recovered.
       expect(result.rFitWindowUsed[1]).toBeLessThan(1.7);
       expect(relError(result.a, aTrue)).toBeLessThan(0.02);
+    });
+  });
+});
+
+describe('automatic enforcement cutoff parity with scaling.auto_enforcement_cutoff', () => {
+  fixture.expected.enforcement.cases.forEach(({ config, r, g, onset, foot, cutoff }, index) => {
+    it(`case ${index}: foot of the first shell, below the onset`, () => {
+      const rArr = Float64Array.from(r);
+      const gArr = Float64Array.from(g);
+      expect(detectFirstPeakOnset(rArr, gArr, { searchMin: config.rCutoff + 0.3, qmax: config.qmax }))
+        .toBe(onset);
+      expect(firstShellFoot(rArr, gArr, onset)).toBe(foot);
+      expect(autoEnforcementCutoff(rArr, gArr, config)).toBe(cutoff);
+      expect(cutoff).toBeLessThan(onset - 0.2);
     });
   });
 });

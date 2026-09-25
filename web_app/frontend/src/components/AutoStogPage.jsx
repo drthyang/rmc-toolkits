@@ -155,7 +155,7 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
 const resolveEnforcement = (form, inp) => {
   if (!form.enforce) return null;
   const cutoff = numberOr(form.enforceCutoff) ?? (inp ? inp.peakCutoff : undefined);
-  if (cutoff === undefined) return 'auto'; // worker enforces at the detected r0
+  if (cutoff === undefined) return 'auto'; // worker enforces at the first-shell foot
   const usingInpWindow = inp && numberOr(form.enforceCutoff) === undefined;
   return {
     cutoff,
@@ -884,7 +884,7 @@ const AutoStogPage = () => {
                 Enforce low-r
               </label>
               {form.enforce && (
-                <label className="autostog-field" title="Enforcement cutoff (empty: the detected r₀)">
+                <label className="autostog-field" title="Enforcement cutoff (empty: automatic — the foot of the detected first shell, below its rising flank)">
                   <span>Cutoff Å</span>
                   <input value={form.enforceCutoff} onChange={setField('enforceCutoff')} inputMode="decimal" placeholder="auto" />
                 </label>

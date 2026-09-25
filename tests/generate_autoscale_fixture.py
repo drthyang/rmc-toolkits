@@ -17,8 +17,10 @@ import numpy as np
 
 from rmc_toolkits.scaling import (
     ScalingConfig,
+    auto_enforcement_cutoff,
     autoscale,
     detect_first_peak_onset,
+    first_shell_foot,
     estimate_rho0,
     level_sweep,
     scale_pipeline,
@@ -61,12 +63,18 @@ def detector_cases() -> dict:
         "shellAtSearchStart": 6.0 * _gauss(r, 1.37, 0.045) + 3.0 * _gauss(r, 2.4, 0.08)
         + _continuum(r, 3.0),
     }
+    profiles = {name: np.round(g, 12) for name, g in profiles.items()}
     cases = []
     for name, g in profiles.items():
         for qmax in (28.0, 0.0):
             onset = detect_first_peak_onset(r, g, qmax, search_min=1.3)
-            cases.append({"name": name, "qmax": qmax, "g": g.tolist(), "onset": onset})
-    return {"r": r.tolist(), "searchMin": 1.3, "cases": cases}
+            cases.append({"name": name, "qmax": qmax, "onset": onset})
+    return {
+        "r": r.tolist(),
+        "searchMin": 1.3,
+        "profiles": {name: g.tolist() for name, g in profiles.items()},
+        "cases": cases,
+    }
 
 
 def window_cases() -> dict:
@@ -104,6 +112,31 @@ def window_cases() -> dict:
             case["error"] = str(exc)
         cases.append(case)
     return {"q": q.tolist(), "aTrue": 10.0, "cases": cases}
+
+
+def enforcement_cases() -> dict:
+    """Automatic enforcement cutoff parity (models from tests/test_stog_a_enforcement.py)."""
+    from test_stog_a_enforcement import exact_sq
+
+    cases = []
+    for sigma, qmax, lorch in ((0.10, 26.0, False), (0.15, 26.0, True), (0.08, 40.0, False)):
+        q, sq = exact_sq(sigma, qmax)
+        config = ScalingConfig(
+            qmin=0.01, qmax=qmax, rho0=RHO0, b_avg_sq=1.0, lorch=lorch, rmax=20.0, nr=2000,
+        )
+        result = scale_pipeline(q, sq, config, 1.0, 0.0)
+        keep = result.r <= 6.5
+        r, g = result.r[keep], result.g_filtered[keep]
+        onset = detect_first_peak_onset(r, g, qmax, search_min=config.r_cutoff + 0.3)
+        cases.append({
+            "config": {"qmax": qmax, "rCutoff": config.r_cutoff},
+            "r": r.tolist(),
+            "g": g.tolist(),
+            "onset": onset,
+            "foot": first_shell_foot(r, g, onset),
+            "cutoff": auto_enforcement_cutoff(r, g, config),
+        })
+    return {"cases": cases}
 
 
 def main() -> None:
@@ -184,6 +217,7 @@ def main() -> None:
             },
             "detector": detector_cases(),
             "window": window_cases(),
+            "enforcement": enforcement_cases(),
             "manual": {
                 "lowRRms": manual.low_r_rms,
                 "c1TailMean": manual.c1_tail_mean,

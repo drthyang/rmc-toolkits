@@ -50,6 +50,7 @@ from .parsers import (
 from .scaling import (
     ScalingConfig,
     ScalingResult,
+    auto_enforcement_cutoff,
     autoscale,
     detect_first_peak_onset,
     diagnostics_summary,
@@ -509,6 +510,7 @@ def _print_report(
     manual: bool,
     enforcement: Optional[tuple[float, float, float]],
     n_points: int,
+    enforcement_note: Optional[str] = None,
 ) -> None:
     mode = "manual (fixed a, b)" if manual else f"auto ({summary.get('c1_mode', 'fit')})"
     print(f"Auto StoG (rmc-toolkits {__version__})")
@@ -549,10 +551,14 @@ def _print_report(
         )
     if enforcement is not None:
         cutoff, peak_rmin, peak_rmax = enforcement
-        print(
-            f"  enforcement: RMC outputs hard-set below r = {cutoff:g} A "
-            f"(first-peak window [{peak_rmin:g}, {peak_rmax:g}])"
+        where = (
+            enforcement_note
+            if enforcement_note
+            else f"first-peak window [{peak_rmin:g}, {peak_rmax:g}]"
         )
+        print(f"  enforcement: RMC outputs hard-set below r = {cutoff:.4g} A ({where})")
+    elif enforcement_note:
+        print(f"  enforcement: {enforcement_note}")
     print(f"Outputs -> {targets['provenance'].parent}")
     for key, _, description in _OUTPUTS:
         print(f"  {targets[key].name:<28s} {description}")
@@ -589,6 +595,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         config = _build_config(args, inp, header)
         enforcement = _resolve_enforcement(args, inp)
+        enforcement_source = None
+        if enforcement is not None:
+            enforcement_source = "user" if args.enforce_cutoff is not None else "stog.inp"
         targets = _resolve_targets(args, inp, inp_path, data_path)
 
         manual = args.manual or args.scale is not None or args.offset is not None
@@ -648,8 +657,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else:
             result = autoscale(q, sq, config, sigma=sigma)
 
-        # Data mode without an explicit cutoff: enforce at the data-derived
-        # closest approach (classic-product parity, from physics not a guess).
+        # No explicit cutoff (data mode) and enforcement not refused: enforce
+        # automatically at the FOOT of the first shell, below its rising flank
+        # (auto_enforcement_cutoff), so no first-shell signal is removed.
+        auto_note: Optional[str] = None
         if enforcement is None and args.enforce is not False:
             r0_detected = result.provenance.get("r0_detected")
             if r0_detected is None:
@@ -659,8 +670,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
                 if r0_detected is not None:
                     result.provenance["r0_detected"] = float(r0_detected)
-            if r0_detected is not None:
-                enforcement = (float(r0_detected),) * 3
+            cutoff = auto_enforcement_cutoff(
+                result.r, result.g_filtered, config, onset=r0_detected
+            )
+            if cutoff is not None:
+                enforcement = (cutoff,) * 3
+                enforcement_source = "auto (first-shell foot)"
+                auto_note = (
+                    f"automatic: foot of the first shell, onset {r0_detected:.2f} A"
+                )
+            else:
+                auto_note = (
+                    "none: no first shell detected to anchor an automatic "
+                    "cutoff (pass --enforce-cutoff to enforce)"
+                )
 
         summary = diagnostics_summary(result, config)
         summary["c1_mode"] = result.provenance.get("c1_mode_effective", "manual")
@@ -677,7 +700,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             else {"a": inp.a, "b": inp.b, "yscale": inp.yscale, "yoffset": inp.yoffset},
             "enforcement": None
             if enforcement is None
-            else dict(zip(("cutoff", "peak_rmin", "peak_rmax"), enforcement)),
+            else {
+                **dict(zip(("cutoff", "peak_rmin", "peak_rmax"), enforcement)),
+                "source": enforcement_source,
+            },
             "outputs": {key: str(path) for key, path in targets.items()},
             "rho0_estimate": rho0_estimate,
             "diagnostics": summary,
@@ -690,6 +716,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _print_report(
             result, summary, targets, reference, manual, enforcement,
             n_points=int(result.provenance["n_q_points"]),
+            enforcement_note=auto_note,
         )
         return 0
     except CliError as exc:

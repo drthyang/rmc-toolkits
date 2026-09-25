@@ -466,6 +466,57 @@ def detect_first_peak_onset(
     return None
 
 
+def first_shell_foot(r: np.ndarray, g: np.ndarray, onset: float) -> float:
+    """Foot of the first shell: walk left from ``onset`` down its rising flank.
+
+    From the grid point at ``onset`` (a point on the shell's flank, e.g. from
+    :func:`detect_first_peak_onset`), step left while |g| keeps decreasing and
+    g keeps the shell's sign. The walk stops at the first local minimum of |g|
+    (returned) or where g changes sign (the point just across the zero
+    crossing is returned, so the whole same-sign lobe lies above it).
+    """
+    r = np.asarray(r, dtype=float)
+    g = np.asarray(g, dtype=float)
+    a = np.abs(g)
+    index = int(np.argmin(np.abs(r - float(onset))))
+    sign = np.sign(g[index])
+    while index > 0:
+        if np.sign(g[index - 1]) != sign:
+            return float(r[index - 1])
+        if a[index - 1] >= a[index]:
+            break
+        index -= 1
+    return float(r[index])
+
+
+def auto_enforcement_cutoff(
+    r: np.ndarray,
+    g: np.ndarray,
+    config: ScalingConfig,
+    onset: float | None = None,
+) -> float | None:
+    """Automatic low-r enforcement cutoff: at the foot of the first shell.
+
+    The classic enforcement zeroes g (G_K = -<b>^2) for every ``r <=
+    cutoff`` in the RMCProfile files, so an automatic cutoff must sit below
+    the first shell's rising flank — never on it (the detected onset is ~35 %
+    up the flank; enforcing there deleted 6-9 % of the first-shell pair
+    density). The cutoff is ``min(foot, onset - R0_WINDOW_MARGIN)``: the
+    :func:`first_shell_foot` below the onset, and never above the top of the
+    region the density-limit fit itself treats as g = 0. ``onset`` defaults
+    to :func:`detect_first_peak_onset` on ``g``. Returns None when no first
+    shell is detected (then there is nothing to anchor an automatic cutoff).
+    """
+    if onset is None:
+        onset = detect_first_peak_onset(
+            r, g, config.qmax, search_min=config.r_cutoff + 0.3
+        )
+    if onset is None:
+        return None
+    foot = first_shell_foot(r, g, onset)
+    return float(min(foot, float(onset) - R0_WINDOW_MARGIN))
+
+
 _HUBER_C = 1.345  # 95% Gaussian efficiency
 
 
