@@ -25,8 +25,10 @@ describe('basis-size cap', () => {
         expect(MAX_SYMMETRY_SITES).toBe(2000);
     });
 
+    // Literal sizes, not MAX_SYMMETRY_SITES ± 1: the glass must be built (and the test time
+    // the finder on it) even where the constant is missing, as it was before the cap.
     it('skips a basis above the cap with an explanation and no ladder', () => {
-        const structure = glass(MAX_SYMMETRY_SITES + 1);
+        const structure = glass(2001);
         const t0 = performance.now();
         const found = describeSymmetry(structure, 0.2);
         const ladder = toleranceLadder(structure, 1.0);
@@ -41,7 +43,7 @@ describe('basis-size cap', () => {
     });
 
     it('still analyses a basis at the cap, quickly', { timeout: 20000 }, () => {
-        const structure = glass(MAX_SYMMETRY_SITES);
+        const structure = glass(2000);
         const t0 = performance.now();
         const found = describeSymmetry(structure, 0.2);
         expect(found.spaceGroup).toBe('P1');
