@@ -287,7 +287,9 @@ export const UNDETERMINED = Object.freeze({
   nSpace: 0, nPoint: 0, nTrans: 0, setting: null,
 });
 
-// Every candidate operation of (A, basis) within `tol`, with its residual (Steps 7–9).
+// Every candidate operation of (A, basis) within `tol`, with its residual (Steps 7–9). `tol`
+// is also the pass's pairing (2·tol) and near-duplicate (tol) radius; a caller that wants
+// the operations of a looser pass below some threshold runs the looser pass and filters.
 // `pointOps` restricts the rotations tried (operationEstimate passes the identity alone);
 // the search stops once `maxOps` operations are found.
 function detectOperations(A, basis, tol, latticeTol, pointOps = latticeCandidates(A, Math.min(latticeTol, tol)), maxOps = Infinity) {
@@ -296,10 +298,17 @@ function detectOperations(A, basis, tol, latticeTol, pointOps = latticeCandidate
 
   const ops = [];
   let maxResidual = 0;
-  // Use the rarest element for candidate translations (fewest partners → fastest).
-  let refEl = basis[0].el;
-  for (const [el, arr] of byEl) if (arr.length < byEl.get(refEl).length) refEl = el;
-  const refAtom = byEl.get(refEl)[0];
+  // Use the rarest element for candidate translations (fewest partners → fastest). Element
+  // and atom are chosen from the sites themselves, not their order (ties by element name;
+  // the atom with the smallest coordinates), so the seeds — and the local least-squares
+  // optimum each refines to, which at a loose pairing radius depends on the seed — are the
+  // same for any order of the basis.
+  let refEl = null;
+  for (const [el, arr] of byEl) {
+    if (refEl === null || arr.length < byEl.get(refEl).length || (arr.length === byEl.get(refEl).length && el < refEl)) refEl = el;
+  }
+  const lexFrac = (p, q) => wrap01(p.frac[0]) - wrap01(q.frac[0]) || wrap01(p.frac[1]) - wrap01(q.frac[1]) || wrap01(p.frac[2]) - wrap01(q.frac[2]);
+  const refAtom = byEl.get(refEl).reduce((best, s) => (lexFrac(s, best) < 0 ? s : best));
   const index = partnerIndex(byEl, A, 2 * tol);
 
   for (const { R, strain } of pointOps) {
@@ -693,16 +702,25 @@ export function symmetryLadder(A, basis, tolMax = 1.5, latticeTol = tolMax) {
 
 /**
  * The space group holding at cartesian tolerance `tol` (Å), with its operations: the
- * same closed group the ladder shows at `tol` (groupsByThreshold over one detection
- * pass at `tol`). `maxResidual` is the worst residual of the operations returned.
+ * largest closed group among the operations of one detection pass at `passTol` ≥ `tol`
+ * whose residual is ≤ `tol` (groupsByThreshold). `maxResidual` is the worst residual of
+ * the operations returned.
+ *
+ * A pass pairs each seed within 2·passTol while refining it and merges translations of one
+ * rotation closer than passTol (detectOperations), so which operations it keeps depends on
+ * passTol. With passTol = the ladder's tolMax (what describeSymmetry passes: the card's
+ * 1 Å) the pass IS the ladder's, and the result is exactly the ladder's group at `tol`.
+ * The default, a pass at `tol` alone, is cheaper but can differ from the ladder where a
+ * seed refines to another least-squares optimum or near-duplicates are merged differently.
  *
  * @returns {{ centering, pointGroup, spaceGroup, spaceGroupNumber, nSpace, nPoint,
  *             maxResidual, ops:{R,t,residual}[] }}
  */
-export function spaceGroupAtTolerance(A, basis, tol = 0.2, latticeTol = Math.max(tol, 1e-3)) {
+export function spaceGroupAtTolerance(A, basis, tol = 0.2, passTol = tol) {
   const empty = { ...UNDETERMINED, maxResidual: Number.NaN, ops: [] };
   if (!basis || !basis.length) return empty;
-  const { ops: all } = detectOperations(A, basis, Math.max(tol, 1e-3), latticeTol);
+  const pass = Math.max(passTol, tol, 1e-3);
+  const { ops: all } = detectOperations(A, basis, pass, pass);
   const walk = groupsByThreshold(all, A, tol);
   if (!walk.length) return empty;
   const ops = walk[walk.length - 1].members.map(k => all[k]);

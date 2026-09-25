@@ -2747,23 +2747,23 @@ finder passes $\tau_L = \min(\texttt{latticeTol}, \tau)$ with `latticeTol` defau
 **Input**: the point-operation list, the basis $\{(e_s, \mathbf x_s)\}$ (element + fractional
 position), the Cartesian tolerance $\tau$ Å.
 
-The basis is bucketed by element (`byEl`). A reference atom is chosen as the **first site of the
-rarest element** (fewest sites in the cell) — purely a speed choice, since it minimises the number
-of candidate partners:
+The basis is bucketed by element (`byEl`). A reference atom $a_0$ is chosen from the **rarest
+element** (fewest sites in the cell) — a speed choice, since it minimises the number of candidate
+partners — and both choices are made from the sites themselves, not from their order:
 
 ```
-refEl   = basis[0].el                        // seed
-for (el, arr) of byEl: if (arr.length < |byEl[refEl]|) refEl = el   // STRICT <
-refAtom = byEl[refEl][0]                     // = a0
+refEl   = the element with fewest sites; ties → the smaller element name
+refAtom = the refEl site with the lexicographically smallest (x, y, z), each wrapped to [0, 1)
 ```
 
-The tie-break is therefore **not** arbitrary or alphabetical: `refEl` is seeded with `basis[0].el`
-and replaced only on a *strict* `<`, so when two elements have equally few sites the winner is the
-one whose first site comes earliest in `basis` — and `byEl` is a `Map` filled in basis order, which
-is ascending reference number (Step 5). `refAtom` is likewise the lowest-reference-number site of
-that element. The reference atom fixes the *seed* translations and the enumeration order, but not
-the result: each seed is refined over all sites (Step 9), so the accepted operations and their
-residuals are the same for any order of the basis.
+The reference atom fixes the *seed* translations, and a seed is refined by least squares (Step 9)
+to the nearest local optimum: at a tight pairing radius every seed of one operation reaches the
+same one, but at the ladder's 2 Å (Step 9) a seed can settle elsewhere. So $a_0$ must not depend on
+the order of the basis. Before 1.0 it was the first site of the rarest element in basis order (ties
+by first appearance), and a shuffled basis could move the ladder's bricks: a noisy $P6_3/mmc$
+(σ = 0.03 Å) had its $P6_3/mmc 	o P6/mmm$ boundary at 0.794 Å in one site order and 0.767 Å in
+another. With the order-free choice the operations, residuals and bricks are the same for any order
+of the basis (up to floating-point summation order in the mean offset).
 
 For each rotation $R$ and each same-element candidate partner $\mathbf x_b \in$ `byEl[refEl]`:
 
@@ -2774,12 +2774,13 @@ This is exhaustive over the possible images of $a_0$: any genuine operation $\{R
 send $a_0$ to *some* same-element site, so its translation part is one of these candidates (up to
 the mapping error at that site). The candidate is only a **seed**: it carries the displacement noise
 of $a_0$ and of its partner, so Step 9 refines it by least squares over every site before the
-operation is accepted or its residual recorded. The refined operation therefore does not depend on
-which atom happened to be $a_0$ (the basis order): every seed that leads to the same operation
-refines to the same translation.
+operation is accepted or its residual recorded. Seeds of the same operation from nearby
+starting points refine to the same translation; which atom is $a_0$ is fixed independently of the
+basis order (above), so even a seed that settles in another local optimum does so in every order.
 
 **Deduplication**: every seed is refined (Step 9). Refined translations of one $R$ closer than
-$\tau$ Å to each other (minimum-image Cartesian distance) are one operation at this resolution, and
+$\tau$ Å to each other — $\tau$ being the **pass** tolerance, 1 Å in the card's ladder and headline
+(Step 12) — (minimum-image Cartesian distance) are one operation at this resolution, and
 the **best-fitting** one is kept: they are taken in order of residual (ties by translation) and
 each is dropped if it lies within $\tau$ of one already kept. Before 1.0 the first one found, in
 seed order, was kept and seeds near it were skipped; at the ladder's loose 1 Å a poor
@@ -2808,14 +2809,16 @@ minimises $\sum_s d_s^2$ is
 $$\mathbf t \leftarrow \mathbf t + \frac1N\sum_s \boldsymbol\delta_s ,$$
 
 because every pair shares the metric $G$. The sites are re-paired at the new $\mathbf t$ and the
-step repeated until the mean offset vanishes (at most four passes). The seed pass pairs within
-$2\tau$ (the seed can be off by the noise of the two atoms that defined it); the refined operation
-is **accepted** iff every site then has a partner and
+step repeated until the mean offset vanishes (at most four passes). Pairing is within $2\tau$ of
+the pass (the seed can be off by the noise of the two atoms that defined it; 2 Å in the card's
+1 Å pass), so the pass tolerance, not only the acceptance threshold, decides which local optimum a
+seed refines to; the refined operation is **accepted** iff every site then has a partner and
 
 $$\varrho(R,\mathbf t) \;=\; \max_{s}\ d_s \;\le\; \tau \quad [\text{Å}]$$
 
 i.e. the *worst-site* nearest-image error at the least-squares translation — an
-$L_\infty$-over-sites, $L_2$-in-space measure. It is independent of the basis order and never
+$L_\infty$-over-sites, $L_2$-in-space measure. It is independent of the basis order (with $a_0$
+chosen as above) and never
 larger than the error read off a single reference pair (on the bundled demo the full-group residual
 drops from 0.038 Å to 0.031 Å). `!(ϱ ≤ τ)` also rejects `NaN`.
 
@@ -3099,19 +3102,27 @@ $n_\mathrm{trans}$ = distinct pure translations, keyed on a $10^{-3}$ grid **aft
 passes this and is closed — by construction when the walk built it (`closed: true`), otherwise by an
 all-pairs check (`isClosedSet()`, products matched within $3\cdot$`tolFrac` per fractional
 component). A set that fails is labelled `not a group` with no number. The walk's products are
-matched within the residuals, so this is not excluded by construction at loose thresholds; before
+matched within the residuals, so this is not excluded by construction at loose thresholds. Before
 1.0 it was reached through the Step 8 near-duplicates (a noisy $P4_322$ ladder ended in `not a
-group`), and no case is known since (1380 noisy fixture ladders to 1 Å, 790 well-known structures
-in eight cells).
+group`). It can still be reached: a 4-site noisy Pm structure read `not a group` (6–7 operations
+with two pure translations) at 0.90–0.98 Å in a pass at that τ. In the ladder's 1 Å pass —
+the one the card uses for its headline too (Step 12) — that structure reads `Pm` and `≥ Amm2`. The
+ladder itself can still end in one: in two sweeps of noisy fixture groups at physical density in
+random cells (2065 rungs), one rung was `not a group` (a two-orbit Ccc2 from 0.98 Å to the 1 Å
+end); the earlier sweeps of 1380 noisy fixture ladders to 1 Å in their conventional cells and 790
+well-known structures in eight cells found none. The card shows it as such, with no number.
 
 **Code**: `symmetry.js` → `composeOps()`, `productTable()`, `growingGroup()`, `closeUnder()`,
 `groupsByThreshold()`, `isClosedSet()`, `isValidGroup()`.
 
 #### Step 12. The reported space group at the selected tolerance
 
-`spaceGroupAtTolerance(A, basis, τ, latticeTol)` produces the headline of the Detected SG card:
+`spaceGroupAtTolerance(A, basis, τ, passTol)` produces the headline of the Detected SG card:
 
-1. Run one detection pass (Steps 7–9) at $\tau' = \max(\tau, 10^{-3})$ Å.
+1. Run one detection pass (Steps 7–9) at $\tau' = \max(\text{passTol}, \tau, 10^{-3})$ Å — its
+   lattice strain bound, pairing radius $2\tau'$ and near-duplicate radius $\tau'$.
+   `describeSymmetry` passes `passTol = max(τ, 1 Å)`, the ladder's own pass (Step 13); the default
+   `passTol = τ` is a cheaper pass at τ alone.
 2. Walk its residual thresholds $\le\tau$ (Step 11) and take the group holding at the last one.
 3. Classify it (Step 10) with `tolFrac = max(τ, 10⁻⁶)/meanEdge(A)`.
 
@@ -3123,8 +3134,17 @@ rejects every candidate in Step 7 — the result is `undetermined` (`UNDETERMINE
 group `—`, 0 operations, `maxResidual` `NaN`), `describeSymmetry` returns no orbits, and the ladder
 is empty. Before 1.0 it was `P1` / No. 1 — a space-group number for a structure never analysed.
 
-The headline is the same group the ladder shows at $\tau$ (same walk); checked on the bundled demo
-and noisy test structures at every brick midpoint.
+With the ladder's pass the headline is **exactly** the group the ladder shows at $\tau$: the same
+operations with the same residuals (the refinement of a seed does not depend on the acceptance
+threshold, and the near-duplicate merge keeps the best fit first, so the operations kept below τ
+are those the ladder keeps below τ), and the same walk up to τ over the same product table. A pass
+at τ alone need not agree: its smaller pairing radius drops seeds the 1 Å pass refines, and its
+smaller merge radius keeps near-duplicates the 1 Å pass merges. Before 1.0 the card's headline ran
+such a pass, and in sweeps of noisy fixture groups (physical density, random cells) about 1 brick
+midpoint in 400 disagreed with its brick: a noisy P-6m2 whose ladder read `P3m1` at 0.15 Å had the
+headline `Cm` there, and a 4-site Pm read `not a group` (Step 11) inside a `Pm` brick
+(`symmetryHeadlineLadder.test.js`). The price is that every headline runs the ladder's 1 Å pass —
+tens of milliseconds for the 52-site GaNb₄Se₈ and GaTa₄Se₈ bases.
 
 **Code**: `symmetry.js` → `spaceGroupAtTolerance()`, `UNDETERMINED`; glue in `symmetryModel.js` → `describeSymmetry()`.
 
@@ -3143,9 +3163,9 @@ The first threshold is always 0 — the identity maps every site onto itself wit
 — so the first brick starts at 0 without being forced there. Operation counts are non-decreasing
 left → right (Step 11). Each brick carries `{ from, to, spaceGroup, spaceGroupNumber, pointGroup, nSpace }`.
 
-**One-pass caveat.** The ladder's translation dedup radius (Step 8) is `tolMax` for every rung,
-while the headline's is $\tau$; on a cell whose distinct translations of one rotation lie closer
-than 1 Å the two passes could differ.
+**One-pass caveat.** The ladder's translation dedup radius (Step 8) is `tolMax` for every rung
+(the card's headline shares it, Step 12): distinct translations of one rotation closer than 1 Å are
+one operation at every tolerance.
 
 **Code**: `symmetry.js` → `symmetryLadder()`; `symmetryModel.js` → `toleranceLadder()`.
 
@@ -3382,9 +3402,10 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
 - **Translation dedup radius equals the detection tolerance.** At the ladder's `tolMax = 1.0` Å,
   distinct translations less than 1 Å apart are merged for *every* rung. On a small cell this can
   suppress real centering vectors.
-- **Ladder and headline are separate passes of the same walk.** The ladder thresholds one pass at
-  1.0 Å; the headline runs a pass at $\tau$. They agree except where the dedup radius matters
-  (Step 13).
+- **The headline pays for the ladder's pass.** The card's headline is walked from the ladder's
+  own 1 Å detection pass (Step 12), so it is exactly the ladder's group at $\tau$, and every τ change
+  reruns that pass. A direct `spaceGroupAtTolerance(A, basis, τ)` call without `passTol` runs a
+  cheaper pass at $\tau$ and can differ from the ladder at a brick midpoint.
 - **A merged brick shows its loosest rung's operation count.** Merging keeps `from` and takes the
   latest `to` and `nSpace` (Step 13).
 - **Wyckoff letters assume the table's origin.** Letters are read in the standard cell the group is

@@ -129,7 +129,9 @@ export function describeSymmetry(structure, tol = 0.2) {
       + '(check the .rmc6f "Supercell dimensions"). With its lattice rotations that is more than '
       + `${MAX_SYMMETRY_OPS} candidate operations, too many to analyse on the page.`);
   }
-  const sg = spaceGroupAtTolerance(A, structure.basis, tol);   // a closed group, or 'undetermined'
+  // Detected in the ladder's own pass (pairing and near-duplicate radii of LADDER_TOL_MAX),
+  // then walked to tol: the headline is then exactly the ladder's group at tol.
+  const sg = spaceGroupAtTolerance(A, structure.basis, tol, Math.max(tol, LADDER_TOL_MAX));   // a closed group, or 'undetermined'
   // No operation at all (a broken lattice): no orbits either — not one orbit per site.
   const found = sg.ops.length ? siteOrbits(A, structure.basis, sg.ops, tol) : [];
   const positions = lettersInSetting(sg, found, structure.basis, A, tol);
