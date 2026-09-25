@@ -941,8 +941,10 @@ and its decline rules; the synthetic cases of the parity fixture (`single-site`,
 `zero-bandwidth`) pin the two runtimes to each other.
 
 **Code.** `rmc_toolkits/kde.py` → `KDE_MESSAGES`, `COVARIANCE_CONDITION_LIMIT`, `_valid_bandwidth()`,
-`_well_conditioned()`, `_kernel_summary()`, `kde_slice()` (the decline chain, the
-`gaussian_kde(slab.T, bw_method=bw)` call and the `density *= slab_total / slab_count` rescale);
+`_well_conditioned()`, `_kernel_summary()`, `_source_atom_rows()`, `_FixedCovarianceKDE` (with
+`ScipyKdeUnsupported`), `kde_slice()` (the decline chain, the
+`_FixedCovarianceKDE(slab.T, covariance, bw)` call and the `density *= slab_total / slab_count`
+rescale);
 `localKdeWorker.js` → `KDE_MESSAGES`, `COVARIANCE_CONDITION_LIMIT`, `hasDistinctPoints()`,
 `hasTwoDimensionalSpread()`, `covariance()`, `cholesky2()`, `kernelSummary()`, `makeKernel()`, and the
 decline chain in `computeKde()`.
@@ -1548,9 +1550,11 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
    site can be drawn 2 : 1 or more along the line joining the slab's sites, the shape depends on the
    cell setting and origin, and a one- or two-site slab can collapse the kernel below the grid
    (flagged `subgrid`). The overlay prints the kernel's $\sigma$ in Å. **Everything geometric
-   happens in fractional space**: the custom
-   plane is a Miller index triple $(hkl)$ (and labelled as one), not a real-space vector; and the slab thickness in
-   Å must be reconstructed by hand as $\Delta z(|h|+|k|+|l|)d_{hkl}$.
+   happens in fractional space**: the custom plane is a Miller index triple $(hkl)$ (and labelled as
+   one), not a real-space vector, and the slider's $\Delta z$ is a fraction of the cube's depth
+   range, not of a cell edge. The overlay prints the slab thickness in Å next to it
+   (`d=0.080 (1.44 Å)`, $\Delta z(|h|+|k|+|l|)d_{hkl}$, Step 4); API consumers of `z`/`dz` must
+   do that conversion themselves.
 9. **The slider auto-jumps.** Changing the element filter or the normal — including typing a single
    digit into a custom-direction box — re-runs the 50-bin "densest layer" search and overwrites $z_c$.
    That search runs on the unwrapped, display-sampled population.

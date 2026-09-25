@@ -1414,7 +1414,7 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             {kernelAngstrom && kernelAngstrom.major > KERNEL_ANISOTROPY_NOTE * kernelAngstrom.minor && (
                                 <div className="local-density-note kde-message-note" role="status">
                                     {`The kernel is ${Math.round(kernelAngstrom.major / kernelAngstrom.minor)}:1 anisotropic: `
-                                        + 'its shape is bw times the covariance of all the slab\'s atoms, so it follows how '
+                                        + 'its shape is bw² times the covariance of the slab\'s atoms, so it follows how '
                                         + 'the sites are laid out in the slab, not how any atom moves. Elongation of the '
                                         + 'blobs along the kernel\'s long axis is an artefact; use the PCA Ellipsoid page '
                                         + 'for displacement shapes.'}
