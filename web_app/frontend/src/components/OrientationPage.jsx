@@ -37,7 +37,7 @@ const WEIGHT_OPTIONS = [
     { value: 'amplitude2', label: '|Δr|²' }
 ];
 
-export default function OrientationPage({ directory, localRun }) {
+export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) {
     // Fold-and-cluster distance (Å), used only when the loaded file has no
     // reference-site/cell columns and its sites must be reconstructed.
     const [clusterThreshold, setClusterThreshold] = useState(DEFAULT_CLUSTER_THRESHOLD);
@@ -67,7 +67,7 @@ export default function OrientationPage({ directory, localRun }) {
         localFile,
         ready,
         unitCell
-    } = useSiteCloud({ directory, localRun, clusterThreshold });
+    } = useSiteCloud({ directory, localRun, clusterThreshold, dataEpoch });
 
     const staticMode = isStaticMode();
     const noRun = staticMode && !localFile;

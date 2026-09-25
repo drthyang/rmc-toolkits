@@ -49,16 +49,17 @@ const useDebounced = (value, delay = 400) => {
     return debounced;
 };
 
-export default function BondGeometryPage({ directory, localRun }) {
+export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 }) {
     const {
         sites,
         sitesError,
         loadingSites,
         requestPca,
         localFile,
+        rmc6fText,
         ready,
         datasetKey
-    } = useSiteCloud({ directory, localRun });
+    } = useSiteCloud({ directory, localRun, dataEpoch });
 
     const elements = useMemo(() => sites?.elements ?? [], [sites]);
     const elementColors = useMemo(() => buildElementColors(sites?.elements ?? []), [sites]);
@@ -105,6 +106,9 @@ export default function BondGeometryPage({ directory, localRun }) {
     const [result, setResult] = useState(null);
     const [resultError, setResultError] = useState(null);
     const [computing, setComputing] = useState(false);
+    // Set when a new configuration of the SAME run replaced the one the
+    // shown result was computed from (see below); cleared by Compute.
+    const [configChanged, setConfigChanged] = useState(false);
     const [angleView, setAngleView] = useState('sin');
 
     const staticMode = isStaticMode();
@@ -114,14 +118,45 @@ export default function BondGeometryPage({ directory, localRun }) {
     // epoch, so a compute that was in flight for the old run can never land
     // its (stale) payload on the new one.
     const runEpoch = useRef(0);
+    // Whether a computed angle distribution is on screen (read by the
+    // configuration-change effect below without making it a dependency).
+    const hasResult = useRef(false);
+    // The configuration the page last saw: the Flask Live Data epoch and a
+    // browser-loaded run's .rmc6f text (null while a new file is being read).
+    const seenConfig = useRef({ epoch: dataEpoch, text: null });
     useEffect(() => {
         runEpoch.current += 1;
+        seenConfig.current = { ...seenConfig.current, text: null };
+        hasResult.current = false;
         setResult(null);
         setResultError(null);
+        // The in-flight compute (if any) can no longer land, so its
+        // `finally` will not clear the busy state: clear it here.
+        setComputing(false);
+        setConfigChanged(false);
     }, [datasetKey]);
+    // A new .rmc6f saved under the same run (Live Data) reloads the element
+    // list, the Model information card and the partials in place, keeping
+    // the triplet and the typed windows. The angle distribution is computed
+    // on demand, so it is dropped rather than recomputed unasked: a result
+    // from the previous configuration must never sit next to the new model.
+    useEffect(() => {
+        const seen = seenConfig.current;
+        const epochChanged = dataEpoch !== seen.epoch;
+        const textChanged = rmc6fText != null && seen.text != null && rmc6fText !== seen.text;
+        seenConfig.current = { epoch: dataEpoch, text: rmc6fText ?? seen.text };
+        if (!epochChanged && !textChanged) return;
+        runEpoch.current += 1;
+        if (hasResult.current) setConfigChanged(true);
+        hasResult.current = false;
+        setResult(null);
+        setResultError(null);
+        setComputing(false);
+    }, [dataEpoch, rmc6fText]);
 
     const compute = useCallback(async () => {
         const epoch = runEpoch.current;
+        setConfigChanged(false);
         // A cleared or non-numeric box is an error naming the field — never
         // sent as Number('') = 0, which silently widened the window to 0 Å.
         let params;
@@ -130,6 +165,7 @@ export default function BondGeometryPage({ directory, localRun }) {
                 end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth
             });
         } catch (error) {
+            hasResult.current = false;
             setResult(null);
             setResultError(error.message);
             return;
@@ -138,9 +174,13 @@ export default function BondGeometryPage({ directory, localRun }) {
         setResultError(null);
         try {
             const data = await requestPca('triplets', params);
-            if (runEpoch.current === epoch) setResult(data);
+            if (runEpoch.current === epoch) {
+                hasResult.current = true;
+                setResult(data);
+            }
         } catch (error) {
             if (runEpoch.current === epoch) {
+                hasResult.current = false;
                 setResult(null);
                 setResultError(error.message);
             }
@@ -208,7 +248,7 @@ export default function BondGeometryPage({ directory, localRun }) {
             .then((response) => { if (!cancelled) setStructure(response.data); })
             .catch(() => { if (!cancelled) setStructure(null); });
         return () => { cancelled = true; };
-    }, [localRun, directory, datasetKey]);
+    }, [localRun, directory, datasetKey, dataEpoch]);
 
     // --- Partial g(r) for the window helper. ---------------------------------
     // The run's PDFpartials.csv (when present) shows where the first
@@ -249,7 +289,7 @@ export default function BondGeometryPage({ directory, localRun }) {
         };
         load();
         return () => { cancelled = true; };
-    }, [localRun, directory, datasetKey]);
+    }, [localRun, directory, datasetKey, dataEpoch]);
 
     // PDFpartials.csv labels a pair in one order only, so try both.
     const findPartial = useCallback((a, b) => {
@@ -513,7 +553,13 @@ export default function BondGeometryPage({ directory, localRun }) {
                 <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to analyse bond angles.</p>
             )}
             {(sitesError || resultError) && <p className="pca-error-banner">{sitesError || resultError}</p>}
-            {!noRun && !result && !resultError && !sitesError && (
+            {!noRun && !result && !resultError && !sitesError && configChanged && (
+                <p className="pca-hint">
+                    The run saved a new configuration, so the previous angle distribution was
+                    cleared. Compute again to update it; the triplet and windows are kept.
+                </p>
+            )}
+            {!noRun && !result && !resultError && !sitesError && !configChanged && (
                 <p className="pca-hint">
                     Pick the A{'–'}B{'–'}C triplet (B central), bound the bond lengths, then
                     Compute. Angles are counted over the periodic configuration exactly, images included.

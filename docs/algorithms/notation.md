@@ -465,19 +465,20 @@ that kept its first response (the site table, the slab points) while later reque
 move, a site click) went to a newly saved configuration would mix two configurations in one view.
 In Flask mode `App.jsx` therefore checks the `.rmc6f` entries of `/api/files` (on every **Load**
 or **Select Folder** — of the folder already shown too — then on every Live Data poll,
-`WATCH_INTERVAL_MS`) and, when their `fileSignature()` changes, bumps `configEpoch`; the Atomic
-Density, Bond Geometry, PCA Ellipsoid and Displacement Directions pages are keyed on it, so they
-remount and re-read everything from the new file. **The remount resets every page to its
-defaults**, which static-mode Live Data does not do (there the pages keep a pick that still
-applies): Atomic Density loses its element, slice normal, $z_c$/$\Delta z$, bandwidth, grid,
-colormap and contour/log toggles; Bond Geometry its A–B–C triplet, typed bond windows and bin
-width, and its computed distribution is cleared (press Compute again); PCA Ellipsoid its selected
-site, probability, KDE and display settings and the 3D camera; Displacement Directions its site,
-histogram options, colormap and sphere camera. Each remount also creates fresh WebGL contexts
-(the old ones are disposed but not force-released), so after several saves Chrome may log "Too
-many active WebGL contexts. Oldest context will be lost." — the contexts it drops are the
-disposed ones. Reloading in place (the pages keeping their picks and taking a data epoch in their
-fetch effects) is the planned replacement for the remount. **Limitation:** with
+`WATCH_INTERVAL_MS`) and, when their `fileSignature()` changes, bumps `configEpoch`. The Atomic
+Density, Bond Geometry, PCA Ellipsoid and Displacement Directions pages take it as a `dataEpoch`
+prop that sits in the dependencies of their backend fetches (`useSiteCloud`'s `requestPca` and
+site table — hence the PCA KDE volume and the orientation histogram — and the Atomic Density and
+Bond Geometry structure and partials requests, which the KDE slice follows), so they **re-read everything from the
+new file in place** and keep the picks that still apply, as static-mode Live Data does: the
+Atomic Density element, slice normal, $z_c$/$\Delta z$, bandwidth, grid, colormap, toggles and 3D
+camera; the PCA Ellipsoid site (when the new configuration still has it), settings and camera;
+the Displacement Directions site, histogram options and sphere camera; and the Bond Geometry
+triplet, typed windows and bin width. Only Bond Geometry's computed angle distribution is
+dropped, never recomputed unasked — a result from the previous configuration must not sit next
+to the new model — and the page says so (press Compute again). The pages are never remounted, and
+every Three.js view releases its WebGL context on teardown (`renderer.forceContextLoss()` after
+`dispose()`), so repeated saves do not pile up contexts. **Limitation:** with
 Live Data *off*, nothing is polled — a configuration saved while you are on an analysis page is
 picked up by that page's *next* request only. Before comparing numbers across a save, press
 **Load** again (it re-checks the `.rmc6f` and refreshes the analysis pages only if it changed),

@@ -291,7 +291,11 @@ const makeSectionEdgeGeometry = (sections) => {
     return new THREE.BufferGeometry().setFromPoints(points);
 };
 
-const StructurePage = ({ directory, localRun, theme }) => {
+// `dataEpoch` (Flask mode) changes when the run's .rmc6f changes on disk under
+// the same directory: the structure is re-read in place, which in turn
+// re-requests the KDE slice, while the element, slice normal and slab
+// position, KDE settings and 3D camera are kept.
+const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
     const [structure, setStructure] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -457,6 +461,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
             return;
         }
 
+        // The previous structure stays on screen until the new one arrives, so
+        // a Live Data reload does not blank the page; a response for a
+        // directory or configuration that has since been replaced is dropped.
+        let cancelled = false;
         const fetchStructure = async () => {
             setLoading(true);
             setError(null);
@@ -464,17 +472,19 @@ const StructurePage = ({ directory, localRun, theme }) => {
                 const response = await axios.get(`${API_BASE_URL}/api/structure`, {
                     params: { dir: directory || '.', maxPoints: STRUCTURE_MAX_POINTS }
                 });
-                setStructure(response.data);
+                if (!cancelled) setStructure(response.data);
             } catch (err) {
+                if (cancelled) return;
                 setStructure(null);
                 setError(err.response?.data?.error || 'No structure data available in this folder');
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         fetchStructure();
-    }, [directory, localRun]);
+        return () => { cancelled = true; };
+    }, [directory, localRun, dataEpoch]);
 
     useEffect(() => {
         if (!normalMenuOpen) return undefined;
@@ -644,9 +654,21 @@ const StructurePage = ({ directory, localRun, theme }) => {
     );
 
     // Default the slice to the densest band so the view is populated on load
-    // (the geometric midpoint can fall in a gap between atomic layers).
+    // (the geometric midpoint can fall in a gap between atomic layers). Only a
+    // new run, element or slice normal re-defaults it: a new configuration of
+    // the SAME run (Live Data, either runtime) keeps the band the user placed.
+    const datasetKey = localRun?.runId ?? directory ?? null;
+    const slabDefaultKeyRef = useRef(null);
     useEffect(() => {
         if (!points.length) return;
+        const previous = slabDefaultKeyRef.current;
+        slabDefaultKeyRef.current = { datasetKey, selectedElement, sliceConfig };
+        if (
+            previous
+            && previous.datasetKey === datasetKey
+            && previous.selectedElement === selectedElement
+            && previous.sliceConfig === sliceConfig
+        ) return;
         const bins = 50;
         const counts = new Array(bins).fill(0);
         points.forEach((point) => {
@@ -658,7 +680,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
             if (count > counts[best]) best = index;
         });
         setZCenter((best + 0.5) / bins);
-    }, [points, sliceConfig, pointDepth]);
+    // datasetKey is read but deliberately not a dependency: a new directory
+    // must re-default against ITS points, which arrive later (the old
+    // structure stays on screen until then) and re-run this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [points, selectedElement, sliceConfig, pointDepth]);
 
     // Fetch a real server-side gaussian_kde slice, or compute a lightweight
     // browser-side density field for uploaded static-mode data.

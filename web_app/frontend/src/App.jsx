@@ -45,7 +45,8 @@ function App() {
   const [demoActive, setDemoActive] = useState(false);
   const [watchFiles, setWatchFiles] = useState(false);
   // Flask-mode configuration epoch: bumped when the run's .rmc6f changes on disk
-  // (see the effect below); the analysis pages are keyed on it.
+  // (see the effect below); the analysis pages take it as `dataEpoch` and
+  // re-read their data in place when it changes.
   const [configEpoch, setConfigEpoch] = useState(0);
   // Bumped by every Load / Select Folder, even of the folder already shown:
   // React skips an unchanged currentDirectory, so this is what makes loading
@@ -141,10 +142,12 @@ function App() {
   // configurations mixed in one view. So watch the .rmc6f signature in the same
   // listing (checked on every Load of a folder -- the same one included -- then
   // every poll while Live Data is on) and bump configEpoch when it changes: the
-  // pages are keyed on it, remount, and re-read everything from the one new
-  // file. Their view settings reset with the remount (docs/algorithms/notation.md
-  // §3c lists what is lost). A browser-loaded run (Demo, picked folder) is a
-  // snapshot and is not watched here.
+  // pages receive it as `dataEpoch`, which is in the dependencies of their
+  // backend fetches, so they re-read everything from the one new file in
+  // place — keeping the picks and view settings that still apply, as static
+  // mode does when a picked folder's files change (docs/algorithms/notation.md
+  // §3c). A browser-loaded run (Demo, picked folder) is a snapshot and is not
+  // watched here.
   useEffect(() => {
     if (staticMode || localRun) return undefined;
     let cancelled = false;
@@ -534,7 +537,7 @@ function App() {
               className={`workspace-page${activePage === 'structure' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'structure'}
             >
-              <StructurePage key={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" />
+              <StructurePage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" />
             </div>
           )}
           {visitedPages.ellipsoids && (
@@ -542,7 +545,7 @@ function App() {
               className={`workspace-page${activePage === 'ellipsoids' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'ellipsoids'}
             >
-              <PcaKdePage key={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" onSitesChange={setPcaSites} />
+              <PcaKdePage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" onSitesChange={setPcaSites} />
             </div>
           )}
           {visitedPages.orientation && (
@@ -552,7 +555,7 @@ function App() {
             >
               {/* Displacement-direction histogram — independent of the PCA page
                   (shares only the site picker via useSiteCloud). */}
-              <OrientationPage key={configEpoch} directory={currentDirectory} localRun={localRun} />
+              <OrientationPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
             </div>
           )}
           {visitedPages.geometry && (
@@ -562,7 +565,7 @@ function App() {
             >
               {/* Bond-angle (triplet) distribution + bond-length/coordination
                   statistics — the RMCProfile `triplets` workflow. */}
-              <BondGeometryPage key={configEpoch} directory={currentDirectory} localRun={localRun} />
+              <BondGeometryPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
             </div>
           )}
           {visitedPages.assistant && (

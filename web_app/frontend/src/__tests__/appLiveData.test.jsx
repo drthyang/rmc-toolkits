@@ -7,9 +7,11 @@
 // on disk, so when RMCProfile saves a new .rmc6f a page that is not refreshed
 // would draw its old site table / slab points next to data its next request
 // (a slider move, a site click) takes from the new configuration. App.jsx
-// keys the analysis pages on a configuration epoch that changes with the
-// .rmc6f signature in the /api/files listing, so they remount and re-read
-// everything from the new file.
+// passes the analysis pages a configuration epoch (`dataEpoch`) that changes
+// with the .rmc6f signature in the /api/files listing; it is in the
+// dependencies of the pages' backend fetches, so they re-read everything from
+// the new file IN PLACE — never remounting, which would reset the user's
+// picks and leak a WebGL context per page per save.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
@@ -17,7 +19,10 @@ import { createRoot } from 'react-dom/client';
 
 const state = vi.hoisted(() => ({
     files: [],
+    // Mounts of each page (must stay at 1: no remount on a new configuration)
+    // and the data loads it performs (one per distinct dataEpoch it is given).
     mounts: { structure: 0, geometry: 0, ellipsoids: 0, orientation: 0 },
+    loads: { structure: 0, geometry: 0, ellipsoids: 0, orientation: 0 },
 }));
 
 vi.mock('axios', () => ({
@@ -39,8 +44,9 @@ vi.mock('../browserData', async (importOriginal) => ({
 const countingPage = async (name) => {
     const { useEffect } = await import('react');
     return {
-        default: function CountingPage() {
+        default: function CountingPage({ dataEpoch }) {
             useEffect(() => { state.mounts[name] += 1; }, []);
+            useEffect(() => { state.loads[name] += 1; }, [dataEpoch]);
             return null;
         },
     };
@@ -69,7 +75,7 @@ describe('App Flask-mode Live Data', () => {
     beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
         vi.useFakeTimers();
-        Object.keys(state.mounts).forEach((key) => { state.mounts[key] = 0; });
+        Object.keys(state.mounts).forEach((key) => { state.mounts[key] = 0; state.loads[key] = 0; });
         state.files = listing({ modified: 100, size: 5000 }, { modified: 100, size: 10 });
         container = document.createElement('div');
         document.body.appendChild(container);
@@ -91,6 +97,9 @@ describe('App Flask-mode Live Data', () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(WATCH_INTERVAL_MS); });
     };
 
+    const once = { structure: 1, geometry: 1, ellipsoids: 1, orientation: 1 };
+    const twice = { structure: 2, geometry: 2, ellipsoids: 2, orientation: 2 };
+
     const openAnalysisPagesWithLiveData = async () => {
         await act(async () => { root.render(<App />); });
         for (const label of ['Atomic Density', 'Bond Geometry', 'PCA Ellipsoid', 'Displacement Directions']) {
@@ -98,55 +107,61 @@ describe('App Flask-mode Live Data', () => {
         }
         await click(container.querySelector('label.watch-toggle input[type="checkbox"]'));
         await poll();
-        expect(state.mounts).toEqual({ structure: 1, geometry: 1, ellipsoids: 1, orientation: 1 });
+        expect(state.mounts).toEqual(once);
+        expect(state.loads).toEqual(once);
     };
 
-    it('re-reads the analysis pages when the .rmc6f changes on disk', async () => {
+    it('re-reads the analysis pages in place when the .rmc6f changes on disk', async () => {
         await openAnalysisPagesWithLiveData();
 
-        // RMCProfile saves a new configuration.
+        // RMCProfile saves a new configuration: every page reloads its data...
         state.files = listing({ modified: 200, size: 5100 }, { modified: 100, size: 10 });
         await poll();
-        expect(state.mounts).toEqual({ structure: 2, geometry: 2, ellipsoids: 2, orientation: 2 });
+        expect(state.loads).toEqual(twice);
+        // ...without being remounted (its picks and camera survive).
+        expect(state.mounts).toEqual(once);
 
         // Nothing new on disk: no further refresh.
         await poll();
-        expect(state.mounts).toEqual({ structure: 2, geometry: 2, ellipsoids: 2, orientation: 2 });
+        expect(state.loads).toEqual(twice);
+        expect(state.mounts).toEqual(once);
     });
 
     it('catches up when Live Data is switched on after the file changed', async () => {
         await act(async () => { root.render(<App />); });
         await click(tab('PCA Ellipsoid'));
         await poll();
-        expect(state.mounts.ellipsoids).toBe(1);
+        expect(state.loads.ellipsoids).toBe(1);
 
         // Saved while Live Data was off: nothing is polled...
         state.files = listing({ modified: 200, size: 5100 }, { modified: 100, size: 10 });
         await poll();
-        expect(state.mounts.ellipsoids).toBe(1);
+        expect(state.loads.ellipsoids).toBe(1);
 
         // ...until it is switched on, which re-reads the page at once.
         await click(container.querySelector('label.watch-toggle input[type="checkbox"]'));
-        expect(state.mounts.ellipsoids).toBe(2);
+        expect(state.loads.ellipsoids).toBe(2);
+        expect(state.mounts.ellipsoids).toBe(1);
     });
 
     it('re-checks the .rmc6f when the same folder is loaded again with Live Data off', async () => {
         await act(async () => { root.render(<App />); });
         await click(tab('PCA Ellipsoid'));
         await poll();
-        expect(state.mounts.ellipsoids).toBe(1);
+        expect(state.loads.ellipsoids).toBe(1);
         const load = container.querySelector('form.path-bar button[type="submit"]');
 
-        // Load the same folder with nothing new on disk: the page keeps its state.
+        // Load the same folder with nothing new on disk: the page keeps its data.
         await click(load);
-        expect(state.mounts.ellipsoids).toBe(1);
+        expect(state.loads.ellipsoids).toBe(1);
 
         // A configuration saved while Live Data is off is picked up by Load.
         state.files = listing({ modified: 200, size: 5100 }, { modified: 100, size: 10 });
         await poll();
-        expect(state.mounts.ellipsoids).toBe(1);
+        expect(state.loads.ellipsoids).toBe(1);
         await click(load);
-        expect(state.mounts.ellipsoids).toBe(2);
+        expect(state.loads.ellipsoids).toBe(2);
+        expect(state.mounts.ellipsoids).toBe(1);
     });
 
     it('does not reload the analysis pages when only the plot/log files change', async () => {
@@ -154,6 +169,7 @@ describe('App Flask-mode Live Data', () => {
 
         state.files = listing({ modified: 100, size: 5000 }, { modified: 300, size: 99 });
         await poll();
-        expect(state.mounts).toEqual({ structure: 1, geometry: 1, ellipsoids: 1, orientation: 1 });
+        expect(state.loads).toEqual(once);
+        expect(state.mounts).toEqual(once);
     });
 });

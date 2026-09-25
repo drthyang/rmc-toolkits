@@ -495,7 +495,7 @@ const frameAlongCellAxis = (camera, controls, kde, unitCell, axisIndex, aspect =
     placeMainCamera(camera, controls, kde, dir, [up.x, up.y, up.z], aspect);
 };
 
-export default function PcaKdePage({ directory, localRun, onSitesChange }) {
+export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpoch = 0 }) {
     const [kde, setKde] = useState(null);
     const [kdeError, setKdeError] = useState(null);
     const [loadingKde, setLoadingKde] = useState(false);
@@ -553,7 +553,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         rmc6fText,
         unitCell,
         datasetKey
-    } = useSiteCloud({ directory, localRun, probability, clusterThreshold });
+    } = useSiteCloud({ directory, localRun, probability, clusterThreshold, dataEpoch });
 
     // --- Load the KDE volume for the selected site. ---------------------------
     useEffect(() => {
