@@ -79,7 +79,7 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     usable_sigma,
 )
 from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset
-from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_density
+from rmc_toolkits.scattering import number_density_from_mass_density
 from rmc_toolkits.transforms import first_peak_zero, g_to_gk, gk_to_dr
 
 
