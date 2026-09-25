@@ -105,7 +105,7 @@ the canvas both read *"The Flask app uses SciPy KDE for reference-grade values"*
 | $\mathbf{p}_i=(u_i,v_i)$ | in-plane projection $(\mathbf{x}_i\!\cdot\!\hat{\mathbf{u}},\, \mathbf{x}_i\!\cdot\!\hat{\mathbf{v}})$ | dimensionless |
 | $N_\mathrm{src}$ | unique source atoms contributing to the slab (`slabCount`) — see the warning in Step 4 | count |
 | $N_\mathrm{img}$ | slab rows including periodic images | count |
-| $n$ | fit points actually handed to the estimator (`fitCount`) | count |
+| $n$ | slab rows (images included, subsampled to ≤6000) the kernel is summed over (`fitCount`) | count |
 | $m$ | periodic-image margin | fractional |
 | $\mathbf{C}$ | $2\times2$ sample covariance of the slab's **source atoms** (one row per atom, images excluded) | fractional² |
 | $f$ | bandwidth factor (`bw`) | dimensionless |
@@ -657,7 +657,8 @@ so the reader can always see when subsampling kicked in.
 
 ### Step 6 — The Gaussian kernel: bandwidth matrix and normalization
 
-**Inputs.** The $n$ fit points $\mathbf{p}_i=(u_i,v_i)$ and the *Bandwidth* slider
+**Inputs.** The $n$ fit points $\mathbf{p}_i=(u_i,v_i)$, the slab's $N_\mathrm{src}$ source-atom rows
+$\mathbf{q}_a$ (for $\mathbf{C}$), and the *Bandwidth* slider
 $f \in [0.005, 0.15]$, step 0.005, **default 0.03**.
 
 **The estimator.** Both paths compute the standard multivariate Gaussian KDE with a
