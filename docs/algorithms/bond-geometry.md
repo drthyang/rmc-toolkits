@@ -95,8 +95,11 @@ $(N,3)$, the lattice a finite $(3,3)$ matrix, each window needs $0 \le r_\mathrm
 r_\mathrm{max}$ with finite bounds, and a triplet element with no atoms in the configuration
 reports the list of symbols that *are* available. The port
 ([workers/triplets.js](../../web_app/frontend/src/workers/triplets.js)) additionally rejects
-`null`/`''` bounds explicitly, because JavaScript's `Number(null)` would otherwise silently
-coerce a missing bound to `rmin = 0` where Python's `float()` raises.
+`null`, `''` and whitespace-only bounds explicitly (`isBlankValue`), because JavaScript's
+`Number()` turns every one of them into `0` — a missing bound would silently become
+`rmin = 0` — where Python's `float()` raises. The guard only protects callers that hand the
+engine the raw value, so neither app boundary converts a bound before the check (Step 8), and
+the page validates its input boxes before sending anything (page Step 2).
 
 Two flags fall out of the spec before any geometry runs:
 
@@ -347,7 +350,13 @@ would freeze the shared PCA worker:
 | $r_\mathrm{max} \le 15\,$Å (each window) | the neighbour search (bond count $\sim r_\mathrm{max}^3$) | 400 | thrown `Error` |
 | exact angle count $\le$ `APP_MAX_ANGLES` $= 5\times10^7$ | the pairing work (angle count $\sim r_\mathrm{max}^6$) | 400 | thrown `Error` |
 | `binWidth` $\ge 0.05°$ | the response size | 400 | thrown `Error` |
-| `r23Min`/`r23Max` required together | — | 400 | thrown `Error` |
+| `r12Min`/`r12Max` present, `r23Min`/`r23Max` both or neither — `null`, `''` and whitespace count as missing | — | 400 | thrown `Error` |
+
+A missing bound is an error with the same text at both boundaries ("r12Min/r12Max are required
+together; missing r12Min") — never a bound of 0. Before 1.0 the worker ran `Number()` on every
+bound, so a cleared minimum reached the engine as `0` and silently widened the window (Nb–Nb–Nb
+3.5–4.6 Å became 0–4.6 Å on the 5 K sample: 235 883 angles, mean 107°, instead of 48 182 at
+62°), while Flask rejected the same request.
 
 The rmax cap alone does **not** bound the work: on the 52 000-atom 5 K sample a Se–Nb–Se window
 2.2–15 Å forms $1.27\times10^9$ angles (Se–Se–Se 2–15 Å: $2.45\times10^9$). So both boundaries
@@ -494,15 +503,20 @@ existing valid selection is never overwritten.
 
 ### Step 2 — The compute request and the epoch guard
 
-**Compute** issues `requestPca('triplets', {end1, apex, end2, r12Min, r12Max, r23Min?, r23Max?,
-binWidth})` — the B–C window included only when the split switch is on (the engine then receives
-`bond23 = null` and reuses `bond12`). A dataset switch clears any previous result immediately
+**Compute** first turns the input boxes into a request with `tripletRequestFromInputs`
+([workers/triplets.js](../../web_app/frontend/src/workers/triplets.js)): a cleared or non-numeric
+box shows an error naming it ("A–B window minimum is empty — enter a number.") and nothing is
+sent — it is never coerced to `0`. It then issues `requestPca('triplets', {end1, apex, end2,
+r12Min, r12Max, r23Min?, r23Max?, binWidth})` — the B–C window included only when the split
+switch is on (the engine then receives `bond23 = null` and reuses `bond12`). A dataset switch clears any previous result immediately
 and bumps a `runEpoch` ref; a compute that was in flight for the old run compares its captured
 epoch on resolve and can never land a stale payload on the new dataset.
 
 ### Step 3 — The result chips
 
-Straight reads of the payload: central-atom count (`apexCount`), **Bonds** — the physical
+The card's header names the triplet and the windows **the engine actually used** (the
+resolved `bond12`/`bond23` of the payload) — both, labelled A–B and B–C, whenever they differ.
+The chips are straight reads of the payload: central-atom count (`apexCount`), **Bonds** — the physical
 bond count `uniqueBonds`, each bond once, with its mean length (`lengths12`, and `lengths23`
 when not shared; a tooltip gives the B-centred count when the end element is the central one) —
 the coordination summary — mean bonds per B $\sum_n n\,c_n / \sum_n c_n$, which counts a B–B
@@ -568,7 +582,7 @@ shows instantaneous atoms: a stick is the average bond, not any single configura
 | Control | Default | Notes |
 |---|---|---|
 | Triplet A, B, C | seeded per sites payload | ends = most abundant element, central = next |
-| A–B window | 2.0 – 3.0 Å | inclusive; string state, validated at the boundary |
+| A–B window | 2.0 – 3.0 Å | inclusive; string state, validated before sending (a cleared box is an error, not 0) |
 | Distinct B–C | off | off ⇒ B–C reuses the A–B window and one guide pair |
 | B–C window | 2.0 – 3.0 Å | only sent when the split is on |
 | Bin width | 1.0° | realized width comes back in the payload |

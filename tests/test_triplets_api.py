@@ -78,6 +78,18 @@ class TripletsBudgetApiTests(unittest.TestCase):
         self.assertIn("angles", refused.get_json()["error"])
         self.assertIn("narrow", refused.get_json()["error"])
 
+    def test_blank_bounds_are_missing_not_zero(self):
+        # The same request shape the worker rejects: a cleared rmin box.
+        for blank in ("", "   "):
+            response = self.client.get("/api/triplets", query_string=self.query(r12Min=blank))
+            self.assertEqual(response.status_code, 400, repr(blank))
+            self.assertIn("required together; missing r12Min", response.get_json()["error"])
+            half = self.client.get(
+                "/api/triplets", query_string=self.query(r23Min=blank, r23Max=4.0)
+            )
+            self.assertEqual(half.status_code, 400, repr(blank))
+            self.assertIn("missing r23Min", half.get_json()["error"])
+
     def test_route_uses_the_engine_budget_constant(self):
         from rmc_toolkits.triplets import APP_MAX_ANGLES
 

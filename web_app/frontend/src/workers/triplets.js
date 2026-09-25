@@ -57,13 +57,19 @@ const capitalize = (symbol) => {
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
 };
 
+// A missing request value: null/undefined, '' or whitespace only. Number()
+// turns every one of them into 0 — so a cleared "rmin" box would silently
+// become rmin = 0 — where Python's float() raises. Callers test this first.
+export const isBlankValue = (value) =>
+  value == null || (typeof value === 'string' && value.trim() === '');
+
 const validateWindow = (name, window) => {
   if (!Array.isArray(window) || window.length !== 2) {
     throw new Error(`${name} must be a (rmin, rmax) pair`);
   }
-  // Number(null) and Number('') coerce to 0 — reject them explicitly so a
-  // missing bound errors like Python's float() instead of becoming rmin = 0.
-  if (window.some((value) => value == null || value === '')) {
+  // Reject missing bounds explicitly so they error like Python's float()
+  // instead of becoming rmin = 0.
+  if (window.some(isBlankValue)) {
     throw new Error(`${name} bounds must be finite, got (${window[0]}, ${window[1]})`);
   }
   const rmin = Number(window[0]);
@@ -433,6 +439,36 @@ const lengthHistogram = (perCenter, [lo, hi], homonuclear) => {
     uniqueBonds: homonuclear ? total / 2 : total,
     meanLength: total ? sum / total : null
   };
+};
+
+/**
+ * The Bond Geometry page's input boxes → the flat `triplets` request (the
+ * shape both the worker and /api/triplets take). Every box is a string; a
+ * cleared or non-numeric one throws an Error naming the field — it is never
+ * sent as 0. The B–C window is included only when `split23` is on.
+ */
+export const tripletRequestFromInputs = ({
+  end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth
+}) => {
+  const number = (value, label) => {
+    if (isBlankValue(value)) throw new Error(`${label} is empty — enter a number.`);
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) throw new Error(`${label} is not a number: "${value}".`);
+    return parsed;
+  };
+  const params = {
+    end1,
+    apex,
+    end2,
+    r12Min: number(r12Min, 'A–B window minimum'),
+    r12Max: number(r12Max, 'A–B window maximum'),
+    binWidth: number(binWidth, 'Bin width')
+  };
+  if (split23) {
+    params.r23Min = number(r23Min, 'B–C window minimum');
+    params.r23Max = number(r23Max, 'B–C window maximum');
+  }
+  return params;
 };
 
 /**

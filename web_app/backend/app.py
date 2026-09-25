@@ -655,7 +655,13 @@ def triplets_endpoint():
 
         def window(min_key, max_key, fallback=None):
             raw_min, raw_max = request.args.get(min_key), request.args.get(max_key)
-            missing = [key for key, raw in ((min_key, raw_min), (max_key, raw_max)) if raw in (None, "")]
+            # Blank (empty or whitespace) is missing, exactly as in the browser
+            # worker -- never a 0 A bound.
+            missing = [
+                key
+                for key, raw in ((min_key, raw_min), (max_key, raw_max))
+                if raw is None or not raw.strip()
+            ]
             if len(missing) == 2 and fallback is not None:
                 return fallback
             if missing:

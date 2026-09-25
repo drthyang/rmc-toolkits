@@ -23,6 +23,7 @@ import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import FoldedCellPanel from './FoldedCellPanel';
 import useSiteCloud from '../useSiteCloud';
+import { tripletRequestFromInputs } from '../workers/triplets';
 import './PcaKdePage.css';
 import './BondGeometryPage.css';
 
@@ -121,21 +122,21 @@ export default function BondGeometryPage({ directory, localRun }) {
 
     const compute = useCallback(async () => {
         const epoch = runEpoch.current;
+        // A cleared or non-numeric box is an error naming the field — never
+        // sent as Number('') = 0, which silently widened the window to 0 Å.
+        let params;
+        try {
+            params = tripletRequestFromInputs({
+                end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth
+            });
+        } catch (error) {
+            setResult(null);
+            setResultError(error.message);
+            return;
+        }
         setComputing(true);
         setResultError(null);
         try {
-            const params = {
-                end1,
-                apex,
-                end2,
-                r12Min: Number(r12Min),
-                r12Max: Number(r12Max),
-                binWidth: Number(binWidth)
-            };
-            if (split23) {
-                params.r23Min = Number(r23Min);
-                params.r23Max = Number(r23Max);
-            }
             const data = await requestPca('triplets', params);
             if (runEpoch.current === epoch) setResult(data);
         } catch (error) {
@@ -373,6 +374,7 @@ export default function BondGeometryPage({ directory, localRun }) {
     }, [result]);
 
     const windowLabel = (window) => `${formatNumber(window[0])}–${formatNumber(window[1])} ${ANGSTROM}`;
+    const sameWindow = (one, two) => one[0] === two[0] && one[1] === two[1];
 
     // 'Bonds' chips show physical bonds, each once (uniqueBonds). With the
     // end element equal to the central one every bond is found from both of
@@ -513,7 +515,11 @@ export default function BondGeometryPage({ directory, localRun }) {
                         <h2 className="model-summary-title">
                             Triplet result
                             <span className="model-summary-source">
-                                {`${result.triplet.join('–')} · ${windowLabel(result.bond12)}`}
+                                {/* The windows the engine actually used (resolved
+                                    payload values), the B–C one whenever it differs. */}
+                                {sameWindow(result.bond12, result.bond23)
+                                    ? `${result.triplet.join('–')} · ${windowLabel(result.bond12)}`
+                                    : `${result.triplet.join('–')} · A–B ${windowLabel(result.bond12)} · B–C ${windowLabel(result.bond23)}`}
                             </span>
                         </h2>
                         <dl className="model-stats">
