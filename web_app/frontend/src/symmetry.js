@@ -268,13 +268,24 @@ function refineOperation(R, t0, basis, index, A, tol) {
  *   nSpace : total {R|t} (= point-group order × #centering-type cosets for the cell).
  */
 export function findSpaceGroupOps(A, basis, tol = 0.1, latticeTol = tol) {
-  if (!basis || basis.length === 0) return { ops: [], nSpace: 0, nPoint: 0, order: 0, maxResidual: 0, centering: 'P', pointGroup: '1', spaceGroup: 'P1', spaceGroupNumber: 1 };
+  if (!basis || basis.length === 0) return { ...UNDETERMINED, ops: [], order: 0, maxResidual: Number.NaN };
   const { ops, maxResidual } = detectOperations(A, basis, tol, latticeTol);
   // The raw set need not be closed (Step 11): classify the largest closed group in it.
   const walk = groupsByThreshold(ops, A, Infinity);
-  const group = walk.length ? walk[walk.length - 1].members.map(k => ops[k]) : [];
+  if (!walk.length) return { ...UNDETERMINED, ops, order: ops.length, maxResidual: Number.NaN };
+  const group = walk[walk.length - 1].members.map(k => ops[k]);
   return { ops, order: ops.length, maxResidual, ...classifyOperations(group, tol / meanEdge(A), { closed: true, A }) };
 }
+
+/**
+ * The result when nothing can be analysed: no basis, or no operation — not even the
+ * identity — survives (a lattice with a non-finite entry, or a singular one, rejects every
+ * candidate in Step 7). Never "P1 No. 1": that would name a structure never seen.
+ */
+export const UNDETERMINED = Object.freeze({
+  centering: null, pointGroup: '—', spaceGroup: 'undetermined', spaceGroupNumber: null,
+  nSpace: 0, nPoint: 0, nTrans: 0, setting: null,
+});
 
 // Every candidate operation of (A, basis) within `tol`, with its residual (Steps 7–9).
 function detectOperations(A, basis, tol, latticeTol) {
@@ -653,7 +664,7 @@ export function symmetryLadder(A, basis, tolMax = 1.5, latticeTol = tolMax) {
  *             maxResidual, ops:{R,t,residual}[] }}
  */
 export function spaceGroupAtTolerance(A, basis, tol = 0.2, latticeTol = Math.max(tol, 1e-3)) {
-  const empty = { centering: 'P', pointGroup: '1', spaceGroup: 'P1', spaceGroupNumber: 1, nSpace: 0, nPoint: 0, maxResidual: 0, ops: [] };
+  const empty = { ...UNDETERMINED, maxResidual: Number.NaN, ops: [] };
   if (!basis || !basis.length) return empty;
   const { ops: all } = detectOperations(A, basis, Math.max(tol, 1e-3), latticeTol);
   const walk = groupsByThreshold(all, A, tol);

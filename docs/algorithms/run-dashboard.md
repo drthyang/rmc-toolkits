@@ -3061,12 +3061,15 @@ component). A set that fails is labelled `not a group` with no number (never rea
 `maxResidual` is the **worst residual of the operations returned** (0 only when that group is the
 identity alone, whose residual is exactly 0) — shown in the card's tooltip as `fits to <maxResidual>
 Å`. `nSpace` is the number of operations of that group ("Operations"). On an empty basis, or when no
-operation survives (e.g. a `NaN` lattice, Step 7), the result is `P1` / No. 1 / 0 operations.
+operation survives — not even the identity: a lattice with a non-finite entry, or a singular one,
+rejects every candidate in Step 7 — the result is `undetermined` (`UNDETERMINED`: no number, point
+group `—`, 0 operations, `maxResidual` `NaN`), `describeSymmetry` returns no orbits, and the ladder
+is empty. Before 1.0 it was `P1` / No. 1 — a space-group number for a structure never analysed.
 
 The headline is the same group the ladder shows at $\tau$ (same walk); checked on the bundled demo
 and noisy test structures at every brick midpoint.
 
-**Code**: `symmetry.js` → `spaceGroupAtTolerance()`; glue in `symmetryModel.js` → `describeSymmetry()`.
+**Code**: `symmetry.js` → `spaceGroupAtTolerance()`, `UNDETERMINED`; glue in `symmetryModel.js` → `describeSymmetry()`.
 
 #### Step 13. The tolerance ladder
 
@@ -3299,9 +3302,9 @@ unit-cell configuration, and a symmetry search on it would only ever return `P1`
 - **No origin shift.** The standard cell is found by a change of basis only; the origin stays where
   the `.rmc6f` puts it. Space-group names do not depend on the origin, Wyckoff letters do (Step 14).
 - **Header input is unvalidated.** Neither the `Lattice` numbers nor the `Supercell` multiplicities
-  are checked. `NaN` lattice entries make `latticePointOps` accept all 6960 unimodular patterns (all
-  `NaN` comparisons are false) and then make every mapping residual `NaN`, so the card silently
-  degrades to `P1` / 0 operations with an empty ladder and `NaN` cell edges. A zero or non-integer
+  are checked. A non-finite or singular lattice gives `NaN` strains, every candidate operation is
+  rejected (Step 7), and the card shows `undetermined` with 0 operations, no ladder and `NaN` cell
+  edges (Step 12). A zero or non-integer
   supercell entry is guarded in the *cell* division but not in the *fold into one cell*, giving a
   collapsed one-site basis and a spurious high-symmetry answer (Steps 1 and 5).
 - **A reference site's species is whatever appeared first.** `acc.element` is set once and never

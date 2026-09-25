@@ -356,8 +356,8 @@ describe('rotation and point-group classification', () => {
 });
 
 describe('findSpaceGroupOps', () => {
-    it('returns an empty group for an empty basis', () => {
-        expect(findSpaceGroupOps(cubic(4), [], 0.1)).toMatchObject({ nSpace: 0, spaceGroup: 'P1' });
+    it('reports an empty basis as undetermined, with no number', () => {
+        expect(findSpaceGroupOps(cubic(4), [], 0.1)).toMatchObject({ nSpace: 0, spaceGroup: 'undetermined', spaceGroupNumber: null });
     });
 
     it('gives P-1 for a lone atom — a one-atom basis is always centrosymmetric', () => {

@@ -92,8 +92,9 @@ export function describeSymmetry(structure, tol = 0.2) {
     };
   }
   const A = conventionalCell(structure);
-  const sg = spaceGroupAtTolerance(A, structure.basis, tol);   // always a closed group
-  const found = siteOrbits(A, structure.basis, sg.ops, tol);
+  const sg = spaceGroupAtTolerance(A, structure.basis, tol);   // a closed group, or 'undetermined'
+  // No operation at all (a broken lattice): no orbits either — not one orbit per site.
+  const found = sg.ops.length ? siteOrbits(A, structure.basis, sg.ops, tol) : [];
   const letters = lettersInSetting(sg, found, structure.basis, A, tol);
   const orbits = found.map((o, i) => ({
     element: o.element,
