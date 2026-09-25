@@ -273,9 +273,32 @@ class StructureEndpointReportTests(unittest.TestCase):
         self.assertEqual(payload["parseReport"]["coordsOnlyAtoms"], ATOMS)
 
     def test_zero_parsed_atoms_is_an_error_that_says_why(self):
+        # Unusable input is a 400 with the reason, as /api/pca/sites and
+        # /api/triplets answer for the same file (500 is for server faults).
         response = self._structure(VARIANTS["extra_numeric_column"])
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 400)
         self.assertIn(f"{ATOMS} of {ATOMS} atom lines unparsed", response.get_json()["error"])
+        for route in ("/api/pca/sites", "/api/triplets"):
+            with self.subTest(route=route):
+                other = self.client.get(route, query_string={
+                    "dir": str(self.directory), "end1": "Se", "apex": "Nb", "end2": "Se",
+                    "r12Min": 2.0, "r12Max": 3.0})
+                self.assertEqual(other.status_code, 400)
+                self.assertIn(f"{ATOMS} of {ATOMS} atom lines unparsed", other.get_json()["error"])
+
+    def test_bond_angles_read_coords_only_atoms_like_the_browser_worker(self):
+        # The worker's triplets request uses parseRmc6fAtoms' atoms, both
+        # layouts; Flask used to see no atoms in a coords-only file.
+        query = {"end1": "Ga", "apex": "Ga", "end2": "Ga", "r12Min": 6.0, "r12Max": 8.5}
+        _write(self.directory, "run", _with_atoms(ATOM_LINES))
+        full = self.client.get("/api/triplets", query_string={"dir": str(self.directory), **query})
+        _write(self.directory, "run", VARIANTS["coords_only"])
+        coords = self.client.get("/api/triplets", query_string={"dir": str(self.directory), **query})
+        self.assertEqual(full.status_code, 200)
+        self.assertEqual(coords.status_code, 200)
+        self.assertGreater(full.get_json()["angleCount"], 0)
+        self.assertEqual(coords.get_json()["angleCount"], full.get_json()["angleCount"])
+        self.assertEqual(coords.get_json()["counts"], full.get_json()["counts"])
 
     def test_non_finite_line_is_skipped_and_reported(self):
         lines = list(ATOM_LINES)

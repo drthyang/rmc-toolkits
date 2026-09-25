@@ -90,6 +90,14 @@ deterministic to the last count.
 - `triplet = (A, B, C)` with **B central**, `bond12 = (rmin, rmax)` for A–B, and an optional
   `bond23` for B–C (`None` reuses `bond12`).
 
+From a file (`_read_configuration`, used by the Flask route and the CLI) the atoms come from the
+shared `.rmc6f` grammar with `include_coords_only=True`: bond angles need only element and position,
+so legacy coordinates-only lines count as well — the same atom set the browser worker takes from
+`parseRmc6fAtoms()`. Lines with a non-finite coordinate are skipped (the Model information card
+reports them), and a file with no parseable atom is a `ValueError` (HTTP 400) *"no atoms could be
+parsed — …"* naming what was found. Before 1.0 Flask read full-layout lines only, so a
+coordinates-only file had "no atoms" there but angles in the browser.
+
 Validation is strict and raises `ValueError` rather than coercing: coordinates must be finite
 $(N,3)$, the lattice a finite $(3,3)$ matrix, each window needs $0 \le r_\mathrm{min} <
 r_\mathrm{max}$ with finite bounds, and a triplet element with no atoms in the configuration

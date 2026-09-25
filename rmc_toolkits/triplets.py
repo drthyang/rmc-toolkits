@@ -132,7 +132,7 @@ from typing import Sequence
 
 import numpy as np
 
-from .parsers import iter_rmc6f_atoms, read_cell_vectors
+from .parsers import Rmc6fParseReport, iter_rmc6f_atoms, read_cell_vectors
 
 # Cap on linked-list cells per lattice direction. Beyond this the per-cell
 # occupancy for any realistic RMC box is far below one atom and finer cells
@@ -928,14 +928,25 @@ def bond_angle_summary(
 
 
 def _read_configuration(path: str | Path) -> tuple[np.ndarray, list[str], np.ndarray]:
+    """Every atom's element and supercell-fraction position.
+
+    Bond angles need only those two, so legacy coords-only lines count too --
+    the same atom set as the browser worker (``parseRmc6fAtoms`` keeps both
+    layouts). Non-finite and unparsed lines are skipped by the shared grammar;
+    no atom at all is a ``ValueError`` naming what was found.
+    """
     lattice_vectors, _ = read_cell_vectors(path)
     coords: list[np.ndarray] = []
     elements: list[str] = []
-    for atom in iter_rmc6f_atoms(path):
+    report = Rmc6fParseReport()
+    for atom in iter_rmc6f_atoms(path, include_coords_only=True, report=report):
         coords.append(atom["coords"])
         elements.append(atom["element"])
     if not coords:
-        raise ValueError(f"{path} does not contain any atoms")
+        detail = report.warning() or (
+            "the Atoms section is empty" if report.has_atoms_section else "there is no Atoms section"
+        )
+        raise ValueError(f"{path}: no atoms could be parsed — {detail}")
     return np.asarray(coords, dtype=float), elements, lattice_vectors
 
 
