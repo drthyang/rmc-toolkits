@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { computeDensityGpu, shouldUseGpu } from './gpuKde.js';
+import { isInSlab } from './slabSelection.js';
 
 const CUBE_CORNERS = [
     [0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
@@ -119,7 +120,7 @@ const makeSlab = ({ points, sourceIndex, imageRanks, normal, uVector, vVector, r
     points.forEach((point, index) => {
         const fraction = [point.x, point.y, point.z];
         const normalizedDepth = (dot(fraction, normal) - range[0]) / depthSpan;
-        if (Math.abs(normalizedDepth - zCenter) <= thickness / 2) {
+        if (isInSlab(normalizedDepth, zCenter, thickness)) {
             const row = [dot(fraction, uVector), dot(fraction, vVector)];
             slab.push(row);
             const source = sourceIndex ? sourceIndex[index] : index;

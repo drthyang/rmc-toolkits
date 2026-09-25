@@ -403,17 +403,32 @@ the `margin` line inside `computeKde()`.
 **Inputs.** Slider `zCenter` $=z_c \in [0,1]$ (step 0.001) and slider
 `Thickness` $=\Delta z \in [0.01, 0.5]$ (step 0.01, default 0.08).
 
-**Math.** The slider values are mapped onto the depth axis and an atom is in the slab iff
+**Math.** Each atom's depth is normalized to the slider's units, $\tilde d_i = (\mathbf{x}_i\cdot\hat{\mathbf{h}} - d_{\min})/\Delta_d$,
+and the atom is in the slab iff
 
-$$\left| \mathbf{x}_i\cdot\hat{\mathbf{h}} - \big(d_{\min} + z_c\Delta_d\big) \right| \ \le\ \frac{\Delta z\,\Delta_d}{2}.$$
+$$\big|\tilde d_i - z_c\big| \ \le\ \frac{\Delta z}{2} + \epsilon_\mathrm{face}, \qquad \epsilon_\mathrm{face} = 10^{-9}.$$
 
-Python writes this as `center_depth = depth_min + center*depth_span`,
-`thickness_depth = thickness*depth_span`, then in `kde_slice()`
-`half = 0.5*max(dz,1e-12)` with an inclusive two-sided comparison. JavaScript `makeSlab()`
-normalizes first — `normalizedDepth = (x·n̂ − range[0]) / depthSpan` — and tests
-`|normalizedDepth − zCenter| ≤ thickness/2`. **The two are algebraically identical.** Python
-additionally clamps $z_c$ into $[0,1]$ and floors $\Delta z$ at $10^{-12}$; the JavaScript path relies
-on the slider bounds.
+**One expression in all three places**, evaluated in the same order: `oriented_kde_slice()` builds
+`normalized_depth = (_dot3(positions, normal) - depth_min) / depth_span` and `kde_slice()` tests
+`np.abs(z - z_center) <= 0.5*max(dz, 1e-12) + SLAB_FACE_TOLERANCE`; the worker's `makeSlab()` and the
+page's `inActiveSlab()` both call `isInSlab()` from `workers/slabSelection.js`
+(`Math.abs(normalizedDepth - zCenter) <= thickness/2 + SLAB_FACE_TOLERANCE`). `_dot3()` sums
+$x h_1 + y h_2 + z h_3$ left to right, like the worker's `dot()`, so presets give bit-identical
+depths. Python additionally clamps $z_c$ into $[0,1]$ and floors $\Delta z$ at $10^{-12}$; the
+JavaScript path relies on the slider bounds.
+
+**Why the tolerance.** Before 1.0 Python tested `center_depth - half <= d <= center_depth + half` in
+absolute depth units and the worker and the Slab-In-Cell highlight tested
+`|normalizedDepth − zCenter| ≤ thickness/2`: algebraically identical, but rounded differently exactly
+at the faces. An ideal or unrelaxed configuration puts every copy of a site on the same coordinate,
+and slider positions hit those faces routinely — `|0.125 − 0.165|` evaluates to
+`0.04000000000000001 > 0.08/2`, so for atom layers at $z=k/8$ (as in an ideal cubic cell) with
+$z_c = 0.165$, $\Delta z = 0.08$ the browser dropped the whole $z=0.125$ layer that SciPy kept (24 of
+4004 slider settings on such a lattice, e.g. also $z_c = 0.21, 0.54, 0.71$ at $\Delta z = 0.08$), and
+in Flask mode the highlighted atoms disagreed with the density. $10^{-9}$ is far above the round-off of
+a depth in $[0,1]$ ($\sim10^{-16}$) and far below any physical offset.
+`tests/test_kde_slab_faces.py` and `workers/__tests__/slabFaces.test.js` check the slab counts of that
+lattice against exact integer arithmetic at every $z_c$ on a 0.005 grid for four thicknesses.
 
 **The mask is applied to the augmented set and is not clamped to the cube.** A slab at $z_c=0$ picks
 up images at depth $d \approx 0^-$ from atoms whose folded depth is $\approx 1$; that is the whole point of
@@ -545,8 +560,9 @@ returns a c-slice, not a $(110)$ slice.
 **Outputs.** The slab point list $\{\mathbf{p}_i\}$ (2-D, in-plane fractional projections),
 $N_\mathrm{img}$ = slab rows including images, $N_\mathrm{src}$ = unique source atoms with an image in the slab = `slabCount`.
 
-**Code.** `rmc_toolkits/kde.py` → `oriented_kde_slice()` (depth mapping, margin,
-`_plane_section_vertices()`) and `kde_slice()` (mask/`slabCount`); `localKdeWorker.js` →
+**Code.** `rmc_toolkits/kde.py` → `SLAB_FACE_TOLERANCE`, `_dot3()`, `oriented_kde_slice()` (depth
+normalization, margin, `_plane_section_vertices()`) and `kde_slice()` (mask/`slabCount`);
+`workers/slabSelection.js` → `SLAB_FACE_TOLERANCE`, `isInSlab()`; `localKdeWorker.js` →
 `makeSlab()`, `planeSectionVertices()`; `StructurePage.jsx` → the auto-centring effect,
 `pointDepth()`/`inActiveSlab()`, `planeSectionVertices()`; `web_app/backend/app.py` →
 `_slice_orientation_from_request()`, `kde_slice_endpoint()`.
@@ -1261,20 +1277,18 @@ the distinct element labels before assigning colours) shown in the legend **belo
 | `message` | ✓ | ✓ | why no density was drawn (Step 6), the same string in both; `null` when drawn |
 | `center`, `thickness` | ✓ | ✓ | the raw slider fractions in **both** — this is what the UI reads |
 | `normal`, `uVector`, `vVector`, `planeVertices`, `planePolygon` | ✓ | ✓ | `uVector`/`vVector` differ for custom normals (Step 2) |
-| `z`, `dz` | `center_depth`, `thickness_depth` | `zCenter`, `thickness` | **different meanings** — see below |
+| `z`, `dz` | ✓ | ✓ | the slider fractions in both (since 1.0; see below) |
 | `depth`, `depthThickness`, `depthRange` | ✓ | — | absolute depth-projection units |
 | `slabVertices` | ✓ | — | the two clamped slab faces; **not consumed by `StructurePage.jsx`** |
 | `cellLengths`, `unitVectors`, `orientation`, `source`, `element` | ✓ (added by the endpoint) | — | `cellLengths`/`unitVectors` are ignored by the frontend (Step 10) |
 | `browserKde: true`, `backend: 'gpu' \| 'cpu'` | — | ✓ | worker-only |
 
-**`z`/`dz` mean different things.** Flask returns `z = center_depth = ` $d_{\min} + z_c\Delta_d$ and
-`dz = thickness_depth = ` $\Delta z\,\Delta_d$. The `dz` form is a clean scaling, but `z` carries the
-$d_{\min}$ offset, which vanishes only when the normal has no negative components — so it reduces to
-$z_c\Delta_d$ for any all-positive normal and to plain $z_c$ for the a/b/c presets, while for e.g.
-$\mathbf{h}=(1,-1,0)$ it is shifted by $d_{\min} = -1/\sqrt2$. The browser worker returns the raw
-slider fractions. The UI reads `center`/`thickness`, which *are* the slider fractions in both
-runtimes, so nothing on screen is wrong — but an API consumer reading `z`/`dz` must know which
-runtime produced the payload.
+**`z`/`dz` are the slider fractions in both runtimes.** Before 1.0 Flask returned `z = center_depth
+= ` $d_{\min} + z_c\Delta_d$ and `dz = thickness_depth = ` $\Delta z\,\Delta_d$ (so for
+$\mathbf{h}=(1,-1,0)$ and $z_c=0.5$ it returned `z = 0`), while the worker returned the fractions.
+Now `kde_slice()` receives normalized depths and echoes $z_c$ and $\Delta z$ (after Python's clamp
+and floor); the absolute depth-projection values remain available as `depth`, `depthThickness` and
+`depthRange`.
 
 ---
 
@@ -1304,6 +1318,7 @@ Added for 1.0:
 | Test | What it pins |
 | --- | --- |
 | `tests/test_kde_decline.py` | every decline rule of Step 6 (with its `message`), the bandwidth validation, exact agreement with `scipy.stats.gaussian_kde` on a near-collinear slab, and the `kernel` summary |
+| `tests/test_kde_slab_faces.py` / `workers/__tests__/slabFaces.test.js` | face atoms of an ideal $k/8$ lattice are in the slab at every slider position (exact integer reference); the face tolerance; `z`/`dz` echo the slider fractions |
 | `tests/test_kde_parity_fixture.py` | the committed browser-parity golden is still what `kde.py` computes (re-run `tests/generate_kde_fixture.py` when it fails) |
 | `workers/__tests__/kdeParity.test.js` | **cross-runtime**: the worker reproduces the Python golden — demo run, GaNb₄Se₈ run (skipped when `data/` is absent), synthetic slabs — to $10^{-6}$ of the peak, with identical `slabCount`, `fitCount`, kernel and `message` |
 | `workers/__tests__/localKdeKernel.test.js` | the worker's kernel equals an in-test brute-force $f^2\mathbf{C}$ mixture; its rank test and decline rules |
@@ -1356,7 +1371,7 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
 | --- | --- |
 | Unit-cell folding | **Exact** (same modulo convention, sign-corrected in JS) |
 | Periodic image tiling + margin | **Equivalent for folded inputs** (Python: unconditional originals + 26 shifted offsets; JS: all 27 offsets margin-tested). **Row order differs**, so index-based subsampling picks different points |
-| Slab selection in depth | **Exact** (algebraically identical, inclusive both ends) |
+| Slab selection in depth | **Exact** (tested): the same normalized-depth expression with the same $10^{-9}$ face tolerance in `kde.py`, the worker and `inActiveSlab` |
 | `slabCount` (unique source atoms with an image in the slab) | **Exact** |
 | Subsample size (6000) | **Exact**; the **selected subset differs** (PCG64 vs mulberry32, and a different row order) |
 | Bandwidth matrix $\mathbf{H}=f^2\mathbf{C}$ | **Exact** (tested, $<10^{-9}$ relative): $\mathbf{C}$ from the same source-atom rows in both, before and independently of the subsample. No ridge, no substitution for $f$ |
@@ -1852,15 +1867,17 @@ The slider quantities are **fractions of that range**, not of a cell edge:
 
 $$\tilde d(\mathbf{x}) = \frac{\hat{\mathbf{h}}\cdot\mathbf{x} - d_{\min}}{\Delta_d}
 \quad(\texttt{pointDepth}), \qquad
-\text{in slab} \iff \big|\tilde d - z_c\big| \le \tfrac{\Delta z}{2}\quad(\texttt{inActiveSlab})$$
+\text{in slab} \iff \big|\tilde d - z_c\big| \le \tfrac{\Delta z}{2} + 10^{-9}\quad(\texttt{inActiveSlab} \to \texttt{isInSlab})$$
 
 with $\Delta_d$ replaced by 1 if it evaluates to 0.
 
-The same **depth convention** is used by the browser KDE worker
+The same **depth convention and the same inclusive test** — `isInSlab()` in
+[`workers/slabSelection.js`](../../web_app/frontend/src/workers/slabSelection.js), with a
+$10^{-9}$ face tolerance added to $\Delta z/2$ — is used by `inActiveSlab`, by the browser KDE worker
 ([localKdeWorker.js](../../web_app/frontend/src/workers/localKdeWorker.js) → `makeSlab`) and by the
-server (`rmc_toolkits/kde.py` → `oriented_kde_slice`, which converts to absolute depth as
-$d_c = d_{\min} + z_c\Delta_d$ and $\delta = \Delta z\,\Delta_d$ before selecting, after clamping
-$z_c$ to $[0,1]$ and $\Delta z$ to $\ge 10^{-12}$). The formula is the same in all three.
+server (`rmc_toolkits/kde.py` → `oriented_kde_slice`/`kde_slice`, on the same normalized depth, after
+clamping $z_c$ to $[0,1]$ and $\Delta z$ to $\ge 10^{-12}$), so an atom exactly on a face is in the
+slab in all three (KDE Step 4).
 
 > **But the predicate is applied to different point sets.** Both KDE implementations first tile
 > periodic images — `_augment_periodic_images()` / `augmentPeriodicImages()`, keeping every image of

@@ -48,6 +48,15 @@ KDE_MESSAGES = {
     ),
 }
 
+# Slab membership is |d - z_c| <= dz/2 + SLAB_FACE_TOLERANCE, with d the atom's
+# depth normalised to [0, 1] across the unit cube's projection range (the
+# slider's units). Atoms of an ideal or unrelaxed configuration sit exactly on
+# slider-reachable faces (z = 0.125 against z_c = 0.165, dz = 0.08), where two
+# roundings of the same inequality disagree and a whole site flips in or out.
+# The worker (localKdeWorker.js) and the Slab-In-Cell highlight
+# (StructurePage.jsx) use the same expression and constant (slabSelection.js).
+SLAB_FACE_TOLERANCE = 1e-9
+
 # A covariance whose in-plane correlation coefficient rho satisfies
 # 1 - rho^2 <= this limit is declined as numerically singular. Below it the
 # Cholesky pivot of C sits at the level of summation round-off (~N*eps), so
@@ -227,6 +236,16 @@ def _augment_periodic_images(
     return np.concatenate(augmented), np.concatenate(sources), np.concatenate(ranks)
 
 
+def _dot3(points: np.ndarray, vector: np.ndarray) -> np.ndarray:
+    """Row-wise ``points . vector`` summed left to right, like the worker's ``dot()``.
+
+    An explicit ``(x*v0 + y*v1) + z*v2`` rather than a BLAS matmul, so depths
+    and in-plane coordinates round exactly as in the browser.
+    """
+    points = np.atleast_2d(points)
+    return points[:, 0] * vector[0] + points[:, 1] * vector[1] + points[:, 2] * vector[2]
+
+
 def _normalize_vector(vector: np.ndarray, name: str) -> np.ndarray:
     vector = np.asarray(vector, dtype=float)
     norm = float(np.linalg.norm(vector))
@@ -311,8 +330,13 @@ def oriented_kde_slice(
     """Compute a KDE slice through fractional coordinates along any direction.
 
     ``center`` and ``thickness`` are fractions of the unit-cube projection range
-    along ``normal``. For example, normal ``[0, 0, 1]`` matches the original
-    c-axis slice semantics.
+    along ``normal`` (they equal cell-edge fractions only for the a/b/c axis
+    normals; nothing is converted to Angstrom). For example, normal
+    ``[0, 0, 1]`` matches the original c-axis slice semantics. An atom is in
+    the slab when its normalised depth d satisfies
+    ``|d - center| <= thickness / 2 + SLAB_FACE_TOLERANCE``; the payload's
+    ``z``/``dz`` echo ``center``/``thickness`` and ``depth``/``depthThickness``
+    give the same slab in absolute depth units.
 
     Positions are treated as periodic: images from neighbor cells within a
     margin of the unit cube join the slab selection and the KDE fit, so the
@@ -332,7 +356,7 @@ def oriented_kde_slice(
     positions, source_index, image_rank = _augment_periodic_images(positions, margin)
 
     normal, u_axis, v_axis = _plane_basis(normal, u_axis, v_axis)
-    corner_depths = _CUBE_CORNERS @ normal
+    corner_depths = _dot3(_CUBE_CORNERS, normal)
     depth_min = float(np.min(corner_depths))
     depth_max = float(np.max(corner_depths))
     depth_span = max(depth_max - depth_min, 1e-12)
@@ -341,15 +365,21 @@ def oriented_kde_slice(
     center_depth = depth_min + center * depth_span
     thickness_depth = thickness * depth_span
 
-    projected_corners = np.column_stack([_CUBE_CORNERS @ u_axis, _CUBE_CORNERS @ v_axis])
+    projected_corners = np.column_stack([_dot3(_CUBE_CORNERS, u_axis), _dot3(_CUBE_CORNERS, v_axis)])
     xlim = (float(np.min(projected_corners[:, 0])), float(np.max(projected_corners[:, 0])))
     ylim = (float(np.min(projected_corners[:, 1])), float(np.max(projected_corners[:, 1])))
 
-    projected_positions = np.column_stack([positions @ u_axis, positions @ v_axis, positions @ normal])
+    # The slab test runs on the depth normalised across the cube's projection
+    # range -- the slider's own units, so z/dz in the payload echo the inputs --
+    # with the expression the worker and the Slab-In-Cell highlight use.
+    normalized_depth = (_dot3(positions, normal) - depth_min) / depth_span
+    projected_positions = np.column_stack(
+        [_dot3(positions, u_axis), _dot3(positions, v_axis), normalized_depth]
+    )
     result = kde_slice(
         projected_positions,
-        z_center=center_depth,
-        dz=thickness_depth,
+        z_center=center,
+        dz=thickness,
         xlim=xlim,
         ylim=ylim,
         bw=bw,
@@ -478,7 +508,9 @@ def kde_slice(
 
     Returns a JSON-serializable dict with the density grid, plot extent,
     contour polylines, the slab atom count, the kernel, and (when no density
-    was drawn) a ``message`` saying why.
+    was drawn) a ``message`` saying why. A row is in the slab when
+    ``|z - z_center| <= dz / 2 + SLAB_FACE_TOLERANCE`` (an absolute tolerance
+    in the units of ``z``; oriented_kde_slice passes normalised depths).
 
     The kernel is scipy's: ``H = bw**2 * C``. ``C`` is the covariance of the
     slab's *source atoms*, one row per atom, and the density sums that fixed
@@ -513,7 +545,7 @@ def kde_slice(
     if positions.shape[0]:
         x, y, z = positions[:, 0], positions[:, 1], positions[:, 2]
         half = 0.5 * max(dz, 1e-12)
-        mask = (z >= z_center - half) & (z <= z_center + half)
+        mask = np.abs(z - z_center) <= half + SLAB_FACE_TOLERANCE
         slab = np.column_stack([x[mask], y[mask]])
         slab_total = int(slab.shape[0])
         atoms = _source_atom_rows(slab, mask, source_index, image_rank)

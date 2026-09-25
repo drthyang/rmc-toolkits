@@ -10,6 +10,7 @@ import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
+import { isInSlab } from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
 import SaveMenu from './SaveMenu';
 import InfoBadge from './InfoBadge';
@@ -615,8 +616,9 @@ const StructurePage = ({ directory, localRun, theme }) => {
         return (rawDepth - sliceConfig.range[0]) / span;
     }, [sliceConfig]);
 
+    // Same membership test (and face tolerance) as the KDE in both runtimes.
     const inActiveSlab = useCallback(
-        (point) => Math.abs(pointDepth(point) - zCenter) <= thickness / 2,
+        (point) => isInSlab(pointDepth(point), zCenter, thickness),
         [pointDepth, zCenter, thickness]
     );
 
