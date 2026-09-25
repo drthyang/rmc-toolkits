@@ -3194,7 +3194,13 @@ import `orbitLabel()`.)
 #### Step 15. What the card renders
 
 - **Space group**: `symmetry.spaceGroup`, with `No. <n> · <pointGroup>` beneath, and a tooltip
-  `Point group <pg> · fits to <maxResidual.toFixed(3)> Å`.
+  `Point group <pg> · fits to <maxResidual.toFixed(3)> Å`. The `No.` part is omitted whenever
+  `spaceGroupNumber` is `null` — a crystal class, a `≥` lower bound, `undetermined` or
+  `not analysed`. For the last two `maxResidual` is `NaN` and the tooltip currently prints
+  `fits to NaN Å`, and the `reason` of a skipped structure is not shown anywhere on the card;
+  the card's info badge also still says the symbol is reported in the given cell "up to an axis
+  permutation", which Step 10f superseded. Those are `ModelSummary.jsx` wording issues, not
+  finder results.
 - **Operations**: `symmetry.nSpace`.
 - **Space group vs. tolerance**: the ladder bricks. Brick **fill** is
   `color-mix(in srgb, var(--accent) P%, var(--panel-raised))` with
@@ -3388,9 +3394,13 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
   a noisy lacunar spinel) and class-consistent symbols; `symmetryRepresentatives.test.js` checks
   that a symbol does not depend on the lattice representative of a translation, and that every
   noisy trigonal, hexagonal and cubic subgroup is named after a group with the same element types
-  per coset (rotation or screw, mirror or glide); `symmetryWyckoff.test.js` and
-  `wyckoff.test.js` check every Wyckoff row against its group's operations, the demo's letters and
-  letters in permuted settings; `symmetryLimits.test.js`, `symmetryPerformance.test.js` and
+  per coset (rotation or screw, mirror or glide); `symmetryDuplicates.test.js` checks that of two
+  near-duplicate operations the better-fitting one is kept, so the ladder reaches the group the
+  headline finds whatever the site order;
+  `symmetryWyckoff.test.js` and `wyckoff.test.js` check every Wyckoff row against its group's
+  operations, the demo's letters and letters in permuted settings, and
+  `symmetryWyckoffLabels.test.js` that a letter is paired with the multiplicity of the cell it is
+  read in; `symmetryLimits.test.js`, `symmetryPerformance.test.js` and
   `symmetryUndetermined.test.js` cover the basis cap, the operation budget and an unanalysable
   lattice. The two GaNb₄Se₈ runs are gitignored, so they are not
   in the suite; every rung of their ladders was checked by hand to be closed and to have the
