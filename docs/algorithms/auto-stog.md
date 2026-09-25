@@ -1807,9 +1807,13 @@ shell-at-the-search-edge profiles and on the real Mn₃Sn 59438 run.
 **The onset is a point ~35 % up the shell's rising flank — never the cutoff itself.** Enforcement
 zeroes $g$ for every $r \le$ cutoff, so the cutoff must sit below the whole flank:
 
-$$\text{cutoff} = \min\bigl(\text{foot},\ \text{onset} - 0.25\bigr),$$
+$$\text{cutoff} = \min\bigl(\text{foot}(\text{anchor}),\ \text{anchor} - 0.25\bigr),\qquad
+\text{anchor} = \min(\text{onset},\ r_0^\text{given}),$$
 
-where `first_shell_foot()` walks left from the onset while $|g|$ keeps decreasing and $g$ keeps the
+where $r_0^\text{given}$ is a closest approach the user supplied (`--r0` / the page's r₀ field / a
+`MINIMUM_DISTANCES ::` header / the `stog.inp` peak line) — the automatic cutoff never cuts above a
+given $r_0$ (only the detected onset is used when none is given; the given $r_0$ alone when
+detection fails) — and `first_shell_foot()` walks left from the anchor while $|g|$ keeps decreasing and $g$ keeps the
 shell's sign, stopping at the first local minimum of $|g|$ (or the point just across a sign
 change), and $0.25$ Å is `R0_WINDOW_MARGIN` — the same margin that separates the density-limit
 window from the onset, so the automatic enforcement never asserts $g = 0$ above the region the fit
@@ -3103,6 +3107,7 @@ come from. **The two implementations read their inputs from different places:**
 | `density_limit_satisfied` | $\lvert$`g_window_mean`$\rvert < 0.1$ | **ONE-SIDED.** False *proves* no affine $(a,b)$ can satisfy the density limit — the absolute scale is not recoverable from self-consistency on this data. True only means the fit reached its target; a smooth low-$Q$ deficiency is generically absorbed into a biased scale with all residuals clean. True does **not** certify the absolute scale. |
 | `level`, `level_uncertainty`, `level_window`, `asymptote_found` | the Step-3 sweep result | `asymptote_found = False` ⇒ the fit silently ran in joint 2-dof mode, `level_uncertainty` is `NaN`, **and `level_window` is the fabricated last-3 Å⁻¹ span, not a searched window**. Otherwise `level_uncertainty` is a spread over overlapping admissible windows. |
 | `r0_detected`, `window_refined` | Step-8 outputs | `r0_detected` is the first-shell onset on the final $g(r)$. `window_refined` is True when `autoscale` placed the window from it; absent when you pinned `r0`/`r_fit_max` (detection then only annotates), in manual runs, and in FZ mode when the shell leaves no room for a window. |
+| `first_shell_below_r0` | detected onset < given $r_0$ − 0.1 Å | Present when an $r_0$ was given and not refined. True: the data's first shell starts below the $r_0$ you supplied, so the window $[lo, r_0 - 0.25]$ may cut into it — the given value is still used (CLI prints a WARNING, the page flags the r₀ card). |
 | `a_fz` | the independent $Q\to 0$ amplitude | Present only when $\langle b^2\rangle$ is available **and** the sweep found a flat level (`a_fz` is computed inside `if level is not None`). Otherwise it — and the concordance row — are absent. In FZ mode it *is* `a`. |
 | `amplitude_concordance` | $a_\mathrm{fz}/a$ — **omitted in FZ mode** (it would be 1 by construction) | The absolute-scale trust metric. FeCoSn agrees to 4–6 %. |
 | `amplitudes_concordant` | $\lvert a_\mathrm{fz}/a - 1\rvert < 0.1$ | Discord ⇒ suspect $\rho_0$ (moves only $a$), or missing low-$Q$ (moves them apart). The page's chip says "check ρ₀ / low-Q, or use the Faber-Ziman Q→0 amplitude". |

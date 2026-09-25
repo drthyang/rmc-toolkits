@@ -119,17 +119,21 @@ def enforcement_cases() -> dict:
     from test_stog_a_enforcement import exact_sq
 
     cases = []
-    for sigma, qmax, lorch in ((0.10, 26.0, False), (0.15, 26.0, True), (0.08, 40.0, False)):
+    for sigma, qmax, lorch, r0 in (
+        (0.10, 26.0, False, None), (0.15, 26.0, True, None), (0.08, 40.0, False, None),
+        (0.10, 26.0, False, 2.2),  # a pinned r0 below the detected onset caps the cutoff
+    ):
         q, sq = exact_sq(sigma, qmax)
         config = ScalingConfig(
             qmin=0.01, qmax=qmax, rho0=RHO0, b_avg_sq=1.0, lorch=lorch, rmax=20.0, nr=2000,
+            r0=r0,
         )
         result = scale_pipeline(q, sq, config, 1.0, 0.0)
         keep = result.r <= 6.5
         r, g = result.r[keep], result.g_filtered[keep]
         onset = detect_first_peak_onset(r, g, qmax, search_min=config.r_cutoff + 0.3)
         cases.append({
-            "config": {"qmax": qmax, "rCutoff": config.r_cutoff},
+            "config": {"qmax": qmax, "rCutoff": config.r_cutoff, "r0": r0},
             "r": r.tolist(),
             "g": g.tolist(),
             "onset": onset,

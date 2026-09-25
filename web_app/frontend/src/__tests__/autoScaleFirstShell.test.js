@@ -71,6 +71,7 @@ describe('automatic enforcement cutoff parity with scaling.auto_enforcement_cuto
       expect(firstShellFoot(rArr, gArr, onset)).toBe(foot);
       expect(autoEnforcementCutoff(rArr, gArr, config)).toBe(cutoff);
       expect(cutoff).toBeLessThan(onset - 0.2);
+      if (config.r0 != null) expect(cutoff).toBeLessThanOrEqual(config.r0 - 0.25);
     });
   });
 });

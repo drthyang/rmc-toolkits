@@ -756,15 +756,18 @@ export const firstShellFoot = (r, g, onset) => {
 
 /**
  * Automatic low-r enforcement cutoff (port of scaling.auto_enforcement_cutoff):
- * min(foot of the first shell, onset - R0_WINDOW_MARGIN) — below the rising
- * flank, never on it. onset defaults to detectFirstPeakOnset on g; null when
- * no first shell is detected.
+ * anchor = the first-shell onset capped at a pinned config.r0 (never
+ * overridden upward); cutoff = min(foot of the first shell below the anchor,
+ * anchor - R0_WINDOW_MARGIN) — below the rising flank, never on it. onset
+ * defaults to detectFirstPeakOnset on g; null when there is neither a
+ * detected shell nor a pinned r0.
  */
 export const autoEnforcementCutoff = (r, g, config, onset = null) => {
   let anchor = onset;
   if (anchor == null) {
     anchor = detectFirstPeakOnset(r, g, { searchMin: config.rCutoff + 0.3, qmax: config.qmax });
   }
+  if (config.r0 != null) anchor = anchor == null ? config.r0 : Math.min(anchor, config.r0);
   if (anchor == null) return null;
   return Math.min(firstShellFoot(r, g, anchor), anchor - R0_WINDOW_MARGIN);
 };
@@ -1045,6 +1048,11 @@ export const diagnosticsSummary = (result, config) => {
   if (result.r0Detected != null) {
     summary.r0_detected = result.r0Detected;
     summary.window_refined = Boolean(result.windowRefined);
+    if (!summary.window_refined && config.r0 != null) {
+      // A given r0 is respected, but a first shell detected clearly below it
+      // means the low-r window may cut into that shell (Python parity).
+      summary.first_shell_below_r0 = result.r0Detected < config.r0 - 0.1;
+    }
   }
   if (result.sweep) {
     summary.level = result.sweep.level;

@@ -501,20 +501,26 @@ def auto_enforcement_cutoff(
     cutoff`` in the RMCProfile files, so an automatic cutoff must sit below
     the first shell's rising flank — never on it (the detected onset is ~35 %
     up the flank; enforcing there deleted 6-9 % of the first-shell pair
-    density). The cutoff is ``min(foot, onset - R0_WINDOW_MARGIN)``: the
-    :func:`first_shell_foot` below the onset, and never above the top of the
-    region the density-limit fit itself treats as g = 0. ``onset`` defaults
-    to :func:`detect_first_peak_onset` on ``g``. Returns None when no first
-    shell is detected (then there is nothing to anchor an automatic cutoff).
+    density). With ``anchor`` = the first-shell onset, capped at a pinned
+    ``config.r0`` (a user / MINIMUM_DISTANCES / stog.inp closest approach is
+    never overridden upward), the cutoff is
+    ``min(first_shell_foot(anchor), anchor - R0_WINDOW_MARGIN)``: below the
+    whole flank, and never above the top of the region the density-limit
+    fit itself treats as g = 0. ``onset`` defaults to
+    :func:`detect_first_peak_onset` on ``g``. Returns None when there is
+    neither a detected shell nor a pinned ``r0`` to anchor it.
     """
     if onset is None:
         onset = detect_first_peak_onset(
             r, g, config.qmax, search_min=config.r_cutoff + 0.3
         )
-    if onset is None:
+    anchor = onset
+    if config.r0 is not None:
+        anchor = float(config.r0) if anchor is None else min(float(anchor), float(config.r0))
+    if anchor is None:
         return None
-    foot = first_shell_foot(r, g, onset)
-    return float(min(foot, float(onset) - R0_WINDOW_MARGIN))
+    foot = first_shell_foot(r, g, anchor)
+    return float(min(foot, float(anchor) - R0_WINDOW_MARGIN))
 
 
 _HUBER_C = 1.345  # 95% Gaussian efficiency
@@ -1211,6 +1217,14 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
     if "r0_detected" in result.provenance:
         summary["r0_detected"] = result.provenance["r0_detected"]
         summary["window_refined"] = bool(result.provenance.get("window_refined", False))
+        r0_given = effective.get("r0", config.r0)
+        if not summary["window_refined"] and r0_given is not None:
+            # A given closest approach (user / header / stog.inp) is respected,
+            # but a first shell detected clearly below it means the low-r
+            # window [lo, r0 - 0.25] may cut into that shell: say so.
+            summary["first_shell_below_r0"] = bool(
+                float(result.provenance["r0_detected"]) < float(r0_given) - 0.1
+            )
     if result.a_fz is not None:
         summary["a_fz"] = result.a_fz
         if amplitude_criterion != "fz":

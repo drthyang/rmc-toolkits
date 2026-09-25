@@ -125,6 +125,59 @@ class AutoEnforcementCoordinationTests(unittest.TestCase):
         self.assertGreater(first_shell_foot(r, g, 2.25), 1.97)
 
 
+class PinnedR0EnforcementTests(unittest.TestCase):
+    """A given closest approach (--r0, MINIMUM_DISTANCES, stog.inp) is never overridden upward."""
+
+    def run_synthetic(self, extra, header=""):
+        q, sq = exact_sq(0.10, 26.0)  # the data's first shell starts at ~2.6 A
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "shell.dat"
+            rows = "\n".join(f"{x:.6f} {y:.10f}" for x, y in zip(q, sq))
+            data.write_text(header + rows + "\n")
+            code, out, err = run_cli([
+                "--data", data, "--qmin", "0.01", "--qmax", "26", "--rho0", RHO0,
+                "--b-avg-sq", "1.0", "--scale", "1", "--offset", "0",
+                "--rmax", "20", "--nr", "2000", "--out-dir", Path(tmp) / "out", *extra,
+            ])
+            self.assertEqual(code, 0, err)
+            return cli_outputs(Path(tmp) / "out", "shell"), out
+
+    def test_cli_r0_caps_the_automatic_cutoff(self):
+        (r, gk_rmc, gm1_ft, provenance), out = self.run_synthetic(["--r0", "2.2"])
+        # Pre-fix the cutoff came from the detected onset (~2.66 -> 2.40 A),
+        # above the closest approach the user declared.
+        self.assertLessEqual(provenance["enforcement"]["cutoff"], 2.2 - 0.25 + 1e-9)
+        above = r > 2.2 - 0.25
+        np.testing.assert_allclose(gk_rmc[above], gm1_ft[above], atol=1e-6)
+
+    def test_minimum_distances_header_caps_the_automatic_cutoff(self):
+        (r, gk_rmc, gm1_ft, provenance), _ = self.run_synthetic(
+            [], header="MINIMUM_DISTANCES :: 2.3 2.2\n"
+        )
+        self.assertLessEqual(provenance["enforcement"]["cutoff"], 2.2 - 0.25 + 1e-9)
+
+    def test_library_cap_and_conflict_flag(self):
+        from rmc_toolkits.scaling import auto_enforcement_cutoff, diagnostics_summary
+
+        q, sq = exact_sq(0.10, 26.0)
+        base = dict(qmin=0.01, qmax=26.0, rho0=RHO0, b_avg_sq=1.0, rmax=20.0, nr=2000)
+        free = scale_pipeline(q, sq, ScalingConfig(**base), 1.0, 0.0)
+        cut_free = auto_enforcement_cutoff(free.r, free.g_filtered, ScalingConfig(**base))
+        pinned_config = ScalingConfig(**base, r0=2.2)
+        cut_pinned = auto_enforcement_cutoff(free.r, free.g_filtered, pinned_config)
+        self.assertGreater(cut_free, 2.3)
+        self.assertLessEqual(cut_pinned, 1.95 + 1e-12)
+        # A pinned r0 ABOVE the detected shell is respected but flagged.
+        high = ScalingConfig(**base, r0=3.0)
+        result = scale_pipeline(q, sq, high, 1.0, 0.0)
+        result.provenance["r0_detected"] = 2.66
+        self.assertTrue(diagnostics_summary(result, high)["first_shell_below_r0"])
+        low = ScalingConfig(**base, r0=2.6)
+        result = scale_pipeline(q, sq, low, 1.0, 0.0)
+        result.provenance["r0_detected"] = 2.66
+        self.assertFalse(diagnostics_summary(result, low)["first_shell_below_r0"])
+
+
 @unittest.skipUnless(FECOSN.exists(), "FeCoSn 199K run not present")
 class FeCoSnAutoEnforcementTests(unittest.TestCase):
     def test_first_peak_flank_survives(self):

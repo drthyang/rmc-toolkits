@@ -1023,11 +1023,13 @@ const AutoStogPage = () => {
             </span>
           </div>
           {diagnostics.r0_detected != null && (
-            <div className="autostog-stat">
+            <div className={`autostog-stat${diagnostics.first_shell_below_r0 ? ' is-warn' : ''}`}>
               <span className="autostog-stat-label">First shell r₀</span>
               <span className="autostog-stat-value">{fmt(diagnostics.r0_detected, 4)} Å (detected)</span>
               <span className="autostog-stat-sub">
-                {diagnostics.window_refined ? 'fit window refined to it' : 'window unchanged'}
+                {diagnostics.first_shell_below_r0
+                  ? 'below the given r₀ — the fit window may cut into it; check r₀'
+                  : (diagnostics.window_refined ? 'fit window refined to it' : 'window unchanged')}
                 {preview.enforcement ? ` · enforced below ${fmt(preview.enforcement.cutoff ?? preview.enforcement[0], 3)} Å` : ''}
               </span>
             </div>

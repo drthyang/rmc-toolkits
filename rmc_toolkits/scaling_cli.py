@@ -543,6 +543,13 @@ def _print_report(
     if summary.get("r0_detected") is not None:
         refined = " (fit window refined)" if summary.get("window_refined") else ""
         print(f"  r0 (data) : first-shell onset detected at {summary['r0_detected']:.2f} A{refined}")
+        if summary.get("first_shell_below_r0"):
+            print(
+                "  WARNING   : the first shell starts below the given r0 "
+                f"({summary['r0_detected']:.2f} A); the low-r window "
+                f"[{summary['r_fit_window'][0]:g}, {summary['r_fit_window'][1]:g}] A may "
+                "cut into it — check r0 (--r0 / MINIMUM_DISTANCES / stog.inp)"
+            )
     if "amplitude_concordance" in summary:
         verdict = "concordant" if summary["amplitudes_concordant"] else "DISCORDANT"
         print(
