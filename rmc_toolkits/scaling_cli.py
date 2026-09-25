@@ -52,6 +52,7 @@ from .parsers import (
 )
 from .scaling import (
     R0_WINDOW_MARGIN,
+    RHO0_SEED,
     ScalingConfig,
     ScalingResult,
     auto_enforcement_cutoff,
@@ -133,7 +134,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="self-consistent number density: iterate the density-limit fit "
         "until its amplitude agrees with the rho0-independent Q->0 "
         "Faber-Ziman amplitude (requires <b^2> via --b-sq-avg or --formula); "
-        "the estimate replaces rho0 for the run",
+        "the estimate replaces rho0 for the run. rho0 (--rho0 / header / "
+        "--mass-density / stog.inp) seeds it; with no density source the seed "
+        "is 0.05 1/A^3",
     )
     data.add_argument(
         "--b-avg-sq",
@@ -449,11 +452,6 @@ def _build_config(
             if not (args.formula or "").strip():
                 raise CliError("--mass-density needs --formula to convert to rho0")
             rho0 = number_density_from_mass_density(args.formula, args.mass_density)
-        if rho0 is None:
-            raise CliError(
-                "number density unknown: pass --rho0, or --mass-density with "
-                "--formula, or use a data file with a NUMBER_DENSITY :: header"
-            )
         b_avg_sq = args.b_avg_sq
         r_cutoff = args.r_cutoff if args.r_cutoff is not None else 1.0
         rmax = args.rmax if args.rmax is not None else 50.0
@@ -478,6 +476,22 @@ def _build_config(
     b_avg_sq, b_sq_avg = resolved["b_avg_sq"], resolved["b_sq_avg"]
     if b_avg_sq is None:
         raise CliError("--data mode requires <b>^2: pass --b-avg-sq or --formula")
+    if rho0 is None:
+        if args.estimate_rho0 and b_sq_avg is not None:
+            # No density source, but the self-consistency is requested: seed it
+            # like the Auto StoG page (the estimate replaces the seed).
+            rho0 = RHO0_SEED
+            print(
+                f"rho0: no density source — seeding the self-consistency at "
+                f"{RHO0_SEED:g} 1/A^3",
+                file=sys.stderr,
+            )
+        else:
+            raise CliError(
+                "number density unknown: pass --rho0, or --mass-density with "
+                "--formula, or use a data file with a NUMBER_DENSITY :: header "
+                "(or --estimate-rho0 with <b^2> from --formula / --b-sq-avg)"
+            )
     if args.amplitude == "fz" and b_sq_avg is None:
         raise CliError(
             "--amplitude fz requires <b^2>: pass --b-sq-avg, or --formula when "

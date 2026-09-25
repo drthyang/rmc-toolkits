@@ -58,6 +58,8 @@ MAX_WINDOW_REFITS = 4
 #: Number densities (atoms/A^3) :func:`estimate_rho0` may return: liquid Cs
 #: (~0.0085) to beyond diamond (0.176), with margin on both sides.
 RHO0_PHYSICAL_RANGE = (0.005, 0.25)
+#: Seed of :func:`estimate_rho0` when no density source exists (CLI, page).
+RHO0_SEED = 0.05
 #: Width (A^-1) of the low-Q head the Faber-Ziman Q->0 extrapolation is fitted on.
 FZ_FIT_WIDTH = 1.0
 #: Relative rounding slack of the <b^2> >= <b>^2 (Cauchy-Schwarz) check: a

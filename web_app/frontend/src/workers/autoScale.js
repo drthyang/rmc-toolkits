@@ -436,6 +436,8 @@ export const ONSET_TOLERANCE = 0.15;
 export const MAX_WINDOW_REFITS = 4;
 /** Number densities (atoms/Å³) estimateRho0 may return (scaling.RHO0_PHYSICAL_RANGE). */
 export const RHO0_PHYSICAL_RANGE = [0.005, 0.25];
+/** Seed of estimateRho0 when no density source exists (scaling.RHO0_SEED). */
+export const RHO0_SEED = 0.05;
 /** Width (Å⁻¹) of the low-Q head the Faber-Ziman extrapolation is fitted on (scaling.FZ_FIT_WIDTH). */
 export const FZ_FIT_WIDTH = 1.0;
 /** Rounding slack of the <b^2> >= <b>^2 check (scaling.B_SQ_RTOL). */

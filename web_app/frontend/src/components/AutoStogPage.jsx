@@ -12,6 +12,7 @@ import InteractivePlot from './InteractivePlot';
 import { downloadBlob, sanitizeFilename } from '../figureExport';
 import { buildZip } from '../zipArchive';
 import {
+  RHO0_SEED,
   makeConfig,
   numberDensityFromMassDensity,
   readDatHeader,
@@ -128,7 +129,7 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
   let wantEstimate = false;
   if (rho0 === undefined) {
     if (bSqAvg !== undefined) {
-      rho0 = 0.05; // seed only — the worker adopts the self-consistent estimate
+      rho0 = RHO0_SEED; // seed only — the worker adopts the self-consistent estimate
       wantEstimate = true;
     } else {
       throw new Error(

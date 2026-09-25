@@ -546,11 +546,16 @@ scale.
   `else:` (data-mode) branch and are unreachable here. Passing `--mass-density` alongside a
   `stog.inp` produces no error and no effect — it is silently ignored.
 - **in `--data` mode:** `--rho0` → `NUMBER_DENSITY ::` → `--mass-density` + `--formula` (the
-  formula is required, else *"--mass-density needs --formula"*) → error.
+  formula is required, else *"--mass-density needs --formula"*) → with `--estimate-rho0` and a
+  $\langle b^2\rangle$ (from `--b-sq-avg` or a consistent `--formula`), the seed
+  `RHO0_SEED = 0.05` Å⁻³ (announced on stderr, as the page does) → error.
 
-Neither front-end seeds; the self-consistency route is the explicit `--estimate-rho0` flag
-(`scaling_cli.py` → `main`), which is a hard error on non-convergence. The Flask API has **no**
-self-consistency path at all.
+The self-consistency route is the explicit `--estimate-rho0` flag (`scaling_cli.py` → `main`),
+which is a hard error on non-convergence; whatever density was resolved above only seeds it.
+Before 1.0 the CLI demanded a density even with `--estimate-rho0`, so the documented
+composition-only example (`rmc-autoscale --data … --formula SrTiO3 --estimate-rho0`) exited with
+"number density unknown" on a headerless file (`tests/test_stog_b_cli_seed.py`). The Flask API has
+**no** self-consistency path at all.
 
 **Pre-fill is not uniformly non-destructive (browser).** `selectSource` runs the moment a file is
 selected and writes straight into the form. It is *not* a "fill the empty fields" pass:
