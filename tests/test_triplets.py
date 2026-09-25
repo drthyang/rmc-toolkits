@@ -1001,6 +1001,20 @@ class CliTests(unittest.TestCase):
                 (bare / name).write_text("", encoding="utf-8")
             self.assertEqual(resolve_config(bare), bare / "a.rmc6f")
 
+    def test_documented_flags_exist(self):
+        # triplets.physics.5 et al.: the algorithm reference named a flag
+        # (--angles-out) the parser never had.
+        import re
+
+        from rmc_toolkits.triplets_cli import build_parser
+
+        doc = (ROOT / "docs" / "algorithms" / "bond-geometry.md").read_text(encoding="utf-8")
+        section = doc.split("### The `rmc-triplets` CLI", 1)[1].split("\n### ", 1)[0]
+        flags = set(re.findall(r"(?<![\w-])--[a-z][a-z0-9-]*", section))
+        self.assertIn("--dump-angles", flags)
+        known = set(build_parser()._option_string_actions)
+        self.assertEqual(flags - known, set())
+
     def test_missing_config_fails_cleanly(self):
         code = triplets_main(
             [

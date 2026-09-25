@@ -151,7 +151,9 @@ def write_plot(path: Path, result: BondAngleDistribution) -> None:
         color="#c05640",
         linestyle="--",
         linewidth=1.0,
-        label="density (rescaled)",
+        # One axis: the density is drawn for its shape only, scaled so its
+        # peak meets the sin-corrected peak (values are in the CSV).
+        label="density, rescaled to the sin-corrected peak",
     )
     axes.set_xlim(0, 180)
     axes.set_xlabel("angle (deg)")

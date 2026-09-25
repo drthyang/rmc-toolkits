@@ -388,14 +388,27 @@ backend's `_find_rmc6f` and the browser's `chooseStructureFile`): the `.rmc6f` w
 the run's own outputs (`<stem>-NN.log` first, then `<stem>_PDFpartials.csv`, `_FQ1.csv`, …), the
 first sorted file only when nothing matches — so an input supercell `GaNb4Se8.rmc6f` beside the
 refined `GaNb4Se8_5K.rmc6f` no longer wins by sorting first (`'.'` < `'_'`). The CLI prints the
-path it chose. It writes a commented CSV (`angle_deg, counts, density_per_deg, sin_corrected` with the
-spec, physical bond counts — plus the B-centred count when the end element is the central one — and mean lengths in `#` headers), optionally a PNG plot (`--plot`, Agg
-backend, sin-corrected + density on twin axes) and the raw angle list (`--angles-out`). Nothing
-is overwritten without `--force`.
+path it chose. Outputs:
+
+- the CSV (`--output`, default `triplets_<A-B-C>_<config>.csv`): columns `angle_deg, counts,
+  density_per_deg, sin_corrected`, with the spec, physical bond counts — plus the B-centred
+  count when the end element is the central one — mean lengths and the angle count in `#`
+  headers;
+- optionally a PNG (`--plot PATH`, Agg backend): **one** y-axis, the sin-corrected curve in
+  its own units, with the per-degree density drawn dashed and **rescaled** so its peak meets the
+  sin-corrected peak (legend "density, rescaled to the sin-corrected peak"). The dashed curve
+  shows shape only — read density values from the CSV;
+- optionally the raw angle list (`--dump-angles PATH`): one angle per line in degrees, 6
+  decimals, in the engine's pairing order (unsorted). This is the one output whose memory grows
+  with the angle count — the engine keeps the list only for it.
+
+Nothing is overwritten without `--force`; every destination is checked before anything is
+written.
 
 ```bash
 rmc-triplets data/5K_try1 --triplet Se Nb Se --bond12 2.2 2.9 --plot se_nb_se.png
 rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --bin-width 0.5
+rmc-triplets data/5K_try1 --triplet Nb Nb Nb --bond12 2.6 3.4 --dump-angles nb_angles.txt
 ```
 
 ### Parameters and defaults
