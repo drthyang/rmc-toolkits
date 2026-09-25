@@ -2296,11 +2296,13 @@ The Run Dashboard renders two cards side by side, both produced by
   *symmetry-vs-tolerance ladder*.
 
 **The Detected SG card is computed entirely in the browser**, in JavaScript, with no backend call,
-no `spglib`, and no WASM. It consults **no external space-group database**; classification uses only
-small in-file lookup tables (a 69-entry symmorphic `SG_NUMBER` map, the Bravais centering vectors,
-point-group orders and crystal systems, and Wyckoff lists for four space groups — all documented in
-Steps 10–14). There is **no Python counterpart** anywhere in `rmc_toolkits/` or `web_app/backend/` —
-a repo-wide search for `spglib`, `space_group`, or `point_group` in the Python tree returns nothing.
+no `spglib`, and no WASM. It consults **no external space-group database**; classification uses
+in-repo tables — the 230 space groups with their standard short symbols and crystal classes
+(`spaceGroupTable.js`), the Bravais centering vectors and the per-system symmetry directions
+(`spaceGroupSymbol.js`), point-group orders (`symmetry.js`), and the Wyckoff positions of all 230
+groups in their ITA standard setting (`wyckoffTable.js`) — all documented in Steps 10–14. There is
+**no Python counterpart** anywhere in `rmc_toolkits/` or `web_app/backend/` — a repo-wide search for
+`spglib`, `space_group`, or `point_group` in the Python tree returns nothing.
 
 The **Model information** card is browser-computed too in static / local-folder mode. In
 server-directory (Flask) mode its raw inputs come from Python: `Dashboard.jsx` and `StructurePage.jsx`
@@ -2624,9 +2626,19 @@ The scaling engines ([`rmc_toolkits/scaling.py`](../../rmc_toolkits/scaling.py),
 
 ### Part B — The Detected SG symmetry finder
 
-All of Part B lives in [`web_app/frontend/src/symmetry.js`](../../web_app/frontend/src/symmetry.js)
-(pure functions, no React, no I/O) with the structure→finder glue in
-[`web_app/frontend/src/symmetryModel.js`](../../web_app/frontend/src/symmetryModel.js).
+Part B is pure JavaScript (no React, no I/O) in six modules under `web_app/frontend/src/`:
+
+| Module | Role |
+| --- | --- |
+| [`symmetry.js`](../../web_app/frontend/src/symmetry.js) | lattice rotations, operation search and refinement, closure walk, ladder, point group, orbits (Steps 7–13) |
+| [`spaceGroupSymbol.js`](../../web_app/frontend/src/spaceGroupSymbol.js) | screw/glide analysis, centering, the standard-setting search, the H–M symbol, the lower-bound check (Step 10) |
+| [`spaceGroupTable.js`](../../web_app/frontend/src/spaceGroupTable.js) | the 230 groups: number, standard short symbol, crystal class, pre-2002 `e`-glide spellings |
+| [`wyckoff.js`](../../web_app/frontend/src/wyckoff.js) + [`wyckoffTable.js`](../../web_app/frontend/src/wyckoffTable.js) | Wyckoff positions of the 230 groups and the letter assignment (Step 14) |
+| [`symmetryModel.js`](../../web_app/frontend/src/symmetryModel.js) | structure → finder glue: the cell, the basis-size cap, orbits and letters in the naming cell |
+
+Tests: `web_app/frontend/src/__tests__/symmetry*.test.js` and `wyckoff.test.js` (the 230-group
+fixtures in `__tests__/fixtures/spaceGroups.js`, well-known structures in
+`__tests__/fixtures/symmetryStructures.js`).
 
 **Convention**: fractional coordinates are **column vectors** and operations act as
 $\mathbf x' = R\,\mathbf x + \mathbf t$. The lattice matrix $A$ stores lattice vectors as **rows**,
@@ -2907,8 +2919,8 @@ deliberate, so that a structure whose symmetry is a proper subgroup of its latti
 generic case partway up the tolerance ladder) is classified correctly.
 
 **(f) Space-group symbol** (`spaceGroupHM()` → `spaceGroupSymbol.js`). Triclinic groups are `P1`
-(No. 1) or `P-1` (No. 2) whatever cell describes them. Every other group is named in a **standard
-setting**, which the RMC cell need not be:
+(No. 1) or `P-1` (No. 2) whatever cell describes them (unless item 4 marks them as a lower bound).
+Every other group is named in a **standard setting**, which the RMC cell need not be:
 
 1. **Symmetry elements** (`classifyElement()`): each operation's characteristic direction (rotation
    axis, or mirror normal), order, and — from the **intrinsic translation**
@@ -3254,11 +3266,11 @@ unit-cell configuration, and a symmetry search on it would only ever return `P1`
 ### Caveats / what this is not
 
 - **This is not spglib, and not FINDSYM.** It is a bounded approximation written for interactive use
-  in a browser, with **no external space-group database** (no spglib tables, no WASM) — but it is not
-  literally "table-free" as the source comment says: classification rests on small in-file lookup
-  tables (`POINT_GROUP_ORDER`, `PG_SYSTEM`, `ALLOWED_CENTERING`, `CENTERING_SETS`, the 69-entry
-  `SG_NUMBER` map, and `WYCKOFF` / `CEN_VECS`). Use it to see *how* symmetry changes with tolerance on
-  a disordered configuration, not to produce a published space-group assignment.
+  in a browser, with **no external space-group database** (no spglib tables, no WASM); it rests on
+  the in-repo tables listed at the top of Part B (`SPACE_GROUPS`, `POINT_GROUP_SYSTEM`,
+  `SYSTEM_DIRECTIONS`, `BRAVAIS`, `STANDARD_CENTERING`, `POINT_GROUP_ORDER`, the Wyckoff table). Use it
+  to see *how* symmetry changes with tolerance on a disordered configuration, not to produce a
+  published space-group assignment.
 - **A group that cannot be named is shown as its crystal class.** The symbol is built positionally
   and accepted only when it is a tabulated symbol of the detected class and centering (Step 10f);
   otherwise the card shows e.g. `4/mmm class` with no number and no Wyckoff letters.
@@ -3318,9 +3330,16 @@ unit-cell configuration, and a symmetry search on it would only ever return `P1`
   also a different parser: the Python `iter_rmc6f_atoms()` skips every line with fewer than 9 fields,
   so coords-only `.rmc6f` files yield zero atoms there, and it capitalizes element tokens while
   `read_atom_indices()` (same response) does not (Step 2).
-- **No unit tests cover `symmetry.js`.** The frontend vitest suite covers `browserData.js`
-  (including the circular-mean basis and `dispA`), `rmc6f.js`, `autoScale.js`, `pcaKde.js` and the
-  LLM context builder, but there is no test file importing `symmetry.js`; only `symmetryModel.js`
-  imports it. The numbers quoted above for the enumeration counts (6960 unimodular patterns, 48
-  cubic and 24 hexagonal-P point operations) were verified by re-running the code's own algorithm,
-  not by an existing test.
+- **What the tests pin.** `symmetry.test.js` recovers all 230 fixture groups (built from ITA
+  generators) from their atoms, names rocksalt, perovskite, diamond, hcp and an I4/mcm perovskite,
+  and checks the point-group and space-group tables; `symmetrySettings.test.js` names the 230
+  groups in all six axis orders and well-known structures in centred, primitive, rhombohedral and
+  supercell cells, with the principal axis off $c$, and as subgroups of a centred parent;
+  `symmetryObliqueCells.test.js` pins the lattice-rotation count on oblique bases, naming on oblique
+  and strongly oblique cells, the lower bound and the translation snap; `symmetryFinder.test.js`
+  covers basis-order independence, lattice strain, closure of every rung (the bundled GTS_250K demo,
+  a noisy lacunar spinel) and class-consistent symbols; `symmetryWyckoff.test.js` and
+  `wyckoff.test.js` check every Wyckoff row against its group's operations, the demo's letters and
+  letters in permuted settings; `symmetryLimits.test.js` and `symmetryUndetermined.test.js` cover
+  the basis cap and an unanalysable lattice. The two GaNb₄Se₈ runs are gitignored, so they are not
+  in the suite; their ladders were checked by hand to consist only of closed, correctly named groups.
