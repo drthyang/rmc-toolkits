@@ -35,8 +35,10 @@ export const detectPlotKind = (name) => {
     if (name.includes('PDF') && name.endsWith('.csv')) {
         return name.includes('PDFpartials') ? 'pdf_partials' : 'npdf';
     }
-    if (name.endsWith('_FQ1.csv')) return 'xray_sq';
-    if (name.endsWith('_SQ1.csv')) return 'neutron_sq';
+    // Reciprocal-space fits of any dataset number (_FQ2, _SQ3, …), like the xPDF
+    // rule and the stem chooser; *_FQ1partials.csv is not one of them.
+    if (/_FQ\d+\.csv$/.test(name)) return 'xray_sq';
+    if (/_SQ\d+\.csv$/.test(name)) return 'neutron_sq';
     if (/_bragg(?:_.+)?\.csv$/.test(name)) return 'bragg';
     if (/-\d{2,}\.log$/.test(name)) return 'r_value';
     // Any RMCProfile STOG data file (r-space .gr, reciprocal .sq / .fq), not just the
@@ -428,21 +430,64 @@ export const chiHistoryLabels = (column) => {
     return { title: `χ² history: ${name}`, label: name };
 };
 
+// The function a fit CSV holds, read from its own data-column headers:
+// `Q, F(Q)_RMC, F(Q)_Expt` → `F(Q)`; null when no data column names one.
+// Mirrors fit_function_label() in plots.py.
+const FIT_FUNCTION_RE = /([A-Za-z])\(([QqRr])\)/;
+const RECIPROCAL_DATASET_RE = /_([FS])Q(\d+)\.csv$/;
+
+export const fitFunctionLabel = (labels) => {
+    for (const label of labels.slice(1)) {
+        const match = FIT_FUNCTION_RE.exec(String(label ?? ''));
+        if (match) return `${match[1]}(${match[2]})`;
+    }
+    return null;
+};
+
+// [title, y label] of a dashboard fit/partials CSV from what the file holds:
+// *_FQn / *_SQn hold F(Q) (→ −⟨b⟩² at low Q, 0 at high Q), not S(Q) (→ 1) — the
+// function comes from the headers, else the file name (FQ → F(Q), SQ → S(Q)),
+// with "#n" for dataset n > 1 and no radiation claimed; PDFpartials hold the
+// partial g_ij(r) (0 below closest approach, → 1), not G(r) (→ 0). `labels` may
+// be empty before the file is parsed. Mirrors series_titles() in plots.py.
+export const seriesTitles = (kind, name, labels = []) => {
+    if (kind === 'xray_sq' || kind === 'neutron_sq') {
+        const match = RECIPROCAL_DATASET_RE.exec(name);
+        const [letter, index] = match ? [match[1], Number(match[2])] : [kind === 'xray_sq' ? 'F' : 'S', 1];
+        const func = fitFunctionLabel(labels) || `${letter}(Q)`;
+        return [index === 1 ? func : `${func} #${index}`, func];
+    }
+    if (kind === 'pdf_partials') return ['Partial g(r)', 'g(r)'];
+    if (kind === 'xpdf') return ['xPDF', fitFunctionLabel(labels) || 'G(r)'];
+    if (kind === 'npdf') return [name.replace(/\.[^.]+$/, '').split('_').pop(), fitFunctionLabel(labels) || 'G(r)'];
+    if (kind === 'exafs_q') return ['EXAFS Q-space', 'χ(k) k²'];
+    if (kind === 'exafs_r') return ['EXAFS R-space', 'FT[χ(k) k²]'];
+    if (kind === 'bragg') return ['BRAGG', 'Intensity'];
+    return [name, 'data'];
+};
+
+// Extension default for a STOG file: .gr G(r), .fq F(Q) (Keen's F(Q), → 0),
+// else S(Q). Mirrors stog_function_label() in plots.py; the run-control
+// FIT_TYPE wins when known.
+const stogFunctionLabel = (name) => {
+    const lower = name.toLowerCase();
+    if (lower.endsWith('.gr')) return 'G(r)';
+    if (lower.endsWith('.fq')) return 'F(Q)';
+    return 'S(Q)';
+};
+
 export const plotMetadataFromFile = (file) => {
     const kind = file.plotKind;
-    if (kind === 'xpdf') return { kind, title: 'xPDF', metrics: file.plotData?.metrics || {} };
-    if (kind === 'exafs_q') return { kind, title: 'EXAFS Q-space', metrics: file.plotData?.metrics || {} };
-    if (kind === 'exafs_r') return { kind, title: 'EXAFS R-space', metrics: file.plotData?.metrics || {} };
-    if (kind === 'npdf') return { kind, title: file.name.replace(/\.[^.]+$/, '').split('_').pop(), metrics: file.plotData?.metrics || {} };
-    if (kind === 'pdf_partials') return { kind, title: file.name.replace(/\.[^.]+$/, '').split('_').pop(), metrics: file.plotData?.metrics || {} };
-    if (kind === 'xray_sq') return { kind, title: 'S(Q) (x-ray)', metrics: file.plotData?.metrics || {} };
-    if (kind === 'neutron_sq') return { kind, title: 'S(Q) (neutron)', metrics: file.plotData?.metrics || {} };
-    if (kind === 'bragg') return { kind, title: 'BRAGG', metrics: file.plotData?.metrics || {} };
+    if (['xpdf', 'exafs_q', 'exafs_r', 'npdf', 'pdf_partials', 'xray_sq', 'neutron_sq', 'bragg'].includes(kind)) {
+        // After parsing, the title reflects the file's own headers (plotData.title).
+        const title = file.plotData?.title || seriesTitles(kind, file.name)[0];
+        return { kind, title, metrics: file.plotData?.metrics || {} };
+    }
     if (kind === 'r_value') return { kind, title: file.plotData?.title || chiHistoryLabels(null).title, metrics: file.plotData?.metrics || {} };
     if (kind === 'stog') {
         // Heading is the fit-function form from the run-control .dat (e.g. "D(r)")
         // when known, else the extension-based default; the file name shows beneath.
-        const funcLabel = file.fitType || (file.name.toLowerCase().endsWith('.gr') ? 'G(r)' : 'S(Q)');
+        const funcLabel = file.fitType || stogFunctionLabel(file.name);
         return { kind, title: funcLabel, metrics: file.plotData?.metrics || {} };
     }
     return null;
@@ -477,7 +522,7 @@ export const plotDataFromText = (file) => {
         const isRealSpace = file.name.toLowerCase().endsWith('.gr');
         // The run-control .dat declares the actual fit-function form (e.g. a .gr
         // file fit as D(r)); prefer it over the extension-based default.
-        const funcLabel = file.fitType || (isRealSpace ? 'G(r)' : 'S(Q)');
+        const funcLabel = file.fitType || stogFunctionLabel(file.name);
         return {
             kind,
             title: file.name,
@@ -497,26 +542,19 @@ export const plotDataFromText = (file) => {
     }
     if (kind === 'npdf') metrics.pdf_index = pdfIndex(file.name);
 
+    // One label source with Flask and the PNGs (seriesTitles ⟷ plots.series_titles).
+    const [title, yLabel] = seriesTitles(kind, file.name, csv.labels);
     let xLabel = csv.labels[0] || 'x';
-    let yLabel = 'data';
     if (kind === 'exafs_q') {
         xLabel = 'k (Å^{-1})';
-        yLabel = 'χ(k) k²';
-    } else if (kind === 'exafs_r') {
+    } else if (['exafs_r', 'xpdf', 'npdf', 'pdf_partials'].includes(kind)) {
         xLabel = 'r (Å)';
-        yLabel = 'FT[χ(k) k²]';
-    } else if (['xpdf', 'npdf', 'pdf_partials'].includes(kind)) {
-        xLabel = 'r (Å)';
-        yLabel = 'G(r)';
     } else if (['xray_sq', 'neutron_sq'].includes(kind)) {
         xLabel = 'Q (Å^{-1})';
-        yLabel = 'S(Q)';
     } else if (kind === 'bragg') {
         xLabel = braggAxis(csv.labels[0]);
-        yLabel = 'Intensity';
     } else xLabel = cleanAxisLabel(xLabel);
 
-    const title = plotMetadataFromFile({ ...file, plotData: { metrics } })?.title || file.name;
     return {
         kind,
         title,

@@ -59,6 +59,8 @@ from rmc_toolkits.plots import (
     detect_plot_kind,
     make_plot,
     plot_to_png,
+    series_titles,
+    stog_function_label,
 )
 from rmc_toolkits.scaling import (
     ScalingConfig,
@@ -434,7 +436,7 @@ def plot_data():
                 {
                     **metadata,
                     "xLabel": "r (Å)" if path.name.endswith(".gr") else "Q (Å^{-1})",
-                    "yLabel": "G(r)" if path.name.endswith(".gr") else "S(Q)",
+                    "yLabel": stog_function_label(path.name),
                     "series": [{"label": path.name, "x": data[0].tolist(), "y": data[1].tolist()}],
                 }
             )
@@ -446,25 +448,20 @@ def plot_data():
             if idx < len(series.data):
                 payload_series.append({"label": label.strip() or f"Series {idx}", "x": x_values, "y": series.data[idx].tolist()})
 
+        # One label source for Flask, the PNGs and (mirrored) the browser:
+        # F(Q) for *_FQn.csv, partial g(r) for PDFpartials, from the file's headers.
+        _, y_label = series_titles(kind, path.name, series.labels)
         x_label = series.labels[0] if series.labels else "x"
         if kind == "exafs_q":
             x_label = "k (Å^{-1})"
-            y_label = "χ(k) k²"
-        elif kind == "exafs_r":
+        elif kind in ("exafs_r", "xpdf", "npdf", "pdf_partials"):
             x_label = "r (Å)"
-            y_label = "FT[χ(k) k²]"
-        elif kind in ("xpdf", "npdf", "pdf_partials"):
-            x_label = "r (Å)"
-            y_label = "G(r)"
         elif kind in ("xray_sq", "neutron_sq"):
             x_label = "Q (Å^{-1})"
-            y_label = "S(Q)"
         elif kind == "bragg":
             x_label = "ToF (µs)" if bragg_is_tof(series.labels[0] if series.labels else None) else "Q (Å^{-1})"
-            y_label = "Intensity"
         else:
             x_label = _clean_axis_label(x_label)
-            y_label = "data"
 
         return jsonify({**metadata, "xLabel": x_label, "yLabel": y_label, "series": payload_series})
     except PermissionError as exc:

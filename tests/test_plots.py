@@ -9,7 +9,17 @@ import unittest
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "rmc_toolkits_matplotlib"))
 Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
 
-from rmc_toolkits.plots import bragg_is_tof, close_plot, detect_plot_kind, make_plot, plot_to_png
+from rmc_toolkits.parsers import read_rmc_csv
+from rmc_toolkits.plots import (
+    bragg_is_tof,
+    close_plot,
+    detect_plot_kind,
+    fit_function_label,
+    make_plot,
+    plot_to_png,
+    series_titles,
+    stog_function_label,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +39,11 @@ class PlotTests(unittest.TestCase):
             "GNSe_FT_XFQ1.csv": "xpdf",
             "GNSe_FT_XFQ2.csv": "xpdf",
             "GNSe_FQ1.csv": "xray_sq",
+            "GNSe_FQ2.csv": "xray_sq",
+            "GNSe_SQ1.csv": "neutron_sq",
+            "GNSe_SQ12.csv": "neutron_sq",
+            "GNSe_FQ1partials.csv": None,
+            "GNSe_XFQ1.csv": None,
             "GNSe_bragg.csv": "bragg",
             "GNSe_bragg_1.csv": "bragg",
             "GNSe_braggish.csv": None,
@@ -90,7 +105,7 @@ class PlotTests(unittest.TestCase):
         result = make_plot(DATA / "GNSe_FQ1.csv")
         try:
             self.assertEqual(result.kind, "xray_sq")
-            self.assertEqual(result.title, "S(Q) (x-ray)")
+            self.assertEqual(result.title, "F(Q)")
             self.assertIn("rwp", result.metrics)
             self.assertGreater(result.metrics["rwp"], 0.0)
 
@@ -208,6 +223,62 @@ class ChiHistoryLabelTests(unittest.TestCase):
             result = make_plot(path)
             try:
                 self.assertEqual(result.title, "χ² history: last log column")
+            finally:
+                close_plot(result)
+
+
+class FunctionLabelTests(unittest.TestCase):
+    """Axis labels and titles name the function the file holds (headers first)."""
+
+    def test_demo_fq_file_holds_f_of_q_and_is_labelled_so(self):
+        # Independent physics check of the label: F(Q) -> 0 at high Q, S(Q) -> 1.
+        series = read_rmc_csv(DEMO / "GTS_250K_FQ1.csv")
+        self.assertEqual(series.labels, ["Q", "F(Q)_RMC", "F(Q)_Expt"])
+        q, experiment = series.data[0], series.data[2]
+        self.assertLess(abs(experiment[q > 0.8 * q.max()].mean()), 0.05)
+        result = make_plot(DEMO / "GTS_250K_FQ1.csv")
+        try:
+            self.assertEqual(result.title, "F(Q)")
+            self.assertEqual(result.figure.axes[0].get_ylabel(), "F(Q)")
+        finally:
+            close_plot(result)
+
+    def test_demo_partials_are_g_of_r_and_labelled_so(self):
+        # Partial g_ij(r): 0 below the closest approach and -> 1 at large r (G(r) -> 0).
+        series = read_rmc_csv(DEMO / "GTS_250K_PDFpartials.csv")
+        r = series.data[0]
+        for column in series.data[1:]:
+            self.assertEqual(float(column[r < 1.0].max()), 0.0)
+            self.assertLess(abs(column[r > 0.8 * r.max()].mean() - 1.0), 0.2)
+        result = make_plot(DEMO / "GTS_250K_PDFpartials.csv")
+        try:
+            self.assertEqual(result.title, "Partial g(r)")
+            self.assertEqual(result.figure.axes[0].get_ylabel(), "g(r)")
+        finally:
+            close_plot(result)
+
+    def test_series_titles_follow_headers_then_the_file_name(self):
+        self.assertEqual(series_titles("xray_sq", "run_FQ1.csv", ["Q", "F(Q)_RMC", "F(Q)_Expt"]), ("F(Q)", "F(Q)"))
+        self.assertEqual(series_titles("xray_sq", "run_FQ2.csv", ["Q", "a", "b"]), ("F(Q) #2", "F(Q)"))
+        self.assertEqual(series_titles("neutron_sq", "run_SQ1.csv", ["Q", "a", "b"]), ("S(Q)", "S(Q)"))
+        self.assertEqual(series_titles("neutron_sq", "run_SQ1.csv", ["Q", "F(Q)_RMC", "F(Q)_Expt"]), ("F(Q)", "F(Q)"))
+        self.assertEqual(series_titles("npdf", "run_PDF1.csv", ["r", "D(r)_RMC", "D(r)_Expt"]), ("PDF1", "D(r)"))
+        self.assertEqual(series_titles("npdf", "run_PDF2.csv", ["r", "calc", "expt"]), ("PDF2", "G(r)"))
+        self.assertEqual(fit_function_label(["Q", "Ga-Ga"]), None)
+
+    def test_stog_extension_defaults(self):
+        self.assertEqual(stog_function_label("scale_ft_rmc.fq"), "F(Q)")
+        self.assertEqual(stog_function_label("scale_ft.sq"), "S(Q)")
+        self.assertEqual(stog_function_label("scale_ft.gr"), "G(r)")
+
+    def test_higher_numbered_reciprocal_datasets_are_charted_with_rwp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = _write_fit_csv(Path(tmpdir), "run_FQ2.csv", "Q, F(Q)_RMC, F(Q)_Expt",
+                                  [(1.0, 0.7, 1.0), (2.0, -1.4, -2.0)])
+            result = make_plot(path)
+            try:
+                self.assertEqual((result.kind, result.title), ("xray_sq", "F(Q) #2"))
+                self.assertAlmostEqual(result.metrics["rwp"], 0.3)
             finally:
                 close_plot(result)
 

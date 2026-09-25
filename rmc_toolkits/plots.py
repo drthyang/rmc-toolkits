@@ -38,9 +38,11 @@ def detect_plot_kind(path: str | Path) -> str | None:
         return "xpdf"
     if "PDF" in name and name.endswith(".csv"):
         return "pdf_partials" if "PDFpartials" in name else "npdf"
-    if name.endswith("_FQ1.csv"):
+    # Reciprocal-space fits of any dataset number (_FQ2, _SQ3, …), like the
+    # xPDF rule and the stem chooser; *_FQ1partials.csv is not one of them.
+    if re.search(r"_FQ\d+\.csv$", name):
         return "xray_sq"
-    if name.endswith("_SQ1.csv"):
+    if re.search(r"_SQ\d+\.csv$", name):
         return "neutron_sq"
     if re.search(r"_bragg(?:_.+)?\.csv$", name):
         return "bragg"
@@ -49,6 +51,71 @@ def detect_plot_kind(path: str | Path) -> str | None:
     if name in {"scale_ft.gr", "scale_ft.sq", "scale_ft_rmc.fq"}:
         return "stog"
     return None
+
+
+_FIT_FUNCTION_RE = re.compile(r"([A-Za-z])\(([QqRr])\)")
+_RECIPROCAL_DATASET_RE = re.compile(r"_([FS])Q(\d+)\.csv$")
+
+
+def fit_function_label(labels: list[str]) -> str | None:
+    """The function a fit CSV holds, read from its own data-column headers.
+
+    ``Q, F(Q)_RMC, F(Q)_Expt`` → ``F(Q)``; ``r, G(r)_RMC, …`` → ``G(r)``. ``None``
+    when no data column names one. Mirrors ``fitFunctionLabel()`` in browserData.js.
+    """
+    for label in labels[1:]:
+        match = _FIT_FUNCTION_RE.search(str(label))
+        if match:
+            return f"{match.group(1)}({match.group(2)})"
+    return None
+
+
+def series_titles(kind: str, name: str, labels: list[str]) -> tuple[str, str]:
+    """``(title, y label)`` of a dashboard fit/partials CSV, from what the file holds.
+
+    * ``*_FQn.csv`` / ``*_SQn.csv``: RMCProfile writes F(Q) (``F(Q)_RMC, F(Q)_Expt``,
+      → −⟨b⟩² at low Q and 0 at high Q), not S(Q) (→ 1). The function is read from
+      the column headers, else from the file name (``FQ`` → F(Q), ``SQ`` → S(Q)); the
+      title is that function, with ``#n`` for dataset n > 1, and claims no radiation.
+    * ``*_PDFpartials.csv``: the partial pair distribution functions g_ij(r) (0
+      below the closest approach, → 1 at large r), not G(r) (→ 0).
+    * ``xpdf`` / ``npdf``: the header's function if it names one, else ``G(r)``.
+
+    Mirrors ``seriesTitles()`` in browserData.js; ``/api/plot/data`` and the
+    matplotlib figures use it too.
+    """
+    if kind in ("xray_sq", "neutron_sq"):
+        match = _RECIPROCAL_DATASET_RE.search(name)
+        letter, index = (match.group(1), int(match.group(2))) if match else ("F" if kind == "xray_sq" else "S", 1)
+        function = fit_function_label(labels) or f"{letter}(Q)"
+        return (function if index == 1 else f"{function} #{index}"), function
+    if kind == "pdf_partials":
+        return "Partial g(r)", "g(r)"
+    if kind == "xpdf":
+        return "xPDF", fit_function_label(labels) or "G(r)"
+    if kind == "npdf":
+        return Path(name).stem.split("_")[-1], fit_function_label(labels) or "G(r)"
+    if kind == "exafs_q":
+        return "EXAFS Q-space", "χ(k) k²"
+    if kind == "exafs_r":
+        return "EXAFS R-space", "FT[χ(k) k²]"
+    if kind == "bragg":
+        return "BRAGG", "Intensity"
+    return name, "data"
+
+
+def stog_function_label(name: str) -> str:
+    """Extension default for a STOG file: ``.gr`` G(r), ``.fq`` F(Q), else S(Q).
+
+    ``scale_ft_rmc.fq`` is Keen's F(Q) (→ 0 at high Q); only ``.sq`` holds S(Q).
+    The browser prefers the run-control ``FIT_TYPE`` when it knows it.
+    """
+    lower = name.lower()
+    if lower.endswith(".gr"):
+        return "G(r)"
+    if lower.endswith(".fq"):
+        return "F(Q)"
+    return "S(Q)"
 
 
 def bragg_is_tof(header: str | None) -> bool:
@@ -142,7 +209,7 @@ def _stog_plot(path: Path) -> PlotResult:
     data = read_stog(path)
     title = path.name
     xlabel = r"r ($\mathrm{\AA}$)" if path.name.endswith(".gr") else r"Q ($\mathrm{\AA^{-1}}$)"
-    ylabel = "G(r)" if path.name.endswith(".gr") else "S(Q)"
+    ylabel = stog_function_label(path.name)
 
     fig = plt.figure(figsize=(6.75, 4.725))
     ax = fig.add_subplot(111)
@@ -160,46 +227,33 @@ def make_plot(path: str | Path) -> PlotResult:
     if kind is None:
         raise ValueError(f"Unsupported plot file type: {path.name}")
 
-    if kind == "exafs_q":
-        return _series_plot(
-            path,
-            "EXAFS Q-space",
-            r"k ($\mathrm{\AA^{-1}}$)",
-            r"$\chi(k) k^2$",
-            reader=read_exafs_csv,
-        )
-    if kind == "exafs_r":
-        return _series_plot(
-            path,
-            "EXAFS R-space",
-            r"r ($\mathrm{\AA}$)",
-            r"FT[$\chi(k) k^2$]",
-            reader=read_exafs_csv,
-        )
-    if kind == "xpdf":
-        return _series_plot(path, "xPDF", r"r ($\mathrm{\AA}$)", calculate_rwp=True)
-    if kind == "npdf":
-        neutron_index = pdf_index(path)
-        title = path.stem.split("_")[-1]
-        result = _series_plot(path, title, r"r ($\mathrm{\AA}$)", calculate_rwp=True)
-        metrics = dict(result.metrics)
-        metrics["pdf_index"] = float(neutron_index)
-        return PlotResult(result.figure, kind, title, metrics)
-    if kind == "pdf_partials":
-        return _series_plot(path, path.stem.split("_")[-1], r"r ($\mathrm{\AA}$)", calculate_rwp=False)
-    if kind == "xray_sq":
-        labels = read_rmc_csv(path).labels
-        return _series_plot(path, "S(Q) (x-ray)", labels[0] if labels else r"Q ($\mathrm{\AA^{-1}}$)", calculate_rwp=True)
-    if kind == "neutron_sq":
-        labels = read_rmc_csv(path).labels
-        return _series_plot(path, "S(Q) (neutron)", labels[0] if labels else r"Q ($\mathrm{\AA^{-1}}$)", calculate_rwp=True)
-    if kind == "bragg":
-        labels = read_rmc_csv(path).labels
-        x_label = r"ToF ($\mu$s)" if bragg_is_tof(labels[0] if labels else None) else r"Q ($\mathrm{\AA^{-1}}$)"
-        return _series_plot(path, "BRAGG", x_label, calculate_rwp=True)
     if kind == "r_value":
         return _chi_plot(path)
-    return _stog_plot(path)
+    if kind == "stog":
+        return _stog_plot(path)
+
+    reader = read_exafs_csv if kind in ("exafs_q", "exafs_r") else read_rmc_csv
+    labels = reader(path).labels
+    title, y_label = series_titles(kind, path.name, labels)
+    if kind == "exafs_q":
+        return _series_plot(path, title, r"k ($\mathrm{\AA^{-1}}$)", r"$\chi(k) k^2$", reader=read_exafs_csv)
+    if kind == "exafs_r":
+        return _series_plot(path, title, r"r ($\mathrm{\AA}$)", r"FT[$\chi(k) k^2$]", reader=read_exafs_csv)
+    if kind == "xpdf":
+        return _series_plot(path, title, r"r ($\mathrm{\AA}$)", y_label, calculate_rwp=True)
+    if kind == "npdf":
+        result = _series_plot(path, title, r"r ($\mathrm{\AA}$)", y_label, calculate_rwp=True)
+        metrics = dict(result.metrics)
+        metrics["pdf_index"] = float(pdf_index(path))
+        return PlotResult(result.figure, kind, title, metrics)
+    if kind == "pdf_partials":
+        return _series_plot(path, title, r"r ($\mathrm{\AA}$)", y_label, calculate_rwp=False)
+    if kind in ("xray_sq", "neutron_sq"):
+        return _series_plot(path, title, r"Q ($\mathrm{\AA^{-1}}$)", y_label, calculate_rwp=True)
+    if kind == "bragg":
+        x_label = r"ToF ($\mu$s)" if bragg_is_tof(labels[0] if labels else None) else r"Q ($\mathrm{\AA^{-1}}$)"
+        return _series_plot(path, title, x_label, y_label, calculate_rwp=True)
+    raise ValueError(f"Unsupported plot file type: {path.name}")
 
 
 def plot_to_png(result: PlotResult, dpi: int = 150) -> bytes:

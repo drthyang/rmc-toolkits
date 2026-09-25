@@ -175,15 +175,15 @@ The Python `detect_plot_kind()` ([plots.py](../../rmc_toolkits/plots.py)) and th
 | 3 | `_FT_XFQ\d+\.csv$` | `xpdf` | X-ray PDF obtained by Fourier-transforming F(Q) |
 | 4 | name contains `PDF` **and** ends `.csv`, and contains `PDFpartials` | `pdf_partials` | per-pair partial PDFs |
 | 5 | name contains `PDF` **and** ends `.csv` (otherwise) | `npdf` | neutron PDF |
-| 6 | ends `_FQ1.csv` | `xray_sq` | titled "S(Q) (x-ray)" |
-| 7 | ends `_SQ1.csv` | `neutron_sq` | titled "S(Q) (neutron)" |
+| 6 | `_FQ\d+\.csv$` | `xray_sq` | reciprocal-space fit, titled by its function (`F(Q)`, `F(Q) #2`, …) |
+| 7 | `_SQ\d+\.csv$` | `neutron_sq` | reciprocal-space fit, titled by its function (`S(Q)` unless the header says otherwise) |
 | 8 | `_bragg(?:_.+)?\.csv$` | `bragg` | Bragg profile |
 | 9 | `-\d{2,}\.log$` (an **inline** regex in both files, not `R_VALUE_LOG_RE`) | `r_value` | RMCProfile run log (χ history) |
 | 10 | **Python:** name ∈ `{scale_ft.gr, scale_ft.sq, scale_ft_rmc.fq}`<br>**JS:** `\.(gr\|sq\|fq)$` (case-insensitive) | `stog` | STOG/preprocessing data file |
 | — | anything else | `null` | not plotted |
 
 Ordering is load-bearing where the patterns genuinely overlap: **rules 4–5 fire before rules 6–7**,
-so a name containing both `PDF` and `_FQ1.csv` is classified as a PDF, never `xray_sq` — as
+so a name containing both `PDF` and `_FQ<n>.csv` is classified as a PDF, never `xray_sq` — as
 `pdf_partials` if it also contains `PDFpartials` (rule 4), otherwise as `npdf` (rule 5). Both are
 one `if "PDF" in name and name.endswith(".csv")` branch in the source, split into two rows here
 because they return different kinds. The rule-3-before-rules-4–5 ordering only bites for an xPDF
@@ -194,14 +194,17 @@ substring and would be `xpdf` under either ordering.
 **Known consequences of pattern-only classification** (all reproducible against the bundled demo
 folder, [web_app/frontend/public/demo/](../../web_app/frontend/public/demo/)):
 
-* `GTS_250K_XFQ1.csv` (the x-ray F(Q)) matches **nothing** — `_FQ1.csv` requires an underscore
-  immediately before `FQ1`, and `XFQ1.csv` supplies an `X`. That file is indexed but never charted.
-* `GTS_250K_FQ1partials.csv` matches nothing (it does not end in `_FQ1.csv`), so partial F(Q) files
+* `GTS_250K_XFQ1.csv` (the x-ray F(Q)) matches **nothing** — `_FQ\d+` requires an underscore
+  immediately before `FQ`, and `XFQ1.csv` supplies an `X`. That file is indexed but never charted
+  (in the demo run it duplicates `GTS_250K_FQ1.csv` at higher precision).
+* `GTS_250K_FQ1partials.csv` matches nothing (it does not end in `_FQ<n>.csv`), so partial F(Q) files
   are silently skipped. Partial *PDF* files are not, because rules 4–5 key on the substring `PDF`
   anywhere in the name (`GTS_250K_PDFpartials.csv` → rule 4).
-* Rule 6 asserts that `_FQ1.csv` is **x-ray** and rule 7 that `_SQ1.csv` is **neutron**. This is a
-  naming convention, not something read from the data; the title chip will say "S(Q) (x-ray)" for
-  any `*_FQ1.csv` regardless of radiation.
+* Rules 6–7 accept **any dataset number**, like rule 3 and the stem chooser; until 2026-09 they
+  matched only the literal `_FQ1.csv` / `_SQ1.csv`, so a second reciprocal-space dataset was never
+  classified, charted, given an Rwp or described to the assistant. The kind names `xray_sq` /
+  `neutron_sq` are internal identifiers only: the **title and y label name the function the file
+  holds** (Step 6) and claim no radiation type.
 * Rule 9 needs **two or more** digits: `run-01.log` is an R-value log, `run-1.log` and
   `derivative.log` are not (`tests/test_plots.py::test_detect_plot_kind_for_supported_outputs`
   pins `GNSe.log → None`, `run-info.log → None`, `GNSe-123.log → r_value`).
@@ -657,11 +660,11 @@ matplotlib builder, so it applies even though the dashboard never uses the PNG.
 |---|---|---|---|---|
 | `exafs_q` | `EXAFS Q-space` | `k (Å⁻¹)` | `χ(k) k²` | no |
 | `exafs_r` | `EXAFS R-space` | `r (Å)` | `FT[χ(k) k²]` | no |
-| `xpdf` | `xPDF` | `r (Å)` | `G(r)` | yes |
-| `npdf` | last `_`-segment of the stem (e.g. `PDF1`) | `r (Å)` | `G(r)` | yes |
-| `pdf_partials` | last `_`-segment of the stem | `r (Å)` | `G(r)` | no |
-| `xray_sq` | `S(Q) (x-ray)` | `Q (Å⁻¹)` | `S(Q)` | yes |
-| `neutron_sq` | `S(Q) (neutron)` | `Q (Å⁻¹)` | `S(Q)` | yes |
+| `xpdf` | `xPDF` | `r (Å)` | header function, else `G(r)` | yes |
+| `npdf` | last `_`-segment of the stem (e.g. `PDF1`) | `r (Å)` | header function, else `G(r)` | yes |
+| `pdf_partials` | `Partial g(r)` | `r (Å)` | `g(r)` | no |
+| `xray_sq` | header function (`F(Q)`), `#n` for dataset n > 1 | `Q (Å⁻¹)` | header function, else `F(Q)` | yes |
+| `neutron_sq` | header function, `#n` for dataset n > 1 | `Q (Å⁻¹)` | header function, else `S(Q)` | yes |
 | `bragg` | `BRAGG` | `ToF (µs)` **or** `Q (Å⁻¹)` | `Intensity` | yes |
 | `r_value` | `χ² history: <last log column>` (e.g. `χ² history: X_ray_(R)1`) | `Time steps` | `ln(χ²)` (see 5d) | no |
 | `stog` † | see below | `r (Å)` if `.gr`, else `Q (Å⁻¹)` | see below | no |
@@ -673,9 +676,24 @@ and the three implementations do not agree on it, so it is recorded here only fo
   extension;
 * browser **plot data** (`plotDataFromText`): `title = file.name`; the fit-function label lands in
   `yLabel` only;
-* **Flask**: no `fitType` concept at all — `/api/plot/data` returns
-  `yLabel = "G(r)" if name.endswith(".gr") else "S(Q)"`, and the title comes from `make_plot()` →
-  `_stog_plot()`, which sets `title = path.name`.
+* **Flask**: no `fitType` concept at all — `/api/plot/data` returns the extension default
+  `stog_function_label()` (`.gr` → `G(r)`, `.fq` → `F(Q)`, else `S(Q)`; the browser's
+  `stogFunctionLabel()` is the same rule), and the title comes from `make_plot()` → `_stog_plot()`,
+  which sets `title = path.name`.
+
+**Where the function names come from.** `plots.py` → `series_titles(kind, name, labels)` is the one
+source for Flask (`/api/plot/data`), the matplotlib figures (`make_plot`) and — mirrored as
+`browserData.js` → `seriesTitles()` — the browser. `fit_function_label()` / `fitFunctionLabel()` reads
+the function from the file's own data-column headers (`/([A-Za-z])\(([QqRr])\)/` →
+`F(Q)_RMC` gives `F(Q)`); without one, a reciprocal-space file falls back to its name (`FQ` → `F(Q)`,
+`SQ` → `S(Q)`). This is not cosmetic: RMCProfile writes **F(Q)** into `*_FQ1.csv`
+(`Q, F(Q)_RMC, F(Q)_Expt`; the demo data tend to ≈ −1 at low Q and 0 at high Q, where an S(Q) would
+tend to 1), and **partial g_ij(r)** into `*_PDFpartials.csv` (exactly 0 below the closest approach,
+≈ 1 at large r, where a G(r) would oscillate about 0). Both used to be labelled `S(Q) (x-ray)` /
+`G(r)` — on every exported figure and in the assistant's dataset titles, contradicting the assistant's
+own `pairCorrelations.js`, which treats the partials as g(r). Pinned against the demo files (with the
+F(Q) → 0 and g(r) → 1 asymptotes checked from the data) by `tests/test_plots.py::FunctionLabelTests`,
+`tests/test_parsers_plot_payload.py` and `plotLabels.test.js`.
 
 **Bragg axis selection** — `bragg_is_tof(header)` (plots.py) / `braggAxis(header)`
 (browserData.js) is a case-insensitive regex on the **first column's header text**:
@@ -1140,21 +1158,23 @@ There are two producers, one per runtime mode:
   on a locally-picked file. `Dashboard.jsx` passes the result down as the `plotData` prop, and the
   card heading/metrics come from `plotMetadataFromFile()`.
 
-#### 1a — Axis labels are hard-coded per plot kind, not read from the file
+#### 1a — Axis labels: the x axis by kind, the y axis by the function the file holds
 
-For every kind except the fallback branch, the axis strings are constants chosen by `kind` — i.e.
-**an assumption about the file's units**, not a measurement of them. Both producers use the same
+The x-axis strings are constants chosen by `kind` — **an assumption about the file's units**, not a
+measurement of them. The y label of a fit CSV is the function its own headers name, through
+`plots.series_titles()` / `browserData.seriesTitles()` (Parsing, Step 6). Both producers use the same
 table (`app.py::plot_data`, `browserData.js::plotDataFromText`):
 
 | kind | xLabel | yLabel |
 | --- | --- | --- |
 | `exafs_q` | `k (Å^{-1})` | `χ(k) k²` |
 | `exafs_r` | `r (Å)` | `FT[χ(k) k²]` |
-| `xpdf`, `npdf`, `pdf_partials` | `r (Å)` | `G(r)` |
-| `xray_sq`, `neutron_sq` | `Q (Å^{-1})` | `S(Q)` |
+| `xpdf`, `npdf` | `r (Å)` | header function, else `G(r)` |
+| `pdf_partials` | `r (Å)` | `g(r)` |
+| `xray_sq`, `neutron_sq` | `Q (Å^{-1})` | header function, else `F(Q)` / `S(Q)` by file name |
 | `bragg` | `ToF (µs)` or `Q (Å^{-1})` (see 1b) | `Intensity` |
-| `r_value` | `Time steps` | `log(χ)` |
-| `stog` | `r (Å)` if `.gr`, else `Q (Å^{-1})` | `G(r)`/`S(Q)` (Python) — see the third bullet in 1e |
+| `r_value` | `Time steps` | `ln(χ²)` |
+| `stog` | `r (Å)` if `.gr`, else `Q (Å^{-1})` | `G(r)` / `F(Q)` / `S(Q)` by extension (Python) — see the third bullet in 1e |
 | anything else | `cleanAxisLabel(header[0])` | `data` |
 
 Only the fallback branch reads the file's own first-column header, through
@@ -1228,10 +1248,10 @@ metrics.
   run-control `.dat` file (`file.fitType`, e.g. `D(r)`, harvested by `browserData.js::pairFitTypes`
   → `fitTypeByFilename`) for *both* the y-label (`plotDataFromText`) and the card heading
   (`plotMetadataFromFile`). The Flask path always uses the extension default for the y-label
-  (`"G(r)" if path.name.endswith(".gr") else "S(Q)"`) and the bare file name for the title (from
-  `_stog_plot`). The same file therefore shows y-label `D(r)` / heading `D(r)` in static mode but
-  y-label `G(r)` / heading `scale_ft.gr` in Flask mode. Python's `.gr` test is **case-sensitive**;
-  the JS one lower-cases first.
+  (`stog_function_label()`: `.gr` → `G(r)`, `.fq` → `F(Q)`, else `S(Q)` — the same default the browser
+  falls back to) and the bare file name for the title (from `_stog_plot`). The same file therefore
+  shows y-label `D(r)` / heading `D(r)` in static mode but y-label `G(r)` / heading `scale_ft.gr` in
+  Flask mode.
 - **CSV line numbering in error messages.** `readRmcCsv` (JS) filters blank lines *before* numbering
   rows, so its reported "line N" counts non-blank lines; `read_rmc_csv` (Python) numbers against the
   raw file. The EXAFS readers agree (both number against the raw line list).
@@ -2036,7 +2056,7 @@ endpoint has no live consumer in the shipped UI.
 #### 16a — `detect_plot_kind(path)` and its precedence
 
 Classification is by **file name**, tested in this exact order (first match wins). It is not all
-regex — two branches are substring/`endswith` tests and the last is a set membership test:
+regex — one branch is a substring/`endswith` test and the last is a set membership test:
 
 | # | test on `Path(path).name` | kind |
 | --- | --- | --- |
@@ -2044,14 +2064,14 @@ regex — two branches are substring/`endswith` tests and the last is a set memb
 | 2 | `re.search(r"-EXAFS-.+_R_OUTPUT\.csv$")` | `exafs_r` |
 | 3 | `re.search(r"_FT_XFQ\d+\.csv$")` | `xpdf` |
 | 4 | `"PDF" in name and name.endswith(".csv")` | `pdf_partials` if `"PDFpartials" in name` else `npdf` |
-| 5 | `name.endswith("_FQ1.csv")` | `xray_sq` |
-| 6 | `name.endswith("_SQ1.csv")` | `neutron_sq` |
+| 5 | `re.search(r"_FQ\d+\.csv$")` | `xray_sq` |
+| 6 | `re.search(r"_SQ\d+\.csv$")` | `neutron_sq` |
 | 7 | `re.search(r"_bragg(?:_.+)?\.csv$")` | `bragg` |
 | 8 | `re.search(r"-\d{2,}\.log$")` | `r_value` |
 | 9 | `name in {"scale_ft.gr", "scale_ft.sq", "scale_ft_rmc.fq"}` | `stog` |
 | — | otherwise | `None` → `/api/plot/data` answers **400** |
 
-Note rule 4's precedence: it fires **before** the `_FQ1`/`_SQ1` tests, so a file whose name contains
+Note rule 4's precedence: it fires **before** the `_FQ<n>`/`_SQ<n>` tests, so a file whose name contains
 both `PDF` and `_SQ1.csv` is classified `npdf`, not `neutron_sq`.
 
 The JS counterpart is `browserData.js::detectPlotKind`, and the Python side is pinned by
