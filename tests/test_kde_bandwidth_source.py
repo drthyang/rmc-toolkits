@@ -90,6 +90,28 @@ class KdeBandwidthSourceTests(unittest.TestCase):
         expected = 0.03**2 * np.cov(points[:, :2], rowvar=False)
         np.testing.assert_allclose(first["kernel"]["covariance"], expected, rtol=1e-12)
 
+    def test_fixed_covariance_kde_is_scipys_sum_and_guards_against_scipy_changes(self):
+        from unittest import mock
+
+        from rmc_toolkits.kde import _FixedCovarianceKDE
+
+        rng = np.random.default_rng(4)
+        data = rng.random((2, 300))
+        covariance = np.array([[0.02, 0.005], [0.005, 0.01]])
+        kde = _FixedCovarianceKDE(data, covariance, 0.05)
+        np.testing.assert_allclose(kde.covariance, 0.05**2 * covariance, rtol=1e-15)
+        # The density is the Gaussian mixture with that kernel, not with cov(data).
+        point = np.array([[0.4], [0.6]])
+        inverse = np.linalg.inv(kde.covariance)
+        offsets = data - point
+        quadratic = np.einsum("in,ij,jn->n", offsets, inverse, offsets)
+        expected = np.exp(-0.5 * quadratic).sum() / (300 * 2 * np.pi * np.sqrt(np.linalg.det(kde.covariance)))
+        self.assertAlmostEqual(float(kde(point)[0]) / expected, 1.0, places=10)
+        # A scipy whose evaluate() ignored the supplied covariance must raise.
+        with mock.patch.object(_FixedCovarianceKDE, "evaluate", lambda self, points: np.array([1.0])):
+            with self.assertRaises(RuntimeError):
+                _FixedCovarianceKDE(data, covariance, 0.05)
+
     @unittest.skipUnless(GANB4SE8_5K.exists(), "GaNb4Se8 5K run not present in data/ (gitignored)")
     def test_real_ga_layer_kernel_is_independent_of_the_slab_thickness(self):
         # The z = 0.75 Ga layer of GaNb4Se8; the z = 0.25 layer stays outside

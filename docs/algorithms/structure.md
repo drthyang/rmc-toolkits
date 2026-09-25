@@ -874,9 +874,12 @@ shared verbatim: `KDE_MESSAGES` in `kde.py` and in `localKdeWorker.js`).
 | 1 | no slab rows | `empty` — "No atoms in this slab." |
 | 2 | $f$ not a finite number $>0$ | `bandwidth` |
 | 3 | slab rows $< 5$ | `too_few` / `tooFew` |
-| 4 | $<3$ distinct $(u,v)$ pairs | `few_unique` / `fewUnique` |
-| 5 | centred points of rank $<2$ with numpy's tolerance $\sigma_{\min}\le\sigma_{\max}\max(N,2)\,\varepsilon$ | `collinear` |
+| 4 | source atoms at $<3$ distinct $(u,v)$ positions | `few_unique` / `fewUnique` |
+| 5 | centred source-atom positions of rank $<2$ with numpy's tolerance $\sigma_{\min}\le\sigma_{\max}\max(N,2)\,\varepsilon$ | `collinear` |
 | 6 | $\mathbf{C}$ not safely positive definite: $c_{00}\le0$, $c_{11}\le0$, $1-\rho^2\le10^{-10}$ (`COVARIANCE_CONDITION_LIMIT`), or a failed Cholesky | `singular` |
+
+Tests 4–6 run on the source-atom rows that define $\mathbf{C}$ (Step 6 above), before any
+subsampling.
 
 Test 5 is `np.linalg.matrix_rank` in Python; the worker's `hasTwoDimensionalSpread()` gets the two
 singular values from a twice-orthogonalized Gram–Schmidt QR of the centred columns and the
@@ -885,11 +888,11 @@ same tolerance. Test 6 exists because a slab can pass the rank test and still be
 round-off — coordinates written with a finite number of decimals put the perpendicular spread at
 $\sim10^{-10}$ — and there the sign of the Cholesky pivot $c_{11}-c_{01}^2/c_{00}$ depends on the
 summation order, so the two runtimes could disagree on whether to draw. $\rho$ is the in-plane
-correlation coefficient of the fit points; $1-\rho^2\le10^{-10}$ corresponds to a kernel aspect ratio
+correlation coefficient of the source atoms; $1-\rho^2\le10^{-10}$ corresponds to a kernel aspect ratio
 above $\sim2\times10^5$, i.e. a needle far below any grid spacing, and the limit sits about 100× above
 the worst-case summation round-off for 6000 points. The worker's `cholesky2()` applies test 6 and
-then fails exactly where LAPACK's `potrf` raises; Python checks test 6 on `np.cov(slab)` and then
-lets `gaussian_kde` raise `LinAlgError`.
+then fails exactly where LAPACK's `potrf` raises; Python checks test 6 on `np.cov(atoms)` and then
+lets `scipy.linalg.cholesky` (inside `_FixedCovarianceKDE`) raise `LinAlgError`.
 
 **Before 1.0 the two paths differed here**, and not only on degenerate input: the browser added a
 fixed $10^{-8}$ (fractional²) ridge to the diagonal of $\mathbf{H}$ on every slab, and whenever
@@ -1416,6 +1419,10 @@ Added for 1.0:
 | `workers/__tests__/kdeParity.test.js` | **cross-runtime**: the worker reproduces the Python golden — demo run, GaNb₄Se₈ run (skipped when `data/` is absent), synthetic slabs — to $10^{-6}$ of the peak, with identical `slabCount`, `fitCount`, kernel and `message` |
 | `workers/__tests__/localKdeKernel.test.js` | the worker's kernel equals an in-test brute-force $f^2\mathbf{C}$ mixture; its rank test and decline rules |
 | `workers/__tests__/gpuKdeEmulation.test.js` | the WGSL shader, replayed in float32 on the packed buffers, against the CPU loop |
+| `tests/test_kde_bandwidth_source.py` / `workers/__tests__/kdeBandwidthSource.test.js` | $\mathbf{C}$ is the covariance of the folded source atoms, unchanged across a thickness or bandwidth margin step, across subsample seeds, and for depth-wrapped atoms (plus the real Ga layer in Python); `_FixedCovarianceKDE` sums SciPy's Gaussian with the supplied covariance and raises if SciPy stops honouring it |
+| `tests/test_kde_contours.py` / `workers/__tests__/logContours.test.js` | log scale keeps all eight contours on an oblique disordered slice whose log peak is negative; a declined slab has none |
+| `tests/test_kde_kernel_diagnostics.py` / `workers/__tests__/kernelDiagnostics.test.js` | the `subgrid` warning; the kernel's σ in Å through the cell metric |
+| `workers/__tests__/millerPlane.test.js` / `slabThickness.test.js` | the custom slice is labelled and selected as the plane family $(hkl)$; the slab thickness in Å |
 
 **What is still not covered.** The cross-runtime golden uses slabs below the 6000-point fit cap, where
 both runtimes sum the same rows; above it they draw different subsamples (Step 5) and agree only

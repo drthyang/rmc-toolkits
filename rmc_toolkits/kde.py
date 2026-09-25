@@ -106,17 +106,17 @@ def _valid_bandwidth(bw) -> bool:
     return math.isfinite(float(bw)) and float(bw) > 0.0
 
 
-def _kernel_summary(covariance: np.ndarray, cholesky: np.ndarray) -> dict:
+def _kernel_summary(covariance: np.ndarray, cholesky_factor: np.ndarray) -> dict:
     """Kernel matrix H and its principal standard deviations (in-plane units).
 
-    ``cholesky`` is the lower Cholesky factor of ``covariance``. The minor
+    ``cholesky_factor`` is the lower Cholesky factor of ``covariance``. The minor
     eigenvalue is taken as det(H)/lambda_max with det(H) from the Cholesky
     diagonal, which stays accurate for needle-shaped kernels where the
     closed-form ``mean - radius`` would cancel. The worker computes the same
     closed form (``kernelSummary`` in localKdeWorker.js).
     """
     h00, h01, h11 = float(covariance[0, 0]), float(covariance[0, 1]), float(covariance[1, 1])
-    root_det = float(cholesky[0, 0]) * float(cholesky[1, 1])
+    root_det = float(cholesky_factor[0, 0]) * float(cholesky_factor[1, 1])
     lambda_major = 0.5 * (h00 + h11) + math.hypot(0.5 * (h00 - h11), h01)
     lambda_minor = root_det * root_det / lambda_major if lambda_major > 0 else 0.0
     return {
@@ -124,6 +124,8 @@ def _kernel_summary(covariance: np.ndarray, cholesky: np.ndarray) -> dict:
         "sigmaMinor": math.sqrt(max(lambda_minor, 0.0)),
         "sigmaMajor": math.sqrt(max(lambda_major, 0.0)),
     }
+
+
 _CUBE_CORNERS = np.asarray(
     [[float(x), float(y), float(z)] for x in (0, 1) for y in (0, 1) for z in (0, 1)],
     dtype=float,
@@ -367,9 +369,10 @@ def oriented_kde_slice(
     give the same slab in absolute depth units.
 
     Positions are treated as periodic: images from neighbor cells within a
-    margin of the unit cube join the slab selection and the KDE fit, so the
+    margin of the unit cube join the slab selection and the density sum, so the
     density is correct at cell faces, edges, and corners instead of decaying
-    toward the boundary.
+    toward the boundary. The kernel itself is fitted to the slab's source
+    atoms (one row each), so the margin does not change it (see kde_slice).
     """
     positions = np.asarray(positions, dtype=float)
     if positions.ndim != 2 or positions.shape[1] != 3:
@@ -510,7 +513,10 @@ class _FixedCovarianceKDE(gaussian_kde):
             / (self.n * 2 * np.pi * self.cho_cov[0, 0] * self.cho_cov[1, 1])
         )
         actual = float(self.evaluate(point)[0])
-        if not abs(actual - expected) <= 1e-9 * expected:
+        # scipy whitens the point and the data separately, so needle kernels
+        # differ from this direct form at ~1e-10; a scipy that ignored the
+        # supplied covariance would differ at O(1).
+        if not abs(actual - expected) <= 1e-6 * expected:
             raise RuntimeError(
                 "scipy.stats.gaussian_kde no longer evaluates a supplied covariance "
                 f"(scipy internals changed: {actual!r} != {expected!r}); update rmc_toolkits.kde"
