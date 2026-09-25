@@ -2715,8 +2715,9 @@ The tie-break is therefore **not** arbitrary or alphabetical: `refEl` is seeded 
 and replaced only on a *strict* `<`, so when two elements have equally few sites the winner is the
 one whose first site comes earliest in `basis` — and `byEl` is a `Map` filled in basis order, which
 is ascending reference number (Step 5). `refAtom` is likewise the lowest-reference-number site of
-that element. Since the reference atom fixes the candidate translation set, this determines the
-enumeration order and is reproducibility-relevant.
+that element. The reference atom fixes the *seed* translations and the enumeration order, but not
+the result: each seed is refined over all sites (Step 9), so the accepted operations and their
+residuals are the same for any order of the basis.
 
 For each rotation $R$ and each same-element candidate partner $\mathbf x_b \in$ `byEl[refEl]`:
 
@@ -2725,37 +2726,47 @@ $$\mathbf t = \operatorname{frac}\!\big(\mathbf x_b - R\,\mathbf x_{a_0}\big),\q
 
 This is exhaustive over the possible images of $a_0$: any genuine operation $\{R|\mathbf t\}$ must
 send $a_0$ to *some* same-element site, so its translation part is one of these candidates (up to
-the mapping error at that site).
+the mapping error at that site). The candidate is only a **seed**: it carries the displacement noise
+of $a_0$ and of its partner, so Step 9 refines it by least squares over every site before the
+operation is accepted or its residual recorded. The refined operation therefore does not depend on
+which atom happened to be $a_0$ (the basis order): every seed that leads to the same operation
+refines to the same translation.
 
-**Deduplication**: a candidate is skipped if it is within $\tau$ Å (minimum-image Cartesian
-distance, Step 9) of an already-**accepted** translation for the same $R$. Rejected translations are
-not remembered, so near-duplicates of a rejected candidate are re-tested.
+**Deduplication**: a seed is skipped if it is within $\tau$ Å (minimum-image Cartesian distance) of
+an already-accepted *refined* translation for the same $R$, and a refined translation is discarded
+if it lands within $\tau$ Å of one already accepted (the same operation reached from another seed).
 
 **Code**: `symmetry.js` → `findSpaceGroupOps()`, inner loop; `applyR()`.
 
 #### Step 9. Acceptance test and residual
 
-For a candidate $\{R|\mathbf t\}$, every basis site $s$ is mapped:
+For a candidate $\{R|\mathbf t\}$, every basis site $s$ is mapped,
 
-$$\mathbf y_s = \operatorname{frac}\big(R\,\mathbf x_s + \mathbf t\big)$$
+$$\mathbf y_s = R\,\mathbf x_s + \mathbf t ,$$
 
-and matched against the **same-element** sites $o$ using a minimum-image Cartesian distance:
+and paired with its **nearest same-element** site $o(s)$ under a minimum-image Cartesian distance:
 
-$$d(\mathbf y,\mathbf x_o) = \big\| A^{\mathsf T}\,\mathbf\delta \big\|_2,\qquad
-\delta_i = (y_i - x_{o,i}) - \operatorname{round}(y_i - x_{o,i})$$
+$$\boldsymbol\delta_s = (\mathbf x_{o} - \mathbf y_s) - \operatorname{round}(\mathbf x_{o} - \mathbf y_s),\qquad
+d_s = \big\| A^{\mathsf T}\boldsymbol\delta_s \big\|_2$$
 
-(the component-wise nearest-integer wrap; $\|\cdot\|_2$ via `Math.hypot`, result in Å). The
-operation is **accepted** iff
+(the component-wise nearest-integer wrap; result in Å).
 
-$$\max_{s}\ \min_{o\,:\,e_o=e_s} d(\mathbf y_s, \mathbf x_o)\ \le\ \tau$$
+**Least-squares translation** (`refineOperation()`). With the pairing fixed, the translation that
+minimises $\sum_s d_s^2$ is
 
-and its **residual** is that same quantity:
+$$\mathbf t \leftarrow \mathbf t + \frac1N\sum_s \boldsymbol\delta_s ,$$
 
-$$\varrho(R,\mathbf t) \;=\; \max_{s}\ \min_{o\,:\,e_o=e_s} d(\mathbf y_s,\mathbf x_o)\ \ [\text{Å}]$$
+because every pair shares the metric $G$. The sites are re-paired at the new $\mathbf t$ and the
+step repeated until the mean offset vanishes (at most four passes). The seed pass pairs within
+$2\tau$ (the seed can be off by the noise of the two atoms that defined it); the refined operation
+is **accepted** iff every site then has a partner and
 
-i.e. the *worst-site* nearest-image error — an $L_\infty$-over-sites, $L_2$-in-space measure. The
-implementation short-circuits to $\infty$ (reject) as soon as one site has no same-element partner
-within $\tau$.
+$$\varrho(R,\mathbf t) \;=\; \max_{s}\ d_s \;\le\; \tau \quad [\text{Å}]$$
+
+i.e. the *worst-site* nearest-image error at the least-squares translation — an
+$L_\infty$-over-sites, $L_2$-in-space measure. It is independent of the basis order and never
+larger than the error read off a single reference pair (on the bundled demo the full-group residual
+drops from 0.038 Å to 0.031 Å). `!(ϱ ≤ τ)` also rejects `NaN`.
 
 Three properties matter for interpretation:
 
@@ -2771,7 +2782,7 @@ difference is only visible at exactly the tolerance, so it is worth stating per 
 
 | Test | Code | Boundary |
 | --- | --- | --- |
-| operation acceptance (Step 9) | `if (best > tol) return Infinity` | **non-strict**: $d = \tau$ is accepted |
+| operation acceptance (Step 9) | `if (!m \|\| !(m.worst <= tol)) return null` | **non-strict**: $\varrho = \tau$ is accepted |
 | translation dedup (Step 8) | `cartDist(u, t, A) < tol` | strict |
 | orbit union + stabiliser (Step 14) | `bestD = tol; if (d < bestD)`, `cartDist(...) < tol` | strict |
 | centering match (Step 10c) | `… < tol` with `tol = 0.1` | strict |
@@ -2781,7 +2792,7 @@ difference is only visible at exactly the tolerance, so it is worth stating per 
 `findSpaceGroupOps` returns `{ ops: [{R, t, residual}], order = ops.length, maxResidual }` merged
 with the classification of Step 10. (`maxResidual` here is the max over *accepted* ops.)
 
-**Code**: `symmetry.js` → `mappingResidual()`, `cartDist()`, `findSpaceGroupOps()`.
+**Code**: `symmetry.js` → `matchImages()`, `refineOperation()`, `offset()`, `findSpaceGroupOps()`.
 
 #### Step 10. Classification: centering, point group, Hermann–Mauguin symbol
 

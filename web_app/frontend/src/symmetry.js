@@ -109,19 +109,56 @@ function cartDist(fa, fb, A) {
   return Math.hypot(c[0], c[1], c[2]);
 }
 
-// For op {R|t}, the worst cartesian mapping error over all atoms (∞ if some atom
-// has no same-element image within `tol`).
-function mappingResidual(R, t, basis, byEl, A, tol) {
+// Minimum-image fractional offset (component-wise nearest integer) and its Cartesian length.
+function offset(from, to, A) {
+  const d = [nearestInt(to[0] - from[0]), nearestInt(to[1] - from[1]), nearestInt(to[2] - from[2])];
+  const c0 = d[0] * A[0][0] + d[1] * A[1][0] + d[2] * A[2][0];
+  const c1 = d[0] * A[0][1] + d[1] * A[1][1] + d[2] * A[2][1];
+  const c2 = d[0] * A[0][2] + d[1] * A[1][2] + d[2] * A[2][2];
+  return { d, dist: Math.hypot(c0, c1, c2) };
+}
+
+// Map every site through {R|t} and pair its image with the nearest same-element site.
+// Returns null as soon as one image has no partner within `radius` Å; otherwise the mean
+// fractional offset (partner − image) over all sites and the worst Cartesian distance.
+function matchImages(R, t, basis, byEl, A, radius) {
+  const mean = [0, 0, 0];
   let worst = 0;
   for (const s of basis) {
     const img = applyR(R, s.frac);
-    img[0] = wrap01(img[0] + t[0]); img[1] = wrap01(img[1] + t[1]); img[2] = wrap01(img[2] + t[2]);
+    img[0] += t[0]; img[1] += t[1]; img[2] += t[2];
     let best = Infinity;
-    for (const o of byEl.get(s.el)) { const dd = cartDist(img, o.frac, A); if (dd < best) best = dd; }
-    if (best > tol) return Infinity;
+    let bestD = null;
+    for (const o of byEl.get(s.el)) {
+      const { d, dist } = offset(img, o.frac, A);
+      if (dist < best) { best = dist; bestD = d; }
+    }
+    if (!(best <= radius)) return null;
+    mean[0] += bestD[0]; mean[1] += bestD[1]; mean[2] += bestD[2];
     if (best > worst) worst = best;
   }
-  return worst;
+  const n = basis.length;
+  return { shift: [mean[0] / n, mean[1] / n, mean[2] / n], worst };
+}
+
+// Least-squares translation of {R|t0} and its residual. The seed t0 comes from ONE atom
+// pair and carries both atoms' displacement; the translation that minimises the summed
+// squared Cartesian mismatch over all matched pairs is t0 + mean(partner − image) (the
+// metric is common to every pair). Re-pair and re-centre until the shift vanishes (at
+// most four passes); the residual is the worst site's distance at the final translation. The seed is paired within 2·tol, since it can be off by the noise of the
+// two atoms that defined it, but the refined operation must fit within tol. `!(x <= tol)`
+// also rejects NaN (an unparseable lattice).
+function refineOperation(R, t0, basis, byEl, A, tol) {
+  let t = t0.slice();
+  let m = matchImages(R, t, basis, byEl, A, 2 * tol);
+  for (let pass = 0; pass < 4 && m; pass++) {
+    const moved = Math.abs(m.shift[0]) + Math.abs(m.shift[1]) + Math.abs(m.shift[2]);
+    t = [wrap01(t[0] + m.shift[0]), wrap01(t[1] + m.shift[1]), wrap01(t[2] + m.shift[2])];
+    m = matchImages(R, t, basis, byEl, A, 2 * tol);
+    if (moved < 1e-12) break;
+  }
+  if (!m || !(m.worst <= tol)) return null;
+  return { t, residual: m.worst };
 }
 
 /**
@@ -140,7 +177,6 @@ export function findSpaceGroupOps(A, basis, tol = 0.1, metricTol = 1e-2) {
   for (const s of basis) { if (!byEl.has(s.el)) byEl.set(s.el, []); byEl.get(s.el).push(s); }
 
   const ops = [];
-  const rotSeen = new Set();
   let maxResidual = 0;
   // Use the rarest element for candidate translations (fewest partners → fastest).
   let refEl = basis[0].el;
@@ -151,15 +187,15 @@ export function findSpaceGroupOps(A, basis, tol = 0.1, metricTol = 1e-2) {
     const Ra0 = applyR(R, refAtom.frac);
     const tSeen = [];
     for (const cand of byEl.get(refEl)) {
-      const t = [wrap01(cand.frac[0] - Ra0[0]), wrap01(cand.frac[1] - Ra0[1]), wrap01(cand.frac[2] - Ra0[2])];
-      if (tSeen.some(u => cartDist(u, t, A) < tol)) continue;   // dedupe translations mod lattice
-      const res = mappingResidual(R, t, basis, byEl, A, tol);
-      if (res === Infinity) continue;
-      tSeen.push(t);
-      ops.push({ R, t, residual: res });
-      if (res > maxResidual) maxResidual = res;
+      const seed = [wrap01(cand.frac[0] - Ra0[0]), wrap01(cand.frac[1] - Ra0[1]), wrap01(cand.frac[2] - Ra0[2])];
+      if (tSeen.some(u => cartDist(u, seed, A) < tol)) continue;   // an accepted op already covers this seed
+      const op = refineOperation(R, seed, basis, byEl, A, tol);
+      if (!op) continue;
+      if (tSeen.some(u => cartDist(u, op.t, A) < tol)) continue;   // same op reached from another seed
+      tSeen.push(op.t);
+      ops.push({ R, t: op.t, residual: op.residual });
+      if (op.residual > maxResidual) maxResidual = op.residual;
     }
-    if (tSeen.length) rotSeen.add(R.flat().join(','));
   }
   return { ops, order: ops.length, maxResidual, ...classifyOperations(ops, tolFrac) };
 }
