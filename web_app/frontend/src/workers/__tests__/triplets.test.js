@@ -58,8 +58,10 @@ describe('Python parity (triplets_fixture.json)', () => {
         const summary = expected.summary;
         expect(result.coordination).toEqual(summary.coordination);
         expect(result.lengths12.counts).toEqual(summary.lengths12.counts);
+        expect(result.lengths12.uniqueBonds).toBe(summary.lengths12.uniqueBonds);
         if (summary.lengths23) {
           expect(result.lengths23.counts).toEqual(summary.lengths23.counts);
+          expect(result.lengths23.uniqueBonds).toBe(summary.lengths23.uniqueBonds);
         } else {
           expect(result.lengths23).toBeNull();
         }
@@ -193,6 +195,24 @@ describe('geometry invariants', () => {
     expect(nudged.angleCount).toBe(15);
     expect(nudged.counts).toEqual(shared.counts);
     expect(nudged.lengths23.count).toBe(6);
+  });
+
+  it('bonds between two central atoms are counted once (uniqueBonds)', () => {
+    // One Nb4 tetrahedron: 12 Nb-centred bond vectors, six physical edges.
+    const s = 3 / (2 * Math.SQRT2) / 10;
+    const fractional = [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]
+      .map((corner) => corner.map((value) => 0.5 + value * s));
+    const result = bondAngleSummary(fractional, ['Nb', 'Nb', 'Nb', 'Nb'], cubic, {
+      triplet: ['Nb', 'Nb', 'Nb'], bond12: [2.5, 3.5]
+    });
+    expect(result.lengths12.count).toBe(12);
+    expect(result.lengths12.uniqueBonds).toBe(6);
+    // A single atom and its six face images: 3 periodic bonds, 6 vectors.
+    const image = bondAngleSummary([[0.1, 0.2, 0.3]], ['Se'], [[3, 0, 0], [0, 3, 0], [0, 0, 3]], {
+      triplet: ['Se', 'Se', 'Se'], bond12: [2.5, 3.5]
+    });
+    expect(image.lengths12.count).toBe(6);
+    expect(image.lengths12.uniqueBonds).toBe(3);
   });
 
   it('rejects an unknown element with the available list', () => {

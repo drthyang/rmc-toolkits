@@ -29,6 +29,23 @@ neighbours. Bond windows are inclusive at both ends: ``rmin <= r <= rmax`` --
 except that a pair at exactly zero length (bitwise-coincident atoms under
 ``rmin = 0``) is never a bond, since a zero vector subtends no angle.
 
+A bond vector is ``((f_cand - f_center) + m) @ L``: the fractional difference
+is taken *before* the integer image shift ``m`` is added, so the vector from
+the other end, ``((f_center - f_cand) - m) @ L``, is its exact negative
+(IEEE rounding is symmetric under negation). A bond therefore has the same
+length from both of its ends and sits inside or outside a window for both
+-- which is what makes the undirected bond count below exact.
+
+Bond counts
+-----------
+Bonds are found from each central atom, so ``bond12_count`` counts
+B-centred bond vectors. When the end element is the central element (A = B,
+e.g. Nb-Nb-Nb) every bond is found from both of its ends, and the directed
+count is exactly twice the number of physical bonds; ``unique_bonds12`` /
+``unique_bonds23`` report the physical (undirected) count -- half the
+directed one when the end element is the central one, the directed count
+otherwise. Per-central-atom coordination is the directed count per B.
+
 Angle counting
 --------------
 For each central B atom the A-bond list and the C-bond list are combined:
@@ -149,6 +166,9 @@ class BondAngleDistribution:
     the inclusive (rmin, rmax) windows in angstrom for the A--B and B--C
     bonds. Bin arrays are in degrees over [0, 180]. ``angles`` holds the raw
     angle list (degrees) only when the engine was asked to collect it.
+    ``bond12_count`` / ``bond23_count`` count B-centred bond vectors (an
+    A--B bond with A = B is found from both ends and counted twice);
+    ``unique_bonds12`` / ``unique_bonds23`` count physical bonds once.
     """
 
     triplet: tuple[str, str, str]
@@ -168,6 +188,10 @@ class BondAngleDistribution:
     mean_length12: float | None  # angstrom; None when no bonds
     mean_length23: float | None
     angles: np.ndarray | None  # (angle_count,) degrees, optional
+    # Physical (undirected) bonds: bond12_count / 2 when A = B (each bond is
+    # found from both ends), else bond12_count. Same for window 2 with C.
+    unique_bonds12: int
+    unique_bonds23: int
 
 
 def _validate_window(name: str, window: Sequence[float]) -> tuple[float, float]:
@@ -336,7 +360,9 @@ def _neighbor_bonds(
             slots = cell_starts[flat][local] + _ragged_ranks(counts)
             candidate_pos = order[slots]
 
-            delta = frac_candidates[candidate_pos] + image[local] - block_frac[local]
+            # Difference first, image shift second: the vector from the other
+            # end of the same bond is then the exact negative of this one.
+            delta = (frac_candidates[candidate_pos] - block_frac[local]) + image[local]
             # Row-vector product written out term by term -- the evaluation
             # order of workers/triplets.js, so both engines produce bitwise
             # identical vectors (and no BLAS matmul, whose Accelerate build
@@ -558,6 +584,24 @@ def _stream_angles(pairing: _Pairing, nbins: int, collect: bool) -> _AngleHistog
     )
 
 
+def _unique_bonds(bonds: _Bonds, end: str, apex: str) -> int:
+    """Physical (undirected) bond count of a B-centred bond list.
+
+    With the end element equal to the central element every bond is found
+    from both of its ends -- exactly, since a bond's two vectors are exact
+    negatives (see ``_neighbor_bonds``) -- so the directed count is even and
+    halves; otherwise each bond is found once, from its B end.
+    """
+    directed = int(bonds.lengths.size)
+    if end != apex:
+        return directed
+    if directed % 2:
+        raise RuntimeError(
+            f"internal error: {directed} directed {end}-{apex} bonds do not pair up"
+        )
+    return directed // 2
+
+
 @dataclass(frozen=True)
 class _TripletCore:
     """Shared mid-stage state between the public result builders."""
@@ -569,6 +613,8 @@ class _TripletCore:
     apex_count: int
     bonds12: _Bonds  # the A--B window's bonds
     bonds23: _Bonds  # the B--C window's bonds
+    unique_bonds12: int  # physical (undirected) A--B bonds
+    unique_bonds23: int
     pairing: _Pairing
     angle_count: int  # exact, counted before any angle is formed
 
@@ -690,6 +736,8 @@ def _triplet_core(
         apex_count=n_centers,
         bonds12=bonds12,
         bonds23=bonds23,
+        unique_bonds12=_unique_bonds(bonds12, end1, apex),
+        unique_bonds23=_unique_bonds(bonds23, end2, apex),
         pairing=pairing,
         angle_count=angle_count,
     )
@@ -775,6 +823,8 @@ def bond_angle_distribution(
         mean_length12=mean12,
         mean_length23=mean23,
         angles=histogram.angles,
+        unique_bonds12=core.unique_bonds12,
+        unique_bonds23=core.unique_bonds23,
     )
 
 
@@ -810,14 +860,18 @@ def bond_angle_summary(
     histogram = _stream_angles(core.pairing, nbins, False)
     edges, density, sin_corrected = _normalized(histogram.counts, nbins)
 
-    def length_histogram(bonds: _Bonds, window: tuple[float, float]) -> dict:
+    def length_histogram(bonds: _Bonds, window: tuple[float, float], unique: int) -> dict:
         length_counts, length_edges = np.histogram(
             bonds.lengths, bins=LENGTH_BINS, range=window
         )
         return {
             "binCenters": ((length_edges[:-1] + length_edges[1:]) / 2.0).tolist(),
             "counts": length_counts.tolist(),
+            # B-centred bond vectors (the histogram total): an A-B bond with
+            # A = B is found from both ends and appears twice here.
             "count": int(bonds.lengths.size),
+            # Physical bonds, each once.
+            "uniqueBonds": unique,
             "meanLength": float(np.mean(bonds.lengths)) if bonds.lengths.size else None,
         }
 
@@ -839,9 +893,13 @@ def bond_angle_summary(
         "meanAngle": histogram.mean,
         "stdAngle": histogram.std,
         "apexCount": core.apex_count,
-        "lengths12": length_histogram(core.bonds12, core.window12),
+        "lengths12": length_histogram(core.bonds12, core.window12, core.unique_bonds12),
         # Shared ends reuse the window-1 bonds, so the page shows one histogram.
-        "lengths23": None if core.shared_ends else length_histogram(core.bonds23, core.window23),
+        "lengths23": (
+            None
+            if core.shared_ends
+            else length_histogram(core.bonds23, core.window23, core.unique_bonds23)
+        ),
         # coordination[n] = how many central atoms have exactly n window-1 bonds.
         "coordination": coordination.tolist(),
     }

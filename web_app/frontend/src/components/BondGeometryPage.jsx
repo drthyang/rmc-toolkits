@@ -374,6 +374,17 @@ export default function BondGeometryPage({ directory, localRun }) {
 
     const windowLabel = (window) => `${formatNumber(window[0])}–${formatNumber(window[1])} ${ANGSTROM}`;
 
+    // 'Bonds' chips show physical bonds, each once (uniqueBonds). With the
+    // end element equal to the central one every bond is found from both of
+    // its ends, so the B-centred count (lengths.count, which the coordination
+    // chip averages) is twice that; the tooltip says so.
+    const bondsTitle = (lengths, end) => (
+        end === result?.triplet[1]
+            ? `Each ${end}–${end} bond counted once. Counted from the central atoms, as the `
+                + `coordination is, there are ${lengths.count.toLocaleString()}: each bond is seen from both ends.`
+            : `Each ${end}–${result?.triplet[1]} bond counted once, from its central ${result?.triplet[1]} atom.`
+    );
+
     // Detected-bond overlay for the unit-cell panel: the computed windows,
     // A–B in the app accent, B–C in amber when the windows are distinct.
     const bondSets = useMemo(() => {
@@ -515,8 +526,8 @@ export default function BondGeometryPage({ directory, localRun }) {
                             </div>
                             <div className="model-stat">
                                 <dt>{result.sharedEnds ? 'Bonds' : 'Bonds A–B'}</dt>
-                                <dd>
-                                    {result.lengths12.count.toLocaleString()}
+                                <dd title={bondsTitle(result.lengths12, result.triplet[0])}>
+                                    {result.lengths12.uniqueBonds.toLocaleString()}
                                     {result.lengths12.meanLength != null && (
                                         <span className="model-stat-sub">
                                             mean {formatNumber(result.lengths12.meanLength, 3)} {ANGSTROM}
@@ -527,8 +538,8 @@ export default function BondGeometryPage({ directory, localRun }) {
                             {!result.sharedEnds && result.lengths23 && (
                                 <div className="model-stat">
                                     <dt>Bonds B–C</dt>
-                                    <dd>
-                                        {result.lengths23.count.toLocaleString()}
+                                    <dd title={bondsTitle(result.lengths23, result.triplet[2])}>
+                                        {result.lengths23.uniqueBonds.toLocaleString()}
                                         {result.lengths23.meanLength != null && (
                                             <span className="model-stat-sub">
                                                 mean {formatNumber(result.lengths23.meanLength, 3)} {ANGSTROM}

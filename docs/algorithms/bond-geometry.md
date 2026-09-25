@@ -161,7 +161,16 @@ and multiple images of the *same* atom become genuine distinct neighbours
 (`SmallBoxImageTests`). The candidate's image is placed beside the center in fractional space,
 then mapped to Cartesian:
 
-$$\Delta\mathbf x = \bigl(\mathbf f_\text{cand} + \mathbf m - \mathbf f_\text{center}\bigr)\,\mathsf L$$
+$$\Delta\mathbf x = \bigl((\mathbf f_\text{cand} - \mathbf f_\text{center}) + \mathbf m\bigr)\,\mathsf L$$
+
+The order of operations is deliberate: the fractional difference is taken **before** the integer
+shift is added, so the same bond seen from its other end,
+$((\mathbf f_\text{center} - \mathbf f_\text{cand}) - \mathbf m)\,\mathsf L$, is the *exact*
+negative (IEEE rounding is symmetric under negation) and has bitwise the same length. A bond is
+therefore inside or outside a window from both of its ends alike. Before 1.0 the shift was added
+first, and on ideal lattices with a window bound exactly on a shell the two ends could disagree
+(one bond counted from one end only — an odd directed count, e.g. 2675 on a 5×5×5 two-atom
+cubic lattice with $r_\mathrm{max} = a$).
 
 (One implementation note, recorded in the source: the fractional→Cartesian product, the
 squared length and the angle's dot product are written out term by term —
@@ -323,7 +332,7 @@ change here. On top of the three angle curves it adds:
 |---|---|
 | `triplet`, `bond12`, `bond23`, `sharedEnds`, `binWidth` | the resolved spec (realized bin width, not the requested one) |
 | `angleCount`, `meanAngle`, `stdAngle`, `apexCount` | angle statistics and the central-atom count; means are `None` when empty |
-| `lengths12`, `lengths23` | bond-length histograms **inside each window**: fixed `LENGTH_BINS = 40` bins over the window (fixed count, not width, so any window renders at the same detail), plus `count` and `meanLength`. `lengths23` is `null` under shared ends — it would duplicate `lengths12` |
+| `lengths12`, `lengths23` | bond-length histograms **inside each window**: fixed `LENGTH_BINS = 40` bins over the window (fixed count, not width, so any window renders at the same detail), plus `count`, `uniqueBonds` and `meanLength`. `count` is the number of **B-centred bond vectors** (the histogram total); `uniqueBonds` the number of **physical bonds**, each once. They differ when the end element is the central element (A = B for `lengths12`, C = B for `lengths23`): every such bond is found from both of its ends, so `uniqueBonds = count / 2` exactly (Step 3's antisymmetry makes the halving exact; a self-image bond to $\pm\mathbf m$ is one periodic bond). Otherwise `uniqueBonds = count`. On the 5 K sample, Nb–Nb–Nb 2.6–3.4 Å has `count` 46 704 and `uniqueBonds` 23 352 — the number of distinct Nb–Nb pairs an independent `cKDTree` search finds. `lengths23` is `null` under shared ends — it would duplicate `lengths12` |
 | `coordination` | `coordination[n]` = how many central atoms have exactly $n$ window-1 bonds — a double `bincount` of the per-center bond counts |
 
 ### Step 8 — The two app boundaries and their caps
@@ -366,7 +375,7 @@ Console entry point installed by `pip install -e .`
 ([triplets_cli.py](../../rmc_toolkits/triplets_cli.py); module form
 `python -m rmc_toolkits.triplets_cli`). Accepts an `.rmc6f` file or a run folder (first sorted
 match), writes a commented CSV (`angle_deg, counts, density_per_deg, sin_corrected` with the
-spec, bond counts and mean lengths in `#` headers), optionally a PNG plot (`--plot`, Agg
+spec, physical bond counts — plus the B-centred count when the end element is the central one — and mean lengths in `#` headers), optionally a PNG plot (`--plot`, Agg
 backend, sin-corrected + density on twin axes) and the raw angle list (`--angles-out`). Nothing
 is overwritten without `--force`.
 
@@ -493,10 +502,12 @@ epoch on resolve and can never land a stale payload on the new dataset.
 
 ### Step 3 — The result chips
 
-Straight reads of the payload: central-atom count (`apexCount`), bonds with mean length
-(`lengths12`, and `lengths23` when not shared), the coordination summary — mean bonds per B
-$\sum_n n\,c_n / \sum_n c_n$, plus the modal $n$ and its share — and the angle count with
-mean ± std.
+Straight reads of the payload: central-atom count (`apexCount`), **Bonds** — the physical
+bond count `uniqueBonds`, each bond once, with its mean length (`lengths12`, and `lengths23`
+when not shared; a tooltip gives the B-centred count when the end element is the central one) —
+the coordination summary — mean bonds per B $\sum_n n\,c_n / \sum_n c_n$, which counts a B–B
+bond at both of its ends, as a coordination number should, plus the modal $n$ and its share —
+and the angle count with mean ± std.
 
 ### Step 4 — The angle plot and the `fit` variant
 

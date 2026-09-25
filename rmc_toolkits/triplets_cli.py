@@ -43,17 +43,34 @@ def default_output_name(config: Path, triplet: tuple[str, str, str]) -> str:
     return f"triplets_{label}_{config.stem}.csv"
 
 
+def bond_count_text(unique: int, directed: int, end: str, apex: str) -> str:
+    """Physical bond count, with the B-centred count when the two differ.
+
+    An A-B bond with A = B is found from both of its ends, so the count of
+    bond vectors seen from the central atoms is twice the number of bonds.
+    """
+    if end != apex:
+        return f"{unique} physical bonds"
+    return (
+        f"{unique} physical bonds ({directed} bond vectors counted from the central "
+        f"atoms: {end} is the central element, so each bond is seen from both ends)"
+    )
+
+
 def write_csv(path: Path, config: Path, result: BondAngleDistribution) -> None:
+    end1, apex, end2 = result.triplet
     lines = [
         f"# rmc-triplets bond-angle distribution",
         f"# configuration: {config}",
-        f"# triplet (B central): {result.triplet[0]}-{result.triplet[1]}-{result.triplet[2]}",
+        f"# triplet (B central): {end1}-{apex}-{end2}",
         f"# bond12 window (Ang): {result.bond12[0]:g} .. {result.bond12[1]:g}",
         f"# bond23 window (Ang): {result.bond23[0]:g} .. {result.bond23[1]:g}",
         f"# central atoms: {result.apex_count}",
-        f"# bonds in window12: {result.bond12_count}"
+        "# bonds in window12: "
+        + bond_count_text(result.unique_bonds12, result.bond12_count, end1, apex)
         + (f" (mean {result.mean_length12:.4f} Ang)" if result.mean_length12 else ""),
-        f"# bonds in window23: {result.bond23_count}"
+        "# bonds in window23: "
+        + bond_count_text(result.unique_bonds23, result.bond23_count, end2, apex)
         + (f" (mean {result.mean_length23:.4f} Ang)" if result.mean_length23 else ""),
         f"# angles: {result.angle_count}",
         "# density is per degree with unit integral over [0, 180];",
@@ -208,24 +225,21 @@ def main(argv: list[str] | None = None) -> int:
     label = "-".join(result.triplet)
     print(f"configuration: {config}")
     print(f"triplet:       {label} (central {result.triplet[1]})")
-    print(
-        f"bonds 1-2:     {result.bond12_count}"
-        + (
-            f"  (mean length {result.mean_length12:.4f} Ang, "
-            f"{result.bond12_count / result.apex_count:.2f} per central atom)"
-            if result.bond12_count
-            else ""
+    for name, unique, directed, mean in (
+        ("bonds 1-2", result.unique_bonds12, result.bond12_count, result.mean_length12),
+        ("bonds 2-3", result.unique_bonds23, result.bond23_count, result.mean_length23),
+    ):
+        # Bonds once each; "per central atom" is the B-centred count per B
+        # (the coordination), which counts a B-B bond at both of its ends.
+        print(
+            f"{name}:     {unique} "
+            + (
+                f" (mean length {mean:.4f} Ang, "
+                f"{directed / result.apex_count:.2f} per central atom)"
+                if directed
+                else ""
+            )
         )
-    )
-    print(
-        f"bonds 2-3:     {result.bond23_count}"
-        + (
-            f"  (mean length {result.mean_length23:.4f} Ang, "
-            f"{result.bond23_count / result.apex_count:.2f} per central atom)"
-            if result.bond23_count
-            else ""
-        )
-    )
     print(
         f"angles:        {result.angle_count}"
         + (

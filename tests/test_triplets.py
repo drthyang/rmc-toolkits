@@ -206,6 +206,80 @@ class SmallBoxImageTests(unittest.TestCase):
         np.testing.assert_allclose(angles[12:], 180.0, atol=1e-9)
 
 
+class BondCountTests(unittest.TestCase):
+    """'Bonds' is the physical (undirected) number of bonds.
+
+    triplets.physics.8/20, numerics.15/32: the engines count bonds from each
+    central atom, so when the end element is the central element every bond
+    is found from both of its ends and the directed count is twice the
+    number of bonds.
+    """
+
+    def _tetrahedron(self):
+        # One Nb4 tetrahedron (edge 3 A) and a Se above each face, in a big box.
+        corners = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]], float)
+        nb = 5.0 + corners * (3.0 / (2 * math.sqrt(2)))
+        se = 5.0 - corners * 1.8
+        return place(np.vstack([nb, se])), ["Nb"] * 4 + ["Se"] * 4
+
+    def test_homonuclear_bonds_are_counted_once(self):
+        positions, elements = self._tetrahedron()
+        result = bond_angle_distribution(
+            positions, elements, CUBIC_10, triplet=("Nb", "Nb", "Nb"), bond12=(2.5, 3.5)
+        )
+        self.assertEqual(result.bond12_count, 12)  # B-centred: 4 atoms x 3 neighbours
+        self.assertEqual(result.unique_bonds12, 6)  # the tetrahedron's six edges
+        self.assertEqual(result.unique_bonds23, 6)
+        summary = bond_angle_summary(
+            positions, elements, CUBIC_10, triplet=("Nb", "Nb", "Nb"), bond12=(2.5, 3.5)
+        )
+        self.assertEqual(summary["lengths12"]["count"], 12)
+        self.assertEqual(summary["lengths12"]["uniqueBonds"], 6)
+
+    def test_heteronuclear_and_mixed_triplets(self):
+        positions, elements = self._tetrahedron()
+        # A != B: each Se-Nb bond is found once, from its Nb end.
+        hetero = bond_angle_distribution(
+            positions, elements, CUBIC_10, triplet=("Se", "Nb", "Se"), bond12=(1.5, 3.2)
+        )
+        self.assertEqual(hetero.unique_bonds12, hetero.bond12_count)
+        # A = B, C != B: halve the Nb-Nb side only.
+        mixed = bond_angle_summary(
+            positions, elements, CUBIC_10, triplet=("Nb", "Nb", "Se"),
+            bond12=(2.5, 3.5), bond23=(1.5, 3.2),
+        )
+        self.assertEqual(mixed["lengths12"]["uniqueBonds"], 6)
+        self.assertEqual(mixed["lengths23"]["uniqueBonds"], mixed["lengths23"]["count"])
+
+    def test_self_image_bonds_pair_up(self):
+        # One atom, its six face images in a 3 A cube: three physical bonds
+        # (to +a and -a are the same periodic bond), six B-centred vectors.
+        result = bond_angle_distribution(
+            np.array([[0.1, 0.2, 0.3]]), ["Se"], np.diag([3.0, 3.0, 3.0]),
+            triplet=("Se", "Se", "Se"), bond12=(2.5, 3.5),
+        )
+        self.assertEqual(result.bond12_count, 6)
+        self.assertEqual(result.unique_bonds12, 3)
+
+    def test_directed_bonds_come_in_exact_pairs_at_a_window_bound(self):
+        # Ideal lattice, bound exactly on a shell: rounding once put a bond
+        # inside the window from one end and outside it from the other, so
+        # the directed count could be odd (2675 here). Bond vectors are now
+        # exact negatives of each other, so the halving is exact.
+        cells, a = 5, 3.9
+        grid = np.array(list(product(range(cells), repeat=3)), float) / cells
+        positions = np.concatenate([grid, (grid + 0.5 / cells) % 1.0])
+        lattice = np.diag([a * cells] * 3)
+        for rmax in (a, a * math.sqrt(3) / 2, a * math.sqrt(2)):
+            summary = bond_angle_summary(
+                positions, ["Se"] * len(positions), lattice,
+                triplet=("Se", "Se", "Se"), bond12=(0.1, rmax),
+            )
+            directed = summary["lengths12"]["count"]
+            self.assertEqual(directed % 2, 0, f"rmax {rmax}")
+            self.assertEqual(summary["lengths12"]["uniqueBonds"] * 2, directed)
+
+
 class CoincidentAtomTests(unittest.TestCase):
     def test_zero_length_pair_is_never_a_bond(self):
         # Two distinct atoms at bitwise-identical positions with rmin = 0: the
@@ -877,6 +951,35 @@ class CliTests(unittest.TestCase):
             self.assertTrue(plot.exists())
             self.assertEqual(triplets_main(argv), 1)
             self.assertEqual(triplets_main(argv + ["--force"]), 0)
+
+    def test_csv_and_stdout_report_physical_bonds(self):
+        import contextlib
+        import io
+
+        # Nb4 tetrahedron: 6 Nb-Nb bonds, found 12 times from the Nb centers.
+        corners = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]], float)
+        positions = place(5.0 + corners * (3.0 / (2 * math.sqrt(2))))
+        lines = [
+            f"{index + 1} Nb [1] {p[0]:.12f} {p[1]:.12f} {p[2]:.12f} {index + 1} 0 0 0"
+            for index, p in enumerate(positions)
+        ]
+        with TemporaryDirectory() as scratch:
+            scratch = Path(scratch)
+            config = scratch / "tetra.rmc6f"
+            write_rmc6f(config, lines)
+            output = scratch / "out.csv"
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = triplets_main(
+                    [str(config), "--triplet", "Nb", "Nb", "Nb", "--bond12", "2.5", "3.5",
+                     "--output", str(output)]
+                )
+            self.assertEqual(code, 0)
+            header = output.read_text(encoding="utf-8")
+        self.assertIn("# bonds in window12: 6 physical bonds", header)
+        self.assertIn("12 bond vectors counted from the central atoms", header)
+        self.assertIn("bonds 1-2:     6 ", stdout.getvalue())
+        self.assertIn("3.00 per central atom", stdout.getvalue())
 
     def test_missing_config_fails_cleanly(self):
         code = triplets_main(

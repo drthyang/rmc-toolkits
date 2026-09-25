@@ -177,9 +177,12 @@ const visitNeighbors = (wrapped, centerRows, candidateRows, lattice, windows, vi
             // A center is never its own neighbour in the unshifted image;
             // other images of the same atom are genuine neighbours and stay.
             if (row === centerRow && ix === 0 && iy === 0 && iz === 0) continue;
-            const dxf = wrapped[row][0] + ix - fx;
-            const dyf = wrapped[row][1] + iy - fy;
-            const dzf = wrapped[row][2] + iz - fz;
+            // Difference first, image shift second (as in the Python engine):
+            // the other end's vector of the same bond is its exact negative,
+            // so a bond is in or out of a window from both ends alike.
+            const dxf = (wrapped[row][0] - fx) + ix;
+            const dyf = (wrapped[row][1] - fy) + iy;
+            const dzf = (wrapped[row][2] - fz) + iz;
             const vx = dxf * lattice[0][0] + dyf * lattice[1][0] + dzf * lattice[2][0];
             const vy = dxf * lattice[0][1] + dyf * lattice[1][1] + dzf * lattice[2][1];
             const vz = dxf * lattice[0][2] + dyf * lattice[1][2] + dzf * lattice[2][2];
@@ -400,7 +403,11 @@ const forEachAngle = (core, visit) => {
   }
 };
 
-const lengthHistogram = (perCenter, [lo, hi]) => {
+// Bond-length histogram of one window. `count` is the number of B-centred
+// bond vectors (the histogram total); `uniqueBonds` the physical bonds, each
+// once — half of `count` when the end element is the central one, since each
+// such bond is found from both of its ends (mirrors _unique_bonds).
+const lengthHistogram = (perCenter, [lo, hi], homonuclear) => {
   const counts = new Array(LENGTH_BINS).fill(0);
   const width = (hi - lo) / LENGTH_BINS;
   let total = 0;
@@ -416,10 +423,14 @@ const lengthHistogram = (perCenter, [lo, hi]) => {
     { length: LENGTH_BINS },
     (_, index) => lo + (index + 0.5) * width
   );
+  if (homonuclear && total % 2) {
+    throw new Error(`internal error: ${total} directed homonuclear bonds do not pair up`);
+  }
   return {
     binCenters,
     counts,
     count: total,
+    uniqueBonds: homonuclear ? total / 2 : total,
     meanLength: total ? sum / total : null
   };
 };
@@ -489,8 +500,10 @@ export const bondAngleSummary = (fractional, elements, latticeVectors, options =
     meanAngle,
     stdAngle,
     apexCount: core.apexCount,
-    lengths12: lengthHistogram(core.bonds12, core.window12),
-    lengths23: core.sharedEnds ? null : lengthHistogram(core.bonds23, core.window23),
+    lengths12: lengthHistogram(core.bonds12, core.window12, core.triplet[0] === core.triplet[1]),
+    lengths23: core.sharedEnds
+      ? null
+      : lengthHistogram(core.bonds23, core.window23, core.triplet[2] === core.triplet[1]),
     coordination
   };
   if (collected) {
