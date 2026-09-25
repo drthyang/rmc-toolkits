@@ -45,7 +45,16 @@ class KdeParityFixtureTests(unittest.TestCase):
                     np.testing.assert_allclose(
                         actual["kernel"]["covariance"], expected["kernel"]["covariance"], rtol=1e-12
                     )
-                    self.assertAlmostEqual(actual["vmax"] / expected["vmax"], 1.0, places=12)
+                    # The peak is SciPy's compiled sum, which whitens through
+                    # chol(H) (>= 1.10) or chol(H^-1) (older) with release-
+                    # dependent round-off, amplified by the kernel's condition
+                    # number: near-collinear (cond 6.6e6) moves by 6e-11 on
+                    # SciPy 1.17 and 1.7e-9 on 1.8 against the 1.13 golden;
+                    # the well-conditioned cases by <= 1e-11.
+                    kernel = expected["kernel"]
+                    condition = (kernel["sigmaMajor"] / kernel["sigmaMinor"]) ** 2
+                    rtol = 1e-10 + 20 * condition * np.finfo(float).eps
+                    np.testing.assert_allclose(actual["vmax"], expected["vmax"], rtol=rtol)
                 np.testing.assert_allclose(
                     actual["densityOverPeak"], expected["densityOverPeak"], rtol=0, atol=1e-8
                 )

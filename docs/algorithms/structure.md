@@ -1433,7 +1433,7 @@ Added for 1.0:
 | --- | --- |
 | `tests/test_kde_decline.py` | every decline rule of Step 6 (with its `message`), the bandwidth validation, exact agreement with `scipy.stats.gaussian_kde` on a near-collinear slab, and the `kernel` summary |
 | `tests/test_kde_slab_faces.py` / `workers/__tests__/slabFaces.test.js` | face atoms of an ideal $k/8$ lattice are in the slab at every slider position (exact integer reference); the face tolerance; `z`/`dz` echo the slider fractions |
-| `tests/test_kde_parity_fixture.py` | the committed browser-parity golden is still what `kde.py` computes (re-run `tests/generate_kde_fixture.py` when it fails) |
+| `tests/test_kde_parity_fixture.py` | the committed browser-parity golden is still what `kde.py` computes (re-run `tests/generate_kde_fixture.py` when it fails): kernel covariance to $10^{-12}$, map shape to $10^{-8}$ of the peak, and the peak to $10^{-10}+20\,\kappa(\mathbf{H})\,\varepsilon$ relative, because SciPy releases round the Gaussian sum differently and a needle kernel amplifies that by its condition number $\kappa$ (near-collinear, $\kappa=6.6\times10^6$: $6\times10^{-11}$ on SciPy 1.17, $1.7\times10^{-9}$ on 1.8, against the 1.13 golden) |
 | `workers/__tests__/kdeParity.test.js` | **cross-runtime**: the worker reproduces the Python golden — demo run, GaNb₄Se₈ run (skipped when `data/` is absent), synthetic slabs — to $10^{-6}$ of the peak, with identical `slabCount`, `fitCount`, kernel and `message` |
 | `workers/__tests__/localKdeKernel.test.js` | the worker's kernel equals an in-test brute-force $f^2\mathbf{C}$ mixture; its rank test and decline rules |
 | `workers/__tests__/gpuKdeEmulation.test.js` | the WGSL shader, replayed in float32 on the packed buffers, against the CPU loop |
