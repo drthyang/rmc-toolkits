@@ -69,6 +69,43 @@ def detector_cases() -> dict:
     return {"r": r.tolist(), "searchMin": 1.3, "cases": cases}
 
 
+def window_cases() -> dict:
+    """Low-r window placement parity cases (models from tests/test_stog_a_window.py).
+
+    Composition-free configs (b_sq_avg unset) so the engines' S(0) handling in
+    the self-consistent loop cannot differ; coarse grids keep the JS test fast.
+    """
+    from test_stog_a_window import B2O3_LIKE, PEROVSKITE, crystal_sq, shell_sq
+
+    q = np.arange(17, 1001) * 0.03  # 0.51 .. 30.0
+    cases = []
+    sq, values = crystal_sq("SrTiO3", PEROVSKITE, 3.905, q=q)
+    formula, rho0, shells, r_continuum = B2O3_LIKE
+    sq_short, values_short = shell_sq(formula, rho0, shells, r_continuum, q=q)
+    for name, data, values in (("srtio3", sq, values), ("shortBond", sq_short, values_short)):
+        config = {
+            "qmin": values["qmin"], "qmax": values["qmax"], "rho0": values["rho0"],
+            "bAvgSq": values["b_avg_sq"], "rmax": 25.0, "nr": 1000,
+        }
+        py_config = ScalingConfig(
+            qmin=config["qmin"], qmax=config["qmax"], rho0=config["rho0"],
+            b_avg_sq=config["bAvgSq"], rmax=25.0, nr=1000,
+        )
+        case = {"name": name, "config": config, "sqMeas": data.tolist()}
+        try:
+            result = autoscale(q, data, py_config)
+            case["expected"] = {
+                "a": result.a,
+                "b": result.b,
+                "r0Detected": result.provenance["r0_detected"],
+                "rFitWindow": list(result.provenance["r_fit_window"]),
+            }
+        except ValueError as exc:
+            case["error"] = str(exc)
+        cases.append(case)
+    return {"q": q.tolist(), "aTrue": 10.0, "cases": cases}
+
+
 def main() -> None:
     q = np.arange(20, 981) * 0.03  # 0.60 .. 29.40
     r = np.arange(1, 12001) * 0.005
@@ -146,6 +183,7 @@ def main() -> None:
                 "rFitWindow": list(detected.provenance["r_fit_window"]),
             },
             "detector": detector_cases(),
+            "window": window_cases(),
             "manual": {
                 "lowRRms": manual.low_r_rms,
                 "c1TailMean": manual.c1_tail_mean,

@@ -42,6 +42,16 @@ from .transforms import (
 )
 
 
+#: Gap between the detected first-shell onset and the top of the automatic
+#: low-r fit window (``r_fit_window`` hi = ``r0 - R0_WINDOW_MARGIN``) — also the
+#: margin of the automatic low-r enforcement cutoff.
+R0_WINDOW_MARGIN = 0.25
+#: Narrowest low-r fit window :func:`autoscale` places on its own (A).
+MIN_AUTO_WINDOW = 0.1
+#: Trial window widths above ``lo`` used to locate the first shell (A).
+START_WINDOW_WIDTHS = (0.3, 1.0)
+
+
 @dataclass(frozen=True)
 class ScalingConfig:
     """Parameters for the auto-scaling pipeline.
@@ -190,7 +200,7 @@ class ScalingConfig:
         if self.r_fit_max is not None:
             hi = self.r_fit_max
         elif self.r0 is not None:
-            hi = self.r0 - 0.25
+            hi = self.r0 - R0_WINDOW_MARGIN
         else:
             hi = lo + 1.0
         if hi <= lo:
@@ -781,6 +791,14 @@ def scale_pipeline(
     )
 
 
+def _detect_onset(result: ScalingResult, config: ScalingConfig) -> float | None:
+    """First-shell onset of a result's filtered g(r), searched above r_cutoff + 0.3."""
+    return detect_first_peak_onset(
+        result.r, result.g_filtered, config.qmax,
+        search_min=config.r_cutoff + 0.3,
+    )
+
+
 def autoscale(
     q: np.ndarray,
     sq: np.ndarray,
@@ -795,33 +813,104 @@ def autoscale(
     (per-point uncertainties, e.g. the data file's third column) weights the
     high-Q C1 rows by 1/sigma.
 
-    When the caller pins neither ``r0`` nor ``r_fit_max``, a second refinement
-    pass runs: the first pass's filtered g(r) yields a data-derived closest
-    approach (:func:`detect_first_peak_onset`), and if that moves the low-r
-    window materially the fit is redone with the detected ``r0``. The result's
-    provenance then carries ``r0_detected`` / ``window_refined`` — this is what
-    lets composition + Q-window be the only required inputs.
+    **Low-r window placement.** The C2 rows force g = 0 on the window, so the
+    window must lie below the first coordination shell. When the caller pins
+    neither ``r0`` nor ``r_fit_max`` (the composition + Q-window workflow), the
+    window is located from the data instead of assumed:
+
+    1. two trial fits on ``[lo, lo + w]`` for ``w`` in :data:`START_WINDOW_WIDTHS`
+       (a narrow window below any bond longer than ~1.75 A, and the historic
+       ``lo + 1.0`` one, which averages the large low-r ripples of
+       missing-low-Q data); a trial with a non-physical scale ``a <= 0``
+       sits on structure and is discarded, the others each yield a first-shell
+       onset (:func:`detect_first_peak_onset`);
+    2. the SMALLEST onset wins — it is refitted on ``[lo, onset - 0.25]`` and
+       confirmed by detecting the first shell again on the refined g(r) (a
+       lower shell uncovered by the refit replaces it, up to three times);
+    3. if no trial yields a shell, or the shell leaves less than
+       :data:`MIN_AUTO_WINDOW` above ``lo``, a ``ValueError`` explains what to
+       change (lower ``r_cutoff`` / ``r_fit_min``, or pin ``r0`` /
+       ``r_fit_max``) — a fit across the first shell is never returned.
+
+    The result's provenance carries ``r0_detected`` (the onset on the final
+    g(r)) and ``window_refined``. With a pinned window, or with
+    ``amplitude_criterion="fz"`` (whose amplitude does not depend on the
+    window), one pass runs and detection only annotates the result (the fz
+    diagnostic window is still refined when the shell leaves room for it).
     """
-    result = _autoscale_pass(q, sq, config, sigma)
-    onset = detect_first_peak_onset(
-        result.r, result.g_filtered, config.qmax,
-        search_min=config.r_cutoff + 0.3,
+    lo = config.r_fit_window[0]
+    if config.r0 is not None or config.r_fit_max is not None:
+        result = _autoscale_pass(q, sq, config, sigma)
+        onset = _detect_onset(result, config)
+        if onset is not None:
+            result.provenance["r0_detected"] = float(onset)
+        return result
+
+    if config.amplitude_criterion == "fz":
+        result = _autoscale_pass(q, sq, config, sigma)
+        onset = _detect_onset(result, config)
+        if onset is None:
+            return result
+        if onset - R0_WINDOW_MARGIN - lo < MIN_AUTO_WINDOW:
+            result.provenance["r0_detected"] = float(onset)
+            return result
+        refined = _autoscale_pass(q, sq, replace(config, r0=float(onset)), sigma)
+        refined.provenance["r0_detected"] = float(onset)
+        refined.provenance["window_refined"] = True
+        return refined
+
+    candidates: list[float] = []
+    for width in START_WINDOW_WIDTHS:
+        trial = _autoscale_pass(q, sq, replace(config, r_fit_max=lo + width), sigma)
+        if not trial.a > 0:
+            continue  # a non-physical scale: this window sits on structure
+        onset = _detect_onset(trial, config)
+        if onset is not None:
+            candidates.append(float(onset))
+    if not candidates:
+        raise ValueError(
+            "autoscale: could not locate the first coordination shell in the "
+            f"data (trial low-r windows [{lo:g}, {lo + START_WINDOW_WIDTHS[0]:g}] "
+            f"and [{lo:g}, {lo + START_WINDOW_WIDTHS[-1]:g}] A gave a "
+            "non-physical scale or no shell standing out of the ripples), so "
+            "the density-limit window cannot be placed below it. Set r0 (the "
+            "closest interatomic approach) or r_fit_max; if the first bond is "
+            f"shorter than ~{lo + 0.55:.1f} A, also lower r_cutoff "
+            f"(now {config.r_cutoff:g} A)"
+        )
+    onset = min(candidates)
+    for _ in range(3):
+        if onset - R0_WINDOW_MARGIN - lo < MIN_AUTO_WINDOW:
+            advice = (
+                f"lower r_fit_min below {onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW:.2f} A"
+                if config.r_fit_min is not None
+                else "lower r_cutoff to <= "
+                f"{np.floor((onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW - 0.2) / 0.05) * 0.05:.2f} A"
+            )
+            raise ValueError(
+                f"autoscale: the first coordination shell starts at {onset:.2f} A, "
+                f"leaving no low-r fit window between {lo:g} A and "
+                f"{onset - R0_WINDOW_MARGIN:.2f} A (onset - {R0_WINDOW_MARGIN:g}); a "
+                "window across the shell would force it to zero and bias the "
+                f"scale. {advice[0].upper() + advice[1:]}, or set r0 / r_fit_max"
+            )
+        refined = _autoscale_pass(q, sq, replace(config, r0=onset), sigma)
+        check = _detect_onset(refined, config)
+        if check is None:
+            raise ValueError(
+                f"autoscale: after refitting below the detected first shell "
+                f"(onset {onset:.2f} A) no shell stands out of the ripples any "
+                "more; the low-r window cannot be verified. Set r0 or r_fit_max"
+            )
+        if check >= onset - 0.1:
+            refined.provenance["r0_detected"] = float(check)
+            refined.provenance["window_refined"] = True
+            return refined
+        onset = float(check)  # the refit uncovered a lower shell
+    raise ValueError(
+        "autoscale: the first-shell onset kept moving down while the low-r "
+        f"window was refined (last {onset:.2f} A). Set r0 or r_fit_max"
     )
-    if onset is not None:
-        result.provenance["r0_detected"] = float(onset)
-    if (
-        onset is not None
-        and config.r0 is None
-        and config.r_fit_max is None
-        and onset - 0.25 > (config.r_fit_min if config.r_fit_min is not None else config.r_cutoff + 0.2)
-        and abs((onset - 0.25) - config.r_fit_window[1]) > 0.05
-    ):
-        refined = replace(config, r0=float(onset))
-        refined_result = _autoscale_pass(q, sq, refined, sigma)
-        refined_result.provenance["r0_detected"] = float(onset)
-        refined_result.provenance["window_refined"] = True
-        return refined_result
-    return result
 
 
 def _autoscale_pass(
@@ -952,8 +1041,10 @@ def estimate_rho0(
     starting point, not a measurement. ``config.rho0`` seeds the iteration.
 
     Returns a JSON-friendly dict: ``rho0``, ``converged``, ``iterations``,
-    ``concordance``, ``a_density``, ``a_fz``, ``extrapolated``, and
-    ``history`` rows ``[rho0, a_density, a_fz, concordance]``.
+    ``concordance``, ``a_density``, ``a_fz``, ``extrapolated``, ``history``
+    rows ``[rho0, a_density, a_fz, concordance]``, and ``stopped`` — None, or
+    why the iteration stopped early because :func:`autoscale` could not fit a
+    trial density (the last usable iterate is reported, ``converged=False``).
     """
     if config.b_sq_avg is None:
         raise ValueError(
@@ -966,11 +1057,18 @@ def estimate_rho0(
     rho = float(np.clip(work.rho0, rho_min, rho_max))
     history: list[tuple[float, float, float, float]] = []
     converged = False
-    result = None
-    iterations = 0
-    for iterations in range(1, max_iter + 1):
+    stopped: str | None = None
+    for _ in range(max_iter):
         work = replace(work, rho0=rho)
-        result = autoscale(q, sq, work, sigma)
+        try:
+            result = autoscale(q, sq, work, sigma)
+        except ValueError as exc:
+            if not history:
+                raise  # the seed density itself cannot be fitted
+            # The fixed-point step left the physical range (the density limit
+            # cannot even be placed below the first shell there): stop.
+            stopped = f"autoscale failed at rho0 = {rho:.6g}: {exc}"
+            break
         if result.a_fz is None or not np.isfinite(result.a_fz) or result.a_fz <= 0:
             raise ValueError(
                 "estimate_rho0: no usable Faber-Ziman amplitude (no flat "
@@ -995,7 +1093,7 @@ def estimate_rho0(
     return {
         "rho0": history[-1][0],
         "converged": converged,
-        "iterations": iterations,
+        "iterations": len(history),
         "concordance": history[-1][3],
         "a_density": history[-1][1],
         "a_fz": history[-1][2],
@@ -1003,6 +1101,7 @@ def estimate_rho0(
         # extrapolation is longer than the data it rests on.
         "extrapolated": bool(config.qmin > 1.0),
         "history": [list(row) for row in history],
+        "stopped": stopped,
     }
 
 

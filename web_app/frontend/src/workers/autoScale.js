@@ -327,6 +327,13 @@ const huberWeights = (residuals) => {
   return weights;
 };
 
+/** Gap between the first-shell onset and the automatic window top (scaling.R0_WINDOW_MARGIN). */
+export const R0_WINDOW_MARGIN = 0.25;
+/** Narrowest low-r fit window autoscale places on its own (scaling.MIN_AUTO_WINDOW). */
+export const MIN_AUTO_WINDOW = 0.1;
+/** Trial window widths above lo used to locate the first shell (scaling.START_WINDOW_WIDTHS). */
+export const START_WINDOW_WIDTHS = [0.3, 1.0];
+
 export const defaultConfig = {
   qmin: NaN,
   qmax: NaN,
@@ -392,7 +399,7 @@ export const rFitWindow = (config) => {
   const lo = config.rFitMin != null ? config.rFitMin : config.rCutoff + 0.2;
   let hi;
   if (config.rFitMax != null) hi = config.rFitMax;
-  else if (config.r0 != null) hi = config.r0 - 0.25;
+  else if (config.r0 != null) hi = config.r0 - R0_WINDOW_MARGIN;
   else hi = lo + 1.0;
   if (hi <= lo) throw new Error(`empty low-r fit window [${lo}, ${hi}]`);
   return [lo, hi];
@@ -722,31 +729,99 @@ export const detectFirstPeakOnset = (
   return null;
 };
 
+const detectOnset = (result, config) => detectFirstPeakOnset(result.r, result.gFiltered, {
+  searchMin: config.rCutoff + 0.3,
+  qmax: config.qmax,
+});
+
+const fmtG = (value) => String(Number(value.toPrecision(6)));
+
+/**
+ * Auto-scale with data-located low-r window (port of scaling.autoscale — keep
+ * in sync). With r0 / rFitMax pinned, or in fz mode, one pass runs and the
+ * detection only annotates it (fz: the diagnostic window is still refined when
+ * the shell leaves room). Otherwise two trial windows [lo, lo + w] locate the
+ * first shell (trials with a <= 0 sit on structure and are dropped), the
+ * smallest onset is refitted on [lo, onset - 0.25] and confirmed on the
+ * refined g(r); no shell, or a shell too close to lo, throws — a fit across
+ * the first shell is never returned.
+ */
 export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
-  // Two-pass: when the caller pins neither r0 nor the fit window, the first
-  // pass's g(r) yields a data-derived closest approach and the fit reruns
-  // with the refined low-r window (python engine parity).
-  const result = autoscalePass(qIn, sqIn, config, sigmaIn);
-  const onset = detectFirstPeakOnset(result.r, result.gFiltered, {
-    searchMin: config.rCutoff + 0.3,
-    qmax: config.qmax,
-  });
-  if (onset != null) result.r0Detected = onset;
-  const lo = config.rFitMin != null ? config.rFitMin : config.rCutoff + 0.2;
-  if (
-    onset != null
-    && config.r0 == null
-    && config.rFitMax == null
-    && onset - 0.25 > lo
-    && Math.abs((onset - 0.25) - rFitWindow(config)[1]) > 0.05
-  ) {
-    const refined = { ...config, r0: onset };
-    const refinedResult = autoscalePass(qIn, sqIn, refined, sigmaIn);
-    refinedResult.r0Detected = onset;
-    refinedResult.windowRefined = true;
-    return refinedResult;
+  const lo = rFitWindow(config)[0];
+  if (config.r0 != null || config.rFitMax != null) {
+    const result = autoscalePass(qIn, sqIn, config, sigmaIn);
+    const onset = detectOnset(result, config);
+    if (onset != null) result.r0Detected = onset;
+    return result;
   }
-  return result;
+
+  if (config.amplitudeCriterion === 'fz') {
+    const result = autoscalePass(qIn, sqIn, config, sigmaIn);
+    const onset = detectOnset(result, config);
+    if (onset == null) return result;
+    if (onset - R0_WINDOW_MARGIN - lo < MIN_AUTO_WINDOW) {
+      result.r0Detected = onset;
+      return result;
+    }
+    const refined = autoscalePass(qIn, sqIn, { ...config, r0: onset }, sigmaIn);
+    refined.r0Detected = onset;
+    refined.windowRefined = true;
+    return refined;
+  }
+
+  const candidates = [];
+  for (const width of START_WINDOW_WIDTHS) {
+    const trial = autoscalePass(qIn, sqIn, { ...config, rFitMax: lo + width }, sigmaIn);
+    if (!(trial.a > 0)) continue; // a non-physical scale: this window sits on structure
+    const onset = detectOnset(trial, config);
+    if (onset != null) candidates.push(onset);
+  }
+  if (!candidates.length) {
+    throw new Error(
+      'autoscale: could not locate the first coordination shell in the data '
+      + `(trial low-r windows [${fmtG(lo)}, ${fmtG(lo + START_WINDOW_WIDTHS[0])}] `
+      + `and [${fmtG(lo)}, ${fmtG(lo + START_WINDOW_WIDTHS[START_WINDOW_WIDTHS.length - 1])}] Å `
+      + 'gave a non-physical scale or no shell standing out of the ripples), so the '
+      + 'density-limit window cannot be placed below it. Set r₀ (the closest '
+      + 'interatomic approach) or the fit-window maximum; if the first bond is '
+      + `shorter than ~${(lo + 0.55).toFixed(1)} Å, also lower the filter r-cut `
+      + `(now ${fmtG(config.rCutoff)} Å)`
+    );
+  }
+  let onset = Math.min(...candidates);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (onset - R0_WINDOW_MARGIN - lo < MIN_AUTO_WINDOW) {
+      const advice = config.rFitMin != null
+        ? `Lower the fit-window minimum below ${(onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW).toFixed(2)} Å`
+        : `Lower the filter r-cut to <= ${(Math.floor((onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW - 0.2) / 0.05) * 0.05).toFixed(2)} Å`;
+      throw new Error(
+        `autoscale: the first coordination shell starts at ${onset.toFixed(2)} Å, `
+        + `leaving no low-r fit window between ${fmtG(lo)} Å and `
+        + `${(onset - R0_WINDOW_MARGIN).toFixed(2)} Å (onset - ${R0_WINDOW_MARGIN}); a window `
+        + 'across the shell would force it to zero and bias the scale. '
+        + `${advice}, or set r₀ / the fit-window maximum`
+      );
+    }
+    const refined = autoscalePass(qIn, sqIn, { ...config, r0: onset }, sigmaIn);
+    const check = detectOnset(refined, config);
+    if (check == null) {
+      throw new Error(
+        'autoscale: after refitting below the detected first shell (onset '
+        + `${onset.toFixed(2)} Å) no shell stands out of the ripples any more; the `
+        + 'low-r window cannot be verified. Set r₀ or the fit-window maximum'
+      );
+    }
+    if (check >= onset - 0.1) {
+      refined.r0Detected = check;
+      refined.windowRefined = true;
+      return refined;
+    }
+    onset = check; // the refit uncovered a lower shell
+  }
+  throw new Error(
+    'autoscale: the first-shell onset kept moving down while the low-r window '
+    + `was refined (last ${onset.toFixed(2)} Å). Set r₀ or the fit-window maximum`
+  );
 };
 
 const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
@@ -853,10 +928,19 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
   let rho = Math.min(Math.max(work.rho0, rhoMin), rhoMax);
   const history = [];
   let converged = false;
-  let iterations = 0;
-  for (iterations = 1; iterations <= maxIter; iterations += 1) {
+  let stopped = null;
+  for (let iteration = 0; iteration < maxIter; iteration += 1) {
     work = { ...work, rho0: rho };
-    const result = autoscale(qIn, sqIn, work, sigmaIn);
+    let result;
+    try {
+      result = autoscale(qIn, sqIn, work, sigmaIn);
+    } catch (error) {
+      if (!history.length) throw error; // the seed density itself cannot be fitted
+      // The fixed-point step left the physical range (the density limit
+      // cannot even be placed below the first shell there): stop.
+      stopped = `autoscale failed at rho0 = ${fmtG(rho)}: ${error.message}`;
+      break;
+    }
     if (result.aFz == null || !isNum(result.aFz) || result.aFz <= 0) {
       throw new Error(
         'estimateRho0: no usable Faber-Ziman amplitude (no flat high-Q '
@@ -884,12 +968,13 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
   return {
     rho0: last[0],
     converged,
-    iterations,
+    iterations: history.length,
     concordance: last[3],
     aDensity: last[1],
     aFz: last[2],
     extrapolated: config.qmin > 1.0,
     history,
+    stopped,
   };
 };
 

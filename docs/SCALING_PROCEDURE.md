@@ -77,8 +77,13 @@ the manual "try again" scale loop replaced by physics:
    stands out of the ripple field below it, not the tallest one — is located and its left
    flank (35% of its own height) taken as the data's first-shell onset. |g| because
    negative-b pairs give *inverted* shells (Ti–O in titanates, Mn–Sn in Mn₃Sn), often
-   weaker than the second shell. The fit window is then refined to end 0.25 Å below the
-   onset and the fit re-run. Detected onsets: 2.62–2.77 Å on all four Mn₃Sn runs (Qmin 0.82
+   weaker than the second shell. Without a given r₀ the window is located, not assumed:
+   two trial fits ([r_cut+0.2, +0.3] and [.., +1.0] Å; a trial with a ≤ 0 sits on
+   structure and is dropped) give candidate onsets, the smallest is refitted on
+   [r_cut+0.2, onset − 0.25] and confirmed on the refined g(r). If no shell can be
+   located, or it leaves < 0.1 Å of window (bonds shorter than ~1.75 Å at the default
+   r_cut = 1.0: Si–O, P–O, B–O, C–O), the run stops with the r_cut to use instead of
+   fitting across the shell. Detected onsets: 2.62–2.77 Å on all four Mn₃Sn runs (Qmin 0.82
    or 1.0), 2.53 Å for FeCoSn — the flank of the first peak, i.e. *above* the hand-chosen
    classic cutoffs 2.40–2.68 Å, which sit below it.
 6. **Independent cross-check**: `a_fz` from the Q→0 Faber-Ziman limit (level-subtracted

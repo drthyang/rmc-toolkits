@@ -592,8 +592,12 @@ Four behaviours of the estimator are load-bearing and easy to miss:
    Å⁻³). Both exits return `converged: False`.
 3. **The returned `rho0` is `history[-1][0]`** — the density the *last fit was run at*, not the
    last update. On a non-converged return you get the last density tried, not a refined one.
-4. **Cost.** Each iteration is a full two-pass `autoscale`, so the estimate costs up to
-   8 × 2 = 16 pipeline passes before the run's own fit even starts.
+4. **Cost.** Each iteration is a full `autoscale` (two trial windows + the refined fit, Step 8),
+   so the estimate costs up to 8 × 3 = 24 pipeline passes before the run's own fit even starts.
+5. **A trial density that cannot be fitted stops the iteration.** If `autoscale` raises at an
+   iterate (a fixed-point step to an absurd density, e.g. Mn₃Sn 500 K jumps from 0.063 to 0.66
+   Å⁻³, where no first shell can be located), the estimate returns the last usable iterate with
+   `converged: False` and the reason in `stopped`; a failure at the seed itself propagates.
 
 The three front-ends treat non-convergence differently: the Web Worker **throws** (the page
 refuses to fit on a garbage density), the CLI raises a `CliError`, and the Python
@@ -754,7 +758,8 @@ $$Q_\mathrm{tail,min} = Q_\mathrm{max} - f_\mathrm{tail}\,(Q_\mathrm{max} - Q_\m
 
 $$[r_\mathrm{fit,lo},\, r_\mathrm{fit,hi}] =
 \bigl[\,r_\mathrm{cut} + 0.2,\; r_0 - 0.25\,\bigr]
-\quad\text{(or } r_\mathrm{fit,lo} + 1.0 \text{ when } r_0 \text{ is unknown)} .$$
+\quad\text{(the property falls back to } r_\mathrm{fit,lo} + 1.0 \text{ when } r_0 \text{ is unknown;}$$
+$$\text{`autoscale()` never fits on that fallback — it locates } r_0 \text{ first, Step 8)} .$$
 
 Note $r = 0$ is **excluded** from the grid (the $g(r)$ conversions divide by $r$). Both fit
 windows must contain at least 2 points or `_fit_windows` / `fitWindows` raises.
@@ -1000,7 +1005,7 @@ provenance JSON).
 | `s0_target` / `s0Target` | `None` → $1-\langle b^2\rangle/\langle b\rangle^2$ → `0.0` | Python/JS config only (not exposed) | dimensionless |
 | `r_cutoff` | `1.0` | form / `--r-cutoff` / `stog.inp` line 15 | Å |
 | `r0` | `None` → header → `stog.inp` → detected | form / `--r0` / `MINIMUM_DISTANCES ::` | Å |
-| `r_fit_min` / `r_fit_max` | `r_cutoff + 0.2` / `r0 − 0.25` (or `lo + 1.0`) | form / `--r-fit-min`,`--r-fit-max` | Å |
+| `r_fit_min` / `r_fit_max` | `r_cutoff + 0.2` / `r0 − 0.25` (with neither `r0` nor `r_fit_max` set, `autoscale` locates the first shell and uses the detected onset − 0.25, Step 8) | form / `--r-fit-min`,`--r-fit-max` | Å |
 | `rmax` | `50.0` | form / `--rmax` / `stog.inp` line 8 | Å |
 | `nr` | `5000` | form / `--nr` / `stog.inp` line 9 | → Δr = 0.01 Å at defaults |
 | `q_tail_frac` | `0.15` | Python/JS config only (not exposed) | fraction of the Q window |
@@ -1021,7 +1026,7 @@ provenance JSON).
 | `enforce_cutoff` (config field) | `None` | **library only** — never set by the CLI, the API or the browser | Å; drives `enforce_low_r` |
 | min. usable points after crop | `16` (checked *before* despiking) | hard-coded | both engines |
 | min. finite points for the level sweep | `32` (window ≥ 24 pts, ≥ 3 Å⁻¹ wide) | hard-coded | the binding limit in the default `sweep` mode |
-| $\rho_0$ estimate `rtol`, `max_iter`, bounds | `1e-3`, `8`, `[1e-4, 1]` | hard-coded | Å⁻³; each iteration is a full two-pass `autoscale` |
+| $\rho_0$ estimate `rtol`, `max_iter`, bounds | `1e-3`, `8`, `[1e-4, 1]` | hard-coded | Å⁻³; each iteration is a full `autoscale` (Step 8 window placement included) |
 | $\rho_0$ seed when unresolved | `0.05` | browser only | Å⁻³ |
 | $\rho_0$ write-back rounding | 5 significant digits | browser only | run uses the unrounded value |
 | formula-vs-override warning threshold | 2 % (of the *composition* value in the browser, of the *configured* value in the CLI) | browser chip ($\langle b\rangle^2$ and $\langle b^2\rangle$) + CLI stderr ($\langle b\rangle^2$ only) | — |
@@ -1808,7 +1813,7 @@ enforcement is set to `'auto'` — the boolean then collapses to $r \le r_0$, id
 stating:
 
 - **`'auto'` enforcement is not guaranteed to happen.** The worker first tries to recover `r0`
-  when the engine did not detect one (manual runs skip `autoscale`'s two-pass detection, so the
+  when the engine did not detect one (manual runs skip `autoscale`'s first-shell detection, so the
   worker re-runs `detectFirstPeakOnset` with `searchMin: config.rCutoff + 0.3`, exactly like the
   CLI's post-run detection). But if detection still returns `null`, `effectiveEnforcement` is set
   to `null` and **no enforcement is applied at all**: `gkEnforced` / `drEnforced` come back
@@ -2325,8 +2330,8 @@ Two independent physics targets pin $(a, b)$, and a third is reported:
 - **C2 — low-$r$ density limit (Keen Eqs. 15/29 in $g$-space):** $g_\mathrm{corr}(r) \equiv 0$ for
   $r < r_0$, equivalently $G_K \to -\langle b\rangle^2$ and
   $D(r) \to -4\pi\rho_0\langle b\rangle^2 r$. Evaluated on `r_fit_window`
-  $= [\,\texttt{r\_cutoff}+0.2,\ r_0 - 0.25\,]$ Å by default (if
-  $r_0$ is unknown and un-detected, the upper edge falls back to lower + 1.0 Å).
+  $= [\,\texttt{r\_cutoff}+0.2,\ r_0 - 0.25\,]$ Å by default; with $r_0$ unknown, `autoscale`
+  locates the first shell from the data first (Step 8) and **raises** rather than fit across it.
 - **C3 — the $Q\to 0$ limit,** $F_K(0)\to-\langle b^2\rangle$, is **reported, never fitted** in
   density mode; it becomes the *fitting* criterion only in `amplitude_criterion="fz"` (Step 9).
 
@@ -2768,13 +2773,41 @@ Design choices:
 - **$|g|$, not $g$.** Below the first shell $g \to 0$; a shell of either sign departs from that
   level.
 
-**The refinement pass.** `autoscale()` runs `_autoscale_pass()` once, detects the onset, records it
-as `provenance["r0_detected"]`, and re-runs the entire fit with `r0 = onset` **only if all** of:
-`config.r0 is None`, `config.r_fit_max is None`, $(\mathrm{onset}-0.25) > r_\mathrm{fit,min}$, and
-$|(\mathrm{onset}-0.25) - r_\mathrm{fit,max}^\mathrm{current}| > 0.05$ Å. The refined result carries
-`provenance["window_refined"] = True`. So a full auto-scale can cost **two** complete
-self-consistent loops. Note this happens for **both** amplitude criteria — the FZ branch is not
-exempt (Step 9).
+**Placing the window (`autoscale()`).** The C2 rows force $g = 0$ on the window, so a window that
+reaches into the first shell forces a real shell to zero and biases the scale (pre-1.0, the blind
+first-pass window $[r_\mathrm{cut}+0.2, r_\mathrm{cut}+1.2] = [1.2, 2.2]$ Å gave SrTiO₃ $a$ −48 %,
+ReO₃ $a < 0$, and short bonds were refused refinement and returned as if fine). With neither `r0`
+nor `r_fit_max` pinned, and `amplitude_criterion="density"`:
+
+1. **Two trial fits** on $[lo, lo + w]$, $w \in$ `START_WINDOW_WIDTHS` $= (0.3, 1.0)$ Å
+   ($lo = r_\mathrm{fit,min}$, default $r_\mathrm{cut}+0.2$): the narrow one lies below any bond
+   longer than ~1.75 Å; the wide one averages the large low-$r$ ripples of missing-low-$Q$ data
+   (on the Mn₃Sn runs the narrow window alone gives $a < 0$). A trial with $a \le 0$ is a
+   non-physical scale — its window sits on structure — and is discarded; each other trial yields a
+   first-shell onset.
+2. The **smallest onset** is refitted on $[lo,\ \mathrm{onset} - 0.25]$ (`R0_WINDOW_MARGIN`) and
+   **confirmed**: the first shell is detected again on the refined $g(r)$; if the refit uncovers a
+   lower shell (onset lower by > 0.1 Å) that one replaces it (up to three times).
+3. **Fail loudly.** No trial yields a shell → `ValueError` ("could not locate the first
+   coordination shell … set r0 or r_fit_max; lower r_cutoff for bonds shorter than ~1.75 Å").
+   A shell leaving less than `MIN_AUTO_WINDOW` $= 0.1$ Å above $lo$ → `ValueError` naming the
+   onset and the $r_\mathrm{cut}$ that would make room ($\le$ onset − 0.55, rounded down to
+   0.05 Å). A fit across the first shell is never returned.
+
+The result carries `provenance["r0_detected"]` (the onset on the **final** $g(r)$) and
+`provenance["window_refined"] = True`; `config.r0` inside the provenance is the onset the window
+was built from. A density-mode auto-scale therefore costs **three** complete self-consistent loops.
+With `r0` or `r_fit_max` pinned, one pass runs and detection only annotates it. In FZ mode the
+amplitude does not depend on the window: one pass, and the diagnostic window is refined to
+$[lo, \mathrm{onset}-0.25]$ when the shell leaves room (no error otherwise, `window_refined`
+absent).
+
+Validated (scratch bench, true $a$ = 5 or 10): SrTiO₃, ReO₃, Ni supercells 0.0–0.2 %; SrTiO₃ /
+rutile / weak-first-shell Gaussian-shell models 0.3–3.6 %; the Mn₃Sn and FeCoSn runs unchanged
+(same detected onsets and windows as the pre-1.0 two-pass on those data); Si–O (1.61 Å), P–O,
+B–O and β-cristobalite fail loudly at $r_\mathrm{cut} = 1.0$ and succeed with
+$r_\mathrm{cut} = 0.6$–$0.8$ (Si–O, P–O, SiO₂ supercell within 1–3 %). Tests:
+`tests/test_stog_a_window.py`; JS parity on the fixture's `expected.window` cases.
 
 Measured detections quoted in [SCALING_PROCEDURE.md](../SCALING_PROCEDURE.md): 2.62–2.77 Å on all
 four Mn₃Sn runs (Qmin 0.82 or 1.0; the pre-1.0 argmax detector gave 3.19–3.49 Å at Qmin 1.0) and
@@ -2864,7 +2897,7 @@ $$\mathrm{concordance}(\rho_0) \;\equiv\; \frac{a_\mathrm{fz}}{a_\mathrm{density
 
 **Operation.** `estimate_rho0()` forces `amplitude_criterion="density"`, `c1_mode="sweep"`, seeds
 $\rho \leftarrow \mathrm{clip}(\texttt{config.rho0},\ 10^{-4},\ 1.0)$ Å⁻³, and iterates (max 8
-passes, each a full `autoscale()` including its two-pass $r_0$ refinement):
+passes, each a full `autoscale()` including its Step-8 window placement):
 
 $$\rho \;\leftarrow\; \mathrm{clip}\big(\rho\cdot\mathrm{concordance}(\rho),\ \rho_\mathrm{min},\ \rho_\mathrm{max}\big),\qquad
 \rho_\mathrm{min}=10^{-4},\ \rho_\mathrm{max}=1.0\ \text{Å}^{-3},$$
@@ -3046,7 +3079,7 @@ come from. **The two implementations read their inputs from different places:**
 | `d_r_low_r_slope_theory` | $-4\pi\rho_0\langle b\rangle^2$ | The straight line $D(r)$ should follow below $r_0$. |
 | `density_limit_satisfied` | $\lvert$`g_window_mean`$\rvert < 0.1$ | **ONE-SIDED.** False *proves* no affine $(a,b)$ can satisfy the density limit — the absolute scale is not recoverable from self-consistency on this data. True only means the fit reached its target; a smooth low-$Q$ deficiency is generically absorbed into a biased scale with all residuals clean. True does **not** certify the absolute scale. |
 | `level`, `level_uncertainty`, `level_window`, `asymptote_found` | the Step-3 sweep result | `asymptote_found = False` ⇒ the fit silently ran in joint 2-dof mode, `level_uncertainty` is `NaN`, **and `level_window` is the fabricated last-3 Å⁻¹ span, not a searched window**. Otherwise `level_uncertainty` is a spread over overlapping admissible windows. |
-| `r0_detected`, `window_refined` | Step-8 outputs | If `window_refined` is False, the detected $r_0$ was reported but did not change the fit (because you pinned `r0`/`r_fit_max`, or the change was < 0.05 Å). |
+| `r0_detected`, `window_refined` | Step-8 outputs | `r0_detected` is the first-shell onset on the final $g(r)$. `window_refined` is True when `autoscale` placed the window from it; absent when you pinned `r0`/`r_fit_max` (detection then only annotates), in manual runs, and in FZ mode when the shell leaves no room for a window. |
 | `a_fz` | the independent $Q\to 0$ amplitude | Present only when $\langle b^2\rangle$ is available **and** the sweep found a flat level (`a_fz` is computed inside `if level is not None`). Otherwise it — and the concordance row — are absent. In FZ mode it *is* `a`. |
 | `amplitude_concordance` | $a_\mathrm{fz}/a$ — **omitted in FZ mode** (it would be 1 by construction) | The absolute-scale trust metric. FeCoSn agrees to 4–6 %. |
 | `amplitudes_concordant` | $\lvert a_\mathrm{fz}/a - 1\rvert < 0.1$ | Discord ⇒ suspect $\rho_0$ (moves only $a$), or missing low-$Q$ (moves them apart). The page's chip says "check ρ₀ / low-Q, or use the Faber-Ziman Q→0 amplitude". |
@@ -3141,7 +3174,7 @@ Genuine implementation differences:
 | `r_cutoff` | 1.0 | Å | Fourier-filter cutoff |
 | `r0` | `None` → detected | Å | closest approach |
 | `r_fit_min` | `None` → `r_cutoff + 0.2` | Å | C2 window lower edge (**not** echoed in provenance) |
-| `r_fit_max` | `None` → `r0 - 0.25`, else `r_fit_min + 1.0` | Å | C2 window upper edge (**not** echoed in provenance) |
+| `r_fit_max` | `None` → `r0 - 0.25`; with `r0` also unset `autoscale` detects the first shell and uses onset − 0.25 (property fallback `r_fit_min + 1.0` is only a trial window) | Å | C2 window upper edge (**not** echoed in provenance) |
 | `q_tail_frac` | 0.15 | — | C1 window = top 15 % of the *configured* $[Q_\mathrm{min},Q_\mathrm{max}]$ |
 | `rmax`, `nr` | 50.0, 5000 | Å, count | $r$ grid ($\Delta r = 0.01$ Å), $r=0$ excluded; also sets the C2 row count |
 | `lorch` | `False` | — | Lorch window $M(Q)=\sin(x)/x$, $x=\pi Q/Q_{N-1}$, applied to $F(Q)$ before the forward transform only — built from the **last cropped data point**, not `qmax` |
@@ -3651,7 +3684,7 @@ is structurally different from `autoscale()` in ways the cards and plots do not 
   `amplitude_concordance` or `amplitudes_concordant` — the **High-Q level** card, the
   **Concordance** card and the blue `Level L` guide in Plot 1 all disappear.
 - `c1ModeEffective` is the literal string `'manual'`.
-- **No two-pass fit-window refinement** (`windowRefined` is always false). The first-shell
+- **No fit-window placement** (`windowRefined` is always false). The first-shell
   *detection* can still run — but only via the worker's manual-mode recovery (Step 6, item 1),
   i.e. only when the enforcement descriptor is the string `'auto'`. With any other descriptor
   there is no `r0_detected`, so the **First shell $r_0$** card is absent too.
@@ -3675,7 +3708,7 @@ Three things are computed in `autoScaleWorker.js` rather than in the engine, bec
 computes them outside the engine too and the outputs must match — items 2 and 3 in
 `scaling_cli._write_outputs()`, item 1 in `scaling_cli.main()`'s post-run block:
 
-1. **Manual-mode $r_0$ recovery.** `autoscale()` runs the two-pass first-shell detection
+1. **Manual-mode $r_0$ recovery.** `autoscale()` runs the first-shell detection
    internally; `scalePipeline()` (manual) does not. So when `enforcement === 'auto'` and
    `result.r0Detected` is null, the worker calls
    `detectFirstPeakOnset(r, gFiltered, {searchMin: rCutoff + 0.3})` itself — otherwise a
@@ -4024,8 +4057,8 @@ comparing the two should expect:
 
 Two known gaps in the browser JSON, both harmless but worth stating:
 
-- `config.r0` is the *input* value. If the two-pass refinement fired, the effective closest
-  approach is in `diagnostics.r0_detected` and the effective window in
+- `config.r0` is the *input* value. If `autoscale` placed the window itself (Step 8), the
+  detected first-shell onset is in `diagnostics.r0_detected` and the effective window in
   `diagnostics.r_fit_window` — not in `config`.
 - The despiked-point count (`nDespiked`) is returned by the worker but is **not** written to
   the JSON (the CLI records it as `provenance.n_despiked`).
@@ -4066,8 +4099,8 @@ Two known gaps in the browser JSON, both harmless but worth stating:
 | — | `s0Target` | `null` | — | explicit low-Q target; the page never sets it, so it always resolves through `effectiveS0Target()` (no UI) |
 | — | `maxIter` / `tol` | 50 / 1e-6 | — | self-consistency loop stopping rule (no UI) |
 | — | level sweep | minWidth 3.0 Å⁻¹, 80 grid edges, ≥24 pts, 2σ slope test | — | not exposed |
-| — | $r_0$ detection | search 1.0–6.0 Å (from rCutoff+0.3), 35 % of peak, floor 0.5 | — | not exposed |
-| — | $\rho_0$ estimate | rtol 1e-3, ≤8 passes, ρ clamped to [1e-4, 1.0] Å⁻³; also exits on a ≤ 0 / concordance ≤ 0, or a clamp-pinned update; throws when no usable a_fz | — | not exposed |
+| — | $r_0$ detection | search rCutoff+0.3 … 6.0 Å, candidates from +2π/Qmax, first maximum ≥ 3× (or ≥ 2× and ≥ 35 % of range max) its ripple field, flank at 35 % of that shell, floor 0.5 | — | not exposed |
+| — | $\rho_0$ estimate | rtol 1e-3, ≤8 passes, ρ clamped to [1e-4, 1.0] Å⁻³; also exits on a ≤ 0 / concordance ≤ 0, a clamp-pinned update, or an autoscale failure at a trial density (`stopped`); throws when no usable a_fz | — | not exposed |
 
 ---
 
@@ -4083,7 +4116,7 @@ Everything this page runs also exists in Python. The parity contract is pinned b
   `c1TailMean` < 1e-8;
 - FZ-amplitude mode $(a,b)$: < 1e-6, with `iterations === 0`;
 - manual pipeline sampled $G_K$ / $S_\mathrm{filtered}$ values: 9 decimals;
-- two-pass $r_0$ detection: 9 decimals, same `windowRefined` flag;
+- first-shell detection (repo synthetic, no r0): 9 decimals, same `windowRefined` flag; detector cases exact; window placement (SrTiO₃ supercell, short bond) `a`,`b` to 1e-6, same onset and window, same refusal;
 - **$\rho_0$ self-consistency: only ~1e-4 relative.** The test and `AGENTS.md` attribute this to the
   fixed-point iteration compounding summation-order float noise against the `rtol = 1e-3`
   stopping rule. That explanation is incomplete: there is also a genuine algorithmic
