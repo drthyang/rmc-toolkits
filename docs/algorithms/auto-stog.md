@@ -689,6 +689,14 @@ How the triple is resolved (`AutoStogPage.jsx::resolveEnforcement`,
 - The CLI exposes `--peak-window RMIN RMAX` (same semantics) and rejects
   `--no-enforce` combined with `--enforce-cutoff`/`--peak-window`. The browser has no
   peak-window control.
+- The API (`/api/scaling/preview|run`) reads `enforce` **once** as the same tri-state
+  (`app.py::_scaling_enforce_flag`: absent/empty → default on; `true`/`"true"`/`"1"`/`"yes"` → on;
+  anything else, e.g. `false`, `"false"`, `"0"`, `0` → off), honours `enforceCutoff` /
+  `peakWindow` in data mode without `enforce: true`, and rejects (400) `enforce: false` together
+  with `enforceCutoff`/`peakWindow`, a `peakWindow` without a cutoff source, and a malformed
+  `peakWindow`. Pre-1.0 the data-mode default read `enforce` as False (discarding an explicit
+  `enforceCutoff`) and the auto branch tested `payload.get("enforce") is not False`, so
+  `"false"`/`0` switched the automatic enforcement back on.
 - **Pre-filled cutoff:** `selectSource` pre-fills the Cutoff field with `inp.peakCutoff`
   (Step 8), so the page cannot tell a pre-filled value from a typed one; `autoScale.js::
   resolveEnforcementDescriptor()` therefore keeps the `.inp`'s `peak_rmin`/`peak_rmax` whenever

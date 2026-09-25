@@ -862,22 +862,49 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
     return config
 
 
-def _resolve_scaling_enforcement(payload: dict, inp) -> tuple[float, float, float] | None:
-    if _payload_bool(payload, "enforce", inp is not None) is False:
+def _scaling_enforce_flag(payload: dict) -> bool | None:
+    """The ``enforce`` flag, parsed ONCE as a tri-state (CLI ``--enforce`` parity).
+
+    None (absent / empty: enforcement on by default), True, or False — with
+    the same string forms as every other boolean of this API ("false", "0"
+    and 0 are False).
+    """
+    if payload.get("enforce") in (None, ""):
         return None
-    cutoff = _payload_float(payload, "enforceCutoff")
+    return _payload_bool(payload, "enforce", True)
+
+
+def _resolve_scaling_enforcement(
+    payload: dict, inp, enforce_flag: bool | None
+) -> tuple[float, float, float] | None:
+    """Explicit enforcement triple, mirroring ``scaling_cli._resolve_enforcement``.
+
+    Returns None when enforcement is off (``enforce_flag is False``) or when no
+    explicit cutoff exists (then the caller applies the automatic first-shell
+    cutoff unless ``enforce_flag is False``).
+    """
+    window = payload.get("peakWindow")
+    if window is not None and not (isinstance(window, (list, tuple)) and len(window) == 2):
+        raise CliError("peakWindow must be a two-element list [rmin, rmax]")
+    explicit_cutoff = _payload_float(payload, "enforceCutoff")
+    if enforce_flag is False:
+        if explicit_cutoff is not None or window is not None:
+            raise CliError("enforce=false contradicts enforceCutoff/peakWindow")
+        return None
+    cutoff = explicit_cutoff
     if cutoff is None and inp is not None:
         cutoff = inp.peak_cutoff
     if cutoff is None:
-        return None  # data mode: resolved post-run from the detected r0
-    window = payload.get("peakWindow")
-    if isinstance(window, (list, tuple)) and len(window) == 2:
+        if window is not None:
+            raise CliError("peakWindow requires enforceCutoff (or a stog input)")
+        return None  # resolved post-run: the automatic first-shell cutoff
+    if window is not None:
         peak_rmin, peak_rmax = float(window[0]), float(window[1])
-    elif inp is not None and _payload_float(payload, "enforceCutoff") is None:
+    elif inp is not None and explicit_cutoff is None:
         peak_rmin, peak_rmax = inp.peak_rmin, inp.peak_rmax
     else:
         peak_rmin = peak_rmax = cutoff
-    return float(cutoff), peak_rmin, peak_rmax
+    return float(cutoff), float(peak_rmin), float(peak_rmax)
 
 
 def _resolve_scaling_mode(payload: dict, inp) -> tuple[str, float, float]:
@@ -917,7 +944,8 @@ def _cached_scaling(path_str: str, mtime: float, config: ScalingConfig, mode: st
 def _scaling_request(payload: dict):
     inp, inp_path, data_path, header = _resolve_scaling_source(payload)
     config = _resolve_scaling_config(payload, inp, header)
-    enforcement = _resolve_scaling_enforcement(payload, inp)
+    enforce_flag = _scaling_enforce_flag(payload)
+    enforcement = _resolve_scaling_enforcement(payload, inp, enforce_flag)
     mode, a, b = _resolve_scaling_mode(payload, inp)
     use_sigma = _payload_bool(payload, "useSigma", True)
     result = _cached_scaling(
@@ -925,7 +953,7 @@ def _scaling_request(payload: dict):
     )
     # No explicit cutoff and enforcement not refused: enforce automatically
     # at the foot of the first shell (CLI-mirroring auto default).
-    if enforcement is None and payload.get("enforce") is not False:
+    if enforcement is None and enforce_flag is not False:
         r0_detected = result.provenance.get("r0_detected")
         if r0_detected is None:
             r0_detected = detect_first_peak_onset(

@@ -84,6 +84,62 @@ class ScalingApiStogATests(unittest.TestCase):
         self.assertAlmostEqual(payload["provenance"]["config"]["r0"], 1.6)
         self.assertLess(abs(payload["result"]["a"] / 10.0 - 1.0), 0.03)
 
+    def test_data_mode_honours_an_explicit_enforce_cutoff(self):
+        # Pre-fix: without enforce:true the cutoff was discarded and the RMC G(r)
+        # flattened out to the auto-detected onset instead.
+        response = self.client.post("/api/scaling/preview", json=self.data_body(enforceCutoff=2.0))
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200, payload)
+        self.assertEqual(payload["enforcement"], {"cutoff": 2.0, "peakRmin": 2.0, "peakRmax": 2.0})
+        r = np.asarray(payload["series"]["r"])
+        gk = np.asarray(payload["series"]["gk"])
+        enforced = np.asarray(payload["series"]["gkEnforced"])
+        above = r > 2.0
+        np.testing.assert_allclose(enforced[above], gk[above], atol=1e-15)
+        np.testing.assert_allclose(enforced[~above], -B2, atol=1e-15)
+
+    def test_run_writes_the_explicit_cutoff(self):
+        body = self.data_body(enforceCutoff=2.0, outDir=f"{REL}/out_cutoff", force=True)
+        response = self.client.post("/api/scaling/run", json=body)
+        self.assertEqual(response.status_code, 200, response.get_json())
+        import json
+
+        provenance = json.loads((RUN / "out_cutoff" / "synth_provenance.json").read_text())
+        self.assertEqual(provenance["enforcement"]["cutoff"], 2.0)
+
+    def test_string_and_numeric_false_disable_enforcement(self):
+        # Pre-fix: _payload_bool read "false" as off for the explicit cutoff, but
+        # the auto branch tested `is not False`, so "false"/0 re-enabled it.
+        for flag in ("false", "0", 0, False, "no"):
+            with self.subTest(enforce=flag):
+                response = self.client.post("/api/scaling/preview", json=self.data_body(enforce=flag))
+                payload = response.get_json()
+                self.assertEqual(response.status_code, 200, payload)
+                self.assertIsNone(payload["enforcement"])
+                self.assertIsNone(payload["series"]["gkEnforced"])
+        inp = self.client.post(
+            "/api/scaling/preview", json={"path": f"{REL}/short.inp", "enforce": "false"}
+        ).get_json()
+        self.assertIsNone(inp["enforcement"])
+
+    def test_default_and_true_still_enforce(self):
+        for extra in ({}, {"enforce": True}, {"enforce": "true"}, {"enforce": ""}):
+            with self.subTest(**extra):
+                payload = self.client.post(
+                    "/api/scaling/preview", json=self.data_body(**extra)
+                ).get_json()
+                self.assertIsNotNone(payload["enforcement"])
+
+    def test_contradictory_flags_are_rejected(self):
+        response = self.client.post(
+            "/api/scaling/preview", json=self.data_body(enforce=False, enforceCutoff=2.0)
+        )
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post(
+            "/api/scaling/preview", json=self.data_body(peakWindow=[2.1, 2.5])
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()
