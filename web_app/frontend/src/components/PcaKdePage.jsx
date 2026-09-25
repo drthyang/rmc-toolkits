@@ -23,6 +23,7 @@ import {
 } from './sceneAxes';
 import useSiteCloud from '../useSiteCloud';
 import { crystalOrientationRows, projectVolumeOntoFrame } from '../pcaCrystalFrame';
+import { siteLabel } from '../siteLabel';
 import './PcaKdePage.css';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
@@ -44,18 +45,6 @@ const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercen
 
 const numberFormat = (value, digits = 4) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
-
-// A mixed-occupancy site (one reference number, several species) reads as its
-// composition, e.g. Ga0.75In0.25 (majority first); a pure site as its element.
-const siteLabel = (site) => {
-    if (!site?.mixed || !site.elementCounts) return site?.element ?? '';
-    const entries = Object.entries(site.elementCounts);
-    const total = entries.reduce((sum, [, count]) => sum + count, 0) || 1;
-    return entries
-        .sort(([nameA, a], [nameB, b]) => b - a || (nameA < nameB ? -1 : nameA > nameB ? 1 : 0))
-        .map(([name, count]) => `${name}${(count / total).toFixed(2)}`)
-        .join('');
-};
 
 // One component of a [u v w] direction. Components that round to zero print as a
 // clean 0.00 (never "-0.00"), so a direction along a cell axis reads as [1 0 0].

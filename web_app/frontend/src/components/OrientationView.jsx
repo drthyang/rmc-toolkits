@@ -34,6 +34,7 @@ import {
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
 import SaveMenu from './SaveMenu';
+import { siteLabel } from '../siteLabel';
 import {
     CELL_AXIS_COLORS,
     CELL_AXIS_CSS,
@@ -427,7 +428,7 @@ export default function OrientationView({
         if (!handle) return;
         const { renderer, scene, camera } = handle;
         const name = selectedEllipsoid
-            ? `Orientation_${selectedEllipsoid.element}_site${selectedEllipsoid.referenceNumber}`
+            ? `Orientation_${siteLabel(selectedEllipsoid)}_site${selectedEllipsoid.referenceNumber}`
             : 'Orientation_sphere';
         if (format === 'png3x') {
             const size = renderer.getSize(new THREE.Vector2());
@@ -489,7 +490,7 @@ export default function OrientationView({
                 <h3>
                     <span className="panel-title-label">
                         {selectedEllipsoid
-                            ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber} — displacement directions`
+                            ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber} — displacement directions`
                             : 'Displacement directions'}
                     </span>
                     <span className="panel-title-actions">

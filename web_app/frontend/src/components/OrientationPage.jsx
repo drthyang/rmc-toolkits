@@ -19,6 +19,7 @@ import InfoBadge from './InfoBadge';
 import OrientationView from './OrientationView';
 import SiteStructurePanel from './SiteStructurePanel';
 import useSiteCloud from '../useSiteCloud';
+import { siteLabel } from '../siteLabel';
 import './PcaKdePage.css';
 
 const numberFormat = (value, digits = 4) =>
@@ -105,7 +106,7 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
                         >
                             {sites?.sites.map((site) => (
                                 <option key={site.referenceNumber} value={site.referenceNumber}>
-                                    {`#${site.referenceNumber} ${site.element} — U=${numberFormat(site.uIso, 4)} Å²`}
+                                    {`#${site.referenceNumber} ${siteLabel(site)} — U=${numberFormat(site.uIso, 4)} Å²`}
                                     {site.copiesPerCell ? ` (${site.count}/${site.copiesPerCell})` : ''}
                                 </option>
                             ))}
