@@ -47,6 +47,11 @@ function App() {
   // Flask-mode configuration epoch: bumped when the run's .rmc6f changes on disk
   // (see the effect below); the analysis pages are keyed on it.
   const [configEpoch, setConfigEpoch] = useState(0);
+  // Bumped by every Load / Select Folder, even of the folder already shown:
+  // React skips an unchanged currentDirectory, so this is what makes loading
+  // the same folder again re-check its .rmc6f (with Live Data off, the only
+  // way short of a browser reload).
+  const [loadRequest, setLoadRequest] = useState(0);
   // Shared "Detected SG" tolerance, so the ladder selection persists across pages.
   const symTolState = useState(0.2);
   const directoryInputRef = useRef(null);
@@ -134,11 +139,12 @@ function App() {
   // left alone would keep its old site table / slab points while its next request
   // (a slider move, a site click) came from the new configuration — two
   // configurations mixed in one view. So watch the .rmc6f signature in the same
-  // listing (checked once per folder, then every poll while Live Data is on) and
-  // bump configEpoch when it changes: the pages are keyed on it, remount, and
-  // re-read everything from the one new file. Their view settings reset with the
-  // remount. A browser-loaded run (Demo, picked folder) is a snapshot and is not
-  // watched here.
+  // listing (checked on every Load of a folder -- the same one included -- then
+  // every poll while Live Data is on) and bump configEpoch when it changes: the
+  // pages are keyed on it, remount, and re-read everything from the one new
+  // file. Their view settings reset with the remount (docs/algorithms/notation.md
+  // §3c lists what is lost). A browser-loaded run (Demo, picked folder) is a
+  // snapshot and is not watched here.
   useEffect(() => {
     if (staticMode || localRun) return undefined;
     let cancelled = false;
@@ -175,12 +181,13 @@ function App() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [staticMode, localRun, watchFiles, currentDirectory]);
+  }, [staticMode, localRun, watchFiles, currentDirectory, loadRequest]);
 
   const handleDirectorySubmit = (event) => {
     event.preventDefault();
     const nextDirectory = draftDirectory.trim() || '.';
     setCurrentDirectory(nextDirectory);
+    setLoadRequest((count) => count + 1);
   };
 
   const handleNativeBrowse = async () => {
@@ -192,6 +199,7 @@ function App() {
       const nextPath = response.data.path;
       setDraftDirectory(nextPath);
       setCurrentDirectory(nextPath);
+      setLoadRequest((count) => count + 1);
       setBrowseStatus(null);
     } catch (err) {
       const message = err.response?.data?.error || 'Could not open the folder picker';

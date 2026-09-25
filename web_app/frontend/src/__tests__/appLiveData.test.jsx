@@ -130,6 +130,25 @@ describe('App Flask-mode Live Data', () => {
         expect(state.mounts.ellipsoids).toBe(2);
     });
 
+    it('re-checks the .rmc6f when the same folder is loaded again with Live Data off', async () => {
+        await act(async () => { root.render(<App />); });
+        await click(tab('PCA Ellipsoid'));
+        await poll();
+        expect(state.mounts.ellipsoids).toBe(1);
+        const load = container.querySelector('form.path-bar button[type="submit"]');
+
+        // Load the same folder with nothing new on disk: the page keeps its state.
+        await click(load);
+        expect(state.mounts.ellipsoids).toBe(1);
+
+        // A configuration saved while Live Data is off is picked up by Load.
+        state.files = listing({ modified: 200, size: 5100 }, { modified: 100, size: 10 });
+        await poll();
+        expect(state.mounts.ellipsoids).toBe(1);
+        await click(load);
+        expect(state.mounts.ellipsoids).toBe(2);
+    });
+
     it('does not reload the analysis pages when only the plot/log files change', async () => {
         await openAnalysisPagesWithLiveData();
 

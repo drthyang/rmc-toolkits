@@ -462,13 +462,16 @@ static-mode Live Data hands every page a new `localRun` when the folder changes.
 directory is different — every `/api/*` request reads the file **currently on disk**, so a page
 that kept its first response (the site table, the slab points) while later requests (a slider
 move, a site click) went to a newly saved configuration would mix two configurations in one view.
-In Flask mode `App.jsx` therefore checks the `.rmc6f` entries of `/api/files` (once per folder,
-then on every Live Data poll, `WATCH_INTERVAL_MS`) and, when their `fileSignature()` changes,
-bumps `configEpoch`; the Atomic Density, Bond Geometry, PCA Ellipsoid and Displacement Directions
-pages are keyed on it, so they remount and re-read everything from the new file (their view
-settings reset). **Limitation:** with Live Data *off*, nothing is polled — a configuration saved
-while you are on an analysis page is picked up by that page's *next* request only, so reload the
-folder (or switch Live Data on, which re-checks at once) before comparing numbers across a save.
+In Flask mode `App.jsx` therefore checks the `.rmc6f` entries of `/api/files` (on every **Load**
+or **Select Folder** — of the folder already shown too — then on every Live Data poll,
+`WATCH_INTERVAL_MS`) and, when their `fileSignature()` changes, bumps `configEpoch`; the Atomic
+Density, Bond Geometry, PCA Ellipsoid and Displacement Directions pages are keyed on it, so they
+remount and re-read everything from the new file (their view settings reset). **Limitation:** with
+Live Data *off*, nothing is polled — a configuration saved while you are on an analysis page is
+picked up by that page's *next* request only. Before comparing numbers across a save, press
+**Load** again (it re-checks the `.rmc6f` and refreshes the analysis pages only if it changed),
+switch Live Data on (which re-checks at once), or reload the browser page. Load does not refresh
+the Dashboard's plots; those follow Live Data or a browser reload.
 On the server side the parsed-file caches are keyed on a full file signature and never keep a
 parse of a file that changed while it was read (see the backend API notes in
 [REFERENCE.md](../REFERENCE.md)).
