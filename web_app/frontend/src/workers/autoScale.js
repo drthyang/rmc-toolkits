@@ -1496,6 +1496,9 @@ export const diagnosticsSummary = (result, config) => {
 
 const NUMERIC_TOKEN = /^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$/i;
 
+/** Universal newlines (Python text mode): LF, CRLF and a bare CR all end a line. */
+const LINE_BREAK = /\r\n|\r|\n/;
+
 const tokenToFloat = (token) => {
   if (/^[+-]?nan$/i.test(token)) return NaN;
   if (/^[+-]?inf(inity)?$/i.test(token)) return token.startsWith('-') ? -Infinity : Infinity;
@@ -1504,7 +1507,7 @@ const tokenToFloat = (token) => {
 
 export const readStogXy = (text) => {
   const groups = new Map();
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of text.split(LINE_BREAK)) {
     const parts = line.trim().split(/\s+/).filter(Boolean);
     if (parts.length < 2) continue;
     if (!parts.every((token) => NUMERIC_TOKEN.test(token))) continue;
@@ -1524,7 +1527,7 @@ export const readStogXy = (text) => {
 const stogFlag = (token) => token.trim().toUpperCase().startsWith('Y');
 
 export const readStogInp = (text) => {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = text.split(LINE_BREAK).map((line) => line.trim()).filter(Boolean);
   if (lines.length < 22) throw new Error(`stog input has ${lines.length} non-empty lines; expected >= 22`);
   const nFiles = parseInt(lines[0].split(/\s+/)[0], 10);
   if (nFiles !== 1) throw new Error('only single-dataset stog inputs supported');
@@ -1603,7 +1606,7 @@ export const resolveEnforcementDescriptor = ({ enforce, cutoff }, inp) => {
 
 export const readDatHeader = (text) => {
   const raw = {};
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of text.split(LINE_BREAK)) {
     const idx = line.indexOf('::');
     if (idx < 0) continue;
     raw[line.slice(0, idx).trim().toUpperCase()] = line.slice(idx + 2).trim();

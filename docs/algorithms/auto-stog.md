@@ -242,6 +242,13 @@ JS port `autoScale.js` → `readStogXy()`. Writer counterpart: `write_stog_xy()`
   STOG numeric rows").
 - Tie-breaking when two column-count groups have the same number of rows follows insertion
   order in both engines, i.e. the group whose first row appeared earliest wins.
+- **Line endings are universal in all three readers** (`read_stog_xy`, `read_stog_inp`,
+  `read_dat_header` and their JS ports): LF, CRLF and a bare CR (classic Mac) all end a line —
+  Python by text-mode universal newlines (`read_stog_inp` then splits on `\n` only, not
+  `str.splitlines`' extra separators), JS by splitting on `/\r\n|\r|\n/`. Before 1.0 the JS
+  readers split on `/\r?\n/`, so a CR-only file the CLI accepted was one line in the browser
+  ("no numeric rows" / "1 non-empty lines"). Tests: `tests/test_stog_b_readers.py`,
+  `src/__tests__/autoScaleLineEndings.test.js`.
 - The readers keep file order; the crop (`crop_sq` / `cropSq`, Step 1) puts the rows in
   ascending $Q$ — a descending file, or non-overlapping segments in any order, are sorted, and
   duplicate $Q$ or overlapping segments (concatenated banks) raise. Every downstream trapezoid

@@ -240,7 +240,10 @@ def read_stog_inp(path: str | Path) -> StogInput:
     so silent misparses are impossible.
     """
     path = Path(path)
-    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+    # read_text translates LF / CRLF / CR (universal newlines); split on those
+    # only — str.splitlines would also break on form feeds etc., which the JS
+    # port (readStogInp) does not.
+    lines = [line.strip() for line in path.read_text(encoding="utf-8").split("\n")]
     lines = [line for line in lines if line]
     if len(lines) < 22:
         raise ValueError(f"{path} has {len(lines)} non-empty lines; expected >= 22")
