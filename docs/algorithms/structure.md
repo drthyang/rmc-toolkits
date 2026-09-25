@@ -1025,36 +1025,29 @@ Both produce the same *set* of crossing points; the browser version can connect 
 indistinguishable at typical grid sizes (segments are ~1 px), but the browser contour data is not
 suitable for extracting a closed iso-line.
 
-**A behavioural discrepancy in log mode.** The Python guard is
+**Whether to contour is decided on the linear density, in both runtimes.** `kde_slice()` records
+`has_density = nanmax(density) > 0` *before* the log transform and calls `_contour_segments()` only
+then; the worker records `linearMax` in the same pass that applies the log and calls
+`extractContours()` only when `linearMax > 0` (its own `vmax > vmin` guard then only rejects a flat
+grid). A declined slab (all-zero grid) therefore has no contours in either mode, and a drawn map has
+its levels in either mode.
 
-```python
-if n_levels <= 0 or not np.isfinite(density).any() or float(density.max()) <= 0:
-    return []
-```
-
-That `density.max() <= 0` test is applied **after** the log transform. So whenever the peak
-$\log_{10}\rho \le 0$ — i.e. peak linear density $\le 1$ per unit fractional area — the reference
-path emits **zero contours**, while the browser path (whose only guard is `vmax > vmin`) still
-draws all 8. Verified directly against the code with a fixed fixture — 200 points from
-`np.random.default_rng(0)` at $z=0.5$, `kde_slice(..., z_center=0.5, dz=0.1, xlim=ylim=(0,1),
-grid=120, log=True)`:
-
-| bandwidth | peak $\log_{10}\rho$ | contours, `log=True` | contours, `log=False` |
-| --- | --- | --- | --- |
-| `bw=0.5` | $+0.027$ | 8 | 8 |
-| `bw=2.0` | $-0.443$ | **0** | 8 |
-
-(The peak is stable across `grid` 16–220; `oriented_kde_slice` on the same points gives $+0.021$ and
-$-0.421$, the small offset coming from its periodic augmentation.) With the slider's maximum
-bandwidth of 0.15 and a normally populated slab the peak is comfortably $>1$, so this rarely bites —
-but it is a real mode-dependent difference, not a rendering choice.
+Before 1.0 the Python guard was `density.max() <= 0` applied **after** the log transform, so any map
+whose peak linear density was $\le 1$ per unit fractional area lost every contour on the SciPy path
+while the browser drew all eight. That is not rare: the cell carries unit mass, so the mean density
+over an oblique cross-section of area $A>1$ is about $1/A$, and for a disordered configuration the
+smoothed peak drops below 1 once $f\gtrsim0.1$. Measured on 8000 quasi-uniform points
+(`tests/test_kde_contours.py`, (111) slice, $z_c=0.5$, $\Delta z=0.08$, $f=0.1$): peak
+$\log_{10}\rho = -0.05$, and 0 contours on the old Python path against 8 now (and 8 in linear mode).
+The worker's twin is `workers/__tests__/logContours.test.js`.
 
 **Rendering.** `drawKdeSlice()` strokes every polyline in data coordinates through the same
 plane mapper used for the cell outline, at `lineWidth = 1`, in a theme-dependent colour
 (`rgba(21,34,50,0.72)` in light theme, `rgba(230,236,244,0.76)` in dark). The *Contours* switch is a
 pure client-side toggle — turning it off does not recompute anything.
 
-**Code.** `rmc_toolkits/kde.py` → `_contour_segments()`; `localKdeWorker.js` → `extractContours()`;
+**Code.** `rmc_toolkits/kde.py` → `_contour_segments()` and the `has_density` guard in `kde_slice()`;
+`localKdeWorker.js` → `extractContours()` and the `linearMax` guard in `computeKde()`;
 `StructurePage.jsx` → `drawKdeSlice()` contour loop.
 
 ---
@@ -1383,7 +1376,7 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
 | $\log_{10}$ transform + $10^{-12}$ floor | **Exact** |
 | Contour level values | **Exact** (same formula; both drop levels that yield no polylines) |
 | Contour tracing | contourpy stitched polylines with saddle handling vs. per-cell 2-point segments with arbitrary saddle pairing |
-| Contours in log mode | Python suppresses all contours when peak $\log_{10}\rho\le0$; JS does not |
+| Contours in log mode | **Same rule** (tested): contour iff the *linear* density has a positive maximum |
 | In-plane axes for a **custom** normal | **Differ** (different Gram–Schmidt seed → in-plane rotation/reflection) |
 | In-plane axes for a/b/c presets | **Exact** |
 | Zero / near-zero custom normal | **Differ**: JS falls back to $(0,0,1)$ at $\lVert\mathbf{h}\rVert\le10^{-9}$; Python raises at $\le10^{-12}$. The app never hits the raise because it sends the already-normalized fallback |
@@ -1435,8 +1428,9 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
     and its accumulator. Structurally identical to the CPU loop, numerically equal to about
     $10^{-6}$–$10^{-5}$ relative ($2\times10^{-4}$ for a needle kernel) in a float32 emulation of the
     shader — fine for a picture, not a bit-for-bit guarantee, and no test runs a real GPU.
-11. **In log mode the Flask path can silently drop all contours** when the peak density is below 1
-    per unit fractional area, while the browser path draws them.
+11. **Contours need a positive linear density, nothing more.** Log scale changes the levels (equally
+    spaced in $\log_{10}\rho$), never whether contours are drawn; before 1.0 the Flask path dropped
+    all of them whenever the peak density was below 1 per unit fractional area.
 12. **The periodic wrap is exact only out to the margin $m$.** Images farther than $m$ from the cube
     are discarded, which truncates a cell-filling slab's kernel at $\approx10\sigma$ at the defaults
     and $\approx6\sigma$ at $f=0.15$ (Step 3). This applies to the SciPy path too.

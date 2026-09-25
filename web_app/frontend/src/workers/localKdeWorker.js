@@ -475,10 +475,14 @@ export const computeKde = async (payload) => {
         density = Array.from({ length: grid }, () => new Array(grid).fill(0));
     }
 
+    // Contours need positive density, judged on the linear values (as kde.py
+    // does): a log map whose peak is below 1 is still contoured.
+    let linearMax = -Infinity;
     let vmin = Infinity;
     let vmax = -Infinity;
     for (let y = 0; y < grid; y += 1) {
         for (let x = 0; x < grid; x += 1) {
+            linearMax = Math.max(linearMax, density[y][x]);
             if (logScale) density[y][x] = Math.log10(density[y][x] + 1e-12);
             vmin = Math.min(vmin, density[y][x]);
             vmax = Math.max(vmax, density[y][x]);
@@ -502,7 +506,7 @@ export const computeKde = async (payload) => {
         message,
         vmin: Number.isFinite(vmin) ? vmin : 0,
         vmax: Number.isFinite(vmax) ? vmax : 0,
-        contours: extractContours({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax }),
+        contours: linearMax > 0 ? extractContours({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax }) : [],
         center: zCenter,
         thickness,
         normal,

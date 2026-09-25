@@ -166,8 +166,12 @@ def _contour_segments(
     density: np.ndarray,
     n_levels: int,
 ) -> list[dict]:
-    """Extract contour polylines for a density field without rendering a figure."""
-    if n_levels <= 0 or not np.isfinite(density).any() or float(density.max()) <= 0:
+    """Extract contour polylines for a density field without rendering a figure.
+
+    ``density`` may be log-transformed, so no sign test here: whether there is
+    anything to contour is decided on the linear density by the caller.
+    """
+    if n_levels <= 0 or not np.isfinite(density).any():
         return []
 
     # contourpy ships with matplotlib; use it directly to avoid pyplot state.
@@ -588,10 +592,16 @@ def kde_slice(
                 kernel = _kernel_summary(kde.covariance, kde.cho_cov)
                 message = None
 
+    # Contour only a map with positive density, tested on the linear values:
+    # after log10 a smooth field whose peak is <= 1 per unit fractional area
+    # (common for oblique slices at bw >= 0.1) has a negative maximum and must
+    # still be contoured. The worker's guard is equivalent (its vmax > vmin is
+    # false only for the all-zero grid of a declined slab).
+    has_density = bool(np.nanmax(density) > 0) if density.size else False
     if log:
         density = np.log10(density + 1e-12)
 
-    contours = _contour_segments(grid_x, grid_y, density, n_levels)
+    contours = _contour_segments(grid_x, grid_y, density, n_levels) if has_density else []
 
     return {
         "density": density.tolist(),
