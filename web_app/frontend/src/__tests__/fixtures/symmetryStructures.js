@@ -77,6 +77,21 @@ export const STRUCTURES = {
     },
 };
 
+/**
+ * GaNb4Se8-type lacunar spinel, F-43m (#216): Ga 4a, Nb 16e, Se 16e ×2, in the 10.4 Å
+ * F-cubic cell. `gaShift` moves all four Ga along [111] (fractional), which lowers the
+ * symmetry to R3m (#160) — the low-temperature distortion of this family.
+ */
+export function lacunarSpinel(gaShift = 0) {
+    const xs = { Nb: 0.6036, Se1: 0.3667, Se2: 0.8639 };
+    const e16 = (x) => [[x, x, x], [-x, -x, x], [-x, x, -x], [x, -x, -x]];
+    const motif = [['Ga', gaShift, gaShift, gaShift]];
+    for (const [el, x] of [['Nb', xs.Nb], ['Se', xs.Se1], ['Se', xs.Se2]]) {
+        for (const [a, b, c] of e16(x)) motif.push([el, a, b, c]);
+    }
+    return { A: cubicCell(10.4), basis: centred(FCC, motif) };
+}
+
 /** Expand asymmetric-unit rows through coordinate-triplet functions, dropping duplicates. */
 export function orbits(ops, rows) {
     const basis = [];

@@ -8,7 +8,9 @@ import { describe, it, expect } from 'vitest';
 
 import { spaceGroupAtTolerance, symmetryLadder, findSpaceGroupOps } from '../symmetry.js';
 import { conventionalCell } from '../symmetryModel.js';
-import { demoStructure, shuffled, withNoise, STRUCTURES, at } from './fixtures/symmetryStructures.js';
+import {
+    demoStructure, shuffled, withNoise, STRUCTURES, at, closureDefects, lacunarSpinel,
+} from './fixtures/symmetryStructures.js';
 import { cellVectors } from './fixtures/spaceGroups.js';
 
 const ladderKey = (ladder) => ladder.map((b) => `${b.spaceGroup}[${b.from.toFixed(6)},${b.to.toFixed(6)}]`).join(' > ');
@@ -97,5 +99,49 @@ describe('lattice strain is measured on the atomic-position scale', () => {
         const ladder = symmetryLadder(A, basis, 1.0);
         expect(ladder[0].spaceGroup).toBe('P2/m');
         expect(ladder[ladder.length - 1].spaceGroup).toBe('Pm-3m');
+    });
+});
+
+describe('every reported operation set is a group', () => {
+    // A ladder rung or headline is a set of operations {R|t} kept because each one's
+    // residual is within the tolerance. With noise those residuals differ, so the kept
+    // set is an arbitrary subset of the true group unless closure is enforced.
+    const midpoints = (ladder) => ladder.map((b) => (b.from + b.to) / 2);
+
+    it('closes every rung of the bundled demo ladder', { timeout: 60000 }, () => {
+        const demo = demoStructure();
+        const A = conventionalCell(demo);
+        const ladder = symmetryLadder(A, demo.basis, 1.0);
+        expect(ladder[ladder.length - 1]).toMatchObject({ spaceGroup: 'F-43m', spaceGroupNumber: 216 });
+        for (const tol of midpoints(ladder)) {
+            const found = spaceGroupAtTolerance(A, demo.basis, tol);
+            expect(closureDefects(found.ops), `${found.spaceGroup} at ${tol.toFixed(4)} Å`).toHaveLength(0);
+        }
+    });
+
+    it('closes the headline of a noisy lacunar spinel at every tolerance', { timeout: 60000 }, () => {
+        const { A, basis } = withNoise(lacunarSpinel(), 0.02, 3);
+        for (const tol of [0.02, 0.04, 0.06, 0.08, 0.1, 0.15, 0.2]) {
+            const found = spaceGroupAtTolerance(A, basis, tol);
+            expect(closureDefects(found.ops), `${found.spaceGroup} at ${tol} Å`).toHaveLength(0);
+            expect(found.nSpace).toBe(found.ops.length);
+        }
+        expect(spaceGroupAtTolerance(A, basis, 0.2)).toMatchObject({ spaceGroup: 'F-43m', spaceGroupNumber: 216 });
+    });
+
+    it('reports the worst residual of the group it returns', () => {
+        const { A, basis } = withNoise(STRUCTURES.perovskite(), 0.01, 11);
+        const found = spaceGroupAtTolerance(A, basis, 0.2);
+        expect(found.maxResidual).toBeCloseTo(Math.max(...found.ops.map((o) => o.residual)), 12);
+    });
+
+    it('never lets the operation count fall as the tolerance loosens', { timeout: 60000 }, () => {
+        const { A, basis } = withNoise(lacunarSpinel(), 0.02, 3);
+        const ladder = symmetryLadder(A, basis, 1.0);
+        expect(ladder[0].from).toBe(0);
+        for (let i = 1; i < ladder.length; i += 1) {
+            expect(ladder[i].from).toBeCloseTo(ladder[i - 1].to, 12);
+            expect(ladder[i].nSpace).toBeGreaterThan(ladder[i - 1].nSpace);
+        }
     });
 });
