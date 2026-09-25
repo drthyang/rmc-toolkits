@@ -682,19 +682,20 @@ How the triple is resolved (`AutoStogPage.jsx::resolveEnforcement`,
   by default in every mode** (CLI `--enforce/--no-enforce` default `None` = on; `rmc-autoscale
   --help` states this precedence); only `--no-enforce` / an unchecked box / `enforce: false`
   turns it off.
-- `peak_rmin`, `peak_rmax`: taken from the `.inp` **only** when the user supplied no explicit
-  cutoff. A user-typed cutoff, and the `'auto'` path, both collapse the window to
+- `peak_rmin`, `peak_rmax`: taken from the `.inp` when the cutoff is the `.inp`'s own (CLI: no
+  `--enforce-cutoff`; page: the Cutoff field still holds the pre-filled `inp.peakCutoff`). A
+  different explicit cutoff, and the `'auto'` path, both collapse the window to
   `peak_rmin = peak_rmax = cutoff` — a flat replacement of everything below the cutoff.
 - The CLI exposes `--peak-window RMIN RMAX` (same semantics) and rejects
   `--no-enforce` combined with `--enforce-cutoff`/`--peak-window`. The browser has no
   peak-window control.
-- **Browser wrinkle:** because `selectSource` pre-fills the Cutoff field with `inp.peakCutoff`
-  (Step 8), `numberOr(form.enforceCutoff)` is *defined* whenever an `.inp` is loaded, so
-  `usingInpWindow` is false and the `.inp`'s `peak_rmin`/`peak_rmax` are **not** used — the
-  browser degenerates to a flat replacement where the CLI would keep the peak window. This is
-  invisible on the validation runs (where `peak_rmin > cutoff`, so both forms zero exactly
-  $r \le$ cutoff) and only bites when `peak_rmin < cutoff`. Clear the Cutoff field to get the
-  `.inp` window back.
+- **Pre-filled cutoff:** `selectSource` pre-fills the Cutoff field with `inp.peakCutoff`
+  (Step 8), so the page cannot tell a pre-filled value from a typed one; `autoScale.js::
+  resolveEnforcementDescriptor()` therefore keeps the `.inp`'s `peak_rmin`/`peak_rmax` whenever
+  the cutoff **equals** `inp.peakCutoff` (typing the same number back gives the same, classic,
+  result). Pre-1.0 the pre-filled value counted as user-typed and the page flattened a first-peak
+  window starting inside the cutoff (e.g. `2.7 2.3 3.1`: $[2.3, 2.7]$ Å set to
+  $-\langle b\rangle^2$) where the CLI kept it.
 
 **So the genuinely required inputs are:** an $S(Q)$ file, the $[Q_\mathrm{min}, Q_\mathrm{max}]$
 window, $\langle b\rangle^2$, and $\rho_0$ — where a **chemical composition alone supplies both
@@ -3646,12 +3647,13 @@ One deliberate mode-dependent override: for `mode === 'manual'` the amplitude cr
 forced to `'density'`, because a fixed-$(a,b)$ run never uses the criterion and a leftover
 `'fz'` selection would otherwise fail `makeConfig`'s validation for no reason.
 
-`resolveEnforcement(form, inp)` runs alongside and returns one of three things:
+`resolveEnforcement(form, inp)` (→ `resolveEnforcementDescriptor()` in `autoScale.js`, unit-tested
+in `autoScaleStogInp.test.js`) runs alongside and returns one of three things:
 `null` (checkbox off), the string `'auto'` (checkbox on, no cutoff resolvable — the worker
-enforces at the detected $r_0$), or
-`{cutoff, peakRmin, peakRmax}`. When the cutoff came from the stog.inp *and the user has not
-typed one*, `peakRmin`/`peakRmax` are the inp's first-peak window; otherwise both collapse to
-the cutoff (a flat replacement).
+enforces at the foot of the detected first shell), or
+`{cutoff, peakRmin, peakRmax}`. When the cutoff equals the stog.inp's `peakCutoff` (blank or
+still the pre-filled value), `peakRmin`/`peakRmax` are the inp's first-peak window; otherwise
+both collapse to the cutoff (a flat replacement).
 
 **Code:** `AutoStogPage.jsx` → `resolveConfig()`, `resolveEnforcement()`;
 `autoScale.js` → `makeConfig()`, `faberZiman()`, `parseFormula()`,
@@ -4125,7 +4127,7 @@ Two known gaps in the browser JSON, both harmless but worth stating:
 | Fit win min | `rFitMin` | rCutoff + 0.2 | Å | low-r window bottom |
 | Fit win max | `rFitMax` | $r_0$ − 0.25 (or rFitMin + 1.0) | Å | low-r window top |
 | Enforce low-r | (page-level) | on | — | classic stog ripple removal on the RMC files |
-| Cutoff | (page-level `enforceCutoff`) | stog.inp peak cutoff, else detected $r_0$ | Å | enforcement radius |
+| Cutoff | (page-level `enforceCutoff`) | stog.inp peak cutoff (with its first-peak window), else the foot of the detected first shell | Å | enforcement radius |
 | a / b | (manual mode) | stog.inp hand values when loaded | — | fixed correction, skips the fit |
 | — | `qTailFrac` | 0.15 | — | C1 tail = top 15 % of the Q window (no UI) |
 | — | `c2Weight` | 1.0 | — | relative weight of the low-r block (no UI) |
@@ -4174,13 +4176,11 @@ floating-point noise):
    fits), and then apply your $(a,b)$ with the estimated $\rho_0$.
 3. **Fixed-b fallback.** With an inp loaded, a typed `a` and a cleared `b`, the page falls
    back to the inp's `b`; the CLI with `--scale` and no `--offset` uses `b = 0`.
-4. **Enforcement window from a stog.inp.** Because the page prefills the Cutoff field from
-   `inp.peak_cutoff`, `resolveEnforcement()` treats the cutoff as user-supplied and collapses
-   the first-peak window to `peakRmin = peakRmax = cutoff`, whereas the CLI keeps the inp's
-   `peak_rmin`/`peak_rmax`. The zeroed set is *identical* whenever `peak_rmin ≥ cutoff` (the
-   case in every validation run, e.g. cutoff 2.48 with window 2.65–3.1); it differs only for
-   inputs whose first peak starts *below* the cutoff, where the browser zeroes a band the
-   Fortran/CLI would keep.
+4. **Enforcement window from a stog.inp.** The page keeps the inp's first-peak window while the
+   Cutoff field holds the pre-filled `inp.peakCutoff`, exactly like the CLI without
+   `--enforce-cutoff`. The one remaining difference: typing a cutoff *equal* to the inp's on the
+   page keeps the window, while `--enforce-cutoff` with that value on the CLI flattens it (the
+   page cannot distinguish a pre-filled value from a retyped one).
 5. **Python-only knobs.** `c2_bins` (binned C2 rows) and `c1_slope_nuisance` (linear tail
    drift term) exist in `ScalingConfig` but have no counterpart in `autoScale.js`. Their
    defaults are 0 / `False`, so default runs agree; a Python run that sets them cannot be

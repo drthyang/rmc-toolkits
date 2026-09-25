@@ -5,7 +5,7 @@
 // the browser engine — must agree with scaling_cli.stog_inp_closest_approach.
 
 import { describe, expect, it } from 'vitest';
-import { stogInpClosestApproach } from '../workers/autoScale';
+import { resolveEnforcementDescriptor, stogInpClosestApproach } from '../workers/autoScale';
 
 const inp = (peakCutoff, peakRmin, peakRmax) => ({ peakCutoff, peakRmin, peakRmax });
 
@@ -22,5 +22,29 @@ describe('stogInpClosestApproach (r0 from the stog.inp peak line)', () => {
 
   it('defers to detection when the line leaves no fit window (FeCoSn "1.0 0 0")', () => {
     expect(stogInpClosestApproach(inp(1.0, 0, 0), 1.0)).toBeNull();
+  });
+});
+
+describe('resolveEnforcementDescriptor (page enforcement, CLI precedence)', () => {
+  const inp59438 = { peakCutoff: 2.7, peakRmin: 2.3, peakRmax: 3.1 };
+
+  it('keeps the stog.inp first-peak window for the pre-filled cutoff', () => {
+    // selectSource pre-fills Cutoff with String(inp.peakCutoff); pre-fix the
+    // page then flattened [2.3, 2.7] to -<b>^2 where the CLI keeps it.
+    const prefilled = Number(String(inp59438.peakCutoff));
+    expect(resolveEnforcementDescriptor({ enforce: true, cutoff: prefilled }, inp59438))
+      .toEqual({ cutoff: 2.7, peakRmin: 2.3, peakRmax: 3.1 });
+    expect(resolveEnforcementDescriptor({ enforce: true, cutoff: undefined }, inp59438))
+      .toEqual({ cutoff: 2.7, peakRmin: 2.3, peakRmax: 3.1 });
+  });
+
+  it('a different typed cutoff is a flat replacement (like --enforce-cutoff)', () => {
+    expect(resolveEnforcementDescriptor({ enforce: true, cutoff: 2.5 }, inp59438))
+      .toEqual({ cutoff: 2.5, peakRmin: 2.5, peakRmax: 2.5 });
+  });
+
+  it('auto without a cutoff source, off when unchecked', () => {
+    expect(resolveEnforcementDescriptor({ enforce: true, cutoff: undefined }, null)).toBe('auto');
+    expect(resolveEnforcementDescriptor({ enforce: false, cutoff: 2.5 }, inp59438)).toBeNull();
   });
 });

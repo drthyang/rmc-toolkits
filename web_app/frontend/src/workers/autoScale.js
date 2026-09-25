@@ -1164,6 +1164,27 @@ export const stogInpClosestApproach = (inp, rCutoff) => {
   return candidate - R0_WINDOW_MARGIN > rCutoff + 0.2 ? candidate : null;
 };
 
+/**
+ * Enforcement descriptor for the Auto StoG page, with the CLI's precedence
+ * (scaling_cli._resolve_enforcement): null (off) | 'auto' (the worker
+ * enforces at the first-shell foot) | {cutoff, peakRmin, peakRmax}. The page
+ * pre-fills its Cutoff field with the loaded stog.inp's peak cutoff, so a
+ * cutoff equal to inp.peakCutoff keeps the inp's first-peak window (classic
+ * first_peak_zero semantics, as the CLI does without --enforce-cutoff); any
+ * other typed cutoff is a flat replacement below it.
+ */
+export const resolveEnforcementDescriptor = ({ enforce, cutoff }, inp) => {
+  if (!enforce) return null;
+  const value = cutoff ?? (inp ? inp.peakCutoff : undefined);
+  if (value === undefined || value === null) return 'auto';
+  const usingInpWindow = Boolean(inp) && value === inp.peakCutoff;
+  return {
+    cutoff: value,
+    peakRmin: usingInpWindow ? inp.peakRmin : value,
+    peakRmax: usingInpWindow ? inp.peakRmax : value,
+  };
+};
+
 export const readDatHeader = (text) => {
   const raw = {};
   for (const line of text.split(/\r?\n/)) {

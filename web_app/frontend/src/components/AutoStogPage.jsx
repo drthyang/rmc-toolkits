@@ -18,6 +18,7 @@ import {
   readDatHeader,
   readStogInp,
   readStogXy,
+  resolveEnforcementDescriptor,
   stogInpClosestApproach,
   writeStogXy,
 } from '../workers/autoScale';
@@ -153,17 +154,13 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
   return { config, wantEstimate };
 };
 
-const resolveEnforcement = (form, inp) => {
-  if (!form.enforce) return null;
-  const cutoff = numberOr(form.enforceCutoff) ?? (inp ? inp.peakCutoff : undefined);
-  if (cutoff === undefined) return 'auto'; // worker enforces at the first-shell foot
-  const usingInpWindow = inp && numberOr(form.enforceCutoff) === undefined;
-  return {
-    cutoff,
-    peakRmin: usingInpWindow ? inp.peakRmin : cutoff,
-    peakRmax: usingInpWindow ? inp.peakRmax : cutoff,
-  };
-};
+// 'auto' → the worker enforces at the first-shell foot. The Cutoff field is
+// pre-filled with the stog.inp's peak cutoff; while it still holds that value
+// the inp's first-peak window is kept (CLI parity).
+const resolveEnforcement = (form, inp) => resolveEnforcementDescriptor(
+  { enforce: form.enforce, cutoff: numberOr(form.enforceCutoff) },
+  inp,
+);
 
 const AutoStogPage = () => {
   const [sources, setSources] = useState([]); // uploaded {name, text}
