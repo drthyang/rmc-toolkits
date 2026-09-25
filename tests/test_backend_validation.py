@@ -469,6 +469,37 @@ class ScalingValidationTests(unittest.TestCase):
             with self.subTest(key=key, raw=raw):
                 self.assertBadRequest(self.manual(**{key: raw}), key)
 
+    def test_enforcement_window_numbers_are_validated(self):
+        # Parsed only when enforcement is on: a merge that fell back to a bare
+        # float() here would reopen the 200-with-NaN answer.
+        cases = [
+            ({"enforceCutoff": 1.0, "peakWindow": ["nan", 1]}, "peakWindow[0]"),
+            ({"enforceCutoff": 1.0, "peakWindow": [1, "x"]}, "peakWindow[1]"),
+            ({"enforceCutoff": "nan"}, "enforceCutoff"),
+            ({"enforceCutoff": float("inf")}, "enforceCutoff"),
+        ]
+        for overrides, fragment in cases:
+            with self.subTest(**{k: str(v) for k, v in overrides.items()}):
+                self.assertBadRequest(self.manual(enforce=True, **overrides), fragment)
+
+    def test_an_overflowing_result_is_a_bad_request_not_empty_curves(self):
+        # Finite but extreme manual values overflow float64: the series came
+        # back all-null over HTTP 200 (and /run would write them to disk).
+        for overrides in ({"a": 1e308, "b": 1e308}, {"b": 1e308}):
+            with self.subTest(**{k: str(v) for k, v in overrides.items()}):
+                self.assertBadRequest(self.manual(**overrides), "NaN or Infinity")
+        response = self.client.post(
+            "/api/scaling/run",
+            data=json.dumps({
+                "path": f"{self.RUN}/synth.dat", "qmin": 0.6, "qmax": 30, "rho0": self.RHO0,
+                "bAvgSq": self.B2, "r0": 2.65, "mode": "manual", "a": 1e308, "b": 1e308,
+                "enforce": False, "outDir": f"{self.RUN}/out",
+            }),
+            content_type="application/json",
+        )
+        self.assertBadRequest(response, "NaN or Infinity")
+        self.assertFalse((self.run_dir / "out").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

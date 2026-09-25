@@ -1258,6 +1258,26 @@ def _compute_scaling(path_str: str, config: ScalingConfig, mode: str, a: float, 
     return autoscale(q, sq, config, sigma=sigma)
 
 
+def _require_finite_scaling(result) -> None:
+    """A scaling result with NaN/Infinity is a ValueError (400), never data.
+
+    ``crop_sq`` drops non-finite input rows, so every output point comes from
+    finite data: a non-finite ``a``/``b`` or series value means finite but
+    extreme parameters (a manual ``a = b = 1e308``) overflowed float64. The
+    app's JSON provider would write those as ``null`` -- a 200 with empty
+    curves -- and /api/scaling/run would write them into the RMCProfile files.
+    """
+    arrays = (result.sq_scaled, result.sq_filtered, result.sq_ft, result.g_filtered,
+              result.gk, result.d_r, result.fk)
+    if not (math.isfinite(result.a) and math.isfinite(result.b)) or not all(
+        np.isfinite(array).all() for array in arrays
+    ):
+        raise ValueError(
+            f"the scaling result contains NaN or Infinity (a = {result.a:g}, b = {result.b:g}): "
+            "the scale or offset is too extreme for float64 arithmetic"
+        )
+
+
 def _scaling_request(payload: dict):
     inp, inp_path, data_path, header = _resolve_scaling_source(payload)
     config, warnings = _resolve_scaling_config(payload, inp, header)
@@ -1266,6 +1286,7 @@ def _scaling_request(payload: dict):
     mode, a, b = _resolve_scaling_mode(payload, inp)
     use_sigma = _payload_bool(payload, "useSigma", True)
     result = _cached_scaling(data_path, config, mode, a, b, use_sigma)
+    _require_finite_scaling(result)
     # The cached ScalingResult is shared by every identical request (and
     # request thread): annotate a per-request copy, never the cached object.
     from dataclasses import replace as _replace_result
@@ -1339,6 +1360,12 @@ def scaling_preview():
             _scaling_request(payload)
         )
         summary = diagnostics_summary(result, config)
+        sq_raw = (result.sq_scaled - result.b) / result.a
+        if not np.isfinite(sq_raw).all():
+            raise ValueError(
+                f"the scaling result contains NaN or Infinity (a = {result.a:g}): "
+                "the scale is too extreme for float64 arithmetic"
+            )
 
         gk_enforced = dr_enforced = None
         if enforcement is not None:
@@ -1393,7 +1420,7 @@ def scaling_preview():
             ),
             "series": {
                 "q": result.q.tolist(),
-                "sqRaw": ((result.sq_scaled - result.b) / result.a).tolist(),
+                "sqRaw": sq_raw.tolist(),
                 "sqScaled": result.sq_scaled.tolist(),
                 "sqFiltered": result.sq_filtered.tolist(),
                 "r": result.r.tolist(),
