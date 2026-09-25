@@ -422,3 +422,36 @@ describe('peak significance (look-elsewhere-corrected Poisson tail)', () => {
         expect(significance.filter((value) => value > 3).length).toBeLessThanOrEqual(1);
     });
 });
+
+// orientation.numerics.3, orientation.physics.7 — shared verbatim with
+// GOLDEN_MAP in tests/test_orientation_fixes.py.
+const GOLDEN_MAP = [
+    [6, 1, 60, { mapChiSquare: 800.1657022469657, mapDegreesOfFreedom: 361,
+        mapPValue: 2.594835912106325e-35, mapSignificance: 12.344903050139939 }],
+    [10, 2, 60, { mapChiSquare: 2596.980147082603, mapDegreesOfFreedom: 1001,
+        mapPValue: 5.119975741811708e-142, mapSignificance: 25.344856220908564 }],
+    [null, 0, 60, { mapChiSquare: 109.05527451398147, mapDegreesOfFreedom: 41,
+        mapPValue: 4.324724387217442e-08, mapSignificance: 5.353027939305108 }],
+    [10, 2, 0, { mapChiSquare: 206.08354289942974, mapDegreesOfFreedom: 1001,
+        mapPValue: 1.0, mapSignificance: -28.039678814235533 }],
+    [2, 0, 6, { mapChiSquare: 2.8616952082936087, mapDegreesOfFreedom: 41,
+        mapPValue: 1.0, mapSignificance: -8.344487440440679 }]
+];
+
+describe('map significance (Pearson chi-square)', () => {
+    it('matches the Python golden values', () => assertGolden(GOLDEN_MAP));
+
+    it('reads isotropic clouds as noise and a one-sided cloud as overwhelming', () => {
+        const gauss = makeRng(77);
+        const values = [];
+        for (let k = 0; k < 80; k += 1) {
+            values.push(orientationHistogram(isotropicUnits(gauss, 216), { frequency: 10, smoothing: 2, geometry: false }).mapSignificance);
+        }
+        expect(values.filter((value) => value > 2).length / values.length).toBeLessThanOrEqual(0.06);
+        expect(values.filter((value) => value > 3).length).toBeLessThanOrEqual(1);
+        const hemisphere = isotropicUnits(gauss, 1000).map(([x, y, z]) => [Math.abs(x), y, z]);
+        const oneSided = orientationHistogram(hemisphere, { frequency: 10, smoothing: 2, geometry: false });
+        expect(oneSided.significance).toBeLessThan(1.5);
+        expect(oneSided.mapSignificance).toBeGreaterThan(10);
+    });
+});

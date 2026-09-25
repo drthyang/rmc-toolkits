@@ -362,8 +362,8 @@ genuine $1.5\times$ lobe stands out and large enough that noise does not manufac
 
 **The failure mode it guards.** Push $\nu$ past the data and every cell holds 0 or 1 points.
 The map becomes Poisson confetti — and confetti on a sphere looks exactly like structure to the
-eye. This is the single easiest way to over-read this kind of plot, which is also why `zScore`
-and `significance` are computed and displayed.
+eye. This is the single easiest way to over-read this kind of plot, which is also why calibrated
+tests (`peakSignificance`, `mapSignificance`, §6.3) are computed and displayed.
 
 **Pinned in both suites.** `tests/test_orientation.py` and `orientation.test.js` pin
 `recommendedFrequency(774) == 2`, `(300) == 1`, `(12000) == 9`; `tests/test_orientation_fixes.py`
@@ -882,12 +882,44 @@ counts per cell) 8 and 11 sites exceed 2σ and 1 and 3 exceed 3σ — real lobes
 once the cells hold enough atoms. The per-cell hover value stays the local $z_m$ and is labelled
 "local z".
 
-**Whole-map summary.** Also reported is
+**The map test** (`mapChiSquare`, `mapDegreesOfFreedom`, `mapPValue`, `mapSignificance`). The
+whole-map question — is the direction distribution isotropic at all? — is Pearson's
+goodness-of-fit test on the raw counts:
 
-$$\texttt{significance} \;=\; \sqrt{\tfrac{1}{C}\textstyle\sum_m z_m^2}\ \ [\sigma],$$
+$$X^2 \;=\; \sum_m \frac{(n_m - e_m)^2}{e_m} \;=\; \sum_m z_m^2 ,
+\qquad X^2 \;\sim\; \chi^2_{C-1} \ \text{under isotropy},$$
 
-the RMS $z$. $\approx 1$ means the entire pattern is consistent with pure counting noise;
-well above 1 means real directional structure.
+(one degree of freedom is lost because $\sum_m n_m = N$ is fixed),
+$\texttt{mapPValue} = Q\big(\tfrac{C-1}{2}, \tfrac{X^2}{2}\big)$ and
+$\texttt{mapSignificance} = \Phi^{-1}(1 - \texttt{mapPValue})$, with the same two-tail evaluation
+and $10^{-300}$ floor as the peak test. A negative deviate means a map *more* uniform than
+counting noise.
+
+*What it replaces.* Before the 1.0 audit the strip printed `significance`
+$= \sqrt{\tfrac1C\sum_m z_m^2} = \sqrt{X^2/C}$ with a σ unit. Under the null that RMS is
+$1 \pm 1/\sqrt{2C}$ — $1.00 \pm 0.02$ at $\nu = 10$ — so it is not in units of σ at all: 1.05 is
+already ≈ 2.3σ, 1.10 ≈ 4.4σ, and a cloud with **every atom in one hemisphere** (1000 copies,
+$\nu = 10$) printed "1.4σ" although it is ≳ 20σ from isotropy. The field is still returned under
+its old name for compatibility (the legacy RMS $z$); the UI no longer shows it.
+
+*Calibration, measured* on exactly isotropic clouds (4000 per row; nominal 2.28 % / 0.135 %):
+
+| $N$ | $\nu$ | per cell | mean, sd of `mapSignificance` | $P(> 2)$ | $P(> 3)$ |
+|---|---|---|---|---|---|
+| 216 | 10 (UI default) | 0.22 | −0.01, 1.00 | 2.6 % | 0.25 % |
+| 1000 | 10 (UI default) | 1.0 | 0.02, 0.99 | 2.4 % | 0.18 % |
+| 1000 | 2 (Auto) | 23.8 | 0.00, 1.02 | 2.7 % | 0.22 % |
+| 216 | 1 (Auto) | 18 | −0.02, 0.99 | 2.4 % | 0.05 % |
+| 5000 | 16 | 1.95 | 0.00, 1.01 | 2.7 % | 0.18 % |
+| 216 | 24 | 0.04 | −0.01, 1.10 | 4.4 % | 0.75 % |
+
+With $\gtrsim 1$ atom per cell the $\chi^2_{C-1}$ reference is accurate. In the sparse regime the
+upper tail runs heavy: the mean of $X^2$ is exactly $C - 1$ for any $N$, but its variance is
+$2(C-1) + \big(\sum_m 1/p_m - C^2 - 2C + 2\big)/N$ (Haldane; $p_m = \Omega_m/4\pi$), inflated by
+the $\pm 12\,\%$ area spread when $N \ll C$, and its skewness is that of the pair-coincidence
+count rather than of $\chi^2$. At the UI default with 216 copies a pure-noise map therefore
+exceeds 3σ about twice as often as nominal (0.25–0.3 %), and over-binning to $\nu = 24$ makes it
+5×. Read the map test on *Auto* resolution when in doubt.
 
 #### 6.4 Neighbour smoothing
 
@@ -1022,7 +1054,7 @@ $$3\sqrt{\frac{C}{\pi N}} < 1 \iff N > \frac{9C}{\pi} .$$
 
 Measured, to make the failure concrete: a **perfectly one-sided** 216-point cloud at
 $\nu = 10$ reports `usedPoints = 216`, $\mathcal{A} = 1.000$ (its maximum),
-$\mathcal{A}_{\text{null}} = 1.215$, flag **False**, and `significance` $= 1.35\sigma$ — the page
+$\mathcal{A}_{\text{null}} = 1.215$, flag **False**, and the then-displayed legacy `significance` $= 1.35\sigma$ — the page
 reads a maximally asymmetric cloud as consistent with noise. The same cloud on *Auto*
 ($\nu = 1$) gives $\mathcal{A} = 0.991$, $\mathcal{A}_{\text{null}} = 0.133$, flag **True**.
 **So the antipodal readout, exactly like the map itself, must be read on Auto resolution for
@@ -1180,7 +1212,9 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `peakCount`, `peakExpected` | int / float | — | raw count and isotropic expectation $e$ of the peak cell | no |
 | `peakLocalPValue`, `peakPValue` | probability | — | exact Poisson tail $P(X \ge n \mid e)$; the same Šidák-corrected over the $C$ cells (§6.3) | no |
 | `peakSignificance` | $\sigma$ (one-sided normal deviate) | — | $\Phi^{-1}(1 - \texttt{peakPValue})$, $\lvert z\rvert \le 37.04$ | yes |
-| `significance` | $\sigma$ | — | RMS $z$ over cells, raw counts | yes |
+| `significance` | dimensionless | — | **legacy** RMS of the local $z$ over cells ($1 \pm 1/\sqrt{2C}$ for noise) — not a σ level | no (shown until the 1.0 audit) |
+| `mapChiSquare`, `mapDegreesOfFreedom` | float / int | — | Pearson $X^2 = \sum_m z_m^2$ and $C - 1$ (§6.3) | in the InfoBadge |
+| `mapPValue`, `mapSignificance` | probability / $\sigma$ | — | $\chi^2_{C-1}$ upper tail of $X^2$ and its one-sided normal deviate | `mapSignificance` |
 | `recommendedFrequency` | int | — | what Auto would have chosen | no |
 | `referenceNumber`, `element`, `siteFractional` | int / str / 3 fractional | — | site tag added by `site_orientation_histogram`; `siteFractional` is $\mathrm{mod}(\text{site mean}\times\text{supercell},\,1)$, i.e. the site's mean position reduced into one unit cell ([pca_kde.py:172](../../rmc_toolkits/pca_kde.py)) | **no** — the panel header's element and site number come from `selectedEllipsoid` (the `/api/pca/sites` payload), not from this result; `siteFractional` here is read by nothing (the site panel reads `site.siteFractional` from the sites payload instead) |
 | `source` | str | — | Flask only: resolved `.rmc6f` path | no |
@@ -1188,8 +1222,8 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 
 **Smoothed vs raw, in one line.** Smoothed: `mass`, `density`, `enhancement`, `vmin`, `vmax`,
 `cellMeanAmplitude`, `peakCell`, `peakEnhancement`. Raw: `counts`, `expected`, `zScore`,
-`peakZScore`, the whole peak test (`peakCount` … `peakSignificance`), `significance`,
-`emptyFraction`, `antipodalAsymmetry`. Two consequences worth
+`peakZScore`, the whole peak test (`peakCount` … `peakSignificance`), `significance`, the map
+test (`mapChiSquare` … `mapSignificance`), `emptyFraction`, `antipodalAsymmetry`. Two consequences worth
 naming: with smoothing on, `peakCell` (smoothed argmax) and `peakZScore` (raw $z$ *at* that cell)
 describe different populations; and `emptyFraction` does **not** shrink when smoothing is applied,
 even though after one pass essentially every cell holds mass.
@@ -2111,7 +2145,7 @@ isotropic expectation.
 | `peak N.NN× at [x, y, z] · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakTieCount`, `peakSignificance` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction; and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 1.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
 | `anisotropy N.NN` | `orientationAnisotropy` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue. $T = I/3$ for a uniform sphere, so the value is **0 for isotropic, 2 for a perfect single axis**. Computed from the vectors, not the bins, so it is resolution-independent. | 2 dp |
 | `± asymmetry N.NN (noise floor N.NN)` | `antipodalAsymmetry`, `antipodalAsymmetryNull` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The floor is the level pure Poisson noise alone produces, $\sqrt{C/(\pi N)}$, from $\mathbb E\lvert X-Y\rvert \approx 2\sqrt{m/\pi}$ for two iid Poisson($m$) cells. | both 2 dp |
-| `map significance N.Nσ` | `significance` | $\sqrt{\big\langle z_c^2 \big\rangle_c}$ with $z_c = (n_c - e_c)/\sqrt{e_c}$ — the RMS per-cell Poisson $z$ against the isotropic null. **≈1 means the whole map is consistent with counting noise**; well above 1 means real directional structure. | 1 dp |
+| `map significance N.Nσ` | `mapSignificance` (InfoBadge also prints `mapChiSquare`, `mapDegreesOfFreedom`) | Pearson's $X^2 = \sum_c z_c^2$, $z_c = (n_c - e_c)/\sqrt{e_c}$, against $\chi^2_{C-1}$, as a one-sided normal deviate (engine §6.3); "not significant" when $\le 0$. Until the 1.0 audit this slot printed the RMS of $z_c$ with a σ unit, whose noise value is $1 \pm 1/\sqrt{2C}$ — "1.4σ" for a cloud with every atom in one hemisphere | σ 1 dp |
 
 The only *client-side* logic in the strip is the red flag:
 
@@ -2729,10 +2763,12 @@ returns **ν = 2** (42 cells). At ν = 10 the expected count per cell is ≈ 1. 
 
 * The colour field is only legible because of the smoothing; the raw map at ~1 count/cell is Poisson
   confetti. Turning smoothing to 0 at the default ν shows that directly.
-* Per-cell `zScore` and the `map significance` (RMS of z) are computed from raw counts against
-  $\text{expected} \approx 1$, so `significance` sits near 1 (its pure-noise value) unless the
-  anisotropy is strong. The readout is **resolution-dependent** and is not comparable between two
-  maps at different ν.
+* Per-cell `zScore` and the map test are computed from raw counts against
+  $\text{expected} \approx 1$ or less. The calibrated `map significance` is valid there, but with
+  under one atom per cell its $\chi^2$ reference runs slightly heavy (pure noise exceeds 3σ about
+  twice as often as nominal, engine §6.3), and a smooth real anisotropy spread over a thousand cells
+  has little power against a thousand degrees of freedom. The readout is **resolution-dependent**
+  and is not comparable between two maps at different ν.
 * **The ± asymmetry flag can be unreachable.** The null floor is
   $\text{null} = \sqrt{C/(\pi N)}$ with $C$ cells and $N$ surviving vectors, and the UI flags red only
   when $\text{asymmetry} > 3\,\text{null}$. But `antipodalAsymmetry` is bounded above by 1 by

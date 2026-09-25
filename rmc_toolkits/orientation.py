@@ -821,6 +821,17 @@ def orientation_histogram(
     peak = int(tied[0])
     peak_test = _peak_significance(int(counts[peak]), float(expected[peak]), cell_count)
 
+    # Whole-map test: Pearson's X^2 = sum z^2 against chi^2 with C - 1 degrees
+    # of freedom (the counts are multinomial with N fixed), as a one-sided
+    # normal deviate. The RMS of z ("significance") is not a sigma level: its
+    # null is 1 +/- 1/sqrt(2C).
+    chi_square = float(np.sum(z_score**2))
+    degrees_of_freedom = cell_count - 1
+    map_p_value = float(gammaincc(degrees_of_freedom / 2.0, chi_square / 2.0))
+    map_significance = _normal_deviate(
+        map_p_value, float(gammainc(degrees_of_freedom / 2.0, chi_square / 2.0))
+    )
+
     result = {
         "frequency": int(tiling.frequency),
         "cellCount": cell_count,
@@ -875,9 +886,14 @@ def orientation_histogram(
         "peakLocalPValue": peak_test["local"],
         "peakPValue": peak_test["corrected"],
         "peakSignificance": peak_test["deviate"],
-        # How far the map departs from isotropy overall, in units of the
-        # Poisson noise floor: ~1 means the structure is consistent with noise.
+        # Legacy whole-map summary: the RMS of the local z (1 +/- 1/sqrt(2C)
+        # for pure noise). NOT a sigma level -- use mapSignificance.
         "significance": float(np.sqrt(np.mean(z_score**2))),
+        # Pearson's chi-square test of isotropy over all cells.
+        "mapChiSquare": chi_square,
+        "mapDegreesOfFreedom": int(degrees_of_freedom),
+        "mapPValue": map_p_value,
+        "mapSignificance": map_significance,
         "recommendedFrequency": recommended_frequency(used, target_per_cell=target_per_cell),
     }
     if geometry:

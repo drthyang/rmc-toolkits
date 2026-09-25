@@ -420,5 +420,69 @@ GOLDEN_PEAK = {
 }
 
 
+def _hemisphere_cloud(rng, n):
+    u = _isotropic_units(rng, n)
+    u[:, 0] = np.abs(u[:, 0])
+    return u
+
+
+class MapSignificanceTests(unittest.TestCase):
+    """orientation.numerics.3, orientation.physics.7.
+
+    'map significance N.N sigma' was the RMS of the per-cell z: its null is
+    1.00 +/- 1/sqrt(2C) (0.02 at the UI default), not a sigma level, so 1.1
+    meant ~4 sigma and a cloud with every atom in one hemisphere printed
+    '1.4 sigma'. mapSignificance is Pearson's X^2 = sum z^2 against chi^2 with
+    C-1 degrees of freedom, as a one-sided normal deviate.
+    """
+
+    def test_value_is_the_pearson_chi_square_tail(self):
+        from scipy.stats import chi2, norm
+
+        result = orientation_histogram(golden_cloud(), frequency=6, geometry=False)
+        z = np.asarray(result["zScore"])
+        self.assertAlmostEqual(result["mapChiSquare"] / float(np.sum(z * z)), 1.0, places=12)
+        self.assertEqual(result["mapDegreesOfFreedom"], result["cellCount"] - 1)
+        p = chi2.sf(result["mapChiSquare"], result["cellCount"] - 1)
+        self.assertAlmostEqual(result["mapPValue"] / p, 1.0, places=9)
+        self.assertAlmostEqual(result["mapSignificance"], norm.isf(p), places=8)
+
+    def test_isotropic_null_reads_as_noise_at_the_ui_defaults(self):
+        rng = np.random.default_rng(77)
+        for n in (216, 1000):
+            values = np.array([
+                orientation_histogram(_isotropic_units(rng, n), frequency=10, smoothing=2, geometry=False)["mapSignificance"]
+                for _ in range(150)
+            ])
+            self.assertLess(abs(values.mean()), 0.3, msg=f"N={n}")
+            self.assertLessEqual(np.mean(values > 2), 0.06, msg=f"N={n}")
+            self.assertLessEqual(np.mean(values > 3), 0.02, msg=f"N={n}")
+
+    def test_a_one_sided_cloud_is_overwhelmingly_significant(self):
+        rng = np.random.default_rng(5)
+        result = orientation_histogram(_hemisphere_cloud(rng, 1000), frequency=10, smoothing=2, geometry=False)
+        # The old RMS readout printed this as '1.4 sigma'.
+        self.assertLess(result["significance"], 1.5)
+        self.assertGreater(result["mapSignificance"], 10.0)
+
+    def test_golden_values_shared_with_the_js_engine(self):
+        assert_golden(self, GOLDEN_MAP)
+
+
+# Shared verbatim with GOLDEN_MAP in orientationFixes.test.js.
+GOLDEN_MAP = {
+    (6, 1, 60): {"mapChiSquare": 800.1657022469657, "mapDegreesOfFreedom": 361,
+                 "mapPValue": 2.594835912106325e-35, "mapSignificance": 12.344903050139939},
+    (10, 2, 60): {"mapChiSquare": 2596.980147082603, "mapDegreesOfFreedom": 1001,
+                  "mapPValue": 5.119975741811708e-142, "mapSignificance": 25.344856220908564},
+    (None, 0, 60): {"mapChiSquare": 109.05527451398147, "mapDegreesOfFreedom": 41,
+                    "mapPValue": 4.324724387217442e-08, "mapSignificance": 5.353027939305108},
+    (10, 2, 0): {"mapChiSquare": 206.08354289942974, "mapDegreesOfFreedom": 1001,
+                 "mapPValue": 1.0, "mapSignificance": -28.039678814235533},
+    (2, 0, 6): {"mapChiSquare": 2.8616952082936087, "mapDegreesOfFreedom": 41,
+                "mapPValue": 1.0, "mapSignificance": -8.344487440440679},
+}
+
+
 if __name__ == "__main__":
     unittest.main()

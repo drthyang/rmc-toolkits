@@ -867,6 +867,11 @@ export const orientationHistogram = (vectors, options = {}) => {
         }
     }
     const peakTest = peakSignificance(counts[peak], expected[peak], cellCount);
+
+    // Whole-map test: Pearson's X^2 = sum z^2 vs chi^2 with C - 1 degrees of
+    // freedom, as a one-sided normal deviate. Mirrors the Python engine.
+    const degreesOfFreedom = cellCount - 1;
+    const mapTails = regularizedGamma(degreesOfFreedom / 2, zSquares / 2);
     let amplitudeSum = 0;
     let amplitudeSquares = 0;
     keptAmplitude.forEach((value) => { amplitudeSum += value; amplitudeSquares += value * value; });
@@ -918,7 +923,13 @@ export const orientationHistogram = (vectors, options = {}) => {
         peakLocalPValue: peakTest.local,
         peakPValue: peakTest.corrected,
         peakSignificance: peakTest.deviate,
+        // Legacy RMS of the local z (1 +/- 1/sqrt(2C) for noise) -- NOT a
+        // sigma level; the calibrated readout is mapSignificance.
         significance: Math.sqrt(zSquares / cellCount),
+        mapChiSquare: zSquares,
+        mapDegreesOfFreedom: degreesOfFreedom,
+        mapPValue: mapTails.upper,
+        mapSignificance: normalDeviate(mapTails.upper, mapTails.lower),
         recommendedFrequency: recommendedFrequency(used, { targetPerCell }),
         browserOrientation: true
     };

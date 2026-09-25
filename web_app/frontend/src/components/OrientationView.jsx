@@ -616,12 +616,15 @@ export default function OrientationView({
                                 </InfoBadge>
                             </span>
                             <span className="orient-stat">
-                                map significance <b>{numberFormat(result.significance, 1)}σ</b>
+                                map significance <b>{sigmaFormat(result.mapSignificance)}</b>
                                 <InfoBadge label="About the map significance" align="end">
                                     <p>
-                                        RMS of the per-cell Poisson z-scores against the isotropic null:
-                                        ≈1 means the pattern is consistent with pure counting noise;
-                                        well above 1 means real directional structure.
+                                        Pearson&apos;s χ² of the raw cell counts against an isotropic
+                                        site (χ² = {numberFormat(result.mapChiSquare, 0)} on{' '}
+                                        {result.mapDegreesOfFreedom} degrees of freedom), as a one-sided
+                                        normal deviate. Pure counting noise stays below 2σ about 97% of
+                                        the time; with fewer than ~1 atom per cell the tail runs slightly
+                                        heavy, so prefer Auto resolution.
                                     </p>
                                 </InfoBadge>
                             </span>
