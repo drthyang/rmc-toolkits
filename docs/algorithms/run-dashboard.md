@@ -2326,7 +2326,7 @@ mode and whenever a local run folder is selected.
 | $\mathbf t$ | fractional translation part | dimensionless |
 | $\tau$ (`tol`, `symTol`) | Cartesian atomic-position tolerance for symmetry acceptance | Å |
 | $\varrho$ (`residual`) | worst-site Cartesian mapping error of one operation | Å |
-| $\epsilon_G$ (`metricTol`) | *relative* tolerance on the metric-preservation test | dimensionless |
+| $\tau_L$ (`latticeTol`) | Cartesian tolerance on the lattice strain of a point operation (default $\tau$) | Å |
 
 ---
 
@@ -2645,7 +2645,8 @@ built on a primitive cell, or on a non-standard setting, the finder analyses tha
 
 #### Step 7. Lattice point operations: integer automorphisms of the metric
 
-**Input**: $A$ (Å), relative tolerance $\epsilon_G$ (`metricTol`, default $10^{-2}$).
+**Input**: $A$ (Å), Cartesian lattice tolerance $\tau_L$ (`latticeTol`, Å; default: the pass
+tolerance $\tau$).
 
 The metric tensor is built explicitly,
 
@@ -2662,15 +2663,33 @@ enumerates candidates **exhaustively**:
 - Every $3\times3$ matrix with entries drawn from $\{-1,0,1\}$: $3^9 = 19\,683$ patterns, iterated
   as a base-3 counter over `code = 0 … 19682`.
 - Keep those with $\det R \in \{+1,-1\}$ — **6960** of the 19 683 (verified by direct enumeration).
-- Keep those satisfying $R^{\mathsf T}GR = G$ **componentwise** within an absolute threshold
+- Keep those whose **Cartesian lattice strain** is at most $\tau_L$.
 
-$$\varepsilon = \epsilon_G \cdot \tfrac{1}{3}\operatorname{tr}G = \epsilon_G\cdot\tfrac13\big(a_1^2+a_2^2+a_3^2\big)\ \ [\text{Å}^2]$$
+**Lattice strain** (`latticeStrain()`). Used as if it were an isometry, $R$ acts on Cartesian
+vectors as $M = A^{\mathsf T}RA^{-\mathsf T}$, whose Green strain is
 
-  (the `|| 1` guard makes the scale 1 if the trace is 0).
+$$E=\tfrac12\big(M^{\mathsf T}M-I\big)=\tfrac12\,A^{-1}DA^{-\mathsf T},\qquad D = R^{\mathsf T}GR-G\ [\text{Å}^2].$$
 
-The surviving set is the **holohedry of the lattice in the conventional direct basis**. Verified by
-enumeration: a cubic metric ($a=10$ Å) yields exactly 48 operations; a primitive hexagonal metric
-($a=b=5$ Å, $c=8$ Å, $\gamma=120°$) yields exactly 24, at $\epsilon_G = 10^{-2}$.
+The cell edge $\mathbf a_i = A^{\mathsf T}\mathbf e_i$ is displaced by $|E\mathbf a_i| = \tfrac12|A^{-1}D\mathbf e_i|$,
+and the strain of $R$ is the largest of the three,
+
+$$\varrho_L(R) = \max_i\ \tfrac12\,\big|A^{-1}D\,\mathbf e_i\big|\quad[\text{Å}].$$
+
+It is 0 for an exact lattice symmetry and is on the **same Å scale as an atomic-position residual**
+(Step 9). It is not an absolute threshold on $D$ scaled by the mean squared edge, so a long $c$ axis
+does not loosen the test on $a$ and $b$ (a 2.8 % $a/b$ splitting in a cell with $c = 20$ Å is a
+0.14 Å strain whatever $c$ is). A `NaN` lattice gives `NaN` strain and every $R$ is rejected.
+
+Each surviving $R$ carries its strain into the operation's residual: $\varrho = \max(\varrho_\text{atoms},
+\varrho_L)$ (Step 9). So a homogeneous strain of a higher-symmetry cell whose atoms still sit at
+parent-compatible *fractional* coordinates is no longer invisible: a perovskite with $c/a = 1.004$
+(0.016 Å) reads `P4/mmm` below 0.016 Å and `Pm-3m` above it, and the cubic rung of the ladder starts
+at ≈ 0.016 Å. Because the accepted set of lattice operations need not compose (two operations that
+each strain the cell by $\le\tau_L$ can compose to one that strains it by more), closure is not
+assumed here: it is enforced on the final operation set (Step 11).
+
+Verified by enumeration: a cubic metric ($a=10$ Å) yields exactly 48 operations; a primitive
+hexagonal metric ($a=b=5$ Å, $c=8$ Å, $\gamma=120°$) yields exactly 24.
 
 **Why $\{-1,0,1\}$ suffices.** In a *conventional crystallographic setting*, the matrix of every
 point operation expressed in the direct basis has entries in $\{-1,0,1\}$. This holds for cubic,
@@ -2692,9 +2711,9 @@ search. The finder does **not** attempt cell reduction (Niggli/Delaunay) first.
 
 **Output**: an array of integer $3\times3$ matrices (row-major), typically 2–48 entries.
 
-**Code**: `symmetry.js` → `metricTensor()`, `det3()`, `conjugate()`, `latticePointOps()`.
-Note: `latticePointOps` documents a default `tol = 1e-3`, but **every call site in the app passes
-$10^{-2}$** (`findSpaceGroupOps(..., metricTol = 1e-2)`), so $10^{-2}$ is the effective default.
+**Code**: `symmetry.js` → `metricTensor()`, `det3()`, `inv3()`, `conjugate()`, `latticeStrain()`,
+`latticeCandidates()`, `latticePointOps()` (the exported wrapper, default $\tau_L = 0.01$ Å). The
+finder passes $\tau_L = \min(\texttt{latticeTol}, \tau)$ with `latticeTol` defaulting to $\tau$.
 
 #### Step 8. Candidate translations
 
@@ -2922,7 +2941,7 @@ that composing two accepted operations yields a third accepted operation.
 
 #### Step 12. The reported space group at the selected tolerance
 
-`spaceGroupAtTolerance(A, basis, τ, metricTol)` produces the headline of the Detected SG card:
+`spaceGroupAtTolerance(A, basis, τ, latticeTol)` produces the headline of the Detected SG card:
 
 1. Run one full detection pass (Steps 7–9) at $\tau' = \max(\tau, 10^{-3})$ Å.
 2. Collect the distinct residual values $\le \tau + 10^{-9}$ and sort them **descending**.
@@ -2965,10 +2984,10 @@ One piece of dead code worth naming for anyone reading along: `findSpaceGroupOps
 
 #### Step 13. The tolerance ladder
 
-`symmetryLadder(A, basis, tolMax, metricTol)` builds the coloured brick strip. Crucially it does
+`symmetryLadder(A, basis, tolMax, latticeTol)` builds the coloured brick strip. Crucially it does
 **one** detection pass, at the loosest tolerance, and then *thresholds*:
 
-1. `full = findSpaceGroupOps(A, basis, tolMax, metricTol)` — every candidate operation with its
+1. `full = findSpaceGroupOps(A, basis, tolMax, latticeTol)` — every candidate operation with its
    residual, at $\tau = $ `tolMax` (the app passes **1.0 Å**; the function's own default of 1.5 Å is
    never used).
 2. `thresholds` = the sorted distinct residual values, ascending. These are the only tolerances at
@@ -3135,8 +3154,8 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 | `tol` | `findSpaceGroupOps()` | `0.1` | Å | never used from the app (callers always pass) |
 | `tolMax` | `toleranceLadder()` (called with `1.0`) | `1.0` | Å | loosest tolerance the ladder explores |
 | `tolMax` | `symmetryLadder()` signature | `1.5` | Å | never used (callers pass `1.0`) |
-| `metricTol` ($\epsilon_G$) | `findSpaceGroupOps`, `symmetryLadder`, `spaceGroupAtTolerance` | `1e-2` | dimensionless | relative tolerance on $R^{\mathsf T}GR=G$; absolute threshold $=\epsilon_G\cdot\tfrac13\operatorname{tr}G$ Å². **Never forwarded** by `symmetryModel.js`, so the default is hard-wired app-wide |
-| `tol` | `latticePointOps()` signature | `1e-3` | dimensionless | documented default, **never reached** from the app |
+| `latticeTol` ($\tau_L$) | `findSpaceGroupOps`, `symmetryLadder`, `spaceGroupAtTolerance` | $\tau$ (the pass tolerance) | Å | largest Cartesian lattice strain $\varrho_L(R)$ of an admitted point operation (Step 7); the strain is also a floor on that operation's residual. Not forwarded by `symmetryModel.js`, so it follows $\tau$ |
+| `tol` | `latticePointOps()` signature | `0.01` | Å | exported wrapper only; the finder calls `latticeCandidates()` with $\tau_L$ |
 | `tol` | `siteOrbits()` signature | `0.1` | Å | never used (`describeSymmetry` always passes `symTol`) |
 | `tolFrac` | `classifyOperations()` signature | `0.02` | cell fractions | never used (all callers pass `tol / meanEdge(A)`) |
 | centering match tolerance | `matchCentering()` | `0.1` | cell fractions | per-component match to a Bravais centering vector |
@@ -3173,15 +3192,13 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 - **`R` centering is unreachable.** `matchCentering()` only tests F, I, A, B, C, so a rhombohedral
   structure in hexagonal axes will report `P`-something. The `R3`/`R-3m` rows in `SG_NUMBER` and the
   `R` in `ALLOWED_CENTERING['trig']` are dead.
-- **The metric tolerance is loose.** With $\epsilon_G=10^{-2}$ the absolute threshold on
-  $R^{\mathsf T}GR-G$ is $10^{-2}\cdot\tfrac13\operatorname{tr}G$ Å² — about 1 Å² for a 10 Å cell.
-  A pseudo-cubic cell with a ~0.5 % axial difference is therefore treated as cubic by the lattice
-  search. The lattice's *metric* symmetry is admitted generously; the atom-position test is what
-  actually gates the answer. **There is no knob for this**: `symmetryModel.js` never forwards a
-  `metricTol` (`spaceGroupAtTolerance(A, basis, tol)` and `symmetryLadder(A, basis, tolMax)` are both
-  called without it), so $10^{-2}$ is hard-wired. The only user-adjustable parameter on this page is
-  $\tau$, and the only way to change it is clicking a ladder brick (which sets $\tau$ to the brick
-  midpoint) — there is no numeric input.
+- **Lattice strain is measured on the atom scale.** A point operation is admitted when the Cartesian
+  displacement it implies for the cell edges, $\varrho_L$ (Step 7), is within $\tau$, and that
+  strain is a floor on the operation's residual. A strained cell therefore reads as the lower
+  symmetry below its strain and as the higher one above it, and the ladder shows where. The strain
+  is measured on the three cell edges; an atom far from the origin of a large cell can be displaced
+  more by the same strain than an edge-length figure suggests. There is still no separate knob: the
+  only user-adjustable parameter on this page is $\tau$, set by clicking a ladder brick.
 - **The answer is tolerance-dependent by design.** An RMC configuration is disordered; the basis is
   a circular mean over supercell copies, and residual displacements of 0.05–0.5 Å are normal. There
   is no "correct" $\tau$ — the ladder exists precisely because the reported group is a function of

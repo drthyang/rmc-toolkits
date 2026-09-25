@@ -63,30 +63,68 @@ function conjugate(R, G) {
   return M;
 }
 
+/** Inverse of a 3×3 matrix (NaN/Infinity entries for a singular one). */
+export function inv3(m) {
+  const d = det3(m);
+  const c = (i, j) => {
+    const r0 = i === 0 ? 1 : 0, r1 = i === 2 ? 1 : 2, s0 = j === 0 ? 1 : 0, s1 = j === 2 ? 1 : 2;
+    return ((i + j) % 2 ? -1 : 1) * (m[r0][s0] * m[r1][s1] - m[r0][s1] * m[r1][s0]);
+  };
+  return [[c(0, 0) / d, c(1, 0) / d, c(2, 0) / d], [c(0, 1) / d, c(1, 1) / d, c(2, 1) / d], [c(0, 2) / d, c(1, 2) / d, c(2, 2) / d]];
+}
+
 /**
- * Lattice point operations: integer R (entries in {-1,0,1}, |det|=1) with RᵀGR=G.
- * `tol` is a RELATIVE metric tolerance (fraction of the mean squared edge).
+ * Cartesian lattice strain of the point operation R (Å): how far the cell-edge vectors
+ * are displaced when R is used as if it were an isometry of the lattice.
+ *
+ * With x' = R·x acting on fractional columns, the Cartesian map is M = Aᵀ·R·A⁻ᵀ and its
+ * Green strain is E = ½(MᵀM − I) = ½·A⁻¹·D·A⁻ᵀ with D = RᵀGR − G. Edge a_i = Aᵀe_i is
+ * displaced by |E·a_i| = ½·|A⁻¹·D·e_i|; the strain is the largest of the three. It is 0
+ * for an exact lattice symmetry and is on the same Å scale as an atomic-position residual,
+ * so a strained cell is tested against the same tolerance as the atoms.
  */
-export function latticePointOps(A, tol = 1e-3) {
+export function latticeStrain(A, R, G = metricTensor(A), Ainv = inv3(A)) {
+  const M = conjugate(R, G);
+  let worst = 0;
+  for (let i = 0; i < 3; i++) {
+    const d0 = M[0][i] - G[0][i], d1 = M[1][i] - G[1][i], d2 = M[2][i] - G[2][i];
+    const v = 0.5 * Math.hypot(
+      Ainv[0][0] * d0 + Ainv[0][1] * d1 + Ainv[0][2] * d2,
+      Ainv[1][0] * d0 + Ainv[1][1] * d1 + Ainv[1][2] * d2,
+      Ainv[2][0] * d0 + Ainv[2][1] * d1 + Ainv[2][2] * d2,
+    );
+    if (!(v <= worst)) worst = v;          // NaN propagates, so a broken lattice rejects all
+  }
+  return worst;
+}
+
+// Every unimodular integer R with entries in {-1,0,1} whose lattice strain is ≤ tol (Å),
+// with that strain. The strain is a floor on the operation's residual, so a strained cell
+// shows up in the ladder at the tolerance that absorbs the strain.
+function latticeCandidates(A, tol) {
   const G = metricTensor(A);
-  const scale = (G[0][0] + G[1][1] + G[2][2]) / 3 || 1;
-  const eps = tol * scale;
-  const ops = [];
+  const Ainv = inv3(A);
+  const out = [];
   const v = [-1, 0, 1];
   const R = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  // Iterate all 3^9 sign/zero patterns; keep metric-preserving unimodular ones.
+  // Iterate all 3^9 sign/zero patterns; keep unimodular ones that preserve the metric.
   for (let code = 0; code < 19683; code++) {
     let c = code;
     for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) { R[a][b] = v[c % 3]; c = (c / 3) | 0; }
     const d = det3(R);
     if (d !== 1 && d !== -1) continue;
-    const M = conjugate(R, G);
-    let ok = true;
-    for (let i = 0; i < 3 && ok; i++) for (let j = 0; j < 3 && ok; j++)
-      if (Math.abs(M[i][j] - G[i][j]) > eps) ok = false;
-    if (ok) ops.push(R.map(r => r.slice()));
+    const strain = latticeStrain(A, R, G, Ainv);
+    if (strain <= tol) out.push({ R: R.map(r => r.slice()), strain });
   }
-  return ops;
+  return out;
+}
+
+/**
+ * Lattice point operations: integer R (entries in {-1,0,1}, |det|=1) that preserve the
+ * metric to within a Cartesian lattice strain of `tol` Å (see latticeStrain).
+ */
+export function latticePointOps(A, tol = 0.01) {
+  return latticeCandidates(A, tol).map(c => c.R);
 }
 
 // Apply R (integer) to a fractional column vector.
@@ -165,14 +203,18 @@ function refineOperation(R, t0, basis, byEl, A, tol) {
  * Space-group operations of (A, basis) within a cartesian tolerance `tol` (Å).
  * basis: [{ el, frac:[x,y,z] }]. Returns operations + summary counts + residual.
  *
+ * `latticeTol` (Å, default `tol`) bounds the Cartesian lattice strain of a point operation
+ * (latticeStrain); an operation's residual is the larger of its lattice strain and its
+ * worst atomic mismatch, so a strained cell is judged on the same scale as the atoms.
+ *
  * @returns {{ ops:{R,t,residual}[], nSpace, nPoint, order, maxResidual }}
  *   nPoint : distinct rotation parts present in the space group (its point group).
  *   nSpace : total {R|t} (= point-group order × #centering-type cosets for the cell).
  */
-export function findSpaceGroupOps(A, basis, tol = 0.1, metricTol = 1e-2) {
+export function findSpaceGroupOps(A, basis, tol = 0.1, latticeTol = tol) {
   if (!basis || basis.length === 0) return { ops: [], nSpace: 0, nPoint: 0, order: 0, maxResidual: 0, centering: 'P', pointGroup: '1', spaceGroup: 'P1', spaceGroupNumber: 1 };
   const tolFrac = tol / meanEdge(A); // ~ tol in cell fractions (mean edge, not just |a1|)
-  const pointOps = latticePointOps(A, metricTol);
+  const pointOps = latticeCandidates(A, Math.min(latticeTol, tol));
   const byEl = new Map();
   for (const s of basis) { if (!byEl.has(s.el)) byEl.set(s.el, []); byEl.get(s.el).push(s); }
 
@@ -183,7 +225,7 @@ export function findSpaceGroupOps(A, basis, tol = 0.1, metricTol = 1e-2) {
   for (const [el, arr] of byEl) if (arr.length < byEl.get(refEl).length) refEl = el;
   const refAtom = byEl.get(refEl)[0];
 
-  for (const R of pointOps) {
+  for (const { R, strain } of pointOps) {
     const Ra0 = applyR(R, refAtom.frac);
     const tSeen = [];
     for (const cand of byEl.get(refEl)) {
@@ -193,8 +235,9 @@ export function findSpaceGroupOps(A, basis, tol = 0.1, metricTol = 1e-2) {
       if (!op) continue;
       if (tSeen.some(u => cartDist(u, op.t, A) < tol)) continue;   // same op reached from another seed
       tSeen.push(op.t);
-      ops.push({ R, t: op.t, residual: op.residual });
-      if (op.residual > maxResidual) maxResidual = op.residual;
+      const residual = Math.max(op.residual, strain);
+      ops.push({ R, t: op.t, residual });
+      if (residual > maxResidual) maxResidual = residual;
     }
   }
   return { ops, order: ops.length, maxResidual, ...classifyOperations(ops, tolFrac) };
@@ -260,8 +303,8 @@ function isValidGroup(cls) {
  * @returns {{from:number, to:number, spaceGroup:string, spaceGroupNumber:number|null,
  *            pointGroup:string, nSpace:number}[]} bricks, tight→loose.
  */
-export function symmetryLadder(A, basis, tolMax = 1.5, metricTol = 1e-2) {
-  const full = findSpaceGroupOps(A, basis, tolMax, metricTol);
+export function symmetryLadder(A, basis, tolMax = 1.5, latticeTol = tolMax) {
+  const full = findSpaceGroupOps(A, basis, tolMax, latticeTol);
   if (!full.ops.length) return [];
   const tolFrac = tolMax / meanEdge(A);
   const thresholds = [...new Set(full.ops.map(o => o.residual))].sort((a, b) => a - b);
@@ -290,8 +333,8 @@ export function symmetryLadder(A, basis, tolMax = 1.5, metricTol = 1e-2) {
  * @returns {{ centering, pointGroup, spaceGroup, spaceGroupNumber, nSpace, nPoint,
  *             maxResidual, ops:{R,t,residual}[] }}
  */
-export function spaceGroupAtTolerance(A, basis, tol = 0.2, metricTol = 1e-2) {
-  const full = findSpaceGroupOps(A, basis, Math.max(tol, 1e-3), metricTol);
+export function spaceGroupAtTolerance(A, basis, tol = 0.2, latticeTol = Math.max(tol, 1e-3)) {
+  const full = findSpaceGroupOps(A, basis, Math.max(tol, 1e-3), latticeTol);
   const empty = { centering: 'P', pointGroup: '1', spaceGroup: 'P1', spaceGroupNumber: 1, nSpace: 0, nPoint: 0, maxResidual: 0, ops: [] };
   if (!full.ops.length) return empty;
   const tolFrac = Math.max(tol, 1e-6) / meanEdge(A);

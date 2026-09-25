@@ -8,7 +8,8 @@ import { describe, it, expect } from 'vitest';
 
 import { spaceGroupAtTolerance, symmetryLadder, findSpaceGroupOps } from '../symmetry.js';
 import { conventionalCell } from '../symmetryModel.js';
-import { demoStructure, shuffled, withNoise, STRUCTURES } from './fixtures/symmetryStructures.js';
+import { demoStructure, shuffled, withNoise, STRUCTURES, at } from './fixtures/symmetryStructures.js';
+import { cellVectors } from './fixtures/spaceGroups.js';
 
 const ladderKey = (ladder) => ladder.map((b) => `${b.spaceGroup}[${b.from.toFixed(6)},${b.to.toFixed(6)}]`).join(' > ');
 
@@ -58,5 +59,43 @@ describe('operation residuals do not depend on the order of the sites', () => {
             }
             for (let i = 0; i < 3; i++) expect(Math.abs(mean[i])).toBeLessThan(1e-9);
         }
+    });
+});
+
+describe('lattice strain is measured on the atomic-position scale', () => {
+    const perovskiteIn = (A) => ({ A, basis: STRUCTURES.perovskite().basis });
+
+    it('sees a 0.4 % tetragonal strain at a tolerance tighter than the strain', () => {
+        // Fractional coordinates stay those of cubic Pm-3m, so ONLY the cell is strained:
+        // c − a = 0.0156 Å. A tolerance below that must not report cubic symmetry.
+        const a = 3.905;
+        const { A, basis } = perovskiteIn(cellVectors(a, a, a * 1.004, 90, 90, 90));
+        expect(spaceGroupAtTolerance(A, basis, 0.005)).toMatchObject({ spaceGroup: 'P4/mmm', spaceGroupNumber: 123 });
+        expect(spaceGroupAtTolerance(A, basis, 0.05)).toMatchObject({ spaceGroup: 'Pm-3m', spaceGroupNumber: 221 });
+        const ladder = symmetryLadder(A, basis, 1.0);
+        expect(ladder.map((b) => b.spaceGroup)).toEqual(['P4/mmm', 'Pm-3m']);
+        // the cubic rung starts where the strain is taken up: ≈ c − a
+        expect(ladder[1].from).toBeGreaterThan(0.01);
+        expect(ladder[1].from).toBeLessThan(0.02);
+    });
+
+    it('does not loosen the a/b test because c is long', () => {
+        // 2.8 % a/b splitting (0.14 Å) in a cell with a 20 Å c axis.
+        const basis = [at('X', 0, 0, 0), at('Y', 0.5, 0.5, 0.5)];
+        const A = cellVectors(5.0, 5.14, 20.0, 90, 90, 90);
+        expect(spaceGroupAtTolerance(A, basis, 0.01)).toMatchObject({ spaceGroup: 'Pmmm', spaceGroupNumber: 47 });
+        expect(spaceGroupAtTolerance(A, basis, 0.3)).toMatchObject({ spaceGroup: 'P4/mmm', spaceGroupNumber: 123 });
+    });
+
+    it('keeps a slightly sheared cell a group at every tolerance', () => {
+        // β = 90.3° (a 0.02 Å shear of the cell edges): monoclinic at tight tolerance,
+        // cubic once the shear is within it — never P1 at every tolerance because the
+        // accepted lattice operations failed to compose.
+        const { A, basis } = perovskiteIn(cellVectors(3.9, 3.9, 3.91, 90, 90.3, 90));
+        expect(spaceGroupAtTolerance(A, basis, 0.003)).toMatchObject({ spaceGroup: 'P2/m', spaceGroupNumber: 10 });
+        expect(spaceGroupAtTolerance(A, basis, 0.2)).toMatchObject({ spaceGroup: 'Pm-3m', spaceGroupNumber: 221 });
+        const ladder = symmetryLadder(A, basis, 1.0);
+        expect(ladder[0].spaceGroup).toBe('P2/m');
+        expect(ladder[ladder.length - 1].spaceGroup).toBe('Pm-3m');
     });
 });
