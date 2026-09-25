@@ -688,11 +688,27 @@ which with the default uniform weights $w_i = 1/n$ is exactly the $n-1$ divisor,
 $\sum_i w_i \mathcal{N}(\mathbf{p};\mathbf{p}_i,\mathbf{H})$ with those same uniform weights (SciPy
 1.13.1, `scipy/stats/_kde.py`). `kde.py` → `_FixedCovarianceKDE` subclasses it and overrides only
 `_compute_covariance()` to install $\mathbf{C}$ (`np.cov` of the source-atom rows,
-`_source_atom_rows()`) instead of the dataset's covariance, setting the same attributes SciPy's
-version sets; the density is still SciPy's compiled sum. Because that leans on SciPy internals, the
-constructor evaluates one point against the direct formula and raises `RuntimeError` if a SciPy
-version stops honouring the supplied covariance, rather than silently drawing a different kernel.
-SciPy evaluates the sum through the lower Cholesky factor
+`_source_atom_rows()`) instead of the dataset's covariance; the density is still SciPy's compiled
+sum. **No SciPy floor is declared, and the evaluator reads different attributes in different
+releases**, so `_compute_covariance()` sets every one of them from $\mathbf{C}$: `covariance` and
+`log_det` (all releases); `cho_cov`, the lower Cholesky factor of $\mathbf{H}$ that SciPy ≥ 1.10
+whitens with; `inv_cov` $=\mathbf{H}^{-1}$, which earlier releases (1.8.1 checked) whiten with
+through its own Cholesky factor (from 1.10 on SciPy defines `inv_cov` as a property that
+re-estimates the covariance from the dataset, so the subclass overrides that property too); and
+`_norm_factor` $=\sqrt{\det 2\pi\mathbf{H}}$ for the oldest, pure-Python `evaluate`. Because that still leans on SciPy internals,
+the constructor evaluates one point against the direct formula below and raises
+`ScipyKdeUnsupported` (a `RuntimeError`) when SciPy evaluates anything else — an attribute it cannot
+find, or a different value. The tolerance is $10^{-6} + 10\,\kappa(\mathbf{H})\,\varepsilon$:
+evaluators that whiten through $\mathrm{chol}(\mathbf{H})$ and through
+$\mathrm{chol}(\mathbf{H}^{-1})$ legitimately differ by $O(\kappa\varepsilon)$ (measured
+$\le 0.33\,\kappa\varepsilon$, i.e. $1.7\times10^{-6}$ for a needle near
+`COVARIANCE_CONDITION_LIMIT`), while one that ignored the supplied covariance would be off by the
+change in $\mathbf{C}$ itself. `kde_slice()` turns that error into a declined slab with the
+Python-only `engine` message (logged as a warning), so `/api/kde/slice` answers 200 with an
+explanation rather than 500. Checked against SciPy 1.8.1 (numpy 1.22), 1.13.1, 1.17.1 and 1.18.1:
+the kernel, the peak and the decline decisions agree, the peak to $\le 2\times10^{-9}$ relative
+(Step 6 parity fixture).
+SciPy ≥ 1.10 evaluates the sum through the lower Cholesky factor
 $\mathbf{L}=f\,\mathrm{chol}(\mathbf{C})$ of $\mathbf{H}$ (`cho_cov`): whitened offsets
 $\mathbf{w}=\mathbf{L}^{-1}(\mathbf{p}-\mathbf{p}_i)$, kernel $e^{-|\mathbf{w}|^2/2}$, normalization
 $1/(2\pi\,L_{00}L_{11})$. The JavaScript `makeKernel()` reproduces it term for term: it forms
@@ -878,6 +894,7 @@ shared verbatim: `KDE_MESSAGES` in `kde.py` and in `localKdeWorker.js`).
 | 4 | source atoms at $<3$ distinct $(u,v)$ positions | `few_unique` / `fewUnique` |
 | 5 | centred source-atom positions of rank $<2$ with numpy's tolerance $\sigma_{\min}\le\sigma_{\max}\max(N,2)\,\varepsilon$ | `collinear` |
 | 6 | $\mathbf{C}$ not safely positive definite: $c_{00}\le0$, $c_{11}\le0$, $1-\rho^2\le10^{-10}$ (`COVARIANCE_CONDITION_LIMIT`), or a failed Cholesky | `singular` |
+| (7) | Python only: the installed SciPy's `gaussian_kde` does not evaluate the supplied kernel (`ScipyKdeUnsupported`, above) | `engine` |
 
 Tests 4–6 run on the source-atom rows that define $\mathbf{C}$ (Step 6 above), before any
 subsampling.
@@ -1420,6 +1437,7 @@ Added for 1.0:
 | `workers/__tests__/kdeParity.test.js` | **cross-runtime**: the worker reproduces the Python golden — demo run, GaNb₄Se₈ run (skipped when `data/` is absent), synthetic slabs — to $10^{-6}$ of the peak, with identical `slabCount`, `fitCount`, kernel and `message` |
 | `workers/__tests__/localKdeKernel.test.js` | the worker's kernel equals an in-test brute-force $f^2\mathbf{C}$ mixture; its rank test and decline rules |
 | `workers/__tests__/gpuKdeEmulation.test.js` | the WGSL shader, replayed in float32 on the packed buffers, against the CPU loop |
+| `tests/test_kde_scipy_compat.py` | `_FixedCovarianceKDE` hands the supplied kernel to every SciPy evaluator (the ≥ 1.10 one it runs on, plus in-test replicas of the pre-1.10 `inv_cov` path and the pure-Python `_norm_factor` path); `inv_cov` is $\mathbf{H}^{-1}$ and reading it leaves $\mathbf{C}$ alone; the construction check accepts an $O(\kappa\varepsilon)$ disagreement on a needle and rejects a $10^{-3}$ one; a SciPy that cannot evaluate the kernel declines with `engine` in `kde_slice()` and over `/api/kde/slice` (HTTP 200) |
 | `tests/test_kde_bandwidth_source.py` / `workers/__tests__/kdeBandwidthSource.test.js` | $\mathbf{C}$ is the covariance of the folded source atoms, unchanged across a thickness or bandwidth margin step, across subsample seeds, and for depth-wrapped atoms (plus the real Ga layer in Python); `_FixedCovarianceKDE` sums SciPy's Gaussian with the supplied covariance and raises if SciPy stops honouring it |
 | `tests/test_kde_contours.py` / `workers/__tests__/logContours.test.js` | log scale keeps all eight contours on an oblique disordered slice whose log peak is negative; a declined slab has none |
 | `tests/test_kde_kernel_diagnostics.py` / `workers/__tests__/kernelDiagnostics.test.js` | the `subgrid` warning; the kernel's σ in Å through the cell metric |

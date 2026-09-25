@@ -10,6 +10,7 @@ density with its own colormap and contour styling.
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from itertools import combinations, product
@@ -21,6 +22,8 @@ from scipy.stats import gaussian_kde
 
 from .parsers import iter_rmc6f_atoms, read_cell_vectors
 
+_LOG = logging.getLogger(__name__)
+
 # Cap on the number of slab atoms fed to gaussian_kde. The density estimate is
 # stable well below the full population, and the eval cost scales with the
 # number of fit points, so subsampling keeps slider interaction responsive.
@@ -29,7 +32,9 @@ MAX_KDE_FIT_POINTS = 6000
 # Why a slab produced no density. The browser worker
 # (web_app/frontend/src/workers/localKdeWorker.js, KDE_MESSAGES) returns the
 # same strings for the same conditions, checked in the same order, so both
-# runtimes either draw the same kernel or decline with the same reason.
+# runtimes either draw the same kernel or decline with the same reason. The
+# one exception is "engine", which only this module can hit: the installed
+# SciPy's gaussian_kde does not evaluate the supplied kernel (_FixedCovarianceKDE).
 KDE_MESSAGES = {
     "empty": "No atoms in this slab.",
     "bandwidth": "The bandwidth must be a positive finite number.",
@@ -45,6 +50,11 @@ KDE_MESSAGES = {
     "singular": (
         "The slab covariance is singular to within round-off, "
         "so the KDE bandwidth is undefined."
+    ),
+    "engine": (
+        "This server's SciPy does not evaluate the KDE kernel the way rmc_toolkits "
+        "expects (scipy.stats.gaussian_kde internals changed), so no density was drawn. "
+        "Update rmc_toolkits, or use a SciPy it supports."
     ),
 }
 
@@ -477,6 +487,10 @@ def _source_atom_rows(
     return slab[order[first]]
 
 
+class ScipyKdeUnsupported(RuntimeError):
+    """This SciPy's ``gaussian_kde`` does not evaluate the kernel ``_FixedCovarianceKDE`` supplies."""
+
+
 class _FixedCovarianceKDE(gaussian_kde):
     """``scipy.stats.gaussian_kde`` with a supplied data covariance.
 
@@ -484,18 +498,29 @@ class _FixedCovarianceKDE(gaussian_kde):
     slab rows -- periodic images included, possibly subsampled -- while ``C``
     must come from the source atoms alone, so that the kernel ``bw**2 * C``
     depends on neither the image margin nor the subsample. Only the covariance
-    estimate is replaced: ``_compute_covariance`` sets the attributes scipy's
-    own ``_compute_covariance`` sets (``factor``, ``covariance``, ``cho_cov``,
-    ``log_det``), and the density is still scipy's compiled Gaussian sum.
-    Because that relies on scipy's internals, construction checks one value
-    against the direct formula and raises rather than return a different
-    kernel on a scipy version that evaluates differently.
+    estimate is replaced; the density is still scipy's own Gaussian sum.
+
+    That sum reads different attributes in different SciPy releases, and no
+    SciPy floor is declared, so ``_compute_covariance`` sets all of them from
+    the supplied ``C``: ``covariance`` and ``log_det`` (every release),
+    ``cho_cov`` (>= 1.10 whiten with this Cholesky factor of H), ``inv_cov``
+    (earlier releases, 1.8.1 verified, whiten with the Cholesky factor of H^-1;
+    from 1.10 SciPy makes it a property that re-estimates C from the dataset,
+    hence the override below) and ``_norm_factor`` (the oldest, pure-Python
+    ``evaluate``). Construction then checks one value against the direct
+    formula and raises ``ScipyKdeUnsupported`` rather than return a different
+    kernel on a SciPy that evaluates differently.
     """
 
     def __init__(self, dataset: np.ndarray, data_covariance: np.ndarray, bw: float):
         self._fixed_covariance = np.atleast_2d(np.asarray(data_covariance, dtype=float))
         super().__init__(dataset, bw_method=bw)
         self._check_scipy_honours_the_covariance()
+
+    @property
+    def inv_cov(self) -> np.ndarray:
+        """H^-1 of the supplied kernel (SciPy < 1.10 evaluates through it)."""
+        return self._fixed_inv_cov
 
     def _compute_covariance(self):
         self.factor = self.covariance_factor()
@@ -504,6 +529,16 @@ class _FixedCovarianceKDE(gaussian_kde):
         self.covariance = self._data_covariance * self.factor**2
         self.cho_cov = (self._data_cho_cov * self.factor).astype(np.float64)
         self.log_det = 2 * np.log(np.diag(self.cho_cov * np.sqrt(2 * np.pi))).sum()
+        # H^-1 = L^-T L^-1 from the same factor, symmetrised; det(2 pi H)^(1/2).
+        inverse_factor = solve_triangular(self.cho_cov, np.eye(self.d), lower=True)
+        inv_cov = inverse_factor.T @ inverse_factor
+        self._fixed_inv_cov = 0.5 * (inv_cov + inv_cov.T)
+        self._data_inv_cov = self._fixed_inv_cov * self.factor**2
+        self._norm_factor = float(np.exp(0.5 * self.log_det))
+
+    def _condition_number(self) -> float:
+        eigenvalues = np.linalg.eigvalsh(self.covariance)
+        return float(eigenvalues[-1] / eigenvalues[0]) if eigenvalues[0] > 0 else math.inf
 
     def _check_scipy_honours_the_covariance(self) -> None:
         point = self.dataset[:, :1]
@@ -512,13 +547,21 @@ class _FixedCovarianceKDE(gaussian_kde):
             np.exp(-0.5 * np.sum(whitened * whitened, axis=0)).sum()
             / (self.n * 2 * np.pi * self.cho_cov[0, 0] * self.cho_cov[1, 1])
         )
-        actual = float(self.evaluate(point)[0])
-        # scipy whitens the point and the data separately, so needle kernels
-        # differ from this direct form at ~1e-10; a scipy that ignored the
-        # supplied covariance would differ at O(1).
-        if not abs(actual - expected) <= 1e-6 * expected:
-            raise RuntimeError(
-                "scipy.stats.gaussian_kde no longer evaluates a supplied covariance "
+        try:
+            actual = float(np.asarray(self.evaluate(point)).ravel()[0])
+        except (AttributeError, TypeError, KeyError, IndexError) as exc:
+            raise ScipyKdeUnsupported(
+                f"scipy.stats.gaussian_kde cannot evaluate a supplied covariance ({exc})"
+            ) from exc
+        # Two correct evaluators that whiten differently (SciPy >= 1.10 through
+        # chol(H), older releases through chol(H^-1)) differ by O(cond(H) * eps):
+        # measured <= 0.33 cond * eps, 1.7e-6 for a needle near
+        # COVARIANCE_CONDITION_LIMIT. A SciPy that ignored the supplied
+        # covariance would differ by the change in C itself.
+        tolerance = 1e-6 + 10.0 * self._condition_number() * np.finfo(float).eps
+        if not abs(actual - expected) <= tolerance * expected:
+            raise ScipyKdeUnsupported(
+                "scipy.stats.gaussian_kde does not evaluate a supplied covariance "
                 f"(scipy internals changed: {actual!r} != {expected!r}); update rmc_toolkits.kde"
             )
 
@@ -603,6 +646,7 @@ def kde_slice(
                 rng = np.random.default_rng(rng_seed)
                 choice = rng.choice(slab_total, MAX_KDE_FIT_POINTS, replace=False)
                 slab = slab[choice]
+            kde = None
             try:
                 if not _well_conditioned(covariance):
                     raise np.linalg.LinAlgError("slab covariance is numerically singular")
@@ -611,7 +655,12 @@ def kde_slice(
                 # The source atoms' covariance is not (safely) positive
                 # definite even though they passed the rank test.
                 message = KDE_MESSAGES["singular"]
-            else:
+            except ScipyKdeUnsupported as exc:
+                # Decline rather than fail the request: the reason is the
+                # installed SciPy, not the slab.
+                _LOG.warning("%s", exc)
+                message = KDE_MESSAGES["engine"]
+            if kde is not None:
                 sample = np.vstack([mesh_x.ravel(), mesh_y.ravel()])
                 density = kde(sample).reshape(mesh_x.shape)
                 if slab_total > slab_count > 0:
