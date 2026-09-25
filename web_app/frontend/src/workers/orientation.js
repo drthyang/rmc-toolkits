@@ -26,6 +26,9 @@ export const MAX_FREQUENCY = 64;
 export const NEGLIGIBLE_AMPLITUDE = 1e-9;
 export const SMOOTHING_ALPHA = 0.5;
 export const DEFAULT_TARGET_PER_CELL = 12;
+// Relative tolerance of the tied-peak rule (lowest index within it of the
+// maximum wins). Mirrors PEAK_TIE_RTOL.
+export const PEAK_TIE_RTOL = 1e-9;
 
 const WEIGHTS = ['count', 'amplitude', 'amplitude2'];
 const FRAMES = ['cartesian', 'pca'];
@@ -673,10 +676,6 @@ export const orientationHistogram = (vectors, options = {}) => {
     }
     const tensorDecomposition = eigenDecomposition(tensor);
 
-    let peak = 0;
-    for (let cell = 1; cell < cellCount; cell += 1) {
-        if (enhancement[cell] > enhancement[peak]) peak = cell;
-    }
     let vmin = Infinity;
     let vmax = -Infinity;
     let emptyCells = 0;
@@ -686,6 +685,17 @@ export const orientationHistogram = (vectors, options = {}) => {
         if (enhancement[cell] > vmax) vmax = enhancement[cell];
         if (counts[cell] === 0) emptyCells += 1;
         zSquares += zScore[cell] * zScore[cell];
+    }
+    // Tie-tolerant argmax: the lowest index within PEAK_TIE_RTOL of the
+    // maximum, so round-off in symmetry-equal cell areas cannot pick the peak.
+    let peak = -1;
+    let peakTieCount = 0;
+    const tieFloor = vmax * (1 - PEAK_TIE_RTOL);
+    for (let cell = 0; cell < cellCount; cell += 1) {
+        if (enhancement[cell] >= tieFloor) {
+            if (peak < 0) peak = cell;
+            peakTieCount += 1;
+        }
     }
     let amplitudeSum = 0;
     let amplitudeSquares = 0;
@@ -727,6 +737,7 @@ export const orientationHistogram = (vectors, options = {}) => {
         orientationAxes: tensorDecomposition.axes,
         orientationAnisotropy: 3 * tensorDecomposition.eigenvalues[0] - 1,
         peakCell: peak,
+        peakTieCount,
         peakDirection: tiling.centers[peak],
         peakEnhancement: enhancement[peak],
         peakZScore: zScore[peak],

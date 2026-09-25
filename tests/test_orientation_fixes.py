@@ -275,5 +275,40 @@ class ElementAllTests(unittest.TestCase):
         )
 
 
+class TiedPeakTests(unittest.TestCase):
+    """orientation.numerics.2/.14, orientation.parity.11/.16, orientation.physics.21.
+
+    Symmetry-equivalent Goldberg cells have mathematically equal solid angles
+    that differ in the last bits -- differently in NumPy and JS. With equal
+    counts the plain argmax picked a peak by round-off, so the Flask and
+    browser engines reported peak directions up to 180 degrees apart. Both
+    now take the lowest-index cell within a relative 1e-9 of the maximum and
+    report how many cells tie.
+    """
+
+    def _tied_cloud(self):
+        # nu = 3 cells 2 and 10 are symmetry-equivalent; in both engines the
+        # computed area of cell 2 is a few ulp larger, so a plain argmax picks
+        # cell 10 when both hold the same count.
+        tiling = goldberg_tiling(3)
+        return np.vstack(
+            [np.repeat(tiling.centers[[2, 10]], 20, axis=0), tiling.centers[[50, 60, 70]]]
+        )
+
+    def test_tied_maximum_resolves_to_the_lowest_index(self):
+        result = orientation_histogram(self._tied_cloud(), frequency=3, geometry=False)
+        tiling = goldberg_tiling(3)
+        self.assertEqual(result["peakCell"], 2)
+        self.assertEqual(result["peakTieCount"], 2)
+        self.assertEqual(result["peakDirection"], tiling.centers[2].tolist())
+
+    def test_untied_maximum_reports_a_single_cell(self):
+        rng = np.random.default_rng(1)
+        cloud = rng.normal(size=(20000, 3)) * np.array([0.5, 0.1, 0.1])
+        result = orientation_histogram(cloud, frequency=8, geometry=False)
+        self.assertEqual(result["peakTieCount"], 1)
+        self.assertEqual(result["peakCell"], int(np.argmax(result["enhancement"])))
+
+
 if __name__ == "__main__":
     unittest.main()

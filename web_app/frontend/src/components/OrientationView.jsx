@@ -567,6 +567,11 @@ export default function OrientationView({
                         <div className="orient-summary">
                             <span className="orient-stat">
                                 peak <b>{numberFormat(result.peakEnhancement, 2)}×</b> at {formatDirection(result.peakDirection)}
+                                {result.peakTieCount > 1 && (
+                                    <span className="orient-stat-null" title="Several cells share the maximum enhancement (within 1e-9); the lowest-index cell is reported">
+                                        {' '}(1 of {result.peakTieCount} equal cells)
+                                    </span>
+                                )}
                                 {' '}(z = {numberFormat(result.peakZScore, 1)})
                             </span>
                             <span className="orient-stat">

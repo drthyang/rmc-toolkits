@@ -100,6 +100,13 @@ SMOOTHING_ALPHA = 0.5
 # floors to it: the auto resolution averages at least this many per cell.
 DEFAULT_TARGET_PER_CELL = 12
 
+# Cells whose enhancement lies within this relative distance of the maximum
+# are one tied peak. Symmetry-equivalent cells have mathematically equal solid
+# angles that differ only in the last bits (differently in NumPy and JS), so a
+# plain argmax would pick the peak by round-off; 1e-9 is far above that
+# (~1e-15) and far below any physical difference. The lowest index wins.
+PEAK_TIE_RTOL = 1e-9
+
 WEIGHTS = ("count", "amplitude", "amplitude2")
 FRAMES = ("cartesian", "pca")
 
@@ -751,7 +758,10 @@ def orientation_histogram(
     # resolution independent.
     tensor = (directions * weights[:, None]).T @ directions / weights.sum()
     tensor_eigenvalues, tensor_axes = _eigen_decomposition(tensor)
-    peak = int(np.argmax(enhancement))
+    # Tie-tolerant argmax (lowest index within PEAK_TIE_RTOL of the maximum),
+    # identical in both engines -- see PEAK_TIE_RTOL.
+    tied = np.flatnonzero(enhancement >= enhancement.max() * (1.0 - PEAK_TIE_RTOL))
+    peak = int(tied[0])
 
     result = {
         "frequency": int(tiling.frequency),
@@ -791,6 +801,8 @@ def orientation_histogram(
         # scalar summary of how much the cloud prefers one direction at all.
         "orientationAnisotropy": float(3.0 * tensor_eigenvalues[0] - 1.0),
         "peakCell": peak,
+        # Number of cells tied for the maximum (1 = a unique peak).
+        "peakTieCount": int(tied.size),
         "peakDirection": tiling.centers[peak].tolist(),
         "peakEnhancement": float(enhancement[peak]),
         "peakZScore": float(z_score[peak]),

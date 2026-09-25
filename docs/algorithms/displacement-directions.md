@@ -1119,7 +1119,8 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `orientationTensor`, `orientationEigenvalues` | 3×3 / 3 | req / — | §8 | no |
 | `orientationAxes` | 3×3, rows | **req** | §8 — PCA-frame axes when `frame="pca"` | no |
 | `orientationAnisotropy` | dimensionless | — | $3\lambda_1 - 1$ | yes |
-| `peakCell`, `peakEnhancement` | int / float | — | argmax over the **smoothed** enhancement | `peakEnhancement` only |
+| `peakCell`, `peakEnhancement` | int / float | — | tie-tolerant argmax over the **smoothed** enhancement: the lowest index within a relative `PEAK_TIE_RTOL = 1e-9` of the maximum | `peakEnhancement` only |
+| `peakTieCount` | int | — | number of cells within `PEAK_TIE_RTOL` of the maximum (1 = unique peak) | yes, as "(1 of k equal cells)" when $k > 1$ |
 | `peakDirection` | unit vector | **req** | `centers[peakCell]` | yes |
 | `peakZScore` | float | — | the **raw** $z$ at that cell | yes |
 | `significance` | $\sigma$ | — | RMS $z$ over cells, raw counts | yes |
@@ -1172,8 +1173,8 @@ simply cannot be served by `/api/pca/orientation`. The algorithm, the clustering
 clean/merged/fragmented labelling are *PCA Ellipsoid page* → Step 1b; caveat 12 below records what
 those reconstructed sites do to *this* page's numbers.
 
-**Module constants** ([orientation.py](../../rmc_toolkits/orientation.py) lines 85–103, mirrored at
-[orientation.js](../../web_app/frontend/src/workers/orientation.js) lines 24–31):
+**Module constants** (top of [orientation.py](../../rmc_toolkits/orientation.py), mirrored at the top of
+[orientation.js](../../web_app/frontend/src/workers/orientation.js)):
 
 | Constant | Value | Unit | Role |
 |---|---|---|---|
@@ -1181,6 +1182,7 @@ those reconstructed sites do to *this* page's numbers.
 | `MAX_FREQUENCY` | 64 | — | 40 962 cells; 0.25 s (Py) / 0.11 s (JS) to tessellate |
 | `NEGLIGIBLE_AMPLITUDE` | $10^{-9}$ | Å | always-on floor; below it a direction is round-off |
 | `SMOOTHING_ALPHA` | 0.5 | — | fraction of mass a cell exports per pass |
+| `PEAK_TIE_RTOL` | $10^{-9}$ | — | cells within this relative distance of the maximum enhancement tie; the lowest index is `peakCell` |
 | `DEFAULT_TARGET_PER_CELL` | 12 | points/cell | auto-resolution floor: Auto averages $\ge 12$ per cell ($\le 29\%$ Poisson scatter) |
 | `recommended_frequency(max_frequency=)` | 24 | — | auto-resolution never exceeds this |
 | greedy-walk cap | 8 | rounds | measured need: 1 |
@@ -1278,9 +1280,24 @@ independently computed in each language — not a shared-golden parity suite.
   §4.5, `neighbors` is identical and `polygons` agree to $\le 2\times10^{-14}$ at every
   $\nu \le 38$ tested); on a shared 3000-point cloud at
   $\nu = 6$, `smoothing=2`, in both frames and both weightings, `counts` and `peakCell` are
-  bit-identical and every float field agrees to $\le 3\times 10^{-13}$
+  bit-identical and every float field agrees to $\le 3\times 10^{-13}$. `peakCell` is identical
+  in general only because of the tie rule below — without it the claim held for that smoothed
+  cloud but failed on tied maxima
   (`enhancement`, `zScore`, `density`, `cellMeanAmplitude`, `pcaAxes`, `orientationTensor`,
   `significance`, `antipodalAsymmetry`). This is a verification, not a regression guard.
+- **Tied maxima are resolved by one explicit rule.** Symmetry-equivalent cells have
+  mathematically equal $\Omega_m$ that differ in the last bits, *differently* in NumPy and JS
+  (e.g. at $\nu = 3$ cell 2's computed area is a few ulp larger than cell 10's in both engines,
+  but by different amounts elsewhere). With equal raw counts (smoothing 0, Auto) or equal smoothed
+  rationals, the enhancements tie exactly and a plain `argmax` / strict `>` scan picked the peak by
+  round-off: before the 1.0 audit 5–15 % of real sites at smoothing 0 reported a different
+  `peakDirection` in the two runtimes, up to 180° apart, and with smoothing the raw `peakZScore`
+  at the chosen cell could differ too. Both engines now take the **lowest index among cells with
+  $\mathcal{E}_m \ge \max\mathcal{E}\,(1 - 10^{-9})$** (`PEAK_TIE_RTOL`) and report the number of
+  tied cells as `peakTieCount`. $10^{-9}$ is six orders above the cross-engine round-off
+  ($\le 10^{-13}$) and far below any physical difference. Measured after the fix on both
+  GaNb₄Se₈ runs (104 sites × 7 settings, including Auto and smoothing 0 where 6–15 sites per
+  setting have tied maxima): `peakCell`, `peakTieCount` and `counts` identical in all 728 cases.
 - **Different eigensolvers.** Python uses LAPACK `numpy.linalg.eigh`; the JS port uses a 3×3
   cyclic **Jacobi** rotation (`jacobiEigenSymmetric`); the sweep budget, the *absolute*
   $10^{-18}$ convergence test and why Jacobi was chosen over a closed-form cubic are in
@@ -2028,7 +2045,7 @@ isotropic expectation.
 
 | Readout | Engine field | Definition | Format |
 | --- | --- | --- | --- |
-| `peak N.NN× at [x, y, z] (z = N.N)` | `peakEnhancement`, `peakDirection`, `peakZScore` | the cell with the largest `enhancement`; its centre direction and its raw-count Poisson $z$ | 2 dp, direction 2 dp, $z$ 1 dp |
+| `peak N.NN× at [x, y, z] (z = N.N)` | `peakEnhancement`, `peakDirection`, `peakZScore`, `peakTieCount` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction and its raw-count Poisson $z$ | 2 dp, direction 2 dp, $z$ 1 dp |
 | `anisotropy N.NN` | `orientationAnisotropy` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue. $T = I/3$ for a uniform sphere, so the value is **0 for isotropic, 2 for a perfect single axis**. Computed from the vectors, not the bins, so it is resolution-independent. | 2 dp |
 | `± asymmetry N.NN (noise floor N.NN)` | `antipodalAsymmetry`, `antipodalAsymmetryNull` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The floor is the level pure Poisson noise alone produces, $\sqrt{C/(\pi N)}$, from $\mathbb E\lvert X-Y\rvert \approx 2\sqrt{m/\pi}$ for two iid Poisson($m$) cells. | both 2 dp |
 | `map significance N.Nσ` | `significance` | $\sqrt{\big\langle z_c^2 \big\rangle_c}$ with $z_c = (n_c - e_c)/\sqrt{e_c}$ — the RMS per-cell Poisson $z$ against the isotropic null. **≈1 means the whole map is consistent with counting noise**; well above 1 means real directional structure. | 1 dp |
@@ -2540,7 +2557,7 @@ canvas alone:
 
 The engines return considerably more than this page shows. From the orientation response, the UI
 reads only `polygons`, `enhancement`, `vmax`, `cellMeanAmplitude`, `meanAmplitude`, `centers`,
-`counts`, `zScore`, `cellCount`, `peakEnhancement`, `peakDirection`, `peakZScore`,
+`counts`, `zScore`, `cellCount`, `peakEnhancement`, `peakDirection`, `peakZScore`, `peakTieCount`,
 `orientationAnisotropy`, `antipodalAsymmetry`, `antipodalAsymmetryNull`, `significance`, `weight`,
 `smoothing`, `browserOrientation`, and `pcaAxes` (fallback rods only). **Never rendered anywhere:**
 

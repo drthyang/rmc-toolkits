@@ -257,3 +257,30 @@ describe('element "all" normalisation', () => {
         expect('element' in result).toBe(false);
     });
 });
+
+// orientation.numerics.2/.14, orientation.parity.11/.16, orientation.physics.21
+describe('tie-tolerant peak', () => {
+    const tiedCloud = () => {
+        const tiling = goldbergTiling(3);
+        const points = [];
+        for (const cell of [2, 10]) for (let i = 0; i < 20; i += 1) points.push(tiling.centers[cell]);
+        for (const cell of [50, 60, 70]) points.push(tiling.centers[cell]);
+        return points;
+    };
+
+    it('resolves a tied maximum to the lowest index and counts the ties', () => {
+        const result = orientationHistogram(tiedCloud(), { frequency: 3, geometry: false });
+        expect(result.peakCell).toBe(2);
+        expect(result.peakTieCount).toBe(2);
+        expect(result.peakDirection).toEqual(goldbergTiling(3).centers[2]);
+    });
+
+    it('reports a single cell for an untied maximum', () => {
+        const gauss = makeRng(1);
+        const points = [];
+        for (let i = 0; i < 20000; i += 1) points.push([gauss() * 0.5, gauss() * 0.1, gauss() * 0.1]);
+        const result = orientationHistogram(points, { frequency: 8, geometry: false });
+        expect(result.peakTieCount).toBe(1);
+        expect(result.enhancement[result.peakCell]).toBe(result.vmax);
+    });
+});
