@@ -2321,16 +2321,15 @@ rounding matter as much as the formula:
 
 ### Caveats / what this is not
 
-- **No decimation exists — and the failure mode is a crash, not slow rendering.** Nothing is hidden
-  by subsampling, but nothing protects you either. `domains` builds `visibleSeries.flatMap(s => s.x)`
-  (and a second flatMap for y) on **every** zoom step and legend toggle, and `niceDomain` then calls
-  `Math.min(...finite)` / `Math.max(...finite)` by argument spread. Argument-count limits (~10⁵ in
-  practice, engine-dependent) make that **throw `RangeError: Maximum call stack size exceeded`** once
-  the total point count across visible series passes the limit. Nothing catches it inside the memo
-  and there is no error boundary on that path, so the chart unmounts into a React error rather than
-  degrading. There is no point budget, no progressive rendering, and no warning. The same spread
-  pattern appears in `yAxisMax`/`xAxisMax` and in `makeProjectedPlane`, but those operate on tick
-  lists and polygon corners and are harmless.
+- **No decimation exists — large series cost time, not correctness.** Nothing is hidden by
+  subsampling, and nothing protects you from a slow chart either. `domains` builds
+  `visibleSeries.flatMap(s => s.x)` (and a second flatMap for y) on **every** zoom step and legend
+  toggle, and `niceDomain` ([`plotDomain.js`](../../web_app/frontend/src/plotDomain.js)) scans that
+  array in one pass. (Earlier versions spread it into `Math.min(...)`/`Math.max(...)`, which threw
+  `RangeError: Maximum call stack size exceeded` past ~10⁵ points; that was fixed before 1.0.)
+  There is no point budget, no progressive rendering, and no warning. The spread pattern survives
+  only in `yAxisMax`/`xAxisMax` and in `makeProjectedPlane`, which operate on tick lists and polygon
+  corners and are harmless.
 - **The hover search is x-only and unbounded.** It ignores y entirely, so with several overlapping
   curves the tooltip reports every visible series' value at (its own) nearest x, not the curve you
   are pointing at. There is no "snap radius", so a cursor far from any data still produces a reading.
@@ -3371,16 +3370,14 @@ shifted origin usually fits no form and gets no letter (diamond described with i
 
 Orbits are not rendered on the Run Dashboard card itself; they flow into the AI-assistant context
 (`runContext.js` → `symmetryContext()` → `symmetry.sites`, ranked by mean displacement, capped at 12
-sites), where `multiplicity` is the orbit's size in the given cell and `wyckoff` should be the
-naming-cell pair `wyckoffMultiplicity` + letter. **Open:** `symmetryContext()` still builds the
-label as `` `${orbit.size}${orbit.wyckoff}` ``, so wherever the naming cell is not the given cell
-the assistant is handed a label the named group does not have: `16i` for the Nb of the 5 K
+sites), where `multiplicity` is the orbit's size in the given cell and `wyckoff` is the
+naming-cell pair `` `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}` `` — the rule of
+`orbitLabel()`, read from a field of the `symmetry` prop so the `llm/` import boundary holds.
+Before 1.0 the context used the given-cell orbit size, so wherever the naming cell is not the given
+cell the assistant was handed a label the named group does not have: `16i` for the Nb of the 5 K
 GaNb₄Se₈ run at τ = 0.02 Å (P-4n2 is named in a cell half the F-cubic one; the card's pair is
 `8i`), `4a`/`12b` for the R3m lacunar spinel in its F cell (`3a`/`9b`), `1a`/`1b` for rocksalt on
-its primitive cell (`4a`/`4b`). The fix is one line in `runContext.js`,
-`` `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}` ``; it reads a field of the
-`symmetry` prop, so the `llm/` import boundary holds (it needs no `orbitLabel()` import). It is
-outside the symmetry finder's files and handed to the `llm/` module's owner, with a test.
+its primitive cell (`4a`/`4b`). Pinned by `llm/__tests__/runContextWyckoff.test.js`.
 
 **Code**: `symmetry.js` → `siteOrbits()`; `symmetryModel.js` → `describeSymmetry()`,
 `lettersInSetting()`, `orbitLabel()`; `wyckoff.js` → `wyckoffPositions()`, `parseCoordinateForm()`,
