@@ -3,6 +3,418 @@
 Chronological record of notable changes, newest first. For current architecture and conventions see
 [AGENTS.md](../AGENTS.md); for forward plans see [ROADMAP.md](ROADMAP.md).
 
+## v1.0.0 — 2026-09-25
+
+The first stable release. Every engine's math and physics was audited end to end, and the
+audit's roughly 100 defects were fixed in both runtimes. They included wrong numbers, Python ↔
+browser disagreements, inputs that crashed or silently produced garbage, and docs that described
+code that no longer existed. Nine groups fixed them test-first (Auto StoG ×2, structure KDE, PCA
+ellipsoid, displacement directions, bond angles, parsers and dashboard, symmetry finder, Flask
+API). Each group was reviewed independently, then merged and integrated. Several numbers the app
+reports change *because they were wrong*: read **Behaviour changes** before comparing 1.0 output
+with 0.5.0.
+
+### Highlights
+
+- **Physics fixes with visible consequences.** The dashboard Rwp was divided by the calculated
+  curve, reading 43 % high for calc = 0.7 × expt. PCA sites at x = ½ in a one-cell-thick box were
+  torn in two, giving an rms of 5–6 Å instead of 0.08 Å. Auto StoG fitted its density-limit window
+  across the first shell of most oxides (synthetic SrTiO₃: scale −48 %; ReO₃: a < 0), and its
+  automatic low-r cleanup cut 6–9 % of the first shell away. The Detected SG ladder named
+  operation sets that are not groups ("P-42m No. 111" on the bundled demo).
+- **One answer in both runtimes.** The browser ports are held to committed Python goldens: Auto
+  StoG to round-off (≤ 5×10⁻¹³ on every real run), the Structure KDE to 10⁻⁶ of the peak
+  (measured ≤ 2×10⁻¹²), bond angles to exact integer histograms, and displacement directions to
+  10⁻⁹ relative. The shared `.rmc6f` parser and the plot readers have goldens too. PCA is the
+  exception: each engine is pinned to its own reference, with no shared golden
+  ([ALGORITHMS.md](ALGORITHMS.md)).
+- **Auto StoG files match classic stog.** The classic-named files hold the Fortran stog
+  functions, g(r) and r·[g(r) − 1], and the stog.inp r₀ rule is the classic one. Automatic
+  low-r enforcement cuts at the foot of the first shell, and a fit with a non-physical scale is
+  never written.
+- **Statistics you can quote.** Displacement Directions reports calibrated significances instead
+  of local z-scores. PCA non-Gaussianity is rotation-invariant (Mardia). Bond Geometry reports
+  physical bond counts and counts each same-element triplet once.
+- **Inputs are validated, not guessed.** Both runtimes share one validated `.rmc6f` atom-line
+  grammar, with a parse report against the header's atom count; this fixes the zero-atom
+  static-mode issue. Every Flask numeric parameter is range-checked (bad input is a 400, never a
+  200 with invalid JSON), and parsed-file caches never serve a torn read.
+- **Stable-release tooling.** Dependency floors are declared, and CI runs a Python
+  3.9/3.11/3.13 matrix. Tests on the committed demo run now exercise real RMCProfile files in CI,
+  where the real-data tests skip.
+
+### Correctness fixes
+
+#### Auto StoG (`scaling.py`, `scaling_cli.py`, `autoScale.js`, `rmc-autoscale`)
+
+- **First-shell detection finds the first shell.** `detect_first_peak_onset` took the flank of
+  the strongest |g| feature, which skipped weak or inverted first shells: SrTiO₃'s Ti–O read at
+  2.6 Å instead of 1.85 Å, and Mn₃Sn 59438 (Q 1.0–28) at 3.49 Å instead of ~2.74 Å. It now returns
+  the smallest-r shell of either sign that stands out of the ripple field below it. A flank that
+  reaches the search start is not a shell.
+- **The density-limit window is placed from the data.** Without r₀ or `r_fit_max`, the blind
+  [1.2, 2.2] Å window used to sit across the first shell. Two trial fits now propose shell onsets.
+  The smallest onset is refitted on [lo, onset − 0.25] Å and accepted only when that refit
+  re-detects it within 0.15 Å, so a ripple lobe is dropped (at most 4 refits). A refit with
+  a ≤ 0 raises. Every fit returned on the four Mn₃Sn runs (Qmin 0.82/1.0 × Qmax 24–30) has a > 0
+  and a window top of 2.40–2.50 Å.
+- **Automatic low-r enforcement at the first-shell foot.** Enforcement used to zero g(r) up to
+  the first-shell onset, deleting 6–9 % of the first-shell pair density. It now cuts at
+  min(foot, anchor − 0.25 Å), where the anchor is min(detected onset, given r₀) and the foot is
+  `first_shell_foot`. The cut never lands above a given r₀, and the first-shell coordination
+  number is preserved to ≤ 0.3 %. On Mn₃Sn 59438 at Q 1.0–27 the cut is at 2.43 Å (expert
+  `rmccut` 2.48 Å). A given r₀ that sits above the detected shell is flagged
+  `first_shell_below_r0`.
+- **Huber IRLS is the Huber estimator.** Both engines multiplied rows by the weight w, which
+  minimises Σw²e² (a redescending estimator). Rows are now scaled by √w. On FeCoSn 199 K the
+  density and Faber-Ziman amplitudes agree to 0.6 % (5.8 % before), and the ρ₀ self-consistency
+  estimate lands 0.5 % from the expert density (5.9 % before). The full before/after table is in
+  [auto-stog.md](algorithms/auto-stog.md).
+- **The page fits what the CLI fits.** The JS loop filtered with S(0) = 0 instead of the
+  composition target, so page and CLI (a, b) differed by up to 2.0 % on Mn₃Sn. They now agree to
+  round-off, and so does the iterated ρ₀.
+- **ρ₀ self-consistency.** `estimate_rho0` confines ρ₀ to 0.005–0.25 Å⁻³ and accepts a root only
+  where the density limit holds. With r₀ pinned at 2.6 Å, Mn₃Sn 300 K had "converged" at
+  0.428 Å⁻³, about 50 g/cm³. Every
+  non-converged exit carries a `reason`, and the CLI and page name the trial density that could
+  not be fitted. `extrapolated` is judged on the first measured Q.
+- **⟨b⟩² and ⟨b²⟩ come from one source.** A composition's Sears ⟨b²⟩ was paired with an
+  unrelated ⟨b⟩² (for example 1 for normalised x-ray data). That invented an S(0) target (+0.55
+  for FeCoSn) and a 60 %-low "converged" density. S(0) > 0 is now rejected.
+- **Q order and bank overlap.** Descending-Q files are sorted. Before, they gave a negated G(r),
+  and a reversed synthetic fitted a = −10.1 for a true +9.97. Duplicate or overlapping Q
+  (concatenated banks) raise.
+- **Despiking and σ.** `--despike` runs once, so the fit and the written files share one point
+  set (2136 vs 2308 points on 59438 before) and `n_despiked` is the true count. The page applies
+  the CLI's σ-column guard, and an unconverged JS run reports `max_iter` iterations.
+- **Faber-Ziman conditioning.** New fields `a_fz_rel_se` (Huber sandwich error) and
+  `a_fz_reliable`. A reliable a_fz is described as necessary, not sufficient, and 59438's a_fz is
+  flagged unreliable.
+- **Aliasing limit.** `r_alias_limit` is π/max ΔQ of the transformed grid, and an r_max beyond it
+  is flagged. Despike gaps lower it to 24 Å on 59438.
+- **CLI.** `--help` states the real enforcement default, which is on in every mode.
+  `--estimate-rho0` seeds ρ₀ = 0.05 when no density source exists. A given r₀ with no detected
+  shell no longer crashes with a TypeError.
+- **stog readers.** Both engines read CR-only line endings, a BOM, bad bytes, Fortran D exponents
+  and ASCII-only digits the same way.
+
+#### Transforms (`transforms.py` and its JS port)
+
+- The Lorch low-Q correction basis is cancellation-free. Grid points 10⁻⁹–10⁻⁶ Å from π/Qmax
+  got coefficients off by up to ~80× or with flipped sign. The unwindowed moments use a Taylor
+  series at small Q₀r, where they were off by 100 %.
+- The Fourier filter accepts an r grid that starts at 0. Before, every output Q was NaN;
+  `g_filtered(0)` is now the continuous extension (`gpdf_slope_at_zero`).
+- The public transforms raise on a grid that is not strictly increasing.
+
+#### Structure KDE (`kde.py`, `localKdeWorker.js`, `gpuKde.js`)
+
+- **The browser draws the SciPy kernel.** The worker's 10⁻⁸ ridge and its isotropic fallback are
+  gone. Both runtimes evaluate H = bw²·C exactly and decline the same slabs with the same
+  `message`. Before, on the GaNb₄Se₈ Ga layer at bw ≤ 0.015, the browser map differed from SciPy's
+  by 36–55 % of the peak.
+- **Kernel from the source atoms.** C is the covariance of one row per slab atom. Periodic images
+  and the 6000-row subsample enter only the density sum, so the thickness and bandwidth sliders
+  no longer reshape the kernel.
+- **One slab test**, `|d − z_c| ≤ dz/2 + 10⁻⁹`, in `kde.py`, the worker and the Slab-In-Cell
+  highlight.
+- **Contours.** Flask's log mode no longer drops contours when the peak is below 1. A map whose
+  kernel misses every grid node is flagged `unresolved` and is neither contoured nor painted.
+- **SciPy.** `_FixedCovarianceKDE` drives SciPy 1.8 through 1.18; `/api/kde/slice` used to answer
+  500 on SciPy < 1.10.
+- **Honest labels.** The custom slice is labelled as the Miller plane (h k l) it is. The map
+  prints the slab thickness and the kernel σ in Å and warns on sub-grid kernels.
+
+#### PCA ellipsoid (`pca_kde.py`, `pcaKde.js`, `pcaCrystalFrame.js`)
+
+- Offsets are unwrapped about each site's circular mean, not folded about zero. A site at x = ½
+  in a one-cell-thick box, or near x = 1 in a two-cell box, was torn in two, making U 10³–10⁴×
+  too large. Displacement Directions inherited the fix.
+- The browser ellipsoid scale uses the exact χ²₃ quantile. The old table was up to +3.5 % off and
+  had a wrong 0.6827 node.
+- The volume, mass, iso levels and PC walls are always sampled on the per-axis box. On planar
+  clouds the captured mass had read 0 % or ~2×10⁵ %. The shell no longer paints clamped box-face
+  density, and the crystal-frame walls are line-integral marginals (no moiré; error 6–22 % → 2–3 %
+  at grid 40).
+- Mixed-occupancy sites are labelled by their majority species. Element pooling selects atoms by
+  their own element.
+- The isosurface level defaults to 50 %, the ellipsoid's.
+- The Cartesian → CIF U_ij formula in the docs is corrected, as is the claim that the
+  20 000-point cap binds only pooled clouds (it also binds single sites in boxes of ≥ 28 cells per
+  edge).
+
+#### Displacement Directions (`orientation.py`, `orientation.js`)
+
+- **Calibrated significances.** The peak readout is `peakSignificance`: the exact Poisson tail
+  of the peak cell, Šidák-corrected over all cells. The map test compares Pearson's X² with a
+  gamma matched to its exact isotropic moments, in `mapSignificance`. It replaces an RMS z
+  printed as "σ": a hemisphere-only cloud used to read "1.4 σ" and now reads > 10 σ. The map test
+  is withheld below 0.1 expected coincident pairs.
+- **Antipodal asymmetry.** The null is now the exact inversion-symmetric one, conditional on
+  each pair's total, and carries an engine flag at 3 SD. The old √(C/πN) floor could exceed 1,
+  so the red flag could never fire at ν = 10.
+- **Anisotropy.** The isotropic expectation is 9/√(10πN_eff), and a Bingham test is added.
+- **Ties.** Exact Voronoi ties are broken centrosymmetrically (an exactly centrosymmetric cloud
+  read an antipodal asymmetry of 1.000 at odd ν),
+  tied peaks resolve by one 10⁻⁹ rule, and neighbour cycles start at their smallest index.
+  Before, 185 of 1002 neighbour rows differed between engines at ν = 10.
+- `recommended_frequency` returns the largest ν with ≥ 12 points per cell, as its docstring
+  promised.
+- Non-finite rows and options are rejected by name. Before, Python failed with a LAPACK error
+  and JS returned NaN axes.
+
+#### Bond angles (`triplets.py`, `triplets.js`, `rmc-triplets`)
+
+- **Bounded work.** Angles stream into the histogram, and both app boundaries refuse a request
+  whose exact angle count exceeds 5×10⁷ before forming any. The 15 Å cap had allowed ~10⁹-angle
+  requests: tens of GB in Flask, `RangeError` in the worker.
+- **One count per physical triplet.** For A = C with distinct windows the old ordered rule
+  counted overlap triplets twice.
+- **Ideal geometries are deterministic.** An angle within 10⁻⁹° of a bin edge bins on it, and a
+  bond within 10⁻⁹ Å of a window bound is inside. A shell typed at its exact distance used to
+  lose up to 60 % of its bonds.
+- **Physical bond counts.** `uniqueBonds` counts each bond once; the directed count is 2× when
+  A = B.
+- A cleared window box is an error. It used to become rmin = 0 silently: Nb–Nb–Nb 3.5–4.6 Å
+  became 0–4.6 Å.
+- `rmc-triplets <run folder>` picks the same `.rmc6f` as the app.
+- The docs correct the sin θ rationale and give the factor to RMCProfile's `norm/sin(theta)`.
+  Angle totals match RMCProfile's own TRIPLETS output for five triplets on the 5 K run.
+
+#### Parsers and run dashboard (`parsers.py`, `plots.py`, `browserData.js`, `rmc6f.js`)
+
+- **Rwp** is normalised by the experimental column. The column roles come from the header when
+  it names them, else from RMCProfile's (x, calc, expt) order.
+- **`.rmc6f` atom lines.** The browser read fields from the end of the line, so one extra
+  trailing field put all 52 000 atoms on z = 0 with cell indices as sites. Both runtimes now
+  share one anchored, validated grammar. It reads D exponents, any spelling of the `Atoms` marker,
+  bare-CR files and coords-only lines. It skips and counts non-finite lines and reports
+  "k of n atom lines unparsed".
+- **Structure files.** 0-byte or marker-less candidates are skipped; an empty `.rmc6f` used to
+  hide six valid configurations in `data/250K_try1/supercell`. `read_structure` pairs Frac/rmc6f
+  files by stem. Before, it could fold a 5×10×10 Frac file with a 10×10×10 supercell.
+- **χ² history.** `.log` reads check the header's column count, drop a half-written last line and
+  keep NaN rows as gaps. Static mode charts one run's logs, not every run spliced together. The
+  curve is named by its column (`χ² history: X_ray_(R)1`): it is one fit term, not a total.
+- **Labels.** `*_FQn.csv` is labelled F(Q), `*_PDFpartials.csv` g(r); PNG and Flask use the same
+  strings.
+- **dispA** goes through the full cell metric. It was +10 % in hexagonal and +23 % in
+  rhombohedral cells.
+- **Flask JSON is strict.** A NaN in a data series becomes `null`, never an invalid JSON token.
+
+#### Symmetry finder (`symmetry.js`, `spaceGroupSymbol.js`, `wyckoff.js`)
+
+- **Closed groups only.** A space-group number is given only to an operation set that is closed
+  under composition. A set that fails is labelled "not a group" with no number (1 of 2065 rungs in
+  random sweeps). Each operation's translation is least-squares refined, so the answer no longer
+  depends on atom order; the demo's full-group residual fell from 0.038 to 0.031 Å.
+- **Standard settings.** A symbol is shown only when it is a tabulated symbol of the detected
+  class and centring, in a standard setting found from the group's own elements (any axis order,
+  centred, primitive or rhombohedral cells, supercells reduced). Otherwise the card shows the
+  crystal class or a "≥" lower bound, with no number. A centred group given on a primitive cell
+  is named in its centred cell (C2 used to read P2 No. 3, I4 P4 No. 75, R3 P3 No. 143).
+- **Lattice rotations** are tested by Cartesian strain on the τ scale. A c/a = 1.004 perovskite
+  reads `P4/mmm` below 0.016 Å and `Pm-3m` above it.
+- **I2₁2₁2₁ and I2₁3 are told apart** from I222 and I23. The 0.5.0 entry listed that as a known
+  limitation.
+- **Wyckoff letters** are read in the naming cell and paired with that cell's multiplicity. The
+  assistant's labels follow.
+- **Correction to the 0.5.0 entry.** The table holds 1731 positions, not 1724. The seven
+  P222₁ (#17) and I2₁2₁2₁ (#24) special positions the 0.5.0 check "rejected" are correct. The
+  rejection came from test fixtures that described those two groups about a shifted origin. At
+  the ITA origin, P222₁'s 2a site `x,0,0` lies on the 2-fold axis along a and expands to 2
+  points. All seven are restored.
+- **Bounded cost.** Bases over 2000 sites, or boxes over 384 candidate operations, read
+  "not analysed" instead of freezing the page. An unanalysable lattice reads "undetermined"
+  instead of P1 No. 1.
+
+#### Flask API (`web_app/backend/app.py`)
+
+- **One validator for every numeric parameter** (`_number()`). NaN, ±∞, text, lists and
+  out-of-range values are a 400 that names the parameter. Before, they could produce a 200 with
+  invalid JSON or an all-zero map. A computed result that comes out NaN/∞ is also a 400,
+  including a KDE bandwidth whose kernel overflows and a scaling fit that overflows.
+- **Parsed-file caches** are keyed on the full file signature (`st_mtime_ns`, `st_ctime_ns`,
+  `st_size`, `st_ino`), never on a whole-second mtime. A file rewritten over sshfs or `scp -p`
+  used to be served stale until the server restarted. A parse of a file that changed while it
+  was being read is never cached; a file that keeps changing is a 409.
+- **Live Data in Flask mode** re-checks the `.rmc6f` signature on every poll and on Load. The
+  analysis pages then reload in place, keeping the picks that still apply, so a page never mixes
+  two configurations. Only Bond Geometry's computed distribution is dropped. Every Three.js view
+  releases its WebGL context on teardown.
+- `/api/scaling/*` parse `enforce` once, as a tri-state. They return the coefficient warnings
+  the CLI prints and never mutate a cached result.
+- [REFERENCE.md](REFERENCE.md) documents all 15 routes with their ranges and caps, and a
+  contract test keeps it complete.
+
+### Behaviour changes
+
+Read these before comparing 1.0 numbers or files with earlier releases.
+
+- **Classic Auto StoG outputs follow Fortran stog.** `scale.gr` / `<stem>.gr` hold the
+  unfiltered g(r), ≈ 1 at large r. `scale_ft.gr` / `<stem>_ft.gr` hold the filtered g(r) plus a
+  third column r·[g(r) − 1]. They used to hold g − 1 and 4πρ₀r(g − 1). The `_rmc` files (Keen
+  G_K, D, F_K) are unchanged.
+- **Low-r enforcement is automatic** at the first-shell foot when no cutoff is given: CLI
+  `--data`, API without a stog.inp, or a page with a blank Cutoff. A stog.inp or an explicit
+  `--enforce-cutoff` still wins, and `--no-enforce` turns it off.
+- **Short first bonds stop the fit.** A first shell within ~0.55 Å of `r_cutoff` (Si–O, P–O,
+  B–O, C–O at the default 1.0 Å) raises an error that names the `r_cutoff` to use; it used to
+  return a biased scale. An unpinned density-mode fit that cannot confirm a first shell also
+  stops, asking for r₀ or the FZ criterion. On Mn₃Sn this happens in 9 of 56
+  (run, Qmin, Qmax) configurations.
+- **A fit with a ≤ 0 is never written** (CLI, API, page). Other failures that now stop instead
+  of passing: an S(Q) with overlapping Q banks, and ⟨b²⟩ < ⟨b⟩².
+- **stog.inp r₀ rule.** Line 22 follows the classic semantics: `peak_rmin` when the first-peak
+  window starts inside the cutoff, else `peak_cutoff`. '2.48 2.65 3.1' now gives r₀ = 2.48, where
+  it gave 2.65.
+- **Auto StoG values move.** The Huber √w fix moves the Mn₃Sn density-limit scales down 8–16 %;
+  see the table in [auto-stog.md](algorithms/auto-stog.md). The aliasing flag now fires on
+  despiked runs at r_max = 50 Å.
+- **Rwp denominator** is the experimental column. Values change for every fit whose curves
+  differ in amplitude.
+- **Labels.** `*_FQn.csv` fits are titled F(Q), without a radiation type, and PDF partials are
+  titled `Partial g(r)`. The R-value chart is `χ² history: <column>` with y label ln(χ²).
+- **Orientation.** `recommended_frequency` floors, so Auto picks coarser tilings (N = 1000 →
+  ν = 2, was 3; 300 → 1; 12 000 → 9). `antipodalAsymmetryNull` is the exact conditional null.
+  Negative or NaN smoothing is rejected; it used to be a silent no-op. A direction exactly on a
+  Voronoi boundary (idealised input only) may land in a different cell; 0 of 624 000 real-data
+  assignments changed.
+- **New or nullable payload fields.** Orientation adds `peakSignificance`, `peakPValue`,
+  `peakLocalPValue`, `peakCount`, `peakExpected`, `peakTieCount`, `mapSignificance`,
+  `mapPValue`, `mapChiSquare`, `mapDegreesOfFreedom`, `mapNullSd`, `mapNullSkewness`,
+  `mapExpectedPairs`, `antipodalAsymmetryNullSd`, `antipodalAsymmetryZ`,
+  `antipodalAsymmetrySignificant`, `orientationEffectivePoints`, `orientationAnisotropyNull`,
+  `orientationBinghamStatistic`, `orientationBinghamPValue` and
+  `orientationAnisotropySignificance`. `mapPValue`/`mapSignificance` are `null` on maps too
+  sparse to test. The legacy `significance` (an RMS z) and `peakZScore` (a local z) stay in the
+  payload but are no longer displayed.
+- The other new fields:
+  - **PCA:** `axisResolved`, `zeroSpread` (axes, anisotropy, κ and `nonGaussianity` are then
+    `null`), `elementCounts`, `mixed` and `boxHalfWidths`.
+  - **Structure KDE:** `kernel`, `message`, `warnings`, and `bw: null` on a declined bandwidth.
+  - **Bond angles:** `lengths12/23.uniqueBonds` and `unique_bonds12/23`.
+  - **Structure payloads:** `parseReport`/`parseWarning`.
+  - **Auto StoG:** `fit_failure`, `a_fz_rel_se`, `a_fz_reliable`, `r_alias_limit`,
+    `rmax_beyond_alias_limit`, `first_shell_below_r0`, the estimate's `reason`/`stopped`, and a
+    `warnings` array on `/api/scaling/*`.
+- **PCA `nonGaussianity`** is Mardia's (b₂ − 15)/5, so it changes for every site. A symmetric
+  split site is negative. The tooltip used to say "positive = split sites".
+- **Bond angles.** For A = C with distinct overlapping windows, each physical triplet counts once,
+  where overlap triplets used to count twice. Shared windows, different end elements and disjoint
+  windows count as before. App requests above 5×10⁷ angles are refused (400 / thrown Error);
+  library and CLI calls are unrestricted.
+- **Structure KDE payload.** For a custom normal the Python `z`/`dz` echo the slider fractions
+  (fractions of the cube's projection range along the normal) as the browser always did.
+  `depth`/`depthThickness` keep depth units. In library calls a non-positive or non-finite
+  bandwidth is declined (`bw: null`); Python used to draw |bw| and JS to substitute 0.03.
+- **PCA `cubicBox` is display-only.** It sizes `boxHalfWidths`. The volume, mass and levels are
+  always sampled per axis, so API callers that relied on a cubic volume get per-axis
+  `halfWidths`.
+- **Browser parsing is stricter.** Element names are capitalised as in Python (SE → Se). A CSV
+  with a stray non-numeric cell fails with a line-numbered error; it used to plot a silent NaN.
+  A `.rmc6f` with zero parseable atoms is an error that says why, in both runtimes; it used to
+  give an empty card.
+- **Flask answers 400 for invalid input** where it answered 200 with invalid JSON or an empty
+  map, or 500. That covers numeric parameters, zero parseable atoms, non-finite computed results
+  and an overflowing bandwidth. 409 means the source file kept changing during the read.
+- **Live Data (Flask mode)** reloads the analysis pages when the `.rmc6f` changes. With Live Data
+  off, press Load to pick up a newly saved configuration.
+
+### Robustness and parity
+
+- Python ↔ browser goldens: Auto StoG (`autoscale_fixture.json`, round-off), Structure KDE
+  (`kde_parity_fixture.json`), bond angles (`triplets_fixture.json`), displacement directions
+  (values shared between `test_orientation_fixes.py` and `orientationFixes.test.js`), the
+  `.rmc6f` parser (`rmc6f_coords_only_fixture.json`) and the plot readers
+  (`plot_parity_fixture.json`, including neutron, Bragg and EXAFS layouts). The WebGPU shader is
+  checked by a float32 emulation.
+- Non-finite input is handled one way everywhere: `.rmc6f` lines with NaN/∞ coordinates are
+  skipped, counted and reported in both runtimes (no batched `LinAlgError`). NaN in a data series
+  is `null`. A NaN result is a 400.
+- Both runtimes resolve a run folder to the same configuration (`find_run_configuration`,
+  `chooseStructureFile`), with code-point tie-breaks.
+- The package root exports the 1.0 engine API (`first_shell_foot`, `auto_enforcement_cutoff`,
+  `fz_limit_fit`, `alias_limit`, `bond_angle_summary_from_file`, …).
+- Coordinates-only site reconstruction on the PCA page is 3.5–6.5× faster. The `.rmc6f`
+  classifier's fast path parses 52 000 atoms in ~0.2 s.
+
+### Tooling
+
+- Dependency floors `numpy>=1.22`, `scipy>=1.8`, `matplotlib>=3.6` and `contourpy>=1.0.7`
+  (`kde.py` imports contourpy directly). The suite passes on the floors (Python 3.9) and on the
+  newest releases (Python 3.13).
+- CI runs the Python suite on 3.9 with the floors pinned exactly, and on 3.11 and 3.13 with the
+  latest releases. The frontend job runs lint, `npm test` and the build.
+- The committed demo run (`web_app/frontend/public/demo/GTS_250K.*`) backs tests that run in CI:
+  `tests/test_parsers_demo_run.py`, `__tests__/demoRun.test.js`, the KDE golden and the plot
+  parity golden. The GaNb₄Se₈ and `stog_tests` real-data tests still skip without `data/`, and
+  the full Mn₃Sn sweep is opt-in (`RMC_TOOLKITS_FULL_SWEEP=1`).
+- Version 1.0.0 (Production/Stable classifier). The Auto StoG tab stays hidden in the shipped
+  build (`SHOW_AUTO_STOG = false`); the engine, CLI and API are supported.
+
+### Deferred beyond 1.0
+
+Maintainer decisions considered during the audit and not taken for 1.0:
+
+- **Structure KDE:**
+  - A physical kernel, isotropic in the real plane with a width in Å, which would remove the
+    slab-layout kernel artefact. That artefact is documented and flagged on the map.
+  - Normalising oblique slices by the section integral.
+  - An `[uvw]` input mode, and `(100)`-style labels for the a/b/c presets.
+  - A decline instead of a warning for `unresolved` maps.
+- **χ² history:**
+  - Plotting every χ² column and the total, and having the watchdog classify on the total. Today
+    both the chart and the badge follow the last column, and the badge names it.
+  - A dedicated "blown-up" watchdog status.
+  - A weighted Rwp.
+- **Symmetry finder:**
+  - A Python port or an spglib cross-check in CI; the finder is browser-only.
+  - Moving it into a Web Worker so the 2000-site and 384-operation caps can rise.
+  - An origin-shift search, so Wyckoff letters are unique across origins (Ga 4c vs 4d).
+  - Cell reduction for boxes declared 1×1×1, and a reduced-cell re-description to name "≥"
+    lower bounds fully.
+  - Subgroup enumeration instead of the greedy maximal group.
+- **Displacement Directions:**
+  - Making Auto (or a coarser ν) the default resolution instead of ν = 10. Measured during the
+    audit, 1 of 52 real sites exceeded 2σ at ν = 10, against 8–11 on Auto.
+  - Removing or renaming the legacy `significance`/`peakZScore` fields.
+  - A variance-matched map test, and an exact antipodal null at coarse ν.
+  - A reference-position option, since coherent off-centring is invisible by construction.
+  - A physical sign rule for the PCA frame.
+- **PCA ellipsoid:**
+  - Identical subsamples in both engines above 20 000 copies.
+  - `AXIS_RESOLUTION_SIGMAS` = 2 instead of 3. At 3, PC2 is never resolved on the heavy-tailed
+    5 K sites, so the κ column mostly reads "—".
+  - U_cif/β_ij beside the Cartesian tensor.
+  - A fixed-band shell colour scale.
+  - Linking the isosurface and ellipsoid levels.
+  - Per-species clouds for mixed sites.
+  - Exact analytic crystal-frame marginals.
+- **Auto StoG:**
+  - A lower default `r_cutoff`, or lowering it automatically for short bonds.
+  - Switching to the FZ amplitude automatically when the density limit is degenerate (the Mn₃Sn
+    refusals).
+  - Refusing an unconverged, an unreliable-FZ or an r₀-above-the-shell fit.
+  - Exposing the ρ₀ physical range.
+  - An "enforcement not applied" chip and explicit first-peak-window fields on the page.
+- **Bond angles:**
+  - Pairing A = C distinct-window requests as (w12 bond, w23 bond), so the work and not only the
+    angle count is bounded by the budget.
+  - A different `APP_MAX_ANGLES`.
+  - A CLI `--max-angles`.
+  - Showing the exact count before Compute.
+  - Snapping the length-histogram bins.
+  - Checking the distinct-window convention against an RMCProfile TRIPLETS run.
+- **Parsers and API:**
+  - Flipping `iter_rmc6f_atoms`'s full-layout-only default in 2.0.
+  - Renaming the `xray_sq`/`neutron_sq` kinds.
+  - The mid-write guard on the analysis pages.
+  - A "configuration changed" banner with Live Data off.
+  - Rejecting out-of-range grids and z instead of clamping them.
+  - Caching `rmc6f_problem` per file signature (each request re-reads a 64 KiB head per
+    candidate, ~0.4 ms).
+
 ## v0.5.0 — 2026-08-14
 
 Two new analysis pages, correct space-group naming, and the math reference.
