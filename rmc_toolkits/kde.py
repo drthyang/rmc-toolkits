@@ -201,6 +201,12 @@ def load_unit_cell_positions(
 
     Coordinates are returned in Angstrom (cartesian), matching the desktop
     ``RMC_KDE.py`` convention so axis limits and aspect ratios line up.
+
+    Only element and position are needed, so legacy coords-only atom lines
+    (``id element [label] x y z``) count too: the fold ``(coords * supercell) % 1``
+    needs no cell index. That is the atom set the browser KDE worker folds
+    (``structureFromRmc6f`` keeps both layouts), so a coords-only file gives the
+    same positions in both runtimes instead of none in this one.
     """
     rmc6f_path = Path(rmc6f_path)
     lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
@@ -209,7 +215,7 @@ def load_unit_cell_positions(
     select = element if element not in (None, "", "all") else None
     folded: list[np.ndarray] = []
     fractional: list[np.ndarray] = []
-    for atom in iter_rmc6f_atoms(rmc6f_path):
+    for atom in iter_rmc6f_atoms(rmc6f_path, include_coords_only=True):
         if select is not None and atom["element"] != select:
             continue
         unit_frac = (atom["coords"] * supercell) % 1.0
