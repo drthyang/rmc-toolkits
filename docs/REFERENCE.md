@@ -136,6 +136,18 @@ Lower-level parser helpers are also exported: `read_rmc_csv`, `read_exafs_csv`, 
 All endpoints are under `/api`. Relative paths resolve under `RMC_TOOLKITS_DATA_ROOT`; absolute
 paths are rejected unless inside the configured root or a folder selected via the native picker.
 
+**Parameter validation.** Every numeric query-string or JSON-body parameter is parsed by
+`_number()` in `web_app/backend/app.py`: it must be a finite number (text, lists, objects,
+booleans, `NaN` and `±Infinity` are rejected), integer parameters must be integral, and each value
+must lie in its documented range. A violation is **HTTP 400** with an `error` message naming the
+parameter; a missing or blank parameter takes its default. Grid sizes are the exception: they are
+clamped to the engine's limits instead of rejected. The KDE-slice, PCA-KDE and orientation routes
+also refuse to serialize a result that came out `NaN`/`Infinity` for finite but extreme values
+(e.g. a bandwidth of `1e-200`, which underflows the float64 kernel): that is a 400 too, never a
+200 whose body is invalid JSON. Error statuses: 400 bad parameter or unusable input, 403 path
+outside the data roots, 404 missing file/folder, 409 output exists (`/api/scaling/run` without
+`force`), 500 unexpected failure.
+
 | Method & path | Description |
 | --- | --- |
 | `GET /api/health` | Service status and active data root. |

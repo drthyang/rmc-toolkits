@@ -227,6 +227,86 @@ def _clean_axis_label(label: str) -> str:
     )
 
 
+# --- Request parameter parsing ------------------------------------------------
+# Every numeric query-string or JSON parameter goes through _number(). It
+# rejects anything that is not a finite number (text, lists, objects, booleans,
+# NaN, +-inf), non-integral values for integer parameters, and values outside
+# the parameter's documented range, by raising ValueError naming the parameter.
+# Every route maps ValueError to HTTP 400, so a bad value never reaches an
+# engine that would answer 200 with bare NaN/Infinity tokens (invalid JSON for
+# a browser) or with a silently empty map. Grid sizes are clamped (not
+# rejected) to the same limits the engines apply. The accepted ranges are
+# listed with the endpoints in docs/REFERENCE.md.
+
+KDE_GRID_CLAMP = (16, 400)  # kde.kde_slice clamps to the same range
+KDE_MAX_LEVELS = 64
+PCA_GRID_CLAMP = (8, 128)  # pca_kde.pca_kde_volume clamps to the same range
+MAX_ORIENTATION_SMOOTHING = 64  # neighbour-diffusion passes (the UI offers 0-12)
+
+
+def _number(
+    raw,
+    name: str,
+    *,
+    integer: bool = False,
+    gt: float | None = None,
+    ge: float | None = None,
+    lt: float | None = None,
+    le: float | None = None,
+    clamp: tuple[int, int] | None = None,
+) -> float | int:
+    """Parse one request value as a finite number and check its range."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise ValueError(f"{name} must be a number, got {raw!r}")
+    try:
+        value = float(raw)
+    except (ValueError, OverflowError):
+        raise ValueError(f"{name} must be a number, got {raw!r}") from None
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number, got {raw!r}")
+    if integer:
+        if not value.is_integer():
+            raise ValueError(f"{name} must be an integer, got {raw!r}")
+        value = int(value)
+    if gt is not None and not value > gt:
+        raise ValueError(f"{name} must be > {gt:g}, got {value:g}")
+    if ge is not None and not value >= ge:
+        raise ValueError(f"{name} must be >= {ge:g}, got {value:g}")
+    if lt is not None and not value < lt:
+        raise ValueError(f"{name} must be < {lt:g}, got {value:g}")
+    if le is not None and not value <= le:
+        raise ValueError(f"{name} must be <= {le:g}, got {value:g}")
+    if clamp is not None:
+        value = min(max(value, clamp[0]), clamp[1])
+    return value
+
+
+def _query_number(name: str, default, **rules):
+    """A numeric query-string argument; missing or blank means ``default``."""
+    raw = request.args.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return _number(raw, name, **rules)
+
+
+def _finite_json(payload):
+    """``jsonify`` for numeric results that refuses NaN/Infinity.
+
+    Finite but extreme parameters (a bandwidth of 1e-200, an extent of 1e300)
+    pass the range checks yet make the float64 kernels underflow or overflow;
+    Flask would serialize the resulting NaN as a bare token, which is invalid
+    JSON for a browser. Raise ValueError (HTTP 400) instead.
+    """
+    try:
+        body = app.json.dumps(payload, allow_nan=False)
+    except ValueError:
+        raise ValueError(
+            "the result contains NaN or Infinity for these parameters (an extreme "
+            "bandwidth, scale or extent?); use less extreme values"
+        ) from None
+    return app.response_class(f"{body}\n", mimetype=app.json.mimetype)
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "dataRoot": str(DATA_ROOT)})
@@ -420,7 +500,9 @@ def convert_frac():
 def structure():
     try:
         target = _resolve_inside_root(request.args.get("dir", "."))
-        max_points = max(100, min(int(request.args.get("maxPoints", MAX_STRUCTURE_POINTS)), MAX_STRUCTURE_POINTS))
+        max_points = _query_number(
+            "maxPoints", MAX_STRUCTURE_POINTS, integer=True, clamp=(100, MAX_STRUCTURE_POINTS)
+        )
         rmc6f_path = _find_rmc6f(target)
         lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
         atom_indices = read_atom_indices(rmc6f_path)
@@ -467,6 +549,8 @@ def structure():
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -483,12 +567,19 @@ SLICE_ORIENTATIONS = {
 }
 
 
-def _bw_argument(raw: str) -> str | float:
-    """Bandwidth query arg: the names 'scott'/'silverman', else a positive float."""
+def _bw_argument(raw: str | None, default: str = "scott") -> str | float:
+    """Bandwidth query arg: the names 'scott'/'silverman', else a positive finite number."""
+    if raw is None or not str(raw).strip():
+        return default
     name = str(raw).strip().lower()
     if name in ("scott", "silverman"):
         return name
-    return float(raw)
+    try:
+        return _number(raw, "bw", gt=0.0)
+    except ValueError:
+        raise ValueError(
+            f"bw must be 'scott', 'silverman' or a positive finite number, got {raw!r}"
+        ) from None
 
 
 def _slice_orientation_from_request():
@@ -497,10 +588,11 @@ def _slice_orientation_from_request():
         config = SLICE_ORIENTATIONS[orientation]
         return orientation, config["normal"], config["u"], config["v"]
 
+    # A zero normal is rejected by kde._plane_basis (ValueError -> 400).
     normal = (
-        float(request.args.get("nx", 0.0)),
-        float(request.args.get("ny", 0.0)),
-        float(request.args.get("nz", 1.0)),
+        _query_number("nx", 0.0),
+        _query_number("ny", 0.0),
+        _query_number("nz", 1.0),
     )
     return "custom", normal, None, None
 
@@ -514,20 +606,22 @@ def kde_slice_endpoint():
         element = request.args.get("element") or None
         if element in ("", "all"):
             element = None
-        positions = _cached_positions(str(rmc6f_path), rmc6f_path.stat().st_mtime, element)
-        cell_lengths = positions.cell_lengths
 
         orientation, normal, u_axis, v_axis = _slice_orientation_from_request()
 
         # z and dz arrive as fractions of the projection range along the slice
         # normal. Keep the KDE slice in fractional coordinates so non-orthogonal
         # cells can be projected through the actual cell basis in the frontend.
-        z_frac = float(request.args.get("z", 0.5))
-        dz_frac = float(request.args.get("dz", 0.08))
-        bw = float(request.args.get("bw", 0.03))
-        grid = int(request.args.get("grid", 120))
-        levels = int(request.args.get("levels", 8))
+        # z is clamped to [0, 1] by the engine (echoed back as "center").
+        z_frac = _query_number("z", 0.5)
+        dz_frac = _query_number("dz", 0.08, gt=0.0, le=1.0)
+        bw = _query_number("bw", 0.03, gt=0.0)
+        grid = _query_number("grid", 120, integer=True, clamp=KDE_GRID_CLAMP)
+        levels = _query_number("levels", 8, integer=True, ge=0, le=KDE_MAX_LEVELS)
         log = request.args.get("log", "false").lower() in ("1", "true", "yes")
+
+        positions = _cached_positions(str(rmc6f_path), rmc6f_path.stat().st_mtime, element)
+        cell_lengths = positions.cell_lengths
 
         result = oriented_kde_slice(
             positions.fractional_positions,
@@ -546,11 +640,13 @@ def kde_slice_endpoint():
         result["orientation"] = orientation
         result["source"] = str(rmc6f_path)
         result["element"] = element or "all"
-        return jsonify(result)
+        return _finite_json(result)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:  # includes numpy.linalg.LinAlgError
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -569,7 +665,7 @@ def pca_sites_endpoint():
     try:
         target = _resolve_inside_root(request.args.get("dir", "."))
         rmc6f_path = _find_rmc6f(target)
-        probability = float(request.args.get("probability", 0.5))
+        probability = _query_number("probability", 0.5, gt=0.0, lt=1.0)
         sites = _cached_site_displacements(rmc6f_path)
         ellipsoids = site_ellipsoids(sites, probability=probability)
         return jsonify(
@@ -588,6 +684,8 @@ def pca_sites_endpoint():
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -598,28 +696,32 @@ def pca_kde_endpoint():
     try:
         target = _resolve_inside_root(request.args.get("dir", "."))
         rmc6f_path = _find_rmc6f(target)
-        sites = _cached_site_displacements(rmc6f_path)
 
-        reference_raw = request.args.get("referenceNumber")
-        reference_number = int(reference_raw) if reference_raw not in (None, "") else None
+        reference_number = _query_number("referenceNumber", None, integer=True)
         element = request.args.get("element") or None
         if element in ("", "all"):
             element = None
+        bw = _bw_argument(request.args.get("bw"))
+        bw_scale = _query_number("bwScale", 1.0, gt=0.0)
+        grid = _query_number("grid", 48, integer=True, clamp=PCA_GRID_CLAMP)
+        extent = _query_number("extent", 3.0, gt=0.0)
+        probability = _query_number("probability", 0.5, gt=0.0, lt=1.0)
 
+        sites = _cached_site_displacements(rmc6f_path)
         result = site_pca_kde(
             sites,
             reference_number=reference_number,
             element=element,
-            bw=_bw_argument(request.args.get("bw", "scott")),
-            bw_scale=float(request.args.get("bwScale", 1.0)),
-            grid=int(request.args.get("grid", 48)),
-            extent=float(request.args.get("extent", 3.0)),
+            bw=bw,
+            bw_scale=bw_scale,
+            grid=grid,
+            extent=extent,
             cubic_box=request.args.get("cubicBox", "false").lower() in ("1", "true", "yes"),
-            probability=float(request.args.get("probability", 0.5)),
+            probability=probability,
             projections=request.args.get("projections", "true").lower() in ("1", "true", "yes"),
         )
         result["source"] = str(rmc6f_path)
-        return jsonify(result)
+        return _finite_json(result)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
@@ -653,14 +755,14 @@ def triplets_endpoint():
                 return fallback
             if missing:
                 raise ValueError(f"{min_key}/{max_key} are required together; missing {missing[0]}")
-            bounds = float(raw_min), float(raw_max)
+            bounds = _number(raw_min, min_key), _number(raw_max, max_key)
             if bounds[1] > 15.0:
                 raise ValueError(f"{max_key} is capped at 15 A for API requests, got {bounds[1]}")
             return bounds
 
         window12 = window("r12Min", "r12Max")
         window23 = window("r23Min", "r23Max", fallback=window12)
-        bin_width = float(request.args.get("binWidth", 1.0))
+        bin_width = _query_number("binWidth", 1.0)
         if bin_width < 0.05:
             raise ValueError(f"binWidth is capped at >= 0.05 deg for API requests, got {bin_width}")
         result = dict(
@@ -698,29 +800,34 @@ def pca_orientation_endpoint():
     try:
         target = _resolve_inside_root(request.args.get("dir", "."))
         rmc6f_path = _find_rmc6f(target)
-        sites = _cached_site_displacements(rmc6f_path)
 
-        reference_raw = request.args.get("referenceNumber")
-        reference_number = int(reference_raw) if reference_raw not in (None, "") else None
+        reference_number = _query_number("referenceNumber", None, integer=True)
         element = request.args.get("element") or None
         if element in ("", "all"):
             element = None
+        # frequency's [1, 64] range is enforced by orientation.goldberg_tiling.
+        frequency = _query_number("frequency", None, integer=True)
+        min_amplitude = _query_number("minAmplitude", 0.0, ge=0.0)
+        min_amplitude_quantile = _query_number("minAmplitudeQuantile", 0.0, ge=0.0, lt=1.0)
+        smoothing = _query_number(
+            "smoothing", 0, integer=True, ge=0, le=MAX_ORIENTATION_SMOOTHING
+        )
 
-        frequency_raw = request.args.get("frequency")
+        sites = _cached_site_displacements(rmc6f_path)
         result = site_orientation_histogram(
             sites,
             reference_number=reference_number,
             element=element,
-            frequency=int(frequency_raw) if frequency_raw not in (None, "") else None,
+            frequency=frequency,
             weight=request.args.get("weight", "count"),
-            min_amplitude=float(request.args.get("minAmplitude", 0.0)),
-            min_amplitude_quantile=float(request.args.get("minAmplitudeQuantile", 0.0)),
-            smoothing=int(request.args.get("smoothing", 0)),
+            min_amplitude=min_amplitude,
+            min_amplitude_quantile=min_amplitude_quantile,
+            smoothing=smoothing,
             frame=request.args.get("frame", "cartesian"),
             geometry=request.args.get("geometry", "true").lower() in ("1", "true", "yes"),
         )
         result["source"] = str(rmc6f_path)
-        return jsonify(result)
+        return _finite_json(result)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
@@ -736,11 +843,12 @@ def pca_orientation_endpoint():
 # rmc-autoscale CLI so API outputs are identical to a CLI/classic-stog session.
 
 
-def _payload_float(payload: dict, key: str) -> float | None:
+def _payload_float(payload: dict, key: str, **rules) -> float | None:
+    """A numeric JSON-body field (see ``_number``); missing, null or blank is None."""
     value = payload.get(key)
-    if value in (None, ""):
+    if value is None or (isinstance(value, str) and not value.strip()):
         return None
-    return float(value)
+    return _number(value, key, **rules)
 
 
 def _payload_bool(payload: dict, key: str, default: bool) -> bool:
@@ -784,8 +892,8 @@ def _resolve_scaling_source(payload: dict):
 
 
 def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
-    def pick(key: str, fallback):
-        value = _payload_float(payload, key)
+    def pick(key: str, fallback, **rules):
+        value = _payload_float(payload, key, **rules)
         return fallback if value is None else value
 
     if inp is not None:
@@ -795,7 +903,7 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
         b_avg_sq = pick("bAvgSq", inp.b_avg_sq)
         r_cutoff = pick("rCutoff", inp.r_cutoff)
         rmax = pick("rmax", inp.rmax)
-        nr = int(pick("nr", inp.nr))
+        nr = int(pick("nr", inp.nr, integer=True))
         lorch = _payload_bool(payload, "lorch", inp.lorch)
     else:
         qmin = _payload_float(payload, "qmin")
@@ -818,7 +926,7 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
         b_avg_sq = _payload_float(payload, "bAvgSq")
         r_cutoff = pick("rCutoff", 1.0)
         rmax = pick("rmax", 50.0)
-        nr = int(pick("nr", 5000))
+        nr = int(pick("nr", 5000, integer=True))
         lorch = _payload_bool(payload, "lorch", False)
 
     b_sq_avg = _payload_float(payload, "bSqAvg")
@@ -873,7 +981,8 @@ def _resolve_scaling_enforcement(payload: dict, inp) -> tuple[float, float, floa
         return None  # data mode: resolved post-run from the detected r0
     window = payload.get("peakWindow")
     if isinstance(window, (list, tuple)) and len(window) == 2:
-        peak_rmin, peak_rmax = float(window[0]), float(window[1])
+        peak_rmin = _number(window[0], "peakWindow[0]")
+        peak_rmax = _number(window[1], "peakWindow[1]")
     elif inp is not None and _payload_float(payload, "enforceCutoff") is None:
         peak_rmin, peak_rmax = inp.peak_rmin, inp.peak_rmax
     else:
@@ -894,6 +1003,10 @@ def _resolve_scaling_mode(payload: dict, inp) -> tuple[str, float, float]:
                 b = inp.b
         if a is None:
             raise CliError("manual mode requires a scale 'a' (or a stog input to take it from)")
+        if not math.isfinite(float(a)) or float(a) == 0.0:
+            # S_corr = a*S_meas + b: a = 0 discards the data (and the raw-S(Q)
+            # series (S_corr - b)/a would be 0/0).
+            raise ValueError(f"manual mode requires a finite, non-zero scale 'a', got {a}")
         if b is None:
             b = 0.0
         return mode, float(a), float(b)
