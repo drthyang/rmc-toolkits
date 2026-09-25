@@ -826,6 +826,15 @@
     cursor: help;
 }
 
+/* A full-width explanatory row (no displacement / unresolved axes): wraps, reads
+   as prose rather than a number. */
+.pca-matrix td.pca-axes-note {
+    text-align: left;
+    white-space: normal;
+    color: var(--muted);
+    line-height: 1.25;
+}
+
 /* Color dot tying each PC row to the 3D triad (PC1 red, PC2 green, PC3 blue). */
 .pca-pc-dot {
     display: inline-block;

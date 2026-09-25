@@ -316,13 +316,13 @@ $\lambda_1\ge\lambda_2\ge\lambda_3\ge0$.
   transpose so axes are **rows**.
 - JS `eigenDecomposition()`: `jacobiEigenSymmetric()` — cyclic Jacobi rotations over the pairs
   $(0,1),(0,2),(1,2)$, at most **50 sweeps**, early exit when
-  $|a_{01}|+|a_{02}|+|a_{12}| < 10^{-18}$, and an individual rotation skipped when
-  $|a_{pq}|<10^{-300}$ (which would otherwise divide by zero forming
-  $\theta=(a_{qq}-a_{pp})/2a_{pq}$). Note the convergence test is **absolute**, not scaled by the
-  matrix norm; for displacement covariances (order $10^{-4}$–$10^{-1}$ Å²) it lies ~16 orders below
-  the data, so in practice the loop runs until the off-diagonals underflow to zero (capped at 50
-  sweeps) rather than until a meaningful relative tolerance is met. For a matrix with entries near or
-  below $10^{-18}$ it would exit immediately and return the raw diagonal.
+  $|a_{01}|+|a_{02}|+|a_{12}| \le 10^{-15}\,\lVert\mathbf{U}\rVert_F$, and an individual rotation
+  skipped when $|a_{pq}|<10^{-300}$ (which would otherwise divide by zero forming
+  $\theta=(a_{qq}-a_{pp})/2a_{pq}$). The convergence test is **relative** to the Frobenius norm, so a
+  matrix of any scale is diagonalised to the same precision. (Before 1.0 it was an absolute
+  $<10^{-18}$, which returned a round-off covariance of $\sim10^{-28}$ Å² — an average configuration —
+  undiagonalised with identity axes while `eigh` returned rotated noise, so the two engines disagreed
+  on axes, anisotropy and the `degenerate` flag for the same file.)
 
   Cyclic Jacobi was chosen over a closed-form $3\times3$ eigenvalue formula because it stays accurate
   on the near-degenerate clouds (planar or linear disorder) that trip cubic-root solvers, and a few
@@ -365,8 +365,9 @@ Everything in the *Displacement statistics* panel comes from Step 3 (`site_ellip
 | $U_\mathrm{iso}$ | $U_\mathrm{eq}=\tfrac13\sum_a\lambda_a=\tfrac13\,\mathrm{tr}\,\mathbf{U}$ | Å² | `uIso` |
 | $B_\mathrm{iso}$ | $8\pi^2U_\mathrm{eq}$ | Å² | `bIso` |
 | $\langle u^2\rangle^{1/2}$ | $\sqrt{U_\mathrm{eq}}$ | Å | `rmsIso` (not displayed) |
-| Anisotropy | $\sqrt{\max(\lambda_1,10^{-30})/\max(\lambda_3,10^{-30})}$ | — | `anisotropy` |
-| Degenerate flag | $\lambda_3/\max(\lambda_1,10^{-30}) < 10^{-6}$ (`DEGENERATE_RATIO`) | — | `degenerate` |
+| Anisotropy | $\sqrt{\max(\lambda_1,10^{-30})/\max(\lambda_3,10^{-30})}$; `null` for a zero-spread site | — | `anisotropy` |
+| Zero-spread flag | $\lambda_1 <$ `ZERO_SPREAD_VARIANCE` $=10^{-8}$ Å² (RMS $<10^{-4}$ Å on every axis) | — | `zeroSpread` |
+| Degenerate flag | `zeroSpread` **or** $\lambda_3/\max(\lambda_1,10^{-30}) < 10^{-6}$ (`DEGENERATE_RATIO`) | — | `degenerate` |
 
 $\mathrm{tr}\,\mathbf{U}$ is rotation-invariant, so $U_\mathrm{eq}=\mathrm{tr}\,\mathbf{U}/3$ is the
 standard equivalent isotropic displacement parameter and $B_\mathrm{iso}=8\pi^2U_\mathrm{eq}$ the
@@ -376,6 +377,18 @@ Note that **both** the numerator and the denominator of `anisotropy` carry the $
 that the same floored "largest" also serves as the denominator of the degeneracy ratio. The
 unfloored expression $\sigma_1/\sigma_3$ agrees with it for every real site but not in the limit —
 see the walkthrough below.
+
+**Zero spread.** In an RMCProfile `*AVERAGE.rmc6f`, or an ideal starting configuration, every copy of
+a site sits at the same offset and the covariance is floating-point round-off
+($\sim10^{-26}$–$10^{-29}$ Å²; e.g. `data/5K_try1/GaNb4Se8_5KAVERAGE.rmc6f`). A ratio test cannot see
+that — ratios of noise are noise — so both engines apply one **absolute** floor,
+`ZERO_SPREAD_VARIANCE = 1e-8` Å² (RMS $10^{-4}$ Å, five orders below any physical ADP and far above
+round-off or the $\sim10^{-5}$ Å quantisation of a 7-decimal coordinate in a 100 Å box). Such a site
+reports `zeroSpread: true`, `degenerate: true`, `axes: null`, `anisotropy: null`,
+`excessKurtosis: [null, null, null]` and `nonGaussianity: null` (JSON `null`, never a `NaN` token);
+$\mathbf{U}$, $\lambda_a$, `rms`, $U_\mathrm{iso}$ and $B_\mathrm{iso}$ keep their (round-off) values.
+The panel prints *no displacement* in the anisotropy cell and explains the missing axes, and the KDE
+request raises *"displacement cloud has zero spread"* (Step 6).
 
 #### Step 4b — What the statistics panel actually prints
 
@@ -414,15 +427,15 @@ with `fitCount`/`count` through `toLocaleString()`, captured mass to **1 decimal
 line renders only when a `kde` payload exists.
 
 **A degenerate site, end to end.** For a site with a single box copy: $\mathbf{U}=\mathbf 0$, so
-$\lambda_a=0$, `rms` $=$ `semiAxes` $=0$, $U_\mathrm{iso}=B_\mathrm{iso}=0$; `degenerate` is true
-($0/10^{-30}<10^{-6}$); `anisotropy` is $\sqrt{10^{-30}/10^{-30}}=1$; and
-$\kappa_a=0/\text{floor}-3=-3$ on every axis, so *Non-Gaussianity* prints $-3.00$. Meanwhile the KDE
-request for that site **throws** — `pca_kde_volume()` / `pcaKdeVolume()` raise *"a 3D KDE needs at
-least four points"* for $n<4$ and *"displacement cloud has zero spread"* for $\lambda_1\le0$ (Step 6)
-— and the page shows the red `pca-badge is-error` overlay in the viewport. Because the sites table
-and the KDE volume are two independent requests, the tables render fine while the 3D view shows only
-the error badge, and the metadata line above (which needs `kde`) does not render at all. The numbers
-look like bugs and are not.
+$\lambda_a=0$, `rms` $=$ `semiAxes` $=0$, $U_\mathrm{iso}=B_\mathrm{iso}=0$; `zeroSpread` and
+`degenerate` are true; `axes`, `anisotropy`, every $\kappa_a$ and the non-Gaussianity are `null`, so
+the Summary prints *no displacement* and *Non-Gaussianity* `—`, and the Principal-axes table shows a
+one-line explanation instead of axes. The KDE request for that site **throws** — `pca_kde_volume()` /
+`pcaKdeVolume()` raise *"a 3D KDE needs at least four points"* for $n<4$ and *"displacement cloud has
+zero spread"* for $\lambda_1<10^{-8}$ Å² (Step 6) — and the page shows the red `pca-badge is-error`
+overlay in the viewport. Because the sites table and the KDE volume are two independent requests,
+the tables render while the 3D view shows only the error badge, and the metadata line above (which
+needs `kde`) does not render at all.
 
 **What the code does *not* compute.** There is no conversion of the Cartesian $\mathbf{U}$ to the
 crystallographic $U^{ij}$ / $U_\mathrm{cif}$ basis (components on the reciprocal-cell axes) and no
@@ -502,8 +515,11 @@ $\mathsf{H}$ singular, so `pca_kde_volume()` floors
 $\lambda_a\leftarrow\max(\lambda_a,\lambda_1\cdot\texttt{EIGENVALUE\_FLOOR\_RATIO})$ with
 `EIGENVALUE_FLOOR_RATIO = 1e-8` — bounding $\mathrm{cond}(\mathsf{H})$ at $10^8$ (a bandwidth ratio
 of $10^4$) without visibly moving a well-conditioned site. The pre-floor ratio is what sets the
-`degenerate` flag. If $\lambda_1\le0$ the call raises *"displacement cloud has zero spread"*; fewer
-than 4 points raises *"a 3D KDE needs at least four points"*.
+`degenerate` flag. If $\lambda_1<$ `ZERO_SPREAD_VARIANCE` ($10^{-8}$ Å², Step 4) the call raises
+*"displacement cloud has zero spread (RMS below 1e-4 A on every axis)"* — before 1.0 the test was
+$\lambda_1\le0$, which a round-off covariance passes, so an average configuration drew a
+$10^{-14}$ Å "cloud" with $v_\mathrm{max}\approx10^{42}$ Å⁻³; fewer than 4 points raises *"a 3D KDE
+needs at least four points"*.
 
 **Box half-widths.** The KDE convolves the cloud with the kernel, so the *estimate*'s variance along
 axis $a$ is $\lambda_a+h_a^2=\lambda_a(1+f^2)$. The sampling box is sized on that broadened width:
@@ -793,20 +809,17 @@ from raw (biased, $1/n$) moments:
 
 $$q_{ma}=(\mathbf{u}_m-\bar{\mathbf{u}})\cdot\mathbf{p}_a,\qquad
 m_2^{(a)}=\frac1n\sum_m q_{ma}^2,\quad m_4^{(a)}=\frac1n\sum_m q_{ma}^4,\qquad
-\kappa_a=\frac{m_4^{(a)}}{D_a}-3 .$$
+\kappa_a=\frac{m_4^{(a)}}{\big(m_2^{(a)}\big)^2}-3 .$$
 
-**The guard denominator $D_a$ is not the same in the two engines**, and the difference is not
-cosmetic:
-
-$$D_a^{\text{Python}}=\bigl(\max(m_2^{(a)},\,10^{-30})\bigr)^2\ \ \text{(effective floor }10^{-60}),
-\qquad
-D_a^{\text{JS}}=\max\bigl((m_2^{(a)})^{2},\,10^{-30}\bigr)\ \ \text{(effective floor }10^{-30}).$$
-
-They agree for every ordinary axis and diverge only once $m_2^{(a)}\lesssim10^{-15}$ Å², where the JS
-floor binds and the Python one does not: at $m_2=10^{-20}$ Å² the JS denominator is $10^{-30}$
-against Python's $10^{-40}$, so the JS $\kappa_a$ comes out ten orders of magnitude smaller. Only a
-frozen or literally zero-width axis reaches that regime — but the constant is not shared between the
-engines, and nothing pins them together.
+**One definedness rule, no floor constant, in both engines** (`_axis_excess_kurtosis` /
+`axisDefined`): $\kappa_a$ exists only when the site has spread
+($\lambda_1\ge$ `ZERO_SPREAD_VARIANCE`) and axis $a$ has not collapsed
+($\lambda_a\ge10^{-6}\lambda_1$, the `DEGENERATE_RATIO` of the degenerate flag); otherwise
+$m_2^{(a)}$ is round-off, the ratio is $0/0$, and $\kappa_a$ is reported as `null`. A planar cloud
+therefore has no $\kappa_3$, and a zero-spread site no $\kappa$ at all. (Before 1.0 the engines
+guarded the denominator with different floors — $\max(m_2,10^{-30})^2$ in Python,
+$\max(m_2^2,10^{-30})$ in JS — and printed unrelated noise, e.g. $-0.74$ against exactly $-3.00$, for
+the same frozen site.)
 
 Note also that the moments use $n$ (population moments) while the covariance of Step 3 uses $n-1$:
 $\kappa_a$ is internally consistent, but $m_2^{(a)}\neq\lambda_a$ exactly.
@@ -961,9 +974,9 @@ direction information appears in the picker.
 | `MAX_PCA_FIT_POINTS` | — | — | **20 000** | — | points |
 | `EIGENVALUE_FLOOR_RATIO` | — | — | **1e-8** | — | fraction of $\lambda_1$ |
 | `DEGENERATE_RATIO` | — | — | **1e-6** | — | $\lambda_3/\max(\lambda_1,10^{-30})$ |
-| kurtosis guard (Python) | — | — | $\max(m_2,10^{-30})^2$ | — | effective floor $10^{-60}$ |
-| kurtosis guard (JS) | — | — | $\max(m_2^2,10^{-30})$ | — | effective floor $10^{-30}$ |
-| Jacobi sweeps / tolerance | — | — | 50 sweeps; off-diagonal sum $<10^{-18}$ (**absolute**); rotation skipped at $\lvert a_{pq}\rvert<10^{-300}$ | — | — |
+| `ZERO_SPREAD_VARIANCE` | — | — | **1e-8** (both engines) | — | Å² on $\lambda_1$; below it `zeroSpread` |
+| kurtosis definedness | — | — | $\lambda_1\ge10^{-8}$ Å² and $\lambda_a\ge10^{-6}\lambda_1$, else `null` (both engines) | — | — |
+| Jacobi sweeps / tolerance | — | — | 50 sweeps; off-diagonal sum $\le10^{-15}\lVert\mathbf U\rVert_F$ (**relative**); rotation skipped at $\lvert a_{pq}\rvert<10^{-300}$ | — | — |
 | `rng_seed` | — | — | 0 | — | — |
 | $k(0.5)$ | — | — | 1.5381722 | — | — |
 | contour fractions | — | — | 0.10, 0.25, 0.40, 0.55, 0.70, 0.85 | — | × plane's $v_\mathrm{max}$ |
@@ -999,9 +1012,7 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    clouds.
 4. **The two engines are not proven equal to each other.** Each is pinned against its own reference.
    There is no golden-file parity test between `pca_kde.py` and `pcaKde.js`. The known systematic
-   differences are the different
-   subsample draws above 20 000 points, and the **different kurtosis guard floors** (Step 12), which
-   bind only for a literally zero-width axis. Eigenvector signs follow the same canonicalisation rule
+   difference is the different subsample draw above 20 000 points (Step 2). Eigenvector signs follow the same canonicalisation rule
    in both engines (with one unreachable difference in how the handedness flip is written — next
    section, Step 3), so they do not differ.
 5. **Server mode cannot read coordinates-only `.rmc6f` files.** The fold-and-cluster site
@@ -1574,16 +1585,17 @@ The button row's label switches between `PC` (buttons `1`, `2`, `3`) and `Cell` 
 
 #### 9e. Degenerate clouds — what the viewport shows (pointer)
 
-A one-copy site gives $C=\mathbf 0$: the panel prints zeros, `1.00 · degen.` and a non-Gaussianity
-of $-3.00$, while the KDE request throws and the viewport shows only an error badge. The full
-walkthrough is in the previous section, Step 4b.
+A one-copy site, or any site of an average/ideal configuration, has no spread
+($\lambda_1<10^{-8}$ Å²): the panel prints *no displacement*, `—` for the non-Gaussianity, and no
+axes, while the KDE request throws and the viewport shows only an error badge. The full walkthrough
+is in the previous section, Step 4 and 4b.
 
-The consequence *for directions* is the part that belongs here: with $C=\mathbf 0$ the eigenvectors
-are whatever the solver returns for a zero matrix, canonicalised into a right-handed frame by
-Step 3 — so the panel prints three perfectly clean-looking unit axes that mean **nothing**. The
-`degenerate` flag is the only signal that they are arbitrary, and it fires only at the extreme
-$\lambda_3/\lambda_1<10^{-6}$; a near-tie between $\lambda_1$ and $\lambda_2$, which makes PC1 and
-PC2 individually meaningless in exactly the same way, does not raise it.
+The consequence *for directions* is the part that belongs here: the eigenvectors of a round-off
+covariance are whatever the solver returns, so both engines return `axes: null` for such a site and
+no crystal-orientation row is drawn. A planar or linear cloud keeps its axes (the spanned plane or
+line is well defined) and is flagged by `degenerate` at $\lambda_3/\lambda_1<10^{-6}$. A near-tie
+between two non-zero eigenvalues, which makes the axes inside that pair individually meaningless,
+does not raise either flag.
 
 ### Step 10 — Computed but not currently displayed
 
@@ -1709,7 +1721,7 @@ the user having opened the AI Assistant page
 
 Engine-side constants — the covariance denominator, eigenvalue ordering and clamp,
 `EIGENVALUE_FLOOR_RATIO`, `DEGENERATE_RATIO`, `MAX_PCA_FIT_POINTS`, `rngSeed`, the grid clamp, the
-Jacobi sweep budget and tolerances, the two kurtosis guard floors, the anisotropy floors — and every
+Jacobi sweep budget and tolerances, `ZERO_SPREAD_VARIANCE` and the kurtosis definedness rule, the anisotropy floors — and every
 UI default of the PCA Ellipsoid page are tabulated in the previous section, "Parameters and
 defaults". The table below lists only what this section owns.
 

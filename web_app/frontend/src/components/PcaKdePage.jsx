@@ -1488,7 +1488,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                 </tr>
                                                 <tr>
                                                     <th scope="row">Anisotropy</th>
-                                                    <td>{numberFormat(selectedEllipsoid.anisotropy, 2)}{selectedEllipsoid.degenerate ? ' · degen.' : ''}</td>
+                                                    <td>
+                                                        {selectedEllipsoid.zeroSpread
+                                                            ? 'no displacement'
+                                                            : `${numberFormat(selectedEllipsoid.anisotropy, 2)}${selectedEllipsoid.degenerate ? ' · degen.' : ''}`}
+                                                    </td>
                                                 </tr>
                                                 <tr>
                                                     <th scope="row">Non-Gaussianity</th>
@@ -1568,7 +1572,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {selectedEllipsoid.axes.map((axis, i) => (
+                                                    {!selectedEllipsoid.axes && (
+                                                        <tr>
+                                                            <td colSpan={7} className="pca-axes-note">
+                                                                No displacement: every copy of this site sits at
+                                                                the same position (an average or ideal
+                                                                configuration), so its covariance is round-off and
+                                                                has no principal axes.
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    {(selectedEllipsoid.axes || []).map((axis, i) => (
                                                         <tr key={i}>
                                                             <th scope="row">
                                                                 <span

@@ -76,8 +76,21 @@ MAX_PCA_FIT_POINTS = 20000
 EIGENVALUE_FLOOR_RATIO = 1e-8
 
 # Below this ratio of smallest to largest eigenvalue the cloud is effectively
-# planar or linear and the ellipsoid is reported as degenerate.
+# planar or linear and the ellipsoid is reported as degenerate. The same ratio
+# marks an individual principal axis as collapsed (no spread along it), where
+# the excess kurtosis m4/m2^2 - 3 is 0/0 and is reported as undefined (None).
 DEGENERATE_RATIO = 1e-6
+
+# Absolute floor on the largest displacement variance (Angstrom^2): below
+# (1e-4 A)^2 a site has no displacement at all. An RMCProfile *AVERAGE.rmc6f or an
+# ideal starting configuration puts every copy of a site at the same offset, and
+# the covariance is float round-off (~1e-28 A^2) whose ratios, axes and kurtosis
+# are noise. Such a site is flagged ``zeroSpread`` with anisotropy, kurtosis and
+# axes reported as None, and ``pca_kde_volume`` refuses it. Five orders of
+# magnitude below any physical ADP (zero-point motion alone gives U >~ 1e-3 A^2)
+# and far above the round-off, including the ~1e-5 A quantisation of a 7-decimal
+# coordinate in a ~100 A box.
+ZERO_SPREAD_VARIANCE = 1e-8
 
 
 @dataclass(frozen=True)
@@ -313,14 +326,12 @@ def site_ellipsoids(
     eigenvalues, axes = _eigen_decomposition(covariance)
     scale = probability_scale(probability)
     u_eq = eigenvalues.mean(axis=1)
+    zero_spread = eigenvalues[:, 0] < ZERO_SPREAD_VARIANCE
     largest = np.maximum(eigenvalues[:, 0], 1e-30)
     ratio = eigenvalues[:, 2] / largest
 
-    # Per-axis excess kurtosis in each site's own PCA frame: 0 for a harmonic
-    # (Gaussian) site, positive for a peaked, fat-tailed distribution whose
-    # covariance ellipsoid overstates the concentrated core. This is the
-    # anharmonicity signal that explains a KDE isosurface tighter than its
-    # ellipsoid. Projecting per atom onto its site axes costs one einsum.
+    # Per-axis excess kurtosis in each site's own PCA frame (0 for a Gaussian).
+    # Projecting per atom onto its site axes costs one einsum.
     projected = np.einsum("nij,nj->ni", axes[site_index], displacements)
     m2 = np.column_stack(
         [np.bincount(site_index, weights=projected[:, a] ** 2, minlength=site_count) for a in range(3)]
@@ -328,10 +339,11 @@ def site_ellipsoids(
     m4 = np.column_stack(
         [np.bincount(site_index, weights=projected[:, a] ** 4, minlength=site_count) for a in range(3)]
     ) / np.maximum(counts, 1.0)[:, None]
-    excess_kurtosis = m4 / np.maximum(m2, 1e-30) ** 2 - 3.0
+    excess_kurtosis = _axis_excess_kurtosis(m2, m4, eigenvalues)
 
     ellipsoids: list[dict] = []
     for index in range(site_count):
+        zero = bool(zero_spread[index])
         ellipsoids.append(
             {
                 "referenceNumber": int(sites.reference_numbers[index]),
@@ -340,21 +352,52 @@ def site_ellipsoids(
                 "siteFractional": sites.site_fractional[index].tolist(),
                 "covariance": covariance[index].tolist(),
                 "eigenvalues": eigenvalues[index].tolist(),
-                "axes": axes[index].tolist(),
+                # A zero-spread site's eigenvectors are round-off: no axes.
+                "axes": None if zero else axes[index].tolist(),
                 "rms": np.sqrt(eigenvalues[index]).tolist(),
                 "semiAxes": (scale * np.sqrt(eigenvalues[index])).tolist(),
                 "probability": float(probability),
                 "uIso": float(u_eq[index]),
                 "bIso": float(8.0 * np.pi**2 * u_eq[index]),
                 "rmsIso": float(np.sqrt(max(u_eq[index], 0.0))),
-                "excessKurtosis": excess_kurtosis[index].tolist(),
-                "nonGaussianity": float(excess_kurtosis[index].mean()),
+                "excessKurtosis": _nullable(excess_kurtosis[index]),
+                "nonGaussianity": _nullable_mean(excess_kurtosis[index]),
                 # sqrt of the eigenvalue ratio: the ellipsoid's long/short axis.
-                "anisotropy": float(np.sqrt(largest[index] / max(eigenvalues[index, 2], 1e-30))),
-                "degenerate": bool(ratio[index] < DEGENERATE_RATIO),
+                "anisotropy": None if zero
+                else float(np.sqrt(largest[index] / max(eigenvalues[index, 2], 1e-30))),
+                "degenerate": bool(zero or ratio[index] < DEGENERATE_RATIO),
+                "zeroSpread": zero,
             }
         )
     return ellipsoids
+
+
+def _axis_excess_kurtosis(m2: np.ndarray, m4: np.ndarray, eigenvalues: np.ndarray) -> np.ndarray:
+    """Per-axis excess kurtosis ``m4 / m2**2 - 3``, NaN where it is undefined.
+
+    ``m2``/``m4`` are the population (1/n) moments along each principal axis and
+    ``eigenvalues`` the matching descending variances (last axis = the three PCs).
+    An axis is defined only when the site has spread at all (``lambda_1 >=
+    ZERO_SPREAD_VARIANCE``) and the axis itself has not collapsed (``lambda_a >=
+    DEGENERATE_RATIO * lambda_1``); otherwise ``m2`` is round-off and the ratio is
+    0/0. One rule, no floor constant -- ``workers/pcaKde.js`` applies the same.
+    """
+    defined = (eigenvalues[..., :1] >= ZERO_SPREAD_VARIANCE) & (
+        eigenvalues >= DEGENERATE_RATIO * eigenvalues[..., :1]
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        kurtosis = m4 / (m2 * m2) - 3.0
+    return np.where(defined, kurtosis, np.nan)
+
+
+def _nullable(values: np.ndarray) -> list:
+    """List of floats with NaN (undefined) mapped to None -- JSON null, never a NaN token."""
+    return [None if not np.isfinite(value) else float(value) for value in np.asarray(values)]
+
+
+def _nullable_mean(values: np.ndarray) -> float | None:
+    finite = np.asarray(values)[np.isfinite(values)]
+    return float(finite.mean()) if finite.size else None
 
 
 def _bandwidth_factor(method: str | float, count: int, dimensions: int) -> float:
@@ -500,11 +543,13 @@ def pca_kde_volume(
     covariance = np.cov(centered, rowvar=False, bias=False)
     eigenvalues, axes = _eigen_decomposition(covariance)
 
-    # A flat direction would make the bandwidth singular; floor it, and say so.
+    # No spread at all (an average/ideal configuration): nothing to estimate.
     largest = float(eigenvalues[0])
-    if largest <= 0:
-        raise ValueError("displacement cloud has zero spread")
+    if not largest >= ZERO_SPREAD_VARIANCE:
+        raise ValueError("displacement cloud has zero spread (RMS below 1e-4 A on every axis)")
+    # A flat direction would make the bandwidth singular; floor it, and say so.
     ratio = float(eigenvalues[2] / largest)
+    raw_eigenvalues = eigenvalues
     eigenvalues = np.maximum(eigenvalues, largest * EIGENVALUE_FLOOR_RATIO)
 
     factor = _bandwidth_factor(bw, count, 3) * bw_scale
@@ -541,12 +586,11 @@ def pca_kde_volume(
     probabilities = np.asarray(probabilities, dtype=float)
     mass_levels, density_levels, mass = _iso_levels(density, cell_volume, probabilities)
 
-    # Per-axis excess kurtosis in the PCA frame (0 = Gaussian): positive means a
-    # peaked, fat-tailed distribution whose covariance ellipsoid is wider than
-    # the KDE isosurface -- the anharmonicity the two-shape comparison reveals.
+    # Per-axis excess kurtosis in the PCA frame (0 = Gaussian), undefined on a
+    # collapsed axis -- the same rule as ``site_ellipsoids``.
     m2 = (projected**2).mean(axis=0)
     m4 = (projected**4).mean(axis=0)
-    excess_kurtosis = m4 / np.maximum(m2, 1e-30) ** 2 - 3.0
+    excess_kurtosis = _axis_excess_kurtosis(m2, m4, raw_eigenvalues)
 
     scale = probability_scale(probability)
     result = {
@@ -562,9 +606,10 @@ def pca_kde_volume(
         "uIso": float(eigenvalues.mean()),
         "bIso": float(8.0 * np.pi**2 * eigenvalues.mean()),
         "anisotropy": float(sigma[0] / sigma[2]),
-        "excessKurtosis": excess_kurtosis.tolist(),
-        "nonGaussianity": float(excess_kurtosis.mean()),
+        "excessKurtosis": _nullable(excess_kurtosis),
+        "nonGaussianity": _nullable_mean(excess_kurtosis),
         "degenerate": bool(ratio < DEGENERATE_RATIO),
+        "zeroSpread": False,
         "bw": bw if isinstance(bw, str) else float(bw),
         "bwScale": bw_scale,
         "factor": float(factor),

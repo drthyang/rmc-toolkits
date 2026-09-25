@@ -17,8 +17,14 @@ import numpy as np
 
 from rmc_toolkits.pca_kde import (
     load_site_displacements,
+    pca_kde_volume,
     site_ellipsoids,
+    site_pca_kde,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
+AVERAGE_RMC6F = ROOT / "data" / "5K_try1" / "GaNb4Se8_5KAVERAGE.rmc6f"
 
 
 def write_rmc6f(path: Path, atom_lines, *, supercell, lattice):
@@ -98,6 +104,75 @@ class SiteCentredFoldTests(unittest.TestCase):
     def test_regular_boxes_are_unchanged(self):
         # N_i >= 3 never reached the old fold threshold; the fix must not move them.
         self.assert_intact((6, 6, 6), (0.5, 0.99, 0.0))
+
+
+class ZeroSpreadTests(unittest.TestCase):
+    """pca.parity.3 / parity.24 / parity.30.
+
+    In an *AVERAGE.rmc6f (or an ideal start) every copy of a site sits at the
+    same offset; the covariance is ~1e-28 A^2 of round-off. Nothing caught it:
+    anisotropy, kurtosis and axes were noise that differed between engines, and
+    the KDE drew a femtometre 'cloud'.
+    """
+
+    def _write_frozen(self, path, supercell=(6, 6, 6), cell_edge=10.0):
+        lattice = np.diag(np.asarray(supercell, dtype=float) * cell_edge)
+        frozen = wrapped_site_lines((0.25, 0.5, 0.75), 0.0, supercell=supercell,
+                                    cell_edge=cell_edge, seed=1, element="Ga", reference=1)
+        moving = wrapped_site_lines((0.6, 0.1, 0.3), 0.07, supercell=supercell,
+                                    cell_edge=cell_edge, seed=2, element="Se", reference=2,
+                                    start=len(frozen) + 1)
+        write_rmc6f(path, frozen + moving, supercell=supercell, lattice=lattice)
+
+    def test_frozen_site_is_flagged_and_its_noise_suppressed(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "frozen.rmc6f"
+            self._write_frozen(path)
+            sites = load_site_displacements(path)
+            frozen, moving = site_ellipsoids(sites)
+        self.assertTrue(frozen["zeroSpread"])
+        self.assertTrue(frozen["degenerate"])
+        self.assertIsNone(frozen["anisotropy"])
+        self.assertIsNone(frozen["nonGaussianity"])
+        self.assertEqual(frozen["excessKurtosis"], [None, None, None])
+        self.assertIsNone(frozen["axes"])
+        self.assertLess(frozen["uIso"], 1e-12)
+        # The moving site next to it is untouched.
+        self.assertFalse(moving["zeroSpread"])
+        self.assertFalse(moving["degenerate"])
+        self.assertIsNotNone(moving["axes"])
+        self.assertTrue(all(np.isfinite(moving["excessKurtosis"])))
+
+    def test_kde_refuses_a_zero_spread_cloud(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "frozen.rmc6f"
+            self._write_frozen(path)
+            sites = load_site_displacements(path)
+        with self.assertRaisesRegex(ValueError, "zero spread"):
+            site_pca_kde(sites, reference_number=1, grid=12, projections=False)
+        # A cloud of pure round-off (the femtometre case) is refused too.
+        rng = np.random.default_rng(0)
+        with self.assertRaisesRegex(ValueError, "zero spread"):
+            pca_kde_volume(rng.normal(size=(200, 3)) * 1e-14, grid=8)
+
+    def test_collapsed_axis_has_no_kurtosis(self):
+        # A planar cloud: z identically 0. kappa along PC3 is 0/0, not a number.
+        rng = np.random.default_rng(5)
+        cloud = np.column_stack([rng.normal(size=2000) * 0.1, rng.normal(size=2000) * 0.07,
+                                 np.zeros(2000)])
+        result = pca_kde_volume(cloud, grid=16, projections=False)
+        self.assertTrue(result["degenerate"])
+        self.assertIsNone(result["excessKurtosis"][2])
+        self.assertTrue(np.isfinite(result["excessKurtosis"][0]))
+        self.assertTrue(np.isfinite(result["nonGaussianity"]))
+
+    @unittest.skipUnless(AVERAGE_RMC6F.exists(), "GaNb4Se8 AVERAGE sample not present in data/")
+    def test_real_average_configuration_is_all_zero_spread(self):
+        sites = load_site_displacements(AVERAGE_RMC6F)
+        entries = site_ellipsoids(sites)
+        self.assertEqual(len(entries), 52)
+        self.assertTrue(all(entry["zeroSpread"] and entry["degenerate"] for entry in entries))
+        self.assertTrue(all(entry["nonGaussianity"] is None for entry in entries))
 
 
 if __name__ == "__main__":

@@ -32,6 +32,10 @@ import { parseAtomLine } from '../rmc6f.js';
 
 const EIGENVALUE_FLOOR_RATIO = 1e-8;
 const DEGENERATE_RATIO = 1e-6;
+// Absolute floor on the largest displacement variance (A^2): below (1e-4 A)^2 a
+// site has no displacement at all (an *AVERAGE.rmc6f or ideal configuration). Same
+// constant and rule as ZERO_SPREAD_VARIANCE in pca_kde.py.
+export const ZERO_SPREAD_VARIANCE = 1e-8;
 
 // --- Chi-square(3) quantile ------------------------------------------------------
 // The squared Mahalanobis radius of a 3D Gaussian is chi-square with 3 degrees of
@@ -121,12 +125,18 @@ export const probabilityScale = (probability) => Math.sqrt(chiSquare3Quantile(pr
 // Symmetric 3x3 eigendecomposition by cyclic Jacobi rotation. Robust for the
 // near-degenerate clouds (flat or linear disorder) that trip analytic formulas,
 // and three iterations of a 3x3 sweep are negligible next to the KDE itself.
+// The stopping test is RELATIVE to the matrix's Frobenius norm, so a matrix of
+// any scale (1e-28 A^2 round-off included) is rotated to the same precision
+// instead of being returned undiagonalised.
 const jacobiEigenSymmetric = (matrix) => {
     const a = matrix.map((row) => row.slice());
     const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    let norm = 0;
+    for (let i = 0; i < 3; i += 1) for (let j = 0; j < 3; j += 1) norm += a[i][j] * a[i][j];
+    const tolerance = 1e-15 * Math.sqrt(norm);
     for (let sweep = 0; sweep < 50; sweep += 1) {
         const off = Math.abs(a[0][1]) + Math.abs(a[0][2]) + Math.abs(a[1][2]);
-        if (off < 1e-18) break;
+        if (off <= tolerance) break;
         for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
             if (Math.abs(a[p][q]) < 1e-300) continue;
             const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
@@ -208,10 +218,19 @@ const covariance3 = (points) => {
     return { mean, cov };
 };
 
-// Per-axis excess kurtosis of a centered cloud in its PCA frame (0 = Gaussian).
-// Positive means a peaked, fat-tailed distribution whose covariance ellipsoid is
-// wider than the KDE isosurface -- the anharmonicity signal the view reveals.
-const excessKurtosisPca = (points, mean, axes) => {
+// Per-axis excess kurtosis of a centered cloud in its PCA frame (0 = Gaussian),
+// null where undefined: the site has no spread (lambda_1 < ZERO_SPREAD_VARIANCE)
+// or the axis has collapsed (lambda_a < DEGENERATE_RATIO * lambda_1), where m2 is
+// round-off and m4 / m2^2 is 0/0. Same rule as `_axis_excess_kurtosis`.
+const axisDefined = (eigenvalues, a) => eigenvalues[0] >= ZERO_SPREAD_VARIANCE
+    && eigenvalues[a] >= DEGENERATE_RATIO * eigenvalues[0];
+
+const meanOfDefined = (values) => {
+    const defined = values.filter((value) => value !== null);
+    return defined.length ? defined.reduce((sum, value) => sum + value, 0) / defined.length : null;
+};
+
+const excessKurtosisPca = (points, mean, axes, eigenvalues) => {
     const n = points.length;
     const m2 = [0, 0, 0];
     const m4 = [0, 0, 0];
@@ -226,7 +245,9 @@ const excessKurtosisPca = (points, mean, axes) => {
             m4[a] += p2 * p2;
         }
     });
-    return [0, 1, 2].map((a) => (m4[a] / n) / Math.max((m2[a] / n) ** 2, 1e-30) - 3);
+    return [0, 1, 2].map((a) => (axisDefined(eigenvalues, a)
+        ? (m4[a] / n) / ((m2[a] / n) * (m2[a] / n)) - 3
+        : null));
 };
 
 // --- Bandwidth and sampling ---------------------------------------------------
@@ -391,9 +412,14 @@ export const pcaKdeVolume = (points, options = {}) => {
     const axes = decomposition.axes;
     let eigenvalues = decomposition.eigenvalues;
 
+    // No spread at all (an average/ideal configuration): nothing to estimate.
     const largest = eigenvalues[0];
-    if (!(largest > 0)) throw new Error('displacement cloud has zero spread');
+    if (!(largest >= ZERO_SPREAD_VARIANCE)) {
+        throw new Error('displacement cloud has zero spread (RMS below 1e-4 A on every axis)');
+    }
+    // A flat direction would make the bandwidth singular; floor it, and say so.
     const ratio = eigenvalues[2] / largest;
+    const rawEigenvalues = eigenvalues;
     eigenvalues = eigenvalues.map((value) => Math.max(value, largest * EIGENVALUE_FLOOR_RATIO));
 
     const factor = bandwidthFactor(bw, count, 3) * bwScale;
@@ -453,7 +479,7 @@ export const pcaKdeVolume = (points, options = {}) => {
     const cellVolume = axisCoords.reduce((product, coords) => product * (coords[1] - coords[0]), 1);
     const { massLevels, densityLevels, mass, vmin, vmax } = isoLevels(density, cellVolume, probabilities);
 
-    const excessKurtosis = excessKurtosisPca(fit, mean, axes);
+    const excessKurtosis = excessKurtosisPca(fit, mean, axes, rawEigenvalues);
     const scale = probabilityScale(probability);
     const result = {
         count: total,
@@ -469,8 +495,9 @@ export const pcaKdeVolume = (points, options = {}) => {
         bIso: 8 * Math.PI * Math.PI * ((eigenvalues[0] + eigenvalues[1] + eigenvalues[2]) / 3),
         anisotropy: sigma[0] / sigma[2],
         excessKurtosis,
-        nonGaussianity: (excessKurtosis[0] + excessKurtosis[1] + excessKurtosis[2]) / 3,
+        nonGaussianity: meanOfDefined(excessKurtosis),
         degenerate: ratio < DEGENERATE_RATIO,
+        zeroSpread: false,
         bw,
         bwScale,
         factor,
@@ -789,7 +816,8 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
         const { eigenvalues, axes } = eigenDecomposition(cov);
         const uEq = (eigenvalues[0] + eigenvalues[1] + eigenvalues[2]) / 3;
         const largest = Math.max(eigenvalues[0], 1e-30);
-        const excessKurtosis = excessKurtosisPca(site.displacements, mean, axes);
+        const zeroSpread = eigenvalues[0] < ZERO_SPREAD_VARIANCE;
+        const excessKurtosis = excessKurtosisPca(site.displacements, mean, axes, eigenvalues);
         return {
             referenceNumber: site.referenceNumber,
             element: site.element,
@@ -798,17 +826,19 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
             siteFractional: site.siteFractional,
             covariance: cov,
             eigenvalues,
-            axes,
+            // A zero-spread site's eigenvectors are round-off: no axes.
+            axes: zeroSpread ? null : axes,
             rms: eigenvalues.map(Math.sqrt),
             semiAxes: eigenvalues.map((value) => scale * Math.sqrt(value)),
             probability,
             uIso: uEq,
             bIso: 8 * Math.PI * Math.PI * uEq,
             rmsIso: Math.sqrt(Math.max(uEq, 0)),
-            anisotropy: Math.sqrt(largest / Math.max(eigenvalues[2], 1e-30)),
+            anisotropy: zeroSpread ? null : Math.sqrt(largest / Math.max(eigenvalues[2], 1e-30)),
             excessKurtosis,
-            nonGaussianity: (excessKurtosis[0] + excessKurtosis[1] + excessKurtosis[2]) / 3,
-            degenerate: eigenvalues[2] / largest < DEGENERATE_RATIO
+            nonGaussianity: meanOfDefined(excessKurtosis),
+            degenerate: zeroSpread || eigenvalues[2] / largest < DEGENERATE_RATIO,
+            zeroSpread
         };
     });
 };
