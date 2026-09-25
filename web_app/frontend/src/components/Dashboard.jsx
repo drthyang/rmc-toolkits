@@ -4,7 +4,15 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
-import { fileSignature, isStaticMode, parseRunSettings, plotMetadataFromFile, readAndParseLocalPlotFile, WATCH_INTERVAL_MS } from '../browserData';
+import {
+    combineRValueFiles,
+    fileSignature,
+    isStaticMode,
+    parseRunSettings,
+    plotMetadataFromFile,
+    readAndParseLocalPlotFile,
+    WATCH_INTERVAL_MS
+} from '../browserData';
 import { saveSvgFiguresAsZip } from '../figureExport';
 import { WatchdogBadge } from '../llm';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
@@ -40,52 +48,6 @@ const comparePlotFiles = (a, b) => {
     }
 
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-};
-
-const combineRValueFiles = (rValueFiles) => {
-    if (!rValueFiles.length) return null;
-    if (
-        rValueFiles.length === 1
-        || !rValueFiles.some((file) => file.sourceFile || file.plotData || file.parseError)
-        || rValueFiles.some((file) => file.sourceFile && !file.plotData && !file.parseError)
-    ) {
-        return rValueFiles[0];
-    }
-
-    const parsedFiles = rValueFiles.filter((file) => file.plotData?.series?.[0]?.y?.length);
-    if (!parsedFiles.length) {
-        return {
-            ...rValueFiles[0],
-            parseError: rValueFiles.map((file) => file.parseError).filter(Boolean).join('; ') || 'Could not parse R-value logs'
-        };
-    }
-
-    const yValues = parsedFiles.flatMap((file) => file.plotData.series[0].y);
-    const lastParsed = parsedFiles[parsedFiles.length - 1];
-    const parseErrors = rValueFiles
-        .filter((file) => file.parseError)
-        .map((file) => `${file.name}: ${file.parseError}`);
-
-    return {
-        ...parsedFiles[0],
-        name: 'R-value',
-        path: `r-value:${parsedFiles.map((file) => file.path).join('|')}`,
-        sourceNames: parsedFiles.map((file) => file.name),
-        sourceFile: undefined,
-        parseError: parseErrors.join('; '),
-        plotData: {
-            kind: 'r_value',
-            title: 'R-value',
-            metrics: { final_chi_r: lastParsed.plotData.metrics?.final_chi_r },
-            xLabel: 'Time steps',
-            yLabel: 'log(χ)',
-            series: [{
-                label: 'R',
-                x: yValues.map((_, index) => index),
-                y: yValues
-            }]
-        }
-    };
 };
 
 // A structure read that came back short of the header's `Number of atoms:` —
@@ -416,7 +378,12 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         () => plotFiles.filter((file) => file.plotKind === 'r_value'),
         [plotFiles]
     );
-    const rValueFile = useMemo(() => combineRValueFiles(rValueFiles), [rValueFiles]);
+    // The run the Model card describes picks which log group is charted.
+    const structurePath = localRun ? localRun.structureFile?.path : structure?.source;
+    const rValueFile = useMemo(
+        () => combineRValueFiles(rValueFiles, structurePath),
+        [rValueFiles, structurePath]
+    );
     const gridFiles = useMemo(
         () => plotFiles.filter((file) => file.plotKind !== 'r_value'),
         [plotFiles]
@@ -558,7 +525,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         if (!rValueFile) return null;
         const meta = metadata[rValueFile.path];
         const title = meta?.title || rValueFile.name;
-        const sourceLabel = rValueFile.sourceNames?.join(', ') || rValueFile.name;
+        const sourceLabel = (rValueFile.sourceNames?.join(', ') || rValueFile.name)
+            + (rValueFile.otherRuns?.length ? ` · other runs not shown: ${rValueFile.otherRuns.join(', ')}` : '');
         return (
             <article className={`plot-card r-value-card${showRValue ? '' : ' is-collapsed'}`}>
                 <div className="plot-card-header">

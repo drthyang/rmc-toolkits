@@ -426,7 +426,7 @@ different term is plotted**, which is why the series is labelled by its header n
 Pinned by `tests/test_parsers.py::ReadChiLogTests` and `__tests__/chiLog.test.js` (the demo log cut at
 every byte of its final line; token-count, NaN/`****` and no-header cases).
 
-**Multiple logs are concatenated — but by different code in each mode.** Python
+**Multiple logs of ONE run are concatenated — the same rule in both modes.** Python
 `related_r_value_logs()` re-scans the log's parent directory for every file matching
 `^(.+)-(\d{2,})\.log$` (`R_VALUE_LOG_RE`) with the **same stem**, and `sort_r_value_logs()` orders
 them by (lowercase stem, integer sequence, lowercase name) — so `run-01.log, run-02.log, run-10.log`,
@@ -434,15 +434,24 @@ them by (lowercase stem, integer sequence, lowercase name) — so `run-01.log, r
 (`tests/test_parsers.py::test_related_r_value_logs_use_numeric_suffix_order`). This runs **server-side
 inside `/api/plot/data`**, on every request.
 
-The browser's `combineRValueFiles()` in `Dashboard.jsx` concatenates the already-parsed y arrays of
-the r-value files in `comparePlotFiles()` order (same stem/sequence rule, via a fourth copy of the
-pattern, `rValueLogParts`). It **short-circuits and returns `rValueFiles[0]` unchanged** when any of
-these hold:
+The browser's `combineRValueFiles()` (`browserData.js`, used by `Dashboard.jsx`) first **groups the
+visible logs by folder and exact stem** (`rValueGroupKey()`, the same `^(.+)-(\d{2,})\.log$` stem as
+Python) and picks **one group** (`chooseRValueGroup()`): the one whose folder and stem match the
+structure file the Model information card describes (`localRun.structureFile.path` in static mode,
+`structure.source` in Flask mode), else the first group in `comparePlotFiles()` order — which is the
+log Flask is handed, so both modes chart the same run. Only that group's already-parsed y arrays are
+concatenated; the other runs' stems are listed beside the panel title ("other runs not shown: …")
+and are never spliced in. Until 2026-09 the browser flat-mapped **every** visible log, so a folder
+holding two runs (a restart under a new stem, or a parent folder walked recursively) produced one
+"convergence" curve spliced from both — 2550 points with a jump from ln χ² = −9.05 to +0.10 at the
+join and `final_chi_r` from whichever stem sorted last — while Flask showed the single run.
+It then **short-circuits and returns the chosen group's first file unchanged** when any of these
+hold:
 
-1. there is only one r-value file;
+1. the group has only one log;
 2. no file carries `sourceFile`, `plotData` or `parseError` — which is exactly the **Flask** case,
-   where files come from `/api/files` and carry none of those;
-3. any browser-backed log is still being parsed (`sourceFile && !plotData && !parseError`).
+   where files come from `/api/files` and carry none of those (the server concatenates);
+3. any browser-backed log of the group is still being parsed (`sourceFile && !plotData && !parseError`).
 
 So the concatenation shown here happens **client-side only in static mode**. Condition 3 means that
 during a Live Data re-parse the strip transiently shows only the first log's curve. And the
@@ -555,9 +564,10 @@ number, and it is not currently surfaced in the dashboard UI.
 #### 5c. `final_chi_r`
 
 For `r_value`: the **last** element of the raw `chi_r` array — **not** log-transformed —
-after concatenating all related logs. `tests/test_plots.py::test_log_plot_combines_related_logs_in_numeric_order`
+after concatenating the logs of the one run (4d); `NaN` (JSON `null`) when that last row's χ² is
+non-finite. `tests/test_plots.py::test_log_plot_combines_related_logs_in_numeric_order`
 pins that three logs `run-01/02/10` yield the value from `run-10.log`. In static mode
-`combineRValueFiles()` takes `final_chi_r` from the **last parsed** log file, matching the Python;
+`combineRValueFiles()` takes `final_chi_r` from the **last parsed** log file of the chosen run, matching the Python;
 in Flask mode `combineRValueFiles()` short-circuits (4d) and the value is whatever the server
 computed from its own concatenation.
 
@@ -569,26 +579,27 @@ $$y_i \;=\; \ln\!\bigl(\max(v_i,\, 10^{-12})\bigr)$$
 
 where $v_i$ is the raw value from the last whitespace column of log row $i$.
 
-* `browserData.js` → `plotDataFromText()` (kind `r_value`): `Math.log(Math.max(value, 1e-12))`.
-* `app.py` → `plot_data()` (kind `r_value`): `math.log(max(value, 1e-12))`.
-* `plots.py` → `_chi_plot()` (matplotlib PNG path): `np.log(chi_r)` — **no clamp**. A zero or
-  negative entry produces `-inf`/`nan` and a NumPy warning here, where the other two paths floor at
-  $\ln(10^{-12}) \approx -27.63$.
+* `browserData.js` → `plotDataFromText()` (kind `r_value`): `Math.log(Math.max(value, 1e-12))`,
+  `NaN` for a non-finite value.
+* `app.py` → `plot_data()` and `plots.py` → `_chi_plot()` (JSON and PNG): `chi_history_ln()`, the same
+  clamp with the same `NaN` gaps (JSON `null`).
 
 The reason for the log is dynamic range: the metric falls by orders of magnitude over a run, and
 additive shifts in ln-space are *relative* changes in the metric, which is exactly what the
 convergence watchdog thresholds on.
 
-> **What is actually being plotted — flagged.** The axis label is `log(χ)` in all three paths
-> (`plots.py` `r"log($\chi$)"`, `app.py` `"log(χ)"`, `browserData.js` `'log(χ)'`), while
-> `src/llm/context/runContext.js` describes the same array as
-> `"ln of chi^2 goodness metric (natural log; lower is better)"` and names the metric key
-> `final_chi_r`. **Neither label is verified by the code**, which reads `parts[-1]` positionally and
-> never looks at the header. In the bundled demo run that column is headed `X_ray_(R)1` — an
-> R-factor for the X-ray dataset, not a χ² and not a χ. The only statements this document can stand
-> behind are: the transform is a **natural** log with a $10^{-12}$ floor, and the quantity is
-> *whatever the last whitespace column of the run's `.log` happens to hold*. Treat both `log(χ)` and
-> "ln(χ²)" as conventions the code does not check.
+> **What is actually being plotted.** The series is the **last column** of the run's `.log`, named by
+> its header: in the bundled demo run `X_ray_(R)1`, the χ² of the X-ray **real-space** fit term
+> (`(R)` = real space; RMCProfile's `.chi2` file lists the same term as `X-real_1` beside the
+> reciprocal-space `Expt_1` and the total `chi2`). It is **one term of the fit, not a total** and not an
+> R-factor: the reciprocal-space `F(Q)_1` column of the same data is ~26× larger at the end of the 5 K
+> run and can stall while the real-space term still improves. So every producer names it by that
+> header — panel title `χ² history: X_ray_(R)1`, series label `X_ray_(R)1`, y label `ln(χ²)`
+> (`plots.py` → `chi_history_labels()`, `CHI_HISTORY_Y_LABEL`; `browserData.js` → `chiHistoryLabels()`,
+> `CHI_HISTORY_Y_LABEL`; a log with no column header reads `χ² history: last log column`), and the AI
+> context says `ln of the chi^2 in the last .log column 'X_ray_(R)1' … one fit term of the run, not a
+> total` with `column: 'X_ray_(R)1'`. `final_chi_r` keeps its historical key name. The transform is a
+> **natural** log with a $10^{-12}$ floor.
 
 The x-axis is the **row index** (`0, 1, 2, …`) labelled `"Time steps"`. The `.log`'s actual first
 column is a wall-clock stamp (`hhmmss.sss`) and is discarded, so one "time step" is one log row,
@@ -652,7 +663,7 @@ matplotlib builder, so it applies even though the dashboard never uses the PNG.
 | `xray_sq` | `S(Q) (x-ray)` | `Q (Å⁻¹)` | `S(Q)` | yes |
 | `neutron_sq` | `S(Q) (neutron)` | `Q (Å⁻¹)` | `S(Q)` | yes |
 | `bragg` | `BRAGG` | `ToF (µs)` **or** `Q (Å⁻¹)` | `Intensity` | yes |
-| `r_value` | `R-value` | `Time steps` | `log(χ)` (see 5d) | no |
+| `r_value` | `χ² history: <last log column>` (e.g. `χ² history: X_ray_(R)1`) | `Time steps` | `ln(χ²)` (see 5d) | no |
 | `stog` † | see below | `r (Å)` if `.gr`, else `Q (Å⁻¹)` | see below | no |
 
 † **The `stog` row is unreachable from the Run Dashboard** (`isDashboardPlotFile` drops it, Step 2)
@@ -849,9 +860,10 @@ with `comparePlotFiles()`:
 `showRValue = false`, rendered in the `wide` 1440×320 viewport); everything else goes into the plot
 grid (720×450 cards).
 
-**Only one R-value card is ever rendered**, for the combined (or, per 4d, first) r-value file. The
-remaining logs still appear in the loaded-files list with an `r_value` badge but get no chart of
-their own.
+**Only one R-value card is ever rendered**, for the chosen run's combined (or, per 4d, first)
+r-value file, titled by its log column (`χ² history: X_ray_(R)1`). The remaining logs still appear in
+the loaded-files list with an `r_value` badge but get no chart of their own; logs of *other runs* in
+the folder are also named beside the card title.
 
 The **"Loaded N plot files"** panel lists every *chartable* plot file — i.e. those with a non-null
 `plotKind` other than `stog` — with its kind badge, and lets the user hide individual charts.
@@ -955,7 +967,7 @@ per-card alert until the next poll.
 | R-value row token count | = number of names on line 1 (first data row's count when line 1 names < 2) | `read_chi_log()` / `readChi()` | other counts are skipped; an unterminated final line is always dropped |
 | STOG header skip | first **2** lines | `read_stog()` / `readStog()` | fixed, not sniffed |
 | R-value classification | inline `-\d{2,}\.log$` | `plots.py`, `browserData.js` | ≥ 2 digits required |
-| R-value grouping/sorting | `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` | `parsers.py`; mirrored by `rValueLogParts` in `Dashboard.jsx` | anchored stem + integer sequence |
+| R-value grouping/sorting | `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` | `parsers.py`; mirrored by `rValueLogParts` (sort) in `Dashboard.jsx` and `R_VALUE_LOG_RE` / `rValueGroupKey()` (one run per folder + exact stem) in `browserData.js` | anchored stem + integer sequence |
 | run-control head read | `131072` bytes | `pairFitTypes()` | 128 KiB per candidate `.dat` |
 | run-control candidates | `6` | `runControlCandidates()` | max `.dat` files tried; stops at first non-empty map |
 | datasets parsed | `8` | `parseRunSettings()` | max `*_DATA` blocks kept |
@@ -1001,11 +1013,10 @@ per-card alert until the next poll.
   denominator is zero. Neither case is a fit quality, so no number is offered for one. A *partly*
   NaN column still produces a value, computed over the finite points only and therefore over
   silently fewer rows than the file has; the chip does not say how many (5a).
-* **The R-value curve is "the last column of the log file".** No header is consulted, so neither
-  `log(χ)` (the axis text) nor `ln(χ²)` (the codebase's description) is verified by the code. In the
-  bundled demo run that column is headed `X_ray_(R)1`, an R-factor. The only verified statements are
-  the positional column choice and the transform `ln(max(v, 1e-12))`. The second-to-last column is
-  parsed into `chi_q` (Python only) and never displayed.
+* **The R-value curve is "the last column of the log file" — one χ² term, not a total.** It is
+  picked by position and named by its header (`X_ray_(R)1` in the demo run: the X-ray real-space
+  term); other terms (e.g. the reciprocal-space `F(Q)_1`) and the weighted total are not plotted
+  (5d). The second-to-last column is parsed into `chi_q` (Python only) and never displayed.
 * **"Time steps" are log rows**, one per RMCProfile print/save period — not Monte-Carlo steps, and
   not uniform wall-clock time (the actual timestamps in column 1 are discarded).
 * **The convergence badge is off by default.** It renders only when the user enables the watchdog in
@@ -1167,12 +1178,13 @@ exactly. Two honest limitations:
 #### 1c — The R-value series is a concatenation of several log files
 
 R-value ("convergence") charts are not one file. In **Flask mode**, `plot_data()` calls
-`read_chi(related_r_value_logs(path))`; `parsers.related_r_value_logs` globs the *parent directory*
+`read_chi_log(related_r_value_logs(path))`; `parsers.related_r_value_logs` globs the *parent directory*
 for every sibling matching `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` with the same stem, and
 `sort_r_value_logs` orders them by `(stem.lower(), sequence, name.lower())`. All of their chi values
-are concatenated into one array. In **static mode**, `Dashboard.jsx::combineRValueFiles` does the
-equivalent client-side: it `flatMap`s `plotData.series[0].y` over every parsed R-value file and
-re-indexes `x = 0 … N-1`.
+are concatenated into one array. In **static mode**, `browserData.js::combineRValueFiles` does the
+equivalent client-side for **one run**: it groups the parsed logs by folder and stem
+(`chooseRValueGroup()`, Parsing Step 4d), `flatMap`s `plotData.series[0].y` over the chosen group only,
+and re-indexes `x = 0 … N-1`.
 
 Consequences worth stating:
 

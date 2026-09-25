@@ -104,20 +104,38 @@ def chi_history_ln(chi: np.ndarray) -> np.ndarray:
     return out
 
 
+CHI_HISTORY_Y_LABEL = "ln(χ²)"
+UNNAMED_CHI_COLUMN = "last log column"
+
+
+def chi_history_labels(column: str | None) -> tuple[str, str]:
+    """``(title, series label)`` of the chi^2 history of one log column.
+
+    The plotted series is the LAST column of the RMCProfile ``.log`` — the chi^2
+    of one fit term (``X_ray_(R)1``: the X-ray real-space fit), not a total or an
+    R-factor — so it is named by its header, never as "R-value". Mirrors
+    ``chiHistoryLabels()`` in browserData.js.
+    """
+    name = column or UNNAMED_CHI_COLUMN
+    return f"χ² history: {name}", name
+
+
 def _chi_plot(path: Path) -> PlotResult:
     log_paths = related_r_value_logs(path)
-    chi_r = read_chi_log(log_paths).chi_r
+    log = read_chi_log(log_paths)
+    chi_r = log.chi_r
     if len(chi_r) == 0:
         raise ValueError(f"{path} does not contain chi values")
+    title, label = chi_history_labels(log.column)
 
     fig = plt.figure(figsize=(6.75, 4.05))
     ax = fig.add_subplot(111)
-    ax.plot(chi_history_ln(chi_r), label="R", lw=1.0, alpha=0.65)
+    ax.plot(chi_history_ln(chi_r), label=label, lw=1.0, alpha=0.65)
     ax.set_xlabel("Time steps", fontsize=11)
-    ax.set_ylabel(r"log($\chi$)", fontsize=11)
+    ax.set_ylabel(r"ln($\chi^2$)", fontsize=11)
     ax.legend(loc=1, fontsize=9, frameon=False)
-    fig.suptitle("R-value", fontsize=14)
-    return PlotResult(fig, "r_value", "R-value", {"final_chi_r": float(chi_r[-1])})
+    fig.suptitle(title, fontsize=14)
+    return PlotResult(fig, "r_value", title, {"final_chi_r": float(chi_r[-1])})
 
 
 def _stog_plot(path: Path) -> PlotResult:

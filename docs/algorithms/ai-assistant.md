@@ -615,9 +615,12 @@ raw $\chi$ before the log, so a $\chi$ of exactly 0 maps to $\ln(10^{-12}) \appr
 $-\infty$ — and $y_k = $ `NaN` for a non-finite $\chi_k$.
 
 **How the logs are combined.** `combineRValueFiles()` in
-[`Dashboard.jsx`](../../web_app/frontend/src/components/Dashboard.jsx) **concatenates** the log-transformed
-series of every visible R-value log and re-indexes $x$ as $0,1,2,\dots$; `final_chi_r` is taken from the
-*last* parsed file. The order is `comparePlotFiles`: first by `plotOrder` index of `plotKind`, then — for
+[`browserData.js`](../../web_app/frontend/src/browserData.js) (called by `Dashboard.jsx`) **concatenates**
+the log-transformed series of the visible R-value logs **of one run** — the logs sharing the folder and
+stem of the structure file (else the first stem), as Flask's `related_r_value_logs()` does — and
+re-indexes $x$ as $0,1,2,\dots$; `final_chi_r` is taken from the *last* parsed file of that run. Logs of
+other runs in the folder are never spliced in (they used to be, in static mode, which fed the model
+another run's `final_chi_squared` and tail slope). The order is `comparePlotFiles`: first by `plotOrder` index of `plotKind`, then — for
 names matching `/^(.+)-(\d{2,})\.log$/` — by lower-cased stem and then by the **numeric log sequence
 number**, and otherwise by a numeric-aware `localeCompare` of the file name.
 
@@ -659,20 +662,20 @@ value is rounded to 3 s.f. This is *decimation, not averaging* — no local mini
 survives, which is why the min/max/slope statistics are computed on the full series first.
 (`HISTORY_POINTS` is also the default argument of the exported `downsampleSeries`.)
 
-**Also emitted:** `quantity` — the literal string
-`"ln of chi^2 goodness metric (natural log; lower is better)"` — and `final_chi_squared` =
-`plotData.metrics.final_chi_r`, the **un-logged** last value, so
-$\mathrm{last} = \ln(\text{final\_chi\_squared})$ up to rounding.
+**Also emitted:** `quantity` — `"ln of the chi^2 in the last .log column 'X_ray_(R)1' (natural log;
+lower is better) — one fit term of the run, not a total"` (the column name comes from the log header,
+`plotData.chiColumn`, and is omitted when the log has none) — `column` (that header name), and
+`final_chi_squared` = `plotData.metrics.final_chi_r`, the **un-logged** last value of that column, so
+$\mathrm{last} = \ln(\text{final\_chi\_squared})$ up to rounding. The series is **one term** of the
+fit (in the demo run the X-ray real-space χ²; the reciprocal-space `F(Q)_1` term is not included), which
+is why the context names it rather than calling it the run's goodness of fit.
 
-> **Naming discrepancies (trust the code).** Three labels attached to this one array disagree with each
-> other and with the parser:
+> **Naming (trust the code).** Two labels attached to this data still need care:
 >
-> 1. **$\chi$ vs $\chi^2$.** The parser and the Python plotter label the quantity $\chi$
->    (`yLabel: 'log(χ)'` in `browserData.js`; `ax.set_ylabel(r"log($\chi$)")` in `plots.py`; the metric
->    key is `final_chi_r`), while the assistant context and the watchdog comments call it $\chi^2$. The
->    numbers are identical either way — only the label the model is told differs. It matters for
->    interpreting relative changes: a 0.02 shift in the stored $\ln$ value is a 2 % change in *the
->    quantity as parsed*, which would be 4 % if that quantity is really $\chi$ and you wanted $\chi^2$.
+> 1. **One term, named.** Every producer now labels the series $\ln(\chi^2)$ of the named log column
+>    (`CHI_HISTORY_Y_LABEL = 'ln(χ²)'`, title `χ² history: X_ray_(R)1`), and the context says the same;
+>    only the historical metric key `final_chi_r` keeps the old name. The column is one fit term (in the
+>    demo run the X-ray real-space χ²), not the run's total χ².
 > 2. **`rwp` is not weighted** (Step 10), despite its name and the system prompt's wording.
 > 3. **The x-axis is not a move count.** `SYSTEM_PROMPT` in
 >    [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js) tells the model, on
@@ -1072,8 +1075,9 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 - **`rwp` is unweighted** (Step 10) despite its name and the system prompt's description, and exists for
   only five dataset kinds. It is normalized by the experimental column; when it is undefined (no finite
   pair, or an all-zero experiment) it is `null` and the key is simply absent from the dataset entry.
-- **The quantity is labeled $\chi^2$ in the context but $\chi$ in the parser and the Python plots**
-  (Step 11). Same numbers, contradictory labels.
+- **The convergence series is one χ² term, not the total** (Step 11): the last `.log` column, named in
+  `convergence.column`. A run whose other terms stall while that one improves is still reported as
+  improving.
 - **The character budget is best-effort.** Several blocks are never trimmed; an unusual run can exceed
   4,500 characters. And only four of the eight trim steps leave an `*_omitted` counter — a dropped second
   $g(r)$ peak, a re-downsampled history, and a dropped PCA `note` are invisible in the delivered JSON.

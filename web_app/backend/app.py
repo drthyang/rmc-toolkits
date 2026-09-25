@@ -50,7 +50,16 @@ from rmc_toolkits.parsers import (
     related_r_value_logs,
     write_frac_from_rmc6f,
 )
-from rmc_toolkits.plots import bragg_is_tof, chi_history_ln, close_plot, detect_plot_kind, make_plot, plot_to_png
+from rmc_toolkits.plots import (
+    CHI_HISTORY_Y_LABEL,
+    bragg_is_tof,
+    chi_history_labels,
+    chi_history_ln,
+    close_plot,
+    detect_plot_kind,
+    make_plot,
+    plot_to_png,
+)
 from rmc_toolkits.scaling import (
     ScalingConfig,
     autoscale,
@@ -399,15 +408,18 @@ def plot_data():
         close_plot(metadata_result)
 
         if kind == "r_value":
-            chi_r = read_chi_log(related_r_value_logs(path)).chi_r
+            log = read_chi_log(related_r_value_logs(path))
+            chi_r = log.chi_r
+            _, series_label = chi_history_labels(log.column)
             return jsonify(
                 {
                     **metadata,
                     "xLabel": "Time steps",
-                    "yLabel": "log(χ)",
+                    "yLabel": CHI_HISTORY_Y_LABEL,
+                    "chiColumn": log.column,
                     "series": [
                         {
-                            "label": "R",
+                            "label": series_label,
                             "x": list(range(len(chi_r))),
                             # Non-finite chi^2 rows stay in the series (null in JSON).
                             "y": chi_history_ln(chi_r).tolist(),

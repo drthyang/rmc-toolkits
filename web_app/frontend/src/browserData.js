@@ -418,6 +418,16 @@ const braggAxis = (header) => (
     /tof|flight|time/.test((header || '').toLowerCase()) ? 'ToF (µs)' : 'Q (Å^{-1})'
 );
 
+// Title and series label of the chi^2 history of one log column. The series is
+// the LAST column of the RMCProfile .log — the chi^2 of one fit term
+// (`X_ray_(R)1`: the X-ray real-space fit), not a total or an R-factor — so it
+// is named by its header, never "R-value". Mirrors chi_history_labels() in plots.py.
+export const CHI_HISTORY_Y_LABEL = 'ln(χ²)';
+export const chiHistoryLabels = (column) => {
+    const name = column || 'last log column';
+    return { title: `χ² history: ${name}`, label: name };
+};
+
 export const plotMetadataFromFile = (file) => {
     const kind = file.plotKind;
     if (kind === 'xpdf') return { kind, title: 'xPDF', metrics: file.plotData?.metrics || {} };
@@ -428,7 +438,7 @@ export const plotMetadataFromFile = (file) => {
     if (kind === 'xray_sq') return { kind, title: 'S(Q) (x-ray)', metrics: file.plotData?.metrics || {} };
     if (kind === 'neutron_sq') return { kind, title: 'S(Q) (neutron)', metrics: file.plotData?.metrics || {} };
     if (kind === 'bragg') return { kind, title: 'BRAGG', metrics: file.plotData?.metrics || {} };
-    if (kind === 'r_value') return { kind, title: 'R-value', metrics: file.plotData?.metrics || {} };
+    if (kind === 'r_value') return { kind, title: file.plotData?.title || chiHistoryLabels(null).title, metrics: file.plotData?.metrics || {} };
     if (kind === 'stog') {
         // Heading is the fit-function form from the run-control .dat (e.g. "D(r)")
         // when known, else the extension-based default; the file name shows beneath.
@@ -443,16 +453,18 @@ export const plotDataFromText = (file) => {
     if (!kind) return null;
 
     if (kind === 'r_value') {
-        const { values: yValues } = readChi(file.text);
+        const { values: yValues, column } = readChi(file.text);
         if (!yValues.length) throw new Error(`${file.name} does not contain chi values`);
+        const { title, label } = chiHistoryLabels(column);
         return {
             kind,
-            title: 'R-value',
+            title,
+            chiColumn: column,
             metrics: { final_chi_r: yValues[yValues.length - 1] },
             xLabel: 'Time steps',
-            yLabel: 'log(χ)',
+            yLabel: CHI_HISTORY_Y_LABEL,
             series: [{
-                label: 'R',
+                label,
                 x: yValues.map((_, index) => index),
                 // Same clamp as plots.chi_history_ln; a non-finite chi^2 stays NaN (a gap).
                 y: yValues.map((value) => (Number.isFinite(value) ? Math.log(Math.max(value, 1e-12)) : NaN))
@@ -659,6 +671,107 @@ export const readAndParseLocalPlotFile = async (file) => {
     }
     const text = await file.sourceFile.text();
     return plotDataFromText({ ...file, text });
+};
+
+// --- R-value (chi^2 history) logs: which ones belong to one run ---------------
+//
+// RMCProfile writes <stem>-00.log, <stem>-01.log, … for one run (restarts append
+// a sequence number). Python's related_r_value_logs() concatenates ONLY the logs
+// that share the clicked log's stem in the same folder; the static-mode dashboard
+// must do the same, or a folder holding two runs (a restart under a new stem, or
+// a parent folder walked recursively) splices them into one curve.
+const R_VALUE_LOG_RE = /^(.+)-(\d{2,})\.log$/;
+const splitPath = (path) => String(path || '').split(/[\\/]/);
+
+/** `<folder>/<stem>` of an RMCProfile run log (exact stem, as in Python). */
+export const rValueGroupKey = (path) => {
+    const parts = splitPath(path);
+    const name = parts.pop() || '';
+    const match = name.match(R_VALUE_LOG_RE);
+    return `${parts.join('/')}/${match ? match[1] : name}`;
+};
+
+/**
+ * The logs of the run to chart, and the other runs' groups. `rValueFiles` is in
+ * display order (stem, then numeric sequence); the chosen group is the one whose
+ * folder and stem match the structure file — the run the Model card describes —
+ * else the first group.
+ */
+export const chooseRValueGroup = (rValueFiles, structurePath = null) => {
+    const groups = new Map();
+    rValueFiles.forEach((file) => {
+        const key = rValueGroupKey(file.path || file.name);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(file);
+    });
+    const all = [...groups.values()];
+    if (!all.length) return { group: [], others: [] };
+    let structureKey = null;
+    if (structurePath) {
+        const parts = splitPath(structurePath);
+        const name = (parts.pop() || '').replace(/\.rmc6f$/i, '');
+        structureKey = `${parts.join('/')}/${name}`;
+    }
+    const group = all.find((files) => rValueGroupKey(files[0].path || files[0].name) === structureKey) || all[0];
+    return { group, others: all.filter((files) => files !== group) };
+};
+
+// The chi^2 history of ONE run: only the logs sharing the chosen stem and
+// folder are concatenated (chooseRValueGroup — the stem of the structure file
+// the Model card describes, else the first), exactly as Flask's
+// related_r_value_logs() does server-side. Logs of other runs in the folder are
+// named (otherRuns), never spliced in.
+export const combineRValueFiles = (rValueFiles, structurePath = null) => {
+    const { group, others } = chooseRValueGroup(rValueFiles, structurePath);
+    if (!group.length) return null;
+    const otherRuns = others.map((files) => files[0].name.replace(/-\d{2,}\.log$/, ''));
+    const withOthers = (file) => (otherRuns.length ? { ...file, otherRuns } : file);
+    if (
+        group.length === 1
+        || !group.some((file) => file.sourceFile || file.plotData || file.parseError)
+        || group.some((file) => file.sourceFile && !file.plotData && !file.parseError)
+    ) {
+        return withOthers(group[0]);
+    }
+
+    const parsedFiles = group.filter((file) => file.plotData?.series?.[0]?.y?.length);
+    if (!parsedFiles.length) {
+        return withOthers({
+            ...group[0],
+            parseError: group.map((file) => file.parseError).filter(Boolean).join('; ') || 'Could not parse the chi² logs'
+        });
+    }
+
+    const yValues = parsedFiles.flatMap((file) => file.plotData.series[0].y);
+    const lastParsed = parsedFiles[parsedFiles.length - 1];
+    const parseErrors = group
+        .filter((file) => file.parseError)
+        .map((file) => `${file.name}: ${file.parseError}`);
+    // Label by the logs' own last-column header; say so if restarts disagree.
+    const columns = [...new Set(parsedFiles.map((file) => file.plotData.chiColumn ?? null))];
+    const { title, label } = chiHistoryLabels(columns.filter(Boolean).join(' / ') || null);
+
+    return withOthers({
+        ...parsedFiles[0],
+        name: title,
+        path: `r-value:${parsedFiles.map((file) => file.path).join('|')}`,
+        sourceNames: parsedFiles.map((file) => file.name),
+        sourceFile: undefined,
+        parseError: parseErrors.join('; '),
+        plotData: {
+            kind: 'r_value',
+            title,
+            chiColumn: columns.length === 1 ? columns[0] : null,
+            metrics: { final_chi_r: lastParsed.plotData.metrics?.final_chi_r },
+            xLabel: 'Time steps',
+            yLabel: CHI_HISTORY_Y_LABEL,
+            series: [{
+                label,
+                x: yValues.map((_, index) => index),
+                y: yValues
+            }]
+        }
+    });
 };
 
 // Build a run object from { path, file } pairs. Shared by the <input webkitdirectory>

@@ -177,6 +177,41 @@ class RwpColumnRoleTests(unittest.TestCase):
         )
 
 
+DEMO = ROOT / "web_app" / "frontend" / "public" / "demo"
+
+
+class ChiHistoryLabelTests(unittest.TestCase):
+    """The log series is ONE column's chi^2, named by its header — not a total "R-value"."""
+
+    def test_demo_run_logs_are_labelled_by_their_last_column(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            directory = Path(tmpdir)
+            for name in ("GTS_250K-00.log", "GTS_250K-01.log", "GTS_250K-02.log"):
+                (directory / name).write_bytes((DEMO / name).read_bytes())
+            header = (DEMO / "GTS_250K-00.log").read_text(encoding="utf-8").splitlines()[0].split()
+            last = (DEMO / "GTS_250K-02.log").read_text(encoding="utf-8").splitlines()[-1].split()[-1]
+
+            result = make_plot(directory / "GTS_250K-01.log")
+            try:
+                self.assertEqual(result.kind, "r_value")
+                self.assertEqual(result.title, f"χ² history: {header[-1]}")
+                self.assertEqual(result.title, "χ² history: X_ray_(R)1")
+                self.assertEqual(result.metrics["final_chi_r"], float(last))
+                self.assertEqual(result.figure.axes[0].get_legend_handles_labels()[1], ["X_ray_(R)1"])
+            finally:
+                close_plot(result)
+
+    def test_headerless_log_says_it_is_the_last_column(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "run-00.log"
+            path.write_text("header\nheader\n1 0.1 2.0\n", encoding="utf-8")
+            result = make_plot(path)
+            try:
+                self.assertEqual(result.title, "χ² history: last log column")
+            finally:
+                close_plot(result)
+
+
 class BraggAxisTests(unittest.TestCase):
     def test_time_of_flight_headers(self):
         for header in ("Flight time (us)", "TOF,ms", "Time"):

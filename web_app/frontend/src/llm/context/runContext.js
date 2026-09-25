@@ -279,11 +279,17 @@ const convergenceContext = (rValueFile, historyPoints) => {
     const history = rValueFile?.plotData?.series?.[0]?.y;
     const stats = seriesStats(history);
     if (!stats) return null;
+    // The series is the LAST column of the RMCProfile .log — the chi^2 of one
+    // fit term, named by its header (e.g. X_ray_(R)1: the X-ray real-space
+    // fit), not a total over datasets and constraints. Say which, or the model
+    // will describe one term as the run's overall fit.
+    const column = rValueFile?.plotData?.chiColumn || null;
     const convergence = {
         // The dashboard stores ln(chi^2), not raw chi^2 (browserData.js applies
         // Math.log when parsing the .log files) — say so, or the model will
         // misread the magnitudes.
-        quantity: 'ln of chi^2 goodness metric (natural log; lower is better)',
+        quantity: `ln of the chi^2 in the last .log column${column ? ` '${column}'` : ''} `
+            + '(natural log; lower is better) — one fit term of the run, not a total',
         n_steps: stats.nSteps,
         first: roundSig(stats.first),
         last: roundSig(stats.last),
@@ -299,6 +305,7 @@ const convergenceContext = (rValueFile, historyPoints) => {
         convergence.non_finite_note = 'log rows whose chi^2 is NaN/Inf/overflow (null here) — '
             + 'the run produced non-finite values there; `last` is null when the latest row is one';
     }
+    if (column) convergence.column = column;
     const finalChi = rValueFile?.plotData?.metrics?.final_chi_r;
     if (Number.isFinite(finalChi)) convergence.final_chi_squared = roundSig(finalChi);
     return convergence;
