@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import { isAtomsMarker, LINE_BREAK, parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from './rmc6f.js';
+import { isAtomsMarker, LINE_BREAK, parseFortranNumber, parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from './rmc6f.js';
 
 const SUPPORTED_NAMES = new Set(['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq', 'stog_input.dat']);
 
@@ -303,16 +303,38 @@ const readExafsCsv = (text, name) => {
     return { labels, data: transpose(rows) };
 };
 
-const readChi = (text) => {
-    const chiR = [];
-    text.split(LINE_BREAK).slice(2).forEach((line) => {
+// The chi^2 history of one RMCProfile `-NN.log`: the LAST column of every
+// complete data row. Line 1 names the columns (`Time moves_acc moves_gen F(Q)_1
+// … X_ray_(R)1`) and fixes the token count a data row must have (when it names
+// fewer than two, the first data row does); line 2 (WEIGHT PARAMETERS) is
+// skipped; a final line without a newline is dropped — Live Data re-reads the
+// log while RMCProfile appends, and a half-written row would otherwise become
+// the "final" chi^2. Rows are never dropped for their VALUE: a non-finite chi^2
+// (NaN, Inf, Fortran ****) stays as NaN so a blown-up run shows as one.
+// Returns { values, column, skippedRows }; column is the last header name.
+// Mirrors read_chi_log() in parsers.py.
+export const readChi = (text) => {
+    const lines = text.split(LINE_BREAK);
+    // Every complete line ends with a break: the last element is '' for a
+    // terminated file, or the line RMCProfile is still writing.
+    const unterminated = lines.pop();
+    let skippedRows = unterminated.trim() && lines.length >= 2 ? 1 : 0;
+    const header = lines.length ? lines[0].trim().split(/\s+/).filter(Boolean) : [];
+    let expected = header.length >= 2 ? header.length : null;
+    const column = expected !== null ? header[header.length - 1] : null;
+    const values = [];
+    lines.slice(2).forEach((line) => {
         const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (parts.length >= 2) {
-            const value = Number(parts[parts.length - 1]);
-            if (Number.isFinite(value)) chiR.push(value);
+        if (!parts.length) return;
+        if (expected === null) expected = parts.length;
+        if (parts.length !== expected || parts.length < 2) {
+            skippedRows += 1;
+            return;
         }
+        const value = parseFortranNumber(parts[parts.length - 1]);
+        values.push(value === null ? NaN : value);
     });
-    return chiR;
+    return { values, column, skippedRows };
 };
 
 const readStog = (text, name) => {
@@ -421,7 +443,7 @@ export const plotDataFromText = (file) => {
     if (!kind) return null;
 
     if (kind === 'r_value') {
-        const yValues = readChi(file.text);
+        const { values: yValues } = readChi(file.text);
         if (!yValues.length) throw new Error(`${file.name} does not contain chi values`);
         return {
             kind,
@@ -432,7 +454,8 @@ export const plotDataFromText = (file) => {
             series: [{
                 label: 'R',
                 x: yValues.map((_, index) => index),
-                y: yValues.map((value) => Math.log(Math.max(value, 1e-12)))
+                // Same clamp as plots.chi_history_ln; a non-finite chi^2 stays NaN (a gap).
+                y: yValues.map((value) => (Number.isFinite(value) ? Math.log(Math.max(value, 1e-12)) : NaN))
             }]
         };
     }

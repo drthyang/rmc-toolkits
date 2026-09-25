@@ -13,6 +13,7 @@ from rmc_toolkits.parsers import (
     read_atom_indices,
     read_cell_vectors,
     read_chi,
+    read_chi_log,
     read_moves_metadata,
     read_exafs_csv,
     read_rmc_csv,
@@ -193,6 +194,64 @@ class ParserTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "mode must be"):
             read_structure(DATA, mode="bad-mode")
+
+
+DEMO_LOG = ROOT / "web_app" / "frontend" / "public" / "demo" / "GTS_250K-02.log"
+
+
+def _last_column(text: str) -> list[float]:
+    """Last-column values of the complete data rows, read independently of the parser."""
+    rows = [line.split() for line in text.split("\n")[2:] if line.strip()]
+    return [float(row[-1]) for row in rows]
+
+
+class ReadChiLogTests(unittest.TestCase):
+    """RMCProfile .log reads must survive Live Data polls that land mid-write."""
+
+    def _read(self, text: str):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "run-00.log"
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                handle.write(text)
+            return read_chi_log([path])
+
+    def test_complete_demo_log_matches_its_last_column(self):
+        text = DEMO_LOG.read_text(encoding="utf-8")
+        log = self._read(text)
+        np.testing.assert_array_equal(log.chi_r, _last_column(text))
+        self.assertEqual(log.column, "X_ray_(R)1")
+        self.assertEqual(log.skipped_rows, 0)
+
+    def test_a_half_written_final_line_never_becomes_the_final_chi(self):
+        # Cut the real log at every byte inside its final line: a truncated move
+        # counter, a lone "0." or a truncated mantissa used to become chi^2.
+        text = DEMO_LOG.read_text(encoding="utf-8")
+        complete = _last_column(text)
+        final_start = text.rstrip("\n").rfind("\n") + 1
+        for offset in range(final_start, len(text)):
+            with self.subTest(offset=offset):
+                log = self._read(text[:offset])
+                np.testing.assert_array_equal(log.chi_r, complete[:-1])
+
+    def test_rows_with_a_different_token_count_than_the_header_are_skipped(self):
+        header = "Time  moves_acc moves_gen  F(Q)_1  X_ray_(R)1\nh/m/s/.th WEIGHT PARAMETERS 0.1E+01 0.1E+01\n"
+        log = self._read(header + "1.0 10 20 0.3E-02 0.2E-03\n2.0 20 40 0.117\n3.0 30 60 0.3E-02 0.1D-03\n")
+        np.testing.assert_allclose(log.chi_r, [0.2e-3, 0.1e-3])
+        self.assertEqual(log.skipped_rows, 1)
+
+    def test_non_finite_chi_rows_are_kept_as_nan(self):
+        # A blown-up run must stay visible (the browser used to drop these rows).
+        header = "Time  moves_acc moves_gen  F(Q)_1  X_ray_(R)1\nh/m/s/.th WEIGHT PARAMETERS 0.1E+01 0.1E+01\n"
+        log = self._read(header + "1.0 10 20 0.3E-02 0.2E-03\n2.0 20 40 0.3E-02 NaN\n3.0 30 60 0.3E-02 **********\n")
+        self.assertEqual(len(log.chi_r), 3)
+        self.assertEqual(log.chi_r[0], 0.2e-3)
+        self.assertTrue(np.isnan(log.chi_r[1:]).all())
+
+    def test_logs_without_a_column_header_use_the_first_row_count(self):
+        log = self._read("header\nheader\n1 0.1 10.0\n2 0.2\n3 0.3 30.0\n")
+        np.testing.assert_array_equal(log.chi_r, [10.0, 30.0])
+        self.assertIsNone(log.column)
+        self.assertEqual(log.skipped_rows, 1)
 
 
 # An older (2018-era) `.rmc6f` omits the per-atom bracketed type label, so its atom

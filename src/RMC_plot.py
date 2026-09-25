@@ -14,7 +14,7 @@ from matplotlib import rc
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
-from rmc_toolkits.parsers import rwp as _package_rwp, rwp_columns  # noqa: E402
+from rmc_toolkits.parsers import read_chi as _package_read_chi, rwp as _package_rwp, rwp_columns  # noqa: E402
 
 plt.rcParams['font.family'] = 'Dejavu Sans'
 plt.rcParams['mathtext.fontset'] = 'dejavusans'
@@ -51,22 +51,12 @@ def read_csv(fname) :
         return [], []
 
 def read_chi(fnames) :
-    chi_Q = []
-    chi_R = []
-    for ii in np.arange(len(fnames)) :
-        try:
-            f = open(fnames[ii],'r')
-            lines = f.readlines()
-            f.close()
-            for jj in np.arange(2,len(lines),1) :
-                tmp = lines[jj].split()
-                chi_Q.append(np.float64(tmp[-2]))
-                chi_R.append(np.float64(tmp[-1]))
-        except Exception as e:
-            print(f"Error reading {fnames[ii]}: {e}")
-    chi_R = np.array(chi_R)
-    chi_Q = np.array(chi_Q)
-    return chi_Q, chi_R
+    """(second-to-last, last) log columns via rmc_toolkits.parsers.read_chi.
+
+    The package reader checks each row against the header's column count, drops
+    a half-written final line and keeps non-finite chi^2 rows as NaN.
+    """
+    return _package_read_chi(list(fnames))
 
 def Rwp(r, observed, fitted, fit_range=None):
     """R-factor of ``fitted`` against ``observed`` (the EXPERIMENT) over ``fit_range``.
@@ -183,7 +173,7 @@ def main():
         if len(chi_R) > 0:
             fig4 = plt.figure(figsize=(3.375*2,3.375*1.2))
             dx = fig4.add_subplot(111)
-            dx.plot(np.log(chi_R),label=r'R',lw=1.0,alpha=0.5)
+            dx.plot(np.log(np.maximum(chi_R, 1e-12)),label=r'R',lw=1.0,alpha=0.5)
             dx.set_xlabel(r'Time steps',fontsize=11)
             dx.set_ylabel(r'log($\mathrm{\chi}$)',fontsize=11)
             dx.legend(loc=1,fontsize=9,frameon=False)

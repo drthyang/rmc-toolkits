@@ -392,31 +392,39 @@ same function:
 (The tolerant "keep the rows that parse" behaviour that *does* exist in Python lives in
 `read_stog_xy()`, a different function the dashboard path never calls.)
 
-#### 4d. R-value log — `read_chi()` / `readChi()`
+#### 4d. R-value log — `read_chi_log()` / `readChi()`
 
-**Skips exactly the first two lines** of each `.log` (RMCProfile writes a column-name row and a
-`WEIGHT PARAMETERS` row), whitespace-splits the rest, and for every line with ≥ 2 tokens takes:
+Per `.log` file, identically in both runtimes (`parsers.py` → `read_chi_log()`, `read_chi()` a thin
+wrapper; `browserData.js` → `readChi()`):
 
-$$\chi_Q \leftarrow \texttt{parts[-2]} , \qquad \chi_r \leftarrow \texttt{parts[-1]}$$
+1. **Lines** are split on `\r\n|\r|\n`. The last element of that split is either `''` (the file ends
+   with a line break) or a line RMCProfile is **still writing** — it is dropped either way (and counted
+   in `skipped_rows` when it held data). Live Data re-reads a log while it grows, and until 2026-09 a
+   poll landing mid-line turned the partial row into the "final" χ²: cutting the demo 5 K log at each
+   of the 121 byte offsets of its final line gave a wrong last value at 89 of them (a move counter
+   `131863`, a lone `0.` → χ² = 0, or a truncated mantissa `0.117` for `0.117E-03`), in both runtimes.
+2. **Line 1 names the columns** — in the demo run
+   `Time, moves_acc, moves_gen, F(Q)_1, Curvature ×6, X_ray_(R)1` (11 names) — and **fixes the token
+   count a data row must have**. A row with any other count (a partial line that did get its line
+   break, a stray message) is skipped and counted. A log whose line 1 names fewer than two columns (no
+   column-name header, e.g. a synthetic test log) takes the count from its first data row.
+3. **Line 2** (`h/m/s/.th  WEIGHT PARAMETERS  0.100E+01 …`) is skipped. Those per-dataset weights are
+   **discarded here and never applied anywhere in the app** (see 5a).
+4. From every accepted row: $\chi_Q \leftarrow$ `parts[-2]`, $\chi_r \leftarrow$ `parts[-1]`, parsed with
+   `parse_fortran_number()` / `parseFortranNumber()` (`E` or Fortran `D` exponents). **A row is never
+   dropped for its value:** `NaN`, `Inf`, a Fortran `****` overflow or any non-number becomes `NaN`, so
+   a run that blew up keeps its rows (the browser used to drop them — the watchdog then judged only the
+   last finite points and could report `improving` for a NaN tail — while Python kept them: the two
+   runtimes now agree). The name of the last column (`X_ray_(R)1` here) is returned as `column`.
 
-i.e. **the last and second-to-last whitespace-separated columns, by position**. Neither
-implementation reads the header to identify which dataset those columns belong to. In the bundled
-demo run the log columns are
-`Time, moves_acc, moves_gen, F(Q)_1, Curvature ×6, X_ray_(R)1`, so `parts[-1]` is the X-ray R
-column and `parts[-2]` is a (identically zero) curvature-constraint column. **For a run with a
-different dataset/constraint ordering, a different quantity is plotted.** This is the single most
-fragile heuristic on the page.
+So $\chi_r$ is **the last log column by position** — in the demo run the χ² of the X-ray real-space fit
+term `X_ray_(R)1`, not a total (`F(Q)_1`, the reciprocal-space term of the same data, is the fourth
+column); `parts[-2]` is a (here identically zero) curvature-constraint column, parsed into `chi_q`
+(Python only) and never displayed. **For a run with a different dataset/constraint ordering, a
+different term is plotted**, which is why the series is labelled by its header name (Step 6).
 
-The skipped second line is where the run's own per-dataset weights live — in the demo run it reads
-`h/m/s/.th  WEIGHT PARAMETERS  0.100E+01 …`. Those weights are **discarded here and never applied
-anywhere in the app** (see 5a).
-
-The JavaScript reads only the last column (it never builds `chi_q`) and keeps a value only
-`if (Number.isFinite(value))`. The Python builds both inside a `try`/`except ValueError`, which lets
-`NaN`/`Inf` through — so a log containing such a token yields a **longer series in Flask than in the
-browser**. The Python also has an ordering quirk worth knowing about: it appends to `chi_q` *before*
-parsing `parts[-1]`, so a line whose last token is non-numeric leaves `chi_q` one element longer
-than `chi_r`. Only `chi_r` is plotted, so the dashboard is unaffected.
+Pinned by `tests/test_parsers.py::ReadChiLogTests` and `__tests__/chiLog.test.js` (the demo log cut at
+every byte of its final line; token-count, NaN/`****` and no-header cases).
 
 **Multiple logs are concatenated — but by different code in each mode.** Python
 `related_r_value_logs()` re-scans the log's parent directory for every file matching
@@ -918,8 +926,12 @@ file listing.
 the runtime (milliseconds in the browser, `st_mtime` float seconds from `os.stat`) — a file rewritten
 within the same tick to the same byte length would not be noticed. A file whose `stat()` raised
 `OSError` carries `modified = size = null` and can never trigger a refresh (Step 1). And a file that
-is being written when the poll lands may be read half-complete; the resulting parse error surfaces
-as a per-card alert and is corrected on the next poll.
+is being written when the poll lands may be read half-complete. That is handled explicitly rather
+than hoped to fail loudly: a `.log`'s unterminated last line is dropped and rows are checked against
+the header's column count (Step 4d), and an `.rmc6f` read that comes back short of its header's
+`Number of atoms:` keeps the previous complete model summary on screen with a notice (Model summary,
+Part A Step 2). A CSV caught mid-write fails the strict column-count check (4a) and surfaces as a
+per-card alert until the next poll.
 
 ---
 
@@ -939,7 +951,8 @@ as a per-card alert and is corrected on the next poll.
 | symmetry tolerance (default) | `0.2` Å | `ModelSummary.jsx` | model-summary space-group search |
 | symmetry ladder cap | `1.0` Å | `ModelSummary.jsx` → `toleranceLadder` | upper bound of the tolerance sweep |
 | χ² clamp | `1e-12` | `browserData.js`, `app.py` | floor before `ln`; ⇒ y ≥ −27.63. **Absent** in `plots.py` |
-| R-value log-header skip | first **2** lines | `read_chi()` / `readChi()` | fixed, not sniffed (line 2 holds the discarded `WEIGHT PARAMETERS`) |
+| R-value log-header skip | first **2** lines | `read_chi_log()` / `readChi()` | fixed, not sniffed (line 2 holds the discarded `WEIGHT PARAMETERS`) |
+| R-value row token count | = number of names on line 1 (first data row's count when line 1 names < 2) | `read_chi_log()` / `readChi()` | other counts are skipped; an unterminated final line is always dropped |
 | STOG header skip | first **2** lines | `read_stog()` / `readStog()` | fixed, not sniffed |
 | R-value classification | inline `-\d{2,}\.log$` | `plots.py`, `browserData.js` | ≥ 2 digits required |
 | R-value grouping/sorting | `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` | `parsers.py`; mirrored by `rValueLogParts` in `Dashboard.jsx` | anchored stem + integer sequence |
@@ -1172,15 +1185,15 @@ Consequences worth stating:
   is a locally-parsed file (Flask mode — the server does the concatenation instead), or while any of
   them is still parsing.
 
-**Which column is chi.** `parsers.read_chi` skips the first **2 lines** of every log, splits each
-remaining line on whitespace, requires ≥ 2 tokens, and takes `parts[-2]` as $\chi_Q$ and `parts[-1]`
-as $\chi_r$. **Only $\chi_r$ is ever plotted**; $\chi_Q$ is parsed and discarded. Lines that fail
-`float()` are skipped (Python) or dropped by `Number.isFinite` (JS `browserData.js::readChi`, which
-reads only the last token). So the plotted quantity is *the last whitespace-separated field of each
-post-header line*, and the sample index is an index into the **surviving** lines, not into the
-file's lines.
+**Which column is chi.** `parsers.read_chi_log` / `browserData.js::readChi` keep a data row only
+when it has as many tokens as line 1 names, drop an unterminated final line, and take `parts[-1]` as
+$\chi_r$ (Parsing, Step 4d). **Only $\chi_r$ is ever plotted.** A non-finite or non-numeric $\chi_r$
+stays in the series as `NaN` (JSON `null` from Flask), so the sample index is an index into the
+**complete data rows** of the logs.
 
-Both interactive producers plot $\ln\!\big(\max(\chi_r, 10^{-12})\big)$ against that index.
+All producers — both interactive ones and the matplotlib `_chi_plot()` — plot
+$\ln\!\big(\max(\chi_r, 10^{-12})\big)$ against that index (`plots.py` → `chi_history_ln()`), with a
+non-finite $\chi_r$ left as a gap.
 
 #### 1d — Metrics
 
@@ -1196,9 +1209,9 @@ metrics.
 - **Non-numeric CSV cells.** `read_rmc_csv` (Python) calls `float(value)` and raises, so the request
   fails with an error message. `readRmcCsv` (JS) uses `values.map(Number)`, which yields `NaN`
   silently; those points are then dropped at draw time (Step 7) and the polyline bridges the gap.
-- **R-value log clamp.** Both interactive producers clamp with $\max(\chi,10^{-12})$; the matplotlib
-  path (`_chi_plot()`) uses `np.log(chi_r)` with **no** clamp, so a zero/negative entry gives
-  $-\infty$/NaN there but $\ln 10^{-12} = -27.63$ in the interactive chart.
+- **R-value log clamp.** Every producer (both interactive ones and matplotlib `_chi_plot()`) uses
+  the same $\ln\max(\chi,10^{-12})$ (`chi_history_ln()`), so a zero entry is $-27.63$ everywhere and
+  a non-finite one is a gap everywhere.
 - **STOG y-label and card title.** The browser prefers the fit-function form declared in the
   run-control `.dat` file (`file.fitType`, e.g. `D(r)`, harvested by `browserData.js::pairFitTypes`
   → `fitTypeByFilename`) for *both* the y-label (`plotDataFromText`) and the card heading
@@ -2088,7 +2101,7 @@ re-reads and re-parses the whole file (and re-globs the sibling logs, for R-valu
 | ticks | 1–2–5 `niceTicks`, target 7/6 (or 11/4) | matplotlib's own `MaxNLocator` |
 | curve opacity | opaque, including guides (Step 2) | `alpha=0.65` on every series **except** `_stog_plot`, which is opaque (`alpha=1.0`) |
 | markers | hollow circles for `*exp*` series when paired | none; all series are lines |
-| R-value log | $\ln\max(\chi,10^{-12})$ | $\ln\chi$, unclamped |
+| R-value log | $\ln\max(\chi,10^{-12})$ | $\ln\max(\chi,10^{-12})$ (`chi_history_ln`) |
 | title | HTML card header only (not in the figure) | `fig.suptitle` for `_series_plot`/`_chi_plot`; **`_stog_plot` adds none** (its file name appears only in the legend) |
 | axis label text | hard-coded per kind (Step 1a) | same for EXAFS/PDF; raw CSV header for `_FQ1`/`_SQ1`/bragg x, and y-label `"data"` |
 | legend | HTML chips outside the SVG (not exported) | inside the figure, upper right |

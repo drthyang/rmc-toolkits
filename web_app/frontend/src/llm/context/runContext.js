@@ -54,16 +54,29 @@ export const recentSlope = (values) => {
 };
 
 // Summary statistics computed on the FULL series (before downsampling), so
-// nothing important is lost to sampling.
+// nothing important is lost to sampling. A log row whose chi^2 is non-finite
+// (NaN / Inf / Fortran overflow — a blown-up run; JSON null from Flask) stays
+// in the series: `first`/`last` are the raw end values (so a non-finite latest
+// value is visible as such), min/max and the slope use the finite values only,
+// and `nonFiniteSteps` counts the rest. One pass for min/max — a spread onto
+// the argument stack throws past ~10^5 points.
 export const seriesStats = (values) => {
     if (!Array.isArray(values) || !values.length) return null;
+    const finite = values.filter(Number.isFinite);
+    let min = Infinity;
+    let max = -Infinity;
+    finite.forEach((value) => {
+        if (value < min) min = value;
+        if (value > max) max = value;
+    });
     return {
         nSteps: values.length,
         first: values[0],
         last: values[values.length - 1],
-        min: Math.min(...values),
-        max: Math.max(...values),
-        recentSlopePerStep: recentSlope(values)
+        min: finite.length ? min : NaN,
+        max: finite.length ? max : NaN,
+        recentSlopePerStep: recentSlope(finite),
+        nonFiniteSteps: values.length - finite.length
     };
 };
 
@@ -279,6 +292,13 @@ const convergenceContext = (rValueFile, historyPoints) => {
         recent_slope_per_step: roundSig(stats.recentSlopePerStep, 2),
         history: downsampleSeries(history, historyPoints)
     };
+    // Non-finite rows serialize as null; say how many and what they mean, or
+    // the model reads a blown-up run's null tail as missing data.
+    if (stats.nonFiniteSteps) {
+        convergence.non_finite_steps = stats.nonFiniteSteps;
+        convergence.non_finite_note = 'log rows whose chi^2 is NaN/Inf/overflow (null here) — '
+            + 'the run produced non-finite values there; `last` is null when the latest row is one';
+    }
     const finalChi = rValueFile?.plotData?.metrics?.final_chi_r;
     if (Number.isFinite(finalChi)) convergence.final_chi_squared = roundSig(finalChi);
     return convergence;

@@ -606,10 +606,13 @@ entry cannot be produced by an undefined metric.
 **Input:** `rValueFile.plotData.series[0].y`.
 
 **What the values are.** RMCProfile's `<stem>-NN.log` files are read by `readChi()` in
-`browserData.js`: skip the first 2 lines, take the **last whitespace-separated number** of every line
-with ≥2 fields. The dashboard then stores $y_k = \ln\!\left(\max(\chi_k, 10^{-12})\right)$ — the natural
-log, with a hard floor of $10^{-12}$ on the raw $\chi$ before the log, so a $\chi$ of exactly 0 maps to
-$\ln(10^{-12}) \approx -27.63$ rather than $-\infty$.
+`browserData.js` (mirroring `read_chi_log()` in Python): skip the first 2 lines, keep only data rows with
+exactly as many tokens as line 1 names, drop an unterminated final line (a row RMCProfile is still
+writing), and take the **last column** of each row — a row with a non-finite χ² (`NaN`, `Inf`, Fortran
+`****`) is **kept as `NaN`**, never dropped (run-dashboard.md, Parsing Step 4d). The dashboard then stores
+$y_k = \ln\!\left(\max(\chi_k, 10^{-12})\right)$ — the natural log, with a hard floor of $10^{-12}$ on the
+raw $\chi$ before the log, so a $\chi$ of exactly 0 maps to $\ln(10^{-12}) \approx -27.63$ rather than
+$-\infty$ — and $y_k = $ `NaN` for a non-finite $\chi_k$.
 
 **How the logs are combined.** `combineRValueFiles()` in
 [`Dashboard.jsx`](../../web_app/frontend/src/components/Dashboard.jsx) **concatenates** the log-transformed
@@ -639,9 +642,12 @@ count, and the concatenation assumes the logs are in chronological order.
 $$\mathrm{nSteps} = N,\quad \mathrm{first} = y_0,\quad \mathrm{last} = y_{N-1},\quad
 \min_k y_k,\quad \max_k y_k,\quad \mathrm{recentSlopePerStep} = m$$
 
-with $m$ the tail least-squares slope defined in Step 14. On output, `n_steps` is the **exact integer
-point count and is never rounded**; `first`, `last`, `min`, `max` are 3 s.f.; `recent_slope_per_step`
-is 2 s.f.
+with $m$ the tail least-squares slope defined in Step 14. `first`/`last` are the raw end values (a
+non-finite latest value serializes as `null` — visible, not hidden); `min`, `max` and $m$ use only the
+finite values, in one pass (no argument spread). When any value is non-finite the block also carries
+`non_finite_steps` (the count) and a `non_finite_note` telling the model those rows are a blown-up run,
+not missing data. On output, `n_steps` is the **exact integer point count and is never rounded**;
+`first`, `last`, `min`, `max` are 3 s.f.; `recent_slope_per_step` is 2 s.f.
 
 **Downsampling (`downsampleSeries`).** Uniform-stride resampling to at most `HISTORY_POINTS = 48` points
 that always retains the endpoints:
@@ -834,6 +840,12 @@ magnitude-independent — the same rule works for $\chi \sim 10^{-2}$ and $\chi 
 
 **Classification (`classifyConvergence`).**
 
+Non-finite values (the NaN rows above, or `null`) are handled first: **a non-finite latest value is
+`diverging`** — the run produced NaN/Inf χ² — and otherwise the rule below runs on the **finite values
+only** (an isolated earlier NaN does not break the trend; `unknown` if fewer than 2 remain). The
+browser used to drop such rows, so a log whose last 40 of 100 rows were NaN was classified `improving`
+from its finite prefix. `detectDivergence()`/`detectStall()` apply the same handling.
+
 $$\mathrm{status} = \begin{cases}
 \texttt{unknown} & N < 2\ \text{or input not an array}\\[2pt]
 \texttt{diverging} & \Delta_{\mathrm{win}} > 0.02\\[2pt]
@@ -852,15 +864,15 @@ $-0.01$/step ramp → `improving`; 150 steps of ramp followed by 150 flat steps 
 $-0.0001$/step ramp (total drop 0.02 < 0.1) → `stalled`; a $-0.01$ ramp followed by a $+0.01$ ramp →
 `diverging`.
 
-**Watchdog payload (`watchdogStats`).** Exactly five fields:
-`{n_steps, first, last, min, recent_window_delta}`. `n_steps` is the exact integer point count (never
-rounded); `first`, `last`, `min` are 3 s.f.; `recent_window_delta` is 2 s.f. The full history is *never*
-sent to the watchdog. Three implementation details worth knowing:
+**Watchdog payload (`watchdogStats`).** Five fields:
+`{n_steps, first, last, min, recent_window_delta}`, plus `non_finite_steps` when the history holds
+non-finite values. `n_steps` is the exact integer point count (never rounded); `first`, `last`, `min`
+are 3 s.f. and `recent_window_delta` 2 s.f., each `null` when not finite (a non-finite latest value is
+sent as `last: null`). The full history is *never* sent to the watchdog. Two implementation details
+worth knowing:
 
-- It **recomputes** `windowDelta(values)` — a second full `recentSlope` pass over the tail — instead of
-  reusing `stats.recentSlopePerStep` from the `seriesStats()` call it already made.
-- It calls `Number(x.toPrecision(n))` **directly, not `roundSig`**, so unlike everywhere else in the
-  module a non-numeric `first` / `last` / `min` throws a `TypeError` rather than passing through.
+- It **recomputes** `windowDelta()` over the finite values — a second `recentSlope` pass over the tail —
+  instead of reusing `stats.recentSlopePerStep` from the `seriesStats()` call it already made.
 - `max` and `recentSlopePerStep` from `seriesStats()` are deliberately dropped.
 
 **Re-ask gate (`significantChange`).** Given the stats of the last LLM call and the current stats:
@@ -873,8 +885,8 @@ $$\mathrm{significant} \iff
 i.e. 200 new log lines, or a ≥2 % move in $\chi$. It returns `true` when there are no previous stats and
 `false` when there are no current stats. **Non-finite fallback:** if either `last` is not a finite number
 the $\ln(1.02)$ test is skipped entirely and the function returns the strict inequality
-`prevStats.last !== nextStats.last` — which for two `NaN`s is `true`, forcing a model call on every poll
-that clears the interval gate. Unlike `WINDOW_DELTA_EPSILON` and `MIN_TOTAL_DROP` (module constants), the
+`prevStats.last !== nextStats.last`. Since `watchdogStats` sends a non-finite `last` as `null`, two
+consecutive non-finite polls compare equal and do not force a model call. Unlike `WINDOW_DELTA_EPSILON` and `MIN_TOTAL_DROP` (module constants), the
 two re-ask thresholds are per-call options (`{relativeDelta = 0.02, stepDelta = 200}`); no caller
 overrides them — `useWatchdog` calls `significantChange(prev, next)` with no third argument.
 

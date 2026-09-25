@@ -120,21 +120,87 @@ def read_exafs_csv(path: str | Path) -> CsvSeries:
     return CsvSeries(labels=labels, data=np.asarray(rows, dtype=float).T)
 
 
-def read_chi(paths: list[str | Path]) -> tuple[np.ndarray, np.ndarray]:
+_LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
+
+
+@dataclass(frozen=True)
+class ChiLog:
+    """The chi^2 columns of one or more RMCProfile ``-NN.log`` files, concatenated.
+
+    ``chi_r`` is the LAST log column and ``chi_q`` the second-to-last, one entry
+    per complete data row (``NaN`` where the token is non-finite — ``NaN``,
+    ``Inf``, a Fortran ``****`` overflow — or not a number). ``column`` is the
+    header name of the last column (e.g. ``X_ray_(R)1``: the chi^2 of one fit
+    term, not a total), ``None`` when the log has no column-name header.
+    ``skipped_rows`` counts data lines dropped for a token count that differs
+    from the header's, plus unterminated final lines.
+    """
+
+    chi_q: np.ndarray
+    chi_r: np.ndarray
+    column: str | None
+    skipped_rows: int
+
+
+def read_chi_log(paths: list[str | Path]) -> ChiLog:
+    """Read RMCProfile ``.log`` chi^2 history, robust to a file still being written.
+
+    Per file: line 1 names the columns (``Time moves_acc moves_gen F(Q)_1 …
+    X_ray_(R)1``), line 2 carries the ``WEIGHT PARAMETERS`` and is skipped.
+    A data row is kept only when it has exactly as many tokens as line 1 names
+    (when line 1 names fewer than two columns — a log with no column-name header
+    — the first data row sets the count), and a final line without a newline is
+    dropped: in Live Data the log is re-read while RMCProfile appends to it, and
+    a half-written last line would otherwise become the "final" chi^2 (a move
+    counter, ``0.``, or a truncated mantissa). Rows are never dropped for their
+    VALUE: a non-finite chi^2 stays in the series as ``NaN`` so a blown-up run
+    shows as such. Mirrors ``readChi()`` in browserData.js.
+    """
     chi_q: list[float] = []
     chi_r: list[float] = []
+    column: str | None = None
+    skipped = 0
     for path in paths:
-        with Path(path).open("r", encoding="utf-8") as handle:
-            lines = handle.readlines()
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        lines = _LINE_BREAK_RE.split(text)
+        # Every complete line ends with a break, so the last element is either ''
+        # (a terminated file) or a line RMCProfile is still writing.
+        unterminated = lines.pop()
+        if unterminated.strip() and len(lines) >= 2:
+            skipped += 1
+        header = lines[0].split() if lines else []
+        expected = len(header) if len(header) >= 2 else None
+        if expected is not None and column is None:
+            column = header[-1]
         for line in lines[2:]:
             parts = line.split()
-            if len(parts) >= 2:
-                try:
-                    chi_q.append(float(parts[-2]))
-                    chi_r.append(float(parts[-1]))
-                except ValueError:
-                    continue
-    return np.asarray(chi_q, dtype=float), np.asarray(chi_r, dtype=float)
+            if not parts:
+                continue
+            if expected is None:
+                expected = len(parts)
+            if len(parts) != expected or len(parts) < 2:
+                skipped += 1
+                continue
+            values = [parse_fortran_number(token) for token in parts[-2:]]
+            chi_q.append(float("nan") if values[0] is None else values[0])
+            chi_r.append(float("nan") if values[1] is None else values[1])
+    return ChiLog(
+        chi_q=np.asarray(chi_q, dtype=float),
+        chi_r=np.asarray(chi_r, dtype=float),
+        column=column,
+        skipped_rows=skipped,
+    )
+
+
+def read_chi(paths: list[str | Path]) -> tuple[np.ndarray, np.ndarray]:
+    """``(second-to-last, last)`` log columns — see :func:`read_chi_log`.
+
+    The names are historical: in current RMCProfile logs the last column is the
+    chi^2 of the last fitted term (``X_ray_(R)1`` in the demo run) and the
+    second-to-last is often a constraint term, not a reciprocal-space chi^2.
+    """
+    log = read_chi_log(paths)
+    return log.chi_q, log.chi_r
 
 
 def r_value_log_parts(path: str | Path) -> tuple[str, int] | None:

@@ -16,7 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .parsers import fit_rwp, pdf_index, read_chi, read_exafs_csv, read_rmc_csv, read_stog, related_r_value_logs
+from .parsers import fit_rwp, pdf_index, read_chi_log, read_exafs_csv, read_rmc_csv, read_stog, related_r_value_logs
 
 
 @dataclass(frozen=True)
@@ -91,15 +91,28 @@ def _series_plot(
     return PlotResult(fig, detect_plot_kind(path) or "series", title, metrics)
 
 
+def chi_history_ln(chi: np.ndarray) -> np.ndarray:
+    """``ln(max(chi, 1e-12))`` per log row; a non-finite chi^2 stays ``NaN`` (a gap).
+
+    The same clamp as ``plotDataFromText`` in browserData.js, so the PNG, the
+    JSON series and the browser chart plot identical numbers.
+    """
+    chi = np.asarray(chi, dtype=float)
+    out = np.full(chi.shape, np.nan)
+    finite = np.isfinite(chi)
+    out[finite] = np.log(np.maximum(chi[finite], 1e-12))
+    return out
+
+
 def _chi_plot(path: Path) -> PlotResult:
     log_paths = related_r_value_logs(path)
-    _, chi_r = read_chi(log_paths)
+    chi_r = read_chi_log(log_paths).chi_r
     if len(chi_r) == 0:
         raise ValueError(f"{path} does not contain chi values")
 
     fig = plt.figure(figsize=(6.75, 4.05))
     ax = fig.add_subplot(111)
-    ax.plot(np.log(chi_r), label="R", lw=1.0, alpha=0.65)
+    ax.plot(chi_history_ln(chi_r), label="R", lw=1.0, alpha=0.65)
     ax.set_xlabel("Time steps", fontsize=11)
     ax.set_ylabel(r"log($\chi$)", fontsize=11)
     ax.legend(loc=1, fontsize=9, frameon=False)

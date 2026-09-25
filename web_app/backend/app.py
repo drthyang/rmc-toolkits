@@ -39,7 +39,7 @@ from rmc_toolkits.parsers import (
     parse_rmc6f_atoms,
     read_cell_vectors,
     read_moves_metadata,
-    read_chi,
+    read_chi_log,
     rmc6f_problem,
     read_dat_header,
     read_exafs_csv,
@@ -50,7 +50,7 @@ from rmc_toolkits.parsers import (
     related_r_value_logs,
     write_frac_from_rmc6f,
 )
-from rmc_toolkits.plots import bragg_is_tof, close_plot, detect_plot_kind, make_plot, plot_to_png
+from rmc_toolkits.plots import bragg_is_tof, chi_history_ln, close_plot, detect_plot_kind, make_plot, plot_to_png
 from rmc_toolkits.scaling import (
     ScalingConfig,
     autoscale,
@@ -399,8 +399,7 @@ def plot_data():
         close_plot(metadata_result)
 
         if kind == "r_value":
-            _, chi_r = read_chi(related_r_value_logs(path))
-            y_values = [float(value) for value in chi_r]
+            chi_r = read_chi_log(related_r_value_logs(path)).chi_r
             return jsonify(
                 {
                     **metadata,
@@ -409,8 +408,9 @@ def plot_data():
                     "series": [
                         {
                             "label": "R",
-                            "x": list(range(len(y_values))),
-                            "y": [float(math.log(max(value, 1e-12))) for value in y_values],
+                            "x": list(range(len(chi_r))),
+                            # Non-finite chi^2 rows stay in the series (null in JSON).
+                            "y": chi_history_ln(chi_r).tolist(),
                         }
                     ],
                 }
