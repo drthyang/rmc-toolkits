@@ -3445,7 +3445,9 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
   per coset (rotation or screw, mirror or glide); `symmetryHiddenCentring.test.js` names the
   centred groups C2 … C2/c, I4 … I4/m, R3 and R-3 on primitive cells that keep the axis as a basis
   vector (with the conventional description's Wyckoff labels) and checks that no P-named rung of a
-  noisy trigonal or hexagonal ladder hides a centring; `symmetryDuplicates.test.js` checks that of two
+  noisy trigonal or hexagonal ladder hides a centring; `symmetryHeadlineLadder.test.js` that the
+  card's headline is the ladder's group at every brick midpoint and that the bricks do not move
+  with the order of the basis; `symmetryDuplicates.test.js` checks that of two
   near-duplicate operations the better-fitting one is kept, so the ladder reaches the group the
   headline finds whatever the site order;
   `symmetryWyckoff.test.js` and `wyckoff.test.js` check every Wyckoff row against its group's
