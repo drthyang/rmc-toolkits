@@ -3,7 +3,7 @@
 
 """Reusable analysis helpers for RMCProfile post-processing."""
 
-__version__ = "0.5.0"
+__version__ = "1.0.0"
 
 from .kde import (
     MAX_KDE_FIT_POINTS,
