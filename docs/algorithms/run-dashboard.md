@@ -3164,8 +3164,13 @@ are comparable.
    component ($\overline{a'}$ = mean edge of the naming cell; `fitsForm()` solves for the free
    parameters by ridge-regularised least squares and checks the residual). Exactly one fit → that
    letter; otherwise none.
-3. No letter is ever guessed: the UI then shows `"<multiplicity> (<site symmetry>)"`
-   (`symmetryModel.orbitLabel()`).
+3. A letter is returned with the multiplicity **of the cell it is read in**,
+   `wyckoffMultiplicity`, beside the given-cell `size`: a Wyckoff label pairs the two, so the Ga
+   of the lacunar spinel is `3a` (never `4a`, which R3m does not have) and rocksalt on its
+   primitive cell is `4a`/`4b` (never `1a`/`1b`). `orbitLabel()` prints
+   `"<wyckoffMultiplicity><letter>"`.
+4. No letter is ever guessed: with none, `wyckoffMultiplicity` is `null` and `orbitLabel()` shows
+   `"<given-cell multiplicity> (<site symmetry>)"`.
 
 **Origin.** The standard cell is found by a change of basis only (Step 10f), so letters that need
 the coordinate form assume the structure's origin is the table's origin or an equivalent one.
@@ -3175,8 +3180,12 @@ shifted origin usually fits no form and gets no letter (diamond described with i
 
 Orbits are not rendered on the Run Dashboard card itself; they flow into the AI-assistant context
 (`runContext.js` → `symmetryContext()` → `symmetry.sites`, ranked by mean displacement, capped at 12
-sites), where `size` is the multiplicity in the given cell and `wyckoff` the letter in the naming
-cell.
+sites), where `multiplicity` is the orbit's size in the given cell and `wyckoff` should be the
+naming-cell pair `wyckoffMultiplicity` + letter. (`runContext.js` still builds the label from the
+given-cell `size`, so where the naming cell is not the given cell — a primitive or rhombohedral
+description, an R subgroup kept in its F-cubic parent cell — the assistant is handed a label such
+as `4a` that the named group does not have; the fix belongs to the `llm/` module, which may not
+import `orbitLabel()`.)
 
 **Code**: `symmetry.js` → `siteOrbits()`; `symmetryModel.js` → `describeSymmetry()`,
 `lettersInSetting()`, `orbitLabel()`; `wyckoff.js` → `wyckoffPositions()`, `parseCoordinateForm()`,

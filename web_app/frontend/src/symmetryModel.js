@@ -66,17 +66,20 @@ const meanEdge = (A) => A.reduce((sum, row) => sum + Math.hypot(row[0], row[1], 
 const wrap01 = (x) => { const y = x - Math.floor(x); return y > 1 - 1e-9 ? 0 : y; };
 
 /**
- * Wyckoff letters for the orbits, read in the standard cell the group was named in
+ * Wyckoff positions of the orbits, read in the standard cell the group was named in
  * (`setting`: Q = new basis vectors as columns in the given cell's fractional basis,
  * Qinv, the new cell's pure translations, and ratio = new/old cell volume). The tables
  * describe the standard cell, so each orbit's members are carried into it (x' = Q⁻¹x,
  * plus every translation of that cell, so any tabulated representative can be matched)
- * and its multiplicity scaled to that cell. With no setting — an unnamed group, a lower
- * bound, a triclinic group in a centred cell — every letter is withheld.
+ * and its multiplicity scaled to that cell. Returns one { letter, multiplicity } per
+ * orbit — both of the standard cell, since a label pairs them — or nulls where no letter
+ * is assigned. With no setting — an unnamed group, a lower bound, a triclinic group in a
+ * centred cell — every letter is withheld.
  */
 function lettersInSetting(sg, found, basis, A, tol) {
   const { setting } = sg;
-  if (!sg.spaceGroupNumber || !setting) return found.map(() => null);
+  const none = { letter: null, multiplicity: null };
+  if (!sg.spaceGroupNumber || !setting) return found.map(() => none);
   const { Q, Qinv, translations, ratio } = setting;
   const As = [0, 1, 2].map((i) => [0, 1, 2].map((k) => Q[0][i] * A[0][k] + Q[1][i] * A[1][k] + Q[2][i] * A[2][k]));
   const moved = [];
@@ -94,16 +97,18 @@ function lettersInSetting(sg, found, basis, A, tol) {
     // A fractional multiplicity means the orbit does not fit the cell: no letter.
     return { size: Math.abs(size - Math.round(size)) < 1e-6 ? Math.round(size) : -1, site: o.site, index };
   });
-  return assignWyckoffLetters(sg.spaceGroupNumber, orbits, moved, tol / meanEdge(As));
+  const letters = assignWyckoffLetters(sg.spaceGroupNumber, orbits, moved, tol / meanEdge(As));
+  return letters.map((letter, i) => (letter ? { letter, multiplicity: orbits[i].size } : none));
 }
 
 /**
  * Space group of a parsed structure at a cartesian tolerance `tol` (Å):
  *   { spaceGroup, spaceGroupNumber, pointGroup, centering, nSpace, nPoint,
- *     maxResidual, orbits:[{ element, size, site, rep, wyckoff }] }
+ *     maxResidual, orbits:[{ element, size, site, rep, wyckoff, wyckoffMultiplicity, members }] }
  * Returns null when the structure has no basis (not yet loaded / no reference sites).
  * `size` is the orbit's multiplicity in the GIVEN cell; `wyckoff` is the letter in the
- * standard cell the group is named in (the multiplicity there can differ).
+ * standard cell the group is named in and `wyckoffMultiplicity` the multiplicity there
+ * (they can differ from `size`: label a position with the pair, as orbitLabel does).
  */
 export function describeSymmetry(structure, tol = 0.2) {
   if (!structure?.basis?.length || !structure?.latticeVectors) return null;
@@ -127,13 +132,17 @@ export function describeSymmetry(structure, tol = 0.2) {
   const sg = spaceGroupAtTolerance(A, structure.basis, tol);   // a closed group, or 'undetermined'
   // No operation at all (a broken lattice): no orbits either — not one orbit per site.
   const found = sg.ops.length ? siteOrbits(A, structure.basis, sg.ops, tol) : [];
-  const letters = lettersInSetting(sg, found, structure.basis, A, tol);
+  const positions = lettersInSetting(sg, found, structure.basis, A, tol);
   const orbits = found.map((o, i) => ({
     element: o.element,
     size: o.size,
     site: o.site,
     rep: o.rep,
-    wyckoff: letters[i],
+    wyckoff: positions[i].letter,
+    // The multiplicity that goes with the letter: the orbit's size in the standard cell the
+    // letter is read in, which differs from `size` when that is not the given cell (4 Ga
+    // in an F-cubic cell are R3m's 3a). null when there is no letter.
+    wyckoffMultiplicity: positions[i].multiplicity,
     // Indices into structure.basis, so callers can aggregate per-site data
     // (e.g. rms displacements) over each orbit's member sites.
     members: o.index,
@@ -158,7 +167,11 @@ export function toleranceLadder(structure, tolMax = 1.0) {
   return symmetryLadder(A, structure.basis, tolMax);
 }
 
-/** Wyckoff label for an orbit: multiplicity + letter, or multiplicity + site symmetry. */
+/**
+ * Wyckoff label for an orbit: the standard cell's multiplicity + letter ('3a'), or, with no
+ * letter, the given cell's multiplicity + site symmetry ('4 (3m)').
+ */
 export function orbitLabel(orbit) {
-  return `${orbit.size}${orbit.wyckoff || ` (${orbit.site})`}`;
+  if (orbit.wyckoff) return `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}`;
+  return `${orbit.size} (${orbit.site})`;
 }
