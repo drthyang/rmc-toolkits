@@ -170,8 +170,9 @@ const symmetryContext = (structure, symmetry) => {
 // symmetry/mean-displacement stats can't express. `pcaSites` is the table the
 // PCA Ellipsoid page computes (worker or Flask /api/pca/sites) — one entry per
 // reference site with uIso, the three principal RMS amplitudes, anisotropy, and
-// mean excess kurtosis. Sites are ranked by non-Gaussianity (then uIso) so the
-// most anharmonic / split sites lead and survive budget trimming.
+// Mardia's multivariate excess kurtosis (b2 − 15)/5. Sites are ranked by
+// |non-Gaussianity| (then uIso): a symmetric split site is NEGATIVE
+// (platykurtic), so a signed ranking would list it last and trim it first.
 const pcaContext = (pcaSites) => {
     const rows = pcaSites?.sites;
     if (!Array.isArray(rows) || !rows.length) return null;
@@ -185,17 +186,26 @@ const pcaContext = (pcaSites) => {
         };
         if (Number.isFinite(site.nonGaussianity)) entry.non_gaussianity = roundSig(site.nonGaussianity, 3);
         if (site.degenerate) entry.degenerate = true;
+        // No spread at all: anisotropy and non_gaussianity are undefined (null).
+        if (site.zeroSpread) entry.zero_spread = true;
+        // A mixed-occupancy site: `element` is the majority species only.
+        if (site.mixed && site.elementCounts) {
+            entry.mixed = true;
+            entry.element_counts = site.elementCounts;
+        }
         return entry;
     }).sort((a, b) => (
-        (b.non_gaussianity ?? -Infinity) - (a.non_gaussianity ?? -Infinity)
+        Math.abs(b.non_gaussianity ?? 0) - Math.abs(a.non_gaussianity ?? 0)
         || (b.U_iso_A2 ?? -Infinity) - (a.U_iso_A2 ?? -Infinity)
     ));
     const block = {
         // Tell the model what the numbers mean, or it will misread the kurtosis.
         note: 'Per reference site, from PCA of RMC displacement clouds. U_iso_A2: isotropic '
             + 'ADP (Å²); rms_axes_A: principal RMS displacement amplitudes PC1≥PC2≥PC3 (Å); '
-            + 'anisotropy = rms1/rms3; non_gaussianity: mean excess kurtosis (0 = harmonic/Gaussian, '
-            + '>0 = peaked, fat-tailed — anharmonic motion or an unresolved split site).',
+            + 'anisotropy = rms1/rms3; non_gaussianity: Mardia multivariate excess kurtosis '
+            + '(b2-15)/5 — 0 = harmonic/Gaussian; >0 = peaked, heavy-tailed well or a minority '
+            + 'off-centre component; <0 = flat-topped or bimodal, including a symmetric split site. '
+            + 'Listed by |non_gaussianity|, largest first.',
         sites: sites.slice(0, MAX_SITES)
     };
     if (sites.length > MAX_SITES) block.sites_omitted = sites.length - MAX_SITES;
