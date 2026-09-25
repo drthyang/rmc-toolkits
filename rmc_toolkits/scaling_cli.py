@@ -656,11 +656,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
             rho0_estimate = estimate_rho0(q, sq, config, sigma=sigma)
             if not rho0_estimate["converged"]:
+                reason = (
+                    "the iteration stopped at a density the auto-scale cannot "
+                    f"fit ({rho0_estimate['stopped']})"
+                    if rho0_estimate.get("stopped")
+                    else "the density-limit and Q->0 Faber-Ziman amplitudes "
+                    "disagree at every density — typically data missing "
+                    "structure below Qmin"
+                )
                 raise CliError(
                     "rho0 self-consistency did not converge (final concordance "
-                    f"{rho0_estimate['concordance']:.3g}): the density-limit and "
-                    "Q->0 Faber-Ziman amplitudes disagree at every density — "
-                    "typically data missing structure below Qmin. Set rho0 "
+                    f"{rho0_estimate['concordance']:.3g}): {reason}. Set rho0 "
                     "explicitly (--rho0 / --mass-density / data header) and "
                     "consider '--amplitude fz' for the scale"
                 )

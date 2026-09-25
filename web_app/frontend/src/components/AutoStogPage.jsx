@@ -19,6 +19,7 @@ import {
   readStogInp,
   readStogXy,
   resolveEnforcementDescriptor,
+  rho0NonConvergenceMessage,
   stogInpClosestApproach,
   writeStogXy,
 } from '../workers/autoScale';
@@ -409,14 +410,7 @@ const AutoStogPage = () => {
       const result = await postJob({ kind: 'estimateRho0', config, ...payload }, transfers);
       if (!result.estimate.converged) {
         setRho0Info(null);
-        throw new Error(
-          'ρ₀ self-consistency did not converge (final concordance '
-          + `${fmt(result.estimate.concordance, 3)}): the density-limit and Q→0 `
-          + 'Faber-Ziman amplitudes disagree at every density — typically data '
-          + 'missing structure below Qmin. Set ρ₀ explicitly (value, data '
-          + 'header, or mass density) and consider the Faber-Ziman Q→0 '
-          + 'amplitude criterion for the scale.'
-        );
+        throw new Error(rho0NonConvergenceMessage(result.estimate));
       }
       setRho0Info(result.estimate);
       setForm((current) => ({

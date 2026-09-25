@@ -1116,6 +1116,24 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
   };
 };
 
+/**
+ * Why a density self-consistency (estimateRho0) did not converge, for the
+ * worker and the page to throw: the iteration either stopped at a trial
+ * density the auto-scale could not fit (estimate.stopped), or ran out with
+ * the two amplitude criteria still disagreeing. scaling_cli.py words the same
+ * two cases for the CLI.
+ */
+export const rho0NonConvergenceMessage = (estimate) => {
+  const concordance = Number(estimate.concordance.toPrecision(3));
+  const reason = estimate.stopped
+    ? `the iteration stopped at a density the auto-scale cannot fit (${estimate.stopped})`
+    : 'the density-limit and Q→0 Faber-Ziman amplitudes disagree at every density — '
+      + 'typically data missing structure below Qmin';
+  return `ρ₀ self-consistency did not converge (final concordance ${concordance}): ${reason}. `
+    + 'Set ρ₀ explicitly (value, data header, or mass density) and consider the '
+    + 'Faber-Ziman Q→0 amplitude criterion for the scale.';
+};
+
 export const diagnosticsSummary = (result, config) => {
   const [lo, hi] = result.rFitWindowUsed || rFitWindow(config);
   let total = 0;

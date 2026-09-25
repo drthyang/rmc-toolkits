@@ -604,7 +604,13 @@ Four behaviours of the estimator are load-bearing and easy to miss:
 
 The three front-ends treat non-convergence differently: the Web Worker **throws** (the page
 refuses to fit on a garbage density), the CLI raises a `CliError`, and the Python
-`estimate_rho0` simply returns `converged: False` for the caller to check.
+`estimate_rho0` simply returns `converged: False` for the caller to check. The worker, the page's
+"Estimate ρ₀" button (both through `rho0NonConvergenceMessage()`) and the CLI name the reason:
+the `stopped` text — the trial density `autoscale` could not fit, and why — when it is set, and
+otherwise the amplitude discordance ("the density-limit and Q→0 Faber-Ziman amplitudes disagree
+at every density"). The two call for different remedies, so the first 1.0 message, which always
+blamed the discordance, misled on a stopped iteration (`tests/test_stog_a_rho0.py`,
+`autoScaleRho0Stopped.test.js`).
 
 **The standalone "Estimate ρ₀" button (browser only)** is a separate entry point with its own
 rules (`AutoStogPage.jsx` → `runEstimate`, gate `canEstimate`). It is enabled whenever a file is
