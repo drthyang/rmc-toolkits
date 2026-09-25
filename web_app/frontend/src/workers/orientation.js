@@ -12,8 +12,9 @@
 // tiling of a sphere must carry), and divide each cell's count by its exact
 // solid angle. `enhancement = 4*pi*density` is 1 everywhere for an isotropic
 // site, so the map reads directly as "this direction is Nx more likely than
-// chance"; `zScore` is the Poisson significance that keeps an over-binned map
-// from being read as structure. The map is never antipodally folded -- a +u/-u
+// chance"; `zScore` is each cell's local (uncorrected) z, and the calibrated
+// readouts are the `...Significance` fields (one-sided normal deviates of
+// exact tail probabilities). The map is never antipodally folded -- a +u/-u
 // imbalance (static off-centring, odd anharmonicity) is precisely the signal
 // the ellipsoid cannot show, and `antipodalAsymmetry` quantifies it.
 //
@@ -29,6 +30,10 @@ export const DEFAULT_TARGET_PER_CELL = 12;
 // Relative tolerance of the tied-peak rule (lowest index within it of the
 // maximum wins). Mirrors PEAK_TIE_RTOL.
 export const PEAK_TIE_RTOL = 1e-9;
+// Tail probabilities are floored here before conversion to a normal deviate,
+// so |z| <= 37.04 and no infinity reaches the payload. Mirrors
+// SIGNIFICANCE_TAIL_FLOOR.
+export const SIGNIFICANCE_TAIL_FLOOR = 1e-300;
 
 const WEIGHTS = ['count', 'amplitude', 'amplitude2'];
 const FRAMES = ['cartesian', 'pca'];
@@ -61,6 +66,168 @@ const inverse3 = (m) => {
         [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
         [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det]
     ];
+};
+
+// --- special functions (scipy stand-ins for the significance readouts) -------
+//
+// Python uses scipy.special.gammainc / gammaincc / ndtri; these ports agree
+// with them to <= 1e-12 relative on the small tail (pinned against scipy
+// values in orientationFixes.test.js), far inside the 1e-9 golden tolerance.
+
+const LOG_SQRT_2PI = 0.5 * Math.log(2 * Math.PI);
+
+// Stirling-series remainder lnGamma(x) - [(x - 0.5) ln x - x + ln sqrt(2 pi)],
+// accurate to ~1e-16 for x >= 15.
+const stirlingCorrection = (x) => {
+    const r = 1 / x;
+    const r2 = r * r;
+    return r * (1 / 12 - r2 * (1 / 360 - r2 * (1 / 1260 - r2 * (1 / 1680 - r2 * (1 / 1188 - r2 * (691 / 360360))))));
+};
+
+export const logGamma = (x) => {
+    if (!(x > 0)) throw new Error('logGamma needs x > 0');
+    let shift = 0;
+    let z = x;
+    while (z < 15) { shift += Math.log(z); z += 1; }
+    return (z - 0.5) * Math.log(z) - z + LOG_SQRT_2PI + stirlingCorrection(z) - shift;
+};
+
+// log(x^a e^-x / Gamma(a)), the prefactor of both incomplete-gamma branches,
+// written for a >= 15 as -a*(u - log1p(u)) + ... (u = x/a - 1) so the large
+// cancelling terms never meet in floating point.
+const logGammaPrefactor = (a, x) => {
+    if (a < 15) return a * Math.log(x) - x - logGamma(a);
+    const u = (x - a) / a;
+    let uMinusLog1p;
+    if (Math.abs(u) < 0.25) {
+        // u - log1p(u) = sum_{k>=2} (-1)^k u^k / k
+        let term = u * u;
+        let sum = 0;
+        for (let k = 2; k < 200; k += 1) {
+            const piece = term / k;
+            sum += k % 2 === 0 ? piece : -piece;
+            if (Math.abs(piece) < 1e-17 * Math.abs(sum)) break;
+            term *= u;
+        }
+        uMinusLog1p = sum;
+    } else {
+        uMinusLog1p = u - Math.log1p(u);
+    }
+    return -a * uMinusLog1p + 0.5 * Math.log(a) - LOG_SQRT_2PI - stirlingCorrection(a);
+};
+
+const GAMMA_EPS = 1e-16;
+const GAMMA_MAX_ITER = 100000;
+
+// Regularized incomplete gamma: { lower: P(a, x), upper: Q(a, x) }, each side
+// computed directly where it is the small one (series for x < a + 1, Lentz
+// continued fraction otherwise) so both tails keep full relative accuracy.
+export const regularizedGamma = (a, x) => {
+    if (!(a > 0) || !(x >= 0)) throw new Error('regularizedGamma needs a > 0, x >= 0');
+    if (x === 0) return { lower: 0, upper: 1 };
+    if (x === Infinity) return { lower: 1, upper: 0 };
+    const logPrefactor = logGammaPrefactor(a, x);
+    if (x < a + 1) {
+        let ap = a;
+        let term = 1 / a;
+        let sum = term;
+        for (let n = 0; n < GAMMA_MAX_ITER; n += 1) {
+            ap += 1;
+            term *= x / ap;
+            sum += term;
+            if (Math.abs(term) < Math.abs(sum) * GAMMA_EPS) break;
+        }
+        const lower = sum * Math.exp(logPrefactor);
+        return { lower, upper: 1 - lower };
+    }
+    const tiny = 1e-300;
+    let b = x + 1 - a;
+    let c = 1 / tiny;
+    let d = 1 / b;
+    let h = d;
+    for (let i = 1; i < GAMMA_MAX_ITER; i += 1) {
+        const an = -i * (i - a);
+        b += 2;
+        d = an * d + b;
+        if (Math.abs(d) < tiny) d = tiny;
+        c = b + an / c;
+        if (Math.abs(c) < tiny) c = tiny;
+        d = 1 / d;
+        const delta = d * c;
+        h *= delta;
+        if (Math.abs(delta - 1) < GAMMA_EPS) break;
+    }
+    const upper = Math.exp(logPrefactor) * h;
+    return { lower: 1 - upper, upper };
+};
+
+// Wichura's AS 241 (PPND16): the standard normal quantile to ~1e-16.
+export const normalQuantile = (p) => {
+    if (!(p > 0 && p < 1)) {
+        if (p === 0) return -Infinity;
+        if (p === 1) return Infinity;
+        throw new Error('normalQuantile needs 0 <= p <= 1');
+    }
+    const q = p - 0.5;
+    if (Math.abs(q) <= 0.425) {
+        const r = 0.180625 - q * q;
+        return q * (((((((2509.0809287301227 * r + 33430.57558358813) * r + 67265.7709270087) * r
+            + 45921.95393154987) * r + 13731.69376550946) * r + 1971.5909503065513) * r
+            + 133.14166789178438) * r + 3.3871328727963665)
+            / (((((((5226.495278852546 * r + 28729.085735721943) * r + 39307.89580009271) * r
+            + 21213.794301586597) * r + 5394.196021424751) * r + 687.1870074920579) * r
+            + 42.31333070160091) * r + 1);
+    }
+    let r = q < 0 ? p : 1 - p;
+    r = Math.sqrt(-Math.log(r));
+    let value;
+    if (r <= 5) {
+        r -= 1.6;
+        value = (((((((0.0007745450142783414 * r + 0.022723844989269184) * r + 0.2417807251774506) * r
+            + 1.2704582524523684) * r + 3.6478483247632045) * r + 5.769497221460691) * r
+            + 4.630337846156546) * r + 1.4234371107496835)
+            / (((((((1.0507500716444169e-9 * r + 0.0005475938084995345) * r + 0.015198666563616457) * r
+            + 0.14810397642748008) * r + 0.6897673349851) * r + 1.6763848301838038) * r
+            + 2.053191626637759) * r + 1);
+    } else {
+        r -= 5;
+        value = (((((((2.0103343992922881e-7 * r + 0.000027115555687434876) * r + 0.0012426609473880784) * r
+            + 0.026532189526576124) * r + 0.29656057182850487) * r + 1.7848265399172913) * r
+            + 5.463784911164114) * r + 6.657904643501103)
+            / (((((((2.0442631033899397e-15 * r + 1.421511758316446e-7) * r + 0.000018463183175100548) * r
+            + 0.0007868691311456133) * r + 0.014875361290850615) * r + 0.1369298809227358) * r
+            + 0.599832206555888) * r + 1);
+    }
+    return q < 0 ? -value : value;
+};
+
+/**
+ * One-sided normal deviate z with P(Z >= z) = upper; `lower` = 1 - upper
+ * computed independently so both tails stay accurate. Mirrors `_normal_deviate`.
+ */
+export const normalDeviate = (upper, lower) => (
+    upper <= 0.5
+        ? -normalQuantile(Math.max(upper, SIGNIFICANCE_TAIL_FLOOR))
+        : normalQuantile(Math.max(lower, SIGNIFICANCE_TAIL_FLOOR))
+);
+
+// Look-elsewhere-corrected Poisson significance of one cell's raw count:
+// exact upper tail P(X >= n | e) = P(n, e), Sidak-corrected over `trials`
+// cells in log space. Mirrors `_peak_significance`.
+const peakSignificance = (count, expected, trials) => {
+    let local = 1;
+    let localLower = 0;
+    if (count > 0) {
+        const tails = regularizedGamma(count, expected);
+        local = tails.lower;
+        localLower = tails.upper;
+    }
+    let logLower;
+    if (local < 0.5) logLower = trials * Math.log1p(-local);
+    else if (localLower > 0) logLower = trials * Math.log(localLower);
+    else logLower = -Infinity;
+    const corrected = -Math.expm1(logLower);
+    return { local, corrected, deviate: normalDeviate(corrected, Math.exp(logLower)) };
 };
 
 // --- icosahedron + geodesic subdivision ---------------------------------------
@@ -508,7 +675,8 @@ const covariance3 = (points) => {
  * Cartesian Angstrom displacements; only directions are used). Mirrors
  * `orientation_histogram` in Python -- same options, same output keys:
  * `density` integrates to 1 over the sphere, `enhancement = 4*pi*density` is 1
- * for an isotropic cloud, `zScore` is the Poisson significance per cell.
+ * for an isotropic cloud, `zScore` is the local (uncorrected) z per cell and
+ * `peakSignificance` the look-elsewhere-corrected peak test.
  */
 export const orientationHistogram = (vectors, options = {}) => {
     const {
@@ -639,8 +807,9 @@ export const orientationHistogram = (vectors, options = {}) => {
         enhancement[cell] = density[cell] * 4 * Math.PI;
     }
 
-    // Poisson significance from the *raw* counts (smoothing would correlate
-    // cells and overstate the evidence).
+    // Local z from the *raw* counts (smoothing would correlate cells and
+    // overstate the evidence) -- a description, not a test; the peak test is
+    // peakSignificance below.
     const expected = new Array(cellCount);
     const zScore = new Array(cellCount);
     for (let cell = 0; cell < cellCount; cell += 1) {
@@ -697,6 +866,7 @@ export const orientationHistogram = (vectors, options = {}) => {
             peakTieCount += 1;
         }
     }
+    const peakTest = peakSignificance(counts[peak], expected[peak], cellCount);
     let amplitudeSum = 0;
     let amplitudeSquares = 0;
     keptAmplitude.forEach((value) => { amplitudeSum += value; amplitudeSquares += value * value; });
@@ -740,7 +910,14 @@ export const orientationHistogram = (vectors, options = {}) => {
         peakTieCount,
         peakDirection: tiling.centers[peak],
         peakEnhancement: enhancement[peak],
+        // Local, uncorrected Gaussian z -- kept for API compatibility; the
+        // calibrated readout is peakSignificance (see _peak_significance).
         peakZScore: zScore[peak],
+        peakCount: counts[peak],
+        peakExpected: expected[peak],
+        peakLocalPValue: peakTest.local,
+        peakPValue: peakTest.corrected,
+        peakSignificance: peakTest.deviate,
         significance: Math.sqrt(zSquares / cellCount),
         recommendedFrequency: recommendedFrequency(used, { targetPerCell }),
         browserOrientation: true

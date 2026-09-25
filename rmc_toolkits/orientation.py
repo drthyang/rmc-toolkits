@@ -55,9 +55,14 @@ Reading the output
 ``density`` integrates to 1 over the sphere. ``enhancement = 4*pi*density`` is
 the more useful display quantity: it is dimensionless, **1 everywhere for an
 isotropic site**, and reads directly as "this direction is 1.8x more likely
-than chance". ``zScore`` is the Poisson significance of each cell against the
-isotropic null, which is what stops an over-binned map (more cells than data)
-from being read as structure -- see :func:`recommended_frequency`.
+than chance". ``zScore`` is each cell's *local* Gaussian z against the
+isotropic null -- not a significance: the map has C cells, so its largest
+local z is routinely 3-5 on pure noise, and at the ~0.2-1 expected counts per
+cell of a fine tiling the Gaussian reading of a Poisson count is badly
+anti-conservative. The calibrated readouts are ``peakSignificance`` (the peak
+cell's exact Poisson tail, corrected for the C cells searched) and the other
+``...Significance`` fields, each a one-sided normal deviate. Over-binning
+itself is guarded by :func:`recommended_frequency`.
 
 Conventions
 -----------
@@ -73,6 +78,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
+from scipy.special import gammainc, gammaincc, ndtri
 
 # Shared with the PCA engine on purpose: the orientation tensor's axes are meant
 # to be compared against a site's PCA axes, so they must use the identical
@@ -106,6 +112,12 @@ DEFAULT_TARGET_PER_CELL = 12
 # plain argmax would pick the peak by round-off; 1e-9 is far above that
 # (~1e-15) and far below any physical difference. The lowest index wins.
 PEAK_TIE_RTOL = 1e-9
+
+# Every significance readout is a tail probability p converted to the
+# equivalent one-sided standard-normal deviate z (P(Z >= z) = p). Tail
+# probabilities are floored here before the conversion, so |z| <= 37.04 and
+# the payload never carries an infinity (which JSON cannot represent).
+SIGNIFICANCE_TAIL_FLOOR = 1e-300
 
 WEIGHTS = ("count", "amplitude", "amplitude2")
 FRAMES = ("cartesian", "pca")
@@ -560,6 +572,47 @@ def _validated_target(target_per_cell) -> int:
 # --- Orientation histogram ----------------------------------------------------
 
 
+def _normal_deviate(upper: float, lower: float) -> float:
+    """One-sided normal deviate z with P(Z >= z) = ``upper``.
+
+    ``lower`` is ``1 - upper`` computed independently by the caller, so the
+    conversion stays accurate in both tails (``1 - upper`` itself would lose
+    every digit once ``upper`` is within 1e-16 of 1).
+    """
+    if upper <= 0.5:
+        return float(-ndtri(max(float(upper), SIGNIFICANCE_TAIL_FLOOR)))
+    return float(ndtri(max(float(lower), SIGNIFICANCE_TAIL_FLOOR)))
+
+
+def _peak_significance(count: int, expected: float, trials: int) -> dict:
+    """Look-elsewhere-corrected Poisson significance of one cell's raw count.
+
+    The local p-value is the exact Poisson upper tail P(X >= n | e) =
+    P(n, e) (regularized lower incomplete gamma), not the Gaussian reading of
+    (n - e)/sqrt(e), which is badly anti-conservative at e ~ 0.2-1. The cell
+    was chosen as the maximum of ``trials`` cells, so the global p-value is the
+    Sidak correction 1 - (1 - p)^C, evaluated in log space.
+    """
+    if count <= 0:
+        local, local_lower = 1.0, 0.0
+    else:
+        local = float(gammainc(count, expected))
+        local_lower = float(gammaincc(count, expected))
+    if local < 0.5:
+        log_lower = trials * np.log1p(-local)
+    elif local_lower > 0.0:
+        log_lower = trials * np.log(local_lower)
+    else:
+        log_lower = -np.inf
+    corrected = float(-np.expm1(log_lower))
+    corrected_lower = float(np.exp(log_lower))
+    return {
+        "local": local,
+        "corrected": corrected,
+        "deviate": _normal_deviate(corrected, corrected_lower),
+    }
+
+
 def _smooth(mass: np.ndarray, neighbors: np.ndarray, passes: int) -> np.ndarray:
     """Neighbour diffusion on the cell graph; exactly mass-conserving.
 
@@ -632,7 +685,10 @@ def orientation_histogram(
     dict
         ``density`` integrates to 1 over the sphere; ``enhancement`` is
         ``4*pi*density``, i.e. 1 for an isotropic cloud; ``zScore`` is the
-        Poisson significance of the raw counts against the isotropic null;
+        local (uncorrected, Gaussian-approximation) z of each raw count
+        against the isotropic null; ``peakSignificance`` is the calibrated
+        peak test (exact Poisson tail of the peak cell's raw count, Sidak-
+        corrected over all cells, as a one-sided normal deviate);
         ``antipodalAsymmetry`` is ``sum_pairs |n(u) - n(-u)| / N`` (0 for an
         inversion-symmetric cloud, 1 for a fully one-sided one), with
         ``antipodalAsymmetryNull`` the level pure Poisson noise would produce;
@@ -734,9 +790,10 @@ def orientation_histogram(
     density = mass / (total_mass * tiling.areas)
     enhancement = density * 4.0 * np.pi
 
-    # Poisson significance against the isotropic null, always from the *raw*
-    # counts: smoothing correlates neighbouring cells, so a z computed after it
-    # would overstate the evidence.
+    # Local z against the isotropic null, always from the *raw* counts:
+    # smoothing correlates neighbouring cells, so a z computed after it would
+    # overstate the evidence. It is a per-cell description, not a test -- the
+    # peak's calibrated significance is _peak_significance below.
     expected = used * tiling.areas / (4.0 * np.pi)
     z_score = (counts - expected) / np.sqrt(np.maximum(expected, 1e-12))
 
@@ -762,6 +819,7 @@ def orientation_histogram(
     # identical in both engines -- see PEAK_TIE_RTOL.
     tied = np.flatnonzero(enhancement >= enhancement.max() * (1.0 - PEAK_TIE_RTOL))
     peak = int(tied[0])
+    peak_test = _peak_significance(int(counts[peak]), float(expected[peak]), cell_count)
 
     result = {
         "frequency": int(tiling.frequency),
@@ -805,7 +863,18 @@ def orientation_histogram(
         "peakTieCount": int(tied.size),
         "peakDirection": tiling.centers[peak].tolist(),
         "peakEnhancement": float(enhancement[peak]),
+        # Local, uncorrected Gaussian z of the peak cell's raw count -- kept
+        # for API compatibility; NOT a significance (see peakSignificance).
         "peakZScore": float(z_score[peak]),
+        # The peak test: raw count and isotropic expectation of the peak cell,
+        # its exact Poisson upper-tail p-value, that p Sidak-corrected for the
+        # C cells the maximum was searched over, and the corrected p as a
+        # one-sided normal deviate (sigma). This is the calibrated readout.
+        "peakCount": int(counts[peak]),
+        "peakExpected": float(expected[peak]),
+        "peakLocalPValue": peak_test["local"],
+        "peakPValue": peak_test["corrected"],
+        "peakSignificance": peak_test["deviate"],
         # How far the map departs from isotropy overall, in units of the
         # Poisson noise floor: ~1 means the structure is consistent with noise.
         "significance": float(np.sqrt(np.mean(z_score**2))),

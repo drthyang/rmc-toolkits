@@ -50,6 +50,13 @@ const SAVE_OPTIONS = [
 const numberFormat = (value, digits = 2) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
 
+// A calibrated one-sided deviate (engine field) as "N.Nσ"; a deviate at or
+// below 0 means the tail probability is >= 1/2, i.e. no evidence at all.
+const sigmaFormat = (value) => {
+    if (!Number.isFinite(value)) return '—';
+    return value > 0 ? `${value.toFixed(1)}σ` : 'not significant';
+};
+
 // Thin axis rods through the sphere centre along ±dir (both signs, since a
 // direction map has no preferred end of an axis), one mesh per sign.
 const buildAxisRods = (axes, colors, radius, length) => {
@@ -540,7 +547,7 @@ export default function OrientationView({
                             <div>{formatDirection(result.centers[hoverCell])}</div>
                             <div>{numberFormat(result.enhancement[hoverCell], 2)}× isotropic</div>
                             <div>
-                                {result.counts[hoverCell]} atoms · z = {numberFormat(result.zScore[hoverCell], 1)}
+                                {result.counts[hoverCell]} atoms · local z = {numberFormat(result.zScore[hoverCell], 1)}
                             </div>
                             {result.cellMeanAmplitude?.[hoverCell] > 0 && (
                                 <div>⟨|Δr|⟩ = {numberFormat(result.cellMeanAmplitude[hoverCell], 3)} Å</div>
@@ -572,7 +579,18 @@ export default function OrientationView({
                                         {' '}(1 of {result.peakTieCount} equal cells)
                                     </span>
                                 )}
-                                {' '}(z = {numberFormat(result.peakZScore, 1)})
+                                {' '}· <b>{sigmaFormat(result.peakSignificance)}</b>
+                                <InfoBadge label="About the peak significance" align="end">
+                                    <p>
+                                        How surprising the peak cell&apos;s raw count is for an isotropic
+                                        site: the exact Poisson probability of at least that many atoms
+                                        given the cell&apos;s expected count, corrected for having searched
+                                        all {result.cellCount} cells for the maximum (Šidák), as a
+                                        one-sided normal deviate. A pure-noise map exceeds 2σ in at most
+                                        ~2% of cases. The hover z is local and uncorrected — the largest
+                                        of many cells, so it is not a significance.
+                                    </p>
+                                </InfoBadge>
                             </span>
                             <span className="orient-stat">
                                 anisotropy <b>{numberFormat(result.orientationAnisotropy, 2)}</b>

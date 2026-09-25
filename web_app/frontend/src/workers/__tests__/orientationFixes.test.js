@@ -11,8 +11,12 @@ import {
     MIN_FREQUENCY,
     assignCells,
     goldbergTiling,
+    logGamma,
+    normalDeviate,
+    normalQuantile,
     orientationHistogram,
     recommendedFrequency,
+    regularizedGamma,
     siteOrientationHistogram
 } from '../orientation.js';
 import { siteDisplacementsFromRmc6f } from '../pcaKde.js';
@@ -282,5 +286,139 @@ describe('tie-tolerant peak', () => {
         const result = orientationHistogram(points, { frequency: 8, geometry: false });
         expect(result.peakTieCount).toBe(1);
         expect(result.enhancement[result.peakCell]).toBe(result.vmax);
+    });
+});
+
+// --- significance statistics -----------------------------------------------
+
+// scipy.special references: [a, x, gammainc(a, x), gammaincc(a, x)].
+const SCIPY_GAMMA = [
+    [1, 0.2, 0.18126924692201815, 0.8187307530779818],
+    [2, 0.9029912627020413, 0.22861236738599036, 0.7713876326140097],
+    [5, 0.15932045206675688, 7.492499892444724e-07, 0.9999992507500107],
+    [39, 2.5649892741371745, 3.6267987030691646e-32, 1.0],
+    [40, 0.2, 1.1087134276149818e-76, 1.0],
+    [2.5, 3.0, 0.6937810815867218, 0.30621891841327825],
+    [2.5, 40.0, 0.9999999999999991, 8.391825114831597e-16],
+    [500.5, 480.0, 0.18030685630218252, 0.8196931436978174],
+    [500.5, 560.0, 0.9949983047395444, 0.005001695260455566],
+    [2880.5, 2600.0, 3.330569543243583e-08, 0.9999999666943046],
+    [2880.5, 3300.0, 0.9999999999999606, 3.94213016105765e-14],
+    [20480.5, 20000.0, 0.00036000517881559747, 0.9996399948211844],
+    [20480.5, 22000.0, 1.0, 1.7291900418622563e-25],
+    [0.5, 0.001, 0.035670591729679894, 0.9643294082703201]
+];
+// scipy.special.ndtri references: [p, ndtri(p)].
+const SCIPY_NDTRI = [
+    [1e-300, -37.0470962993612], [1e-100, -21.273453560965322], [1e-20, -9.262340089798409],
+    [1e-05, -4.264890793922825], [0.02, -2.053748910631823], [0.3, -0.5244005127080409],
+    [0.5, 0.0], [0.8, 0.8416212335729143], [0.999, 3.090232306167813],
+    [0.999999999999, 7.0344869100478356]
+];
+
+const relClose = (actual, expected, rtol) => {
+    expect(Math.abs(actual - expected)).toBeLessThanOrEqual(rtol * Math.max(1, Math.abs(expected)));
+};
+
+describe('special functions match scipy', () => {
+    it('regularized incomplete gamma, small tail to 1e-11 relative', () => {
+        SCIPY_GAMMA.forEach(([a, x, lower, upper]) => {
+            const result = regularizedGamma(a, x);
+            const [small, reference] = lower < upper ? [result.lower, lower] : [result.upper, upper];
+            expect(Math.abs(small - reference) / reference).toBeLessThan(1e-11);
+            relClose(result.lower + result.upper, 1, 1e-15);
+        });
+    });
+
+    it('normal quantile to 1e-14', () => {
+        SCIPY_NDTRI.forEach(([p, z]) => relClose(normalQuantile(p), z, 1e-14));
+        expect(Math.abs(normalDeviate(0.5, 0.5))).toBe(0);
+        relClose(normalDeviate(1e-5, 1 - 1e-5), 4.264890793922825, 1e-14);
+    });
+
+    it('logGamma to 1e-14', () => {
+        relClose(logGamma(0.5), 0.5723649429247, 1e-14);
+        relClose(logGamma(3.7), 1.428072326665388, 1e-14);
+        relClose(logGamma(10), 12.801827480081469, 1e-14);
+        relClose(logGamma(20480.5), 182830.05847756125, 1e-14);
+    });
+});
+
+// Deterministic, RNG-free cloud — identical to golden_cloud() in
+// tests/test_orientation_fixes.py.
+const goldenCloud = ({ nSphere = 900, nLobe = 60, lobe = [0.3, -0.5, 0.81] } = {}) => {
+    const points = [];
+    for (let i = 0; i < nSphere; i += 1) {
+        const z = 1 - (2 * i + 1) / nSphere;
+        const r = Math.sqrt(1 - z * z);
+        const phi = i * 2.399963229728653;
+        const radius = 0.05 + 0.03 * ((i * 7) % 11) / 11;
+        points.push([r * Math.cos(phi) * radius, r * Math.sin(phi) * radius, z * radius]);
+    }
+    const length = Math.hypot(...lobe);
+    const unit = lobe.map((value) => value / length);
+    for (let j = 0; j < nLobe; j += 1) {
+        const jitter = [Math.cos(j * 1.3), Math.sin(j * 1.7), Math.cos(j * 0.9)].map((value) => 0.02 * value);
+        points.push(unit.map((value, axis) => (value + jitter[axis]) * 0.12));
+    }
+    return points;
+};
+
+// Shared verbatim with GOLDEN_PEAK in tests/test_orientation_fixes.py:
+// [frequency, smoothing, nLobe, expected fields].
+const GOLDEN_PEAK = [
+    [6, 1, 60, { peakCell: 181, peakCount: 39, peakExpected: 2.5649892741371745,
+        peakLocalPValue: 3.6267987030691646e-32, peakPValue: 1.3129011305110377e-29,
+        peakSignificance: 11.238918217145391 }],
+    [10, 2, 60, { peakCell: 480, peakCount: 45, peakExpected: 0.8960392805524379,
+        peakLocalPValue: 2.4905767221833515e-59, peakPValue: 2.4955578756277183e-56,
+        peakSignificance: 15.770175177825124 }],
+    [null, 0, 60, { peakCell: 10, peakCount: 72, peakExpected: 23.631937108780438,
+        peakLocalPValue: 1.0240227941836545e-15, peakPValue: 4.300895735571259e-14,
+        peakSignificance: 7.460770577845533 }],
+    [10, 2, 0, { peakCell: 436, peakCount: 2, peakExpected: 0.9029912627020413,
+        peakLocalPValue: 0.22861236738599036, peakPValue: 1.0,
+        peakSignificance: -22.629329003077444 }],
+    [2, 0, 6, { peakCell: 10, peakCount: 27, peakExpected: 22.30264064641154,
+        peakLocalPValue: 0.18477705092278982, peakPValue: 0.999812237582693,
+        peakSignificance: -3.5567124319438927 }]
+];
+
+const assertGolden = (table) => {
+    table.forEach(([frequency, smoothing, nLobe, expected]) => {
+        const result = orientationHistogram(goldenCloud({ nLobe }), { frequency, smoothing, geometry: false });
+        Object.entries(expected).forEach(([key, value]) => {
+            if (typeof value === 'boolean' || Number.isInteger(value) || value === null) {
+                expect(result[key], `${frequency}/${smoothing}/${nLobe} ${key}`).toBe(value);
+            } else {
+                expect(Math.abs(result[key] - value), `${frequency}/${smoothing}/${nLobe} ${key}`)
+                    .toBeLessThanOrEqual(1e-9 * Math.max(1, Math.abs(value)));
+            }
+        });
+    });
+};
+
+const isotropicUnits = (gauss, n) => {
+    const points = [];
+    for (let i = 0; i < n; i += 1) points.push([gauss(), gauss(), gauss()]);
+    return points;
+};
+
+// orientation.numerics.1/.26, orientation.physics.20
+describe('peak significance (look-elsewhere-corrected Poisson tail)', () => {
+    it('matches the Python golden values', () => assertGolden(GOLDEN_PEAK));
+
+    it('reads isotropic clouds as not significant at the UI defaults', () => {
+        const gauss = makeRng(2024);
+        const significance = [];
+        const local = [];
+        for (let k = 0; k < 80; k += 1) {
+            const result = orientationHistogram(isotropicUnits(gauss, 216), { frequency: 10, smoothing: 2, geometry: false });
+            significance.push(result.peakSignificance);
+            local.push(result.peakZScore);
+        }
+        expect(local.filter((value) => value >= 3).length / local.length).toBeGreaterThan(0.5);
+        expect(significance.filter((value) => value > 2).length / significance.length).toBeLessThanOrEqual(0.05);
+        expect(significance.filter((value) => value > 3).length).toBeLessThanOrEqual(1);
     });
 });

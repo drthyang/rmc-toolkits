@@ -807,16 +807,16 @@ $$\boxed{\;\mathcal{E}_m \;=\; 4\pi\,\rho_m\;}
 `vmin`/`vmax` are $\min_m \mathcal{E}_m$ and $\max_m \mathcal{E}_m$; the colourbar runs
 $0 \to \texttt{vmax}$ with a tick drawn at the isotropic $1\times$.
 
-#### 6.3 Poisson significance against the isotropic null
+#### 6.3 Per-cell $z$, and the calibrated peak test
 
 **Null model.** The $N$ surviving directions are i.i.d. uniform on the sphere. Then
 $n_m \sim \mathrm{Binomial}(N, \Omega_m/4\pi) \approx \mathrm{Poisson}(e_m)$ with
 
 $$e_m \;=\; \frac{N\,\Omega_m}{4\pi} \qquad \text{(reported as } \texttt{expected} \text{),}$$
 
-and, using the Poisson identity $\operatorname{Var} = \operatorname{E}$,
+and, using the Poisson identity $\operatorname{Var} = \operatorname{E}$, each cell's **local** $z$ is
 
-$$z_m \;=\; \frac{n_m - e_m}{\sqrt{\max(e_m,\,10^{-12})}} .$$
+$$z_m \;=\; \frac{n_m - e_m}{\sqrt{\max(e_m,\,10^{-12})}} \qquad (\texttt{zScore}) .$$
 
 Three things to note:
 
@@ -828,13 +828,66 @@ Three things to note:
 2. The exact multinomial standard deviation is $\sqrt{e_m(1 - \Omega_m/4\pi)}$, smaller than
    $\sqrt{e_m}$ by a factor $\sqrt{1-1/C}$ — 0.05 % at $\nu = 10$. Using the Poisson form is
    therefore very slightly conservative.
-3. A whole-map summary is reported as
+3. **$z_m$ is a local description, not a significance** — and `peakZScore`, the $z_m$ of the
+   peak cell, is kept in the payload for compatibility only. Two errors stack up if it is read
+   as one. *Look-elsewhere*: the peak is the maximum over $C$ cells (1002 at the UI default), and
+   the largest of $C$ noise deviates is routinely 3–5. *Poisson skew*: at the default operating
+   point $e_m \approx 0.2$–$1$, where $(n - e)/\sqrt{e}$ wildly overstates the tail (at
+   $e = 0.2156$ a count of 3 gives $z = 6.0$, Gaussian $p = 10^{-9}$, true Poisson $p = 1.4\times10^{-3}$).
+   Before the 1.0 audit the summary strip printed this $z$ next to the peak: an exactly isotropic
+   cloud read a median "z = 3.8" (1000 copies) or 5.4 (216 copies) at the UI defaults, and 42 of 52
+   real GaNb₄Se₈ sites printed $z \ge 3$ although their peaks were statistically
+   indistinguishable from an isotropised copy of the same data.
+
+**The peak test** (`peakCount`, `peakExpected`, `peakLocalPValue`, `peakPValue`,
+`peakSignificance`; `_peak_significance` / `peakSignificance`). With $n = n_{\text{peak}}$ the raw
+count and $e = e_{\text{peak}}$ the expectation of the peak cell (the tie-tolerant argmax of the
+*smoothed* enhancement, §Outputs):
+
+$$p_{\text{loc}} \;=\; P(X \ge n \mid X \sim \mathrm{Poisson}(e)) \;=\; P(n, e)
+\quad(\text{regularized lower incomplete gamma; } p_{\text{loc}} = 1 \text{ for } n = 0),$$
+
+$$p \;=\; 1 - (1 - p_{\text{loc}})^{C} \quad\text{(Šidák, evaluated as } -\mathrm{expm1}(C\,\mathrm{log1p}(-p_{\text{loc}}))\text{)},
+\qquad
+\texttt{peakSignificance} \;=\; \Phi^{-1}(1 - p) .$$
+
+The deviate is computed on whichever tail is accurate: $-\Phi^{-1}(p)$ for $p \le \tfrac12$,
+$\Phi^{-1}(1 - p)$ with $1 - p = (1 - p_{\text{loc}})^C$ evaluated directly otherwise, and both
+tail probabilities are floored at `SIGNIFICANCE_TAIL_FLOOR = 1e-300`, so $|z| \le 37.04$ and no
+infinity reaches the JSON. A deviate $\le 0$ ($p \ge \tfrac12$) is no evidence at all; the summary
+strip then prints "not significant". Python evaluates $P(a, x)$, $Q(a, x)$ and $\Phi^{-1}$ with
+`scipy.special.gammainc` / `gammaincc` / `ndtri`; the JS port carries its own
+(`regularizedGamma`: series / Lentz continued fraction with a cancellation-free prefactor;
+`normalQuantile`: Wichura's AS 241), pinned against scipy values to $\le 10^{-11}$ relative on
+the small tail and against Python goldens to $10^{-9}$.
+
+*Why this is conservative whatever cell is picked.* Every cell's discrete Poisson $p$-value
+satisfies $P(p_m \le \alpha) \le \alpha$ under the null, so Šidák over all $C$ cells bounds the
+chance that *any* cell — and therefore the chosen one, whichever rule chose it — reaches global
+$p \le \alpha$. The cells are slightly negatively dependent (multinomial), which the Poisson tail
+(heavier than the binomial one) more than covers. Measured on exactly isotropic clouds (4000 per
+row):
+
+| $N$ | $\nu$ | smoothing | $P(\texttt{peakSignificance} > 2)$ | $P(> 3)$ |
+|---|---|---|---|---|
+| 216 | 10 | 2 (UI default) | 0.40 % | 0.00 % |
+| 1000 | 10 | 2 (UI default) | 0.67 % | 0.13 % |
+| 1000 | 10 | 0 | 0.73 % | 0.08 % |
+| 1000 | 2 (Auto) | 0 | 1.65 % | 0.10 % |
+| 216 | 24 | 2 | 0.15 % | 0.05 % |
+
+against nominal ceilings of 2.28 % and 0.135 %. On the real runs at the UI defaults, 1 of 52
+sites (5 K) and 1 of 52 (250 K) exceed 2σ and none exceeds 3σ; on Auto (coarser cells, more
+counts per cell) 8 and 11 sites exceed 2σ and 1 and 3 exceed 3σ — real lobes become detectable
+once the cells hold enough atoms. The per-cell hover value stays the local $z_m$ and is labelled
+"local z".
+
+**Whole-map summary.** Also reported is
 
 $$\texttt{significance} \;=\; \sqrt{\tfrac{1}{C}\textstyle\sum_m z_m^2}\ \ [\sigma],$$
 
-   the RMS $z$. $\approx 1$ means the entire pattern is consistent with pure counting noise;
-   well above 1 means real directional structure. This is the number that stops an over-binned
-   map from being read as physics.
+the RMS $z$. $\approx 1$ means the entire pattern is consistent with pure counting noise;
+well above 1 means real directional structure.
 
 #### 6.4 Neighbour smoothing
 
@@ -878,7 +931,8 @@ Applied to: `mass`, the per-cell amplitude sum $S_m$, and a float copy of the co
 > versus 0.999 elsewhere at 2 passes), so heavy smoothing paints a faint icosahedral pattern
 > onto an isotropic site. At the default 2 passes it is a $\pm 6\%$ effect — well below the
 > Poisson noise of any real map — but at 8–12 passes it approaches the size of a weak real lobe.
-> Read `zScore`, which is untouched by smoothing, when in doubt.
+> Read the raw `counts` and the calibrated `peakSignificance` (§6.3), which are untouched by
+> smoothing, when in doubt.
 
 #### 6.5 Per-cell mean amplitude (the relief)
 
@@ -1110,7 +1164,7 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `mass` | $(C,)$ | — | weighted, **post**-smoothing | no |
 | `density` | $(C,)$ sr⁻¹ | — | from smoothed `mass`; integrates to 1 | no |
 | `enhancement` | $(C,)$ dimensionless | — | $4\pi\rho$, **smoothed**; 1 = isotropic | yes (colour) |
-| `expected`, `zScore` | $(C,)$ | — | isotropic null and its $z$, both from **raw** counts | `zScore` (hover) |
+| `expected`, `zScore` | $(C,)$ | — | isotropic null and each cell's **local** (uncorrected) $z$, both from **raw** counts | `zScore` (hover, labelled "local z") |
 | `vmin`, `vmax` | dimensionless | — | enhancement range | `vmax` (colourbar) |
 | `meanCount`, `emptyFraction` | float | — | $N/C$; fraction of cells with **raw** count 0 | no |
 | `meanAmplitude`, `rmsAmplitude` | Å | — | $\langle a\rangle$, $\sqrt{\langle a^2\rangle}$ over survivors | `meanAmplitude` (relief scale) |
@@ -1122,7 +1176,10 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `peakCell`, `peakEnhancement` | int / float | — | tie-tolerant argmax over the **smoothed** enhancement: the lowest index within a relative `PEAK_TIE_RTOL = 1e-9` of the maximum | `peakEnhancement` only |
 | `peakTieCount` | int | — | number of cells within `PEAK_TIE_RTOL` of the maximum (1 = unique peak) | yes, as "(1 of k equal cells)" when $k > 1$ |
 | `peakDirection` | unit vector | **req** | `centers[peakCell]` | yes |
-| `peakZScore` | float | — | the **raw** $z$ at that cell | yes |
+| `peakZScore` | float | — | the **raw, local** $z$ at that cell — kept for compatibility, **not a significance** (§6.3) | no |
+| `peakCount`, `peakExpected` | int / float | — | raw count and isotropic expectation $e$ of the peak cell | no |
+| `peakLocalPValue`, `peakPValue` | probability | — | exact Poisson tail $P(X \ge n \mid e)$; the same Šidák-corrected over the $C$ cells (§6.3) | no |
+| `peakSignificance` | $\sigma$ (one-sided normal deviate) | — | $\Phi^{-1}(1 - \texttt{peakPValue})$, $\lvert z\rvert \le 37.04$ | yes |
 | `significance` | $\sigma$ | — | RMS $z$ over cells, raw counts | yes |
 | `recommendedFrequency` | int | — | what Auto would have chosen | no |
 | `referenceNumber`, `element`, `siteFractional` | int / str / 3 fractional | — | site tag added by `site_orientation_histogram`; `siteFractional` is $\mathrm{mod}(\text{site mean}\times\text{supercell},\,1)$, i.e. the site's mean position reduced into one unit cell ([pca_kde.py:172](../../rmc_toolkits/pca_kde.py)) | **no** — the panel header's element and site number come from `selectedEllipsoid` (the `/api/pca/sites` payload), not from this result; `siteFractional` here is read by nothing (the site panel reads `site.siteFractional` from the sites payload instead) |
@@ -1131,7 +1188,8 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 
 **Smoothed vs raw, in one line.** Smoothed: `mass`, `density`, `enhancement`, `vmin`, `vmax`,
 `cellMeanAmplitude`, `peakCell`, `peakEnhancement`. Raw: `counts`, `expected`, `zScore`,
-`peakZScore`, `significance`, `emptyFraction`, `antipodalAsymmetry`. Two consequences worth
+`peakZScore`, the whole peak test (`peakCount` … `peakSignificance`), `significance`,
+`emptyFraction`, `antipodalAsymmetry`. Two consequences worth
 naming: with smoothing on, `peakCell` (smoothed argmax) and `peakZScore` (raw $z$ *at* that cell)
 describe different populations; and `emptyFraction` does **not** shrink when smoothing is applied,
 even though after one pass essentially every cell holds mass.
@@ -1382,9 +1440,11 @@ independently computed in each language — not a shared-golden parity suite.
    $\mathcal{A} \le 1$ while $\mathcal{A}_{\text{null}} = \sqrt{C/\pi N}$ is not bounded, the
    `A > 3·null` red flag **cannot fire at all** unless $N > 9C/\pi$ — 2 871 copies at $\nu = 10$
    (§7). A perfectly one-sided 216-point site at the default resolution reports
-   $\mathcal{A} = 1.000$ against a floor of 1.215 and is displayed as unremarkable. Always check
-   `significance` (should be $\gg 1$) and the hover `z` before believing a lobe, and switch the
-   Resolution control to *Auto* — for both the map **and** the antipodal readout.
+   $\mathcal{A} = 1.000$ against a floor of 1.215 and is displayed as unremarkable. Before
+   believing a lobe, read the calibrated `peakSignificance` (§6.3) — **not** the hover `z`, which
+   is a local, uncorrected value and routinely reads 3–5 on pure noise at the default resolution —
+   and prefer the Resolution control's *Auto*, where cells hold enough atoms for a real lobe to
+   reach significance at all.
 8. **The orientation tensor is antipodally blind, like the ellipsoid.**
    $\mathbf{u}\mathbf{u}^{\mathsf T} = (-\mathbf{u})(-\mathbf{u})^{\mathsf T}$, so a "cluster"
    in $\mathbf{T}$ means a preferred *axis*, not a preferred *direction*. Only the map itself and
@@ -2021,15 +2081,18 @@ i.e. the CSS `left` is written to 2 decimal places, marking the isotropic level.
 $v_{\max} \le 1$ — a map with no cell above chance anywhere — the tick is omitted rather than pinned
 to the right edge.
 
-**One formatter behind every printed number.** The right-hand colorbar label, all four summary
+**One formatter behind every printed number.** The right-hand colorbar label, the summary
 statistics and three of the four tooltip lines go through the module-local
 
 ```js
 const numberFormat = (value, digits = 2) => (Number.isFinite(value) ? value.toFixed(digits) : '—');
 ```
 
-([`OrientationView.jsx:50-51`](../../web_app/frontend/src/components/OrientationView.jsx); the host page
-has its own copy with `digits = 4` for the site labels). So **any non-finite value — `NaN`,
+([`OrientationView.jsx`](../../web_app/frontend/src/components/OrientationView.jsx); the host page
+has its own copy with `digits = 4` for the site labels). The calibrated deviates (`…Significance`)
+go through its sibling `sigmaFormat`, which prints `N.Nσ` for a positive deviate, **"not
+significant"** for a deviate $\le 0$ (tail probability $\ge \tfrac12$), and `—` for a non-finite
+one. So **any non-finite value — `NaN`,
 `Infinity`, a missing field — prints as an em-dash `—`, never as `NaN`**. The tables below give only
 the digit counts; the `—` fallback applies to every one of them. The two exceptions are noted where
 they occur: the tooltip's atom count is printed raw, and the tick position uses `.toFixed(2)`
@@ -2045,7 +2108,7 @@ isotropic expectation.
 
 | Readout | Engine field | Definition | Format |
 | --- | --- | --- | --- |
-| `peak N.NN× at [x, y, z] (z = N.N)` | `peakEnhancement`, `peakDirection`, `peakZScore`, `peakTieCount` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction and its raw-count Poisson $z$ | 2 dp, direction 2 dp, $z$ 1 dp |
+| `peak N.NN× at [x, y, z] · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakTieCount`, `peakSignificance` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction; and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 1.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
 | `anisotropy N.NN` | `orientationAnisotropy` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue. $T = I/3$ for a uniform sphere, so the value is **0 for isotropic, 2 for a perfect single axis**. Computed from the vectors, not the bins, so it is resolution-independent. | 2 dp |
 | `± asymmetry N.NN (noise floor N.NN)` | `antipodalAsymmetry`, `antipodalAsymmetryNull` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The floor is the level pure Poisson noise alone produces, $\sqrt{C/(\pi N)}$, from $\mathbb E\lvert X-Y\rvert \approx 2\sqrt{m/\pi}$ for two iid Poisson($m$) cells. | both 2 dp |
 | `map significance N.Nσ` | `significance` | $\sqrt{\big\langle z_c^2 \big\rangle_c}$ with $z_c = (n_c - e_c)/\sqrt{e_c}$ — the RMS per-cell Poisson $z$ against the isotropic null. **≈1 means the whole map is consistent with counting noise**; well above 1 means real directional structure. | 1 dp |
@@ -2125,7 +2188,7 @@ shows four lines:
 | --- | --- | --- |
 | `[x, y, z]` | `result.centers[cell]`, 2 dp, via `formatDirection` | the **cell centre**, not the ray direction |
 | `N.NN× isotropic` | `result.enhancement[cell]`, 2 dp | smoothed if smoothing > 0 |
-| `n atoms · z = ±N.N` | `result.counts[cell]` **printed raw — no `numberFormat`, so no `—` fallback and no rounding**; `result.zScore[cell]` 1 dp | **raw, unsmoothed counts** |
+| `n atoms · local z = ±N.N` | `result.counts[cell]` **printed raw — no `numberFormat`, so no `—` fallback and no rounding**; `result.zScore[cell]` 1 dp — a **local, uncorrected** Gaussian $z$ (one cell of $C$, Gaussian-read at small expected counts), labelled as such since the 1.0 audit; it is not a significance (engine §6.3) | **raw, unsmoothed counts** |
 | `⟨\|Δr\|⟩ = N.NNN Å` | `result.cellMeanAmplitude[cell]`, 3 dp; shown only when > 0 | smoothed if smoothing > 0 |
 
 Two honest notes on this readout:
@@ -2557,7 +2620,7 @@ canvas alone:
 
 The engines return considerably more than this page shows. From the orientation response, the UI
 reads only `polygons`, `enhancement`, `vmax`, `cellMeanAmplitude`, `meanAmplitude`, `centers`,
-`counts`, `zScore`, `cellCount`, `peakEnhancement`, `peakDirection`, `peakZScore`, `peakTieCount`,
+`counts`, `zScore`, `cellCount`, `peakEnhancement`, `peakDirection`, `peakSignificance`, `peakTieCount`,
 `orientationAnisotropy`, `antipodalAsymmetry`, `antipodalAsymmetryNull`, `significance`, `weight`,
 `smoothing`, `browserOrientation`, and `pcaAxes` (fallback rods only). **Never rendered anywhere:**
 

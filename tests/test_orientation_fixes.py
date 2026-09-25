@@ -310,5 +310,115 @@ class TiedPeakTests(unittest.TestCase):
         self.assertEqual(result["peakCell"], int(np.argmax(result["enhancement"])))
 
 
+def golden_cloud(n_sphere=900, n_lobe=60, lobe=(0.3, -0.5, 0.81)):
+    """Deterministic, RNG-free cloud built identically in the JS suite.
+
+    A Fibonacci-spiral sphere (radius modulated by index) plus a tight lobe of
+    `n_lobe` points around `lobe` -- a cross-engine golden input for the
+    significance statistics.
+    """
+    i = np.arange(n_sphere, dtype=float)
+    z = 1.0 - (2.0 * i + 1.0) / n_sphere
+    r = np.sqrt(1.0 - z * z)
+    phi = i * 2.399963229728653
+    radius = 0.05 + 0.03 * ((i * 7) % 11) / 11.0
+    sphere = np.column_stack([r * np.cos(phi), r * np.sin(phi), z]) * radius[:, None]
+    j = np.arange(n_lobe, dtype=float)
+    lobe = np.asarray(lobe) / np.linalg.norm(lobe)
+    jitter = 0.02 * np.column_stack([np.cos(j * 1.3), np.sin(j * 1.7), np.cos(j * 0.9)])
+    lobe_points = (lobe[None, :] + jitter) * 0.12
+    return np.vstack([sphere, lobe_points])
+
+
+def _isotropic_units(rng, n):
+    v = rng.normal(size=(n, 3))
+    return v / np.linalg.norm(v, axis=1, keepdims=True)
+
+
+class PeakSignificanceTests(unittest.TestCase):
+    """orientation.numerics.1/.26, orientation.physics.20.
+
+    peakZScore is the local Gaussian z of the chosen cell: the largest of ~C
+    correlated values (no look-elsewhere correction) and Gaussian-read at
+    expected counts of ~0.2-1, so an exactly isotropic cloud printed a median
+    'z = 3.8' at the UI defaults. peakSignificance is the exact Poisson upper
+    tail of the peak cell's raw count, Sidak-corrected over all C cells and
+    reported as a one-sided normal deviate.
+    """
+
+    def test_isotropic_clouds_read_as_not_significant_at_the_ui_defaults(self):
+        rng = np.random.default_rng(2024)
+        for n in (216, 1000):
+            values = [
+                orientation_histogram(_isotropic_units(rng, n), frequency=10, smoothing=2, geometry=False)
+                for _ in range(150)
+            ]
+            significance = np.array([v["peakSignificance"] for v in values])
+            local = np.array([v["peakZScore"] for v in values])
+            # The old readout: most noise maps printed a >= 3 sigma peak.
+            self.assertGreater(np.mean(local >= 3), 0.5)
+            # The calibrated one: <= 2.3% expected above 2 sigma (Sidak is
+            # conservative); allow binomial scatter over 150 draws.
+            self.assertLessEqual(np.mean(significance > 2), 0.05, msg=f"N={n}")
+            self.assertLessEqual(np.mean(significance > 3), 0.02, msg=f"N={n}")
+
+    def test_value_is_the_sidak_corrected_poisson_tail(self):
+        from scipy.stats import norm, poisson
+
+        result = orientation_histogram(golden_cloud(), frequency=6, smoothing=1, geometry=False)
+        peak = result["peakCell"]
+        count = result["counts"][peak]
+        expected = result["expected"][peak]
+        self.assertEqual(result["peakCount"], count)
+        self.assertAlmostEqual(result["peakExpected"], expected, places=12)
+        local = poisson.sf(count - 1, expected)
+        self.assertAlmostEqual(result["peakLocalPValue"] / local, 1.0, places=10)
+        corrected = -np.expm1(result["cellCount"] * np.log1p(-local))
+        self.assertAlmostEqual(result["peakPValue"] / corrected, 1.0, places=8)
+        self.assertAlmostEqual(result["peakSignificance"], norm.isf(corrected), places=8)
+
+    def test_a_real_lobe_is_significant(self):
+        result = orientation_histogram(golden_cloud(), frequency=6, geometry=False)
+        self.assertGreater(result["peakSignificance"], 5.0)
+        self.assertLess(result["peakPValue"], 1e-6)
+
+    def test_golden_values_shared_with_the_js_engine(self):
+        assert_golden(self, GOLDEN_PEAK)
+
+
+def assert_golden(case, table):
+    for (frequency, smoothing, n_lobe), expected in table.items():
+        result = orientation_histogram(
+            golden_cloud(n_lobe=n_lobe), frequency=frequency, smoothing=smoothing, geometry=False
+        )
+        for key, value in expected.items():
+            message = f"nu={frequency} s={smoothing} lobe={n_lobe} {key}"
+            if isinstance(value, (bool, int)) or value is None:
+                case.assertEqual(result[key], value, msg=message)
+            else:
+                case.assertLess(abs(result[key] - value), 1e-9 * max(1.0, abs(value)), msg=message)
+
+
+# Shared verbatim with orientationFixes.test.js (GOLDEN_PEAK there):
+# (frequency, smoothing, n_lobe) -> expected peak-test fields.
+GOLDEN_PEAK = {
+    (6, 1, 60): {"peakCell": 181, "peakCount": 39, "peakExpected": 2.5649892741371745,
+                 "peakLocalPValue": 3.6267987030691646e-32, "peakPValue": 1.3129011305110377e-29,
+                 "peakSignificance": 11.238918217145391},
+    (10, 2, 60): {"peakCell": 480, "peakCount": 45, "peakExpected": 0.8960392805524379,
+                  "peakLocalPValue": 2.4905767221833515e-59, "peakPValue": 2.4955578756277183e-56,
+                  "peakSignificance": 15.770175177825124},
+    (None, 0, 60): {"peakCell": 10, "peakCount": 72, "peakExpected": 23.631937108780438,
+                    "peakLocalPValue": 1.0240227941836545e-15, "peakPValue": 4.300895735571259e-14,
+                    "peakSignificance": 7.460770577845533},
+    (10, 2, 0): {"peakCell": 436, "peakCount": 2, "peakExpected": 0.9029912627020413,
+                 "peakLocalPValue": 0.22861236738599036, "peakPValue": 1.0,
+                 "peakSignificance": -22.629329003077444},
+    (2, 0, 6): {"peakCell": 10, "peakCount": 27, "peakExpected": 22.30264064641154,
+                "peakLocalPValue": 0.18477705092278982, "peakPValue": 0.999812237582693,
+                "peakSignificance": -3.5567124319438927},
+}
+
+
 if __name__ == "__main__":
     unittest.main()
