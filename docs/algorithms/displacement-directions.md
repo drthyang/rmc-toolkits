@@ -1534,7 +1534,7 @@ the shared worker answers; otherwise axios hits
 `{ sites: '/api/pca/sites', orientation: '/api/pca/orientation' }[kind] ?? '/api/pca/kde'`. So a
 developer running the full Flask stack and opening a folder through the file picker is reading
 the **JavaScript** numbers, not the Python ones. The Flask
-route caches only the *parse* (`cached_site_displacements`, keyed on path + mtime, `maxsize=8`)
+route caches only the *parse* (`_SITES_CACHE` in `app.py`, keyed on the file signature, `maxsize=8`)
 and the *tiling* (`goldberg_tiling`, `maxsize=8`) — the histogram itself is recomputed every
 request. The browser side caches the *tiling* per worker (an unbounded `Map`) and the *parse* in
 the single **app-lifetime** worker `useSiteCloud.js` creates and never terminates — one cache slot,

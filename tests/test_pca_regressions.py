@@ -426,7 +426,7 @@ class KernelBroadeningGuidanceTests(unittest.TestCase):
     At EQUAL levels the p% mass isosurface of a Gaussian cloud sits sqrt(1+f^2)
     outside the p% ellipsoid (kernel broadening), so only a surface inside the
     ellipsoid signals anharmonicity; at the old defaults (25% surface, 50%
-    ellipsoid) a Gaussian site sat ~16% inside by construction.
+    ellipsoid) a Gaussian site sat ~25% inside by construction.
     """
 
     def _surface_radius_along_pc1(self, result, level):

@@ -121,25 +121,29 @@ the canvas both read *"The Flask app uses SciPy KDE for reference-grade values"*
 
 #### Which `.rmc6f` file, when the folder holds several
 
-Both runtimes implement the same heuristic, and it is not "the only one there":
+Both runtimes implement the same rule, and it is not "the only one there":
 
-* `web_app/backend/app.py` → `_find_rmc6f()`. If the path *is* a `.rmc6f` it is used directly.
-  Otherwise the directory is globbed for `*.rmc6f` (sorted by name) and every file in the directory
-  is tested against `_run_stem_from_output_name()`, a table of output-file patterns with an explicit
-  priority: **0** = `<stem>-NN.log`; **1** = `<stem>-EXAFS-*_[QR]_OUTPUT.csv`, `<stem>_FT_XFQ*.csv`,
-  `<stem>_[FS]Q*.csv`, `<stem>_bragg*.csv`, `<stem>_PDF*.csv`; **2** = `Frac_coord_<stem>.txt`.
-  Matches are sorted by `(priority, lowercased filename)` and the first `.rmc6f` whose stem matches
-  wins. If nothing matches, **the alphabetically first `.rmc6f` is used**.
+* `rmc_toolkits/parsers.py` → `find_run_configuration()` is the one Python rule, used by the
+  backend (`web_app/backend/app.py` → `_find_rmc6f()`, which only adds "if the path *is* a
+  `.rmc6f`, use it") and by the `rmc-triplets` CLI. The directory is globbed for `*.rmc6f` (sorted
+  by name); a 0-byte or marker-less candidate (`rmc6f_problem()`, e.g. left by a killed run) never
+  hides a usable one. Every file in the directory is tested against `run_stem_from_output_name()`,
+  a table of output-file patterns with an explicit priority: **0** = `<stem>-NN.log`; **1** =
+  `<stem>-EXAFS-*_[QR]_OUTPUT.csv`, `<stem>_FT_XFQ*.csv`, `<stem>_[FS]Q*.csv`, `<stem>_bragg*.csv`,
+  `<stem>_PDF*.csv`; **2** = `Frac_coord_<stem>.txt`. Matches are sorted by `(priority, lowercased
+  filename)` and the first `.rmc6f` whose stem matches wins. If nothing matches, **the first usable
+  `.rmc6f` by name is used**.
 * `web_app/frontend/src/browserData.js` → `chooseStructureFile()` is the parallel implementation,
-  keyed on `directory + '/' + stem` so the match is per-subfolder, with the same priority table but a
-  **different fallback**: it ends with `return rmc6fFiles[0]` on an unsorted
-  `files.filter(f => f.name.endsWith('.rmc6f'))`, i.e. the first `.rmc6f` in directory-walk / file-picker
-  order, which need not be the alphabetically first one — so a multi-model folder can resolve to
-  different files on the two paths. (Python sorts: `sorted(directory.glob("*.rmc6f"))[0]`.)
+  keyed on `directory + '/' + stem` so the match is per-subfolder, with the same priority table and
+  the same tie-breaking: candidates sorted by path and outputs by (priority, lower-cased name,
+  stem), all in code-point order as Python's `sorted()` compares strings (since 1.0; before it the
+  browser fell back to directory-walk order and ranked outputs with `localeCompare`, so a
+  multi-model folder could resolve to different files on the two paths).
 
-**Consequence.** In a multi-configuration folder the page can silently analyse a different
-`.rmc6f` than the user has in mind. The chosen path is reported (`source` in the Flask payload,
-`source` in the browser structure object) but is not shown prominently in the UI.
+**Consequence.** In a multi-configuration folder the page analyses the configuration the run's
+outputs name, which may not be the one the user has in mind. The chosen path is reported (`source`
+in the Flask payload, `source` in the browser structure object) but is not shown prominently in the
+UI.
 
 **Math.** The `.rmc6f` header supplies $\mathbf{N}$ (`Supercell dimensions`) and the supercell
 lattice matrix $\mathbf{L}$ (`Lattice vectors`, three rows). The unit-cell basis is
@@ -158,34 +162,43 @@ the result is always in $[0,1)$. The JavaScript twin writes `((value * supercell
 because JavaScript's `%` keeps the sign of the dividend; the two are numerically identical for the
 same input.
 
-Two equivalent spellings appear in the repo and both are in use:
-
-* `rmc_toolkits/kde.py` → `load_unit_cell_positions()` folds $\mathbf{f}_i$ directly.
-* `web_app/backend/app.py` → `structure()` first subtracts the per-atom cell index,
-  `reduced = coords - cell_indices/supercell`, then folds. Subtracting the cell index only removes
-  an integer *before* the modulo, so the two give the same $\mathbf{x}_i$. The browser parser
-  ([`browserData.js`](../../web_app/frontend/src/browserData.js) → `structureFromRmc6f()`) uses the
-  direct form and says so in a comment, which matters because the oldest `.rmc6f` variants carry no
-  per-atom cell index at all.
+Every reader folds $\mathbf{f}_i$ directly — `rmc_toolkits/kde.py` → `load_unit_cell_positions()`,
+`web_app/backend/app.py` → `structure()` and the browser parser
+([`browserData.js`](../../web_app/frontend/src/browserData.js) → `structureFromRmc6f()`) — which
+matters because the oldest `.rmc6f` variants carry no per-atom cell index at all. (Subtracting the
+cell index first, `coords - cell_indices/supercell`, as `structure()` did before 1.0 and the
+`Frac*.txt` writer still does, only removes an integer before the modulo and gives the same
+$\mathbf{x}_i$.)
 
 `load_unit_cell_positions()` also returns Cartesian positions
 $\mathbf{x}_i^{\mathrm{cart}} = x_i\mathbf{a} + y_i\mathbf{b} + z_i\mathbf{c}$ (Å) and
 `cell_lengths` $=(\lVert\mathbf{a}\rVert, \lVert\mathbf{b}\rVert, \lVert\mathbf{c}\rVert)$ (Å).
 **The Cartesian array is not used by the KDE endpoint** — see the units gotcha in Step 4.
 
-**Atom-line parsing.** `rmc_toolkits/parsers.py` → `iter_rmc6f_atoms()` and its browser twin
-`web_app/frontend/src/rmc6f.js` → `parseAtomLine()` both index fields *from the end* of the line so
-that the modern 10-field form (`id element [type] x y z ref cellx celly cellz`) and the legacy
-9-field form both parse: the reference number and three cell indices are the last four tokens, the
-fractional coordinates the three before them. The browser parser additionally accepts a 5–6 field
-coordinates-only form (returning `referenceNumber = null` and `cellIndices = null`) and explicitly
-**rejects** 7–8-field lines, so a truncated full line is not misread as coordinates. Python has no
-5–6-field branch: `iter_rmc6f_atoms()` skips any line with fewer than 9 tokens.
+**Atom-line parsing.** Both runtimes share one anchored, validated grammar (since 1.0):
+`rmc_toolkits/parsers.py` → `classify_rmc6f_atom_line()` / `iter_rmc6f_atoms()` /
+`parse_rmc6f_atoms()` and their browser twins in `web_app/frontend/src/rmc6f.js` →
+`classifyAtomLine()` / `parseRmc6fAtoms()`. A line is `id element [label]` followed by **exactly 7**
+data fields (`x y z ref cx cy cz`, the full layout) or **exactly 3** (`x y z`, the legacy
+coordinates-only form, with `referenceNumber`/`cellIndices` null); the label is a bracket group or
+one non-numeric token. Numbers accept Fortran `D` exponents, `ref` must be a positive integer and
+each cell index an integer in $[0, N_i)$. Any spelling of the `Atoms` marker is accepted, and
+bare-CR files parse. A line of valid layout with a non-finite coordinate (`NaN`, `Inf`, Fortran
+`****`) is **skipped and counted**; any other line is counted as unparsed. The parse report
+(`Rmc6fParseReport` / `report`) compares the accepted count with the header's `Number of atoms:`
+and its `warning()` / `parseWarning` text ("… of … atom lines unparsed", "parsed M of N atoms
+declared in the header", "… skipped for non-finite coordinates") reaches the Model information
+card, the PCA pages and the bond-angle payload. Before 1.0 both parsers indexed fields from the
+end of the line, so an extra trailing field silently shifted every column in the browser, and
+Python had no coordinates-only branch. `iter_rmc6f_atoms()` yields full-layout atoms by default;
+`load_unit_cell_positions()` passes `include_coords_only=True`, since the KDE needs only element
+and position.
 
 #### Population handed to the KDE (this differs between runtimes)
 
 * **Server-side run source** — `/api/kde/slice` calls `load_unit_cell_positions()` itself (memoized
-  by `_cached_positions`, an `lru_cache(maxsize=16)` keyed on path, mtime and element). **Every atom**
+  by `_cached_positions` → `_POSITIONS_CACHE`, a `_FileCache(16)` keyed on the file signature
+  `(st_mtime_ns, st_ctime_ns, st_size, st_ino)` and the element). **Every atom**
   of the selected element enters the estimate; no display sampling is applied, and the element
   filter is applied while parsing, before anything else.
 * **Browser-loaded run** — the worker is posted the `points` **memo**, i.e. `structure.points`
@@ -223,10 +236,11 @@ per-element counts.
 
 **Code.** `rmc_toolkits/kde.py` → `load_unit_cell_positions()`, `UnitCellPositions`;
 `rmc_toolkits/parsers.py` → `read_cell_vectors()`, `iter_rmc6f_atoms()`;
-`web_app/backend/app.py` → `_find_rmc6f()`, `_run_stem_from_output_name()`,
-`_sample_atoms_by_site()`, `structure()`;
+`rmc_toolkits/parsers.py` → `find_run_configuration()`, `run_stem_from_output_name()`,
+`classify_rmc6f_atom_line()`;
+`web_app/backend/app.py` → `_find_rmc6f()`, `_sample_atoms_by_site()`, `structure()`;
 `web_app/frontend/src/browserData.js` → `chooseStructureFile()`, `structureFromRmc6f()`;
-`web_app/frontend/src/rmc6f.js` → `parseAtomLine()`;
+`web_app/frontend/src/rmc6f.js` → `classifyAtomLine()`, `parseRmc6fAtoms()`;
 `web_app/frontend/src/workers/localStructureWorker.js`;
 `StructurePage.jsx` → the `points` `useMemo`.
 
@@ -1045,8 +1059,8 @@ sub-threshold work — resolves to `null` and `computeKde()` falls through to `c
 (`density = mapped ?? computeDensityCpu(args)`). A lost device clears the cached promise so a later message can
 re-initialize. The result object reports which one ran via `backend: 'gpu' | 'cpu'`.
 
-The repo's own wording — `AGENTS.md`: *"fall back to the CPU loop with identical output"*;
-`gpuKde.js`: the CPU loop *"evaluates the same kernel in float64"* — is true **structurally** (same
+The repo's own wording — `AGENTS.md` and `gpuKde.js`: the CPU loop *"evaluates the same kernel in
+float64"* (before 1.0 `AGENTS.md` said *"with identical output"*) — is true **structurally** (same
 formula, same grid, same normalizer, same cutoff, reshaped to the same nested JS array) but not
 **bitwise**, and the float32 narrowing is broader than the accumulator alone. Everything crosses the
 boundary as `f32`:
@@ -1403,8 +1417,9 @@ the distinct element labels before assigning colours) shown in the legend **belo
 * **Debounce.** Slider changes are debounced before a recompute: **160 ms** on the Flask path (with
   an `AbortController` cancelling any in-flight request) and **80 ms** on the browser-worker path.
   Worker results are matched to a monotonically increasing request id so a stale reply is discarded.
-* **Backend cache.** `_cached_positions()` is an `lru_cache(maxsize=16)` keyed on
-  `(path, mtime, element)`, so re-slicing the same file does not re-parse it. The KDE itself is
+* **Backend cache.** `_cached_positions()` goes through `_POSITIONS_CACHE`, a `_FileCache(16)`
+  keyed on `(path, file signature, element)`, so re-slicing the same file does not re-parse it, and
+  a parse of a file that changed during the read is never cached. The KDE itself is
   recomputed per request.
 * **Determinism.** Given the same file, element, normal, $z_c$, $\Delta z$, $f$, grid and log flag,
   each runtime returns a bit-reproducible result on the CPU path (the subsample seed is fixed at 0
@@ -1618,15 +1633,13 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
 15. **A missing lattice block degrades silently.** If `structure.latticeVectors` or
     `structure.supercell` is absent the frontend draws a 1 Å cubic cell with no warning.
 16. **The page may not be analysing the file you think.** In a folder with several `.rmc6f`
-    configurations, the one paired with a recognised output file wins; with no match Flask falls back
-    to the alphabetically first one and the browser to the first in directory-walk order, so the two
-    paths can pick different models (Step 1).
-17. **A zero-atom browser parse is still listed as an open issue** (`AGENTS.md`, *Current known
-    issues*, 2026-06-18) — but **its stated rationale is stale and should not be quoted**: it blames
-    a parser that "assumes one exact atom-line format", whereas `parseAtomLine()` now handles the
-    5–6-field coords-only form, the 9-field legacy form and the 10+-field modern form by indexing
-    from the end (Step 1). If a zero-atom failure mode survives, it is somewhere else — the `Atoms:`
-    header match, or the lattice/supercell header parse — not in the atom-line field layout.
+    configurations, the one paired with a recognised output file wins; with no match both runtimes
+    fall back to the first usable one by name (Step 1).
+17. **Skipped atom lines are reported, not hidden.** The zero-atom static-mode issue (`AGENTS.md`
+    *Current known issues*, 2026-06-18) is resolved in 1.0: both parsers share the validated grammar
+    of Step 1, report skipped or unparsed lines against the header's atom count, and a file with no
+    parseable atom is an error naming what was found (HTTP 400 from `/api/structure`, `/api/pca/*`
+    and `/api/triplets`; a thrown error in the browser) rather than an empty card.
 18. **No error bars, no resolution function, no thermal deconvolution.** The width of a blob in this
     map is the convolution of the true site spread with the KDE kernel; the kernel is *not*
     deconvolved. For quantitative displacement parameters use the
@@ -1729,10 +1742,11 @@ Two independent implementations exist and the page uses whichever data path it i
 
 A run folder can hold several models, and the choice decides what all three panels show.
 
-`app.py` → `_find_rmc6f()`: if the resolved target is itself a `.rmc6f` file, use it. Otherwise glob
-`*.rmc6f` (error if none), then walk the directory's other files in case-insensitive name order and
-classify each by `_run_stem_from_output_name()`, which extracts a run stem at one of three
-priorities:
+`app.py` → `_find_rmc6f()`: if the resolved target is itself a `.rmc6f` file, use it. Otherwise
+`parsers.find_run_configuration()` (the rule the `rmc-triplets` CLI uses too) globs `*.rmc6f` (error
+if none), keeps the usable candidates (not 0-byte, an Atoms marker in the first 64 KiB), then walks
+the directory's other files in case-insensitive name order and classifies each by
+`run_stem_from_output_name()`, which extracts a run stem at one of three priorities:
 
 | priority | pattern |
 | --- | --- |
@@ -1740,13 +1754,14 @@ priorities:
 | 1 | `<stem>-EXAFS-*_Q_OUTPUT.csv` / `_R_OUTPUT.csv`, `<stem>_FT_XFQ<n>.csv`, `<stem>_FQ<n>.csv`, `<stem>_SQ<n>.csv`, `<stem>_bragg*.csv`, `<stem>_PDF*.csv` |
 | 2 | `Frac_coord_<stem>.txt` |
 
-The `(priority, filename)` list is sorted and the first `.rmc6f` whose stem matches wins; with no
-match, the **alphabetically first** `.rmc6f` is used.
+The `(priority, filename)` list is sorted and the first usable `.rmc6f` whose stem matches wins; with
+no match, the **alphabetically first** usable `.rmc6f` is used.
 
-`browserData.js` → `chooseStructureFile()` uses the same priority ladder but matches on
-`dirname + '/' + stem`, so an output file only claims an `.rmc6f` sitting in the *same* subfolder; its
-fallback is the first `.rmc6f` in directory-walk order, which is not necessarily alphabetical. A
-folder holding several models can therefore resolve to a different model on the two paths.
+`browserData.js` → `chooseStructureFile()` uses the same priority ladder and the same tie-breaking
+(candidates by path, outputs by (priority, lower-cased name, stem), code-point order) but matches on
+`dirname + '/' + stem`, so an output file only claims an `.rmc6f` sitting in the *same* subfolder.
+Before 1.0 its fallback was the first `.rmc6f` in directory-walk order, so a folder holding several
+models could resolve to a different model on the two paths.
 
 #### 1b. Metadata
 
@@ -1758,76 +1773,68 @@ Both parsers scan for two headers and are otherwise position-independent:
   $\mathbf{L}_1,\mathbf{L}_2,\mathbf{L}_3$ in Å.
 
 Python: `rmc_toolkits/parsers.py` → `read_cell_vectors()`. JavaScript:
-[browserData.js](../../web_app/frontend/src/browserData.js) → `readCellVectors()`. The two agree
+[rmc6f.js](../../web_app/frontend/src/rmc6f.js) → `readRmc6fCellVectors()`. The two agree
 exactly; both raise/throw if either header is missing. Note that the `Cell (Ang/deg): a b c α β γ`
 line, when present, is **ignored** — the cell geometry always comes from the lattice-vector rows, so
 a triclinic cell is handled by construction.
 
 #### 1c. Atom lines
 
-Atom records start after a line whose first token is `Atoms:`.
-
-Python — `rmc_toolkits/parsers.py` → `iter_rmc6f_atoms()` — requires **≥ 9 whitespace tokens** and
-indexes from the *end* of the line, so both the current and the older layouts parse:
+Atom records start after the `Atoms` marker line (any spelling: `Atoms:`, `Atoms :`, `atoms:`,
+`Atoms (fractional coordinates):`, case-insensitive). Both runtimes classify each line with **one
+anchored grammar** — Python `rmc_toolkits/parsers.py` → `classify_rmc6f_atom_line()` (used by
+`iter_rmc6f_atoms()` / `parse_rmc6f_atoms()`), JavaScript
+[rmc6f.js](../../web_app/frontend/src/rmc6f.js) → `classifyAtomLine()` (used by `parseRmc6fAtoms()`):
 
 ```
-current (10 fields):  id  element  [type]  f1 f2 f3  ref  n1 n2 n3
-older    (9 fields):  id  element          f1 f2 f3  ref  n1 n2 n3
+id  element  [label]  x y z  ref  n1 n2 n3     full layout: exactly 7 data fields
+id  element  [label]  x y z                    legacy coords-only: exactly 3 data fields
 ```
 
-i.e. `coords = parts[n-7:n-4]`, `reference_number = parts[n-4]`, `cell_indices = parts[n-3:n]`. The
-element is stored **capitalized** (`parts[1].capitalize()`); everything between the element and the
-coordinates is joined into `type_label`.
+The label is optional: a bracket group (`[1]`, or split as `[ 1]`) or one non-numeric token.
+Numbers accept Fortran `D` exponents; `ref` must be a positive integer and each cell index an
+integer in $[0, N_i)$ ($N$ from the `Supercell` line). A coords-only atom comes back with
+`reference_number`/`cell_indices` (`referenceNumber`/`cellIndices`) null. A line of valid layout
+whose coordinates are non-finite (`NaN`, `Inf`, Fortran `****`) is **skipped and counted**
+separately; every other line after the marker that fits no layout is counted as unparsed. Element
+tokens are capitalized the same way in both runtimes (Python `str.capitalize()`: `SE`/`se` → `Se`).
+The report (`Rmc6fParseReport` / `report`) holds those counts and the header's `Number of atoms:`,
+and its warning is shown on the Model information card and returned as `parseWarning` by the
+structure, PCA and bond-angle paths. `iter_rmc6f_atoms()` yields full-layout atoms by default;
+position-only consumers (`load_unit_cell_positions()`, the triplets loader, `/api/structure`) pass
+`include_coords_only=True`. `read_atom_indices()` is built on the same iterator, so the site table
+and the atom list cannot disagree. Tests: `tests/test_parsers_rmc6f_grammar.py` and
+`web_app/frontend/src/__tests__/rmc6f.test.js`, plus the coords-only golden
+`rmc6f_coords_only_fixture.json` (`tests/test_coords_only_fixture.py` ↔
+`coordsOnlyParity.test.js`).
 
-JavaScript — [rmc6f.js](../../web_app/frontend/src/rmc6f.js) → `parseAtomLine()` — is more tolerant. It
-accepts three shapes:
-
-- `n < 5` → rejected;
-- `5 ≤ n ≤ 6` → **coords-only** legacy form (`id element [label] f1 f2 f3`): the last three tokens are
-  the coordinates; `referenceNumber` and `cellIndices` come back `null`;
-- `7 ≤ n ≤ 8` → rejected as a truncated full line;
-- `n ≥ 9` → full form, indexed from the end exactly as Python does.
-
-Non-finite coordinates, reference number, or cell indices reject the line. The element token is
-**not** capitalized. `web_app/frontend/src/__tests__/rmc6f.test.js` pins all five branches.
-
-> **Cross-runtime differences (real).**
->
-> 1. A coords-only (5–6 field) `.rmc6f` yields **zero atoms on the backend path** — `iter_rmc6f_atoms()`
->    does `if n < 9: continue`, so such a line is never yielded — but parses fine in the browser.
-> 2. An element written `GA` or `se` becomes `Ga`/`Se` server-side but stays `GA`/`se` in the browser,
->    which changes the element filter list, the legend, and the colour lookup between the two paths.
-> 3. **The capitalization is not even uniform inside one backend payload.** `elements` and
->    `elementCounts` come from `iter_rmc6f_atoms()` and are capitalized, but `atomIndices` comes from
->    `read_atom_indices()`, which keys on the **raw** token `parts[1]` (and skips any line with fewer
->    than 5 tokens or a non-integer `parts[-4]`). For a file whose element column is not already
->    title-case, `atomIndices['Se']` is undefined while `elementCounts['Se']` exists, so the
->    per-element **site counts** in `ModelSummary` read 0 (the *total* site count still sums all
->    `atomIndices` values and stays correct). The CLI element filter in `read_structure()` goes
->    through `read_atom_indices()` too, so it matches the raw casing.
+> **Before 1.0** the two parsers indexed fields from the *end* of the line. Python required ≥ 9
+> tokens, so a coords-only file gave **zero atoms** on the backend path while the browser parsed it;
+> an extra trailing field silently shifted every column in the browser; the browser left `GA`/`se`
+> uncapitalized, which changed the element filter, legend and colours between the two paths; and
+> `read_atom_indices()` keyed on the raw token and read `parts[-4]` of any line, so a file whose
+> element column was not title-case showed 0 sites per element on the Model information card.
 
 #### 1d. Folding
 
 Backend path ([app.py](../../web_app/backend/app.py) → `structure()`):
 
-$$\mathrm{reduced}_i = f_i - \frac{n_i}{N_i}, \qquad x_i = \big(\mathrm{reduced}_i \cdot N_i\big) \bmod 1$$
+$$x_i = \big(f_i N_i\big) \bmod 1$$
 
 Browser path ([browserData.js](../../web_app/frontend/src/browserData.js) → `structureFromRmc6f()`):
 
 $$x_i = \big(((f_i N_i) \bmod 1) + 1\big) \bmod 1$$
 
-**When both run, they are algebraically identical**: subtracting $n_i/N_i$ removes an integer after
-multiplication by $N_i$, so it cannot change the value mod 1, and the extra `+1 %1` in JS only fixes
-JavaScript's sign-preserving `%` for negative coordinates (Python's `%` is already non-negative). To
-floating point they agree exactly.
+**They are identical**: the extra `+1 %1` in JS only fixes JavaScript's sign-preserving `%` for
+negative coordinates (Python's `%` is already non-negative). To floating point they agree exactly.
+(Before 1.0 the backend first subtracted $n_i/N_i$, which removes an integer after multiplication by
+$N_i$ and so cannot change the value mod 1 — but needed the cell-index columns.)
 
-They are **not** equally applicable, though: only the JS form is index-free. The backend form
-evaluates `atom["coords"] - (atom["cell_indices"] / supercell)`, which needs the cell-index columns,
-and its parser drops any atom line with fewer than 9 tokens — so a file without per-atom cell indices
-produces **no atoms at all** on the backend path (consistent with the box in 1c), not a differently
-folded set. `load_unit_cell_positions()` in `rmc_toolkits/kde.py` uses the index-free form
-`(coords * supercell) % 1.0`, but it reads atoms through the same 9-token parser, so it inherits the
-same restriction.
+Both are index-free: `/api/structure` folds a coords-only atom (no cell indices) straight from its
+coordinates, and `load_unit_cell_positions()` in `rmc_toolkits/kde.py` uses the
+index-free form `(coords * supercell) % 1.0` on every atom `iter_rmc6f_atoms(...,
+include_coords_only=True)` yields — so a legacy coords-only file gives the same folded positions in
+both runtimes (before 1.0 it gave **no atoms at all** on the backend path).
 
 #### 1e. Subsampling (the two paths use *different* strategies)
 
@@ -1898,8 +1905,8 @@ worker.
 On the **backend path the KDE panel is not filtered client-side at all**: `selectedElement` is sent as
 the `element=` query argument and applied server-side by `rmc_toolkits/kde.py` →
 `load_unit_cell_positions()`, which skips atoms whose symbol differs from it
-(`element in (None, '', 'all')` means no filter) and is memoized per `(path, mtime, element)` by
-`_cached_positions`. Both sides of that comparison come from `iter_rmc6f_atoms()`, so they are
+(`element in (None, '', 'all')` means no filter) and is memoized per `(path, file signature, element)`
+by `_cached_positions`. Both sides of that comparison come from `iter_rmc6f_atoms()`, so they are
 consistently capitalized; but the same control therefore acts through **two different mechanisms at
 two different points of the pipeline**, and the symbol it matches is the capitalized one on the
 backend path and the file's raw token on the browser path.
@@ -1914,8 +1921,11 @@ row per atom,
 
 $$\mathrm{reduced}_i = f_i - \frac{n_i}{N_i} \quad\text{printed as}\quad \texttt{RN  x  y  z  Nx  Ny  Nz}$$
 
-with the coordinates formatted to **5 decimal places** of a *box* fraction. `read_structure()` reads
-that file back, skipping exactly the first 5 lines, and re-expands
+with the coordinates formatted to **5 decimal places** of a *box* fraction. `read_structure()` pairs
+`Frac_coord_<stem>.txt` with the usable `<stem>.rmc6f` of the same configuration (a folder with
+exactly one of each pairs them regardless of name; any other ambiguity raises; `frac_path=` /
+`rmc6f_path=` choose explicitly), cross-checks the Frac cell indices against the `.rmc6f` supercell
+and its reference numbers against the `.rmc6f` sites, then reads the Frac file back, skipping exactly the first 5 lines, and re-expands
 $\mathbf{x} = (\mathrm{reduced}\cdot\mathbf{N}) \bmod 1$, optionally converting to Cartesian
 $\mathbf{r}=\sum_i x_i\mathbf{A}_i$ (`mode="cartesian"`, the default; `mode="fractional"` returns
 $\mathbf{x}$).

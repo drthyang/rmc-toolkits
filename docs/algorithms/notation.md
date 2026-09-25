@@ -395,19 +395,21 @@ In all of these the storage rule is the same — **matrices hold basis vectors a
 `m[row][col]`** — and only the choice of writing vectors as columns (§7, §12) or rows (§11) varies.
 That is the difference to watch when moving a formula between sections.
 
-**The `z`/`dz` contract at the KDE API boundary (§8 Step 4).** **$z_c$ and $\Delta z$ are
+**The depth-fraction contract at the KDE API boundary (§8 Step 4).** **$z_c$ and $\Delta z$ are
 fractions of the projection range $\Delta_d$ of the unit cube along the chosen normal**,
 coinciding with "fraction of a cell edge" only for the `a`/`b`/`c` presets (where
 $\Delta_d = 1$; for the $(111)$ normal $\Delta_d = \sqrt3$). **No Ångström conversion happens
-anywhere on the KDE path**: `/api/kde/slice` passes `positions.fractional_positions` (not the Å
-array) into `oriented_kde_slice()`, so the slab half-width, the KDE covariance, the evaluation
-grid and the contour coordinates are all dimensionless — doubling every lattice vector of a run
-leaves `slabCount`, the density and `depthThickness` unchanged. Ångströms enter only at draw time,
-when `StructurePage.jsx` maps $\hat{\mathbf u},\hat{\mathbf v}$ through `unitCell.unitVectors`.
-The Å conversion $\Delta z\,\Delta_d\lVert\mathbf h\rVert_2 d_{hkl}$ is derived in §8 but performed
-nowhere in the app. (`AGENTS.md` still states that `z`/`dz` are "cell-edge fractions … converted
-to Ångström inside `kde.py`", pending a maintainer correction; that wording never matched the
-code — [structure.md](structure.md) Step 4 shows why.) The route validates the pair: $z_c$ must
+on the KDE path**: `/api/kde/slice` passes `positions.fractional_positions` (not the Å array) into
+`oriented_kde_slice()`, so the slab half-width, the KDE covariance, the evaluation grid and the
+contour coordinates are all dimensionless — doubling every lattice vector of a run leaves
+`slabCount`, the density and `depthThickness` unchanged. Both payloads echo `z`/`dz` as given
+(the Flask payload's `depth`/`depthThickness` are absolute depth-projection units). Ångströms
+enter only at draw time, when `StructurePage.jsx` maps $\hat{\mathbf u},\hat{\mathbf v}$ through
+`unitCell.unitVectors`; the real slab thickness $\Delta z\,\Delta_d\lVert\mathbf h\rVert_2 d_{hkl}
+= \Delta z\,(|h|+|k|+|l|)\,d_{hkl}$ is printed on the map (`slabThicknessAngstrom()` in
+`workers/slabSelection.js`). `AGENTS.md` said until 1.0 that `z`/`dz` were "cell-edge fractions …
+converted to Ångström inside `kde.py`"; that never matched the code ([structure.md](structure.md)
+Step 4). The route validates the pair: $z_c$ must
 be finite and is clamped to $[0, 1]$ by the engine (echoed as `center`); $0 < \Delta z \le 1$.
 
 **The three display frames** (§10 Step 13, §12 Steps 5–9, §13 Step 2, §14 Step 10):

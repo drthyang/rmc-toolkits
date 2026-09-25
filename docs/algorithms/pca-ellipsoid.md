@@ -239,8 +239,11 @@ showed `#1 In` in one runtime and `#1 Ga` in the other, and the minority species
 element list.) The page shows a mixed site as its composition — `Ga0.75In0.25` in the picker and the
 viewport heading — with a `mixed · Ga 48 · In 16` tag in the Summary column.
 
-**Caching.** Python: `cached_site_displacements()` is `functools.lru_cache(maxsize=8)` keyed on
-`(path, st_mtime)`. JS: `pcaKdeWorker.js` → `parseCached()` keys on a **cheap content signature** —
+**Caching.** Flask: `/api/pca/sites|kde|orientation` cache the parse in `app.py`'s `_SITES_CACHE`,
+a `_FileCache(8)` keyed on the file signature `(st_mtime_ns, st_ctime_ns, st_size, st_ino)`, and a
+parse of a file that changed during the read is never cached. The library helper
+`cached_site_displacements()`, an `lru_cache(8)` keyed on the caller's `(path, st_mtime)`, is no
+longer used by the API. JS: `pcaKdeWorker.js` → `parseCached()` keys on a **cheap content signature** —
 FNV-1a over every 64th character plus the total length, concatenated with the cluster threshold. That
 is a heuristic, not a hash of the full text; two different files of identical length whose every-64th
 characters agree would collide and reuse the wrong parse. The key is deliberately content-based
@@ -731,7 +734,8 @@ Computed and returned by both engines but **not used by the UI**.
 
 **UI wiring.** The slider *Level* (1–99%, default **50** — the same level as the ellipsoid's default
 probability, because the two surfaces are only comparable at equal $p$; the pre-1.0 default of 25%
-against a 50% ellipsoid put a Gaussian site's surface ~16% *inside* the ellipsoid, the very cue the
+against a 50% ellipsoid put a Gaussian site's surface ~25% *inside* the ellipsoid (radius ratio
+≈ 0.76 at $n = 1000$), the very cue the
 tooltip calls anharmonic) picks `kde.massLevels[isoPercent].level`,
 with a fallback of `vmax * (1 − isoPercent/100)` when mass levels are unavailable
 (`PcaKdePage.jsx`, the `massLevel` line in the scene-rebuild effect). `test_mass_levels_bracket_the_cloud`
@@ -996,8 +1000,8 @@ $-0.74$ against exactly $-3.00$, for the same frozen site.)
 - $<0$ — flat-topped or **bimodal**. An equal-occupancy double well $N(\pm d,s^2)$ has excess
   kurtosis $-2d^4/(s^2+d^2)^2$ along the split — always negative, tending to $-2$ as $d/s$ grows,
   whether or not the two wells are resolved. A symmetric split site and a heavy-tailed single well
-  therefore give **opposite** signs (`test_symmetric_split_site_is_platykurtic` pins $-0.50$ along the
-  split for $d=0.15$, $s=0.08$ Å). Before 1.0 the UI tooltip said "positive = split sites", which was
+  therefore give **opposite** signs (`test_symmetric_split_site_is_platykurtic` pins the analytic
+  $-1.21$ along the split for $d=0.15$, $s=0.08$ Å; the site's Mardia value is $\kappa/5 \approx -0.24$). Before 1.0 the UI tooltip said "positive = split sites", which was
   the wrong way round.
 
 Kurtosis is computed on the raw cloud, not on the KDE, is blind to skew, and — as a fourth moment —
@@ -1186,8 +1190,9 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    difference is the different subsample draw above 20 000 points (Step 2). Eigenvector signs follow the same canonicalisation rule
    in both engines (with one unreachable difference in how the handedness flip is written — next
    section, Step 3), so they do not differ.
-5. **Server mode cannot read coordinates-only `.rmc6f` files.** The fold-and-cluster site
-   reconstruction exists only in the browser engine. Reconstructed sites are a *heuristic* grouping
+5. **Server-mode PCA cannot reconstruct the sites of a coordinates-only `.rmc6f`.** Both runtimes'
+   structure parsers read such files, but the fold-and-cluster site reconstruction exists only in
+   the browser engine; `/api/pca/*` needs the reference-number column. Reconstructed sites are a *heuristic* grouping
    controlled by a distance knob; a `162/27` count means the "ellipsoid" is really a disordered shell
    and should be read from the KDE, not as an ADP.
 6. **`U` is Cartesian.** No $U_\mathrm{cif}$/$U^{ij}$/$\beta_{ij}$ conversion is performed anywhere;
@@ -1855,52 +1860,49 @@ accumulators are built at all, `structure.basis` comes back empty, `describeSymm
 `max_disp_A` ever reaches the assistant — even though the PCA page still reconstructs sites for
 that same file by folding and clustering.
 
-**Operation.** For each reference site, and separately for each of the three cell axes $i$,
-accumulate the circular statistics of the folded within-unit-cell fraction. The fold is a
+**Operation.** Two passes over the site's copies. The first accumulates, per reference site and
+per cell axis $i$, the circular mean of the folded within-unit-cell fraction. The fold is a
 **positive** modulo, not a plain one, because real `.rmc6f` files carry negative coordinates:
 
-$$w_{i,m}=\bigl((x_{i,m}\,n_i \bmod 1)+1\bigr)\bmod 1\ \in[0,1),$$
+$$w_{i,m}=\bigl((x_{i,m}\,n_i \bmod 1)+1\bigr)\bmod 1\ \in[0,1),\qquad
+\bar w_i=\frac{\operatorname{atan2}\bigl(\sum_m\sin 2\pi w_{i,m},\ \sum_m\cos 2\pi w_{i,m}\bigr)}{2\pi}
+\ \text{folded into } [0,1)$$
 
-$$C_i=\sum_m\cos(2\pi w_{i,m}),\quad S_i=\sum_m\sin(2\pi w_{i,m}),\quad
-R_i=\frac{\sqrt{C_i^2+S_i^2}}{N}\in[0,1].$$
+— the site's `frac` in `structure.basis`. The second pass takes each copy's offset from that
+mean, wrapped to the nearest image, $d_{i,m} = (w_{i,m}-\bar w_i) - \operatorname{round}(w_{i,m}-\bar w_i)$,
+maps it to Cartesian Å through the unit-cell vectors $\mathbf a_i = \mathbf L_i/N_i$, and takes the
+root of the population variance:
 
-$R_i$ is the resultant length; the site's mean fractional position is
-$\operatorname{atan2}(S_i,C_i)/2\pi$ folded into $[0,1)$. The circular standard deviation follows
-as
+$$\Delta\mathbf r_m=\sum_{i=1}^{3} d_{i,m}\,\mathbf a_i,\qquad
+\texttt{dispA}=\sqrt{\langle|\Delta\mathbf r|^2\rangle-|\langle\Delta\mathbf r\rangle|^2}\quad[\text{Å}],$$
 
-$$\sigma^{\text{frac}}_i=\frac{\sqrt{-2\ln \max(R_i,\,10^{-6})}}{2\pi}\quad[\text{unit-cell fractions}],$$
-
-and the axes are combined in quadrature after scaling by the **unit-cell edge lengths**
-$\ell_i=\lVert\mathbf L_i\rVert/\max(n_i,1)$ (Å):
-
-$$\texttt{dispA}=\sqrt{\sum_{i=1}^{3}\bigl(\sigma^{\text{frac}}_i\,\ell_i\bigr)^2}\quad[\text{Å}].$$
-
-An axis with $R_i\ge1$ (zero spread, or a single copy) contributes nothing; the $10^{-6}$ floor
-caps $\sigma^{\text{frac}}_i$ at $\approx0.837$ cell fractions.
+the square root of the trace of the site's Cartesian displacement covariance with the **full cell
+metric**, so it is the same for any setting of the same cell. Before 1.0 `dispA` combined per-axis
+circular standard deviations $\sqrt{-2\ln R_i}/2\pi$ times the edge lengths in quadrature, which
+ignored the cross terms $\mathbf a_i\cdot\mathbf a_j$ and overstated hexagonal and rhombohedral
+cells by 10–23 % (orthogonal runs moved by < 0.2 %).
 
 **How it differs from the PCA amplitudes.**
 
 | | `dispA` | PCA `rms` / `eigenvalues` |
 | --- | --- | --- |
-| Estimator | circular std $\sqrt{-2\ln R}$, population (divide by $N$) | sample variance, unbiased (divide by $N-1$) |
-| Frame | the three **fractional cell axes**, then scaled by edge length | Cartesian Å, then rotated to the cloud's own eigenframe |
-| Metric | quadrature sum — **ignores the cell metric cross terms** $\mathbf a_i\cdot\mathbf a_j$, so it is not a true Cartesian magnitude for an oblique cell | exact; $C$ is a Cartesian tensor |
+| Estimator | population variance (divide by $N$) about the circular-mean site | sample variance, unbiased (divide by $N-1$) |
+| Frame | Cartesian Å through the full metric | Cartesian Å, then rotated to the cloud's own eigenframe |
 | Output | one scalar per site | a $3\times3$ tensor: three amplitudes **and** three directions |
 | Runtime | browser structure parser only (no Flask equivalent) | both runtimes |
 | Needs reference-number column | **yes** — empty `basis` without it | no (browser worker reconstructs by clustering) |
 | Where used | per-Wyckoff-orbit `mean_disp_A` / `max_disp_A` in the AI-assistant context | Principal axes / Summary tables, drawn ellipsoids, assistant `pca` block |
 
-For an **orthogonal** cell and a spread small compared with the cell, the circular std tends to
-the linear std and
+So
 
-$$\texttt{dispA}\;\approx\;\sqrt{\lambda_1+\lambda_2+\lambda_3}\;=\;\sqrt{3\,U_\text{iso}},$$
+$$\texttt{dispA}\;=\;\sqrt{\tfrac{N-1}{N}\,(\lambda_1+\lambda_2+\lambda_3)}\;\approx\;\sqrt{3\,U_\text{iso}},$$
 
-i.e. `dispA` is roughly the total RMS displacement magnitude, the trace information of $C$ with
-all directional content discarded. The unit test in
-[`browserData.test.js`](../../web_app/frontend/src/__tests__/browserData.test.js) pins the estimator:
-two copies at $\pm0.02$ cell fractions on a 10 Å edge give
-$\sqrt{-2\ln\cos(2\pi\cdot0.02)}/2\pi\times10 \approx 0.2003$ Å, against the 0.2 Å a linear std
-would give.
+the total RMS displacement magnitude — the trace information of $C$ with all directional content
+discarded — smaller than $\sqrt{3U_\text{iso}}$ by the factor $\sqrt{(N-1)/N}$ (0.05 % at 1000 copies,
+about 1.9 % for a 3×3×3 box). The unit test in
+[`browserData.test.js`](../../web_app/frontend/src/__tests__/browserData.test.js) pins it: two copies
+at $\pm0.02$ cell fractions on a 10 Å edge give exactly 0.2 Å (the former circular-std estimate gave
+$\approx 0.2003$ Å).
 
 **Consumers.** `dispA` never appears in a UI panel. It flows
 `browserData.structureFromRmc6f` → `structure.basis[]` →
@@ -1934,7 +1936,6 @@ defaults". The table below lists only what this section owns.
 | angle unit | degrees, `RAD_TO_DEG = 180/π` | `principalAxisOrientation` | — |
 | $[u\,v\,w]$ normalisation | $\max_k\lvert\cdot\rvert=1$ (divisor falls back to 1) | `principalAxisOrientation` | no integer reduction |
 | supercell division guard | $\lvert n_i\rvert>0$ else 1 | `unitCellVectors` | zero-repeat guard only |
-| `dispA` resultant floor | `1e-6` | `structureFromRmc6f` | caps $\sigma^\text{frac}$ at $\approx0.837$ |
 | assistant site cap | `MAX_SITES = 12`, plus `sites_omitted` | `pcaContext`, `symmetryContext` in [`runContext.js`](../../web_app/frontend/src/llm/context/runContext.js) | `pcaContext` rounds to 3 s.f., `symmetryContext` to 2 s.f. |
 | default reference frame | `pc` | `axisFrame` state in [`PcaKdePage.jsx`](../../web_app/frontend/src/components/PcaKdePage.jsx) | `crystal` disabled when `unitCell` is `null` |
 | camera FOV / distance | `45°` / $4.3\times\max(\texttt{halfWidths})$ (`\|\| 1`) | `CAMERA_FOV`, `placeMainCamera` | — |
@@ -1975,9 +1976,10 @@ defaults". The table below lists only what this section owns.
   equally consistent with a soft harmonic mode, a double-well split site, and static strain
   disorder. $\kappa_i$ and the KDE isosurface are what separate those cases; the ellipsoid alone
   cannot.
-- **`dispA` is not a PCA amplitude.** It is a circular-statistics scalar on the fractional cell
-  axes, with the cell metric's cross terms ignored and all directional content discarded
-  (Step 11). It never appears in a UI panel, and it exists only in the browser structure parser.
+- **`dispA` is not a PCA amplitude.** It is one scalar per site, the Cartesian rms displacement
+  through the full cell metric ($\approx\sqrt{3U_\mathrm{iso}}$, population-normalised), with all
+  directional content discarded (Step 11). It never appears in a UI panel, and it exists only in the
+  browser structure parser.
 - **Where the numbers themselves come from is the previous section's problem.** The estimator
   choices that set the *magnitudes* — the subsample cap and the two engines' different draws, the
   browser's Jacobi solver, the KDE bandwidth broadening,

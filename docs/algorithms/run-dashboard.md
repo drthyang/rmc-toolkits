@@ -252,11 +252,13 @@ failed with an unhelpful metadata error. When no candidate is usable the error l
 why (`No usable .rmc6f file: new_x.rmc6f (empty (0 bytes))`).
 
 Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
-usable `.rmc6f` wins; otherwise the **first** usable `.rmc6f` in the list is used. Python sorts the
-directory alphabetically before this scan, so "first" is alphabetical; the browser uses the
-enumeration order of the directory pick, so the two can disagree on the fallback. The browser
+usable `.rmc6f` wins; otherwise the **first** usable `.rmc6f` by name is used. Both runtimes break
+ties in code-point order, as Python's `sorted()` compares strings: candidates by path, outputs by
+(priority, lower-cased name, stem). Before 1.0 the browser fell back to the enumeration order of the
+directory pick and ranked outputs with `localeCompare`, so the two could disagree. The browser
 additionally keys the stem map by `dirname/stem`, so matching is per-subfolder; the Python only
-ever looks at one directory.
+ever looks at one directory. In Python the rule is one function, `parsers.find_run_configuration()`,
+shared by the backend (`_find_rmc6f()`) and the `rmc-triplets` CLI.
 
 The package function `read_structure(directory)` (a `Frac_coord_*.txt` reader, not used by the
 page) applies the same principle to its **pair** of files: `Frac_coord_<stem>.txt` is paired with
@@ -267,8 +269,8 @@ Frac reference number a site of it). It used to take the alphabetically first fi
 independently, which in `data/250K_try1/supercell` folded a 5×10×10 configuration with a 10×10×10
 supercell and dropped every atom on sites 53–104.
 
-**Code:** `app.py` → `_run_stem_from_output_name()`, `_find_rmc6f()`; `parsers.py` →
-`rmc6f_problem()`, `read_structure()`; `browserData.js` → `runStemFromOutputName()`,
+**Code:** `parsers.py` → `run_stem_from_output_name()`, `find_run_configuration()`,
+`rmc6f_problem()`, `read_structure()`; `app.py` → `_find_rmc6f()`, `_require_usable_rmc6f()`; `browserData.js` → `runStemFromOutputName()`,
 `structureFileProblem()`, `chooseStructureFile()`.
 
 **Run-control file (static mode only).** `chooseSettingsEntry()` computes
@@ -958,7 +960,11 @@ than hoped to fail loudly: a `.log`'s unterminated last line is dropped and rows
 the header's column count (Step 4d), and an `.rmc6f` read that comes back short of its header's
 `Number of atoms:` keeps the previous complete model summary on screen with a notice (Model summary,
 Part A Step 2). A CSV caught mid-write fails the strict column-count check (4a) and surfaces as a
-per-card alert until the next poll.
+per-card alert until the next poll. That holds for the Dashboard cards; the backend's parsed-file
+caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`st_mtime_ns`,
+`st_ctime_ns`, `st_size`, `st_ino`) and never keep a parse of a file that changed during the read
+(409 if it keeps changing), and in Flask mode Live Data reloads the analysis pages in place when the
+`.rmc6f` signature changes ([notation.md](notation.md) §3c).
 
 ---
 
@@ -1081,8 +1087,9 @@ per-card alert until the next poll.
   move counters, Frac conversion, `read_structure`, and the Flask files/plot/structure/convert
   endpoints — with every expected value read from the files by independent code.
 * **The matplotlib rendering path is effectively dead UI.** `PlotViewer.jsx` and `FileExplorer.jsx`
-  are not mounted; `GET /api/plot` still works as an API. Its axis labels, its STOG reference line,
-  and its unclamped `np.log(chi_r)` differ from what the dashboard draws — but its
+  are not mounted; `GET /api/plot` still works as an API. Its STOG reference line and its figure
+  styling differ from what the dashboard draws (its titles, axis labels and $\ln\max(\chi^2,
+  10^{-12})$ curve follow the same helpers since 1.0) — but its
   two-numeric-column precondition still gates the live Flask endpoints, because they build the
   figure to get the metrics.
 
@@ -2097,22 +2104,27 @@ file with a truthy `plotKind`, `stog` included — never in a chart.
   and substitutes `Series {idx}` for a *blank* header cell). Legend `loc=1` (upper right),
   `fontsize=9`, `frameon=False`; axis labels at 11 pt; `fig.suptitle(title, fontsize=14)`.
   $R_\mathrm{wp}$ is computed here only when `calculate_rwp` is set *and* the file has ≥ 3 columns.
-- `_chi_plot()` plots `np.log(chi_r)` against the implicit index — **unclamped**, unlike the
-  interactive path's $\max(\chi,10^{-12})$ guard — over the concatenated sibling logs of Step 1c, and
-  returns the metric `final_chi_r = float(chi_r[-1])`, the **raw, un-logged** last chi. The dashboard
-  and the static path report the same quantity.
+- `_chi_plot()` plots `chi_history_ln(chi_r)` $=\ln\max(\chi^2, 10^{-12})$ against the log-row
+  index, with non-finite rows left as `NaN` gaps — the same clamp as the interactive path — over the
+  concatenated sibling logs of Step 1c. Title and legend come from `chi_history_labels()`: the last
+  `.log` column's own header (`χ² history: X_ray_(R)1` in the demo), never "R-value". It returns the
+  metric `final_chi_r = float(chi_r[-1])`, the **raw, un-logged** last value. The dashboard and the
+  static path report the same quantity. (Before 1.0 it plotted an unclamped `np.log(chi_r)`.)
 - `_stog_plot()` uses `figsize=(6.75, 4.725)` and a single **opaque** red curve (`alpha=1.0,
   color="r"`). Its dashed black horizontal reference is `ax.hlines(y, data[0][0], data[0][-1],
   ls="--", lw=0.5, color="black")` with $y = 0$ for `.fq` and $y = 1$ otherwise — spanning the
   **first and last x samples**, not the axis limits. It emits **no `fig.suptitle`**: the only text
   identifying the file is the legend label.
-- `npdf` additionally reports `pdf_index` from `parsers.pdf_index`, the filename regex
-  `PDF(\d+)\.csv$` (default 0, matching the JS `pdfIndex`), and takes its title from
-  `path.stem.split("_")[-1]`; `pdf_partials` uses the same title rule.
-- The `xray_sq`, `neutron_sq` and `bragg` branches pass the **raw first CSV header** (or the
-  ToF/Q string) as the matplotlib x-label and leave the y-label at `_series_plot`'s default
-  `"data"` — so the matplotlib axis text differs from the interactive chart's hard-coded strings of
-  Step 1a.
+- Titles and y-labels come from `series_titles()`, the port of the browser's `seriesTitles()`:
+  `*_FQn.csv` / `*_SQn.csv` are titled by the function the headers (else the file name) name —
+  `F(Q)`, with `#n` for dataset $n>1$, and no radiation claimed; `*_PDFpartials.csv` is
+  `Partial g(r)` with y-label `g(r)`; `npdf` takes its title from `path.stem.split("_")[-1]` and
+  additionally reports `pdf_index` from `parsers.pdf_index`, the filename regex `PDF(\d+)\.csv$`
+  (default 0, matching the JS `pdfIndex`).
+- The `xray_sq` and `neutron_sq` branches label the x-axis `Q (Å⁻¹)` and `bragg` `ToF (µs)` or
+  `Q (Å⁻¹)` (`bragg_is_tof()` on the first header), with the `series_titles()` y-label — the
+  interactive chart's strings of Step 1a. Before 1.0 they passed the raw first CSV header as the
+  x-label and left the y-label at `"data"`.
 - `plot_to_png(result, dpi=150)` writes with `bbox_inches="tight"`, so the raster is
   $6.75\times150 = 1012$ px wide *before* the tight crop trims whitespace; the final pixel size is
   therefore layout-dependent and not a fixed number.
@@ -2134,7 +2146,7 @@ re-reads and re-parses the whole file (and re-globs the sibling logs, for R-valu
 | markers | hollow circles for `*exp*` series when paired | none; all series are lines |
 | R-value log | $\ln\max(\chi,10^{-12})$ | $\ln\max(\chi,10^{-12})$ (`chi_history_ln`) |
 | title | HTML card header only (not in the figure) | `fig.suptitle` for `_series_plot`/`_chi_plot`; **`_stog_plot` adds none** (its file name appears only in the legend) |
-| axis label text | hard-coded per kind (Step 1a) | same for EXAFS/PDF; raw CSV header for `_FQ1`/`_SQ1`/bragg x, and y-label `"data"` |
+| axis label text | per kind (Step 1a) | the same strings: `Q (Å⁻¹)` / `ToF (µs)` x-labels and the `series_titles()` y-labels |
 | legend | HTML chips outside the SVG (not exported) | inside the figure, upper right |
 | interactivity | zoom/hover/legend toggles | none (static PNG) |
 | output size | fixed 1440 × 900 px (PNG) or true vector (SVG) | ≈1012 px wide at dpi 150, then `bbox_inches='tight'` |
@@ -3563,10 +3575,9 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
 - **Orbits and site symmetries are evaluated at a looser radius than the group.** `siteOrbits` is
   called with the raw $\tau$, not with the `maxResidual` at which the group was accepted (Step 14).
 - **No cell volume, no number density** is reported by this page (see the note after Step 5).
-- **Flask/server-directory mode has no Detected SG card** — `/api/structure` returns no basis. It is
-  also a different parser: the Python `iter_rmc6f_atoms()` skips every line with fewer than 9 fields,
-  so coords-only `.rmc6f` files yield zero atoms there, and it capitalizes element tokens while
-  `read_atom_indices()` (same response) does not (Step 2).
+- **Flask/server-directory mode has no Detected SG card** — `/api/structure` returns no basis. Its
+  parser is no longer the difference: since 1.0 both runtimes share one atom-line grammar, read
+  coords-only lines, and capitalize element tokens the same way (Step 2).
 - **What the tests pin.** `symmetry.test.js` recovers all 230 fixture groups (built from ITA
   generators) from their atoms, names rocksalt, perovskite, diamond, hcp and an I4/mcm perovskite,
   and checks the point-group and space-group tables; `symmetrySettings.test.js` names the 230

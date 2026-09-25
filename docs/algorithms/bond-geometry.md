@@ -59,7 +59,7 @@ module docstring is the compact math reference). It is served three ways, all bu
 
 | Boundary | Entry point | Notes |
 |---|---|---|
-| Flask | `/api/triplets` in [app.py](../../web_app/backend/app.py) | `cached_bond_angle_summary`, an `lru_cache(16)` keyed on (path, mtime, every parameter) |
+| Flask | `/api/triplets` in [app.py](../../web_app/backend/app.py) | the uncached `bond_angle_summary_from_file`, memoized by `_TRIPLETS_CACHE` (a `_FileCache(16)`) keyed on (file signature, every parameter including the angle budget) |
 | Browser | `kind: 'triplets'` in [pcaKdeWorker.js](../../web_app/frontend/src/workers/pcaKdeWorker.js), engine [workers/triplets.js](../../web_app/frontend/src/workers/triplets.js) | line-for-line port; answers from the worker's cached parse of the already-loaded `.rmc6f` |
 | CLI | `rmc-triplets` ([triplets_cli.py](../../rmc_toolkits/triplets_cli.py)) | commented CSV + optional PNG and raw angle list |
 
@@ -93,8 +93,9 @@ deterministic to the last count.
 From a file (`_read_configuration`, used by the Flask route and the CLI) the atoms come from the
 shared `.rmc6f` grammar with `include_coords_only=True`: bond angles need only element and position,
 so legacy coordinates-only lines count as well — the same atom set the browser worker takes from
-`parseRmc6fAtoms()`. Lines with a non-finite coordinate are skipped (the Model information card
-reports them), and a file with no parseable atom is a `ValueError` (HTTP 400) *"no atoms could be
+`parseRmc6fAtoms()`. Lines with a non-finite coordinate are skipped and counted: the payload's
+`parseWarning` names them in both runtimes (`null` when the file is clean; the `rmc-triplets` CLI
+prints it on stderr, and the Model information card reports the same lines), and a file with no parseable atom is a `ValueError` (HTTP 400) *"no atoms could be
 parsed — …"* naming what was found. Before 1.0 Flask read full-layout lines only, so a
 coordinates-only file had "no atoms" there but angles in the browser.
 
@@ -230,8 +231,8 @@ $\mathbf m$, Cartesian vector, length) — the `_Bonds` container.
 
 ### Step 5 — Pairing bonds into angles
 
-`_pair_angles` sorts the bond lists by central atom (stable sort, so order is deterministic)
-and forms the per-center pairing:
+`_sort_by_center` sorts the bond lists by central atom (stable sort, so order is deterministic)
+and `_Pairing` forms the per-center pairing, chunk by chunk:
 
 - **Same end element** (`same_end`, A = C): the one search of Step 1 lists every bond image
   $x$ once, with flags $x \in w_{12}$ and $x \in w_{23}$. The list is paired with itself over the
@@ -258,8 +259,10 @@ The angle is then
 $$\theta = \frac{180°}{\pi}\arccos\!\Bigl(\operatorname{clip}\bigl(
 \tfrac{\mathbf v_1\cdot\mathbf v_2}{\lVert\mathbf v_1\rVert\lVert\mathbf v_2\rVert},\,-1,\,1\bigr)\Bigr)$$
 
-with the clip guarding the $\pm1$ boundary against rounding. There is no tolerance anywhere
-else: the whole calculation is exact geometry on float64.
+with the clip guarding the $\pm1$ boundary against rounding. Apart from the two $10^{-9}$
+tolerances that make ideal configurations deterministic — `WINDOW_TOL` on the window bounds
+(Step 4) and `EDGE_SNAP_DEG` on the bin edges (Step 6) — the calculation is exact geometry on
+float64.
 
 **The exact angle count comes first.** Before any angle is formed, the count per center follows
 from the bond lists alone (`_angles_per_center`):
@@ -385,15 +388,16 @@ change here. On top of the three angle curves it adds:
 
 ### Step 8 — The two app boundaries and their caps
 
-The engine itself is **unrestricted** — library and CLI callers can ask for anything (and, with
-Step 5's streaming, memory stays bounded; only the time grows). The two app boundaries apply
+The engine itself is **unrestricted** — library and CLI callers can ask for anything. Step 5's
+streaming bounds the memory the *angles* take; the bond lists themselves are stored in full and
+grow as $\sim r_\mathrm{max}^3$, and the CLI has no $r_\mathrm{max}$ cap. The two app boundaries apply
 identical request caps, each bounding a different cost — and in the browser an unbounded request
 would freeze the shared PCA worker:
 
 | Cap | Bounds | Flask `/api/triplets` | Worker `kind: 'triplets'` |
 |---|---|---|---|
 | $r_\mathrm{max} \le 15\,$Å (each window) | the neighbour search (bond count $\sim r_\mathrm{max}^3$) | 400 | thrown `Error` |
-| exact angle count $\le$ `APP_MAX_ANGLES` $= 5\times10^7$ | the pairing work (angle count $\sim r_\mathrm{max}^6$) | 400 | thrown `Error` |
+| exact angle count $\le$ `APP_MAX_ANGLES` $= 5\times10^7$ | the angles formed (count $\sim r_\mathrm{max}^6$) — and with them the pairing work, except for A = C with distinct windows (below) | 400 | thrown `Error` |
 | `binWidth` $\ge 0.05°$ | the response size | 400 | thrown `Error` |
 | `r12Min`/`r12Max` present, `r23Min`/`r23Max` both or neither — `null`, `''` and whitespace count as missing | — | 400 | thrown `Error` |
 
@@ -415,13 +419,20 @@ angles, over the limit of 50,000,000 for one request; narrow the bond windows").
 Flask, parse included); an accepted Se–Nb–Se 2.2–8 Å request ($2.9\times10^7$ angles) takes
 ~0.8 s / 0.4 GB in the worker and ~2 s / 0.5 GB in Flask.
 
+The budget counts angles, not candidate pairs. For A = C with **distinct** windows, Step 5 examines
+every pair of the centre's combined bond list ($n^2$ candidates per centre in Python, $n(n-1)/2$ in
+the JS loop, $n$ = bonds in either window) and keeps those with one bond in each window, so one
+narrow window paired with a wide one costs more time than its angle count suggests. Every number
+it produces is exact; only the run time is not bounded by `APP_MAX_ANGLES` there.
+
 Request parameters are flat scalars (`end1`, `apex`, `end2`, `r12Min`, `r12Max`, `r23Min`,
 `r23Max`, `binWidth`) so the identical request shape works as an HTTP query string and as a
 worker message. The Flask side normalizes element case **before** the cache key
 (`'se'` and `'Se'` share one entry) and resolves the `bond23` default before the call, so equal
-windows hit one cache entry; the cache is `lru_cache(maxsize=16)` keyed on (path, mtime, every
-parameter), mirroring `pca_kde.cached_site_displacements`. Errors map to 400 (bad parameters),
-403 (path escapes the data root), 404 (no `.rmc6f`).
+windows hit one cache entry; the cache is `_TRIPLETS_CACHE` (a `_FileCache(16)` in `app.py`) keyed on
+(file signature, every parameter), and a parse of a file that changed while it was read is never
+cached. Errors map to 400 (bad or non-finite parameters, a file with no parseable atom), 403 (path
+escapes the data root), 404 (no `.rmc6f`), 409 (the file kept changing while it was read).
 
 ### The `rmc-triplets` CLI
 
@@ -543,8 +554,10 @@ numpy.histogram agreement off the edges).
   a window bound is on it, an angle that close to a bin edge is on it. They exist only to make
   float noise irrelevant; neither moves a real configuration's numbers.
 - **App requests are refused above $5\times10^7$ angles** (`APP_MAX_ANGLES`, exact count, before
-  any work on angles). Library and CLI calls are unrestricted; wide windows there cost time,
-  not memory, unless the raw angle list is requested.
+  any work on angles). The budget bounds the angles, not the candidate pairs of an A = C request
+  with distinct windows (Step 8). Library and CLI calls are unrestricted: the angles stream in
+  bounded memory unless the raw angle list is requested, but the stored bond lists grow as
+  $\sim r_\mathrm{max}^3$.
 - **`count` vs `uniqueBonds`.** `lengths.count` (and `bond12_count`) counts B-centred bond
   vectors — twice the physical bonds when the end element is the central one; `uniqueBonds`
   counts each bond once. The coordination numbers are per B and use the B-centred count.
@@ -585,6 +598,13 @@ r12Min, r12Max, r23Min?, r23Max?, binWidth})` — the B–C window included only
 switch is on (the engine then receives `bond23 = null` and reuses `bond12`). A dataset switch clears any previous result immediately
 and bumps a `runEpoch` ref; a compute that was in flight for the old run compares its captured
 epoch on resolve and can never land a stale payload on the new dataset.
+
+A **new configuration of the same run** — a Live Data save, picked up through the Flask
+`dataEpoch` prop (App.jsx's `configEpoch`) or a browser-loaded run's changed `.rmc6f` text — bumps
+the same epoch, keeps the triplet and the typed windows, reloads the element list, the Model
+information card and the partials in place, and **drops** the computed distribution with the
+note "The run saved a new configuration…". The distribution is computed on demand, so it is never
+recomputed unasked, and a result from the previous configuration never sits next to the new model.
 
 ### Step 3 — The result chips
 

@@ -312,6 +312,10 @@ site lists. The ladder itself is always computed up to a maximum tolerance of **
   `symmetry.spaceGroupNumber` is truthy, so a bare symbol such as `"F-43m"` is possible.
 - `point_group`; `n_ops` (order of the space group).
 - `tolerance_A` and `max_residual_A` (2 s.f., Å).
+- `note` — present only for a structure the finder did **not analyse** (over the 2000-site cap or
+  the 384-operation budget): the finder's `reason`, so the model reads why instead of a bare
+  "not analysed". Since 1.0 `space_group` carries no `(No. N)` when the card shows a crystal class
+  (`4/mmm class`), a lower bound (`≥ P4/mmm`), `undetermined` or `not analysed`.
 - `ladder` — a list of rungs `{sg, holds_A: [from, to], n_ops}`: the space group the average sites
   satisfy over each Cartesian tolerance interval in Å. **Emitted only when the ladder has more than one
   rung** (`symmetry.ladder.length > 1`); a structure whose ladder collapses to a single rung gets no
@@ -319,8 +323,11 @@ site lists. The ladder itself is always computed up to a maximum tolerance of **
 - `sites` — one entry per Wyckoff orbit:
   `{element, multiplicity, wyckoff?, site_sym?, frac?, mean_disp_A?, max_disp_A?}`, where
   - `multiplicity` = `orbit.size`, the number of basis sites in the orbit;
-  - `wyckoff` = multiplicity and letter concatenated (`` `${orbit.size}${orbit.wyckoff}` ``, e.g.
-    `"16e"`), present only when a letter was identified;
+  - `wyckoff` = the naming-cell multiplicity and letter
+    (`` `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}` ``, e.g. `"16e"`), present only
+    when a letter was identified. It can differ from `multiplicity` when the group is named in a
+    cell other than the given one (R3m's `3a` for the Ga of a lacunar spinel kept in its F-cubic
+    cell, not `4a`);
   - `site_sym` = the site-symmetry symbol (e.g. `"3m"`), present only when determined;
   - `frac` = the orbit representative's fractional coordinate triple in the conventional cell, rounded
     to **3 s.f.** — this is the atomic-coordinate content of the context (see the data-flow section);
@@ -346,7 +353,9 @@ nearest image, and mapped to Cartesian Å through the unit-cell vectors $\mathbf
 $$\Delta\mathbf r = \sum_{i=1}^{3} d_i\,\mathbf a_i,\qquad
 u_s = \sqrt{\langle|\Delta\mathbf r|^2\rangle - |\langle\Delta\mathbf r\rangle|^2},$$
 
-the square root of the trace of the site's Cartesian displacement covariance ($=\sqrt{3U_\mathrm{iso}}$),
+the square root of the trace of the site's Cartesian displacement covariance
+($\approx\sqrt{3U_\mathrm{iso}}$ of the PCA page: `dispA` divides by $n$, the PCA covariance by $n-1$, a
+factor $\sqrt{(n-1)/n}$ — 0.05 % at 1000 copies, ~1.9 % for a 3×3×3 box),
 which uses the **full metric** and is the same for any setting of the same cell (run-dashboard.md, Model
 summary Part A Step 5). This is a **single-snapshot** spread: it mixes static disorder with thermal
 motion.
