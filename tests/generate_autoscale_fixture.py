@@ -233,6 +233,36 @@ def main() -> None:
     )
     estimate = estimate_rho0(q, sq_meas, est_config)
 
+    # The main (density-limit) auto path with a composition: <b^2> set makes the
+    # omitted-low-Q extrapolation target S(0) = 1 - <b^2>/<b>^2 nonzero inside
+    # the self-consistent loop. 13.06 * <b>^2 is the Mn3Sn-like S(0) = -12.06.
+    composition_cases = []
+    for label, b_sq_avg, extra in (
+        ("mn3snLike", 13.06 * B2, {}),
+        ("mn3snLikeLorch", 13.06 * B2, {"lorch": True}),
+        ("mn3snLikeDetect", 13.06 * B2, {"r0": None, "r_fit_max": None}),
+        ("trueS0", float(B2 * (1.0 - s_true_0)), {}),
+    ):
+        case_config = ScalingConfig(**{**base, **extra}, b_sq_avg=float(b_sq_avg))
+        result = autoscale(q, sq_meas, case_config)
+        composition_cases.append({
+            "name": label,
+            "config": {
+                "bSqAvg": float(b_sq_avg),
+                **({"lorch": True} if extra.get("lorch") else {}),
+                **({"r0": None, "rFitMax": None} if "r0" in extra else {}),
+            },
+            "s0Target": case_config.effective_s0_target,
+            "a": result.a,
+            "b": result.b,
+            "iterations": result.iterations,
+            "converged": bool(result.converged),
+            "lowRRms": result.low_r_rms,
+            "c1TailMean": result.c1_tail_mean,
+            "aFz": result.a_fz,
+            "r0Detected": result.provenance.get("r0_detected"),
+        })
+
     manual = scale_pipeline(q, sq_meas, config, A_TRUE, B_TRUE)
     r_sample_idx = [50, 200, 500, 999]   # on the r grid (nr = 1000)
     q_sample_idx = [50, 200, 500, 950]   # on the cropped q grid (961 pts)
@@ -266,6 +296,7 @@ def main() -> None:
                 "nAdmissible": sweep.n_admissible,
             },
             "fz": {"a": fz.a, "b": fz.b},
+            "autoComposition": composition_cases,
             "rho0Estimate": {
                 "rho0": estimate["rho0"],
                 "converged": estimate["converged"],

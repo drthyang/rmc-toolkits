@@ -577,8 +577,9 @@ $\rho_0 = 0.063049$ Å⁻³ ↔ $\rho_m = 7.4209$ g/cm³, and back to 9 decimal 
 fixed-point update $\rho \leftarrow \rho\cdot\mathrm{concordance}$, with `rtol = 1e-3`,
 `max_iter = 8`, and clipping to $[10^{-4}, 1]$ Å⁻³. It **requires** $\langle b^2\rangle$, and
 sets an `extrapolated` flag when $Q_\mathrm{min} > 1$ Å⁻¹ (the $Q\to0$ extrapolation then owns
-the estimate — a starting point, not a measurement). Cross-engine agreement of the *iterated*
-result is bounded by the stopping rule (~1e-4 relative), not by single-pass transform precision.
+the estimate — a starting point, not a measurement). The iteration is deterministic and takes the
+same steps in both engines, so the *iterated* result agrees across engines to round-off (asserted
+to 1e-10 relative, same iteration count).
 
 Four behaviours of the estimator are load-bearing and easy to miss:
 
@@ -1072,9 +1073,11 @@ provenance JSON).
 | Config validation | `ScalingConfig.__post_init__` | `makeConfig` | same checks, same messages in spirit, except that JS's `!(qmax > qmin)` also rejects NaN $Q$ bounds that Python's `qmax <= qmin` lets through; both evaluate the low-$r$ fit window eagerly in the shipping paths |
 | Enforcement | `first_peak_zero` in `_write_outputs` | `firstPeakZero` in the worker | same function; the browser cannot reach the `.inp` peak window (Step 9) |
 
-Overall engine parity is asserted numerically: $(a,b)$ to 1e-6 relative, level to 1e-9, sampled
-$G_K(r)$/filtered $S(Q)$ to 9 decimals, $\rho_0$ estimate to 1e-4 relative
-([`src/__tests__/autoScale.test.js`](../../web_app/frontend/src/__tests__/autoScale.test.js)).
+Overall engine parity is asserted numerically at round-off: $(a,b)$ to 1e-10 relative (with and
+without a composition-derived $S(0)$ target), level to 1e-9, sampled $G_K(r)$/filtered $S(Q)$ to
+9 decimals, $\rho_0$ estimate and its concordance to 1e-10 relative
+([`src/__tests__/autoScale.test.js`](../../web_app/frontend/src/__tests__/autoScale.test.js),
+[`src/__tests__/autoScaleComposition.test.js`](../../web_app/frontend/src/__tests__/autoScaleComposition.test.js)).
 
 ### Caveats / what this is not
 
@@ -1676,34 +1679,22 @@ cosmetic implementation difference: Python selects the section with the boolean 
 `r <= cutoff`, JS with a monotone prefix scan (`while (r[sectionEnd] <= cutoff) sectionEnd += 1`).
 These agree for any ascending $r$ grid, which is all `r_grid`/`rGrid` ever produces.
 
-> #### Known divergence: the JS auto loop drops `s0Target`
+> #### The filter call inside the auto loop carries the $S(0)$ target in both engines
 >
-> The two engines do **not** call the filter identically inside the auto-scale iteration.
 > Python's `_pipeline()` always passes `s0_target=config.effective_s0_target`, and it is the only
-> Python caller of `fourier_filter`. On the JavaScript side `scalePipeline()` does pass
-> `s0Target: effectiveS0Target(config)` — but the iteration inside `autoscale()` calls
-> `fourierFilter(q, sqScaled, r, { rho0, cutoff, lorch, lowQCorrection })` **with no `s0Target`
-> key**, so the destructuring default `s0Target = 0` applies.
+> Python caller of `fourier_filter`. The JS iteration inside `autoscalePass()` passes
+> `s0Target: effectiveS0Target(config)` the same way (as do `solveAffine`'s low-$Q$ basis and the
+> final `scalePipeline()`), so the fed-back $\Delta S = S_\mathrm{ft} - 1$ that seeds the next
+> `solveAffine` comes from the same omitted-low-$Q$ model in both engines.
 >
-> The consequence is not cosmetic. That call's `sqFt` becomes the fed-back
-> $\Delta S = S_\mathrm{ft} - 1$ that seeds the next `solveAffine`, so **whenever
-> $s_0^\mathrm{target} \neq 0$ — i.e. whenever a composition supplies $\langle b^2\rangle$, which
-> is the composition-first workflow the page advertises — the fitted $(a,b)$ differ between the
-> two engines.** For Mn₃Sn the dropped target is $\approx -12$. The *final* `scalePipeline` filter
-> does pass the target in both engines, so the exported arrays agree **given the same $(a,b)$**;
-> it is the $(a,b)$ themselves that diverge.
->
-> The golden-fixture parity tests do not catch it: the `auto` / `manual` / detection fixture
-> configs set no `b_sq_avg` (so $s_0^\mathrm{target} = 0$ in both engines), the one `fz` case that
-> does set it takes `autoscale`'s early-return branch and never enters the loop. The
-> `estimate_rho0` case *does* exercise the loop with a nonzero target — the fixture's
-> $\langle b\rangle^2 = 0.02$, $\langle b^2\rangle = 0.0347972$ barn give
-> $s_0^\mathrm{target} = -0.74$ — but only under the loose `1e-4` relative tolerance on $\rho_0$,
-> which the measured 2.8·10⁻⁵ shift sits inside (engine section
-> [parity](#python--javascript-parity-1), difference 4). This is an
-> unreported divergence in the shipped code, not a rounding-level difference — it is recorded
-> here because a reader has no other way to know the page's fitted scale comes from a
-> differently-corrected filter term than the CLI's.
+> Before the 1.0 audit the JS loop call omitted the key, so the destructuring default
+> `s0Target = 0` applied and the page's $(a,b)$ was the fixed point of a different map whenever a
+> composition supplied $\langle b^2\rangle$: measured on the repo's Mn₃Sn runs ($S(0) = -12.06$),
+> $a$ differed from the CLI/API by 2.0 % (59438), 0.5 % (300 K) and 0.2 % (500 K), with different
+> iteration counts. The golden fixture now runs the main auto path with $\langle b^2\rangle$ set
+> (`autoComposition` cases, $S(0) = -12.06$ with and without Lorch and with first-shell
+> detection, and $S(0) = -0.74$) and asserts $(a, b)$ to 1e-10 relative
+> (`src/__tests__/autoScaleComposition.test.js`).
 
 **Default** — `r_cutoff = 1.0` Å in both engines (`ScalingConfig.r_cutoff`,
 `defaultConfig.rCutoff`); a parsed `stog.inp` line 15 overrides it.
@@ -1967,7 +1958,7 @@ All `stog.inp` line numbers above are **1-based indices into the file's non-empt
 | Forward transform | `fq_to_gpdf` | `fqToGpdf` | Identical |
 | Backward transform | `gpdf_to_fq` (alias of `sine_transform`) | no alias; `sineTransform` called directly | Identical operation |
 | Fourier filter (the function) | `fourier_filter` | `fourierFilter` | Identical formulas; section selected by mask vs prefix scan (equivalent for ascending $r$) |
-| Filter **call inside the auto loop** | `_pipeline` passes `s0_target=config.effective_s0_target` | `autoscale` omits `s0Target` → default `0` | **Differs** whenever $s_0^\mathrm{target}\neq0$ (i.e. whenever a composition supplies $\langle b^2\rangle$); the fed-back $\Delta S$ and hence the fitted $(a,b)$ diverge. See Step 7 |
+| Filter **call inside the auto loop** | `_pipeline` passes `s0_target=config.effective_s0_target` | `autoscalePass` passes `s0Target: effectiveS0Target(config)` | Identical (before 1.0 JS omitted it and $(a,b)$ diverged by up to 2 % on Mn₃Sn — see Step 7) |
 | Filter call in the final pipeline | `_pipeline` (same) | `scalePipeline` **does** pass `s0Target` | Identical |
 | Crop + despike | `crop_sq` / `_despike_mask` | `cropSq` / `despikeKeepMask` | Identical rule, constants and ordering |
 | Peak-onset detection | `detect_first_peak_onset` | `detectFirstPeakOnset` | Identical rules and constants; `qmax` is a positional argument in Python and an option (default 0) in JS — every caller passes it. Exact parity on the golden detector cases |
@@ -1983,30 +1974,26 @@ engine on a shared synthetic model and writes
 `web_app/frontend/src/__tests__/autoScale.test.js` (vitest) then asserts against it. The
 transform-layer-relevant tolerances:
 
-- fitted $a$, $b$: relative error < `1e-6`
-- pre-enforcement low-$r$ rms: relative error < `1e-5` (auto) / `1e-6` (manual)
-- high-$Q$ tail mean: relative error < `1e-8`
+- fitted $a$, $b$: relative error < `1e-10`
+- pre-enforcement low-$r$ rms: relative error < `1e-10`
+- high-$Q$ tail mean: relative error < `1e-12`
 - sampled $G_K(r)$ and $S_\mathrm{filt}(Q)$ values: `toBeCloseTo(..., 9)` — 9 decimal places
-- the $\rho_0$ fixed-point estimate: relative error < `1e-4`, explicitly documented in the test
-  as "bounded by the `rtol=1e-3` stopping rule, not by single-pass transform precision"
+- the $\rho_0$ fixed-point estimate and its concordance: relative error < `1e-10`, with
+  `converged` and `iterations` equal exactly
 
-The test file's own header states the tolerance philosophy: "loose enough for summation-order
-float noise (numpy pairwise vs JS sequential) and tight enough that any real math drift fails."
+The engines run the same deterministic algorithm, so the measured agreement is round-off
+(≤ 1e-13 relative on every quantity above, the iterated $\rho_0$ included); the tolerances sit a
+few orders above that so summation order (NumPy pairwise vs JS sequential) never fails while any
+algorithmic divergence does.
 
-**Which fixture case sees the `s0Target` divergence.** Only one. The `auto`, `manual` and
-`autoDetect` configs set no `b_sq_avg`, so $s_0^\mathrm{target} = 0$ in both engines and the Step-7
-`s0Target` divergence cannot show up in the `1e-6`/`1e-8`/9-decimal tolerances above. The `fz` case
-does set `b_sq_avg`, but `amplitude_criterion='fz'` returns from `autoscale` before the iteration,
-so it never enters the loop. The `rho0Estimate` case **does** exercise it: it passes
-`bSqAvg = fixture.fzBSqAvg` and seeds `rho0 = 0.02` away from the model's 0.05, so the fixed-point
-loop runs with a non-zero $s_0^\mathrm{target}$ — which is precisely why its tolerance is relative
-error < `1e-4` on $\rho_0$ and $\lvert\text{concordance} - 1\rvert < 1.5\times10^{-3}$, two orders
-looser than the `1e-6` asserted for $a$ and $b$, while `converged` and `iterations` must still match
-exactly (`autoScale.test.js` → *"rho0 self-consistency matches Python and recovers the density"*).
-
-So the composition-first path is covered **only** through `estimateRho0`. No fixture case runs the
-main `autoscale` auto path with a non-zero $s_0^\mathrm{target}$, which is the configuration the Auto
-StoG page actually uses once a formula is entered.
+**The composition-first path is covered directly.** Besides `rho0Estimate` (seeded at
+`rho0 = 0.02`, $s_0^\mathrm{target} = -0.74$), the `autoComposition` cases run the main
+`autoscale` auto path with $\langle b^2\rangle$ set — Mn₃Sn-like $S(0) = -12.06$ with and
+without Lorch and with first-shell detection, and the model's own $S(0) = -0.74$ —
+asserting $(a,b)$, `lowRRms`, `c1TailMean`, `aFz` and the iteration count
+(`src/__tests__/autoScaleComposition.test.js`). A looser `1e-4` bound on $\rho_0$, justified as
+"stopping-rule noise", previously hid the JS loop running its filter with $S(0) = 0$ (2.8·10⁻⁵ on
+the fixture, 2 % in $a$ on the real Mn₃Sn runs).
 
 ### What the tests assert against real data
 
@@ -2082,10 +2069,6 @@ test suite (whose committed thresholds are the looser 2×10⁻³ above).
   un-windowed (`low_q_correction=False`, `s0_target=0.0`, `lorch=False`); the ON policy is a
   `ScalingConfig`/`defaultConfig` decision. Numbers reproduced by calling the reference API
   directly will not match the page unless you pass the flags yourself.
-- **The Python and JavaScript engines are known to disagree in one place.** Inside the auto-scale
-  iteration the JS filter call omits `s0Target` (Step 7), so the fitted $(a,b)$ differ between the
-  CLI/API and the page whenever a composition supplies $\langle b^2\rangle$. The golden fixture
-  does not cover that case.
 - **The Fourier filter injects an assumption.** After filtering, $S(Q)$ carries the constraint
   "$g \equiv 0$ below $r_\mathrm{cut}$". It is a data-conditioning step, not a measurement, and
   it does part of the normalization work in the classic workflow.
@@ -3076,14 +3059,13 @@ spanning 0.02–0.20, which is the part that *is* a claim about the code
 (`test_estimate_rho0_is_seed_independent`). The tolerance is therefore per run: one bound covering
 both would have to be ~13 % and would stop the test noticing a regression on 199 K.
 
-**The ~10⁻⁴ parity caveat.** The loop stops the *first* time $|\mathrm{concordance}-1| \le 10^{-3}$.
-Two engines whose single-pass arithmetic differs at round-off can therefore accept **different
-iterates** inside that band, and since concordance varies roughly as $1/\rho$, the accepted $\rho_0$
-carries an ambiguity of order `rtol`. Cross-engine agreement on the iterated density is bounded by
-the stopping rule — the vitest parity test allows **10⁻⁴ relative cross-engine on $\rho_0$**, and
-*separately* checks that the JS concordance lands within **1.5·10⁻³ of 1** (the physical target);
-the golden concordance itself is never compared — **not** by transform precision, unlike a single
-`autoscale()` call where the tolerance is 10⁻⁶ on $(a,b)$.
+**Cross-engine parity is at round-off.** The loop stops the *first* time
+$|\mathrm{concordance}-1| \le 10^{-3}$. Two engines whose single-pass arithmetic differed at
+round-off could in principle accept different iterates inside that band, but in practice both take
+the same steps (the same iteration count) and the iterated $\rho_0$ and concordance agree to
+~1e-14; the vitest parity test asserts **10⁻¹⁰ relative** on both, plus the physical check that
+the concordance lands within **1.5·10⁻³ of 1**. (An earlier 10⁻⁴ bound, explained as stopping-rule
+noise, was really absorbing the JS loop's missing $S(0)$ target — Step 7.)
 
 **Code:** `rmc_toolkits/scaling.py` → `estimate_rho0()`; JS `estimateRho0()`.
 `web_app/frontend/src/workers/autoScaleWorker.js` runs it first and adopts the result when $\rho_0$
@@ -3237,11 +3219,11 @@ grids. `tests/generate_autoscale_fixture.py` produces golden numbers from the Py
 | `level` | 10⁻⁹ relative |
 | `qLo`, `qHi` | `toBeCloseTo(…, 9)` — **absolute** (≈5·10⁻¹⁰), not relative |
 | `nAdmissible` | **exact equality** (797 on the fixture) |
-| `levelUncertainty` | 10⁻⁶ relative |
-| $a$, $b$ (sweep + density), $a$, $b$ (FZ mode), $a$ (detection pass) | 10⁻⁶ relative; iteration counts equal exactly |
-| `lowRRms` | 10⁻⁵–10⁻⁶ relative; `c1TailMean` 10⁻⁸ |
+| `levelUncertainty` | 10⁻¹⁰ relative |
+| $a$, $b$ (sweep + density, with and without a composition), $a$, $b$ (FZ mode), $a$ (detection pass) | 10⁻¹⁰ relative; iteration counts equal exactly |
+| `lowRRms` | 10⁻¹⁰ relative (10⁻⁹ in the composition cases); `c1TailMean` 10⁻¹² |
 | sampled `gk`, `sqFiltered` | 9 decimal places |
-| `estimateRho0.rho0` | 10⁻⁴ relative — bounded by the `rtol` stopping rule, not by transform precision. (The companion assertion `abs(concordance − 1) < 1.5·10⁻³` is a check against the *physical target 1*, **not** a comparison with the Python golden concordance, which the test never asserts on.) |
+| `estimateRho0.rho0`, `.concordance` | 10⁻¹⁰ relative, iteration count equal exactly (plus the physical check `abs(concordance − 1) < 1.5·10⁻³`) |
 
 Genuine implementation differences:
 
@@ -3249,21 +3231,19 @@ Genuine implementation differences:
    $A^\top A x = A^\top y$ and solves by Gaussian elimination with partial pivoting (throwing on a
    pivot below 10⁻³⁰⁰). For the ≤3-column, well-conditioned systems here the answers agree to
    round-off, but the JS path is the numerically weaker one if a design ever becomes ill-conditioned.
-2. **Summation order.** numpy's pairwise summation vs JS sequential accumulation — the source of the
-   tolerances above.
+2. **Summation order.** numpy's pairwise summation vs JS sequential accumulation — a round-off
+   (~1e-14) effect, which the tolerances above clear by several orders.
 3. **Python-only features.** `c2_bins` (binned C2 levels), `c1_slope_nuisance` (tail-drift column)
    and `enforce_cutoff` inside `scale_pipeline` have **no JS equivalent**. The browser enforces the
    low-$r$ level in `autoScaleWorker.js` via `firstPeakZero()` instead. The Auto StoG page does not
    expose `c2_bins`, `c1_slope_nuisance`, `c2_weight`, `q_tail_frac`, `max_iter` or `tol` in either
    runtime.
-4. **A real divergence in the loop's filter call.** Python's `_pipeline()` passes
-   `s0_target=config.effective_s0_target` to `fourier_filter`; the JS `autoscalePass()` inner-loop
-   call **omits `s0Target`, so it defaults to 0**, while the JS final `scalePipeline()` passes it
-   correctly. The two engines therefore compute slightly different $\delta(Q)$ whenever the
-   composition-aware $S(0)$ target is non-zero. Measured on the parity fixture ($S(0) = -0.74$): the
-   estimated $\rho_0$ shifts by 2.8·10⁻⁵ relative — inside the test tolerance. Bounded on a
-   Mn₃Sn-like synthetic ($S(0) = -12.06$): $a$ shifts by ≈1.8·10⁻³ relative. Small, but it is a code
-   difference, not float noise.
+4. **The loop's filter call (fixed in 1.0).** Python's `_pipeline()` passes
+   `s0_target=config.effective_s0_target` to `fourier_filter`, and so does the JS `autoscalePass()`
+   inner-loop call. Before the 1.0 audit the JS call omitted it (default 0), which was not "small":
+   $a$ differed from the CLI by 2.0 % on the Mn₃Sn 59438 run (0.5 % at 300 K, 0.2 % at 500 K),
+   1.7·10⁻³ on a Mn₃Sn-like synthetic, and the fixture's $\rho_0$ estimate by 2.8·10⁻⁵ — all of it
+   algorithmic, none of it float noise. With the target passed, every case agrees to ≤ 2·10⁻¹⁵.
 5. **`np.linspace(...).astype(int)` emulation.** JS reproduces the sweep's edge grid with
    `Math.trunc(k*(n-1)/(nGrid-1))`. This matches numpy's truncation on the tested data; a rare
    floating-point tie could in principle shift one edge index by 1.
@@ -4245,17 +4225,15 @@ Everything this page runs also exists in Python. The parity contract is pinned b
 
 - level sweep level: relative error < 1e-9; window edges to 9 decimals; admissible-window
   count exactly equal;
-- auto-scale $(a,b)$: relative error < 1e-6; `iterations` exactly equal; `lowRRms` < 1e-5;
-  `c1TailMean` < 1e-8;
-- FZ-amplitude mode $(a,b)$: < 1e-6, with `iterations === 0`;
+- auto-scale $(a,b)$: relative error < 1e-10; `iterations` exactly equal; `lowRRms` < 1e-10;
+  `c1TailMean` < 1e-12 — with and without a composition-derived $S(0)$ target
+  (`autoComposition` cases);
+- FZ-amplitude mode $(a,b)$: < 1e-10, with `iterations === 0`;
 - manual pipeline sampled $G_K$ / $S_\mathrm{filtered}$ values: 9 decimals;
 - first-shell detection (repo synthetic, no r0): 9 decimals, same `windowRefined` flag; detector cases exact; window placement (SrTiO₃ supercell, short bond) `a`,`b` to 1e-6, same onset and window, same refusal;
-- **$\rho_0$ self-consistency: only ~1e-4 relative.** The test and `AGENTS.md` attribute this to the
-  fixed-point iteration compounding summation-order float noise against the `rtol = 1e-3`
-  stopping rule. That explanation is incomplete: there is also a genuine algorithmic
-  divergence in exactly this path (behavioural difference 6 below), which is the more likely
-  dominant term. Treat ~1e-4 as the honest bound on the $\rho_0$ estimate's cross-engine agreement,
-  not as pure float noise.
+- **$\rho_0$ self-consistency:** estimate and concordance to 1e-10 relative, same iteration count.
+  The iteration is deterministic; the ~1e-4 gap once blamed on stopping-rule noise was entirely
+  the JS loop's missing $S(0)$ target, fixed in 1.0.
 
 Genuine behavioural differences between this page and the `rmc-autoscale` CLI (not
 floating-point noise):
@@ -4280,19 +4258,10 @@ floating-point noise):
    drift term) exist in `ScalingConfig` but have no counterpart in `autoScale.js`. Their
    defaults are 0 / `False`, so default runs agree; a Python run that sets them cannot be
    reproduced in the browser.
-6. **Low-Q S(0) target inside the fit loop.** `autoScale.js` → `autoscalePass()` calls
-   `fourierFilter(q, sqScaled, r, {rho0, cutoff, lorch, lowQCorrection})` with **no**
-   `s0Target`, so the per-iteration filter falls back to the destructuring default
-   `s0Target = 0` and extrapolates to $S(0)=0$; Python's `scaling.py` → `_pipeline()` passes
-   `s0_target=config.effective_s0_target` on **every** loop iteration. Only the final
-   `scalePipeline()` call passes `effectiveS0Target(config)` in both engines (and both use it
-   in the affine solve's low-Q basis). Consequence: with `lowQCorrection` on **and**
-   $\langle b^2\rangle$ known, the browser's converged $(a,b)$ is the fixed point of a slightly
-   different map than Python's. The parity fixture does not cover this — the auto / detect /
-   manual goldens use a `base` config with no `b_sq_avg` (so `effective_s0_target == 0` there
-   too) and the `fz` golden skips the loop entirely (`iterations = 0`). The one golden that
-   *does* exercise the loop with a nonzero $S(0)$ target is the $\rho_0$ estimate — precisely the
-   comparison that agrees only to ~1e-4.
+6. **Low-Q S(0) target inside the fit loop — no longer a difference.** Since 1.0 the page's
+   `autoscalePass()` passes `s0Target: effectiveS0Target(config)` to the per-iteration filter
+   exactly like Python's `_pipeline()`; with a composition the page's $(a,b)$ matches the CLI to
+   round-off (before, 2 % apart on the Mn₃Sn 59438 run).
 7. **The "shadowed coefficients" check.** The browser flags
    $|\mathrm{override} - \mathrm{fz}| > 0.02\,|\mathrm{fz}|$ — relative to the **Sears** value —
    independently for $\langle b\rangle^2$ **and** $\langle b^2\rangle$, as a persistent ⚠ chip.

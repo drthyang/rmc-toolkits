@@ -1008,11 +1008,15 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
     ({ a, b } = solveAffine(q, sq, deltaSq, r, tail, window, config, sigma, level));
     const sqScaled = new Float64Array(q.length);
     for (let i = 0; i < q.length; i += 1) sqScaled[i] = a * sq[i] + b;
+    // Same filter as scaling._pipeline, including the composition-aware S(0)
+    // target: the fed-back deltaSq must come from the omitted-low-Q model the
+    // affine solve (solveAffine) and the final scalePipeline use.
     const { sqFt, gFiltered } = fourierFilter(q, sqScaled, r, {
       rho0: config.rho0,
       cutoff: config.rCutoff,
       lorch: config.lorch,
       lowQCorrection: config.lowQCorrection,
+      s0Target: effectiveS0Target(config),
     });
     deltaSq = new Float64Array(q.length);
     for (let i = 0; i < q.length; i += 1) deltaSq[i] = sqFt[i] - 1;
