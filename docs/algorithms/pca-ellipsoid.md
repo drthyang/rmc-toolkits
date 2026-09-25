@@ -304,9 +304,14 @@ the API/engine only.
 `np.random.default_rng(rng_seed).choice(n, limit, replace=False)` then sorts the indices; JS runs a
 partial Fisher–Yates with a `mulberry32(seed)` PRNG then sorts. Both are deterministic with default
 seed 0, but they draw **different subsets** — so above 20 000 points the two engines agree only
-statistically, not to round-off. A single site in an $n\times n\times n$ box has $n^3$ copies (1000
-for a 10³ box), so the cap binds only for element-pooled clouds. The result reports both `count`
-(total) and `fitCount` (used).
+statistically, not to round-off. A single site in an $n\times n\times n$ box has $n^3$ copies — 1000
+for a 10³ box, but 21 952 for 28³ and 27 000 for 30³ (a normal ~54k-atom box for a two-atom cell) —
+so the cap binds for **per-site clouds in boxes of 28 or more cells per edge** as well as for
+element-pooled clouds. There the KDE volume, its mass levels, its axes and eigenvalues come from
+20 000 of the copies, and the Flask and static apps use different ones (a 27 000-copy Gaussian site:
+eigenvalues differ by up to 0.6%; the audit measured up to 6% of $v_\mathrm{max}$ in the density).
+The result reports both `count` (total) and `fitCount` (used), and the panel's metadata line prints
+`fit {fitCount}/{count}`.
 
 Note `site_ellipsoids()` (the ADP table) **never** subsamples — it always uses every atom of every
 site.
@@ -1159,8 +1164,10 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
     they do not carry the same total as the PC-frame analytic marginals.
 11. **The drawn ellipsoid mixes two computations.** `semiAxes` come from the sites table (full cloud,
     unfloored eigenvalues) while the orientation and centre come from the KDE result (possibly
-    subsampled, floored eigenvalues). These coincide for a per-site cloud — the only case the UI
-    requests — but would diverge for a pooled cloud above the 20 000-point cap.
+    subsampled, floored eigenvalues). They coincide whenever the cloud has at most 20 000 copies, and
+    diverge slightly above the cap — for a pooled cloud, or for a single site in a box of $\ge28$
+    cells per edge (the UI's only request is per-site, so the second case is reachable from the
+    page).
 12. **Marching-cubes normals are recomputed by the renderer**, discarding the field-gradient normals
     the module produces; the 4-crossing (saddle) case in the 2D contour code is emitted without
     disambiguation. Both affect appearance only, not the reported numbers.

@@ -314,6 +314,9 @@ const subsample = (points, limit, seed) => {
     return indices.slice(0, limit).sort((i, j) => i - j).map((index) => points[index]);
 };
 
+// Same cap as pca_kde.py. It binds for pooled clouds and for a single site in a
+// box of >= 28 cells per edge; this draw (mulberry32 Fisher-Yates) differs from
+// numpy's, so above the cap the two runtimes agree only statistically.
 export const MAX_PCA_FIT_POINTS = 20000;
 
 // One 1D Gaussian kernel matrix, laid out row-major as grid x N in a Float64Array

@@ -63,9 +63,12 @@ from scipy.stats import chi2
 
 from .parsers import iter_rmc6f_atoms, read_cell_vectors
 
-# Cap on the number of cloud points fed to the KDE. Every site in a 10x10x10 box
-# has 1000 copies, so this only binds when clouds are pooled across the sites of
-# an element (e.g. 32000 Se atoms); the density estimate is stable well below it.
+# Cap on the number of cloud points fed to the KDE (the ADP table never
+# subsamples). A site in an n x n x n box has n^3 copies, so this binds for
+# element-pooled clouds (e.g. 32000 Se atoms) AND for a single site once the box
+# has >= 28 cells per edge. The subset is a seeded draw that differs from the
+# JS port's (mulberry32 Fisher-Yates), so above the cap the two runtimes agree
+# only statistically; the density estimate is stable well below it.
 MAX_PCA_FIT_POINTS = 20000
 
 # The KDE needs a positive-definite bandwidth. A site whose cloud is flat along
