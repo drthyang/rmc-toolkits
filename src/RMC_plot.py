@@ -5,8 +5,16 @@
 import numpy as np
 import sys, glob, re, os
 import argparse
+from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib import rc
+
+# The R-factor comes from the package (the single source of truth, shared with the
+# web dashboard) so this script can never drift from it again.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from rmc_toolkits.parsers import read_chi as _package_read_chi, rwp as _package_rwp, rwp_columns  # noqa: E402
 
 plt.rcParams['font.family'] = 'Dejavu Sans'
 plt.rcParams['mathtext.fontset'] = 'dejavusans'
@@ -43,34 +51,29 @@ def read_csv(fname) :
         return [], []
 
 def read_chi(fnames) :
-    chi_Q = []
-    chi_R = []
-    for ii in np.arange(len(fnames)) :
-        try:
-            f = open(fnames[ii],'r')
-            lines = f.readlines()
-            f.close()
-            for jj in np.arange(2,len(lines),1) :
-                tmp = lines[jj].split()
-                chi_Q.append(np.float64(tmp[-2]))
-                chi_R.append(np.float64(tmp[-1]))
-        except Exception as e:
-            print(f"Error reading {fnames[ii]}: {e}")
-    chi_R = np.array(chi_R)
-    chi_Q = np.array(chi_Q)
-    return chi_Q, chi_R
+    """(second-to-last, last) log columns via rmc_toolkits.parsers.read_chi.
 
-def Rwp(r, gr, grfit, fit_range) :
-    idx = [ ii for ii in np.arange(len(r)) if (r[ii]>=fit_range[0]) and (r[ii]<=fit_range[-1]) ]
-    if len(idx) == 0:
-        return 0.0
-    gr_sub = np.array(gr[idx])
-    grfit_sub = np.array(grfit[idx])
-    denom = np.sum( gr_sub*gr_sub )
-    if denom == 0:
-        return 0.0
-    Rsq = np.sum( (grfit_sub-gr_sub) * (grfit_sub-gr_sub)  ) / denom
-    return np.sqrt(Rsq)
+    The package reader checks each row against the header's column count, drops
+    a half-written final line and keeps non-finite chi^2 rows as NaN.
+    """
+    return _package_read_chi(list(fnames))
+
+def Rwp(r, observed, fitted, fit_range=None):
+    """R-factor of ``fitted`` against ``observed`` (the EXPERIMENT) over ``fit_range``.
+
+    Delegates to :func:`rmc_toolkits.parsers.rwp`: only rows finite in both columns
+    count, and an undefined value (no such row, or an all-zero experiment) is
+    ``None`` -- never ``0.0``, which would read as a perfect fit.
+    """
+    r = np.asarray(r, dtype=float)
+    mask = np.ones(r.shape, dtype=bool)
+    if fit_range is not None:
+        mask = (r >= fit_range[0]) & (r <= fit_range[-1])
+    return _package_rwp(
+        r[mask],
+        np.asarray(observed, dtype=float)[mask],
+        np.asarray(fitted, dtype=float)[mask],
+    )
 
 def plot_data(fname, title, xlabel, ylabel, args, calc_rwp=False, rwp_label_prefix=""):
     if not fname:
@@ -81,9 +84,12 @@ def plot_data(fname, title, xlabel, ylabel, args, calc_rwp=False, rwp_label_pref
         return
 
     if calc_rwp and len(data) >= 3:
-        fit_range = [data[0][0],data[0][-1]]
-        Rw = Rwp(data[0],data[1],data[2],fit_range)
-        print(f"{rwp_label_prefix:<20} R = {Rw:.6f}")
+        # RMCProfile writes (x, calculated, experimental); a header naming the
+        # roles overrides that order. The experiment is the denominator.
+        calculated, experimental = rwp_columns([label.strip() for label in labels], len(data))
+        Rw = Rwp(data[0], data[experimental], data[calculated])
+        shown = f"{Rw:.6f}" if Rw is not None else "n/a (undefined for this data)"
+        print(f"{rwp_label_prefix:<20} R = {shown}")
 
     fig = plt.figure(figsize=(3.375*2,3.375*1.2))
     ax = fig.add_subplot(111)
@@ -135,19 +141,21 @@ def main():
              tag = f"G(r) (neutron{'' if x in (0,1) else f' #{x}'})"
              plot_data(fpath, plot_title_suffix, r'r ($\mathrm{\AA}$)', 'data', args, calc_rwp=True, rwp_label_prefix=tag)
 
-    # Reciprocal space S(Q) - X-ray
-    fname_x = glob.glob(os.path.join(input_dir, '*_FQ1.csv'))
-    if fname_x:
-        labels, _ = read_csv(fname_x[0]) # Read just to get label if needed, but we can just use generic
-        xlabel = labels[0].strip() if labels else r'Q ($\mathrm{\AA^{-1}}$)'
-        plot_data(fname_x[0], 'S(Q) (x-ray)', xlabel, 'data', args, calc_rwp=True, rwp_label_prefix="S(Q) (x-ray):")
+    # Reciprocal space fits. RMCProfile writes F(Q) into *_FQ1.csv (header
+    # F(Q)_RMC, F(Q)_Expt; -> 0 at high Q), not S(Q): title each file by the
+    # function its own header names, else by its name (FQ -> F(Q), SQ -> S(Q)).
+    def _function_title(labels, default):
+        match = next((re.search(r'([A-Za-z])\(([QqRr])\)', label) for label in labels[1:]
+                      if re.search(r'([A-Za-z])\(([QqRr])\)', label)), None)
+        return f"{match.group(1)}({match.group(2)})" if match else default
 
-    # Reciprocal space S(Q) - Neutron
-    fname_n = glob.glob(os.path.join(input_dir, '*_SQ1.csv'))
-    if fname_n:
-        labels, _ = read_csv(fname_n[0])
-        xlabel = labels[0].strip() if labels else r'Q ($\mathrm{\AA^{-1}}$)'
-        plot_data(fname_n[0], 'S(Q) (neutron)', xlabel, 'data', args, calc_rwp=True, rwp_label_prefix="S(Q) (neutron):")
+    for pattern, default in (('*_FQ1.csv', 'F(Q)'), ('*_SQ1.csv', 'S(Q)')):
+        fnames_q = glob.glob(os.path.join(input_dir, pattern))
+        if fnames_q:
+            labels, _ = read_csv(fnames_q[0])
+            xlabel = labels[0].strip() if labels else r'Q ($\mathrm{\AA^{-1}}$)'
+            title = _function_title(labels, default)
+            plot_data(fnames_q[0], title, xlabel, title, args, calc_rwp=True, rwp_label_prefix=f"{title}:")
 
     # BRAGG
     fnames = sorted(set(glob.glob(os.path.join(input_dir, '*_bragg.csv'))
@@ -167,7 +175,7 @@ def main():
         if len(chi_R) > 0:
             fig4 = plt.figure(figsize=(3.375*2,3.375*1.2))
             dx = fig4.add_subplot(111)
-            dx.plot(np.log(chi_R),label=r'R',lw=1.0,alpha=0.5)
+            dx.plot(np.log(np.maximum(chi_R, 1e-12)),label=r'R',lw=1.0,alpha=0.5)
             dx.set_xlabel(r'Time steps',fontsize=11)
             dx.set_ylabel(r'log($\mathrm{\chi}$)',fontsize=11)
             dx.legend(loc=1,fontsize=9,frameon=False)

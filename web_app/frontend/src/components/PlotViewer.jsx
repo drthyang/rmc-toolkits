@@ -105,7 +105,9 @@ const PlotViewer = ({ file, onConverted }) => {
                     <div className="plot-meta">
                         <span>{metadata.title}</span>
                         {Object.entries(metadata.metrics || {}).map(([key, value]) => (
-                            <span key={key}>{key}: {Number(value).toPrecision(5)}</span>
+                            // null = metric undefined for this data (e.g. Rwp of an all-NaN or
+                            // all-zero experiment): a dash, never 0.0000 (a "perfect fit").
+                            <span key={key}>{key}: {Number.isFinite(value) ? Number(value).toPrecision(5) : '—'}</span>
                         ))}
                     </div>
                 )}

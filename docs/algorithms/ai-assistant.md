@@ -231,11 +231,14 @@ the same quantities.
 ### Step 3 — Sampling counters (`context.configuration_optimization`)
 
 **Input:** `structure.moves`, parsed from the `.rmc6f` header by `readMovesMetadata()` in
-[`browserData.js`](../../web_app/frontend/src/browserData.js). **Static mode only** — the Flask
-`/api/structure` response carries no `moves` key.
+[`browserData.js`](../../web_app/frontend/src/browserData.js) in static mode, and by
+`parsers.read_moves_metadata()` in Flask mode (the `/api/structure` response carries `moves` as a
+keys-only dict: a counter absent from the header is simply absent). **Both runtimes** therefore produce
+this block, and the same counters are also rendered on the Model information card.
 
-**Parse gate.** `readMovesMetadata()` scans **only the header**: `text.slice(0, …)` up to the index of
-the literal `Atoms:` marker, or the **first 4,000 characters** when that marker is absent or at index 0.
+**Parse gate.** Both readers scan **only the header**: the text up to the Atoms marker
+(case-insensitive `/^[ \t]*atoms\b/im`, the same rule as the atom parser), or the **first 4,000
+characters** when that marker is absent or at index 0.
 Four regexes are applied (`Number of moves generated/tried/accepted:` and
 `Accumulated time (s)…:`), and the function returns `null` unless **at least one** of them matched a
 finite number. A run whose header uses different wording therefore yields no block at all rather than a
@@ -249,7 +252,9 @@ $$\text{acceptance\_ratio} = \frac{N_{\mathrm{acc}}}{N_{\mathrm{tried}}}\ \ (\te
 \text{accepted\_moves\_per\_atom} = \frac{N_{\mathrm{acc}}}{N_{\mathrm{atoms}}}\ \ (\text{3 s.f.}), \qquad
 \text{accumulated\_time\_h} = \frac{t}{3600}\ \ (\text{3 s.f.})$$
 
-Ratios are emitted only when the denominator is $>0$; the block is dropped entirely if empty.
+Ratios are emitted only when the denominator is $>0$; the block is dropped entirely if empty. Note the
+denominator: the context's `acceptance_ratio` is accepted / **tried**, while the Model information
+card's "Accepted / generated" row (`moveStats.js` → `moveRatios()`) divides by moves **generated**.
 
 **Code:** `runContext.js` → `configurationOptimizationContext()`; `browserData.js` → `readMovesMetadata()`.
 
@@ -334,21 +339,17 @@ displacement. Non-finite entries are filtered out; if none survive, the two keys
 **Where $u_m$ comes from** (`structureFromRmc6f()` in `browserData.js` — upstream of this module, but
 the number is meaningless without it). `structure.basis` holds **one entry per reference-site number**
 (the circular-mean position of every atom sharing that reference number), not one entry per atom. For
-reference site $s$ with $N_c$ copies (atoms), axis $i$, and within-unit-cell fraction
-$w_i = \operatorname{frac}(x_i N_i)$, the circular resultant and circular standard deviation are
+reference site $s$ with $N_c$ copies (atoms), each copy's within-unit-cell fraction
+$w_i = \operatorname{frac}(x_i N_i)$ is offset from the site's circular mean $\bar w_i$, wrapped to the
+nearest image, and mapped to Cartesian Å through the unit-cell vectors $\mathbf a_i = \mathbf L_i / N_i$:
 
-$$\bar R_i = \frac{1}{N_c}\left\lVert \left(\textstyle\sum \cos 2\pi w_i,\ \sum \sin 2\pi w_i\right)\right\rVert,
-\qquad \sigma_i^{\mathrm{frac}} = \frac{\sqrt{-2\ln \bar R_i}}{2\pi},$$
+$$\Delta\mathbf r = \sum_{i=1}^{3} d_i\,\mathbf a_i,\qquad
+u_s = \sqrt{\langle|\Delta\mathbf r|^2\rangle - |\langle\Delta\mathbf r\rangle|^2},$$
 
-and the site's scalar displacement is the quadrature sum converted to Å with the conventional-cell edge
-lengths:
-
-$$u_s = \sqrt{\sum_{i=1}^{3}\left(\sigma_i^{\mathrm{frac}}\, a_i\right)^2}, \qquad a_i = \lVert\mathbf L_i\rVert / N_i .$$
-
-Axes with $\bar R_i \ge 1$ (a single atom, or zero spread) contribute nothing; $\bar R_i$ is floored at $10^{-6}$.
-This is a **single-snapshot** spread: it mixes static disorder with thermal motion, and it uses edge
-lengths rather than the full metric tensor, so for a strongly non-orthogonal cell the Å conversion is an
-approximation.
+the square root of the trace of the site's Cartesian displacement covariance ($=\sqrt{3U_\mathrm{iso}}$),
+which uses the **full metric** and is the same for any setting of the same cell (run-dashboard.md, Model
+summary Part A Step 5). This is a **single-snapshot** spread: it mixes static disorder with thermal
+motion.
 
 **Ordering and truncation.** Sites are sorted by `mean_disp_A` **descending** (sites with no
 displacement sort last, treated as $-1$), then truncated to `MAX_SITES = 12` with `sites_omitted`
@@ -574,23 +575,30 @@ and `rwp` is `plotData.metrics.rwp` at 3 s.f.
 
 **Which kinds actually carry an `rwp`.** `plotDataFromText()` in `browserData.js` computes
 `metrics.rwp` **only** for `kind ∈ {xpdf, npdf, xray_sq, neutron_sq, bragg}` **and** only when the parsed
-CSV has at least 3 columns, using columns 1/2/3 as $(x, y^{\mathrm{obs}}, y^{\mathrm{calc}})$. `pdf_partials`,
+CSV has at least 3 columns. RMCProfile writes those CSVs as $(x, y^{\mathrm{calc}}, y^{\mathrm{expt}})$ —
+`Q, F(Q)_RMC, F(Q)_Expt`, `r(A), X_ray-calc, X_ray_exp_renorm` — so by default column 2 is the RMC
+calculation and column 3 the experiment; a header that names both roles (`/exp|obs/i` vs
+`/calc|rmc|fit/i`) overrides that order (`rwpColumns()`, mirrored by `rwp_columns()` in Python). `pdf_partials`,
 `exafs_q`, `exafs_r` (and `r_value`, which is excluded anyway) never have one, so in a real run most
 `datasets` entries are `{kind}` or `{kind, title}` with no residual — their absence is not an error.
 
-The metric is computed by `rwp(x, obs, fit)` in `browserData.js`; the Python equivalent is `rwp()` in
-[`rmc_toolkits/parsers.py`](../../rmc_toolkits/parsers.py). **Both compute the same unweighted quantity, and
-they agree exactly, including the zero-denominator branch:**
+The metric is computed by `fitRwp()` → `rwp(x, observed = y^expt, fitted = y^calc)` in `browserData.js`;
+the Python equivalent is `fit_rwp()` → `rwp()` in [`rmc_toolkits/parsers.py`](../../rmc_toolkits/parsers.py).
+**Both compute the same unweighted quantity over the rows finite in both columns, normalized by the
+experiment:**
 
-$$R = \sqrt{\frac{\sum_i (y^{\mathrm{calc}}_i - y^{\mathrm{obs}}_i)^2}{\sum_i (y^{\mathrm{obs}}_i)^2}}$$
+$$R = \sqrt{\frac{\sum_i (y^{\mathrm{calc}}_i - y^{\mathrm{expt}}_i)^2}{\sum_i (y^{\mathrm{expt}}_i)^2}}$$
 
 with no weights $w_i$ — despite the name `rwp` and despite the system prompt describing it as "a weighted
 profile residual". Treat it as a relative goodness indicator between datasets of the same run, not as a
-Rietveld $R_{wp}$. **Zero-denominator caveat:** when $\sum_i (y^{\mathrm{obs}}_i)^2 = 0$ both
-implementations return exactly `0` (not `NaN`), so an `rwp: 0` entry means *"the observed column was all
-zeros"*, not *"a perfect fit"*.
+Rietveld $R_{wp}$. **Undefined cases:** when no row is finite in both columns, or
+$\sum_i (y^{\mathrm{expt}}_i)^2 = 0$, both implementations return the unavailable sentinel
+`None`/`null` (never `0`, which would read as a perfect fit). `datasetContext()` keeps `rwp` only when it
+is finite, so such a dataset reaches the model as `{kind, title?}` with **no `rwp` key** — an `rwp: 0`
+entry cannot be produced by an undefined metric.
 
-**Code:** `runContext.js` → `datasetContext()`; `browserData.js` → `plotDataFromText()`, `rwp()`.
+**Code:** `runContext.js` → `datasetContext()`; `browserData.js` → `plotDataFromText()`, `rwpColumns()`,
+`fitRwp()`, `rwp()`.
 
 ---
 
@@ -599,15 +607,21 @@ zeros"*, not *"a perfect fit"*.
 **Input:** `rValueFile.plotData.series[0].y`.
 
 **What the values are.** RMCProfile's `<stem>-NN.log` files are read by `readChi()` in
-`browserData.js`: skip the first 2 lines, take the **last whitespace-separated number** of every line
-with ≥2 fields. The dashboard then stores $y_k = \ln\!\left(\max(\chi_k, 10^{-12})\right)$ — the natural
-log, with a hard floor of $10^{-12}$ on the raw $\chi$ before the log, so a $\chi$ of exactly 0 maps to
-$\ln(10^{-12}) \approx -27.63$ rather than $-\infty$.
+`browserData.js` (mirroring `read_chi_log()` in Python): skip the first 2 lines, keep only data rows with
+exactly as many tokens as line 1 names, drop an unterminated final line (a row RMCProfile is still
+writing), and take the **last column** of each row — a row with a non-finite χ² (`NaN`, `Inf`, Fortran
+`****`) is **kept as `NaN`**, never dropped (run-dashboard.md, Parsing Step 4d). The dashboard then stores
+$y_k = \ln\!\left(\max(\chi_k, 10^{-12})\right)$ — the natural log, with a hard floor of $10^{-12}$ on the
+raw $\chi$ before the log, so a $\chi$ of exactly 0 maps to $\ln(10^{-12}) \approx -27.63$ rather than
+$-\infty$ — and $y_k = $ `NaN` for a non-finite $\chi_k$.
 
 **How the logs are combined.** `combineRValueFiles()` in
-[`Dashboard.jsx`](../../web_app/frontend/src/components/Dashboard.jsx) **concatenates** the log-transformed
-series of every visible R-value log and re-indexes $x$ as $0,1,2,\dots$; `final_chi_r` is taken from the
-*last* parsed file. The order is `comparePlotFiles`: first by `plotOrder` index of `plotKind`, then — for
+[`browserData.js`](../../web_app/frontend/src/browserData.js) (called by `Dashboard.jsx`) **concatenates**
+the log-transformed series of the visible R-value logs **of one run** — the logs sharing the folder and
+stem of the structure file (else the first stem), as Flask's `related_r_value_logs()` does — and
+re-indexes $x$ as $0,1,2,\dots$; `final_chi_r` is taken from the *last* parsed file of that run. Logs of
+other runs in the folder are never spliced in (they used to be, in static mode, which fed the model
+another run's `final_chi_squared` and tail slope). The order is `comparePlotFiles`: first by `plotOrder` index of `plotKind`, then — for
 names matching `/^(.+)-(\d{2,})\.log$/` — by lower-cased stem and then by the **numeric log sequence
 number**, and otherwise by a numeric-aware `localeCompare` of the file name.
 
@@ -632,9 +646,12 @@ count, and the concatenation assumes the logs are in chronological order.
 $$\mathrm{nSteps} = N,\quad \mathrm{first} = y_0,\quad \mathrm{last} = y_{N-1},\quad
 \min_k y_k,\quad \max_k y_k,\quad \mathrm{recentSlopePerStep} = m$$
 
-with $m$ the tail least-squares slope defined in Step 14. On output, `n_steps` is the **exact integer
-point count and is never rounded**; `first`, `last`, `min`, `max` are 3 s.f.; `recent_slope_per_step`
-is 2 s.f.
+with $m$ the tail least-squares slope defined in Step 14. `first`/`last` are the raw end values (a
+non-finite latest value serializes as `null` — visible, not hidden); `min`, `max` and $m$ use only the
+finite values, in one pass (no argument spread). When any value is non-finite the block also carries
+`non_finite_steps` (the count) and a `non_finite_note` telling the model those rows are a blown-up run,
+not missing data. On output, `n_steps` is the **exact integer point count and is never rounded**;
+`first`, `last`, `min`, `max` are 3 s.f.; `recent_slope_per_step` is 2 s.f.
 
 **Downsampling (`downsampleSeries`).** Uniform-stride resampling to at most `HISTORY_POINTS = 48` points
 that always retains the endpoints:
@@ -646,20 +663,20 @@ value is rounded to 3 s.f. This is *decimation, not averaging* — no local mini
 survives, which is why the min/max/slope statistics are computed on the full series first.
 (`HISTORY_POINTS` is also the default argument of the exported `downsampleSeries`.)
 
-**Also emitted:** `quantity` — the literal string
-`"ln of chi^2 goodness metric (natural log; lower is better)"` — and `final_chi_squared` =
-`plotData.metrics.final_chi_r`, the **un-logged** last value, so
-$\mathrm{last} = \ln(\text{final\_chi\_squared})$ up to rounding.
+**Also emitted:** `quantity` — `"ln of the chi^2 in the last .log column 'X_ray_(R)1' (natural log;
+lower is better) — one fit term of the run, not a total"` (the column name comes from the log header,
+`plotData.chiColumn`, and is omitted when the log has none) — `column` (that header name), and
+`final_chi_squared` = `plotData.metrics.final_chi_r`, the **un-logged** last value of that column, so
+$\mathrm{last} = \ln(\text{final\_chi\_squared})$ up to rounding. The series is **one term** of the
+fit (in the demo run the X-ray real-space χ²; the reciprocal-space `F(Q)_1` term is not included), which
+is why the context names it rather than calling it the run's goodness of fit.
 
-> **Naming discrepancies (trust the code).** Three labels attached to this one array disagree with each
-> other and with the parser:
+> **Naming (trust the code).** Two labels attached to this data still need care:
 >
-> 1. **$\chi$ vs $\chi^2$.** The parser and the Python plotter label the quantity $\chi$
->    (`yLabel: 'log(χ)'` in `browserData.js`; `ax.set_ylabel(r"log($\chi$)")` in `plots.py`; the metric
->    key is `final_chi_r`), while the assistant context and the watchdog comments call it $\chi^2$. The
->    numbers are identical either way — only the label the model is told differs. It matters for
->    interpreting relative changes: a 0.02 shift in the stored $\ln$ value is a 2 % change in *the
->    quantity as parsed*, which would be 4 % if that quantity is really $\chi$ and you wanted $\chi^2$.
+> 1. **One term, named.** Every producer now labels the series $\ln(\chi^2)$ of the named log column
+>    (`CHI_HISTORY_Y_LABEL = 'ln(χ²)'`, title `χ² history: X_ray_(R)1`), and the context says the same;
+>    only the historical metric key `final_chi_r` keeps the old name. The column is one fit term (in the
+>    demo run the X-ray real-space χ²), not the run's total χ².
 > 2. **`rwp` is not weighted** (Step 10), despite its name and the system prompt's wording.
 > 3. **The x-axis is not a move count.** `SYSTEM_PROMPT` in
 >    [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js) tells the model, on
@@ -827,6 +844,12 @@ magnitude-independent — the same rule works for $\chi \sim 10^{-2}$ and $\chi 
 
 **Classification (`classifyConvergence`).**
 
+Non-finite values (the NaN rows above, or `null`) are handled first: **a non-finite latest value is
+`diverging`** — the run produced NaN/Inf χ² — and otherwise the rule below runs on the **finite values
+only** (an isolated earlier NaN does not break the trend; `unknown` if fewer than 2 remain). The
+browser used to drop such rows, so a log whose last 40 of 100 rows were NaN was classified `improving`
+from its finite prefix. `detectDivergence()`/`detectStall()` apply the same handling.
+
 $$\mathrm{status} = \begin{cases}
 \texttt{unknown} & N < 2\ \text{or input not an array}\\[2pt]
 \texttt{diverging} & \Delta_{\mathrm{win}} > 0.02\\[2pt]
@@ -845,15 +868,15 @@ $-0.01$/step ramp → `improving`; 150 steps of ramp followed by 150 flat steps 
 $-0.0001$/step ramp (total drop 0.02 < 0.1) → `stalled`; a $-0.01$ ramp followed by a $+0.01$ ramp →
 `diverging`.
 
-**Watchdog payload (`watchdogStats`).** Exactly five fields:
-`{n_steps, first, last, min, recent_window_delta}`. `n_steps` is the exact integer point count (never
-rounded); `first`, `last`, `min` are 3 s.f.; `recent_window_delta` is 2 s.f. The full history is *never*
-sent to the watchdog. Three implementation details worth knowing:
+**Watchdog payload (`watchdogStats`).** Five fields:
+`{n_steps, first, last, min, recent_window_delta}`, plus `non_finite_steps` when the history holds
+non-finite values. `n_steps` is the exact integer point count (never rounded); `first`, `last`, `min`
+are 3 s.f. and `recent_window_delta` 2 s.f., each `null` when not finite (a non-finite latest value is
+sent as `last: null`). The full history is *never* sent to the watchdog. Two implementation details
+worth knowing:
 
-- It **recomputes** `windowDelta(values)` — a second full `recentSlope` pass over the tail — instead of
-  reusing `stats.recentSlopePerStep` from the `seriesStats()` call it already made.
-- It calls `Number(x.toPrecision(n))` **directly, not `roundSig`**, so unlike everywhere else in the
-  module a non-numeric `first` / `last` / `min` throws a `TypeError` rather than passing through.
+- It **recomputes** `windowDelta()` over the finite values — a second `recentSlope` pass over the tail —
+  instead of reusing `stats.recentSlopePerStep` from the `seriesStats()` call it already made.
 - `max` and `recentSlopePerStep` from `seriesStats()` are deliberately dropped.
 
 **Re-ask gate (`significantChange`).** Given the stats of the last LLM call and the current stats:
@@ -866,8 +889,8 @@ $$\mathrm{significant} \iff
 i.e. 200 new log lines, or a ≥2 % move in $\chi$. It returns `true` when there are no previous stats and
 `false` when there are no current stats. **Non-finite fallback:** if either `last` is not a finite number
 the $\ln(1.02)$ test is skipped entirely and the function returns the strict inequality
-`prevStats.last !== nextStats.last` — which for two `NaN`s is `true`, forcing a model call on every poll
-that clears the interval gate. Unlike `WINDOW_DELTA_EPSILON` and `MIN_TOTAL_DROP` (module constants), the
+`prevStats.last !== nextStats.last`. Since `watchdogStats` sends a non-finite `last` as `null`, two
+consecutive non-finite polls compare equal and do not force a model call. Unlike `WINDOW_DELTA_EPSILON` and `MIN_TOTAL_DROP` (module constants), the
 two re-ask thresholds are per-call options (`{relativeDelta = 0.02, stepDelta = 200}`); no caller
 overrides them — `useWatchdog` calls `significantChange(prev, next)` with no third argument.
 
@@ -940,7 +963,7 @@ in each mode:
 |---|---|---|
 | `run`, `live_mode` | yes | yes |
 | `structure` (cell, angles, composition) | yes | yes (`/api/structure`) |
-| `configuration_optimization` | yes | **no** — `/api/structure` returns no move counters |
+| `configuration_optimization` | yes | yes — `/api/structure` returns the header's move counters (`moves`) |
 | `run_settings` | yes | **no** — the `.dat` is read only from a locally picked folder |
 | `symmetry` (+ per-site displacements, `frac`) | yes | **no** — `/api/structure` returns no `basis`, so `describeSymmetry()` returns `null` |
 | `pair_correlations` | yes (needs parsed partials) | **no** — plot files carry no `plotData.series` |
@@ -1030,9 +1053,8 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   the instantaneous configuration. For an element with a single basis site, the A–A entry degenerates to
   the shortest conventional-cell lattice translation — a lattice repeat, not a bond — and nothing in the
   context flags it.
-- **`mean_disp_A` / `max_disp_A` mix static disorder with thermal motion** and are derived from a
-  single-snapshot circular standard deviation, converted to Å with cell *edge lengths* — an approximation
-  for non-orthogonal cells.
+- **`mean_disp_A` / `max_disp_A` mix static disorder with thermal motion**: they are the single-snapshot
+  rms displacement of each reference site about its mean (Cartesian, through the full cell metric).
 - **The whole `symmetry` block is tolerance-dependent, and the tolerance is a live UI control.** Space
   group, point group, operation count, residual, and the entire orbit partition (hence which sites exist
   and how their displacements are averaged) change with the shared "Detected SG" tolerance. Only
@@ -1050,11 +1072,12 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   (routine during Live Data), the concatenation is skipped and only the first log is described.
 - **The system prompt actively mislabels that axis** as "accepted-move steps" on every request. Discount
   anything the model says about "moves" that is derived from the convergence block.
-- **`rwp` is unweighted** (Step 10) despite its name and the system prompt's description, exists for only
-  five dataset kinds, and returns exactly `0` for an all-zero observed column — which reads as a perfect
-  fit but means the opposite.
-- **The quantity is labeled $\chi^2$ in the context but $\chi$ in the parser and the Python plots**
-  (Step 11). Same numbers, contradictory labels.
+- **`rwp` is unweighted** (Step 10) despite its name and the system prompt's description, and exists for
+  only five dataset kinds. It is normalized by the experimental column; when it is undefined (no finite
+  pair, or an all-zero experiment) it is `null` and the key is simply absent from the dataset entry.
+- **The convergence series is one χ² term, not the total** (Step 11): the last `.log` column, named in
+  `convergence.column`. A run whose other terms stall while that one improves is still reported as
+  improving.
 - **The character budget is best-effort.** Several blocks are never trimmed; an unusual run can exceed
   4,500 characters. And only four of the eight trim steps leave an `*_omitted` counter — a dropped second
   $g(r)$ peak, a re-downsampled history, and a dropped PCA `note` are invisible in the delivered JSON.
@@ -1086,8 +1109,9 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 - **No Python equivalent exists for this pipeline.** Nothing in this section is computed in
   `rmc_toolkits/`. Two upstream helpers do exist in both languages, and they do **not** agree equally
   well:
-  - `rwp` — `browserData.js` and `rmc_toolkits/parsers.py` implement the identical unweighted formula
-    *and* the identical zero-denominator fallback. **Exact match.**
+  - `rwp` — `browserData.js` and `rmc_toolkits/parsers.py` implement the identical unweighted formula,
+    the identical column-role resolution (`rwpColumns` / `rwp_columns`) *and* the identical `null`/`None`
+    sentinel for the undefined cases. **Exact match** (to floating-point round-off).
   - `detect_plot_kind` — the `pdf_partials` (`*PDFpartials*.csv`), `npdf`, `xpdf`, `xray_sq`,
     `neutron_sq`, `bragg`, `exafs_q`, `exafs_r` and `r_value` (`*-NN.log`) branches match exactly, which
     covers everything this section depends on. The **`stog` branch differs**: the JS returns `'stog'` for

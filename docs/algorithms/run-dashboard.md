@@ -175,15 +175,15 @@ The Python `detect_plot_kind()` ([plots.py](../../rmc_toolkits/plots.py)) and th
 | 3 | `_FT_XFQ\d+\.csv$` | `xpdf` | X-ray PDF obtained by Fourier-transforming F(Q) |
 | 4 | name contains `PDF` **and** ends `.csv`, and contains `PDFpartials` | `pdf_partials` | per-pair partial PDFs |
 | 5 | name contains `PDF` **and** ends `.csv` (otherwise) | `npdf` | neutron PDF |
-| 6 | ends `_FQ1.csv` | `xray_sq` | titled "S(Q) (x-ray)" |
-| 7 | ends `_SQ1.csv` | `neutron_sq` | titled "S(Q) (neutron)" |
+| 6 | `_FQ\d+\.csv$` | `xray_sq` | reciprocal-space fit, titled by its function (`F(Q)`, `F(Q) #2`, …) |
+| 7 | `_SQ\d+\.csv$` | `neutron_sq` | reciprocal-space fit, titled by its function (`S(Q)` unless the header says otherwise) |
 | 8 | `_bragg(?:_.+)?\.csv$` | `bragg` | Bragg profile |
 | 9 | `-\d{2,}\.log$` (an **inline** regex in both files, not `R_VALUE_LOG_RE`) | `r_value` | RMCProfile run log (χ history) |
 | 10 | **Python:** name ∈ `{scale_ft.gr, scale_ft.sq, scale_ft_rmc.fq}`<br>**JS:** `\.(gr\|sq\|fq)$` (case-insensitive) | `stog` | STOG/preprocessing data file |
 | — | anything else | `null` | not plotted |
 
 Ordering is load-bearing where the patterns genuinely overlap: **rules 4–5 fire before rules 6–7**,
-so a name containing both `PDF` and `_FQ1.csv` is classified as a PDF, never `xray_sq` — as
+so a name containing both `PDF` and `_FQ<n>.csv` is classified as a PDF, never `xray_sq` — as
 `pdf_partials` if it also contains `PDFpartials` (rule 4), otherwise as `npdf` (rule 5). Both are
 one `if "PDF" in name and name.endswith(".csv")` branch in the source, split into two rows here
 because they return different kinds. The rule-3-before-rules-4–5 ordering only bites for an xPDF
@@ -194,14 +194,17 @@ substring and would be `xpdf` under either ordering.
 **Known consequences of pattern-only classification** (all reproducible against the bundled demo
 folder, [web_app/frontend/public/demo/](../../web_app/frontend/public/demo/)):
 
-* `GTS_250K_XFQ1.csv` (the x-ray F(Q)) matches **nothing** — `_FQ1.csv` requires an underscore
-  immediately before `FQ1`, and `XFQ1.csv` supplies an `X`. That file is indexed but never charted.
-* `GTS_250K_FQ1partials.csv` matches nothing (it does not end in `_FQ1.csv`), so partial F(Q) files
+* `GTS_250K_XFQ1.csv` (the x-ray F(Q)) matches **nothing** — `_FQ\d+` requires an underscore
+  immediately before `FQ`, and `XFQ1.csv` supplies an `X`. That file is indexed but never charted
+  (in the demo run it duplicates `GTS_250K_FQ1.csv` at higher precision).
+* `GTS_250K_FQ1partials.csv` matches nothing (it does not end in `_FQ<n>.csv`), so partial F(Q) files
   are silently skipped. Partial *PDF* files are not, because rules 4–5 key on the substring `PDF`
   anywhere in the name (`GTS_250K_PDFpartials.csv` → rule 4).
-* Rule 6 asserts that `_FQ1.csv` is **x-ray** and rule 7 that `_SQ1.csv` is **neutron**. This is a
-  naming convention, not something read from the data; the title chip will say "S(Q) (x-ray)" for
-  any `*_FQ1.csv` regardless of radiation.
+* Rules 6–7 accept **any dataset number**, like rule 3 and the stem chooser; until 2026-09 they
+  matched only the literal `_FQ1.csv` / `_SQ1.csv`, so a second reciprocal-space dataset was never
+  classified, charted, given an Rwp or described to the assistant. The kind names `xray_sq` /
+  `neutron_sq` are internal identifiers only: the **title and y label name the function the file
+  holds** (Step 6) and claim no radiation type.
 * Rule 9 needs **two or more** digits: `run-01.log` is an R-value log, `run-1.log` and
   `derivative.log` are not (`tests/test_plots.py::test_detect_plot_kind_for_supported_outputs`
   pins `GNSe.log → None`, `run-info.log → None`, `GNSe-123.log → r_value`).
@@ -240,15 +243,33 @@ last column names the kind of output file the pattern matches, not the value ext
 | 1 | `^(.+)_PDF(?:partials\|\d+)?\.csv$` | PDF |
 | 2 | `^Frac_coord_(.+)\.txt$` | fractional-coordinate export |
 
-Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
-`.rmc6f` wins; otherwise the **first** `.rmc6f` in the list is used. Python sorts the directory
-alphabetically before this scan, so "first" is alphabetical; the browser uses the enumeration order
-of the directory pick, so the two can disagree on the fallback. The browser additionally keys the
-stem map by `dirname/stem`, so matching is per-subfolder; the Python only ever looks at one
-directory.
+**Only usable candidates take part.** A `.rmc6f` that is empty (0 bytes) or shows no Atoms marker
+(`/^\s*atoms\b/i`) in its first 64 KiB — typically left by a killed run — is skipped
+(`parsers.py` → `rmc6f_problem()`, `browserData.js` → `structureFileProblem()`, same rule). Before
+2026-09 a stem match was taken unconditionally, so in `data/250K_try1/supercell` the empty
+`new_x.rmc6f` (stem-matched by `Frac_coord_new_x.txt`) hid six valid configurations and the page
+failed with an unhelpful metadata error. When no candidate is usable the error lists each file and
+why (`No usable .rmc6f file: new_x.rmc6f (empty (0 bytes))`).
 
-**Code:** `app.py` → `_run_stem_from_output_name()`, `_find_rmc6f()`; `browserData.js` →
-`runStemFromOutputName()`, `chooseStructureFile()`.
+Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
+usable `.rmc6f` wins; otherwise the **first** usable `.rmc6f` in the list is used. Python sorts the
+directory alphabetically before this scan, so "first" is alphabetical; the browser uses the
+enumeration order of the directory pick, so the two can disagree on the fallback. The browser
+additionally keys the stem map by `dirname/stem`, so matching is per-subfolder; the Python only
+ever looks at one directory.
+
+The package function `read_structure(directory)` (a `Frac_coord_*.txt` reader, not used by the
+page) applies the same principle to its **pair** of files: `Frac_coord_<stem>.txt` is paired with
+`<stem>.rmc6f` (usable candidates only); a folder with exactly one Frac file and one usable `.rmc6f`
+pairs them regardless of name; any other ambiguity raises; `frac_path=` / `rmc6f_path=` choose
+explicitly; and the pair is cross-checked (every Frac cell index inside the `.rmc6f` supercell, every
+Frac reference number a site of it). It used to take the alphabetically first file of each kind
+independently, which in `data/250K_try1/supercell` folded a 5×10×10 configuration with a 10×10×10
+supercell and dropped every atom on sites 53–104.
+
+**Code:** `app.py` → `_run_stem_from_output_name()`, `_find_rmc6f()`; `parsers.py` →
+`rmc6f_problem()`, `read_structure()`; `browserData.js` → `runStemFromOutputName()`,
+`structureFileProblem()`, `chooseStructureFile()`.
 
 **Run-control file (static mode only).** `chooseSettingsEntry()` computes
 `wanted = structureFile.path.replace(/\.rmc6f$/, '.dat')` and returns the raw entry whose `path`
@@ -295,33 +316,41 @@ gated on `wantAssistantData`, i.e. it stays idle until the user opens the AI Ass
 
 Used for `xpdf`, `npdf`, `pdf_partials`, `xray_sq`, `neutron_sq`, `bragg`.
 
-* Line 1 is the header; labels = comma-split, whitespace-stripped, **empties preserved**.
+* Lines are split on `\r\n|\r|\n`; **blank lines are ignored**, and the first non-blank line is the
+  header; labels = comma-split, whitespace-stripped, **empties preserved**.
 * Every subsequent line is comma-split, stripped, and **empty fields are dropped** (this is what
   lets RMCProfile's trailing-comma data rows, e.g. `GTS_250K_PDFpartials.csv`, parse against a
   header that has no trailing comma).
 * A row whose surviving field count ≠ the label count raises
-  `"<path> line <n> has <k> values; expected <m>"`.
+  `"<path> line <n> has <k> values; expected <m>"`, with `<n>` the **true file line** in both runtimes.
+* Every cell goes through `parse_fortran_number()` / `parseFortranNumber()`: a number (`E` or Fortran
+  `D` exponent) is kept, an explicit non-finite token (`NaN`, `Inf`, `Infinity`, `****`) becomes `NaN`
+  — a masked region — and anything else raises `"<path> line <n>: '<cell>' is not a number"`.
 * Result is `np.asarray(rows, float).T` — column 0 is x, columns 1… are the y series.
 
-**Blank-line handling differs, and it moves the header.** The JavaScript reader pre-filters *all*
-blank/whitespace-only lines (`text.split(/\r?\n/).filter((line) => line.trim())`) and then takes
-element 0 as the header; Python takes `lines[0]` of the raw file. A file with a leading blank line
-therefore gets its real header in the browser and a **blank header (label count 1)** in Flask. The
-same pre-filter shifts the error message's line number: Python enumerates true file lines
-(`enumerate(lines[1:], start=2)`) while JavaScript reports `index + 2` over the blank-filtered
-array. The message text is identical; **the line number is the true file line in Python and the
-index among non-blank lines in JavaScript**, so the two disagree on any file containing blank lines.
-
-**Python/JS discrepancy on non-numeric tokens:** Python calls `float(value)` and lets a `ValueError`
-propagate, so a stray non-numeric row **fails the whole file**. JavaScript calls `Number(value)`,
-which yields `NaN` silently; the SVG renderer then drops non-finite points at draw time
-(`Number.isFinite` guard in `InteractivePlot.jsx` → `seriesShapes`). The same file can therefore
-plot in static mode and error in Flask mode — and, as 5a shows, produce a *misleading metric* rather
-than an error.
+**Both runtimes apply these rules identically** (`read_rmc_csv()` ⟷ `readRmcCsv()`). Until 2026-09
+they did not: the browser pre-filtered blank lines while Python took the raw first line as the header
+(a leading blank line gave a one-label header in Flask), the browser numbered error lines among
+non-blank lines, and a stray non-numeric cell failed the whole file in Python but became a silent
+`NaN` in the browser. Pinned by `tests/test_parsers.py::test_read_rmc_csv_cell_rules_match_the_browser`
+and the matching block in `plotParity.test.js`.
 
 **For this reader only,** both runtimes accept the literal token `NaN` as a number and neither masks
 it before computing metrics (see 5a). That is not true of the other three readers: see 4b, 4c
 and 4d.
+
+**Transport: non-finite values reach the browser as JSON `null`.** Flask serializes every response
+through the app-wide `StrictJSONProvider` in [app.py](../../web_app/backend/app.py): any non-finite
+float (NaN, ±Inf) anywhere in the payload — series arrays, metrics, nested objects, NumPy scalars and
+arrays — is written as `null`, and `json.dumps(..., allow_nan=False)` guards the path, so no response
+can contain the bare tokens `NaN`/`Infinity` that `JSON.parse` rejects. Before 2026-09 a masked CSV
+region or a NaN χ² made `/api/plot/data` invalid JSON; axios then returned the raw text as
+`response.data` and the chart render threw. A masked region now plots in Flask exactly as in static
+mode: `null` and `NaN` are both non-finite, so the renderer drops the point (Plot rendering, Step 7)
+and the hover never snaps to it (Step 9). `InteractivePlot` also refuses a payload that is not an
+object with a `series` array (`plotDomain.js` → `plotPayloadError()`), showing a message instead of
+rendering. Pinned by `tests/test_parsers_json_transport.py` (strict `json.loads` with
+`parse_constant` raising) and `plotPayload.test.js` / `interactivePlotNull.test.jsx`.
 
 #### 4b. EXAFS CSV — `read_exafs_csv()` / `readExafsCsv()`
 
@@ -332,11 +361,11 @@ first line is already numeric (`data_start == 0`) is rejected — there would be
 `tests/test_parsers.py::test_read_exafs_csv_skips_q_output_title_row` and
 `…accepts_r_output_header`.
 
-**"Fully numeric" is defined differently in the two runtimes.** Python's `_numeric_csv_values()`
-uses `float()`, which accepts `NaN` and `Inf`; JavaScript's `numericCsvValues()` requires
-`parsed.every(Number.isFinite)`, which rejects them. A row of `NaN`s is therefore numeric to Python
-and non-numeric to JavaScript, so the same EXAFS file can pick a **different line as the header**
-and keep a **different number of rows** in the two runtimes.
+**"Fully numeric" is one rule in both runtimes.** `_numeric_csv_values()` / `numericCsvValues()` accept
+a row only when every cell passes `parse_fortran_number()` / `parseFortranNumber()` — a number, or an
+explicit non-finite token kept as `NaN` — so a NaN-masked row is a data row in both, the same line
+becomes the header, and both keep the same rows. (Python used `float()` and JavaScript demanded finite
+values until 2026-09, so a masked row was data to one and a header candidate to the other.)
 
 Typical columns: Q-space `k, calculated, experiment`; R-space
 `r, Re_Calc, Im_Calc, Mod_Calc, Re_Ex, Im_Ex, Mod_Ex`. Every column after the first is drawn as its
@@ -361,33 +390,41 @@ same function:
 (The tolerant "keep the rows that parse" behaviour that *does* exist in Python lives in
 `read_stog_xy()`, a different function the dashboard path never calls.)
 
-#### 4d. R-value log — `read_chi()` / `readChi()`
+#### 4d. R-value log — `read_chi_log()` / `readChi()`
 
-**Skips exactly the first two lines** of each `.log` (RMCProfile writes a column-name row and a
-`WEIGHT PARAMETERS` row), whitespace-splits the rest, and for every line with ≥ 2 tokens takes:
+Per `.log` file, identically in both runtimes (`parsers.py` → `read_chi_log()`, `read_chi()` a thin
+wrapper; `browserData.js` → `readChi()`):
 
-$$\chi_Q \leftarrow \texttt{parts[-2]} , \qquad \chi_r \leftarrow \texttt{parts[-1]}$$
+1. **Lines** are split on `\r\n|\r|\n`. The last element of that split is either `''` (the file ends
+   with a line break) or a line RMCProfile is **still writing** — it is dropped either way (and counted
+   in `skipped_rows` when it held data). Live Data re-reads a log while it grows, and until 2026-09 a
+   poll landing mid-line turned the partial row into the "final" χ²: cutting the demo 5 K log at each
+   of the 121 byte offsets of its final line gave a wrong last value at 89 of them (a move counter
+   `131863`, a lone `0.` → χ² = 0, or a truncated mantissa `0.117` for `0.117E-03`), in both runtimes.
+2. **Line 1 names the columns** — in the demo run
+   `Time, moves_acc, moves_gen, F(Q)_1, Curvature ×6, X_ray_(R)1` (11 names) — and **fixes the token
+   count a data row must have**. A row with any other count (a partial line that did get its line
+   break, a stray message) is skipped and counted. A log whose line 1 names fewer than two columns (no
+   column-name header, e.g. a synthetic test log) takes the count from its first data row.
+3. **Line 2** (`h/m/s/.th  WEIGHT PARAMETERS  0.100E+01 …`) is skipped. Those per-dataset weights are
+   **discarded here and never applied anywhere in the app** (see 5a).
+4. From every accepted row: $\chi_Q \leftarrow$ `parts[-2]`, $\chi_r \leftarrow$ `parts[-1]`, parsed with
+   `parse_fortran_number()` / `parseFortranNumber()` (`E` or Fortran `D` exponents). **A row is never
+   dropped for its value:** `NaN`, `Inf`, a Fortran `****` overflow or any non-number becomes `NaN`, so
+   a run that blew up keeps its rows (the browser used to drop them — the watchdog then judged only the
+   last finite points and could report `improving` for a NaN tail — while Python kept them: the two
+   runtimes now agree). The name of the last column (`X_ray_(R)1` here) is returned as `column`.
 
-i.e. **the last and second-to-last whitespace-separated columns, by position**. Neither
-implementation reads the header to identify which dataset those columns belong to. In the bundled
-demo run the log columns are
-`Time, moves_acc, moves_gen, F(Q)_1, Curvature ×6, X_ray_(R)1`, so `parts[-1]` is the X-ray R
-column and `parts[-2]` is a (identically zero) curvature-constraint column. **For a run with a
-different dataset/constraint ordering, a different quantity is plotted.** This is the single most
-fragile heuristic on the page.
+So $\chi_r$ is **the last log column by position** — in the demo run the χ² of the X-ray real-space fit
+term `X_ray_(R)1`, not a total (`F(Q)_1`, the reciprocal-space term of the same data, is the fourth
+column); `parts[-2]` is a (here identically zero) curvature-constraint column, parsed into `chi_q`
+(Python only) and never displayed. **For a run with a different dataset/constraint ordering, a
+different term is plotted**, which is why the series is labelled by its header name (Step 6).
 
-The skipped second line is where the run's own per-dataset weights live — in the demo run it reads
-`h/m/s/.th  WEIGHT PARAMETERS  0.100E+01 …`. Those weights are **discarded here and never applied
-anywhere in the app** (see 5a).
+Pinned by `tests/test_parsers.py::ReadChiLogTests` and `__tests__/chiLog.test.js` (the demo log cut at
+every byte of its final line; token-count, NaN/`****` and no-header cases).
 
-The JavaScript reads only the last column (it never builds `chi_q`) and keeps a value only
-`if (Number.isFinite(value))`. The Python builds both inside a `try`/`except ValueError`, which lets
-`NaN`/`Inf` through — so a log containing such a token yields a **longer series in Flask than in the
-browser**. The Python also has an ordering quirk worth knowing about: it appends to `chi_q` *before*
-parsing `parts[-1]`, so a line whose last token is non-numeric leaves `chi_q` one element longer
-than `chi_r`. Only `chi_r` is plotted, so the dashboard is unaffected.
-
-**Multiple logs are concatenated — but by different code in each mode.** Python
+**Multiple logs of ONE run are concatenated — the same rule in both modes.** Python
 `related_r_value_logs()` re-scans the log's parent directory for every file matching
 `^(.+)-(\d{2,})\.log$` (`R_VALUE_LOG_RE`) with the **same stem**, and `sort_r_value_logs()` orders
 them by (lowercase stem, integer sequence, lowercase name) — so `run-01.log, run-02.log, run-10.log`,
@@ -395,15 +432,24 @@ them by (lowercase stem, integer sequence, lowercase name) — so `run-01.log, r
 (`tests/test_parsers.py::test_related_r_value_logs_use_numeric_suffix_order`). This runs **server-side
 inside `/api/plot/data`**, on every request.
 
-The browser's `combineRValueFiles()` in `Dashboard.jsx` concatenates the already-parsed y arrays of
-the r-value files in `comparePlotFiles()` order (same stem/sequence rule, via a fourth copy of the
-pattern, `rValueLogParts`). It **short-circuits and returns `rValueFiles[0]` unchanged** when any of
-these hold:
+The browser's `combineRValueFiles()` (`browserData.js`, used by `Dashboard.jsx`) first **groups the
+visible logs by folder and exact stem** (`rValueGroupKey()`, the same `^(.+)-(\d{2,})\.log$` stem as
+Python) and picks **one group** (`chooseRValueGroup()`): the one whose folder and stem match the
+structure file the Model information card describes (`localRun.structureFile.path` in static mode,
+`structure.source` in Flask mode), else the first group in `comparePlotFiles()` order — which is the
+log Flask is handed, so both modes chart the same run. Only that group's already-parsed y arrays are
+concatenated; the other runs' stems are listed beside the panel title ("other runs not shown: …")
+and are never spliced in. Until 2026-09 the browser flat-mapped **every** visible log, so a folder
+holding two runs (a restart under a new stem, or a parent folder walked recursively) produced one
+"convergence" curve spliced from both — 2550 points with a jump from ln χ² = −9.05 to +0.10 at the
+join and `final_chi_r` from whichever stem sorted last — while Flask showed the single run.
+It then **short-circuits and returns the chosen group's first file unchanged** when any of these
+hold:
 
-1. there is only one r-value file;
+1. the group has only one log;
 2. no file carries `sourceFile`, `plotData` or `parseError` — which is exactly the **Flask** case,
-   where files come from `/api/files` and carry none of those;
-3. any browser-backed log is still being parsed (`sourceFile && !plotData && !parseError`).
+   where files come from `/api/files` and carry none of those (the server concatenates);
+3. any browser-backed log of the group is still being parsed (`sourceFile && !plotData && !parseError`).
 
 So the concatenation shown here happens **client-side only in static mode**. Condition 3 means that
 during a Live Data re-parse the strip transiently shows only the first log's curve. And the
@@ -435,12 +481,30 @@ residual = fitted[paired] - observed[paired]
 return sqrt(sum(residual**2) / denom)
 ```
 
-Called as `rwp(series.data[0], series.data[1], series.data[2])` — the x column is passed and
+Called through `fit_rwp(labels, data)` (`fitRwp(csv)` in the JS), which first resolves the
+**column roles** with `rwp_columns()` / `rwpColumns()` and then calls
+`rwp(x, observed=<experimental column>, fitted=<calculated column>)` — the x column is passed and
 **ignored** (`void x` in the JS). So the reported number is
 
-$$R \;=\; \sqrt{\dfrac{\sum_{i=1}^{N}\bigl(y^{(3)}_i - y^{(2)}_i\bigr)^2}{\sum_{i=1}^{N}\bigl(y^{(2)}_i\bigr)^2}}$$
+$$R \;=\; \sqrt{\dfrac{\sum_{i=1}^{N}\bigl(y^{\mathrm{calc}}_i - y^{\mathrm{expt}}_i\bigr)^2}{\sum_{i=1}^{N}\bigl(y^{\mathrm{expt}}_i\bigr)^2}}$$
 
-where $y^{(2)}$ is the file's **second** column and $y^{(3)}$ its **third**.
+the conventional normalization by the **measurement**. The roles:
+
+* **Default — RMCProfile's positional order.** RMCProfile writes its fit CSVs as
+  `(x, calculated, experimental)` — verified in the demo run: `Q, F(Q)_RMC, F(Q)_Expt` and
+  `r(A), X_ray-calc, X_ray_exp_renorm`. So column 2 is $y^\mathrm{calc}$ and column 3 is
+  $y^\mathrm{expt}$.
+* **A header that names both roles wins.** If one data-column label matches `/exp|obs/i` and another
+  matches `/calc|rmc|fit/i` (and not the experimental pattern), the first of each is used, whatever
+  their positions — a file written `(x, experimental, calculated)` is still normalized by its data.
+  The two patterns are identical in `parsers.py` (`_EXPERIMENTAL_LABEL` / `_CALCULATED_LABEL`) and
+  `browserData.js` (`EXPERIMENTAL_LABEL` / `CALCULATED_LABEL`).
+
+Until 2026-09 both runtimes called `rwp(data[0], data[1], data[2])`, i.e. normalized by the
+**calculated** column (`‖calc − expt‖ / ‖calc‖`): 0.1–0.3 % off for the converged demo fits, but
+43 % high (0.4286 instead of 0.3000) for a calculated curve at 0.7 × the data, as early in a run or
+with a wrong scale. `tests/test_plots.py::RwpColumnRoleTests` and `rwpColumns.test.js` pin the
+corrected roles for `_FQ1`, `_FT_XFQ1`, `_PDF1`, `_SQ1` and `_bragg` headers.
 
 Four things must be stated plainly:
 
@@ -448,17 +512,13 @@ Four things must be stated plainly:
    and the parameter names, this is the unweighted R-factor $R = \|\Delta\|_2 / \|y\|_2$. The run's
    own per-dataset weights *are* physically present, on line 2 of the `.log`
    (`WEIGHT PARAMETERS 0.100E+01 …`), and are skipped by `read_chi()`/`readChi()` and used nowhere.
-2. **The denominator is the calculated curve, not the data.** RMCProfile writes these CSVs in the
-   order `(x, calculated, experimental)` — verified in the demo run:
-   `Q, F(Q)_RMC, F(Q)_Expt` and `r(A), X_ray-calc, X_ray_exp_renorm`. The parameter named
-   `observed` therefore receives the **RMC-calculated** column and the one named `fitted` receives
-   the **experiment**. The numerator is symmetric so the residual is right, but the normalization
-   is $\sum y_\mathrm{calc}^2$, not the conventional $\sum y_\mathrm{obs}^2$. The two agree only
-   insofar as $\sum y_\mathrm{calc}^2 \approx \sum y_\mathrm{obs}^2$ — close for a good fit,
-   not identical, and **not** the standard crystallographic $R_\mathrm{wp}$.
-3. **Only columns 2 and 3 ever enter it.** For a file with four or more numeric columns (multi-bank
-   outputs, partial-inclusive exports) every column beyond the third is **drawn but contributes
-   nothing to the number**, and which two curves get compared is purely positional.
+2. **The denominator is the experiment** (see the roles above), as in the conventional
+   definition — but with unit weights it is still **not** the standard crystallographic
+   $R_\mathrm{wp}$.
+3. **Only two columns ever enter it.** For a file with four or more numeric columns (multi-bank
+   outputs, partial-inclusive exports) every other column is **drawn but contributes nothing to the
+   number**. Which two are compared follows the header roles when the header names them, and the
+   positional `(x, calculated, experimental)` order otherwise.
 4. **It is strictly per-dataset.** One value per file, over **every row in the file** — no Q or r
    window, no exclusion region, no point weighting by Δx (so a non-uniform grid is summed as a
    plain point sum). There is no combined/global R anywhere in the app, and the app never
@@ -473,9 +533,9 @@ sums sequentially) rather than bit-for-bit. **On degenerate input they now agree
 
 | Input | Python `rwp()` | JavaScript `rwp()` |
 |---|---|---|
-| `denom == 0` (flat-zero 2nd column) | `None` | `null` |
-| `NaN` throughout the **2nd** (calculated) column | `None` | `null` |
-| `NaN` throughout the **3rd** column | `None` | `null` |
+| `denom == 0` (flat-zero experimental column) | `None` | `null` |
+| `NaN` throughout the calculated column | `None` | `null` |
+| `NaN` throughout the experimental column | `None` | `null` |
 | `NaN` in *some* rows of either column | value over the finite rows | value over the finite rows |
 
 This matters because it is reachable in static mode: `readRmcCsv` turns unparseable cells into
@@ -502,9 +562,10 @@ number, and it is not currently surfaced in the dashboard UI.
 #### 5c. `final_chi_r`
 
 For `r_value`: the **last** element of the raw `chi_r` array — **not** log-transformed —
-after concatenating all related logs. `tests/test_plots.py::test_log_plot_combines_related_logs_in_numeric_order`
+after concatenating the logs of the one run (4d); `NaN` (JSON `null`) when that last row's χ² is
+non-finite. `tests/test_plots.py::test_log_plot_combines_related_logs_in_numeric_order`
 pins that three logs `run-01/02/10` yield the value from `run-10.log`. In static mode
-`combineRValueFiles()` takes `final_chi_r` from the **last parsed** log file, matching the Python;
+`combineRValueFiles()` takes `final_chi_r` from the **last parsed** log file of the chosen run, matching the Python;
 in Flask mode `combineRValueFiles()` short-circuits (4d) and the value is whatever the server
 computed from its own concatenation.
 
@@ -516,26 +577,27 @@ $$y_i \;=\; \ln\!\bigl(\max(v_i,\, 10^{-12})\bigr)$$
 
 where $v_i$ is the raw value from the last whitespace column of log row $i$.
 
-* `browserData.js` → `plotDataFromText()` (kind `r_value`): `Math.log(Math.max(value, 1e-12))`.
-* `app.py` → `plot_data()` (kind `r_value`): `math.log(max(value, 1e-12))`.
-* `plots.py` → `_chi_plot()` (matplotlib PNG path): `np.log(chi_r)` — **no clamp**. A zero or
-  negative entry produces `-inf`/`nan` and a NumPy warning here, where the other two paths floor at
-  $\ln(10^{-12}) \approx -27.63$.
+* `browserData.js` → `plotDataFromText()` (kind `r_value`): `Math.log(Math.max(value, 1e-12))`,
+  `NaN` for a non-finite value.
+* `app.py` → `plot_data()` and `plots.py` → `_chi_plot()` (JSON and PNG): `chi_history_ln()`, the same
+  clamp with the same `NaN` gaps (JSON `null`).
 
 The reason for the log is dynamic range: the metric falls by orders of magnitude over a run, and
 additive shifts in ln-space are *relative* changes in the metric, which is exactly what the
 convergence watchdog thresholds on.
 
-> **What is actually being plotted — flagged.** The axis label is `log(χ)` in all three paths
-> (`plots.py` `r"log($\chi$)"`, `app.py` `"log(χ)"`, `browserData.js` `'log(χ)'`), while
-> `src/llm/context/runContext.js` describes the same array as
-> `"ln of chi^2 goodness metric (natural log; lower is better)"` and names the metric key
-> `final_chi_r`. **Neither label is verified by the code**, which reads `parts[-1]` positionally and
-> never looks at the header. In the bundled demo run that column is headed `X_ray_(R)1` — an
-> R-factor for the X-ray dataset, not a χ² and not a χ. The only statements this document can stand
-> behind are: the transform is a **natural** log with a $10^{-12}$ floor, and the quantity is
-> *whatever the last whitespace column of the run's `.log` happens to hold*. Treat both `log(χ)` and
-> "ln(χ²)" as conventions the code does not check.
+> **What is actually being plotted.** The series is the **last column** of the run's `.log`, named by
+> its header: in the bundled demo run `X_ray_(R)1`, the χ² of the X-ray **real-space** fit term
+> (`(R)` = real space; RMCProfile's `.chi2` file lists the same term as `X-real_1` beside the
+> reciprocal-space `Expt_1` and the total `chi2`). It is **one term of the fit, not a total** and not an
+> R-factor: the reciprocal-space `F(Q)_1` column of the same data is ~26× larger at the end of the 5 K
+> run and can stall while the real-space term still improves. So every producer names it by that
+> header — panel title `χ² history: X_ray_(R)1`, series label `X_ray_(R)1`, y label `ln(χ²)`
+> (`plots.py` → `chi_history_labels()`, `CHI_HISTORY_Y_LABEL`; `browserData.js` → `chiHistoryLabels()`,
+> `CHI_HISTORY_Y_LABEL`; a log with no column header reads `χ² history: last log column`), and the AI
+> context says `ln of the chi^2 in the last .log column 'X_ray_(R)1' … one fit term of the run, not a
+> total` with `column: 'X_ray_(R)1'`. `final_chi_r` keeps its historical key name. The transform is a
+> **natural** log with a $10^{-12}$ floor.
 
 The x-axis is the **row index** (`0, 1, 2, …`) labelled `"Time steps"`. The `.log`'s actual first
 column is a wall-clock stamp (`hhmmss.sss`) and is discarded, so one "time step" is one log row,
@@ -593,13 +655,13 @@ matplotlib builder, so it applies even though the dashboard never uses the PNG.
 |---|---|---|---|---|
 | `exafs_q` | `EXAFS Q-space` | `k (Å⁻¹)` | `χ(k) k²` | no |
 | `exafs_r` | `EXAFS R-space` | `r (Å)` | `FT[χ(k) k²]` | no |
-| `xpdf` | `xPDF` | `r (Å)` | `G(r)` | yes |
-| `npdf` | last `_`-segment of the stem (e.g. `PDF1`) | `r (Å)` | `G(r)` | yes |
-| `pdf_partials` | last `_`-segment of the stem | `r (Å)` | `G(r)` | no |
-| `xray_sq` | `S(Q) (x-ray)` | `Q (Å⁻¹)` | `S(Q)` | yes |
-| `neutron_sq` | `S(Q) (neutron)` | `Q (Å⁻¹)` | `S(Q)` | yes |
+| `xpdf` | `xPDF` | `r (Å)` | header function, else `G(r)` | yes |
+| `npdf` | last `_`-segment of the stem (e.g. `PDF1`) | `r (Å)` | header function, else `G(r)` | yes |
+| `pdf_partials` | `Partial g(r)` | `r (Å)` | `g(r)` | no |
+| `xray_sq` | header function (`F(Q)`), `#n` for dataset n > 1 | `Q (Å⁻¹)` | header function, else `F(Q)` | yes |
+| `neutron_sq` | header function, `#n` for dataset n > 1 | `Q (Å⁻¹)` | header function, else `S(Q)` | yes |
 | `bragg` | `BRAGG` | `ToF (µs)` **or** `Q (Å⁻¹)` | `Intensity` | yes |
-| `r_value` | `R-value` | `Time steps` | `log(χ)` (see 5d) | no |
+| `r_value` | `χ² history: <last log column>` (e.g. `χ² history: X_ray_(R)1`) | `Time steps` | `ln(χ²)` (see 5d) | no |
 | `stog` † | see below | `r (Å)` if `.gr`, else `Q (Å⁻¹)` | see below | no |
 
 † **The `stog` row is unreachable from the Run Dashboard** (`isDashboardPlotFile` drops it, Step 2)
@@ -609,9 +671,24 @@ and the three implementations do not agree on it, so it is recorded here only fo
   extension;
 * browser **plot data** (`plotDataFromText`): `title = file.name`; the fit-function label lands in
   `yLabel` only;
-* **Flask**: no `fitType` concept at all — `/api/plot/data` returns
-  `yLabel = "G(r)" if name.endswith(".gr") else "S(Q)"`, and the title comes from `make_plot()` →
-  `_stog_plot()`, which sets `title = path.name`.
+* **Flask**: no `fitType` concept at all — `/api/plot/data` returns the extension default
+  `stog_function_label()` (`.gr` → `G(r)`, `.fq` → `F(Q)`, else `S(Q)`; the browser's
+  `stogFunctionLabel()` is the same rule), and the title comes from `make_plot()` → `_stog_plot()`,
+  which sets `title = path.name`.
+
+**Where the function names come from.** `plots.py` → `series_titles(kind, name, labels)` is the one
+source for Flask (`/api/plot/data`), the matplotlib figures (`make_plot`) and — mirrored as
+`browserData.js` → `seriesTitles()` — the browser. `fit_function_label()` / `fitFunctionLabel()` reads
+the function from the file's own data-column headers (`/([A-Za-z])\(([QqRr])\)/` →
+`F(Q)_RMC` gives `F(Q)`); without one, a reciprocal-space file falls back to its name (`FQ` → `F(Q)`,
+`SQ` → `S(Q)`). This is not cosmetic: RMCProfile writes **F(Q)** into `*_FQ1.csv`
+(`Q, F(Q)_RMC, F(Q)_Expt`; the demo data tend to ≈ −1 at low Q and 0 at high Q, where an S(Q) would
+tend to 1), and **partial g_ij(r)** into `*_PDFpartials.csv` (exactly 0 below the closest approach,
+≈ 1 at large r, where a G(r) would oscillate about 0). Both used to be labelled `S(Q) (x-ray)` /
+`G(r)` — on every exported figure and in the assistant's dataset titles, contradicting the assistant's
+own `pairCorrelations.js`, which treats the partials as g(r). Pinned against the demo files (with the
+F(Q) → 0 and g(r) → 1 asymptotes checked from the data) by `tests/test_plots.py::FunctionLabelTests`,
+`tests/test_parsers_plot_payload.py` and `plotLabels.test.js`.
 
 **Bragg axis selection** — `bragg_is_tof(header)` (plots.py) / `braggAxis(header)`
 (browserData.js) is a case-insensitive regex on the **first column's header text**:
@@ -741,26 +818,28 @@ that carry no per-atom cell index.
 subsampled (`sampledAtoms`). The element rows and totals a user reads off the card are therefore
 exact even though the plotted cloud is a sample.
 
-**Fields only static mode produces.** The Flask `/api/structure` response contains **no `basis` and
-no `moves`**:
+**The field only static mode produces.** The Flask `/api/structure` response contains **no `basis`**:
+one representative site per `reference_number`, built from per-axis **circular means** of the
+within-cell fraction, with a per-site rms displacement `dispA` in Å (the Cartesian rms through the full
+cell metric). The derivation is documented in the **Model summary and the Detected SG symmetry
+finder** section; it is not repeated here.
 
-* `basis` — one representative site per `reference_number`, built from per-axis **circular means** of
-  the within-cell fraction, with a per-site rms displacement `dispA` in Å derived from the circular
-  resultant. The full derivation (circular mean, the $\sigma = \sqrt{-2\ln R}/2\pi$ wrapped-normal
-  relation, the resultant floor of `1e-6`, and the cell-edge normalization
-  $a_i = |\text{lattice row } i| / \max(\mathrm{supercell}_i, 1)$) is documented in the
-  **Model summary and the Detected SG symmetry finder** section; it is not repeated here.
-* `moves` — run-history counters scraped from the `.rmc6f` header by `readMovesMetadata()` with four
-  regexes (`Number of moves generated/tried/accepted:`, `Accumulated time (s)…:`). It reads only the
-  text before the `Atoms:` marker, or the **first 4000 characters** if that marker is not found in
-  the leading text. These feed the AI-assistant run context only.
+**Fields both runtimes produce.**
 
-**Element names are normalized differently.** Python `iter_rmc6f_atoms()` stores
-`parts[1].capitalize()`; the browser's `parseAtomLine()` keeps the raw token. A `.rmc6f` written with
-`SE` or `se` yields one merged `Se` row in Flask mode and one or two raw `SE`/`se` rows in static
-mode — **the element table of the model summary differs between runtimes for such a file**. The
-browser parser also accepts a 5–6 field coordinates-only line (`referenceNumber = null`, excluded
-from the site basis); the Python requires ≥ 9 fields and drops those lines entirely.
+* `moves` — run-history counters from the `.rmc6f` header: `readMovesMetadata()` in the browser and
+  `parsers.read_moves_metadata()` on the Flask `/api/structure` path, the same four regexes
+  (`Number of moves generated/tried/accepted:`, `Accumulated time (s)…:`) over the text before the
+  Atoms marker (or the **first 4000 characters** if that marker is not found in the leading text).
+  Python returns only the counters it found (keys absent otherwise); the browser returns all four
+  keys with `null` for a missing one. Both render on the **Model information card** as
+  Generated / atom, Accepted / atom and Accepted / generated (`ModelSummary.jsx` → `moveRatios()` in
+  `moveStats.js`), and both feed the AI context's `configuration_optimization` block — which reports the
+  acceptance ratio as accepted / **tried**, whereas the card's is accepted / **generated**.
+* `parseReport` / `parseWarning` — the atom-line parse report (Model summary, Part A Step 2).
+
+**Element names are normalized the same way.** Both parsers store the element token like Python's
+`str.capitalize()` (`SE`/`se` → `Se`), and both accept the legacy coords-only line
+(`referenceNumber = null`, excluded from the site basis): they share one atom-line grammar.
 
 **What `ModelSummary.jsx` computes on top of this** — box lengths $|\text{lattice row}|$,
 conventional cell lengths $|\text{lattice row}_i| / \max(\mathrm{supercell}_i, 1)$, the three cell
@@ -796,9 +875,10 @@ with `comparePlotFiles()`:
 `showRValue = false`, rendered in the `wide` 1440×320 viewport); everything else goes into the plot
 grid (720×450 cards).
 
-**Only one R-value card is ever rendered**, for the combined (or, per 4d, first) r-value file. The
-remaining logs still appear in the loaded-files list with an `r_value` badge but get no chart of
-their own.
+**Only one R-value card is ever rendered**, for the chosen run's combined (or, per 4d, first)
+r-value file, titled by its log column (`χ² history: X_ray_(R)1`). The remaining logs still appear in
+the loaded-files list with an `r_value` badge but get no chart of their own; logs of *other runs* in
+the folder are also named beside the card title.
 
 The **"Loaded N plot files"** panel lists every *chartable* plot file — i.e. those with a non-null
 `plotKind` other than `stog` — with its kind badge, and lets the user hide individual charts.
@@ -873,8 +953,12 @@ file listing.
 the runtime (milliseconds in the browser, `st_mtime` float seconds from `os.stat`) — a file rewritten
 within the same tick to the same byte length would not be noticed. A file whose `stat()` raised
 `OSError` carries `modified = size = null` and can never trigger a refresh (Step 1). And a file that
-is being written when the poll lands may be read half-complete; the resulting parse error surfaces
-as a per-card alert and is corrected on the next poll.
+is being written when the poll lands may be read half-complete. That is handled explicitly rather
+than hoped to fail loudly: a `.log`'s unterminated last line is dropped and rows are checked against
+the header's column count (Step 4d), and an `.rmc6f` read that comes back short of its header's
+`Number of atoms:` keeps the previous complete model summary on screen with a notice (Model summary,
+Part A Step 2). A CSV caught mid-write fails the strict column-count check (4a) and surfaces as a
+per-card alert until the next poll.
 
 ---
 
@@ -894,10 +978,11 @@ as a per-card alert and is corrected on the next poll.
 | symmetry tolerance (default) | `0.2` Å | `ModelSummary.jsx` | model-summary space-group search |
 | symmetry ladder cap | `1.0` Å | `ModelSummary.jsx` → `toleranceLadder` | upper bound of the tolerance sweep |
 | χ² clamp | `1e-12` | `browserData.js`, `app.py` | floor before `ln`; ⇒ y ≥ −27.63. **Absent** in `plots.py` |
-| R-value log-header skip | first **2** lines | `read_chi()` / `readChi()` | fixed, not sniffed (line 2 holds the discarded `WEIGHT PARAMETERS`) |
+| R-value log-header skip | first **2** lines | `read_chi_log()` / `readChi()` | fixed, not sniffed (line 2 holds the discarded `WEIGHT PARAMETERS`) |
+| R-value row token count | = number of names on line 1 (first data row's count when line 1 names < 2) | `read_chi_log()` / `readChi()` | other counts are skipped; an unterminated final line is always dropped |
 | STOG header skip | first **2** lines | `read_stog()` / `readStog()` | fixed, not sniffed |
 | R-value classification | inline `-\d{2,}\.log$` | `plots.py`, `browserData.js` | ≥ 2 digits required |
-| R-value grouping/sorting | `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` | `parsers.py`; mirrored by `rValueLogParts` in `Dashboard.jsx` | anchored stem + integer sequence |
+| R-value grouping/sorting | `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` | `parsers.py`; mirrored by `rValueLogParts` (sort) in `Dashboard.jsx` and `R_VALUE_LOG_RE` / `rValueGroupKey()` (one run per folder + exact stem) in `browserData.js` | anchored stem + integer sequence |
 | run-control head read | `131072` bytes | `pairFitTypes()` | 128 KiB per candidate `.dat` |
 | run-control candidates | `6` | `runControlCandidates()` | max `.dat` files tried; stops at first non-empty map |
 | datasets parsed | `8` | `parseRunSettings()` | max `*_DATA` blocks kept |
@@ -931,10 +1016,10 @@ as a per-card alert and is corrected on the next poll.
   a file is. Rename a file and the app will plot it as something else; use a naming convention the
   patterns in Step 2 do not cover and the file is silently ignored. There is no "unrecognized files"
   report — the "Loaded N plot files" panel counts only *chartable* files.
-* **"Rwp" is neither weighted nor conventionally normalized.** It is
-  $\sqrt{\sum(\mathrm{col3}-\mathrm{col2})^2 / \sum \mathrm{col2}^2}$ with unit weights, and for
-  RMCProfile CSVs column 2 is the *calculated* curve. Columns 4 and beyond are drawn but never
-  enter it. The run's own `WEIGHT PARAMETERS` line is parsed past and discarded. Do not quote this
+* **"Rwp" is not weighted.** It is
+  $\sqrt{\sum(y^\mathrm{calc}-y^\mathrm{expt})^2 / \sum (y^\mathrm{expt})^2}$ with unit weights —
+  normalized by the experiment (column 3 of an RMCProfile CSV, or the column the header names as
+  experimental). Any further columns are drawn but never enter it. The run's own `WEIGHT PARAMETERS` line is parsed past and discarded. Do not quote this
   number as $R_\mathrm{wp}$ in a paper without recomputing from the columns yourself. It is
   per-file; there is no combined R across datasets.
 * **A degenerate R-factor is reported as unavailable, not as a number.** Both implementations sum
@@ -943,11 +1028,10 @@ as a per-card alert and is corrected on the next poll.
   denominator is zero. Neither case is a fit quality, so no number is offered for one. A *partly*
   NaN column still produces a value, computed over the finite points only and therefore over
   silently fewer rows than the file has; the chip does not say how many (5a).
-* **The R-value curve is "the last column of the log file".** No header is consulted, so neither
-  `log(χ)` (the axis text) nor `ln(χ²)` (the codebase's description) is verified by the code. In the
-  bundled demo run that column is headed `X_ray_(R)1`, an R-factor. The only verified statements are
-  the positional column choice and the transform `ln(max(v, 1e-12))`. The second-to-last column is
-  parsed into `chi_q` (Python only) and never displayed.
+* **The R-value curve is "the last column of the log file" — one χ² term, not a total.** It is
+  picked by position and named by its header (`X_ray_(R)1` in the demo run: the X-ray real-space
+  term); other terms (e.g. the reciprocal-space `F(Q)_1`) and the weighted total are not plotted
+  (5d). The second-to-last column is parsed into `chi_q` (Python only) and never displayed.
 * **"Time steps" are log rows**, one per RMCProfile print/save period — not Monte-Carlo steps, and
   not uniform wall-clock time (the actual timestamps in column 1 are discarded).
 * **The convergence badge is off by default.** It renders only when the user enables the watchdog in
@@ -973,21 +1057,29 @@ as a per-card alert and is corrected on the next poll.
   deployment** (`isStaticMode()`, four branches — a dev server without `VITE_API_BASE_URL` uses the
   JavaScript parsers). They agree on detection rules 1–9, on the Rwp formula for clean numeric data
   (to floating-point round-off) *and* on its degenerate cases (5a), on the χ² clamp, and on the
-  log-combination order. They differ on:
-  the `stog` rule (any `.gr/.sq/.fq` vs three fixed names); the file-listing patterns; non-numeric
-  and `NaN` handling in **all four** readers (raise vs `NaN` vs silently-dropped rows), including
-  which line becomes the EXAFS header; blank-line handling and error line numbers in the CSV reader;
-  the `.rmc6f` fallback pick; whether hidden logs are excluded
-  from the combined R-value curve; the atom-sampling strategy; the presence of `basis`/`moves` in
-  the structure payload; and element-name normalization (`parts[1].capitalize()` in Python vs the
-  raw token in the browser, so `SE`/`se`/`Se` merge in Flask and may not in the browser).
+  log-combination order, and — since 2026-09 — on the CSV, EXAFS and `.log` readers' cell, row and
+  line rules (4a, 4b, 4d), the function labels (Step 6) and the Rwp column roles (5a). That agreement
+  is pinned for layouts no real run on hand covers (neutron `*_PDFn` / `*_SQn`, ToF and Q `*_bragg`,
+  EXAFS Q/R, partials; NaN-masked regions, CRLF, trailing commas, a leading blank line, E-notation)
+  by a golden of the **Flask** payloads, `web_app/frontend/src/__tests__/fixtures/plot_parity_fixture.json`
+  (regenerate with `python tests/generate_plot_parity_fixture.py`), which `plotParity.test.js` holds
+  the browser to and `tests/test_parsers_plot_payload.py` keeps current, checking each case's R-factor
+  against the column roles it was built with. They still differ on:
+  the `stog` rule (any `.gr/.sq/.fq` vs three fixed names); the file-listing patterns; `NaN` handling
+  in the STOG reader (4c); the `.rmc6f` fallback pick; whether hidden logs are excluded
+  from the combined R-value curve; the atom-sampling strategy; and the presence of `basis` in
+  the structure payload. (The `.rmc6f` atom-line grammar, element-name normalization and the parse
+  report are shared — Model summary, Part A Step 2.)
 * **The repository's reference run folders are not in the repository.** `data/` is gitignored, so
   examples such as `scale_ft_rmc.fq` cannot be reproduced from a clean clone; the reproducible run
   is [web_app/frontend/public/demo/](../../web_app/frontend/public/demo/).
-* **Sample-backed tests skip in CI.** The GNSe reference dataset is likewise gitignored, so the
-  assertions that pin real-file shapes, `Rwp > 0`, and `final_chi_r ≈ 0.00405`
-  (`tests/test_plots.py`) do not run on CI — only the synthetic-fixture and pure-logic tests do
-  (`AGENTS.md`, "Current known issues").
+* **The GNSe-backed tests skip in CI, but the committed demo run is tested.** The GNSe reference
+  dataset is gitignored, so the assertions that pin `final_chi_r ≈ 0.00405` etc. do not run on CI.
+  Their counterparts run on the committed demo run (`web_app/frontend/public/demo/GTS_250K.*`) in
+  `tests/test_parsers_demo_run.py` and `__tests__/demoRun.test.js` — CSV shapes, the Rwp of the F(Q)
+  and xPDF fits, the three-restart log concatenation and final χ², the `.rmc6f` composition, sites and
+  move counters, Frac conversion, `read_structure`, and the Flask files/plot/structure/convert
+  endpoints — with every expected value read from the files by independent code.
 * **The matplotlib rendering path is effectively dead UI.** `PlotViewer.jsx` and `FileExplorer.jsx`
   are not mounted; `GET /api/plot` still works as an API. Its axis labels, its STOG reference line,
   and its unclamped `np.log(chi_r)` differ from what the dashboard draws — but its
@@ -1071,21 +1163,23 @@ There are two producers, one per runtime mode:
   on a locally-picked file. `Dashboard.jsx` passes the result down as the `plotData` prop, and the
   card heading/metrics come from `plotMetadataFromFile()`.
 
-#### 1a — Axis labels are hard-coded per plot kind, not read from the file
+#### 1a — Axis labels: the x axis by kind, the y axis by the function the file holds
 
-For every kind except the fallback branch, the axis strings are constants chosen by `kind` — i.e.
-**an assumption about the file's units**, not a measurement of them. Both producers use the same
+The x-axis strings are constants chosen by `kind` — **an assumption about the file's units**, not a
+measurement of them. The y label of a fit CSV is the function its own headers name, through
+`plots.series_titles()` / `browserData.seriesTitles()` (Parsing, Step 6). Both producers use the same
 table (`app.py::plot_data`, `browserData.js::plotDataFromText`):
 
 | kind | xLabel | yLabel |
 | --- | --- | --- |
 | `exafs_q` | `k (Å^{-1})` | `χ(k) k²` |
 | `exafs_r` | `r (Å)` | `FT[χ(k) k²]` |
-| `xpdf`, `npdf`, `pdf_partials` | `r (Å)` | `G(r)` |
-| `xray_sq`, `neutron_sq` | `Q (Å^{-1})` | `S(Q)` |
+| `xpdf`, `npdf` | `r (Å)` | header function, else `G(r)` |
+| `pdf_partials` | `r (Å)` | `g(r)` |
+| `xray_sq`, `neutron_sq` | `Q (Å^{-1})` | header function, else `F(Q)` / `S(Q)` by file name |
 | `bragg` | `ToF (µs)` or `Q (Å^{-1})` (see 1b) | `Intensity` |
-| `r_value` | `Time steps` | `log(χ)` |
-| `stog` | `r (Å)` if `.gr`, else `Q (Å^{-1})` | `G(r)`/`S(Q)` (Python) — see the third bullet in 1e |
+| `r_value` | `Time steps` | `ln(χ²)` |
+| `stog` | `r (Å)` if `.gr`, else `Q (Å^{-1})` | `G(r)` / `F(Q)` / `S(Q)` by extension (Python) — see the third bullet in 1e |
 | anything else | `cleanAxisLabel(header[0])` | `data` |
 
 Only the fallback branch reads the file's own first-column header, through
@@ -1109,12 +1203,13 @@ exactly. Two honest limitations:
 #### 1c — The R-value series is a concatenation of several log files
 
 R-value ("convergence") charts are not one file. In **Flask mode**, `plot_data()` calls
-`read_chi(related_r_value_logs(path))`; `parsers.related_r_value_logs` globs the *parent directory*
+`read_chi_log(related_r_value_logs(path))`; `parsers.related_r_value_logs` globs the *parent directory*
 for every sibling matching `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` with the same stem, and
 `sort_r_value_logs` orders them by `(stem.lower(), sequence, name.lower())`. All of their chi values
-are concatenated into one array. In **static mode**, `Dashboard.jsx::combineRValueFiles` does the
-equivalent client-side: it `flatMap`s `plotData.series[0].y` over every parsed R-value file and
-re-indexes `x = 0 … N-1`.
+are concatenated into one array. In **static mode**, `browserData.js::combineRValueFiles` does the
+equivalent client-side for **one run**: it groups the parsed logs by folder and stem
+(`chooseRValueGroup()`, Parsing Step 4d), `flatMap`s `plotData.series[0].y` over the chosen group only,
+and re-indexes `x = 0 … N-1`.
 
 Consequences worth stating:
 
@@ -1127,15 +1222,15 @@ Consequences worth stating:
   is a locally-parsed file (Flask mode — the server does the concatenation instead), or while any of
   them is still parsing.
 
-**Which column is chi.** `parsers.read_chi` skips the first **2 lines** of every log, splits each
-remaining line on whitespace, requires ≥ 2 tokens, and takes `parts[-2]` as $\chi_Q$ and `parts[-1]`
-as $\chi_r$. **Only $\chi_r$ is ever plotted**; $\chi_Q$ is parsed and discarded. Lines that fail
-`float()` are skipped (Python) or dropped by `Number.isFinite` (JS `browserData.js::readChi`, which
-reads only the last token). So the plotted quantity is *the last whitespace-separated field of each
-post-header line*, and the sample index is an index into the **surviving** lines, not into the
-file's lines.
+**Which column is chi.** `parsers.read_chi_log` / `browserData.js::readChi` keep a data row only
+when it has as many tokens as line 1 names, drop an unterminated final line, and take `parts[-1]` as
+$\chi_r$ (Parsing, Step 4d). **Only $\chi_r$ is ever plotted.** A non-finite or non-numeric $\chi_r$
+stays in the series as `NaN` (JSON `null` from Flask), so the sample index is an index into the
+**complete data rows** of the logs.
 
-Both interactive producers plot $\ln\!\big(\max(\chi_r, 10^{-12})\big)$ against that index.
+All producers — both interactive ones and the matplotlib `_chi_plot()` — plot
+$\ln\!\big(\max(\chi_r, 10^{-12})\big)$ against that index (`plots.py` → `chi_history_ln()`), with a
+non-finite $\chi_r$ left as a gap.
 
 #### 1d — Metrics
 
@@ -1148,27 +1243,21 @@ matplotlib path.
 The two agree on structure, series ordering, and (with the exceptions below) axis-label strings and
 metrics.
 
-- **Non-numeric CSV cells.** `read_rmc_csv` (Python) calls `float(value)` and raises, so the request
-  fails with an error message. `readRmcCsv` (JS) uses `values.map(Number)`, which yields `NaN`
-  silently; those points are then dropped at draw time (Step 7) and the polyline bridges the gap.
-- **R-value log clamp.** Both interactive producers clamp with $\max(\chi,10^{-12})$; the matplotlib
-  path (`_chi_plot()`) uses `np.log(chi_r)` with **no** clamp, so a zero/negative entry gives
-  $-\infty$/NaN there but $\ln 10^{-12} = -27.63$ in the interactive chart.
+- **Non-numeric CSV cells — now the same.** Both readers keep `NaN`/`Inf`/`****` as masked `NaN`
+  cells (dropped at draw time, Step 7) and raise on any other non-number, naming the true file line.
+- **R-value log clamp.** Every producer (both interactive ones and matplotlib `_chi_plot()`) uses
+  the same $\ln\max(\chi,10^{-12})$ (`chi_history_ln()`), so a zero entry is $-27.63$ everywhere and
+  a non-finite one is a gap everywhere.
 - **STOG y-label and card title.** The browser prefers the fit-function form declared in the
   run-control `.dat` file (`file.fitType`, e.g. `D(r)`, harvested by `browserData.js::pairFitTypes`
   → `fitTypeByFilename`) for *both* the y-label (`plotDataFromText`) and the card heading
   (`plotMetadataFromFile`). The Flask path always uses the extension default for the y-label
-  (`"G(r)" if path.name.endswith(".gr") else "S(Q)"`) and the bare file name for the title (from
-  `_stog_plot`). The same file therefore shows y-label `D(r)` / heading `D(r)` in static mode but
-  y-label `G(r)` / heading `scale_ft.gr` in Flask mode. Python's `.gr` test is **case-sensitive**;
-  the JS one lower-cases first.
-- **CSV line numbering in error messages.** `readRmcCsv` (JS) filters blank lines *before* numbering
-  rows, so its reported "line N" counts non-blank lines; `read_rmc_csv` (Python) numbers against the
-  raw file. The EXAFS readers agree (both number against the raw line list).
-- **EXAFS data-row detection.** `readExafsCsv` (JS) locates the first data row by requiring
-  `Number.isFinite` on every token; `read_exafs_csv` (Python) uses `float()` in a `try/except`.
-  Tokens Python accepts as non-finite floats (`inf`, `nan`) make a row "numeric" for Python but not
-  for JS, which can shift the detected header line.
+  (`stog_function_label()`: `.gr` → `G(r)`, `.fq` → `F(Q)`, else `S(Q)` — the same default the browser
+  falls back to) and the bare file name for the title (from `_stog_plot`). The same file therefore
+  shows y-label `D(r)` / heading `D(r)` in static mode but y-label `G(r)` / heading `scale_ft.gr` in
+  Flask mode.
+- **CSV line numbering and EXAFS data-row detection — now the same** (Parsing, 4a/4b): true file
+  line numbers, and one "fully numeric" rule, in both runtimes.
 - **Strict column count (both).** Every data row must have exactly `len(labels)` values or the read
   raises — a hard failure, not a skipped row. In static mode this surfaces as the card's parse
   error; in Flask mode as a 500 from `/api/plot/data`.
@@ -1551,11 +1640,12 @@ Details that matter:
   clipped away but the tooltip still prints its value.
 - **There is no proximity cut-off.** The nearest point is always found, however far the cursor is;
   hovering an empty region snaps to the closest endpoint.
-- **Ties go to the lowest index.** `best` is initialised to `0` and the comparison is strictly
-  `distance < bestDistance`, so an exact tie keeps the earlier sample.
-- **A series with no finite x still reports index 0.** If every `x` is NaN (all comparisons false) or
-  the array is empty, `best` stays `0`, `series.x[0]` may be `undefined`, and the row's `cx`/`cy`
-  become NaN — a NaN dot and a NaN tooltip entry, with no error.
+- **Ties go to the lowest index.** The comparison is strictly `distance < bestDistance`, so an exact
+  tie keeps the earlier sample.
+- **Only drawable points are candidates.** The scan (`plotDomain.js` → `nearestFiniteIndex()`) skips
+  every point whose `x` or `y` is not finite — NaN, ±Inf, and the JSON `null` a masked region arrives
+  as from Flask (`null - x` would otherwise coerce to `0` and win near the origin). A series with no
+  finite point at all is left out of the tooltip; when no visible series has one, there is no hover.
 - **Series with different x-grids report different x.** Each series answers with *its own* nearest
   sample, but the crosshair position and the tooltip header x are taken from `values[0]` — the first
   visible non-guide series. If two series are on different grids (e.g. an experimental file and a
@@ -1965,7 +2055,7 @@ endpoint has no live consumer in the shipped UI.
 #### 16a — `detect_plot_kind(path)` and its precedence
 
 Classification is by **file name**, tested in this exact order (first match wins). It is not all
-regex — two branches are substring/`endswith` tests and the last is a set membership test:
+regex — one branch is a substring/`endswith` test and the last is a set membership test:
 
 | # | test on `Path(path).name` | kind |
 | --- | --- | --- |
@@ -1973,14 +2063,14 @@ regex — two branches are substring/`endswith` tests and the last is a set memb
 | 2 | `re.search(r"-EXAFS-.+_R_OUTPUT\.csv$")` | `exafs_r` |
 | 3 | `re.search(r"_FT_XFQ\d+\.csv$")` | `xpdf` |
 | 4 | `"PDF" in name and name.endswith(".csv")` | `pdf_partials` if `"PDFpartials" in name` else `npdf` |
-| 5 | `name.endswith("_FQ1.csv")` | `xray_sq` |
-| 6 | `name.endswith("_SQ1.csv")` | `neutron_sq` |
+| 5 | `re.search(r"_FQ\d+\.csv$")` | `xray_sq` |
+| 6 | `re.search(r"_SQ\d+\.csv$")` | `neutron_sq` |
 | 7 | `re.search(r"_bragg(?:_.+)?\.csv$")` | `bragg` |
 | 8 | `re.search(r"-\d{2,}\.log$")` | `r_value` |
 | 9 | `name in {"scale_ft.gr", "scale_ft.sq", "scale_ft_rmc.fq"}` | `stog` |
 | — | otherwise | `None` → `/api/plot/data` answers **400** |
 
-Note rule 4's precedence: it fires **before** the `_FQ1`/`_SQ1` tests, so a file whose name contains
+Note rule 4's precedence: it fires **before** the `_FQ<n>`/`_SQ<n>` tests, so a file whose name contains
 both `PDF` and `_SQ1.csv` is classified `npdf`, not `neutron_sq`.
 
 The JS counterpart is `browserData.js::detectPlotKind`, and the Python side is pinned by
@@ -2042,7 +2132,7 @@ re-reads and re-parses the whole file (and re-globs the sibling logs, for R-valu
 | ticks | 1–2–5 `niceTicks`, target 7/6 (or 11/4) | matplotlib's own `MaxNLocator` |
 | curve opacity | opaque, including guides (Step 2) | `alpha=0.65` on every series **except** `_stog_plot`, which is opaque (`alpha=1.0`) |
 | markers | hollow circles for `*exp*` series when paired | none; all series are lines |
-| R-value log | $\ln\max(\chi,10^{-12})$ | $\ln\chi$, unclamped |
+| R-value log | $\ln\max(\chi,10^{-12})$ | $\ln\max(\chi,10^{-12})$ (`chi_history_ln`) |
 | title | HTML card header only (not in the figure) | `fig.suptitle` for `_series_plot`/`_chi_plot`; **`_stog_plot` adds none** (its file name appears only in the legend) |
 | axis label text | hard-coded per kind (Step 1a) | same for EXAFS/PDF; raw CSV header for `_FQ1`/`_SQ1`/bragg x, and y-label `"data"` |
 | legend | HTML chips outside the SVG (not exported) | inside the figure, upper right |
@@ -2056,23 +2146,24 @@ The formula is computed identically in both languages — `parsers.rwp(x, observ
 
 $$R_\mathrm{wp} = \sqrt{\frac{\sum_i (f_i - o_i)^2}{\sum_i o_i^2}}$$
 
-with $o$ = CSV column 1 and $f$ = CSV column 2 **by position**, so $R_\mathrm{wp}$ is only meaningful when
-the file's column order really is (x, observed, calculated). The `x` argument is accepted and
-ignored by both. The two runtimes agree to floating-point round-off. The conditions and the display
+with $o$ = the **experimental** column and $f$ = the **calculated** column as resolved by
+`rwp_columns()` / `rwpColumns()` (5a): RMCProfile's positional `(x, calculated, experimental)` order,
+overridden by a header that names both roles. The `x` argument is accepted and ignored by both. The two runtimes agree to floating-point round-off. The conditions and the display
 rounding matter as much as the formula:
 
 - It is computed **only** for kinds `xpdf`, `npdf`, `xray_sq`, `neutron_sq` and `bragg` — never for
   `exafs_q`, `exafs_r`, `pdf_partials`, `stog` or `r_value` — and **only when the CSV has ≥ 3
   columns**. Otherwise the card shows no chip.
-- When the denominator $\sum_i o_i^2$ is exactly zero, both implementations return **`0.0` by
-  convention** — a silent "perfect fit" reading rather than an error or a blank.
+- When the denominator $\sum_i o_i^2$ is exactly zero, or no row is finite in both columns, both
+  implementations return the unavailable sentinel **`None`/`null`** (chip "Rwp —"), never `0.0`,
+  which would read as a perfect fit.
 - The dashboard chip prints `Number(rwp).toPrecision(4)` (4 significant figures). The unmounted
   `PlotViewer.jsx` metric strip prints every metric at `toPrecision(5)`.
 
 **Code:** `plots.py` → `detect_plot_kind`, `bragg_is_tof`, `_series_plot`, `_stog_plot`, `_chi_plot`,
-`make_plot`, `plot_to_png`, `close_plot`; `parsers.py` → `rwp`, `pdf_index`;
+`make_plot`, `plot_to_png`, `close_plot`; `parsers.py` → `rwp`, `rwp_columns`, `fit_rwp`, `pdf_index`;
 `app.py` → `plot_file`, `plot_metadata`, `plot_data`; `browserData.js` → `detectPlotKind`, `rwp`,
-`pdfIndex`.
+`rwpColumns`, `pdfIndex`.
 
 ---
 
@@ -2231,8 +2322,8 @@ rounding matter as much as the formula:
 - **The hover search is x-only and unbounded.** It ignores y entirely, so with several overlapping
   curves the tooltip reports every visible series' value at (its own) nearest x, not the curve you
   are pointing at. There is no "snap radius", so a cursor far from any data still produces a reading.
-  Ties resolve to the lowest index, and a series whose x values are all NaN still reports index 0 —
-  yielding a NaN dot and a NaN tooltip row.
+  Ties resolve to the lowest index; non-finite (NaN / `null`) points are never snapped to, and a series
+  with no finite point is omitted from the tooltip.
 - **The tooltip header x belongs to the first visible non-guide series.** On mismatched x-grids the
   other rows' y values are sampled at slightly different x than the header states.
 - **Series identity is the label string.** Duplicate column headers merge into one legend chip, share
@@ -2308,7 +2399,8 @@ issue `GET /api/structure`, and the endpoint
 ([`web_app/backend/app.py`](../../web_app/backend/app.py) → `structure()`) returns
 `latticeVectors`, `supercell`, `elementCounts`, `atomIndices`, `totalAtoms` and sampled `points`
 produced by the Python parsers; only the *derived* quantities (edge lengths, angles) are computed in
-JS on that path. The response carries **no `basis` field**, so in Flask mode the *Detected SG* card
+JS on that path. It also carries the header's move counters (`moves`, Step 2b) and the atom-line
+`parseReport` / `parseWarning` (Step 2). The response carries **no `basis` field**, so in Flask mode the *Detected SG* card
 is suppressed entirely (`describeSymmetry` returns `null` without a basis). The symmetry analysis
 exists only on the browser-parsed path (`browserData.structureFromRmc6f`), which is used in static
 mode and whenever a local run folder is selected.
@@ -2352,8 +2444,9 @@ run's output files:
 2. Those candidates are sorted by `(priority, lowercase file name)`.
 3. Each is looked up in a map keyed `` `${dirname(path)}/${rmc6f stem}` `` — the match is
    **directory-scoped**, so a stem only matches an `.rmc6f` sitting in the same folder. The first hit
-   wins.
-4. If nothing matches, the fallback is `rmc6fFiles[0]` — the first `.rmc6f` in the **unsorted** input
+   wins. Only usable candidates are in the map: empty or marker-less files are skipped
+   (`structureFileProblem()`, Run Dashboard Step 3).
+4. If nothing matches, the fallback is the first usable `.rmc6f` in the **unsorted** input
    file list, i.e. directory-enumeration order, not alphabetical order.
 
 `readCellVectors()` scans every line and takes:
@@ -2363,8 +2456,12 @@ run's output files:
 - the line whose first token is `Lattice` → the **next three lines**, each split on whitespace and
   parsed as numbers, become the rows of $L$ (Å).
 
-If either is missing the parse throws `Missing lattice or supercell metadata` and no summary is
-shown. Note that the last `Supercell`/`Lattice` occurrence in the file wins (the loop overwrites).
+If either is missing the parse throws `<file> is missing lattice or supercell metadata` (the Python
+wording; the browser error names the file too) and no summary is shown. Note that the last
+`Supercell`/`Lattice` occurrence in the file wins (the loop overwrites). The shared reader is
+`rmc6f.js` → `readRmc6fCellVectors(text, name)`; every browser reader splits lines on
+`LINE_BREAK = /\r\n|\r|\n/`, so a file with bare-CR line endings (which Python's universal newlines
+always read) no longer throws in the browser.
 
 **No numeric validation.** `readCellVectors` checks only that the two *markers* exist. The three
 lattice rows are read as `row.trim().split(/\s+/).map(Number)` with no `filter(Boolean)`, no length
@@ -2377,26 +2474,59 @@ damage is contained rather than silent-but-wrong: `cartDist` returns `NaN` for e
 `mappingResidual` rejects every candidate and the card degrades to `P1` / No. 1 / **0 operations**
 with an empty ladder, while the Model information card prints `NaN` cell edges. Nothing is raised.
 
-**Code**: `browserData.js` → `readCellVectors()`; Python equivalent
+**Code**: `rmc6f.js` → `readRmc6fCellVectors()`; Python equivalent
 `rmc_toolkits/parsers.py` → `read_cell_vectors()` uses the identical rule (`parts[-3:]` and the
 three following lines) and the two agree exactly.
 
 #### Step 2. Per-atom parsing, element counts, and reference sites
 
-`structureFromRmc6f(file, maxPoints = 100)` walks the lines after the `Atoms:` marker and hands each
-whitespace-split line to `parseAtomLine()` in
-[`rmc6f.js`](../../web_app/frontend/src/rmc6f.js). That function indexes **from the end** of the line so
-that any number of label columns between the element and the coordinates is tolerated:
+`structureFromRmc6f(file, maxPoints = 100)` hands the text to `parseRmc6fAtoms()` in
+[`rmc6f.js`](../../web_app/frontend/src/rmc6f.js), which implements **one atom-line grammar shared
+verbatim with Python** (`parsers.py` → `classify_rmc6f_atom_line()` / `iter_rmc6f_atoms()`):
 
-- $\ge 9$ fields ("full" format): the last four fields are the reference number and the three cell
-  indices $(c_1,c_2,c_3)$; the three before them are the fractional box coordinates.
-- 5–6 fields ("coords-only", oldest format): the last three fields are the coordinates;
-  `referenceNumber` and `cellIndices` come back `null`.
-- 7–8 fields, or non-finite numbers → `null` (line skipped).
+- **Section.** Atom lines are the non-blank lines after the first line matching `/^\s*atoms\b/i`
+  (`Atoms:`, `Atoms :`, `atoms:`, `Atoms (fractional coordinates):` …). Before it, the header's
+  `Number of atoms:` (the *declared* count) and `Supercell` line are read.
+- **Line layout**, anchored from the **front** — `id element [label] <data>`:
+  `id` a non-negative integer; `element` a token starting with a letter, normalized like Python's
+  `str.capitalize()` (`SE`/`se` → `Se`, in both runtimes); an optional label — a bracket group
+  (`[1]`, or split as `[ 1]`) or one non-numeric token; then `<data>` of **exactly 7** tokens
+  `x y z ref cx cy cz` (full layout) or **exactly 3** tokens `x y z` (legacy coords-only;
+  `referenceNumber`/`cellIndices` come back `null`).
+- **Numbers** accept Fortran `D` exponents (`0.743D-01`); `NaN`, `Inf`, `Infinity` and an all-`*`
+  Fortran overflow field are *non-finite*; anything else is not a number.
+- **Validation of every accepted line:** `ref` a positive integer, each cell index an integer in
+  $[0, N_i)$ ($N$ from the `Supercell` line), coordinates finite.
+- **Outcome per line:** a full atom, a coords-only atom, *skipped for non-finite coordinates*, or
+  *unparsed* (no layout fits, or validation failed). Nothing is inferred by indexing from the end of
+  the line any more: until 2026-09 the browser read the last seven fields, so one extra trailing
+  field shifted every column (y, z became x, y; a cell index became the reference number) with every
+  value still finite, while Python dropped the same lines and its `read_atom_indices()` reported cell
+  indices as "sites".
+
+The per-line outcomes are counted in a **parse report** — `{declaredAtoms, atomLines, parsedAtoms,
+coordsOnlyAtoms, nonFiniteLines, invalidLines, firstInvalidLine, firstNonFiniteLine}`, identical keys
+from `structureFromRmc6f` and from Flask `/api/structure` (`Rmc6fParseReport.to_dict()`) — and
+`rmc6fParseWarning()` / `Rmc6fParseReport.warning()` turn it into one sentence (same wording in both
+runtimes), e.g. `parsed 31196 of 52000 atoms declared in the header; 1 of 31197 atom lines unparsed
+(first: '…')` or `2 atom lines skipped for non-finite coordinates (first: '…')`. It is returned as
+`structure.parseWarning` (`null` when clean) and shown on the Model information card as a
+**Parse warning** cell (full sentence in the tooltip). **Zero parsed atoms is an error**, not an
+empty card: the browser throws `<file>: no atoms could be parsed — <warning>` and Flask answers the
+same message; a file with no Atoms marker fails with `<file> does not contain an Atoms section` in
+both. On a **Live Data** re-read that comes back short of the declared count (a configuration
+RMCProfile is still writing), the Dashboard keeps the previous complete summary and says so
+(`Dashboard.jsx` → `isIncompleteStructure()`), in both runtimes.
+
+The grammar is pinned on 17 variants of a real configuration (CRLF, bare CR, tabs, BOM, no label,
+split label, E and D exponents, trailing blank lines, three marker spellings, upper-case elements,
+an extra trailing field, a trailing `M: 2.5` pair, a label-without-reference line, coords-only),
+plus truncation, non-finite and index-validation cases, with the same expectations in
+`tests/test_parsers_rmc6f_grammar.py` and `__tests__/rmc6fGrammar.test.js`.
 
 From this:
 
-$$\texttt{totalAtoms} = \#\{\text{parsed atom lines}\},\qquad
+$$\texttt{totalAtoms} = \#\{\text{full + coords-only atoms}\},\qquad
 \texttt{elementCounts}[e] = \#\{\text{atoms with element } e\}$$
 
 $$\texttt{atomIndices}[e] = \{\, \text{distinct reference numbers of element } e \,\}\ \text{(sorted ascending)}$$
@@ -2443,44 +2573,43 @@ symmetry finder** — those use all atoms / all reference sites.
 additionally clamps the request to $[100, 10^6]$ (`app.py`, `MAX_STRUCTURE_POINTS = 1_000_000`) and
 samples *per reference site* (`_sample_atoms_by_site()`) rather than by a flat stride.
 
-The `.rmc6f` header's declared `Number of atoms:` is parsed for nothing and is **not** validated
-against the number of atom lines actually read (listed as a known issue in
-[AGENTS.md](../../AGENTS.md)).
+The `.rmc6f` header's declared `Number of atoms:` is compared with the atoms actually accepted
+(the parse report above); a mismatch is reported, never silently shown as the atom count.
 
-**Code**: `browserData.js` → `structureFromRmc6f()`; `rmc6f.js` → `parseAtomLine()`.
+**Code**: `browserData.js` → `structureFromRmc6f()`; `rmc6f.js` → `parseRmc6fAtoms()`,
+`classifyAtomLine()`, `parseAtomLine()`, `parseFortranNumber()`, `rmc6fParseWarning()`.
 
-**Python counterpart** (`rmc_toolkits/parsers.py`), used only in Flask mode — it differs from the JS
-parser in two ways, not one:
-
-- `iter_rmc6f_atoms()` uses the same index-from-the-end rule **for the ≥ 9-field full format only**:
-  it hard-rejects shorter lines (`n = len(parts); if n < 9: continue`). The 5–6-field "coords-only"
-  form that `parseAtomLine` tolerates yields **zero atoms** in Flask mode, so an old file that gives
-  a full Model information card in browser mode gives an empty one through `/api/structure`.
-- It **capitalizes** the element token (`parts[1].capitalize()`, which also lowercases the tail:
-  `SE → Se`) while the JavaScript parser keeps it verbatim. Element identity is compared by exact
-  string equality downstream, so a file mixing `SE` and `Se` is two species in browser mode and one
-  in Flask mode. Worse, the sibling function `read_atom_indices()` — which produces the `atomIndices`
-  in the same response — does **not** capitalize and accepts `len(parts) >= 5` with `int(parts[-4])`.
-  A file written with upper-case tokens therefore returns `elementCounts` keyed `Se` and
-  `atomIndices` keyed `SE`, and the card shows the element row with **no** "N sites" sub-label while
-  the "Total atoms" sub-label still counts those sites.
+**Python counterpart** (`rmc_toolkits/parsers.py`), used in Flask mode: `/api/structure` calls
+`parse_rmc6f_atoms(path, include_coords_only=True)`, the same grammar and report, so both runtimes
+count the same atoms (coords-only included) under the same element names, and `atomIndices` is built
+from the same accepted full-layout lines (`read_atom_indices()` now reuses `iter_rmc6f_atoms()`).
+`iter_rmc6f_atoms()` itself yields **only full-layout atoms by default** — its records promise an
+integer `reference_number` and `cell_indices` to the PCA and Frac-conversion consumers — and yields
+the coords-only records (with those two fields `None`) when called with `include_coords_only=True`;
+pass `report=Rmc6fParseReport()` to receive the counts.
 
 #### Step 2b. Run counters from the header (`readMovesMetadata`)
 
 `structureFromRmc6f` also calls `readMovesMetadata(file.text)` and returns the result as
-`structure.moves`. It slices the header —
-`text.slice(0, text.indexOf('Atoms:') > 0 ? text.indexOf('Atoms:') : 4000)`, i.e. a 4000-character
-fallback when the marker is absent or at index 0 — and applies four regexes:
+`structure.moves`. It slices the header up to the Atoms marker (the same case-insensitive
+`/^[ \t]*atoms\b/im` rule as the atom parser), with a 4000-character fallback when the marker is
+absent or at index 0, and applies four regexes:
 `Number of moves generated:`, `… tried:`, `… accepted:` (each `([\d.]+)`) and
 `Accumulated time \(s\)[^:]*:\s*([\d.]+)`. Each field is `Number(match[1])` or `null`, and the whole
 object collapses to `null` unless at least one value is finite.
 
-It is **not rendered on either card**. It feeds the AI-assistant run context
-(`runContext.js`: acceptance ratio $=$ accepted/tried, accepted moves per atom, accumulated time in
-hours). There is no Python equivalent on the `/api/structure` path, so `structure.moves` is absent in
-Flask mode.
+The **Python equivalent** is `parsers.read_moves_metadata()`, which `/api/structure` returns as
+`moves` in Flask mode (same regexes and header slice; keys present only for the counters found, as
+floats). In both runtimes the counters are **rendered on the Model information card** —
+`ModelSummary.jsx` shows Generated / atom, Accepted / atom and Accepted / generated via `moveRatios()`
+([`moveStats.js`](../../web_app/frontend/src/moveStats.js)), each row only when its inputs exist — and
+they feed the AI-assistant run context (`runContext.js`: acceptance ratio $=$ accepted/**tried**,
+accepted moves per atom, accumulated time in hours). Note the two acceptance ratios use different
+denominators: the card divides by moves **generated**, the context by moves **tried**.
 
-**Code**: `browserData.js` → `readMovesMetadata()`, called from `structureFromRmc6f()`.
+**Code**: `browserData.js` → `readMovesMetadata()`, called from `structureFromRmc6f()`;
+`parsers.py` → `read_moves_metadata()`, called from `app.py` → `structure()`; `moveStats.js` →
+`moveRatios()`; `ModelSummary.jsx`.
 
 #### Step 3. Conventional-cell edge lengths
 
@@ -2502,7 +2631,7 @@ grouping — a French locale renders 10.532 Å as `10,532`.
 duplicated verbatim in
 [`llm/context/runContext.js`](../../web_app/frontend/src/llm/context/runContext.js) →
 `structureContext()` (deliberate duplication — the `src/llm/` module is not allowed to import from
-the host app, per [AGENTS.md](../../AGENTS.md)), and again in `browserData.js` as `cellEdgeA`.
+the host app, per [AGENTS.md](../../AGENTS.md)), and the same division by `max(N_i, 1)` gives the unit-cell vectors of the `dispA` pass in `browserData.js` (`unitVectors`).
 
 #### Step 4. Cell angles
 
@@ -2543,7 +2672,7 @@ modulus, since `%` is a sign-following remainder).
 
 **Supercell guard inconsistency.** This fold uses the **raw** `supercell[i]`, whereas every other use
 of the multiplicity divides by `Math.max(supercell[i], 1)` — the card's cell lengths
-(`ModelSummary.jsx`), `cellEdgeA` in `browserData.js`, and `conventionalCell()` in
+(`ModelSummary.jsx`), `unitVectors` (the `dispA` pass) in `browserData.js`, and `conventionalCell()` in
 `symmetryModel.js`. Since `readCellVectors` never validates that the three `Supercell` tokens are
 positive integers, a header declaring `0` (or a non-integer) yields a *guarded*, finite conventional
 edge on that axis while collapsing every atom's $w_i$ to 0 — a one-site basis and a spurious
@@ -2560,20 +2689,27 @@ A circular (not arithmetic) mean is required so that a site straddling the cell 
 by `structureFromRmc6f site displacement (dispA) › handles a boundary-wrapping site (mean at 0 ≡ 1)`
 in [`__tests__/browserData.test.js`](../../web_app/frontend/src/__tests__/browserData.test.js).
 
-The same accumulators give the per-site spread for free. With resultant length
-$\bar R_i = \big|\sum_c(\cos,\sin)\big| / N_c$ over the $N_c$ copies, the circular standard
-deviation in cell fractions is $\sigma_i^{\mathrm{frac}} = \sqrt{-2\ln \bar R_i}\,/\,2\pi$ (with $\bar R_i$ floored
-at $10^{-6}$, and $\sigma_i^{\mathrm{frac}}$ taken as 0 when $\bar R_i\ge1$, i.e. a single copy or zero spread), and
+The per-site spread comes from a **second pass** over the atoms. Each copy's within-cell offset from
+its site mean is wrapped to the nearest image, $d_i = w_i - \bar w_i - \operatorname{round}(w_i - \bar w_i)$,
+and mapped to Cartesian Å through the conventional-cell vectors $\mathbf a_i = \mathbf L_i / N_i$,
+$\Delta\mathbf r = \sum_i d_i\,\mathbf a_i$, so the **full metric** enters. The site's rms displacement is
 
-$$u_s \;\equiv\; \texttt{dispA} = \sqrt{\sum_{i=1}^{3}\big(\sigma_i^{\mathrm{frac}} \, a_i\big)^2}\ \ [\text{Å}]$$
+$$u_s \;\equiv\; \texttt{dispA} = \sqrt{\big\langle |\Delta\mathbf r|^2\big\rangle - \big|\langle\Delta\mathbf r\rangle\big|^2}
+= \sqrt{\operatorname{tr} C_\mathrm{cart}}\ \ [\text{Å}]$$
+
+— the square root of the trace of the site's Cartesian displacement covariance (population
+normalization), i.e. $\sqrt{3\,U_\mathrm{iso}}$ in the PCA page's terms, independent of the cell
+setting. Until 2026-09 it was $\sqrt{\sum_i(\sigma_i^{\mathrm{frac}} a_i)^2}$ with a per-axis circular
+standard deviation $\sigma_i^{\mathrm{frac}}$ and edge **lengths** $a_i$, which drops the metric
+cross-terms: for an isotropic cloud it read +10 % in a hexagonal cell and +23 % for fcc in its 60°
+rhombohedral primitive cell (the same crystal gave different values in different settings); on the
+orthogonal demo run the two agree within 0.2 %. `__tests__/dispMetric.test.js` pins the new value
+against a directly computed Cartesian rms for hexagonal, rhombohedral and cubic cells.
 
 This rms displacement is **not shown on the card**; it is consumed by the AI-assistant context
-(`runContext.js` → `symmetryContext()` aggregates `mean_disp_A` / `max_disp_A` per Wyckoff orbit).
-Two approximations are worth naming: (i) $\sigma_i^{\mathrm{frac}} a_i$ multiplies a fractional spread by an edge
-*length*, which ignores the metric cross-terms and is therefore exact only for orthogonal axes;
-(ii) the circular-std formula is the von-Mises/wrapped-normal relation, exact only for a wrapped
-Gaussian. The unit test pins the value for a two-copy $\pm0.02$-fraction case on a 10 Å edge at
-$0.2003$ Å.
+(`runContext.js` → `symmetryContext()` aggregates `mean_disp_A` / `max_disp_A` per Wyckoff orbit). It is
+a **single-snapshot** spread: static disorder and thermal motion together. The unit test pins the
+two-copy $\pm0.02$-fraction case on a 10 Å edge at exactly $0.2$ Å.
 
 Sites are keyed by reference number and emitted **sorted by reference number**, as
 `{ el, referenceNumber, frac, dispA }`. Per the early return above, an oldest-format file yields an

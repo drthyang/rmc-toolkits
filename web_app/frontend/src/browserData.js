@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import { parseAtomLine } from './rmc6f.js';
+import { isAtomsMarker, LINE_BREAK, parseFortranNumber, parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from './rmc6f.js';
 
 const SUPPORTED_NAMES = new Set(['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq', 'stog_input.dat']);
 
@@ -35,8 +35,10 @@ export const detectPlotKind = (name) => {
     if (name.includes('PDF') && name.endsWith('.csv')) {
         return name.includes('PDFpartials') ? 'pdf_partials' : 'npdf';
     }
-    if (name.endsWith('_FQ1.csv')) return 'xray_sq';
-    if (name.endsWith('_SQ1.csv')) return 'neutron_sq';
+    // Reciprocal-space fits of any dataset number (_FQ2, _SQ3, …), like the xPDF
+    // rule and the stem chooser; *_FQ1partials.csv is not one of them.
+    if (/_FQ\d+\.csv$/.test(name)) return 'xray_sq';
+    if (/_SQ\d+\.csv$/.test(name)) return 'neutron_sq';
     if (/_bragg(?:_.+)?\.csv$/.test(name)) return 'bragg';
     if (/-\d{2,}\.log$/.test(name)) return 'r_value';
     // Any RMCProfile STOG data file (r-space .gr, reciprocal .sq / .fq), not just the
@@ -75,9 +77,32 @@ const runStemFromOutputName = (name) => {
     return null;
 };
 
-const chooseStructureFile = (files) => {
-    const rmc6fFiles = files.filter((file) => file.name.endsWith('.rmc6f'));
-    if (!rmc6fFiles.length) return null;
+// Why a `.rmc6f` cannot be the run's configuration, or null when it can: a
+// killed run can leave a 0-byte (or header-only) file beside valid ones, and
+// picking it hid every usable model in the folder. Mirrors rmc6f_problem() in
+// parsers.py: non-empty, with the Atoms marker in the first 64 KiB.
+const RMC6F_HEAD_BYTES = 65536;
+
+export const structureFileProblem = async (file) => {
+    if (!file.size) return 'empty (0 bytes)';
+    let head;
+    try {
+        head = await file.sourceFile.slice(0, RMC6F_HEAD_BYTES).text();
+    } catch (error) {
+        return `unreadable (${error.message || error})`;
+    }
+    return head.split(LINE_BREAK).some(isAtomsMarker) ? null : 'no Atoms section in its first 64 KiB';
+};
+
+const chooseStructureFile = async (files) => {
+    const allRmc6f = files.filter((file) => file.name.endsWith('.rmc6f'));
+    if (!allRmc6f.length) return { file: null, skipped: [] };
+    const problems = await Promise.all(allRmc6f.map(structureFileProblem));
+    const skipped = allRmc6f
+        .map((file, index) => (problems[index] ? `${file.name} (${problems[index]})` : null))
+        .filter(Boolean);
+    const rmc6fFiles = allRmc6f.filter((_, index) => !problems[index]);
+    if (!rmc6fFiles.length) return { file: null, skipped };
     const rmc6fByLocationAndStem = new Map(
         rmc6fFiles.map((file) => [`${dirname(file.path)}/${file.name.replace(/\.rmc6f$/, '')}`, file])
     );
@@ -96,9 +121,9 @@ const chooseStructureFile = (files) => {
 
     for (const output of outputStems) {
         const match = rmc6fByLocationAndStem.get(`${output.directory}/${output.stem}`);
-        if (match) return match;
+        if (match) return { file: match, skipped };
     }
-    return rmc6fFiles[0];
+    return { file: rmc6fFiles[0], skipped };
 };
 
 // The RMCProfile run-control file: <structure stem>.dat, `KEY :: value` lines
@@ -119,7 +144,7 @@ export const parseRunSettings = (text) => {
     };
     let block = null;   // { type: 'flags' } | { type: 'dataset', entry }
     let matchedAnything = false;
-    for (const rawLine of text.split(/\r?\n/)) {
+    for (const rawLine of text.split(LINE_BREAK)) {
         const line = rawLine.trim();
         if (!line) continue;
         if (line.startsWith('>')) {
@@ -235,17 +260,28 @@ const parseNumberRows = (lines, startIndex = 0, separator = /\s+/) => {
 
 const transpose = (rows) => rows[0].map((_, index) => rows.map((row) => row[index]));
 
+// An RMCProfile fit/partials CSV: a header line, then numeric rows. Blank lines
+// are ignored (the header is the first non-blank line) and empty fields dropped,
+// so trailing-comma rows parse. Every cell must be a number (E/D exponents) or an
+// explicit non-finite token (NaN, Inf, ****), kept as NaN — a masked region;
+// anything else throws, naming the true file line. Mirrors read_rmc_csv().
 const readRmcCsv = (text, name) => {
-    const lines = text.split(/\r?\n/).filter((line) => line.trim());
+    const lines = text.split(LINE_BREAK)
+        .map((line, index) => ({ line, number: index + 1 }))
+        .filter(({ line }) => line.trim());
     if (!lines.length) throw new Error(`${name} is empty`);
-    const labels = lines[0].split(',').map((label) => label.trim());
-    const rows = lines.slice(1).map((line, index) => {
+    const labels = lines[0].line.split(',').map((label) => label.trim());
+    const rows = lines.slice(1).map(({ line, number }) => {
         const values = line.split(',').map((value) => value.trim()).filter(Boolean);
         if (!values.length) return null;
         if (values.length !== labels.length) {
-            throw new Error(`${name} line ${index + 2} has ${values.length} values; expected ${labels.length}`);
+            throw new Error(`${name} line ${number} has ${values.length} values; expected ${labels.length}`);
         }
-        return values.map(Number);
+        return values.map((value) => {
+            const parsed = parseFortranNumber(value);
+            if (parsed === null) throw new Error(`${name} line ${number}: '${value}' is not a number`);
+            return parsed;
+        });
     }).filter(Boolean);
     if (!rows.length) throw new Error(`${name} does not contain numeric rows`);
     return { labels, data: transpose(rows) };
@@ -253,15 +289,17 @@ const readRmcCsv = (text, name) => {
 
 const csvValues = (line) => line.split(',').map((value) => value.trim()).filter(Boolean);
 
+// The row's numbers, or null unless EVERY cell is a number or an explicit
+// non-finite token (NaN rows are data). Same rule as _numeric_csv_values().
 const numericCsvValues = (line) => {
     const values = csvValues(line);
     if (!values.length) return null;
-    const parsed = values.map(Number);
-    return parsed.every(Number.isFinite) ? parsed : null;
+    const parsed = values.map(parseFortranNumber);
+    return parsed.some((value) => value === null) ? null : parsed;
 };
 
 const readExafsCsv = (text, name) => {
-    const lines = text.split(/\r?\n/);
+    const lines = text.split(LINE_BREAK);
     const dataStart = lines.findIndex((line) => numericCsvValues(line));
     if (dataStart <= 0) {
         throw new Error(`${name} does not contain an EXAFS column header and numeric rows`);
@@ -280,20 +318,42 @@ const readExafsCsv = (text, name) => {
     return { labels, data: transpose(rows) };
 };
 
-const readChi = (text) => {
-    const chiR = [];
-    text.split(/\r?\n/).slice(2).forEach((line) => {
+// The chi^2 history of one RMCProfile `-NN.log`: the LAST column of every
+// complete data row. Line 1 names the columns (`Time moves_acc moves_gen F(Q)_1
+// … X_ray_(R)1`) and fixes the token count a data row must have (when it names
+// fewer than two, the first data row does); line 2 (WEIGHT PARAMETERS) is
+// skipped; a final line without a newline is dropped — Live Data re-reads the
+// log while RMCProfile appends, and a half-written row would otherwise become
+// the "final" chi^2. Rows are never dropped for their VALUE: a non-finite chi^2
+// (NaN, Inf, Fortran ****) stays as NaN so a blown-up run shows as one.
+// Returns { values, column, skippedRows }; column is the last header name.
+// Mirrors read_chi_log() in parsers.py.
+export const readChi = (text) => {
+    const lines = text.split(LINE_BREAK);
+    // Every complete line ends with a break: the last element is '' for a
+    // terminated file, or the line RMCProfile is still writing.
+    const unterminated = lines.pop();
+    let skippedRows = unterminated.trim() && lines.length >= 2 ? 1 : 0;
+    const header = lines.length ? lines[0].trim().split(/\s+/).filter(Boolean) : [];
+    let expected = header.length >= 2 ? header.length : null;
+    const column = expected !== null ? header[header.length - 1] : null;
+    const values = [];
+    lines.slice(2).forEach((line) => {
         const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (parts.length >= 2) {
-            const value = Number(parts[parts.length - 1]);
-            if (Number.isFinite(value)) chiR.push(value);
+        if (!parts.length) return;
+        if (expected === null) expected = parts.length;
+        if (parts.length !== expected || parts.length < 2) {
+            skippedRows += 1;
+            return;
         }
+        const value = parseFortranNumber(parts[parts.length - 1]);
+        values.push(value === null ? NaN : value);
     });
-    return chiR;
+    return { values, column, skippedRows };
 };
 
 const readStog = (text, name) => {
-    const rows = parseNumberRows(text.split(/\r?\n/), 2);
+    const rows = parseNumberRows(text.split(LINE_BREAK), 2);
     if (!rows.length) throw new Error(`${name} does not contain STOG numeric rows`);
     return transpose(rows);
 };
@@ -320,6 +380,37 @@ const rwp = (x, observed, fitted) => {
     return Math.sqrt(residual / denom);
 };
 
+// Column roles of an RMCProfile fit CSV for the R-factor. RMCProfile writes
+// (x, calculated, experimental) — `Q, F(Q)_RMC, F(Q)_Expt`, `r(A), X_ray-calc,
+// X_ray_exp_renorm` — so that positional order is the default; a header that
+// names both roles (exp/obs vs calc/rmc/fit) overrides it, so the residual is
+// always normalized by the measurement. Returns [calculated, experimental]
+// indices, or null below three columns. Mirrors rwp_columns() in parsers.py.
+const EXPERIMENTAL_LABEL = /exp|obs/i;
+const CALCULATED_LABEL = /calc|rmc|fit/i;
+
+export const rwpColumns = (labels, nColumns = labels.length) => {
+    if (nColumns < 3) return null;
+    const names = labels.slice(1, nColumns).map((label) => String(label ?? ''));
+    const experimental = [];
+    const calculated = [];
+    names.forEach((name, offset) => {
+        if (EXPERIMENTAL_LABEL.test(name)) experimental.push(offset + 1);
+        else if (CALCULATED_LABEL.test(name)) calculated.push(offset + 1);
+    });
+    if (experimental.length && calculated.length) return [calculated[0], experimental[0]];
+    return [1, 2];
+};
+
+// The dashboard R-factor of a parsed fit CSV (see rwpColumns): rwp() with the
+// experiment as the observed series. Mirrors fit_rwp() in parsers.py.
+const fitRwp = (csv) => {
+    const roles = rwpColumns(csv.labels, csv.data.length);
+    if (!roles) return null;
+    const [calculated, experimental] = roles;
+    return rwp(csv.data[0], csv.data[experimental], csv.data[calculated]);
+};
+
 const pdfIndex = (name) => {
     const match = name.match(/PDF(\d+)\.csv$/);
     return match ? Number(match[1]) : 0;
@@ -342,21 +433,74 @@ const braggAxis = (header) => (
     /tof|flight|time/.test((header || '').toLowerCase()) ? 'ToF (µs)' : 'Q (Å^{-1})'
 );
 
+// Title and series label of the chi^2 history of one log column. The series is
+// the LAST column of the RMCProfile .log — the chi^2 of one fit term
+// (`X_ray_(R)1`: the X-ray real-space fit), not a total or an R-factor — so it
+// is named by its header, never "R-value". Mirrors chi_history_labels() in plots.py.
+export const CHI_HISTORY_Y_LABEL = 'ln(χ²)';
+export const chiHistoryLabels = (column) => {
+    const name = column || 'last log column';
+    return { title: `χ² history: ${name}`, label: name };
+};
+
+// The function a fit CSV holds, read from its own data-column headers:
+// `Q, F(Q)_RMC, F(Q)_Expt` → `F(Q)`; null when no data column names one.
+// Mirrors fit_function_label() in plots.py.
+const FIT_FUNCTION_RE = /([A-Za-z])\(([QqRr])\)/;
+const RECIPROCAL_DATASET_RE = /_([FS])Q(\d+)\.csv$/;
+
+export const fitFunctionLabel = (labels) => {
+    for (const label of labels.slice(1)) {
+        const match = FIT_FUNCTION_RE.exec(String(label ?? ''));
+        if (match) return `${match[1]}(${match[2]})`;
+    }
+    return null;
+};
+
+// [title, y label] of a dashboard fit/partials CSV from what the file holds:
+// *_FQn / *_SQn hold F(Q) (→ −⟨b⟩² at low Q, 0 at high Q), not S(Q) (→ 1) — the
+// function comes from the headers, else the file name (FQ → F(Q), SQ → S(Q)),
+// with "#n" for dataset n > 1 and no radiation claimed; PDFpartials hold the
+// partial g_ij(r) (0 below closest approach, → 1), not G(r) (→ 0). `labels` may
+// be empty before the file is parsed. Mirrors series_titles() in plots.py.
+export const seriesTitles = (kind, name, labels = []) => {
+    if (kind === 'xray_sq' || kind === 'neutron_sq') {
+        const match = RECIPROCAL_DATASET_RE.exec(name);
+        const [letter, index] = match ? [match[1], Number(match[2])] : [kind === 'xray_sq' ? 'F' : 'S', 1];
+        const func = fitFunctionLabel(labels) || `${letter}(Q)`;
+        return [index === 1 ? func : `${func} #${index}`, func];
+    }
+    if (kind === 'pdf_partials') return ['Partial g(r)', 'g(r)'];
+    if (kind === 'xpdf') return ['xPDF', fitFunctionLabel(labels) || 'G(r)'];
+    if (kind === 'npdf') return [name.replace(/\.[^.]+$/, '').split('_').pop(), fitFunctionLabel(labels) || 'G(r)'];
+    if (kind === 'exafs_q') return ['EXAFS Q-space', 'χ(k) k²'];
+    if (kind === 'exafs_r') return ['EXAFS R-space', 'FT[χ(k) k²]'];
+    if (kind === 'bragg') return ['BRAGG', 'Intensity'];
+    return [name, 'data'];
+};
+
+// Extension default for a STOG file: .gr G(r), .fq F(Q) (Keen's F(Q), → 0),
+// else S(Q). Mirrors stog_function_label() in plots.py; the run-control
+// FIT_TYPE wins when known.
+const stogFunctionLabel = (name) => {
+    const lower = name.toLowerCase();
+    if (lower.endsWith('.gr')) return 'G(r)';
+    if (lower.endsWith('.fq')) return 'F(Q)';
+    return 'S(Q)';
+};
+
 export const plotMetadataFromFile = (file) => {
     const kind = file.plotKind;
-    if (kind === 'xpdf') return { kind, title: 'xPDF', metrics: file.plotData?.metrics || {} };
-    if (kind === 'exafs_q') return { kind, title: 'EXAFS Q-space', metrics: file.plotData?.metrics || {} };
-    if (kind === 'exafs_r') return { kind, title: 'EXAFS R-space', metrics: file.plotData?.metrics || {} };
-    if (kind === 'npdf') return { kind, title: file.name.replace(/\.[^.]+$/, '').split('_').pop(), metrics: file.plotData?.metrics || {} };
-    if (kind === 'pdf_partials') return { kind, title: file.name.replace(/\.[^.]+$/, '').split('_').pop(), metrics: file.plotData?.metrics || {} };
-    if (kind === 'xray_sq') return { kind, title: 'S(Q) (x-ray)', metrics: file.plotData?.metrics || {} };
-    if (kind === 'neutron_sq') return { kind, title: 'S(Q) (neutron)', metrics: file.plotData?.metrics || {} };
-    if (kind === 'bragg') return { kind, title: 'BRAGG', metrics: file.plotData?.metrics || {} };
-    if (kind === 'r_value') return { kind, title: 'R-value', metrics: file.plotData?.metrics || {} };
+    if (['xpdf', 'exafs_q', 'exafs_r', 'npdf', 'pdf_partials', 'xray_sq', 'neutron_sq', 'bragg'].includes(kind)) {
+        // After parsing, the title reflects the file's own headers (plotData.title).
+        const title = file.plotData?.title || seriesTitles(kind, file.name)[0];
+        return { kind, title, metrics: file.plotData?.metrics || {} };
+    }
+    if (kind === 'r_value') return { kind, title: file.plotData?.title || chiHistoryLabels(null).title, metrics: file.plotData?.metrics || {} };
     if (kind === 'stog') {
         // Heading is the fit-function form from the run-control .dat (e.g. "D(r)")
         // when known, else the extension-based default; the file name shows beneath.
-        const funcLabel = file.fitType || (file.name.toLowerCase().endsWith('.gr') ? 'G(r)' : 'S(Q)');
+        const funcLabel = file.fitType || stogFunctionLabel(file.name);
         return { kind, title: funcLabel, metrics: file.plotData?.metrics || {} };
     }
     return null;
@@ -367,18 +511,21 @@ export const plotDataFromText = (file) => {
     if (!kind) return null;
 
     if (kind === 'r_value') {
-        const yValues = readChi(file.text);
+        const { values: yValues, column } = readChi(file.text);
         if (!yValues.length) throw new Error(`${file.name} does not contain chi values`);
+        const { title, label } = chiHistoryLabels(column);
         return {
             kind,
-            title: 'R-value',
+            title,
+            chiColumn: column,
             metrics: { final_chi_r: yValues[yValues.length - 1] },
             xLabel: 'Time steps',
-            yLabel: 'log(χ)',
+            yLabel: CHI_HISTORY_Y_LABEL,
             series: [{
-                label: 'R',
+                label,
                 x: yValues.map((_, index) => index),
-                y: yValues.map((value) => Math.log(Math.max(value, 1e-12)))
+                // Same clamp as plots.chi_history_ln; a non-finite chi^2 stays NaN (a gap).
+                y: yValues.map((value) => (Number.isFinite(value) ? Math.log(Math.max(value, 1e-12)) : NaN))
             }]
         };
     }
@@ -388,7 +535,7 @@ export const plotDataFromText = (file) => {
         const isRealSpace = file.name.toLowerCase().endsWith('.gr');
         // The run-control .dat declares the actual fit-function form (e.g. a .gr
         // file fit as D(r)); prefer it over the extension-based default.
-        const funcLabel = file.fitType || (isRealSpace ? 'G(r)' : 'S(Q)');
+        const funcLabel = file.fitType || stogFunctionLabel(file.name);
         return {
             kind,
             title: file.name,
@@ -404,30 +551,23 @@ export const plotDataFromText = (file) => {
         : readRmcCsv(file.text, file.name);
     const metrics = {};
     if (['xpdf', 'npdf', 'xray_sq', 'neutron_sq', 'bragg'].includes(kind) && csv.data.length >= 3) {
-        metrics.rwp = rwp(csv.data[0], csv.data[1], csv.data[2]);
+        metrics.rwp = fitRwp(csv);
     }
     if (kind === 'npdf') metrics.pdf_index = pdfIndex(file.name);
 
+    // One label source with Flask and the PNGs (seriesTitles ⟷ plots.series_titles).
+    const [title, yLabel] = seriesTitles(kind, file.name, csv.labels);
     let xLabel = csv.labels[0] || 'x';
-    let yLabel = 'data';
     if (kind === 'exafs_q') {
         xLabel = 'k (Å^{-1})';
-        yLabel = 'χ(k) k²';
-    } else if (kind === 'exafs_r') {
+    } else if (['exafs_r', 'xpdf', 'npdf', 'pdf_partials'].includes(kind)) {
         xLabel = 'r (Å)';
-        yLabel = 'FT[χ(k) k²]';
-    } else if (['xpdf', 'npdf', 'pdf_partials'].includes(kind)) {
-        xLabel = 'r (Å)';
-        yLabel = 'G(r)';
     } else if (['xray_sq', 'neutron_sq'].includes(kind)) {
         xLabel = 'Q (Å^{-1})';
-        yLabel = 'S(Q)';
     } else if (kind === 'bragg') {
         xLabel = braggAxis(csv.labels[0]);
-        yLabel = 'Intensity';
     } else xLabel = cleanAxisLabel(xLabel);
 
-    const title = plotMetadataFromFile({ ...file, plotData: { metrics } })?.title || file.name;
     return {
         kind,
         title,
@@ -447,7 +587,9 @@ export const plotDataFromText = (file) => {
 // time. With the atom count these gauge sampling sufficiency (accepted moves
 // per atom), so they feed the AI assistant's run context.
 const readMovesMetadata = (text) => {
-    const header = text.slice(0, text.indexOf('Atoms:') > 0 ? text.indexOf('Atoms:') : 4000);
+    // Same case-insensitive Atoms-marker rule as the atom parser (rmc6f.js).
+    const marker = text.search(/^[ \t]*atoms\b/im);
+    const header = text.slice(0, marker > 0 ? marker : 4000);
     const grab = (pattern) => {
         const match = pattern.exec(header);
         return match ? Number(match[1]) : null;
@@ -461,45 +603,28 @@ const readMovesMetadata = (text) => {
     return Object.values(moves).some(Number.isFinite) ? moves : null;
 };
 
-const readCellVectors = (text) => {
-    const lines = text.split(/\r?\n/);
-    let latticeVectors = null;
-    let supercell = null;
-    lines.forEach((line, index) => {
-        const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (!parts.length) return;
-        if (parts[0] === 'Supercell') supercell = parts.slice(-3).map(Number);
-        if (parts[0] === 'Lattice') {
-            latticeVectors = [lines[index + 1], lines[index + 2], lines[index + 3]]
-                .map((row) => row.trim().split(/\s+/).map(Number));
-        }
-    });
-    if (!latticeVectors || !supercell) throw new Error('Missing lattice or supercell metadata');
-    return { latticeVectors, supercell };
-};
-
 // Circular mean of an angle-like quantity in [0,1): averages the box copies of a
 // site's within-cell fraction so a boundary-wrapping site (≈0 ≡ 1) lands on the
 // true position, and thermal displacement in a single snapshot averages out.
 const TWO_PI = 2 * Math.PI;
 
 export const structureFromRmc6f = (file, maxPoints = 100) => {
-    const { latticeVectors, supercell } = readCellVectors(file.text);
+    const name = file.path || file.name || 'structure file';
+    const { latticeVectors, supercell } = readRmc6fCellVectors(file.text, name);
+    // Shared line grammar with the Python parser (rmc6f.js ⟷ parsers.py): every
+    // accepted line is validated, and what was skipped is reported rather than
+    // silently yielding a short (or zero) atom count.
+    const { atoms: parsedAtoms, report } = parseRmc6fAtoms(file.text);
+    const parseWarning = rmc6fParseWarning(report);
+    if (!report.hasAtomsSection) throw new Error(`${name} does not contain an Atoms section`);
+    if (!parsedAtoms.length) {
+        throw new Error(`${name}: no atoms could be parsed — ${parseWarning || 'the Atoms section is empty'}`);
+    }
     const counts = {};
     const atomIndices = {};
     const atoms = [];
     const rnAcc = new Map();   // referenceNumber -> { element, sc:[3], ss:[3] } for the circular-mean basis
-    let inAtoms = false;
-    file.text.split(/\r?\n/).forEach((line) => {
-        const parts = line.trim().split(/\s+/).filter(Boolean);
-        if (!parts.length) return;
-        if (parts[0] === 'Atoms:') {
-            inAtoms = true;
-            return;
-        }
-        if (!inAtoms) return;
-        const atom = parseAtomLine(parts);
-        if (!atom) return;
+    parsedAtoms.forEach((atom) => {
         const { referenceNumber, element, coords, cellIndices } = atom;
         counts[element] = (counts[element] || 0) + 1;
         atoms.push({ element, referenceNumber, coords, cellIndices });
@@ -520,15 +645,7 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
     });
 
     // One representative site per reference number (its circular-mean fraction) —
-    // the (element, fractional) basis the symmetry finder consumes. The same
-    // accumulators also give the spread about that mean for free: the resultant
-    // length R = |Σ(cos,sin)|/n yields the circular std √(−2 ln R) per axis,
-    // which scaled to Å is the site's rms displacement (dispA) — the
-    // local-distortion signal (static disorder + thermal motion) that the AI
-    // assistant's run context aggregates per Wyckoff orbit.
-    const cellEdgeA = latticeVectors.map((row, i) => (
-        Math.sqrt(row.reduce((sum, value) => sum + value * value, 0)) / Math.max(supercell[i], 1)
-    ));
+    // the (element, fractional) basis the symmetry finder consumes.
     const basis = [...rnAcc.entries()]
         .sort(([a], [b]) => a - b)
         .map(([referenceNumber, acc]) => ({
@@ -538,13 +655,42 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
                 const a = Math.atan2(acc.ss[i], acc.sc[i]) / TWO_PI;
                 return a - Math.floor(a);
             }),
-            dispA: Math.sqrt([0, 1, 2].reduce((sum, i) => {
-                const resultant = Math.hypot(acc.sc[i], acc.ss[i]) / acc.n;
-                if (resultant >= 1) return sum;   // zero spread (or a single atom)
-                const sigmaFrac = Math.sqrt(-2 * Math.log(Math.max(resultant, 1e-6))) / TWO_PI;
-                return sum + (sigmaFrac * cellEdgeA[i]) ** 2;
-            }, 0))
+            dispA: 0
         }));
+
+    // The site's rms displacement about that mean (dispA) — the local-distortion
+    // signal (static disorder + thermal motion) that the AI assistant's run context
+    // aggregates per Wyckoff orbit. A second pass maps each copy's within-cell
+    // offset from the site mean (wrapped to the nearest image) to Cartesian Å
+    // through the unit-cell vectors a_i = L_i / N_i, so the full metric enters:
+    //   dr = Σ_i d_i a_i,   dispA = √(⟨|dr|²⟩ − |⟨dr⟩|²)  = √(trace of the Cartesian covariance)
+    // (= √(3·U_iso) of the PCA page). Per-axis spreads times edge lengths treated
+    // the axes as orthogonal and overstated hexagonal / rhombohedral cells by 10–23%.
+    const unitVectors = latticeVectors.map((row, i) => row.map((value) => value / Math.max(supercell[i], 1)));
+    const siteIndex = new Map(basis.map((site, index) => [site.referenceNumber, index]));
+    const spread = basis.map(() => ({ n: 0, sum: [0, 0, 0], sumSq: 0 }));
+    atoms.forEach(({ referenceNumber, coords }) => {
+        if (referenceNumber === null) return;
+        const index = siteIndex.get(referenceNumber);
+        const mean = basis[index].frac;
+        const dr = [0, 0, 0];
+        for (let i = 0; i < 3; i++) {
+            const wf = ((coords[i] * supercell[i]) % 1 + 1) % 1;
+            let d = wf - mean[i];
+            d -= Math.round(d);
+            for (let k = 0; k < 3; k++) dr[k] += d * unitVectors[i][k];
+        }
+        const acc = spread[index];
+        acc.n += 1;
+        for (let k = 0; k < 3; k++) acc.sum[k] += dr[k];
+        acc.sumSq += dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+    });
+    basis.forEach((site, index) => {
+        const { n, sum, sumSq } = spread[index];
+        if (!n) return;
+        const meanSq = (sum[0] ** 2 + sum[1] ** 2 + sum[2] ** 2) / (n * n);
+        site.dispA = Math.sqrt(Math.max(sumSq / n - meanSq, 0));
+    });
 
     const stride = Math.max(1, Math.ceil(atoms.length / maxPoints));
     const points = atoms.filter((_, index) => index % stride === 0).slice(0, maxPoints).map((atom) => {
@@ -576,7 +722,18 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
         latticeVectors,
         basis,
         points,
-        moves: readMovesMetadata(file.text)
+        moves: readMovesMetadata(file.text),
+        parseReport: {
+            declaredAtoms: report.declaredAtoms,
+            atomLines: report.atomLines,
+            parsedAtoms: report.parsedAtoms,
+            coordsOnlyAtoms: report.coordsOnlyAtoms,
+            nonFiniteLines: report.nonFiniteLines,
+            invalidLines: report.invalidLines,
+            firstInvalidLine: report.firstInvalidLine,
+            firstNonFiniteLine: report.firstNonFiniteLine
+        },
+        parseWarning
     };
 };
 
@@ -586,6 +743,107 @@ export const readAndParseLocalPlotFile = async (file) => {
     }
     const text = await file.sourceFile.text();
     return plotDataFromText({ ...file, text });
+};
+
+// --- R-value (chi^2 history) logs: which ones belong to one run ---------------
+//
+// RMCProfile writes <stem>-00.log, <stem>-01.log, … for one run (restarts append
+// a sequence number). Python's related_r_value_logs() concatenates ONLY the logs
+// that share the clicked log's stem in the same folder; the static-mode dashboard
+// must do the same, or a folder holding two runs (a restart under a new stem, or
+// a parent folder walked recursively) splices them into one curve.
+const R_VALUE_LOG_RE = /^(.+)-(\d{2,})\.log$/;
+const splitPath = (path) => String(path || '').split(/[\\/]/);
+
+/** `<folder>/<stem>` of an RMCProfile run log (exact stem, as in Python). */
+export const rValueGroupKey = (path) => {
+    const parts = splitPath(path);
+    const name = parts.pop() || '';
+    const match = name.match(R_VALUE_LOG_RE);
+    return `${parts.join('/')}/${match ? match[1] : name}`;
+};
+
+/**
+ * The logs of the run to chart, and the other runs' groups. `rValueFiles` is in
+ * display order (stem, then numeric sequence); the chosen group is the one whose
+ * folder and stem match the structure file — the run the Model card describes —
+ * else the first group.
+ */
+export const chooseRValueGroup = (rValueFiles, structurePath = null) => {
+    const groups = new Map();
+    rValueFiles.forEach((file) => {
+        const key = rValueGroupKey(file.path || file.name);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(file);
+    });
+    const all = [...groups.values()];
+    if (!all.length) return { group: [], others: [] };
+    let structureKey = null;
+    if (structurePath) {
+        const parts = splitPath(structurePath);
+        const name = (parts.pop() || '').replace(/\.rmc6f$/i, '');
+        structureKey = `${parts.join('/')}/${name}`;
+    }
+    const group = all.find((files) => rValueGroupKey(files[0].path || files[0].name) === structureKey) || all[0];
+    return { group, others: all.filter((files) => files !== group) };
+};
+
+// The chi^2 history of ONE run: only the logs sharing the chosen stem and
+// folder are concatenated (chooseRValueGroup — the stem of the structure file
+// the Model card describes, else the first), exactly as Flask's
+// related_r_value_logs() does server-side. Logs of other runs in the folder are
+// named (otherRuns), never spliced in.
+export const combineRValueFiles = (rValueFiles, structurePath = null) => {
+    const { group, others } = chooseRValueGroup(rValueFiles, structurePath);
+    if (!group.length) return null;
+    const otherRuns = others.map((files) => files[0].name.replace(/-\d{2,}\.log$/, ''));
+    const withOthers = (file) => (otherRuns.length ? { ...file, otherRuns } : file);
+    if (
+        group.length === 1
+        || !group.some((file) => file.sourceFile || file.plotData || file.parseError)
+        || group.some((file) => file.sourceFile && !file.plotData && !file.parseError)
+    ) {
+        return withOthers(group[0]);
+    }
+
+    const parsedFiles = group.filter((file) => file.plotData?.series?.[0]?.y?.length);
+    if (!parsedFiles.length) {
+        return withOthers({
+            ...group[0],
+            parseError: group.map((file) => file.parseError).filter(Boolean).join('; ') || 'Could not parse the chi² logs'
+        });
+    }
+
+    const yValues = parsedFiles.flatMap((file) => file.plotData.series[0].y);
+    const lastParsed = parsedFiles[parsedFiles.length - 1];
+    const parseErrors = group
+        .filter((file) => file.parseError)
+        .map((file) => `${file.name}: ${file.parseError}`);
+    // Label by the logs' own last-column header; say so if restarts disagree.
+    const columns = [...new Set(parsedFiles.map((file) => file.plotData.chiColumn ?? null))];
+    const { title, label } = chiHistoryLabels(columns.filter(Boolean).join(' / ') || null);
+
+    return withOthers({
+        ...parsedFiles[0],
+        name: title,
+        path: `r-value:${parsedFiles.map((file) => file.path).join('|')}`,
+        sourceNames: parsedFiles.map((file) => file.name),
+        sourceFile: undefined,
+        parseError: parseErrors.join('; '),
+        plotData: {
+            kind: 'r_value',
+            title,
+            chiColumn: columns.length === 1 ? columns[0] : null,
+            metrics: { final_chi_r: lastParsed.plotData.metrics?.final_chi_r },
+            xLabel: 'Time steps',
+            yLabel: CHI_HISTORY_Y_LABEL,
+            series: [{
+                label,
+                x: yValues.map((_, index) => index),
+                y: yValues
+            }]
+        }
+    });
 };
 
 // Build a run object from { path, file } pairs. Shared by the <input webkitdirectory>
@@ -606,7 +864,7 @@ const makeRunFromEntries = async (entries) => {
         throw new Error(`No supported RMCProfile files found in ${entries.length} selected files`);
     }
 
-    const rmc6f = chooseStructureFile(files);
+    const { file: rmc6f, skipped: skippedStructures } = await chooseStructureFile(files);
     const settingsEntry = chooseSettingsEntry(entries, rmc6f);
     await pairFitTypes(files, entries, settingsEntry);
     const directoryRoot = files
@@ -628,7 +886,11 @@ const makeRunFromEntries = async (entries) => {
                 modified: settingsEntry.file.lastModified
             }
             : null,
-        structureError: rmc6f ? 'Structure data loads when needed' : 'No model structure detected',
+        structureError: rmc6f
+            ? 'Structure data loads when needed'
+            : skippedStructures.length
+                ? `No usable .rmc6f file: ${skippedStructures.join(', ')}`
+                : 'No model structure detected',
         diagnostics: {
             selectedFileCount: entries.length,
             supportedFileCount: files.length,

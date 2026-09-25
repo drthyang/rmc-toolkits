@@ -16,8 +16,11 @@ import subprocess
 import sys
 import threading
 
+import json
+
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -35,11 +38,11 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, cached_bond_angle_summary
 from rmc_toolkits.parsers import (
-    iter_rmc6f_atoms,
-    read_atom_indices,
+    parse_rmc6f_atoms,
     read_cell_vectors,
     read_moves_metadata,
-    read_chi,
+    read_chi_log,
+    rmc6f_problem,
     read_dat_header,
     read_exafs_csv,
     read_rmc_csv,
@@ -49,7 +52,18 @@ from rmc_toolkits.parsers import (
     related_r_value_logs,
     write_frac_from_rmc6f,
 )
-from rmc_toolkits.plots import bragg_is_tof, close_plot, detect_plot_kind, make_plot, plot_to_png
+from rmc_toolkits.plots import (
+    CHI_HISTORY_Y_LABEL,
+    bragg_is_tof,
+    chi_history_labels,
+    chi_history_ln,
+    close_plot,
+    detect_plot_kind,
+    make_plot,
+    plot_to_png,
+    series_titles,
+    stog_function_label,
+)
 from rmc_toolkits.scaling import (
     ScalingConfig,
     autoscale,
@@ -71,7 +85,56 @@ from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_densit
 from rmc_toolkits.transforms import first_peak_zero, g_to_gk, gk_to_dr
 
 
+def _finite_json(value):
+    """``value`` with every non-finite float (NaN, +/-Inf) replaced by ``None``.
+
+    Walks dicts, lists/tuples, NumPy arrays and NumPy scalars, so a masked region
+    (NaN in an RMCProfile CSV or log) reaches the browser as JSON ``null`` — a gap
+    the chart skips — instead of the bare token ``NaN`` that ``JSON.parse`` rejects.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _finite_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite_json(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return _finite_json(value.tolist())
+    if isinstance(value, np.generic):
+        return _finite_json(value.item())
+    return value
+
+
+class StrictJSONProvider(DefaultJSONProvider):
+    """App-wide JSON provider that only ever emits strict (RFC 8259) JSON.
+
+    Non-finite floats become ``null``; ``allow_nan=False`` is the guard that makes
+    any path that slips past the sanitizer fail loudly instead of emitting ``NaN``.
+    The common all-finite payload is serialized in one pass; only a payload that
+    trips the guard is walked by :func:`_finite_json` and serialized again.
+    """
+
+    @staticmethod
+    def default(o):
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        if isinstance(o, np.generic):
+            return o.item()
+        return DefaultJSONProvider.default(o)
+
+    def dumps(self, obj, **kwargs):
+        kwargs.setdefault("default", self.default)
+        kwargs.setdefault("ensure_ascii", self.ensure_ascii)
+        kwargs.setdefault("sort_keys", self.sort_keys)
+        kwargs["allow_nan"] = False
+        try:
+            return json.dumps(obj, **kwargs)
+        except ValueError:
+            return json.dumps(_finite_json(obj), **kwargs)
+
+
 app = Flask(__name__, static_folder=str(FRONTEND_DIST), static_url_path="")
+app.json = StrictJSONProvider(app)
 CORS(app)
 
 DATA_ROOT = Path(os.environ.get("RMC_TOOLKITS_DATA_ROOT", PROJECT_ROOT)).expanduser().resolve()
@@ -184,9 +247,14 @@ def _run_stem_from_output_name(name: str) -> tuple[int, str] | None:
 def _find_rmc6f(directory: Path) -> Path:
     if directory.is_file() and directory.suffix == ".rmc6f":
         return directory
-    rmc6f_files = sorted(directory.glob("*.rmc6f"))
-    if not rmc6f_files:
+    all_rmc6f = sorted(directory.glob("*.rmc6f"))
+    if not all_rmc6f:
         raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    # A 0-byte or marker-less configuration (e.g. left by a killed run) must not
+    # hide the valid ones beside it: skip it and fall through to the next match.
+    # With no usable candidate at all the stem rule still names one, and the
+    # caller's reader reports what is wrong with it (see _require_usable_rmc6f).
+    rmc6f_files = [path for path in all_rmc6f if rmc6f_problem(path) is None] or all_rmc6f
     rmc6f_by_stem = {path.stem: path for path in rmc6f_files}
     output_stems: list[tuple[int, str, str]] = []
     for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
@@ -202,17 +270,29 @@ def _find_rmc6f(directory: Path) -> Path:
     return rmc6f_files[0]
 
 
+def _require_usable_rmc6f(rmc6f_path: Path, target: Path) -> None:
+    """Raise a FileNotFoundError that lists every candidate when none is usable."""
+    if rmc6f_problem(rmc6f_path) is None:
+        return
+    directory = target if target.is_dir() else rmc6f_path.parent
+    candidates = sorted(directory.glob("*.rmc6f")) if target.is_dir() else [rmc6f_path]
+    listing = ", ".join(f"{path.name} ({rmc6f_problem(path)})" for path in candidates)
+    raise FileNotFoundError(f"No usable .rmc6f file in {directory}: {listing}")
+
+
 def _sample_atoms_by_site(atoms: list[dict], max_points: int) -> tuple[list[dict], int]:
     if len(atoms) <= max_points:
         return atoms, 1
 
-    by_reference: dict[int, list[dict]] = {}
+    # Legacy coords-only atoms carry no reference number; they form one group
+    # (key None), sorted after the numbered sites.
+    by_reference: dict[int | None, list[dict]] = {}
     for atom in atoms:
         by_reference.setdefault(atom["reference_number"], []).append(atom)
 
     quota = max(1, max_points // len(by_reference))
     sampled: list[dict] = []
-    for reference_number in sorted(by_reference):
+    for reference_number in sorted(by_reference, key=lambda ref: (ref is None, ref or 0)):
         group = by_reference[reference_number]
         stride = max(1, len(group) // quota)
         sampled.extend(group[::stride][:quota])
@@ -504,18 +584,21 @@ def plot_data():
         close_plot(metadata_result)
 
         if kind == "r_value":
-            _, chi_r = read_chi(related_r_value_logs(path))
-            y_values = [float(value) for value in chi_r]
+            log = read_chi_log(related_r_value_logs(path))
+            chi_r = log.chi_r
+            _, series_label = chi_history_labels(log.column)
             return jsonify(
                 {
                     **metadata,
                     "xLabel": "Time steps",
-                    "yLabel": "log(χ)",
+                    "yLabel": CHI_HISTORY_Y_LABEL,
+                    "chiColumn": log.column,
                     "series": [
                         {
-                            "label": "R",
-                            "x": list(range(len(y_values))),
-                            "y": [float(math.log(max(value, 1e-12))) for value in y_values],
+                            "label": series_label,
+                            "x": list(range(len(chi_r))),
+                            # Non-finite chi^2 rows stay in the series (null in JSON).
+                            "y": chi_history_ln(chi_r).tolist(),
                         }
                     ],
                 }
@@ -527,7 +610,7 @@ def plot_data():
                 {
                     **metadata,
                     "xLabel": "r (Å)" if path.name.endswith(".gr") else "Q (Å^{-1})",
-                    "yLabel": "G(r)" if path.name.endswith(".gr") else "S(Q)",
+                    "yLabel": stog_function_label(path.name),
                     "series": [{"label": path.name, "x": data[0].tolist(), "y": data[1].tolist()}],
                 }
             )
@@ -539,25 +622,20 @@ def plot_data():
             if idx < len(series.data):
                 payload_series.append({"label": label.strip() or f"Series {idx}", "x": x_values, "y": series.data[idx].tolist()})
 
+        # One label source for Flask, the PNGs and (mirrored) the browser:
+        # F(Q) for *_FQn.csv, partial g(r) for PDFpartials, from the file's headers.
+        _, y_label = series_titles(kind, path.name, series.labels)
         x_label = series.labels[0] if series.labels else "x"
         if kind == "exafs_q":
             x_label = "k (Å^{-1})"
-            y_label = "χ(k) k²"
-        elif kind == "exafs_r":
+        elif kind in ("exafs_r", "xpdf", "npdf", "pdf_partials"):
             x_label = "r (Å)"
-            y_label = "FT[χ(k) k²]"
-        elif kind in ("xpdf", "npdf", "pdf_partials"):
-            x_label = "r (Å)"
-            y_label = "G(r)"
         elif kind in ("xray_sq", "neutron_sq"):
             x_label = "Q (Å^{-1})"
-            y_label = "S(Q)"
         elif kind == "bragg":
             x_label = "ToF (µs)" if bragg_is_tof(series.labels[0] if series.labels else None) else "Q (Å^{-1})"
-            y_label = "Intensity"
         else:
             x_label = _clean_axis_label(x_label)
-            y_label = "data"
 
         return jsonify({**metadata, "xLabel": x_label, "yLabel": y_label, "series": payload_series})
     except PermissionError as exc:
@@ -598,19 +676,28 @@ def structure():
             "maxPoints", MAX_STRUCTURE_POINTS, integer=True, clamp=(100, MAX_STRUCTURE_POINTS)
         )
         rmc6f_path = _find_rmc6f(target)
+        _require_usable_rmc6f(rmc6f_path, target)
         lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
-        atom_indices = read_atom_indices(rmc6f_path)
         moves = read_moves_metadata(rmc6f_path)
 
-        atoms = list(iter_rmc6f_atoms(rmc6f_path))
+        # Same line grammar as the browser parser (rmc6f.js): full-layout and
+        # legacy coords-only atoms both count; non-finite / unparsed lines are
+        # reported, and zero parsed atoms is an error naming what was found.
+        atoms, parse_report = parse_rmc6f_atoms(rmc6f_path, include_coords_only=True)
+        index_sets: dict[str, set[int]] = {}
+        for atom in atoms:
+            if atom["reference_number"] is not None:
+                index_sets.setdefault(atom["element"], set()).add(int(atom["reference_number"]))
+        atom_indices = {element: sorted(indices) for element, indices in index_sets.items()}
         sampled, stride = _sample_atoms_by_site(atoms, max_points)
         points = []
         counts: dict[str, int] = {}
         for atom in atoms:
             counts[atom["element"]] = counts.get(atom["element"], 0) + 1
         for atom in sampled:
-            reduced = atom["coords"] - (atom["cell_indices"] / supercell)
-            unit_cell = (reduced * supercell) % 1.0
+            # Fold the box coordinate into one unit cell; subtracting the cell
+            # index first only removes an integer, so coords-only atoms fold too.
+            unit_cell = (atom["coords"] * supercell) % 1.0
             points.append(
                 {
                     "element": atom["element"],
@@ -636,6 +723,8 @@ def structure():
                 "supercell": supercell.tolist(),
                 "latticeVectors": lattice_vectors.tolist(),
                 "moves": moves,
+                "parseReport": parse_report.to_dict(),
+                "parseWarning": parse_report.warning(),
                 "points": points,
             }
         )

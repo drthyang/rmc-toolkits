@@ -42,9 +42,10 @@ describe('structureFromRmc6f site displacement (dispA)', () => {
         expect(site.frac[0]).toBeCloseTo(0.5, 6);
         expect(site.frac[1]).toBeCloseTo(0.25, 6);
         expect(site.frac[2]).toBeCloseTo(0.75, 6);
-        // Two points at ±0.02 in cell fraction on a 10 Å edge: circular std
-        // √(−2 ln cos(2πδ))/2π · 10 ≈ 0.2003 Å; y and z contribute zero.
-        expect(site.dispA).toBeCloseTo(0.2003, 3);
+        // Two points at ±0.02 in cell fraction on a 10 Å edge: offsets ±0.2 Å
+        // about the mean, so the rms displacement is 0.2 Å (y and z add zero).
+        // (The former circular-std estimate gave √(−2 ln cos 2πδ)/2π · 10 ≈ 0.2003.)
+        expect(site.dispA).toBeCloseTo(0.2, 12);
     });
 
     it('reports zero displacement for coincident copies', () => {
@@ -140,8 +141,12 @@ describe('parseRunSettings (<stem>.dat run-control file)', () => {
     });
 });
 
+// The structure chooser skips empty / marker-less .rmc6f candidates, so a
+// placeholder configuration needs at least the Atoms marker.
+const RMC6F_STUB = 'Supercell dimensions: 1 1 1\nAtoms:\n';
+
 describe('settings file selection (buildLocalRun)', () => {
-    const makeFile = (name) => new File(['x'], name, { lastModified: 1 });
+    const makeFile = (name) => new File([name.endsWith('.rmc6f') ? RMC6F_STUB : 'x'], name, { lastModified: 1 });
     const withPath = (name) => {
         const file = makeFile(name);
         Object.defineProperty(file, 'webkitRelativePath', { value: `run/${name}` });
@@ -224,7 +229,7 @@ describe('run-control fit-function labels on Dashboard plots', () => {
             return file;
         };
         const run = await buildLocalRun([
-            withPath('PMN.rmc6f', 'x'),
+            withPath('PMN.rmc6f', RMC6F_STUB),
             withPath('PMN.dat', dat),
             withPath('chi2.dat', '0.1 0.2\n0.3 0.4\n'),
             withPath('PMN_v2.gr', 'h1\nh2\n0 1\n0.1 2\n'),
@@ -236,9 +241,10 @@ describe('run-control fit-function labels on Dashboard plots', () => {
     });
 });
 
-// Rwp comes from an S(Q) CSV's second and third columns (observed, fitted).
-// A column can hold non-numeric text ("nan" in a masked region), which the CSV
-// reader carries through as NaN.
+// Rwp of an S(Q) CSV whose header names the roles: `observed` is the
+// experiment (the denominator), `fitted` the calculation (rwpColumns). A column
+// can hold non-numeric text ("nan" in a masked region), which the CSV reader
+// carries through as NaN.
 const rwpFromRows = (rows) => plotDataFromText({
     plotKind: 'neutron_sq',
     name: 'PMN_SQ1.csv',
@@ -271,5 +277,40 @@ describe('Rwp metric', () => {
 
     it('is null when every row has NaN on one side or the other', () => {
         expect(rwpFromRows(['0,nan,1', '1,2,nan'])).toBeNull();
+    });
+});
+
+describe('structure file choice (buildLocalRun)', () => {
+    const withPath = (name, content) => {
+        const file = new File([content], name, { lastModified: 1 });
+        Object.defineProperty(file, 'webkitRelativePath', { value: `run/${name}` });
+        return file;
+    };
+
+    it('skips a 0-byte stem match left by an aborted run and takes the next usable one', async () => {
+        // Mirrors data/250K_try1/supercell: Frac_coord_new_x.txt stem-matches new_x.rmc6f,
+        // which is empty, while new_y.rmc6f beside it is a valid configuration.
+        const run = await buildLocalRun([
+            withPath('Frac_coord_new_x.txt', 'h\n'),
+            withPath('Frac_coord_new_y.txt', 'h\n'),
+            withPath('new_x.rmc6f', ''),
+            withPath('new_y.rmc6f', RMC6F_STUB),
+        ]);
+        expect(run.structureFile.name).toBe('new_y.rmc6f');
+    });
+
+    it('skips a candidate with no Atoms section', async () => {
+        const run = await buildLocalRun([
+            withPath('a-00.log', 'h\nh\n1 2 3\n'),
+            withPath('a.rmc6f', '(Version 6f format configuration file)\nNumber of atoms: 4\n'),
+            withPath('b.rmc6f', RMC6F_STUB),
+        ]);
+        expect(run.structureFile.name).toBe('b.rmc6f');
+    });
+
+    it('says why when no candidate is usable', async () => {
+        const run = await buildLocalRun([withPath('a-00.log', 'h\nh\n1 2 3\n'), withPath('a.rmc6f', '')]);
+        expect(run.structureFile).toBeNull();
+        expect(run.structureError).toBe('No usable .rmc6f file: a.rmc6f (empty (0 bytes))');
     });
 });
