@@ -55,6 +55,9 @@ START_WINDOW_WIDTHS = (0.3, 1.0)
 ONSET_TOLERANCE = 0.15
 #: Most refits :func:`autoscale` spends confirming first-shell candidates.
 MAX_WINDOW_REFITS = 4
+#: Number densities (atoms/A^3) :func:`estimate_rho0` may return: liquid Cs
+#: (~0.0085) to beyond diamond (0.176), with margin on both sides.
+RHO0_PHYSICAL_RANGE = (0.005, 0.25)
 
 
 @dataclass(frozen=True)
@@ -1275,8 +1278,8 @@ def estimate_rho0(
     *,
     rtol: float = 1.0e-3,
     max_iter: int = 8,
-    rho_min: float = 1.0e-4,
-    rho_max: float = 1.0,
+    rho_min: float = RHO0_PHYSICAL_RANGE[0],
+    rho_max: float = RHO0_PHYSICAL_RANGE[1],
 ) -> dict[str, Any]:
     """Self-consistent number density from amplitude-criteria concordance.
 
@@ -1294,18 +1297,33 @@ def estimate_rho0(
     ``rho_next = rho0 * concordance`` converges in a few :func:`autoscale`
     passes.
 
+    A concordant density is accepted only when it is physical: the iterate is
+    confined to ``[rho_min, rho_max]`` (default :data:`RHO0_PHYSICAL_RANGE`,
+    0.005-0.25 A^-3 — from liquid Cs to beyond diamond; a step leaving it
+    stops the iteration), and the density-limit criterion must hold at the
+    root (``diagnostics_summary``'s ``density_limit_satisfied``). On
+    missing-low-Q data ``a_density(rho0)`` can cross ``a_fz`` a second time
+    at a density no solid has (0.388 A^-3 = 45.7 g/cm^3 for Mn3Sn at 300 K);
+    that crossing is a spurious root, reported ``converged=False``.
+
     Caveats: requires ``config.b_sq_avg`` (without a composition the
     degeneracy is fundamental) and a statistically flat high-Q level; the
     returned ``extrapolated`` flag marks data whose Qmin exceeds the FZ fit
     width — there the Q->0 extrapolation owns the estimate, so treat it as a
-    starting point, not a measurement. ``config.rho0`` seeds the iteration.
+    starting point, not a measurement. ``config.rho0`` seeds the iteration
+    (clipped into the physical range).
 
     Returns a JSON-friendly dict: ``rho0``, ``converged``, ``iterations``,
     ``concordance``, ``a_density``, ``a_fz``, ``extrapolated``, ``history``
-    rows ``[rho0, a_density, a_fz, concordance]``, and ``stopped`` — None, or
+    rows ``[rho0, a_density, a_fz, concordance]``, ``stopped`` — None, or
     why the iteration stopped early because :func:`autoscale` could not fit a
-    trial density (the last usable iterate is reported, ``converged=False``).
+    trial density (the last usable iterate is reported, ``converged=False``)
+    — and ``reason``: None when converged, else why not (``stopped``, a
+    non-physical amplitude, a step out of the physical range, a spurious
+    root, or no concordance within ``max_iter`` passes).
     """
+    if not (0.0 < rho_min < rho_max):
+        raise ValueError(f"need 0 < rho_min < rho_max, got [{rho_min}, {rho_max}]")
     if config.b_sq_avg is None:
         raise ValueError(
             "estimate_rho0 requires b_sq_avg (<b^2>): without a composition "
@@ -1318,6 +1336,7 @@ def estimate_rho0(
     history: list[tuple[float, float, float, float]] = []
     converged = False
     stopped: str | None = None
+    reason: str | None = None
     for _ in range(max_iter):
         work = replace(work, rho0=rho)
         try:
@@ -1328,6 +1347,7 @@ def estimate_rho0(
             # The fixed-point step left the physical range (the density limit
             # cannot even be placed below the first shell there): stop.
             stopped = f"autoscale failed at rho0 = {rho:.6g}: {exc}"
+            reason = stopped
             break
         if result.a_fz is None or not np.isfinite(result.a_fz) or result.a_fz <= 0:
             raise ValueError(
@@ -1338,18 +1358,45 @@ def estimate_rho0(
         concordance = float(result.a_fz / result.a)
         history.append((rho, float(result.a), float(result.a_fz), concordance))
         if abs(concordance - 1.0) <= rtol:
-            converged = True
+            # The amplitudes agree; the root is the density only if the fit it
+            # rests on satisfies the density limit there.
+            summary = diagnostics_summary(result, work)
+            if summary["density_limit_satisfied"]:
+                converged = True
+            else:
+                lo, hi = summary["r_fit_window"]
+                reason = (
+                    f"the amplitudes agree at rho0 = {rho:.6g} A^-3, but the "
+                    "density-limit criterion fails there (mean g on the low-r "
+                    f"window [{lo:.3g}, {hi:.3g}] A = {summary['g_window_mean']:.3g}, "
+                    "not ~0): a spurious root, not the sample density"
+                )
             break
         if result.a <= 0 or concordance <= 0:
             # The density-limit fit produced a non-physical amplitude: the two
             # criteria are discordant on this data (typically missing low-Q
             # structure, cf. the Mn3Sn runs) and no density can reconcile
             # them. Stop instead of iterating garbage.
+            reason = (
+                f"the density-limit amplitude is non-physical at rho0 = {rho:.6g} "
+                f"A^-3 (a = {result.a:.4g}, concordance {concordance:.4g}): the "
+                "two amplitude criteria cannot be reconciled on these data"
+            )
             break
         rho_next = float(np.clip(rho * concordance, rho_min, rho_max))
         if rho_next == rho:  # pinned at a bound: no progress possible
+            reason = (
+                f"the fixed-point step leaves the physical density range "
+                f"[{rho_min:g}, {rho_max:g}] A^-3 (next rho0 = "
+                f"{rho * concordance:.4g} A^-3)"
+            )
             break
         rho = rho_next
+    else:
+        reason = (
+            f"no concordant density within {max_iter} passes (last concordance "
+            f"{history[-1][3]:.4g})"
+        )
     return {
         "rho0": history[-1][0],
         "converged": converged,
@@ -1362,6 +1409,7 @@ def estimate_rho0(
         "extrapolated": bool(config.qmin > 1.0),
         "history": [list(row) for row in history],
         "stopped": stopped,
+        "reason": None if converged else reason,
     }
 
 

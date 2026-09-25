@@ -360,6 +360,8 @@ export const START_WINDOW_WIDTHS = [0.3, 1.0];
 export const ONSET_TOLERANCE = 0.15;
 /** Most refits autoscale spends confirming first-shell candidates (scaling.MAX_WINDOW_REFITS). */
 export const MAX_WINDOW_REFITS = 4;
+/** Number densities (atoms/Å³) estimateRho0 may return (scaling.RHO0_PHYSICAL_RANGE). */
+export const RHO0_PHYSICAL_RANGE = [0.005, 0.25];
 
 export const defaultConfig = {
   qmin: NaN,
@@ -1157,10 +1159,13 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
  * aDensity grows ~linearly with rho0 the fixed-point update
  * rho *= concordance converges in a few autoscale passes. Requires
  * config.bSqAvg; `extrapolated` flags data whose Qmin exceeds the FZ fit
- * width (the estimate is then a starting point, not a measurement).
+ * width (the estimate is then a starting point, not a measurement). The
+ * iterate stays in [rhoMin, rhoMax] (RHO0_PHYSICAL_RANGE) and a concordant
+ * root counts only where the density limit holds; every non-converged exit
+ * sets `reason`.
  */
 export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
-  rtol = 1e-3, maxIter = 8, rhoMin = 1e-4, rhoMax = 1.0,
+  rtol = 1e-3, maxIter = 8, rhoMin = RHO0_PHYSICAL_RANGE[0], rhoMax = RHO0_PHYSICAL_RANGE[1],
 } = {}) => {
   if (config.bSqAvg == null) {
     throw new Error(
@@ -1168,11 +1173,16 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
       + 'density and the amplitude are degenerate'
     );
   }
+  if (!(rhoMin > 0 && rhoMin < rhoMax)) {
+    throw new Error(`need 0 < rhoMin < rhoMax, got [${rhoMin}, ${rhoMax}]`);
+  }
   let work = { ...config, amplitudeCriterion: 'density', c1Mode: 'sweep' };
   let rho = Math.min(Math.max(work.rho0, rhoMin), rhoMax);
   const history = [];
   let converged = false;
   let stopped = null;
+  let reason = null;
+  let exhausted = true;
   for (let iteration = 0; iteration < maxIter; iteration += 1) {
     work = { ...work, rho0: rho };
     let result;
@@ -1183,6 +1193,8 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
       // The fixed-point step left the physical range (the density limit
       // cannot even be placed below the first shell there): stop.
       stopped = `autoscale failed at rho0 = ${fmtG(rho)}: ${error.message}`;
+      reason = stopped;
+      exhausted = false;
       break;
     }
     if (result.aFz == null || !isNum(result.aFz) || result.aFz <= 0) {
@@ -1195,18 +1207,43 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
     const concordance = result.aFz / result.a;
     history.push([rho, result.a, result.aFz, concordance]);
     if (Math.abs(concordance - 1) <= rtol) {
-      converged = true;
+      // The amplitudes agree; the root is the density only if the fit it
+      // rests on satisfies the density limit there (scaling.estimate_rho0).
+      const summary = diagnosticsSummary(result, work);
+      if (summary.density_limit_satisfied) {
+        converged = true;
+      } else {
+        const [lo, hi] = summary.r_fit_window;
+        reason = `the amplitudes agree at rho0 = ${fmtG(rho)} A^-3, but the `
+          + 'density-limit criterion fails there (mean g on the low-r '
+          + `window [${fmtP(lo, 3)}, ${fmtP(hi, 3)}] A = ${fmtP(summary.g_window_mean, 3)}, `
+          + 'not ~0): a spurious root, not the sample density';
+      }
+      exhausted = false;
       break;
     }
     if (result.a <= 0 || concordance <= 0) {
       // Non-physical density-limit amplitude: the criteria are discordant on
       // this data (typically missing low-Q structure) and no density can
       // reconcile them. Stop instead of iterating garbage.
+      reason = `the density-limit amplitude is non-physical at rho0 = ${fmtG(rho)} `
+        + `A^-3 (a = ${fmtP(result.a, 4)}, concordance ${fmtP(concordance, 4)}): the `
+        + 'two amplitude criteria cannot be reconciled on these data';
+      exhausted = false;
       break;
     }
     const rhoNext = Math.min(Math.max(rho * concordance, rhoMin), rhoMax);
-    if (rhoNext === rho) break; // pinned at a bound: no progress possible
+    if (rhoNext === rho) { // pinned at a bound: no progress possible
+      reason = 'the fixed-point step leaves the physical density range '
+        + `[${fmtG(rhoMin)}, ${fmtG(rhoMax)}] A^-3 (next rho0 = ${fmtP(rho * concordance, 4)} A^-3)`;
+      exhausted = false;
+      break;
+    }
     rho = rhoNext;
+  }
+  if (exhausted) {
+    reason = `no concordant density within ${maxIter} passes (last concordance `
+      + `${fmtP(history[history.length - 1][3], 4)})`;
   }
   const last = history[history.length - 1];
   return {
@@ -1219,6 +1256,7 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
     extrapolated: config.qmin > 1.0,
     history,
     stopped,
+    reason: converged ? null : reason,
   };
 };
 
@@ -1231,10 +1269,15 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
  */
 export const rho0NonConvergenceMessage = (estimate) => {
   const concordance = Number(estimate.concordance.toPrecision(3));
-  const reason = estimate.stopped
-    ? `the iteration stopped at a density the auto-scale cannot fit (${estimate.stopped})`
-    : 'the density-limit and Q→0 Faber-Ziman amplitudes disagree at every density — '
+  let reason;
+  if (estimate.stopped) {
+    reason = `the iteration stopped at a density the auto-scale cannot fit (${estimate.stopped})`;
+  } else if (estimate.reason) {
+    reason = estimate.reason;
+  } else {
+    reason = 'the density-limit and Q→0 Faber-Ziman amplitudes disagree at every density — '
       + 'typically data missing structure below Qmin';
+  }
   return `ρ₀ self-consistency did not converge (final concordance ${concordance}): ${reason}. `
     + 'Set ρ₀ explicitly (value, data header, or mass density) and consider the '
     + 'Faber-Ziman Q→0 amplitude criterion for the scale.';

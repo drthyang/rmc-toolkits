@@ -577,7 +577,9 @@ $\rho_0 = 0.063049$ Å⁻³ ↔ $\rho_m = 7.4209$ g/cm³, and back to 9 decimal 
 **Self-consistent estimate (referenced here, detailed in the fit section).**
 `estimate_rho0` / `estimateRho0` root-find $a_\mathrm{fz}/a_\mathrm{density}(\rho_0) = 1$ by the
 fixed-point update $\rho \leftarrow \rho\cdot\mathrm{concordance}$, with `rtol = 1e-3`,
-`max_iter = 8`, and clipping to $[10^{-4}, 1]$ Å⁻³. It **requires** $\langle b^2\rangle$, and
+`max_iter = 8`, and clipping to the physical range $[0.005, 0.25]$ Å⁻³ (`RHO0_PHYSICAL_RANGE`);
+a concordant root is accepted only where the density limit holds. It **requires**
+$\langle b^2\rangle$, and
 sets an `extrapolated` flag when $Q_\mathrm{min} > 1$ Å⁻¹ (the $Q\to0$ extrapolation then owns
 the estimate — a starting point, not a measurement). The iteration is deterministic and takes the
 same steps in both engines, so the *iterated* result agrees across engines to round-off (asserted
@@ -592,9 +594,10 @@ Four behaviours of the estimator are load-bearing and easy to miss:
 2. **It can stop without converging.** Besides `|concordance − 1| ≤ rtol`, the loop breaks when
    `result.a <= 0 or concordance <= 0` (no density can reconcile the two criteria — with the
    automatic window placement `autoscale` raises instead of returning $a \le 0$, so this exit is
-   reached with a pinned `r0` / `r_fit_max`, and the raise lands in item 5) and when the
-   clipped update lands on the same value (`rho_next == rho`, i.e. pinned at $10^{-4}$ or 1
-   Å⁻³). Both exits return `converged: False`.
+   reached with a pinned `r0` / `r_fit_max`, and the raise lands in item 5), when the
+   clipped update lands on the same value (`rho_next == rho`, i.e. the step leaves the physical
+   range $[0.005, 0.25]$ Å⁻³), and when a concordant root fails the density-limit criterion (a
+   spurious root). Every such exit returns `converged: False` with a `reason`.
 3. **The returned `rho0` is `history[-1][0]`** — the density the *last fit was run at*, not the
    last update. On a non-converged return you get the last density tried, not a refined one.
 4. **Cost.** Each iteration is a full `autoscale` (two trial windows + usually one confirming
@@ -1041,7 +1044,7 @@ provenance JSON).
 | `enforce_cutoff` (config field) | `None` | **library only** — never set by the CLI, the API or the browser | Å; drives `enforce_low_r` |
 | min. usable points after crop | `16` (checked *before* despiking) | hard-coded | both engines |
 | min. finite points for the level sweep | `32` (window ≥ 24 pts, ≥ 3 Å⁻¹ wide) | hard-coded | the binding limit in the default `sweep` mode |
-| $\rho_0$ estimate `rtol`, `max_iter`, bounds | `1e-3`, `8`, `[1e-4, 1]` | hard-coded | Å⁻³; each iteration is a full `autoscale` (Step 8 window placement included) |
+| $\rho_0$ estimate `rtol`, `max_iter`, bounds | `1e-3`, `8`, `[0.005, 0.25]` (`RHO0_PHYSICAL_RANGE`) | hard-coded | Å⁻³; each iteration is a full `autoscale` (Step 8 window placement included) |
 | $\rho_0$ seed when unresolved | `0.05` | browser only | Å⁻³ |
 | $\rho_0$ write-back rounding | 5 significant digits | browser only | run uses the unrounded value |
 | formula-vs-override warning threshold | 2 % (of the *composition* value in the browser, of the *configured* value in the CLI) | browser chip ($\langle b\rangle^2$ and $\langle b^2\rangle$) + CLI stderr ($\langle b\rangle^2$ only) | — |
@@ -3002,13 +3005,18 @@ does not depend on $\rho_0$ at all. So the true density is the root of
 $$\mathrm{concordance}(\rho_0) \;\equiv\; \frac{a_\mathrm{fz}}{a_\mathrm{density}(\rho_0)} \;=\; 1 .$$
 
 **Operation.** `estimate_rho0()` forces `amplitude_criterion="density"`, `c1_mode="sweep"`, seeds
-$\rho \leftarrow \mathrm{clip}(\texttt{config.rho0},\ 10^{-4},\ 1.0)$ Å⁻³, and iterates (max 8
-passes, each a full `autoscale()` including its Step-8 window placement):
+$\rho \leftarrow \mathrm{clip}(\texttt{config.rho0},\ \rho_\mathrm{min},\ \rho_\mathrm{max})$ Å⁻³, and iterates
+(max 8 passes, each a full `autoscale()` including its Step-8 window placement):
 
 $$\rho \;\leftarrow\; \mathrm{clip}\big(\rho\cdot\mathrm{concordance}(\rho),\ \rho_\mathrm{min},\ \rho_\mathrm{max}\big),\qquad
-\rho_\mathrm{min}=10^{-4},\ \rho_\mathrm{max}=1.0\ \text{Å}^{-3},$$
+\rho_\mathrm{min}=0.005,\ \rho_\mathrm{max}=0.25\ \text{Å}^{-3},$$
 
-stopping when $|\mathrm{concordance}-1| \le \texttt{rtol} = 10^{-3}$. Because
+stopping when $|\mathrm{concordance}-1| \le \texttt{rtol} = 10^{-3}$ **and** the density limit holds
+at that root (`diagnostics_summary(...)["density_limit_satisfied"]`, i.e.
+$|\langle g\rangle_\mathrm{window}| < 0.1$). The default range (`RHO0_PHYSICAL_RANGE`,
+`rho_min`/`rho_max` keyword arguments; JS `rhoMin`/`rhoMax`) spans every condensed phase —
+liquid Cs is 0.0085 Å⁻³, diamond 0.176 Å⁻³ — with margin; before 1.0 it was $[10^{-4}, 1]$ Å⁻³,
+wide enough to accept impossible roots (below). Because
 $a_\mathrm{density} \propto \rho_0$ the update is Newton-like; observed 2–4 passes from seeds
 spanning a 10× range.
 
@@ -3029,16 +3037,28 @@ Two consequences of "each pass is a full `autoscale()`" that the shape of the up
 - $a_\mathrm{density} \le 0$ or concordance $\le 0$ → **break with `converged=False`**: the two
   criteria are irreconcilable at *any* density (typically missing low-$Q$ structure) and iterating
   would produce garbage. `test_estimate_rho0_fails_honestly` pins this on the Mn₃Sn 500 K run.
-- $\rho$ pinned at a clip bound (no progress) → break, `converged=False`.
+- $\rho$ pinned at a bound of the physical range (the step leaves it) → break, `converged=False`.
+- A concordant root at which the density limit fails → `converged=False` (a **spurious root**).
+  On missing-low-$Q$ data $a_\mathrm{density}(\rho_0)$ can cross $a_\mathrm{fz}$ a second time at an
+  impossible density: with the closest approach pinned at 2.6 Å (as a `stog.inp` or
+  `MINIMUM_DISTANCES` header supplies it) the Mn₃Sn 300 K run used to "converge" at 0.428 Å⁻³
+  (~50 g/cm³, 6.8× the real 0.063) from the true density as seed, and the CLI adopted it. Now
+  every Mn₃Sn run and seed (0.02, 0.05, 0.063) ends `converged=False` with a reason
+  (`tests/test_stog_b_rho0.py`): the step towards 0.39–1.9 Å⁻³ leaves the physical range, or the
+  seed fit already has $a \le 0$.
+- `max_iter` passes without concordance → `converged=False`.
 
-Callers refuse to adopt a non-converged estimate. The CLI raises with a message pointing at
+Every non-converged return carries `reason` (a sentence naming which exit fired and at which
+density; equal to `stopped` for an autoscale failure).
+
+Callers refuse to adopt a non-converged estimate, quoting the `reason`. The CLI raises with a message pointing at
 `--rho0` / `--mass-density` / the data header and suggesting `--amplitude fz`; the worker throws the
 same physics in browser wording — "Set ρ₀ explicitly (value, data header, or mass density) and
 consider the Faber-Ziman Q→0 amplitude criterion for the scale" — since there is no CLI flag in the
 browser path.
 
 **Returned dict:** `rho0`, `converged`, `iterations`, `concordance`, `a_density`, `a_fz`,
-`extrapolated`, `history` (rows `[rho0, a_density, a_fz, concordance]`). `rho0` is the density at
+`extrapolated`, `history` (rows `[rho0, a_density, a_fz, concordance]`), `stopped`, `reason`. `rho0` is the density at
 which the **last** pass ran, so on success it is the value that produced the accepted concordance.
 `extrapolated` is simply `config.qmin > 1.0` Å⁻¹ — a flag meaning the $Q\to 0$ extrapolation is
 longer than the data it rests on, so the estimate is *a starting point, not a measurement*.
@@ -3297,7 +3317,7 @@ Genuine implementation differences:
 | `level_sweep`: `min_width`, `n_grid`, `slope_nsigma` | 3.0, 80, 2.0 | Å⁻¹, count, σ | **not configurable** |
 | `detect_first_peak_onset` / `first_shell_candidates`: `search_min`, `search_max`, `fraction`, `floor`, `prominence`, `major`, `strong_prominence` | `r_cutoff+0.3`, 6.0, 0.35, 0.5, 2.0, 0.5, 4.0 | Å, Å, —, $\lvert g\rvert$, —, —, — | **not configurable** |
 | `amplitude_from_fz_limit`: `fit_width` | 1.0 | Å⁻¹ | head extrapolation span, ≥8 points |
-| `estimate_rho0`: `rtol`, `max_iter`, `rho_min`, `rho_max` | 1e-3, 8, 1e-4, 1.0 | —, count, Å⁻³, Å⁻³ | fixed-point root-find |
+| `estimate_rho0`: `rtol`, `max_iter`, `rho_min`, `rho_max` | 1e-3, 8, 0.005, 0.25 | —, count, Å⁻³, Å⁻³ | fixed-point root-find, confined to the physical range; a root must also satisfy the density limit |
 | diagnostic thresholds | $\lvert$`g_window_mean`$\rvert<0.1$; $\lvert a_\mathrm{fz}/a - 1\rvert<0.1$; UI coefficient-shadowing warning at 2 % | — | one-sided / concordance verdicts |
 
 **Hard minimums.** ≥16 points after cropping (checked *before* despiking, never re-checked); ≥32
@@ -3918,17 +3938,19 @@ the estimate back into the $\rho_0$ **form field**, rounded to 5 significant dig
   are looking at — it is a new run at a slightly different density, producing slightly
   different $a$, $b$, $G_K$, $D$ and written files, while the cards read as if nothing changed.
 - `estimateRho0` seeds its fixed-point iteration from `config.rho0`
-  (`Math.min(Math.max(work.rho0, 1e-4), 1.0)` Å⁻³), so pressing **Estimate $\rho_0$** twice starts
+  (`Math.min(Math.max(work.rho0, 0.005), 0.25)` Å⁻³), so pressing **Estimate $\rho_0$** twice starts
   the second search from the first answer rather than from a fixed seed.
 
 The estimator's exit conditions (`autoScale.js` → `estimateRho0()`) and its `history` shape
 are worth stating because both surface in the provenance JSON:
 
-- $|{\rm concordance}-1|\le$ `rtol` $=10^{-3}$ → `converged = true`;
+- $|{\rm concordance}-1|\le$ `rtol` $=10^{-3}$ → `converged = true` if the density limit holds
+  there (`diagnosticsSummary(...).density_limit_satisfied`), else `converged = false` with a
+  spurious-root `reason`;
 - `result.a <= 0 || concordance <= 0` (non-physical density-limit amplitude) → break with
   `converged = false`;
-- the clamped update `rhoNext === rho` (pinned at the $[10^{-4}, 1.0]$ Å⁻³ bound, no progress
-  possible) → break with `converged = false`;
+- the clamped update `rhoNext === rho` (the step leaves the physical range $[0.005, 0.25]$ Å⁻³)
+  → break with `converged = false`;
 - `result.aFz` null / non-finite / ≤ 0 → **throws** (“no usable Faber-Ziman amplitude …”), a
   different failure mode from non-convergence;
 - otherwise the loop runs to `maxIter = 8` passes with `converged = false`.
@@ -4211,7 +4233,7 @@ Two known gaps in the browser JSON, both harmless but worth stating:
 | — | `maxIter` / `tol` | 50 / 1e-6 | — | self-consistency loop stopping rule (no UI) |
 | — | level sweep | minWidth 3.0 Å⁻¹, 80 grid edges, ≥24 pts, 2σ slope test | — | not exposed |
 | — | $r_0$ detection | search rCutoff+0.3 … 6.0 Å, candidates from +2π/Qmax, first maximum ≥ 4× (or ≥ 2× and ≥ 50 % of range max) its ripple field, flank at 35 % of that shell (none if it reaches the search edge), floor 0.5; window placement: onset tolerance 0.15 Å, ≤ 4 confirming refits | — | not exposed |
-| — | $\rho_0$ estimate | rtol 1e-3, ≤8 passes, ρ clamped to [1e-4, 1.0] Å⁻³; also exits on a ≤ 0 / concordance ≤ 0, a clamp-pinned update, or an autoscale failure at a trial density (`stopped`); throws when no usable a_fz | — | not exposed |
+| — | $\rho_0$ estimate | rtol 1e-3, ≤8 passes, ρ clamped to the physical range [0.005, 0.25] Å⁻³; a concordant root must satisfy the density limit; also exits on a ≤ 0 / concordance ≤ 0, a step out of the range, or an autoscale failure at a trial density (`stopped`) — every non-converged exit sets `reason`, which the error banner quotes; throws when no usable a_fz | — | not exposed |
 
 ---
 
