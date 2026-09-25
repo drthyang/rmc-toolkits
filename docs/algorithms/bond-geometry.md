@@ -598,8 +598,13 @@ actual first shell:
   debounce so the plot's view state does not reset per keystroke. With the split **off**, one
   neutral-grey pair covers both bonds. With it **on**, each window gets its own pair, labelled
   `A–B rmin/rmax` and `B–C rmin/rmax` **by role** (pair names would collide for same-element
-  triplets) and colored to match the curve each brackets: guides consume no palette slot, so
-  shell $N$ is `PLOT_PALETTE[N]` ([plotPalette.js](../../web_app/frontend/src/plotPalette.js)).
+  triplets) and colored `PLOT_PALETTE[0]` / `PLOT_PALETTE[1]`: guides consume no palette slot,
+  so shell $N$ is `PLOT_PALETTE[N]` ([plotPalette.js](../../web_app/frontend/src/plotPalette.js))
+  and, when the bonds are different types, each pair matches the curve it brackets (for a
+  same-type triplet the B–C pair has the second color and no curve of its own).
+- **Nothing is shaded**: the window is marked only by the guides. The in-app help (the A–B
+  window and Partial PDF InfoBadges) states exactly these rules — the second curve follows the
+  bond types, the switch only the guides — pinned by `BondGeometryPage.test.jsx`.
 - **Crop**: the x-range is cut at $\max(6\,\text{Å},\ 2\times$ the furthest active
   $r_\mathrm{max})$ — beyond the first-shell region nothing informs a bond window.
 

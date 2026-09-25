@@ -449,8 +449,8 @@ export default function BondGeometryPage({ directory, localRun }) {
                                 <p>
                                     Two atoms are bonded when their distance falls inside the window
                                     (inclusive). Read the window off the first-shell peak of the
-                                    partial g(r) — the helper panel shades it once a partials file is
-                                    in the run folder.
+                                    partial g(r) — the Partial PDF panel marks the current bounds
+                                    with dashed guides once a partials file is in the run folder.
                                 </p>
                             </InfoBadge>
                         </span>
@@ -636,9 +636,17 @@ export default function BondGeometryPage({ directory, localRun }) {
                                         The A{'–'}B partial pair distribution from the run's{' '}
                                         <code>PDFpartials.csv</code>. Set the bond window to bracket
                                         the first-shell peak; the dashed guides track the current
-                                        A{'–'}B bounds. With <b>distinct B{'–'}C</b> on, the B{'–'}C
-                                        partial is plotted alongside it with its own pair of guides,
-                                        so both windows can be set against their own shell.
+                                        bounds.
+                                    </p>
+                                    <p>
+                                        A second partial is drawn whenever A{'–'}B and B{'–'}C are
+                                        different pair types (Ga{'–'}Nb{'–'}Se: Ga{'–'}Nb and Nb{'–'}Se),
+                                        whether or not <b>Distinct B{'–'}C</b> is on; a same-type
+                                        triplet such as Se{'–'}Nb{'–'}Se has one shell and one curve.
+                                        The switch governs the guides: off, one neutral pair covers
+                                        both bonds; on, each window gets its own labelled pair
+                                        (A{'–'}B, B{'–'}C), colored like its shell's curve when the
+                                        two bonds are different types.
                                     </p>
                                 </InfoBadge>
                             </span>
