@@ -917,13 +917,20 @@ def autoscale(
         return refined
 
     candidates: list[float] = []
+    failures: list[ValueError] = []
     for width in START_WINDOW_WIDTHS:
-        trial = _autoscale_pass(q, sq, replace(config, r_fit_max=lo + width), sigma)
+        try:
+            trial = _autoscale_pass(q, sq, replace(config, r_fit_max=lo + width), sigma)
+        except ValueError as exc:  # e.g. a trial window with < 2 r points
+            failures.append(exc)
+            continue
         if not trial.a > 0:
             continue  # a non-physical scale: this window sits on structure
         onset = _detect_onset(trial, config)
         if onset is not None:
             candidates.append(float(onset))
+    if len(failures) == len(START_WINDOW_WIDTHS):
+        raise failures[-1]  # the data cannot be fitted at all: report why
     if not candidates:
         raise ValueError(
             "autoscale: could not locate the first coordination shell in the "

@@ -813,11 +813,21 @@ export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
   }
 
   const candidates = [];
+  const failures = [];
   for (const width of START_WINDOW_WIDTHS) {
-    const trial = autoscalePass(qIn, sqIn, { ...config, rFitMax: lo + width }, sigmaIn);
+    let trial;
+    try {
+      trial = autoscalePass(qIn, sqIn, { ...config, rFitMax: lo + width }, sigmaIn);
+    } catch (error) { // e.g. a trial window with < 2 r points
+      failures.push(error);
+      continue;
+    }
     if (!(trial.a > 0)) continue; // a non-physical scale: this window sits on structure
     const onset = detectOnset(trial, config);
     if (onset != null) candidates.push(onset);
+  }
+  if (failures.length === START_WINDOW_WIDTHS.length) {
+    throw failures[failures.length - 1]; // the data cannot be fitted at all: report why
   }
   if (!candidates.length) {
     throw new Error(

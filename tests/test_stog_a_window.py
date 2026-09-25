@@ -150,6 +150,14 @@ class ShortBondTests(unittest.TestCase):
         self.assertLess(abs(result.a / A_TRUE - 1.0), 0.08, f"a = {result.a}")
         self.assertLess(summary["r_fit_window"][1], 1.35)
 
+    def test_unfittable_data_reports_the_real_error(self):
+        # Both trial fits fail for a reason unrelated to the first shell: that
+        # reason is reported, not "could not locate the first shell".
+        formula, rho0, shells, r_continuum = SIO2_GLASS
+        sq, values = shell_sq(formula, rho0, shells, r_continuum)
+        with self.assertRaisesRegex(ValueError, "fewer than 16 usable"):
+            autoscale(Q[:10], sq[:10], ScalingConfig(**values))
+
     def test_pinned_window_is_respected(self):
         formula, rho0, shells, r_continuum = SIO2_GLASS
         sq, values = shell_sq(formula, rho0, shells, r_continuum)
