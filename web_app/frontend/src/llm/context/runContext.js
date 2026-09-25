@@ -127,6 +127,9 @@ const symmetryContext = (structure, symmetry) => {
     if (Number.isFinite(symmetry.nSpace)) block.n_ops = symmetry.nSpace;
     if (Number.isFinite(symmetry.toleranceA)) block.tolerance_A = roundSig(symmetry.toleranceA, 2);
     if (Number.isFinite(symmetry.maxResidual)) block.max_residual_A = roundSig(symmetry.maxResidual, 2);
+    // A structure the finder did not analyse (too many sites, over the
+    // operation budget) says why, instead of a bare 'not analysed'.
+    if (symmetry.skipped && symmetry.reason) block.note = symmetry.reason;
     if (Array.isArray(symmetry.ladder) && symmetry.ladder.length > 1) {
         block.ladder = symmetry.ladder.map((brick) => ({
             sg: brick.spaceGroup,
@@ -138,7 +141,13 @@ const symmetryContext = (structure, symmetry) => {
         const basis = structure?.basis;
         const sites = symmetry.orbits.map((orbit) => {
             const site = { element: orbit.element, multiplicity: orbit.size };
-            if (orbit.wyckoff) site.wyckoff = `${orbit.size}${orbit.wyckoff}`;
+            // `multiplicity` is the orbit's size in the GIVEN cell; the letter is
+            // read in the standard cell the group is named in, so the label
+            // pairs it with that cell's multiplicity (wyckoffMultiplicity) --
+            // R3m's 3a for the Ga of a lacunar spinel kept in its F-cubic cell,
+            // not 4a. The same rule as symmetryModel's orbitLabel(), which this
+            // module may not import.
+            if (orbit.wyckoff) site.wyckoff = `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}`;
             if (orbit.site) site.site_sym = orbit.site;
             if (Array.isArray(orbit.rep)) site.frac = orbit.rep.map((value) => roundSig(value, 3));
             const disps = (orbit.members || [])
