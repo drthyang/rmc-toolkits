@@ -12,8 +12,11 @@ import {
     assignCells,
     goldbergTiling,
     orientationHistogram,
-    recommendedFrequency
+    recommendedFrequency,
+    siteOrientationHistogram
 } from '../orientation.js';
+import { siteDisplacementsFromRmc6f } from '../pcaKde.js';
+import { handlePcaMessage } from '../pcaKdeWorker.js';
 
 // Deterministic Gaussian sampler (same construction as orientation.test.js).
 const makeRng = (seed) => {
@@ -203,5 +206,54 @@ describe('canonical cyclic order', () => {
         Object.entries(POLYGON_STARTS_NU38).forEach(([cell, vertex]) => {
             vertex.forEach((value, axis) => expect(tiling.polygons[Number(cell)][0][axis]).toBeCloseTo(value, 12));
         });
+    });
+});
+
+// orientation.parity.19 — element "all" / "" is the pooled default in both
+// transports and must not be stamped onto the payload (Python omits the key).
+const twoSiteRmc6f = () => {
+    const gauss = makeRng(41);
+    const lines = [
+        'Supercell dimensions 4 4 4',
+        'Lattice vectors (Ang):',
+        '32 0 0',
+        '0 32 0',
+        '0 0 32',
+        'Atoms:'
+    ];
+    let atom = 0;
+    for (const [element, reference, offset] of [['Ga', 1, 0], ['Se', 2, 0.5]]) {
+        for (let ix = 0; ix < 4; ix += 1) {
+            for (let iy = 0; iy < 4; iy += 1) {
+                for (let iz = 0; iz < 4; iz += 1) {
+                    atom += 1;
+                    const coord = [ix, iy, iz].map((index) => (index + offset) / 4 + gauss() * 0.003);
+                    lines.push(`${atom} ${element} [${reference}] ${coord.map((value) => value.toFixed(10)).join(' ')} ${reference} ${ix} ${iy} ${iz}`);
+                }
+            }
+        }
+    }
+    return lines.join('\n');
+};
+
+describe('element "all" normalisation', () => {
+    it('does not stamp element on a pooled library result', () => {
+        const parsed = siteDisplacementsFromRmc6f(twoSiteRmc6f());
+        for (const element of ['all', '', null]) {
+            const result = siteOrientationHistogram(parsed, { element, frequency: 2, geometry: false });
+            expect(result.totalPoints).toBe(128);
+            expect('element' in result).toBe(false);
+        }
+        expect(siteOrientationHistogram(parsed, { element: 'Se', frequency: 2, geometry: false }).element).toBe('Se');
+    });
+
+    it('normalises element "all" in the worker transport like the Flask route', async () => {
+        const text = twoSiteRmc6f();
+        const result = await handlePcaMessage(
+            { kind: 'orientation', element: 'all', frequency: 2, geometry: false },
+            async () => text
+        );
+        expect(result.totalPoints).toBe(128);
+        expect('element' in result).toBe(false);
     });
 });

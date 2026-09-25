@@ -1299,13 +1299,15 @@ independently computed in each language — not a shared-golden parity suite.
   `vectors must be a numeric array with shape (N, 3)`; JS's `vectors.some(...)` passes trivially
   on an empty array, so the run reaches `no displacement vectors survive the amplitude cutoff`
   instead. Same class of failure, different message.
-- **One shape divergence.** With `element = "all"` the JS engine stamps `result.element = "all"`
-  onto the payload (`else if (element)` — the string is truthy,
-  [orientation.js:716-718](../../web_app/frontend/src/workers/orientation.js)) while Python omits the
-  key entirely (`elif element not in (None, "", "all")`,
-  [orientation.py:734](../../rmc_toolkits/orientation.py)). Both transports normalise `"all"` to
-  `null`/`None` before the call, so it is reachable only from a direct library call — but it does
-  mean "both produce the same JSON shape" is true of the wire, not of the functions.
+- **`element = "all"` has one shape in both engines and both transports.** Before the 1.0 audit
+  the JS engine stamped `result.element = "all"` onto a pooled payload (`else if (element)` — the
+  string is truthy) while Python omits the key (`elif element not in (None, "", "all")`), and only
+  the Flask route normalised `""`/`"all"` to `None` — the worker forwarded `data.element`
+  unchanged, so the divergence was reachable over the worker transport, not only from a library
+  call. Now `siteOrientationHistogram` treats `""`/`"all"` exactly like `null` (pooled, no
+  `element` key) and the worker's `kind: 'orientation'` branch normalises them to `null` before the
+  call, like `pca_orientation_endpoint`. (The worker's `kind: 'kde'` branch still forwards
+  `element` unchanged; `sitePcaKde` is outside this page.)
 - **Two places the tolerances already differ.** The $\sum\Omega_m = 4\pi$ assertion is a mixed
   absolute+relative bound in Python (`np.isclose`'s default `atol = 1e-8` is included) and purely
   relative in JS — see §4.6. And the eigensolvers differ, as above.

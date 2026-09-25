@@ -749,11 +749,13 @@ export const orientationHistogram = (vectors, options = {}) => {
 export const siteOrientationHistogram = (parsed, { referenceNumber = null, element = null, ...options } = {}) => {
     let cloud = [];
     let tagged = null;
+    // '' and 'all' are the pooled-everything default, exactly as in Python.
+    const pooledAll = element === null || element === undefined || element === '' || element === 'all';
     if (referenceNumber !== null) {
         tagged = parsed.sites.find((site) => site.referenceNumber === referenceNumber);
         if (!tagged) throw new Error(`Unknown reference number ${referenceNumber}`);
         cloud = tagged.displacements;
-    } else if (element !== null && element !== '' && element !== 'all') {
+    } else if (!pooledAll) {
         const matches = parsed.sites.filter(
             (site) => site.element.toLowerCase() === String(element).toLowerCase()
         );
@@ -768,7 +770,7 @@ export const siteOrientationHistogram = (parsed, { referenceNumber = null, eleme
         result.referenceNumber = tagged.referenceNumber;
         result.element = tagged.element;
         result.siteFractional = tagged.siteFractional;
-    } else if (element) {
+    } else if (!pooledAll) {
         result.element = String(element);
     }
     return result;

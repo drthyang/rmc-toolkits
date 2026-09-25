@@ -9,6 +9,8 @@ web_app/frontend/src/workers/__tests__/orientationFixes.test.js, with the
 same inputs and the same expected values, so the two engines cannot drift.
 """
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 import numpy as np
@@ -19,7 +21,9 @@ from rmc_toolkits.orientation import (
     goldberg_tiling,
     orientation_histogram,
     recommended_frequency,
+    site_orientation_histogram,
 )
+from rmc_toolkits.pca_kde import load_site_displacements
 
 
 def _cloud(n=200, seed=0):
@@ -231,6 +235,44 @@ class CanonicalCyclicOrderTests(unittest.TestCase):
             for i in range(size):
                 turn = np.cross(polygon[i], polygon[(i + 1) % size]) @ tiling.centers[cell]
                 self.assertGreater(turn, 0.0)
+
+
+class ElementAllTests(unittest.TestCase):
+    """orientation.parity.19 (Python side; the worker fix is in the JS twin)."""
+
+    def test_pooled_result_carries_no_element_key(self):
+        rng = np.random.default_rng(41)
+        lines = [
+            "Supercell dimensions 4 4 4",
+            "Lattice vectors (Ang):",
+            "32 0 0",
+            "0 32 0",
+            "0 0 32",
+            "Atoms:",
+        ]
+        atom = 0
+        for element, reference, offset in (("Ga", 1, 0.0), ("Se", 2, 0.5)):
+            for ix in range(4):
+                for iy in range(4):
+                    for iz in range(4):
+                        atom += 1
+                        coord = (np.array([ix, iy, iz]) + offset) / 4 + rng.normal(size=3) * 0.003
+                        lines.append(
+                            f"{atom} {element} [{reference}] "
+                            + " ".join(f"{value:.10f}" for value in coord)
+                            + f" {reference} {ix} {iy} {iz}"
+                        )
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "two.rmc6f"
+            path.write_text("\n".join(lines), encoding="utf-8")
+            sites = load_site_displacements(path)
+        for element in ("all", "", None):
+            result = site_orientation_histogram(sites, element=element, frequency=2, geometry=False)
+            self.assertEqual(result["totalPoints"], 128)
+            self.assertNotIn("element", result)
+        self.assertEqual(
+            site_orientation_histogram(sites, element="Se", frequency=2, geometry=False)["element"], "Se"
+        )
 
 
 if __name__ == "__main__":
