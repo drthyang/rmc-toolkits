@@ -236,9 +236,10 @@ describe('run-control fit-function labels on Dashboard plots', () => {
     });
 });
 
-// Rwp comes from an S(Q) CSV's second and third columns (observed, fitted).
-// A column can hold non-numeric text ("nan" in a masked region), which the CSV
-// reader carries through as NaN.
+// Rwp of an S(Q) CSV whose header names the roles: `observed` is the
+// experiment (the denominator), `fitted` the calculation (rwpColumns). A column
+// can hold non-numeric text ("nan" in a masked region), which the CSV reader
+// carries through as NaN.
 const rwpFromRows = (rows) => plotDataFromText({
     plotKind: 'neutron_sq',
     name: 'PMN_SQ1.csv',

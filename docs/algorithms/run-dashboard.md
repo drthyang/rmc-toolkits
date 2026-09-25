@@ -435,12 +435,30 @@ residual = fitted[paired] - observed[paired]
 return sqrt(sum(residual**2) / denom)
 ```
 
-Called as `rwp(series.data[0], series.data[1], series.data[2])` — the x column is passed and
+Called through `fit_rwp(labels, data)` (`fitRwp(csv)` in the JS), which first resolves the
+**column roles** with `rwp_columns()` / `rwpColumns()` and then calls
+`rwp(x, observed=<experimental column>, fitted=<calculated column>)` — the x column is passed and
 **ignored** (`void x` in the JS). So the reported number is
 
-$$R \;=\; \sqrt{\dfrac{\sum_{i=1}^{N}\bigl(y^{(3)}_i - y^{(2)}_i\bigr)^2}{\sum_{i=1}^{N}\bigl(y^{(2)}_i\bigr)^2}}$$
+$$R \;=\; \sqrt{\dfrac{\sum_{i=1}^{N}\bigl(y^{\mathrm{calc}}_i - y^{\mathrm{expt}}_i\bigr)^2}{\sum_{i=1}^{N}\bigl(y^{\mathrm{expt}}_i\bigr)^2}}$$
 
-where $y^{(2)}$ is the file's **second** column and $y^{(3)}$ its **third**.
+the conventional normalization by the **measurement**. The roles:
+
+* **Default — RMCProfile's positional order.** RMCProfile writes its fit CSVs as
+  `(x, calculated, experimental)` — verified in the demo run: `Q, F(Q)_RMC, F(Q)_Expt` and
+  `r(A), X_ray-calc, X_ray_exp_renorm`. So column 2 is $y^\mathrm{calc}$ and column 3 is
+  $y^\mathrm{expt}$.
+* **A header that names both roles wins.** If one data-column label matches `/exp|obs/i` and another
+  matches `/calc|rmc|fit/i` (and not the experimental pattern), the first of each is used, whatever
+  their positions — a file written `(x, experimental, calculated)` is still normalized by its data.
+  The two patterns are identical in `parsers.py` (`_EXPERIMENTAL_LABEL` / `_CALCULATED_LABEL`) and
+  `browserData.js` (`EXPERIMENTAL_LABEL` / `CALCULATED_LABEL`).
+
+Until 2026-09 both runtimes called `rwp(data[0], data[1], data[2])`, i.e. normalized by the
+**calculated** column (`‖calc − expt‖ / ‖calc‖`): 0.1–0.3 % off for the converged demo fits, but
+43 % high (0.4286 instead of 0.3000) for a calculated curve at 0.7 × the data, as early in a run or
+with a wrong scale. `tests/test_plots.py::RwpColumnRoleTests` and `rwpColumns.test.js` pin the
+corrected roles for `_FQ1`, `_FT_XFQ1`, `_PDF1`, `_SQ1` and `_bragg` headers.
 
 Four things must be stated plainly:
 
@@ -448,17 +466,13 @@ Four things must be stated plainly:
    and the parameter names, this is the unweighted R-factor $R = \|\Delta\|_2 / \|y\|_2$. The run's
    own per-dataset weights *are* physically present, on line 2 of the `.log`
    (`WEIGHT PARAMETERS 0.100E+01 …`), and are skipped by `read_chi()`/`readChi()` and used nowhere.
-2. **The denominator is the calculated curve, not the data.** RMCProfile writes these CSVs in the
-   order `(x, calculated, experimental)` — verified in the demo run:
-   `Q, F(Q)_RMC, F(Q)_Expt` and `r(A), X_ray-calc, X_ray_exp_renorm`. The parameter named
-   `observed` therefore receives the **RMC-calculated** column and the one named `fitted` receives
-   the **experiment**. The numerator is symmetric so the residual is right, but the normalization
-   is $\sum y_\mathrm{calc}^2$, not the conventional $\sum y_\mathrm{obs}^2$. The two agree only
-   insofar as $\sum y_\mathrm{calc}^2 \approx \sum y_\mathrm{obs}^2$ — close for a good fit,
-   not identical, and **not** the standard crystallographic $R_\mathrm{wp}$.
-3. **Only columns 2 and 3 ever enter it.** For a file with four or more numeric columns (multi-bank
-   outputs, partial-inclusive exports) every column beyond the third is **drawn but contributes
-   nothing to the number**, and which two curves get compared is purely positional.
+2. **The denominator is the experiment** (see the roles above), as in the conventional
+   definition — but with unit weights it is still **not** the standard crystallographic
+   $R_\mathrm{wp}$.
+3. **Only two columns ever enter it.** For a file with four or more numeric columns (multi-bank
+   outputs, partial-inclusive exports) every other column is **drawn but contributes nothing to the
+   number**. Which two are compared follows the header roles when the header names them, and the
+   positional `(x, calculated, experimental)` order otherwise.
 4. **It is strictly per-dataset.** One value per file, over **every row in the file** — no Q or r
    window, no exclusion region, no point weighting by Δx (so a non-uniform grid is summed as a
    plain point sum). There is no combined/global R anywhere in the app, and the app never
@@ -473,9 +487,9 @@ sums sequentially) rather than bit-for-bit. **On degenerate input they now agree
 
 | Input | Python `rwp()` | JavaScript `rwp()` |
 |---|---|---|
-| `denom == 0` (flat-zero 2nd column) | `None` | `null` |
-| `NaN` throughout the **2nd** (calculated) column | `None` | `null` |
-| `NaN` throughout the **3rd** column | `None` | `null` |
+| `denom == 0` (flat-zero experimental column) | `None` | `null` |
+| `NaN` throughout the calculated column | `None` | `null` |
+| `NaN` throughout the experimental column | `None` | `null` |
 | `NaN` in *some* rows of either column | value over the finite rows | value over the finite rows |
 
 This matters because it is reachable in static mode: `readRmcCsv` turns unparseable cells into
@@ -931,10 +945,10 @@ as a per-card alert and is corrected on the next poll.
   a file is. Rename a file and the app will plot it as something else; use a naming convention the
   patterns in Step 2 do not cover and the file is silently ignored. There is no "unrecognized files"
   report — the "Loaded N plot files" panel counts only *chartable* files.
-* **"Rwp" is neither weighted nor conventionally normalized.** It is
-  $\sqrt{\sum(\mathrm{col3}-\mathrm{col2})^2 / \sum \mathrm{col2}^2}$ with unit weights, and for
-  RMCProfile CSVs column 2 is the *calculated* curve. Columns 4 and beyond are drawn but never
-  enter it. The run's own `WEIGHT PARAMETERS` line is parsed past and discarded. Do not quote this
+* **"Rwp" is not weighted.** It is
+  $\sqrt{\sum(y^\mathrm{calc}-y^\mathrm{expt})^2 / \sum (y^\mathrm{expt})^2}$ with unit weights —
+  normalized by the experiment (column 3 of an RMCProfile CSV, or the column the header names as
+  experimental). Any further columns are drawn but never enter it. The run's own `WEIGHT PARAMETERS` line is parsed past and discarded. Do not quote this
   number as $R_\mathrm{wp}$ in a paper without recomputing from the columns yourself. It is
   per-file; there is no combined R across datasets.
 * **A degenerate R-factor is reported as unavailable, not as a number.** Both implementations sum
@@ -2056,23 +2070,24 @@ The formula is computed identically in both languages — `parsers.rwp(x, observ
 
 $$R_\mathrm{wp} = \sqrt{\frac{\sum_i (f_i - o_i)^2}{\sum_i o_i^2}}$$
 
-with $o$ = CSV column 1 and $f$ = CSV column 2 **by position**, so $R_\mathrm{wp}$ is only meaningful when
-the file's column order really is (x, observed, calculated). The `x` argument is accepted and
-ignored by both. The two runtimes agree to floating-point round-off. The conditions and the display
+with $o$ = the **experimental** column and $f$ = the **calculated** column as resolved by
+`rwp_columns()` / `rwpColumns()` (5a): RMCProfile's positional `(x, calculated, experimental)` order,
+overridden by a header that names both roles. The `x` argument is accepted and ignored by both. The two runtimes agree to floating-point round-off. The conditions and the display
 rounding matter as much as the formula:
 
 - It is computed **only** for kinds `xpdf`, `npdf`, `xray_sq`, `neutron_sq` and `bragg` — never for
   `exafs_q`, `exafs_r`, `pdf_partials`, `stog` or `r_value` — and **only when the CSV has ≥ 3
   columns**. Otherwise the card shows no chip.
-- When the denominator $\sum_i o_i^2$ is exactly zero, both implementations return **`0.0` by
-  convention** — a silent "perfect fit" reading rather than an error or a blank.
+- When the denominator $\sum_i o_i^2$ is exactly zero, or no row is finite in both columns, both
+  implementations return the unavailable sentinel **`None`/`null`** (chip "Rwp —"), never `0.0`,
+  which would read as a perfect fit.
 - The dashboard chip prints `Number(rwp).toPrecision(4)` (4 significant figures). The unmounted
   `PlotViewer.jsx` metric strip prints every metric at `toPrecision(5)`.
 
 **Code:** `plots.py` → `detect_plot_kind`, `bragg_is_tof`, `_series_plot`, `_stog_plot`, `_chi_plot`,
-`make_plot`, `plot_to_png`, `close_plot`; `parsers.py` → `rwp`, `pdf_index`;
+`make_plot`, `plot_to_png`, `close_plot`; `parsers.py` → `rwp`, `rwp_columns`, `fit_rwp`, `pdf_index`;
 `app.py` → `plot_file`, `plot_metadata`, `plot_data`; `browserData.js` → `detectPlotKind`, `rwp`,
-`pdfIndex`.
+`rwpColumns`, `pdfIndex`.
 
 ---
 

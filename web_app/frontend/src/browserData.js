@@ -320,6 +320,37 @@ const rwp = (x, observed, fitted) => {
     return Math.sqrt(residual / denom);
 };
 
+// Column roles of an RMCProfile fit CSV for the R-factor. RMCProfile writes
+// (x, calculated, experimental) — `Q, F(Q)_RMC, F(Q)_Expt`, `r(A), X_ray-calc,
+// X_ray_exp_renorm` — so that positional order is the default; a header that
+// names both roles (exp/obs vs calc/rmc/fit) overrides it, so the residual is
+// always normalized by the measurement. Returns [calculated, experimental]
+// indices, or null below three columns. Mirrors rwp_columns() in parsers.py.
+const EXPERIMENTAL_LABEL = /exp|obs/i;
+const CALCULATED_LABEL = /calc|rmc|fit/i;
+
+export const rwpColumns = (labels, nColumns = labels.length) => {
+    if (nColumns < 3) return null;
+    const names = labels.slice(1, nColumns).map((label) => String(label ?? ''));
+    const experimental = [];
+    const calculated = [];
+    names.forEach((name, offset) => {
+        if (EXPERIMENTAL_LABEL.test(name)) experimental.push(offset + 1);
+        else if (CALCULATED_LABEL.test(name)) calculated.push(offset + 1);
+    });
+    if (experimental.length && calculated.length) return [calculated[0], experimental[0]];
+    return [1, 2];
+};
+
+// The dashboard R-factor of a parsed fit CSV (see rwpColumns): rwp() with the
+// experiment as the observed series. Mirrors fit_rwp() in parsers.py.
+const fitRwp = (csv) => {
+    const roles = rwpColumns(csv.labels, csv.data.length);
+    if (!roles) return null;
+    const [calculated, experimental] = roles;
+    return rwp(csv.data[0], csv.data[experimental], csv.data[calculated]);
+};
+
 const pdfIndex = (name) => {
     const match = name.match(/PDF(\d+)\.csv$/);
     return match ? Number(match[1]) : 0;
@@ -404,7 +435,7 @@ export const plotDataFromText = (file) => {
         : readRmcCsv(file.text, file.name);
     const metrics = {};
     if (['xpdf', 'npdf', 'xray_sq', 'neutron_sq', 'bragg'].includes(kind) && csv.data.length >= 3) {
-        metrics.rwp = rwp(csv.data[0], csv.data[1], csv.data[2]);
+        metrics.rwp = fitRwp(csv);
     }
     if (kind === 'npdf') metrics.pdf_index = pdfIndex(file.name);
 

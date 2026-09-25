@@ -16,7 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .parsers import pdf_index, read_chi, read_exafs_csv, read_rmc_csv, read_stog, related_r_value_logs, rwp
+from .parsers import fit_rwp, pdf_index, read_chi, read_exafs_csv, read_rmc_csv, read_stog, related_r_value_logs
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,9 @@ def _series_plot(
 
     metrics: dict[str, float | None] = {}
     if calculate_rwp and len(series.data) >= 3:
-        metrics["rwp"] = rwp(series.data[0], series.data[1], series.data[2])
+        # Normalized by the experiment: RMCProfile writes (x, calculated,
+        # experimental), and a header that names the roles overrides that order.
+        metrics["rwp"] = fit_rwp(series.labels, series.data)
 
     fig = plt.figure(figsize=(6.75, 4.05))
     ax = fig.add_subplot(111)

@@ -5,8 +5,16 @@
 import numpy as np
 import sys, glob, re, os
 import argparse
+from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib import rc
+
+# The R-factor comes from the package (the single source of truth, shared with the
+# web dashboard) so this script can never drift from it again.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from rmc_toolkits.parsers import rwp as _package_rwp, rwp_columns  # noqa: E402
 
 plt.rcParams['font.family'] = 'Dejavu Sans'
 plt.rcParams['mathtext.fontset'] = 'dejavusans'
@@ -60,17 +68,22 @@ def read_chi(fnames) :
     chi_Q = np.array(chi_Q)
     return chi_Q, chi_R
 
-def Rwp(r, gr, grfit, fit_range) :
-    idx = [ ii for ii in np.arange(len(r)) if (r[ii]>=fit_range[0]) and (r[ii]<=fit_range[-1]) ]
-    if len(idx) == 0:
-        return 0.0
-    gr_sub = np.array(gr[idx])
-    grfit_sub = np.array(grfit[idx])
-    denom = np.sum( gr_sub*gr_sub )
-    if denom == 0:
-        return 0.0
-    Rsq = np.sum( (grfit_sub-gr_sub) * (grfit_sub-gr_sub)  ) / denom
-    return np.sqrt(Rsq)
+def Rwp(r, observed, fitted, fit_range=None):
+    """R-factor of ``fitted`` against ``observed`` (the EXPERIMENT) over ``fit_range``.
+
+    Delegates to :func:`rmc_toolkits.parsers.rwp`: only rows finite in both columns
+    count, and an undefined value (no such row, or an all-zero experiment) is
+    ``None`` -- never ``0.0``, which would read as a perfect fit.
+    """
+    r = np.asarray(r, dtype=float)
+    mask = np.ones(r.shape, dtype=bool)
+    if fit_range is not None:
+        mask = (r >= fit_range[0]) & (r <= fit_range[-1])
+    return _package_rwp(
+        r[mask],
+        np.asarray(observed, dtype=float)[mask],
+        np.asarray(fitted, dtype=float)[mask],
+    )
 
 def plot_data(fname, title, xlabel, ylabel, args, calc_rwp=False, rwp_label_prefix=""):
     if not fname:
@@ -81,9 +94,12 @@ def plot_data(fname, title, xlabel, ylabel, args, calc_rwp=False, rwp_label_pref
         return
 
     if calc_rwp and len(data) >= 3:
-        fit_range = [data[0][0],data[0][-1]]
-        Rw = Rwp(data[0],data[1],data[2],fit_range)
-        print(f"{rwp_label_prefix:<20} R = {Rw:.6f}")
+        # RMCProfile writes (x, calculated, experimental); a header naming the
+        # roles overrides that order. The experiment is the denominator.
+        calculated, experimental = rwp_columns([label.strip() for label in labels], len(data))
+        Rw = Rwp(data[0], data[experimental], data[calculated])
+        shown = f"{Rw:.6f}" if Rw is not None else "n/a (undefined for this data)"
+        print(f"{rwp_label_prefix:<20} R = {shown}")
 
     fig = plt.figure(figsize=(3.375*2,3.375*1.2))
     ax = fig.add_subplot(111)

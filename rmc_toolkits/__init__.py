@@ -50,6 +50,8 @@ from .parsers import (
     read_stog_xy,
     read_structure,
     rwp,
+    rwp_columns,
+    fit_rwp,
     write_frac_from_rmc6f,
     write_stog_xy,
 )
@@ -189,5 +191,7 @@ __all__ = [
     "read_stog",
     "read_structure",
     "rwp",
+    "rwp_columns",
+    "fit_rwp",
     "write_frac_from_rmc6f",
 ]

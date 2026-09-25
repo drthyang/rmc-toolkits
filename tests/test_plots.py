@@ -124,6 +124,59 @@ class PlotTests(unittest.TestCase):
                 close_plot(result)
 
 
+def _write_fit_csv(directory: Path, name: str, header: str, rows: list[tuple[float, ...]]) -> Path:
+    path = directory / name
+    path.write_text(
+        header + "\n" + "".join(", ".join(f"{value:.7f}" for value in row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    return path
+
+
+class RwpColumnRoleTests(unittest.TestCase):
+    """The dashboard R-factor is normalized by the EXPERIMENT, whatever the column order.
+
+    RMCProfile writes fit CSVs as (x, calculated, experimental). With the calculated
+    curve a uniform 0.7 x the experiment, the conventional R = ||calc - expt|| / ||expt||
+    is exactly 0.3; normalizing by the calculated column instead gives 0.3 / 0.7.
+    """
+
+    EXPT = (1.0, -2.0, 3.0, 0.5, -1.5)
+
+    def _rwp(self, name: str, header: str, calc_first: bool = True) -> float:
+        rows = []
+        for index, expt in enumerate(self.EXPT):
+            calc = 0.7 * expt
+            rows.append((0.1 * index, calc, expt) if calc_first else (0.1 * index, expt, calc))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = make_plot(_write_fit_csv(Path(tmpdir), name, header, rows))
+            try:
+                return result.metrics["rwp"]
+            finally:
+                close_plot(result)
+
+    def test_rmcprofile_order_divides_by_the_experiment(self):
+        for name, header in (
+            ("run_FQ1.csv", "Q, F(Q)_RMC, F(Q)_Expt"),
+            ("run_FT_XFQ1.csv", "r(A), X_ray-calc, X_ray_exp_renorm"),
+            ("run_PDF1.csv", "r, G(r)_RMC, G(r)_Expt"),
+            ("run_SQ1.csv", "Q, S(Q)_RMC, S(Q)_Expt"),
+            ("run_bragg.csv", "Flight time (us), Calculated, Experiment"),
+        ):
+            with self.subTest(name=name):
+                self.assertAlmostEqual(self._rwp(name, header), 0.3, places=6)
+
+    def test_unlabelled_columns_follow_the_rmcprofile_positional_order(self):
+        # No role names in the header: column 2 is the calculation, column 3 the data.
+        self.assertAlmostEqual(self._rwp("run_FQ1.csv", "Q, a, b"), 0.3, places=6)
+
+    def test_header_roles_override_the_positional_order(self):
+        # A file written (x, experimental, calculated) is still normalized by the data.
+        self.assertAlmostEqual(
+            self._rwp("run_FQ1.csv", "Q, F(Q)_Expt, F(Q)_RMC", calc_first=False), 0.3, places=6
+        )
+
+
 class BraggAxisTests(unittest.TestCase):
     def test_time_of_flight_headers(self):
         for header in ("Flight time (us)", "TOF,ms", "Time"):

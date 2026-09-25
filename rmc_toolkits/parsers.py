@@ -428,6 +428,54 @@ def rwp(x: np.ndarray, observed: np.ndarray, fitted: np.ndarray) -> float | None
     return float(np.sqrt(float(np.dot(residual, residual)) / denom))
 
 
+# Column-role vocabulary of RMCProfile fit CSV headers: ``F(Q)_Expt``,
+# ``X_ray_exp_renorm``, ``observed`` name the measurement; ``F(Q)_RMC``,
+# ``X_ray-calc``, ``calculated``, ``fitted`` the model curve. Mirrors
+# ``EXPERIMENTAL_LABEL`` / ``CALCULATED_LABEL`` in browserData.js.
+_EXPERIMENTAL_LABEL = re.compile(r"exp|obs", re.IGNORECASE)
+_CALCULATED_LABEL = re.compile(r"calc|rmc|fit", re.IGNORECASE)
+
+
+def rwp_columns(labels: list[str], n_columns: int | None = None) -> tuple[int, int] | None:
+    """``(calculated, experimental)`` column indices for the R-factor of a fit CSV.
+
+    RMCProfile writes its fit files as ``(x, calculated, experimental)`` —
+    ``Q, F(Q)_RMC, F(Q)_Expt`` and ``r(A), X_ray-calc, X_ray_exp_renorm`` — so
+    that positional layout is the default. When the header names both roles
+    explicitly (a column matching ``exp``/``obs`` and another matching
+    ``calc``/``rmc``/``fit``), the header wins, so a file written in another
+    order is still normalized by its measurement. Returns ``None`` when there
+    are fewer than three columns. Mirrors ``rwpColumns()`` in browserData.js.
+    """
+    count = len(labels) if n_columns is None else n_columns
+    if count < 3:
+        return None
+    names = [str(label) for label in labels[1:count]]
+    experimental = [idx for idx, name in enumerate(names, start=1) if _EXPERIMENTAL_LABEL.search(name)]
+    calculated = [
+        idx
+        for idx, name in enumerate(names, start=1)
+        if _CALCULATED_LABEL.search(name) and not _EXPERIMENTAL_LABEL.search(name)
+    ]
+    if experimental and calculated:
+        return calculated[0], experimental[0]
+    return 1, 2
+
+
+def fit_rwp(labels: list[str], data: np.ndarray) -> float | None:
+    """The dashboard R-factor of a parsed fit CSV: ``rwp`` normalized by the experiment.
+
+    ``data`` is the transposed column array of :class:`CsvSeries`. The column
+    roles come from :func:`rwp_columns`; ``None`` when fewer than three columns
+    exist or when :func:`rwp` itself is undefined.
+    """
+    roles = rwp_columns(labels, len(data))
+    if roles is None:
+        return None
+    calculated, experimental = roles
+    return rwp(data[0], observed=data[experimental], fitted=data[calculated])
+
+
 def read_atom_indices(rmc6f_path: str | Path) -> dict[str, list[int]]:
     lines = Path(rmc6f_path).read_text(encoding="utf-8", errors="replace").splitlines()
     start = next((idx for idx, line in enumerate(lines) if line.split()[:1] == ["Atoms:"]), None)

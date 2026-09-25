@@ -574,23 +574,30 @@ and `rwp` is `plotData.metrics.rwp` at 3 s.f.
 
 **Which kinds actually carry an `rwp`.** `plotDataFromText()` in `browserData.js` computes
 `metrics.rwp` **only** for `kind ∈ {xpdf, npdf, xray_sq, neutron_sq, bragg}` **and** only when the parsed
-CSV has at least 3 columns, using columns 1/2/3 as $(x, y^{\mathrm{obs}}, y^{\mathrm{calc}})$. `pdf_partials`,
+CSV has at least 3 columns. RMCProfile writes those CSVs as $(x, y^{\mathrm{calc}}, y^{\mathrm{expt}})$ —
+`Q, F(Q)_RMC, F(Q)_Expt`, `r(A), X_ray-calc, X_ray_exp_renorm` — so by default column 2 is the RMC
+calculation and column 3 the experiment; a header that names both roles (`/exp|obs/i` vs
+`/calc|rmc|fit/i`) overrides that order (`rwpColumns()`, mirrored by `rwp_columns()` in Python). `pdf_partials`,
 `exafs_q`, `exafs_r` (and `r_value`, which is excluded anyway) never have one, so in a real run most
 `datasets` entries are `{kind}` or `{kind, title}` with no residual — their absence is not an error.
 
-The metric is computed by `rwp(x, obs, fit)` in `browserData.js`; the Python equivalent is `rwp()` in
-[`rmc_toolkits/parsers.py`](../../rmc_toolkits/parsers.py). **Both compute the same unweighted quantity, and
-they agree exactly, including the zero-denominator branch:**
+The metric is computed by `fitRwp()` → `rwp(x, observed = y^expt, fitted = y^calc)` in `browserData.js`;
+the Python equivalent is `fit_rwp()` → `rwp()` in [`rmc_toolkits/parsers.py`](../../rmc_toolkits/parsers.py).
+**Both compute the same unweighted quantity over the rows finite in both columns, normalized by the
+experiment:**
 
-$$R = \sqrt{\frac{\sum_i (y^{\mathrm{calc}}_i - y^{\mathrm{obs}}_i)^2}{\sum_i (y^{\mathrm{obs}}_i)^2}}$$
+$$R = \sqrt{\frac{\sum_i (y^{\mathrm{calc}}_i - y^{\mathrm{expt}}_i)^2}{\sum_i (y^{\mathrm{expt}}_i)^2}}$$
 
 with no weights $w_i$ — despite the name `rwp` and despite the system prompt describing it as "a weighted
 profile residual". Treat it as a relative goodness indicator between datasets of the same run, not as a
-Rietveld $R_{wp}$. **Zero-denominator caveat:** when $\sum_i (y^{\mathrm{obs}}_i)^2 = 0$ both
-implementations return exactly `0` (not `NaN`), so an `rwp: 0` entry means *"the observed column was all
-zeros"*, not *"a perfect fit"*.
+Rietveld $R_{wp}$. **Undefined cases:** when no row is finite in both columns, or
+$\sum_i (y^{\mathrm{expt}}_i)^2 = 0$, both implementations return the unavailable sentinel
+`None`/`null` (never `0`, which would read as a perfect fit). `datasetContext()` keeps `rwp` only when it
+is finite, so such a dataset reaches the model as `{kind, title?}` with **no `rwp` key** — an `rwp: 0`
+entry cannot be produced by an undefined metric.
 
-**Code:** `runContext.js` → `datasetContext()`; `browserData.js` → `plotDataFromText()`, `rwp()`.
+**Code:** `runContext.js` → `datasetContext()`; `browserData.js` → `plotDataFromText()`, `rwpColumns()`,
+`fitRwp()`, `rwp()`.
 
 ---
 
@@ -1050,9 +1057,9 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   (routine during Live Data), the concatenation is skipped and only the first log is described.
 - **The system prompt actively mislabels that axis** as "accepted-move steps" on every request. Discount
   anything the model says about "moves" that is derived from the convergence block.
-- **`rwp` is unweighted** (Step 10) despite its name and the system prompt's description, exists for only
-  five dataset kinds, and returns exactly `0` for an all-zero observed column — which reads as a perfect
-  fit but means the opposite.
+- **`rwp` is unweighted** (Step 10) despite its name and the system prompt's description, and exists for
+  only five dataset kinds. It is normalized by the experimental column; when it is undefined (no finite
+  pair, or an all-zero experiment) it is `null` and the key is simply absent from the dataset entry.
 - **The quantity is labeled $\chi^2$ in the context but $\chi$ in the parser and the Python plots**
   (Step 11). Same numbers, contradictory labels.
 - **The character budget is best-effort.** Several blocks are never trimmed; an unusual run can exceed
@@ -1086,8 +1093,9 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 - **No Python equivalent exists for this pipeline.** Nothing in this section is computed in
   `rmc_toolkits/`. Two upstream helpers do exist in both languages, and they do **not** agree equally
   well:
-  - `rwp` — `browserData.js` and `rmc_toolkits/parsers.py` implement the identical unweighted formula
-    *and* the identical zero-denominator fallback. **Exact match.**
+  - `rwp` — `browserData.js` and `rmc_toolkits/parsers.py` implement the identical unweighted formula,
+    the identical column-role resolution (`rwpColumns` / `rwp_columns`) *and* the identical `null`/`None`
+    sentinel for the undefined cases. **Exact match** (to floating-point round-off).
   - `detect_plot_kind` — the `pdf_partials` (`*PDFpartials*.csv`), `npdf`, `xpdf`, `xray_sq`,
     `neutron_sq`, `bragg`, `exafs_q`, `exafs_r` and `r_value` (`*-NN.log`) branches match exactly, which
     covers everything this section depends on. The **`stog` branch differs**: the JS returns `'stog'` for

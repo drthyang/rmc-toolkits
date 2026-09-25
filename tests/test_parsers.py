@@ -19,6 +19,7 @@ from rmc_toolkits.parsers import (
     read_structure,
     related_r_value_logs,
     rwp,
+    rwp_columns,
     write_frac_from_rmc6f,
 )
 
@@ -141,6 +142,15 @@ class ParserTests(unittest.TestCase):
         )
 
         self.assertIsNone(value)
+
+    def test_rwp_columns_resolve_calculated_and_experimental_roles(self):
+        # (calculated, experimental) indices; RMCProfile's own order is (x, calc, expt).
+        self.assertEqual(rwp_columns(["Q", "F(Q)_RMC", "F(Q)_Expt"]), (1, 2))
+        self.assertEqual(rwp_columns(["r(A)", "X_ray-calc", "X_ray_exp_renorm"]), (1, 2))
+        self.assertEqual(rwp_columns(["Q", "F(Q)_Expt", "F(Q)_RMC"]), (2, 1))
+        self.assertEqual(rwp_columns(["Q", "observed", "fitted"]), (2, 1))
+        self.assertEqual(rwp_columns(["Q", "a", "b"]), (1, 2))
+        self.assertIsNone(rwp_columns(["Q", "F(Q)_RMC"]))
 
     @requires_sample
     def test_read_rmc6f_metadata_and_atom_indices(self):
