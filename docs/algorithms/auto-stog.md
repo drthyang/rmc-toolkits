@@ -242,8 +242,10 @@ JS port `autoScale.js` → `readStogXy()`. Writer counterpart: `write_stog_xy()`
   STOG numeric rows").
 - Tie-breaking when two column-count groups have the same number of rows follows insertion
   order in both engines, i.e. the group whose first row appeared earliest wins.
-- Neither engine sorts, deduplicates, or checks that $Q$ is monotonically increasing. Ascending
-  $Q$ is assumed by every downstream trapezoid transform.
+- The readers keep file order; the crop (`crop_sq` / `cropSq`, Step 1) puts the rows in
+  ascending $Q$ — a descending file, or non-overlapping segments in any order, are sorted, and
+  duplicate $Q$ or overlapping segments (concatenated banks) raise. Every downstream trapezoid
+  transform needs an increasing grid and raises on any other (Step 4).
 
 **Test coverage:** `autoScale.test.js` → *"readStogXy keeps NaN padding and picks the modal
 column count"* and the `writeStogXy` → `readStogXy` round-trip.
@@ -970,8 +972,8 @@ hand-supplied coefficients, so read that scope note as "no automatic x-ray corre
 
 At the end of Step 0 the engine holds:
 
-- `q`, `sq` (float64, cropped, optionally despiked, ascending by assumption), plus `sigma`
-  or `None`;
+- `q`, `sq` (float64, cropped, sorted to strictly ascending $Q$, optionally despiked), plus
+  `sigma` (permuted alongside) or `None`;
 - the $r$ grid $r_k = k\,r_\mathrm{max}/n_r$;
 - the tail mask $Q \ge Q_\mathrm{tail,min}$ and the low-$r$ window mask
   $r \in [r_\mathrm{cut}+0.2,\; r_0-0.25]$;
@@ -1077,9 +1079,11 @@ without a composition-derived $S(0)$ target), level to 1e-9, sampled $G_K(r)$/fi
   browser's pre-filled values are the data's finite extent rounded to 4 significant digits, not
   a recommendation. Cut $Q_\mathrm{max}$ before detector rolloff; push $Q_\mathrm{min}$ as low
   as the reduction allows.
-- **No monotonicity, uniqueness, or unit checking of $Q$.** Rows are kept in file order. A
-  non-monotonic or duplicated $Q$ column will silently corrupt every trapezoid transform.
-  Likewise `NUMBER_DENSITY ::` and `MINIMUM_DISTANCES ::` are read as bare numbers with the
+- **$Q$ order is enforced, units are not.** The crop sorts the rows to ascending $Q$ (a
+  descending file gives exactly the ascending result) and refuses duplicate $Q$ values or
+  segments whose $Q$ ranges overlap (two detector banks concatenated, rows out of order) —
+  merge such data first. No unit checking is done: `NUMBER_DENSITY ::` and
+  `MINIMUM_DISTANCES ::` are read as bare numbers with the units in the line ignored. Likewise `NUMBER_DENSITY ::` and `MINIMUM_DISTANCES ::` are read as bare numbers with the
   units in the line ignored.
 - **The scattering-length table is neutron, natural-abundance, real-part-only.** Isotopic
   samples need `b_overrides_fm`, the second argument of `faber_ziman()` / `faberZiman()` — a
@@ -2290,13 +2294,25 @@ here.
 > over-aggressive despike downstream is the level sweep's ≥32-point requirement or the ≥2-points-per
 > -fit-window check, with a different error message.
 
-**Grid assumptions (both engines, never checked).** The input $Q$ column is used **in file order** —
-no sorting, deduplication, interpolation or rebinning is performed anywhere. The window sweep's
-prefix sums, both transforms' trapezoid rule, the low-$Q$ correction hook ($Q_0 =$ first cropped
-point), the Lorch $Q_{N-1}$ (last cropped point) and the FZ head selection all assume a strictly
-ascending grid. On a non-monotonic file the results are undefined, and the two engines even
-disagree: the sweep's failure path uses `np.median(sq[q >= q.max() - min_width])` in Python and
-`q[n-1]` in JS.
+**Grid order (both engines, enforced).** The window sweep's prefix sums, both transforms'
+trapezoid rule (signed panel widths $Q_i - Q_{i-1}$), the low-$Q$ correction hook ($Q_0 =$ first
+cropped point), the Lorch $Q_{N-1}$ (last cropped point) and the FZ head selection all need a
+strictly ascending grid — with descending $Q$ every integral is negated, $Q_\mathrm{min}$ and
+$Q_\mathrm{max}$ swap, and the auto-fit used to "converge" to a negative scale (the repo's
+synthetic model written in reverse: $a = -10.10$, "converged: yes", instead of $+9.97$). So `crop_sq` / `cropSq` order the
+kept rows (`_ascending_order` / `ascendingOrder`, identical rules and messages): an ascending
+file is left alone; otherwise the rows are read against the majority step direction and split
+into maximal ascending runs; runs whose $Q$ ranges do not overlap (a descending file = runs of one
+point; banks written high-$Q$ first) are sorted with a stable argsort, while **duplicate $Q$** or
+**overlapping runs** (two banks concatenated, rows out of order) raise `ValueError` — there is no
+single $S(Q)$ to sort them into; merge them first. Sorting precedes the despike (its rolling
+median is order-dependent), and `sigma` is permuted alongside. No interpolation or rebinning is
+performed. The public transforms (`sine_transform`, `fq_to_gpdf`, `gpdf_to_fq`,
+`low_q_correction_basis`, `fourier_filter` and the JS ports) additionally raise on an
+integration grid that is not strictly increasing and finite (`_increasing_grid` /
+`requireIncreasing`; grids of < 2 points integrate to 0 and pass). `sine_transform`'s *output*
+grid may have any shape, a scalar included. Tests: `tests/test_stog_b_qorder.py`,
+`src/__tests__/autoScaleQOrder.test.js`.
 
 The $r$ grid is built independently of the data: `ScalingConfig.r_grid` is
 $r_i = i\cdot (r_\mathrm{max}/n_r)$ for $i = 1\ldots n_r$ (defaults $r_\mathrm{max}=50$ Å,
@@ -3160,7 +3176,8 @@ come from. **The two implementations read their inputs from different places:**
 | Key | Definition | How to read it |
 | --- | --- | --- |
 | `a`, `b` | the fitted correction | In sweep mode $b$ is not free: $b = 1 - aL$ exactly. |
-| `converged`, `iterations` | fixed-point loop status | `converged = False` means the loop hit `max_iter = 50`; treat $(a,b)$ as unfinished. FZ mode and manual mode always report `iterations = 0`. |
+| `converged`, `iterations` | fixed-point loop status | `converged = False` means the loop hit `max_iter = 50` (`iterations = max_iter` in both engines), or that the fit returned a non-physical scale $a \le 0$ (then `fit_failure` says so); treat $(a,b)$ as unfinished. FZ mode and manual mode always report `iterations = 0`. |
+| `fit_failure` | auto pass | present when the fitted $a \le 0$ (or non-finite): the result is never `converged`, and the CLI (`refuse_failed_fit`), `/api/scaling/run` and the page worker refuse to write RMCProfile files from it |
 | `c1_tail_mean` | mean of the **filtered** $S(Q)$ over the C1 tail window $Q \ge q_\mathrm{max} - 0.15\,(q_\mathrm{max}-q_\mathrm{min})$, from the **configured** `qmin`/`qmax` | Should sit on 1. Tests accept 0.02–0.05 depending on dataset. Because the window is configured, not data-derived, a `qmax` above the end of your data shifts it (and can empty it — "fit windows contain fewer than 2 points"). |
 | `low_r_rms_pre_enforcement` | $\sqrt{\langle g_\mathrm{filtered}^2\rangle}$ over the low-$r$ window, **before** any enforcement | The honest fit-quality number. Compare it against a hand-scaled run — `test_autoscale_beats_hand_tuning` requires the auto fit to be ≤ the expert's (×1.001). |
 | `g_window_mean` | signed mean of $g_\mathrm{filtered}$ over the same window (target 0) | A large positive mean is the signature of missing structure below $Q_\mathrm{min}$. |
@@ -3323,8 +3340,8 @@ touches `config.r_fit_window` deliberately so the error renders as a CLI error).
   column exists to absorb tail drift,
   but the Sears table is neutron and the plan document still labels general x-ray use as out of
   scope for v1.
-- **The input grid is trusted.** No sorting, deduplication, interpolation or rebinning is ever
-  performed; a non-monotonic $Q$ column gives undefined results and makes the two engines diverge.
+- **The input grid is sorted, not repaired.** Rows are sorted to ascending $Q$; duplicate $Q$ or
+  overlapping segments are refused, and no interpolation or rebinning is ever performed.
 - **The level sweep operates inside the configured $[Q_\mathrm{min}, Q_\mathrm{max}]$**, so it
   cannot warn you about rolloff you already cropped out, and it cannot yet inform the $Q_\mathrm{max}$
   choice itself (flagged as the next refinement in
@@ -3537,10 +3554,9 @@ declared data file).
    `readDatHeader()`; Python twin `parsers.read_dat_header()`.
 4. `dataExtent()` scans for rows where both $Q$ and $S$ are finite and reports
    `{qlo, qhi, count, hasSigma}` — displayed as the file chip
-   `name: N pts · Q lo–hi Å⁻¹ · σ`. **`qlo` is the $Q$ of the *first* finite row and `qhi`
-   that of the *last*** — they are **not** `min`/`max`. The code assumes $Q$ ascends; a
-   non-monotonic file (concatenated banks, a reversed block) therefore produces a wrong Q
-   prefill, which can silently exclude most of the data at crop time.
+   `name: N pts · Q lo–hi Å⁻¹ · σ`. `qlo`/`qhi` are the **min/max** $Q$ of the finite rows, so a
+   descending file prefills the right window (the engine sorts it); a file with overlapping
+   segments is refused by the engine at run time.
 5. The form is prefilled by `selectSource()`. There is **no single precedence chain** — each
    field has its own rule, and two of them overwrite values the user already typed:
 

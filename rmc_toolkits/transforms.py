@@ -40,6 +40,26 @@ except AttributeError:  # pragma: no cover - numpy < 2.0
 _SINE_CHUNK = 512
 
 
+def _increasing_grid(x: np.ndarray, name: str) -> np.ndarray:
+    """Return ``x`` as a 1-D float array, or raise unless strictly increasing.
+
+    The trapezoid rule integrates with signed panel widths ``x[i] - x[i-1]``: a
+    descending grid silently negates every integral (and swaps Qmin/Qmax in the
+    low-Q correction and the Lorch window), a repeated point gives a zero-width
+    panel, and a non-monotone grid folds panels back over each other. Grids with
+    fewer than two points (an empty filter section) integrate to 0 and pass.
+    """
+    x = np.asarray(x, dtype=float)
+    if x.ndim != 1:
+        raise ValueError(f"the {name} grid must be one-dimensional, got shape {x.shape}")
+    if x.size > 1 and not (np.all(np.isfinite(x)) and np.all(np.diff(x) > 0)):
+        raise ValueError(
+            f"the {name} grid must be strictly increasing (and finite); sort it "
+            "and merge or remove duplicate points first"
+        )
+    return x
+
+
 # ---------------------------------------------------------------------------
 # Algebraic conversions (pure, grid-preserving)
 # ---------------------------------------------------------------------------
@@ -113,17 +133,20 @@ def lorch_window(q: np.ndarray, qmax: float) -> np.ndarray:
 def sine_transform(x: np.ndarray, y: np.ndarray, xout: np.ndarray) -> np.ndarray:
     """Trapezoid-rule ``integral y(x) sin(x * xout) dx`` for each point of ``xout``.
 
+    ``x`` must be strictly increasing (``ValueError`` otherwise); ``xout`` may
+    have any shape (a scalar included) and the result has the same shape.
     Chunked over the output grid to bound the kernel-matrix memory.
     """
-    x = np.asarray(x, dtype=float)
+    x = _increasing_grid(x, "integration (x)")
     y = np.asarray(y, dtype=float)
     xout = np.asarray(xout, dtype=float)
-    out = np.empty_like(xout)
-    for start in range(0, xout.size, _SINE_CHUNK):
-        chunk = xout[start : start + _SINE_CHUNK]
+    flat = xout.ravel()
+    out = np.empty_like(flat)
+    for start in range(0, flat.size, _SINE_CHUNK):
+        chunk = flat[start : start + _SINE_CHUNK]
         kernel = y[np.newaxis, :] * np.sin(np.outer(chunk, x))
         out[start : start + chunk.size] = _trapezoid(kernel, x=x, axis=1)
-    return out
+    return out.reshape(xout.shape)
 
 
 def fq_to_gpdf(
@@ -142,7 +165,7 @@ def fq_to_gpdf(
     ``[0, Qmin]`` range, extrapolating to ``S(0) = s0_target`` (see
     :func:`omitted_low_q_correction`).
     """
-    q = np.asarray(q, dtype=float)
+    q = _increasing_grid(q, "Q")
     fq = np.asarray(fq, dtype=float)
     weighted = fq * lorch_window(q, q[-1]) if lorch else fq
     gpdf = (2.0 / np.pi) * sine_transform(q, weighted, r)
@@ -183,7 +206,7 @@ def low_q_correction_basis(
     Eq. 21 target ``S(0) = 1 - <b^2>/<b>^2`` is O(-10), and using it here
     instead of 0 removes an O(1) bias in the low-r transform.
     """
-    q = np.asarray(q, dtype=float)
+    q = _increasing_grid(q, "Q")
     r = np.asarray(r, dtype=float)
     if q[0] == 0:
         # Data starting at Q = 0 omit nothing — the [0, q[1]] panel is already
@@ -275,9 +298,9 @@ def fourier_filter(
     S(Q)-convention correction section (the classic stog ``ft.dat``), so that
     ``sq_filtered = sq - (sq_ft - 1)``.
     """
-    q = np.asarray(q, dtype=float)
+    q = _increasing_grid(q, "Q")
     sq = np.asarray(sq, dtype=float)
-    r = np.asarray(r, dtype=float)
+    r = _increasing_grid(r, "r")
     if q[0] <= 0:
         raise ValueError(
             "fourier_filter requires a strictly positive Q grid (the S(Q) "

@@ -71,7 +71,26 @@ const solveLeastSquares = (columns, rhs) => {
 // Transforms (port of rmc_toolkits/transforms.py)
 // ---------------------------------------------------------------------------
 
+/**
+ * Throw unless x is strictly increasing and finite (transforms._increasing_grid):
+ * the trapezoid rule integrates with signed panel widths, so a descending grid
+ * silently negates every integral. Fewer than two points (an empty filter
+ * section) integrate to 0 and pass.
+ */
+const requireIncreasing = (x, name) => {
+  if (x.length < 2) return;
+  let ok = Number.isFinite(x[0]);
+  for (let i = 1; ok && i < x.length; i += 1) ok = Number.isFinite(x[i]) && x[i] > x[i - 1];
+  if (!ok) {
+    throw new Error(
+      `the ${name} grid must be strictly increasing (and finite); sort it `
+      + 'and merge or remove duplicate points first'
+    );
+  }
+};
+
 export const sineTransform = (x, y, xout) => {
+  requireIncreasing(x, 'integration (x)');
   const out = new Float64Array(xout.length);
   const n = x.length;
   for (let k = 0; k < xout.length; k += 1) {
@@ -98,6 +117,7 @@ export const lorchWindow = (q, qmax) => {
 };
 
 export const lowQCorrectionBasis = (q, r, { lorch = false, s0Target = 0 } = {}) => {
+  requireIncreasing(q, 'Q');
   const coef = new Float64Array(r.length);
   const constant = new Float64Array(r.length);
   const q0 = q[0];
@@ -146,6 +166,7 @@ export const lowQCorrectionBasis = (q, r, { lorch = false, s0Target = 0 } = {}) 
 };
 
 export const fqToGpdf = (q, fq, r, { lorch = false, lowQCorrection = false, s0Target = 0 } = {}) => {
+  requireIncreasing(q, 'Q');
   let weighted = fq;
   if (lorch) {
     const window = lorchWindow(q, q[q.length - 1]);
@@ -164,6 +185,8 @@ export const fqToGpdf = (q, fq, r, { lorch = false, lowQCorrection = false, s0Ta
 };
 
 export const fourierFilter = (q, sq, r, { rho0, cutoff, lorch = false, lowQCorrection = false, s0Target = 0 }) => {
+  requireIncreasing(q, 'Q');
+  requireIncreasing(r, 'r');
   if (q[0] <= 0) throw new Error('fourierFilter requires a strictly positive Q grid');
   const n = q.length;
   const fq = new Float64Array(n);
@@ -434,20 +457,83 @@ const despikeKeepMask = (sq, window, nsigma) => {
   return keep;
 };
 
+const fmtQ = (value) => String(Number(value.toPrecision(6)));
+
+/**
+ * Index order that sorts the cropped q ascending — or throw (port of
+ * scaling._ascending_order, same rules and messages): a descending file is read
+ * backwards and non-overlapping segments in any order are sorted; duplicate Q or
+ * segments whose Q ranges overlap (concatenated banks) throw.
+ */
+const ascendingOrder = (q) => {
+  const n = q.length;
+  const index = Array.from({ length: n }, (_, i) => i);
+  let ascending = true;
+  let up = 0;
+  let down = 0;
+  for (let i = 1; i < n; i += 1) {
+    if (q[i] > q[i - 1]) up += 1;
+    else {
+      ascending = false;
+      if (q[i] < q[i - 1]) down += 1;
+    }
+  }
+  if (ascending) return index;
+  const order = [...index].sort((i, j) => q[i] - q[j] || i - j);
+  for (let k = 1; k < n; k += 1) {
+    if (q[order[k]] === q[order[k - 1]]) {
+      throw new Error(
+        `S(Q) has duplicate Q values (e.g. Q = ${fmtQ(q[order[k]])} Å⁻¹ appears more `
+        + 'than once) inside [qmin, qmax]: merge or rebin the data (several '
+        + 'detector banks?) into one S(Q) before scaling'
+      );
+    }
+  }
+  const read = down > up ? [...index].reverse() : index;
+  const spans = [];
+  let start = 0;
+  for (let k = 1; k <= n; k += 1) {
+    if (k === n || q[read[k]] < q[read[k - 1]]) {
+      spans.push([q[read[start]], q[read[k - 1]]]);
+      start = k;
+    }
+  }
+  spans.sort((left, right) => left[0] - right[0]);
+  for (let k = 1; k < spans.length; k += 1) {
+    const [lo1, hi1] = spans[k - 1];
+    const [lo2, hi2] = spans[k];
+    if (lo2 < hi1) {
+      throw new Error(
+        'S(Q) rows are not in one monotonic Q order: segments overlap in Q '
+        + `([${fmtQ(lo1)}, ${fmtQ(hi1)}] and [${fmtQ(lo2)}, ${fmtQ(hi2)}] Å⁻¹) — typically `
+        + 'several detector banks concatenated, or rows out of order; merge '
+        + 'them into one monotonic S(Q) before scaling'
+      );
+    }
+  }
+  return order;
+};
+
 export const cropSq = (qIn, sqIn, config, sigmaIn = null) => {
-  const q = [];
-  const sq = [];
-  const sigma = sigmaIn ? [] : null;
+  const qKept = [];
+  const sqKept = [];
+  const sigmaKept = sigmaIn ? [] : null;
   for (let i = 0; i < qIn.length; i += 1) {
     const qi = qIn[i];
     const si = sqIn[i];
     if (!isNum(qi) || !isNum(si)) continue;
     if (qi <= 0 || qi < config.qmin - 1e-12 || qi > config.qmax + 1e-12) continue;
-    q.push(qi);
-    sq.push(si);
-    if (sigma) sigma.push(sigmaIn[i]);
+    qKept.push(qi);
+    sqKept.push(si);
+    if (sigmaKept) sigmaKept.push(sigmaIn[i]);
   }
-  if (q.length < 16) throw new Error('fewer than 16 usable S(Q) points after cropping');
+  if (qKept.length < 16) throw new Error('fewer than 16 usable S(Q) points after cropping');
+  // Ascending Q (scaling.crop_sq): the transforms need an increasing grid, and
+  // the despike's rolling median runs on the sorted data.
+  const order = ascendingOrder(qKept);
+  const q = order.map((i) => qKept[i]);
+  const sq = order.map((i) => sqKept[i]);
+  const sigma = sigmaKept ? order.map((i) => sigmaKept[i]) : null;
   if (!config.despike) {
     return { q: Float64Array.from(q), sq: Float64Array.from(sq), sigma: sigma ? Float64Array.from(sigma) : null, nDespiked: 0 };
   }
@@ -682,6 +768,7 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
     rFitWindowUsed: rFitWindow(config),
     r0Detected: extras.r0Detected !== undefined ? extras.r0Detected : null,
     windowRefined: Boolean(extras.windowRefined),
+    fitFailure: extras.fitFailure || null,
   };
 };
 
@@ -1033,11 +1120,23 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
     bPrev = b;
   }
 
+  // A non-physical scale is a failed fit however stable the iteration was
+  // (scaling._autoscale_pass): never converged; the worker refuses to export it.
+  let fitFailure = null;
+  if (!(isNum(a) && a > 0)) {
+    converged = false;
+    const [lo, hi] = rFitWindow(config);
+    fitFailure = `non-physical scale a = ${fmtP(a, 6)} (a <= 0): the density-limit fit `
+      + 'cannot describe these data as a*S + b with a positive scale on the '
+      + `low-r window [${fmtP(lo, 4)}, ${fmtP(hi, 4)}] Å`;
+  }
+
   let aFz = null;
   if (level != null) aFz = amplitudeFromFzLimit(q, sq, level, config);
 
   return scalePipeline(qIn, sqIn, config, a, b, {
     converged,
+    fitFailure,
     iterations,
     history,
     sweep,
@@ -1165,6 +1264,7 @@ export const diagnosticsSummary = (result, config) => {
     d_r_low_r_slope_theory: -4 * Math.PI * config.rho0 * config.bAvgSq,
     density_limit_satisfied: Math.abs(gWindowMean) < 0.1,
   };
+  if (result.fitFailure) summary.fit_failure = result.fitFailure;
   if (result.r0Detected != null) {
     summary.r0_detected = result.r0Detected;
     summary.window_refined = Boolean(result.windowRefined);

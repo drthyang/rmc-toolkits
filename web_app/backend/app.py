@@ -59,6 +59,7 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     _json_safe,
     _write_outputs,
     _resolve_targets as _resolve_scaling_targets,
+    refuse_failed_fit,
     stog_inp_closest_approach,
 )
 from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset
@@ -1100,6 +1101,8 @@ def scaling_run():
     try:
         payload = request.get_json(silent=True) or {}
         inp, inp_path, data_path, header, config, enforcement, mode, result = _scaling_request(payload)
+        if mode == "auto":
+            refuse_failed_fit(result)  # a <= 0 never becomes RMCProfile input (CLI parity)
         summary = diagnostics_summary(result, config)
 
         from types import SimpleNamespace

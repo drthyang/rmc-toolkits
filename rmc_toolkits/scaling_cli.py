@@ -296,6 +296,23 @@ def _load_dataset(data_path: Path, use_sigma: bool):
     return q, sq, sigma
 
 
+def refuse_failed_fit(result: ScalingResult) -> None:
+    """Raise :class:`CliError` when an auto-fit returned a non-physical scale.
+
+    ``autoscale`` flags ``a <= 0`` (or a non-finite scale) as
+    ``provenance["fit_failure"]`` with ``converged=False``; such a result must
+    not become RMCProfile input. Shared by the CLI and the scaling API.
+    """
+    failure = result.provenance.get("fit_failure")
+    if failure:
+        raise CliError(
+            f"auto-fit failed: {failure}. No files were written. Check that the "
+            "S(Q) is not sign-inverted or corrupted, pin the closest approach "
+            "(--r0 / --r-fit-max), or use '--amplitude fz' when the composition "
+            "is known"
+        )
+
+
 def stog_inp_closest_approach(inp: StogInput, r_cutoff: float) -> Optional[float]:
     """Closest-approach proxy from a classic stog.inp first-peak line (line 22).
 
@@ -698,6 +715,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             result = scale_pipeline(q, sq, config, float(a), float(b))
         else:
             result = autoscale(q, sq, config, sigma=sigma)
+            refuse_failed_fit(result)
 
         # No explicit cutoff (data mode) and enforcement not refused: enforce
         # automatically at the FOOT of the first shell, below its rising flank

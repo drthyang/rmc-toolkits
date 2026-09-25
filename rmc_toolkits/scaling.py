@@ -768,6 +768,44 @@ def _despike_mask(sq: np.ndarray, window: int, nsigma: float) -> np.ndarray:
     return np.abs(residual) <= nsigma * max(mad, 1e-12)
 
 
+def _ascending_order(q: np.ndarray) -> np.ndarray:
+    """Index order that sorts the (finite, cropped) ``q`` ascending — or raise.
+
+    A file in descending Q (e.g. Q = 2 pi/d kept in d order) is simply read
+    backwards, and non-overlapping segments in any order (banks written high-Q
+    first) are sorted. Duplicate Q values, and segments whose Q ranges overlap
+    (several detector banks concatenated, or rows out of order inside a run),
+    have no single S(Q) to sort into and raise ``ValueError``: merge them first.
+    """
+    steps = np.diff(q)
+    if np.all(steps > 0):
+        return np.arange(q.size)
+    order = np.argsort(q, kind="stable")
+    repeated = np.diff(q[order]) == 0
+    if np.any(repeated):
+        value = float(q[order][1:][repeated][0])
+        raise ValueError(
+            f"S(Q) has duplicate Q values (e.g. Q = {value:.6g} A^-1 appears more "
+            "than once) inside [qmin, qmax]: merge or rebin the data (several "
+            "detector banks?) into one S(Q) before scaling"
+        )
+    # Read against the majority direction, then split into ascending runs.
+    index = np.arange(q.size)
+    if np.count_nonzero(steps < 0) > np.count_nonzero(steps > 0):
+        index = index[::-1]
+    runs = np.split(index, np.where(np.diff(q[index]) < 0)[0] + 1)
+    spans = sorted((float(q[run[0]]), float(q[run[-1]])) for run in runs)
+    for (lo1, hi1), (lo2, hi2) in zip(spans, spans[1:]):
+        if lo2 < hi1:
+            raise ValueError(
+                "S(Q) rows are not in one monotonic Q order: segments overlap in Q "
+                f"([{lo1:.6g}, {hi1:.6g}] and [{lo2:.6g}, {hi2:.6g}] A^-1) — typically "
+                "several detector banks concatenated, or rows out of order; merge "
+                "them into one monotonic S(Q) before scaling"
+            )
+    return order
+
+
 def crop_sq(
     q: np.ndarray,
     sq: np.ndarray,
@@ -779,6 +817,11 @@ def crop_sq(
     ``Q <= 0`` rows are dropped unconditionally: the S(Q) conversions divide
     by Q, and the analytic low-Q correction already models the omitted
     ``[0, Qmin]`` range, so a Q = 0 point carries no usable information.
+    The kept rows are returned in ascending Q (a descending file, or
+    non-overlapping segments in any order, are sorted — the transforms'
+    trapezoid rule needs an increasing grid); duplicate Q values or segments
+    whose Q ranges overlap raise ``ValueError`` (see :func:`_ascending_order`).
+    The optional despike runs on the sorted data.
     Returns ``(q, sq, sigma)`` with ``sigma`` cropped alongside (or ``None``).
     """
     q = np.asarray(q, dtype=float)
@@ -795,6 +838,10 @@ def crop_sq(
     q, sq = q[keep], sq[keep]
     if sigma is not None:
         sigma = np.asarray(sigma, dtype=float)[keep]
+    order = _ascending_order(q)
+    q, sq = q[order], sq[order]
+    if sigma is not None:
+        sigma = sigma[order]
     if config.despike:
         keep2 = _despike_mask(sq, config.despike_window, config.despike_nsigma)
         q, sq = q[keep2], sq[keep2]
@@ -1184,6 +1231,18 @@ def _autoscale_pass(
             break
         a_prev, b_prev = a, b
 
+    # A non-physical scale is a failed fit however stable the iteration was:
+    # never report it as converged (the CLI and the API refuse to write it).
+    fit_failure = None
+    if not (np.isfinite(a) and a > 0):
+        converged = False
+        lo, hi = config.r_fit_window
+        fit_failure = (
+            f"non-physical scale a = {a:.6g} (a <= 0): the density-limit fit "
+            "cannot describe these data as a*S + b with a positive scale on the "
+            f"low-r window [{lo:.4g}, {hi:.4g}] A"
+        )
+
     a_fz = None
     if level is not None:
         a_fz = amplitude_from_fz_limit(q, sq, level, config)
@@ -1202,6 +1261,7 @@ def _autoscale_pass(
     )
     result.provenance["mode"] = "auto"
     result.provenance["c1_mode_effective"] = "sweep" if level is not None else "joint"
+    result.provenance["fit_failure"] = fit_failure
     if sweep is not None:
         result.provenance["level_sweep"] = _sweep_provenance(sweep)
     return result
@@ -1352,6 +1412,8 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
         # scale_pipeline) whenever Qmin is not small.
         "density_limit_satisfied": bool(abs(g_window_mean) < 0.1),
     }
+    if result.provenance.get("fit_failure"):
+        summary["fit_failure"] = result.provenance["fit_failure"]
     if result.sweep is not None:
         summary["level"] = result.sweep.level
         summary["level_uncertainty"] = result.sweep.level_uncertainty

@@ -50,6 +50,15 @@ self.onmessage = (event) => {
     const result = mode === 'manual'
       ? scalePipeline(qArr, sqArr, config, a, b, { mode: 'manual' })
       : autoscale(qArr, sqArr, config, sigmaArr);
+    if (mode !== 'manual' && result.fitFailure) {
+      // A non-physical scale never becomes RMCProfile input (scaling_cli
+      // refuse_failed_fit parity).
+      throw new Error(
+        `Auto-fit failed: ${result.fitFailure}. Check that the S(Q) is not `
+        + 'sign-inverted or corrupted, set r₀ / the fit-window maximum, or use the '
+        + 'Faber-Ziman Q→0 amplitude criterion when the composition is known.'
+      );
+    }
     // 'auto' enforcement is anchored on the data-derived first shell. Manual
     // runs skip the detection inside autoscale, so recover the onset here
     // exactly like the CLI does (scaling_cli.py post-run detection) —

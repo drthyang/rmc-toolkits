@@ -68,14 +68,15 @@ const OUTPUT_LIST = [
 ];
 
 // Q extent / point count of the finite rows (NaN-padded rebin files are common).
+// Min/max, not first/last: a file in descending Q is valid (the engine sorts it).
 const dataExtent = (q, sq, sigma) => {
   let qlo = null;
   let qhi = null;
   let count = 0;
   for (let i = 0; i < q.length; i += 1) {
     if (Number.isFinite(q[i]) && Number.isFinite(sq[i])) {
-      if (qlo === null) qlo = q[i];
-      qhi = q[i];
+      if (qlo === null || q[i] < qlo) qlo = q[i];
+      if (qhi === null || q[i] > qhi) qhi = q[i];
       count += 1;
     }
   }
