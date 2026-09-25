@@ -1,7 +1,8 @@
 # QuickStart
 
 Use `rmc-toolkits` to inspect RMCProfile run folders with interactive plots, model information,
-KDE slices, thermal ellipsoids, displacement-direction maps, and a 3D structure view.
+KDE slices, thermal ellipsoids, displacement-direction maps, bond-angle distributions, and a 3D
+structure view.
 
 ## 1. Open The Hosted Dashboard
 
@@ -38,12 +39,15 @@ After loading, use:
 - `Displacement Directions` for where atoms move rather than how far: the site's displacement
   directions binned on a hex-tiled sphere, highlighting preferred hop directions and ±u asymmetry
   the ellipsoid can't show.
+- `Bond Geometry` for bond angles: pick an A–B–C triplet with B central, bound the two bond
+  lengths, and press `Compute` for the angle distribution over the periodic configuration.
 
 ## 3. Live Data (Auto-Refresh)
 
 `Live Data` watches your selected folder and refreshes charts as files are updated. On the hosted
 dashboard it works in Chromium browsers (Chrome, Edge, Arc, Opera). In Safari or Firefox, run the
-local Flask app for the same feature:
+local Flask app for the same feature; there, a newly saved `.rmc6f` also reloads the analysis
+pages in place (a computed bond-angle distribution is cleared until you press `Compute` again):
 
 From the repository root:
 
@@ -111,9 +115,10 @@ Then open:
 ## Supported Files
 
 - `*.rmc6f` for model information, KDE, and 3D structure views.
-- `*.log` for R-value history.
-- `*_FQ1.csv` and `*_SQ1.csv` for S(Q).
-- `*_FT_XFQ1.csv` and `*PDF*.csv` for PDF/G(r).
+- `*-NN.log` for the χ² history (the last log column, e.g. `X_ray_(R)1`; restarts of one run are
+  concatenated).
+- `*_FQ1.csv` for F(Q) and `*_SQ1.csv` for S(Q) fits (further datasets `_FQ2`, `_SQ2`, … too).
+- `*_FT_XFQ1.csv` and `*PDF*.csv` for PDF/G(r); `*_PDFpartials.csv` for the partial g(r).
 - `*-EXAFS-*_Q_OUTPUT.csv` and `*-EXAFS-*_R_OUTPUT.csv` for RMCProfile EXAFS dataset Q-space and
   R-space outputs.
 - `*_bragg.csv` for Bragg profiles.
