@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import re
 from typing import Iterator, TypedDict
@@ -596,7 +597,9 @@ def parse_fortran_number(token: str) -> float | None:
     number. Mirrors ``parseFortranNumber()`` in ``rmc6f.js``.
     """
     if _RMC6F_NUMBER_RE.match(token):
-        return float(token.replace("D", "E").replace("d", "e"))
+        if "D" in token or "d" in token:
+            token = token.replace("D", "E").replace("d", "e")
+        return float(token)
     if _RMC6F_NON_FINITE_RE.match(token):
         return float("nan")
     return None
@@ -668,70 +671,82 @@ class Rmc6fParseReport:
 
 
 def _rmc6f_integer(token: str) -> int | None:
+    if token.isascii() and token.isdigit():
+        return int(token)
     return int(token) if _RMC6F_INTEGER_RE.match(token) else None
 
 
 def classify_rmc6f_atom_line(
     parts: list[str],
-    supercell: np.ndarray | None = None,
+    supercell=None,
 ) -> tuple[str, Rmc6fAtom | None]:
     """Classify one whitespace-split atom line: ``(kind, atom)``.
 
     ``kind`` is ``"atom"`` (full layout), ``"coords"`` (legacy coords-only; the
     record's ``reference_number``/``cell_indices`` are ``None``), ``"non_finite"``
     (a valid layout with a NaN/Inf/``****`` coordinate; ``atom`` is ``None``) or
-    ``"invalid"``. See the grammar comment above; mirrors ``classifyAtomLine()``
-    in ``rmc6f.js``.
+    ``"invalid"``. ``supercell`` (optional, three numbers) bounds the cell
+    indices. See the grammar comment above; mirrors ``classifyAtomLine()`` in
+    ``rmc6f.js``.
     """
-    if len(parts) < 5:
-        return "invalid", None
+    invalid = ("invalid", None)
+    count = len(parts)
+    if count < 5:
+        return invalid
     atom_number = _rmc6f_integer(parts[0])
     if atom_number is None or atom_number < 0 or not _RMC6F_ELEMENT_RE.match(parts[1]):
-        return "invalid", None
-    element = parts[1].capitalize()
+        return invalid
 
-    index = 2
-    label_tokens: list[str] = []
-    if parts[index].startswith("["):
-        while index < len(parts):
-            label_tokens.append(parts[index])
-            index += 1
-            if label_tokens[-1].endswith("]"):
-                break
-        else:
-            return "invalid", None
-    elif parse_fortran_number(parts[index]) is None:
-        label_tokens.append(parts[index])
-        index += 1
-    data = parts[index:]
-    if len(data) not in (3, 7):
-        return "invalid", None
+    first = parts[2]
+    if first.startswith("["):
+        end = 2
+        while end < count and not parts[end].endswith("]"):
+            end += 1
+        if end >= count:
+            return invalid
+        type_label = " ".join(parts[2 : end + 1])
+        data = parts[end + 1 :]
+    elif parse_fortran_number(first) is None:
+        type_label = first
+        data = parts[3:]
+    else:
+        type_label = ""
+        data = parts[2:]
+    size = len(data)
+    if size != 3 and size != 7:
+        return invalid
 
-    coords = [parse_fortran_number(token) for token in data[:3]]
-    if any(value is None for value in coords):
-        return "invalid", None
+    x = parse_fortran_number(data[0])
+    y = parse_fortran_number(data[1])
+    z = parse_fortran_number(data[2])
+    if x is None or y is None or z is None:
+        return invalid
+    reference = None
+    cells = None
+    if size == 7:
+        reference = _rmc6f_integer(data[3])
+        cells = (_rmc6f_integer(data[4]), _rmc6f_integer(data[5]), _rmc6f_integer(data[6]))
+        if reference is None or reference < 1 or None in cells:
+            return invalid
+        for axis in range(3):
+            cell = cells[axis]
+            if cell < 0:
+                return invalid
+            if supercell is not None:
+                limit = float(supercell[axis])
+                if math.isfinite(limit) and limit >= 1 and cell >= limit:
+                    return invalid
+    if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+        return "non_finite", None
     record: Rmc6fAtom = {
         "atom_number": atom_number,
-        "element": element,
-        "type_label": " ".join(label_tokens),
-        "coords": np.asarray(coords, dtype=float),
-        "reference_number": None,
-        "cell_indices": None,
+        "element": parts[1].capitalize(),
+        "type_label": type_label,
+        "coords": np.array((x, y, z), dtype=float),
+        "reference_number": reference,
+        "cell_indices": None if cells is None else np.array(cells, dtype=int),
     }
-    if len(data) == 7:
-        reference = _rmc6f_integer(data[3])
-        cells = [_rmc6f_integer(token) for token in data[4:7]]
-        if reference is None or reference < 1 or any(cell is None for cell in cells):
-            return "invalid", None
-        for axis, cell in enumerate(cells):
-            limit = supercell[axis] if supercell is not None else None
-            if cell < 0 or (limit is not None and np.isfinite(limit) and limit >= 1 and cell >= limit):
-                return "invalid", None
-        record["reference_number"] = reference
-        record["cell_indices"] = np.asarray(cells, dtype=int)
-    if not np.all(np.isfinite(record["coords"])):
-        return "non_finite", None
-    return ("atom" if len(data) == 7 else "coords"), record
+    return ("atom" if size == 7 else "coords"), record
 
 
 def read_atom_indices(rmc6f_path: str | Path) -> dict[str, list[int]]:
