@@ -581,7 +581,9 @@ epoch on resolve and can never land a stale payload on the new dataset.
 ### Step 3 — The result chips
 
 The card's header names the triplet and the windows **the engine actually used** (the
-resolved `bond12`/`bond23` of the payload) — both, labelled A–B and B–C, whenever they differ.
+resolved `bond12`/`bond23` of the payload) — both, labelled A–B and B–C, on their own lines
+whenever they differ, each bound printed at the precision it was given (2–4 decimals, so a B–C
+bound of 3.4001 does not read as 3.40). The header wraps instead of truncating.
 The chips are straight reads of the payload: central-atom count (`apexCount`), **Bonds** — the physical
 bond count `uniqueBonds`, each bond once, with its mean length (`lengths12`, and `lengths23`
 when not shared; a tooltip gives the B-centred count when the end element is the central one) —

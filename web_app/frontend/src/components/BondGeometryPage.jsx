@@ -373,8 +373,21 @@ export default function BondGeometryPage({ directory, localRun }) {
         };
     }, [result]);
 
-    const windowLabel = (window) => `${formatNumber(window[0])}–${formatNumber(window[1])} ${ANGSTROM}`;
+    // Bounds at the precision they were given (2–4 decimals): a B–C window
+    // nudged to 3.4001 must not read as the A–B window's 3.40.
+    const formatBound = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        const decimals = (String(value).split('.')[1] ?? '').length;
+        return value.toFixed(Math.min(4, Math.max(2, decimals)));
+    };
+    const windowLabel = (window) => `${formatBound(window[0])}–${formatBound(window[1])} ${ANGSTROM}`;
     const sameWindow = (one, two) => one[0] === two[0] && one[1] === two[1];
+    // One line per segment: triplet, then the window(s).
+    const resultSource = result && (
+        sameWindow(result.bond12, result.bond23)
+            ? [result.triplet.join('–'), windowLabel(result.bond12)]
+            : [result.triplet.join('–'), `A–B ${windowLabel(result.bond12)}`, `B–C ${windowLabel(result.bond23)}`]
+    );
 
     // 'Bonds' chips show physical bonds, each once (uniqueBonds). With the
     // end element equal to the central one every bond is found from both of
@@ -511,15 +524,16 @@ export default function BondGeometryPage({ directory, localRun }) {
                 <div className="model-cards" role="status">
                     {/* Same presentation as the Model information card: labeled
                         columns, not badges. */}
-                    <section className="model-summary" aria-label="Triplet result">
+                    <section className="model-summary geom-result" aria-label="Triplet result">
                         <h2 className="model-summary-title">
                             Triplet result
-                            <span className="model-summary-source">
-                                {/* The windows the engine actually used (resolved
-                                    payload values), the B–C one whenever it differs. */}
-                                {sameWindow(result.bond12, result.bond23)
-                                    ? `${result.triplet.join('–')} · ${windowLabel(result.bond12)}`
-                                    : `${result.triplet.join('–')} · A–B ${windowLabel(result.bond12)} · B–C ${windowLabel(result.bond23)}`}
+                            {/* The windows the engine actually used (resolved
+                                payload values), the B–C one whenever it differs;
+                                wraps rather than truncating (geom-result). */}
+                            <span className="model-summary-source" title={resultSource.join(' · ')}>
+                                {resultSource.map((segment) => (
+                                    <span key={segment} className="geom-result-line">{segment}</span>
+                                ))}
                             </span>
                         </h2>
                         <dl className="model-stats">
