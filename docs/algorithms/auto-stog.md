@@ -1119,8 +1119,7 @@ without a composition-derived $S(0)$ target), level to 1e-9, sampled $G_K(r)$/fi
   descending file gives exactly the ascending result) and refuses duplicate $Q$ values or
   segments whose $Q$ ranges overlap (two detector banks concatenated, rows out of order) —
   merge such data first. No unit checking is done: `NUMBER_DENSITY ::` and
-  `MINIMUM_DISTANCES ::` are read as bare numbers with the units in the line ignored. Likewise `NUMBER_DENSITY ::` and `MINIMUM_DISTANCES ::` are read as bare numbers with the
-  units in the line ignored.
+  `MINIMUM_DISTANCES ::` are read as bare numbers with the units in the line ignored.
 - **The scattering-length table is neutron, natural-abundance, real-part-only.** Isotopic
   samples need `b_overrides_fm`, the second argument of `faber_ziman()` / `faberZiman()` — a
   **library-only** knob with no CLI flag (`build_parser` exposes only `--formula`,
@@ -4208,12 +4207,12 @@ Two things about these entries that the table cannot carry:
   enforced curve, so with "Enforce low-r" on, `_ft.gr` keeps the sub-$r_0$ ripples while
   `_rmc.gr` is flat. That disagreement below the cutoff is deliberate.
 - **Entry 2 has an undocumented writer fallback.** The call is
-  `writeStogXy(series.r, series.gm1Unfiltered || gm1, …)`. If `gm1Unfiltered` were ever absent
+  `writeStogXy(series.r, series.gUnfiltered || gFiltered, …)`. If `gUnfiltered` were ever absent
   (the worker returns `null` for its buffer), the file would silently receive the **filtered**
-  `gk/$\langle b\rangle^2$` instead — making `<stem>.gr` and `<stem>_ft.gr` identical in y with no marker,
-  since the title line is the same. In the current worker `gm1Unfiltered` is always produced,
-  so the fallback is unreachable in practice; it is recorded here because nothing in the file
-  would reveal it if it fired.
+  $g$ (`gFiltered` = `gk/$\langle b\rangle^2$ + 1`) instead — making `<stem>.gr` and `<stem>_ft.gr`
+  identical in y with no marker, since the title line is the same. In the current worker
+  `gUnfiltered` is always produced, so the fallback is unreachable in practice; it is recorded
+  here because nothing in the file would reveal it if it fired.
 
 Relations the files satisfy exactly, by construction:
 

@@ -954,7 +954,7 @@ const AutoStogPage = () => {
             stands out of the ripples, of either sign (inverted negative-b shells count) — is
             located from the data and refines the fit window and the classic low-r
             enforcement cutoff.</li>
-          <li><b>Outputs:</b> the classic stog file family (S(Q), g(r)−1, filtered pair,
+          <li><b>Outputs:</b> the classic stog file family (S(Q), g(r), filtered pair,
             F<sub>K</sub>(Q), G<sub>K</sub>(r), D(r), ft.dat) + a provenance JSON. Read the
             flags: a violated density limit means the absolute scale needs the composition
             (FZ) route or external validation.</li>
