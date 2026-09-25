@@ -119,7 +119,7 @@ the manual "try again" scale loop replaced by physics:
   pin S(0) → restore-level construction) gives a = 10–16 on the 55537/55526/54139 runs —
   but only when its Q→0 extrapolation is well conditioned. On run 59438 the Bragg-dominated
   head extrapolates to within noise of the level: a_fz = 74 (Qmin 0.82), 91 (1.0), 512 (1.05),
-  flagged `a_fz_reliable = False` (relative error 30–174 %). Trust an FZ scale only when the
+  flagged `a_fz_reliable = False` (relative error 29–168 %). Trust an FZ scale only when the
   report shows it reliable, and check it against the other runs / an external density.
 - The RMC-ready files satisfy the Keen limits *by construction* (enforcement); judge fit
   quality only on the reported pre-enforcement numbers.

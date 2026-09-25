@@ -842,6 +842,43 @@ const lowRRmsOf = (r, gFiltered, config) => {
 };
 
 /**
+ * Huber sandwich standard error of the head fit's Q = 0 intercept (port of
+ * scaling._intercept_se): the final IRLS solve scales rows by u, so
+ * psi(r) = u^2 r (psi' = 1 in the core, -u^2 beyond it), and
+ * cov = K^2 [sum psi^2 / (n - p)] / mean(psi')^2 (D^T D)^-1 with
+ * K = 1 + (p / n) var(psi') / mean(psi')^2 (Huber 1981, Eq. 7.10). The
+ * naive weighted-LSQ error was 0.77-0.90 of the intercept's scatter.
+ * Infinity when mean(psi') <= 0 (the intercept is not identified).
+ */
+const interceptSe = (qc, qMean, used, residuals) => {
+  const n = qc.length;
+  const p = 2;
+  const psi = new Float64Array(n);
+  const dpsi = new Float64Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const u2 = used[i] * used[i];
+    psi[i] = u2 * residuals[i];
+    dpsi[i] = used[i] >= 1 ? 1 : -u2;
+  }
+  const meanDpsi = mean(dpsi);
+  if (!(meanDpsi > 0)) return Infinity;
+  let varDpsi = 0;
+  for (let i = 0; i < n; i += 1) varDpsi += (dpsi[i] - meanDpsi) ** 2;
+  varDpsi /= n;
+  const k = 1 + (p / n) * varDpsi / meanDpsi ** 2;
+  let psiSq = 0;
+  let qcSq = 0;
+  for (let i = 0; i < n; i += 1) {
+    psiSq += psi[i] * psi[i];
+    qcSq += qc[i] * qc[i];
+  }
+  const sigma2 = (k * k * psiSq) / Math.max(n - p, 1) / meanDpsi ** 2;
+  // [1, -qMean] (D^T D)^-1 [1, -qMean]^T with sum(qc) = 0.
+  const quad = 1 / n + (qMean * qMean) / qcSq;
+  return Math.sqrt(Math.max(sigma2 * quad, 0));
+};
+
+/**
  * The Q->0 Faber-Ziman amplitude with its conditioning (port of
  * scaling.fz_limit_fit — same fit, same error model): a_fz = (s0 - 1) /
  * (S_meas(0) - level), the standard error of the Huber head fit's Q = 0
@@ -880,23 +917,7 @@ export const fzLimitFit = (q, sq, level, config, { fitWidth = FZ_FIT_WIDTH, leve
   const sMeas0 = solution[0] - solution[1] * qMean;
   const denom = sMeas0 - level;
   if (Math.abs(denom) < 1e-9) return null;
-  // Standard error of the extrapolated intercept of the final weighted solve.
-  let s00 = 0;
-  let s01 = 0;
-  let s11 = 0;
-  let rss = 0;
-  for (let i = 0; i < qc.length; i += 1) {
-    const w2 = used[i] * used[i];
-    s00 += w2;
-    s01 += w2 * qc[i];
-    s11 += w2 * qc[i] * qc[i];
-    rss += w2 * residuals[i] * residuals[i];
-  }
-  const sigma2 = rss / Math.max(qc.length - 2, 1);
-  const det = s00 * s11 - s01 * s01;
-  // x = [1, -qMean]: x^T N^-1 x with N = [[s00, s01], [s01, s11]].
-  const quad = (s11 + 2 * qMean * s01 + qMean * qMean * s00) / det;
-  const sMeas0Se = Math.sqrt(Math.max(sigma2 * quad, 0));
+  const sMeas0Se = interceptSe(qc, qMean, used, residuals);
   const levelSe = Number.isFinite(levelUncertainty) ? levelUncertainty : 0;
   const denomSe = Math.hypot(sMeas0Se, levelSe);
   const relSe = denomSe / Math.abs(denom);

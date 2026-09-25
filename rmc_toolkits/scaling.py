@@ -741,6 +741,41 @@ def _low_r_rms(r: np.ndarray, g_filtered: np.ndarray, config: ScalingConfig) -> 
     return float(np.sqrt(np.mean(g_filtered[window] ** 2)))
 
 
+def _intercept_se(
+    q_centered: np.ndarray, q_mean: float, used: np.ndarray, residuals: np.ndarray
+) -> float:
+    """Huber sandwich standard error of the head fit's Q = 0 intercept.
+
+    The final solve of the IRLS head fit scales each row by its weight ``u``
+    (from the previous iterate), so it solves ``sum psi(r_i) d_i = 0`` with
+    ``psi(r) = u^2 r``: ``r`` inside the Huber core, ``c^2 s^2 / r`` beyond it,
+    whence ``psi' = 1`` inside and ``-u^2`` outside. Huber's covariance
+    (Huber 1981, Eq. 7.10; statsmodels RLM ``'H1'``)::
+
+        K^2 [sum psi^2 / (n - p)] / mean(psi')^2 (D^T D)^-1,
+        K = 1 + (p / n) var(psi') / mean(psi')^2
+
+    is calibrated against the scatter of the intercept (Gaussian, Student-t
+    and spiked heads: 0.98-1.04 of the empirical sd), where the naive
+    weighted-LSQ error ``sum(u^2 r^2)/dof`` over ``D^T U^2 D`` was 0.77-0.90.
+    ``D = [1, Q - mean Q]`` so ``(D^T D)^-1`` is diagonal. A non-positive
+    ``mean(psi')`` (half the head beyond the core) leaves the intercept
+    unidentified: the error is infinite.
+    """
+    n, p = q_centered.size, 2
+    inlier = used >= 1.0
+    psi = used * used * residuals
+    dpsi = np.where(inlier, 1.0, -used * used)
+    mean_dpsi = float(np.mean(dpsi))
+    if not mean_dpsi > 0.0:
+        return float("inf")
+    k = 1.0 + (p / n) * float(np.var(dpsi)) / mean_dpsi**2
+    sigma2 = k * k * float(np.sum(psi * psi)) / max(n - p, 1) / mean_dpsi**2
+    # [1, -q_mean] (D^T D)^-1 [1, -q_mean]^T with sum(q_centered) = 0.
+    quad = 1.0 / n + q_mean * q_mean / float(np.sum(q_centered * q_centered))
+    return float(np.sqrt(max(sigma2 * quad, 0.0)))
+
+
 def fz_limit_fit(
     q: np.ndarray,
     sq: np.ndarray,
@@ -755,19 +790,20 @@ def fz_limit_fit(
     ``a_fz = (s0_target - 1) / (S_meas(0) - level)`` (see
     :func:`amplitude_from_fz_limit`). The denominator is a difference of two
     measured numbers that can nearly cancel, so the Huber head fit also
-    returns the standard error of its Q = 0 intercept (weighted residual
-    variance of the final IRLS solve), combined in quadrature with the level's
+    returns the standard error of its Q = 0 intercept (Huber's sandwich,
+    :func:`_intercept_se`), combined in quadrature with the level's
     uncertainty (``level_uncertainty``, the level sweep's spread) into
     ``denominator_se`` and the relative error ``a_fz_rel_se`` of ``a_fz``
     (= ``denominator_se / |denominator|``). ``reliable`` is False when that
     exceeds :data:`FZ_REL_SE_MAX` — the head (e.g. Bragg-contaminated
     crystalline data) cannot pin S_meas(0) against the level: on the Mn3Sn
-    59438 run a_fz = 74-141 at Qmin 0.82-1.02 with a 30-49 % relative error, and
-    512 (174 %) at Qmin 1.05 (the 300 K run: 10.4-10.9, 6-9 %). The flag is
-    statistical: a systematic head bias below the threshold (55537: 11 -> 6
-    at 9-18 %) still needs the concordance cross-check. Returns None
-    when ``b_sq_avg`` is missing, the
-    head has < 8 points, or the denominator vanishes.
+    59438 run a_fz = 74-141 at Qmin 0.82-1.02 with a 29-49 % relative error, and
+    512 (168 %) at Qmin 1.05 (the 300 K run: 10.3-11.1, 6-9 %). The flag is
+    statistical — necessary, not sufficient: a systematic head bias below the
+    threshold (55537: 11 -> 6 at 8-15 %, 54139: 16 -> 26 at 9-18 %, Qmin
+    0.82-1.08) still needs the a_fz-vs-Qmin stability and concordance
+    cross-checks. Returns None when ``b_sq_avg`` is missing, the head has < 8
+    points, or the denominator vanishes.
     """
     if config.b_sq_avg is None:
         return None
@@ -792,13 +828,7 @@ def fz_limit_fit(
     denom = s_meas_0 - level
     if abs(denom) < 1e-9:
         return None
-    # Standard error of the extrapolated intercept of the final weighted solve.
-    w2 = used * used
-    dof = max(int(head.sum()) - 2, 1)
-    sigma2 = float(np.sum(w2 * residuals**2) / dof)
-    normal = design.T @ (design * w2[:, np.newaxis])
-    at_zero = np.array([1.0, -q_mean])
-    s_meas_0_se = float(np.sqrt(max(sigma2 * at_zero @ np.linalg.solve(normal, at_zero), 0.0)))
+    s_meas_0_se = _intercept_se(q_head - q_mean, q_mean, used, residuals)
     level_se = float(level_uncertainty) if np.isfinite(level_uncertainty) else 0.0
     denom_se = float(np.hypot(s_meas_0_se, level_se))
     rel_se = denom_se / abs(denom)

@@ -21,8 +21,8 @@ const compare = (fit, expected) => {
   expect(fit.reliable).toBe(expected.reliable);
   expect(relError(fit.aFz, expected.a_fz)).toBeLessThan(1e-10);
   expect(relError(fit.sMeas0, expected.s_meas_0)).toBeLessThan(1e-10);
-  expect(relError(fit.sMeas0Se, expected.s_meas_0_se)).toBeLessThan(1e-8);
-  expect(relError(fit.aFzRelSe, expected.a_fz_rel_se)).toBeLessThan(1e-8);
+  expect(relError(fit.sMeas0Se, expected.s_meas_0_se)).toBeLessThan(1e-10);
+  expect(relError(fit.aFzRelSe, expected.a_fz_rel_se)).toBeLessThan(1e-10);
 };
 
 describe('fzLimitFit (scaling.fz_limit_fit port)', () => {

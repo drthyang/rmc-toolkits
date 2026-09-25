@@ -3070,19 +3070,37 @@ So the FZ amplitude is not "consistent across the Mn₃Sn runs", and on its own 
 defensible scale.
 
 **Conditioning (since 1.0).** `fz_limit_fit()` / JS `fzLimitFit()` return, with $a_\mathrm{fz}$,
-the standard error of the Huber head fit's $Q = 0$ intercept (weighted residual variance of the
-final IRLS solve, $\mathbf x^\top(A^\top W A)^{-1}\mathbf x$ at $Q = 0$), combined in quadrature
-with the level sweep's `level_uncertainty` into the error of the denominator
-$S_\mathrm{meas}(0) - L$; `a_fz_rel_se` is its ratio to $|S_\mathrm{meas}(0) - L|$, and the
-amplitude is **reliable** only when `a_fz_rel_se` ≤ `FZ_REL_SE_MAX` = 0.2 (the denominator
-resolved at ≥ 5σ). `diagnostics_summary` reports `a_fz_rel_se` / `a_fz_reliable` (provenance
+the standard error of the Huber head fit's $Q = 0$ intercept, combined in quadrature with the
+level sweep's `level_uncertainty` into the error of the denominator $S_\mathrm{meas}(0) - L$;
+`a_fz_rel_se` is its ratio to $|S_\mathrm{meas}(0) - L|$, and the amplitude is **reliable** only
+when `a_fz_rel_se` ≤ `FZ_REL_SE_MAX` = 0.2 (the denominator resolved at ≥ 5σ).
+The intercept error is **Huber's sandwich** for the M-estimator the head fit actually solves
+(`_intercept_se()` / JS `interceptSe()`): the final IRLS solve scales each row by its weight $u$,
+so it solves $\sum\psi(r_i)\,\mathbf d_i = 0$ with $\psi(r) = u^2 r$ ($\psi' = 1$ in the Huber core,
+$-u^2$ beyond it), and
+
+$$\operatorname{cov} = K^2\,\frac{\sum\psi_i^2/(n-p)}{\overline{\psi'}^{\,2}}\,(D^\top D)^{-1},
+\qquad K = 1 + \frac{p}{n}\,\frac{\operatorname{var}\psi'}{\overline{\psi'}^{\,2}}$$
+
+(Huber 1981, Eq. 7.10; statsmodels RLM `'H1'`), evaluated at $\mathbf x = (1, -\bar Q)$ with
+$D = [1, Q-\bar Q]$; a non-positive $\overline{\psi'}$ leaves the intercept unidentified and the
+error infinite. Before 1.0 the error was the naive weighted-LSQ one,
+$\sum u^2 r^2/\mathrm{dof}\cdot\mathbf x^\top(D^\top U^2 D)^{-1}\mathbf x$, which clips the
+residuals it estimates the scatter from: 0.77–0.90 of the intercept's empirical scatter on
+Gaussian, Student-$t_3$ and spiked heads (so the 5σ gate was ≈ 4σ); the sandwich gives
+0.97–1.05 (`tests/test_stog_b_fz_se_calibration.py`, 300–2000 realizations).
+`diagnostics_summary` reports `a_fz_rel_se` / `a_fz_reliable` (provenance
 `fz_limit` holds the full fit), the CLI prints a WARNING, the page shows a *Q→0 amplitude* card,
 and `estimate_rho0` reports `a_fz_reliable` for its anchor. Measured over $Q_\mathrm{min}$
-0.82–1.08 Å⁻¹: Mn₃Sn 59438 30–465 % (flagged everywhere); 300 K 6–9 % ($a_\mathrm{fz}$ 10.4–10.9);
-FeCoSn 199 K 2.2 %; the parity fixture 4.5 %. The flag is statistical — it catches a denominator
-lost in the scatter of the head, not every systematic head bias: the 55537 run's $a_\mathrm{fz}$
-drifts 11 → 6 at 9–18 % and the 500 K run's 16 → 26 at 10–19 %, both below the threshold, so the
-concordance with the density-limit amplitude (and agreement across runs) remains the cross-check. Tests: `tests/test_stog_b_fz_conditioning.py`,
+0.82–1.08 Å⁻¹ ($Q_\mathrm{max}$ 28): Mn₃Sn 59438 29–697 % (flagged everywhere); 300 K 6–9 %
+($a_\mathrm{fz}$ 10.3–11.1); FeCoSn 199 K 2.1 % ($Q$ 0.5–26); the parity fixture 5.1 %.
+**`a_fz_reliable = True` is necessary, not sufficient.** The flag is statistical — it catches a
+denominator lost in the scatter of the head, not a systematic head bias: over the same
+$Q_\mathrm{min}$ range the 55537 run's $a_\mathrm{fz}$ drifts 11 → 6 at 8–15 % and the 500 K
+(54139) run's 16 → 26 at 9–18 %, a ≈ 45 % drift with every point flagged reliable. Check that
+$a_\mathrm{fz}$ is stable against $Q_\mathrm{min}$ (re-run at a few values) and that it is concordant
+with the density-limit amplitude and with other runs of the same material before trusting it.
+Tests: `tests/test_stog_b_fz_conditioning.py`, `tests/test_stog_b_fz_se_calibration.py`,
 `src/__tests__/autoScaleFzConditioning.test.js`.
 
 **Code:** `fz_limit_fit()` / `amplitude_from_fz_limit()`, the
