@@ -233,13 +233,15 @@ file, turn the **σ column** toggle off unless you know the third column is the 
 JS port `autoScale.js` → `readStogXy()`. Writer counterpart: `write_stog_xy()` /
 `writeStogXy()` emit `count` line, title line, then `%.16E` columns.
 
-**Python ↔ JS divergences (real, small):**
+**Python ↔ JS parity of accepted inputs:**
 
-- Python uses `float(token)`; JS uses a regex gate
-  `^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$` followed by a `D→e` rewrite.
-  A **Fortran `D` exponent** (`1.234D+00`) therefore parses in the browser and is *skipped* by
-  the Python reader (that row is dropped; if all rows use `D`, Python raises "does not contain
-  STOG numeric rows").
+- Both engines use the same token grammar, a regex gate
+  `^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$` (case-insensitive) followed
+  by a `D→e` rewrite (Python `parsers._NUMERIC_TOKEN` / `_stog_token`, JS `NUMERIC_TOKEN` /
+  `tokenToFloat`). A **Fortran `D` exponent** (`1.234D+00`) parses in both. Before 1.0 Python
+  used bare `float(token)`: it skipped `D`-exponent rows (raising "does not contain STOG numeric
+  rows" when all rows used `D`) and accepted `1_0` or non-ASCII digits the browser skips, so the
+  two engines could read different rows from the same file.
 - Tie-breaking when two column-count groups have the same number of rows follows insertion
   order in both engines, i.e. the group whose first row appeared earliest wins.
 - **Decoding matches the browser in all three readers**: UTF-8 with a leading BOM dropped and
@@ -1082,7 +1084,7 @@ provenance JSON).
 | Sears table / $\langle b\rangle^2$, $\langle b^2\rangle$ | `faber_ziman` | `faberZiman` | exact (same table, same arithmetic); JS omits `fractions`/`weights`/`b_coh_fm` |
 | Mass ↔ number density | `number_density_from_mass_density` | `numberDensityFromMassDensity` | exact (same $N_A$ constant) |
 | `S(0)` target | `effective_s0_target` | `effectiveS0Target` | exact |
-| Column reader | `read_stog_xy` | `readStogXy` | same rules **except** Fortran `D` exponents (JS accepts, Python skips the row) |
+| Column reader | `read_stog_xy` | `readStogXy` | same rules: one numeric-token grammar (Fortran `D` exponents accepted by both), universal line endings, UTF-8 with replacement and BOM dropped |
 | `stog.inp` reader | `read_stog_inp` | `readStogInp` | same line indices, same five rejections; Python raises on any field that is not a valid float/int, JS coerces (`Number`/`parseInt`) and defers NaN to `makeConfig` — and accepts non-integer `nr`/`n_files` |
 | `.dat` header | `read_dat_header` | `readDatHeader` | matches on realistic headers; diverges on `nan`/`inf` tokens (Python accepts, JS skips), on underscore vs hex literals, on an empty `TITLE ::`, and on file decoding — see Step 3 |
 | Q crop | `crop_sq` | `cropSq` | exact |

@@ -7,6 +7,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import numpy as np
+
 from rmc_toolkits.parsers import read_dat_header, read_stog_inp, read_stog_xy
 
 INP = [
@@ -106,6 +108,30 @@ class EncodingTests(unittest.TestCase):
                 ])
         self.assertEqual(code, 0, err.getvalue())
         self.assertIn("961 S(Q) points used", out.getvalue())
+
+
+class NumericTokenTests(unittest.TestCase):
+    """read_stog_xy accepts exactly the JS port's numeric tokens (readStogXy NUMERIC_TOKEN)."""
+
+    def test_fortran_d_exponents_and_rejected_forms(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "d.dat"
+            path.write_text(
+                "3\ntitle\n 0.5D+00 1.1D+00\n 0.51d0 1.25E0\n 5.2E-01 1.3\n"
+                " 1_0 2\n 0x10 3\n"
+            )
+            xy = read_stog_xy(path)
+        # D exponents parse (as in the browser); '1_0' and '0x10' are not rows.
+        self.assertEqual(list(xy[0]), [0.5, 0.51, 0.52])
+        self.assertEqual(list(xy[1]), [1.1, 1.25, 1.3])
+
+    def test_nan_and_inf_spellings_are_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "n.dat"
+            path.write_text(" 0.5 NaN\n 0.6 -Infinity\n 0.7 +inf\n")
+            xy = read_stog_xy(path)
+        self.assertTrue(np.isnan(xy[1][0]))
+        self.assertEqual(list(xy[1][1:]), [-np.inf, np.inf])
 
 
 if __name__ == "__main__":

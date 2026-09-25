@@ -311,12 +311,30 @@ def read_stog_inp(path: str | Path) -> StogInput:
     )
 
 
+#: Numeric tokens of a STOG data row — the grammar of the JS port's
+#: ``NUMERIC_TOKEN`` (readStogXy): decimal with an optional e/E or Fortran d/D
+#: exponent, or nan / inf / infinity (any case, optional sign). Python's
+#: float() alone would also take '1_0' or non-ASCII digits and reject '1.0D+00',
+#: so the two engines read different rows from the same file.
+_NUMERIC_TOKEN = re.compile(
+    r"^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$", re.IGNORECASE
+)
+
+
+def _stog_token(token: str) -> float:
+    """Parse one STOG numeric token (``ValueError`` when not :data:`_NUMERIC_TOKEN`)."""
+    if not _NUMERIC_TOKEN.match(token):
+        raise ValueError(f"not a STOG numeric token: {token!r}")
+    return float(token.replace("d", "e").replace("D", "e"))
+
+
 def read_stog_xy(path: str | Path) -> np.ndarray:
     """Robustly read a whitespace-separated STOG-style x/y(/err) data file.
 
     Skips count headers, stray scalar lines, and text titles; keeps rows whose
-    tokens all parse as floats with at least two columns (``NaN`` tokens are
-    kept, so rebinned files retain their padding rows for the caller to mask).
+    tokens are all numeric (:data:`_NUMERIC_TOKEN`, Fortran ``D`` exponents
+    included) with at least two columns (``NaN`` tokens are kept, so rebinned
+    files retain their padding rows for the caller to mask).
     Returns the columns transposed, matching :func:`read_stog`.
     """
     groups: dict[int, list[list[float]]] = {}
@@ -326,7 +344,7 @@ def read_stog_xy(path: str | Path) -> np.ndarray:
             if len(parts) < 2:
                 continue
             try:
-                values = [float(value) for value in parts]
+                values = [_stog_token(value) for value in parts]
             except ValueError:
                 continue
             groups.setdefault(len(values), []).append(values)
