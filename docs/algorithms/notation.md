@@ -466,7 +466,17 @@ In Flask mode `App.jsx` therefore checks the `.rmc6f` entries of `/api/files` (o
 or **Select Folder** — of the folder already shown too — then on every Live Data poll,
 `WATCH_INTERVAL_MS`) and, when their `fileSignature()` changes, bumps `configEpoch`; the Atomic
 Density, Bond Geometry, PCA Ellipsoid and Displacement Directions pages are keyed on it, so they
-remount and re-read everything from the new file (their view settings reset). **Limitation:** with
+remount and re-read everything from the new file. **The remount resets every page to its
+defaults**, which static-mode Live Data does not do (there the pages keep a pick that still
+applies): Atomic Density loses its element, slice normal, $z_c$/$\Delta z$, bandwidth, grid,
+colormap and contour/log toggles; Bond Geometry its A–B–C triplet, typed bond windows and bin
+width, and its computed distribution is cleared (press Compute again); PCA Ellipsoid its selected
+site, probability, KDE and display settings and the 3D camera; Displacement Directions its site,
+histogram options, colormap and sphere camera. Each remount also creates fresh WebGL contexts
+(the old ones are disposed but not force-released), so after several saves Chrome may log "Too
+many active WebGL contexts. Oldest context will be lost." — the contexts it drops are the
+disposed ones. Reloading in place (the pages keeping their picks and taking a data epoch in their
+fetch effects) is the planned replacement for the remount. **Limitation:** with
 Live Data *off*, nothing is polled — a configuration saved while you are on an analysis page is
 picked up by that page's *next* request only. Before comparing numbers across a save, press
 **Load** again (it re-checks the `.rmc6f` and refreshes the analysis pages only if it changed),
