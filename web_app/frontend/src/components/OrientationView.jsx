@@ -14,9 +14,11 @@
 // three-column grid next to the site picker.
 //
 // What to look for that the ellipsoid cannot show: discrete spots (hop sites),
-// and a +u/−u imbalance (static off-centring / odd anharmonicity) — the map is
-// never antipodally folded, and the asymmetry readout flags a real imbalance
-// against its Poisson noise floor.
+// and a +u/−u imbalance about the site mean (skewness: odd anharmonicity or
+// unequally occupied off-centre wells) — the map is never antipodally folded,
+// and the asymmetry readout flags a real imbalance against its exact
+// inversion-symmetric null. Directions are measured from the site's own mean
+// position, so a coherent off-centring of every copy is invisible here.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -622,8 +624,11 @@ export default function OrientationView({
                                         is its exact mean ± SD if every pair&apos;s atoms had split at
                                         random between u and −u (same pair totals), and the readout
                                         turns red above null + 3 SD. The thermal ellipsoid is blind to
-                                        this — a value well above the null is real off-centring or
-                                        odd-order anharmonicity.
+                                        this — a value well above the null means the cloud is skewed
+                                        about its mean: odd-order anharmonicity, or unequally occupied
+                                        opposite off-centre wells. Directions are measured from the
+                                        site&apos;s own mean position, so an off-centring shared by every
+                                        copy moves that mean and does not show here.
                                     </p>
                                 </InfoBadge>
                             </span>

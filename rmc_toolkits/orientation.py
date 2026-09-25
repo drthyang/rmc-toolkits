@@ -19,6 +19,18 @@ discrete off-centre positions gives *discrete spots* that no ellipsoid can
 represent, and a site with odd-order anharmonicity gives a sphere that is not
 antipodally symmetric. None of those three signatures is visible in U.
 
+Reference point: ``dr`` is measured from the configuration's *own* site mean
+(``pca_kde.load_site_displacements`` subtracts it), so ``sum_i dr_i = 0`` for
+every site. A coherent (ordered) off-centring -- every copy displaced the same
+way from the ideal position -- therefore lives entirely in the site mean and
+leaves this map, ``antipodalAsymmetry`` and the orientation tensor exactly as
+they would be without it; read it from the site mean against the ideal
+(Wyckoff / average-structure) position instead. What the map does show is the
+*shape* of the cloud about its mean: a +u/-u imbalance is skewness (odd-order
+anharmonicity, or unequal occupation of opposite off-centre wells), and with
+partial off-centring the minority of copies left near the ideal site is what
+appears as a lobe, pointing *away* from the off-centring direction.
+
 Binning
 -------
 Solid-angle bins are the faces of a **Goldberg polyhedron**: the dual of a
@@ -707,9 +719,12 @@ def orientation_histogram(
     ``vectors`` is an ``(N, 3)`` array of displacements (Cartesian Angstrom);
     only their directions are used. The map is never antipodally folded: seeing
     the full, possibly inversion-*asymmetric* distribution is the point of this
-    view -- a +u/-u imbalance is real physics (static off-centring, odd-order
-    anharmonicity) that the ellipsoid's second moment is structurally blind to.
-    ``antipodalAsymmetry`` quantifies exactly that imbalance.
+    view -- a +u/-u imbalance about the site mean is real physics (skewness:
+    odd-order anharmonicity, or unequal occupation of opposite off-centre
+    wells) that the ellipsoid's second moment is structurally blind to.
+    ``antipodalAsymmetry`` quantifies exactly that imbalance. It is measured
+    about the cloud's own mean, so a coherent shift of every copy (ordered
+    off-centring) is invisible here by construction -- see the module notes.
 
     Parameters
     ----------

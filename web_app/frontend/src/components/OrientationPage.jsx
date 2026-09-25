@@ -89,8 +89,11 @@ export default function OrientationPage({ directory, localRun }) {
                                 <p>
                                     Each reference site (an RMCProfile reference number) is one
                                     crystallographic position. Only the <em>directions</em> of its
-                                    per-atom displacements are analysed here — the amplitude enters
-                                    solely through the optional weighting and the amplitude height.
+                                    per-atom displacements are analysed here — measured from the
+                                    site&apos;s own mean position in this configuration, so an
+                                    off-centring shared by every copy is not visible — and the
+                                    amplitude enters solely through the optional weighting and the
+                                    amplitude height.
                                 </p>
                             </InfoBadge>
                         </span>

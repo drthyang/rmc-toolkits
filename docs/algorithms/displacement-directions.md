@@ -79,9 +79,12 @@ common signatures survive in $p(\mathbf{u})$ and are provably invisible in $\mat
    moment.
 2. **Odd-order anharmonicity / antipodal asymmetry.** $\mathbf{U}$ is built from
    $\Delta\mathbf{r}\,\Delta\mathbf{r}^{\mathsf T}$, which is invariant under
-   $\Delta\mathbf{r} \to -\Delta\mathbf{r}$. Any $+\mathbf{u}$ vs $-\mathbf{u}$ imbalance —
-   static off-centring, a one-sided potential — is annihilated by that product. This page
-   therefore **never folds the map antipodally**, and reports `antipodalAsymmetry` explicitly.
+   $\Delta\mathbf{r} \to -\Delta\mathbf{r}$. Any $+\mathbf{u}$ vs $-\mathbf{u}$ imbalance *about
+   the site mean* — skewness from a one-sided potential, or unequal occupation of opposite
+   off-centre wells — is annihilated by that product. This page therefore **never folds the map
+   antipodally**, and reports `antipodalAsymmetry` explicitly. (A *coherent* off-centring, the
+   same shift for every copy, is **not** such a signature: it moves the site mean and is invisible
+   here by construction — see "The reference point" in Step 1.)
 3. **Any non-convexity at all** — a girdle with a hole in it, a cone, a ring.
 
 Conversely, this page throws away the radial information the ellipsoid is made of. It is a
@@ -129,6 +132,26 @@ The UI always sends a `referenceNumber`, so the last row is only reachable from 
 hand-made HTTP request, or a direct library call — but it is the *default* of both engines, and
 it mixes species with different masses and different $\mathbf{U}$ into one cloud. That is almost
 never the intended read (caveat 11).
+
+**The reference point is the configuration's own site mean.** `load_site_displacements`
+subtracts each site's mean position over its copies, so $\sum_i \Delta\mathbf{r}_i = \mathbf{0}$
+for every site: every direction here is measured from where the atoms *are on average in this
+configuration*, not from the ideal (Wyckoff or average-structure) position. Three consequences,
+verified on synthetic $10^3$-copy Ti sites ($\sigma = 0.08$ Å):
+
+- **Ordered off-centring is invisible.** Shifting every copy by $+0.2$ Å along $z$ moves the site
+  mean (fractional $z$ 0.2497 → 0.2747) and leaves the map, $\mathcal{A}$, the tensor and every
+  statistic *bit-for-bit* unchanged. A polar distortion shared by all copies must be read from
+  `siteFractional` against the ideal position, not from this page.
+- **$\pm\mathbf{u}$ imbalance is skewness about the mean** — odd-order anharmonicity or unequal
+  occupation of opposite off-centre wells. Equal-occupancy multi-well disorder ($\pm d$ 50/50,
+  eight $\langle111\rangle$ wells) is centrosymmetric about the mean and gives no asymmetry.
+- **Partial off-centring can put the peak opposite to the displacement.** With 78 % of copies
+  shifted $+0.3$ Å along $z$, the mean follows the majority, and the 22 % left near the ideal
+  site form the sharpest lobe — at **$-z$**: `peakDirection` $= [0, -0.12, -0.99]$ at $\nu = 10$
+  and $[0, 0, -1]$ ($8.2\sigma$) on Auto, while the asymmetry is correctly significant
+  ($z_{\mathcal{A}} = 8.8$ on Auto). The lobe is real; its direction names where the *minority*
+  sits relative to the mean.
 
 **Amplitude.** $a_i = \lVert \Delta\mathbf{r}_i \rVert$ (Å).
 
@@ -1015,6 +1038,11 @@ cells. Range and meaning:
 - $\mathcal{A} = 0$ — perfectly inversion-symmetric cloud (what a harmonic site gives).
 - $\mathcal{A} = 1$ — fully one-sided: every occupied cell's antipode is empty.
 
+Because every $\mathbf{u}_i$ is measured from the site's own mean (Step 1, "The reference point"),
+$\mathcal{A}$ measures **skewness about that mean** — odd-order anharmonicity, or unequally
+occupied opposite off-centre wells. It is blind to a coherent off-centring shared by every copy,
+and blind to equal-occupancy multi-well disorder, both of which are centrosymmetric about the mean.
+
 **$\mathcal{A}$ is bounded above by 1 by construction.** Since
 $|n_m - n_{\text{ant}(m)}| \le n_m + n_{\text{ant}(m)}$ and $\sum_m n_m = N$,
 
@@ -1598,6 +1626,12 @@ independently computed in each language — not a shared-golden parity suite.
     `significance` and `antipodalAsymmetry` all change for identical data (Step 2, detail 5).
     Do not compare per-cell numbers across frames. And below four points `frame="pca"` is
     silently the identity, i.e. exactly the cartesian map, with nothing in the payload saying so.
+15. **Directions are measured from the configuration's own site mean** (Step 1, "The reference
+    point"). A coherent off-centring of every copy is absorbed by the mean and is invisible to the
+    map, to $\mathcal{A}$ and to the tensor; a significant $\mathcal{A}$ means skewness about the
+    mean (odd-order anharmonicity, unequal well occupation), not "the site is off-centre"; and with
+    partial off-centring the peak can point *away* from the displacement. Compare `siteFractional`
+    with the ideal position for the coherent part.
 
 
 ## Displacement Directions — the sphere view, axis views, and site picker
@@ -2232,8 +2266,9 @@ reads the engine's flag ($z > 3$ null SDs, `ASYMMETRY_FLAG_SIGMA`) and adds `.is
 `var(--danger)`) to the asymmetry stat. Until the 1.0 audit the page computed
 `antipodalAsymmetry > 3 * antipodalAsymmetryNull` itself — three times the null *mean*, not its
 spread — which could not fire at the default resolution (engine §7). A genuine +u/−u imbalance is the headline finding of this page — it is exactly
-the physics (static off-centring, odd-order anharmonicity) that a covariance ellipsoid is
-structurally blind to — which is why it gets the only coloured state in the strip.
+the physics (skewness about the site mean: odd-order anharmonicity, unequally occupied opposite
+off-centre wells) that a covariance ellipsoid is structurally blind to — though not a coherent
+off-centring of every copy, which moves the site mean and is invisible here (engine Step 1) — which is why it gets the only coloured state in the strip.
 
 The strip does **not** show the resolution actually used, the number of vectors that survived the
 amplitude cut, or the tensor's eigenvectors; see Step 14.

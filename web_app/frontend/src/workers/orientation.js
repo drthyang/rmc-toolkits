@@ -15,8 +15,11 @@
 // chance"; `zScore` is each cell's local (uncorrected) z, and the calibrated
 // readouts are the `...Significance` fields (one-sided normal deviates of
 // exact tail probabilities). The map is never antipodally folded -- a +u/-u
-// imbalance (static off-centring, odd anharmonicity) is precisely the signal
-// the ellipsoid cannot show, and `antipodalAsymmetry` quantifies it.
+// imbalance about the site mean (skewness: odd anharmonicity, or unequal
+// occupation of opposite off-centre wells) is precisely the signal the
+// ellipsoid cannot show, and `antipodalAsymmetry` quantifies it. Displacements
+// are measured from the configuration's own site mean, so a coherent shift of
+// every copy (ordered off-centring) is invisible here by construction.
 //
 // Keep this file in sync with orientation.py -- same constants, same outputs.
 
