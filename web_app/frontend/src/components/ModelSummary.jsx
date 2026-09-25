@@ -219,17 +219,27 @@ const ModelSummary = ({ structure, showSymmetry = true }) => {
                                 appears; the ladder shows which space group holds over each tolerance range.
                             </p>
                             <p>
-                                Unlike FINDSYM this does not search for a smaller or differently-shaped
-                                cell: the unit cell is taken from the <code>.rmc6f</code> supercell as
-                                given, and the symbol is reported in that setting (up to an axis
-                                permutation), with no origin shift or idealized structure.
+                                The unit cell is the <code>.rmc6f</code> supercell divided by its supercell
+                                dimensions, but the symbol is reported in its standard setting: the finder also
+                                tries the other axis orders and cells built from the symmetry elements (a centred
+                                or primitive cell, or the true cell of a supercell). Where no standard setting is
+                                found the crystal class is shown, without a number; a symbol marked ≥ is a lower
+                                bound. Unlike FINDSYM there is no origin shift or idealized structure.
                             </p>
                         </InfoBadge>
                     </h2>
                     <dl className="model-stats">
                         <div className="model-stat">
                             <dt>Space group</dt>
-                            <dd title={`Point group ${symmetry.pointGroup} · fits to ${symmetry.maxResidual.toFixed(3)} Å`}>
+                            {/* A skipped (not analysed) structure has no fit -- maxResidual is
+                                NaN -- so its tooltip gives the reason, never 'fits to NaN Å'. */}
+                            <dd
+                                title={symmetry.skipped
+                                    ? symmetry.reason
+                                    : `Point group ${symmetry.pointGroup}${Number.isFinite(symmetry.maxResidual)
+                                        ? ` · fits to ${symmetry.maxResidual.toFixed(3)} Å`
+                                        : ''}`}
+                            >
                                 {symmetry.spaceGroup}
                                 <span className="model-stat-sub">
                                     {symmetry.spaceGroupNumber ? `No. ${symmetry.spaceGroupNumber} · ` : ''}{symmetry.pointGroup}

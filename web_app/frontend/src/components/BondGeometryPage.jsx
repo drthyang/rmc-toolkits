@@ -27,8 +27,8 @@ import { tripletRequestFromInputs } from '../workers/triplets';
 import './PcaKdePage.css';
 import './BondGeometryPage.css';
 
-// Same cap as StructurePage/Dashboard: the Model information + Detected SG
-// cards need the full basis and counts, and parsing is worker-side anyway.
+// Same cap as StructurePage/Dashboard: the Model information card needs the
+// full counts, and parsing is worker-side anyway.
 const STRUCTURE_MAX_POINTS = 1000000;
 
 const DEGREES = '°';
@@ -189,11 +189,12 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
         }
     }, [requestPca, end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth]);
 
-    // --- Structure for the Model information / Detected SG cards. -----------
+    // --- Structure for the Model information card. ---------------------------
     // Same source as the Dashboard and Atomic Density pages: a local run's
     // .rmc6f parses in the structure worker (both runtimes); a typed backend
-    // directory asks /api/structure. ModelSummary then renders the model card
-    // and, when the payload carries a basis, the Detected SG card.
+    // directory asks /api/structure. ModelSummary renders the model card only
+    // (showSymmetry={false}): the Detected SG card stays on the Dashboard and
+    // Atomic Density pages.
     const [structure, setStructure] = useState(null);
     const structureWorkerRef = useRef(null);
     const structureRequestRef = useRef(0);
