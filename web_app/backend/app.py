@@ -31,7 +31,7 @@ from rmc_toolkits.pca_kde import (
     site_ellipsoids,
     site_pca_kde,
 )
-from rmc_toolkits.triplets import cached_bond_angle_summary
+from rmc_toolkits.triplets import APP_MAX_ANGLES, cached_bond_angle_summary
 from rmc_toolkits.parsers import (
     iter_rmc6f_atoms,
     read_atom_indices,
@@ -630,6 +630,11 @@ def pca_kde_endpoint():
         return jsonify({"error": str(exc)}), 500
 
 
+# Work budget for one /api/triplets request (same constant as the browser
+# worker's): an over-budget spec is a 400 before any angle is formed.
+TRIPLETS_MAX_ANGLES = APP_MAX_ANGLES
+
+
 @app.route("/api/triplets", methods=["GET"])
 def triplets_endpoint():
     """Bond-angle (triplet) summary of the run's configuration.
@@ -637,10 +642,12 @@ def triplets_endpoint():
     Params: end1/apex/end2 (elements, apex central), r12Min/r12Max and the
     optional r23Min/r23Max windows (angstrom, inclusive), binWidth (degrees).
     Payload shape is defined by rmc_toolkits.triplets.bond_angle_summary and
-    mirrored by the browser worker's 'triplets' request; both boundaries cap
-    rmax at 15 A and binWidth at >= 0.05 deg (the engine itself is
-    unrestricted for library/CLI use) so one request cannot blow up the
-    stencil volume or the response size.
+    mirrored by the browser worker's 'triplets' request. Both boundaries apply
+    the same caps (the engine itself is unrestricted for library/CLI use):
+    rmax <= 15 A bounds the neighbour search, binWidth >= 0.05 deg the
+    response size, and TRIPLETS_MAX_ANGLES -- the engine's APP_MAX_ANGLES,
+    checked against the exact angle count before any angle is formed -- the
+    pairing work, which grows ~rmax^6 and which the rmax cap does not bound.
     """
     try:
         target = _resolve_inside_root(request.args.get("dir", "."))
@@ -674,6 +681,7 @@ def triplets_endpoint():
                 *window12,
                 *window23,
                 bin_width,
+                TRIPLETS_MAX_ANGLES,
             )
         )
         result["source"] = str(rmc6f_path)

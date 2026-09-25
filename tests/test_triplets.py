@@ -476,6 +476,128 @@ class SummaryTests(unittest.TestCase):
         json.dumps(summary)  # raises on any lingering numpy type
 
 
+class WorkBudgetTests(unittest.TestCase):
+    """The angle list is streamed, and the app budget is exact and up front.
+
+    triplets.physics.1/7/18, numerics.11/31, parity.28, backend.api.4 and
+    backend.cache.15: the app's rmax cap bounds the neighbour search, but the
+    angle count grows ~rmax^6 and both engines used to hold every angle.
+    """
+
+    def _cloud(self, count=1000, box=20.8, seed=5):
+        rng = np.random.default_rng(seed)
+        return rng.uniform(size=(count, 3)), ["Se"] * count, np.diag([box] * 3)
+
+    def test_budget_rejects_before_forming_angles(self):
+        positions, elements, lattice = self._cloud()
+        kwargs = dict(triplet=("Se", "Se", "Se"), bond12=(0.5, 3.0))
+        exact = bond_angle_summary(positions, elements, lattice, **kwargs)["angleCount"]
+        self.assertGreater(exact, 1000)
+        # At the budget: allowed. One angle over: a clear error naming both.
+        at_budget = bond_angle_summary(positions, elements, lattice, max_angles=exact, **kwargs)
+        self.assertEqual(at_budget["angleCount"], exact)
+        for engine in (bond_angle_summary, bond_angle_distribution):
+            with self.assertRaisesRegex(ValueError, rf"{exact:,} angles.*{exact - 1:,}"):
+                engine(positions, elements, lattice, max_angles=exact - 1, **kwargs)
+
+    def test_budget_counts_exactly_for_every_counting_rule(self):
+        positions, elements, lattice = self._cloud(count=300, box=12.0)
+        elements = ["Se" if index % 3 else "Nb" for index in range(300)]
+        for triplet, bond12, bond23 in [
+            (("Se", "Nb", "Se"), (1.0, 3.0), None),
+            (("Se", "Nb", "Nb"), (1.0, 3.0), (1.5, 3.4)),
+            (("Se", "Nb", "Se"), (1.0, 3.0), (1.5, 3.4)),
+            (("Se", "Se", "Se"), (1.0, 2.0), (2.5, 3.4)),
+        ]:
+            kwargs = dict(triplet=triplet, bond12=bond12, bond23=bond23)
+            exact = bond_angle_distribution(positions, elements, lattice, **kwargs).angle_count
+            bond_angle_distribution(positions, elements, lattice, max_angles=exact, **kwargs)
+            with self.assertRaises(ValueError):
+                bond_angle_distribution(
+                    positions, elements, lattice, max_angles=exact - 1, **kwargs
+                )
+
+    def test_app_budget_is_the_shared_constant(self):
+        from rmc_toolkits import triplets
+
+        self.assertEqual(triplets.APP_MAX_ANGLES, 50_000_000)
+
+    def test_memory_is_bounded_by_the_chunk_not_the_angle_count(self):
+        import tracemalloc
+
+        # ~1.6e6 angles: materializing them (the old engine) peaks at
+        # ~200 B/angle, i.e. over 300 MB; streamed it stays near one chunk.
+        positions, elements, lattice = self._cloud()
+        tracemalloc.start()
+        try:
+            summary = bond_angle_summary(
+                positions, elements, lattice, triplet=("Se", "Se", "Se"), bond12=(0.5, 5.0)
+            )
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertGreater(summary["angleCount"], 1_000_000)
+        self.assertLess(peak, 96 * 2**20)
+
+    def test_refusal_stores_neither_bonds_nor_angles(self):
+        import tracemalloc
+
+        # ~8e7 angles from ~4e5 bonds: the budgeted path counts them with a
+        # search that stores nothing, so refusing costs one search block.
+        positions, elements, lattice = self._cloud()
+        tracemalloc.start()
+        try:
+            with self.assertRaisesRegex(ValueError, "over the limit of 50,000,000"):
+                bond_angle_summary(
+                    positions, elements, lattice, triplet=("Se", "Se", "Se"),
+                    bond12=(0.5, 9.5), max_angles=50_000_000,
+                )
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertLess(peak, 48 * 2**20)
+
+    def test_search_blocking_is_invisible(self):
+        from unittest import mock
+
+        from rmc_toolkits import triplets
+
+        positions, elements, lattice = self._cloud(count=200, box=10.0)
+        elements = ["Se" if index % 3 else "Nb" for index in range(200)]
+        for triplet, bond23 in [(("Se", "Nb", "Se"), None), (("Se", "Nb", "Se"), (1.5, 3.4)),
+                                (("Se", "Nb", "Nb"), (1.5, 3.4))]:
+            kwargs = dict(triplet=triplet, bond12=(1.0, 3.0), bond23=bond23)
+            whole = bond_angle_summary(positions, elements, lattice, **kwargs)
+            with mock.patch.object(triplets, "SEARCH_CHUNK", 5):
+                blocked = bond_angle_summary(
+                    positions, elements, lattice, max_angles=whole["angleCount"], **kwargs
+                )
+            self.assertEqual(blocked["counts"], whole["counts"])
+            self.assertEqual(blocked["coordination"], whole["coordination"])
+            self.assertEqual(blocked["lengths12"]["counts"], whole["lengths12"]["counts"])
+            self.assertAlmostEqual(blocked["meanAngle"], whole["meanAngle"], places=9)
+
+    def test_chunking_is_invisible(self):
+        from unittest import mock
+
+        from rmc_toolkits import triplets
+
+        positions, elements, lattice = self._cloud(count=200, box=10.0)
+        elements = ["Se" if index % 3 else "Nb" for index in range(200)]
+        for triplet, bond23 in [(("Se", "Nb", "Se"), None), (("Se", "Nb", "Se"), (1.5, 3.4)),
+                                (("Se", "Nb", "Nb"), (1.5, 3.4))]:
+            kwargs = dict(triplet=triplet, bond12=(1.0, 3.0), bond23=bond23, collect_angles=True)
+            whole = bond_angle_distribution(positions, elements, lattice, **kwargs)
+            with mock.patch.object(triplets, "PAIR_CHUNK", 7):
+                chunked = bond_angle_distribution(positions, elements, lattice, **kwargs)
+            self.assertGreater(whole.angle_count, 100)
+            self.assertEqual(chunked.angle_count, whole.angle_count)
+            np.testing.assert_array_equal(chunked.counts, whole.counts)
+            np.testing.assert_array_equal(np.sort(chunked.angles), np.sort(whole.angles))
+            self.assertAlmostEqual(chunked.mean_angle, float(np.mean(whole.angles)), places=9)
+            self.assertAlmostEqual(chunked.std_angle, float(np.std(whole.angles)), places=9)
+
+
 class ValidationTests(unittest.TestCase):
     def setUp(self):
         self.positions = place([[5.0, 5.0, 5.0], [6.0, 5.0, 5.0]])

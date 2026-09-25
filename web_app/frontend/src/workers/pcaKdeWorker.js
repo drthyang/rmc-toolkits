@@ -20,7 +20,7 @@ import {
     sitePcaKde
 } from './pcaKde.js';
 import { siteOrientationHistogram } from './orientation.js';
-import { bondAngleSummary } from './triplets.js';
+import { APP_MAX_ANGLES, bondAngleSummary } from './triplets.js';
 
 // Parsing the whole configuration into clouds is the expensive part, so cache it
 // and re-parse only when the .rmc6f text itself changes. The key MUST come from
@@ -79,8 +79,10 @@ export const handlePcaMessage = async (data, getText) => {
         // Flat scalar params (end1/apex/end2, r12Min...) so the identical
         // request shape works as an HTTP query string against /api/triplets.
         // Same request caps as the Flask route (the engine is unrestricted):
-        // a runaway rmax grows the image stencil ~r^6 and a tiny binWidth
-        // the response, and here they would freeze the shared worker.
+        // rmax <= 15 A bounds the neighbour search, binWidth >= 0.05 deg the
+        // response, and the shared APP_MAX_ANGLES budget the pairing work —
+        // the angle count grows ~rmax^6, so without it a window well inside
+        // the rmax cap would freeze the shared worker.
         const given23 = [data.r23Min, data.r23Max].filter((value) => value != null && value !== '');
         if (given23.length === 1) {
             throw new Error('r23Min/r23Max are required together');
@@ -102,7 +104,8 @@ export const handlePcaMessage = async (data, getText) => {
                 triplet: [data.end1, data.apex, data.end2],
                 bond12: [Number(data.r12Min), Number(data.r12Max)],
                 bond23: given23.length === 2 ? [Number(data.r23Min), Number(data.r23Max)] : null,
-                binWidth
+                binWidth,
+                maxAngles: APP_MAX_ANGLES
             }
         );
     }

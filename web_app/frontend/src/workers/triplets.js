@@ -36,6 +36,14 @@ export const MAX_CELLS_PER_AXIS = 64;
 export const LENGTH_BINS = 40;
 const REACH_HEADROOM = 1e-9;
 
+// Work budget for one app request (mirrors APP_MAX_ANGLES in triplets.py —
+// keep the two equal; the parity fixture pins it). The exact angle count is
+// taken from the bond lists before any angle exists and a spec above it is
+// refused, because the count grows ~rmax^6 and the 15 Å rmax cap bounds only
+// the neighbour search. The engine itself is unrestricted unless the caller
+// passes `maxAngles` (the worker's 'triplets' handler does).
+export const APP_MAX_ANGLES = 50_000_000;
+
 const capitalize = (symbol) => {
   const text = String(symbol).trim();
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
@@ -99,11 +107,12 @@ const perpendicularWidths = (lattice) => {
   return areas.map((area) => volume / area);
 };
 
-// All (center, candidate image) bonds whose length falls inside at least one
-// of `windows`, grouped per center (mirrors _neighbor_bonds; grouping replaces
-// the numpy sort-by-center step). Each bond: { row, ix, iy, iz, vx, vy, vz,
-// length, member } with bit w of `member` set when window w holds it.
-const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => {
+// Linked-cell periodic neighbour search with explicit image shifts (mirrors
+// _neighbor_bonds). Calls visit(center, row, ix, iy, iz, vx, vy, vz, distSq,
+// member) for every (center, candidate image) pair whose length falls inside
+// at least one of `windows`, with bit w of `member` set when window w holds
+// it. Centers are visited in order, each one's pairs in stencil order.
+const visitNeighbors = (wrapped, centerRows, candidateRows, lattice, windows, visit) => {
   const rmax = Math.max(...windows.map((window) => window[1]));
   const widths = perpendicularWidths(lattice);
   const cells = widths.map((width) =>
@@ -124,15 +133,15 @@ const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => 
     (buckets[flat] ??= []).push(row);
   }
 
-  const boundsSq = windows.map(([lo, hi]) => [lo * lo, hi * hi]);
-  const perCenter = new Array(centerRows.length);
+  const loSq = windows.map(([lo]) => lo * lo);
+  const hiSq = windows.map(([, hi]) => hi * hi);
+  const nWindows = windows.length;
   for (let center = 0; center < centerRows.length; center += 1) {
     const centerRow = centerRows[center];
     const [fx, fy, fz] = wrapped[centerRow];
     const cx = cellOf(fx, 0);
     const cy = cellOf(fy, 1);
     const cz = cellOf(fz, 2);
-    const bonds = [];
     for (let dx = -reach[0]; dx <= reach[0]; dx += 1) {
       const sx = cx + dx;
       const wx = ((sx % cells[0]) + cells[0]) % cells[0];
@@ -162,25 +171,91 @@ const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => 
             // zero-length pair has no direction (mirrors the Python engine).
             if (!(distSq > 0)) continue;
             let member = 0;
-            boundsSq.forEach(([loSq, hiSq], window) => {
-              if (distSq >= loSq && distSq <= hiSq) member |= 1 << window;
-            });
+            for (let window = 0; window < nWindows; window += 1) {
+              if (distSq >= loSq[window] && distSq <= hiSq[window]) member |= 1 << window;
+            }
             if (!member) continue;
-            bonds.push({ row, ix, iy, iz, vx, vy, vz, length: Math.sqrt(distSq), member });
+            visit(center, row, ix, iy, iz, vx, vy, vz, distSq, member);
           }
         }
       }
     }
-    perCenter[center] = bonds;
   }
+};
+
+// All bonds grouped per center (grouping replaces the numpy sort-by-center
+// step). Each bond: { row, ix, iy, iz, vx, vy, vz, length, member }.
+const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => {
+  const perCenter = Array.from({ length: centerRows.length }, () => []);
+  visitNeighbors(wrapped, centerRows, candidateRows, lattice, windows,
+    (center, row, ix, iy, iz, vx, vy, vz, distSq, member) => {
+      perCenter[center].push({ row, ix, iy, iz, vx, vy, vz, length: Math.sqrt(distSq), member });
+    });
   return perCenter;
+};
+
+// Per-center bond counts by window-membership pattern, storing no bond: the
+// counting pass of a budgeted request (mirrors _neighbor_bonds(count_only)).
+// patterns[center * 2^W + member] = number of that center's bonds.
+const countPatterns = (wrapped, centerRows, candidateRows, lattice, windows) => {
+  const nPatterns = 1 << windows.length;
+  const patterns = new Float64Array(centerRows.length * nPatterns);
+  visitNeighbors(wrapped, centerRows, candidateRows, lattice, windows,
+    (center, row, ix, iy, iz, vx, vy, vz, distSq, member) => {
+      patterns[center * nPatterns + member] += 1;
+    });
+  return patterns;
+};
+
+// Membership-pattern counts from stored bonds (same layout as countPatterns).
+const patternsOf = (perCenter, nWindows) => {
+  const nPatterns = 1 << nWindows;
+  const patterns = new Float64Array(perCenter.length * nPatterns);
+  perCenter.forEach((bonds, center) => {
+    for (const bond of bonds) patterns[center * nPatterns + bond.member] += 1;
+  });
+  return patterns;
+};
+
+const pairs2 = (n) => (n * (n - 1)) / 2;
+
+// Exact angle count summed over centers, from membership-pattern counts
+// (mirrors _angles_per_center). Different ends: Σ n1·n2. Same end, one table
+// over both windows (bit 0 = A–B, bit W−1 = B–C): the combined list's
+// unordered pairs minus those with no bond in one window,
+// C(a+b+c, 2) − C(a, 2) − C(b, 2) (a only A–B, b only B–C, c in both).
+const angleTotal = (sameEnd, nWindows, nCenters, patterns1, patterns2 = null) => {
+  const nPatterns = 1 << nWindows;
+  let total = 0;
+  for (let center = 0; center < nCenters; center += 1) {
+    const base = center * nPatterns;
+    if (!sameEnd) {
+      total += patterns1[base + 1] * patterns2[base + 1];
+      continue;
+    }
+    let all = 0;
+    let only12 = 0;
+    let only23 = 0;
+    for (let pattern = 1; pattern < nPatterns; pattern += 1) {
+      const count = patterns1[base + pattern];
+      const in12 = (pattern & 1) !== 0;
+      const in23 = ((pattern >> (nWindows - 1)) & 1) !== 0;
+      all += count;
+      if (in12 && !in23) only12 += count;
+      else if (in23 && !in12) only23 += count;
+    }
+    total += pairs2(all) - pairs2(only12) - pairs2(only23);
+  }
+  return total;
 };
 
 const toDegrees = 180 / Math.PI;
 
-// Validate + select + bond search + angle formation: the shared core behind
-// bondAngleSummary (mirrors _triplet_core + _pair_angles).
-const tripletCore = (fractional, elements, latticeVectors, { triplet, bond12, bond23 = null }) => {
+// Validate + select + bond search + exact angle count: the shared core behind
+// bondAngleSummary (mirrors _triplet_core + _Pairing.angle_counts). No angle
+// is formed here, so an over-budget spec is refused before any pairing work.
+const tripletCore = (fractional, elements, latticeVectors,
+  { triplet, bond12, bond23 = null, maxAngles = null }) => {
   if (!Array.isArray(fractional) || fractional.some((row) => !Array.isArray(row) || row.length !== 3)) {
     throw new Error('fractional must be an (N, 3) array');
   }
@@ -225,12 +300,33 @@ const tripletCore = (fractional, elements, latticeVectors, { triplet, bond12, bo
   const sharedEnds = sameEnd
     && window12[0] === window23[0] && window12[1] === window23[1];
 
+  const windowsSameEnd = sharedEnds ? [window12] : [window12, window23];
+  const refuse = (count) => {
+    throw new Error(
+      `${end1}-${apex}-${end2} with bond windows ${window12[0]}-${window12[1]} / `
+      + `${window23[0]}-${window23[1]} A would form ${count.toLocaleString('en-US')} angles, `
+      + `over the limit of ${Number(maxAngles).toLocaleString('en-US')} for one request; `
+      + 'narrow the bond windows (the angle count grows roughly as rmax^6)'
+    );
+  };
+  if (maxAngles != null) {
+    // Budgeted (app) request: an exact count from a search that stores
+    // nothing, so an oversized spec is refused before either the bond lists
+    // or a single angle take up memory.
+    const counted = sameEnd
+      ? angleTotal(true, windowsSameEnd.length, apexRows.length,
+        countPatterns(wrapped, apexRows, selections.get(end1), lattice, windowsSameEnd))
+      : angleTotal(false, 1, apexRows.length,
+        countPatterns(wrapped, apexRows, selections.get(end1), lattice, [window12]),
+        countPatterns(wrapped, apexRows, selections.get(end2), lattice, [window23]));
+    if (counted > maxAngles) refuse(counted);
+  }
+
   // Same end element: one search over both windows, each bond image once,
   // tagged with its window(s) (bit 1 = A–B, bit 2 = B–C; one window = bit 1).
   // Different end elements: one search per end.
   const both = sameEnd
-    ? neighborBonds(wrapped, apexRows, selections.get(end1), lattice,
-      sharedEnds ? [window12] : [window12, window23])
+    ? neighborBonds(wrapped, apexRows, selections.get(end1), lattice, windowsSameEnd)
     : null;
   const bit23 = sharedEnds ? 1 : 2;
   const bonds12 = sameEnd
@@ -240,8 +336,31 @@ const tripletCore = (fractional, elements, latticeVectors, { triplet, bond12, bo
     ? (sharedEnds ? bonds12 : both.map((bonds) => bonds.filter((bond) => bond.member & bit23)))
     : neighborBonds(wrapped, apexRows, selections.get(end2), lattice, [window23]);
 
-  const angles = [];
-  for (let center = 0; center < apexRows.length; center += 1) {
+  // Exact angle count (equal to the counting pass's when one ran).
+  const angleCount = sameEnd
+    ? angleTotal(true, windowsSameEnd.length, apexRows.length, patternsOf(both, windowsSameEnd.length))
+    : angleTotal(false, 1, apexRows.length, patternsOf(bonds12, 1), patternsOf(bonds23, 1));
+
+  return {
+    triplet: [end1, apex, end2],
+    window12,
+    window23,
+    sharedEnds,
+    sameEnd,
+    bit23,
+    apexCount: apexRows.length,
+    both,
+    bonds12,
+    bonds23,
+    angleCount
+  };
+};
+
+// Visit every angle (degrees) of a core in the engine's deterministic order,
+// without storing any: the histogram and moments accumulate as it streams.
+const forEachAngle = (core, visit) => {
+  const { sameEnd, bit23, both, bonds12, bonds23 } = core;
+  for (let center = 0; center < core.apexCount; center += 1) {
     const first = sameEnd ? both[center] : bonds12[center];
     const second = sameEnd ? both[center] : bonds23[center];
     for (let i = 0; i < first.length; i += 1) {
@@ -258,21 +377,10 @@ const tripletCore = (fractional, elements, latticeVectors, { triplet, bond12, bo
         }
         const cosine = (one.vx * two.vx + one.vy * two.vy + one.vz * two.vz)
           / (one.length * two.length);
-        angles.push(Math.acos(Math.min(1, Math.max(-1, cosine))) * toDegrees);
+        visit(Math.acos(Math.min(1, Math.max(-1, cosine))) * toDegrees);
       }
     }
   }
-
-  return {
-    triplet: [end1, apex, end2],
-    window12,
-    window23,
-    sharedEnds,
-    apexCount: apexRows.length,
-    bonds12,
-    bonds23,
-    angles
-  };
 };
 
 const lengthHistogram = (perCenter, [lo, hi]) => {
@@ -303,7 +411,10 @@ const lengthHistogram = (perCenter, [lo, hi]) => {
  * The Bond Geometry payload: angle histogram (counts / per-degree density /
  * exact sin-corrected), bond-length histograms per window, and the
  * coordination distribution — mirrors rmc_toolkits.triplets.bond_angle_summary.
- * `collectAngles: true` adds `sortedAngles` (degrees) for tests.
+ * Angles stream straight into the histogram and running moments (Welford),
+ * so memory does not grow with the angle count; `collectAngles: true` also
+ * keeps them and adds `sortedAngles` (degrees) for tests. `maxAngles` refuses
+ * a spec whose exact angle count exceeds it, before any angle is formed.
  */
 export const bondAngleSummary = (fractional, elements, latticeVectors, options = {}) => {
   const { binWidth = 1.0, collectAngles = false } = options;
@@ -317,10 +428,18 @@ export const bondAngleSummary = (fractional, elements, latticeVectors, options =
   const nbins = Math.max(1, Math.round(180 / binWidth));
   const width = 180 / nbins;
   const counts = new Array(nbins).fill(0);
-  for (const angle of core.angles) {
+  const collected = collectAngles ? [] : null;
+  let total = 0;
+  let mean = 0;
+  let m2 = 0;
+  forEachAngle(core, (angle) => {
     counts[histogramIndex(angle, 0, 180, nbins)] += 1;
-  }
-  const total = core.angles.length;
+    total += 1;
+    const delta = angle - mean;
+    mean += delta / total;
+    m2 += delta * (angle - mean);
+    if (collected) collected.push(angle);
+  });
   const binCenters = Array.from({ length: nbins }, (_, index) => (index + 0.5) * width);
   const density = counts.map((count) => (total ? count / (total * width) : 0));
   const sinCorrected = counts.map((count, index) => {
@@ -331,14 +450,8 @@ export const bondAngleSummary = (fractional, elements, latticeVectors, options =
     return count / total / ((Math.cos(lo) - Math.cos(hi)) / 2);
   });
 
-  let meanAngle = null;
-  let stdAngle = null;
-  if (total) {
-    const mean = core.angles.reduce((acc, value) => acc + value, 0) / total;
-    const variance = core.angles.reduce((acc, value) => acc + (value - mean) ** 2, 0) / total;
-    meanAngle = mean;
-    stdAngle = Math.sqrt(variance);
-  }
+  const meanAngle = total ? mean : null;
+  const stdAngle = total ? Math.sqrt(m2 / total) : null;
 
   // coordination[n] = how many central atoms have exactly n window-1 bonds.
   const maxBonds = core.bonds12.reduce((acc, bonds) => Math.max(acc, bonds.length), 0);
@@ -363,8 +476,8 @@ export const bondAngleSummary = (fractional, elements, latticeVectors, options =
     lengths23: core.sharedEnds ? null : lengthHistogram(core.bonds23, core.window23),
     coordination
   };
-  if (collectAngles) {
-    summary.sortedAngles = [...core.angles].sort((a, b) => a - b);
+  if (collected) {
+    summary.sortedAngles = collected.sort((a, b) => a - b);
   }
   return summary;
 };

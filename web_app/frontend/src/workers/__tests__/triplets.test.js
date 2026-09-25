@@ -6,7 +6,7 @@
 // tests/generate_triplets_fixture.py, plus self-contained geometry checks.
 
 import { describe, expect, it } from 'vitest';
-import { bondAngleSummary } from '../triplets';
+import { APP_MAX_ANGLES, bondAngleSummary } from '../triplets';
 import fixture from '../../__tests__/fixtures/triplets_fixture.json';
 
 const runSpec = (testCase, spec) =>
@@ -69,6 +69,51 @@ describe('Python parity (triplets_fixture.json)', () => {
       });
     }
   }
+});
+
+describe('work budget (maxAngles)', () => {
+  const cubic = [[10, 0, 0], [0, 10, 0], [0, 0, 10]];
+  const rng = (() => {
+    let state = 7;
+    return () => {
+      state = (state * 1664525 + 1013904223) % 4294967296;
+      return state / 4294967296;
+    };
+  })();
+  const fractional = Array.from({ length: 200 }, () => [rng(), rng(), rng()]);
+  const elements = fractional.map((_, index) => (index % 3 ? 'Se' : 'Nb'));
+  const specs = [
+    { triplet: ['Se', 'Nb', 'Se'], bond12: [1, 3] },
+    { triplet: ['Se', 'Nb', 'Nb'], bond12: [1, 3], bond23: [1.5, 3.4] },
+    { triplet: ['Se', 'Nb', 'Se'], bond12: [1, 3], bond23: [1.5, 3.4] },
+    { triplet: ['Se', 'Se', 'Se'], bond12: [1, 2], bond23: [2.5, 3.4] }
+  ];
+
+  it('the app budget is the Python engine\'s APP_MAX_ANGLES', () => {
+    expect(APP_MAX_ANGLES).toBe(fixture.appMaxAngles);
+  });
+
+  for (const spec of specs) {
+    it(`counts exactly before pairing: ${spec.triplet.join('-')} ${spec.bond23 ? 'distinct' : 'shared'}`, () => {
+      const exact = bondAngleSummary(fractional, elements, cubic, spec).angleCount;
+      expect(exact).toBeGreaterThan(10);
+      expect(bondAngleSummary(fractional, elements, cubic, { ...spec, maxAngles: exact }).angleCount)
+        .toBe(exact);
+      expect(() => bondAngleSummary(fractional, elements, cubic, { ...spec, maxAngles: exact - 1 }))
+        .toThrow(new RegExp(`${exact.toLocaleString('en-US')} angles.*${(exact - 1).toLocaleString('en-US')}`));
+    });
+  }
+
+  it('streams: no raw angle list unless collectAngles asks for it', () => {
+    const spec = { triplet: ['Se', 'Nb', 'Se'], bond12: [1, 3] };
+    const plain = bondAngleSummary(fractional, elements, cubic, spec);
+    const collected = bondAngleSummary(fractional, elements, cubic, { ...spec, collectAngles: true });
+    expect(plain.sortedAngles).toBeUndefined();
+    expect(collected.sortedAngles).toHaveLength(plain.angleCount);
+    expect(collected.counts).toEqual(plain.counts);
+    const mean = collected.sortedAngles.reduce((acc, value) => acc + value, 0) / plain.angleCount;
+    expect(plain.meanAngle).toBeCloseTo(mean, 9);
+  });
 });
 
 describe('geometry invariants', () => {

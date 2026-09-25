@@ -163,15 +163,22 @@ then mapped to Cartesian:
 
 $$\Delta\mathbf x = \bigl(\mathbf f_\text{cand} + \mathbf m - \mathbf f_\text{center}\bigr)\,\mathsf L$$
 
-(One implementation note, recorded in the source: the fractional→Cartesian product uses
-`np.einsum` rather than `@`, because NumPy on Apple's Accelerate BLAS emits spurious
-divide/overflow warnings for large $(P,3)\times(3,3)$ matmuls of finite values. Results are
-identical; einsum skips that code path.)
+(One implementation note, recorded in the source: the fractional→Cartesian product, the
+squared length and the angle's dot product are written out term by term —
+$(\Delta f_1 L_{1j} + \Delta f_2 L_{2j}) + \Delta f_3 L_{3j}$ — in exactly the JavaScript port's
+evaluation order, so both engines produce bitwise-identical vectors, and no BLAS matmul is
+involved: NumPy on Apple's Accelerate BLAS emits spurious divide/overflow warnings for large
+$(P,3)\times(3,3)$ matmuls of finite values.)
 
-The search is fully vectorized per offset: candidates are bucketed by flattened cell index once
-(`argsort` + `bincount` + prefix sums), and each of the $\prod_i (2k_i{+}1)$ offsets gathers all
-its (center, candidate) pairs in one shot via `_ragged_ranks`, a flattened 0..k−1 rank within
-consecutive groups.
+The search is vectorized per offset: candidates are bucketed by flattened cell index once
+(`argsort` + `bincount` + prefix sums), and each of the $\prod_i (2k_i{+}1)$ offsets gathers its
+(center, candidate) pairs in one shot via `_ragged_ranks`, a flattened 0..k−1 rank within
+consecutive groups. Centers are taken in blocks of $\lfloor$`SEARCH_CHUNK`$/\max(\text{atoms per
+cell})\rfloor$ ($2^{20}$ candidate pairs per offset, ~100 MB of transients), so the search's
+working memory is bounded whatever $r_\mathrm{max}$ and the box; the per-center bond order
+(stencil order) is the same with or without blocking. The same search runs in a
+**count-only** mode that stores nothing and returns, per center, how many bonds fall in each
+window-membership pattern — the exact counting pass of Step 8.
 
 ### Step 4 — Which pairs are bonds
 
@@ -228,6 +235,29 @@ $$\theta = \frac{180°}{\pi}\arccos\!\Bigl(\operatorname{clip}\bigl(
 with the clip guarding the $\pm1$ boundary against rounding. There is no tolerance anywhere
 else: the whole calculation is exact geometry on float64.
 
+**The exact angle count comes first.** Before any angle is formed, the count per center follows
+from the bond lists alone (`_angles_per_center`):
+
+$$N_\text{angles} = \sum_B \begin{cases}
+n_{12}\,n_{23} & A \ne C,\\[2pt]
+\binom{a+b+c}{2} - \binom{a}{2} - \binom{b}{2} & A = C,
+\end{cases}$$
+
+with, for a same end element, $a$ bonds only in $w_{12}$, $b$ only in $w_{23}$ and $c$ in both
+(equal windows: $\binom{c}{2}$). It is what the work budget of Step 8 is checked against.
+
+**Angles are streamed, never all held.** `_stream_angles` walks the centers in consecutive runs
+whose combined bond-pair count stays within `PAIR_CHUNK` $= 2^{18}$ (a single center above it is
+a run of its own), forms that run's angles, adds them to the histogram, and folds their mean and
+variance into the running totals with Chan's parallel update
+($\delta = \bar x_\text{chunk} - \bar x$, $M_2 \mathrel{+}= M_{2,\text{chunk}} + \delta^2 n\,n_\text{chunk}/(n+n_\text{chunk})$).
+Pairing memory is therefore ~25 MB whatever the angle count; the raw list is kept only when
+`collect_angles` asks for it. The JS port streams inside its pairing loop (Welford per angle)
+and keeps angles only for `collectAngles`. Before 1.0 both engines materialized every angle
+(~200 B/angle in NumPy index arrays, one JS array capped by V8 at $2^{27}$ elements), so a
+window well inside the app's 15 Å cap needed tens to hundreds of GB in Flask and threw
+`RangeError: Invalid array length` in the worker.
+
 ### Step 6 — The histogram and its three normalizations
 
 Angles are binned uniformly over $[0°, 180°]$ into $K = \max(1,\lfloor 180/w_\text{req} +
@@ -272,16 +302,29 @@ change here. On top of the three angle curves it adds:
 
 ### Step 8 — The two app boundaries and their caps
 
-The engine itself is **unrestricted** — library and CLI callers can ask for anything. The two
-app boundaries apply identical request caps, because one request could otherwise blow up the
-image stencil (volume grows $\sim r_\mathrm{max}^3$ and the candidate pair count with it) or the
-response size — and in the browser it would freeze the shared PCA worker:
+The engine itself is **unrestricted** — library and CLI callers can ask for anything (and, with
+Step 5's streaming, memory stays bounded; only the time grows). The two app boundaries apply
+identical request caps, each bounding a different cost — and in the browser an unbounded request
+would freeze the shared PCA worker:
 
-| Cap | Flask `/api/triplets` | Worker `kind: 'triplets'` |
-|---|---|---|
-| $r_\mathrm{max} \le 15\,$Å (each window) | 400 | thrown `Error` |
-| `binWidth` $\ge 0.05°$ | 400 | thrown `Error` |
-| `r23Min`/`r23Max` required together | 400 | thrown `Error` |
+| Cap | Bounds | Flask `/api/triplets` | Worker `kind: 'triplets'` |
+|---|---|---|---|
+| $r_\mathrm{max} \le 15\,$Å (each window) | the neighbour search (bond count $\sim r_\mathrm{max}^3$) | 400 | thrown `Error` |
+| exact angle count $\le$ `APP_MAX_ANGLES` $= 5\times10^7$ | the pairing work (angle count $\sim r_\mathrm{max}^6$) | 400 | thrown `Error` |
+| `binWidth` $\ge 0.05°$ | the response size | 400 | thrown `Error` |
+| `r23Min`/`r23Max` required together | — | 400 | thrown `Error` |
+
+The rmax cap alone does **not** bound the work: on the 52 000-atom 5 K sample a Se–Nb–Se window
+2.2–15 Å forms $1.27\times10^9$ angles (Se–Se–Se 2–15 Å: $2.45\times10^9$). So both boundaries
+pass the one shared budget — `APP_MAX_ANGLES` in [triplets.py](../../rmc_toolkits/triplets.py),
+mirrored in [workers/triplets.js](../../web_app/frontend/src/workers/triplets.js) and pinned
+equal by the parity fixture — as `max_angles` / `maxAngles`. A budgeted request first runs the
+count-only search (Step 3), which stores nothing, computes the exact count of Step 5, and
+refuses a spec above the budget with a message naming the count ("… would form 1,274,044,098
+angles, over the limit of 50,000,000 for one request; narrow the bond windows"). Measured on the
+5 K sample: refusing Se–Se–Se 2–15 Å costs ~0.2 GB and <1 s in the worker (~0.5 GB, ~8 s in
+Flask, parse included); an accepted Se–Nb–Se 2.2–8 Å request ($2.9\times10^7$ angles) takes
+~0.8 s / 0.4 GB in the worker and ~2 s / 0.5 GB in Flask.
 
 Request parameters are flat scalars (`end1`, `apex`, `end2`, `r12Min`, `r12Max`, `r23Min`,
 `r23Max`, `binWidth`) so the identical request shape works as an HTTP query string and as a
@@ -314,11 +357,15 @@ rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --b
 | `bond12` | — (required) | inclusive A–B window (Å), $0 \le r_\mathrm{min} < r_\mathrm{max}$ |
 | `bond23` | `None` → `bond12` | inclusive B–C window; A = C ⇒ unordered counting of each triplet once (Step 5) |
 | `bin_width` | `1.0`° | requested width; realized width is $180/\max(1,\lfloor 180/w+0.5\rfloor)$ |
-| `collect_angles` | `False` | `bond_angle_distribution` only: keep the raw angle list |
+| `collect_angles` | `False` | `bond_angle_distribution` only: keep the raw angle list (the one memory cost that grows with the angle count) |
+| `max_angles` | `None` (unlimited) | refuse, before pairing, a spec whose exact angle count exceeds it; the app boundaries pass `APP_MAX_ANGLES` |
+| `APP_MAX_ANGLES` | $5\times10^{7}$ | the shared app-boundary work budget (Python and JS constants must be equal) |
+| `PAIR_CHUNK` | $2^{18}$ | bond pairs formed per streaming chunk (~25 MB) |
+| `SEARCH_CHUNK` | $2^{20}$ | candidate pairs examined per search block and stencil offset (~100 MB) |
 | `MAX_CELLS_PER_AXIS` | 64 | linked-cell resolution cap per lattice direction |
 | `REACH_HEADROOM` | $10^{-9}$ | relative headroom on the layer reach against float rounding |
 | `LENGTH_BINS` | 40 | bond-length histogram bins per window (summary payload only) |
-| App-boundary caps | $r_\mathrm{max}\le15$ Å, `binWidth` ≥ 0.05° | Flask route and worker only; engine and CLI unrestricted |
+| App-boundary caps | $r_\mathrm{max}\le15$ Å, angles ≤ `APP_MAX_ANGLES`, `binWidth` ≥ 0.05° | Flask route and worker only; engine and CLI unrestricted |
 
 ### Parity: Python engine vs JavaScript port
 
@@ -344,6 +391,12 @@ Measured agreement, asserted per bin and per statistic:
 - `meanAngle`, `stdAngle`, `meanLength`: $10^{-7}$.
 - Sorted raw angles (head/tail samples): $10^{-5}$ — these go through `acos` twice
   (compute, then fixture rounding).
+
+The work budget is pinned from both sides: `WorkBudgetTests` (exact count at the budget
+accepted, one over refused, for every counting rule; streamed and blocked results identical to
+unchunked ones; tracemalloc bounds on the streamed and refused paths), `TripletsBudgetApiTests`
+in [tests/test_triplets_api.py](../../tests/test_triplets_api.py) (the route's 400), and the JS
+`work budget` / worker-boundary suites.
 
 The Python engine itself is pinned to a brute-force all-images reference over a $\pm2$ image
 span on random triclinic configurations (`TriclinicBruteForceTests` in
