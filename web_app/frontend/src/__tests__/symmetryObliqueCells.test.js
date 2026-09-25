@@ -122,7 +122,9 @@ describe('a supercell of the translation lattice gives a lower bound, never a nu
 });
 
 describe('supercell translations are snapped to their exact fractions', () => {
-    it('names CsCl in a 5×5×5 cell Pm-3m', () => {
+    // 6000 operations: well past the page's budget (symmetryModel.MAX_SYMMETRY_OPS), so it
+    // is reached only through the library API, and slow enough to need a longer timeout.
+    it('names CsCl in a 5×5×5 cell Pm-3m', { timeout: 30000 }, () => {
         // Fifths are not on a 1/24 grid (0.2 is 0.008 from 5/24): snapped there, the
         // translations did not form a lattice and the group went unnamed.
         expect(named(tiled(STRUCTURES.cscl(), [5, 5, 5]))).toEqual({ spaceGroup: 'Pm-3m', spaceGroupNumber: 221 });

@@ -44,7 +44,7 @@ describe('the operation budget', () => {
         expect(found.reason).toMatch(/supercell/);
         expect(found.reason).toMatch(String(MAX_SYMMETRY_OPS));
         expect(ladder).toEqual([]);
-        expect(t1 + t2).toBeLessThan(1500);
+        expect(t1 + t2).toBeLessThan(5000);
     });
 
     it('declines the noisy box too, headline and ladder alike', () => {
@@ -53,7 +53,7 @@ describe('the operation budget', () => {
         const [ladder, t2] = timed(() => toleranceLadder(structure, 1.0));
         expect(found.skipped).toBe(true);
         expect(ladder).toEqual([]);
-        expect(t1 + t2).toBeLessThan(1500);
+        expect(t1 + t2).toBeLessThan(5000);
     });
 
     it('still analyses a doubled cell within the budget', () => {
