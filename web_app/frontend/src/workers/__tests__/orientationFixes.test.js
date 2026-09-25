@@ -9,6 +9,8 @@ import { describe, it, expect } from 'vitest';
 
 import {
     MIN_FREQUENCY,
+    assignCells,
+    goldbergTiling,
     orientationHistogram,
     recommendedFrequency
 } from '../orientation.js';
@@ -99,5 +101,67 @@ describe('recommendedFrequency floors to the target occupancy', () => {
         RECOMMENDED_FREQUENCY_PINS.forEach(([n, expected]) => expect(recommendedFrequency(n)).toBe(expected));
         expect(recommendedFrequency(1000, { targetPerCell: 5 })).toBe(4);
         expect(recommendedFrequency(5000, { maxFrequency: 3 })).toBe(3);
+    });
+});
+
+// orientation.numerics.28 — exact Voronoi ties must resolve centrosymmetrically.
+const axisCloud = (copies = 500, length = 0.1) => {
+    const points = [];
+    for (const axis of [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]]) {
+        for (let i = 0; i < copies; i += 1) points.push(axis.map((value) => value * length));
+    }
+    return points;
+};
+
+const bodyDiagonalCloud = (copies = 200, length = 0.1) => {
+    const points = [];
+    for (const a of [1, -1]) {
+        for (const b of [1, -1]) {
+            for (const c of [1, -1]) {
+                for (let i = 0; i < copies; i += 1) {
+                    points.push([a, b, c].map((value) => value * length / Math.sqrt(3)));
+                }
+            }
+        }
+    }
+    return points;
+};
+
+// Shared verbatim with AXIS_CELLS_NU3 in tests/test_orientation_fixes.py.
+const AXIS_CELLS_NU3 = [36, 15, 16, 86, 71, 62];
+
+describe('centrosymmetric tie-break', () => {
+    it('keeps an exactly centrosymmetric axis cloud at zero asymmetry', () => {
+        for (const frequency of [1, 2, 3, 5, 6, 9, 10, 11]) {
+            const result = orientationHistogram(axisCloud(), { frequency, geometry: false });
+            result.counts.forEach((count, cell) => expect(count).toBe(result.counts[result.antipode[cell]]));
+            expect(result.antipodalAsymmetry).toBe(0);
+        }
+    });
+
+    it('keeps a body-diagonal cloud at zero asymmetry', () => {
+        for (const frequency of [4, 5, 7, 11]) {
+            expect(orientationHistogram(bodyDiagonalCloud(), { frequency, geometry: false }).antipodalAsymmetry).toBe(0);
+        }
+    });
+
+    it('is exactly inversion-equivariant, ties included', () => {
+        const tiling = goldbergTiling(5);
+        const directions = [
+            ...cloud(2000, 31),
+            [1, 0, 0], [0, 1, 0], [0, 0, 1],
+            ...bodyDiagonalCloud(1),
+            ...tiling.polygons.map((polygon) => polygon[0]),
+            ...tiling.centers
+        ];
+        const plus = assignCells(tiling, directions);
+        const minus = assignCells(tiling, directions.map((u) => u.map((value) => -value)));
+        minus.forEach((cell, index) => expect(cell).toBe(tiling.antipode[plus[index]]));
+    });
+
+    it('pins the axis cells shared with the Python engine', () => {
+        const tiling = goldbergTiling(3);
+        expect(assignCells(tiling, [[1, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], [0, -1, 0], [0, 0, -1]]))
+            .toEqual(AXIS_CELLS_NU3);
     });
 });

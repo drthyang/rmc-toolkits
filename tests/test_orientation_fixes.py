@@ -15,6 +15,8 @@ import numpy as np
 
 from rmc_toolkits.orientation import (
     MIN_FREQUENCY,
+    assign_cells,
+    goldberg_tiling,
     orientation_histogram,
     recommended_frequency,
 )
@@ -113,6 +115,69 @@ class RecommendedFrequencyFloorTests(unittest.TestCase):
             self.assertEqual(recommended_frequency(n), expected, msg=f"N={n}")
         self.assertEqual(recommended_frequency(1000, target_per_cell=5), 4)
         self.assertEqual(recommended_frequency(5000, max_frequency=3), 3)
+
+
+def _axis_cloud(copies=500, length=0.1):
+    """Exactly centrosymmetric: `copies` atoms at each of +/-x, +/-y, +/-z."""
+    axes = np.vstack([np.eye(3), -np.eye(3)]) * length
+    return np.repeat(axes, copies, axis=0)
+
+
+def _body_diagonal_cloud(copies=200, length=0.1):
+    signs = np.array([[a, b, c] for a in (1, -1) for b in (1, -1) for c in (1, -1)], float)
+    return np.repeat(signs * length / np.sqrt(3.0), copies, axis=0)
+
+
+class CentrosymmetricTieBreakTests(unittest.TestCase):
+    """orientation.numerics.28.
+
+    The icosahedron puts 2-fold axes on x, y, z, so at odd nu the directions
+    +/-x, +/-y, +/-z sit exactly on a Voronoi boundary (and <111> on triple
+    points when 3 does not divide nu). The first-maximum tie-breaks resolved
+    +u and -u to cells that are not antipodes, so an exactly centrosymmetric
+    cloud reported antipodalAsymmetry = 1.000 and tripped the red flag.
+    Assignment is now exactly inversion-equivariant.
+    """
+
+    def test_axis_cloud_is_antipodally_symmetric_at_every_frequency(self):
+        for frequency in (1, 2, 3, 5, 6, 9, 10, 11):
+            with self.subTest(frequency=frequency):
+                result = orientation_histogram(_axis_cloud(), frequency=frequency, geometry=False)
+                counts = np.asarray(result["counts"])
+                np.testing.assert_array_equal(counts, counts[np.asarray(result["antipode"])])
+                self.assertEqual(result["antipodalAsymmetry"], 0.0)
+
+    def test_body_diagonal_cloud_is_antipodally_symmetric(self):
+        for frequency in (4, 5, 7, 11):
+            with self.subTest(frequency=frequency):
+                result = orientation_histogram(_body_diagonal_cloud(), frequency=frequency, geometry=False)
+                self.assertEqual(result["antipodalAsymmetry"], 0.0)
+
+    def test_assignment_is_inversion_equivariant(self):
+        rng = np.random.default_rng(31)
+        tiling = goldberg_tiling(5)
+        # Random directions plus every exact tie family: the axes, the body
+        # diagonals, and the cell-polygon vertices (Voronoi triple points).
+        directions = np.vstack([
+            rng.normal(size=(2000, 3)),
+            np.eye(3),
+            _body_diagonal_cloud(copies=1),
+            tiling.polygons[:, 0, :],
+            tiling.centers,
+        ])
+        plus = assign_cells(tiling, directions)
+        minus = assign_cells(tiling, -directions)
+        np.testing.assert_array_equal(minus, tiling.antipode[plus])
+
+    def test_axis_cells_pinned_for_cross_engine_parity(self):
+        # Shared verbatim with orientationFixes.test.js.
+        tiling = goldberg_tiling(3)
+        axes = np.vstack([np.eye(3), -np.eye(3)])
+        self.assertEqual(assign_cells(tiling, axes).tolist(), AXIS_CELLS_NU3)
+
+
+# Cells of +x, +y, +z, -x, -y, -z at nu = 3 (the -u cells are the antipodes).
+AXIS_CELLS_NU3 = [36, 15, 16, 86, 71, 62]
 
 
 if __name__ == "__main__":

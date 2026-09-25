@@ -452,17 +452,39 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
     )
 
 
+def _opposite_hemisphere(directions: np.ndarray) -> np.ndarray:
+    """True where the first non-zero component is negative.
+
+    For any u != 0 exactly one of u and -u is flagged, so it splits the sphere
+    into two antipodal halves (the zero vector counts as unflagged).
+    """
+    x, y, z = directions[:, 0], directions[:, 1], directions[:, 2]
+    return (x < 0) | ((x == 0) & ((y < 0) | ((y == 0) & (z < 0))))
+
+
 def assign_cells(tiling: SphereTiling, directions: np.ndarray) -> np.ndarray:
-    """Cell index for each row of ``directions`` (need not be normalized)."""
+    """Cell index for each row of ``directions`` (need not be normalized).
+
+    Exactly inversion-equivariant: ``assign(-u) == antipode[assign(u)]`` for
+    every u, including directions that sit exactly on a Voronoi boundary. The
+    icosahedron puts 2-fold axes on x, y, z, so the crystal axes (odd nu) and
+    <111> (nu not a multiple of 3) are such ties, and a first-maximum
+    tie-break applied to +u and -u independently lands them in cells that are
+    not antipodes -- an exactly centrosymmetric cloud then reads as maximally
+    one-sided. Only one hemisphere is therefore resolved directly; the other
+    is mapped through the (exact, involutive) antipode table.
+    """
     directions = _normalize(np.atleast_2d(np.asarray(directions, dtype=float)))
-    return _assign(
+    flip = _opposite_hemisphere(directions)
+    resolved = _assign(
         tiling.centers,
         tiling.neighbors,
         tiling.face_inverse,
         tiling.lattice,
         tiling.frequency,
-        directions,
+        np.where(flip[:, None], -directions, directions),
     )
+    return np.where(flip, tiling.antipode[resolved], resolved)
 
 
 def recommended_frequency(

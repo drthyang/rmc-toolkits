@@ -388,9 +388,27 @@ export const goldbergTiling = (frequency = 8) => {
     return tiling;
 };
 
+// True where the first non-zero component is negative: for any u != 0
+// exactly one of u, -u is flagged (the zero vector is unflagged). Mirrors
+// `_opposite_hemisphere`.
+const oppositeHemisphere = (u) => (
+    u[0] < 0 || (u[0] === 0 && (u[1] < 0 || (u[1] === 0 && u[2] < 0)))
+);
+
+// Exactly inversion-equivariant assignment of a unit direction:
+// assign(-u) === antipode[assign(u)] for every u, including exact Voronoi
+// ties (the crystal axes at odd nu, <111> when 3 does not divide nu), which a
+// first-maximum tie-break would otherwise resolve non-antipodally and make a
+// centrosymmetric cloud read as one-sided. Mirrors `assign_cells`.
+const assignCell = (tiling, u) => (
+    oppositeHemisphere(u)
+        ? tiling.antipode[assignOne(tiling, [-u[0], -u[1], -u[2]])]
+        : assignOne(tiling, u)
+);
+
 /** Cell index for each direction ([x, y, z], need not be normalized). */
 export const assignCells = (tiling, directions) => (
-    directions.map((direction) => assignOne(tiling, normalize(direction)))
+    directions.map((direction) => assignCell(tiling, normalize(direction)))
 );
 
 // `targetPerCell` as the integer the resolution guard divides by. Mirrors
@@ -577,7 +595,7 @@ export const orientationHistogram = (vectors, options = {}) => {
     // smoothed population the color shows.
     let amplitudeSumCell = new Float64Array(cellCount);
     directions.forEach((direction, index) => {
-        const cell = assignOne(tiling, direction);
+        const cell = assignCell(tiling, direction);
         counts[cell] += 1;
         mass[cell] += weights[index];
         amplitudeSumCell[cell] += keptAmplitude[index];

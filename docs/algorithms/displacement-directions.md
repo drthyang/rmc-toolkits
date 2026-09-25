@@ -703,11 +703,37 @@ random directions:
 Both engines cap the walk at **8 rounds**. In every case measured, one improving round plus one
 confirming round suffices, at every resolution.
 
-**Two entry points, one of which normalises.** `assign_cells` / `assignCells` (the public
-wrapper) calls `_normalize` first, so callers may pass unnormalised vectors
+**(d) Inversion equivariance — exact ties are broken centrosymmetrically.** Stages (a)–(c) break
+exact ties by "first maximum wins", and that rule is not symmetric under
+$\mathbf{u} \to -\mathbf{u}$. Exact ties are not hypothetical here: §4.1 puts icosahedral 2-fold
+axes on Cartesian $x$, $y$, $z$, so for odd $\nu$ the six directions $\pm\hat{x}, \pm\hat{y},
+\pm\hat{z}$ sit exactly on a Voronoi boundary, and the eight $\langle 111\rangle$ directions sit
+on triple points whenever 3 does not divide $\nu$. Resolved independently, $+\hat{x}$ and
+$-\hat{x}$ landed in cells that are **not** antipodes (at $\nu = 3$: cells 36 and 85, while
+`antipode[36] = 86`), so an exactly centrosymmetric $\pm\langle 100\rangle$ cloud reported
+$\mathcal{A} = 1.000$ — maximally one-sided — at $\nu = 1, 3, 5, 9, 11$, and a $\pm\langle 111\rangle$
+cloud reported $0.25$ at $\nu = 5, 11$. `assign_cells` / `assignCell` therefore resolve only one
+hemisphere directly — the directions whose first non-zero component is positive (plus the zero
+vector) — and map every other direction through the antipode table:
+
+$$m(\mathbf{u}) \;=\; \begin{cases} m_{\text{walk}}(\mathbf{u}) & \text{first non-zero } u_k > 0 \\
+\texttt{antipode}\big[m_{\text{walk}}(-\mathbf{u})\big] & \text{otherwise.}\end{cases}$$
+
+Negation is exact in floating point and the antipode table is an exact involution (§4.7), so
+$m(-\mathbf{u}) = \texttt{antipode}[m(\mathbf{u})]$ holds **bit-for-bit for every $\mathbf{u}$**,
+ties included, and an exactly centrosymmetric cloud has $n_m = n_{\text{antipode}(m)}$ in every
+cell. Away from ties the nearest centre is unique and the fold changes nothing (verified: zero of
+312 000 real-data assignments changed, both GaNb₄Se₈ runs at $\nu \in \{2, 3, 10\}$). Both suites
+assert the equivariance on random directions plus every tie family, and pin the $\pm$axis cells at
+$\nu = 3$ (`[36, 15, 16, 86, 71, 62]`) verbatim across engines.
+
+**Two entry points, one of which normalises and folds.** `assign_cells` / `assignCells` (the
+public wrapper) calls `_normalize` first and applies the hemisphere fold of (d), so callers may
+pass unnormalised vectors
 ([orientation.py:452-462](../../rmc_toolkits/orientation.py)). The internal `_assign` / `assignOne`
-does **not** — it assumes unit input. Two consequences worth knowing: the antipode map of §4.7 is
-built by calling `_assign` directly on `-centers` (already unit, line 434), and the histogram
+does **not** normalise or fold — it assumes unit input. Two consequences worth knowing: the
+antipode map of §4.7 is built by calling `_assign` directly on `-centers` (already unit, and
+necessarily without the fold, which needs that very table), and the histogram
 path calls `assign_cells` on rows that `orientation_histogram` has *already* divided by their
 amplitude (line 611), so the re-normalisation there is redundant work, not a correctness
 requirement.
@@ -1308,9 +1334,12 @@ independently computed in each language — not a shared-golden parity suite.
    The changelog records only the unqualified phrase "brute-force-verified", without naming
    frequencies. The walk is also hard-capped at 8 rounds, so a hypothetical pathological tiling
    would silently return a near-nearest cell rather than fail.
-6. **Boundary ties are resolved arbitrarily.** A direction exactly equidistant from two centres
-   lands in whichever the walk reaches first. Measure-zero for real data; it is why the
-   brute-force parity tests assert $> 99.99\%$ rather than 100 %.
+6. **Boundary ties are resolved by rule, centrosymmetrically.** A direction exactly equidistant
+   from two centres lands in whichever the walk reaches first — but only one hemisphere is resolved
+   that way and the other is its exact antipodal image (Step 5 (d)), so ties can never manufacture
+   a $+\mathbf{u}/-\mathbf{u}$ imbalance. Ties are measure-zero for real (noisy) data but *not* for
+   idealised inputs: the crystal axes are exact ties at odd $\nu$. It is also why the brute-force
+   parity tests assert $> 99.99\%$ rather than 100 %.
 7. **Over-binning is still possible on purpose — and it silently disables the asymmetry flag.**
    The UI defaults to a fixed $\nu = 10$, not to Auto, so a site with only a few hundred copies is
    over-binned out of the box (1002 cells, $< 1$ point per cell); Auto would have picked $\nu = 1$
