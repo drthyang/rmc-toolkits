@@ -1004,7 +1004,10 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
   let converged = false;
   let iterations = 0;
 
-  for (iterations = 1; iterations <= config.maxIter; iterations += 1) {
+  // The loop variable is kept separate so an unconverged run reports maxIter
+  // (Python's `for iterations in range(1, max_iter + 1)`), not maxIter + 1.
+  for (let iteration = 1; iteration <= config.maxIter; iteration += 1) {
+    iterations = iteration;
     ({ a, b } = solveAffine(q, sq, deltaSq, r, tail, window, config, sigma, level));
     const sqScaled = new Float64Array(q.length);
     for (let i = 0; i < q.length; i += 1) sqScaled[i] = a * sq[i] + b;
