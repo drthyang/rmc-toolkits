@@ -19,6 +19,18 @@ discrete off-centre positions gives *discrete spots* that no ellipsoid can
 represent, and a site with odd-order anharmonicity gives a sphere that is not
 antipodally symmetric. None of those three signatures is visible in U.
 
+Reference point: ``dr`` is measured from the configuration's *own* site mean
+(``pca_kde.load_site_displacements`` subtracts it), so ``sum_i dr_i = 0`` for
+every site. A coherent (ordered) off-centring -- every copy displaced the same
+way from the ideal position -- therefore lives entirely in the site mean and
+leaves this map, ``antipodalAsymmetry`` and the orientation tensor exactly as
+they would be without it; read it from the site mean against the ideal
+(Wyckoff / average-structure) position instead. What the map does show is the
+*shape* of the cloud about its mean: a +u/-u imbalance is skewness (odd-order
+anharmonicity, or unequal occupation of opposite off-centre wells), and with
+partial off-centring the minority of copies left near the ideal site is what
+appears as a lobe, pointing *away* from the off-centring direction.
+
 Binning
 -------
 Solid-angle bins are the faces of a **Goldberg polyhedron**: the dual of a
@@ -41,8 +53,9 @@ the cell's own exactly-computed solid angle, which removes the pentagon
 artefact that otherwise prints the parent icosahedron onto the map.
 
 Cell boundaries are the spherical Voronoi diagram of the cell centres: a
-direction is assigned to the cell whose centre it is nearest to, and the
-polygon drawn for that cell is the exact region of directions that land in it.
+direction is assigned to the cell whose centre it is nearest to (an exact tie
+to the lowest cell index, see :func:`assign_cells`), and the polygon drawn for
+that cell is the exact region of directions that land in it.
 Assignment is O(1) per point, not O(cells): the icosahedral face is found by a
 ray/cone test, inverted through the (linear) gnomonic map to a lattice index,
 then a greedy walk on the cell-adjacency graph fixes the small distortion the
@@ -55,9 +68,14 @@ Reading the output
 ``density`` integrates to 1 over the sphere. ``enhancement = 4*pi*density`` is
 the more useful display quantity: it is dimensionless, **1 everywhere for an
 isotropic site**, and reads directly as "this direction is 1.8x more likely
-than chance". ``zScore`` is the Poisson significance of each cell against the
-isotropic null, which is what stops an over-binned map (more cells than data)
-from being read as structure -- see :func:`recommended_frequency`.
+than chance". ``zScore`` is each cell's *local* Gaussian z against the
+isotropic null -- not a significance: the map has C cells, so its largest
+local z is routinely 3-5 on pure noise, and at the ~0.2-1 expected counts per
+cell of a fine tiling the Gaussian reading of a Poisson count is badly
+anti-conservative. The calibrated readouts are ``peakSignificance`` (the peak
+cell's exact Poisson tail, corrected for the C cells searched) and the other
+``...Significance`` fields, each a one-sided normal deviate. Over-binning
+itself is guarded by :func:`recommended_frequency`.
 
 Conventions
 -----------
@@ -73,6 +91,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
+from scipy.special import gammainc, gammaincc, ndtri
 
 # Shared with the PCA engine on purpose: the orientation tensor's axes are meant
 # to be compared against a site's PCA axes, so they must use the identical
@@ -96,8 +115,50 @@ SMOOTHING_ALPHA = 0.5
 
 # Counts per cell that make a map worth looking at: at n per cell the Poisson
 # noise on an isotropic map is 1/sqrt(n), so 12 gives ~29% cell-to-cell scatter
-# -- enough to see a 1.5x lobe, not enough to invent one.
+# -- enough to see a 1.5x lobe, not enough to invent one. recommended_frequency
+# floors to it: the auto resolution averages at least this many per cell.
 DEFAULT_TARGET_PER_CELL = 12
+
+# Cells whose enhancement lies within this relative distance of the maximum
+# are one tied peak. Symmetry-equivalent cells have mathematically equal solid
+# angles that differ only in the last bits (differently in NumPy and JS), so a
+# plain argmax would pick the peak by round-off; 1e-9 is far above that
+# (~1e-15) and far below any physical difference. The lowest index wins.
+PEAK_TIE_RTOL = 1e-9
+
+# A direction whose best dot product with a cell centre is shared, to within
+# this absolute tolerance, by other cells sits on a Voronoi edge or vertex
+# (<111> when 3 does not divide nu, some <110>, the axes at odd nu). Such exact
+# ties go to the lowest cell index -- a combinatorial rule both engines apply
+# identically -- instead of to whichever tied cell the greedy walk reached
+# first, which depends on last-bit round-off (~1e-16) that differs between
+# NumPy and JS. 1e-12 is far above that and far below the dot-product gap of
+# any direction more than ~1e-10 rad from a cell boundary.
+ASSIGN_TIE_TOL = 1e-12
+
+# Every significance readout is a tail probability p converted to the
+# equivalent one-sided standard-normal deviate z (P(Z >= z) = p). Tail
+# probabilities are floored here before the conversion, so |z| <= 37.04 and
+# the payload never carries an infinity (which JSON cannot represent).
+SIGNIFICANCE_TAIL_FLOOR = 1e-300
+
+# The antipodal-asymmetry flag: A exceeds its inversion-symmetric null mean by
+# more than this many null standard deviations.
+ASYMMETRY_FLAG_SIGMA = 3.0
+
+# The whole-map test (mapSignificance) is withheld below this many expected
+# coincident atom pairs, lambda = C(N, 2) * sum_m p_m^2 (pairs of atoms that
+# share a cell under isotropy). X^2 is then a count of 0, 1 or 2 rare
+# coincidences: its tail is a lattice the three-moment reference cannot
+# follow, and it carries no whole-map information the peak test lacks.
+MAP_TEST_MIN_PAIRS = 0.1
+
+# Isotropic expectation of orientationAnisotropy = 3 lambda_1 - 1 is
+# ISOTROPIC_ANISOTROPY_SCALE / sqrt(N_eff) to leading order: sqrt(N) (T - I/3)
+# tends to a traceless GOE matrix with off-diagonal variance 1/15, whose mean
+# largest eigenvalue is 3 sqrt(3 / (2 pi)) / sqrt(15), so 3 E[lambda_1] - 1 ->
+# 9 / sqrt(10 pi N) = 1.6057 / sqrt(N).
+ISOTROPIC_ANISOTROPY_SCALE = 9.0 / np.sqrt(10.0 * np.pi)
 
 WEIGHTS = ("count", "amplitude", "amplitude2")
 FRAMES = ("cartesian", "pca")
@@ -275,11 +336,19 @@ def _tangent_basis(normals: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return e1, e2
 
 
-def _angular_order(centers: np.ndarray, owners: np.ndarray, points: np.ndarray):
+def _angular_order(
+    centers: np.ndarray, owners: np.ndarray, points: np.ndarray, keys: np.ndarray
+):
     """Sort (owner, point) incidences counter-clockwise about each owner's centre.
 
     Returns the incidence order plus each entry's rank within its own owner, so
     callers can scatter into a padded (C, 6) table with one vectorized pass.
+
+    The CCW cycle is then rotated to start at the entry with the smallest
+    integer ``key`` (unique per owner). The raw atan2 start is not reproducible:
+    a neighbour lying on the -e1 ray has an e2 component of +/-1e-17 round-off,
+    so one engine sorts it at +pi (last) and the other at -pi (first). The
+    combinatorial start makes the exported tables identical across engines.
     """
     e1, e2 = _tangent_basis(centers)
     local = points - centers[owners] * (points * centers[owners]).sum(1, keepdims=True)
@@ -289,6 +358,13 @@ def _angular_order(centers: np.ndarray, owners: np.ndarray, points: np.ndarray):
     degree = np.bincount(ordered_owners, minlength=centers.shape[0])
     start = np.concatenate([[0], np.cumsum(degree)[:-1]])
     rank = np.arange(ordered_owners.size) - start[ordered_owners]
+    ordered_keys = np.asarray(keys)[order]
+    smallest = np.full(centers.shape[0], np.iinfo(np.int64).max, dtype=np.int64)
+    np.minimum.at(smallest, ordered_owners, ordered_keys)
+    first = ordered_keys == smallest[ordered_owners]
+    shift = np.zeros(centers.shape[0], dtype=np.int64)
+    shift[ordered_owners[first]] = rank[first]
+    rank = (rank - shift[ordered_owners]) % np.maximum(degree[ordered_owners], 1)
     return order, rank, degree
 
 
@@ -372,7 +448,16 @@ def _assign(
         if not improved.any():
             break
         current = np.where(improved, safe_neighbors[current, pick], current)
-    return current
+
+    # Exact ties: every cell equidistant with the one the walk stopped at is
+    # its neighbour (they share the Voronoi edge or vertex), so the lowest
+    # index within ASSIGN_TIE_TOL of the best dot among the cell and its
+    # neighbours is the tie rule, independent of the walk's path.
+    candidates = np.concatenate([current[:, None], safe_neighbors[current]], axis=1)
+    dots = np.einsum("nkd,nd->nk", centers[candidates], directions)
+    dots[:, 1:] = np.where(valid[current], dots[:, 1:], -np.inf)
+    tied = dots >= dots.max(axis=1, keepdims=True) - ASSIGN_TIE_TOL
+    return np.where(tied, candidates, np.iinfo(np.int64).max).min(axis=1)
 
 
 @lru_cache(maxsize=8)
@@ -382,6 +467,8 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
     Cached: the tiling depends on nothing but ``frequency``, and building one is
     far more expensive than binning into it.
     """
+    if not np.isfinite(float(frequency)):
+        raise ValueError(f"frequency must lie in [{MIN_FREQUENCY}, {MAX_FREQUENCY}]")
     nu = int(frequency)
     if not MIN_FREQUENCY <= nu <= MAX_FREQUENCY:
         raise ValueError(f"frequency must lie in [{MIN_FREQUENCY}, {MAX_FREQUENCY}]")
@@ -399,7 +486,7 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
 
     owners = triangles.reshape(-1)  # each triangle contributes to its 3 vertices
     incident = np.repeat(np.arange(triangles.shape[0]), 3)
-    order, rank, degree = _angular_order(centers, owners, circumcenters[incident])
+    order, rank, degree = _angular_order(centers, owners, circumcenters[incident], incident)
     # Exactly 12 pentagons, everything else hexagonal. At nu = 1 the tiling is
     # the dodecahedron: all 12 cells are pentagons and no hexagons exist.
     if int((degree == 5).sum()) != 12 or not np.isin(degree, (5, 6)).all():
@@ -416,7 +503,9 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
     # with no dedup needed.
     edge_from = triangles[:, [0, 1, 2]].reshape(-1)
     edge_to = triangles[:, [1, 2, 0]].reshape(-1)
-    edge_order, edge_rank, edge_degree = _angular_order(centers, edge_from, centers[edge_to])
+    edge_order, edge_rank, edge_degree = _angular_order(
+        centers, edge_from, centers[edge_to], edge_to
+    )
     if not np.array_equal(edge_degree, degree):
         raise RuntimeError("cell adjacency disagrees with the dual polygon degrees")
     neighbors = np.full((cell_count, 6), -1, dtype=int)
@@ -449,17 +538,43 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
     )
 
 
+def _opposite_hemisphere(directions: np.ndarray) -> np.ndarray:
+    """True where the first non-zero component is negative.
+
+    For any u != 0 exactly one of u and -u is flagged, so it splits the sphere
+    into two antipodal halves (the zero vector counts as unflagged).
+    """
+    x, y, z = directions[:, 0], directions[:, 1], directions[:, 2]
+    return (x < 0) | ((x == 0) & ((y < 0) | ((y == 0) & (z < 0))))
+
+
 def assign_cells(tiling: SphereTiling, directions: np.ndarray) -> np.ndarray:
-    """Cell index for each row of ``directions`` (need not be normalized)."""
+    """Cell index for each row of ``directions`` (need not be normalized).
+
+    Exactly inversion-equivariant: ``assign(-u) == antipode[assign(u)]`` for
+    every u, including directions that sit exactly on a Voronoi boundary. The
+    icosahedron puts 2-fold axes on x, y, z, so the crystal axes (odd nu) and
+    <111> (nu not a multiple of 3) are such ties, and a first-maximum
+    tie-break applied to +u and -u independently lands them in cells that are
+    not antipodes -- an exactly centrosymmetric cloud then reads as maximally
+    one-sided. Only one hemisphere is therefore resolved directly; the other
+    is mapped through the (exact, involutive) antipode table.
+
+    Within the resolved hemisphere a tie goes to the lowest cell index among
+    the cells whose centres are within ``ASSIGN_TIE_TOL`` of the best dot
+    product, so both engines resolve it the same way.
+    """
     directions = _normalize(np.atleast_2d(np.asarray(directions, dtype=float)))
-    return _assign(
+    flip = _opposite_hemisphere(directions)
+    resolved = _assign(
         tiling.centers,
         tiling.neighbors,
         tiling.face_inverse,
         tiling.lattice,
         tiling.frequency,
-        directions,
+        np.where(flip[:, None], -directions, directions),
     )
+    return np.where(flip, tiling.antipode[resolved], resolved)
 
 
 def recommended_frequency(
@@ -470,19 +585,207 @@ def recommended_frequency(
 ) -> int:
     """Largest frequency whose cells still average ``target_per_cell`` points.
 
+    Returns the largest ``nu`` in ``[MIN_FREQUENCY, max_frequency]`` with
+    ``n_points / (10*nu**2 + 2) >= target_per_cell`` -- a floor, so the average
+    occupancy never drops below the target. The one exception is the bottom
+    of the range: fewer than ``12 * target_per_cell`` points still get the
+    12-cell dodecahedron (``MIN_FREQUENCY``), the coarsest tiling there is.
+
     Over-binning is the failure mode of this kind of plot: push the resolution
     past the data and every cell holds 0 or 1 points, the map turns into Poisson
     confetti, and the confetti looks like structure. Callers should use this as
     the default resolution and let the user override it deliberately.
     """
+    target = _validated_target(target_per_cell)
+    if not np.isfinite(float(max_frequency)) or int(max_frequency) < MIN_FREQUENCY:
+        raise ValueError(f"max_frequency must be a finite number >= {MIN_FREQUENCY}")
+    if not np.isfinite(float(n_points)):
+        raise ValueError("n_points must be a finite number")
+    cap = min(int(max_frequency), MAX_FREQUENCY)
     if n_points <= 0:
         return MIN_FREQUENCY
-    cells = max(12.0, float(n_points) / max(int(target_per_cell), 1))
-    frequency = int(round(np.sqrt(max(cells - 2.0, 10.0) / 10.0)))
-    return int(np.clip(frequency, MIN_FREQUENCY, min(max_frequency, MAX_FREQUENCY)))
+    # Seed from the continuous inverse of C = 10 nu^2 + 2, then settle the
+    # boundary with the exact comparison target * C <= N (integer-valued, so
+    # it is exact in both engines and immune to sqrt round-off).
+    seed = int(np.floor(np.sqrt(max(float(n_points) / target - 2.0, 0.0) / 10.0)))
+    frequency = min(max(seed, MIN_FREQUENCY), cap)
+    while frequency < cap and target * (10 * (frequency + 1) ** 2 + 2) <= n_points:
+        frequency += 1
+    while frequency > MIN_FREQUENCY and target * (10 * frequency**2 + 2) > n_points:
+        frequency -= 1
+    return int(frequency)
+
+
+def _validated_target(target_per_cell) -> int:
+    """``target_per_cell`` as the integer the resolution guard divides by."""
+    if not np.isfinite(float(target_per_cell)) or float(target_per_cell) < 1:
+        raise ValueError("target_per_cell must be a finite number >= 1")
+    return int(target_per_cell)
 
 
 # --- Orientation histogram ----------------------------------------------------
+
+
+def _normal_deviate(upper: float, lower: float) -> float:
+    """One-sided normal deviate z with P(Z >= z) = ``upper``.
+
+    ``lower`` is ``1 - upper`` computed independently by the caller, so the
+    conversion stays accurate in both tails (``1 - upper`` itself would lose
+    every digit once ``upper`` is within 1e-16 of 1).
+    """
+    if upper <= 0.5:
+        return float(-ndtri(max(float(upper), SIGNIFICANCE_TAIL_FLOOR)))
+    return float(ndtri(max(float(lower), SIGNIFICANCE_TAIL_FLOOR)))
+
+
+def _peak_significance(count: int, expected: float, trials: int) -> dict:
+    """Look-elsewhere-corrected Poisson significance of one cell's raw count.
+
+    The local p-value is the exact Poisson upper tail P(X >= n | e) =
+    P(n, e) (regularized lower incomplete gamma), not the Gaussian reading of
+    (n - e)/sqrt(e), which is badly anti-conservative at e ~ 0.2-1. The cell
+    was chosen as the maximum of ``trials`` cells, so the global p-value is the
+    Sidak correction 1 - (1 - p)^C, evaluated in log space.
+    """
+    if count <= 0:
+        local, local_lower = 1.0, 0.0
+    else:
+        local = float(gammainc(count, expected))
+        local_lower = float(gammaincc(count, expected))
+    if local < 0.5:
+        log_lower = trials * np.log1p(-local)
+    elif local_lower > 0.0:
+        log_lower = trials * np.log(local_lower)
+    else:
+        log_lower = -np.inf
+    corrected = float(-np.expm1(log_lower))
+    corrected_lower = float(np.exp(log_lower))
+    return {
+        "local": local,
+        "corrected": corrected,
+        "deviate": _normal_deviate(corrected, corrected_lower),
+    }
+
+
+def _pearson_null_moments(used: int, probabilities: np.ndarray) -> tuple[float, float, float]:
+    """Exact mean, variance and third central moment of Pearson's X^2.
+
+    Under ``n ~ Multinomial(N, p)`` (isotropy: ``p_m = Omega_m / 4 pi``),
+    ``X^2 = sum_m (n_m - N p_m)^2 / (N p_m)`` has, with ``C`` cells,
+    ``A = sum 1/p_m - C^2`` and ``B = sum 1/p_m^2 - 3 C sum 1/p_m + 2 C^3``,
+
+        mean = C - 1
+        var  = 2(C - 1) + (A - 2C + 2) / N                          (Haldane)
+        mu3  = 8(C - 1) + (22A + 4C^2 - 36C + 32) / N
+                        + (B - 22A - 4C^2 + 28C - 24) / N^2
+
+    (derived by expanding E[S^k], S = sum n_m^2 / p_m, over the set
+    partitions of the 2k point indices; checked against full enumeration in
+    the tests). A and B vanish for equal cells and are evaluated from the
+    per-cell excess ``1/p_m - C`` so no large terms cancel.
+    """
+    probabilities = np.asarray(probabilities, dtype=float)
+    cells = float(probabilities.size)
+    excess = 1.0 / probabilities - cells
+    a_term = float(excess.sum())
+    b_term = float((excess * (excess - cells)).sum())
+    n = float(used)
+    mean = cells - 1.0
+    variance = 2.0 * (cells - 1.0) + (a_term - 2.0 * cells + 2.0) / n
+    third = (
+        8.0 * (cells - 1.0)
+        + (22.0 * a_term + 4.0 * cells * cells - 36.0 * cells + 32.0) / n
+        + (b_term - 22.0 * a_term - 4.0 * cells * cells + 28.0 * cells - 24.0) / (n * n)
+    )
+    return mean, variance, third
+
+
+def _map_test(chi_square: float, used: int, probabilities: np.ndarray) -> dict:
+    """Pearson's X^2 against its exact-moment isotropic reference.
+
+    chi^2_{C-1} is the large-count limit of X^2; at the fraction of an atom
+    per cell a fine tiling holds, X^2 is dominated by the few atom pairs that
+    share a cell, a skewed, Poisson-like count, and chi^2_{C-1} (nearly
+    normal at large C) is badly anti-conservative. The reference here is a
+    Pearson type III (shifted gamma) matched to the exact mean, variance and
+    skewness of X^2 (:func:`_pearson_null_moments`); it reduces to
+    chi^2_{C-1} exactly when those moments are chi^2's. Below
+    ``MAP_TEST_MIN_PAIRS`` expected coincident pairs no p-value is reported.
+    """
+    probabilities = np.asarray(probabilities, dtype=float)
+    pairs = 0.5 * used * (used - 1) * float(np.sum(probabilities * probabilities))
+    mean, variance, third = _pearson_null_moments(used, probabilities)
+    sd = float(np.sqrt(max(variance, 0.0)))
+    skewness = third / sd**3 if sd > 0.0 else None
+    result = {
+        "nullSd": sd,
+        "nullSkewness": skewness,
+        "expectedPairs": pairs,
+        "pValue": None,
+        "deviate": None,
+    }
+    if pairs < MAP_TEST_MIN_PAIRS or skewness is None or not skewness > 0.0:
+        return result
+    shape = 4.0 / (skewness * skewness)
+    scale = 0.5 * sd * skewness
+    origin = mean - 2.0 * sd / skewness
+    reduced = (float(chi_square) - origin) / scale
+    if reduced <= 0.0:
+        # Below the reference's lower support bound: as uniform as it gets.
+        upper, lower = 1.0, 0.0
+    else:
+        upper = float(gammaincc(shape, reduced))
+        lower = float(gammainc(shape, reduced))
+    result["pValue"] = upper
+    result["deviate"] = _normal_deviate(upper, lower)
+    return result
+
+
+def _central_binomial(kmax: int) -> np.ndarray:
+    """``c_k = C(2k, k) / 4**k`` for k = 0..kmax, by the exact recurrence.
+
+    ``c_k = c_{k-1} (2k - 1) / (2k)``, evaluated as one sequential product so
+    the JS port (same loop) reproduces it bit for bit.
+    """
+    k = np.arange(1, kmax + 1)
+    return np.concatenate([[1.0], np.cumprod((2 * k - 1) / (2 * k))])
+
+
+def _antipodal_asymmetry_test(counts: np.ndarray, antipode: np.ndarray, used: int) -> dict:
+    """A = sum_pairs |n+ - n-| / N and its inversion-symmetric null.
+
+    Conditional on each antipodal pair's total T (the data fix it), an
+    inversion-symmetric (p(u) = p(-u)) population splits every pair as
+    X ~ Bin(T, 1/2), independently across pairs. Then D = |2X - T| has
+    E[D] = T * c_{floor(T/2)} with c_k = C(2k, k)/4^k, and E[D^2] = T, so the
+    null mean and variance of A are exact sums over pairs -- valid for any
+    anisotropic, centrosymmetric site and any count level, and bounded by 1
+    like A itself.
+    """
+    first = np.arange(counts.size) < antipode  # each unordered pair once
+    plus = counts[first]
+    minus = counts[antipode[first]]
+    total = plus + minus
+    central = _central_binomial(int(total.max()) // 2 if total.size else 0)
+    pair_mean = total * central[total // 2]
+    pair_variance = np.maximum(total - pair_mean * pair_mean, 0.0)
+    asymmetry = float(np.abs(plus - minus).sum() / used)
+    null_mean = float(pair_mean.sum() / used)
+    null_sd = float(np.sqrt(pair_variance.sum()) / used)
+    if null_sd > 0.0:
+        z_value = (asymmetry - null_mean) / null_sd
+        significant = bool(z_value > ASYMMETRY_FLAG_SIGMA)
+    else:
+        # Every occupied pair holds a single atom: A equals its null exactly
+        # and carries no information either way.
+        z_value, significant = None, False
+    return {
+        "value": asymmetry,
+        "null": null_mean,
+        "nullSd": null_sd,
+        "z": z_value,
+        "significant": significant,
+    }
 
 
 def _smooth(mass: np.ndarray, neighbors: np.ndarray, passes: int) -> np.ndarray:
@@ -521,9 +824,12 @@ def orientation_histogram(
     ``vectors`` is an ``(N, 3)`` array of displacements (Cartesian Angstrom);
     only their directions are used. The map is never antipodally folded: seeing
     the full, possibly inversion-*asymmetric* distribution is the point of this
-    view -- a +u/-u imbalance is real physics (static off-centring, odd-order
-    anharmonicity) that the ellipsoid's second moment is structurally blind to.
-    ``antipodalAsymmetry`` quantifies exactly that imbalance.
+    view -- a +u/-u imbalance about the site mean is real physics (skewness:
+    odd-order anharmonicity, or unequal occupation of opposite off-centre
+    wells) that the ellipsoid's second moment is structurally blind to.
+    ``antipodalAsymmetry`` quantifies exactly that imbalance. It is measured
+    about the cloud's own mean, so a coherent shift of every copy (ordered
+    off-centring) is invisible here by construction -- see the module notes.
 
     Parameters
     ----------
@@ -547,7 +853,11 @@ def orientation_histogram(
     frame:
         ``"cartesian"`` keeps the crystal frame. ``"pca"`` rotates directions
         into the cloud's own principal axes first, which puts PC1 on +x and
-        makes different sites directly comparable.
+        aligns the principal axes of different sites. Each axis's sign comes
+        from the lab-frame canonical convention, not from the physics, so two
+        symmetry-related sites (e.g. related by a 2-fold rotation) can land
+        with +PC1 and -PC1 swapped: only centrosymmetric features superimpose
+        across sites; a one-sided lobe may sit on opposite poles.
     geometry:
         Include cell polygons in the result. They depend only on ``frequency``,
         so a caller that caches the tiling can turn this off.
@@ -557,12 +867,28 @@ def orientation_histogram(
     dict
         ``density`` integrates to 1 over the sphere; ``enhancement`` is
         ``4*pi*density``, i.e. 1 for an isotropic cloud; ``zScore`` is the
-        Poisson significance of the raw counts against the isotropic null;
+        local (uncorrected, Gaussian-approximation) z of each raw count
+        against the isotropic null; ``peakSignificance`` is the calibrated
+        peak test (exact Poisson tail of the peak cell's raw count, Sidak-
+        corrected over all cells, as a one-sided normal deviate);
         ``antipodalAsymmetry`` is ``sum_pairs |n(u) - n(-u)| / N`` (0 for an
         inversion-symmetric cloud, 1 for a fully one-sided one), with
-        ``antipodalAsymmetryNull`` the level pure Poisson noise would produce;
+        ``antipodalAsymmetryNull`` / ``...NullSd`` its exact mean and spread for
+        an inversion-symmetric population with the same pair totals, and
+        ``antipodalAsymmetrySignificant`` the flag ``A > null + 3 SD``;
+        ``mapSignificance`` is Pearson's X^2 over all cells against a gamma
+        matched to its exact isotropic mean, variance and skewness (None when
+        fewer than ``MAP_TEST_MIN_PAIRS`` atom pairs are expected to share a
+        cell);
         ``cellMeanAmplitude`` is the mean ``|dr|`` (Angstrom) of the atoms that
         moved into each cell (0 for empty cells) -- the radial-relief quantity.
+
+    Raises
+    ------
+    ValueError
+        For a wrong shape, an unknown ``weight``/``frame``, an out-of-range or
+        non-finite option, and for any non-finite (NaN/inf) displacement row --
+        a corrupt vector is rejected by name, never silently dropped.
     """
     vectors = np.asarray(vectors, dtype=float)
     if vectors.ndim != 2 or vectors.shape[1] != 3:
@@ -573,6 +899,22 @@ def orientation_histogram(
         raise ValueError(f"frame must be one of {FRAMES}")
     if not 0.0 <= float(min_amplitude_quantile) < 1.0:
         raise ValueError("min_amplitude_quantile must lie in [0, 1)")
+    if not np.isfinite(float(min_amplitude)):
+        raise ValueError("min_amplitude must be a finite number")
+    if not np.isfinite(float(smoothing)) or float(smoothing) < 0:
+        raise ValueError("smoothing must be a finite, non-negative number of passes")
+    if frequency is not None and not np.isfinite(float(frequency)):
+        raise ValueError(f"frequency must lie in [{MIN_FREQUENCY}, {MAX_FREQUENCY}]")
+    _validated_target(target_per_cell)
+    # A NaN/inf row would otherwise surface as LAPACK's opaque 'Eigenvalues did
+    # not converge' from the PCA fit (even in the cartesian frame), and the two
+    # engines used to fail differently on it. Reject it by name instead.
+    finite_rows = np.isfinite(vectors).all(axis=1)
+    if not finite_rows.all():
+        bad = np.flatnonzero(~finite_rows)
+        raise ValueError(
+            f"vectors contain {bad.size} non-finite (NaN/inf) row(s); first at row {int(bad[0])}"
+        )
 
     total_points = int(vectors.shape[0])
     amplitude = np.linalg.norm(vectors, axis=1)
@@ -636,23 +978,19 @@ def orientation_histogram(
     density = mass / (total_mass * tiling.areas)
     enhancement = density * 4.0 * np.pi
 
-    # Poisson significance against the isotropic null, always from the *raw*
-    # counts: smoothing correlates neighbouring cells, so a z computed after it
-    # would overstate the evidence.
+    # Local z against the isotropic null, always from the *raw* counts:
+    # smoothing correlates neighbouring cells, so a z computed after it would
+    # overstate the evidence. It is a per-cell description, not a test -- the
+    # peak's calibrated significance is _peak_significance below.
     expected = used * tiling.areas / (4.0 * np.pi)
     z_score = (counts - expected) / np.sqrt(np.maximum(expected, 1e-12))
 
     # Antipodal (inversion) asymmetry: the +u vs -u imbalance the ellipsoid is
-    # blind to, and the reason this view is never folded. Each unordered cell
-    # pair appears twice in the sum over cells, so the 0.5 makes the readout
-    # sum_pairs |n(u) - n(-u)| / N: 0 for an inversion-symmetric cloud, 1 for a
-    # fully one-sided one. Pure Poisson noise alone produces a nonzero floor --
-    # |X - Y| of two iid Poisson(m) cells averages ~2*sqrt(m/pi) -- reported as
-    # the null level so a small asymmetry is not over-read.
-    antipodal_asymmetry = float(
-        0.5 * np.abs(counts - counts[tiling.antipode]).sum() / used
-    )
-    antipodal_asymmetry_null = float(np.sqrt(cell_count / (np.pi * used)))
+    # blind to, and the reason this view is never folded --
+    # sum_pairs |n(u) - n(-u)| / N, 0 for an inversion-symmetric cloud, 1 for a
+    # fully one-sided one -- with its exact null conditional on the observed
+    # pair totals (see _antipodal_asymmetry_test).
+    asymmetry_test = _antipodal_asymmetry_test(counts, tiling.antipode, used)
 
     # Orientation tensor T = <u u^T>: I/3 exactly for a uniform sphere, so its
     # eigenvalues (summing to 1) read as the fraction of directional variance on
@@ -660,7 +998,32 @@ def orientation_histogram(
     # resolution independent.
     tensor = (directions * weights[:, None]).T @ directions / weights.sum()
     tensor_eigenvalues, tensor_axes = _eigen_decomposition(tensor)
-    peak = int(np.argmax(enhancement))
+
+    # Bingham's test of uniformity on the tensor: S = (15 n / 2) sum_i
+    # (lambda_i - 1/3)^2 ~ chi^2_5 for isotropic directions. With weights the
+    # sample size is the effective n = (sum w)^2 / sum w^2 (exact for weights
+    # independent of direction). Evaluated from the deviatoric part's
+    # Frobenius norm, so it does not depend on the eigensolver.
+    effective_points = float(weights.sum() ** 2 / np.sum(weights * weights))
+    deviator = tensor - np.trace(tensor) / 3.0 * np.eye(3)
+    bingham_statistic = float(7.5 * effective_points * np.sum(deviator * deviator))
+    bingham_p_value = float(gammaincc(2.5, bingham_statistic / 2.0))
+    anisotropy_significance = _normal_deviate(
+        bingham_p_value, float(gammainc(2.5, bingham_statistic / 2.0))
+    )
+    # Tie-tolerant argmax (lowest index within PEAK_TIE_RTOL of the maximum),
+    # identical in both engines -- see PEAK_TIE_RTOL.
+    tied = np.flatnonzero(enhancement >= enhancement.max() * (1.0 - PEAK_TIE_RTOL))
+    peak = int(tied[0])
+    peak_test = _peak_significance(int(counts[peak]), float(expected[peak]), cell_count)
+
+    # Whole-map test: Pearson's X^2 = sum z^2 against its exact-moment
+    # isotropic reference (see _map_test), as a one-sided normal deviate. The
+    # RMS of z ("significance") is not a sigma level: its null is
+    # 1 +/- 1/sqrt(2C).
+    chi_square = float(np.sum(z_score**2))
+    degrees_of_freedom = cell_count - 1
+    map_test = _map_test(chi_square, used, tiling.areas / (4.0 * np.pi))
 
     result = {
         "frequency": int(tiling.frequency),
@@ -691,21 +1054,61 @@ def orientation_histogram(
         "meanAmplitude": float(kept_amplitude.mean()),
         "rmsAmplitude": float(np.sqrt((kept_amplitude**2).mean())),
         "cellMeanAmplitude": cell_mean_amplitude.tolist(),
-        "antipodalAsymmetry": antipodal_asymmetry,
-        "antipodalAsymmetryNull": antipodal_asymmetry_null,
+        "antipodalAsymmetry": asymmetry_test["value"],
+        # Exact mean and standard deviation of A for an inversion-symmetric
+        # population with the observed antipodal-pair totals; the z-score
+        # (None when the spread is 0) and the flag A > null + 3 SD.
+        "antipodalAsymmetryNull": asymmetry_test["null"],
+        "antipodalAsymmetryNullSd": asymmetry_test["nullSd"],
+        "antipodalAsymmetryZ": asymmetry_test["z"],
+        "antipodalAsymmetrySignificant": asymmetry_test["significant"],
         "orientationTensor": tensor.tolist(),
         "orientationEigenvalues": tensor_eigenvalues.tolist(),
         "orientationAxes": tensor_axes.tolist(),
-        # 3*t1 - 1: 0 for a uniform sphere, 2 for a perfect single axis. A
-        # scalar summary of how much the cloud prefers one direction at all.
+        # 3*t1 - 1: 2 for a perfect single axis; it tends to 0 for a uniform
+        # sphere only as N grows (finite samples are biased upward, see
+        # orientationAnisotropyNull). A scalar summary of how much the cloud
+        # prefers one axis at all.
         "orientationAnisotropy": float(3.0 * tensor_eigenvalues[0] - 1.0),
+        # What an isotropic site of this (effective) size reads, and Bingham's
+        # calibrated test of isotropy (statistic, p-value, normal deviate).
+        "orientationEffectivePoints": effective_points,
+        "orientationAnisotropyNull": float(ISOTROPIC_ANISOTROPY_SCALE / np.sqrt(effective_points)),
+        "orientationBinghamStatistic": bingham_statistic,
+        "orientationBinghamPValue": bingham_p_value,
+        "orientationAnisotropySignificance": anisotropy_significance,
         "peakCell": peak,
+        # Number of cells tied for the maximum (1 = a unique peak).
+        "peakTieCount": int(tied.size),
         "peakDirection": tiling.centers[peak].tolist(),
         "peakEnhancement": float(enhancement[peak]),
+        # Local, uncorrected Gaussian z of the peak cell's raw count -- kept
+        # for API compatibility; NOT a significance (see peakSignificance).
         "peakZScore": float(z_score[peak]),
-        # How far the map departs from isotropy overall, in units of the
-        # Poisson noise floor: ~1 means the structure is consistent with noise.
+        # The peak test: raw count and isotropic expectation of the peak cell,
+        # its exact Poisson upper-tail p-value, that p Sidak-corrected for the
+        # C cells the maximum was searched over, and the corrected p as a
+        # one-sided normal deviate (sigma). This is the calibrated readout.
+        "peakCount": int(counts[peak]),
+        "peakExpected": float(expected[peak]),
+        "peakLocalPValue": peak_test["local"],
+        "peakPValue": peak_test["corrected"],
+        "peakSignificance": peak_test["deviate"],
+        # Legacy whole-map summary: the RMS of the local z (1 +/- 1/sqrt(2C)
+        # for pure noise). NOT a sigma level -- use mapSignificance.
         "significance": float(np.sqrt(np.mean(z_score**2))),
+        # Pearson's X^2 test of isotropy over all cells: the statistic, C - 1
+        # (its exact null mean), its exact null SD and skewness, the expected
+        # number of atom pairs sharing a cell, and the upper-tail p-value and
+        # one-sided normal deviate against the exact-moment gamma reference
+        # (both None when fewer than MAP_TEST_MIN_PAIRS pairs are expected).
+        "mapChiSquare": chi_square,
+        "mapDegreesOfFreedom": int(degrees_of_freedom),
+        "mapNullSd": map_test["nullSd"],
+        "mapNullSkewness": map_test["nullSkewness"],
+        "mapExpectedPairs": map_test["expectedPairs"],
+        "mapPValue": map_test["pValue"],
+        "mapSignificance": map_test["deviate"],
         "recommendedFrequency": recommended_frequency(used, target_per_cell=target_per_cell),
     }
     if geometry:

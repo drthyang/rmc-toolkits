@@ -133,14 +133,13 @@ describe('recommendedFrequency', () => {
         expect(recommendedFrequency(0)).toBe(MIN_FREQUENCY);
     });
 
-    it('matches the Python engine at exact values, incl. the half-even boundary', () => {
-        // Shared verbatim with tests/test_orientation.py. 774 points put the
-        // sqrt at exactly 2.5: Python's round() is half-to-even (nu=2), and
-        // the port must match it, not Math.round's half-up 3 — otherwise the
-        // browser and server render different tilings for the same data.
+    it('matches the Python engine at exact values', () => {
+        // Shared verbatim with tests/test_orientation.py: the largest nu with
+        // 12 * (10 nu^2 + 2) <= N — a floor, so the browser and server always
+        // pick the same tiling and never average fewer than 12 per cell.
         expect(recommendedFrequency(774)).toBe(2);
-        expect(recommendedFrequency(300)).toBe(2);
-        expect(recommendedFrequency(12000)).toBe(10);
+        expect(recommendedFrequency(300)).toBe(1);
+        expect(recommendedFrequency(12000)).toBe(9);
     });
 });
 

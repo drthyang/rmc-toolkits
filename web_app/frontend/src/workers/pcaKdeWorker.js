@@ -129,9 +129,12 @@ export const handlePcaMessage = async (data, getText) => {
     }
 
     if (kind === 'orientation') {
+        // ''/'all' mean "every site pooled", normalised to null exactly as the
+        // Flask route does, so both transports return the same payload shape.
+        const element = data.element === '' || data.element === 'all' ? null : data.element ?? null;
         return siteOrientationHistogram(parsed, {
             referenceNumber: data.referenceNumber ?? null,
-            element: data.element ?? null,
+            element,
             frequency: data.frequency ?? null,
             weight: data.weight ?? 'count',
             minAmplitude: data.minAmplitude ?? 0,

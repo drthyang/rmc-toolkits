@@ -27,8 +27,8 @@ const numberFormat = (value, digits = 4) =>
 const DEFAULT_CLUSTER_THRESHOLD = 1.5;
 
 // Manual resolution choices (geodesic frequency ν → 10ν²+2 cells). 'auto' asks
-// the engine for recommended_frequency, the ~12-points-per-cell over-binning
-// guard.
+// the engine for recommended_frequency, the over-binning guard: the finest ν
+// whose cells still average at least 12 points.
 const FREQUENCY_OPTIONS = ['auto', 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
 
 const WEIGHT_OPTIONS = [
@@ -89,8 +89,11 @@ export default function OrientationPage({ directory, localRun }) {
                                 <p>
                                     Each reference site (an RMCProfile reference number) is one
                                     crystallographic position. Only the <em>directions</em> of its
-                                    per-atom displacements are analysed here — the amplitude enters
-                                    solely through the optional weighting and the amplitude height.
+                                    per-atom displacements are analysed here — measured from the
+                                    site&apos;s own mean position in this configuration, so an
+                                    off-centring shared by every copy is not visible — and the
+                                    amplitude enters solely through the optional weighting and the
+                                    amplitude height.
                                 </p>
                             </InfoBadge>
                         </span>
@@ -115,8 +118,9 @@ export default function OrientationPage({ directory, localRun }) {
                                 <p>
                                     Geodesic frequency ν of the hex tiling (10ν² + 2 cells — hexagons
                                     plus the 12 pentagons every hexagonal tiling of a sphere must
-                                    contain). Auto targets ~12 displacements per cell, the guard
-                                    against reading Poisson noise as structure.
+                                    contain). Auto picks the finest ν whose cells still average at
+                                    least 12 displacements, the guard against reading Poisson noise
+                                    as structure.
                                 </p>
                             </InfoBadge>
                         </span>

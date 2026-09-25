@@ -79,9 +79,12 @@ common signatures survive in $p(\mathbf{u})$ and are provably invisible in $\mat
    moment.
 2. **Odd-order anharmonicity / antipodal asymmetry.** $\mathbf{U}$ is built from
    $\Delta\mathbf{r}\,\Delta\mathbf{r}^{\mathsf T}$, which is invariant under
-   $\Delta\mathbf{r} \to -\Delta\mathbf{r}$. Any $+\mathbf{u}$ vs $-\mathbf{u}$ imbalance —
-   static off-centring, a one-sided potential — is annihilated by that product. This page
-   therefore **never folds the map antipodally**, and reports `antipodalAsymmetry` explicitly.
+   $\Delta\mathbf{r} \to -\Delta\mathbf{r}$. Any $+\mathbf{u}$ vs $-\mathbf{u}$ imbalance *about
+   the site mean* — skewness from a one-sided potential, or unequal occupation of opposite
+   off-centre wells — is annihilated by that product. This page therefore **never folds the map
+   antipodally**, and reports `antipodalAsymmetry` explicitly. (A *coherent* off-centring, the
+   same shift for every copy, is **not** such a signature: it moves the site mean and is invisible
+   here by construction — see "The reference point" in Step 1.)
 3. **Any non-convexity at all** — a girdle with a hole in it, a cone, a ring.
 
 Conversely, this page throws away the radial information the ellipsoid is made of. It is a
@@ -130,6 +133,26 @@ hand-made HTTP request, or a direct library call — but it is the *default* of 
 it mixes species with different masses and different $\mathbf{U}$ into one cloud. That is almost
 never the intended read (caveat 11).
 
+**The reference point is the configuration's own site mean.** `load_site_displacements`
+subtracts each site's mean position over its copies, so $\sum_i \Delta\mathbf{r}_i = \mathbf{0}$
+for every site: every direction here is measured from where the atoms *are on average in this
+configuration*, not from the ideal (Wyckoff or average-structure) position. Three consequences,
+verified on synthetic $10^3$-copy Ti sites ($\sigma = 0.08$ Å):
+
+- **Ordered off-centring is invisible.** Shifting every copy by $+0.2$ Å along $z$ moves the site
+  mean (fractional $z$ 0.2497 → 0.2747) and leaves the map, $\mathcal{A}$, the tensor and every
+  statistic *bit-for-bit* unchanged. A polar distortion shared by all copies must be read from
+  `siteFractional` against the ideal position, not from this page.
+- **$\pm\mathbf{u}$ imbalance is skewness about the mean** — odd-order anharmonicity or unequal
+  occupation of opposite off-centre wells. Equal-occupancy multi-well disorder ($\pm d$ 50/50,
+  eight $\langle111\rangle$ wells) is centrosymmetric about the mean and gives no asymmetry.
+- **Partial off-centring can put the peak opposite to the displacement.** With 78 % of copies
+  shifted $+0.3$ Å along $z$, the mean follows the majority, and the 22 % left near the ideal
+  site form the sharpest lobe — at **$-z$**: `peakDirection` $= [0, -0.12, -0.99]$ at $\nu = 10$
+  and $[0, 0, -1]$ ($8.2\sigma$) on Auto, while the asymmetry is correctly significant
+  ($z_{\mathcal{A}} = 8.8$ on Auto). The lobe is real; its direction names where the *minority*
+  sits relative to the mean.
+
 **Amplitude.** $a_i = \lVert \Delta\mathbf{r}_i \rVert$ (Å).
 
 **Direction.**
@@ -148,11 +171,9 @@ NEGLIGIBLE_AMPLITUDE = 1e-9   # Angstrom   orientation.py:91
 
 **User cutoffs.** Two optional, cumulative cuts sharpen a weak pattern:
 
-- `min_amplitude` / `minAmplitude` — an absolute floor in Å. **Not validated:** a negative value
-  is accepted, has no effect (the $10^{-9}$ floor dominates), and is then hidden by the
-  `max(threshold, 0)` in the reported `amplitudeCutoff`. In JS a non-numeric string becomes
-  `NaN` via `Number(minAmplitude)`, which makes every `>` comparison false and surfaces as the
-  survival error below, not as a type error.
+- `min_amplitude` / `minAmplitude` — an absolute floor in Å. It must be finite (`NaN`/`inf` is
+  rejected, see "Errors" below); a negative value is accepted, has no effect (the $10^{-9}$ floor
+  dominates), and is then hidden by the `max(threshold, 0)` in the reported `amplitudeCutoff`.
 - `min_amplitude_quantile` / `minAmplitudeQuantile` $\in [0, 1)$ — the $q$-quantile of the
   $\{a_i\}$ themselves (NumPy's default linear-interpolation quantile; the JS port
   reimplements that exact rule in `quantile`). The quantile is taken over **all $N_{\text{tot}}$
@@ -182,8 +203,9 @@ construction (their direction is noise), so including them dilutes any real anis
 uniform. A modest quantile cut therefore raises contrast without inventing structure — but it
 also discards data, so it moves the Poisson noise floor up. Both are reported.
 
-**Errors.** `orientation_histogram` / `orientationHistogram` raise six errors in all
-(`ValueError` in Python, `Error` in JS), four of them input validation before any work:
+**Errors.** `orientation_histogram` / `orientationHistogram` raise these errors (`ValueError` in
+Python, `Error` in JS; JS messages use the camelCase option names), all but the last two as input
+validation before any work:
 
 | Message | Raised when |
 |---|---|
@@ -191,8 +213,24 @@ also discards data, so it moves the Poisson noise floor up. Both are reported.
 | `weight must be one of ('count', 'amplitude', 'amplitude2')` | unknown weight |
 | `frame must be one of ('cartesian', 'pca')` | unknown frame |
 | `min_amplitude_quantile must lie in [0, 1)` | quantile outside $[0,1)$ |
+| `min_amplitude must be a finite number` | `NaN`/`inf` absolute cutoff |
+| `smoothing must be a finite, non-negative number of passes` | `NaN`, `inf` or negative `smoothing` |
+| `frequency must lie in [1, 64]` | a non-finite `frequency` (checked here; the range itself is checked by the tiling) |
+| `target_per_cell must be a finite number >= 1` | non-finite or $< 1$ |
+| `vectors contain k non-finite (NaN/inf) row(s); first at row i` | any `NaN`/`inf` component — identical message in both engines |
 | `no displacement vectors survive the amplitude cutoff` | $N = 0$ after the cut |
 | `displacement weights sum to zero` | $\sum_m M_m \le 0$ |
+
+**Non-finite rows are rejected, never dropped.** Before the 1.0 audit a single `NaN` or `inf` row
+reached `np.cov` for the PCA frame — which is fitted on every row, even for `frame="cartesian"` —
+and failed with LAPACK's `Eigenvalues did not converge`, while the JS port silently returned
+`NaN` `pcaAxes` (cartesian) or crashed in the cell assignment with a `TypeError` (pca frame, or an
+`inf` component). Both engines now reject the input by name. A corrupt displacement is a data error,
+not something to be quietly counted into `rejectedPoints` next to the physically meaningful
+amplitude cut. (The `.rmc6f` parsers differ upstream of this: the browser parser skips an atom line
+with a non-finite coordinate, the Python parser keeps it and its `NaN` then poisons the whole site
+mean — so the same corrupt file renders in the browser without that atom but is a 400 with the
+message above on the Flask route. That divergence belongs to the parsers, not to this engine.)
 
 The last is unreachable through the ordinary path — every surviving $a_i > 10^{-9}$ Å, so every
 weight is strictly positive — but it guards a caller who reaches the function directly.
@@ -225,8 +263,21 @@ Code: `orientation_histogram` in [orientation.py](../../rmc_toolkits/orientation
 - **`pca`** — every direction is rotated into the cloud's own principal axes before binning:
   $\mathbf{u}' = \mathbf{A}\,\mathbf{u}$, where the rows of $\mathbf{A}$ are the three PCA axes
   in descending eigenvalue order. PC1 lands on local $+x$, PC2 on $+y$, PC3 on $+z$, which
-  makes different sites (and different elements) directly superimposable. The rods drawn in this
-  mode are the literal identity triad, not `pcaAxes` — in the rotated frame they *are* PC1/2/3.
+  aligns the principal axes of different sites (and different elements). It does **not** make
+  every feature superimposable: see "Axis signs" below. The rods drawn in this mode are the
+  literal identity triad, not `pcaAxes` — in the rotated frame they *are* PC1/2/3.
+
+**Axis signs are a lab-frame convention, so only centrosymmetric features superimpose.** An
+eigenvector is defined up to sign; the shared canonicalisation (largest-magnitude component
+positive, then right-handedness — Step 8) fixes it from the axis's *lab-frame* components, not
+from anything physical. Two sites related by a proper 2-fold rotation get identical canonical
+axes while their clouds differ by that rotation, so any map feature without 2-fold symmetry about
+the PC axes — including exactly the antipodally asymmetric lobes this page exists to show — lands
+on **opposite poles**. Verified: a skewed 4000-point cloud and its $C_{2z}$ image have the same
+canonical PC1 ($[1.000, -0.006, 0.000]$) but PCA-frame `peakDirection` $[1, 0, 0]$ vs
+$[-1, 0, 0]$, with identical $\mathcal{A} = 0.174$. Compare symmetry-related sites' *axes* and
+centrosymmetric shape in the PCA frame; compare one-sided features in the crystal frame (or fix the
+sign by a physical rule such as a positive third moment along PC1 — not implemented).
 
 Five details matter for interpretation:
 
@@ -298,34 +349,48 @@ over-binning guard:
 
 ```python
 def recommended_frequency(n_points, *, target_per_cell=12, max_frequency=24):
-    cells = max(12.0, n_points / target_per_cell)
-    frequency = round(sqrt(max(cells - 2.0, 10.0) / 10.0))
-    return clip(frequency, MIN_FREQUENCY, min(max_frequency, MAX_FREQUENCY))
+    # largest nu in [1, cap] with target * (10 nu^2 + 2) <= N  (a floor)
+    cap = min(max_frequency, MAX_FREQUENCY)
+    nu = clip(floor(sqrt(max(N / target - 2, 0) / 10)), 1, cap)   # seed
+    while nu < cap and target * (10 (nu+1)^2 + 2) <= N: nu += 1     # exact
+    while nu > 1   and target * (10 nu^2 + 2)     >  N: nu -= 1     # boundary
+    return nu
 ```
 
-i.e. invert $C = 10\nu^2 + 2$ at the cell count that gives `DEFAULT_TARGET_PER_CELL = 12`
-points per cell:
+i.e. the **largest** $\nu$ whose cells still average at least `DEFAULT_TARGET_PER_CELL = 12`
+points:
 
-$$\nu_{\text{rec}} \;=\; \operatorname{round}\!\left(\sqrt{\frac{\max\!\big(N/12,\,12\big) - 2}{10}}\,\right),
-\qquad \text{clipped to } [1, 24] .$$
+$$\nu_{\text{rec}} \;=\; \max\Big\{\nu \in [1,\, 24] \;:\; 12\,(10\nu^2 + 2) \le N\Big\}
+\quad(\text{or } 1 \text{ when the set is empty}).$$
 
-**Where the floors bite.** `cells` is pinned at 12 for every $N \le 144$, and the inner
-$\max(\cdot, 10)$ pins the radicand at 1, so $\nu_{\text{rec}} = 1$ there. Rounding then holds
-$\nu = 1$ well past that: measured transition points are
+The float `sqrt` only seeds the search; the boundary is settled by the integer comparison
+`target * (10 nu^2 + 2) <= N`, which is exact in both engines, so the browser and the server pick
+the same tiling for the same data without any rounding-mode subtleties.
 
-| $N$ range | Auto $\nu$ | cells |
-|---|---|---|
-| $\le 293$ | **1** | 12 (the dodecahedron) |
-| 294 – 774 | 2 | 42 |
-| 775 – 1493 | 3 | 92 |
-| 1494 – 2454 | 4 | 162 |
-| 2455 – 3653 | 5 | 252 |
-| $\ge 10\,854$ | $\ge 10$ | $\ge 1002$ |
+**It is a floor, not a rounding.** Before the 1.0 audit the code *rounded* $\sqrt{(N/12 - 2)/10}$
+to the nearest integer (half-to-even), which contradicted the docstring's "largest frequency whose
+cells still average `target_per_cell` points": at the rounding boundaries the average occupancy
+dropped to $12\,((\nu - \tfrac12)/\nu)^2$ — 7.0 per cell at $N = 294$ ($\nu = 2$), 8.4 at
+$N = 775$. The floor makes the docstring true: every Auto map averages $\ge 12$ per cell, except
+at the dodecahedron floor below.
+
+**Where the floor bites.** $\nu = 1$ (the 12-cell dodecahedron, `MIN_FREQUENCY`) is returned for
+every $N < 12 \cdot 42 = 504$, including $N < 144$ where even the dodecahedron averages fewer
+than 12 points — there is no coarser tiling. Transition points (exact, from the rule above):
+
+| $N$ range | Auto $\nu$ | cells | points / cell |
+|---|---|---|---|
+| $\le 503$ | **1** | 12 (the dodecahedron) | $< 42$ |
+| 504 – 1103 | 2 | 42 | 12.0 – 26.3 |
+| 1104 – 1943 | 3 | 92 | 12.0 – 21.1 |
+| 1944 – 3023 | 4 | 162 | 12.0 – 18.7 |
+| 3024 – 4343 | 5 | 252 | 12.0 – 17.2 |
+| $\ge 12\,024$ | $\ge 10$ | $\ge 1002$ | $\ge 12$ |
 
 Two consequences. **Auto can pick a resolution the manual control cannot**: the dropdown starts
 at $\nu = 2$, so $\nu = 1$ is reachable only through Auto. And a typical site with a few hundred
-copies gets $\nu = 1$ or 2 from Auto — twelve or forty-two cells — against the UI's fixed default
-of $\nu = 10$ (1002 cells). That gap is the whole content of caveat 7.
+to a thousand copies gets $\nu = 1$ or 2 from Auto — twelve or forty-two cells — against the UI's
+fixed default of $\nu = 10$ (1002 cells). That gap is the whole content of caveat 7.
 
 **Why 12.** At $n$ points per cell the fractional Poisson noise on an isotropic map is
 $1/\sqrt{n}$; $n = 12$ gives $\approx 29\%$ cell-to-cell scatter. That is small enough that a
@@ -333,19 +398,23 @@ genuine $1.5\times$ lobe stands out and large enough that noise does not manufac
 
 **The failure mode it guards.** Push $\nu$ past the data and every cell holds 0 or 1 points.
 The map becomes Poisson confetti — and confetti on a sphere looks exactly like structure to the
-eye. This is the single easiest way to over-read this kind of plot, which is also why `zScore`
-and `significance` are computed and displayed.
+eye. This is the single easiest way to over-read this kind of plot, which is also why calibrated
+tests (`peakSignificance`, `mapSignificance`, §6.3) are computed and displayed.
 
-**Rounding is load-bearing for cross-runtime agreement.** Python's `round()` is round-half-to-
-even. At exactly 774 surviving points the square root is exactly 2.5, so Python gives $\nu = 2$
-while a naive `Math.round` would give 3 — two different tilings for the same data in the two
-runtimes. The JS port therefore implements `roundHalfEven` explicitly, and *both* test suites
-pin the same three values (`recommendedFrequency(774) == 2`, `(300) == 2`, `(12000) == 10`).
+**Pinned in both suites.** `tests/test_orientation.py` and `orientation.test.js` pin
+`recommendedFrequency(774) == 2`, `(300) == 1`, `(12000) == 9`; `tests/test_orientation_fixes.py`
+and `orientationFixes.test.js` share the full boundary table (503 → 1, 504 → 2, 1103 → 2,
+1104 → 3, 12023 → 9, 12024 → 10, …) verbatim.
 
 Bounds: `MIN_FREQUENCY = 1` ([orientation.py:85](../../rmc_toolkits/orientation.py)),
 `MAX_FREQUENCY = 64` (line 86, $C = 40\,962$ cells). `recommended_frequency` never exceeds 24 on
 its own; the UI dropdown offers `auto, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24` and **defaults to
 $\nu = 10$** (1002 cells), not Auto.
+
+**Validation.** `recommended_frequency` / `recommendedFrequency` raise on a non-finite point count
+(`n_points must be a finite number`), a non-finite or $< 1$ `target_per_cell`, and a
+`max_frequency` below `MIN_FREQUENCY` (`max_frequency must be a finite number >= 1`) — before the
+1.0 audit `max_frequency=0` returned the invalid frequency 0.
 
 ---
 
@@ -482,6 +551,20 @@ $$\theta = \operatorname{atan2}\big(\mathbf{p}_\perp\cdot\mathbf{e}_2,\; \mathbf
 ascending — counter-clockwise seen from outside. Python does this with one stable
 `np.lexsort((angle, owners))`; JS sorts each owner's list with a stable comparator. Ties (which
 do not occur for distinct circumcentres) fall back to incidence order in both.
+
+**The cycle's starting element is combinatorial, not angular.** The sorted list is a cyclic
+order, and where it *starts* is decided by the atan2 branch cut at $\pm\pi$. For many cells one
+neighbour centre lies exactly on the $-\mathbf{e}_1$ ray, so its $\mathbf{e}_2$ component is pure
+$\pm 10^{-17}$ round-off whose sign differs between NumPy and V8 (their centres differ in the last
+ulp): one engine sorted it at $+\pi$ (last), the other at $-\pi$ (first). Before the 1.0 audit
+that rotated 185 of the 1002 exported `neighbors` rows at $\nu = 10$ (76/362 at $\nu = 6$,
+2317/14442 at $\nu = 38$) and started two $\nu = 38$ polygons on a different vertex. No displayed
+number changed, but the payloads disagreed element by element. `_angular_order` / `angularOrder`
+now rotate every cycle to start at its **smallest integer key** — the neighbour's cell index for
+`neighbors`, the incident triangle's index for `polygons` — which is identical in both engines.
+The CCW orientation is untouched (a rotation, not a re-sort), and both suites pin a checksum of the
+`neighbors` table at $\nu \in \{4, 6, 10, 38\}$ plus the two $\nu = 38$ polygon start vertices
+verbatim.
 
 `polygons` is stored padded to six vertices; a pentagon repeats its last vertex, and `sizes`
 carries the true count (5 or 6). The JSON returned to the browser is trimmed back to `sizes`.
@@ -670,11 +753,69 @@ random directions:
 Both engines cap the walk at **8 rounds**. In every case measured, one improving round plus one
 confirming round suffices, at every resolution.
 
-**Two entry points, one of which normalises.** `assign_cells` / `assignCells` (the public
-wrapper) calls `_normalize` first, so callers may pass unnormalised vectors
+**(d) Inversion equivariance — exact ties are broken centrosymmetrically.** Stages (a)–(c) break
+exact ties by "first maximum wins", and that rule is not symmetric under
+$\mathbf{u} \to -\mathbf{u}$. Exact ties are not hypothetical here: §4.1 puts icosahedral 2-fold
+axes on Cartesian $x$, $y$, $z$, so for odd $\nu$ the six directions $\pm\hat{x}, \pm\hat{y},
+\pm\hat{z}$ sit exactly on a Voronoi boundary, and the eight $\langle 111\rangle$ directions sit
+on triple points whenever 3 does not divide $\nu$. Resolved independently, $+\hat{x}$ and
+$-\hat{x}$ landed in cells that are **not** antipodes (at $\nu = 3$: cells 36 and 85, while
+`antipode[36] = 86`), so an exactly centrosymmetric $\pm\langle 100\rangle$ cloud reported
+$\mathcal{A} = 1.000$ — maximally one-sided — at $\nu = 1, 3, 5, 9, 11$, and a $\pm\langle 111\rangle$
+cloud reported $0.25$ at $\nu = 5, 11$. `assign_cells` / `assignCell` therefore resolve only one
+hemisphere directly — the directions whose first non-zero component is positive (plus the zero
+vector) — and map every other direction through the antipode table:
+
+$$m(\mathbf{u}) \;=\; \begin{cases} m_{\text{walk}}(\mathbf{u}) & \text{first non-zero } u_k > 0 \\
+\texttt{antipode}\big[m_{\text{walk}}(-\mathbf{u})\big] & \text{otherwise.}\end{cases}$$
+
+Negation is exact in floating point and the antipode table is an exact involution (§4.7), so
+$m(-\mathbf{u}) = \texttt{antipode}[m(\mathbf{u})]$ holds **bit-for-bit for every $\mathbf{u}$**,
+ties included, and an exactly centrosymmetric cloud has $n_m = n_{\text{antipode}(m)}$ in every
+cell. Away from ties the nearest centre is unique and the fold changes nothing (verified: zero of
+312 000 real-data assignments changed, both GaNb₄Se₈ runs at $\nu \in \{2, 3, 10\}$). Both suites
+assert the equivariance on random directions plus every tie family, and pin the $\pm$axis cells at
+$\nu = 3$ verbatim across engines (`[35, 14, 16, 85, 70, 62]` since (e); `[36, 15, 16, 86, 71, 62]`
+before it).
+
+**(e) Exact ties go to the lowest cell index, the same cell in both engines.** The fold makes each
+engine inversion-equivariant. Within the resolved hemisphere, though, the walk still left a tied
+direction in whichever tied cell it reached first, and that depends on last-bit round-off in the
+dot products, which differs between NumPy and V8. Before the review of the 1.0 fixes,
+$\langle 111\rangle$ went to different cells in the two engines at 18 of the 31 frequencies
+$\nu = 1$–30 and 38 (1, 2, 4, 5, 7, 8, 11, 13, 14, 16, 17, 19, 20, 23, 26, 28, 29, 38), and
+$\langle 110\rangle$ at 9 (3, 4, 10, 11, 12, 18, 19, 25, 26). An 8-well $\langle 111\rangle$ model
+therefore had its $\nu = 2$ peak at $[0.5, 0.309, 0.809]$ in Flask and at $[0.309, 0.809, 0.5]$ in
+the browser. Every cell equidistant with the walked-to cell $m$ shares its Voronoi edge or vertex,
+so it is one of $m$'s neighbours $N(m)$. After the walk both engines therefore return
+
+$$m_{\text{walk}}(\mathbf{u}) \;=\; \min\Big\{\,k \in \{m\} \cup N(m) \;:\;
+\mathbf{u}\cdot\mathbf{c}_k \;\ge\; \max_{j \in \{m\} \cup N(m)} \mathbf{u}\cdot\mathbf{c}_j - \texttt{ASSIGN\_TIE\_TOL}\Big\},
+\qquad \texttt{ASSIGN\_TIE\_TOL} = 10^{-12},$$
+
+that is, the lowest index among the near-equal candidates. $10^{-12}$ is four orders above the
+cross-engine round-off. It moves only directions within about $10^{-11}$ rad of a cell boundary.
+
+Measured results:
+
+- Zero of 624 000 real-data assignments changed (both GaNb₄Se₈ runs at
+  $\nu \in \{1, 2, 3, 5, 10, 24\}$), and Python and JS agree on all 624 000.
+- Python and JS now assign all 26 $\langle 100\rangle$/$\langle 110\rangle$/$\langle 111\rangle$
+  directions identically at every $\nu = 1$–30 and 38.
+- Both suites check the rule against a brute-force scan over all cells: for those 26 directions at
+  all 31 frequencies, and for every Voronoi vertex (a three-way tie) at $\nu \in \{3, 5, 10\}$.
+- Both suites pin, verbatim, the 26 directions' cells at $\nu \in \{1, 2, 3, 4, 10, 11\}$ and the
+  well model's peak at $\nu \in \{2, 4\}$ (`SPECIAL_DIRECTION_CELLS`, `WELL_MODEL_PEAKS`).
+- $+\hat{x}$ and $+\hat{y}$ at $\nu = 3$ are two-way ties. They moved to the lower index of each
+  pair, which is why the pinned axis cells changed.
+
+**Two entry points, one of which normalises and folds.** `assign_cells` / `assignCells` (the
+public wrapper) calls `_normalize` first and applies the hemisphere fold of (d), so callers may
+pass unnormalised vectors
 ([orientation.py:452-462](../../rmc_toolkits/orientation.py)). The internal `_assign` / `assignOne`
-does **not** — it assumes unit input. Two consequences worth knowing: the antipode map of §4.7 is
-built by calling `_assign` directly on `-centers` (already unit, line 434), and the histogram
+does **not** normalise or fold — it assumes unit input. Two consequences worth knowing: the
+antipode map of §4.7 is built by calling `_assign` directly on `-centers` (already unit, and
+necessarily without the fold, which needs that very table), and the histogram
 path calls `assign_cells` on rows that `orientation_histogram` has *already* divided by their
 amplitude (line 611), so the re-normalisation there is redundant work, not a correctness
 requirement.
@@ -734,16 +875,16 @@ $$\boxed{\;\mathcal{E}_m \;=\; 4\pi\,\rho_m\;}
 `vmin`/`vmax` are $\min_m \mathcal{E}_m$ and $\max_m \mathcal{E}_m$; the colourbar runs
 $0 \to \texttt{vmax}$ with a tick drawn at the isotropic $1\times$.
 
-#### 6.3 Poisson significance against the isotropic null
+#### 6.3 Per-cell $z$, and the calibrated peak test
 
 **Null model.** The $N$ surviving directions are i.i.d. uniform on the sphere. Then
 $n_m \sim \mathrm{Binomial}(N, \Omega_m/4\pi) \approx \mathrm{Poisson}(e_m)$ with
 
 $$e_m \;=\; \frac{N\,\Omega_m}{4\pi} \qquad \text{(reported as } \texttt{expected} \text{),}$$
 
-and, using the Poisson identity $\operatorname{Var} = \operatorname{E}$,
+and, using the Poisson identity $\operatorname{Var} = \operatorname{E}$, each cell's **local** $z$ is
 
-$$z_m \;=\; \frac{n_m - e_m}{\sqrt{\max(e_m,\,10^{-12})}} .$$
+$$z_m \;=\; \frac{n_m - e_m}{\sqrt{\max(e_m,\,10^{-12})}} \qquad (\texttt{zScore}) .$$
 
 Three things to note:
 
@@ -755,13 +896,173 @@ Three things to note:
 2. The exact multinomial standard deviation is $\sqrt{e_m(1 - \Omega_m/4\pi)}$, smaller than
    $\sqrt{e_m}$ by a factor $\sqrt{1-1/C}$ — 0.05 % at $\nu = 10$. Using the Poisson form is
    therefore very slightly conservative.
-3. A whole-map summary is reported as
+3. **$z_m$ is a local description, not a significance** — and `peakZScore`, the $z_m$ of the
+   peak cell, is kept in the payload for compatibility only. Two errors stack up if it is read
+   as one. *Look-elsewhere*: the peak is the maximum over $C$ cells (1002 at the UI default), and
+   the largest of $C$ noise deviates is routinely 3–5. *Poisson skew*: at the default operating
+   point $e_m \approx 0.2$–$1$, where $(n - e)/\sqrt{e}$ wildly overstates the tail (at
+   $e = 0.2156$ a count of 3 gives $z = 6.0$, Gaussian $p = 10^{-9}$, true Poisson $p = 1.4\times10^{-3}$).
+   Before the 1.0 audit the summary strip printed this $z$ next to the peak: an exactly isotropic
+   cloud read a median "z = 3.8" (1000 copies) or 5.4 (216 copies) at the UI defaults, and 42 of 52
+   real GaNb₄Se₈ sites printed $z \ge 3$ although their peaks were statistically
+   indistinguishable from an isotropised copy of the same data.
 
-$$\texttt{significance} \;=\; \sqrt{\tfrac{1}{C}\textstyle\sum_m z_m^2}\ \ [\sigma],$$
+**The peak test** (`peakCount`, `peakExpected`, `peakLocalPValue`, `peakPValue`,
+`peakSignificance`; `_peak_significance` / `peakSignificance`). With $n = n_{\text{peak}}$ the raw
+count and $e = e_{\text{peak}}$ the expectation of the peak cell (the tie-tolerant argmax of the
+*smoothed* enhancement, §Outputs):
 
-   the RMS $z$. $\approx 1$ means the entire pattern is consistent with pure counting noise;
-   well above 1 means real directional structure. This is the number that stops an over-binned
-   map from being read as physics.
+$$p_{\text{loc}} \;=\; P(X \ge n \mid X \sim \mathrm{Poisson}(e)) \;=\; P(n, e)
+\quad(\text{regularized lower incomplete gamma; } p_{\text{loc}} = 1 \text{ for } n = 0),$$
+
+$$p \;=\; 1 - (1 - p_{\text{loc}})^{C} \quad\text{(Šidák, evaluated as } -\mathrm{expm1}(C\,\mathrm{log1p}(-p_{\text{loc}}))\text{)},
+\qquad
+\texttt{peakSignificance} \;=\; \Phi^{-1}(1 - p) .$$
+
+The deviate is computed on whichever tail is accurate: $-\Phi^{-1}(p)$ for $p \le \tfrac12$,
+$\Phi^{-1}(1 - p)$ with $1 - p = (1 - p_{\text{loc}})^C$ evaluated directly otherwise, and both
+tail probabilities are floored at `SIGNIFICANCE_TAIL_FLOOR = 1e-300`, so $|z| \le 37.04$ and no
+infinity reaches the JSON. A deviate $\le 0$ ($p \ge \tfrac12$) is no evidence at all; the summary
+strip then prints "not significant". Python evaluates $P(a, x)$, $Q(a, x)$ and $\Phi^{-1}$ with
+`scipy.special.gammainc` / `gammaincc` / `ndtri`; the JS port carries its own
+(`regularizedGamma`: series / Lentz continued fraction with a cancellation-free prefactor;
+`normalQuantile`: Wichura's AS 241), pinned against scipy values to $\le 10^{-11}$ relative on
+the small tail and against Python goldens to $10^{-9}$.
+
+*Why this is conservative whatever cell is picked.* Every cell's discrete Poisson $p$-value
+satisfies $P(p_m \le \alpha) \le \alpha$ under the null, so Šidák over all $C$ cells bounds the
+chance that *any* cell — and therefore the chosen one, whichever rule chose it — reaches global
+$p \le \alpha$. The cells are slightly negatively dependent (multinomial), which the Poisson tail
+(heavier than the binomial one) more than covers. Measured on exactly isotropic clouds (4000 per
+row):
+
+| $N$ | $\nu$ | smoothing | $P(\texttt{peakSignificance} > 2)$ | $P(> 3)$ |
+|---|---|---|---|---|
+| 216 | 10 | 2 (UI default) | 0.40 % | 0.00 % |
+| 1000 | 10 | 2 (UI default) | 0.67 % | 0.13 % |
+| 1000 | 10 | 0 | 0.73 % | 0.08 % |
+| 1000 | 2 (Auto) | 0 | 1.65 % | 0.10 % |
+| 216 | 24 | 2 | 0.15 % | 0.05 % |
+
+against nominal ceilings of 2.28 % and 0.135 %. On the real runs at the UI defaults, 1 of 52
+sites (5 K) and 1 of 52 (250 K) exceed 2σ and none exceeds 3σ; on Auto (coarser cells, more
+counts per cell) 8 and 11 sites exceed 2σ and 1 and 3 exceed 3σ — real lobes become detectable
+once the cells hold enough atoms. The per-cell hover value stays the local $z_m$ and is labelled
+"local z".
+
+**The map test** (`mapChiSquare`, `mapDegreesOfFreedom`, `mapNullSd`, `mapNullSkewness`,
+`mapExpectedPairs`, `mapPValue`, `mapSignificance`; `_map_test` / `mapTest`). The whole-map
+question — is the direction distribution isotropic at all? — is Pearson's goodness-of-fit
+statistic on the raw counts,
+
+$$X^2 \;=\; \sum_m \frac{(n_m - e_m)^2}{e_m} \;=\; \sum_m z_m^2 ,$$
+
+referred to a curve matched to the first three moments of its **exact** isotropic distribution,
+not to $\chi^2_{C-1}$.
+
+*Why not $\chi^2_{C-1}$.* $\chi^2_{C-1}$ is the many-counts limit (every $e_m \gtrsim 5$). A fine
+tiling holds a fraction of an atom per cell, and there $X^2$ is a coincidence count. With
+$p_m = \Omega_m/4\pi$ and $S = \sum_m n_m^2/p_m$, $X^2 = S/N - N$; when almost every cell holds 0
+or 1 atoms, $X^2 \approx C - N + (2C/N)\,P$, where $P$ is the number of atom pairs that share a cell,
+a Poisson-like count with mean
+
+$$\lambda \;=\; \binom{N}{2}\sum_m p_m^2 \qquad (\texttt{mapExpectedPairs})$$
+
+and skewness $\approx 1/\sqrt\lambda$. $\chi^2_{C-1}$ has the right mean ($C - 1$) and nearly the
+right variance, but its skewness is $\sqrt{8/(C-1)} = 0.09$ at $\nu = 10$, so its upper tail is far
+too light. The 1.0 audit first shipped the $\chi^2_{C-1}$ reference, and the review of that fix
+found pure noise reading $> 3\sigma$ in 1.7 % of maps with 27 copies at $\nu = 10$ (13× nominal)
+and in 2.8 % with 64 copies at $\nu = 24$ (20×). The table below has the full picture.
+
+*Exact moments.* Under isotropy $\mathbf n \sim \mathrm{Multinomial}(N, \mathbf p)$. Write
+$S = \sum_{t,s} [c_t = c_s]/p_{c_t}$ over ordered pairs of the $N$ atoms (cells $c_t$ i.i.d.
+$\sim \mathbf p$). Then $\mathrm E[S^k]$ is a sum over the set partitions of the $2k$ atom indices:
+a partition with $b$ blocks is weighted by $N(N-1)\cdots(N-b+1)$, and each connected group of
+blocks, with $v$ blocks joined by $\epsilon$ pair factors, contributes $\sum_m p_m^{\,v-\epsilon}$.
+With $A = \sum_m 1/p_m - C^2$ and $B = \sum_m 1/p_m^2 - 3C\sum_m 1/p_m + 2C^3$, this gives
+
+$$\mathrm E[X^2] = C - 1, \qquad
+\operatorname{Var}[X^2] = 2(C-1) + \frac{A - 2C + 2}{N} \quad\text{(Haldane)},$$
+
+$$\mu_3[X^2] = 8(C-1) + \frac{22A + 4C^2 - 36C + 32}{N} + \frac{B - 22A - 4C^2 + 28C - 24}{N^2}
+\qquad (\texttt{\_pearson\_null\_moments} / \texttt{pearsonNullMoments}).$$
+
+$A$ and $B$ vanish for equal cells, where $\mu_3 = (C-1)\,[\,8 + 4(C-8)/N - 4(C-6)/N^2\,]$. Both
+are evaluated from the per-cell excess $\delta_m = 1/p_m - C$ ($A = \sum_m \delta_m$,
+$B = \sum_m \delta_m(\delta_m - C)$), so no large terms cancel. Both suites check all three moments
+against full enumeration of the multinomial for small $N$ and $C$ with unequal $p$
+(`PEARSON_MOMENTS`, shared verbatim, agreement $\le 2\times10^{-14}$).
+
+*The reference.* A Pearson type III (shifted gamma) with exactly those three moments. With
+$\sigma = \sqrt{\operatorname{Var}}$ (`mapNullSd`), $\gamma = \mu_3/\sigma^3$ (`mapNullSkewness`),
+shape $k = 4/\gamma^2$, scale $\theta = \sigma\gamma/2$ and origin $x_0 = (C - 1) - 2\sigma/\gamma$,
+
+$$\texttt{mapPValue} \;=\; Q\!\Big(k,\ \frac{X^2 - x_0}{\theta}\Big) \quad (= 1 \text{ if } X^2 \le x_0),
+\qquad \texttt{mapSignificance} \;=\; \Phi^{-1}(1 - \texttt{mapPValue}),$$
+
+with the same two-tail evaluation and $10^{-300}$ floor as the peak test. When the moments are
+$\chi^2$'s ($N \gg C$: variance $\to 2(C-1)$, $\mu_3 \to 8(C-1)$), this *is* $\chi^2_{C-1}$:
+$k = (C-1)/2$, $\theta = 2$, $x_0 = 0$. `mapDegreesOfFreedom` is still returned as $C - 1$, which is
+now read as the exact null mean of $X^2$. A negative deviate means a map *more* uniform than
+counting noise; below the reference's support ($X^2 \le x_0$, e.g. a Fibonacci-spiral sphere) it
+sits at the floor, −37.05.
+
+*When the test is withheld.* When $\lambda <$ `MAP_TEST_MIN_PAIRS` $= 0.1$, `mapPValue` and
+`mapSignificance` are `null`, and the strip prints "— (too sparse)". This covers $N \le 14$ at
+$\nu = 10$, $N \le 34$ at $\nu = 24$ and $N \le 2$ at $\nu = 1$. Fewer than one map in ten then
+contains even one shared cell, so $X^2$ counts zero, one or two rare events. Its tail is a lattice
+that no three-moment curve follows (measured at 1.6× nominal at 3σ), and it holds no whole-map
+information that the peak test lacks. `mapChiSquare` is still reported.
+
+*What it replaces.* Before the 1.0 audit the strip printed `significance`
+$= \sqrt{\tfrac1C\sum_m z_m^2} = \sqrt{X^2/C}$ with a σ unit. Under the null that RMS is
+$1 \pm 1/\sqrt{2C}$ — $1.00 \pm 0.02$ at $\nu = 10$ — so it is not in units of σ at all: 1.05 is
+already ≈ 2.3σ, 1.10 ≈ 4.4σ, and a cloud with **every atom in one hemisphere** (1000 copies,
+$\nu = 10$) printed "1.4σ" although it is ≳ 20σ from isotropy. The field is still returned under
+its old name for compatibility (the legacy RMS $z$); the UI no longer shows it.
+
+*Calibration, measured.* Under isotropy the raw counts are exactly $\mathrm{Multinomial}(N, \mathbf p)$,
+because assignment is the exact Voronoi partition of those areas. The reference can therefore be
+checked on direct multinomial draws. Each row below is 200 000 draws; nominal rates are 2.28 %,
+0.135 % and 0.0032 %.
+
+| $N$ | $\nu$ | per cell | $\lambda$ | $\gamma$ | $P(> 2)$ | $P(> 3)$ | $P(> 4)$ | $P(> 3)$ under $\chi^2_{C-1}$ |
+|---|---|---|---|---|---|---|---|---|
+| 8 | 10 | 0.008 | 0.03 | 2.13 | withheld | withheld | withheld | 2.98 % |
+| 20 | 10 | 0.020 | 0.19 | 1.51 | 2.28 % | 0.147 % | 0.0085 % | 2.29 % |
+| 27 | 10 | 0.027 | 0.36 | 1.28 | 2.21 % | 0.130 % | 0.0025 % | 1.72 % |
+| 64 | 10 | 0.064 | 2.0 | 0.71 | 2.27 % | 0.141 % | 0.0035 % | 0.84 % |
+| 125 | 10 | 0.125 | 7.9 | 0.44 | 2.25 % | 0.142 % | 0.0045 % | 0.48 % |
+| 216 | 10 | 0.22 | 23.5 | 0.30 | 2.23 % | 0.138 % | 0.0045 % | 0.32 % |
+| 1000 | 10 | 1.0 | 506 | 0.14 | 2.25 % | 0.128 % | 0.0020 % | 0.16 % |
+| 27 | 24 | 0.005 | 0.06 | 0.94 | withheld | withheld | withheld | 5.25 % |
+| 64 | 24 | 0.011 | 0.36 | 0.78 | 2.26 % | 0.143 % | 0.0110 % | 2.77 % |
+| 125 | 24 | 0.022 | 1.4 | 0.58 | 2.26 % | 0.141 % | 0.0040 % | 1.46 % |
+| 216 | 24 | 0.037 | 4.1 | 0.42 | 2.21 % | 0.134 % | 0.0020 % | 0.80 % |
+| 20 | 4 | 0.12 | 1.2 | 1.10 | 2.14 % | 0.169 % | 0.0075 % | 0.71 % |
+| 5000 | 16 | 1.95 | 4961 | 0.07 | 2.27 % | 0.146 % | 0.0025 % | 0.16 % |
+| 1000 | 2 (Auto) | 23.8 | 11 927 | 0.45 | 2.32 % | 0.125 % | 0.0020 % | 0.13 % |
+| 30 | 1 (Auto) | 2.5 | 36 | 0.95 | 2.11 % | 0.182 % | 0.0070 % | 0.18 % |
+| 12 | 1 (Auto) | 1.0 | 5.5 | 1.11 | 1.80 % | 0.226 % | 0.0075 % | 0.23 % |
+
+The engine path gives the same result. Isotropic Gaussian clouds were run through
+`orientation_histogram` (3000 per row, smoothing 2) at $(N, \nu)$ = (27, 10), (64, 10), (64, 24),
+(125, 24) and (216, 10). Together they gave 24 of 15 000 maps above 3σ (0.16 %), against 1.4 %,
+0.97 %, 3.2 %, 1.7 % and 0.37 % per row under $\chi^2_{C-1}$. Another 100 000 maps at (64, 10),
+built with the engine's own `assign_cells`, gave 2.15 %, 0.162 % and 0.0030 %.
+
+Some limits remain. When the map is sparse ($\lambda \lesssim 5$), the tail beyond about 4σ is up to
+3× heavy (0.0110 % against 0.0032 % for 64 copies at $\nu = 24$), again because of the lattice.
+With a dozen atoms on the 12-cell dodecahedron, plain discreteness makes 3σ 1.7× heavy, and
+$\chi^2_{C-1}$ has the same excess there.
+
+A real departure still reads large. At $\nu = 10$, 27 atoms inside a 10° cap give 14σ. Inside a
+30° cap they give 3.07σ; a 2-million-draw exact multinomial simulation of the same $X^2$ gives
+$p = 1.10\times10^{-3}$ (3.06σ), where $\chi^2_{C-1}$ gave 5.2σ.
+
+On a sparse map this test mostly counts clustering, i.e. several atoms in the same few cells. It
+has little power against a broad lobe; the Bingham test (§8) is the one to read there. On the
+real GaNb₄Se₈ runs (1000 copies per site) the change from $\chi^2_{C-1}$ is at most 0.05σ per site.
 
 #### 6.4 Neighbour smoothing
 
@@ -776,10 +1077,9 @@ The $\max(d, 1)$ is in both engines ([orientation.py:500](../../rmc_toolkits/ori
 tiling, where every degree is 5 or 6.
 
 The pass count is **truncated toward zero**, not rounded: `int(passes)` / `Math.trunc(smoothing)`.
-A fractional `smoothing = 2.9` runs 2 passes. A negative value runs **none** (the whole block is
-guarded by `if smoothing > 0`) but is still echoed verbatim into the result as
-`"smoothing": int(smoothing)` — so a payload can report `smoothing: -3` on a completely unsmoothed
-map.
+A fractional `smoothing = 2.9` runs 2 passes (and is echoed as `2`). A negative, `NaN` or infinite
+value is rejected with `smoothing must be a finite, non-negative number of passes` (Step 1,
+"Errors"); before the 1.0 audit a negative value silently ran no passes and was echoed verbatim.
 
 Each cell keeps $1-\alpha$ of its mass and splits the rest evenly over its own neighbours, so
 **the total is invariant by construction** — the smoothed map still integrates to the same
@@ -806,7 +1106,8 @@ Applied to: `mass`, the per-cell amplitude sum $S_m$, and a float copy of the co
 > versus 0.999 elsewhere at 2 passes), so heavy smoothing paints a faint icosahedral pattern
 > onto an isotropic site. At the default 2 passes it is a $\pm 6\%$ effect — well below the
 > Poisson noise of any real map — but at 8–12 passes it approaches the size of a weak real lobe.
-> Read `zScore`, which is untouched by smoothing, when in doubt.
+> Read the raw `counts` and the calibrated `peakSignificance` (§6.3), which are untouched by
+> smoothing, when in doubt.
 
 #### 6.5 Per-cell mean amplitude (the relief)
 
@@ -857,54 +1158,82 @@ cells. Range and meaning:
 - $\mathcal{A} = 0$ — perfectly inversion-symmetric cloud (what a harmonic site gives).
 - $\mathcal{A} = 1$ — fully one-sided: every occupied cell's antipode is empty.
 
+Because every $\mathbf{u}_i$ is measured from the site's own mean (Step 1, "The reference point"),
+$\mathcal{A}$ measures **skewness about that mean** — odd-order anharmonicity, or unequally
+occupied opposite off-centre wells. It is blind to a coherent off-centring shared by every copy,
+and blind to equal-occupancy multi-well disorder, both of which are centrosymmetric about the mean.
+
 **$\mathcal{A}$ is bounded above by 1 by construction.** Since
 $|n_m - n_{\text{ant}(m)}| \le n_m + n_{\text{ant}(m)}$ and $\sum_m n_m = N$,
 
 $$\mathcal{A} \;\le\; \frac{1}{2N}\sum_m \big(n_m + n_{\text{ant}(m)}\big) \;=\; \frac{2N}{2N} \;=\; 1 .$$
 
-This matters for the flag below, because the null floor has no such bound.
+The null below respects the same bound.
 
-**The null floor.** Pure counting noise produces a non-zero $\mathcal{A}$, so a bare value is
-unreadable. For two i.i.d. $\mathrm{Poisson}(\mu)$ cells with $\mu = N/C$,
-$X - Y \approx \mathcal{N}(0, 2\mu)$ and $\operatorname{E}|X-Y| = \sqrt{4\mu/\pi} = 2\sqrt{\mu/\pi}$.
-Summing over $C$ cells and applying the $1/(2N)$ prefactor:
+**The null: inversion symmetry given the pair totals.** Counting noise alone makes $\mathcal{A}$
+positive, so a bare value is unreadable. The question $\mathcal{A}$ answers is "is
+$p(\mathbf{u}) = p(-\mathbf{u})$?", and its null is therefore *inversion symmetry*, not isotropy.
+Condition on what the data fix — the total $T_p = n(\mathbf{u}) + n(-\mathbf{u})$ of each antipodal
+pair $p$. Under inversion symmetry each atom of the pair is equally likely to sit at
+$+\mathbf{u}$ or $-\mathbf{u}$, independently, so
 
-$$\mathcal{A}_{\text{null}} \;=\; \frac{1}{2N}\,C\cdot 2\sqrt{\frac{N/C}{\pi}}
-\;=\; \boxed{\sqrt{\frac{C}{\pi N}}} \qquad (\texttt{antipodalAsymmetryNull}).$$
+$$X_p \sim \mathrm{Bin}(T_p, \tfrac12), \qquad D_p = |2X_p - T_p| ,
+\qquad \mathcal{A} = \frac{1}{N}\sum_p D_p ,$$
 
-The Gaussian step assumes $\mu = N/C \gg 1$. **At the UI's default operating point it is not:**
-$\nu = 10$, $C = 1002$, and a 216-copy site gives $\mu \approx 0.22$. The formula is still what
-both engines report; read it as an order-of-magnitude floor there, not as a calibrated
-expectation.
+independently across pairs, with the exact moments
 
-**The $3\times$ flag is structurally unreachable at high resolution.** The UI flags the pair red
-when $\mathcal{A} > 3\,\mathcal{A}_{\text{null}}$
-([OrientationView.jsx:447](../../web_app/frontend/src/components/OrientationView.jsx)). Because
-$\mathcal{A} \le 1$ while $\mathcal{A}_{\text{null}} = \sqrt{C/\pi N}$ can exceed $1/3$ — or
-exceed 1 outright — the condition can only ever fire when
+$$\operatorname{E}D_p \;=\; T_p\, c_{\lfloor T_p/2\rfloor},\quad c_k = \binom{2k}{k}4^{-k},
+\qquad \operatorname{E}D_p^2 = T_p ,
+\qquad \operatorname{Var}D_p = T_p - (\operatorname{E}D_p)^2 .$$
 
-$$3\sqrt{\frac{C}{\pi N}} < 1 \iff N > \frac{9C}{\pi} .$$
+($T = 1$: $D = 1$ always; $T = 2$: $D \in \{0, 2\}$, mean 1; $T = 3$: $D \in \{1, 3\}$, mean
+1.5.) The engines evaluate $c_k$ by the exact recurrence $c_k = c_{k-1}(2k-1)/(2k)$ as one
+sequential product (`_central_binomial` / `centralBinomial`, bit-identical across engines) and
+report
 
-| $\nu$ | $C$ | $N$ needed for the flag to be *possible* |
-|---|---|---|
-| 1 (Auto floor) | 12 | 35 |
-| 2 | 42 | 121 |
-| 6 | 362 | 1 038 |
-| 8 | 642 | 1 840 |
-| **10 (UI default)** | **1002** | **2 871** |
-| 24 | 5762 | 16 507 |
+$$\texttt{antipodalAsymmetryNull} = \frac1N\sum_p \operatorname{E}D_p ,\qquad
+\texttt{antipodalAsymmetryNullSd} = \frac1N\sqrt{\textstyle\sum_p \operatorname{Var}D_p} ,$$
 
-Measured, to make the failure concrete: a **perfectly one-sided** 216-point cloud at
-$\nu = 10$ reports `usedPoints = 216`, $\mathcal{A} = 1.000$ (its maximum),
-$\mathcal{A}_{\text{null}} = 1.215$, flag **False**, and `significance` $= 1.35\sigma$ — the page
-reads a maximally asymmetric cloud as consistent with noise. The same cloud on *Auto*
-($\nu = 1$) gives $\mathcal{A} = 0.991$, $\mathcal{A}_{\text{null}} = 0.133$, flag **True**.
-**So the antipodal readout, exactly like the map itself, must be read on Auto resolution for
-typical site copy counts** (caveat 7).
+$$\texttt{antipodalAsymmetryZ} = \frac{\mathcal{A} - \texttt{Null}}{\texttt{NullSd}},\qquad
+\texttt{antipodalAsymmetrySignificant} = \big(\texttt{antipodalAsymmetryZ} > 3\big)
+\quad(\texttt{ASYMMETRY\_FLAG\_SIGMA} = 3).$$
 
-Both suites assert that a deliberately one-sided cloud clears $3\times$ the floor while a
-centrosymmetric Gaussian lands between $0.2\times$ and $2\times$ it — at test resolutions where
-$N > 9C/\pi$ holds.
+When every occupied pair holds a single atom, all $D_p$ are deterministic: $\mathcal{A}$ equals
+its null exactly, the spread is 0, `antipodalAsymmetryZ` is `null` and the flag is off — there is
+no information either way. The null mean is automatically $\le 1$ (each $\operatorname{E}D_p \le
+T_p$), valid at any count level, and correct for any *anisotropic* centrosymmetric site (a rod,
+a disc, eight $\langle 111\rangle$ spots), because it never assumes the pair totals are equal.
+
+**What it replaces — and why the old flag never fired.** Before the 1.0 audit the null was
+$\sqrt{C/(\pi N)}$: the Gaussian large-$\mu$ limit of $\operatorname{E}|X - Y|$ for two i.i.d.
+$\mathrm{Poisson}(N/C)$ cells — an isotropic, unconditional mean. It was wrong three ways. (i) At
+the UI default the cells hold $\mu \approx 0.2$–$1$, where the Gaussian limit is 8–50 % high and
+exceeds the statistic's own maximum (1.215 for 216 copies at $\nu = 10$; the exact Skellam mean
+is 0.82). (ii) For anisotropic sites the isotropic assumption overstates the floor by a further
+12–68 % (Jensen: $\sum_p\sqrt{\mu_p} < C\sqrt{\bar\mu}$). (iii) The UI flag compared
+$\mathcal{A}$ with **three times the null mean**, not with its spread (≈ 0.02 at $N = 1000$), so
+it needed an excess of 20–60 null SDs; with $\mathcal{A} \le 1$ it could not fire at all unless
+$N > 9C/\pi$ (2 871 copies at $\nu = 10$). Measured, old → new:
+
+| cloud ($N = 1000$ unless stated) | $\nu$ | $\mathcal{A}$ | old null (3× = flag) | new null ± SD | $z$ | flag old → new |
+|---|---|---|---|---|---|---|
+| every atom in one hemisphere, $N = 216$ | 10 | 1.000 | 1.215 (3.65) | 0.826 ± 0.027 | 6.3 | False → **True** |
+| same | 1 (Auto) | 0.731 | 0.133 | 0.134 ± 0.041 | 14.8 | True → True |
+| 25 % of atoms shifted 0.2 Å along $+z$, re-centred | 2 (Auto) | 0.328 | 0.109 (0.33) | 0.111 ± 0.019 | 11.4 | False → **True** |
+| 20 % shifted 0.4 Å | 10 | 0.684 | 0.565 (1.69) | 0.420 ± 0.018 | 14.5 | False → **True** |
+| 30 % shifted 0.3 Å | 10 | 0.570 | 0.565 (1.69) | 0.410 ± 0.018 | 8.8 | False → **True** |
+
+(The old page printed the last row as "± asymmetry 0.57 (noise floor 0.57)" — an 8.8σ imbalance
+shown as exactly noise.)
+
+**Calibration, measured** on centrosymmetric clouds (flag = $z > 3$, nominal 0.135 %; 2 000–10 000
+draws per row): isotropic, rod ($\sigma$ 0.2/0.03/0.03 Å), disc, eight $\langle111\rangle$ spots
+and sign-flipped skewed clouds all give $\bar z = 0.00 \pm 0.05$ and $\mathrm{sd}(z) = 0.97$–$1.03$
+at every resolution. The flag rate is 0.11 % (isotropic, 216 copies, $\nu = 10$), 0.21 % (rod,
+$\nu = 10$), and up to 0.35–0.5 % at the Auto resolutions $\nu \le 2$, where only 6–21 pairs
+enter the sum and its normal approximation is coarse. Both suites assert the exact binomial
+moments against a brute-force enumeration, a centrosymmetric flag rate $\le 2\,\%$, and that a
+one-sided and a partially off-centred cloud are flagged at the UI default.
 
 Note $\mathcal{A}$ is built from raw counts, so it is unaffected by smoothing and by the weight
 choice.
@@ -934,7 +1263,45 @@ The scalar summary reported is
 
 $$\texttt{orientationAnisotropy} = 3\lambda_1 - 1 \in [0, 2],$$
 
-0 for a uniform sphere, 2 for a perfect single axis.
+2 for a perfect single axis — and 0 for a uniform sphere **only as $N \to \infty$**.
+
+**Finite-sample bias and the isotropic expectation.** The largest eigenvalue of a *sample* tensor
+is biased upward, so a finite isotropic cloud always reads $3\lambda_1 - 1 > 0$. For uniform
+$\mathbf{u}$, $\sqrt{N}(\mathbf{T} - \mathbf{I}/3)$ tends to a traceless GOE matrix with
+off-diagonal variance $\operatorname{Var}(u_xu_y) = 1/15$ (and diagonal variance $4/45$). The
+mean largest eigenvalue of the $3\times3$ GOE with unit off-diagonal variance is
+$3\sqrt{3/(2\pi)}$ (a closed form of the eigenvalue-gap integral), so
+
+$$\operatorname{E}\big[3\lambda_1 - 1\big]_{\text{isotropic}} \;\simeq\;
+\frac{3}{\sqrt{15}}\cdot\frac{3\sqrt{3/(2\pi)}}{\sqrt{N_{\text{eff}}}}
+\;=\; \frac{9}{\sqrt{10\pi\,N_{\text{eff}}}} \;=\; \frac{1.6057}{\sqrt{N_{\text{eff}}}}
+\qquad (\texttt{orientationAnisotropyNull};\ \texttt{ISOTROPIC\_ANISOTROPY\_SCALE} = 9/\sqrt{10\pi}),$$
+
+with $N_{\text{eff}} = (\sum_i w_i)^2 / \sum_i w_i^2$ (`orientationEffectivePoints`; $= N$ for
+`count`). Measured means over 4 000 isotropic clouds: 0.232 vs 0.227 ($N = 50$), 0.111 vs 0.109
+(216), 0.0512 vs 0.0508 (1000), 0.0160 vs 0.0161 (10 000). Before the 1.0 audit the UI and this
+page said "0 for an isotropic direction distribution" with no reference, so an isotropic 216-copy
+site's 0.11 read as an 11 % preferred axis; on the real GaNb₄Se₈ runs the median site reads 0.08–0.09
+against an isotropic expectation of 0.05.
+
+**Bingham's test of isotropy.** The calibrated statistic on the same tensor is
+
+$$S \;=\; \frac{15\,N_{\text{eff}}}{2}\sum_i\Big(\lambda_i - \frac13\Big)^2
+\;=\; 7.5\,N_{\text{eff}}\,\big\lVert \mathbf{T} - \tfrac13\operatorname{tr}(\mathbf{T})\,\mathbf{I}\big\rVert_F^2
+\;\sim\; \chi^2_5 \ \text{under isotropy}$$
+
+(`orientationBinghamStatistic`), evaluated from the deviatoric Frobenius norm so it does not depend
+on the eigensolver; `orientationBinghamPValue` $= Q(\tfrac52, \tfrac S2)$ and
+`orientationAnisotropySignificance` is its one-sided normal deviate. With weights the effective size
+is exact for weights independent of direction. Measured on isotropic clouds (4 000 per $N$,
+$N \in \{50, 216, 1000, 10\,000\}$): $\bar S = 4.97$–$5.08$, $P(> 2\sigma)$ = 1.9–2.5 % and
+$P(> 3\sigma)$ = 0.03–0.27 % for both `count` and `amplitude2` weights (nominal 2.28 % / 0.135 %).
+Because it pools the whole distribution into five degrees of freedom it is far more powerful
+against smooth, harmonic anisotropy than the 1001-cell map test: a site with a 1.25 : 1 : 1
+$\sigma$ ratio and 1000 copies reads $> 4\sigma$ here while its map is indistinguishable from
+noise, and on the real 5 K run the Nb site 5 (anisotropy 0.19) is a $5.7\sigma$ departure from
+isotropy ($p = 5\times10^{-9}$) with `mapSignificance` 1.0. 20 of 52 (5 K) and 13 of 52 (250 K)
+sites exceed 3σ at the UI defaults.
 
 **Exact identity worth knowing.** With `weight="amplitude2"` and no amplitude cut,
 
@@ -1038,19 +1405,34 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `mass` | $(C,)$ | — | weighted, **post**-smoothing | no |
 | `density` | $(C,)$ sr⁻¹ | — | from smoothed `mass`; integrates to 1 | no |
 | `enhancement` | $(C,)$ dimensionless | — | $4\pi\rho$, **smoothed**; 1 = isotropic | yes (colour) |
-| `expected`, `zScore` | $(C,)$ | — | isotropic null and its $z$, both from **raw** counts | `zScore` (hover) |
+| `expected`, `zScore` | $(C,)$ | — | isotropic null and each cell's **local** (uncorrected) $z$, both from **raw** counts | `zScore` (hover, labelled "local z") |
 | `vmin`, `vmax` | dimensionless | — | enhancement range | `vmax` (colourbar) |
 | `meanCount`, `emptyFraction` | float | — | $N/C$; fraction of cells with **raw** count 0 | no |
 | `meanAmplitude`, `rmsAmplitude` | Å | — | $\langle a\rangle$, $\sqrt{\langle a^2\rangle}$ over survivors | `meanAmplitude` (relief scale) |
 | `cellMeanAmplitude` | $(C,)$ Å | — | per-cell $\langle a\rangle_m$, smoothed numerator **and** denominator | yes (relief + hover) |
-| `antipodalAsymmetry`, `…Null` | dimensionless | — | §7, from raw counts | yes |
+| `antipodalAsymmetry` | dimensionless | — | $\sum_p\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$, §7, from raw counts | yes |
+| `antipodalAsymmetryNull`, `…NullSd` | dimensionless | — | exact mean and SD of $\mathcal{A}$ for an inversion-symmetric population with the observed pair totals (§7) | yes |
+| `antipodalAsymmetryZ` | $\sigma$, or `null` | — | $(\mathcal{A} - \text{null})/\text{SD}$; `null` when the SD is 0 (every occupied pair holds one atom) | yes |
+| `antipodalAsymmetrySignificant` | bool | — | $z > $ `ASYMMETRY_FLAG_SIGMA` $= 3$ | yes (red flag) |
 | `orientationTensor`, `orientationEigenvalues` | 3×3 / 3 | req / — | §8 | no |
 | `orientationAxes` | 3×3, rows | **req** | §8 — PCA-frame axes when `frame="pca"` | no |
-| `orientationAnisotropy` | dimensionless | — | $3\lambda_1 - 1$ | yes |
-| `peakCell`, `peakEnhancement` | int / float | — | argmax over the **smoothed** enhancement | `peakEnhancement` only |
+| `orientationAnisotropy` | dimensionless | — | $3\lambda_1 - 1$ (biased upward for finite $N$, §8) | yes |
+| `orientationEffectivePoints` | float | — | $N_{\text{eff}} = (\sum w)^2/\sum w^2$ | no |
+| `orientationAnisotropyNull` | dimensionless | — | isotropic expectation $9/\sqrt{10\pi N_{\text{eff}}}$ (§8) | yes |
+| `orientationBinghamStatistic`, `orientationBinghamPValue` | float / probability | — | Bingham's $S \sim \chi^2_5$ and its upper tail (§8) | no |
+| `orientationAnisotropySignificance` | $\sigma$ | — | one-sided normal deviate of the Bingham $p$ | yes |
+| `peakCell`, `peakEnhancement` | int / float | — | tie-tolerant argmax over the **smoothed** enhancement: the lowest index within a relative `PEAK_TIE_RTOL = 1e-9` of the maximum | `peakEnhancement` only |
+| `peakTieCount` | int | — | number of cells within `PEAK_TIE_RTOL` of the maximum (1 = unique peak) | yes, as "(1 of k equal cells)" when $k > 1$ |
 | `peakDirection` | unit vector | **req** | `centers[peakCell]` | yes |
-| `peakZScore` | float | — | the **raw** $z$ at that cell | yes |
-| `significance` | $\sigma$ | — | RMS $z$ over cells, raw counts | yes |
+| `peakZScore` | float | — | the **raw, local** $z$ at that cell — kept for compatibility, **not a significance** (§6.3) | no |
+| `peakCount`, `peakExpected` | int / float | — | raw count and isotropic expectation $e$ of the peak cell | no |
+| `peakLocalPValue`, `peakPValue` | probability | — | exact Poisson tail $P(X \ge n \mid e)$; the same Šidák-corrected over the $C$ cells (§6.3) | no |
+| `peakSignificance` | $\sigma$ (one-sided normal deviate) | — | $\Phi^{-1}(1 - \texttt{peakPValue})$, $\lvert z\rvert \le 37.04$ | yes |
+| `significance` | dimensionless | — | **legacy** RMS of the local $z$ over cells ($1 \pm 1/\sqrt{2C}$ for noise) — not a σ level | no (shown until the 1.0 audit) |
+| `mapChiSquare`, `mapDegreesOfFreedom` | float / int | — | Pearson $X^2 = \sum_m z_m^2$ and $C - 1$, its exact null mean (§6.3) | in the InfoBadge |
+| `mapNullSd`, `mapNullSkewness` | float | — | exact isotropic SD (Haldane) and skewness of $X^2$ under the multinomial null (§6.3) | SD in the InfoBadge |
+| `mapExpectedPairs` | float | — | $\lambda = \binom N2 \sum_m p_m^2$, the expected number of atom pairs sharing a cell | in the InfoBadge when withheld |
+| `mapPValue`, `mapSignificance` | probability / $\sigma$ | — | upper tail of $X^2$ under the exact-moment Pearson type III reference and its one-sided normal deviate; both `null` when $\lambda <$ `MAP_TEST_MIN_PAIRS` | `mapSignificance` ("— (too sparse)" when `null`) |
 | `recommendedFrequency` | int | — | what Auto would have chosen | no |
 | `referenceNumber`, `element`, `siteFractional` | int / str / 3 fractional | — | site tag added by `site_orientation_histogram`; `siteFractional` is $\mathrm{mod}(\text{site mean}\times\text{supercell},\,1)$, i.e. the site's mean position reduced into one unit cell ([pca_kde.py:172](../../rmc_toolkits/pca_kde.py)) | **no** — the panel header's element and site number come from `selectedEllipsoid` (the `/api/pca/sites` payload), not from this result; `siteFractional` here is read by nothing (the site panel reads `site.siteFractional` from the sites payload instead) |
 | `source` | str | — | Flask only: resolved `.rmc6f` path | no |
@@ -1058,7 +1440,8 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 
 **Smoothed vs raw, in one line.** Smoothed: `mass`, `density`, `enhancement`, `vmin`, `vmax`,
 `cellMeanAmplitude`, `peakCell`, `peakEnhancement`. Raw: `counts`, `expected`, `zScore`,
-`peakZScore`, `significance`, `emptyFraction`, `antipodalAsymmetry`. Two consequences worth
+`peakZScore`, the whole peak test (`peakCount` … `peakSignificance`), `significance`, the map
+test (`mapChiSquare` … `mapSignificance`), `emptyFraction`, `antipodalAsymmetry`. Two consequences worth
 naming: with smoothing on, `peakCell` (smoothed argmax) and `peakZScore` (raw $z$ *at* that cell)
 describe different populations; and `emptyFraction` does **not** shrink when smoothing is applied,
 even though after one pass essentially every cell holds mass.
@@ -1084,12 +1467,12 @@ through: **HTTP** = read by `pca_orientation_endpoint` in [app.py](../../web_app
 |---|---|---|---|---|---|---|
 | `frequency` | `frequency` | HTTP + worker + UI | 1 – 64, or `None`/absent = auto | `None` (auto) | **10** (1002 cells) | geodesic frequency; $C = 10\nu^2+2$ |
 | `weight` | `weight` | HTTP + worker + UI | `count` \| `amplitude` \| `amplitude2` | `count` | `count` | what each cell accumulates |
-| `min_amplitude` | `minAmplitude` | HTTP + worker, **never sent by the UI** | **not validated** — negatives are accepted and reported as `amplitudeCutoff = 0` | `0.0` | — | absolute short-displacement cut |
+| `min_amplitude` | `minAmplitude` | HTTP + worker, **never sent by the UI** | finite; negatives are accepted and reported as `amplitudeCutoff = 0` | `0.0` | — | absolute short-displacement cut |
 | `min_amplitude_quantile` | `minAmplitudeQuantile` | HTTP + worker + UI | $[0, 1)$, validated | `0.0` | `0` (slider caps at 0.5) | quantile short-displacement cut; skipped entirely at $q = 0$ |
-| `smoothing` | `smoothing` | HTTP + worker + UI | int, truncated toward 0; $\le 0$ = no passes | `0` | **2** (slider max 12) | neighbour-diffusion passes |
+| `smoothing` | `smoothing` | HTTP + worker + UI | finite $\ge 0$, truncated toward 0; negative/`NaN` rejected | `0` | **2** (slider max 12) | neighbour-diffusion passes |
 | `frame` | `frame` | HTTP + worker + UI | `cartesian` \| `pca` | `cartesian` | `cartesian` | crystal frame vs PCA frame |
 | `geometry` | `geometry` | HTTP + worker + UI | bool | `True` | `true` | include `polygons` + `neighbors` |
-| `target_per_cell` | `targetPerCell` | **library call only** — neither the Flask route nor the worker forwards it | int $\ge 1$ | `12` | not exposed | auto-resolution target |
+| `target_per_cell` | `targetPerCell` | **library call only** — neither the Flask route nor the worker forwards it | finite $\ge 1$, truncated to an int; otherwise rejected | `12` | not exposed | auto-resolution target |
 | `reference_number` / `element` | `referenceNumber` / `element` | HTTP + worker; UI sends `referenceNumber` only | — | both `None` → **all sites of all elements pooled** | from the site picker | site selection (`element` pools all sites of one element; `""`/`"all"` normalise to the pooled default in both transports) |
 | — | `clusterThreshold` | **browser worker only** — no Python equivalent | 0.4 – 2.5 Å, slider step 0.1 | `DEFAULT_CLUSTER_THRESHOLD = 1.5` Å ([pcaKde.js:472](../../web_app/frontend/src/workers/pcaKde.js)) | 1.5 Å, control shown only when `sites.reconstructed` | fold-and-cluster distance used to *reconstruct* sites when the file has no reference-site/cell columns; part of the worker's parse cache key, so changing it re-derives every displacement and therefore every number on the page |
 
@@ -1100,8 +1483,8 @@ simply cannot be served by `/api/pca/orientation`. The algorithm, the clustering
 clean/merged/fragmented labelling are *PCA Ellipsoid page* → Step 1b; caveat 12 below records what
 those reconstructed sites do to *this* page's numbers.
 
-**Module constants** ([orientation.py](../../rmc_toolkits/orientation.py) lines 85–103, mirrored at
-[orientation.js](../../web_app/frontend/src/workers/orientation.js) lines 24–31):
+**Module constants** (top of [orientation.py](../../rmc_toolkits/orientation.py), mirrored at the top of
+[orientation.js](../../web_app/frontend/src/workers/orientation.js)):
 
 | Constant | Value | Unit | Role |
 |---|---|---|---|
@@ -1109,7 +1492,10 @@ those reconstructed sites do to *this* page's numbers.
 | `MAX_FREQUENCY` | 64 | — | 40 962 cells; 0.25 s (Py) / 0.11 s (JS) to tessellate |
 | `NEGLIGIBLE_AMPLITUDE` | $10^{-9}$ | Å | always-on floor; below it a direction is round-off |
 | `SMOOTHING_ALPHA` | 0.5 | — | fraction of mass a cell exports per pass |
-| `DEFAULT_TARGET_PER_CELL` | 12 | points/cell | auto-resolution target ($\approx 29\%$ Poisson scatter) |
+| `PEAK_TIE_RTOL` | $10^{-9}$ | — | cells within this relative distance of the maximum enhancement tie; the lowest index is `peakCell` |
+| `ASSIGN_TIE_TOL` | $10^{-12}$ | dot product | cells within this of a direction's best dot product are tied; the lowest index gets it (Step 5 (e)) |
+| `MAP_TEST_MIN_PAIRS` | 0.1 | expected coincident pairs | below it the map test reports no p-value / deviate (§6.3) |
+| `DEFAULT_TARGET_PER_CELL` | 12 | points/cell | auto-resolution floor: Auto averages $\ge 12$ per cell ($\le 29\%$ Poisson scatter) |
 | `recommended_frequency(max_frequency=)` | 24 | — | auto-resolution never exceeds this |
 | greedy-walk cap | 8 | rounds | measured need: 1 |
 
@@ -1173,7 +1559,7 @@ independently computed in each language — not a shared-golden parity suite.
 | Every centre self-assigns | $\nu = 7$ | $\nu = 7$ |
 | Unnormalised input accepted | yes | — |
 | **Monte-Carlo area cross-check** (assignment Voronoi fractions × $4\pi$ = analytic $\Omega_m$) | 200 000 dirs, $\nu = 3$, rtol 12 % | 60 000 dirs, $\nu = 2$, tol 15 % |
-| `recommendedFrequency` at 774 / 300 / 12000 = 2 / 2 / 10 | **pinned** | **pinned (shared verbatim)** |
+| `recommendedFrequency` at 774 / 300 / 12000 = 2 / 1 / 9, plus the exact boundary table | **pinned** | **pinned (shared verbatim)** |
 | Isotropic cloud: $\langle\mathcal{E}\rangle \approx 1$, significance < 1.5, \|anisotropy\| < 0.05 | 20 000 pts, $\nu=8$ | same |
 | Lobed cloud peaks on the long axis, $\mathcal{E}_{\text{peak}} > 2$, significance > 3 | yes | yes |
 | One-sided cloud: peak > 4× its antipode, $\mathcal{A} > 0.5$ and $> 3\mathcal{A}_{\text{null}}$ | yes | yes |
@@ -1194,20 +1580,46 @@ independently computed in each language — not a shared-golden parity suite.
 
 **What is *not* covered, and where the two could diverge.**
 
-- **No cross-engine golden test exists.** Nothing in CI compares Python output to JS output for
-  the same input. `recommendedFrequency(774|300|12000)` are the only values pinned in both
-  suites. In particular, if the two ever enumerated the icosahedron, its faces, the geodesic
-  lattice, or the angular ordering in a different order, `centers[i]` would mean different cells
-  in the two runtimes and **both suites would still pass** — every assertion above is
-  index-agnostic. (Contrast [autoScale.js](../../web_app/frontend/src/workers/autoScale.js), which
-  *is* parity-tested against committed Python goldens.)
+- **Cross-engine goldens (since the 1.0 audit).** The parallel suites above are index-agnostic
+  — if the two engines ever enumerated the icosahedron, its faces, the geodesic lattice or the
+  angular ordering in a different order, `centers[i]` would mean different cells and all of them
+  would still pass. [tests/test_orientation_fixes.py](../../tests/test_orientation_fixes.py) and
+  [orientationFixes.test.js](../../web_app/frontend/src/workers/__tests__/orientationFixes.test.js)
+  therefore share **pinned values verbatim**: the `recommendedFrequency` boundary table, the
+  $\pm$axis cells at $\nu = 3$, the cells of the 26 $\langle 100\rangle$/$\langle 110\rangle$/$\langle 111\rangle$
+  directions at six frequencies and an 8-well model's peak (Step 5 (e)), `neighbors` checksums at $\nu \in \{4,6,10,38\}$ and two $\nu = 38$
+  polygon starts, and — on an RNG-free "golden cloud" (a Fibonacci-spiral sphere plus a tight
+  lobe, built identically in both languages) — `peakCell`, the whole peak test, the map test
+  (including its exact null SD, skewness and expected pairs), the antipodal null and the Bingham
+  anisotropy test (both `count` and `amplitude2` weights) at several $(\nu, \text{smoothing})$
+  settings, to $10^{-9}$ relative. The map test's exact null moments are also pinned, as
+  `PEARSON_MOMENTS`, against full multinomial enumeration. The JS special functions are
+  additionally pinned against `scipy.special` values, including the non-half-integer shapes the
+  map reference uses.
 - **Measured for this document, they do agree.** Running both engines on identical inputs on the
   dev machine: at $\nu = 4$, `centers`, `areas`, `sizes`, `antipode` and even the *per-cell
-  polygon vertex order* match to $\le 9\times 10^{-16}$; on a shared 3000-point cloud at
+  polygon vertex order* match to $\le 9\times 10^{-16}$ (and, since the canonical cycle start of
+  §4.5, `neighbors` is identical and `polygons` agree to $\le 2\times10^{-14}$ at every
+  $\nu \le 38$ tested); on a shared 3000-point cloud at
   $\nu = 6$, `smoothing=2`, in both frames and both weightings, `counts` and `peakCell` are
-  bit-identical and every float field agrees to $\le 3\times 10^{-13}$
+  bit-identical and every float field agrees to $\le 3\times 10^{-13}$. `peakCell` is identical
+  in general only because of the tie rule below — without it the claim held for that smoothed
+  cloud but failed on tied maxima
   (`enhancement`, `zScore`, `density`, `cellMeanAmplitude`, `pcaAxes`, `orientationTensor`,
   `significance`, `antipodalAsymmetry`). This is a verification, not a regression guard.
+- **Tied maxima are resolved by one explicit rule.** Symmetry-equivalent cells have
+  mathematically equal $\Omega_m$ that differ in the last bits, *differently* in NumPy and JS
+  (e.g. at $\nu = 3$ cell 2's computed area is a few ulp larger than cell 10's in both engines,
+  but by different amounts elsewhere). With equal raw counts (smoothing 0, Auto) or equal smoothed
+  rationals, the enhancements tie exactly and a plain `argmax` / strict `>` scan picked the peak by
+  round-off: before the 1.0 audit 5–15 % of real sites at smoothing 0 reported a different
+  `peakDirection` in the two runtimes, up to 180° apart, and with smoothing the raw `peakZScore`
+  at the chosen cell could differ too. Both engines now take the **lowest index among cells with
+  $\mathcal{E}_m \ge \max\mathcal{E}\,(1 - 10^{-9})$** (`PEAK_TIE_RTOL`) and report the number of
+  tied cells as `peakTieCount`. $10^{-9}$ is six orders above the cross-engine round-off
+  ($\le 10^{-13}$) and far below any physical difference. Measured after the fix on both
+  GaNb₄Se₈ runs (104 sites × 7 settings, including Auto and smoothing 0 where 6–15 sites per
+  setting have tied maxima): `peakCell`, `peakTieCount` and `counts` identical in all 728 cases.
 - **Different eigensolvers.** Python uses LAPACK `numpy.linalg.eigh`; the JS port uses a 3×3
   cyclic **Jacobi** rotation (`jacobiEigenSymmetric`); the sweep budget, the *absolute*
   $10^{-18}$ convergence test and why Jacobi was chosen over a closed-form cubic are in
@@ -1226,18 +1638,20 @@ independently computed in each language — not a shared-golden parity suite.
   `vectors must be a numeric array with shape (N, 3)`; JS's `vectors.some(...)` passes trivially
   on an empty array, so the run reaches `no displacement vectors survive the amplitude cutoff`
   instead. Same class of failure, different message.
-- **One shape divergence.** With `element = "all"` the JS engine stamps `result.element = "all"`
-  onto the payload (`else if (element)` — the string is truthy,
-  [orientation.js:716-718](../../web_app/frontend/src/workers/orientation.js)) while Python omits the
-  key entirely (`elif element not in (None, "", "all")`,
-  [orientation.py:734](../../rmc_toolkits/orientation.py)). Both transports normalise `"all"` to
-  `null`/`None` before the call, so it is reachable only from a direct library call — but it does
-  mean "both produce the same JSON shape" is true of the wire, not of the functions.
+- **`element = "all"` has one shape in both engines and both transports.** Before the 1.0 audit
+  the JS engine stamped `result.element = "all"` onto a pooled payload (`else if (element)` — the
+  string is truthy) while Python omits the key (`elif element not in (None, "", "all")`), and only
+  the Flask route normalised `""`/`"all"` to `None` — the worker forwarded `data.element`
+  unchanged, so the divergence was reachable over the worker transport, not only from a library
+  call. Now `siteOrientationHistogram` treats `""`/`"all"` exactly like `null` (pooled, no
+  `element` key) and the worker's `kind: 'orientation'` branch normalises them to `null` before the
+  call, like `pca_orientation_endpoint`. (The worker's `kind: 'kde'` branch still forwards
+  `element` unchanged; `sitePcaKde` is outside this page.)
 - **Two places the tolerances already differ.** The $\sum\Omega_m = 4\pi$ assertion is a mixed
   absolute+relative bound in Python (`np.isclose`'s default `atol = 1e-8` is included) and purely
   relative in JS — see §4.6. And the eigensolvers differ, as above.
-- **Deliberately identical, easy to break:** the half-to-even rounding in `recommendedFrequency`
-  (§3), the stable tie-break in the largest-remainder lattice rounding, the strict `< 0` face
+- **Deliberately identical, easy to break:** the exact integer boundary test in
+  `recommendedFrequency` (§3), the stable tie-break in the largest-remainder lattice rounding, the strict `< 0` face
   winding test (§4.1), the relative adjacency tolerance $10^{-9}\max(\ell, 1)$ (§4.1), the
   first-maximum tie-break in the face `argmax`, the `argmin |n|` choice of tangent reference axis,
   and the 8-round walk cap. Each of these is a place where an "obvious simplification" in one
@@ -1263,7 +1677,7 @@ independently computed in each language — not a shared-golden parity suite.
    that `peakCell`/`peakEnhancement` are argmax/value over the **smoothed** map while
    `peakZScore` is the **raw** $z$ at that cell, and `emptyFraction` is a raw-count quantity that
    does not shrink under smoothing.
-4. **`amplitudeCutoff` under-reports, and `min_amplitude` is unvalidated.** It is
+4. **`amplitudeCutoff` under-reports, and a negative `min_amplitude` is accepted.** It is
    `max(threshold, 0)`, so with no cutoff requested it reads 0 even though points below
    $10^{-9}$ Å were dropped — `usedPoints` can be less than `totalPoints` with
    `amplitudeCutoff == 0`. A **negative** `min_amplitude` is likewise accepted, has no effect, and
@@ -1277,19 +1691,30 @@ independently computed in each language — not a shared-golden parity suite.
    The changelog records only the unqualified phrase "brute-force-verified", without naming
    frequencies. The walk is also hard-capped at 8 rounds, so a hypothetical pathological tiling
    would silently return a near-nearest cell rather than fail.
-6. **Boundary ties are resolved arbitrarily.** A direction exactly equidistant from two centres
-   lands in whichever the walk reaches first. Measure-zero for real data; it is why the
-   brute-force parity tests assert $> 99.99\%$ rather than 100 %.
-7. **Over-binning is still possible on purpose — and it silently disables the asymmetry flag.**
+6. **Boundary ties are resolved by rule: lowest index, centrosymmetrically.** A direction exactly
+   equidistant from two or three centres lands in the lowest-index tied cell of the resolved
+   hemisphere (Step 5 (e)). The other hemisphere is its exact antipodal image (Step 5 (d)). Ties
+   therefore never manufacture a $+\mathbf{u}/-\mathbf{u}$ imbalance, and Flask and the browser
+   resolve them identically. Ties are measure-zero for real (noisy) data but *not* for idealised
+   inputs: the crystal axes at odd $\nu$, $\langle 111\rangle$ whenever 3 does not divide $\nu$,
+   and $\langle 110\rangle$ at some $\nu$. Which tied cell wins is a convention, so for an
+   idealised well model the per-cell counts, and the reported peak cell, reflect it. The
+   brute-force parity tests on random directions assert $> 99.99\%$ rather than 100 %, which
+   leaves a margin for directions within $10^{-12}$ of a boundary.
+7. **Over-binning is still possible on purpose — it costs power, not calibration.**
    The UI defaults to a fixed $\nu = 10$, not to Auto, so a site with only a few hundred copies is
    over-binned out of the box (1002 cells, $< 1$ point per cell); Auto would have picked $\nu = 1$
-   or 2 for the same data (§3). The 2× default smoothing hides this visually. Worse, because
-   $\mathcal{A} \le 1$ while $\mathcal{A}_{\text{null}} = \sqrt{C/\pi N}$ is not bounded, the
-   `A > 3·null` red flag **cannot fire at all** unless $N > 9C/\pi$ — 2 871 copies at $\nu = 10$
-   (§7). A perfectly one-sided 216-point site at the default resolution reports
-   $\mathcal{A} = 1.000$ against a floor of 1.215 and is displayed as unremarkable. Always check
-   `significance` (should be $\gg 1$) and the hover `z` before believing a lobe, and switch the
-   Resolution control to *Auto* — for both the map **and** the antipodal readout.
+   (a few hundred copies) or 2 (~1000 copies) for the same data (§3). The 2× default smoothing
+   hides this visually. The calibrated readouts stay honest there — the peak test, the map test
+   (exact-moment reference, withheld below 0.1 expected coincident pairs) and the conditional
+   asymmetry null (§6.3, §7) all hold their false-alarm rates at $\nu = 10$ — but a
+   real lobe spread over many sparsely filled cells is much harder to detect than on Auto. (Before
+   the 1.0 audit the over-binned default also silently disabled the asymmetry flag: its old null
+   $\sqrt{C/\pi N}$ exceeded 1/3, so `A > 3·null` could not fire below 2 871 copies at
+   $\nu = 10$.) Before believing a lobe, read the calibrated `peakSignificance` (§6.3) — **not** the hover `z`, which
+   is a local, uncorrected value and routinely reads 3–5 on pure noise at the default resolution —
+   and prefer the Resolution control's *Auto*, where cells hold enough atoms for a real lobe to
+   reach significance at all.
 8. **The orientation tensor is antipodally blind, like the ellipsoid.**
    $\mathbf{u}\mathbf{u}^{\mathsf T} = (-\mathbf{u})(-\mathbf{u})^{\mathsf T}$, so a "cluster"
    in $\mathbf{T}$ means a preferred *axis*, not a preferred *direction*. Only the map itself and
@@ -1334,6 +1759,15 @@ independently computed in each language — not a shared-golden parity suite.
     `significance` and `antipodalAsymmetry` all change for identical data (Step 2, detail 5).
     Do not compare per-cell numbers across frames. And below four points `frame="pca"` is
     silently the identity, i.e. exactly the cartesian map, with nothing in the payload saying so.
+15. **Directions are measured from the configuration's own site mean** (Step 1, "The reference
+    point"). A coherent off-centring of every copy is absorbed by the mean and is invisible to the
+    map, to $\mathcal{A}$ and to the tensor; a significant $\mathcal{A}$ means skewness about the
+    mean (odd-order anharmonicity, unequal well occupation), not "the site is off-centre"; and with
+    partial off-centring the peak can point *away* from the displacement. Compare `siteFractional`
+    with the ideal position for the coherent part.
+16. **The PCA frame does not superimpose one-sided features across sites** (Step 2, "Axis
+    signs"). PC axis signs follow a lab-frame convention, so symmetry-related sites can put the
+    same one-sided lobe on opposite poles. Compare asymmetric maps in the crystal frame.
 
 
 ## Displacement Directions — the sphere view, axis views, and site picker
@@ -1374,7 +1808,7 @@ recalled in one line where the display depends on it.
 | Flask API | a **typed backend directory** (`?dir=…`), no local file loaded | `GET /api/pca/orientation` in [app.py](../../web_app/backend/app.py) → `site_orientation_histogram` in [orientation.py](../../rmc_toolkits/orientation.py) | Python, source of truth |
 
 The two engines are written to agree cell-for-cell (same construction order, so cell indices match;
-`recommendedFrequency` was fixed to round half-to-even like Python's `round()`). Everything in *this*
+`recommendedFrequency` settles its boundary with the same exact integer test as Python). Everything in *this*
 section — mesh, relief, colours, cameras, picker — is browser-side JavaScript/Three.js in both
 modes; the backend never renders anything for this page.
 
@@ -1926,15 +2360,18 @@ i.e. the CSS `left` is written to 2 decimal places, marking the isotropic level.
 $v_{\max} \le 1$ — a map with no cell above chance anywhere — the tick is omitted rather than pinned
 to the right edge.
 
-**One formatter behind every printed number.** The right-hand colorbar label, all four summary
+**One formatter behind every printed number.** The right-hand colorbar label, the summary
 statistics and three of the four tooltip lines go through the module-local
 
 ```js
 const numberFormat = (value, digits = 2) => (Number.isFinite(value) ? value.toFixed(digits) : '—');
 ```
 
-([`OrientationView.jsx:50-51`](../../web_app/frontend/src/components/OrientationView.jsx); the host page
-has its own copy with `digits = 4` for the site labels). So **any non-finite value — `NaN`,
+([`OrientationView.jsx`](../../web_app/frontend/src/components/OrientationView.jsx); the host page
+has its own copy with `digits = 4` for the site labels). The calibrated deviates (`…Significance`)
+go through its sibling `sigmaFormat`, which prints `N.Nσ` for a positive deviate, **"not
+significant"** for a deviate $\le 0$ (tail probability $\ge \tfrac12$), and `—` for a non-finite
+one. So **any non-finite value — `NaN`,
 `Infinity`, a missing field — prints as an em-dash `—`, never as `NaN`**. The tables below give only
 the digit counts; the `—` fallback applies to every one of them. The two exceptions are noted where
 they occur: the tooltip's atom count is printed raw, and the tick position uses `.toFixed(2)`
@@ -1950,25 +2387,24 @@ isotropic expectation.
 
 | Readout | Engine field | Definition | Format |
 | --- | --- | --- | --- |
-| `peak N.NN× at [x, y, z] (z = N.N)` | `peakEnhancement`, `peakDirection`, `peakZScore` | the cell with the largest `enhancement`; its centre direction and its raw-count Poisson $z$ | 2 dp, direction 2 dp, $z$ 1 dp |
-| `anisotropy N.NN` | `orientationAnisotropy` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue. $T = I/3$ for a uniform sphere, so the value is **0 for isotropic, 2 for a perfect single axis**. Computed from the vectors, not the bins, so it is resolution-independent. | 2 dp |
-| `± asymmetry N.NN (noise floor N.NN)` | `antipodalAsymmetry`, `antipodalAsymmetryNull` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The floor is the level pure Poisson noise alone produces, $\sqrt{C/(\pi N)}$, from $\mathbb E\lvert X-Y\rvert \approx 2\sqrt{m/\pi}$ for two iid Poisson($m$) cells. | both 2 dp |
-| `map significance N.Nσ` | `significance` | $\sqrt{\big\langle z_c^2 \big\rangle_c}$ with $z_c = (n_c - e_c)/\sqrt{e_c}$ — the RMS per-cell Poisson $z$ against the isotropic null. **≈1 means the whole map is consistent with counting noise**; well above 1 means real directional structure. | 1 dp |
+| `peak N.NN× at [x, y, z] · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakTieCount`, `peakSignificance` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction; and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 1.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
+| `anisotropy N.NN (isotropic ≈ N.NN) · N.Nσ` | `orientationAnisotropy`, `orientationAnisotropyNull`, `orientationAnisotropySignificance` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue: **2 for a perfect single axis, and 0 for isotropy only as $N \to \infty$** — a finite isotropic sample reads $\approx 1.6/\sqrt{N_{\text{eff}}}$, printed in brackets; the σ is Bingham's $\chi^2_5$ test of isotropy on the same tensor (engine §8). Computed from the vectors, not the bins, so it is resolution-independent. Until the 1.0 audit the InfoBadge said "0 for an isotropic direction distribution" and no reference was shown | 2 dp, σ 1 dp |
+| `± asymmetry N.NN (symmetric null N.NN ± N.NN) · N.Nσ` | `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`, `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The null is its exact mean ± SD if every antipodal pair's atoms had split at random between $\pm\mathbf u$ (same pair totals, engine §7), and $z = (\mathcal{A} - \text{null})/\text{SD}$. Until the 1.0 audit the slot printed "(noise floor $\sqrt{C/\pi N}$)", an isotropic Gaussian-limit mean that could exceed 1 | values 2 dp, σ 1 dp |
+| `map significance N.Nσ` | `mapSignificance` (InfoBadge also prints `mapChiSquare`, `mapDegreesOfFreedom`, `mapNullSd`, and `mapExpectedPairs` when withheld) | Pearson's $X^2 = \sum_c z_c^2$, $z_c = (n_c - e_c)/\sqrt{e_c}$, against a gamma curve matched to its exact isotropic mean, SD and skewness, as a one-sided normal deviate (engine §6.3); "not significant" when $\le 0$, **"— (too sparse)"** when the engine withholds it (fewer than 0.1 atom pairs expected to share a cell). Until the 1.0 audit this slot printed the RMS of $z_c$ with a σ unit, whose noise value is $1 \pm 1/\sqrt{2C}$ — "1.4σ" for a cloud with every atom in one hemisphere. The first audit fix referred $X^2$ to $\chi^2_{C-1}$, which read noise above 3σ 13–20× too often on sparse maps (27 copies at $\nu = 10$, 64 at $\nu = 24$), while the InfoBadge promised the tail ran only "slightly heavy" | σ 1 dp |
 
-The only *client-side* logic in the strip is the red flag:
+The red flag is **not** computed in the browser any more:
 
 ```js
-const asymmetrySignificant = result
-  ? result.antipodalAsymmetry > 3 * result.antipodalAsymmetryNull
-  : false;
+const asymmetrySignificant = Boolean(result?.antipodalAsymmetrySignificant);
 ```
 
-which adds `.is-flagged` (colour `var(--danger)`) to the asymmetry stat. The factor **3** is a UI
-constant ([`OrientationView.jsx:447`](../../web_app/frontend/src/components/OrientationView.jsx)), not
-an engine threshold. A genuine +u/−u imbalance is the headline finding of this page — it is exactly
-the physics (static off-centring, odd-order anharmonicity) that a covariance ellipsoid is
-structurally blind to — which is why it gets the only coloured state in the strip. See Caveat 1 for
-when that flag cannot fire at all.
+reads the engine's flag ($z > 3$ null SDs, `ASYMMETRY_FLAG_SIGMA`) and adds `.is-flagged` (colour
+`var(--danger)`) to the asymmetry stat. Until the 1.0 audit the page computed
+`antipodalAsymmetry > 3 * antipodalAsymmetryNull` itself — three times the null *mean*, not its
+spread — which could not fire at the default resolution (engine §7). A genuine +u/−u imbalance is the headline finding of this page — it is exactly
+the physics (skewness about the site mean: odd-order anharmonicity, unequally occupied opposite
+off-centre wells) that a covariance ellipsoid is structurally blind to — though not a coherent
+off-centring of every copy, which moves the site mean and is invisible here (engine Step 1) — which is why it gets the only coloured state in the strip.
 
 The strip does **not** show the resolution actually used, the number of vectors that survived the
 amplitude cut, or the tensor's eigenvectors; see Step 14.
@@ -2030,7 +2466,7 @@ shows four lines:
 | --- | --- | --- |
 | `[x, y, z]` | `result.centers[cell]`, 2 dp, via `formatDirection` | the **cell centre**, not the ray direction |
 | `N.NN× isotropic` | `result.enhancement[cell]`, 2 dp | smoothed if smoothing > 0 |
-| `n atoms · z = ±N.N` | `result.counts[cell]` **printed raw — no `numberFormat`, so no `—` fallback and no rounding**; `result.zScore[cell]` 1 dp | **raw, unsmoothed counts** |
+| `n atoms · local z = ±N.N` | `result.counts[cell]` **printed raw — no `numberFormat`, so no `—` fallback and no rounding**; `result.zScore[cell]` 1 dp — a **local, uncorrected** Gaussian $z$ (one cell of $C$, Gaussian-read at small expected counts), labelled as such since the 1.0 audit; it is not a significance (engine §6.3) | **raw, unsmoothed counts** |
 | `⟨\|Δr\|⟩ = N.NNN Å` | `result.cellMeanAmplitude[cell]`, 3 dp; shown only when > 0 | smoothed if smoothing > 0 |
 
 Two honest notes on this readout:
@@ -2462,13 +2898,16 @@ canvas alone:
 
 The engines return considerably more than this page shows. From the orientation response, the UI
 reads only `polygons`, `enhancement`, `vmax`, `cellMeanAmplitude`, `meanAmplitude`, `centers`,
-`counts`, `zScore`, `cellCount`, `peakEnhancement`, `peakDirection`, `peakZScore`,
-`orientationAnisotropy`, `antipodalAsymmetry`, `antipodalAsymmetryNull`, `significance`, `weight`,
+`counts`, `zScore`, `cellCount`, `peakEnhancement`, `peakDirection`, `peakSignificance`, `peakTieCount`,
+`orientationAnisotropy`, `orientationAnisotropyNull`, `orientationAnisotropySignificance`,
+`antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`,
+`antipodalAsymmetryZ`, `antipodalAsymmetrySignificant`, `mapSignificance`, `mapChiSquare`,
+`mapDegreesOfFreedom`, `mapNullSd`, `mapExpectedPairs`, `weight`,
 `smoothing`, `browserOrientation`, and `pcaAxes` (fallback rods only). **Never rendered anywhere:**
 
 | Field | What it is | Why its absence matters |
 | --- | --- | --- |
-| `recommendedFrequency` | the ν the ~12-per-cell guard would choose | With **Auto** selected the resolution control just reads "Auto" and no panel shows the ν or cell count that was actually used. The 2026-07-24 changelog removed the "N cells (ν=…)" summary line as "already in the Resolution control" — true for a manual ν, **false for Auto**. |
+| `recommendedFrequency` | the ν the ≥ 12-per-cell guard would choose | With **Auto** selected the resolution control just reads "Auto" and no panel shows the ν or cell count that was actually used. The 2026-07-24 changelog removed the "N cells (ν=…)" summary line as "already in the Resolution control" — true for a manual ν, **false for Auto**. |
 | `usedPoints`, `rejectedPoints`, `amplitudeCutoff` | vectors surviving the `Min \|Δr\|` cut, and the Å threshold that quantile resolved to | The header prints `selectedEllipsoid.count` — **all** atoms at the site — so raising `Min \|Δr\|` changes the map without changing the displayed atom count, and the resolved Å cutoff is never shown. |
 | `orientationTensor`, `orientationEigenvalues`, `orientationAxes` | $\langle \mathbf u\mathbf u^{\mathsf T}\rangle$, its eigenvalues, its canonicalised axes | Only the scalar $3\lambda_1 - 1$ is shown. The tensor's *axes* go through the same `_eigen_decomposition` as the site's PCA axes and are therefore directly comparable to them (engine section, Step 8) — and are never drawn or tabulated. The Woodcock girdle-vs-rod reading the three eigenvalues support is unavailable in the UI for the same reason. |
 | `density`, `mass`, `areas`, `expected`, `sizes`, `antipode`, `neighbors` | per-cell engine internals | `neighbors` is requested (via `geometry: true`) and transferred on every request, then discarded. |
@@ -2520,12 +2959,12 @@ destructure.
 | Vertex key rounding | 9 decimals | `vertexKey`, `orientationSphere.js:36` |
 | Negligible amplitude | $10^{-9}$ Å, strict `>` | `NEGLIGIBLE_AMPLITUDE`, `workers/orientation.js:26` |
 | Engine frequency bounds | `MIN_FREQUENCY = 1`, `MAX_FREQUENCY = 64` (UI reaches only 2–24) | `workers/orientation.js:24-25` |
-| Auto-frequency cap | `maxFrequency = 24`, `targetPerCell = 12` | `recommendedFrequency`, `workers/orientation.js:413` |
+| Auto-frequency cap | `maxFrequency = 24`, `targetPerCell = 12` (a floor on the average occupancy) | `recommendedFrequency`, `workers/orientation.js` |
 | LUT | 5 anchors → 256-entry `Uint8ClampedArray`, index clamped to `[0, 255]`, unknown name → viridis | `colormaps.js:27-57` |
 | Outline inflation | 1.002 | `OrientationView` call site |
 | Outline material | `0x10151c`, opacity 0.35 | `OrientationView` |
 | Colorbar stops | 24 (25 colours) | `colorbarGradient` call |
-| Asymmetry flag | `antipodalAsymmetry > 3 × antipodalAsymmetryNull` | `OrientationView.jsx:447` |
+| Asymmetry flag | engine `antipodalAsymmetrySignificant` ($z > 3$ null SDs, `ASYMMETRY_FLAG_SIGMA`) | engines; read by `OrientationView` |
 | Sphere mount fallback | 640 × 520 px (dead in practice — see Step 1) | `OrientationView.jsx:226-227` |
 | Sphere camera | FOV 45°, near 0.01, far 100, default `(2.5, 1.85, 2.5)` | scene effect |
 | OrbitControls | damping 0.12, `enablePan: false` | both panels |
@@ -2563,28 +3002,28 @@ destructure.
 
 ### Caveats
 
-**1. The shipped default resolution over-bins by the engine's own criterion — and that silently
-disables one readout.** The `Resolution` default is ν = 10 (1002 cells), chosen for a legible picture
-together with the 2× smoothing default. The engine's own guard, `recommendedFrequency`, targets ~12
-points per cell; for a typical site with ~1000 copies (one per unit cell of a 10×10×10 supercell) it
-returns **ν = 3** (92 cells). At ν = 10 the expected count per cell is ≈ 1. Three consequences:
+**1. The shipped default resolution over-bins by the engine's own criterion.** The `Resolution` default is ν = 10 (1002 cells), chosen for a legible picture
+together with the 2× smoothing default. The engine's own guard, `recommendedFrequency`, keeps at least
+12 points per cell; for a typical site with ~1000 copies (one per unit cell of a 10×10×10 supercell) it
+returns **ν = 2** (42 cells). At ν = 10 the expected count per cell is ≈ 1. Three consequences:
 
 * The colour field is only legible because of the smoothing; the raw map at ~1 count/cell is Poisson
   confetti. Turning smoothing to 0 at the default ν shows that directly.
-* Per-cell `zScore` and the `map significance` (RMS of z) are computed from raw counts against
-  $\text{expected} \approx 1$, so `significance` sits near 1 (its pure-noise value) unless the
-  anisotropy is strong. The readout is **resolution-dependent** and is not comparable between two
-  maps at different ν.
-* **The ± asymmetry flag can be unreachable.** The null floor is
-  $\text{null} = \sqrt{C/(\pi N)}$ with $C$ cells and $N$ surviving vectors, and the UI flags red only
-  when $\text{asymmetry} > 3\,\text{null}$. But `antipodalAsymmetry` is bounded above by 1 by
-  construction. At ν = 10 and $N = 1000$, $\text{null} = \sqrt{1002/(\pi\cdot1000)} = 0.565$ and the
-  threshold is $1.695 > 1$ — **no possible data can trigger the flag**. Reachability requires
-  $3\sqrt{C/(\pi N)} < 1$, i.e. $C < \pi N/9 \approx 0.35\,N$; at $N = 1000$ that means $C < 349$, and
-  the largest tiling the Resolution dropdown offers under that bound is **ν = 5** ($C = 252$), since
-  ν = 6 already gives 362. Users looking for off-centring must lower the resolution (or select a site
-  with many more copies) before the flag means anything. The numeric value and its floor are always printed, so
-  the information is on screen — only the red flag is dead at the default.
+* Per-cell `zScore` and the map test are computed from raw counts against
+  $\text{expected} \approx 1$ or less. The calibrated `map significance` is valid there: it is
+  referred to the exact isotropic mean, SD and skewness of $X^2$, so pure noise exceeds 3σ at the
+  nominal rate even at 0.03 atom per cell (engine §6.3), and it is withheld ("— (too sparse)")
+  below 0.1 expected coincident pairs. But a smooth real anisotropy spread over a thousand cells
+  has little power against a thousand degrees of freedom, and on a very sparse map $X^2$ mostly
+  counts atoms sharing cells, i.e. clustering. The readout is **resolution-dependent**
+  and is not comparable between two maps at different ν.
+* **The ± asymmetry flag used to be unreachable here.** Before the 1.0 audit the null floor was
+  $\sqrt{C/(\pi N)}$ and the UI flagged red only when $\text{asymmetry} > 3\,\text{null}$; with
+  `antipodalAsymmetry` $\le 1$ that was impossible at ν = 10 for $N = 1000$ (threshold 1.695). The
+  engine now reports the exact inversion-symmetric null given the pair totals and flags
+  $z > 3$ null SDs (engine §7), which fires at the default resolution — a hemisphere-only
+  216-copy cloud reads $z = 6.3$ — while centrosymmetric clouds trip it about 0.1–0.2 % of the
+  time.
 
 **2. Every surviving vector is binned — there is no point budget, and no RNG.** Unlike the PCA-KDE
 path, which explicitly caps its fit with `subsample(points, maxFitPoints, rngSeed)`
@@ -2633,8 +3072,8 @@ neither `reconstructed` nor `copiesPerCell`.
 
 **6. Nothing on this page is a publication number.** The map is a visualisation of a binned, usually
 smoothed histogram. The Python `orientation.py` is the source of truth; the browser port is asserted
-to agree (same construction order, half-to-even rounding of the auto frequency, brute-force-verified
-assignment), but the browser path is a *visualisation* path in the same sense as the static-mode KDE.
+to agree (same construction order, the same exact boundary test for the auto frequency,
+brute-force-verified assignment), but the browser path is a *visualisation* path in the same sense as the static-mode KDE.
 If a number is going into a paper, re-derive it from the package.
 
 **7. Frames.** In the Crystal frame the sphere lives in the shared Cartesian Å basis — **not** in
@@ -2647,7 +3086,9 @@ and the "c up" of the "down a" view is only the component of c perpendicular to 
 the sphere's own $x,y,z$ *are* PC1/2/3 by construction (the engine rotated the directions), so the
 crystal rods are correctly not drawn — but that also means a map in the PCA frame carries no
 crystallographic reference at all, and for a near-isotropic site the PCA frame itself is arbitrary
-within its degenerate subspace (engine section, caveat 9).
+within its degenerate subspace (engine section, caveat 9). Its axis *signs* are a lab-frame
+convention too, so two symmetry-related sites can show the same one-sided lobe on opposite poles
+in the PCA frame (engine section, caveat 16) — compare asymmetric maps in the Crystal frame.
 
 **8. The mini panes can go stale**, and in the no-cell-metadata case their labels (`x, y, z`) disagree
 with the rods actually drawn (the site's PC axes — unless the site has fewer than 4 vectors, in which
