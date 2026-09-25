@@ -40,6 +40,26 @@ except AttributeError:  # pragma: no cover - numpy < 2.0
 _SINE_CHUNK = 512
 
 
+def _increasing_grid(x: np.ndarray, name: str) -> np.ndarray:
+    """Return ``x`` as a 1-D float array, or raise unless strictly increasing.
+
+    The trapezoid rule integrates with signed panel widths ``x[i] - x[i-1]``: a
+    descending grid silently negates every integral (and swaps Qmin/Qmax in the
+    low-Q correction and the Lorch window), a repeated point gives a zero-width
+    panel, and a non-monotone grid folds panels back over each other. Grids with
+    fewer than two points (an empty filter section) integrate to 0 and pass.
+    """
+    x = np.asarray(x, dtype=float)
+    if x.ndim != 1:
+        raise ValueError(f"the {name} grid must be one-dimensional, got shape {x.shape}")
+    if x.size > 1 and not (np.all(np.isfinite(x)) and np.all(np.diff(x) > 0)):
+        raise ValueError(
+            f"the {name} grid must be strictly increasing (and finite); sort it "
+            "and merge or remove duplicate points first"
+        )
+    return x
+
+
 # ---------------------------------------------------------------------------
 # Algebraic conversions (pure, grid-preserving)
 # ---------------------------------------------------------------------------
@@ -100,6 +120,40 @@ def density_line(r: np.ndarray, rho0: float, b_avg_sq: float) -> np.ndarray:
     return -4.0 * np.pi * float(rho0) * float(b_avg_sq) * np.asarray(r, dtype=float)
 
 
+#: Below this |v| = |Q0 r| the unwindowed low-Q moments use their Taylor series.
+_SERIES_V = 0.5
+_SERIES_TERMS = 9
+
+
+def _moment_series(v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """``K(v) = int_0^1 t^2 sin(vt) dt`` and ``J(v) = int_0^1 t sin(vt) dt`` for small |v|.
+
+    ``K = sum_n (-1)^n v^(2n+1) / ((2n+1)! (2n+4))``,
+    ``J = sum_n (-1)^n v^(2n+1) / ((2n+1)! (2n+3))`` (9 terms: < 1e-20 relative
+    for |v| < 0.5).
+    """
+    v = np.asarray(v, dtype=float)
+    k_sum = np.zeros_like(v)
+    j_sum = np.zeros_like(v)
+    power = v.copy()  # (-1)^n v^(2n+1) / (2n+1)!
+    for n in range(_SERIES_TERMS):
+        k_sum += power / (2 * n + 4)
+        j_sum += power / (2 * n + 3)
+        power = -power * v * v / ((2 * n + 2) * (2 * n + 3))
+    return k_sum, j_sum
+
+
+def _sinc(v: np.ndarray) -> np.ndarray:
+    """``sin(v)/v`` with the limit 1 at v = 0 (unnormalized sinc)."""
+    v = np.asarray(v, dtype=float)
+    return np.divide(np.sin(v), v, out=np.ones_like(v), where=v != 0)
+
+
+def _sinc_head(v: np.ndarray) -> np.ndarray:
+    """``(v sin v + cos v - 1)/v^2 = sinc(v) - sinc(v/2)^2 / 2``, cancellation-free (1/2 at 0)."""
+    return _sinc(v) - 0.5 * _sinc(0.5 * np.asarray(v, dtype=float)) ** 2
+
+
 def lorch_window(q: np.ndarray, qmax: float) -> np.ndarray:
     """Lorch modification ``sin(pi Q/Qmax) / (pi Q/Qmax)`` (pystog-compatible)."""
     x = np.pi * np.asarray(q, dtype=float) / float(qmax)
@@ -113,17 +167,20 @@ def lorch_window(q: np.ndarray, qmax: float) -> np.ndarray:
 def sine_transform(x: np.ndarray, y: np.ndarray, xout: np.ndarray) -> np.ndarray:
     """Trapezoid-rule ``integral y(x) sin(x * xout) dx`` for each point of ``xout``.
 
+    ``x`` must be strictly increasing (``ValueError`` otherwise); ``xout`` may
+    have any shape (a scalar included) and the result has the same shape.
     Chunked over the output grid to bound the kernel-matrix memory.
     """
-    x = np.asarray(x, dtype=float)
+    x = _increasing_grid(x, "integration (x)")
     y = np.asarray(y, dtype=float)
     xout = np.asarray(xout, dtype=float)
-    out = np.empty_like(xout)
-    for start in range(0, xout.size, _SINE_CHUNK):
-        chunk = xout[start : start + _SINE_CHUNK]
+    flat = xout.ravel()
+    out = np.empty_like(flat)
+    for start in range(0, flat.size, _SINE_CHUNK):
+        chunk = flat[start : start + _SINE_CHUNK]
         kernel = y[np.newaxis, :] * np.sin(np.outer(chunk, x))
         out[start : start + chunk.size] = _trapezoid(kernel, x=x, axis=1)
-    return out
+    return out.reshape(xout.shape)
 
 
 def fq_to_gpdf(
@@ -142,7 +199,7 @@ def fq_to_gpdf(
     ``[0, Qmin]`` range, extrapolating to ``S(0) = s0_target`` (see
     :func:`omitted_low_q_correction`).
     """
-    q = np.asarray(q, dtype=float)
+    q = _increasing_grid(q, "Q")
     fq = np.asarray(fq, dtype=float)
     weighted = fq * lorch_window(q, q[-1]) if lorch else fq
     gpdf = (2.0 / np.pi) * sine_transform(q, weighted, r)
@@ -183,7 +240,7 @@ def low_q_correction_basis(
     Eq. 21 target ``S(0) = 1 - <b^2>/<b>^2`` is O(-10), and using it here
     instead of 0 removes an O(1) bias in the low-r transform.
     """
-    q = np.asarray(q, dtype=float)
+    q = _increasing_grid(q, "Q")
     r = np.asarray(r, dtype=float)
     if q[0] == 0:
         # Data starting at Q = 0 omit nothing — the [0, q[1]] panel is already
@@ -194,32 +251,34 @@ def low_q_correction_basis(
 
     v = q0 * r
     if lorch:
+        # With the Lorch window M(Q) = sin(aQ)/(aQ), a = pi/qmax, the integrals
+        # split into cos((r -/+ a) Q) terms. Written with v = Q0 (r -/+ a) as
+        #   sin(v)/(r-a) = Q0 sinc(v),
+        #   (v sin v + cos v - 1)/(r-a)^2 = Q0^2 [sinc(v) - sinc(v/2)^2 / 2]
+        # (cos v - 1 = -2 sin^2(v/2)) they carry no subtraction of O(1) terms
+        # and no removable singularity at r = a, so no patch is needed: the
+        # previous (cos v - 1)/(r - a)^2 form lost every digit within ~1e-6 A of
+        # pi/qmax (a sign-flipped coefficient at r = 0.11 for qmax = 28.56).
         a = np.pi / q[-1]
         vm = q0 * (r - a)
         vp = q0 * (r + a)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            f1 = (
-                (vm * np.sin(vm) + np.cos(vm) - 1.0) / (r - a) ** 2
-                - (vp * np.sin(vp) + np.cos(vp) - 1.0) / (r + a) ** 2
-            ) / (2.0 * a)
-            f2 = (np.sin(vm) / (r - a) - np.sin(vp) / (r + a)) / (2.0 * a)
-        # Analytic limits at the removable singularity r == pi/qmax.
-        singular = np.isclose(r, a, rtol=0.0, atol=1e-9 * max(1.0, a))
-        if np.any(singular):
-            vp_a = 2.0 * a * q0
-            f1_lim = (
-                q0**2 / 2.0
-                - (vp_a * np.sin(vp_a) + np.cos(vp_a) - 1.0) / (2.0 * a) ** 2
-            ) / (2.0 * a)
-            f2_lim = (q0 - np.sin(vp_a) / (2.0 * a)) / (2.0 * a)
-            f1 = np.where(singular, f1_lim, f1)
-            f2 = np.where(singular, f2_lim, f2)
+        f1 = q0**2 * (_sinc_head(vm) - _sinc_head(vp)) / (2.0 * a)
+        f2 = q0 * (_sinc(vm) - _sinc(vp)) / (2.0 * a)
     else:
+        # f1 = int_0^Q0 Q^2 sin(Qr) dQ = Q0^3 K(v), f2 = int_0^Q0 Q sin(Qr) dQ
+        # = Q0^2 J(v), v = Q0 r. The closed forms cancel O(1) terms down to
+        # O(v^3): below |v| = 0.5 the Taylor series is used instead (they were
+        # wrong by 100 % or more for v < ~1e-3, e.g. Q0 = 0.01 on a 0.01 A grid).
+        small = np.abs(v) < _SERIES_V
         with np.errstate(divide="ignore", invalid="ignore"):
             f1 = (2.0 * v * np.sin(v) - (v * v - 2.0) * np.cos(v) - 2.0) / r**3
             f2 = (np.sin(v) - v * np.cos(v)) / r**2
-        f1 = np.where(r == 0.0, 0.0, f1)
-        f2 = np.where(r == 0.0, 0.0, f2)
+        if np.any(small):
+            k_series, j_series = _moment_series(v[small])
+            f1 = np.where(small, 0.0, f1)
+            f2 = np.where(small, 0.0, f2)
+            f1[small] = q0**3 * k_series
+            f2[small] = q0**2 * j_series
     coef = (2.0 / np.pi) * f1 / q0
     const = (2.0 / np.pi) * f2
     if s0_target != 0.0:
@@ -274,40 +333,90 @@ def fourier_filter(
     Returns ``(sq_filtered, sq_ft, g_filtered)`` where ``sq_ft`` is the
     S(Q)-convention correction section (the classic stog ``ft.dat``), so that
     ``sq_filtered = sq - (sq_ft - 1)``.
+
+    The ``r`` grid must be strictly increasing and non-negative; it may start
+    at ``r = 0``: the section integrand ``4 pi rho0 r g`` is evaluated as
+    ``G_PDF + 4 pi rho0 r`` (no division by r), and ``g_filtered`` at ``r = 0``
+    is the continuous extension ``1 + G_PDF'(0) / (4 pi rho0)`` of the
+    computed g(r) (:func:`gpdf_slope_at_zero`), not ``0/0``.
     """
-    q = np.asarray(q, dtype=float)
+    q = _increasing_grid(q, "Q")
     sq = np.asarray(sq, dtype=float)
-    r = np.asarray(r, dtype=float)
+    r = _increasing_grid(r, "r")
     if q[0] <= 0:
         raise ValueError(
             "fourier_filter requires a strictly positive Q grid (the S(Q) "
             "conversions divide by Q); crop Q <= 0 first"
         )
+    if r.size and r[0] < 0:
+        raise ValueError("fourier_filter requires a non-negative r grid")
 
+    options = dict(lorch=lorch, low_q_correction=low_q_correction, s0_target=s0_target)
     fq = sq_to_fq(q, sq)
-    gpdf = fq_to_gpdf(
-        q, fq, r, lorch=lorch, low_q_correction=low_q_correction, s0_target=s0_target
-    )
-    g = gpdf_to_g(r, gpdf, rho0)
+    gpdf = fq_to_gpdf(q, fq, r, **options)
 
     section = r <= float(cutoff)
     # pystog shifts the section by +1 and re-derives G_PDF, which reduces to
-    # transforming 4 pi rho0 r * g(r) over the section.
+    # transforming 4 pi rho0 r * g(r) = G_PDF + 4 pi rho0 r over the section
+    # (the identity needs no division by r, so r = 0 is harmless).
     fq_ft = gpdf_to_fq(
         r[section],
-        4.0 * np.pi * float(rho0) * r[section] * g[section],
+        gpdf[section] + 4.0 * np.pi * float(rho0) * r[section],
         q,
     )
     sq_ft = fq_to_sq(q, fq_ft)
 
     fq_filtered = fq - fq_ft
     sq_filtered = fq_to_sq(q, fq_filtered)
-    gpdf_filtered = fq_to_gpdf(
-        q, fq_filtered, r,
-        lorch=lorch, low_q_correction=low_q_correction, s0_target=s0_target,
-    )
-    g_filtered = gpdf_to_g(r, gpdf_filtered, rho0)
+    gpdf_filtered = fq_to_gpdf(q, fq_filtered, r, **options)
+    at_zero = r == 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        g_filtered = gpdf_to_g(r, gpdf_filtered, rho0)
+    if np.any(at_zero):
+        slope = gpdf_slope_at_zero(q, fq_filtered, **options)
+        g_filtered[at_zero] = 1.0 + slope / (4.0 * np.pi * float(rho0))
     return sq_filtered, sq_ft, g_filtered
+
+
+def gpdf_slope_at_zero(
+    q: np.ndarray,
+    fq: np.ndarray,
+    *,
+    lorch: bool = False,
+    low_q_correction: bool = False,
+    s0_target: float = 0.0,
+) -> float:
+    """``d G_PDF / dr`` at ``r = 0`` of :func:`fq_to_gpdf` (same options).
+
+    ``G_PDF(r)`` is odd in r, so ``g = G_PDF/(4 pi rho0 r) + 1`` extends
+    continuously to ``g(0) = 1 + G_PDF'(0)/(4 pi rho0)``. The derivative of the
+    trapezoid sine transform is the trapezoid moment ``(2/pi) sum Q F(Q) M(Q)``
+    (``sin(Qr)/r -> Q``); the omitted-low-Q correction contributes
+    ``coef'(0) S(Q0) - const'(0)`` in closed form (``(2/pi) Q0^3/4`` and
+    ``(2/pi) Q0^3/3`` unwindowed; the Lorch moments of ``sin(aQ)/(aQ)``
+    otherwise).
+    """
+    q = _increasing_grid(q, "Q")
+    fq = np.asarray(fq, dtype=float)
+    weighted = fq * lorch_window(q, q[-1]) if lorch else fq
+    slope = (2.0 / np.pi) * float(_trapezoid(weighted * q, x=q))
+    if low_q_correction and q[0] != 0:
+        q0 = float(q[0])
+        if lorch:
+            a = np.pi / float(q[-1])
+            x = a * q0
+            # (1/a) int_0^Q0 Q^k sin(aQ) dQ for k = 2 (coef) and k = 1 (const).
+            f1 = (2.0 * x * np.sin(x) - (x * x - 2.0) * np.cos(x) - 2.0) / a**4
+            f2 = (np.sin(x) - x * np.cos(x)) / a**3
+        else:
+            f1 = q0**4 / 4.0
+            f2 = q0**3 / 3.0
+        coef = (2.0 / np.pi) * f1 / q0
+        const = (2.0 / np.pi) * f2
+        if s0_target != 0.0:
+            const = (1.0 - s0_target) * const + s0_target * coef
+        slope += coef * (fq[0] / q0 + 1.0) - const
+    return slope
 
 
 def enforce_low_r(

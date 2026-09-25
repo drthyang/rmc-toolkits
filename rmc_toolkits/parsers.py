@@ -226,6 +226,14 @@ class StogInput:
         return self.yoffset
 
 
+#: Text decoding of the STOG readers, matching the browser's File.text(): UTF-8
+#: with a leading BOM dropped and undecodable bytes (a latin-1 'A-ring' in a
+#: title line) replaced — only numeric tokens are consumed, so a replacement
+#: character in a text line is harmless, and a strict decode refused files the
+#: Auto StoG page accepts.
+_TEXT_ENCODING = "utf-8-sig"
+
+
 def _stog_flag(token: str) -> bool:
     return token.strip().upper().startswith("Y")
 
@@ -240,7 +248,11 @@ def read_stog_inp(path: str | Path) -> StogInput:
     so silent misparses are impossible.
     """
     path = Path(path)
-    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+    # read_text translates LF / CRLF / CR (universal newlines); split on those
+    # only — str.splitlines would also break on form feeds etc., which the JS
+    # port (readStogInp) does not.
+    text = path.read_text(encoding=_TEXT_ENCODING, errors="replace")
+    lines = [line.strip() for line in text.split("\n")]
     lines = [line for line in lines if line]
     if len(lines) < 22:
         raise ValueError(f"{path} has {len(lines)} non-empty lines; expected >= 22")
@@ -299,22 +311,50 @@ def read_stog_inp(path: str | Path) -> StogInput:
     )
 
 
+#: Numeric tokens of a STOG data row — the grammar of the JS port's
+#: ``NUMERIC_TOKEN`` (readStogXy): decimal with an optional e/E or Fortran d/D
+#: exponent, or nan / inf / infinity (any case, optional sign). Python's
+#: float() alone would also take '1_0' or non-ASCII digits and reject '1.0D+00',
+#: so the two engines read different rows from the same file. ``re.ASCII``
+#: keeps ``\d`` to [0-9] like JS ``\d`` without the ``u`` flag (Unicode ``\d``
+#: would still admit Arabic-Indic or fullwidth digits).
+_NUMERIC_TOKEN = re.compile(
+    r"^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$",
+    re.IGNORECASE | re.ASCII,
+)
+
+#: Token separators of a STOG data row — the ECMAScript ``\s`` set that
+#: readStogXy splits on. ``str.split()`` differs at the edges: it also splits on
+#: U+001C..U+001F and NEL (U+0085) and does not split on U+FEFF.
+_STOG_WHITESPACE = re.compile(
+    "[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"
+)
+
+
+def _stog_token(token: str) -> float:
+    """Parse one STOG numeric token (``ValueError`` when not :data:`_NUMERIC_TOKEN`)."""
+    if not _NUMERIC_TOKEN.match(token):
+        raise ValueError(f"not a STOG numeric token: {token!r}")
+    return float(token.replace("d", "e").replace("D", "e"))
+
+
 def read_stog_xy(path: str | Path) -> np.ndarray:
     """Robustly read a whitespace-separated STOG-style x/y(/err) data file.
 
     Skips count headers, stray scalar lines, and text titles; keeps rows whose
-    tokens all parse as floats with at least two columns (``NaN`` tokens are
-    kept, so rebinned files retain their padding rows for the caller to mask).
+    tokens are all numeric (:data:`_NUMERIC_TOKEN`, Fortran ``D`` exponents
+    included) with at least two columns (``NaN`` tokens are kept, so rebinned
+    files retain their padding rows for the caller to mask).
     Returns the columns transposed, matching :func:`read_stog`.
     """
     groups: dict[int, list[list[float]]] = {}
-    with Path(path).open("r", encoding="utf-8") as handle:
+    with Path(path).open("r", encoding=_TEXT_ENCODING, errors="replace") as handle:
         for line in handle:
-            parts = line.split()
+            parts = [part for part in _STOG_WHITESPACE.split(line) if part]
             if len(parts) < 2:
                 continue
             try:
-                values = [float(value) for value in parts]
+                values = [_stog_token(value) for value in parts]
             except ValueError:
                 continue
             groups.setdefault(len(values), []).append(values)
@@ -335,7 +375,7 @@ def read_dat_header(path: str | Path) -> dict[str, object]:
     (float, the smallest ``MINIMUM_DISTANCES`` entry) when present.
     """
     raw: dict[str, str] = {}
-    with Path(path).open("r", encoding="utf-8", errors="replace") as handle:
+    with Path(path).open("r", encoding=_TEXT_ENCODING, errors="replace") as handle:
         for line in handle:
             if "::" not in line:
                 continue

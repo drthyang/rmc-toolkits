@@ -61,8 +61,12 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     _json_safe,
     _write_outputs,
     _resolve_targets as _resolve_scaling_targets,
+    refuse_failed_fit,
+    resolve_coefficients,
+    stog_inp_closest_approach,
+    usable_sigma,
 )
-from rmc_toolkits.scaling import detect_first_peak_onset
+from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset
 from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_density
 from rmc_toolkits.transforms import first_peak_zero, g_to_gk, gk_to_dr
 
@@ -1053,14 +1057,20 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
         nr = int(pick("nr", 5000, integer=True))
         lorch = _payload_bool(payload, "lorch", False)
 
-    b_sq_avg = _payload_float(payload, "bSqAvg")
-    formula = (payload.get("formula") or "").strip()
-    if formula:
-        coefficients = faber_ziman(formula)
-        if b_sq_avg is None:
-            b_sq_avg = coefficients.b_sq_avg_barn
-        if b_avg_sq is None:
-            b_avg_sq = coefficients.b_avg_sq_barn
+    # One consistent source for <b>^2 and <b^2> (CLI parity): a formula's <b^2>
+    # is never paired with a <b>^2 from another radiation/normalization.
+    if _payload_float(payload, "bAvgSq") is not None:
+        b_avg_sq_source = "bAvgSq"
+    elif inp is not None:
+        b_avg_sq_source = "stog.inp"
+    else:
+        b_avg_sq_source = None
+    resolved = resolve_coefficients(
+        b_avg_sq=b_avg_sq, b_avg_sq_source=b_avg_sq_source,
+        b_sq_avg=_payload_float(payload, "bSqAvg"),
+        formula=payload.get("formula"),
+    )
+    b_avg_sq, b_sq_avg = resolved["b_avg_sq"], resolved["b_sq_avg"]
     if b_avg_sq is None:
         raise CliError("data mode requires <b>^2: set bAvgSq or formula")
 
@@ -1068,9 +1078,7 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
     if r0 is None and "min_distance" in header:
         r0 = float(header["min_distance"])
     if r0 is None and inp is not None:
-        candidate = max(inp.peak_cutoff, inp.peak_rmin)
-        if candidate - 0.25 > float(r_cutoff) + 0.2:
-            r0 = candidate
+        r0 = stog_inp_closest_approach(inp, float(r_cutoff))
 
     config = ScalingConfig(
         qmin=float(qmin),
@@ -1095,23 +1103,50 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
     return config
 
 
-def _resolve_scaling_enforcement(payload: dict, inp) -> tuple[float, float, float] | None:
-    if _payload_bool(payload, "enforce", inp is not None) is False:
+def _scaling_enforce_flag(payload: dict) -> bool | None:
+    """The ``enforce`` flag, parsed ONCE as a tri-state (CLI ``--enforce`` parity).
+
+    None (absent / empty: enforcement on by default), True, or False — with
+    the same string forms as every other boolean of this API ("false", "0"
+    and 0 are False).
+    """
+    if payload.get("enforce") in (None, ""):
         return None
-    cutoff = _payload_float(payload, "enforceCutoff")
+    return _payload_bool(payload, "enforce", True)
+
+
+def _resolve_scaling_enforcement(
+    payload: dict, inp, enforce_flag: bool | None
+) -> tuple[float, float, float] | None:
+    """Explicit enforcement triple, mirroring ``scaling_cli._resolve_enforcement``.
+
+    Returns None when enforcement is off (``enforce_flag is False``) or when no
+    explicit cutoff exists (then the caller applies the automatic first-shell
+    cutoff unless ``enforce_flag is False``).
+    """
+    window = payload.get("peakWindow")
+    if window is not None and not (isinstance(window, (list, tuple)) and len(window) == 2):
+        raise CliError("peakWindow must be a two-element list [rmin, rmax]")
+    explicit_cutoff = _payload_float(payload, "enforceCutoff")
+    if enforce_flag is False:
+        if explicit_cutoff is not None or window is not None:
+            raise CliError("enforce=false contradicts enforceCutoff/peakWindow")
+        return None
+    cutoff = explicit_cutoff
     if cutoff is None and inp is not None:
         cutoff = inp.peak_cutoff
     if cutoff is None:
-        return None  # data mode: resolved post-run from the detected r0
-    window = payload.get("peakWindow")
-    if isinstance(window, (list, tuple)) and len(window) == 2:
+        if window is not None:
+            raise CliError("peakWindow requires enforceCutoff (or a stog input)")
+        return None  # resolved post-run: the automatic first-shell cutoff
+    if window is not None:
         peak_rmin = _number(window[0], "peakWindow[0]")
         peak_rmax = _number(window[1], "peakWindow[1]")
-    elif inp is not None and _payload_float(payload, "enforceCutoff") is None:
+    elif inp is not None and explicit_cutoff is None:
         peak_rmin, peak_rmax = inp.peak_rmin, inp.peak_rmax
     else:
         peak_rmin = peak_rmax = cutoff
-    return float(cutoff), peak_rmin, peak_rmax
+    return float(cutoff), float(peak_rmin), float(peak_rmax)
 
 
 def _resolve_scaling_mode(payload: dict, inp) -> tuple[str, float, float]:
@@ -1150,10 +1185,7 @@ def _compute_scaling(path_str: str, config: ScalingConfig, mode: str, a: float, 
     q, sq = data[0], data[1]
     sigma = None
     if use_sigma and data.shape[0] >= 3:
-        sigma = data[2]
-        usable = np.isfinite(q) & np.isfinite(sq)
-        if not np.all(np.isfinite(sigma[usable])) or np.any(sigma[usable] <= 0):
-            sigma = None
+        sigma = usable_sigma(q, sq, data[2])  # shared CLI/page guard
     if mode == "manual":
         return scale_pipeline(q, sq, config, a, b)
     return autoscale(q, sq, config, sigma=sigma)
@@ -1162,13 +1194,19 @@ def _compute_scaling(path_str: str, config: ScalingConfig, mode: str, a: float, 
 def _scaling_request(payload: dict):
     inp, inp_path, data_path, header = _resolve_scaling_source(payload)
     config = _resolve_scaling_config(payload, inp, header)
-    enforcement = _resolve_scaling_enforcement(payload, inp)
+    enforce_flag = _scaling_enforce_flag(payload)
+    enforcement = _resolve_scaling_enforcement(payload, inp, enforce_flag)
     mode, a, b = _resolve_scaling_mode(payload, inp)
     use_sigma = _payload_bool(payload, "useSigma", True)
     result = _cached_scaling(data_path, config, mode, a, b, use_sigma)
-    # No explicit cutoff and enforcement not refused: enforce at the
-    # data-derived closest approach (CLI-mirroring auto default).
-    if enforcement is None and payload.get("enforce") is not False:
+    # The cached ScalingResult is shared by every identical request (and
+    # request thread): annotate a per-request copy, never the cached object.
+    from dataclasses import replace as _replace_result
+
+    result = _replace_result(result, provenance=dict(result.provenance))
+    # No explicit cutoff and enforcement not refused: enforce automatically
+    # at the foot of the first shell (CLI-mirroring auto default).
+    if enforcement is None and enforce_flag is not False:
         r0_detected = result.provenance.get("r0_detected")
         if r0_detected is None:
             r0_detected = detect_first_peak_onset(
@@ -1177,8 +1215,11 @@ def _scaling_request(payload: dict):
             )
             if r0_detected is not None:
                 result.provenance["r0_detected"] = float(r0_detected)
-        if r0_detected is not None:
-            enforcement = (float(r0_detected),) * 3
+        cutoff = auto_enforcement_cutoff(
+            result.r, result.g_filtered, config, onset=r0_detected
+        )
+        if cutoff is not None:
+            enforcement = (cutoff,) * 3
     return inp, inp_path, data_path, header, config, enforcement, mode, result
 
 
@@ -1309,6 +1350,8 @@ def scaling_run():
     try:
         payload = request.get_json(silent=True) or {}
         inp, inp_path, data_path, header, config, enforcement, mode, result = _scaling_request(payload)
+        if mode == "auto":
+            refuse_failed_fit(result)  # a <= 0 never becomes RMCProfile input (CLI parity)
         summary = diagnostics_summary(result, config)
 
         from types import SimpleNamespace

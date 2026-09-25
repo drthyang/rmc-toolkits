@@ -9,6 +9,7 @@
 // adopts the estimated density for the fit.
 
 import {
+  autoEnforcementCutoff,
   autoscale,
   detectFirstPeakOnset,
   diagnosticsSummary,
@@ -17,7 +18,9 @@ import {
   firstPeakZero,
   fqToGpdf,
   makeConfig,
+  rho0NonConvergenceMessage,
   scalePipeline,
+  usableSigma,
 } from './autoScale';
 
 self.onmessage = (event) => {
@@ -28,7 +31,9 @@ self.onmessage = (event) => {
   try {
     const qArr = new Float64Array(q);
     const sqArr = new Float64Array(sq);
-    const sigmaArr = sigma ? new Float64Array(sigma) : null;
+    // CLI/API parity: a σ column with any zero / negative / non-finite value on
+    // a usable row is dropped as a whole (the page also warns about it).
+    const sigmaArr = sigma ? usableSigma(qArr, sqArr, new Float64Array(sigma)).sigma : null;
     if (kind === 'estimateRho0') {
       const estimate = estimateRho0(qArr, sqArr, makeConfig(rawConfig), sigmaArr);
       self.postMessage({ id, ok: true, result: { estimate } });
@@ -39,42 +44,59 @@ self.onmessage = (event) => {
     if (wantEstimate) {
       rho0Estimate = estimateRho0(qArr, sqArr, config, sigmaArr);
       if (!rho0Estimate.converged) {
-        // Never fit with a garbage density: surface the physics instead.
-        throw new Error(
-          'ρ₀ self-consistency did not converge (final concordance '
-          + `${rho0Estimate.concordance.toPrecision(3)}): the density-limit and `
-          + 'Q→0 Faber-Ziman amplitudes disagree at every density — typically '
-          + 'data missing structure below Qmin. Set ρ₀ explicitly (value, '
-          + 'data header, or mass density) and consider the Faber-Ziman Q→0 '
-          + 'amplitude criterion for the scale.'
-        );
+        // Never fit with a garbage density: surface the physics (or the
+        // trial density that could not be fitted) instead.
+        throw new Error(rho0NonConvergenceMessage(rho0Estimate));
       }
       config = { ...config, rho0: rho0Estimate.rho0 };
     }
     const result = mode === 'manual'
       ? scalePipeline(qArr, sqArr, config, a, b, { mode: 'manual' })
       : autoscale(qArr, sqArr, config, sigmaArr);
-    // 'auto' enforcement resolves to the data-derived closest approach.
-    // Manual runs skip the two-pass detection inside autoscale, so recover
-    // r0 here exactly like the CLI does (scaling_cli.py post-run detection) —
+    if (mode !== 'manual' && result.fitFailure) {
+      // A non-physical scale never becomes RMCProfile input (scaling_cli
+      // refuse_failed_fit parity).
+      throw new Error(
+        `Auto-fit failed: ${result.fitFailure}. Check that the S(Q) is not `
+        + 'sign-inverted or corrupted, set r₀ / the fit-window maximum, or use the '
+        + 'Faber-Ziman Q→0 amplitude criterion when the composition is known.'
+      );
+    }
+    // 'auto' enforcement is anchored on the data-derived first shell. Manual
+    // runs skip the detection inside autoscale, so recover the onset here
+    // exactly like the CLI does (scaling_cli.py post-run detection) —
     // otherwise a checked "Enforce low-r" would silently become a no-op.
     if (enforcement === 'auto' && result.r0Detected == null) {
       const onset = detectFirstPeakOnset(result.r, result.gFiltered, {
         searchMin: config.rCutoff + 0.3,
+        qmax: config.qmax,
       });
       if (onset != null) result.r0Detected = onset;
     }
     const summary = diagnosticsSummary(result, config);
 
+    // 'auto' enforces at the FOOT of the first shell (below its rising flank,
+    // so no first-shell signal leaves the RMC files) — scaling_cli parity.
     let effectiveEnforcement = enforcement;
     if (enforcement === 'auto') {
-      effectiveEnforcement = result.r0Detected != null
-        ? { cutoff: result.r0Detected, peakRmin: result.r0Detected, peakRmax: result.r0Detected }
+      const cutoff = autoEnforcementCutoff(result.r, result.gFiltered, config, result.r0Detected);
+      effectiveEnforcement = cutoff != null
+        ? {
+          cutoff,
+          peakRmin: cutoff,
+          peakRmax: cutoff,
+          // Name the anchor like the CLI: a given r0 caps the onset, and
+          // anchors the cutoff alone when no shell was detected.
+          source: config.r0 != null && (result.r0Detected == null || config.r0 < result.r0Detected)
+            ? 'auto (given r0)'
+            : 'auto (first-shell foot)',
+          firstShellOnset: result.r0Detected ?? null,
+        }
         : null;
     }
 
-    // Unfiltered g(r) - 1 (the classic scale.gr): recomputed here exactly like
-    // the CLI writer does — it is not part of the engine result.
+    // Unfiltered g(r) (the classic scale.gr): recomputed here exactly like the
+    // CLI writer does — it is not part of the engine result.
     const fqScaled = new Float64Array(result.q.length);
     for (let i = 0; i < result.q.length; i += 1) {
       fqScaled[i] = result.q[i] * (result.sqScaled[i] - 1);
@@ -84,9 +106,9 @@ self.onmessage = (event) => {
       lowQCorrection: config.lowQCorrection,
       s0Target: effectiveS0Target(config),
     });
-    const gm1Unfiltered = new Float64Array(result.r.length);
+    const gUnfiltered = new Float64Array(result.r.length);
     for (let i = 0; i < result.r.length; i += 1) {
-      gm1Unfiltered[i] = gpdfUnfiltered[i] / (4 * Math.PI * config.rho0 * result.r[i]);
+      gUnfiltered[i] = gpdfUnfiltered[i] / (4 * Math.PI * config.rho0 * result.r[i]) + 1;
     }
 
     let gkEnforced = null;
@@ -133,7 +155,7 @@ self.onmessage = (event) => {
         gk: result.gk.buffer,
         dr: result.dr.buffer,
         fk: result.fk.buffer,
-        gm1Unfiltered: gm1Unfiltered.buffer,
+        gUnfiltered: gUnfiltered.buffer,
         gkEnforced: gkEnforced ? gkEnforced.buffer : null,
         drEnforced: drEnforced ? drEnforced.buffer : null,
       },
@@ -142,7 +164,7 @@ self.onmessage = (event) => {
       payload.result.q, payload.result.sqRaw, payload.result.sqScaled,
       payload.result.sqFiltered, payload.result.sqFt, payload.result.r,
       payload.result.gk, payload.result.dr, payload.result.fk,
-      payload.result.gm1Unfiltered,
+      payload.result.gUnfiltered,
     ];
     if (payload.result.gkEnforced) transfers.push(payload.result.gkEnforced, payload.result.drEnforced);
     self.postMessage(payload, transfers);

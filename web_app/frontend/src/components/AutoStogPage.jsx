@@ -12,12 +12,17 @@ import InteractivePlot from './InteractivePlot';
 import { downloadBlob, sanitizeFilename } from '../figureExport';
 import { buildZip } from '../zipArchive';
 import {
-  faberZiman,
+  RHO0_SEED,
   makeConfig,
   numberDensityFromMassDensity,
   readDatHeader,
   readStogInp,
   readStogXy,
+  resolveCoefficients,
+  resolveEnforcementDescriptor,
+  rho0NonConvergenceMessage,
+  stogInpClosestApproach,
+  usableSigma,
   writeStogXy,
 } from '../workers/autoScale';
 import './AutoStogPage.css';
@@ -54,9 +59,9 @@ const EMPTY_FORM = {
 
 const OUTPUT_LIST = [
   ['sq_scaled', 'scaled S(Q)'],
-  ['gr_unfiltered', 'unfiltered g(r)−1'],
+  ['gr_unfiltered', 'unfiltered g(r)'],
   ['sq_filtered', 'filtered S(Q)'],
-  ['gr_filtered', 'filtered g(r)−1 + D(r)'],
+  ['gr_filtered', 'filtered g(r) + r·[g(r)−1]'],
   ['rmc_fq', 'FK(Q) → RMCProfile'],
   ['rmc_gr', 'GK(r) → RMCProfile'],
   ['rmc_dr', 'D(r) → RMCProfile'],
@@ -65,18 +70,22 @@ const OUTPUT_LIST = [
 ];
 
 // Q extent / point count of the finite rows (NaN-padded rebin files are common).
+// Min/max, not first/last: a file in descending Q is valid (the engine sorts it).
 const dataExtent = (q, sq, sigma) => {
   let qlo = null;
   let qhi = null;
   let count = 0;
   for (let i = 0; i < q.length; i += 1) {
     if (Number.isFinite(q[i]) && Number.isFinite(sq[i])) {
-      if (qlo === null) qlo = q[i];
-      qhi = q[i];
+      if (qlo === null || q[i] < qlo) qlo = q[i];
+      if (qhi === null || q[i] > qhi) qhi = q[i];
       count += 1;
     }
   }
-  return { qlo, qhi, count, hasSigma: Boolean(sigma) };
+  // The CLI/API σ guard: a column with any zero / negative / non-finite σ on a
+  // usable row is ignored as a whole (never a 1e12 weight or NaN fit).
+  const { nBad } = usableSigma(q, sq, sigma);
+  return { qlo, qhi, count, hasSigma: Boolean(sigma), sigmaBad: nBad };
 };
 
 // ---------------------------------------------------------------------------
@@ -91,21 +100,20 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
     const value = numberOr(formValue);
     return value === undefined ? fallback : value;
   };
-  let bAvgSq = numberOr(form.bAvgSq) ?? (inp ? inp.bAvgSq : undefined);
-  let bSqAvg = numberOr(form.bSqAvg);
   const formula = form.formula.trim();
-  if (formula) {
-    const coefficients = faberZiman(formula);
-    if (bSqAvg === undefined) bSqAvg = coefficients.bSqAvgBarn;
-    if (bAvgSq === undefined) bAvgSq = coefficients.bAvgSqBarn;
-  }
+  // One consistent source for ⟨b⟩² and ⟨b²⟩ (scaling_cli.resolve_coefficients).
+  const { bAvgSq, bSqAvg } = resolveCoefficients({
+    bAvgSq: numberOr(form.bAvgSq) ?? (inp ? inp.bAvgSq : undefined),
+    bSqAvg: numberOr(form.bSqAvg),
+    formula,
+  });
   if (bAvgSq === undefined) throw new Error('⟨b⟩² unknown: give a composition, or set it under Advanced → Coefficients');
   const rCutoff = pick(form.rCutoff, inp ? inp.rCutoff : 1.0);
   let r0 = numberOr(form.r0);
   if (r0 === undefined && header?.minDistance != null) r0 = header.minDistance;
   if (r0 === undefined && inp) {
-    const candidate = Math.max(inp.peakCutoff, inp.peakRmin);
-    if (candidate - 0.25 > rCutoff + 0.2) r0 = candidate;
+    // Classic first-peak-line semantics, shared with the CLI and the API.
+    r0 = stogInpClosestApproach(inp, rCutoff) ?? undefined;
   }
   const qmin = pick(form.qmin, inp ? inp.qmin : undefined);
   const qmax = pick(form.qmax, inp ? inp.qmax : undefined);
@@ -121,7 +129,7 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
   let wantEstimate = false;
   if (rho0 === undefined) {
     if (bSqAvg !== undefined) {
-      rho0 = 0.05; // seed only — the worker adopts the self-consistent estimate
+      rho0 = RHO0_SEED; // seed only — the worker adopts the self-consistent estimate
       wantEstimate = true;
     } else {
       throw new Error(
@@ -152,17 +160,13 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
   return { config, wantEstimate };
 };
 
-const resolveEnforcement = (form, inp) => {
-  if (!form.enforce) return null;
-  const cutoff = numberOr(form.enforceCutoff) ?? (inp ? inp.peakCutoff : undefined);
-  if (cutoff === undefined) return 'auto'; // worker enforces at the detected r0
-  const usingInpWindow = inp && numberOr(form.enforceCutoff) === undefined;
-  return {
-    cutoff,
-    peakRmin: usingInpWindow ? inp.peakRmin : cutoff,
-    peakRmax: usingInpWindow ? inp.peakRmax : cutoff,
-  };
-};
+// 'auto' → the worker enforces at the first-shell foot. The Cutoff field is
+// pre-filled with the stog.inp's peak cutoff; while it still holds that value
+// the inp's first-peak window is kept (CLI parity).
+const resolveEnforcement = (form, inp) => resolveEnforcementDescriptor(
+  { enforce: form.enforce, cutoff: numberOr(form.enforceCutoff) },
+  inp,
+);
 
 const AutoStogPage = () => {
   const [sources, setSources] = useState([]); // uploaded {name, text}
@@ -259,9 +263,10 @@ const AutoStogPage = () => {
       }
       const columns = readStogXy(dataText);
       const header = readDatHeader(dataText);
-      const sigma = columns.length >= 3 ? columns[2] : null;
+      const rawSigma = columns.length >= 3 ? columns[2] : null;
+      const { sigma } = usableSigma(columns[0], columns[1], rawSigma);
       dataRef.current = { q: columns[0], sq: columns[1], sigma, inp, header, name: dataName };
-      const extent = dataExtent(columns[0], columns[1], sigma);
+      const extent = dataExtent(columns[0], columns[1], rawSigma);
       setInspect({ kind: inp ? 'inp' : 'data', inp, header, dataFile: dataName, extent });
       setForm((current) => ({
         ...current,
@@ -369,6 +374,9 @@ const AutoStogPage = () => {
           a: raw.a, b: raw.b, converged: raw.converged, iterations: raw.iterations,
           lowRRms: raw.lowRRms, c1TailMean: raw.c1TailMean, history: raw.history,
           c1ModeEffective: raw.c1ModeEffective,
+          // Points the (opt-in) despike removed — the check the docs ask for
+          // before trusting a despiked run (CLI provenance n_despiked).
+          nDespiked: raw.nDespiked ?? 0, nQ: raw.q ? raw.q.byteLength / 8 : null,
         },
         diagnostics: raw.summary,
         enforcement: raw.enforcement,
@@ -388,7 +396,7 @@ const AutoStogPage = () => {
           q: arr(raw.q), sqRaw: arr(raw.sqRaw), sqScaled: arr(raw.sqScaled),
           sqFiltered: arr(raw.sqFiltered), sqFt: arr(raw.sqFt), r: arr(raw.r),
           gk: arr(raw.gk), dr: arr(raw.dr), fk: arr(raw.fk),
-          gm1Unfiltered: arr(raw.gm1Unfiltered),
+          gUnfiltered: arr(raw.gUnfiltered),
           gkEnforced: arr(raw.gkEnforced), drEnforced: arr(raw.drEnforced),
         },
       });
@@ -411,14 +419,7 @@ const AutoStogPage = () => {
       const result = await postJob({ kind: 'estimateRho0', config, ...payload }, transfers);
       if (!result.estimate.converged) {
         setRho0Info(null);
-        throw new Error(
-          'ρ₀ self-consistency did not converge (final concordance '
-          + `${fmt(result.estimate.concordance, 3)}): the density-limit and Q→0 `
-          + 'Faber-Ziman amplitudes disagree at every density — typically data '
-          + 'missing structure below Qmin. Set ρ₀ explicitly (value, data '
-          + 'header, or mass density) and consider the Faber-Ziman Q→0 '
-          + 'amplitude criterion for the scale.'
-        );
+        throw new Error(rho0NonConvergenceMessage(result.estimate));
       }
       setRho0Info(result.estimate);
       setForm((current) => ({
@@ -445,15 +446,18 @@ const AutoStogPage = () => {
       const stem = sanitizeFilename(
         exportStem.trim() || dataRef.current?.name?.replace(/\.[^.]+$/, '') || 'autoscale'
       );
+      // Classic stog conventions (the Fortran scale.gr / scale_ft.gr, CLI
+      // parity): column 2 is g(r), scale_ft.gr's column 3 is r·[g(r) − 1].
       const gm1 = series.gk.map((value) => value / config.bAvgSq);
+      const gFiltered = gm1.map((value) => value + 1);
       const encoder = new TextEncoder();
       const entries = [
         [`${stem}.sq`, writeStogXy(series.q, series.sqScaled, { title: label })],
-        [`${stem}.gr`, writeStogXy(series.r, series.gm1Unfiltered || gm1, { title: label })],
+        [`${stem}.gr`, writeStogXy(series.r, series.gUnfiltered || gFiltered, { title: label })],
         [`${stem}_ft.sq`, writeStogXy(series.q, series.sqFiltered, { title: label })],
-        [`${stem}_ft.gr`, writeStogXy(series.r, gm1, {
+        [`${stem}_ft.gr`, writeStogXy(series.r, gFiltered, {
           title: label,
-          extra: series.r.map((radius, i) => 4 * Math.PI * config.rho0 * radius * gm1[i]),
+          extra: series.r.map((radius, i) => radius * gm1[i]),
         })],
         [`${stem}_rmc.fq`, writeStogXy(series.q, series.fk, { title: label })],
         [`${stem}_rmc.gr`, writeStogXy(series.r, series.gkEnforced || series.gk, { title: label })],
@@ -478,6 +482,8 @@ const AutoStogPage = () => {
             }
             : null,
           history: result.history ?? [],
+          nQPoints: result.nQ,
+          nDespiked: result.nDespiked,
           enforcement,
           rho0Estimate,
           config,
@@ -500,23 +506,23 @@ const AutoStogPage = () => {
     && numberOr(form.bSqAvg) === undefined
     && !form.formula.trim();
 
-  const canEstimate = inspect != null
-    && (Boolean(form.formula.trim()) || numberOr(form.bSqAvg) !== undefined);
-
-  // The coefficients actually in effect (same precedence as resolveConfig:
-  // Advanced overrides beat the composition), so the neutron-vs-x-ray state
-  // is always visible up front — with a warning when overrides silently
-  // shadow a typed composition (the classic stale-session trap).
+  // The coefficients actually in effect (resolveCoefficients, the rule
+  // resolveConfig and the CLI use: overrides beat the composition, and the
+  // composition's ⟨b²⟩ is never paired with a ⟨b⟩² from another source), so
+  // the neutron-vs-x-ray state is always visible up front — with a warning
+  // when overrides shadow a typed composition (the classic stale-session trap)
+  // or when the composition's ⟨b²⟩ was left out.
   const coefficients = useMemo(() => {
     const formula = form.formula.trim();
     const overrideBAvgSq = numberOr(form.bAvgSq);
     const overrideBSqAvg = numberOr(form.bSqAvg);
-    let fz = null;
-    if (formula) {
-      try { fz = faberZiman(formula); } catch { fz = null; /* typing */ }
+    let resolved;
+    try {
+      resolved = resolveCoefficients({ bAvgSq: overrideBAvgSq, bSqAvg: overrideBSqAvg, formula });
+    } catch {
+      resolved = resolveCoefficients({ bAvgSq: overrideBAvgSq, bSqAvg: overrideBSqAvg, formula: '' }); // typing
     }
-    const bAvgSq = overrideBAvgSq ?? (fz ? fz.bAvgSqBarn : undefined);
-    const bSqAvg = overrideBSqAvg ?? (fz ? fz.bSqAvgBarn : undefined);
+    const { bAvgSq, bSqAvg, fz, dropped } = resolved;
     if (bAvgSq === undefined && bSqAvg === undefined) return null;
     const shadowed = Boolean(fz) && (
       (overrideBAvgSq !== undefined
@@ -530,11 +536,16 @@ const AutoStogPage = () => {
     const parts = [];
     if (bAvgSq !== undefined) parts.push(`⟨b⟩² ${bAvgSq.toPrecision(4)}`);
     if (bSqAvg !== undefined) parts.push(`⟨b²⟩ ${bSqAvg.toPrecision(4)}`);
+    if (dropped) parts.push(`⟨b²⟩ not set (${formula}'s would mix sources)`);
     if (bAvgSq !== undefined && bSqAvg !== undefined) {
       parts.push(`S(0) ${(1 - bSqAvg / bAvgSq).toPrecision(3)}`);
     }
-    return { text: `${parts.join(' · ')} — ${source}`, shadowed, formula };
+    return {
+      text: `${parts.join(' · ')} — ${source}`, shadowed, formula, dropped, bSqAvg,
+    };
   }, [form.formula, form.bAvgSq, form.bSqAvg]);
+
+  const canEstimate = inspect != null && coefficients?.bSqAvg !== undefined;
 
   // ── plot data ────────────────────────────────────────────────────────────
   const RMAX_DISPLAY = 8;
@@ -674,11 +685,11 @@ const AutoStogPage = () => {
           {inspect?.extent && (
             <span
               className="autostog-chip autostog-chip--file"
-              title={`${inspect.dataFile}: ${inspect.extent.count} points, Q ${fmt(inspect.extent.qlo, 3)}–${fmt(inspect.extent.qhi, 4)} Å⁻¹${inspect.extent.hasSigma ? ', σ column present' : ''}`}
+              title={`${inspect.dataFile}: ${inspect.extent.count} points, Q ${fmt(inspect.extent.qlo, 3)}–${fmt(inspect.extent.qhi, 4)} Å⁻¹${inspect.extent.hasSigma ? (inspect.extent.sigmaBad ? `, σ column IGNORED: ${inspect.extent.sigmaBad} usable rows have a zero, negative or non-finite σ (the fit is unweighted, as in the CLI)` : ', σ column present') : ''}`}
             >
               {inspect.dataFile}: {inspect.extent.count} pts
               · Q {fmt(inspect.extent.qlo, 3)}–{fmt(inspect.extent.qhi, 4)} Å⁻¹
-              {inspect.extent.hasSigma ? ' · σ' : ''}
+              {inspect.extent.hasSigma ? (inspect.extent.sigmaBad ? ' · σ ignored (invalid)' : ' · σ') : ''}
             </span>
           )}
           {inspect?.kind === 'inp' && (
@@ -719,12 +730,14 @@ const AutoStogPage = () => {
           </label>
           {coefficients && (
             <span
-              className={`autostog-chip${coefficients.shadowed ? ' autostog-chip--warn' : ''}`}
-              title={coefficients.shadowed
-                ? `Advanced → Coefficients overrides are in effect and differ from ${coefficients.formula}'s neutron values — clear ⟨b⟩²/⟨b²⟩ to use the composition, or clear the composition if this is x-ray data`
-                : 'Scattering coefficients in effect (barn)'}
+              className={`autostog-chip${coefficients.shadowed || coefficients.dropped ? ' autostog-chip--warn' : ''}`}
+              title={coefficients.dropped
+                ? `⟨b⟩² ${fmt(coefficients.dropped.bAvgSq, 4)} of ${coefficients.formula} differs from the ⟨b⟩² in effect, so its ⟨b²⟩ ${fmt(coefficients.dropped.bSqAvg, 4)} is not used (a pair from two sources fabricates the S(0) target) — set ⟨b²⟩ under Advanced → Coefficients (⟨Z²⟩/⟨Z⟩² for normalized x-ray data), or clear ⟨b⟩² to use the composition`
+                : coefficients.shadowed
+                  ? `Advanced → Coefficients overrides are in effect and differ from ${coefficients.formula}'s neutron values — clear ⟨b⟩²/⟨b²⟩ to use the composition, or clear the composition if this is x-ray data`
+                  : 'Scattering coefficients in effect (barn)'}
             >
-              {coefficients.shadowed ? '⚠ ' : ''}{coefficients.text}
+              {coefficients.shadowed || coefficients.dropped ? '⚠ ' : ''}{coefficients.text}
             </span>
           )}
           {rho0Info && (
@@ -884,7 +897,7 @@ const AutoStogPage = () => {
                 Enforce low-r
               </label>
               {form.enforce && (
-                <label className="autostog-field" title="Enforcement cutoff (empty: the detected r₀)">
+                <label className="autostog-field" title="Enforcement cutoff (empty: automatic — the foot of the detected first shell, below its rising flank)">
                   <span>Cutoff Å</span>
                   <input value={form.enforceCutoff} onChange={setField('enforceCutoff')} inputMode="decimal" placeholder="auto" />
                 </label>
@@ -937,10 +950,11 @@ const AutoStogPage = () => {
           <li><b>ρ₀ self-consistency:</b> the density-limit amplitude depends on ρ₀, the
             FZ amplitude does not — iterating ρ₀ until they agree recovers the density
             from the data (needs a composition; long Q→0 extrapolations are flagged).</li>
-          <li><b>r₀ detection:</b> the first coordination shell is located from the data
-            (|g| flank, robust to inverted negative-b shells) and refines the fit window and
-            the classic low-r enforcement cutoff.</li>
-          <li><b>Outputs:</b> the classic stog file family (S(Q), g(r)−1, filtered pair,
+          <li><b>r₀ detection:</b> the first coordination shell — the smallest-r feature that
+            stands out of the ripples, of either sign (inverted negative-b shells count) — is
+            located from the data and refines the fit window and the classic low-r
+            enforcement cutoff.</li>
+          <li><b>Outputs:</b> the classic stog file family (S(Q), g(r), filtered pair,
             F<sub>K</sub>(Q), G<sub>K</sub>(r), D(r), ft.dat) + a provenance JSON. Read the
             flags: a violated density limit means the absolute scale needs the composition
             (FZ) route or external validation.</li>
@@ -1010,7 +1024,10 @@ const AutoStogPage = () => {
           <div className="autostog-stat">
             <span className="autostog-stat-label">Fit quality</span>
             <span className="autostog-stat-value">low-r rms {fmt(diagnostics.low_r_rms_pre_enforcement, 3)}</span>
-            <span className="autostog-stat-sub">C1 tail mean {fmt(diagnostics.c1_tail_mean, 5)}</span>
+            <span className="autostog-stat-sub">
+              C1 tail mean {fmt(diagnostics.c1_tail_mean, 5)}
+              {preview.config.despike ? ` · despike removed ${preview.result.nDespiked} of ${preview.result.nDespiked + (preview.result.nQ ?? 0)} points` : ''}
+            </span>
           </div>
           <div className={`autostog-stat ${diagnostics.density_limit_satisfied ? 'is-good' : 'is-bad'}`}>
             <span className="autostog-stat-label">Density limit</span>
@@ -1022,12 +1039,42 @@ const AutoStogPage = () => {
             </span>
           </div>
           {diagnostics.r0_detected != null && (
-            <div className="autostog-stat">
+            <div className={`autostog-stat${diagnostics.first_shell_below_r0 ? ' is-warn' : ''}`}>
               <span className="autostog-stat-label">First shell r₀</span>
               <span className="autostog-stat-value">{fmt(diagnostics.r0_detected, 4)} Å (detected)</span>
               <span className="autostog-stat-sub">
-                {diagnostics.window_refined ? 'fit window refined to it' : 'window unchanged'}
+                {diagnostics.first_shell_below_r0
+                  ? 'below the given r₀ — the fit window may cut into it; check r₀'
+                  : (diagnostics.window_refined ? 'fit window refined to it' : 'window unchanged')}
                 {preview.enforcement ? ` · enforced below ${fmt(preview.enforcement.cutoff ?? preview.enforcement[0], 3)} Å` : ''}
+              </span>
+            </div>
+          )}
+          {diagnostics.a_fz_reliable === true && (
+            <div className="autostog-stat">
+              <span className="autostog-stat-label">Q→0 amplitude</span>
+              <span className="autostog-stat-value">a_fz {fmt(diagnostics.a_fz, 4)} (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</span>
+              <span className="autostog-stat-sub">
+                resolved from its error — necessary, not sufficient: a biased low-Q head passes too; re-run at a few Q_min to check a_fz is stable
+                {diagnostics.amplitude_concordance != null ? ' · see also the concordance' : ''}
+              </span>
+            </div>
+          )}
+          {diagnostics.a_fz_reliable === false && (
+            <div className="autostog-stat is-warn">
+              <span className="autostog-stat-label">Q→0 amplitude</span>
+              <span className="autostog-stat-value">a_fz ill-conditioned (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</span>
+              <span className="autostog-stat-sub">
+                S_meas(0) − level is not resolved from its error (Bragg-contaminated or long low-Q head) — trust neither a_fz nor the concordance
+              </span>
+            </div>
+          )}
+          {diagnostics.rmax_beyond_alias_limit && (
+            <div className="autostog-stat is-warn">
+              <span className="autostog-stat-label">Aliasing</span>
+              <span className="autostog-stat-value">r &gt; {fmt(diagnostics.r_alias_limit, 3)} Å folded</span>
+              <span className="autostog-stat-sub">
+                r_max exceeds π/ΔQ of the coarsest S(Q) step: G(r) beyond it is a mirror image (uniform grid) or corrupted by coarse steps (log binning, despike gaps) — lower r_max
               </span>
             </div>
           )}

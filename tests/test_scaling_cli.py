@@ -137,11 +137,11 @@ class StogInpModeTests(CliSyntheticBase):
                 atol=1e-12,
             )
 
-            # The filtered .gr carries the D(r) companion column.
+            # Classic stog scale_ft.gr: g(r) plus the r*[g(r) - 1] column.
             ftgr = read_stog_xy(out_dir / "scale_ft.gr")
             self.assertEqual(ftgr.shape[0], 3)
             np.testing.assert_allclose(
-                ftgr[2], 4.0 * np.pi * RHO0 * ftgr[0] * ftgr[1], rtol=1e-10
+                ftgr[2], ftgr[0] * (ftgr[1] - 1.0), rtol=1e-10, atol=1e-14
             )
 
     def test_manual_mode_reproduces_hand_scaling(self):

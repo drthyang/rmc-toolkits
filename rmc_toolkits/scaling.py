@@ -26,7 +26,7 @@ subtraction term is held fixed during each fit) until ``(a, b)`` converge.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -42,14 +42,44 @@ from .transforms import (
 )
 
 
+#: Gap between the detected first-shell onset and the top of the automatic
+#: low-r fit window (``r_fit_window`` hi = ``r0 - R0_WINDOW_MARGIN``) — also the
+#: margin of the automatic low-r enforcement cutoff.
+R0_WINDOW_MARGIN = 0.25
+#: Narrowest low-r fit window :func:`autoscale` places on its own (A).
+MIN_AUTO_WINDOW = 0.1
+#: Trial window widths above ``lo`` used to locate the first shell (A).
+START_WINDOW_WIDTHS = (0.3, 1.0)
+#: Two first-shell onsets closer than this (A) are the same shell: a refit
+#: confirms the onset its window was built from when it re-detects it this close.
+ONSET_TOLERANCE = 0.15
+#: Most refits :func:`autoscale` spends confirming first-shell candidates.
+MAX_WINDOW_REFITS = 4
+#: Number densities (atoms/A^3) :func:`estimate_rho0` may return: liquid Cs
+#: (~0.0085) to beyond diamond (0.176), with margin on both sides.
+RHO0_PHYSICAL_RANGE = (0.005, 0.25)
+#: Seed of :func:`estimate_rho0` when no density source exists (CLI, page).
+RHO0_SEED = 0.05
+#: Width (A^-1) of the low-Q head the Faber-Ziman Q->0 extrapolation is fitted on.
+FZ_FIT_WIDTH = 1.0
+#: Largest relative standard error of a_fz (from S_meas(0) - level) for which
+#: the Faber-Ziman amplitude is reported as reliable (|denominator| >= 5 sigma).
+FZ_REL_SE_MAX = 0.2
+#: Relative rounding slack of the <b^2> >= <b>^2 (Cauchy-Schwarz) check: a
+#: single-element sample has <b^2> = <b>^2 exactly, i.e. S(0) = 0.
+B_SQ_RTOL = 1.0e-9
+
+
 @dataclass(frozen=True)
 class ScalingConfig:
     """Parameters for the auto-scaling pipeline.
 
     ``b_avg_sq`` is ``<b>^2 = (sum_i c_i b_i)^2`` in barns — the classic stog
     input's "Faber-Ziman coefficient" line. ``b_sq_avg`` is the *different*
-    number ``<b^2> = sum_i c_i b_i^2`` (Keen Eq. 14 Q->0 limit), used only for
-    diagnostics when provided.
+    number ``<b^2> = sum_i c_i b_i^2`` (Keen Eq. 14 Q->0 limit). The two must
+    come from one source (same radiation, same units): ``b_sq_avg < b_avg_sq``
+    — an S(0) = 1 - <b^2>/<b>^2 > 0 no composition can have (Cauchy-Schwarz) —
+    raises ``ValueError``.
 
     ``low_q_correction`` defaults on: measured data always omit ``[0, Qmin]``,
     and without the analytic correction that omission biases the fitted scale
@@ -159,6 +189,19 @@ class ScalingConfig:
             raise ValueError(f"rho0 must be finite and positive, got {self.rho0}")
         if not np.isfinite(self.b_avg_sq) or self.b_avg_sq <= 0:
             raise ValueError(f"b_avg_sq must be finite and positive, got {self.b_avg_sq}")
+        if self.b_sq_avg is not None:
+            if not np.isfinite(self.b_sq_avg) or self.b_sq_avg <= 0:
+                raise ValueError(f"b_sq_avg must be finite and positive, got {self.b_sq_avg}")
+            if self.b_sq_avg < self.b_avg_sq * (1.0 - B_SQ_RTOL):
+                raise ValueError(
+                    f"<b^2> = {self.b_sq_avg:.6g} barn is smaller than <b>^2 = "
+                    f"{self.b_avg_sq:.6g} barn, so S(0) = 1 - <b^2>/<b>^2 = "
+                    f"{1.0 - self.b_sq_avg / self.b_avg_sq:.4g} > 0, which is impossible "
+                    "(<b^2> >= <b>^2, Cauchy-Schwarz): the two coefficients must come "
+                    "from the same source (same radiation and units) — e.g. normalized "
+                    "x-ray data need <b>^2 = 1 with <b^2> = <Z^2>/<Z>^2, not a neutron "
+                    "composition's <b^2>"
+                )
         if self.qmax <= self.qmin:
             raise ValueError("qmax must exceed qmin")
         if int(self.nr) != self.nr or self.nr <= 0:
@@ -190,7 +233,7 @@ class ScalingConfig:
         if self.r_fit_max is not None:
             hi = self.r_fit_max
         elif self.r0 is not None:
-            hi = self.r0 - 0.25
+            hi = self.r0 - R0_WINDOW_MARGIN
         else:
             hi = lo + 1.0
         if hi <= lo:
@@ -374,45 +417,180 @@ def level_sweep(
     )
 
 
-def detect_first_peak_onset(
+def first_shell_candidates(
     r: np.ndarray,
     g: np.ndarray,
-    qmax: float,  # noqa: ARG001 - kept for signature stability / future ripple use
+    qmax: float,
     *,
     search_min: float = 1.0,
     search_max: float = 6.0,
     fraction: float = 0.35,
     floor: float = 0.5,
-) -> float | None:
-    """Data-derived closest-approach r0: the left flank of the first shell.
+    prominence: float = 2.0,
+    major: float = 0.5,
+    strong_prominence: float = 4.0,
+) -> list[float]:
+    """Onsets of the shell-like features of g(r), in increasing r.
 
-    Finds the dominant |g| feature in ``[search_min, search_max]`` and walks
-    left until |g| drops below ``max(floor, fraction * peak)``. Peak-relative
-    (not absolute-threshold) because both the physical peak and the sub-r0
-    truncation ripples scale with the fitted amplitude — on missing-low-Q
-    data the ripples can reach O(peak/3), so no fixed threshold separates
-    them, while the dominant coordination shell still towers above them. |g|
-    is used because Faber-Ziman totals of negative-b compositions (e.g.
-    Mn3Sn) can have an *inverted* first shell. Returns None when no feature
-    exceeds ``floor`` or the flank never falls below the level inside the
-    search range (feature not separable from the ripple field).
+    A shell is a feature of g(r) that stands out of the ripple field below it —
+    of either sign: |g| is used because below the first shell g -> 0 and a
+    shell departs from that level whatever the sign of its Faber-Ziman weight
+    (a weak or *inverted* first shell — Ti-O in titanates, Mn-Sn in Mn3Sn — is
+    routinely smaller than the second shell, so the tallest feature is not the
+    first shell).
+
+    The local maxima of |g| in ``[search_min + 2 pi / qmax, search_max]`` are
+    scanned upward (the first termination-ripple period above ``search_min``
+    is a reference zone only, so every candidate has at least one ripple crest
+    below it to be judged against). Each has a *lobe start* — the nearest
+    local minimum of |g| to its left (a sign change of g is one) — and a
+    *ripple level* ``ripple = max |g|`` over ``[search_min, lobe start]``, the
+    field it must stand out of. A maximum is a shell when ``|g| >= floor`` and
+    either
+
+    - ``|g| >= strong_prominence * ripple`` (it towers over everything below
+      it, however weak it is next to later shells), or
+    - ``|g| >= prominence * ripple`` and ``|g| >= major * max|g|`` over the
+      search range (a major feature that clearly exceeds the ripples).
+
+    Peak/ripple ratios rather than absolute thresholds, because the physical
+    shells and the sub-r0 truncation ripples both scale with the fitted
+    amplitude. The margins (4x, or 2x at half the range maximum) are set by
+    real missing-low-Q data: the sub-shell ripple lobes of the Mn3Sn POWGEN
+    runs reach 2.9x their own ripple field at up to 44 % of the maximum, while
+    their inverted Mn-Sn first shell is 2.1-3.9x at 82-100 %. A shell's onset
+    is taken on its own flank: walk left from its maximum until |g| drops to
+    ``max(floor, fraction * |g_peak|)`` and take the next grid point. A shell
+    whose flank reaches below ``search_min`` is not separable from the
+    reference zone: the scan stops there (it inflates the ripple level of
+    everything above it anyway). Onsets are returned strictly increasing (a
+    maximum whose flank walk lands at or below an earlier onset belongs to that
+    feature).
     """
     r = np.asarray(r, dtype=float)
-    g = np.abs(np.asarray(g, dtype=float))
+    a = np.abs(np.asarray(g, dtype=float))
     selection = np.where((r >= search_min) & (r <= search_max))[0]
     if selection.size < 3:
-        return None
-    peak_index = int(selection[np.argmax(g[selection])])
-    peak = g[peak_index]
-    if peak < floor:
-        return None
-    level = max(floor, fraction * peak)
-    index = peak_index
-    while index > selection[0] and g[index] > level:
+        return []
+    first, last = int(selection[0]), int(selection[-1])
+    global_max = float(a[first : last + 1].max())
+    if global_max < floor:
+        return []
+    # Reference zone: one termination-ripple period above the search start is
+    # never a candidate, so every candidate's ripple field holds >= one crest.
+    zone_end = float(search_min) + (2.0 * np.pi / float(qmax) if qmax > 0 else 0.0)
+    onsets: list[float] = []
+    for index in range(first + 1, last):
+        peak = a[index]
+        if r[index] < zone_end or peak < floor:
+            continue
+        if not (peak >= a[index - 1] and peak > a[index + 1]):
+            continue
+        start = index
+        while start > first and a[start - 1] < a[start]:
+            start -= 1
+        ripple = float(a[first : start + 1].max())
+        if not (
+            peak >= strong_prominence * ripple
+            or (peak >= prominence * ripple and peak >= major * global_max)
+        ):
+            continue
+        level = max(floor, fraction * peak)
+        onset = index
+        while onset > first and a[onset] > level:
+            onset -= 1
+        if a[onset] > level:
+            break  # the flank reaches below the search range: not separable
+        value = float(r[onset + 1])
+        if not onsets or value > onsets[-1]:
+            onsets.append(value)
+    return onsets
+
+
+def detect_first_peak_onset(
+    r: np.ndarray,
+    g: np.ndarray,
+    qmax: float,
+    *,
+    search_min: float = 1.0,
+    search_max: float = 6.0,
+    fraction: float = 0.35,
+    floor: float = 0.5,
+    prominence: float = 2.0,
+    major: float = 0.5,
+    strong_prominence: float = 4.0,
+) -> float | None:
+    """Data-derived closest-approach r0: the rising flank of the FIRST shell.
+
+    The first entry of :func:`first_shell_candidates` (same parameters): the
+    smallest-r feature of g(r) that stands out of the ripple field below it,
+    of either sign — not the tallest feature in the range. Returns None when
+    no maximum qualifies, or when the first qualifying shell's flank reaches
+    below ``search_min`` (not separable from the reference zone).
+    """
+    onsets = first_shell_candidates(
+        r, g, qmax, search_min=search_min, search_max=search_max,
+        fraction=fraction, floor=floor, prominence=prominence, major=major,
+        strong_prominence=strong_prominence,
+    )
+    return onsets[0] if onsets else None
+
+
+def first_shell_foot(r: np.ndarray, g: np.ndarray, onset: float) -> float:
+    """Foot of the first shell: walk left from ``onset`` down its rising flank.
+
+    From the grid point at ``onset`` (a point on the shell's flank, e.g. from
+    :func:`detect_first_peak_onset`), step left while |g| keeps decreasing and
+    g keeps the shell's sign. The walk stops at the first local minimum of |g|
+    (returned) or where g changes sign (the point just across the zero
+    crossing is returned, so the whole same-sign lobe lies above it).
+    """
+    r = np.asarray(r, dtype=float)
+    g = np.asarray(g, dtype=float)
+    a = np.abs(g)
+    index = int(np.argmin(np.abs(r - float(onset))))
+    sign = np.sign(g[index])
+    while index > 0:
+        if np.sign(g[index - 1]) != sign:
+            return float(r[index - 1])
+        if a[index - 1] >= a[index]:
+            break
         index -= 1
-    if g[index] > level:
-        return None  # never dropped below the level inside the search range
-    return float(r[index + 1])
+    return float(r[index])
+
+
+def auto_enforcement_cutoff(
+    r: np.ndarray,
+    g: np.ndarray,
+    config: ScalingConfig,
+    onset: float | None = None,
+) -> float | None:
+    """Automatic low-r enforcement cutoff: at the foot of the first shell.
+
+    The classic enforcement zeroes g (G_K = -<b>^2) for every ``r <=
+    cutoff`` in the RMCProfile files, so an automatic cutoff must sit below
+    the first shell's rising flank — never on it (the detected onset is ~35 %
+    up the flank; enforcing there deleted 6-9 % of the first-shell pair
+    density). With ``anchor`` = the first-shell onset, capped at a pinned
+    ``config.r0`` (a user / MINIMUM_DISTANCES / stog.inp closest approach is
+    never overridden upward), the cutoff is
+    ``min(first_shell_foot(anchor), anchor - R0_WINDOW_MARGIN)``: below the
+    whole flank, and never above the top of the region the density-limit
+    fit itself treats as g = 0. ``onset`` defaults to
+    :func:`detect_first_peak_onset` on ``g``. Returns None when there is
+    neither a detected shell nor a pinned ``r0`` to anchor it.
+    """
+    if onset is None:
+        onset = detect_first_peak_onset(
+            r, g, config.qmax, search_min=config.r_cutoff + 0.3
+        )
+    anchor = onset
+    if config.r0 is not None:
+        anchor = float(config.r0) if anchor is None else min(float(anchor), float(config.r0))
+    if anchor is None:
+        return None
+    foot = first_shell_foot(r, g, anchor)
+    return float(min(foot, float(anchor) - R0_WINDOW_MARGIN))
 
 
 _HUBER_C = 1.345  # 95% Gaussian efficiency
@@ -563,13 +741,118 @@ def _low_r_rms(r: np.ndarray, g_filtered: np.ndarray, config: ScalingConfig) -> 
     return float(np.sqrt(np.mean(g_filtered[window] ** 2)))
 
 
+def _intercept_se(
+    q_centered: np.ndarray, q_mean: float, used: np.ndarray, residuals: np.ndarray
+) -> float:
+    """Huber sandwich standard error of the head fit's Q = 0 intercept.
+
+    The final solve of the IRLS head fit scales each row by its weight ``u``
+    (from the previous iterate), so it solves ``sum psi(r_i) d_i = 0`` with
+    ``psi(r) = u^2 r``: ``r`` inside the Huber core, ``c^2 s^2 / r`` beyond it,
+    whence ``psi' = 1`` inside and ``-u^2`` outside. Huber's covariance
+    (Huber 1981, Eq. 7.10; statsmodels RLM ``'H1'``)::
+
+        K^2 [sum psi^2 / (n - p)] / mean(psi')^2 (D^T D)^-1,
+        K = 1 + (p / n) var(psi') / mean(psi')^2
+
+    is calibrated against the scatter of the intercept (Gaussian, Student-t
+    and spiked heads: 0.98-1.04 of the empirical sd), where the naive
+    weighted-LSQ error ``sum(u^2 r^2)/dof`` over ``D^T U^2 D`` was 0.77-0.90.
+    ``D = [1, Q - mean Q]`` so ``(D^T D)^-1`` is diagonal. A non-positive
+    ``mean(psi')`` (half the head beyond the core) leaves the intercept
+    unidentified: the error is infinite.
+    """
+    n, p = q_centered.size, 2
+    inlier = used >= 1.0
+    psi = used * used * residuals
+    dpsi = np.where(inlier, 1.0, -used * used)
+    mean_dpsi = float(np.mean(dpsi))
+    if not mean_dpsi > 0.0:
+        return float("inf")
+    k = 1.0 + (p / n) * float(np.var(dpsi)) / mean_dpsi**2
+    sigma2 = k * k * float(np.sum(psi * psi)) / max(n - p, 1) / mean_dpsi**2
+    # [1, -q_mean] (D^T D)^-1 [1, -q_mean]^T with sum(q_centered) = 0.
+    quad = 1.0 / n + q_mean * q_mean / float(np.sum(q_centered * q_centered))
+    return float(np.sqrt(max(sigma2 * quad, 0.0)))
+
+
+def fz_limit_fit(
+    q: np.ndarray,
+    sq: np.ndarray,
+    level: float,
+    config: ScalingConfig,
+    *,
+    fit_width: float = FZ_FIT_WIDTH,
+    level_uncertainty: float = 0.0,
+) -> dict[str, Any] | None:
+    """The Q->0 Faber-Ziman amplitude with its conditioning.
+
+    ``a_fz = (s0_target - 1) / (S_meas(0) - level)`` (see
+    :func:`amplitude_from_fz_limit`). The denominator is a difference of two
+    measured numbers that can nearly cancel, so the Huber head fit also
+    returns the standard error of its Q = 0 intercept (Huber's sandwich,
+    :func:`_intercept_se`), combined in quadrature with the level's
+    uncertainty (``level_uncertainty``, the level sweep's spread) into
+    ``denominator_se`` and the relative error ``a_fz_rel_se`` of ``a_fz``
+    (= ``denominator_se / |denominator|``). ``reliable`` is False when that
+    exceeds :data:`FZ_REL_SE_MAX` — the head (e.g. Bragg-contaminated
+    crystalline data) cannot pin S_meas(0) against the level: on the Mn3Sn
+    59438 run a_fz = 74-141 at Qmin 0.82-1.02 with a 29-49 % relative error, and
+    512 (168 %) at Qmin 1.05 (the 300 K run: 10.3-11.1, 6-9 %). The flag is
+    statistical — necessary, not sufficient: a systematic head bias below the
+    threshold (55537: 11 -> 6 at 8-15 %, 54139: 16 -> 26 at 9-18 %, Qmin
+    0.82-1.08) still needs the a_fz-vs-Qmin stability and concordance
+    cross-checks. Returns None when ``b_sq_avg`` is missing, the head has < 8
+    points, or the denominator vanishes.
+    """
+    if config.b_sq_avg is None:
+        return None
+    s0_target = 1.0 - config.b_sq_avg / config.b_avg_sq
+    head = q <= q[0] + fit_width
+    if head.sum() < 8:
+        return None
+    q_head, s_head = q[head], sq[head]
+    q_mean = q_head.mean()
+    design = np.column_stack([np.ones_like(q_head), q_head - q_mean])
+    weights = np.ones_like(q_head)
+    solution = np.array([np.median(s_head), 0.0])
+    used = weights
+    for _ in range(4):
+        used = weights
+        solution, *_ = np.linalg.lstsq(
+            design * used[:, np.newaxis], s_head * used, rcond=None
+        )
+        residuals = design @ solution - s_head
+        weights = _huber_weights(residuals)
+    s_meas_0 = float(solution[0] - solution[1] * q_mean)  # value at Q = 0
+    denom = s_meas_0 - level
+    if abs(denom) < 1e-9:
+        return None
+    s_meas_0_se = _intercept_se(q_head - q_mean, q_mean, used, residuals)
+    level_se = float(level_uncertainty) if np.isfinite(level_uncertainty) else 0.0
+    denom_se = float(np.hypot(s_meas_0_se, level_se))
+    rel_se = denom_se / abs(denom)
+    return {
+        "a_fz": float((s0_target - 1.0) / denom),
+        "s_meas_0": s_meas_0,
+        "s_meas_0_se": s_meas_0_se,
+        "level": float(level),
+        "level_uncertainty": level_se,
+        "denominator": float(denom),
+        "denominator_se": denom_se,
+        "a_fz_rel_se": float(rel_se),
+        "reliable": bool(rel_se <= FZ_REL_SE_MAX),
+        "fit_width": float(fit_width),
+    }
+
+
 def amplitude_from_fz_limit(
     q: np.ndarray,
     sq: np.ndarray,
     level: float,
     config: ScalingConfig,
     *,
-    fit_width: float = 1.0,
+    fit_width: float = FZ_FIT_WIDTH,
 ) -> float | None:
     """Independent amplitude estimate from the Q->0 Faber-Ziman limit.
 
@@ -578,32 +861,15 @@ def amplitude_from_fz_limit(
     ``a_fz = (s0_target - 1) / (S_meas(0) - level)`` where ``S_meas(0)`` is a
     robust linear extrapolation of the first ``fit_width`` of measured data.
     Requires ``config.b_sq_avg``; returns None when unavailable or the
-    extrapolation is degenerate. The caller should treat long extrapolations
-    (Qmin >> fit_width) and Bragg-contaminated low-Q regions with suspicion —
-    compare against the density-limit amplitude (``diagnostics_summary``'s
-    concordance) rather than trusting either alone.
+    extrapolation is degenerate. The number alone says nothing about how well
+    the head pins S_meas(0) against the level — :func:`fz_limit_fit` returns
+    its relative standard error and a ``reliable`` flag (reported as
+    ``a_fz_rel_se`` / ``a_fz_reliable`` by :func:`diagnostics_summary`); long
+    extrapolations (Qmin >> fit_width) and Bragg-contaminated heads are the
+    usual culprits.
     """
-    if config.b_sq_avg is None:
-        return None
-    s0_target = 1.0 - config.b_sq_avg / config.b_avg_sq
-    head = q <= q[0] + fit_width
-    if head.sum() < 8:
-        return None
-    qc = q[head] - q[head].mean()
-    design = np.column_stack([np.ones_like(qc), qc])
-    weights = np.ones_like(qc)
-    solution = np.array([np.median(sq[head]), 0.0])
-    for _ in range(4):
-        solution, *_ = np.linalg.lstsq(
-            design * weights[:, np.newaxis], sq[head] * weights, rcond=None
-        )
-        residuals = design @ solution - sq[head]
-        weights = _huber_weights(residuals)
-    s_meas_0 = float(solution[0] - solution[1] * q[head].mean())  # value at Q = 0
-    denom = s_meas_0 - level
-    if abs(denom) < 1e-9:
-        return None
-    return float((s0_target - 1.0) / denom)
+    fit = fz_limit_fit(q, sq, level, config, fit_width=fit_width)
+    return None if fit is None else fit["a_fz"]
 
 
 def _despike_mask(sq: np.ndarray, window: int, nsigma: float) -> np.ndarray:
@@ -618,6 +884,44 @@ def _despike_mask(sq: np.ndarray, window: int, nsigma: float) -> np.ndarray:
     return np.abs(residual) <= nsigma * max(mad, 1e-12)
 
 
+def _ascending_order(q: np.ndarray) -> np.ndarray:
+    """Index order that sorts the (finite, cropped) ``q`` ascending — or raise.
+
+    A file in descending Q (e.g. Q = 2 pi/d kept in d order) is simply read
+    backwards, and non-overlapping segments in any order (banks written high-Q
+    first) are sorted. Duplicate Q values, and segments whose Q ranges overlap
+    (several detector banks concatenated, or rows out of order inside a run),
+    have no single S(Q) to sort into and raise ``ValueError``: merge them first.
+    """
+    steps = np.diff(q)
+    if np.all(steps > 0):
+        return np.arange(q.size)
+    order = np.argsort(q, kind="stable")
+    repeated = np.diff(q[order]) == 0
+    if np.any(repeated):
+        value = float(q[order][1:][repeated][0])
+        raise ValueError(
+            f"S(Q) has duplicate Q values (e.g. Q = {value:.6g} A^-1 appears more "
+            "than once) inside [qmin, qmax]: merge or rebin the data (several "
+            "detector banks?) into one S(Q) before scaling"
+        )
+    # Read against the majority direction, then split into ascending runs.
+    index = np.arange(q.size)
+    if np.count_nonzero(steps < 0) > np.count_nonzero(steps > 0):
+        index = index[::-1]
+    runs = np.split(index, np.where(np.diff(q[index]) < 0)[0] + 1)
+    spans = sorted((float(q[run[0]]), float(q[run[-1]])) for run in runs)
+    for (lo1, hi1), (lo2, hi2) in zip(spans, spans[1:]):
+        if lo2 < hi1:
+            raise ValueError(
+                "S(Q) rows are not in one monotonic Q order: segments overlap in Q "
+                f"([{lo1:.6g}, {hi1:.6g}] and [{lo2:.6g}, {hi2:.6g}] A^-1) — typically "
+                "several detector banks concatenated, or rows out of order; merge "
+                "them into one monotonic S(Q) before scaling"
+            )
+    return order
+
+
 def crop_sq(
     q: np.ndarray,
     sq: np.ndarray,
@@ -629,6 +933,11 @@ def crop_sq(
     ``Q <= 0`` rows are dropped unconditionally: the S(Q) conversions divide
     by Q, and the analytic low-Q correction already models the omitted
     ``[0, Qmin]`` range, so a Q = 0 point carries no usable information.
+    The kept rows are returned in ascending Q (a descending file, or
+    non-overlapping segments in any order, are sorted — the transforms'
+    trapezoid rule needs an increasing grid); duplicate Q values or segments
+    whose Q ranges overlap raise ``ValueError`` (see :func:`_ascending_order`).
+    The optional despike runs on the sorted data.
     Returns ``(q, sq, sigma)`` with ``sigma`` cropped alongside (or ``None``).
     """
     q = np.asarray(q, dtype=float)
@@ -645,12 +954,36 @@ def crop_sq(
     q, sq = q[keep], sq[keep]
     if sigma is not None:
         sigma = np.asarray(sigma, dtype=float)[keep]
+    order = _ascending_order(q)
+    q, sq = q[order], sq[order]
+    if sigma is not None:
+        sigma = sigma[order]
     if config.despike:
         keep2 = _despike_mask(sq, config.despike_window, config.despike_nsigma)
         q, sq = q[keep2], sq[keep2]
         if sigma is not None:
             sigma = sigma[keep2]
     return q, sq, sigma
+
+
+def alias_limit(q: np.ndarray) -> float:
+    """Largest r the trapezoid sine transform resolves: ``pi / max(dQ)``.
+
+    On a grid ``Q_i = Q_0 + i dQ`` the kernel ``sin(Q_i r)`` at
+    ``r' = 2 pi/dQ - r`` differs from the one at ``r`` only by sign (up to the
+    constant phase), so G(r) beyond ``pi/dQ`` is a negated mirror image of the
+    structure below it (a shell at 20 A reappears inverted at 42.8 A for
+    dQ = 0.1). On a non-uniform grid the coarsest step sets the limit: beyond
+    ``pi/dQ`` a step's trapezoid chord no longer follows ``sin(Q r)``. A
+    log-binned grid (dQ/Q = 0.004 to Q = 30) fails beyond 26 A although its
+    median step gives 203 A, and the gaps despiking leaves (0.13 wide on the
+    Mn3Sn 59438 run) corrupt G(r) beyond 24 A (25-40 % rms). ``dQ`` is taken
+    over the (cropped, despiked) grid that is transformed.
+    """
+    q = np.asarray(q, dtype=float)
+    if q.size < 2:
+        return float("inf")
+    return float(np.pi / np.max(np.diff(q)))
 
 
 def scale_pipeline(
@@ -694,6 +1027,7 @@ def scale_pipeline(
         d_r_enforced = gk_to_dr(r, gk_enforced, config.rho0)
 
     tail, _ = _fit_windows(q, r, config)
+    r_alias = alias_limit(q)
     provenance = {
         "model": "S_corr = a*S_meas + b",
         "mode": "manual",
@@ -714,6 +1048,7 @@ def scale_pipeline(
         "r_fit_window": list(config.r_fit_window),
         "n_q_points": int(q.size),
         "n_despiked": n_despiked,
+        "r_alias_limit": r_alias,
     }
     return ScalingResult(
         a=a,
@@ -740,47 +1075,222 @@ def scale_pipeline(
     )
 
 
+def _detect_onset(result: ScalingResult, config: ScalingConfig) -> float | None:
+    """First-shell onset of a result's filtered g(r), searched above r_cutoff + 0.3."""
+    return detect_first_peak_onset(
+        result.r, result.g_filtered, config.qmax,
+        search_min=config.r_cutoff + 0.3,
+    )
+
+
+def _shell_candidates(result: ScalingResult, config: ScalingConfig) -> list[float]:
+    """All shell onsets of a result's filtered g(r), searched above r_cutoff + 0.3."""
+    return first_shell_candidates(
+        result.r, result.g_filtered, config.qmax,
+        search_min=config.r_cutoff + 0.3,
+    )
+
+
+def _near(value: float, onsets: list[float]) -> bool:
+    return any(abs(value - other) <= ONSET_TOLERANCE for other in onsets)
+
+
+def _cutoff_advice(onset: float, config: ScalingConfig) -> str:
+    """How to make room for a low-r window below a first shell at ``onset``."""
+    if config.r_fit_min is not None:
+        return f"lower r_fit_min below {onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW:.2f} A"
+    target = np.floor((onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW - 0.2) / 0.05) * 0.05
+    return f"lower r_cutoff to <= {target:.2f} A"
+
+
 def autoscale(
     q: np.ndarray,
     sq: np.ndarray,
     config: ScalingConfig,
     sigma: np.ndarray | None = None,
 ) -> ScalingResult:
-    """Automatically determine ``(a, b)`` and run the full pipeline.
+    """Self-consistent (a, b) determination; see the module docstring.
 
-    Self-consistent loop: fit ``(a, b)`` with the Fourier-filter subtraction
-    term held fixed, re-run the filter on the corrected data, repeat until the
-    parameters converge (``tol``) or ``max_iter`` is reached. ``sigma``
+    Runs the single-pass fit (:func:`_autoscale_pass`); ``sigma``
     (per-point uncertainties, e.g. the data file's third column) weights the
     high-Q C1 rows by 1/sigma.
 
-    When the caller pins neither ``r0`` nor ``r_fit_max``, a second refinement
-    pass runs: the first pass's filtered g(r) yields a data-derived closest
-    approach (:func:`detect_first_peak_onset`), and if that moves the low-r
-    window materially the fit is redone with the detected ``r0``. The result's
-    provenance then carries ``r0_detected`` / ``window_refined`` — this is what
-    lets composition + Q-window be the only required inputs.
+    **Low-r window placement.** The C2 rows force g = 0 on the window, so the
+    window must lie below the first coordination shell. When the caller pins
+    neither ``r0`` nor ``r_fit_max`` (the composition + Q-window workflow), the
+    window is located from the data instead of assumed:
+
+    1. two trial fits on ``[lo, lo + w]`` for ``w`` in :data:`START_WINDOW_WIDTHS`
+       (a narrow window below any bond longer than ~1.75 A, and the historic
+       ``lo + 1.0`` one, which averages the large low-r ripples of
+       missing-low-Q data) each propose shell onsets
+       (:func:`first_shell_candidates`) — whatever the sign of the trial's
+       scale, because where a shell sits does not depend on it;
+    2. the smallest untried onset ``c`` is refitted on ``[lo, c - 0.25]``. A
+       refit with a non-physical scale ``a <= 0`` stops the search with a
+       ``ValueError`` (the low-r region cannot be modelled as g = 0 below
+       ``c``: if ``c`` is the first shell no window above it can be right).
+       Otherwise the refit's own g(r) is searched again: its first shell
+       within :data:`ONSET_TOLERANCE` of ``c`` **confirms** ``c``; a lower
+       one is tried next (the refit uncovered it); none, or only higher ones,
+       mean ``c`` was a feature of the trial's scale, not a shell — ``c`` is
+       dropped (and ignored by later confirmations) and the next onset is
+       tried. At most :data:`MAX_WINDOW_REFITS` refits run;
+    3. a confirmed onset that leaves less than :data:`MIN_AUTO_WINDOW` above
+       ``lo``, no confirmable onset, or an exhausted refit budget raise a
+       ``ValueError`` that explains what to change (lower ``r_cutoff`` /
+       ``r_fit_min`` only when a shell is confirmed that close; otherwise pin
+       ``r0`` / ``r_fit_max``) — a fit across the first shell, or one with
+       ``a <= 0``, is never returned.
+
+    The result's provenance carries ``r0_detected`` — the confirmed onset the
+    window was built from (``r_fit_window`` hi = ``r0_detected - 0.25``) — and
+    ``window_refined``. With a pinned window, or with
+    ``amplitude_criterion="fz"`` (whose amplitude does not depend on the
+    window), one pass runs and detection only annotates the result (the fz
+    diagnostic window is still refined when the shell leaves room for it).
     """
-    result = _autoscale_pass(q, sq, config, sigma)
-    onset = detect_first_peak_onset(
-        result.r, result.g_filtered, config.qmax,
-        search_min=config.r_cutoff + 0.3,
+    lo = config.r_fit_window[0]
+    if config.r0 is not None or config.r_fit_max is not None:
+        result = _autoscale_pass(q, sq, config, sigma)
+        onset = _detect_onset(result, config)
+        if onset is not None:
+            result.provenance["r0_detected"] = float(onset)
+        return result
+
+    if config.amplitude_criterion == "fz":
+        result = _autoscale_pass(q, sq, config, sigma)
+        onset = _detect_onset(result, config)
+        if onset is None:
+            return result
+        if onset - R0_WINDOW_MARGIN - lo < MIN_AUTO_WINDOW:
+            result.provenance["r0_detected"] = float(onset)
+            return result
+        refined = _autoscale_pass(q, sq, replace(config, r0=float(onset)), sigma)
+        refined.provenance["r0_detected"] = float(onset)
+        refined.provenance["window_refined"] = True
+        return refined
+
+    return _place_low_r_window(
+        lambda trial_config: _autoscale_pass(q, sq, trial_config, sigma), config
     )
-    if onset is not None:
-        result.provenance["r0_detected"] = float(onset)
-    if (
-        onset is not None
-        and config.r0 is None
-        and config.r_fit_max is None
-        and onset - 0.25 > (config.r_fit_min if config.r_fit_min is not None else config.r_cutoff + 0.2)
-        and abs((onset - 0.25) - config.r_fit_window[1]) > 0.05
-    ):
-        refined = replace(config, r0=float(onset))
-        refined_result = _autoscale_pass(q, sq, refined, sigma)
-        refined_result.provenance["r0_detected"] = float(onset)
-        refined_result.provenance["window_refined"] = True
-        return refined_result
-    return result
+
+
+def _place_low_r_window(
+    run_pass: Callable[[ScalingConfig], ScalingResult], config: ScalingConfig
+) -> ScalingResult:
+    """Locate the first shell and fit below it (steps 1-3 of :func:`autoscale`).
+
+    ``run_pass(config)`` runs one fit pass for a trial / refit configuration;
+    it is a parameter so the placement logic can be exercised on scripted
+    passes (tests, and the JS port's parity fixture).
+    """
+    lo = config.r_fit_window[0]
+    pool: list[float] = []
+
+    def propose(onsets: list[float]) -> None:
+        for value in onsets:
+            if not _near(value, pool):
+                pool.append(float(value))
+
+    failures: list[ValueError] = []
+    trial_scales: list[float] = []
+    for width in START_WINDOW_WIDTHS:
+        try:
+            trial = run_pass(replace(config, r_fit_max=lo + width))
+        except ValueError as exc:  # e.g. a trial window with < 2 r points
+            failures.append(exc)
+            continue
+        trial_scales.append(float(trial.a))
+        propose(_shell_candidates(trial, config))
+    if len(failures) == len(START_WINDOW_WIDTHS):
+        raise failures[-1]  # the data cannot be fitted at all: report why
+
+    fixes = "Set r0 (the closest interatomic approach) or r_fit_max"
+    refits: dict[float, tuple[ScalingResult, list[float]]] = {}
+    dropped: list[float] = []  # onsets their own refit no longer shows
+    while True:
+        live = [value for value in pool if not _near(value, dropped)]
+        if not live:
+            break
+        onset = min(live)
+        room = onset - R0_WINDOW_MARGIN - lo
+        if onset not in refits:
+            if len(refits) >= MAX_WINDOW_REFITS:
+                raise ValueError(
+                    "autoscale: no first-shell onset was confirmed within "
+                    f"{MAX_WINDOW_REFITS} refits of the low-r window (tried "
+                    + ", ".join(f"{value:.2f}" for value in sorted(refits))
+                    + f" A). {fixes}"
+                )
+            try:
+                refined = run_pass(replace(config, r0=onset))
+            except ValueError as exc:
+                if room >= MIN_AUTO_WINDOW:
+                    raise
+                raise ValueError(
+                    f"autoscale: a shell-like feature starts at {onset:.2f} A, too "
+                    f"close to the fit-window start {lo:g} A to place or verify a "
+                    f"low-r window below it ({exc}). If it is the first "
+                    "coordination shell (a bond that short), "
+                    f"{_cutoff_advice(onset, config)}; otherwise {fixes[0].lower()}{fixes[1:]}"
+                ) from exc
+            if not refined.a > 0:
+                where = (
+                    f"the narrow window [{lo:g}, {onset - R0_WINDOW_MARGIN:.2f}] A"
+                    if room < MIN_AUTO_WINDOW
+                    else f"[{lo:g}, {onset - R0_WINDOW_MARGIN:.2f}] A"
+                )
+                raise ValueError(
+                    "autoscale: the density-limit fit below the first-shell "
+                    f"candidate at {onset:.2f} A gives a non-physical scale "
+                    f"(a = {refined.a:.4g} on {where}): the low-r region cannot "
+                    "be modelled as g = 0 there, so no automatic window is "
+                    "trustworthy (typical of data missing structure below Qmin, "
+                    f"where the density limit is degenerate). {fixes}, or use "
+                    "the Faber-Ziman Q->0 amplitude criterion "
+                    "(amplitude_criterion='fz', CLI --amplitude fz) when the "
+                    "composition is known"
+                )
+            found = _shell_candidates(refined, config)
+            refits[onset] = (refined, found)
+            propose(found)
+        refined, found = refits[onset]
+        found = [value for value in found if not _near(value, dropped)]
+        if found and abs(found[0] - onset) <= ONSET_TOLERANCE:
+            if room < MIN_AUTO_WINDOW:
+                advice = _cutoff_advice(onset, config)
+                raise ValueError(
+                    f"autoscale: the first coordination shell starts at {onset:.2f} A, "
+                    f"leaving no low-r fit window between {lo:g} A and "
+                    f"{onset - R0_WINDOW_MARGIN:.2f} A (onset - {R0_WINDOW_MARGIN:g}); a "
+                    "window across the shell would force it to zero and bias the "
+                    f"scale. {advice[0].upper() + advice[1:]}, or set r0 / r_fit_max"
+                )
+            refined.provenance["r0_detected"] = float(onset)
+            refined.provenance["window_refined"] = True
+            return refined
+        if found and found[0] < onset - ONSET_TOLERANCE:
+            continue  # the refit uncovered a lower shell: it is tried next
+        dropped.append(onset)
+
+    tried = (
+        "; onsets not confirmed by their own refit: "
+        + ", ".join(f"{value:.2f}" for value in dropped)
+        + " A"
+        if dropped
+        else ""
+    )
+    raise ValueError(
+        "autoscale: could not locate the first coordination shell in the "
+        f"data (trial low-r windows [{lo:g}, {lo + START_WINDOW_WIDTHS[0]:g}] "
+        f"and [{lo:g}, {lo + START_WINDOW_WIDTHS[-1]:g}] A, scales a = "
+        + ", ".join(f"{value:.3g}" for value in trial_scales)
+        + f"{tried}; no shell stands out of the ripples and survives a refit "
+        "below it), so the density-limit window cannot be placed below it. "
+        f"{fixes}; if the first bond is shorter than ~{lo + 0.55:.1f} A, also "
+        f"lower r_cutoff (now {config.r_cutoff:g} A)"
+    )
 
 
 def _autoscale_pass(
@@ -789,6 +1299,11 @@ def _autoscale_pass(
     config: ScalingConfig,
     sigma: np.ndarray | None = None,
 ) -> ScalingResult:
+    # scale_pipeline crops (and despikes) its input itself, so it gets the RAW
+    # arrays: handing it the already-despiked ones despiked twice, and the
+    # written files and n_despiked then described a smaller point set than the
+    # one fitted (JS parity: autoscalePass passes qIn/sqIn).
+    q_raw, sq_raw = q, sq
     q, sq, sigma = crop_sq(q, sq, config, sigma)
     r = config.r_grid
     tail, window = _fit_windows(q, r, config)
@@ -810,7 +1325,10 @@ def _autoscale_pass(
                 "flat high-Q window, so there is no measured level to anchor; "
                 "inspect the tail or use the density-limit fit"
             )
-        a_fz = amplitude_from_fz_limit(q, sq, level, config)
+        fz_fit = fz_limit_fit(
+            q, sq, level, config, level_uncertainty=sweep.level_uncertainty
+        )
+        a_fz = None if fz_fit is None else fz_fit["a_fz"]
         if a_fz is None or not np.isfinite(a_fz) or a_fz <= 0:
             raise ValueError(
                 "amplitude_criterion='fz': the Q->0 extrapolation is "
@@ -818,8 +1336,8 @@ def _autoscale_pass(
                 "Faber-Ziman limit"
             )
         result = scale_pipeline(
-            q,
-            sq,
+            q_raw,
+            sq_raw,
             config,
             float(a_fz),
             float(1.0 - a_fz * level),
@@ -831,6 +1349,7 @@ def _autoscale_pass(
         result.provenance["mode"] = "auto"
         result.provenance["c1_mode_effective"] = "sweep"
         result.provenance["level_sweep"] = _sweep_provenance(sweep)
+        result.provenance["fz_limit"] = fz_fit
         return result
 
     delta_sq = np.zeros_like(q)
@@ -854,13 +1373,28 @@ def _autoscale_pass(
             break
         a_prev, b_prev = a, b
 
-    a_fz = None
+    # A non-physical scale is a failed fit however stable the iteration was:
+    # never report it as converged (the CLI and the API refuse to write it).
+    fit_failure = None
+    if not (np.isfinite(a) and a > 0):
+        converged = False
+        lo, hi = config.r_fit_window
+        fit_failure = (
+            f"non-physical scale a = {a:.6g} (a <= 0): the density-limit fit "
+            "cannot describe these data as a*S + b with a positive scale on the "
+            f"low-r window [{lo:.4g}, {hi:.4g}] A"
+        )
+
+    a_fz = fz_fit = None
     if level is not None:
-        a_fz = amplitude_from_fz_limit(q, sq, level, config)
+        fz_fit = fz_limit_fit(
+            q, sq, level, config, level_uncertainty=sweep.level_uncertainty
+        )
+        a_fz = None if fz_fit is None else fz_fit["a_fz"]
 
     result = scale_pipeline(
-        q,
-        sq,
+        q_raw,
+        sq_raw,
         config,
         a,
         b,
@@ -872,6 +1406,8 @@ def _autoscale_pass(
     )
     result.provenance["mode"] = "auto"
     result.provenance["c1_mode_effective"] = "sweep" if level is not None else "joint"
+    result.provenance["fit_failure"] = fit_failure
+    result.provenance["fz_limit"] = fz_fit
     if sweep is not None:
         result.provenance["level_sweep"] = _sweep_provenance(sweep)
     return result
@@ -885,8 +1421,8 @@ def estimate_rho0(
     *,
     rtol: float = 1.0e-3,
     max_iter: int = 8,
-    rho_min: float = 1.0e-4,
-    rho_max: float = 1.0,
+    rho_min: float = RHO0_PHYSICAL_RANGE[0],
+    rho_max: float = RHO0_PHYSICAL_RANGE[1],
 ) -> dict[str, Any]:
     """Self-consistent number density from amplitude-criteria concordance.
 
@@ -904,16 +1440,35 @@ def estimate_rho0(
     ``rho_next = rho0 * concordance`` converges in a few :func:`autoscale`
     passes.
 
+    A concordant density is accepted only when it is physical: the iterate is
+    confined to ``[rho_min, rho_max]`` (default :data:`RHO0_PHYSICAL_RANGE`,
+    0.005-0.25 A^-3 — from liquid Cs to beyond diamond; a step leaving it
+    stops the iteration), and the density-limit criterion must hold at the
+    root (``diagnostics_summary``'s ``density_limit_satisfied``). On
+    missing-low-Q data ``a_density(rho0)`` can cross ``a_fz`` a second time
+    at a density no solid has (0.388 A^-3 = 45.7 g/cm^3 for Mn3Sn at 300 K);
+    that crossing is a spurious root, reported ``converged=False``.
+
     Caveats: requires ``config.b_sq_avg`` (without a composition the
     degeneracy is fundamental) and a statistically flat high-Q level; the
-    returned ``extrapolated`` flag marks data whose Qmin exceeds the FZ fit
-    width — there the Q->0 extrapolation owns the estimate, so treat it as a
-    starting point, not a measurement. ``config.rho0`` seeds the iteration.
+    returned ``extrapolated`` flag marks data whose first measured Q (``q_first``,
+    after cropping — not ``config.qmin``, which may lie below NaN-padded rows)
+    exceeds the FZ fit width :data:`FZ_FIT_WIDTH` — there the Q->0
+    extrapolation owns the estimate, so treat it as a starting point, not a
+    measurement. ``config.rho0`` seeds the iteration (clipped into the
+    physical range).
 
     Returns a JSON-friendly dict: ``rho0``, ``converged``, ``iterations``,
-    ``concordance``, ``a_density``, ``a_fz``, ``extrapolated``, and
-    ``history`` rows ``[rho0, a_density, a_fz, concordance]``.
+    ``concordance``, ``a_density``, ``a_fz``, ``extrapolated``, ``q_first``, ``history``
+    rows ``[rho0, a_density, a_fz, concordance]``, ``stopped`` — None, or
+    why the iteration stopped early because :func:`autoscale` could not fit a
+    trial density (the last usable iterate is reported, ``converged=False``)
+    — and ``reason``: None when converged, else why not (``stopped``, a
+    non-physical amplitude, a step out of the physical range, a spurious
+    root, or no concordance within ``max_iter`` passes).
     """
+    if not (0.0 < rho_min < rho_max):
+        raise ValueError(f"need 0 < rho_min < rho_max, got [{rho_min}, {rho_max}]")
     if config.b_sq_avg is None:
         raise ValueError(
             "estimate_rho0 requires b_sq_avg (<b^2>): without a composition "
@@ -922,14 +1477,27 @@ def estimate_rho0(
     # The FZ amplitude needs the measured level; the density-limit amplitude
     # is the quantity being matched.
     work = replace(config, amplitude_criterion="density", c1_mode="sweep")
+    # Where the measured data actually start (NaN padding and a qmin below the
+    # data are common): the Q->0 extrapolation spans [0, q_first].
+    q_first = float(crop_sq(q, sq, work)[0][0])
     rho = float(np.clip(work.rho0, rho_min, rho_max))
     history: list[tuple[float, float, float, float]] = []
     converged = False
-    result = None
-    iterations = 0
-    for iterations in range(1, max_iter + 1):
+    stopped: str | None = None
+    reason: str | None = None
+    fz_fit: dict[str, Any] | None = None
+    for _ in range(max_iter):
         work = replace(work, rho0=rho)
-        result = autoscale(q, sq, work, sigma)
+        try:
+            result = autoscale(q, sq, work, sigma)
+        except ValueError as exc:
+            if not history:
+                raise  # the seed density itself cannot be fitted
+            # The fixed-point step left the physical range (the density limit
+            # cannot even be placed below the first shell there): stop.
+            stopped = f"autoscale failed at rho0 = {rho:.6g}: {exc}"
+            reason = stopped
+            break
         if result.a_fz is None or not np.isfinite(result.a_fz) or result.a_fz <= 0:
             raise ValueError(
                 "estimate_rho0: no usable Faber-Ziman amplitude (no flat "
@@ -937,31 +1505,67 @@ def estimate_rho0(
                 "density cannot be anchored on this data"
             )
         concordance = float(result.a_fz / result.a)
+        fz_fit = result.provenance.get("fz_limit")
         history.append((rho, float(result.a), float(result.a_fz), concordance))
         if abs(concordance - 1.0) <= rtol:
-            converged = True
+            # The amplitudes agree; the root is the density only if the fit it
+            # rests on satisfies the density limit there.
+            summary = diagnostics_summary(result, work)
+            if summary["density_limit_satisfied"]:
+                converged = True
+            else:
+                lo, hi = summary["r_fit_window"]
+                reason = (
+                    f"the amplitudes agree at rho0 = {rho:.6g} A^-3, but the "
+                    "density-limit criterion fails there (mean g on the low-r "
+                    f"window [{lo:.3g}, {hi:.3g}] A = {summary['g_window_mean']:.3g}, "
+                    "not ~0): a spurious root, not the sample density"
+                )
             break
         if result.a <= 0 or concordance <= 0:
             # The density-limit fit produced a non-physical amplitude: the two
             # criteria are discordant on this data (typically missing low-Q
             # structure, cf. the Mn3Sn runs) and no density can reconcile
             # them. Stop instead of iterating garbage.
+            reason = (
+                f"the density-limit amplitude is non-physical at rho0 = {rho:.6g} "
+                f"A^-3 (a = {result.a:.4g}, concordance {concordance:.4g}): the "
+                "two amplitude criteria cannot be reconciled on these data"
+            )
             break
         rho_next = float(np.clip(rho * concordance, rho_min, rho_max))
         if rho_next == rho:  # pinned at a bound: no progress possible
+            reason = (
+                f"the fixed-point step leaves the physical density range "
+                f"[{rho_min:g}, {rho_max:g}] A^-3 (next rho0 = "
+                f"{rho * concordance:.4g} A^-3)"
+            )
             break
         rho = rho_next
+    else:
+        reason = (
+            f"no concordant density within {max_iter} passes (last concordance "
+            f"{history[-1][3]:.4g})"
+        )
     return {
         "rho0": history[-1][0],
         "converged": converged,
-        "iterations": iterations,
+        "iterations": len(history),
         "concordance": history[-1][3],
         "a_density": history[-1][1],
         "a_fz": history[-1][2],
-        # FZ head fit spans ~1 A^-1 from Qmin; beyond that the Q->0
-        # extrapolation is longer than the data it rests on.
-        "extrapolated": bool(config.qmin > 1.0),
+        # The FZ head fit spans FZ_FIT_WIDTH (1 A^-1) from the first measured
+        # Q; beyond that the Q->0 extrapolation is longer than the data it
+        # rests on. Judged on the data, not on config.qmin.
+        "extrapolated": bool(q_first > FZ_FIT_WIDTH),
+        "q_first": q_first,
+        # The density is anchored on a_fz: an ill-conditioned Q->0 limit
+        # (fz_limit_fit) makes the estimate as uncertain as a_fz itself.
+        "a_fz_rel_se": None if not fz_fit else fz_fit["a_fz_rel_se"],
+        "a_fz_reliable": None if not fz_fit else fz_fit["reliable"],
         "history": [list(row) for row in history],
+        "stopped": stopped,
+        "reason": None if converged else reason,
     }
 
 
@@ -1012,6 +1616,16 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
         # scale_pipeline) whenever Qmin is not small.
         "density_limit_satisfied": bool(abs(g_window_mean) < 0.1),
     }
+    if result.provenance.get("fit_failure"):
+        summary["fit_failure"] = result.provenance["fit_failure"]
+    r_alias = result.provenance.get("r_alias_limit")
+    if r_alias is not None:
+        # G(r) beyond pi/max(dQ) is folded (a negated mirror image on a
+        # uniform grid) or corrupted by coarse steps — not structure.
+        summary["r_alias_limit"] = float(r_alias)
+        summary["rmax_beyond_alias_limit"] = bool(
+            float(effective.get("rmax", config.rmax)) > float(r_alias)
+        )
     if result.sweep is not None:
         summary["level"] = result.sweep.level
         summary["level_uncertainty"] = result.sweep.level_uncertainty
@@ -1020,8 +1634,22 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
     if "r0_detected" in result.provenance:
         summary["r0_detected"] = result.provenance["r0_detected"]
         summary["window_refined"] = bool(result.provenance.get("window_refined", False))
+        r0_given = effective.get("r0", config.r0)
+        if not summary["window_refined"] and r0_given is not None:
+            # A given closest approach (user / header / stog.inp) is respected,
+            # but a first shell detected clearly below it means the low-r
+            # window [lo, r0 - 0.25] may cut into that shell: say so.
+            summary["first_shell_below_r0"] = bool(
+                float(result.provenance["r0_detected"]) < float(r0_given) - 0.1
+            )
     if result.a_fz is not None:
         summary["a_fz"] = result.a_fz
+        fz_fit = result.provenance.get("fz_limit")
+        if fz_fit:
+            # Conditioning of the Q->0 extrapolation: a_fz = (s0-1)/(S_meas(0)-L)
+            # blows up when S_meas(0) ~ L within their errors.
+            summary["a_fz_rel_se"] = fz_fit["a_fz_rel_se"]
+            summary["a_fz_reliable"] = fz_fit["reliable"]
         if amplitude_criterion != "fz":
             # Concordance of the two independent amplitude criteria: the
             # density-limit amplitude (result.a) vs the Q->0 Faber-Ziman-limit

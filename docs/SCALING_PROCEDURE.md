@@ -38,7 +38,7 @@ Defaults (all overridable, none normally touched):
 | Low-Q correction | ON, extrapolating to the **composition-derived S(0)** | §3 step 2 — this is load-bearing (53% scale bias without it on real data) |
 | Robust re-weighting | Huber IRLS ON | isolated Bragg/ripple outliers cannot drag the fit |
 | Lorch window | OFF | resolution first; turn on for ripple-heavy display |
-| Low-r enforcement | ON at the detected r₀ (stog.inp cutoffs when present) | classic-product parity; the *pre*-enforcement residual is always reported |
+| Low-r enforcement | ON at the foot of the detected first shell — min(foot, onset − 0.25 Å), below its rising flank — (stog.inp / explicit cutoffs when present) | classic-product parity without removing first-shell signal; the *pre*-enforcement residual is always reported |
 
 ## 2. The functions (Keen 2001 conventions)
 
@@ -73,17 +73,35 @@ the manual "try again" scale loop replaced by physics:
    form (the sine transform is affine in (a, b)), inside a self-consistent loop with the
    **Fourier filter** (r < cutoff content removed and re-transformed; ft.dat is that
    correction). Converges in ~3–7 iterations.
-5. **r₀ detection**: the dominant first-shell |g| feature is located and its left flank
-   (35% of peak height) taken as the data's closest approach — |g| because negative-b
-   compositions can have an *inverted* first shell — then the fit window is refined and
-   the fit re-run once. Detected values: 2.73–2.77 Å across the Mn₃Sn runs, 2.53 Å for
-   FeCoSn (matching the hand-chosen classic cutoffs 2.40–2.68).
+5. **r₀ detection**: the *first* coordination shell — the smallest-r |g| feature that
+   stands out of the ripple field below it (≥ 4× that field, or ≥ 2× while ≥ 50 % of the
+   range maximum), not the tallest one — is located and its left flank (35% of its own
+   height) taken as the data's first-shell onset. |g| because negative-b pairs give
+   *inverted* shells (Ti–O in titanates, Mn–Sn in Mn₃Sn), often weaker than the second
+   shell. Without a given r₀ the window is located, not assumed: two trial fits
+   ([r_cut+0.2, +0.3] and [.., +1.0] Å) propose candidate onsets whatever the sign of
+   their scale; the smallest is refitted on [r_cut+0.2, onset − 0.25] and must be
+   re-detected (within 0.15 Å) on that refit's own g(r) — a candidate the refit no longer
+   shows was a ripple and is dropped, a lower shell the refit uncovers is tried next, and a
+   refit with a ≤ 0 stops the run (a fit with a ≤ 0 is never returned). If no shell is
+   confirmed, or a confirmed one leaves < 0.1 Å of window (bonds shorter than ~1.75 Å at
+   the default r_cut = 1.0: Si–O, P–O, B–O, C–O), the run stops with the r_cut to use
+   instead of fitting across the shell. Confirmed onsets, composition-only, over Qmin 0.82
+   and 1.0 × Qmax 24–30: 2.67–2.75 Å on the four Mn₃Sn runs (window top 2.42–2.50 Å, a > 0
+   in every returned fit), except the PG3_55537 run at (Qmin, Qmax) = (0.82, 25), (1.0, 24)
+   and (1.0, 25), which stops ("could not locate the first coordination shell": both trial
+   scales ≈ 0, the density limit is degenerate there — use `--amplitude fz` or pin r₀);
+   2.52–2.53 Å for FeCoSn 199 K (Qmin 0.5/1.0 × Qmax 22–26). These are flank points of the
+   first peak, i.e. *above* the hand-chosen classic cutoffs 2.40–2.68 Å, which sit below it.
 6. **Independent cross-check**: `a_fz` from the Q→0 Faber-Ziman limit (level-subtracted
    head extrapolated to S(0)). Concordance `a_fz/a ≈ 1` is the absolute-scale trust
    metric; discord quantifies what the data cannot decide (and flags a wrong ρ₀ ~1:1).
 7. **Outputs**: scaled S(Q), unfiltered g−1, filtered S(Q)/g−1(+D), and the
-   RMCProfile-ready `F_K(Q)`, `G_K(r)`, `D(r)` — with classic low-r enforcement applied at
-   r₀ (flags and pre-enforcement residuals reported) — plus a provenance JSON.
+   RMCProfile-ready `F_K(Q)`, `G_K(r)`, `D(r)` — with classic low-r enforcement applied
+   below the first shell (automatic cutoff = min(foot, onset − 0.25 Å): 2.49 Å on Mn₃Sn
+   59438 at Qmin 1.0 / Qmax 28 vs the expert's 2.48, 2.42–2.50 Å on the four Mn₃Sn runs
+   over Qmin 0.82/1.0 × Qmax 24–30; the first-shell coordination number is preserved to
+   ≤ 0.3 %; flags and pre-enforcement residuals reported) — plus a provenance JSON.
 
 ## 4. Reading the verdicts — when is the scale actually absolute?
 
@@ -97,8 +115,20 @@ the manual "try again" scale loop replaced by physics:
   S(Q) carries an O(⟨b²⟩/⟨b⟩²) dive to S(0) that data starting at Qmin ≈ 0.8 never see:
   the density limit is degenerate (flag False on every PG3 run), and the historical hand
   scalings are mutually inconsistent (×2.5, ×2.05, ×10 for the same material). Here the
-  **composition is the scale information**: use `--amplitude fz` (the level-subtract →
-  pin S(0) → restore-level construction), and treat the result as the defensible one.
+  **composition is the scale information**: `--amplitude fz` (the level-subtract →
+  pin S(0) → restore-level construction) gives a = 10–16 on the 55537/55526/54139 runs —
+  but only when its Q→0 extrapolation is well conditioned. On run 59438 the Bragg-dominated
+  head extrapolates to within noise of the level: a_fz = 74 (Qmin 0.82), 91 (1.0), 512 (1.05),
+  flagged `a_fz_reliable = False` (relative error 29–168 %). **`a_fz_reliable = True` is
+  necessary, not sufficient**: the flag only says S_meas(0) − level is resolved from its
+  statistical error, and a systematically biased low-Q head passes it. On two of the three
+  runs above the reliable-flagged a_fz still drifts with Qmin — 55537: 11.0 → 6.1, 54139
+  (500 K): 16.3 → 23.7 over Qmin 0.82–1.05 in 0.01 steps (Qmax 28), every value flagged
+  reliable (relative error 8–14 % and 9–15 %); only 55526 (300 K) is stable (10.3–10.9).
+  Before trusting an FZ scale, re-run at a few Qmin values and check a_fz is stable, check the
+  concordance with the density-limit amplitude, and compare it with other runs of the
+  material / an external density. The CLI and the page print this caveat next to every
+  reliable a_fz.
 - The RMC-ready files satisfy the Keen limits *by construction* (enforcement); judge fit
   quality only on the reported pre-enforcement numbers.
 
@@ -110,7 +140,9 @@ the manual "try again" scale loop replaced by physics:
 - **Qmin**: as low as the reduction allows; the correction handles the rest. Cutting real
   low-Q information (Qmin ≳ 1.5–2) starves the density limit (flagged).
 - **X-ray data**: the Sears table is neutron — set ⟨b⟩² (usually 1 for normalized S(Q))
-  and ⟨b²⟩ = ⟨Z²⟩/⟨Z⟩² explicitly (f(0) = Z).
+  and ⟨b²⟩ = ⟨Z²⟩/⟨Z⟩² explicitly (f(0) = Z). A composition given alongside (e.g. for the
+  mass-density conversion) never supplies ⟨b²⟩ to a ⟨b⟩² from another source: the pair must
+  come from one source, and ⟨b²⟩ < ⟨b⟩² (S(0) > 0) is refused.
 - **Isotopic samples**: per-element b overrides are supported in the library
   (`faber_ziman(..., b_overrides_fm=...)`).
 - ρ₀ sanity: the implied mass density is shown; Mn₃Sn's 0.063049 atoms/Å³ ↔ 7.42 g/cm³.

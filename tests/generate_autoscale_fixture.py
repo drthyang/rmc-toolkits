@@ -10,15 +10,23 @@ whenever the engine's math changes:
     .venv/bin/python tests/generate_autoscale_fixture.py
 """
 
+from dataclasses import replace
 import json
 from pathlib import Path
+import re
 
 import numpy as np
 
 from rmc_toolkits.scaling import (
     ScalingConfig,
+    _place_low_r_window,
+    auto_enforcement_cutoff,
     autoscale,
+    detect_first_peak_onset,
+    first_shell_candidates,
+    first_shell_foot,
     estimate_rho0,
+    fz_limit_fit,
     level_sweep,
     scale_pipeline,
 )
@@ -36,6 +44,164 @@ def synthetic_g(r):
     onset = 0.5 * (1.0 + np.tanh((r - 2.65) / 0.07))
     peak = 1.6 * np.exp(-0.5 * ((r - 2.8) / 0.15) ** 2)
     return onset + peak
+
+
+def _gauss(r, centre, sigma):
+    return np.exp(-0.5 * ((r - centre) / sigma) ** 2)
+
+
+def _continuum(r, start):
+    return 0.5 * (1.0 + np.tanh((r - start) / 0.08))
+
+
+def detector_cases() -> dict:
+    """First-shell detector parity cases (models of tests/test_stog_a_detection.py and
+    tests/test_stog_a_placement.py)."""
+    from test_stog_a_placement import mn3sn_lobe_g
+
+    r = np.arange(1, 801) * 0.01
+    ripple = 0.9 * np.sin(2 * np.pi * (r - 1.3) / 0.24) * ((r > 1.3) & (r < 2.55))
+    profiles = {
+        "invertedFirst": -2.8 * _gauss(r, 1.95, 0.07) + 10.0 * _gauss(r, 2.76, 0.09)
+        + _continuum(r, 3.4),
+        "weakFirst": 0.6 * _gauss(r, 2.1, 0.08) + 5.6 * _gauss(r, 2.9, 0.09)
+        + _continuum(r, 3.6),
+        "rippleField": ripple - 3.7 * _gauss(r, 2.84, 0.06) + 1.8 * _gauss(r, 4.0, 0.08)
+        + _continuum(r, 4.4),
+        "shellAtSearchStart": 6.0 * _gauss(r, 1.37, 0.045) + 3.0 * _gauss(r, 2.4, 0.08)
+        + _continuum(r, 3.0),
+        # Review follow-up: the real Mn3Sn sub-shell lobe (2.9x, 35 %) and a flank
+        # that reaches below search_min (not separable -> no shell).
+        "mn3snLobe": mn3sn_lobe_g(r),
+        "flankToEdge": 3.0 * _gauss(r, 1.58, 0.2) + _continuum(r, 3.4),
+        "twoShell": 1.5 * _gauss(r, 1.95, 0.06) + 4.0 * _gauss(r, 2.76, 0.08)
+        + _continuum(r, 3.4),
+    }
+    profiles = {name: np.round(g, 12) for name, g in profiles.items()}
+    cases = []
+    for name, g in profiles.items():
+        for qmax in (28.0, 0.0):
+            onset = detect_first_peak_onset(r, g, qmax, search_min=1.3)
+            candidates = first_shell_candidates(r, g, qmax, search_min=1.3)
+            cases.append({
+                "name": name, "qmax": qmax, "onset": onset, "candidates": candidates,
+            })
+    return {
+        "r": r.tolist(),
+        "searchMin": 1.3,
+        "profiles": {name: g.tolist() for name, g in profiles.items()},
+        "cases": cases,
+    }
+
+
+def window_cases() -> dict:
+    """Low-r window placement parity cases (models from tests/test_stog_a_window.py).
+
+    Composition-free configs (b_sq_avg unset) so the engines' S(0) handling in
+    the self-consistent loop cannot differ; coarse grids keep the JS test fast.
+    """
+    from test_stog_a_window import B2O3_LIKE, PEROVSKITE, crystal_sq, shell_sq
+
+    q = np.arange(17, 1001) * 0.03  # 0.51 .. 30.0
+    cases = []
+    sq, values = crystal_sq("SrTiO3", PEROVSKITE, 3.905, q=q)
+    formula, rho0, shells, r_continuum = B2O3_LIKE
+    sq_short, values_short = shell_sq(formula, rho0, shells, r_continuum, q=q)
+    for name, data, values in (("srtio3", sq, values), ("shortBond", sq_short, values_short)):
+        config = {
+            "qmin": values["qmin"], "qmax": values["qmax"], "rho0": values["rho0"],
+            "bAvgSq": values["b_avg_sq"], "rmax": 25.0, "nr": 1000,
+        }
+        py_config = ScalingConfig(
+            qmin=config["qmin"], qmax=config["qmax"], rho0=config["rho0"],
+            b_avg_sq=config["bAvgSq"], rmax=25.0, nr=1000,
+        )
+        case = {"name": name, "config": config, "sqMeas": data.tolist()}
+        try:
+            result = autoscale(q, data, py_config)
+            case["expected"] = {
+                "a": result.a,
+                "b": result.b,
+                "r0Detected": result.provenance["r0_detected"],
+                "rFitWindow": list(result.provenance["r_fit_window"]),
+            }
+        except ValueError as exc:
+            case["error"] = str(exc)
+        cases.append(case)
+    return {"q": q.tolist(), "aTrue": 10.0, "cases": cases}
+
+
+#: Numbers in an error message (not the digit of "r0"): the Python and JS messages
+#: word units differently (A / Å, r0 / r₀) but carry the same numbers.
+NUMBER = re.compile(r"(?<![A-Za-z_\d.])-?\d+(?:\.\d+)?")
+
+
+def placement_cases() -> dict:
+    """Low-r window placement loop on scripted passes (tests/test_stog_a_placement.py).
+
+    The JS test replays each scenario with the same scripted-pass rules; both
+    engines detect the candidates on the same (rounded) profiles.
+    """
+    from test_stog_a_placement import (
+        ERROR_KINDS, PROFILES, R, SCENARIOS, scenario_config, scripted_pass,
+    )
+
+    profiles = {name: np.round(build(R), 12) for name, build in PROFILES.items()}
+    cases = []
+    for name, scenario in SCENARIOS.items():
+        run, calls = scripted_pass(scenario, profiles)
+        case = {"name": name, **{key: scenario[key] for key in ("qmax", "trials", "refits", "default")}}
+        try:
+            result = _place_low_r_window(run, scenario_config(scenario))
+            case["expected"] = {
+                "a": result.a,
+                "r0Detected": result.provenance["r0_detected"],
+                "rFitWindow": list(result.provenance["r_fit_window"]),
+            }
+        except ValueError as exc:
+            message = str(exc)
+            case["error"] = {
+                "kind": next(kind for kind in ERROR_KINDS if kind in message),
+                "numbers": [float(value) for value in NUMBER.findall(message)],
+                "message": message,
+            }
+        case["refitOnsets"] = [call[0] for call in calls if call[0] is not None]
+        cases.append(case)
+    return {
+        "r": R.tolist(),
+        "profiles": {name: g.tolist() for name, g in profiles.items()},
+        "config": {"qmin": 0.5, "rho0": 0.05, "bAvgSq": 1.0},
+        "cases": cases,
+    }
+
+
+def enforcement_cases() -> dict:
+    """Automatic enforcement cutoff parity (models from tests/test_stog_a_enforcement.py)."""
+    from test_stog_a_enforcement import exact_sq
+
+    cases = []
+    for sigma, qmax, lorch, r0 in (
+        (0.10, 26.0, False, None), (0.15, 26.0, True, None), (0.08, 40.0, False, None),
+        (0.10, 26.0, False, 2.2),  # a pinned r0 below the detected onset caps the cutoff
+    ):
+        q, sq = exact_sq(sigma, qmax)
+        config = ScalingConfig(
+            qmin=0.01, qmax=qmax, rho0=RHO0, b_avg_sq=1.0, lorch=lorch, rmax=20.0, nr=2000,
+            r0=r0,
+        )
+        result = scale_pipeline(q, sq, config, 1.0, 0.0)
+        keep = result.r <= 6.5
+        r, g = result.r[keep], result.g_filtered[keep]
+        onset = detect_first_peak_onset(r, g, qmax, search_min=config.r_cutoff + 0.3)
+        cases.append({
+            "config": {"qmax": qmax, "rCutoff": config.r_cutoff, "r0": r0},
+            "r": r.tolist(),
+            "g": g.tolist(),
+            "onset": onset,
+            "foot": first_shell_foot(r, g, onset),
+            "cutoff": auto_enforcement_cutoff(r, g, config),
+        })
+    return {"cases": cases}
 
 
 def main() -> None:
@@ -68,6 +234,59 @@ def main() -> None:
         **{**base, "rho0": 0.02}, b_sq_avg=float(B2 * (1.0 - s_true_0))
     )
     estimate = estimate_rho0(q, sq_meas, est_config)
+
+    # The main (density-limit) auto path with a composition: <b^2> set makes the
+    # omitted-low-Q extrapolation target S(0) = 1 - <b^2>/<b>^2 nonzero inside
+    # the self-consistent loop. 13.06 * <b>^2 is the Mn3Sn-like S(0) = -12.06.
+    composition_cases = []
+    for label, b_sq_avg, extra in (
+        ("mn3snLike", 13.06 * B2, {}),
+        ("mn3snLikeLorch", 13.06 * B2, {"lorch": True}),
+        ("mn3snLikeDetect", 13.06 * B2, {"r0": None, "r_fit_max": None}),
+        ("trueS0", float(B2 * (1.0 - s_true_0)), {}),
+    ):
+        case_config = ScalingConfig(**{**base, **extra}, b_sq_avg=float(b_sq_avg))
+        result = autoscale(q, sq_meas, case_config)
+        composition_cases.append({
+            "name": label,
+            "config": {
+                "bSqAvg": float(b_sq_avg),
+                **({"lorch": True} if extra.get("lorch") else {}),
+                **({"r0": None, "rFitMax": None} if "r0" in extra else {}),
+            },
+            "s0Target": case_config.effective_s0_target,
+            "a": result.a,
+            "b": result.b,
+            "iterations": result.iterations,
+            "converged": bool(result.converged),
+            "lowRRms": result.low_r_rms,
+            "c1TailMean": result.c1_tail_mean,
+            "aFz": result.a_fz,
+            "r0Detected": result.provenance.get("r0_detected"),
+        })
+
+    # Opt-in despike: the model with noise and 12 tail glitches. Both engines
+    # despike ONCE and fit, write and count the same point set.
+    rng = np.random.default_rng(3)
+    sq_glitch = sq_meas + rng.normal(0.0, 2e-3, q.size)
+    sq_glitch[rng.choice(np.where(q > 20)[0], 12, replace=False)] += 0.3
+    despiked = autoscale(q, sq_glitch, replace(config, despike=True))
+
+    # Faber-Ziman conditioning: the clean model, and a head whose S_meas(0)
+    # sits within noise of the level (an ill-conditioned a_fz).
+    fz_base = ScalingConfig(**base, b_sq_avg=float(B2 * (1.0 - s_true_0)))
+    fz_good = fz_limit_fit(
+        q, sq_meas, sweep.level, fz_base, level_uncertainty=sweep.level_uncertainty
+    )
+    rng_head = np.random.default_rng(11)
+    sq_flat_head = sq_meas.copy()
+    flat = q <= 1.6
+    sq_flat_head[flat] = sweep.level - 0.08 + rng_head.normal(0.0, 0.05, int(flat.sum()))
+    sweep_flat = level_sweep(q, sq_flat_head)
+    fz_bad = fz_limit_fit(
+        q, sq_flat_head, sweep_flat.level, fz_base,
+        level_uncertainty=sweep_flat.level_uncertainty,
+    )
 
     manual = scale_pipeline(q, sq_meas, config, A_TRUE, B_TRUE)
     r_sample_idx = [50, 200, 500, 999]   # on the r grid (nr = 1000)
@@ -102,6 +321,23 @@ def main() -> None:
                 "nAdmissible": sweep.n_admissible,
             },
             "fz": {"a": fz.a, "b": fz.b},
+            "autoComposition": composition_cases,
+            "fzLimit": {
+                "good": fz_good,
+                "badSqMeas": sq_flat_head.tolist(),
+                "bad": fz_bad,
+                "badLevel": sweep_flat.level,
+                "badLevelUncertainty": sweep_flat.level_uncertainty,
+            },
+            "despike": {
+                "sqMeas": sq_glitch.tolist(),
+                "a": despiked.a,
+                "b": despiked.b,
+                "iterations": despiked.iterations,
+                "nq": int(despiked.q.size),
+                "nDespiked": int(despiked.provenance["n_despiked"]),
+                "lowRRms": despiked.low_r_rms,
+            },
             "rho0Estimate": {
                 "rho0": estimate["rho0"],
                 "converged": estimate["converged"],
@@ -114,6 +350,10 @@ def main() -> None:
                 "windowRefined": bool(detected.provenance.get("window_refined", False)),
                 "rFitWindow": list(detected.provenance["r_fit_window"]),
             },
+            "detector": detector_cases(),
+            "window": window_cases(),
+            "enforcement": enforcement_cases(),
+            "placement": placement_cases(),
             "manual": {
                 "lowRRms": manual.low_r_rms,
                 "c1TailMean": manual.c1_tail_mean,

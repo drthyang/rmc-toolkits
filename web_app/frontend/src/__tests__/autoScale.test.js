@@ -2,9 +2,13 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // Parity tests for the static-mode Auto StoG engine against Python-generated
-// golden numbers (tests/generate_autoscale_fixture.py). Tolerances are loose
-// enough for summation-order float noise (numpy pairwise vs JS sequential)
-// and tight enough that any real math drift fails.
+// golden numbers (tests/generate_autoscale_fixture.py). The two engines run the
+// same deterministic algorithm, so they agree to round-off (measured <= 1e-13
+// relative on every quantity here, including the iterated rho0 estimate);
+// tolerances sit a few orders above that so summation-order noise (numpy
+// pairwise vs JS sequential sums) never fails, while any algorithmic
+// divergence does — a looser bound once hid the JS loop running its Fourier
+// filter with S(0) = 0 instead of the composition target.
 
 import { describe, expect, it } from 'vitest';
 import fixture from './fixtures/autoscale_fixture.json';
@@ -43,7 +47,7 @@ describe('autoScale engine parity with the Python engine', () => {
     expect(relError(sweep.level, expected.level)).toBeLessThan(1e-9);
     expect(sweep.qLo).toBeCloseTo(expected.qLo, 9);
     expect(sweep.qHi).toBeCloseTo(expected.qHi, 9);
-    expect(relError(sweep.levelUncertainty, expected.levelUncertainty)).toBeLessThan(1e-6);
+    expect(relError(sweep.levelUncertainty, expected.levelUncertainty)).toBeLessThan(1e-10);
   });
 
   it('auto-scale (sweep + density) matches Python and recovers the truth', () => {
@@ -51,10 +55,10 @@ describe('autoScale engine parity with the Python engine', () => {
     const expected = fixture.expected.auto;
     expect(result.converged).toBe(true);
     expect(result.iterations).toBe(expected.iterations);
-    expect(relError(result.a, expected.a)).toBeLessThan(1e-6);
-    expect(relError(result.b, expected.b)).toBeLessThan(1e-6);
-    expect(relError(result.lowRRms, expected.lowRRms)).toBeLessThan(1e-5);
-    expect(relError(result.c1TailMean, expected.c1TailMean)).toBeLessThan(1e-8);
+    expect(relError(result.a, expected.a)).toBeLessThan(1e-10);
+    expect(relError(result.b, expected.b)).toBeLessThan(1e-10);
+    expect(relError(result.lowRRms, expected.lowRRms)).toBeLessThan(1e-10);
+    expect(relError(result.c1TailMean, expected.c1TailMean)).toBeLessThan(1e-12);
     // The physics check the whole feature stands on:
     expect(relError(result.a, fixture.aTrue)).toBeLessThan(0.02);
     expect(Math.abs(result.b - fixture.bTrue) / Math.abs(fixture.bTrue)).toBeLessThan(0.02);
@@ -68,8 +72,8 @@ describe('autoScale engine parity with the Python engine', () => {
     });
     const result = autoscale(Q, SQ, config);
     expect(result.iterations).toBe(0);
-    expect(relError(result.a, fixture.expected.fz.a)).toBeLessThan(1e-6);
-    expect(relError(result.b, fixture.expected.fz.b)).toBeLessThan(1e-6);
+    expect(relError(result.a, fixture.expected.fz.a)).toBeLessThan(1e-10);
+    expect(relError(result.b, fixture.expected.fz.b)).toBeLessThan(1e-10);
     expect(result.b).toBeCloseTo(1 - result.a * result.sweep.level, 10);
   });
 
@@ -83,10 +87,11 @@ describe('autoScale engine parity with the Python engine', () => {
     const expected = fixture.expected.rho0Estimate;
     expect(estimate.converged).toBe(expected.converged);
     expect(estimate.iterations).toBe(expected.iterations);
-    // The fixed-point iteration compounds summation-order float noise, so
-    // cross-engine agreement is bounded by the rtol=1e-3 stopping rule, not
-    // by single-pass transform precision.
-    expect(relError(estimate.rho0, expected.rho0)).toBeLessThan(1e-4);
+    // The fixed-point iteration is deterministic and takes the same steps in
+    // both engines (same iteration count), so the iterated estimate agrees to
+    // round-off too — the old 1e-4 bound only hid the S(0)-target divergence.
+    expect(relError(estimate.rho0, expected.rho0)).toBeLessThan(1e-10);
+    expect(relError(estimate.concordance, expected.concordance)).toBeLessThan(1e-10);
     expect(Math.abs(estimate.concordance - 1)).toBeLessThan(1.5e-3);
     expect(relError(estimate.rho0, fixture.config.rho0)).toBeLessThan(0.05); // truth
     expect(() => estimateRho0(Q, SQ, baseConfig())).toThrow(/bSqAvg/);
@@ -95,8 +100,8 @@ describe('autoScale engine parity with the Python engine', () => {
   it('manual pipeline matches Python sampled outputs', () => {
     const result = scalePipeline(Q, SQ, baseConfig(), fixture.aTrue, fixture.bTrue);
     const expected = fixture.expected.manual;
-    expect(relError(result.lowRRms, expected.lowRRms)).toBeLessThan(1e-6);
-    expect(relError(result.c1TailMean, expected.c1TailMean)).toBeLessThan(1e-8);
+    expect(relError(result.lowRRms, expected.lowRRms)).toBeLessThan(1e-10);
+    expect(relError(result.c1TailMean, expected.c1TailMean)).toBeLessThan(1e-12);
     expected.rSampleIdx.forEach((index, position) => {
       expect(result.gk[index]).toBeCloseTo(expected.gkSamples[position], 9);
     });
@@ -125,9 +130,9 @@ describe('autoScale engine parity with the Python engine', () => {
     const expected = fixture.expected.autoDetect;
     expect(result.r0Detected).toBeCloseTo(expected.r0Detected, 9);
     expect(result.windowRefined).toBe(expected.windowRefined);
-    expect(relError(result.a, expected.a)).toBeLessThan(1e-6);
+    expect(relError(result.a, expected.a)).toBeLessThan(1e-10);
     expect(result.rFitWindowUsed[1]).toBeCloseTo(expected.rFitWindow[1], 9);
-    expect(detectFirstPeakOnset(result.r, result.gFiltered, { searchMin: 1.3 }))
+    expect(detectFirstPeakOnset(result.r, result.gFiltered, { searchMin: 1.3, qmax: fixture.config.qmax }))
       .toBeCloseTo(expected.r0Detected, 9);
   });
 
