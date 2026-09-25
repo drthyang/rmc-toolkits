@@ -429,25 +429,75 @@ def _hemisphere_cloud(rng, n):
 
 
 class MapSignificanceTests(unittest.TestCase):
-    """orientation.numerics.3, orientation.physics.7.
+    """orientation.numerics.3, orientation.physics.7, review:1.
 
     'map significance N.N sigma' was the RMS of the per-cell z: its null is
     1.00 +/- 1/sqrt(2C) (0.02 at the UI default), not a sigma level, so 1.1
     meant ~4 sigma and a cloud with every atom in one hemisphere printed
-    '1.4 sigma'. mapSignificance is Pearson's X^2 = sum z^2 against chi^2 with
-    C-1 degrees of freedom, as a one-sided normal deviate.
+    '1.4 sigma'. mapSignificance is now Pearson's X^2 = sum z^2 as a one-sided
+    normal deviate.
+
+    review:1 -- the first fix referred X^2 to chi^2_{C-1}. Below ~0.1 atom per
+    cell X^2 mostly counts atom pairs that share a cell, a skewed, Poisson-like
+    quantity, and chi^2_{C-1} (nearly normal at large C) put pure noise above
+    3 sigma 15-40x more often than nominal at UI-reachable settings (27
+    copies at nu=10, 64 at nu=24). The reference is now a gamma matched to
+    the exact multinomial mean, variance and third moment of X^2, and a map
+    expecting fewer than MAP_TEST_MIN_PAIRS coincident pairs reports no value.
     """
 
-    def test_value_is_the_pearson_chi_square_tail(self):
-        from scipy.stats import chi2, norm
+    def test_null_moments_match_exact_multinomial_enumeration(self):
+        from rmc_toolkits.orientation import _pearson_null_moments
 
-        result = orientation_histogram(golden_cloud(), frequency=6, geometry=False)
-        z = np.asarray(result["zScore"])
-        self.assertAlmostEqual(result["mapChiSquare"] / float(np.sum(z * z)), 1.0, places=12)
-        self.assertEqual(result["mapDegreesOfFreedom"], result["cellCount"] - 1)
-        p = chi2.sf(result["mapChiSquare"], result["cellCount"] - 1)
-        self.assertAlmostEqual(result["mapPValue"] / p, 1.0, places=9)
-        self.assertAlmostEqual(result["mapSignificance"], norm.isf(p), places=8)
+        rng = np.random.default_rng(3)
+        for used, cells in ((1, 3), (2, 3), (3, 4), (5, 4), (6, 5), (4, 6), (7, 3), (8, 5), (9, 4)):
+            p = rng.uniform(0.5, 1.5, cells)
+            p /= p.sum()
+            exact = _exact_pearson_moments(used, p)
+            moments = _pearson_null_moments(used, p)
+            np.testing.assert_allclose(moments, exact, rtol=1e-10, atol=1e-10, err_msg=f"N={used} C={cells}")
+
+    def test_null_moments_pinned_for_cross_engine_parity(self):
+        from rmc_toolkits.orientation import _pearson_null_moments
+
+        for (used, cells), expected in PEARSON_MOMENTS.items():
+            p = _pinned_probabilities(cells)
+            np.testing.assert_allclose(_pearson_null_moments(used, p), expected, rtol=1e-12)
+            np.testing.assert_allclose(_exact_pearson_moments(used, p), expected, rtol=1e-12)
+
+    def test_value_is_the_three_moment_gamma_tail(self):
+        from scipy.stats import norm, pearson3
+
+        tiling = goldberg_tiling(6)
+        p = tiling.areas / (4.0 * np.pi)
+        for n_lobe in (60, 0):
+            result = orientation_histogram(golden_cloud(n_lobe=n_lobe), frequency=6, geometry=False)
+            z = np.asarray(result["zScore"])
+            self.assertAlmostEqual(result["mapChiSquare"] / float(np.sum(z * z)), 1.0, places=12)
+            used = result["usedPoints"]
+            self.assertEqual(result["mapDegreesOfFreedom"], result["cellCount"] - 1)
+            # Haldane's exact variance, from the areas directly.
+            variance = 2.0 * (p.size - 1) + (np.sum(1.0 / p) - p.size**2 - 2 * p.size + 2) / used
+            self.assertAlmostEqual(result["mapNullSd"] / np.sqrt(variance), 1.0, places=12)
+            self.assertAlmostEqual(
+                result["mapExpectedPairs"] / (0.5 * used * (used - 1) * np.sum(p * p)), 1.0, places=12
+            )
+            # scipy's pearson3 is parameterized by exactly (skewness, mean, SD).
+            reference = pearson3(result["mapNullSkewness"], loc=p.size - 1, scale=result["mapNullSd"])
+            tail = reference.sf(result["mapChiSquare"])
+            self.assertAlmostEqual(result["mapPValue"] / tail, 1.0, places=8)
+            # One-sided deviate, from whichever tail is accurate.
+            deviate = norm.isf(tail) if tail <= 0.5 else norm.ppf(reference.cdf(result["mapChiSquare"]))
+            self.assertAlmostEqual(result["mapSignificance"] / deviate, 1.0, places=7)
+
+    def test_reference_tends_to_chi_square_when_cells_are_well_filled(self):
+        from scipy.stats import chi2
+
+        rng = np.random.default_rng(8)
+        result = orientation_histogram(_isotropic_units(rng, 20000), frequency=2, geometry=False)
+        tail = chi2.sf(result["mapChiSquare"], result["mapDegreesOfFreedom"])
+        self.assertLess(abs(result["mapPValue"] - tail), 0.01)
+        self.assertLess(abs(result["mapNullSkewness"] / np.sqrt(8.0 / 41.0) - 1.0), 0.01)
 
     def test_isotropic_null_reads_as_noise_at_the_ui_defaults(self):
         rng = np.random.default_rng(77)
@@ -456,9 +506,70 @@ class MapSignificanceTests(unittest.TestCase):
                 orientation_histogram(_isotropic_units(rng, n), frequency=10, smoothing=2, geometry=False)["mapSignificance"]
                 for _ in range(150)
             ])
+            self.assertTrue(np.isfinite(values).all(), msg=f"N={n}")
             self.assertLess(abs(values.mean()), 0.3, msg=f"N={n}")
             self.assertLessEqual(np.mean(values > 2), 0.06, msg=f"N={n}")
             self.assertLessEqual(np.mean(values > 3), 0.02, msg=f"N={n}")
+
+    def test_sparse_isotropic_maps_are_calibrated_in_the_engine(self):
+        # The reviewer's UI-reachable cases: chi^2_{C-1} put 2.1% (N=27, nu=10)
+        # and 2.9% (N=64, nu=24) of pure-noise maps above 3 sigma.
+        rng = np.random.default_rng(2718)
+        for n, frequency in ((27, 10), (64, 24)):
+            values = np.array([
+                orientation_histogram(_isotropic_units(rng, n), frequency=frequency, smoothing=2, geometry=False)["mapSignificance"]
+                for _ in range(600)
+            ])
+            self.assertTrue(np.isfinite(values).all(), msg=f"N={n} nu={frequency}")
+            self.assertLessEqual(np.sum(values > 3), 4, msg=f"N={n} nu={frequency}")
+            self.assertLessEqual(np.mean(values > 2), 0.04, msg=f"N={n} nu={frequency}")
+
+    def test_sparse_reference_is_calibrated_on_exact_multinomial_draws(self):
+        # Under isotropy the raw counts are exactly Multinomial(N, Omega/4pi)
+        # (assignment is the exact Voronoi partition), so the reference can be
+        # checked on direct draws -- 12000 per case, nominal 2.28% / 0.135%
+        # (chi^2_{C-1} gives 0.34-2.9% above 3 sigma on these cases).
+        from rmc_toolkits.orientation import _map_test
+
+        def threshold(level, n, p):
+            # The deviate is monotone in X^2: bisect for the X^2 that reads
+            # `level` sigma rather than evaluating the reference per draw.
+            low = p.size - 1.0
+            high = low + 80.0 * _map_test(low, n, p)["nullSd"]
+            for _ in range(80):
+                middle = 0.5 * (low + high)
+                if _map_test(middle, n, p)["deviate"] > level:
+                    high = middle
+                else:
+                    low = middle
+            return high
+
+        rng = np.random.default_rng(99)
+        for n, frequency in ((27, 10), (64, 10), (216, 10), (64, 24), (20, 4)):
+            p = goldberg_tiling(frequency).areas / (4.0 * np.pi)
+            expected = n * p
+            chi_square = np.concatenate([
+                np.sum((rng.multinomial(n, p / p.sum(), size=2000) - expected) ** 2 / expected, axis=1)
+                for _ in range(6)
+            ])
+            above_three = np.mean(chi_square > threshold(3.0, n, p))
+            above_two = np.mean(chi_square > threshold(2.0, n, p))
+            self.assertLessEqual(above_three, 0.0025, msg=f"N={n} nu={frequency}")
+            self.assertLess(abs(above_two - 0.0228), 0.006, msg=f"N={n} nu={frequency}")
+
+    def test_too_sparse_map_reports_no_significance(self):
+        from rmc_toolkits.orientation import MAP_TEST_MIN_PAIRS
+
+        rng = np.random.default_rng(4)
+        for n in (1, 2, 8):
+            result = orientation_histogram(_isotropic_units(rng, n), frequency=10, geometry=False)
+            self.assertLess(result["mapExpectedPairs"], MAP_TEST_MIN_PAIRS)
+            self.assertIsNone(result["mapPValue"], msg=f"N={n}")
+            self.assertIsNone(result["mapSignificance"], msg=f"N={n}")
+            self.assertTrue(np.isfinite(result["mapChiSquare"]))
+        populated = orientation_histogram(_isotropic_units(rng, 27), frequency=10, geometry=False)
+        self.assertGreaterEqual(populated["mapExpectedPairs"], MAP_TEST_MIN_PAIRS)
+        self.assertTrue(np.isfinite(populated["mapSignificance"]))
 
     def test_a_one_sided_cloud_is_overwhelmingly_significant(self):
         rng = np.random.default_rng(5)
@@ -466,23 +577,88 @@ class MapSignificanceTests(unittest.TestCase):
         # The old RMS readout printed this as '1.4 sigma'.
         self.assertLess(result["significance"], 1.5)
         self.assertGreater(result["mapSignificance"], 10.0)
+        # Also in the sparse regime (0.03 atom per cell): 27 atoms confined
+        # to a 10-degree cap pile up in a few cells.
+        cap = _isotropic_units(rng, 40000)
+        cap = cap[cap[:, 2] > np.cos(np.radians(10.0))][:27]
+        sparse = orientation_histogram(cap, frequency=10, geometry=False)
+        self.assertGreater(sparse["mapSignificance"], 8.0)
 
     def test_golden_values_shared_with_the_js_engine(self):
         assert_golden(self, GOLDEN_MAP)
 
 
+def _exact_pearson_moments(used, p):
+    """Mean, variance, third central moment of X^2 by full enumeration."""
+    from math import factorial
+
+    p = np.asarray(p, dtype=float)
+
+    def compositions(total, parts):
+        if parts == 1:
+            yield (total,)
+            return
+        for first in range(total + 1):
+            for rest in compositions(total - first, parts - 1):
+                yield (first,) + rest
+
+    values, weights = [], []
+    for counts in compositions(used, p.size):
+        counts = np.asarray(counts)
+        coefficient = factorial(used) / np.prod([factorial(int(c)) for c in counts])
+        weights.append(coefficient * np.prod(p**counts))
+        values.append(np.sum((counts - used * p) ** 2 / (used * p)))
+    values, weights = np.asarray(values), np.asarray(weights)
+    mean = np.sum(weights * values)
+    return (
+        mean,
+        np.sum(weights * (values - mean) ** 2),
+        np.sum(weights * (values - mean) ** 3),
+    )
+
+
+def _pinned_probabilities(cells):
+    """Deterministic unequal cell probabilities, built identically in JS."""
+    raw = 1.0 + 0.3 * np.sin(np.arange(1, cells + 1, dtype=float))
+    return raw / raw.sum()
+
+
+# Shared verbatim with PEARSON_MOMENTS in orientationFixes.test.js:
+# (N, C) -> exact (mean, variance, third central moment) of X^2 for
+# _pinned_probabilities(C).
+PEARSON_MOMENTS = {
+    (3, 4): (3.0, 4.218531116561122, 13.943752126285027),
+    (6, 5): (4.0, 6.91373687143512, 29.01155630009905),
+    (9, 4): (3.0, 5.406177038853709, 20.39545791721937),
+    (12, 3): (2.0, 3.6728421787498275, 12.957998592922594),
+    (2, 7): (6.0, 7.183146093091783, 43.811413401314184),
+}
+
+
 # Shared verbatim with GOLDEN_MAP in orientationFixes.test.js.
 GOLDEN_MAP = {
     (6, 1, 60): {"mapChiSquare": 800.1657022469657, "mapDegreesOfFreedom": 361,
-                 "mapPValue": 2.594835912106325e-35, "mapSignificance": 12.344903050139939},
+                 "mapNullSd": 26.89394588964023, "mapNullSkewness": 0.178121379052147,
+                 "mapExpectedPairs": 1288.2313214115104,
+                 "mapPValue": 8.22254884213926e-33, "mapSignificance": 11.87251368423015},
     (10, 2, 60): {"mapChiSquare": 2596.980147082603, "mapDegreesOfFreedom": 1001,
-                  "mapPValue": 5.119975741811708e-142, "mapSignificance": 25.344856220908564},
+                  "mapNullSd": 44.93009360956353, "mapNullSkewness": 0.13854679111724788,
+                  "mapExpectedPairs": 466.6502011243447,
+                  "mapPValue": 5.115170092676409e-113, "mapSignificance": 22.56203637660662},
     (None, 0, 60): {"mapChiSquare": 109.05527451398147, "mapDegreesOfFreedom": 41,
-                    "mapPValue": 4.324724387217442e-08, "mapSignificance": 5.353027939305108},
+                    "mapNullSd": 9.050975709801982, "mapNullSkewness": 0.4503623992125751,
+                    "mapExpectedPairs": 10991.483242707845,
+                    "mapPValue": 4.869112256098684e-08, "mapSignificance": 5.331542086891653},
+    # A Fibonacci sphere is far more uniform than counting noise: X^2 lies
+    # below the reference's support, so the deviate sits at the floor.
     (10, 2, 0): {"mapChiSquare": 206.08354289942974, "mapDegreesOfFreedom": 1001,
-                 "mapPValue": 1.0, "mapSignificance": -28.039678814235533},
+                 "mapNullSd": 44.942491392316214, "mapNullSkewness": 0.14177901437232995,
+                 "mapExpectedPairs": 410.1132665642458,
+                 "mapPValue": 1.0, "mapSignificance": -37.0470962993612},
     (2, 0, 6): {"mapChiSquare": 2.8616952082936087, "mapDegreesOfFreedom": 41,
-                "mapPValue": 1.0, "mapSignificance": -8.344487440440679},
+                "mapNullSd": 9.05071282835656, "mapNullSkewness": 0.450877377382182,
+                "mapExpectedPairs": 9789.110678651203,
+                "mapPValue": 1.0, "mapSignificance": -8.886765298073716},
 }
 
 

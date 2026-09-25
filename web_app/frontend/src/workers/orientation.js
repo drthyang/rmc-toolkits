@@ -40,6 +40,11 @@ export const SIGNIFICANCE_TAIL_FLOOR = 1e-300;
 // Antipodal-asymmetry flag: A > null mean + this many null SDs. Mirrors
 // ASYMMETRY_FLAG_SIGMA.
 export const ASYMMETRY_FLAG_SIGMA = 3;
+// The whole-map test is withheld below this many expected coincident atom
+// pairs, C(N, 2) * sum p^2: X^2 is then a count of 0-2 rare coincidences
+// whose lattice tail the three-moment reference cannot follow. Mirrors
+// MAP_TEST_MIN_PAIRS.
+export const MAP_TEST_MIN_PAIRS = 0.1;
 // Isotropic expectation of 3*lambda1 - 1 is this / sqrt(N_eff) to leading
 // order (9 / sqrt(10 pi)). Mirrors ISOTROPIC_ANISOTROPY_SCALE.
 export const ISOTROPIC_ANISOTROPY_SCALE = 9 / Math.sqrt(10 * Math.PI);
@@ -237,6 +242,59 @@ const peakSignificance = (count, expected, trials) => {
     else logLower = -Infinity;
     const corrected = -Math.expm1(logLower);
     return { local, corrected, deviate: normalDeviate(corrected, Math.exp(logLower)) };
+};
+
+/**
+ * Exact [mean, variance, third central moment] of Pearson's X^2 under
+ * n ~ Multinomial(N, p): with A = sum 1/p - C^2 and
+ * B = sum 1/p^2 - 3C sum 1/p + 2C^3 (both from the per-cell excess 1/p - C),
+ * mean = C - 1, var = 2(C-1) + (A - 2C + 2)/N (Haldane), and
+ * mu3 = 8(C-1) + (22A + 4C^2 - 36C + 32)/N + (B - 22A - 4C^2 + 28C - 24)/N^2.
+ * Mirrors `_pearson_null_moments`.
+ */
+export const pearsonNullMoments = (used, probabilities) => {
+    const cells = probabilities.length;
+    let aTerm = 0;
+    let bTerm = 0;
+    for (let m = 0; m < cells; m += 1) {
+        const excess = 1 / probabilities[m] - cells;
+        aTerm += excess;
+        bTerm += excess * (excess - cells);
+    }
+    const n = used;
+    const mean = cells - 1;
+    const variance = 2 * (cells - 1) + (aTerm - 2 * cells + 2) / n;
+    const third = 8 * (cells - 1)
+        + (22 * aTerm + 4 * cells * cells - 36 * cells + 32) / n
+        + (bTerm - 22 * aTerm - 4 * cells * cells + 28 * cells - 24) / (n * n);
+    return [mean, variance, third];
+};
+
+/**
+ * Pearson's X^2 against a Pearson type III (shifted gamma) matched to its
+ * exact null mean, variance and skewness -- chi^2_{C-1} is only the
+ * many-counts limit and is badly anti-conservative on sparse maps. No
+ * p-value below MAP_TEST_MIN_PAIRS expected coincident pairs. Mirrors
+ * `_map_test`.
+ */
+export const mapTest = (chiSquare, used, probabilities) => {
+    let squares = 0;
+    for (let m = 0; m < probabilities.length; m += 1) squares += probabilities[m] * probabilities[m];
+    const pairs = 0.5 * used * (used - 1) * squares;
+    const [mean, variance, third] = pearsonNullMoments(used, probabilities);
+    const sd = Math.sqrt(Math.max(variance, 0));
+    const skewness = sd > 0 ? third / (sd * sd * sd) : null;
+    const result = { nullSd: sd, nullSkewness: skewness, expectedPairs: pairs, pValue: null, deviate: null };
+    if (pairs < MAP_TEST_MIN_PAIRS || skewness === null || !(skewness > 0)) return result;
+    const shape = 4 / (skewness * skewness);
+    const scale = 0.5 * sd * skewness;
+    const origin = mean - 2 * sd / skewness;
+    const reduced = (chiSquare - origin) / scale;
+    // Below the reference's lower support bound: as uniform as it gets.
+    const tails = reduced > 0 ? regularizedGamma(shape, reduced) : { lower: 0, upper: 1 };
+    result.pValue = tails.upper;
+    result.deviate = normalDeviate(tails.upper, tails.lower);
+    return result;
 };
 
 // c_k = C(2k, k) / 4^k for k = 0..kmax by the exact recurrence
@@ -926,10 +984,13 @@ export const orientationHistogram = (vectors, options = {}) => {
     }
     const peakTest = peakSignificance(counts[peak], expected[peak], cellCount);
 
-    // Whole-map test: Pearson's X^2 = sum z^2 vs chi^2 with C - 1 degrees of
-    // freedom, as a one-sided normal deviate. Mirrors the Python engine.
+    // Whole-map test: Pearson's X^2 = sum z^2 against its exact-moment
+    // isotropic reference (mapTest), as a one-sided normal deviate. Mirrors
+    // the Python engine.
     const degreesOfFreedom = cellCount - 1;
-    const mapTails = regularizedGamma(degreesOfFreedom / 2, zSquares / 2);
+    const probabilities = new Array(cellCount);
+    for (let cell = 0; cell < cellCount; cell += 1) probabilities[cell] = tiling.areas[cell] / (4 * Math.PI);
+    const map = mapTest(zSquares, used, probabilities);
     let amplitudeSum = 0;
     let amplitudeSquares = 0;
     keptAmplitude.forEach((value) => { amplitudeSum += value; amplitudeSquares += value * value; });
@@ -992,10 +1053,17 @@ export const orientationHistogram = (vectors, options = {}) => {
         // Legacy RMS of the local z (1 +/- 1/sqrt(2C) for noise) -- NOT a
         // sigma level; the calibrated readout is mapSignificance.
         significance: Math.sqrt(zSquares / cellCount),
+        // Pearson's X^2, C - 1 (its exact null mean), its exact null SD and
+        // skewness, the expected number of atom pairs sharing a cell, and the
+        // p-value / deviate against the exact-moment gamma reference (null
+        // below MAP_TEST_MIN_PAIRS expected pairs).
         mapChiSquare: zSquares,
         mapDegreesOfFreedom: degreesOfFreedom,
-        mapPValue: mapTails.upper,
-        mapSignificance: normalDeviate(mapTails.upper, mapTails.lower),
+        mapNullSd: map.nullSd,
+        mapNullSkewness: map.nullSkewness,
+        mapExpectedPairs: map.expectedPairs,
+        mapPValue: map.pValue,
+        mapSignificance: map.deviate,
         recommendedFrequency: recommendedFrequency(used, { targetPerCell }),
         browserOrientation: true
     };

@@ -135,6 +135,13 @@ SIGNIFICANCE_TAIL_FLOOR = 1e-300
 # more than this many null standard deviations.
 ASYMMETRY_FLAG_SIGMA = 3.0
 
+# The whole-map test (mapSignificance) is withheld below this many expected
+# coincident atom pairs, lambda = C(N, 2) * sum_m p_m^2 (pairs of atoms that
+# share a cell under isotropy). X^2 is then a count of 0, 1 or 2 rare
+# coincidences: its tail is a lattice the three-moment reference cannot
+# follow, and it carries no whole-map information the peak test lacks.
+MAP_TEST_MIN_PAIRS = 0.1
+
 # Isotropic expectation of orientationAnisotropy = 3 lambda_1 - 1 is
 # ISOTROPIC_ANISOTROPY_SCALE / sqrt(N_eff) to leading order: sqrt(N) (T - I/3)
 # tends to a traceless GOE matrix with off-diagonal variance 1/15, whose mean
@@ -636,6 +643,80 @@ def _peak_significance(count: int, expected: float, trials: int) -> dict:
     }
 
 
+def _pearson_null_moments(used: int, probabilities: np.ndarray) -> tuple[float, float, float]:
+    """Exact mean, variance and third central moment of Pearson's X^2.
+
+    Under ``n ~ Multinomial(N, p)`` (isotropy: ``p_m = Omega_m / 4 pi``),
+    ``X^2 = sum_m (n_m - N p_m)^2 / (N p_m)`` has, with ``C`` cells,
+    ``A = sum 1/p_m - C^2`` and ``B = sum 1/p_m^2 - 3 C sum 1/p_m + 2 C^3``,
+
+        mean = C - 1
+        var  = 2(C - 1) + (A - 2C + 2) / N                          (Haldane)
+        mu3  = 8(C - 1) + (22A + 4C^2 - 36C + 32) / N
+                        + (B - 22A - 4C^2 + 28C - 24) / N^2
+
+    (derived by expanding E[S^k], S = sum n_m^2 / p_m, over the set
+    partitions of the 2k point indices; checked against full enumeration in
+    the tests). A and B vanish for equal cells and are evaluated from the
+    per-cell excess ``1/p_m - C`` so no large terms cancel.
+    """
+    probabilities = np.asarray(probabilities, dtype=float)
+    cells = float(probabilities.size)
+    excess = 1.0 / probabilities - cells
+    a_term = float(excess.sum())
+    b_term = float((excess * (excess - cells)).sum())
+    n = float(used)
+    mean = cells - 1.0
+    variance = 2.0 * (cells - 1.0) + (a_term - 2.0 * cells + 2.0) / n
+    third = (
+        8.0 * (cells - 1.0)
+        + (22.0 * a_term + 4.0 * cells * cells - 36.0 * cells + 32.0) / n
+        + (b_term - 22.0 * a_term - 4.0 * cells * cells + 28.0 * cells - 24.0) / (n * n)
+    )
+    return mean, variance, third
+
+
+def _map_test(chi_square: float, used: int, probabilities: np.ndarray) -> dict:
+    """Pearson's X^2 against its exact-moment isotropic reference.
+
+    chi^2_{C-1} is the large-count limit of X^2; at the fraction of an atom
+    per cell a fine tiling holds, X^2 is dominated by the few atom pairs that
+    share a cell, a skewed, Poisson-like count, and chi^2_{C-1} (nearly
+    normal at large C) is badly anti-conservative. The reference here is a
+    Pearson type III (shifted gamma) matched to the exact mean, variance and
+    skewness of X^2 (:func:`_pearson_null_moments`); it reduces to
+    chi^2_{C-1} exactly when those moments are chi^2's. Below
+    ``MAP_TEST_MIN_PAIRS`` expected coincident pairs no p-value is reported.
+    """
+    probabilities = np.asarray(probabilities, dtype=float)
+    pairs = 0.5 * used * (used - 1) * float(np.sum(probabilities * probabilities))
+    mean, variance, third = _pearson_null_moments(used, probabilities)
+    sd = float(np.sqrt(max(variance, 0.0)))
+    skewness = third / sd**3 if sd > 0.0 else None
+    result = {
+        "nullSd": sd,
+        "nullSkewness": skewness,
+        "expectedPairs": pairs,
+        "pValue": None,
+        "deviate": None,
+    }
+    if pairs < MAP_TEST_MIN_PAIRS or skewness is None or not skewness > 0.0:
+        return result
+    shape = 4.0 / (skewness * skewness)
+    scale = 0.5 * sd * skewness
+    origin = mean - 2.0 * sd / skewness
+    reduced = (float(chi_square) - origin) / scale
+    if reduced <= 0.0:
+        # Below the reference's lower support bound: as uniform as it gets.
+        upper, lower = 1.0, 0.0
+    else:
+        upper = float(gammaincc(shape, reduced))
+        lower = float(gammainc(shape, reduced))
+    result["pValue"] = upper
+    result["deviate"] = _normal_deviate(upper, lower)
+    return result
+
+
 def _central_binomial(kmax: int) -> np.ndarray:
     """``c_k = C(2k, k) / 4**k`` for k = 0..kmax, by the exact recurrence.
 
@@ -771,6 +852,10 @@ def orientation_histogram(
         ``antipodalAsymmetryNull`` / ``...NullSd`` its exact mean and spread for
         an inversion-symmetric population with the same pair totals, and
         ``antipodalAsymmetrySignificant`` the flag ``A > null + 3 SD``;
+        ``mapSignificance`` is Pearson's X^2 over all cells against a gamma
+        matched to its exact isotropic mean, variance and skewness (None when
+        fewer than ``MAP_TEST_MIN_PAIRS`` atom pairs are expected to share a
+        cell);
         ``cellMeanAmplitude`` is the mean ``|dr|`` (Angstrom) of the atoms that
         moved into each cell (0 for empty cells) -- the radial-relief quantity.
 
@@ -908,16 +993,13 @@ def orientation_histogram(
     peak = int(tied[0])
     peak_test = _peak_significance(int(counts[peak]), float(expected[peak]), cell_count)
 
-    # Whole-map test: Pearson's X^2 = sum z^2 against chi^2 with C - 1 degrees
-    # of freedom (the counts are multinomial with N fixed), as a one-sided
-    # normal deviate. The RMS of z ("significance") is not a sigma level: its
-    # null is 1 +/- 1/sqrt(2C).
+    # Whole-map test: Pearson's X^2 = sum z^2 against its exact-moment
+    # isotropic reference (see _map_test), as a one-sided normal deviate. The
+    # RMS of z ("significance") is not a sigma level: its null is
+    # 1 +/- 1/sqrt(2C).
     chi_square = float(np.sum(z_score**2))
     degrees_of_freedom = cell_count - 1
-    map_p_value = float(gammaincc(degrees_of_freedom / 2.0, chi_square / 2.0))
-    map_significance = _normal_deviate(
-        map_p_value, float(gammainc(degrees_of_freedom / 2.0, chi_square / 2.0))
-    )
+    map_test = _map_test(chi_square, used, tiling.areas / (4.0 * np.pi))
 
     result = {
         "frequency": int(tiling.frequency),
@@ -991,11 +1073,18 @@ def orientation_histogram(
         # Legacy whole-map summary: the RMS of the local z (1 +/- 1/sqrt(2C)
         # for pure noise). NOT a sigma level -- use mapSignificance.
         "significance": float(np.sqrt(np.mean(z_score**2))),
-        # Pearson's chi-square test of isotropy over all cells.
+        # Pearson's X^2 test of isotropy over all cells: the statistic, C - 1
+        # (its exact null mean), its exact null SD and skewness, the expected
+        # number of atom pairs sharing a cell, and the upper-tail p-value and
+        # one-sided normal deviate against the exact-moment gamma reference
+        # (both None when fewer than MAP_TEST_MIN_PAIRS pairs are expected).
         "mapChiSquare": chi_square,
         "mapDegreesOfFreedom": int(degrees_of_freedom),
-        "mapPValue": map_p_value,
-        "mapSignificance": map_significance,
+        "mapNullSd": map_test["nullSd"],
+        "mapNullSkewness": map_test["nullSkewness"],
+        "mapExpectedPairs": map_test["expectedPairs"],
+        "mapPValue": map_test["pValue"],
+        "mapSignificance": map_test["deviate"],
         "recommendedFrequency": recommended_frequency(used, target_per_cell=target_per_cell),
     }
     if geometry:

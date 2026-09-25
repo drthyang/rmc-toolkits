@@ -633,16 +633,29 @@ export default function OrientationView({
                                 </InfoBadge>
                             </span>
                             <span className="orient-stat">
-                                map significance <b>{sigmaFormat(result.mapSignificance)}</b>
+                                map significance <b>{Number.isFinite(result.mapSignificance) ? sigmaFormat(result.mapSignificance) : '— (too sparse)'}</b>
                                 <InfoBadge label="About the map significance" align="end">
                                     <p>
                                         Pearson&apos;s χ² of the raw cell counts against an isotropic
-                                        site (χ² = {numberFormat(result.mapChiSquare, 0)} on{' '}
-                                        {result.mapDegreesOfFreedom} degrees of freedom), as a one-sided
-                                        normal deviate. Pure counting noise stays below 2σ about 97% of
-                                        the time; with fewer than ~1 atom per cell the tail runs slightly
-                                        heavy, so prefer Auto resolution.
+                                        site: χ² = {numberFormat(result.mapChiSquare, 0)}, where pure
+                                        counting noise gives {result.mapDegreesOfFreedom} ±{' '}
+                                        {numberFormat(result.mapNullSd, 0)}. Its tail comes from a gamma
+                                        curve matched to the exact isotropic mean, spread and skewness of
+                                        χ², not from the textbook χ² curve: with well under one atom per
+                                        cell, χ² mostly counts the few pairs of atoms that share a cell,
+                                        which is far more skewed. Reported as a one-sided normal deviate;
+                                        pure counting noise exceeds 2σ in about 2% of maps and 3σ in
+                                        under 0.25%, at any resolution.
                                     </p>
+                                    {!Number.isFinite(result.mapSignificance) && (
+                                        <p>
+                                            Not reported here: only{' '}
+                                            {numberFormat(result.mapExpectedPairs, 2)} pairs of atoms are
+                                            expected to share a cell (under 0.1), so χ² has almost nothing
+                                            to count. Use Auto resolution, or read the peak and anisotropy
+                                            tests.
+                                        </p>
+                                    )}
                                 </InfoBadge>
                             </span>
                         </div>

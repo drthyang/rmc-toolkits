@@ -8,13 +8,16 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+    MAP_TEST_MIN_PAIRS,
     MIN_FREQUENCY,
     assignCells,
     goldbergTiling,
     logGamma,
     normalDeviate,
     normalQuantile,
+    mapTest,
     orientationHistogram,
+    pearsonNullMoments,
     recommendedFrequency,
     regularizedGamma,
     siteOrientationHistogram
@@ -306,7 +309,15 @@ const SCIPY_GAMMA = [
     [2880.5, 3300.0, 0.9999999999999606, 3.94213016105765e-14],
     [20480.5, 20000.0, 0.00036000517881559747, 0.9996399948211844],
     [20480.5, 22000.0, 1.0, 1.7291900418622563e-25],
-    [0.5, 0.001, 0.035670591729679894, 0.9643294082703201]
+    [0.5, 0.001, 0.035670591729679894, 0.9643294082703201],
+    // Non-half-integer shapes, as the map test's gamma reference uses them.
+    [126.07368146574035, 170.0, 0.999815486123718, 0.00018451387628206668],
+    [208.39, 240.5, 0.9839109318641394, 0.016089068135860633],
+    [2.4567, 1.66, 0.3607701545219544, 0.6392298454780456],
+    [2.4567, 14.0, 0.9999666494786777, 3.335052132222686e-05],
+    [1.2, 0.05, 0.024258165295933994, 0.9757418347040661],
+    [19.72, 60.0, 0.9999999995402341, 4.5976590602670967e-10],
+    [19.72, 8.0, 0.0003310527835421063, 0.9996689472164579]
 ];
 // scipy.special.ndtri references: [p, ndtri(p)].
 const SCIPY_NDTRI = [
@@ -428,19 +439,95 @@ describe('peak significance (look-elsewhere-corrected Poisson tail)', () => {
 // GOLDEN_MAP in tests/test_orientation_fixes.py.
 const GOLDEN_MAP = [
     [6, 1, 60, { mapChiSquare: 800.1657022469657, mapDegreesOfFreedom: 361,
-        mapPValue: 2.594835912106325e-35, mapSignificance: 12.344903050139939 }],
+        mapNullSd: 26.89394588964023, mapNullSkewness: 0.178121379052147,
+        mapExpectedPairs: 1288.2313214115104,
+        mapPValue: 8.22254884213926e-33, mapSignificance: 11.87251368423015 }],
     [10, 2, 60, { mapChiSquare: 2596.980147082603, mapDegreesOfFreedom: 1001,
-        mapPValue: 5.119975741811708e-142, mapSignificance: 25.344856220908564 }],
+        mapNullSd: 44.93009360956353, mapNullSkewness: 0.13854679111724788,
+        mapExpectedPairs: 466.6502011243447,
+        mapPValue: 5.115170092676409e-113, mapSignificance: 22.56203637660662 }],
     [null, 0, 60, { mapChiSquare: 109.05527451398147, mapDegreesOfFreedom: 41,
-        mapPValue: 4.324724387217442e-08, mapSignificance: 5.353027939305108 }],
+        mapNullSd: 9.050975709801982, mapNullSkewness: 0.4503623992125751,
+        mapExpectedPairs: 10991.483242707845,
+        mapPValue: 4.869112256098684e-08, mapSignificance: 5.331542086891653 }],
+    // A Fibonacci sphere is far more uniform than counting noise: X^2 lies
+    // below the reference's support, so the deviate sits at the floor.
     [10, 2, 0, { mapChiSquare: 206.08354289942974, mapDegreesOfFreedom: 1001,
-        mapPValue: 1.0, mapSignificance: -28.039678814235533 }],
+        mapNullSd: 44.942491392316214, mapNullSkewness: 0.14177901437232995,
+        mapExpectedPairs: 410.1132665642458,
+        mapPValue: 1.0, mapSignificance: -37.0470962993612 }],
     [2, 0, 6, { mapChiSquare: 2.8616952082936087, mapDegreesOfFreedom: 41,
-        mapPValue: 1.0, mapSignificance: -8.344487440440679 }]
+        mapNullSd: 9.05071282835656, mapNullSkewness: 0.450877377382182,
+        mapExpectedPairs: 9789.110678651203,
+        mapPValue: 1.0, mapSignificance: -8.886765298073716 }]
 ];
 
-describe('map significance (Pearson chi-square)', () => {
+// Deterministic unequal cell probabilities, built identically in Python
+// (_pinned_probabilities in tests/test_orientation_fixes.py).
+const pinnedProbabilities = (cells) => {
+    const raw = [];
+    for (let i = 1; i <= cells; i += 1) raw.push(1 + 0.3 * Math.sin(i));
+    const total = raw.reduce((sum, value) => sum + value, 0);
+    return raw.map((value) => value / total);
+};
+
+// Shared verbatim with PEARSON_MOMENTS in tests/test_orientation_fixes.py:
+// [N, C, exact mean, variance, third central moment of X^2] for
+// pinnedProbabilities(C), from full multinomial enumeration.
+const PEARSON_MOMENTS = [
+    [3, 4, 3.0, 4.218531116561122, 13.943752126285027],
+    [6, 5, 4.0, 6.91373687143512, 29.01155630009905],
+    [9, 4, 3.0, 5.406177038853709, 20.39545791721937],
+    [12, 3, 2.0, 3.6728421787498275, 12.957998592922594],
+    [2, 7, 6.0, 7.183146093091783, 43.811413401314184]
+];
+
+// Exact moments of X^2 by enumerating every multinomial outcome.
+const exactPearsonMoments = (used, p) => {
+    const outcomes = [];
+    const walk = (cell, left, counts) => {
+        if (cell === p.length - 1) {
+            outcomes.push([...counts, left]);
+            return;
+        }
+        for (let k = 0; k <= left; k += 1) walk(cell + 1, left - k, [...counts, k]);
+    };
+    walk(0, used, []);
+    const factorial = (n) => { let value = 1; for (let i = 2; i <= n; i += 1) value *= i; return value; };
+    let mean = 0;
+    const rows = outcomes.map((counts) => {
+        let weight = factorial(used);
+        let x2 = 0;
+        counts.forEach((c, m) => {
+            weight *= p[m] ** c / factorial(c);
+            x2 += (c - used * p[m]) ** 2 / (used * p[m]);
+        });
+        mean += weight * x2;
+        return [weight, x2];
+    });
+    let variance = 0;
+    let third = 0;
+    rows.forEach(([weight, x2]) => {
+        variance += weight * (x2 - mean) ** 2;
+        third += weight * (x2 - mean) ** 3;
+    });
+    return [mean, variance, third];
+};
+
+describe('map significance (Pearson X^2, exact-moment reference)', () => {
     it('matches the Python golden values', () => assertGolden(GOLDEN_MAP));
+
+    it('has the exact multinomial null moments', () => {
+        PEARSON_MOMENTS.forEach(([used, cells, ...expected]) => {
+            const p = pinnedProbabilities(cells);
+            const moments = pearsonNullMoments(used, p);
+            const exact = exactPearsonMoments(used, p);
+            expected.forEach((value, i) => {
+                relClose(moments[i], value, 1e-12);
+                relClose(exact[i], value, 1e-12);
+            });
+        });
+    });
 
     it('reads isotropic clouds as noise and a one-sided cloud as overwhelming', () => {
         const gauss = makeRng(77);
@@ -448,12 +535,53 @@ describe('map significance (Pearson chi-square)', () => {
         for (let k = 0; k < 80; k += 1) {
             values.push(orientationHistogram(isotropicUnits(gauss, 216), { frequency: 10, smoothing: 2, geometry: false }).mapSignificance);
         }
+        expect(values.every(Number.isFinite)).toBe(true);
         expect(values.filter((value) => value > 2).length / values.length).toBeLessThanOrEqual(0.06);
         expect(values.filter((value) => value > 3).length).toBeLessThanOrEqual(1);
         const hemisphere = isotropicUnits(gauss, 1000).map(([x, y, z]) => [Math.abs(x), y, z]);
         const oneSided = orientationHistogram(hemisphere, { frequency: 10, smoothing: 2, geometry: false });
         expect(oneSided.significance).toBeLessThan(1.5);
         expect(oneSided.mapSignificance).toBeGreaterThan(10);
+    });
+
+    it('stays calibrated on sparse isotropic maps (27 copies at nu=10)', () => {
+        // chi^2_{C-1} put ~2% of these above 3 sigma (15x nominal).
+        const gauss = makeRng(2718);
+        const values = [];
+        for (let k = 0; k < 600; k += 1) {
+            values.push(orientationHistogram(isotropicUnits(gauss, 27), { frequency: 10, smoothing: 2, geometry: false }).mapSignificance);
+        }
+        expect(values.every(Number.isFinite)).toBe(true);
+        expect(values.filter((value) => value > 3).length).toBeLessThanOrEqual(4);
+        expect(values.filter((value) => value > 2).length / values.length).toBeLessThanOrEqual(0.04);
+    });
+
+    it('detects a tight lobe even when the map is sparse', () => {
+        const gauss = makeRng(5);
+        const cap = [];
+        while (cap.length < 27) {
+            const [x, y, z] = isotropicUnits(gauss, 1)[0];
+            const length = Math.hypot(x, y, z);
+            if (z / length > Math.cos(10 * Math.PI / 180)) cap.push([x, y, z]);
+        }
+        expect(orientationHistogram(cap, { frequency: 10, geometry: false }).mapSignificance).toBeGreaterThan(8);
+    });
+
+    it('withholds the test when fewer than MAP_TEST_MIN_PAIRS coincidences are expected', () => {
+        const gauss = makeRng(4);
+        [1, 2, 8].forEach((n) => {
+            const result = orientationHistogram(isotropicUnits(gauss, n), { frequency: 10, geometry: false });
+            expect(result.mapExpectedPairs).toBeLessThan(MAP_TEST_MIN_PAIRS);
+            expect(result.mapPValue).toBeNull();
+            expect(result.mapSignificance).toBeNull();
+            expect(Number.isFinite(result.mapChiSquare)).toBe(true);
+        });
+        const populated = orientationHistogram(isotropicUnits(gauss, 27), { frequency: 10, geometry: false });
+        expect(populated.mapExpectedPairs).toBeGreaterThanOrEqual(MAP_TEST_MIN_PAIRS);
+        expect(Number.isFinite(populated.mapSignificance)).toBe(true);
+        // The helper is the engine's path.
+        const p = pinnedProbabilities(12);
+        expect(mapTest(30, 12, p).deviate).toBeGreaterThan(0);
     });
 });
 
