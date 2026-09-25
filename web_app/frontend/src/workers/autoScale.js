@@ -869,6 +869,18 @@ export const amplitudeFromFzLimit = (q, sq, level, config, { fitWidth = FZ_FIT_W
   return (s0Target - 1) / denom;
 };
 
+/**
+ * Largest r the trapezoid sine transform resolves without folding, π / dQ
+ * with dQ the median spacing (port of scaling.alias_limit): beyond it G(r) is a
+ * negated mirror image of the structure below.
+ */
+export const aliasLimit = (q) => {
+  if (q.length < 2) return Infinity;
+  const steps = [];
+  for (let i = 1; i < q.length; i += 1) steps.push(q[i] - q[i - 1]);
+  return Math.PI / median(steps);
+};
+
 export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
   const { q, sq, nDespiked } = cropSq(qIn, sqIn, config);
   const r = rGrid(config);
@@ -891,6 +903,7 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
   for (let i = 0; i < q.length; i += 1) fk[i] = config.bAvgSq * (sqFiltered[i] - 1);
 
   const { tail } = fitWindows(q, r, config);
+  const rAliasLimit = aliasLimit(q);
   let tailTotal = 0;
   for (let i = 0; i < tail.length; i += 1) tailTotal += sqFiltered[tail[i]];
 
@@ -921,6 +934,7 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
     r0Detected: extras.r0Detected !== undefined ? extras.r0Detected : null,
     windowRefined: Boolean(extras.windowRefined),
     fitFailure: extras.fitFailure || null,
+    rAliasLimit,
   };
 };
 
@@ -1463,6 +1477,11 @@ export const diagnosticsSummary = (result, config) => {
     density_limit_satisfied: Math.abs(gWindowMean) < 0.1,
   };
   if (result.fitFailure) summary.fit_failure = result.fitFailure;
+  if (result.rAliasLimit != null) {
+    // G(r) beyond π/dQ is a folded (negated mirror) image, not structure.
+    summary.r_alias_limit = result.rAliasLimit;
+    summary.rmax_beyond_alias_limit = config.rmax > result.rAliasLimit;
+  }
   if (result.r0Detected != null) {
     summary.r0_detected = result.r0Detected;
     summary.window_refined = Boolean(result.windowRefined);

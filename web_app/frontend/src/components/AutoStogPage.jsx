@@ -1047,6 +1047,15 @@ const AutoStogPage = () => {
               </span>
             </div>
           )}
+          {diagnostics.rmax_beyond_alias_limit && (
+            <div className="autostog-stat is-warn">
+              <span className="autostog-stat-label">Aliasing</span>
+              <span className="autostog-stat-value">r &gt; {fmt(diagnostics.r_alias_limit, 3)} Å folded</span>
+              <span className="autostog-stat-sub">
+                r_max exceeds π/ΔQ of the S(Q) grid: G(r) beyond it is a mirror image — lower r_max
+              </span>
+            </div>
+          )}
           {diagnostics.amplitude_concordance != null && (
             <div className={`autostog-stat ${diagnostics.amplitudes_concordant ? 'is-good' : 'is-warn'}`}>
               <span className="autostog-stat-label">Concordance</span>

@@ -1365,9 +1365,18 @@ Caveats:
   $\pi/Q_\mathrm{max} \approx 0.11$ Å while $\Delta r = 0.01$ Å, so the output is **~11×
   oversampled** and neighbouring $r$ points are strongly correlated. Lorch (Step 4) makes the
   true resolution coarser still.
-- The discrete transform's aliasing period is $2\pi/\Delta Q$ — 628 Å at $\Delta Q = 0.01$ Å⁻¹,
-  comfortably beyond $r_\mathrm{max} = 50$ Å, but only 63 Å at $\Delta Q = 0.1$ Å⁻¹. Nothing in
-  the code compares the two.
+- **Aliasing: the transform resolves only $r < \pi/\Delta Q$.** On a uniform grid
+  $Q_i = Q_0 + i\,\Delta Q$ the kernel satisfies $\sin(Q_i(2\pi/\Delta Q - r)) = \pm\sin(Q_i r)$
+  with a sign fixed by the phase, so the trapezoid sum obeys $G(2\pi/\Delta Q - r) = -G(r)$ (for
+  the grids here): the output beyond $\pi/\Delta Q$ is a **negated mirror image** of the structure
+  below it, not new structure. That is 314 Å at $\Delta Q = 0.01$ Å⁻¹ (safe for
+  $r_\mathrm{max} = 50$ Å) but only 31.4 Å at $\Delta Q = 0.1$ Å⁻¹ — where a shell at 20 Å
+  reappears, inverted and at full amplitude, at 42.8 Å. (Before 1.0 this page gave the period
+  $2\pi/\Delta Q$ and called $r_\mathrm{max} = 50$ Å safe at $\Delta Q = 0.1$ — 2× too generous.)
+  Both engines now report `r_alias_limit` $= \pi/\mathrm{median}(\Delta Q)$ of the cropped grid
+  (`scaling.alias_limit` / JS `aliasLimit`, in the provenance and the diagnostics summary) and
+  flag `rmax_beyond_alias_limit`; the CLI prints a WARNING and the page an *Aliasing* card.
+  Tests: `tests/test_stog_b_alias.py`, `src/__tests__/autoScaleAlias.test.js`.
 
 ---
 
@@ -2113,9 +2122,10 @@ test suite (whose committed thresholds are the looser 2×10⁻³ above).
   checked against $\Delta Q$ or $Q_\mathrm{max}$. With the defaults $\Delta r = 0.01$ Å while the
   transform's resolution is $\pi/Q_\mathrm{max} \approx 0.11$ Å at $Q_\mathrm{max} = 28$ Å⁻¹, so
   the plotted curves are ~11× oversampled and neighbouring points are **not independent** —
-  structure at the grid scale is interpolation, not information. Likewise $r_\mathrm{max} = 50$ Å
-  is only safe while the aliasing period $2\pi/\Delta Q$ exceeds it (628 Å at
-  $\Delta Q = 0.01$ Å⁻¹, but only 63 Å at $\Delta Q = 0.1$ Å⁻¹); coarse-$\Delta Q$ data can wrap.
+  structure at the grid scale is interpolation, not information. Likewise $r_\mathrm{max}$ must
+  stay below the aliasing limit $\pi/\Delta Q$ (314 Å at $\Delta Q = 0.01$ Å⁻¹, but only 31.4 Å
+  at $\Delta Q = 0.1$ Å⁻¹, where the default 50 Å already folds); coarse-$\Delta Q$ data wrap, and
+  the engines flag it (`rmax_beyond_alias_limit`, Step 2).
 - **Despiking, if enabled, deletes measured points.** It is OFF by default, but when on it
   removes rows from the array that is then integrated — 12% of points on the crystalline 59438
   benchmark, i.e. real Bragg maxima — and leaves gaps the trapezoid rule bridges with one wide

@@ -686,6 +686,13 @@ def _print_report(
             "recoverable from this data alone (missing low-Q information); "
             "validate the scale externally"
         )
+    if summary.get("rmax_beyond_alias_limit"):
+        print(
+            f"  WARNING   : rmax = {config.rmax if config is not None else float('nan'):g} A "
+            f"exceeds the aliasing limit pi/dQ = {summary['r_alias_limit']:.4g} A of the "
+            "S(Q) grid: G(r)/D(r) beyond it are folded (negated mirror) images — "
+            "lower --rmax, or use finer-binned data"
+        )
     if summary.get("r0_detected") is not None:
         refined = " (fit window refined)" if summary.get("window_refined") else ""
         print(f"  r0 (data) : first-shell onset detected at {summary['r0_detected']:.2f} A{refined}")

@@ -875,6 +875,21 @@ def crop_sq(
     return q, sq, sigma
 
 
+def alias_limit(q: np.ndarray) -> float:
+    """Largest r the trapezoid sine transform resolves without folding: ``pi / dQ``.
+
+    On a grid ``Q_i = Q_0 + i dQ`` the kernel ``sin(Q_i r)`` at
+    ``r' = 2 pi/dQ - r`` differs from the one at ``r`` only by sign (up to the
+    constant phase), so G(r) beyond ``pi/dQ`` is a negated mirror image of the
+    structure below it (a shell at 20 A reappears inverted at 42.8 A for
+    dQ = 0.1). ``dQ`` is the median spacing of the (cropped) grid.
+    """
+    q = np.asarray(q, dtype=float)
+    if q.size < 2:
+        return float("inf")
+    return float(np.pi / np.median(np.diff(q)))
+
+
 def scale_pipeline(
     q: np.ndarray,
     sq: np.ndarray,
@@ -916,6 +931,7 @@ def scale_pipeline(
         d_r_enforced = gk_to_dr(r, gk_enforced, config.rho0)
 
     tail, _ = _fit_windows(q, r, config)
+    r_alias = alias_limit(q)
     provenance = {
         "model": "S_corr = a*S_meas + b",
         "mode": "manual",
@@ -936,6 +952,7 @@ def scale_pipeline(
         "r_fit_window": list(config.r_fit_window),
         "n_q_points": int(q.size),
         "n_despiked": n_despiked,
+        "r_alias_limit": r_alias,
     }
     return ScalingResult(
         a=a,
@@ -1491,6 +1508,13 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
     }
     if result.provenance.get("fit_failure"):
         summary["fit_failure"] = result.provenance["fit_failure"]
+    r_alias = result.provenance.get("r_alias_limit")
+    if r_alias is not None:
+        # G(r) beyond pi/dQ is a folded (negated mirror) image, not structure.
+        summary["r_alias_limit"] = float(r_alias)
+        summary["rmax_beyond_alias_limit"] = bool(
+            float(effective.get("rmax", config.rmax)) > float(r_alias)
+        )
     if result.sweep is not None:
         summary["level"] = result.sweep.level
         summary["level_uncertainty"] = result.sweep.level_uncertainty
