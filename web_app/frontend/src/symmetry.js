@@ -304,14 +304,22 @@ function detectOperations(A, basis, tol, latticeTol, pointOps = latticeCandidate
 
   for (const { R, strain } of pointOps) {
     const Ra0 = applyR(R, refAtom.frac);
-    const tSeen = [];
+    // Refine every seed, then keep, among translations closer than `tol` to each other
+    // (one operation at this resolution), the one that fits best. Keeping the first one
+    // found instead made the result depend on the seed order, and at the ladder's loose
+    // tolerance a poor near-duplicate (residual 0.8 Å) could shadow the true operation
+    // (0.2 Å) for good.
+    const refined = [];
     for (const cand of byEl.get(refEl)) {
       const seed = [wrap01(cand.frac[0] - Ra0[0]), wrap01(cand.frac[1] - Ra0[1]), wrap01(cand.frac[2] - Ra0[2])];
-      if (tSeen.some(u => cartDist(u, seed, A) < tol)) continue;   // an accepted op already covers this seed
       const op = refineOperation(R, seed, basis, index, A, tol);
-      if (!op) continue;
-      if (tSeen.some(u => cartDist(u, op.t, A) < tol)) continue;   // same op reached from another seed
-      tSeen.push(op.t);
+      if (op) refined.push({ ...op, key: translationKey(op.t) });
+    }
+    refined.sort((a, b) => a.residual - b.residual || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    const kept = [];
+    for (const op of refined) {
+      if (kept.some(u => cartDist(u, op.t, A) < tol)) continue;   // a better fit covers it
+      kept.push(op.t);
       const residual = Math.max(op.residual, strain);
       ops.push({ R, t: op.t, residual });
       if (residual > maxResidual) maxResidual = residual;
@@ -320,6 +328,9 @@ function detectOperations(A, basis, tol, latticeTol, pointOps = latticeCandidate
   }
   return { ops, maxResidual };
 }
+
+// Order-independent tie-break for operations of equal residual.
+const translationKey = (t) => t.map(v => Math.round(wrap01(v) * 1e6) % 1e6).join(',');
 
 /**
  * How many operations a pass at `tol` would have to examine, estimated cheaply before

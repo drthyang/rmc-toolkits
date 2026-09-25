@@ -2778,11 +2778,16 @@ operation is accepted or its residual recorded. The refined operation therefore 
 which atom happened to be $a_0$ (the basis order): every seed that leads to the same operation
 refines to the same translation.
 
-**Deduplication**: a seed is skipped if it is within $\tau$ Å (minimum-image Cartesian distance) of
-an already-accepted *refined* translation for the same $R$, and a refined translation is discarded
-if it lands within $\tau$ Å of one already accepted (the same operation reached from another seed).
+**Deduplication**: every seed is refined (Step 9). Refined translations of one $R$ closer than
+$\tau$ Å to each other (minimum-image Cartesian distance) are one operation at this resolution, and
+the **best-fitting** one is kept: they are taken in order of residual (ties by translation) and
+each is dropped if it lies within $\tau$ of one already kept. Before 1.0 the first one found, in
+seed order, was kept and seeds near it were skipped; at the ladder's loose 1 Å a poor
+near-duplicate could then shadow the true operation for good (a noisy $P4_322$: a 4-fold at 0.8 Å
+residual kept, 0.7 Å from the $4_3$ at 0.2 Å, so the ladder read `P222_1` up to 0.96 Å and then a
+set that was not a group, while the headline read `P4_322`).
 
-**Code**: `symmetry.js` → `findSpaceGroupOps()`, inner loop; `applyR()`.
+**Code**: `symmetry.js` → `detectOperations()`; `applyR()`.
 
 #### Step 9. Acceptance test and residual
 
@@ -3070,7 +3075,11 @@ $n_\mathrm{trans}$ = distinct pure translations, keyed on a $10^{-3}$ grid **aft
 0.9997 and 0 count once). `classifyOperations(ops, tolFrac, { closed })` names a set only if it
 passes this and is closed — by construction when the walk built it (`closed: true`), otherwise by an
 all-pairs check (`isClosedSet()`, products matched within $3\cdot$`tolFrac` per fractional
-component). A set that fails is labelled `not a group` with no number (never reached from the card).
+component). A set that fails is labelled `not a group` with no number. The walk's products are
+matched within the residuals, so this is not excluded by construction at loose thresholds; before
+1.0 it was reached through the Step 8 near-duplicates (a noisy $P4_322$ ladder ended in `not a
+group`), and no case is known since (1380 noisy fixture ladders to 1 Å, 790 well-known structures
+in eight cells).
 
 **Code**: `symmetry.js` → `composeOps()`, `productTable()`, `growingGroup()`, `closeUnder()`,
 `groupsByThreshold()`, `isClosedSet()`, `isValidGroup()`.
