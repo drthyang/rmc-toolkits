@@ -77,6 +77,14 @@ export function rotationOrder(R) {
  * rotation/reflection, (m/n) along the axis for a screw, the glide vector for a glide.
  */
 export function intrinsicTranslation(R, t) {
+  return intrinsicRaw(R, t).map(wrap1);
+}
+
+// (1/n)·Σ Rᵏ·t NOT reduced mod 1: the projection of t onto the axis (proper rotation) or
+// the plane (reflection). Reducing each component mod 1 separately is not a lattice
+// translation along the axis when the axis has components of both signs, so projections
+// onto the axis are taken from this.
+function intrinsicRaw(R, t) {
   const n = rotationOrder(R);
   if (!n) return [0, 0, 0];
   const sum = [0, 0, 0];
@@ -86,7 +94,7 @@ export function intrinsicTranslation(R, t) {
     sum[0] += v[0]; sum[1] += v[1]; sum[2] += v[2];
     M = matMul(M, R);
   }
-  return sum.map((v) => wrap1(v / n));
+  return sum.map((v) => v / n);
 }
 
 /* ── characteristic direction ───────────────────────────────────────────────── */
@@ -164,7 +172,7 @@ export function glideLetter(ti) {
  * pairs (4₁/4₃, 3₁/3₂, 6₁/6₅, 6₂/6₄) come out distinct.
  */
 export function screwIndex(R, t, axis, n) {
-  const ti = intrinsicTranslation(R, t);
+  const ti = intrinsicRaw(R, t);
   const dd = axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2];
   const frac = (ti[0] * axis[0] + ti[1] * axis[1] + ti[2] * axis[2]) / dd;
   let m = Math.round(frac * n) % n;
@@ -199,21 +207,53 @@ export function rotationSense(R, axis) {
  *   lattice/centering translation and for inversion (none occupy a symbol position).
  */
 export function classifyElement(R, t) {
+  const geometry = elementGeometry(R);
+  return geometry && elementOf(geometry, R, t);
+}
+
+// The t-independent part of classifyElement: direction, order, and kind of rotation.
+function elementGeometry(R) {
   const dir = characteristicDirection(R);
   if (!dir) return null;
-  const n = rotationOrder(R);
-  const proper = det3i(R) === 1;
+  return { dir, n: rotationOrder(R), proper: det3i(R) === 1, reflection: det3i(R) === -1 && trace(R) === 1 };
+}
+
+function elementOf({ dir, n, proper, reflection }, R, t) {
   if (proper) {
     const m = screwIndex(R, t, dir, n);
     return { kind: m ? 'screw' : 'rotation', order: n, direction: dir, label: m ? `${n}_${m}` : `${n}` };
   }
-  if (trace(R) === 1) {                         // reflection: n = 2, invariant plane
+  if (reflection) {                             // reflection: n = 2, invariant plane
     const letter = glideLetter(intrinsicTranslation(R, t));
     return { kind: letter === 'm' ? 'mirror' : 'glide', order: 2, direction: dir, label: letter };
   }
   // rotoinversion −4 (n = 4), −3 and −6 (n = 6)
   const bar = n === 4 ? 4 : (trace(R) === 0 ? 3 : 6);
   return { kind: 'rotoinversion', order: bar, direction: dir, label: `-${bar}` };
+}
+
+/**
+ * Every distinct element of the coset {R | t + ℓ}, ℓ ∈ {−1, 0, 1}³, of one operation
+ * modulo the cell's lattice. Which representative a detected translation carries is an
+ * accident of wrapping — noise turns an exact 0 into 0.9995 — and where the lattice
+ * projects onto an axis or plane in a fraction of its period, representatives differ in
+ * kind: the [100] 2-fold of a hexagonal cell and the 2_1 half a cell away, a cubic ⟨111⟩
+ * 3-fold and its 3_1 and 3_2, a mirror on a tetragonal or cubic diagonal and an n-glide.
+ * The group holds all of them, and the H–M symbol names the highest-priority element of
+ * each direction (pickAxis, planeOptions), so all are offered and the symbol no longer
+ * depends on the representative. (±1 reaches every residue: the projected lattice steps
+ * are 1/2 or 1/3 of the period along a conventional axis.)
+ */
+export function cosetElements(R, t) {
+  const geometry = elementGeometry(R);
+  if (!geometry) return [];
+  const out = [];
+  const seen = new Set();
+  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+    const e = elementOf(geometry, R, [t[0] + a, t[1] + b, t[2] + c]);
+    if (!seen.has(e.label)) { seen.add(e.label); out.push(e); }
+  }
+  return out;
 }
 
 /* ── symbol assembly ────────────────────────────────────────────────────────── */
@@ -326,11 +366,10 @@ export function hmSymbolCandidates(ops, centering, pointGroup, limit = 96) {
   const system = POINT_GROUP_SYSTEM[pointGroup];
   if (!system || system === 'triclinic') return [`${centering}${pointGroup}`];
 
+  // Every element of every operation's coset (cosetElements), so the symbol does not
+  // depend on which lattice representative of a translation the finder holds.
   const elements = [];
-  for (const { R, t } of ops) {
-    const e = classifyElement(R, t);
-    if (e) elements.push(e);
-  }
+  for (const { R, t } of ops) elements.push(...cosetElements(R, t));
 
   let families = SYSTEM_DIRECTIONS[system];
   if (system === 'monoclinic') {

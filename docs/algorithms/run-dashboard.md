@@ -2924,8 +2924,21 @@ Every other group is named in a **standard setting**, which the RMC cell need no
 
 1. **Symmetry elements** (`classifyElement()`): each operation's characteristic direction (rotation
    axis, or mirror normal), order, and — from the **intrinsic translation**
-   $\mathbf t_\text{int} = \tfrac1n\sum_{k<n}R^k\mathbf t$ (reduced mod 1, snapped to quarters, independent of
-   the origin) — whether a rotation is a screw $n_m$ and which glide ($a,b,c,n,d$, or $e$) a reflection is.
+   $\mathbf t_\text{int} = \tfrac1n\sum_{k<n}R^k\mathbf t$ (independent of the origin) — whether a
+   rotation is a screw $n_m$ ($m = \mathrm{round}(n\,\mathbf t_\text{int}\!\cdot\mathbf d/\mathbf d\!\cdot\!\mathbf d) \bmod n$
+   along the axis $\mathbf d$, from the unreduced $\mathbf t_\text{int}$: reducing each component
+   mod 1 is not a lattice translation along an axis with components of both signs) and which
+   glide ($a,b,c,n,d$, or $e$) a reflection is ($\mathbf t_\text{int}$ reduced mod 1 and snapped to
+   quarters). An operation stands for its coset $\{R\,|\,\mathbf t+\boldsymbol\ell\}$, and where
+   the lattice projects onto the axis or plane in a fraction of its period ($\tfrac1n\sum_k R^k\boldsymbol\ell$
+   not a lattice vector) the representatives differ in kind: the $[100]$ 2-fold of a hexagonal cell
+   and the $2_1$ half a cell away, a cubic $\langle111\rangle$ 3-fold and its $3_1$, $3_2$, a mirror on
+   a tetragonal or cubic diagonal and an $n$-glide. Which representative the finder holds is an
+   accident of wrapping (noise turns an exact 0 into 0.9995), so the symbol reads **every** element
+   of each coset (`cosetElements()`, $\boldsymbol\ell\in\{-1,0,1\}^3$) and the short-symbol rules
+   pick the highest-priority one per position (rotation before screw, $m$ before glides). Before 1.0
+   the held representative decided: a noisy $\{E, 2_{[100]}\}$ subgroup of $P6_3/mmc$ read `P2_1`
+   No. 4 instead of `P2` No. 3.
 2. **Candidate cells** (`hmSymbolInStandardSetting()`). The group is re-expressed (`applySetting()`:
    $R' = Q^{-1}RQ$, $\mathbf t' = Q^{-1}\mathbf t$, and the new cell's translations $Q^{-1}(\mathbb Z^3 + T)$
    mod 1) in a sequence of cells $Q$ (columns = new basis vectors in the old fractional basis), and
@@ -2995,7 +3008,7 @@ magnitude 2 there.
 
 **Code**: `symmetry.js` → `classifyOperations()`, `classifyRotation()`, `pointGroupOf()`,
 `spaceGroupHM()`, `classLabel()`, `lowerBoundLabel()`, `POINT_GROUP_ORDER`; `spaceGroupSymbol.js` →
-`intrinsicTranslation()`, `classifyElement()`, `centeringOfOps()`, `bravaisCentering()`,
+`intrinsicTranslation()`, `classifyElement()`, `cosetElements()`, `centeringOfOps()`, `bravaisCentering()`,
 `applySetting()`, `derivedBases()`, `elementsFitSetting()`, `hmSymbolCandidates()`,
 `hmSymbolInStandardSetting()`, `reduceBasis()`, `shortLatticeVectors()`, `primitiveBasis()`,
 `allLatticeOpsTested()`, `latticeFullyTested()`, `pureTranslations()`, `twoFoldsMeet()`, `transformOps()`;
@@ -3354,9 +3367,13 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
   `symmetryObliqueCells.test.js` pins the lattice-rotation count on oblique bases, naming on oblique
   and strongly oblique cells, the lower bound and the translation snap; `symmetryFinder.test.js`
   covers basis-order independence, lattice strain, closure of every rung (the bundled GTS_250K demo,
-  a noisy lacunar spinel) and class-consistent symbols; `symmetryWyckoff.test.js` and
+  a noisy lacunar spinel) and class-consistent symbols; `symmetryRepresentatives.test.js` checks
+  that a symbol does not depend on the lattice representative of a translation, and that every
+  noisy trigonal, hexagonal and cubic subgroup is named after a group with the same element types
+  per coset (rotation or screw, mirror or glide); `symmetryWyckoff.test.js` and
   `wyckoff.test.js` check every Wyckoff row against its group's operations, the demo's letters and
   letters in permuted settings; `symmetryLimits.test.js`, `symmetryPerformance.test.js` and
   `symmetryUndetermined.test.js` cover the basis cap, the operation budget and an unanalysable
   lattice. The two GaNb₄Se₈ runs are gitignored, so they are not
-  in the suite; their ladders were checked by hand to consist only of closed, correctly named groups.
+  in the suite; every rung of their ladders was checked by hand to be closed and to have the
+  element types of the group it is named after.
