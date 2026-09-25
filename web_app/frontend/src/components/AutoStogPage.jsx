@@ -18,6 +18,7 @@ import {
   readDatHeader,
   readStogInp,
   readStogXy,
+  stogInpClosestApproach,
   writeStogXy,
 } from '../workers/autoScale';
 import './AutoStogPage.css';
@@ -104,8 +105,8 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
   let r0 = numberOr(form.r0);
   if (r0 === undefined && header?.minDistance != null) r0 = header.minDistance;
   if (r0 === undefined && inp) {
-    const candidate = Math.max(inp.peakCutoff, inp.peakRmin);
-    if (candidate - 0.25 > rCutoff + 0.2) r0 = candidate;
+    // Classic first-peak-line semantics, shared with the CLI and the API.
+    r0 = stogInpClosestApproach(inp, rCutoff) ?? undefined;
   }
   const qmin = pick(form.qmin, inp ? inp.qmin : undefined);
   const qmax = pick(form.qmax, inp ? inp.qmax : undefined);

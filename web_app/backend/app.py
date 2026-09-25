@@ -59,6 +59,7 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     _json_safe,
     _write_outputs,
     _resolve_targets as _resolve_scaling_targets,
+    stog_inp_closest_approach,
 )
 from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset
 from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_density
@@ -836,9 +837,7 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> ScalingConfig:
     if r0 is None and "min_distance" in header:
         r0 = float(header["min_distance"])
     if r0 is None and inp is not None:
-        candidate = max(inp.peak_cutoff, inp.peak_rmin)
-        if candidate - 0.25 > float(r_cutoff) + 0.2:
-            r0 = candidate
+        r0 = stog_inp_closest_approach(inp, float(r_cutoff))
 
     config = ScalingConfig(
         qmin=float(qmin),

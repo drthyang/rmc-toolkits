@@ -51,6 +51,7 @@ from .parsers import (
     write_stog_xy,
 )
 from .scaling import (
+    R0_WINDOW_MARGIN,
     ScalingConfig,
     ScalingResult,
     auto_enforcement_cutoff,
@@ -155,7 +156,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--r0",
         type=float,
         help="closest interatomic approach (A); default: MINIMUM_DISTANCES :: header, "
-        "then the stog.inp first-peak line",
+        "then the stog.inp first-peak line (peak_rmin when its window starts below "
+        "the cutoff, else peak_cutoff), else detected from the data",
     )
     physics.add_argument("--r-fit-min", type=float, help="low-r fit window minimum (A)")
     physics.add_argument("--r-fit-max", type=float, help="low-r fit window maximum (A)")
@@ -294,6 +296,28 @@ def _load_dataset(data_path: Path, use_sigma: bool):
     return q, sq, sigma
 
 
+def stog_inp_closest_approach(inp: StogInput, r_cutoff: float) -> Optional[float]:
+    """Closest-approach proxy from a classic stog.inp first-peak line (line 22).
+
+    ``peak_cutoff peak_rmin peak_rmax`` zeroes g for ``r <= peak_cutoff``
+    *except* inside ``[peak_rmin, peak_rmax]`` (Fortran ``first_peak_zero``
+    semantics), so the region the expert asserts g = 0 ends at ``peak_rmin``
+    when a genuine first-peak window starts below the cutoff
+    (``0 < peak_rmin < peak_cutoff < ...``, ``peak_rmax > peak_rmin``) — the
+    window exists precisely for first peaks that begin inside the cleanup
+    radius — and at ``peak_cutoff`` otherwise (window outside ``[0, cutoff]``,
+    or ``'1.0 0 0'``-style lines). Returned only when it leaves a non-empty
+    default fit window above ``r_cutoff`` (else None: r0 is detected). Shared
+    by the CLI, the API and (ported) the Auto StoG page.
+    """
+    candidate = float(inp.peak_cutoff)
+    if 0.0 < inp.peak_rmin < inp.peak_cutoff and inp.peak_rmax > inp.peak_rmin:
+        candidate = float(inp.peak_rmin)
+    if candidate - R0_WINDOW_MARGIN > r_cutoff + 0.2:
+        return candidate
+    return None
+
+
 def _default_r0(
     args: argparse.Namespace,
     header: dict,
@@ -306,12 +330,7 @@ def _default_r0(
     if "min_distance" in header:
         return float(header["min_distance"])
     if inp is not None:
-        # peak_cutoff is the ripple-cleanup radius and peak_rmin the first-peak
-        # start; the larger is the better closest-approach proxy — but only
-        # when it leaves a non-empty default fit window above r_cutoff.
-        candidate = max(inp.peak_cutoff, inp.peak_rmin)
-        if candidate - 0.25 > r_cutoff + 0.2:
-            return candidate
+        return stog_inp_closest_approach(inp, r_cutoff)
     return None
 
 

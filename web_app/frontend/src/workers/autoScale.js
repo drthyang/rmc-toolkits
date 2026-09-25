@@ -1149,6 +1149,21 @@ export const readStogInp = (text) => {
   };
 };
 
+/**
+ * Closest-approach proxy from a classic stog.inp first-peak line (port of
+ * scaling_cli.stog_inp_closest_approach — keep in sync): the line zeroes g for
+ * r <= peakCutoff except inside [peakRmin, peakRmax], so the asserted g = 0
+ * region ends at peakRmin when a genuine window starts below the cutoff,
+ * else at peakCutoff. null when it leaves no default fit window above rCutoff.
+ */
+export const stogInpClosestApproach = (inp, rCutoff) => {
+  let candidate = inp.peakCutoff;
+  if (inp.peakRmin > 0 && inp.peakRmin < inp.peakCutoff && inp.peakRmax > inp.peakRmin) {
+    candidate = inp.peakRmin;
+  }
+  return candidate - R0_WINDOW_MARGIN > rCutoff + 0.2 ? candidate : null;
+};
+
 export const readDatHeader = (text) => {
   const raw = {};
   for (const line of text.split(/\r?\n/)) {

@@ -657,7 +657,7 @@ given"):
 | $\langle b^2\rangle$ (barn) | form → composition (never the `.inp`, never the header) | `None` (then $S(0)$ target = 0, no FZ amplitude, no $\rho_0$ estimate, no $Q\to0$ diagnostic) |
 | $\rho_0$ | see Step 8 | seed 0.05 + self-consistent estimate (browser only) |
 | $r_\mathrm{cut}$ | form → `stog.inp` line 15 | 1.0 Å |
-| $r_0$ | form → **header `MINIMUM_DISTANCES`** → `stog.inp` $\max(\text{peak\_cutoff}, \text{peak\_rmin})$, but only if $r_0 - 0.25 > r_\mathrm{cut} + 0.2$ | `None` → detected from the data after the first pass |
+| $r_0$ | form → **header `MINIMUM_DISTANCES`** → `stog.inp` line 22: `peak_rmin` when a genuine first-peak window starts inside the cutoff ($0 <$ `peak_rmin` $<$ `peak_cutoff`, `peak_rmax` $>$ `peak_rmin`), else `peak_cutoff` — only if $r_0 - 0.25 > r_\mathrm{cut} + 0.2$ (`stog_inp_closest_approach`, shared by CLI/API, JS `stogInpClosestApproach`) | `None` → located from the data (Step 8) |
 | `rmax`, `nr` | form → `stog.inp` | 50.0 Å, 5000 points |
 | Lorch | form → `stog.inp` flag | off |
 | enforcement `(cutoff, peak_rmin, peak_rmax)` | resolved *outside* the config — see below | `'auto'` → the foot of the first shell, $\min(\text{foot}, \text{onset} - 0.25)$ |
@@ -3617,9 +3617,13 @@ and the run mode (`'auto'` / `'manual'`).
    ($\langle b\rangle^2 < 10^{-4}\langle b^2\rangle$). Missing $\langle b\rangle^2$ is a hard
    error.
 2. **`rCutoff`** ← form → `inp.rCutoff` → 1.0.
-3. **`r0`** ← form → header `MINIMUM_DISTANCES` → the stog.inp peak line
-   $\max(\texttt{peakCutoff}, \texttt{peakRmin})$, but only if it leaves a non-empty default
-   fit window, i.e. only when $\max(\cdot) - 0.25 > r_\mathrm{cutoff} + 0.2$.
+3. **`r0`** ← form → header `MINIMUM_DISTANCES` → the stog.inp peak line via
+   `stogInpClosestApproach()`: the classic line zeroes $g$ for $r \le$ `peakCutoff` *except*
+   inside `[peakRmin, peakRmax]`, so the asserted $g = 0$ region ends at `peakRmin` when a
+   genuine window starts inside the cutoff, else at `peakCutoff` — only if that leaves a
+   non-empty default fit window ($r_0 - 0.25 > r_\mathrm{cutoff} + 0.2$). (Pre-1.0 this was
+   $\max(\texttt{peakCutoff}, \texttt{peakRmin})$, which put the window over a first peak starting
+   below the cutoff: `2.3 1.6 2.2` on a 1.7 Å shell gave $a = -4.9$.)
 4. **Q window** ← form → `inp`. Missing either is a hard error
    (`set the Q window (Qmin and Qmax)`).
 5. **$\rho_0$ chain** ← form → `inp.rho0` → header `NUMBER_DENSITY` → mass density + composition:
