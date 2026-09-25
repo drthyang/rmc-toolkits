@@ -195,11 +195,13 @@ describe('pcaKdeVolume separability', () => {
         expect(result.rms[2]).toBeCloseTo(0.1, 1);
     });
 
-    it('cubic box uses one uniform half-width', () => {
+    it('cubic box uses one uniform display half-width', () => {
+        // cubicBox sizes the DISPLAY box; the volume stays on the per-axis box.
         const cloud = anisotropicCloud(400, 9, [[0.6, 0, 0], [0, 0.2, 0], [0, 0, 0.05]]);
         const result = pcaKdeVolume(cloud, { bw: 'scott', grid: 10, cubicBox: true, projections: false });
-        expect(result.halfWidths[0]).toBeCloseTo(result.halfWidths[1], 9);
-        expect(result.halfWidths[1]).toBeCloseTo(result.halfWidths[2], 9);
+        expect(result.boxHalfWidths[0]).toBeCloseTo(result.boxHalfWidths[1], 9);
+        expect(result.boxHalfWidths[1]).toBeCloseTo(result.boxHalfWidths[2], 9);
+        expect(result.boxHalfWidths[0]).toBeCloseTo(Math.max(...result.halfWidths), 12);
     });
 
     it('mass levels bracket the cloud (higher probability -> lower threshold)', () => {

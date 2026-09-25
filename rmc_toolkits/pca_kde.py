@@ -619,6 +619,14 @@ def pca_kde_volume(
     ``extent`` is the half-width of the box in units of the kernel-broadened
     standard deviation along each axis, so the default 3.0 captures >99% of the
     density; the returned ``mass`` reports how much it actually captured.
+
+    The volume, ``mass``, ``massLevels`` and the wall ``projections`` are always
+    sampled on that per-axis box (``halfWidths``), whose G nodes resolve every
+    axis's kernel. ``cubic_box`` only sizes the *display* box returned as
+    ``boxHalfWidths`` -- a cube of half-width ``max(halfWidths)`` for a shadow box
+    whose walls are all the same size. (Until 1.0 it also sampled every axis on
+    that cube, which puts a thin axis's kernels between nodes: a planar cloud
+    read 0% captured mass on an even grid and ~2e5 % on an odd one.)
     """
     points = np.asarray(points, dtype=float)
     if points.ndim != 2 or points.shape[1] != 3:
@@ -665,8 +673,7 @@ def pca_kde_volume(
     # Kernel-broadened spread: the KDE convolves the cloud with the kernel, so
     # its variance along an axis is sigma^2 + h^2 = sigma^2 (1 + factor^2).
     half_widths = extent * sigma * np.sqrt(1.0 + factor * factor)
-    if cubic_box:
-        half_widths = np.full(3, float(half_widths.max()))
+    box_half_widths = np.full(3, float(half_widths.max())) if cubic_box else half_widths
 
     projected = centered @ axes.T  # cloud in the PCA frame, shape (N, 3)
     axis_coords = [np.linspace(-half, half, grid) for half in half_widths]
@@ -724,6 +731,7 @@ def pca_kde_volume(
         "extent": float(extent),
         "cubicBox": bool(cubic_box),
         "halfWidths": half_widths.tolist(),
+        "boxHalfWidths": box_half_widths.tolist(),
         "axisCoords": [coords.tolist() for coords in axis_coords],
         "cellVolume": cell_volume,
         # C-order over (PC1, PC2, PC3): index = (i * grid + j) * grid + k.

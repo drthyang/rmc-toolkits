@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
-import { marchingCubes } from '../workers/marchingCubes';
+import { marchingCubes, sampleFieldTrilinear } from '../workers/marchingCubes';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
 import SaveMenu from './SaveMenu';
@@ -70,40 +70,21 @@ const pcaVertexToCartesian = (fi, fj, fk, axisCoords, axes, mean, out) => {
     return out;
 };
 
-// Trilinear sample of the flat KDE density grid (C order over PC1, PC2, PC3:
-// index = (i*grid + j)*grid + k) at continuous grid indices (fi, fj, fk).
-const sampleDensityTrilinear = (density, grid, fi, fj, fk) => {
-    const clamp = (v) => (v < 0 ? 0 : v > grid - 1 ? grid - 1 : v);
-    const ci = clamp(fi);
-    const cj = clamp(fj);
-    const ck = clamp(fk);
-    const i0 = Math.floor(ci);
-    const j0 = Math.floor(cj);
-    const k0 = Math.floor(ck);
-    const i1 = Math.min(i0 + 1, grid - 1);
-    const j1 = Math.min(j0 + 1, grid - 1);
-    const k1 = Math.min(k0 + 1, grid - 1);
-    const di = ci - i0;
-    const dj = cj - j0;
-    const dk = ck - k0;
-    const at = (i, j, k) => density[(i * grid + j) * grid + k];
-    const c00 = at(i0, j0, k0) * (1 - di) + at(i1, j0, k0) * di;
-    const c01 = at(i0, j0, k1) * (1 - di) + at(i1, j0, k1) * di;
-    const c10 = at(i0, j1, k0) * (1 - di) + at(i1, j1, k0) * di;
-    const c11 = at(i0, j1, k1) * (1 - di) + at(i1, j1, k1) * di;
-    const c0 = c00 * (1 - dj) + c10 * dj;
-    const c1 = c01 * (1 - dj) + c11 * dj;
-    return c0 * (1 - dk) + c1 * dk;
-};
+// Shell vertices that fall outside the sampled KDE box carry no density: they are
+// drawn in this neutral grey and left out of the colour stretch.
+const NO_DATA_RGB = [0.56, 0.58, 0.62];
 
 // Solid p% ellipsoid whose surface is colored by the KDE density sampled at each
-// vertex -- "projecting" the density onto the harmonic reference shell. A perfectly
-// Gaussian cloud gives a near-uniform color; hotter/colder patches mark where the
-// real density departs from the ellipsoid (anharmonicity). The ellipsoid-surface
-// point for a unit-sphere vertex is (semi .* vertex) in the PCA frame, which both
-// maps to world coordinates (baked in, like the isosurface) and indexes the grid.
+// vertex -- "projecting" the density onto the harmonic reference shell. For an
+// infinitely large Gaussian sample the shell would be one colour; a finite cloud
+// adds sampling-noise patches of tens of percent (at 10^3 copies), so only a
+// systematic pattern marks anharmonicity. The ellipsoid-surface point for a
+// unit-sphere vertex is (semi .* vertex) in the PCA frame, which both maps to
+// world coordinates (baked in, like the isosurface) and indexes the grid.
 // Coloring is stretched to the shell's OWN density range (not the global 0..vmax),
 // so the small variation across an iso-probability shell reads with full contrast.
+// A vertex outside the sampled box is grey ("no data"), never the clamped box-face
+// density, which would paint a false hot cap.
 const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap, contrast = 1) => {
     const geometry = new THREE.SphereGeometry(1, 96, 64);
     const unit = geometry.attributes.position;
@@ -125,21 +106,29 @@ const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap, contrast = 1) 
         world[3 * v] = mean[0] + p0 * axes[0][0] + p1 * axes[1][0] + p2 * axes[2][0];
         world[3 * v + 1] = mean[1] + p0 * axes[0][1] + p1 * axes[1][1] + p2 * axes[2][1];
         world[3 * v + 2] = mean[2] + p0 * axes[0][2] + p1 * axes[1][2] + p2 * axes[2][2];
-        const d = sampleDensityTrilinear(
-            kde.density, grid,
+        const d = sampleFieldTrilinear(
+            kde.density, grid, grid, grid,
             (p0 - axisCoords[0][0]) / step[0],
             (p1 - axisCoords[1][0]) / step[1],
             (p2 - axisCoords[2][0]) / step[2]
         );
         values[v] = d;
-        if (d < shellMin) shellMin = d;
-        if (d > shellMax) shellMax = d;
+        if (Number.isFinite(d)) {
+            if (d < shellMin) shellMin = d;
+            if (d > shellMax) shellMax = d;
+        }
     }
     // Second pass: stretch the shell's density range across the full colormap, then
     // apply the user contrast as a symmetric gain about the mid-tone (0.5) — >1
     // narrows the effective vmin/vmax so faint departures stand out, <1 flattens it.
     const shellRange = shellMax - shellMin || 1;
     for (let v = 0; v < count; v += 1) {
+        if (!Number.isFinite(values[v])) {
+            colors[3 * v] = NO_DATA_RGB[0];
+            colors[3 * v + 1] = NO_DATA_RGB[1];
+            colors[3 * v + 2] = NO_DATA_RGB[2];
+            continue;
+        }
         const t = 0.5 + ((values[v] - shellMin) / shellRange - 0.5) * contrast;
         const rgb = sampleColormap(colormap, t < 0 ? 0 : t > 1 ? 1 : t);
         colors[3 * v] = rgb[0] / 255;
@@ -194,38 +183,72 @@ const projectionTexture = (projection, colormap) => {
     return texture;
 };
 
-// Build the wall plane for one projection: a textured quad in the PCA frame on
-// the far wall along the axis not spanned by the projection (Maksim Eremenko's
-// shadow-box layout). first/second index the projection's axes; the plane's
-// local X → axes[first], local Y → axes[second], placed at -halfWidth of the
-// remaining axis and offset slightly outward so it sits just past the cloud.
-const makeProjectionWall = (projection, axes, mean, halfWidths, colormap) => {
+// In-plane coordinate range [lo, hi] of a projection's two axes: its own sampled
+// extent when it carries one (the per-axis box the engine evaluated it on),
+// otherwise the display box.
+const projectionRange = (projection, boxHalfWidths) => {
+    const [first, second] = projection.axes;
+    const e = projection.extent;
+    return e && e.length === 4
+        ? [e[0], e[1], e[2], e[3]]
+        : [-boxHalfWidths[first], boxHalfWidths[first], -boxHalfWidths[second], boxHalfWidths[second]];
+};
+
+// Build the wall for one projection on the far face of the (cubic) display box
+// along the axis not spanned by the projection (Maksim Eremenko's shadow-box
+// layout). first/second index the projection's axes; the plane's local X →
+// axes[first], local Y → axes[second], placed at -boxHalfWidth of the remaining
+// axis and offset slightly outward so it sits just past the cloud. The density
+// texture covers exactly the range the projection was evaluated on -- the
+// per-axis box, which resolves a thin axis -- over a face-sized backing in the
+// colormap's zero colour, so the face reads as one wall. Returns the meshes.
+const makeProjectionWall = (projection, axes, mean, boxHalfWidths, colormap) => {
     const [first, second] = projection.axes;
     const third = 3 - first - second;
     const texture = projectionTexture(projection, colormap);
-    if (!texture) return null;
-
-    const geometry = new THREE.PlaneGeometry(2 * halfWidths[first], 2 * halfWidths[second]);
-    const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.96,
-        depthWrite: false
-    });
-    const plane = new THREE.Mesh(geometry, material);
+    if (!texture) return [];
 
     const xAxis = new THREE.Vector3(axes[first][0], axes[first][1], axes[first][2]);
     const yAxis = new THREE.Vector3(axes[second][0], axes[second][1], axes[second][2]);
     const normal = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
-    const offset = -(halfWidths[third] + 0.06 * halfWidths[third]);
-    const position = new THREE.Vector3(
-        mean[0] + offset * axes[third][0],
-        mean[1] + offset * axes[third][1],
-        mean[2] + offset * axes[third][2]
-    );
-    plane.applyMatrix4(new THREE.Matrix4().makeBasis(xAxis, yAxis, normal).setPosition(position));
-    return plane;
+    const offset = -(boxHalfWidths[third] + 0.06 * boxHalfWidths[third]);
+    const place = (mesh, u, v) => {
+        const position = new THREE.Vector3(
+            mean[0] + offset * axes[third][0] + u * axes[first][0] + v * axes[second][0],
+            mean[1] + offset * axes[third][1] + u * axes[first][1] + v * axes[second][1],
+            mean[2] + offset * axes[third][2] + u * axes[first][2] + v * axes[second][2]
+        );
+        mesh.applyMatrix4(new THREE.Matrix4().makeBasis(xAxis, yAxis, normal).setPosition(position));
+        return mesh;
+    };
+
+    const zero = sampleColormap(colormap, 0);
+    const backing = place(new THREE.Mesh(
+        new THREE.PlaneGeometry(2 * boxHalfWidths[first], 2 * boxHalfWidths[second]),
+        new THREE.MeshBasicMaterial({
+            color: new THREE.Color(zero[0] / 255, zero[1] / 255, zero[2] / 255),
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.96,
+            depthWrite: false
+        })
+    ), 0, 0);
+    backing.renderOrder = 0;
+
+    const [u0, u1, v0, v1] = projectionRange(projection, boxHalfWidths);
+    const plane = place(new THREE.Mesh(
+        new THREE.PlaneGeometry(u1 - u0, v1 - v0),
+        new THREE.MeshBasicMaterial({
+            map: texture,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.96,
+            depthWrite: false
+        })
+    ), 0.5 * (u0 + u1), 0.5 * (v0 + v1));
+    // Coplanar with the backing and neither writes depth: draw order decides.
+    plane.renderOrder = 1;
+    return [backing, plane];
 };
 
 // Marching-squares line segments of a 2D field at one level. Each cell yields 0,
@@ -264,7 +287,7 @@ const contourSegments = (density, level) => {
 
 // Contour lines for one projection, drawn just in front of its wall so they read
 // on top of the colormap (like the projected contours in Maksim's Plotly figure).
-const makeProjectionContours = (projection, axes, mean, halfWidths, color) => {
+const makeProjectionContours = (projection, axes, mean, boxHalfWidths, color) => {
     const density = projection.density;
     const nFirst = density.length;
     const nSecond = density[0] ? density[0].length : 0;
@@ -273,16 +296,17 @@ const makeProjectionContours = (projection, axes, mean, halfWidths, color) => {
 
     const [first, second] = projection.axes;
     const third = 3 - first - second;
-    const stepFirst = (2 * halfWidths[first]) / Math.max(nFirst - 1, 1);
-    const stepSecond = (2 * halfWidths[second]) / Math.max(nSecond - 1, 1);
+    const [u0, u1, v0, v1] = projectionRange(projection, boxHalfWidths);
+    const stepFirst = (u1 - u0) / Math.max(nFirst - 1, 1);
+    const stepSecond = (v1 - v0) / Math.max(nSecond - 1, 1);
     // Sit the lines just inside the wall (toward the box interior).
-    const wallOffset = -(halfWidths[third] + 0.05 * halfWidths[third]);
+    const wallOffset = -(boxHalfWidths[third] + 0.05 * boxHalfWidths[third]);
 
     const points = [];
     [0.1, 0.25, 0.4, 0.55, 0.7, 0.85].forEach((fraction) => {
         contourSegments(density, fraction * vmax).forEach(([fi, fj]) => {
-            const pFirst = -halfWidths[first] + fi * stepFirst;
-            const pSecond = -halfWidths[second] + fj * stepSecond;
+            const pFirst = u0 + fi * stepFirst;
+            const pSecond = v0 + fj * stepSecond;
             points.push(new THREE.Vector3(
                 mean[0] + pFirst * axes[first][0] + pSecond * axes[second][0] + wallOffset * axes[third][0],
                 mean[1] + pFirst * axes[first][1] + pSecond * axes[second][1] + wallOffset * axes[third][1],
@@ -429,7 +453,7 @@ const projectDensityOntoFrame = (kde, frame, half, nBins) => {
             }
             dens[a] = row;
         }
-        return { density: dens, axes: pair, vmax };
+        return { density: dens, axes: pair, extent: [-half, half, -half, half], vmax };
     };
     return {
         pc12: finalize(d01, [0, 1]),
@@ -660,6 +684,19 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             : null),
         [selectedEllipsoid, unitCell]
     );
+
+    // The p% shell pokes out of the sampled KDE box when a semi-axis k(p)·σ_a exceeds
+    // the box half-width along that axis; those vertices are painted grey (no data).
+    // Report the Box (in the slider's σ units, rounded up to its 0.5 step) that
+    // would contain it, so the grey is explained rather than mistaken for density.
+    const shellBoxNeeded = useMemo(() => {
+        if (!kde || !selectedEllipsoid?.semiAxes || !showEllipsoidKde) return null;
+        const ratio = Math.max(...selectedEllipsoid.semiAxes.map(
+            (semi, a) => semi / (kde.halfWidths[a] || Number.POSITIVE_INFINITY)
+        ));
+        if (!(ratio > 1 + 1e-9)) return null;
+        return Math.ceil(kde.extent * ratio * 2) / 2;
+    }, [kde, selectedEllipsoid, showEllipsoidKde]);
 
     // Crystal-frame shadow box + wall projections: an orthonormal frame from the unit
     // cell and the current KDE density re-binned onto its three planes. Used when the
@@ -916,17 +953,23 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         // shadow-box layout). In crystal mode the box + walls switch to the orthonormal
         // crystal frame, with the density re-binned onto the a/b/c planes; in PC mode
         // they stay in the principal-axis frame the volume was computed in.
+        // The display box is a cube (kde.boxHalfWidths) while the volume and its PC
+        // walls were sampled on the per-axis box (kde.halfWidths), which resolves
+        // a thin axis; each wall texture covers its own sampled range on the face.
         const useCrystalBox = axisFrame === 'crystal' && crystalDisplay;
         const boxAxes = useCrystalBox ? crystalDisplay.frame : axes;
-        const boxHalfWidths = useCrystalBox ? crystalDisplay.halfWidths : halfWidths;
+        const cube = Math.max(...halfWidths);
+        const boxHalfWidths = useCrystalBox
+            ? crystalDisplay.halfWidths
+            : (kde.boxHalfWidths ?? [cube, cube, cube]);
         const boxProjections = useCrystalBox ? crystalDisplay.projections : kde.projections;
         if (showProjections && boxProjections) {
             wallsGroup.add(makeBoundingBox(boxAxes, mean, boxHalfWidths, 0x8a97a8));
             PROJECTION_META.forEach(({ key }) => {
                 const projection = boxProjections[key];
                 if (!projection) return;
-                const wall = makeProjectionWall(projection, boxAxes, mean, boxHalfWidths, colormap);
-                if (wall) wallsGroup.add(wall);
+                makeProjectionWall(projection, boxAxes, mean, boxHalfWidths, colormap)
+                    .forEach((mesh) => wallsGroup.add(mesh));
                 const contours = makeProjectionContours(projection, boxAxes, mean, boxHalfWidths, 0xeef3f8);
                 if (contours) wallsGroup.add(contours);
             });
@@ -1435,6 +1478,14 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             </>
                         )}
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        {shellBoxNeeded && (
+                            <span className="pca-legend-item pca-legend-warning">
+                                <i className="pca-legend-swatch" style={{ background: 'rgb(143, 148, 158)' }} />
+                                {shellBoxNeeded <= 5
+                                    ? `shell outside the sampled box (grey) — Box ≥ ${shellBoxNeeded.toFixed(1)}σ covers it`
+                                    : 'shell outside the sampled box (grey) — lower the Level to cover it'}
+                            </span>
+                        )}
                         <a
                             className="pca-legend-credit"
                             href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"

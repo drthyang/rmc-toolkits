@@ -347,5 +347,41 @@ class NonFiniteInputTests(unittest.TestCase):
                 load_site_displacements(path)
 
 
+class CubicDisplayBoxTests(unittest.TestCase):
+    """pca.numerics.14 / numerics.32 / physics.44.
+
+    With cubic_box every axis was sampled over PC1's half-width on the same G
+    nodes, so a thin PC3 kernel fell between nodes: captured mass and the
+    enclosed-mass iso levels collapsed (0% for a planar cloud on an even grid,
+    ~228000% on an odd one). The cube is now a display box only; the volume is
+    always sampled on the per-axis box, where the separable estimator is exact.
+    """
+
+    def test_planar_cloud_keeps_unit_mass_on_even_and_odd_grids(self):
+        rng = np.random.default_rng(8)
+        cloud = np.column_stack([rng.normal(size=1000) * 0.1, rng.normal(size=1000) * 0.07,
+                                 np.zeros(1000)])
+        for grid in (40, 41):
+            with self.subTest(grid=grid):
+                result = pca_kde_volume(cloud, grid=grid, extent=4.0, cubic_box=True, projections=False)
+                self.assertTrue(result["degenerate"])
+                self.assertGreater(result["mass"], 0.99)
+                self.assertLess(result["mass"], 1.01)
+                self.assertEqual(len(result["massLevels"]), 101)
+
+    def test_thin_cloud_volume_does_not_depend_on_the_display_box(self):
+        rng = np.random.default_rng(9)
+        cloud = rng.normal(size=(1000, 3)) * np.array([0.3, 0.1, 0.015])  # sigma1/sigma3 = 20
+        cubic = pca_kde_volume(cloud, grid=40, extent=4.0, cubic_box=True, projections=False)
+        plain = pca_kde_volume(cloud, grid=40, extent=4.0, cubic_box=False, projections=False)
+        self.assertGreater(cubic["mass"], 0.99)
+        np.testing.assert_allclose(cubic["density"], plain["density"], rtol=0, atol=0)
+        self.assertEqual(cubic["massLevels"], plain["massLevels"])
+        # The display box is the cube; the sampled box stays per axis.
+        self.assertEqual(len(set(cubic["boxHalfWidths"])), 1)
+        self.assertAlmostEqual(cubic["boxHalfWidths"][0], max(cubic["halfWidths"]))
+        self.assertEqual(plain["boxHalfWidths"], plain["halfWidths"])
+
+
 if __name__ == "__main__":
     unittest.main()

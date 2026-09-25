@@ -260,3 +260,38 @@ export const marchingCubes = (field, nx, ny, nz, isoLevel) => {
         count: positions.length / 3
     };
 };
+
+/**
+ * Trilinear sample of a scalar field stored C-order over (x, y, z) -- index
+ * (i * ny + j) * nz + k -- at continuous grid indices (fi, fj, fk). Returns NaN
+ * outside the sampled box [0, n-1] on any axis (a round-off margin of 1e-9 cell
+ * is tolerated): extrapolating by clamping to the border node would report the
+ * box-face value, which is nearer the centre and so too dense, as the density at
+ * the point. Callers must treat NaN as "no data".
+ */
+export const sampleFieldTrilinear = (field, nx, ny, nz, fi, fj, fk) => {
+    const TOLERANCE = 1e-9;
+    const inside = (v, n) => v >= -TOLERANCE && v <= n - 1 + TOLERANCE;
+    if (!(inside(fi, nx) && inside(fj, ny) && inside(fk, nz))) return Number.NaN;
+    const clamp = (v, n) => (v < 0 ? 0 : v > n - 1 ? n - 1 : v);
+    const ci = clamp(fi, nx);
+    const cj = clamp(fj, ny);
+    const ck = clamp(fk, nz);
+    const i0 = Math.min(Math.floor(ci), Math.max(nx - 2, 0));
+    const j0 = Math.min(Math.floor(cj), Math.max(ny - 2, 0));
+    const k0 = Math.min(Math.floor(ck), Math.max(nz - 2, 0));
+    const i1 = Math.min(i0 + 1, nx - 1);
+    const j1 = Math.min(j0 + 1, ny - 1);
+    const k1 = Math.min(k0 + 1, nz - 1);
+    const di = ci - i0;
+    const dj = cj - j0;
+    const dk = ck - k0;
+    const at = (i, j, k) => field[(i * ny + j) * nz + k];
+    const c00 = at(i0, j0, k0) * (1 - di) + at(i1, j0, k0) * di;
+    const c01 = at(i0, j0, k1) * (1 - di) + at(i1, j0, k1) * di;
+    const c10 = at(i0, j1, k0) * (1 - di) + at(i1, j1, k0) * di;
+    const c11 = at(i0, j1, k1) * (1 - di) + at(i1, j1, k1) * di;
+    const c0 = c00 * (1 - dj) + c10 * dj;
+    const c1 = c01 * (1 - dj) + c11 * dj;
+    return c0 * (1 - dk) + c1 * dk;
+};

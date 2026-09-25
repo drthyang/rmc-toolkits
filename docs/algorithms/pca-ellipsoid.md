@@ -559,14 +559,28 @@ routes now answer a bad parameter with HTTP 400.
 **Box half-widths.** The KDE convolves the cloud with the kernel, so the *estimate*'s variance along
 axis $a$ is $\lambda_a+h_a^2=\lambda_a(1+f^2)$. The sampling box is sized on that broadened width:
 
-$$w_a=\texttt{extent}\cdot\sigma_a\sqrt{1+f^2},\qquad
-\texttt{cubicBox}\Rightarrow w_a\leftarrow\max_b w_b\ \forall a .$$
+$$w_a=\texttt{extent}\cdot\sigma_a\sqrt{1+f^2}\quad(\texttt{halfWidths}),\qquad
+\texttt{boxHalfWidths}=\begin{cases}(\max_b w_b)\,(1,1,1) & \texttt{cubicBox}\\ (w_1,w_2,w_3) & \text{otherwise.}\end{cases}$$
 
-The page **always** requests `cubicBox: true` (so the three wall projections come out the same
-size), with `extent` from a slider (2–5 σ, step 0.5, default **4**); the engine defaults are
-`extent = 3.0`, `cubic_box = False`. For a Gaussian the fraction of mass inside a $\pm e\sigma$ box
-per axis is $\mathrm{erf}(e/\sqrt2)^3$: 0.870 at $e=2$, **0.992** at $e=3$, 0.99981 at $e=4$. With
-`cubicBox` the short axes get many more σ, so the captured mass is higher still.
+The volume, `mass`, `massLevels` and the PC wall projections are **always** sampled on the per-axis
+box $\pm w_a$, on whose $G$ nodes every axis's kernel $h_a=f\sigma_a$ is resolved
+($\Delta_a/h_a=2\,\texttt{extent}\sqrt{1+f^2}/(f(G-1))\approx0.6$ at the UI defaults, whatever the
+anisotropy). `cubicBox` only sizes the **display** box, `boxHalfWidths`: the cube the page draws the
+shadow box and its walls on. The page always requests `cubicBox: true`, with `extent` from a slider
+(2–5 σ, step 0.5, default **4**); the engine defaults are `extent = 3.0`, `cubic_box = False`. For a
+Gaussian the fraction of mass inside a $\pm e\sigma$ box per axis is $\mathrm{erf}(e/\sqrt2)^3$:
+0.870 at $e=2$, **0.992** at $e=3$, 0.99981 at $e=4$.
+
+*Why the cube is display-only (changed in 1.0).* Until 1.0 `cubicBox` also sampled every axis over
+the cube, with the same $G$ nodes, so the grid spacing along a short axis grew to
+$\Delta=2\,\texttt{extent}\,\sigma_1\sqrt{1+f^2}/(G-1)$ while its kernel stayed $f\sigma_3$. Once
+$\sigma_1/\sigma_3\gtrsim3$ ($G=40$) the narrow kernels fell between nodes and the rectangle-rule mass,
+the HDR levels $\tau(p)$ (the isosurface) and the shell all aliased: 36% captured mass at
+$\sigma_1/\sigma_3=20$, and for a planar or collinear cloud **0%** on the UI's even grids (no node on
+the plane, no isosurface) or $\approx2\times10^5$% on an odd one (one node on the plane weighted by the
+wide $\Delta$). The volume is now independent of `cubicBox` —
+`CubicDisplayBoxTests` / `pcaKdeRegressions.test.js` assert identical densities and unit mass for
+those clouds.
 
 **Grid.** $G$ points per axis on `np.linspace(-w_a, +w_a, G)`, clamped to $8\le G\le128$ in both
 engines. UI options 24/32/40/48/56/64, default **40**; engine default 48. Grid spacing
@@ -734,15 +748,20 @@ sum of the volume over the dropped axis:
 and the JS twin (`grid=80, extent=5`, max relative error $<3\times10^{-3}$). The tolerance is loose
 because the check itself is a discrete sum, not because the marginal is approximate.
 
-**Placement** (`makeProjectionWall`): a `PlaneGeometry` of size $2w_u\times2w_v$, basis
-$(\mathbf{p}_u,\mathbf{p}_v,\mathbf{p}_u\times\mathbf{p}_v)$, positioned at
-$-1.06\,w_t$ along the remaining axis $t=3-u-v$ — i.e. on the far wall, pushed 6% outward so it sits
-just past the cloud; `MeshBasicMaterial`, `DoubleSide`, `opacity 0.96`, `depthWrite: false`.
+**Placement** (`makeProjectionWall`): on the far face of the **display** box, at $-1.06\,W_t$ along
+the remaining axis $t=3-u-v$ ($W$ = `boxHalfWidths`, the cube), pushed 6% outward so it sits just past
+the cloud, with basis $(\mathbf{p}_u,\mathbf{p}_v,\mathbf{p}_u\times\mathbf{p}_v)$. Each face gets two
+coplanar quads (`MeshBasicMaterial`, `DoubleSide`, `opacity 0.96`, `depthWrite: false`): a
+$2W_u\times2W_v$ backing in the colormap's zero colour (`renderOrder 0`), and the density texture sized
+to the range the projection was **evaluated** on — its `extent`, the per-axis box $2w_u\times2w_v$ —
+centred on it (`renderOrder 1`). A short axis therefore shows its true, narrow marginal inside a
+full-size face instead of an under-sampled one stretched over it.
 Texture (`projectionTexture`): `density/(vmax || 1)` clipped to $[0,1]$ through the colormap LUT, so
 **each wall is normalised to its own maximum** (walls are not comparable to each other in absolute
 density). The texture row index is written flipped, `(nSecond − 1 − j)`, to cancel `CanvasTexture`'s
 vertical flip on upload, so the second axis increases along the plane's local $+Y$. A wireframe box
-at $\pm w_a$ (`makeBoundingBox`) completes the shadow-box.
+at $\pm W_a$ (`makeBoundingBox`) completes the shadow-box. Contour lines map their grid indices through
+the same per-projection range (`projectionRange`).
 
 **Contours** (`makeProjectionContours`): marching *squares* (`contourSegments`) at the fixed
 fractions
@@ -784,11 +803,11 @@ in Å⁻². Three defensive fallbacks guard the arithmetic: `cellVolume || 1`, `
 
 - these walls are a **numerical** projection of the discretised volume, whereas the PC walls are the
   analytic marginal;
-- density that falls outside $\pm\max_a w_a$ in the crystal frame is silently dropped. Since the PCA
-  sampling box is a cube of half-width $w$ (the page always sets `cubicBox`), its corners reach
-  $w\sqrt3$ along a crystal direction, so corner cells are lost. At the default `extent = 4` those
-  corners carry a negligible fraction of the mass, but the crystal-frame walls do not integrate to
-  the same total as the PC-frame ones;
+- density that falls outside $\pm\max_a w_a$ in the crystal frame is silently dropped. The PCA
+  sampling box's corners reach up to $\lVert\mathbf w\rVert\le\sqrt3\max_a w_a$ along a crystal
+  direction, so corner cells can be lost. At the default `extent = 4` those corners carry a
+  negligible fraction of the mass, but the crystal-frame walls do not integrate to the same total
+  as the PC-frame ones;
 - the bilinear splat adds a small smoothing of order one bin, so the crystal walls read blockier and
   slightly more diffuse than the PC ones;
 - $\Delta V$ is the **node-spacing product** $(2w_a/(G-1))^3$, so $\sum\rho\,\Delta V$ is a
@@ -816,7 +835,16 @@ maps each vertex $\hat{\mathbf{s}}$ to the ellipsoid surface point
 $\mathbf{q}=(k\sigma_1\hat s_x,\,k\sigma_2\hat s_y,\,k\sigma_3\hat s_z)$ in the PCA frame (using
 `selectedEllipsoid.semiAxes`), bakes the world position
 $\mathbf{x}=\texttt{mean}+\sum_a q_a\mathbf{p}_a$, and samples the KDE volume there by **trilinear
-interpolation** on the flat grid (`sampleDensityTrilinear`, with clamping at the borders).
+interpolation** on the flat grid (`sampleFieldTrilinear` in `marchingCubes.js`).
+
+**Outside the sampled box there is no data.** The shell reaches $k(p)\sigma_a$ along each axis, the
+box only $\texttt{extent}\cdot\sigma_a\sqrt{1+f^2}$, so a small Box with a high Level pokes the PC1
+tips out ($k(p)>\texttt{extent}\sqrt{1+f^2}$: $p\gtrsim0.79$ at Box 2, $0.93$ at 2.5, $0.99$ at 3). The
+sampler returns `NaN` there and the page paints those vertices neutral grey (`NO_DATA_RGB`), leaves
+them out of the colour stretch, and adds a legend note naming the Box that would cover the shell
+(`shellBoxNeeded`, $\lceil 2\,\texttt{extent}\max_a k\sigma_a/w_a\rceil/2$). Before 1.0 the sampler
+clamped to the border node and painted the box-face density — nearer the centre, so 1.4–2.3× too
+dense — as bright false caps along PC1.
 
 Colouring is stretched to the **shell's own** min/max density (not the global $0..v_\mathrm{max}$), then
 a user contrast gain is applied symmetrically about the mid-tone:
@@ -1048,7 +1076,7 @@ direction information appears in the picker.
 | `bw` | Bandwidth select | `scott` | `scott` | `scott`, `silverman`, or a positive float (API/engine only) | — |
 | `bwScale` | *not exposed* | 1.0 | 1.0 | $>0$ | — |
 | `extent` | Box slider | **4.0** | 3.0 | 2–5, step 0.5 | broadened σ |
-| `cubicBox` | *forced* | **true** | `False` | — | — |
+| `cubicBox` | *forced* | **true** | `False` | display box only (`boxHalfWidths`); the volume is always per-axis | — |
 | `probability` $p$ | Level slider (ellipsoid) | **0.5** | 0.5 | 0.10–0.99, step 0.01 | — |
 | `isoPercent` | Level slider (isosurface) | **25** | — | 1–99, step 1 | % of captured mass |
 | `projections` | Projections toggle | on | `True` | — | — |
@@ -1116,7 +1144,7 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    because each site is pre-centred, but the resulting single ellipsoid is only meaningful when the
    pooled sites are symmetry-equivalent *and* similarly oriented.
 9. **Mass fractions are box-relative and quadrature-limited.** `mass` reports how much of the unit
-   total the box captured (≈0.992 at `extent=3` for a Gaussian, higher with `cubicBox`); isosurface
+   total the box captured (≈0.992 at `extent=3` for a Gaussian); isosurface
    levels enclose $p$ of *that* captured mass, from a rectangle-rule sum on the grid.
 10. **Wall projections are per-plane normalised** (each texture is `density/vmax` of its own plane)
     and their contour levels are fixed fractions of that plane's peak — they are **not** enclosed-mass

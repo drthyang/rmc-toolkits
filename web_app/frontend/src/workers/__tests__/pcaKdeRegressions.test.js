@@ -318,3 +318,28 @@ describe('non-finite inputs (pca.parity.6 / parity.23 / parity.27 / numerics.37)
         });
     });
 });
+
+describe('cubic box is a display box only (pca.numerics.14 / numerics.32 / physics.44)', () => {
+    it('keeps unit mass for a planar cloud on even and odd grids', () => {
+        const gauss = makeGauss(8);
+        const cloud = Array.from({ length: 1000 }, () => [0.1 * gauss(), 0.07 * gauss(), 0]);
+        for (const grid of [40, 41]) {
+            const result = pcaKdeVolume(cloud, { grid, extent: 4, cubicBox: true, projections: false });
+            expect(result.degenerate).toBe(true);
+            expect(result.mass).toBeGreaterThan(0.99);
+            expect(result.mass).toBeLessThan(1.01);
+            expect(result.massLevels).toHaveLength(101);
+        }
+    });
+
+    it('samples the same volume whatever the display box', () => {
+        const gauss = makeGauss(9);
+        const cloud = Array.from({ length: 1000 }, () => [0.3 * gauss(), 0.1 * gauss(), 0.015 * gauss()]);
+        const cubic = pcaKdeVolume(cloud, { grid: 40, extent: 4, cubicBox: true, projections: false });
+        const plain = pcaKdeVolume(cloud, { grid: 40, extent: 4, cubicBox: false, projections: false });
+        expect(cubic.mass).toBeGreaterThan(0.99);
+        expect(Array.from(cubic.density)).toEqual(Array.from(plain.density));
+        expect(new Set(cubic.boxHalfWidths).size).toBe(1);
+        expect(plain.boxHalfWidths).toEqual(plain.halfWidths);
+    });
+});

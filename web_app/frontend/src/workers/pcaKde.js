@@ -461,12 +461,13 @@ export const pcaKdeVolume = (points, options = {}) => {
     const sigma = eigenvalues.map(Math.sqrt);
     const bandwidths = sigma.map((value) => factor * value);
 
+    // The volume (and mass, iso levels, walls) is always sampled on the per-axis
+    // box, whose nodes resolve every axis's kernel; cubicBox only sizes the display
+    // box (boxHalfWidths), exactly as in pca_kde_volume.
     const broaden = Math.sqrt(1 + factor * factor);
-    let halfWidths = sigma.map((value) => extent * value * broaden);
-    if (cubicBox) {
-        const maxHalf = Math.max(...halfWidths);
-        halfWidths = [maxHalf, maxHalf, maxHalf];
-    }
+    const halfWidths = sigma.map((value) => extent * value * broaden);
+    const maxHalf = Math.max(...halfWidths);
+    const boxHalfWidths = cubicBox ? [maxHalf, maxHalf, maxHalf] : halfWidths.slice();
 
     // Project the centered cloud onto the principal axes: projected[axis][m].
     const projected = [new Float64Array(count), new Float64Array(count), new Float64Array(count)];
@@ -542,6 +543,7 @@ export const pcaKdeVolume = (points, options = {}) => {
         extent,
         cubicBox,
         halfWidths,
+        boxHalfWidths,
         axisCoords: axisCoords.map((coords) => Array.from(coords)),
         cellVolume,
         density,

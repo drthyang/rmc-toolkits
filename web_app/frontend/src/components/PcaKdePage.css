@@ -573,6 +573,12 @@
     font-variant-numeric: normal;
 }
 
+/* Part of the density shell lies outside the sampled box and is drawn grey. */
+.pca-legend-warning {
+    color: var(--danger);
+    font-variant-numeric: normal;
+}
+
 /* Crystal a/b/c legend: three colored letters grouped as one item with a trailing
    "crystal axes" note, so they read as one frame rather than three loose swatches. */
 .pca-legend-cellaxes {
