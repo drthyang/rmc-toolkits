@@ -323,6 +323,19 @@ than an error.
 it before computing metrics (see 5a). That is not true of the other three readers: see 4b, 4c
 and 4d.
 
+**Transport: non-finite values reach the browser as JSON `null`.** Flask serializes every response
+through the app-wide `StrictJSONProvider` in [app.py](../../web_app/backend/app.py): any non-finite
+float (NaN, ±Inf) anywhere in the payload — series arrays, metrics, nested objects, NumPy scalars and
+arrays — is written as `null`, and `json.dumps(..., allow_nan=False)` guards the path, so no response
+can contain the bare tokens `NaN`/`Infinity` that `JSON.parse` rejects. Before 2026-09 a masked CSV
+region or a NaN χ² made `/api/plot/data` invalid JSON; axios then returned the raw text as
+`response.data` and the chart render threw. A masked region now plots in Flask exactly as in static
+mode: `null` and `NaN` are both non-finite, so the renderer drops the point (Plot rendering, Step 7)
+and the hover never snaps to it (Step 9). `InteractivePlot` also refuses a payload that is not an
+object with a `series` array (`plotDomain.js` → `plotPayloadError()`), showing a message instead of
+rendering. Pinned by `tests/test_parsers_json_transport.py` (strict `json.loads` with
+`parse_constant` raising) and `plotPayload.test.js` / `interactivePlotNull.test.jsx`.
+
 #### 4b. EXAFS CSV — `read_exafs_csv()` / `readExafsCsv()`
 
 RMCProfile's `_Q_OUTPUT` files carry a descriptive title row *above* the column header; `_R_OUTPUT`
@@ -1565,11 +1578,12 @@ Details that matter:
   clipped away but the tooltip still prints its value.
 - **There is no proximity cut-off.** The nearest point is always found, however far the cursor is;
   hovering an empty region snaps to the closest endpoint.
-- **Ties go to the lowest index.** `best` is initialised to `0` and the comparison is strictly
-  `distance < bestDistance`, so an exact tie keeps the earlier sample.
-- **A series with no finite x still reports index 0.** If every `x` is NaN (all comparisons false) or
-  the array is empty, `best` stays `0`, `series.x[0]` may be `undefined`, and the row's `cx`/`cy`
-  become NaN — a NaN dot and a NaN tooltip entry, with no error.
+- **Ties go to the lowest index.** The comparison is strictly `distance < bestDistance`, so an exact
+  tie keeps the earlier sample.
+- **Only drawable points are candidates.** The scan (`plotDomain.js` → `nearestFiniteIndex()`) skips
+  every point whose `x` or `y` is not finite — NaN, ±Inf, and the JSON `null` a masked region arrives
+  as from Flask (`null - x` would otherwise coerce to `0` and win near the origin). A series with no
+  finite point at all is left out of the tooltip; when no visible series has one, there is no hover.
 - **Series with different x-grids report different x.** Each series answers with *its own* nearest
   sample, but the crosshair position and the tooltip header x are taken from `values[0]` — the first
   visible non-guide series. If two series are on different grids (e.g. an experimental file and a
@@ -2246,8 +2260,8 @@ rounding matter as much as the formula:
 - **The hover search is x-only and unbounded.** It ignores y entirely, so with several overlapping
   curves the tooltip reports every visible series' value at (its own) nearest x, not the curve you
   are pointing at. There is no "snap radius", so a cursor far from any data still produces a reading.
-  Ties resolve to the lowest index, and a series whose x values are all NaN still reports index 0 —
-  yielding a NaN dot and a NaN tooltip row.
+  Ties resolve to the lowest index; non-finite (NaN / `null`) points are never snapped to, and a series
+  with no finite point is omitted from the tooltip.
 - **The tooltip header x belongs to the first visible non-guide series.** On mismatched x-grids the
   other rows' y values are sampled at slightly different x than the header states.
 - **Series identity is the label string.** Duplicate column headers merge into one legend chip, share

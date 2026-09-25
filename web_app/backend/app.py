@@ -14,8 +14,11 @@ import shutil
 import subprocess
 import sys
 
+import json
+
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -65,7 +68,56 @@ from rmc_toolkits.scattering import faber_ziman, number_density_from_mass_densit
 from rmc_toolkits.transforms import first_peak_zero, g_to_gk, gk_to_dr
 
 
+def _finite_json(value):
+    """``value`` with every non-finite float (NaN, +/-Inf) replaced by ``None``.
+
+    Walks dicts, lists/tuples, NumPy arrays and NumPy scalars, so a masked region
+    (NaN in an RMCProfile CSV or log) reaches the browser as JSON ``null`` — a gap
+    the chart skips — instead of the bare token ``NaN`` that ``JSON.parse`` rejects.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _finite_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite_json(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return _finite_json(value.tolist())
+    if isinstance(value, np.generic):
+        return _finite_json(value.item())
+    return value
+
+
+class StrictJSONProvider(DefaultJSONProvider):
+    """App-wide JSON provider that only ever emits strict (RFC 8259) JSON.
+
+    Non-finite floats become ``null``; ``allow_nan=False`` is the guard that makes
+    any path that slips past the sanitizer fail loudly instead of emitting ``NaN``.
+    The common all-finite payload is serialized in one pass; only a payload that
+    trips the guard is walked by :func:`_finite_json` and serialized again.
+    """
+
+    @staticmethod
+    def default(o):
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        if isinstance(o, np.generic):
+            return o.item()
+        return DefaultJSONProvider.default(o)
+
+    def dumps(self, obj, **kwargs):
+        kwargs.setdefault("default", self.default)
+        kwargs.setdefault("ensure_ascii", self.ensure_ascii)
+        kwargs.setdefault("sort_keys", self.sort_keys)
+        kwargs["allow_nan"] = False
+        try:
+            return json.dumps(obj, **kwargs)
+        except ValueError:
+            return json.dumps(_finite_json(obj), **kwargs)
+
+
 app = Flask(__name__, static_folder=str(FRONTEND_DIST), static_url_path="")
+app.json = StrictJSONProvider(app)
 CORS(app)
 
 DATA_ROOT = Path(os.environ.get("RMC_TOOLKITS_DATA_ROOT", PROJECT_ROOT)).expanduser().resolve()
