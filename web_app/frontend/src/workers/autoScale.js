@@ -408,6 +408,10 @@ export const levelSweep = (qIn, sqIn, { minWidth = 3.0, nGrid = 80, slopeNsigma 
 
 const HUBER_C = 1.345;
 
+// Huber IRLS weights w = psi(r) / r = min(1, c s / |r|) with a MAD scale
+// (scaling._huber_weights). The IRLS passes scale rows and rhs by sqrt(w), so
+// the weighted solve minimises sum w r^2 and its fixed point is the Huber
+// M-estimator (before 1.0: rows scaled by w, an effective weight w^2).
 const huberWeights = (residuals) => {
   const med = median(residuals);
   const deviations = residuals.map((value) => Math.abs(value - med));
@@ -810,13 +814,14 @@ const solveAffine = (q, sq, deltaSq, r, tailIdx, windowIdx, config, sigma, level
         const wc2 = huberWeights(Array.from(residuals.slice(n1)));
         for (let row = 0; row < wc2.length; row += 1) weights[n1 + row] = wc2[row];
       }
+      const root = weights.map(Math.sqrt);
       const weightedCols = columns.map((column) => {
         const out = new Float64Array(column.length);
-        for (let row = 0; row < column.length; row += 1) out[row] = column[row] * weights[row];
+        for (let row = 0; row < column.length; row += 1) out[row] = column[row] * root[row];
         return out;
       });
       const weightedRhs = new Float64Array(effRhs.length);
-      for (let row = 0; row < effRhs.length; row += 1) weightedRhs[row] = effRhs[row] * weights[row];
+      for (let row = 0; row < effRhs.length; row += 1) weightedRhs[row] = effRhs[row] * root[row];
       solution = solveLeastSquares(weightedCols, weightedRhs);
     }
   }
@@ -843,12 +848,13 @@ const lowRRmsOf = (r, gFiltered, config) => {
 
 /**
  * Huber sandwich standard error of the head fit's Q = 0 intercept (port of
- * scaling._intercept_se): the final IRLS solve scales rows by u, so
- * psi(r) = u^2 r (psi' = 1 in the core, -u^2 beyond it), and
+ * scaling._intercept_se): the final IRLS solve weights squared residuals by
+ * u (rows scaled by sqrt(u)), so psi(r) = u r — Huber's psi, psi' = 1 in the
+ * core and 0 beyond it — and
  * cov = K^2 [sum psi^2 / (n - p)] / mean(psi')^2 (D^T D)^-1 with
  * K = 1 + (p / n) var(psi') / mean(psi')^2 (Huber 1981, Eq. 7.10). The
  * naive weighted-LSQ error was 0.77-0.90 of the intercept's scatter.
- * Infinity when mean(psi') <= 0 (the intercept is not identified).
+ * Infinity when mean(psi') <= 0 (no row in the core: not identified).
  */
 const interceptSe = (qc, qMean, used, residuals) => {
   const n = qc.length;
@@ -856,9 +862,8 @@ const interceptSe = (qc, qMean, used, residuals) => {
   const psi = new Float64Array(n);
   const dpsi = new Float64Array(n);
   for (let i = 0; i < n; i += 1) {
-    const u2 = used[i] * used[i];
-    psi[i] = u2 * residuals[i];
-    dpsi[i] = used[i] >= 1 ? 1 : -u2;
+    psi[i] = used[i] * residuals[i];
+    dpsi[i] = used[i] >= 1 ? 1 : 0;
   }
   const meanDpsi = mean(dpsi);
   if (!(meanDpsi > 0)) return Infinity;
@@ -905,11 +910,12 @@ export const fzLimitFit = (q, sq, level, config, { fitWidth = FZ_FIT_WIDTH, leve
   let residuals = [];
   for (let pass = 0; pass < 4; pass += 1) {
     used = weights;
+    const root = used.map(Math.sqrt);
     const wCols = [
-      Float64Array.from(onesCol, (value, i) => value * used[i]),
-      Float64Array.from(qcCol, (value, i) => value * used[i]),
+      Float64Array.from(onesCol, (value, i) => value * root[i]),
+      Float64Array.from(qcCol, (value, i) => value * root[i]),
     ];
-    const wRhs = Float64Array.from(yHead, (value, i) => value * used[i]);
+    const wRhs = Float64Array.from(yHead, (value, i) => value * root[i]);
     solution = solveLeastSquares(wCols, wRhs);
     residuals = yHead.map((value, i) => solution[0] + solution[1] * qc[i] - value);
     weights = huberWeights(residuals);

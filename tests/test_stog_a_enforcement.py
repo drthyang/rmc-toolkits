@@ -261,9 +261,19 @@ class FeCoSnAutoEnforcementTests(unittest.TestCase):
 @unittest.skipUnless(MN3SN_59438.exists(), "stog_59438 example run not present")
 class Mn3SnAutoEnforcementTests(unittest.TestCase):
     def test_cutoff_matches_the_expert_below_the_inverted_first_shell(self):
+        # Qmax 27: at the expert's 28 the unpinned density fit refuses since
+        # 1.0 (tests/test_stog_a_detection.py), and writes nothing.
         with tempfile.TemporaryDirectory() as tmp:
             code, _, err = run_cli([
                 "--data", MN3SN_59438, "--qmin", "1.0", "--qmax", "28",
+                "--rho0", "0.063049", "--formula", "Mn3Sn", "--out-dir", tmp,
+            ])
+            self.assertEqual(code, 2)
+            self.assertIn("could not locate the first coordination shell", err)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+        with tempfile.TemporaryDirectory() as tmp:
+            code, _, err = run_cli([
+                "--data", MN3SN_59438, "--qmin", "1.0", "--qmax", "27",
                 "--rho0", "0.063049", "--formula", "Mn3Sn", "--out-dir", tmp,
             ])
             self.assertEqual(code, 0, err)

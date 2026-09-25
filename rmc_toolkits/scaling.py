@@ -597,7 +597,15 @@ _HUBER_C = 1.345  # 95% Gaussian efficiency
 
 
 def _huber_weights(residuals: np.ndarray) -> np.ndarray:
-    """Huber IRLS weights with a MAD scale (1 inside the core, down-weighted tails)."""
+    """Huber IRLS weights with a MAD scale (1 inside the core, down-weighted tails).
+
+    ``w = psi(r) / r = min(1, c s / |r|)``. A weighted least-squares solve
+    minimises ``sum w r^2``, so the IRLS passes scale each row (and its rhs)
+    by ``sqrt(w)``: the fixed point then solves ``sum psi(r_i) x_i = 0`` with
+    Huber's psi, the M-estimator ``c = 1.345`` gives 95 % Gaussian efficiency
+    for. (Before 1.0 the rows were scaled by ``w``, an effective weight ``w^2``
+    and a redescending psi.)
+    """
     med = np.median(residuals)
     scale = 1.4826 * np.median(np.abs(residuals - med))
     if scale <= 1e-14:
@@ -627,8 +635,9 @@ def _solve_affine(
     affine ``S_eff`` decomposes into precomputed basis transforms.
 
     With ``config.robust`` (default), a short Huber IRLS loop re-weights rows
-    per block (C1 and C2 scaled by their own MAD) so residual Bragg spikes or
-    ripple bursts cannot drag the closed-form solution.
+    per block (C1 and C2 scaled by their own MAD; rows scaled by ``sqrt(w)``,
+    see :func:`_huber_weights`) so residual Bragg spikes or ripple bursts
+    cannot drag the closed-form solution.
     """
     rw = r[window]
     # Basis transforms on the fit window only (cheap: len(rw) outputs). The
@@ -704,8 +713,9 @@ def _solve_affine(
             weights[:n1] = _huber_weights(residuals[:n1])
             if rhs.size - n1 >= 4:
                 weights[n1:] = _huber_weights(residuals[n1:])
+            root = np.sqrt(weights)
             solution, *_ = np.linalg.lstsq(
-                design * weights[:, np.newaxis], rhs * weights, rcond=None
+                design * root[:, np.newaxis], rhs * root, rcond=None
             )
     a = float(solution[0])
     if level is not None:
@@ -746,26 +756,27 @@ def _intercept_se(
 ) -> float:
     """Huber sandwich standard error of the head fit's Q = 0 intercept.
 
-    The final solve of the IRLS head fit scales each row by its weight ``u``
-    (from the previous iterate), so it solves ``sum psi(r_i) d_i = 0`` with
-    ``psi(r) = u^2 r``: ``r`` inside the Huber core, ``c^2 s^2 / r`` beyond it,
-    whence ``psi' = 1`` inside and ``-u^2`` outside. Huber's covariance
-    (Huber 1981, Eq. 7.10; statsmodels RLM ``'H1'``)::
+    The final solve of the IRLS head fit weights each squared residual by its
+    Huber weight ``u`` (rows scaled by ``sqrt(u)``, weights from the previous
+    iterate), so it solves ``sum psi(r_i) d_i = 0`` with ``psi(r) = u r``:
+    Huber's psi, ``r`` inside the core and ``c s sign(r)`` beyond it, whence
+    ``psi' = 1`` inside and ``0`` outside. Huber's covariance (Huber 1981,
+    Eq. 7.10; statsmodels RLM ``'H1'``)::
 
         K^2 [sum psi^2 / (n - p)] / mean(psi')^2 (D^T D)^-1,
         K = 1 + (p / n) var(psi') / mean(psi')^2
 
     is calibrated against the scatter of the intercept (Gaussian, Student-t
-    and spiked heads: 0.98-1.04 of the empirical sd), where the naive
-    weighted-LSQ error ``sum(u^2 r^2)/dof`` over ``D^T U^2 D`` was 0.77-0.90.
-    ``D = [1, Q - mean Q]`` so ``(D^T D)^-1`` is diagonal. A non-positive
-    ``mean(psi')`` (half the head beyond the core) leaves the intercept
-    unidentified: the error is infinite.
+    and spiked heads, tests/test_stog_b_fz_se_calibration.py), where the naive
+    weighted-LSQ error was 0.77-0.90 of it. ``D = [1, Q - mean Q]`` so
+    ``(D^T D)^-1`` is diagonal. A head with no row inside the core
+    (``mean(psi') = 0``) leaves the intercept unidentified: the error is
+    infinite.
     """
     n, p = q_centered.size, 2
     inlier = used >= 1.0
-    psi = used * used * residuals
-    dpsi = np.where(inlier, 1.0, -used * used)
+    psi = used * residuals
+    dpsi = np.where(inlier, 1.0, 0.0)
     mean_dpsi = float(np.mean(dpsi))
     if not mean_dpsi > 0.0:
         return float("inf")
@@ -797,10 +808,10 @@ def fz_limit_fit(
     (= ``denominator_se / |denominator|``). ``reliable`` is False when that
     exceeds :data:`FZ_REL_SE_MAX` — the head (e.g. Bragg-contaminated
     crystalline data) cannot pin S_meas(0) against the level: on the Mn3Sn
-    59438 run a_fz = 74-141 at Qmin 0.82-1.02 with a 29-49 % relative error, and
-    512 (168 %) at Qmin 1.05 (the 300 K run: 10.3-11.1, 6-9 %). The flag is
+    59438 run a_fz = 54-108 at Qmin 0.82-1.02 with a 29-50 % relative error, and
+    309 (145 %) at Qmin 1.05 (the 300 K run: 8.9-11.2, 7-12 %). The flag is
     statistical — necessary, not sufficient: a systematic head bias below the
-    threshold (55537: 11 -> 6 at 8-15 %, 54139: 16 -> 26 at 9-18 %, Qmin
+    threshold (55537: 9 -> 4-6 at 11-20 %, 54139: 16 -> 28 at 10-23 %, Qmin
     0.82-1.08) still needs the a_fz-vs-Qmin stability and concordance
     cross-checks. Returns None when ``b_sq_avg`` is missing, the head has < 8
     points, or the denominator vanishes.
@@ -819,8 +830,9 @@ def fz_limit_fit(
     used = weights
     for _ in range(4):
         used = weights
+        root = np.sqrt(used)
         solution, *_ = np.linalg.lstsq(
-            design * used[:, np.newaxis], s_head * used, rcond=None
+            design * root[:, np.newaxis], s_head * root, rcond=None
         )
         residuals = design @ solution - s_head
         weights = _huber_weights(residuals)

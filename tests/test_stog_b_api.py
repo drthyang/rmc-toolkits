@@ -68,7 +68,7 @@ class ScalingApiStogBTests(unittest.TestCase):
         response = self.client.post("/api/scaling/preview", json=self.body("desc.dat"))
         self.assertEqual(response.status_code, 200, response.get_json())
         result = response.get_json()["result"]
-        self.assertAlmostEqual(result["a"], 9.969539640717443, places=9)
+        self.assertAlmostEqual(result["a"], 9.969849853119817, places=9)  # the parity fixture's auto a
         self.assertTrue(result["converged"])
 
     def test_run_refuses_a_non_positive_scale(self):

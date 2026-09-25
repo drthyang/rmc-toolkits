@@ -2792,11 +2792,45 @@ passes run — a fixed count, with no convergence test and no early exit:
    w_i = \min\!\left(1,\ \frac{c}{\max(z_i, 10^{-14})}\right),\qquad c = 1.345 .$$
    $c=1.345$ is the standard Huber tuning constant (95 % efficiency at the Gaussian). If
    $s \le 10^{-14}$ all weights are set to 1.
-3. Re-solve with rows and rhs multiplied by $w_i$.
+3. Re-solve with rows and rhs multiplied by $\sqrt{w_i}$, i.e. minimise $\sum_i w_i e_i^2$.
 
-Because rows are multiplied by $w_i$ rather than $\sqrt{w_i}$, the effective quadratic objective is
-$\sum_i w_i^2 e_i^2$ — a *more* aggressive down-weighting than textbook Huber IRLS. Both engines do
-the same thing, so this is a documented characteristic, not a cross-engine divergence.
+Since $w = \psi(e)/e$ with Huber's $\psi(e) = \max(-cs, \min(e, cs))$, the fixed point of these
+passes solves $\sum_i \psi(e_i)\,\mathbf x_i = 0$ per block: the Huber M-estimator that
+$c = 1.345$ tunes to 95 % Gaussian efficiency. **Before 1.0 both engines multiplied the rows by
+$w_i$**, an effective objective $\sum_i w_i^2 e_i^2$ — a redescending estimator
+($\psi(e) = c^2 s^2/e$ beyond the core), not the documented one. Pinned by
+`tests/test_huber_irls.py` (the engine against an independent reference IRLS on the weighted normal
+equations, on a contaminated regression where the old weighting is far off) and its JS twin
+`src/__tests__/autoScaleHuber.test.js`.
+
+Effect of the 1.0 switch on the real runs (both engines, identical to round-off — see
+the real-data check under [Python ↔ JavaScript parity](#python--javascript-parity-1); Mn₃Sn with $\rho_0 = 0.063049$ Å⁻³ and
+the Mn₃Sn composition, $Q_\mathrm{max}$ 28; FeCoSn from its `stog.inp`):
+
+| Run | criterion | $(a, b)$ before | $(a, b)$ since 1.0 |
+| --- | --- | --- | --- |
+| parity fixture (truth $a = 10$) | density / FZ | 9.96954 / 10.0346 | 9.96985 / 10.0137 |
+| FeCoSn 199 K (x-ray, `stog.inp`) | density | (1.18293, −0.19711) | (1.18536, −0.19957) |
+| FeCoSn 199 K, $\langle b^2\rangle = 1.10426$ | FZ | (1.25116, −0.26615) | (1.17840, −0.19252) |
+| FeCoSn 199 K | $\rho_0$ estimate (`stog.inp` 0.057329) | 0.060692 | 0.057045 |
+| Mn₃Sn 55537 ($Q$ 0.82–28) | density / FZ | (0.8966, 0.1288) / 10.953 | refuses (no confirmed first shell) / 8.985 |
+| Mn₃Sn 300 K (55526) | density / FZ | (1.3185, −0.2734) / 10.412 | (1.2081, −0.1667) / 10.507 |
+| Mn₃Sn 500 K (54139) | density / FZ | (1.5569, −0.5990) / 16.344 | (1.3972, −0.4350) / 15.720 |
+| Mn₃Sn 59438 ($Q$ 1.0–28) | density / FZ | (1.2796, −0.2780) / 90.78 | refuses (no confirmed first shell) / 76.02 |
+| Mn₃Sn 59438 ($Q$ 1.0–29, $r_0 = 2.67$) | density | (1.1987, −0.1945) | (1.0111, −0.0076) |
+
+On the well-conditioned x-ray run the two independent amplitude criteria now agree to 0.6 %
+(5.8 % before), and the $\rho_0$ self-consistency lands 0.5 % from the expert density (5.9 %
+before). On the Mn₃Sn runs, whose density limit is degenerate
+(`density_limit_satisfied = False` throughout), the density-limit scale drops by 8–16 %; on 55537
+and 59438 the inverted Mn–Sn first shell of the trial fits then stands 1.85–1.99× above its ripple
+field, just under the detector's 2× margin (`first_shell_candidates`, calibrated at 2.1–3.9× on the
+pre-1.0 fits), so an unpinned density-mode run stops with "could not locate the first coordination
+shell" and asks for $r_0$ / `r_fit_max` or the FZ criterion — a refusal, never a window across the
+shell. Over the 56-configuration sweep (the four Mn₃Sn runs × $Q_\mathrm{min}$ {0.82, 1.0} ×
+$Q_\mathrm{max}$ 24–30, composition given, $r_0$ unset) the unpinned density-mode run refuses in 9
+(3 before): 55537 in 7, 300 K at $Q$ 1.0–25 (a non-physical refit scale) and 59438 at 1.0–28; every
+returned fit has $a > 0$ and a window top of 2.40–2.50 Å, below the first shell.
 
 **Limitation, stated in the code:** IRLS cannot reject a detector glitch that has already been
 transformed — a spike in $S(Q)$ rings across the whole low-$r$ window, so its C2 residuals look like
@@ -3035,8 +3069,9 @@ s_0^{\mathrm{target}} = 1 - \frac{\langle b^2\rangle}{\langle b\rangle^2}\;}$$
 
 $S_\mathrm{meas}(0)$ is a **robust linear extrapolation** of the data head: take
 $Q \le Q_0 + \texttt{fit\_width}$ with `fit_width = 1.0` Å⁻¹ (needs $\ge 8$ points, else `None`),
-fit $y = c_0 + c_1(Q - \bar Q)$ by **four** Huber-weighted least-squares passes (weights recomputed
-after each solve; the first solve is unweighted and the final weight update is discarded), and
+fit $y = c_0 + c_1(Q - \bar Q)$ by **four** Huber-weighted least-squares passes (rows scaled by
+$\sqrt w$ as in Step 6; weights recomputed after each solve; the first solve is unweighted and the
+final weight update is discarded), and
 evaluate at $Q=0$: $S_\mathrm{meas}(0) = c_0 - c_1\bar Q$. A denominator with
 $|S_\mathrm{meas}(0)-L| < 10^{-9}$ returns `None`.
 
@@ -3078,8 +3113,9 @@ scalings disagree with each other by 5× (×2.5, ×2.05, ×10 for the same mater
 lands at $a \in (5, 25)$ on three of the four runs (55537, 300 K, 500 K:
 `test_fz_amplitude_uses_the_composition`) — **but not on the 59438 reference run**, whose head
 $[Q_0, Q_0+1]$ is Bragg-dominated and extrapolates to $S_\mathrm{meas}(0)$ within noise of the level:
-there $a_\mathrm{fz} = 74$ at $Q_\mathrm{min} = 0.82$, 98 / 91 / 141 at 0.98 / 1.00 / 1.02, **512**
-at 1.05, and negative (refused) at 1.08–1.10 Å⁻¹ — 7–50× the other runs and the expert's $a = 10$.
+there $a_\mathrm{fz} = 54$ at $Q_\mathrm{min} = 0.82$, 74 / 76 / 108 at 0.98 / 1.00 / 1.02, **309**
+at 1.05, and negative (refused) at 1.08–1.10 Å⁻¹ — 5–30× the other runs and the expert's $a = 10$
+(Huber head fit, 1.0; before 1.0: 74, 98 / 91 / 141, 512).
 So the FZ amplitude is not "consistent across the Mn₃Sn runs", and on its own it is not a
 defensible scale.
 
@@ -3088,10 +3124,11 @@ the standard error of the Huber head fit's $Q = 0$ intercept, combined in quadra
 level sweep's `level_uncertainty` into the error of the denominator $S_\mathrm{meas}(0) - L$;
 `a_fz_rel_se` is its ratio to $|S_\mathrm{meas}(0) - L|$, and the amplitude is **reliable** only
 when `a_fz_rel_se` ≤ `FZ_REL_SE_MAX` = 0.2 (the denominator resolved at ≥ 5σ).
-The intercept error is **Huber's sandwich** for the M-estimator the head fit actually solves
-(`_intercept_se()` / JS `interceptSe()`): the final IRLS solve scales each row by its weight $u$,
-so it solves $\sum\psi(r_i)\,\mathbf d_i = 0$ with $\psi(r) = u^2 r$ ($\psi' = 1$ in the Huber core,
-$-u^2$ beyond it), and
+The intercept error is **Huber's sandwich** for the M-estimator the head fit solves
+(`_intercept_se()` / JS `interceptSe()`): the final IRLS solve weights each squared residual by its
+Huber weight $u$ (rows scaled by $\sqrt u$, Step 6), so it solves $\sum\psi(r_i)\,\mathbf d_i = 0$
+with $\psi(r) = u\,r$ — Huber's $\psi$, $\psi' = 1$ in the core and $0$ beyond it (before 1.0 the
+rows were scaled by $u$: $\psi = u^2 r$, $\psi' = -u^2$ beyond the core) — and
 
 $$\operatorname{cov} = K^2\,\frac{\sum\psi_i^2/(n-p)}{\overline{\psi'}^{\,2}}\,(D^\top D)^{-1},
 \qquad K = 1 + \frac{p}{n}\,\frac{\operatorname{var}\psi'}{\overline{\psi'}^{\,2}}$$
@@ -3102,16 +3139,18 @@ error infinite. Before 1.0 the error was the naive weighted-LSQ one,
 $\sum u^2 r^2/\mathrm{dof}\cdot\mathbf x^\top(D^\top U^2 D)^{-1}\mathbf x$, which clips the
 residuals it estimates the scatter from: 0.77–0.90 of the intercept's empirical scatter on
 Gaussian, Student-$t_3$ and spiked heads (so the 5σ gate was ≈ 4σ); the sandwich gives
-0.97–1.05 (`tests/test_stog_b_fz_se_calibration.py`, 300–2000 realizations).
+0.97–1.03 for the Huber head fit (`tests/test_stog_b_fz_se_calibration.py`, 300–2000
+realizations).
 `diagnostics_summary` reports `a_fz_rel_se` / `a_fz_reliable` (provenance
 `fz_limit` holds the full fit), the CLI prints a WARNING, the page shows a *Q→0 amplitude* card,
 and `estimate_rho0` reports `a_fz_reliable` for its anchor. Measured over $Q_\mathrm{min}$
-0.82–1.08 Å⁻¹ ($Q_\mathrm{max}$ 28): Mn₃Sn 59438 29–697 % (flagged everywhere); 300 K 6–9 %
-($a_\mathrm{fz}$ 10.3–11.1); FeCoSn 199 K 2.1 % ($Q$ 0.5–26); the parity fixture 5.1 %.
+0.82–1.08 Å⁻¹ in 0.01 steps ($Q_\mathrm{max}$ 28): Mn₃Sn 59438 29–1133 % (flagged everywhere);
+300 K 7–12 % ($a_\mathrm{fz}$ 8.9–11.2); FeCoSn 199 K 2.4 % ($Q$ 0.5–26); the parity fixture 4.9 %.
 **`a_fz_reliable = True` is necessary, not sufficient.** The flag is statistical — it catches a
 denominator lost in the scatter of the head, not a systematic head bias: over the same
-$Q_\mathrm{min}$ range the 55537 run's $a_\mathrm{fz}$ drifts 11 → 6 at 8–15 % and the 500 K
-(54139) run's 16 → 26 at 9–18 %, a factor 1.6–1.8 with every point flagged reliable. Check that
+$Q_\mathrm{min}$ range the 55537 run's $a_\mathrm{fz}$ drifts 9 → 4–6 at 11–20 % and the 500 K
+(54139) run's 16 → 28 at 10–23 %, a factor 2.0–2.2 with every point flagged reliable but the
+last two of 54139. Check that
 $a_\mathrm{fz}$ is stable against $Q_\mathrm{min}$ (re-run at a few values) and that it is concordant
 with the density-limit amplitude and with other runs of the same material before trusting it —
 the CLI prints this caveat next to every reliable $a_\mathrm{fz}$ (*Q->0 amplitude* line) and the
@@ -3208,8 +3247,8 @@ longer than the data it rests on, so the estimate is *a starting point, not a me
 
 | run | recovered $\rho_0$ | vs hand | test tolerance |
 | --- | --- | --- | --- |
-| 199 K | 0.0600 Å⁻³ | 4.7 % | 10 % |
-| 100 K | 0.0640 Å⁻³ | 11.7 % | 13 % |
+| 199 K | 0.0564 Å⁻³ (0.0600 before the 1.0 Huber fix, Step 6) | −1.5 % (+4.7 %) | 3 % |
+| 100 K | 0.0640 Å⁻³ (measured before that fix) | 11.7 % | 13 % |
 
 **How far the estimate lands from a hand value is a property of the measured $S(Q)$, not of the
 code** — the recovered density is the root of $a_\mathrm{fz}/a_\mathrm{density}(\rho_0) = 1$, so each
@@ -3385,6 +3424,16 @@ grids. `tests/generate_autoscale_fixture.py` produces golden numbers from the Py
 | `lowRRms` | 10⁻¹⁰ relative (10⁻⁹ in the composition cases); `c1TailMean` 10⁻¹² |
 | sampled `gk`, `sqFiltered` | 9 decimal places |
 | `estimateRho0.rho0`, `.concordance` | 10⁻¹⁰ relative, iteration count equal exactly (plus the physical check `abs(concordance − 1) < 1.5·10⁻³`) |
+
+**Real-data check (1.0 release).** Beyond the synthetic goldens, both engines were run on identical
+inputs on every run in `data/stog_tests` (Mn₃Sn 55537 / 55526 / 54139 / 59438 with the Mn₃Sn
+composition and $\rho_0 = 0.063049$; FeCoSn 199 K from its `stog.inp`, $\langle b^2\rangle =
+1.10426$ for the $Q\to0$ criteria): auto density mode, auto FZ mode, manual mode and
+`estimate_rho0`. $a$, $b$, the detected $r_0$, the fit window, iteration counts and every output
+array (`sq_scaled`, `sq_ft`, `g_filtered`, `gk`, `d_r`, `fk`) agree to $\le 5\cdot10^{-13}$
+relative, refusals included (same message). The 2.6 % gap once seen on 59438 ($Q$ 1.0–29,
+$r_0 = 2.67$: JS $a = 1.2304$ against Python 1.1987) was difference 4 below: the pre-1.0 JS gives
+1.2304 only with a composition and agrees with Python (3.0535) without one.
 
 Genuine implementation differences:
 

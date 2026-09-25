@@ -95,20 +95,31 @@ class FirstShellDetectorTests(unittest.TestCase):
 class Mn3Sn59438DetectionTests(unittest.TestCase):
     """Real data: the 59438 run's inverted Mn-Sn first shell sits at 2.65-3.1 A."""
 
-    def test_composition_only_run_detects_the_first_shell(self):
+    def autoscale_run(self, qmax):
         data = read_stog_xy(STOG_59438)
         fz = faber_ziman("Mn3Sn")
         config = ScalingConfig(
-            qmin=1.0, qmax=28.0, rho0=0.063049,
+            qmin=1.0, qmax=qmax, rho0=0.063049,
             b_avg_sq=fz.b_avg_sq_barn, b_sq_avg=fz.b_sq_avg_barn,
         )
-        result = autoscale(data[0], data[1], config)
-        summary = diagnostics_summary(result, config)
+        return config, autoscale(data[0], data[1], config)
+
+    def test_composition_only_run_detects_the_first_shell(self):
         # The old detector locked onto the second shell (r0 = 3.49 A) and refined
         # the C2 window to [1.2, 3.24] -- across the first shell.
+        config, result = self.autoscale_run(27.0)
+        summary = diagnostics_summary(result, config)
         self.assertGreater(summary["r0_detected"], 2.4)
         self.assertLess(summary["r0_detected"], 2.9)
         self.assertLess(summary["r_fit_window"][1], 2.65)
+
+    def test_expert_range_refuses_rather_than_fit_across_the_shell(self):
+        # At the expert's Q range (1.0-28) the Huber fits (1.0) leave the
+        # inverted Mn-Sn shell at 1.99x its ripple field, just under the
+        # detector's 2x margin: the run stops and asks for r0 -- never a window
+        # on the second shell. (Pre-1.0 row weighting: detected at 2.74 A.)
+        with self.assertRaisesRegex(ValueError, "could not locate the first coordination shell"):
+            self.autoscale_run(28.0)
 
 
 if __name__ == "__main__":
