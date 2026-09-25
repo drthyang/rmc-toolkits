@@ -2807,8 +2807,8 @@ difference is only visible at exactly the tolerance, so it is worth stating per 
 | operation acceptance (Step 9) | `if (!m \|\| !(m.worst <= tol)) return null` | **non-strict**: $\varrho = \tau$ is accepted |
 | translation dedup (Step 8) | `cartDist(u, t, A) < tol` | strict |
 | orbit union + stabiliser (Step 14) | `bestD = tol; if (d < bestD)`, `cartDist(...) < tol` | strict |
-| centering match (Step 10c) | `… < tol` with `tol = 0.1` | strict |
-| Wyckoff coordinate match (Step 14) | `Math.abs(d) < 0.15` | strict |
+| Wyckoff coordinate form (Step 14) | `Math.abs(fitted - p[i]) > tol` rejects | **non-strict**: a deviation of exactly `tolFrac` fits |
+| translation snap (Step 10c) | `<= tol` with `tol = 0.02` | non-strict |
 | residual threshold filters (Steps 12–13) | `o.residual <= r + 1e-9` | non-strict, with $10^{-9}$ slack |
 
 `findSpaceGroupOps` returns `{ ops: [{R, t, residual}], order = ops.length, maxResidual }` merged
@@ -3054,53 +3054,56 @@ than 1 Å the two passes could differ.
 `siteOrbits(A, basis, ops, τ)` partitions the basis into symmetry orbits with a union–find
 (disjoint-set with path halving):
 
-- For every accepted operation and every site $i$: map $\mathbf x_i \to \mathbf y$, find the
+- For every operation of the reported group and every site $i$: map $\mathbf x_i \to \mathbf y$, find the
   **nearest same-element** site $j$ with $d(\mathbf y,\mathbf x_j) < \tau$, and `union(i, j)`.
-- Group members by root. The orbit's `size` is its multiplicity in the conventional cell; the
+- Group members by root. The orbit's `size` is its multiplicity **in the given cell**; the
   representative is its **first member in basis order** (i.e. lowest reference number).
-- The **site symmetry** is computed as the stabiliser of the representative: the set of *distinct
-  rotation parts* $R$ of operations $\{R|\mathbf t\}$ with $d(\operatorname{frac}(R\mathbf x_\mathrm{rep}+\mathbf t),\ \mathbf x_\mathrm{rep}) < \tau$,
-  fed through the same `pointGroupOf()`. No Wyckoff tables are consulted for this — it is derived
-  from the detected operations directly.
+- The **site symmetry** is the stabiliser of the representative: the distinct rotation parts $R$ of
+  operations with $d(R\mathbf x_\mathrm{rep}+\mathbf t,\ \mathbf x_\mathrm{rep}) < \tau$, fed through the same
+  `pointGroupOf()`. It is derived from the operations, not looked up.
 - Orbits are returned largest-first.
 
-**Tolerance asymmetry (worth naming).** `describeSymmetry` calls
-`siteOrbits(A, structure.basis, sg.ops, tol)` with the **raw user tolerance** $\tau$ — not with
-`sg.maxResidual`, the threshold $r \le \tau$ at which the group was actually accepted. The orbit
-union–find and the stabiliser test therefore use a matching radius strictly looser than any accepted
-operation's residual. On a structure where $r \ll \tau$ this makes the reported multiplicities and
-site symmetries *more generous than the reported space group justifies*: orbits can merge sites, and
-stabilisers admit rotations, that the group itself does not. `siteOrbits`' own signature default is
-`tol = 0.1` Å, never used from the app.
+`describeSymmetry` calls `siteOrbits` with the user tolerance $\tau$, which is at least the worst
+residual of the reported group (`maxResidual`), so the orbit and stabiliser tests are at least as
+generous as the group itself.
 
-`wyckoffLetter(sgNumber, centering, mult, site, rep)` then attempts a letter, from a **hard-coded
-partial table covering four space groups only**:
+**Wyckoff letters** (`symmetryModel.js` → `lettersInSetting()`, `wyckoff.js` →
+`assignWyckoffLetters()`). The table (`wyckoffTable.js`) lists the Wyckoff positions of all 230
+groups in their ITA standard setting (1724 positions; for the groups with two origin choices, the
+one the table was built from — origin choice 2 for the centrosymmetric ones, e.g. Fd-3m). Each row
+was checked against the group's own operations (its coordinate expanded to exactly its
+multiplicity), and its site symmetry is the stabiliser computed the same way as above, so the two
+are comparable.
 
-| SG number | Symbol | Listed positions (letter, multiplicity, site symmetry) |
-| --- | --- | --- |
-| 216 | `F-43m` | 4a, 4b, 4c, 4d (`-43m`), 16e (`3m`), 96i (`1`) |
-| 225 | `Fm-3m` | 4a, 4b (`m-3m`), 8c (`-43m`), 32f (`3m`), 192l (`1`) |
-| 229 | `Im-3m` | 2a (`m-3m`), 6b (`4/mmm`), 8c (`-3m`), 16f (`3m`), 96l (`1`) |
-| 221 | `Pm-3m` | 1a, 1b (`m-3m`), 3c, 3d (`4/mmm`), 8g (`3m`), 48n (`1`) |
+1. Letters are read in the **standard cell the group was named in** (Step 10f). Each orbit's members
+   are carried there, $\mathbf x' = Q^{-1}\mathbf x$, together with every translation of that cell, and
+   its multiplicity is scaled by the cell-volume ratio (the four Ga of a lacunar spinel in its
+   F-cubic cell are one 3a orbit of R3m on hexagonal axes). With no such cell — a crystal class,
+   a `≥` lower bound, or P1/P-1 in a non-primitive cell — every letter is withheld.
+2. The candidates are the rows with the orbit's multiplicity **and** site symmetry. One candidate
+   → that letter. Several (Pm-3m 3c and 3d are both 3 × 4/mmm) → the tie is broken by the
+   **coordinate form**: a letter is kept if some member of the orbit (any lattice-equivalent
+   representative) fits its form, e.g. $(x,x,0)$, within `tolFrac` $= \tau/\overline{a'}$ per
+   component ($\overline{a'}$ = mean edge of the naming cell; `fitsForm()` solves for the free
+   parameters by ridge-regularised least squares and checks the residual). Exactly one fit → that
+   letter; otherwise none.
+3. No letter is ever guessed: the UI then shows `"<multiplicity> (<site symmetry>)"`
+   (`symmetryModel.orbitLabel()`).
 
-Matching rule: filter table rows by exact `multiplicity` **and** `site symmetry`. If exactly one row
-matches and it is a *free* position (no fixed coordinate), return its letter. Otherwise compare the
-representative against each candidate's fixed coordinate **modulo the centering vectors**
-(`CEN_VECS` for P/I/F/C/A/B), accepting a component match when the wrapped difference is
-$<0.15$ fractional. Exactly one hit → that letter; else, if only one candidate survived the
-multiplicity+site filter, return it; else `null` (the UI falls back to `"<multiplicity> (<site symmetry>)"`
-via `symmetryModel.orbitLabel()`).
-
-Any other space group returns `null` for every orbit. The four tables are also **incomplete** (they
-omit, e.g., 24f/24g of 216), so a genuine unlisted position that happens to share a multiplicity and
-site symmetry with a listed one will be given the listed letter.
+**Origin.** The standard cell is found by a change of basis only (Step 10f), so letters that need
+the coordinate form assume the structure's origin is the table's origin or an equivalent one.
+Letters that multiplicity and site symmetry fix alone do not depend on the origin; a tie at a
+shifted origin usually fits no form and gets no letter (diamond described with its atoms at 0 and
+¼ — origin choice 1 — gets no letter for its 8-fold site, because the table uses origin choice 2).
 
 Orbits are not rendered on the Run Dashboard card itself; they flow into the AI-assistant context
 (`runContext.js` → `symmetryContext()` → `symmetry.sites`, ranked by mean displacement, capped at 12
-sites).
+sites), where `size` is the multiplicity in the given cell and `wyckoff` the letter in the naming
+cell.
 
-**Code**: `symmetry.js` → `siteOrbits()`, `wyckoffLetter()`, constants `WYCKOFF`, `CEN_VECS`;
-`symmetryModel.js` → `describeSymmetry()`, `orbitLabel()`.
+**Code**: `symmetry.js` → `siteOrbits()`; `symmetryModel.js` → `describeSymmetry()`,
+`lettersInSetting()`, `orbitLabel()`; `wyckoff.js` → `wyckoffPositions()`, `parseCoordinateForm()`,
+`fitsForm()`, `assignWyckoffLetters()`; data in `wyckoffTable.js`.
 
 #### Step 15. What the card renders
 
@@ -3184,7 +3187,7 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 | `tolFrac` | `classifyOperations()` signature | `0.02` | cell fractions | never used (all callers pass `tol / meanEdge(A)`) |
 | translation snap | `snapTranslation()` (`spaceGroupSymbol.js`) | $1/24$ grid, within `0.02` | cell fractions | pure translations are snapped before the exact Bravais match (Step 10c) |
 | translation-key granularity | `classifyOperations()` | `1e-3` | cell fractions | rounding used to count distinct pure translations (no fold of 1000 → 0) |
-| Wyckoff coordinate tolerance | `wyckoffLetter()` | `0.15` | cell fractions | per-component match to a tabulated special position |
+| Wyckoff coordinate tolerance | `assignWyckoffLetters()` (from `describeSymmetry`) | $\tau/\overline{a'}$ | cell fractions | per-component fit to a tabulated coordinate form, in the naming cell |
 | threshold epsilon | `symmetryLadder`, `spaceGroupAtTolerance` | `1e-9` | Å | float-safety slack on `residual ≤ r` |
 | $\tau$ floor (detection) | `spaceGroupAtTolerance()` | `1e-3` | Å | `Math.max(tol, 1e-3)` for the full detection pass |
 | $\tau$ floor (`tolFrac`) | `spaceGroupAtTolerance()` | `1e-6` | Å | `Math.max(tol, 1e-6)` before dividing by `meanEdge(A)` for the classification tolerance — **distinct** from the `1e-3` detection floor |
@@ -3239,9 +3242,10 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
   (Step 13).
 - **A merged brick shows its loosest rung's operation count.** Merging keeps `from` and takes the
   latest `to` and `nSpace` (Step 13).
-- **Wyckoff letters exist for four space groups only** (216, 221, 225, 229) and those tables are
-  partial. Everything else shows multiplicity + derived site symmetry. Site symmetry itself is
-  always derived from the detected operations and is trustworthy to the same tolerance.
+- **Wyckoff letters assume the table's origin.** Letters are read in the standard cell the group is
+  named in, for all 230 groups, but no origin shift is searched: a tie between positions of equal
+  multiplicity and site symmetry is broken only if the structure's origin is the table's (or an
+  equivalent one), and otherwise left without a letter (Step 14).
 - **No origin shift.** The standard cell is found by a change of basis only; the origin stays where
   the `.rmc6f` puts it. Space-group names do not depend on the origin, Wyckoff letters do (Step 14).
 - **Header input is unvalidated.** Neither the `Lattice` numbers nor the `Supercell` multiplicities

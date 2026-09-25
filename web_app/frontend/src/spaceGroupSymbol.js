@@ -462,8 +462,9 @@ const elementType = (e) => (e.kind === 'mirror' || e.kind === 'glide' ? 'm'
 /**
  * Whether the operations are in a conventional setting of their crystal system: every
  * symmetry element lies along a direction family of the system that may carry an element
- * of its type (FAMILY_ALLOWS). Stronger than coversAllElements, which only asks that the
- * direction belong to SOME family. Only a set that passes can be named positionally.
+ * of its type (FAMILY_ALLOWS), with a monoclinic unique axis along b. Stronger than
+ * coversAllElements, which only asks that the direction belong to SOME family. Only a set
+ * that passes can be named positionally.
  */
 export function elementsFitSetting(ops, pointGroup) {
   const system = POINT_GROUP_SYSTEM[pointGroup];
@@ -474,11 +475,10 @@ export function elementsFitSetting(ops, pointGroup) {
     const e = classifyElement(R, t);
     if (e) elements.push(e);
   }
-  let families = SYSTEM_DIRECTIONS[system];
-  if (system === 'monoclinic') {
-    const unique = elements.find((x) => x.order === 2);
-    families = [[unique ? unique.direction : [0, 1, 0]]];
-  }
+  // The standard monoclinic setting has its unique axis along b. A cell with it along a
+  // or c spells the same short symbol (P2_1/c) but is not the setting the Wyckoff tables
+  // describe, so it is not accepted here; the axis orders tried next move it to b.
+  const families = SYSTEM_DIRECTIONS[system];
   const familyKeys = families.map((family) => new Set(family.map(dirKey)));
   const allows = FAMILY_ALLOWS[system];
   return elements.every((e) => {
