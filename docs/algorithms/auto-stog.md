@@ -223,7 +223,7 @@ a positional `stog.inp` or `--data FILE`.
 **More than three columns.** The modal-group rule can select a 4-, 5- or 6-column group, and
 every consumer then takes **index 2 as $\sigma$ regardless of what it actually holds** —
 `AutoStogPage.jsx` (`columns.length >= 3 ? columns[2] : null`), `scaling_cli.py::_load_dataset`
-and `app.py::_cached_scaling` (`columns.shape[0] >= 3`). Columns 3 and beyond are dropped
+and `app.py::_compute_scaling` (`data.shape[0] >= 3`). Columns 3 and beyond are dropped
 without a warning, and nothing checks that column 2 looks like an uncertainty. On a >3-column
 file, turn the **σ column** toggle off unless you know the third column is the error bar.
 
@@ -950,7 +950,7 @@ Note $\max(\sigma, 10^{-12})$ inside the engines is a **lower clamp, not a rejec
 negative σ — common filler in reduced files — would get a weight of order $10^{12}$ and pin the
 high-$Q$ level to that one row, and one `NaN` σ turns every weight `NaN`. So every front end
 applies the same **validity gate** before the engine sees σ: `scaling_cli.usable_sigma` (CLI
-`_load_dataset`, API `_cached_scaling`) and its port `usableSigma` (the page's `selectSource` /
+`_load_dataset`, API `_compute_scaling`) and its port `usableSigma` (the page's `selectSource` /
 `dataExtent`, and again in `autoScaleWorker.js`) drop the whole σ column if any σ on a row with
 finite $Q$ and $S$ is non-finite or $\le 0$ ("a broken uncertainty column must not poison the
 fit"); the fit then runs unweighted. The page says so on the file chip ("σ ignored (invalid)",
@@ -1927,9 +1927,10 @@ number over $[2.0, 3.2]$ Å changes by ≤ 0.3 % for $\sigma$ = 0.08–0.15 Å, 
 Lorch on/off — the pre-1.0 cutoff at the onset removed 6–9 % (`tests/test_stog_a_enforcement.py`;
 only very sharp shells at low $Q_\max$, $Q_\max\sigma \lesssim 1.6$, lose up to ~2 % — their
 termination side lobes carry that share of the band-limited peak). On the real runs the automatic
-cutoff lands at 2.49 Å on Mn₃Sn 59438 at $Q_\min$ 1.0 / $Q_\max$ 28 (expert `rmccut` 2.48 Å,
-first peak 2.65–3.1 Å), at 2.42–2.50 Å on all four Mn₃Sn runs over $Q_\min$ 0.82/1.0 × $Q_\max$
-24–30 (composition-only; expert cutoffs 2.40–2.68 Å; the three PG3_55537 configurations that stop
+cutoff lands at 2.43 Å on Mn₃Sn 59438 at $Q_\min$ 1.0 / $Q_\max$ 27 (expert `rmccut` 2.48 Å,
+first peak 2.65–3.1 Å; at the expert's own $Q_\max$ 28 the unpinned density fit stops since the
+1.0 Huber weighting, Step 8), at 2.40–2.50 Å on all four Mn₃Sn runs over $Q_\min$ 0.82/1.0 ×
+$Q_\max$ 24–30 (composition-only; expert cutoffs 2.40–2.68 Å; the nine configurations that stop
 in Step 8 excluded) and at 2.27–2.28 Å on FeCoSn 199 K over $Q_\min$ 0.5/1.0 × $Q_\max$ 22–26
 (flank of the 2.64 Å shell kept; the expert enforced only to 1.0 Å). Classic stog leaves `_rmc.fq` untouched, and so does this: with the
 cutoff at the foot the two RMC datasets differ only by the removed sub-shell ripples.
@@ -3022,14 +3023,20 @@ Validated (scratch bench and tests; true $a$ = 10 for the models, measured = (S 
   locate") — a short bond leaves a short, ripple-dominated window, so pin r0 or lower
   $r_\mathrm{cut}$ further there.
 - The four Mn₃Sn POWGEN runs, 56 configurations ($Q_\min$ 0.82 and 1.0 × $Q_\max$ 24–30,
-  composition-only): every returned fit has $a > 0$, confirmed onset 2.67–2.75 Å and window top
-  2.42–2.50 Å (the inverted Mn–Sn shell spans 2.65–3.1 Å), and the density limit is flagged
+  composition-only, $\rho_0 = 0.063049$ Å⁻³; measured on the 1.0 release with the Huber weighting
+  of Step 6): every returned fit has $a > 0$, confirmed onset 2.65–2.75 Å and window top
+  2.40–2.50 Å (the inverted Mn–Sn shell spans 2.65–3.1 Å), and the density limit is flagged
   **unsatisfied** in all of them — the honest verdict for data whose low-$Q$ hole is $O(S(0))$ deep
-  (Step 11). 53 return; the 3 that raise are the PG3_55537 run at $(Q_\min, Q_\max)$ = (0.82, 25),
-  (1.0, 24), (1.0, 25), where both trial scales are $\approx 0$ ($|a| \le 0.26$, the positive one
-  $\le 0.022$): the density limit is degenerate there and "could not locate" is the right answer.
-  The first 1.0 loop returned $a < 0$ in 7 of the 14 59438 configurations and raised in 3 with
-  wrong $r_\mathrm{cut}$ advice, and raised in 9 of the 14 PG3_55537 ones.
+  (Step 11). 47 return; the 9 that raise are PG3_55537 at $(Q_\min, Q_\max)$ = (0.82, 24), (0.82,
+  25), (0.82, 28) and (1.0, 24–27) and 59438 at (1.0, 28), all "could not locate the first
+  coordination shell" (the inverted shell stands 1.85–1.99× its ripple field there, under the 2×
+  margin), and 300 K (55526) at (1.0, 25), where the refit below a 1.92 Å candidate gives
+  $a = -0.43$ ("non-physical scale"). Which $(Q_\min, Q_\max)$ stop depends on the data: quote a
+  real-data onset or window only with the $Q$ range it was measured at. With the pre-1.0 row
+  weighting the same grid returned 53 (only PG3_55537 at (0.82, 25), (1.0, 24), (1.0, 25) raised),
+  with onsets 2.67–2.75 Å. The first 1.0 loop returned $a < 0$ in 7 of the 14 59438
+  configurations and raised in 3 with wrong $r_\mathrm{cut}$ advice, and raised in 9 of the 14
+  PG3_55537 ones.
 - FeCoSn 199 K (x-ray, $Q_\min$ 0.5 and 1.0 × $Q_\max$ 22–26): onset 2.52–2.53 Å, window
   $[1.2, 2.27\text{–}2.28]$ Å, $a$ = 1.17–1.20 ($\rho_0$ 0.057329, $\langle b\rangle^2 = 1$),
   density limit satisfied.
@@ -3662,8 +3669,12 @@ its own `provenance_payload` with `tool: "rmc-autoscale (web API)"`, no `rmc_too
 and no `argv`, a `source` key holding `str(inp_path or data_path)`, and a truncated
 `stog_inp_reference` of only `{a, b}` (no `yscale`/`yoffset`). The API also exposes **no $\rho_0$
 self-consistency** (`--estimate-rho0` has no HTTP counterpart — `estimate_rho0` is never
-imported by `app.py`) and memoizes engine results in an `@lru_cache(maxsize=8)` keyed on
-`(data path, mtime, config, mode, a, b, use_sigma)` (`app.py` → `_cached_scaling()`). The
+imported by `app.py`) and memoizes engine results in `_SCALING_CACHE`, a `_FileCache(8)` keyed on
+`(data path, file signature, config, mode, a, b, use_sigma)` (`app.py` → `_cached_scaling()` →
+`_compute_scaling()`). Every numeric payload field must be a finite number (`_number()`; text,
+lists, booleans, `NaN`/`±Infinity` are a 400 naming the field), manual mode rejects a zero `a`,
+and a result that overflows to `NaN`/`Infinity` for finite but extreme `a`/`b` is a 400 rather
+than a 200 with empty series. The
 cached `ScalingResult` is shared by every identical request, so `_scaling_request` annotates a
 per-request copy (`dataclasses.replace(result, provenance=dict(...))`) — pre-1.0 it wrote
 `r0_detected` into the cached object, so a request's diagnostics and written provenance depended
