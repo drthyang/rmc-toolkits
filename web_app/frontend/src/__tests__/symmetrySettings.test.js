@@ -63,6 +63,14 @@ describe('centred and non-conventional cells', () => {
         expect(named(redescribe(p21c, [[1, 0, 0], [0, 1, 0], [1, 0, 1]]))).toEqual({ spaceGroup: 'P2_1/c', spaceGroupNumber: 14 });
     });
 
+    it('names a mirror on a cell diagonal Cm, not Pm', () => {
+        // A mirror ⊥ [1-10] of a primitive cubic lattice: the monoclinic cell with b along
+        // [1-10] is C-centred. Accepting the given cell with its unique axis on the diagonal
+        // spelled "Pm" (No. 6).
+        const basis = [at('X', 0, 0, 0), at('Y', 0.1, 0.1, 0.3)];
+        expect(named({ A: cubicCell(4.0), basis }, 0.01)).toEqual({ spaceGroup: 'Cm', spaceGroupNumber: 8 });
+    });
+
     it('names R-3m bismuth given on rhombohedral axes', () => {
         const rhombohedral = [[2 / 3, 1 / 3, 1 / 3], [-1 / 3, 1 / 3, 1 / 3], [-1 / 3, -2 / 3, 1 / 3]];
         expect(named(redescribe(STRUCTURES.bismuth(), rhombohedral))).toEqual({ spaceGroup: 'R-3m', spaceGroupNumber: 166 });
