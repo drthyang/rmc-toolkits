@@ -333,6 +333,10 @@ export const R0_WINDOW_MARGIN = 0.25;
 export const MIN_AUTO_WINDOW = 0.1;
 /** Trial window widths above lo used to locate the first shell (scaling.START_WINDOW_WIDTHS). */
 export const START_WINDOW_WIDTHS = [0.3, 1.0];
+/** Onsets closer than this (Å) are the same first shell (scaling.ONSET_TOLERANCE). */
+export const ONSET_TOLERANCE = 0.15;
+/** Most refits autoscale spends confirming first-shell candidates (scaling.MAX_WINDOW_REFITS). */
+export const MAX_WINDOW_REFITS = 4;
 
 export const defaultConfig = {
   qmin: NaN,
@@ -682,17 +686,19 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
 };
 
 /**
- * Data-derived closest approach: the rising flank of the FIRST shell (port of
- * scaling.detect_first_peak_onset — keep in sync). The first local maximum of
- * |g| beyond a one-ripple-period reference zone (2π/qmax above searchMin) that
- * stands out of the ripple field below it (max |g| from searchMin to its lobe
- * start) by strongProminence, or by prominence while being a major feature
- * (>= fraction of the range maximum); either sign, so inverted shells count.
+ * Onsets of the shell-like features of g(r), increasing (port of
+ * scaling.first_shell_candidates — keep in sync). Local maxima of |g| beyond a
+ * one-ripple-period reference zone (2π/qmax above searchMin) that stand out of
+ * the ripple field below them (max |g| from searchMin to the lobe start) by
+ * strongProminence, or by prominence while being a major feature (>= major of
+ * the range maximum); either sign, so inverted shells count. Each onset is on
+ * its shell's own flank (|g| down to max(floor, fraction·peak)); searchMin if
+ * the flank never drops that far (the scan stops there).
  */
-export const detectFirstPeakOnset = (
+export const firstShellCandidates = (
   r, g, {
     searchMin = 1.0, searchMax = 6.0, fraction = 0.35, floor = 0.5,
-    prominence = 2.0, strongProminence = 3.0, qmax = 0,
+    prominence = 2.0, major = 0.5, strongProminence = 4.0, qmax = 0,
   } = {}
 ) => {
   let first = -1;
@@ -703,13 +709,14 @@ export const detectFirstPeakOnset = (
       last = i;
     }
   }
-  if (first < 0 || last - first + 1 < 3) return null;
+  if (first < 0 || last - first + 1 < 3) return [];
   const a = new Float64Array(r.length);
   for (let i = 0; i < r.length; i += 1) a[i] = Math.abs(g[i]);
   let globalMax = -Infinity;
   for (let i = first; i <= last; i += 1) if (a[i] > globalMax) globalMax = a[i];
-  if (globalMax < floor) return null;
+  if (globalMax < floor) return [];
   const zoneEnd = searchMin + (qmax > 0 ? (2 * Math.PI) / qmax : 0);
+  const onsets = [];
   for (let index = first + 1; index < last; index += 1) {
     const peak = a[index];
     if (r[index] < zoneEnd || peak < floor) continue;
@@ -719,14 +726,28 @@ export const detectFirstPeakOnset = (
     let ripple = -Infinity;
     for (let i = first; i <= start; i += 1) if (a[i] > ripple) ripple = a[i];
     if (!(peak >= strongProminence * ripple
-      || (peak >= prominence * ripple && peak >= fraction * globalMax))) continue;
+      || (peak >= prominence * ripple && peak >= major * globalMax))) continue;
     const level = Math.max(floor, fraction * peak);
     let onset = index;
     while (onset > first && a[onset] > level) onset -= 1;
-    if (a[onset] > level) return r[first]; // the flank reaches below the search range
-    return r[onset + 1];
+    if (a[onset] > level) { // the flank reaches below the search range
+      if (!onsets.length) onsets.push(r[first]);
+      break;
+    }
+    const value = r[onset + 1];
+    if (!onsets.length || value > onsets[onsets.length - 1]) onsets.push(value);
   }
-  return null;
+  return onsets;
+};
+
+/**
+ * Data-derived closest approach: the rising flank of the FIRST shell (port of
+ * scaling.detect_first_peak_onset — keep in sync): the first entry of
+ * firstShellCandidates, or null.
+ */
+export const detectFirstPeakOnset = (r, g, options = {}) => {
+  const onsets = firstShellCandidates(r, g, options);
+  return onsets.length ? onsets[0] : null;
 };
 
 /**
@@ -777,17 +798,33 @@ const detectOnset = (result, config) => detectFirstPeakOnset(result.r, result.gF
   qmax: config.qmax,
 });
 
+const shellCandidates = (result, config) => firstShellCandidates(result.r, result.gFiltered, {
+  searchMin: config.rCutoff + 0.3,
+  qmax: config.qmax,
+});
+
+const near = (value, onsets) => onsets.some((other) => Math.abs(value - other) <= ONSET_TOLERANCE);
+
 const fmtG = (value) => String(Number(value.toPrecision(6)));
+const fmtP = (value, digits) => String(Number(value.toPrecision(digits)));
+
+/** How to make room for a low-r window below a first shell at onset (scaling._cutoff_advice). */
+const cutoffAdvice = (onset, config) => (config.rFitMin != null
+  ? `lower the fit-window minimum below ${(onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW).toFixed(2)} Å`
+  : `lower the filter r-cut to <= ${(Math.floor((onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW - 0.2) / 0.05) * 0.05).toFixed(2)} Å`);
 
 /**
  * Auto-scale with data-located low-r window (port of scaling.autoscale — keep
  * in sync). With r0 / rFitMax pinned, or in fz mode, one pass runs and the
  * detection only annotates it (fz: the diagnostic window is still refined when
- * the shell leaves room). Otherwise two trial windows [lo, lo + w] locate the
- * first shell (trials with a <= 0 sit on structure and are dropped), the
- * smallest onset is refitted on [lo, onset - 0.25] and confirmed on the
- * refined g(r); no shell, or a shell too close to lo, throws — a fit across
- * the first shell is never returned.
+ * the shell leaves room). Otherwise two trial windows [lo, lo + w] propose
+ * shell onsets (whatever the sign of their scale); the smallest untried onset
+ * c is refitted on [lo, c - 0.25]: a <= 0 throws, the refit re-detecting c
+ * (within ONSET_TOLERANCE) confirms it, a lower re-detected shell is tried
+ * next, and otherwise c is dropped as a feature of the trial's scale. An
+ * onset too close to lo, no confirmable onset, or an exhausted refit
+ * budget throw — a fit across the first shell, or with a <= 0, is never
+ * returned. r0Detected is the confirmed onset the window was built from.
  */
 export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
   const lo = rFitWindow(config)[0];
@@ -812,68 +849,107 @@ export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
     return refined;
   }
 
-  const candidates = [];
+  return placeLowRWindow((trialConfig) => autoscalePass(qIn, sqIn, trialConfig, sigmaIn), config);
+};
+
+/**
+ * Locate the first shell and fit below it (port of scaling._place_low_r_window
+ * — keep in sync): the trial / confirm loop of autoscale, with the fit pass
+ * injected as runPass(config) so the placement logic can be replayed on
+ * scripted passes (the parity fixture).
+ */
+export const placeLowRWindow = (runPass, config) => {
+  const lo = rFitWindow(config)[0];
+  const pool = [];
+  const propose = (onsets) => {
+    onsets.forEach((value) => {
+      if (!near(value, pool)) pool.push(value);
+    });
+  };
+
   const failures = [];
+  const trialScales = [];
   for (const width of START_WINDOW_WIDTHS) {
     let trial;
     try {
-      trial = autoscalePass(qIn, sqIn, { ...config, rFitMax: lo + width }, sigmaIn);
+      trial = runPass({ ...config, rFitMax: lo + width });
     } catch (error) { // e.g. a trial window with < 2 r points
       failures.push(error);
       continue;
     }
-    if (!(trial.a > 0)) continue; // a non-physical scale: this window sits on structure
-    const onset = detectOnset(trial, config);
-    if (onset != null) candidates.push(onset);
+    trialScales.push(trial.a);
+    propose(shellCandidates(trial, config));
   }
   if (failures.length === START_WINDOW_WIDTHS.length) {
     throw failures[failures.length - 1]; // the data cannot be fitted at all: report why
   }
-  if (!candidates.length) {
-    throw new Error(
-      'autoscale: could not locate the first coordination shell in the data '
-      + `(trial low-r windows [${fmtG(lo)}, ${fmtG(lo + START_WINDOW_WIDTHS[0])}] `
-      + `and [${fmtG(lo)}, ${fmtG(lo + START_WINDOW_WIDTHS[START_WINDOW_WIDTHS.length - 1])}] Å `
-      + 'gave a non-physical scale or no shell standing out of the ripples), so the '
-      + 'density-limit window cannot be placed below it. Set r₀ (the closest '
-      + 'interatomic approach) or the fit-window maximum; if the first bond is '
-      + `shorter than ~${(lo + 0.55).toFixed(1)} Å, also lower the filter r-cut `
-      + `(now ${fmtG(config.rCutoff)} Å)`
-    );
-  }
-  let onset = Math.min(...candidates);
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (onset - R0_WINDOW_MARGIN - lo < MIN_AUTO_WINDOW) {
-      const advice = config.rFitMin != null
-        ? `Lower the fit-window minimum below ${(onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW).toFixed(2)} Å`
-        : `Lower the filter r-cut to <= ${(Math.floor((onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW - 0.2) / 0.05) * 0.05).toFixed(2)} Å`;
+
+  const fixes = 'set r₀ (the closest interatomic approach) or the fit-window maximum';
+  const refits = new Map();
+  const dropped = []; // onsets their own refit no longer shows
+  for (;;) {
+    const live = pool.filter((value) => !near(value, dropped));
+    if (!live.length) break;
+    const onset = Math.min(...live);
+    const room = onset - R0_WINDOW_MARGIN - lo;
+    if (room < MIN_AUTO_WINDOW) {
+      const advice = cutoffAdvice(onset, config);
       throw new Error(
         `autoscale: the first coordination shell starts at ${onset.toFixed(2)} Å, `
         + `leaving no low-r fit window between ${fmtG(lo)} Å and `
         + `${(onset - R0_WINDOW_MARGIN).toFixed(2)} Å (onset - ${R0_WINDOW_MARGIN}); a window `
         + 'across the shell would force it to zero and bias the scale. '
-        + `${advice}, or set r₀ / the fit-window maximum`
+        + `${advice[0].toUpperCase()}${advice.slice(1)}, or set r₀ / the fit-window maximum`
       );
     }
-    const refined = autoscalePass(qIn, sqIn, { ...config, r0: onset }, sigmaIn);
-    const check = detectOnset(refined, config);
-    if (check == null) {
-      throw new Error(
-        'autoscale: after refitting below the detected first shell (onset '
-        + `${onset.toFixed(2)} Å) no shell stands out of the ripples any more; the `
-        + 'low-r window cannot be verified. Set r₀ or the fit-window maximum'
-      );
+    if (!refits.has(onset)) {
+      if (refits.size >= MAX_WINDOW_REFITS) {
+        throw new Error(
+          'autoscale: no first-shell onset was confirmed within '
+          + `${MAX_WINDOW_REFITS} refits of the low-r window (tried `
+          + `${[...refits.keys()].sort((x, y) => x - y).map((value) => value.toFixed(2)).join(', ')} Å). `
+          + `${fixes[0].toUpperCase()}${fixes.slice(1)}`
+        );
+      }
+      const refined = runPass({ ...config, r0: onset });
+      if (!(refined.a > 0)) {
+        const where = `[${fmtG(lo)}, ${(onset - R0_WINDOW_MARGIN).toFixed(2)}] Å`;
+        throw new Error(
+          'autoscale: the density-limit fit below the first-shell candidate at '
+          + `${onset.toFixed(2)} Å gives a non-physical scale (a = ${fmtP(refined.a, 4)} on `
+          + `${where}): the low-r region cannot be modelled as g = 0 there, so no `
+          + 'automatic window is trustworthy (typical of data missing structure below '
+          + `Qmin, where the density limit is degenerate). ${fixes[0].toUpperCase()}${fixes.slice(1)}, `
+          + 'or use the Faber-Ziman Q→0 amplitude criterion when the composition is known'
+        );
+      }
+      const found = shellCandidates(refined, config);
+      refits.set(onset, [refined, found]);
+      propose(found);
     }
-    if (check >= onset - 0.1) {
-      refined.r0Detected = check;
+    const [refined, foundAll] = refits.get(onset);
+    const found = foundAll.filter((value) => !near(value, dropped));
+    if (found.length && Math.abs(found[0] - onset) <= ONSET_TOLERANCE) {
+      refined.r0Detected = onset;
       refined.windowRefined = true;
       return refined;
     }
-    onset = check; // the refit uncovered a lower shell
+    if (found.length && found[0] < onset - ONSET_TOLERANCE) continue; // a lower shell: tried next
+    dropped.push(onset);
   }
+
+  const tried = dropped.length
+    ? `; onsets not confirmed by their own refit: ${dropped.map((value) => value.toFixed(2)).join(', ')} Å`
+    : '';
   throw new Error(
-    'autoscale: the first-shell onset kept moving down while the low-r window '
-    + `was refined (last ${onset.toFixed(2)} Å). Set r₀ or the fit-window maximum`
+    'autoscale: could not locate the first coordination shell in the data '
+    + `(trial low-r windows [${fmtG(lo)}, ${fmtG(lo + START_WINDOW_WIDTHS[0])}] `
+    + `and [${fmtG(lo)}, ${fmtG(lo + START_WINDOW_WIDTHS[START_WINDOW_WIDTHS.length - 1])}] Å, `
+    + `scales a = ${trialScales.map((value) => fmtP(value, 3)).join(', ')}${tried}; no shell `
+    + 'stands out of the ripples and survives a refit below it), so the '
+    + `density-limit window cannot be placed below it. ${fixes[0].toUpperCase()}${fixes.slice(1)}; `
+    + `if the first bond is shorter than ~${(lo + 0.55).toFixed(1)} Å, also lower the filter `
+    + `r-cut (now ${fmtG(config.rCutoff)} Å)`
   );
 };
 

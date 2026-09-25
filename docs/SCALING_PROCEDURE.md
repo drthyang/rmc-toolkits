@@ -74,18 +74,21 @@ the manual "try again" scale loop replaced by physics:
    **Fourier filter** (r < cutoff content removed and re-transformed; ft.dat is that
    correction). Converges in ~3–7 iterations.
 5. **r₀ detection**: the *first* coordination shell — the smallest-r |g| feature that
-   stands out of the ripple field below it, not the tallest one — is located and its left
-   flank (35% of its own height) taken as the data's first-shell onset. |g| because
-   negative-b pairs give *inverted* shells (Ti–O in titanates, Mn–Sn in Mn₃Sn), often
-   weaker than the second shell. Without a given r₀ the window is located, not assumed:
-   two trial fits ([r_cut+0.2, +0.3] and [.., +1.0] Å; a trial with a ≤ 0 sits on
-   structure and is dropped) give candidate onsets, the smallest is refitted on
-   [r_cut+0.2, onset − 0.25] and confirmed on the refined g(r). If no shell can be
-   located, or it leaves < 0.1 Å of window (bonds shorter than ~1.75 Å at the default
-   r_cut = 1.0: Si–O, P–O, B–O, C–O), the run stops with the r_cut to use instead of
-   fitting across the shell. Detected onsets: 2.62–2.77 Å on all four Mn₃Sn runs (Qmin 0.82
-   or 1.0), 2.53 Å for FeCoSn — the flank of the first peak, i.e. *above* the hand-chosen
-   classic cutoffs 2.40–2.68 Å, which sit below it.
+   stands out of the ripple field below it (≥ 4× that field, or ≥ 2× while ≥ 50 % of the
+   range maximum), not the tallest one — is located and its left flank (35% of its own
+   height) taken as the data's first-shell onset. |g| because negative-b pairs give
+   *inverted* shells (Ti–O in titanates, Mn–Sn in Mn₃Sn), often weaker than the second
+   shell. Without a given r₀ the window is located, not assumed: two trial fits
+   ([r_cut+0.2, +0.3] and [.., +1.0] Å) propose candidate onsets whatever the sign of
+   their scale; the smallest is refitted on [r_cut+0.2, onset − 0.25] and must be
+   re-detected (within 0.15 Å) on that refit's own g(r) — a candidate the refit no longer
+   shows was a ripple and is dropped, a lower shell the refit uncovers is tried next, and a
+   refit with a ≤ 0 stops the run (a fit with a ≤ 0 is never returned). If no shell is
+   confirmed, or a confirmed one leaves < 0.1 Å of window (bonds shorter than ~1.75 Å at
+   the default r_cut = 1.0: Si–O, P–O, B–O, C–O), the run stops with the r_cut to use
+   instead of fitting across the shell. Detected onsets: 2.62–2.77 Å on all four Mn₃Sn
+   runs (Qmin 0.82 or 1.0), 2.53 Å for FeCoSn — the flank of the first peak, i.e. *above*
+   the hand-chosen classic cutoffs 2.40–2.68 Å, which sit below it.
 6. **Independent cross-check**: `a_fz` from the Q→0 Faber-Ziman limit (level-subtracted
    head extrapolated to S(0)). Concordance `a_fz/a ≈ 1` is the absolute-scale trust
    metric; discord quantifies what the data cannot decide (and flags a wrong ρ₀ ~1:1).

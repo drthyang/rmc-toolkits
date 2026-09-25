@@ -26,7 +26,7 @@ subtraction term is held fixed during each fit) until ``(a, b)`` converge.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -50,6 +50,11 @@ R0_WINDOW_MARGIN = 0.25
 MIN_AUTO_WINDOW = 0.1
 #: Trial window widths above ``lo`` used to locate the first shell (A).
 START_WINDOW_WIDTHS = (0.3, 1.0)
+#: Two first-shell onsets closer than this (A) are the same shell: a refit
+#: confirms the onset its window was built from when it re-detects it this close.
+ONSET_TOLERANCE = 0.15
+#: Most refits :func:`autoscale` spends confirming first-shell candidates.
+MAX_WINDOW_REFITS = 4
 
 
 @dataclass(frozen=True)
@@ -384,26 +389,27 @@ def level_sweep(
     )
 
 
-def detect_first_peak_onset(
+def first_shell_candidates(
     r: np.ndarray,
     g: np.ndarray,
-    qmax: float,  # noqa: ARG001 - kept for signature stability / future ripple use
+    qmax: float,
     *,
     search_min: float = 1.0,
     search_max: float = 6.0,
     fraction: float = 0.35,
     floor: float = 0.5,
     prominence: float = 2.0,
-    strong_prominence: float = 3.0,
-) -> float | None:
-    """Data-derived closest-approach r0: the rising flank of the FIRST shell.
+    major: float = 0.5,
+    strong_prominence: float = 4.0,
+) -> list[float]:
+    """Onsets of the shell-like features of g(r), in increasing r.
 
-    The first coordination shell is the smallest-r feature of g(r) that stands
-    out of the ripple field below it — not the tallest feature in the range: a
-    weak or *inverted* first shell (negative Faber-Ziman weight, e.g. Ti-O in
-    titanates, Mn-Sn in Mn3Sn) is routinely smaller than the second shell.
-    |g| is used because below the first shell g -> 0 and a shell of either
-    sign departs from that level.
+    A shell is a feature of g(r) that stands out of the ripple field below it —
+    of either sign: |g| is used because below the first shell g -> 0 and a
+    shell departs from that level whatever the sign of its Faber-Ziman weight
+    (a weak or *inverted* first shell — Ti-O in titanates, Mn-Sn in Mn3Sn — is
+    routinely smaller than the second shell, so the tallest feature is not the
+    first shell).
 
     The local maxima of |g| in ``[search_min + 2 pi / qmax, search_max]`` are
     scanned upward (the first termination-ripple period above ``search_min``
@@ -411,36 +417,40 @@ def detect_first_peak_onset(
     below it to be judged against). Each has a *lobe start* — the nearest
     local minimum of |g| to its left (a sign change of g is one) — and a
     *ripple level* ``ripple = max |g|`` over ``[search_min, lobe start]``, the
-    field it must stand out of. A maximum is the first shell when
-    ``|g| >= floor`` and either
+    field it must stand out of. A maximum is a shell when ``|g| >= floor`` and
+    either
 
     - ``|g| >= strong_prominence * ripple`` (it towers over everything below
       it, however weak it is next to later shells), or
-    - ``|g| >= prominence * ripple`` and ``|g| >= fraction * max|g|`` over the
+    - ``|g| >= prominence * ripple`` and ``|g| >= major * max|g|`` over the
       search range (a major feature that clearly exceeds the ripples).
 
     Peak/ripple ratios rather than absolute thresholds, because the physical
     shells and the sub-r0 truncation ripples both scale with the fitted
-    amplitude (on missing-low-Q data the ripples reach O(peak/4)). A real
-    shell inside the reference zone inflates the ripple level, so the later
-    shells are rejected too and the result is None rather than a later shell.
-    The onset is taken on the accepted shell's own flank: walk left from its
-    maximum until |g| drops to ``max(floor, fraction * |g_peak|)`` and return
-    the next grid point (``r`` at ``search_min`` if the flank never drops that
-    far inside the range). Returns None when no maximum qualifies.
+    amplitude. The margins (4x, or 2x at half the range maximum) are set by
+    real missing-low-Q data: the sub-shell ripple lobes of the Mn3Sn POWGEN
+    runs reach 2.9x their own ripple field at up to 44 % of the maximum, while
+    their inverted Mn-Sn first shell is 2.1-3.9x at 82-100 %. A shell's onset
+    is taken on its own flank: walk left from its maximum until |g| drops to
+    ``max(floor, fraction * |g_peak|)`` and take the next grid point
+    (``search_min`` if the flank never drops that far inside the range; the
+    scan stops there). Onsets are returned strictly increasing (a
+    maximum whose flank walk lands at or below an earlier onset belongs to that
+    feature).
     """
     r = np.asarray(r, dtype=float)
     a = np.abs(np.asarray(g, dtype=float))
     selection = np.where((r >= search_min) & (r <= search_max))[0]
     if selection.size < 3:
-        return None
+        return []
     first, last = int(selection[0]), int(selection[-1])
     global_max = float(a[first : last + 1].max())
     if global_max < floor:
-        return None
+        return []
     # Reference zone: one termination-ripple period above the search start is
     # never a candidate, so every candidate's ripple field holds >= one crest.
     zone_end = float(search_min) + (2.0 * np.pi / float(qmax) if qmax > 0 else 0.0)
+    onsets: list[float] = []
     for index in range(first + 1, last):
         peak = a[index]
         if r[index] < zone_end or peak < floor:
@@ -453,7 +463,7 @@ def detect_first_peak_onset(
         ripple = float(a[first : start + 1].max())
         if not (
             peak >= strong_prominence * ripple
-            or (peak >= prominence * ripple and peak >= fraction * global_max)
+            or (peak >= prominence * ripple and peak >= major * global_max)
         ):
             continue
         level = max(floor, fraction * peak)
@@ -461,9 +471,41 @@ def detect_first_peak_onset(
         while onset > first and a[onset] > level:
             onset -= 1
         if a[onset] > level:
-            return float(r[first])  # the flank reaches below the search range
-        return float(r[onset + 1])
-    return None
+            if not onsets:
+                onsets.append(float(r[first]))  # the flank reaches below the search range
+            break
+        value = float(r[onset + 1])
+        if not onsets or value > onsets[-1]:
+            onsets.append(value)
+    return onsets
+
+
+def detect_first_peak_onset(
+    r: np.ndarray,
+    g: np.ndarray,
+    qmax: float,
+    *,
+    search_min: float = 1.0,
+    search_max: float = 6.0,
+    fraction: float = 0.35,
+    floor: float = 0.5,
+    prominence: float = 2.0,
+    major: float = 0.5,
+    strong_prominence: float = 4.0,
+) -> float | None:
+    """Data-derived closest-approach r0: the rising flank of the FIRST shell.
+
+    The first entry of :func:`first_shell_candidates` (same parameters): the
+    smallest-r feature of g(r) that stands out of the ripple field below it,
+    of either sign — not the tallest feature in the range. Returns None when
+    no maximum qualifies.
+    """
+    onsets = first_shell_candidates(
+        r, g, qmax, search_min=search_min, search_max=search_max,
+        fraction=fraction, floor=floor, prominence=prominence, major=major,
+        strong_prominence=strong_prominence,
+    )
+    return onsets[0] if onsets else None
 
 
 def first_shell_foot(r: np.ndarray, g: np.ndarray, onset: float) -> float:
@@ -856,17 +898,35 @@ def _detect_onset(result: ScalingResult, config: ScalingConfig) -> float | None:
     )
 
 
+def _shell_candidates(result: ScalingResult, config: ScalingConfig) -> list[float]:
+    """All shell onsets of a result's filtered g(r), searched above r_cutoff + 0.3."""
+    return first_shell_candidates(
+        result.r, result.g_filtered, config.qmax,
+        search_min=config.r_cutoff + 0.3,
+    )
+
+
+def _near(value: float, onsets: list[float]) -> bool:
+    return any(abs(value - other) <= ONSET_TOLERANCE for other in onsets)
+
+
+def _cutoff_advice(onset: float, config: ScalingConfig) -> str:
+    """How to make room for a low-r window below a first shell at ``onset``."""
+    if config.r_fit_min is not None:
+        return f"lower r_fit_min below {onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW:.2f} A"
+    target = np.floor((onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW - 0.2) / 0.05) * 0.05
+    return f"lower r_cutoff to <= {target:.2f} A"
+
+
 def autoscale(
     q: np.ndarray,
     sq: np.ndarray,
     config: ScalingConfig,
     sigma: np.ndarray | None = None,
 ) -> ScalingResult:
-    """Automatically determine ``(a, b)`` and run the full pipeline.
+    """Self-consistent (a, b) determination; see the module docstring.
 
-    Self-consistent loop: fit ``(a, b)`` with the Fourier-filter subtraction
-    term held fixed, re-run the filter on the corrected data, repeat until the
-    parameters converge (``tol``) or ``max_iter`` is reached. ``sigma``
+    Runs the single-pass fit (:func:`_autoscale_pass`); ``sigma``
     (per-point uncertainties, e.g. the data file's third column) weights the
     high-Q C1 rows by 1/sigma.
 
@@ -878,19 +938,28 @@ def autoscale(
     1. two trial fits on ``[lo, lo + w]`` for ``w`` in :data:`START_WINDOW_WIDTHS`
        (a narrow window below any bond longer than ~1.75 A, and the historic
        ``lo + 1.0`` one, which averages the large low-r ripples of
-       missing-low-Q data); a trial with a non-physical scale ``a <= 0``
-       sits on structure and is discarded, the others each yield a first-shell
-       onset (:func:`detect_first_peak_onset`);
-    2. the SMALLEST onset wins — it is refitted on ``[lo, onset - 0.25]`` and
-       confirmed by detecting the first shell again on the refined g(r) (a
-       lower shell uncovered by the refit replaces it, up to three times);
-    3. if no trial yields a shell, or the shell leaves less than
-       :data:`MIN_AUTO_WINDOW` above ``lo``, a ``ValueError`` explains what to
-       change (lower ``r_cutoff`` / ``r_fit_min``, or pin ``r0`` /
-       ``r_fit_max``) — a fit across the first shell is never returned.
+       missing-low-Q data) each propose shell onsets
+       (:func:`first_shell_candidates`) — whatever the sign of the trial's
+       scale, because where a shell sits does not depend on it;
+    2. the smallest untried onset ``c`` is refitted on ``[lo, c - 0.25]``. A
+       refit with a non-physical scale ``a <= 0`` stops the search with a
+       ``ValueError`` (the low-r region cannot be modelled as g = 0 below
+       ``c``: if ``c`` is the first shell no window above it can be right).
+       Otherwise the refit's own g(r) is searched again: its first shell
+       within :data:`ONSET_TOLERANCE` of ``c`` **confirms** ``c``; a lower
+       one is tried next (the refit uncovered it); none, or only higher ones,
+       mean ``c`` was a feature of the trial's scale, not a shell — ``c`` is
+       dropped (and ignored by later confirmations) and the next onset is
+       tried. At most :data:`MAX_WINDOW_REFITS` refits run;
+    3. an onset that leaves less than :data:`MIN_AUTO_WINDOW` above ``lo``, no
+       confirmable onset, or an exhausted refit budget raise a ``ValueError``
+       that explains what to change (lower ``r_cutoff`` / ``r_fit_min``, or pin
+       ``r0`` / ``r_fit_max``) — a fit across the first shell, or one with
+       ``a <= 0``, is never returned.
 
-    The result's provenance carries ``r0_detected`` (the onset on the final
-    g(r)) and ``window_refined``. With a pinned window, or with
+    The result's provenance carries ``r0_detected`` — the confirmed onset the
+    window was built from (``r_fit_window`` hi = ``r0_detected - 0.25``) — and
+    ``window_refined``. With a pinned window, or with
     ``amplitude_criterion="fz"`` (whose amplitude does not depend on the
     window), one pass runs and detection only annotates the result (the fz
     diagnostic window is still refined when the shell leaves room for it).
@@ -916,41 +985,52 @@ def autoscale(
         refined.provenance["window_refined"] = True
         return refined
 
-    candidates: list[float] = []
+    return _place_low_r_window(
+        lambda trial_config: _autoscale_pass(q, sq, trial_config, sigma), config
+    )
+
+
+def _place_low_r_window(
+    run_pass: Callable[[ScalingConfig], ScalingResult], config: ScalingConfig
+) -> ScalingResult:
+    """Locate the first shell and fit below it (steps 1-3 of :func:`autoscale`).
+
+    ``run_pass(config)`` runs one fit pass for a trial / refit configuration;
+    it is a parameter so the placement logic can be exercised on scripted
+    passes (tests, and the JS port's parity fixture).
+    """
+    lo = config.r_fit_window[0]
+    pool: list[float] = []
+
+    def propose(onsets: list[float]) -> None:
+        for value in onsets:
+            if not _near(value, pool):
+                pool.append(float(value))
+
     failures: list[ValueError] = []
+    trial_scales: list[float] = []
     for width in START_WINDOW_WIDTHS:
         try:
-            trial = _autoscale_pass(q, sq, replace(config, r_fit_max=lo + width), sigma)
+            trial = run_pass(replace(config, r_fit_max=lo + width))
         except ValueError as exc:  # e.g. a trial window with < 2 r points
             failures.append(exc)
             continue
-        if not trial.a > 0:
-            continue  # a non-physical scale: this window sits on structure
-        onset = _detect_onset(trial, config)
-        if onset is not None:
-            candidates.append(float(onset))
+        trial_scales.append(float(trial.a))
+        propose(_shell_candidates(trial, config))
     if len(failures) == len(START_WINDOW_WIDTHS):
         raise failures[-1]  # the data cannot be fitted at all: report why
-    if not candidates:
-        raise ValueError(
-            "autoscale: could not locate the first coordination shell in the "
-            f"data (trial low-r windows [{lo:g}, {lo + START_WINDOW_WIDTHS[0]:g}] "
-            f"and [{lo:g}, {lo + START_WINDOW_WIDTHS[-1]:g}] A gave a "
-            "non-physical scale or no shell standing out of the ripples), so "
-            "the density-limit window cannot be placed below it. Set r0 (the "
-            "closest interatomic approach) or r_fit_max; if the first bond is "
-            f"shorter than ~{lo + 0.55:.1f} A, also lower r_cutoff "
-            f"(now {config.r_cutoff:g} A)"
-        )
-    onset = min(candidates)
-    for _ in range(3):
-        if onset - R0_WINDOW_MARGIN - lo < MIN_AUTO_WINDOW:
-            advice = (
-                f"lower r_fit_min below {onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW:.2f} A"
-                if config.r_fit_min is not None
-                else "lower r_cutoff to <= "
-                f"{np.floor((onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW - 0.2) / 0.05) * 0.05:.2f} A"
-            )
+
+    fixes = "Set r0 (the closest interatomic approach) or r_fit_max"
+    refits: dict[float, tuple[ScalingResult, list[float]]] = {}
+    dropped: list[float] = []  # onsets their own refit no longer shows
+    while True:
+        live = [value for value in pool if not _near(value, dropped)]
+        if not live:
+            break
+        onset = min(live)
+        room = onset - R0_WINDOW_MARGIN - lo
+        if room < MIN_AUTO_WINDOW:
+            advice = _cutoff_advice(onset, config)
             raise ValueError(
                 f"autoscale: the first coordination shell starts at {onset:.2f} A, "
                 f"leaving no low-r fit window between {lo:g} A and "
@@ -958,22 +1038,57 @@ def autoscale(
                 "window across the shell would force it to zero and bias the "
                 f"scale. {advice[0].upper() + advice[1:]}, or set r0 / r_fit_max"
             )
-        refined = _autoscale_pass(q, sq, replace(config, r0=onset), sigma)
-        check = _detect_onset(refined, config)
-        if check is None:
-            raise ValueError(
-                f"autoscale: after refitting below the detected first shell "
-                f"(onset {onset:.2f} A) no shell stands out of the ripples any "
-                "more; the low-r window cannot be verified. Set r0 or r_fit_max"
-            )
-        if check >= onset - 0.1:
-            refined.provenance["r0_detected"] = float(check)
+        if onset not in refits:
+            if len(refits) >= MAX_WINDOW_REFITS:
+                raise ValueError(
+                    "autoscale: no first-shell onset was confirmed within "
+                    f"{MAX_WINDOW_REFITS} refits of the low-r window (tried "
+                    + ", ".join(f"{value:.2f}" for value in sorted(refits))
+                    + f" A). {fixes}"
+                )
+            refined = run_pass(replace(config, r0=onset))
+            if not refined.a > 0:
+                where = f"[{lo:g}, {onset - R0_WINDOW_MARGIN:.2f}] A"
+                raise ValueError(
+                    "autoscale: the density-limit fit below the first-shell "
+                    f"candidate at {onset:.2f} A gives a non-physical scale "
+                    f"(a = {refined.a:.4g} on {where}): the low-r region cannot "
+                    "be modelled as g = 0 there, so no automatic window is "
+                    "trustworthy (typical of data missing structure below Qmin, "
+                    f"where the density limit is degenerate). {fixes}, or use "
+                    "the Faber-Ziman Q->0 amplitude criterion "
+                    "(amplitude_criterion='fz', CLI --amplitude fz) when the "
+                    "composition is known"
+                )
+            found = _shell_candidates(refined, config)
+            refits[onset] = (refined, found)
+            propose(found)
+        refined, found = refits[onset]
+        found = [value for value in found if not _near(value, dropped)]
+        if found and abs(found[0] - onset) <= ONSET_TOLERANCE:
+            refined.provenance["r0_detected"] = float(onset)
             refined.provenance["window_refined"] = True
             return refined
-        onset = float(check)  # the refit uncovered a lower shell
+        if found and found[0] < onset - ONSET_TOLERANCE:
+            continue  # the refit uncovered a lower shell: it is tried next
+        dropped.append(onset)
+
+    tried = (
+        "; onsets not confirmed by their own refit: "
+        + ", ".join(f"{value:.2f}" for value in dropped)
+        + " A"
+        if dropped
+        else ""
+    )
     raise ValueError(
-        "autoscale: the first-shell onset kept moving down while the low-r "
-        f"window was refined (last {onset:.2f} A). Set r0 or r_fit_max"
+        "autoscale: could not locate the first coordination shell in the "
+        f"data (trial low-r windows [{lo:g}, {lo + START_WINDOW_WIDTHS[0]:g}] "
+        f"and [{lo:g}, {lo + START_WINDOW_WIDTHS[-1]:g}] A, scales a = "
+        + ", ".join(f"{value:.3g}" for value in trial_scales)
+        + f"{tried}; no shell stands out of the ripples and survives a refit "
+        "below it), so the density-limit window cannot be placed below it. "
+        f"{fixes}; if the first bond is shorter than ~{lo + 0.55:.1f} A, also "
+        f"lower r_cutoff (now {config.r_cutoff:g} A)"
     )
 
 

@@ -12,14 +12,17 @@ whenever the engine's math changes:
 
 import json
 from pathlib import Path
+import re
 
 import numpy as np
 
 from rmc_toolkits.scaling import (
     ScalingConfig,
+    _place_low_r_window,
     auto_enforcement_cutoff,
     autoscale,
     detect_first_peak_onset,
+    first_shell_candidates,
     first_shell_foot,
     estimate_rho0,
     level_sweep,
@@ -50,7 +53,10 @@ def _continuum(r, start):
 
 
 def detector_cases() -> dict:
-    """First-shell detector parity cases (same models as tests/test_stog_a_detection.py)."""
+    """First-shell detector parity cases (models of tests/test_stog_a_detection.py and
+    tests/test_stog_a_placement.py)."""
+    from test_stog_a_placement import mn3sn_lobe_g
+
     r = np.arange(1, 801) * 0.01
     ripple = 0.9 * np.sin(2 * np.pi * (r - 1.3) / 0.24) * ((r > 1.3) & (r < 2.55))
     profiles = {
@@ -62,13 +68,20 @@ def detector_cases() -> dict:
         + _continuum(r, 4.4),
         "shellAtSearchStart": 6.0 * _gauss(r, 1.37, 0.045) + 3.0 * _gauss(r, 2.4, 0.08)
         + _continuum(r, 3.0),
+        # Review follow-up: the real Mn3Sn sub-shell lobe (2.9x, 35 %).
+        "mn3snLobe": mn3sn_lobe_g(r),
+        "twoShell": 1.5 * _gauss(r, 1.95, 0.06) + 4.0 * _gauss(r, 2.76, 0.08)
+        + _continuum(r, 3.4),
     }
     profiles = {name: np.round(g, 12) for name, g in profiles.items()}
     cases = []
     for name, g in profiles.items():
         for qmax in (28.0, 0.0):
             onset = detect_first_peak_onset(r, g, qmax, search_min=1.3)
-            cases.append({"name": name, "qmax": qmax, "onset": onset})
+            candidates = first_shell_candidates(r, g, qmax, search_min=1.3)
+            cases.append({
+                "name": name, "qmax": qmax, "onset": onset, "candidates": candidates,
+            })
     return {
         "r": r.tolist(),
         "searchMin": 1.3,
@@ -112,6 +125,50 @@ def window_cases() -> dict:
             case["error"] = str(exc)
         cases.append(case)
     return {"q": q.tolist(), "aTrue": 10.0, "cases": cases}
+
+
+#: Numbers in an error message (not the digit of "r0"): the Python and JS messages
+#: word units differently (A / Å, r0 / r₀) but carry the same numbers.
+NUMBER = re.compile(r"(?<![A-Za-z_\d.])-?\d+(?:\.\d+)?")
+
+
+def placement_cases() -> dict:
+    """Low-r window placement loop on scripted passes (tests/test_stog_a_placement.py).
+
+    The JS test replays each scenario with the same scripted-pass rules; both
+    engines detect the candidates on the same (rounded) profiles.
+    """
+    from test_stog_a_placement import (
+        ERROR_KINDS, PROFILES, R, SCENARIOS, scenario_config, scripted_pass,
+    )
+
+    profiles = {name: np.round(build(R), 12) for name, build in PROFILES.items()}
+    cases = []
+    for name, scenario in SCENARIOS.items():
+        run, calls = scripted_pass(scenario, profiles)
+        case = {"name": name, **{key: scenario[key] for key in ("qmax", "trials", "refits", "default")}}
+        try:
+            result = _place_low_r_window(run, scenario_config(scenario))
+            case["expected"] = {
+                "a": result.a,
+                "r0Detected": result.provenance["r0_detected"],
+                "rFitWindow": list(result.provenance["r_fit_window"]),
+            }
+        except ValueError as exc:
+            message = str(exc)
+            case["error"] = {
+                "kind": next(kind for kind in ERROR_KINDS if kind in message),
+                "numbers": [float(value) for value in NUMBER.findall(message)],
+                "message": message,
+            }
+        case["refitOnsets"] = [call[0] for call in calls if call[0] is not None]
+        cases.append(case)
+    return {
+        "r": R.tolist(),
+        "profiles": {name: g.tolist() for name, g in profiles.items()},
+        "config": {"qmin": 0.5, "rho0": 0.05, "bAvgSq": 1.0},
+        "cases": cases,
+    }
 
 
 def enforcement_cases() -> dict:
@@ -222,6 +279,7 @@ def main() -> None:
             "detector": detector_cases(),
             "window": window_cases(),
             "enforcement": enforcement_cases(),
+            "placement": placement_cases(),
             "manual": {
                 "lowRRms": manual.low_r_rms,
                 "c1TailMean": manual.c1_tail_mean,

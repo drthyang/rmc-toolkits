@@ -587,13 +587,16 @@ Four behaviours of the estimator are load-bearing and easy to miss:
    `amplitude = 'fz'` or `c1_mode = 'joint'` selection therefore does **not** apply during
    estimation, only to the final fit that follows.
 2. **It can stop without converging.** Besides `|concordance − 1| ≤ rtol`, the loop breaks when
-   `result.a <= 0 or concordance <= 0` (no density can reconcile the two criteria) and when the
+   `result.a <= 0 or concordance <= 0` (no density can reconcile the two criteria — with the
+   automatic window placement `autoscale` raises instead of returning $a \le 0$, so this exit is
+   reached with a pinned `r0` / `r_fit_max`, and the raise lands in item 5) and when the
    clipped update lands on the same value (`rho_next == rho`, i.e. pinned at $10^{-4}$ or 1
    Å⁻³). Both exits return `converged: False`.
 3. **The returned `rho0` is `history[-1][0]`** — the density the *last fit was run at*, not the
    last update. On a non-converged return you get the last density tried, not a refined one.
-4. **Cost.** Each iteration is a full `autoscale` (two trial windows + the refined fit, Step 8),
-   so the estimate costs up to 8 × 3 = 24 pipeline passes before the run's own fit even starts.
+4. **Cost.** Each iteration is a full `autoscale` (two trial windows + usually one confirming
+   refit, at most four — Step 8), so the estimate costs typically 8 × 3 = 24 (at most 8 × 6 = 48)
+   pipeline passes before the run's own fit even starts.
 5. **A trial density that cannot be fitted stops the iteration.** If `autoscale` raises at an
    iterate (a fixed-point step to an absurd density, e.g. Mn₃Sn 500 K jumps from 0.063 to 0.66
    Å⁻³, where no first shell can be located), the estimate returns the last usable iterate with
@@ -1806,7 +1809,7 @@ part of the transparency story. The onset detection, with every constant:
    `app.py` and `autoScaleWorker.js` alike. Fewer than 3 points in the window, or
    $\max|g| <$ `floor` $= 0.5$ → `None`.
 2. Scan the local maxima of $|g|$ upward from `search_min` $+ 2\pi/Q_\max$ and take the **first**
-   that stands out of the ripple field below it (≥ 3× its ripple level, or ≥ 2× and ≥ 35 % of the
+   that stands out of the ripple field below it (≥ 4× its ripple level, or ≥ 2× and ≥ 50 % of the
    range maximum) — see [Step 8 of the Auto-scaling page](#step-8--r_0-detection-the-first-shells-g-flank-and-the-refinement-pass)
    for the exact rules. **Absolute value**, so an *inverted* first shell (negative-$b$ pairs:
    Ti–O, Mn–Sn) counts.
@@ -1929,9 +1932,10 @@ Everything else:
 | `enforce_cutoff` | `None` (Python engine) | Å | `ScalingConfig`; CLI/page default to `stog.inp` `peak_cutoff` or the first-shell foot (`auto_enforcement_cutoff`) | low-$r$ hard replacement (Python engine: always `enforce_low_r`) |
 | `search_min` (peak onset) | 1.0 default, **1.3** in practice ($r_\mathrm{cut} + 0.3$) | Å | `detect_first_peak_onset`; every caller overrides | lower bound of the $r_0$ search; candidates start $2\pi/Q_\max$ above it (reference zone) |
 | `search_max` (peak onset) | 6.0 | Å | same | upper bound of the $r_0$ search |
-| `fraction` (peak onset) | 0.35 | — | same | "major feature" share of the range maximum, and the flank threshold $\max(\mathrm{floor}, \mathrm{fraction}\times\lvert g_\mathrm{peak}\rvert)$ |
+| `fraction` (peak onset) | 0.35 | — | same | the flank threshold $\max(\mathrm{floor}, \mathrm{fraction}\times\lvert g_\mathrm{peak}\rvert)$ that defines the onset |
 | `floor` (peak onset) | 0.5 | — | same | minimum $\lvert g\rvert$ for a feature to count as the first shell |
-| `prominence`, `strong_prominence` (peak onset) | 2.0, 3.0 | — | same | first-shell peak / ripple-field ratios (2× with the major-feature test, 3× alone) |
+| `prominence`, `major`, `strong_prominence` (peak onset) | 2.0, 0.5, 4.0 | — | same | first-shell peak / ripple-field ratios: 2× when the peak is ≥ 50 % of the range maximum (`major`), 4× alone |
+| `ONSET_TOLERANCE`, `MAX_WINDOW_REFITS` | 0.15, 4 | Å, — | `scaling.py` / `autoScale.js` constants | automatic window placement: a refit confirms the onset its window was built from within 0.15 Å; at most 4 confirming refits |
 | `_SINE_CHUNK` | 512 | output points | `transforms.py` line 40 | memory bound only; no numerical effect |
 | Lorch singularity tolerance | $10^{-9}\max(1, a_L)$ | Å | `low_q_correction_basis` | switches to the analytic limit at $r = a_L = \pi/Q_\mathrm{max}$ |
 | $Q_\mathrm{max}$ for Lorch | `q[-1]` | Å⁻¹ | implicit | last *supplied* point, not `config.qmax` |
@@ -2792,15 +2796,17 @@ has at least one ripple crest below it). For a candidate maximum $p$ with $|g_p|
 - its **lobe start** $s$ is the nearest local minimum of $|g|$ to its left (a sign change of $g$ is
   one);
 - its **ripple level** is $\rho = \max |g|$ over $[\texttt{search\_min}, r_s]$;
-- it is **the first shell** when
-  $|g_p| \ge 3\rho$ (`strong_prominence`: it towers over everything below it, however weak it is
+- it is **a shell** when
+  $|g_p| \ge 4\rho$ (`strong_prominence`: it towers over everything below it, however weak it is
   next to later shells) **or** $|g_p| \ge 2\rho$ (`prominence`) **and**
-  $|g_p| \ge 0.35\,\max|g|$ (`fraction`: a major feature of the range).
+  $|g_p| \ge 0.5\,\max|g|$ (`major`: a major feature of the range).
 
 The onset is taken on that shell's own flank: with
-$\ell = \max(\texttt{floor}, \texttt{fraction}\times|g_p|)$, walk left from $p$ while $|g| > \ell$
-and return the $r$ of the **last point still above** $\ell$ (`r[index + 1]`), or `r[search_min]`
-when the flank is still above $\ell$ at the search edge. No qualifying maximum → `None`.
+$\ell = \max(\texttt{floor}, \texttt{fraction}\times|g_p|)$ (`fraction` $= 0.35$), walk left from
+$p$ while $|g| > \ell$ and return the $r$ of the **last point still above** $\ell$
+(`r[index + 1]`), or `r[search_min]` when the flank is still above $\ell$ at the search edge (the
+scan ends there). `first_shell_candidates()` returns the onsets of every shell the scan accepts, strictly
+increasing; `detect_first_peak_onset()` returns the first, or `None`.
 
 Design choices:
 
@@ -2808,53 +2814,84 @@ Design choices:
   Ti–O ($b_\mathrm{Ti} < 0$) in SrTiO₃ is $-2.8$ against $+10$ for the Sr–O/O–O shell; Mn₃Sn's
   inverted Mn–Sn shell sits below a comparable second shell. The pre-1.0 detector took
   $\arg\max|g|$ and walked left from it, so it returned the *second* shell's flank (SrTiO₃: 2.6 Å
-  instead of 1.85 Å; the Mn₃Sn 59438 run: 3.49 Å instead of ~2.74 Å) and the low-$r$ window and the
-  auto enforcement then covered the real first shell.
-- **Peak/ripple ratios, not absolute thresholds.** Both the physical shells and the sub-$r_0$
-  truncation ripples scale with the fitted amplitude; on the Mn₃Sn first passes the ripple crests
-  reach 20–27 % of the first shell (and a positive Gibbs/Mn–Mn lobe right below it reaches ~45 %),
-  which the 2×/3× prominence rules reject while the shell (2.2–3.9× its ripple field) is accepted.
+  instead of 1.85 Å; the Mn₃Sn 59438 run at $Q_\min$ 1.0, $Q_\max$ 28: 3.49 Å instead of ~2.74 Å)
+  and the low-$r$ window and the auto enforcement then covered the real first shell.
+- **Peak/ripple ratios, not absolute thresholds — with margins set by real data.** Both the
+  physical shells and the sub-$r_0$ truncation ripples scale with the fitted amplitude. On the
+  trial fits of the four Mn₃Sn POWGEN runs ($Q_\min$ 0.82 and 1.0 × $Q_\max$ 24–30) a positive
+  sub-shell ripple lobe at ~1.6–1.7 Å stands 1.6–2.9× above its own ripple field at 34–44 % of the
+  range maximum, while the inverted Mn–Sn first shell stands 2.1–3.9× above its field at 82–100 %.
+  The first 1.0 rule (3×, or 2× at ≥ 35 %) accepted the lobe (59438, $Q_\min$ 1.0, $Q_\max$ 25:
+  2.92× at 35.3 %) and placed the window below a ripple; 4× / (2× at ≥ 50 %) separates the two
+  populations with room on both sides. Clean first shells stand far higher (synthetic SrTiO₃ /
+  ReO₃ trial fits 17–320×, FeCoSn 199 K 11–15×).
 - **Reference zone.** A candidate rising straight from the search edge would have no ripple field to
   be judged against; skipping the first $2\pi/Q_\max$ guarantees one. A real shell inside the zone
   inflates the ripple level of everything after it, so the result is `None`, never a later shell.
 - **$|g|$, not $g$.** Below the first shell $g \to 0$; a shell of either sign departs from that
   level.
 
-**Placing the window (`autoscale()`).** The C2 rows force $g = 0$ on the window, so a window that
-reaches into the first shell forces a real shell to zero and biases the scale (pre-1.0, the blind
-first-pass window $[r_\mathrm{cut}+0.2, r_\mathrm{cut}+1.2] = [1.2, 2.2]$ Å gave SrTiO₃ $a$ −48 %,
-ReO₃ $a < 0$, and short bonds were refused refinement and returned as if fine). With neither `r0`
-nor `r_fit_max` pinned, and `amplitude_criterion="density"`:
+**Placing the window (`autoscale()` → `_place_low_r_window()`).** The C2 rows force $g = 0$ on the
+window, so a window that reaches into the first shell forces a real shell to zero and biases the
+scale (pre-1.0, the blind first-pass window $[r_\mathrm{cut}+0.2, r_\mathrm{cut}+1.2] = [1.2, 2.2]$
+Å gave SrTiO₃ $a$ −48 %, ReO₃ $a < 0$, and short bonds were refused refinement and returned as if
+fine). With neither `r0` nor `r_fit_max` pinned, and `amplitude_criterion="density"`:
 
 1. **Two trial fits** on $[lo, lo + w]$, $w \in$ `START_WINDOW_WIDTHS` $= (0.3, 1.0)$ Å
    ($lo = r_\mathrm{fit,min}$, default $r_\mathrm{cut}+0.2$): the narrow one lies below any bond
-   longer than ~1.75 Å; the wide one averages the large low-$r$ ripples of missing-low-$Q$ data
-   (on the Mn₃Sn runs the narrow window alone gives $a < 0$). A trial with $a \le 0$ is a
-   non-physical scale — its window sits on structure — and is discarded; each other trial yields a
-   first-shell onset.
-2. The **smallest onset** is refitted on $[lo,\ \mathrm{onset} - 0.25]$ (`R0_WINDOW_MARGIN`) and
-   **confirmed**: the first shell is detected again on the refined $g(r)$; if the refit uncovers a
-   lower shell (onset lower by > 0.1 Å) that one replaces it (up to three times).
-3. **Fail loudly.** No trial yields a shell → `ValueError` ("could not locate the first
-   coordination shell … set r0 or r_fit_max; lower r_cutoff for bonds shorter than ~1.75 Å").
-   A shell leaving less than `MIN_AUTO_WINDOW` $= 0.1$ Å above $lo$ → `ValueError` naming the
-   onset and the $r_\mathrm{cut}$ that would make room ($\le$ onset − 0.55, rounded down to
-   0.05 Å). A fit across the first shell is never returned.
+   longer than ~1.75 Å; the wide one averages the large low-$r$ ripples of missing-low-$Q$ data.
+   Each proposes its shell onsets (`first_shell_candidates()`) **whatever the sign of its scale** —
+   where a shell sits does not depend on it: on the Mn₃Sn runs the narrow window gives $a < 0$ and
+   still locates the Mn–Sn shell at 2.67–2.75 Å; on ReO₃ the wide window sits on Re–O, gives
+   $a < 0$ and proposes nothing. Onsets closer than `ONSET_TOLERANCE` $= 0.15$ Å are one candidate.
+2. **Confirm, smallest first.** The smallest candidate $c$ not yet dropped is refitted on
+   $[lo,\ c - 0.25]$ (`R0_WINDOW_MARGIN`) and the refit's own $g(r)$ is searched again:
+   - refit $a \le 0$ → `ValueError` ("non-physical scale"): the region below $c$ cannot be
+     modelled as $g = 0$, and if $c$ is the first shell no window above it can be right — so the
+     search stops rather than trying a higher shell;
+   - its first shell (ignoring dropped candidates) within 0.15 Å of $c$ → **confirmed**: that refit
+     is the result;
+   - a lower first shell → the refit across it uncovered it: it is tried next (and $c$ is
+     re-examined if that one is dropped);
+   - none, or only higher shells → $c$ was a feature of the trial's scale, not a shell (a window
+     below it shows nothing there): $c$ is **dropped**, ignored by later confirmations, and the
+     next candidate is tried.
 
-The result carries `provenance["r0_detected"]` (the onset on the **final** $g(r)$) and
-`provenance["window_refined"] = True`; `config.r0` inside the provenance is the onset the window
-was built from. A density-mode auto-scale therefore costs **three** complete self-consistent loops.
-With `r0` or `r_fit_max` pinned, one pass runs and detection only annotates it. In FZ mode the
-amplitude does not depend on the window: one pass, and the diagnostic window is refined to
-$[lo, \mathrm{onset}-0.25]$ when the shell leaves room (no error otherwise, `window_refined`
-absent).
+   At most `MAX_WINDOW_REFITS` $= 4$ refits run.
+3. **Fail loudly.**
+   - No candidate survives → `ValueError` ("could not locate the first coordination shell",
+     listing the trial scales and the dropped onsets; set r0 or r_fit_max, lower $r_\mathrm{cut}$
+     for bonds shorter than ~1.75 Å).
+   - A candidate leaving less than `MIN_AUTO_WINDOW` $= 0.1$ Å above $lo$ → `ValueError`
+     naming the onset and the $r_\mathrm{cut}$ that would make room ($\le$ onset − 0.55,
+     rounded down to 0.05 Å).
+   - The refit budget runs out → `ValueError` listing the tried onsets.
+
+   A fit across the first shell, or one with $a \le 0$, is never returned.
+
+The result carries `provenance["r0_detected"]` — the **confirmed onset the window was built from**,
+so `r_fit_window` hi $=$ `r0_detected` $- 0.25$ always holds (the first 1.0 loop reported the onset
+re-detected on the final $g(r)$, which could be unrelated to the window: 2.68 Å on a
+$[1.2, 1.33]$ Å window) — and `provenance["window_refined"] = True`. A density-mode auto-scale
+costs **three** complete self-consistent loops when the smallest candidate is confirmed (two trials
+and one refit), at most six. With `r0` or `r_fit_max` pinned, one pass runs and detection only
+annotates it. In FZ mode the amplitude does not depend on the window: one pass, and the diagnostic
+window is refined to $[lo, \mathrm{onset}-0.25]$ when the shell leaves room (no error otherwise,
+`window_refined` absent).
 
 Validated (scratch bench, true $a$ = 5 or 10): SrTiO₃, ReO₃, Ni supercells 0.0–0.2 %; SrTiO₃ /
 rutile / weak-first-shell Gaussian-shell models 0.3–3.6 %; the Mn₃Sn and FeCoSn runs unchanged
 (same detected onsets and windows as the pre-1.0 two-pass on those data); Si–O (1.61 Å), P–O,
 B–O and β-cristobalite fail loudly at $r_\mathrm{cut} = 1.0$ and succeed with
-$r_\mathrm{cut} = 0.6$–$0.8$ (Si–O, P–O, SiO₂ supercell within 1–3 %). Tests:
-`tests/test_stog_a_window.py`; JS parity on the fixture's `expected.window` cases.
+$r_\mathrm{cut} = 0.6$–$0.8$ (Si–O, P–O, SiO₂ supercell within 1–3 %).
+
+Tests: `tests/test_stog_a_window.py` (models), `tests/test_stog_a_placement.py` (the loop on
+scripted passes — ripple dropped, $a \le 0$ refit refused, lower shell uncovered, budget, the
+short-shell message — and the real 59438 run at $Q_\min$ 1.0, $Q_\max$ 29; the whole
+$Q_\min \times Q_\max$ grid with `RMC_TOOLKITS_FULL_SWEEP=1`, ~5 min). JS parity: the fixture's
+`expected.window` cases and `expected.placement` scenarios (`autoScalePlacement.test.js` replays
+the scripted passes through `placeLowRWindow()` and compares outcomes, refit order and error
+numbers).
 
 Measured detections quoted in [SCALING_PROCEDURE.md](../SCALING_PROCEDURE.md): 2.62–2.77 Å on all
 four Mn₃Sn runs (Qmin 0.82 or 1.0; the pre-1.0 argmax detector gave 3.19–3.49 Å at Qmin 1.0) and
@@ -2863,11 +2900,13 @@ sit below them.
 `tests/test_scaling.py` → `test_detects_first_shell_and_refines_window` (synthetic onset 2.65, peak
 2.80) and `test_autoscale_composition_only_detects_first_shell` (real Mn₃Sn) pin the behaviour.
 
-**Code:** `detect_first_peak_onset()`, `autoscale()`; JS `detectFirstPeakOnset()`, `autoscale()`.
-`qmax` sets the reference-zone width $2\pi/Q_\max$ (Python: positional argument; JS: the `qmax`
-option, default 0 = no zone — every caller passes the config's $Q_\max$). Parity is exact on the
-golden detector cases (`expected.detector` in the fixture, `autoScaleFirstShell.test.js`); the
-regression tests are `tests/test_stog_a_detection.py`.
+**Code:** `first_shell_candidates()`, `detect_first_peak_onset()`, `autoscale()` /
+`_place_low_r_window()`; JS `firstShellCandidates()`, `detectFirstPeakOnset()`, `autoscale()` /
+`placeLowRWindow()`. `qmax` sets the reference-zone width $2\pi/Q_\max$ (Python: positional
+argument; JS: the `qmax` option, default 0 = no zone — every caller passes the config's
+$Q_\max$). Parity is exact on the golden detector cases (`expected.detector` in the fixture:
+onsets in `autoScaleFirstShell.test.js`, full candidate lists in `autoScalePlacement.test.js`);
+the regression tests are `tests/test_stog_a_detection.py` and `tests/test_stog_a_placement.py`.
 
 ---
 
@@ -3127,7 +3166,7 @@ come from. **The two implementations read their inputs from different places:**
 | `d_r_low_r_slope_theory` | $-4\pi\rho_0\langle b\rangle^2$ | The straight line $D(r)$ should follow below $r_0$. |
 | `density_limit_satisfied` | $\lvert$`g_window_mean`$\rvert < 0.1$ | **ONE-SIDED.** False *proves* no affine $(a,b)$ can satisfy the density limit — the absolute scale is not recoverable from self-consistency on this data. True only means the fit reached its target; a smooth low-$Q$ deficiency is generically absorbed into a biased scale with all residuals clean. True does **not** certify the absolute scale. |
 | `level`, `level_uncertainty`, `level_window`, `asymptote_found` | the Step-3 sweep result | `asymptote_found = False` ⇒ the fit silently ran in joint 2-dof mode, `level_uncertainty` is `NaN`, **and `level_window` is the fabricated last-3 Å⁻¹ span, not a searched window**. Otherwise `level_uncertainty` is a spread over overlapping admissible windows. |
-| `r0_detected`, `window_refined` | Step-8 outputs | `r0_detected` is the first-shell onset on the final $g(r)$. `window_refined` is True when `autoscale` placed the window from it; absent when you pinned `r0`/`r_fit_max` (detection then only annotates), in manual runs, and in FZ mode when the shell leaves no room for a window. |
+| `r0_detected`, `window_refined` | Step-8 outputs | `r0_detected` is the confirmed first-shell onset the automatic window was built from (window top = `r0_detected` − 0.25), or — with a pinned window, in FZ mode and in manual runs — the onset detected on the result's own $g(r)$. `window_refined` is True when `autoscale` placed the window from it; absent when you pinned `r0`/`r_fit_max` (detection then only annotates), in manual runs, and in FZ mode when the shell leaves no room for a window. |
 | `first_shell_below_r0` | detected onset < given $r_0$ − 0.1 Å | Present when an $r_0$ was given and not refined. True: the data's first shell starts below the $r_0$ you supplied, so the window $[lo, r_0 - 0.25]$ may cut into it — the given value is still used (CLI prints a WARNING, the page flags the r₀ card). |
 | `a_fz` | the independent $Q\to 0$ amplitude | Present only when $\langle b^2\rangle$ is available **and** the sweep found a flat level (`a_fz` is computed inside `if level is not None`). Otherwise it — and the concordance row — are absent. In FZ mode it *is* `a`. |
 | `amplitude_concordance` | $a_\mathrm{fz}/a$ — **omitted in FZ mode** (it would be 1 by construction) | The absolute-scale trust metric. FeCoSn agrees to 4–6 %. |
@@ -3241,7 +3280,7 @@ Genuine implementation differences:
 | `enforce_cutoff` | `None` | Å | classic low-$r$ enforcement (page default: **on**, cutoff auto) |
 | `use_sigma` (page only) | `true` | — | σ column used automatically when present; weights C1 rows only |
 | `level_sweep`: `min_width`, `n_grid`, `slope_nsigma` | 3.0, 80, 2.0 | Å⁻¹, count, σ | **not configurable** |
-| `detect_first_peak_onset`: `search_min`, `search_max`, `fraction`, `floor`, `prominence`, `strong_prominence` | `r_cutoff+0.3`, 6.0, 0.35, 0.5, 2.0, 3.0 | Å, Å, —, $\lvert g\rvert$, —, — | **not configurable** |
+| `detect_first_peak_onset` / `first_shell_candidates`: `search_min`, `search_max`, `fraction`, `floor`, `prominence`, `major`, `strong_prominence` | `r_cutoff+0.3`, 6.0, 0.35, 0.5, 2.0, 0.5, 4.0 | Å, Å, —, $\lvert g\rvert$, —, —, — | **not configurable** |
 | `amplitude_from_fz_limit`: `fit_width` | 1.0 | Å⁻¹ | head extrapolation span, ≥8 points |
 | `estimate_rho0`: `rtol`, `max_iter`, `rho_min`, `rho_max` | 1e-3, 8, 1e-4, 1.0 | —, count, Å⁻³, Å⁻³ | fixed-point root-find |
 | diagnostic thresholds | $\lvert$`g_window_mean`$\rvert<0.1$; $\lvert a_\mathrm{fz}/a - 1\rvert<0.1$; UI coefficient-shadowing warning at 2 % | — | one-sided / concordance verdicts |
@@ -4157,7 +4196,7 @@ Two known gaps in the browser JSON, both harmless but worth stating:
 | — | `s0Target` | `null` | — | explicit low-Q target; the page never sets it, so it always resolves through `effectiveS0Target()` (no UI) |
 | — | `maxIter` / `tol` | 50 / 1e-6 | — | self-consistency loop stopping rule (no UI) |
 | — | level sweep | minWidth 3.0 Å⁻¹, 80 grid edges, ≥24 pts, 2σ slope test | — | not exposed |
-| — | $r_0$ detection | search rCutoff+0.3 … 6.0 Å, candidates from +2π/Qmax, first maximum ≥ 3× (or ≥ 2× and ≥ 35 % of range max) its ripple field, flank at 35 % of that shell, floor 0.5 | — | not exposed |
+| — | $r_0$ detection | search rCutoff+0.3 … 6.0 Å, candidates from +2π/Qmax, first maximum ≥ 4× (or ≥ 2× and ≥ 50 % of range max) its ripple field, flank at 35 % of that shell, floor 0.5; window placement: onset tolerance 0.15 Å, ≤ 4 confirming refits | — | not exposed |
 | — | $\rho_0$ estimate | rtol 1e-3, ≤8 passes, ρ clamped to [1e-4, 1.0] Å⁻³; also exits on a ≤ 0 / concordance ≤ 0, a clamp-pinned update, or an autoscale failure at a trial density (`stopped`); throws when no usable a_fz | — | not exposed |
 
 ---
