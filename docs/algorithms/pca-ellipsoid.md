@@ -344,7 +344,7 @@ walkthrough at the end of Step 4.
 **Where the mean is removed.** The two engines differ in bookkeeping, not in result. Python centres
 **once**, in `load_site_displacements()` (`centered = offsets - site_mean[site_index]`), so
 `site_ellipsoids()` and its kurtosis pass operate on already-centred arrays and subtract nothing
-further. The JS `covariance3()` and `excessKurtosisPca()` re-derive the mean of the array they are
+further. The JS `covariance3()` and `shapeStatistics()` re-derive the mean of the array they are
 handed — numerically $\approx\mathbf{0}$ — and subtract it again. Every formula in this section is
 written with the explicit $-\bar{\mathbf{u}}$; in Python that term is identically zero by
 construction, and the results agree to round-off.
