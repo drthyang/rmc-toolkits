@@ -260,7 +260,8 @@ JS port `autoScale.js` → `readStogXy()`. Writer counterpart: `write_stog_xy()`
 - The readers keep file order; the crop (`crop_sq` / `cropSq`, Step 1) puts the rows in
   ascending $Q$ — a descending file, or non-overlapping segments in any order, are sorted, and
   duplicate $Q$ or overlapping segments (concatenated banks) raise. Every downstream trapezoid
-  transform needs an increasing grid and raises on any other (Step 4).
+  transform needs an increasing grid and raises on any other (engine section, Step 1 —
+  *Grid order*).
 
 **Test coverage:** `autoScale.test.js` → *"readStogXy keeps NaN padding and picks the modal
 column count"* and the `writeStogXy` → `readStogXy` round-trip.
@@ -3151,7 +3152,8 @@ consider the Faber-Ziman Q→0 amplitude criterion for the scale" — since ther
 browser path.
 
 **Returned dict:** `rho0`, `converged`, `iterations`, `concordance`, `a_density`, `a_fz`,
-`extrapolated`, `history` (rows `[rho0, a_density, a_fz, concordance]`), `stopped`, `reason`. `rho0` is the density at
+`extrapolated`, `q_first`, `a_fz_rel_se`, `a_fz_reliable` (the conditioning of the FZ anchor,
+Step 9), `history` (rows `[rho0, a_density, a_fz, concordance]`), `stopped`, `reason`. `rho0` is the density at
 which the **last** pass ran, so on success it is the value that produced the accepted concordance.
 `extrapolated` is `q_first > FZ_FIT_WIDTH` (1.0 Å⁻¹), where `q_first` (also returned) is the first
 $Q$ that survives the crop — the data's real start, so a NaN-padded file or a `stog.inp` $Q_\mathrm{min}$
@@ -4258,7 +4260,7 @@ Entry 9 of the zip, `JSON.stringify(..., null, 2)`:
 | `stogInpReference` | `{a, b, yscale, yoffset}` from the loaded stog.inp, else `null` — so an auto run's zip still records the expert's hand values |
 | `history` | the iteration trajectory, rows `[a, b, low_r_rms]` |
 | `enforcement` | `{cutoff, peakRmin, peakRmax}` or `null` |
-| `rho0Estimate` | `{rho0, converged, iterations, concordance, aDensity, aFz, extrapolated, qFirst, history, stopped, reason}` or `null` |
+| `rho0Estimate` | `{rho0, converged, iterations, concordance, aDensity, aFz, extrapolated, qFirst, aFzRelSe, aFzReliable, history, stopped, reason}` or `null` |
 | `config` | the **effective** engine config (camelCase keys), with `rho0` replaced by the value actually used |
 | `diagnostics` | the full `diagnosticsSummary()` dict (snake_case keys: `a`, `b`, `converged`, `iterations`, `c1_tail_mean`, `low_r_rms_pre_enforcement`, `g_window_mean`, `r_fit_window`, `gk_low_r_theory`, `d_r_low_r_slope_theory`, `density_limit_satisfied`, plus `r0_detected`/`window_refined`, `level`/`level_uncertainty`/`level_window`/`asymptote_found`, `a_fz`/`amplitude_concordance`/`amplitudes_concordant`, `fk_qmin`/`fk_q0_theory` when available) |
 
