@@ -2387,11 +2387,13 @@ The Run Dashboard renders two cards side by side, both produced by
   *symmetry-vs-tolerance ladder*.
 
 **The Detected SG card is computed entirely in the browser**, in JavaScript, with no backend call,
-no `spglib`, and no WASM. It consults **no external space-group database**; classification uses only
-small in-file lookup tables (a 69-entry symmorphic `SG_NUMBER` map, the Bravais centering vectors,
-point-group orders and crystal systems, and Wyckoff lists for four space groups — all documented in
-Steps 10–14). There is **no Python counterpart** anywhere in `rmc_toolkits/` or `web_app/backend/` —
-a repo-wide search for `spglib`, `space_group`, or `point_group` in the Python tree returns nothing.
+no `spglib`, and no WASM. It consults **no external space-group database**; classification uses
+in-repo tables — the 230 space groups with their standard short symbols and crystal classes
+(`spaceGroupTable.js`), the Bravais centering vectors and the per-system symmetry directions
+(`spaceGroupSymbol.js`), point-group orders (`symmetry.js`), and the Wyckoff positions of all 230
+groups in their ITA standard setting (`wyckoffTable.js`) — all documented in Steps 10–14. There is
+**no Python counterpart** anywhere in `rmc_toolkits/` or `web_app/backend/` — a repo-wide search for
+`spglib`, `space_group`, or `point_group` in the Python tree returns nothing.
 
 The **Model information** card is browser-computed too in static / local-folder mode. In
 server-directory (Flask) mode its raw inputs come from Python: `Dashboard.jsx` and `StructurePage.jsx`
@@ -2418,7 +2420,7 @@ mode and whenever a local run folder is selected.
 | $\mathbf t$ | fractional translation part | dimensionless |
 | $\tau$ (`tol`, `symTol`) | Cartesian atomic-position tolerance for symmetry acceptance | Å |
 | $\varrho$ (`residual`) | worst-site Cartesian mapping error of one operation | Å |
-| $\epsilon_G$ (`metricTol`) | *relative* tolerance on the metric-preservation test | dimensionless |
+| $\tau_L$ (`latticeTol`) | Cartesian tolerance on the lattice strain of a point operation (default $\tau$) | Å |
 
 ---
 
@@ -2760,9 +2762,19 @@ The scaling engines ([`rmc_toolkits/scaling.py`](../../rmc_toolkits/scaling.py),
 
 ### Part B — The Detected SG symmetry finder
 
-All of Part B lives in [`web_app/frontend/src/symmetry.js`](../../web_app/frontend/src/symmetry.js)
-(pure functions, no React, no I/O) with the structure→finder glue in
-[`web_app/frontend/src/symmetryModel.js`](../../web_app/frontend/src/symmetryModel.js).
+Part B is pure JavaScript (no React, no I/O) in six modules under `web_app/frontend/src/`:
+
+| Module | Role |
+| --- | --- |
+| [`symmetry.js`](../../web_app/frontend/src/symmetry.js) | lattice rotations, operation search and refinement, closure walk, ladder, point group, orbits (Steps 7–13), the operation estimate |
+| [`spaceGroupSymbol.js`](../../web_app/frontend/src/spaceGroupSymbol.js) | screw/glide analysis, centering, the standard-setting search, the H–M symbol, the lower-bound check (Step 10) |
+| [`spaceGroupTable.js`](../../web_app/frontend/src/spaceGroupTable.js) | the 230 groups: number, standard short symbol, crystal class, pre-2002 `e`-glide spellings |
+| [`wyckoff.js`](../../web_app/frontend/src/wyckoff.js) + [`wyckoffTable.js`](../../web_app/frontend/src/wyckoffTable.js) | Wyckoff positions of the 230 groups and the letter assignment (Step 14) |
+| [`symmetryModel.js`](../../web_app/frontend/src/symmetryModel.js) | structure → finder glue: the cell, the basis-size cap and operation budget, orbits and letters in the naming cell |
+
+Tests: `web_app/frontend/src/__tests__/symmetry*.test.js` and `wyckoff.test.js` (the 230-group
+fixtures in `__tests__/fixtures/spaceGroups.js`, well-known structures in
+`__tests__/fixtures/symmetryStructures.js`).
 
 **Convention**: fractional coordinates are **column vectors** and operations act as
 $\mathbf x' = R\,\mathbf x + \mathbf t$. The lattice matrix $A$ stores lattice vectors as **rows**,
@@ -2781,7 +2793,8 @@ built on a primitive cell, or on a non-standard setting, the finder analyses tha
 
 #### Step 7. Lattice point operations: integer automorphisms of the metric
 
-**Input**: $A$ (Å), relative tolerance $\epsilon_G$ (`metricTol`, default $10^{-2}$).
+**Input**: $A$ (Å), Cartesian lattice tolerance $\tau_L$ (`latticeTol`, Å; default: the pass
+tolerance $\tau$).
 
 The metric tensor is built explicitly,
 
@@ -2793,66 +2806,100 @@ $(R\mathbf x)^{\mathsf T}G(R\mathbf x) = \mathbf x^{\mathsf T}G\mathbf x$ for al
 $$\boxed{\,R^{\mathsf T} G R = G\,}$$
 
 and it maps the lattice onto itself iff $R$ is an integer matrix with $|\det R| = 1$. The code
-enumerates candidates **exhaustively**:
+enumerates candidates **exhaustively, in a reduced basis** of the lattice:
 
+- **Reduce** (`reduceBasis()`): an integer matrix $M$ ($\det M=+1$, rows = new basis vectors in the
+  given basis) such that $A_r = MA$ is a reduced basis of the same lattice — each vector is
+  repeatedly shortened by integer multiples of the others (pairwise size reduction, then
+  $\mathbf b_k \pm \mathbf b_i \pm \mathbf b_j$), shortest first, until nothing shortens (the
+  Minkowski conditions in three dimensions). A conventional cell is already reduced, so this only
+  matters for an oblique cell.
 - Every $3\times3$ matrix with entries drawn from $\{-1,0,1\}$: $3^9 = 19\,683$ patterns, iterated
-  as a base-3 counter over `code = 0 … 19682`.
-- Keep those with $\det R \in \{+1,-1\}$ — **6960** of the 19 683 (verified by direct enumeration).
-- Keep those satisfying $R^{\mathsf T}GR = G$ **componentwise** within an absolute threshold
+  as a base-3 counter over `code = 0 … 19682`, taken as $R_r$ in the reduced basis.
+- Keep those with $\det R_r \in \{+1,-1\}$ — **6960** of the 19 683 (verified by direct enumeration).
+- Keep those whose **Cartesian lattice strain** (on $A_r$) is at most $\tau_L$, and carry each back to
+  the given basis, $R = M^{\mathsf T}R_rM^{-\mathsf T}$ (an integer matrix, since $M$ is unimodular;
+  fractional columns transform as $\mathbf x_r = M^{-\mathsf T}\mathbf x$).
 
-$$\varepsilon = \epsilon_G \cdot \tfrac{1}{3}\operatorname{tr}G = \epsilon_G\cdot\tfrac13\big(a_1^2+a_2^2+a_3^2\big)\ \ [\text{Å}^2]$$
+**Lattice strain** (`latticeStrain()`). Used as if it were an isometry, $R$ acts on Cartesian
+vectors as $M = A^{\mathsf T}RA^{-\mathsf T}$, whose Green strain is
 
-  (the `|| 1` guard makes the scale 1 if the trace is 0).
+$$E=\tfrac12\big(M^{\mathsf T}M-I\big)=\tfrac12\,A^{-1}DA^{-\mathsf T},\qquad D = R^{\mathsf T}GR-G\ [\text{Å}^2].$$
 
-The surviving set is the **holohedry of the lattice in the conventional direct basis**. Verified by
-enumeration: a cubic metric ($a=10$ Å) yields exactly 48 operations; a primitive hexagonal metric
-($a=b=5$ Å, $c=8$ Å, $\gamma=120°$) yields exactly 24, at $\epsilon_G = 10^{-2}$.
+The cell edge $\mathbf a_i = A^{\mathsf T}\mathbf e_i$ is displaced by $|E\mathbf a_i| = \tfrac12|A^{-1}D\mathbf e_i|$,
+and the strain of $R$ is the largest of the three (evaluated with $A = A_r$, the reduced cell's
+edges — the same three edges as the given cell's for a conventional cell),
 
-**Why $\{-1,0,1\}$ suffices.** In a *conventional crystallographic setting*, the matrix of every
-point operation expressed in the direct basis has entries in $\{-1,0,1\}$. This holds for cubic,
-tetragonal, orthorhombic, monoclinic and triclinic settings (signed permutation matrices) and also
-for the hexagonal setting, where the six-fold is
-$\big[\begin{smallmatrix}1&-1&0\\ 1&0&0\\ 0&0&1\end{smallmatrix}\big]$. The code comment in
-`symmetry.js` lists the settings it claims to cover as "cubic, tetragonal, orthorhombic, hexagonal,
-rhombohedral-in-hex, monoclinic, triclinic" — i.e. rhombohedral **only in hexagonal axes**.
-(Independently of that comment: the primitive-rhombohedral setting also has $\{-1,0,1\}$ matrices,
-its three-fold being a cyclic permutation of the axes — but as Step 10(c) notes, `R` centering is
-never actually produced by the classifier.)
+$$\varrho_L(R) = \max_i\ \tfrac12\,\big|A^{-1}D\,\mathbf e_i\big|\quad[\text{Å}].$$
 
-**What it excludes.** Any setting in which a lattice automorphism requires an integer entry with
-magnitude $\ge 2$: sheared, doubled, or otherwise non-conventional cell choices, orthohexagonal
-descriptions of a hexagonal lattice, and in general any cell that is not (close to) a reduced
-conventional cell. It also excludes, by construction, any symmetry of the **supercell** that is not
-already a symmetry of the declared conventional cell, because $A$ is divided by $N$ before the
-search. The finder does **not** attempt cell reduction (Niggli/Delaunay) first.
+It is 0 for an exact lattice symmetry and is on the **same Å scale as an atomic-position residual**
+(Step 9). It is not an absolute threshold on $D$ scaled by the mean squared edge, so a long $c$ axis
+does not loosen the test on $a$ and $b$ (a 2.8 % $a/b$ splitting in a cell with $c = 20$ Å is a
+0.14 Å strain whatever $c$ is). A `NaN` lattice gives `NaN` strain and every $R$ is rejected.
+
+Each surviving $R$ carries its strain into the operation's residual: $\varrho = \max(\varrho_\text{atoms},
+\varrho_L)$ (Step 9). So a homogeneous strain of a higher-symmetry cell whose atoms still sit at
+parent-compatible *fractional* coordinates is no longer invisible: a perovskite with $c/a = 1.004$
+(0.016 Å) reads `P4/mmm` below 0.016 Å and `Pm-3m` above it, and the cubic rung of the ladder starts
+at ≈ 0.016 Å. Because the accepted set of lattice operations need not compose (two operations that
+each strain the cell by $\le\tau_L$ can compose to one that strains it by more), closure is not
+assumed here: it is enforced on the final operation set (Step 11).
+
+Verified by enumeration: a cubic metric ($a=10$ Å) yields exactly 48 operations; a primitive
+hexagonal metric ($a=b=5$ Å, $c=8$ Å, $\gamma=120°$) yields exactly 24. The full holohedry order
+(48, 24, 16, 12, 8, 4) also comes out for cubic P/F/I, tetragonal P/I, hexagonal, rhombohedral,
+orthorhombic P/C/I/F and monoclinic P lattices each re-described by 59 random unimodular basis
+changes (products of six random shears; $\tau_L = 10^{-6}$ Å), and the test suite pins it on four
+strongly oblique cells (`symmetryObliqueCells.test.js`).
+
+**Why $\{-1,0,1\}$ suffices — in a reduced basis.** In a Minkowski-reduced basis every lattice
+automorphism has entries in $\{-1,0,1\}$ (the enumeration spglib uses after Delaunay reduction); a
+conventional cubic, tetragonal, orthorhombic, monoclinic, hexagonal (six-fold
+$\big[\begin{smallmatrix}1&-1&0\\ 1&0&0\\ 0&0&1\end{smallmatrix}\big]$) or rhombohedral cell is already such a
+basis. In an **oblique** description of the same lattice — a tetragonal crystal on a 60° cell
+($\mathbf a' = \mathbf a+\mathbf b$), a sheared cell — some automorphisms need entries of magnitude 2 or
+more in the given basis. Before 1.0 the scan ran in the given basis, missed them, and named the
+subgroup that was left with its own number (rutile on a 60° cell: `Cmmm` No. 65; a Pnma perovskite
+on a sheared cell: `P-1` No. 2). Scanning the reduced basis and carrying the matrices back finds
+every lattice rotation of the given cell, whatever its shape.
+
+**What it still excludes.** Any symmetry of the structure that does not map the **declared cell's
+lattice** $\mathbb Z^3$ onto itself: the finder works in the declared cell, and $A$ is divided by $N$
+before the search. When the declared cell is a supercell of the crystal's own translation lattice
+$\mathbb Z^3+T$ (Step 10c) — a perovskite on a $2\times2\times1$ or $\sqrt2\times\sqrt2\times2$ cell,
+rocksalt on a $1\times1\times2$ cell — rotations of $\mathbb Z^3+T$ that do not preserve $\mathbb Z^3$
+(the cubic 3-folds there) are never tested. The naming step detects this and reports the result
+as a lower bound (`≥ <symbol>`, Step 10f).
 
 **Output**: an array of integer $3\times3$ matrices (row-major), typically 2–48 entries.
 
-**Code**: `symmetry.js` → `metricTensor()`, `det3()`, `conjugate()`, `latticePointOps()`.
-Note: `latticePointOps` documents a default `tol = 1e-3`, but **every call site in the app passes
-$10^{-2}$** (`findSpaceGroupOps(..., metricTol = 1e-2)`), so $10^{-2}$ is the effective default.
+**Code**: `symmetry.js` → `metricTensor()`, `det3()`, `inv3()`, `conjugate()`, `latticeStrain()`,
+`latticeCandidates()`, `latticePointOps()` (the exported wrapper, default $\tau_L = 0.01$ Å);
+`spaceGroupSymbol.js` → `reduceBasis()` (re-exported by `symmetry.js`; the naming step uses it too). The
+finder passes $\tau_L = \min(\texttt{latticeTol}, \tau)$ with `latticeTol` defaulting to $\tau$.
 
 #### Step 8. Candidate translations
 
 **Input**: the point-operation list, the basis $\{(e_s, \mathbf x_s)\}$ (element + fractional
 position), the Cartesian tolerance $\tau$ Å.
 
-The basis is bucketed by element (`byEl`). A reference atom is chosen as the **first site of the
-rarest element** (fewest sites in the cell) — purely a speed choice, since it minimises the number
-of candidate partners:
+The basis is bucketed by element (`byEl`). A reference atom $a_0$ is chosen from the **rarest
+element** (fewest sites in the cell) — a speed choice, since it minimises the number of candidate
+partners — and both choices are made from the sites themselves, not from their order:
 
 ```
-refEl   = basis[0].el                        // seed
-for (el, arr) of byEl: if (arr.length < |byEl[refEl]|) refEl = el   // STRICT <
-refAtom = byEl[refEl][0]                     // = a0
+refEl   = the element with fewest sites; ties → the smaller element name
+refAtom = the refEl site with the lexicographically smallest (x, y, z), each wrapped to [0, 1)
 ```
 
-The tie-break is therefore **not** arbitrary or alphabetical: `refEl` is seeded with `basis[0].el`
-and replaced only on a *strict* `<`, so when two elements have equally few sites the winner is the
-one whose first site comes earliest in `basis` — and `byEl` is a `Map` filled in basis order, which
-is ascending reference number (Step 5). `refAtom` is likewise the lowest-reference-number site of
-that element. Since the reference atom fixes the candidate translation set, this determines the
-enumeration order and is reproducibility-relevant.
+The reference atom fixes the *seed* translations, and a seed is refined by least squares (Step 9)
+to the nearest local optimum: at a tight pairing radius every seed of one operation reaches the
+same one, but at the ladder's 2 Å (Step 9) a seed can settle elsewhere. So $a_0$ must not depend on
+the order of the basis. Before 1.0 it was the first site of the rarest element in basis order (ties
+by first appearance), and a shuffled basis could move the ladder's bricks: a noisy $P6_3/mmc$
+(σ = 0.03 Å) had its $P6_3/mmc 	o P6/mmm$ boundary at 0.794 Å in one site order and 0.767 Å in
+another. With the order-free choice the operations, residuals and bricks are the same for any order
+of the basis (up to floating-point summation order in the mean offset).
 
 For each rotation $R$ and each same-element candidate partner $\mathbf x_b \in$ `byEl[refEl]`:
 
@@ -2861,37 +2908,55 @@ $$\mathbf t = \operatorname{frac}\!\big(\mathbf x_b - R\,\mathbf x_{a_0}\big),\q
 
 This is exhaustive over the possible images of $a_0$: any genuine operation $\{R|\mathbf t\}$ must
 send $a_0$ to *some* same-element site, so its translation part is one of these candidates (up to
-the mapping error at that site).
+the mapping error at that site). The candidate is only a **seed**: it carries the displacement noise
+of $a_0$ and of its partner, so Step 9 refines it by least squares over every site before the
+operation is accepted or its residual recorded. Seeds of the same operation from nearby
+starting points refine to the same translation; which atom is $a_0$ is fixed independently of the
+basis order (above), so even a seed that settles in another local optimum does so in every order.
 
-**Deduplication**: a candidate is skipped if it is within $\tau$ Å (minimum-image Cartesian
-distance, Step 9) of an already-**accepted** translation for the same $R$. Rejected translations are
-not remembered, so near-duplicates of a rejected candidate are re-tested.
+**Deduplication**: every seed is refined (Step 9). Refined translations of one $R$ closer than
+$\tau$ Å to each other — $\tau$ being the **pass** tolerance, 1 Å in the card's ladder and headline
+(Step 12) — (minimum-image Cartesian distance) are one operation at this resolution, and
+the **best-fitting** one is kept: they are taken in order of residual (ties by translation) and
+each is dropped if it lies within $\tau$ of one already kept. Before 1.0 the first one found, in
+seed order, was kept and seeds near it were skipped; at the ladder's loose 1 Å a poor
+near-duplicate could then shadow the true operation for good (a noisy $P4_322$: a 4-fold at 0.8 Å
+residual kept, 0.7 Å from the $4_3$ at 0.2 Å, so the ladder read `P222_1` up to 0.96 Å and then a
+set that was not a group, while the headline read `P4_322`).
 
-**Code**: `symmetry.js` → `findSpaceGroupOps()`, inner loop; `applyR()`.
+**Code**: `symmetry.js` → `detectOperations()`; `applyR()`.
 
 #### Step 9. Acceptance test and residual
 
-For a candidate $\{R|\mathbf t\}$, every basis site $s$ is mapped:
+For a candidate $\{R|\mathbf t\}$, every basis site $s$ is mapped,
 
-$$\mathbf y_s = \operatorname{frac}\big(R\,\mathbf x_s + \mathbf t\big)$$
+$$\mathbf y_s = R\,\mathbf x_s + \mathbf t ,$$
 
-and matched against the **same-element** sites $o$ using a minimum-image Cartesian distance:
+and paired with its **nearest same-element** site $o(s)$ under a minimum-image Cartesian distance:
 
-$$d(\mathbf y,\mathbf x_o) = \big\| A^{\mathsf T}\,\mathbf\delta \big\|_2,\qquad
-\delta_i = (y_i - x_{o,i}) - \operatorname{round}(y_i - x_{o,i})$$
+$$\boldsymbol\delta_s = (\mathbf x_{o} - \mathbf y_s) - \operatorname{round}(\mathbf x_{o} - \mathbf y_s),\qquad
+d_s = \big\| A^{\mathsf T}\boldsymbol\delta_s \big\|_2$$
 
-(the component-wise nearest-integer wrap; $\|\cdot\|_2$ via `Math.hypot`, result in Å). The
-operation is **accepted** iff
+(the component-wise nearest-integer wrap; result in Å).
 
-$$\max_{s}\ \min_{o\,:\,e_o=e_s} d(\mathbf y_s, \mathbf x_o)\ \le\ \tau$$
+**Least-squares translation** (`refineOperation()`). With the pairing fixed, the translation that
+minimises $\sum_s d_s^2$ is
 
-and its **residual** is that same quantity:
+$$\mathbf t \leftarrow \mathbf t + \frac1N\sum_s \boldsymbol\delta_s ,$$
 
-$$\varrho(R,\mathbf t) \;=\; \max_{s}\ \min_{o\,:\,e_o=e_s} d(\mathbf y_s,\mathbf x_o)\ \ [\text{Å}]$$
+because every pair shares the metric $G$. The sites are re-paired at the new $\mathbf t$ and the
+step repeated until the mean offset vanishes (at most four passes). Pairing is within $2\tau$ of
+the pass (the seed can be off by the noise of the two atoms that defined it; 2 Å in the card's
+1 Å pass), so the pass tolerance, not only the acceptance threshold, decides which local optimum a
+seed refines to; the refined operation is **accepted** iff every site then has a partner and
 
-i.e. the *worst-site* nearest-image error — an $L_\infty$-over-sites, $L_2$-in-space measure. The
-implementation short-circuits to $\infty$ (reject) as soon as one site has no same-element partner
-within $\tau$.
+$$\varrho(R,\mathbf t) \;=\; \max_{s}\ d_s \;\le\; \tau \quad [\text{Å}]$$
+
+i.e. the *worst-site* nearest-image error at the least-squares translation — an
+$L_\infty$-over-sites, $L_2$-in-space measure. It is independent of the basis order (with $a_0$
+chosen as above) and never
+larger than the error read off a single reference pair (on the bundled demo the full-group residual
+drops from 0.038 Å to 0.031 Å). `!(ϱ ≤ τ)` also rejects `NaN`.
 
 Three properties matter for interpretation:
 
@@ -2907,17 +2972,17 @@ difference is only visible at exactly the tolerance, so it is worth stating per 
 
 | Test | Code | Boundary |
 | --- | --- | --- |
-| operation acceptance (Step 9) | `if (best > tol) return Infinity` | **non-strict**: $d = \tau$ is accepted |
+| operation acceptance (Step 9) | `if (!m \|\| !(m.worst <= tol)) return null` | **non-strict**: $\varrho = \tau$ is accepted |
 | translation dedup (Step 8) | `cartDist(u, t, A) < tol` | strict |
 | orbit union + stabiliser (Step 14) | `bestD = tol; if (d < bestD)`, `cartDist(...) < tol` | strict |
-| centering match (Step 10c) | `… < tol` with `tol = 0.1` | strict |
-| Wyckoff coordinate match (Step 14) | `Math.abs(d) < 0.15` | strict |
+| Wyckoff coordinate form (Step 14) | `Math.abs(fitted - p[i]) > tol` rejects | **non-strict**: a deviation of exactly `tolFrac` fits |
+| translation snap (Step 10c) | `<= tol` with `tol = 0.02` | non-strict |
 | residual threshold filters (Steps 12–13) | `o.residual <= r + 1e-9` | non-strict, with $10^{-9}$ slack |
 
 `findSpaceGroupOps` returns `{ ops: [{R, t, residual}], order = ops.length, maxResidual }` merged
 with the classification of Step 10. (`maxResidual` here is the max over *accepted* ops.)
 
-**Code**: `symmetry.js` → `mappingResidual()`, `cartDist()`, `findSpaceGroupOps()`.
+**Code**: `symmetry.js` → `matchImages()`, `refineOperation()`, `offset()`, `findSpaceGroupOps()`.
 
 #### Step 10. Classification: centering, point group, Hermann–Mauguin symbol
 
@@ -2927,45 +2992,38 @@ with the classification of Step 10. (`maxResidual` here is the max over *accepte
 `nPoint = ` number of distinct $R$. This set *is* the point group of the detected space group.
 
 **(b) Pure translations.** Operations whose rotation is the identity are collected. Their count,
-`nTrans`, uses the key `Math.round((((t_i % 1) + 1) % 1) * 1000)` per component — a fixed $10^{-3}$
-fractional grid.
+`nTrans`, uses the key `Math.round(wrap01(t_i) * 1000) % 1000` per component — a fixed $10^{-3}$
+fractional grid, folded mod 1 so that a translation recovered as 0.9997 and an exact 0 count once.
 
-> **Wraparound aliasing.** The key does **not** fold 1000 back to 0. A translation numerically just
-> below 1 — e.g. $t = 0.9997$, recovered instead of an exact 0 because the basis positions are
-> circular means — keys to `1000` while the identity translation keys to `0`, so the same translation
-> modulo 1 is counted twice. Because `isValidGroup` compares $n_\mathrm{space}$ against
-> $|P|\cdot n_\mathrm{trans}$ *exactly* (Step 11), one such off-by-one silently invalidates an
-> otherwise real group; the ladder then absorbs it by extending the previous rung, and
-> `spaceGroupAtTolerance` falls back to a tighter threshold.
+`tolFrac` $=\tau/\overline a$ with $\overline a = \tfrac13(|\mathbf a_1|+|\mathbf a_2|+|\mathbf a_3|)$
+(`meanEdge()`) is used only by the closure check of a set handed in directly (Step 11).
 
-Any identity-rotation translation with **at least one** component greater than `tolFrac` is
-additionally pushed onto the centering-candidate list, where
+**(c) Centering letter** (`centeringOfOps()` → `bravaisCentering()`, `spaceGroupSymbol.js`). The
+pure translations are snapped to exact fractions as a **group** (`pureTranslations()`): the $n$
+pure translations (zero included) form a finite group, so each has an order $d$ dividing $n$
+($d\boldsymbol\tau$ is a lattice vector), and each is snapped to $\operatorname{round}(d\boldsymbol\tau)/d$ with
+the smallest such $d$ for which every component lies within 0.02 of the $1/d$ grid. $d$ is capped
+at $1/(2\cdot0.02) = 25$, where neighbouring grid points are $2\cdot0.02$ apart and a snap would be a
+guess. This covers every centering and any supercell fraction up to $1/25$ (fifths, sevenths, …)
+with the loose tolerance a refined translation needs at a loose $\tau$ with few sites (0.0075 off
+on the noisy R-3m fixture at $\tau = 0.6$ Å). A set that does not snap, or in which two
+translations snap together, gives no letter. Before 1.0 each component was snapped to a fixed
+$1/24$ grid, which holds no fifths: CsCl in a $5\times5\times5$ cell went unnamed. The **whole
+set**, zero included, must equal one Bravais centering exactly:
 
-$$\texttt{tolFrac} = \frac{\tau}{\overline{a}},\qquad
-\overline{a}=\tfrac13\big(|\mathbf a_1|+|\mathbf a_2|+|\mathbf a_3|\big)\ [\text{Å}]$$
-
-(`meanEdge()` — the mean of the three conventional edge lengths, not just $|\mathbf a_1|$).
-
-**(c) Centering letter.** `matchCentering()` compares the candidate translations against the Bravais
-centering vector sets, **in this order**:
-
-| Letter | Required vectors (fractional) |
+| Letter | Translations besides 0 (fractional) |
 | --- | --- |
-| `F` | $(0,\tfrac12,\tfrac12)$, $(\tfrac12,0,\tfrac12)$, $(\tfrac12,\tfrac12,0)$ |
+| `P` | none |
+| `A` / `B` / `C` | $(0,\tfrac12,\tfrac12)$ / $(\tfrac12,0,\tfrac12)$ / $(\tfrac12,\tfrac12,0)$ |
 | `I` | $(\tfrac12,\tfrac12,\tfrac12)$ |
-| `A` | $(0,\tfrac12,\tfrac12)$ |
-| `B` | $(\tfrac12,0,\tfrac12)$ |
-| `C` | $(\tfrac12,\tfrac12,0)$ |
+| `F` | $(0,\tfrac12,\tfrac12)$, $(\tfrac12,0,\tfrac12)$, $(\tfrac12,\tfrac12,0)$ |
+| `R` | obverse $(\tfrac23,\tfrac13,\tfrac13)$, $(\tfrac13,\tfrac23,\tfrac23)$; reverse $(\tfrac13,\tfrac23,\tfrac13)$, $(\tfrac23,\tfrac13,\tfrac23)$ |
 
-A vector is "present" if every component matches modulo 1 within a **hard-coded 0.1 fractional**
-tolerance ($\big|((t_i-v_i+0.5)\bmod 1)-0.5\big| < 0.1$; implemented with JavaScript `%`, a
-sign-following *remainder* rather than a true modulus — equivalent here only because `t` has already
-been wrapped into $[0,1)$ by `wrap01` and the centering components are 0 or ½, so the argument is
-never negative) — note `classifyOperations` calls
-`matchCentering(centerings)` without passing `tolFrac`, so the 0.1 default is always used. The first
-letter whose *whole* vector set is present wins; otherwise `P`. **`R` (rhombohedral) centering is
-never produced** — it is not in the table, even though `ALLOWED_CENTERING` lists it as permitted for
-the trigonal system.
+A translation set that is not exactly one of these — the finer lattice of a **supercell** of the
+true cell (a perovskite in a $2\times2\times2$ cell has all eight $(i/2, j/2, k/2)$, which contain the F
+vectors but are not an F lattice) — gives `centering = null`. Before 1.0 the letter came from the
+mere presence of the vectors, so such cells were read as F, I or C. The letter is the centering of
+the **given** cell; the symbol is named in whatever cell Step 10(f) finds, with that cell's letter.
 
 **(d) Rotation type from determinant and trace.** Both are similarity invariants, so this is
 basis-independent. With $t = \operatorname{tr}R$:
@@ -3004,130 +3062,246 @@ The crystal **class is derived from the rotation content itself**, not from the 
 deliberate, so that a structure whose symmetry is a proper subgroup of its lattice's holohedry (the
 generic case partway up the tolerance ladder) is classified correctly.
 
-**(f) Space-group symbol.** `spaceGroupHM(centering, pointGroup)` simply concatenates:
+**(f) Space-group symbol** (`spaceGroupHM()` → `spaceGroupSymbol.js`). Triclinic groups are `P1`
+(No. 1) or `P-1` (No. 2) whatever cell describes them (unless item 4 marks them as a lower bound).
+Every other group is named in a **standard setting**, which the RMC cell need not be:
 
-$$\texttt{symbol} = \texttt{centering} \,\Vert\, \texttt{pointGroup}$$
+1. **Symmetry elements** (`classifyElement()`): each operation's characteristic direction (rotation
+   axis, or mirror normal), order, and — from the **intrinsic translation**
+   $\mathbf t_\text{int} = \tfrac1n\sum_{k<n}R^k\mathbf t$ (independent of the origin) — whether a
+   rotation is a screw $n_m$ ($m = \mathrm{round}(n\,\mathbf t_\text{int}\!\cdot\mathbf d/\mathbf d\!\cdot\!\mathbf d) \bmod n$
+   along the axis $\mathbf d$, from the unreduced $\mathbf t_\text{int}$: reducing each component
+   mod 1 is not a lattice translation along an axis with components of both signs) and which
+   glide ($a,b,c,n,d$, or $e$) a reflection is ($\mathbf t_\text{int}$ reduced mod 1 and snapped to
+   quarters). An operation stands for its coset $\{R\,|\,\mathbf t+\boldsymbol\ell\}$, and where
+   the lattice projects onto the axis or plane in a fraction of its period ($\tfrac1n\sum_k R^k\boldsymbol\ell$
+   not a lattice vector) the representatives differ in kind: the $[100]$ 2-fold of a hexagonal cell
+   and the $2_1$ half a cell away, a cubic $\langle111\rangle$ 3-fold and its $3_1$, $3_2$, a mirror on
+   a tetragonal or cubic diagonal and an $n$-glide. Which representative the finder holds is an
+   accident of wrapping (noise turns an exact 0 into 0.9995), so the symbol reads **every** element
+   of each coset (`cosetElements()`, $\boldsymbol\ell\in\{-1,0,1\}^3$) and the short-symbol rules
+   pick the highest-priority one per position (rotation before screw, $m$ before glides). Before 1.0
+   the held representative decided: a noisy $\{E, 2_{[100]}\}$ subgroup of $P6_3/mmc$ read `P2_1`
+   No. 4 (it is `C2` No. 5 — item 2: its conventional cell is the orthohexagonal C cell).
+2. **Candidate cells** (`hmSymbolInStandardSetting()`). The group is re-expressed (`applySetting()`:
+   $R' = Q^{-1}RQ$, $\mathbf t' = Q^{-1}\mathbf t$, and the new cell's translations $Q^{-1}(\mathbb Z^3 + T)$
+   mod 1) in a sequence of cells $Q$ (columns = new basis vectors in the old fractional basis), and
+   named in the first that is conventional:
+   - the given cell and its five other axis orders (`PERMUTATIONS`, all right-handed so a screw's
+     handedness survives), for every crystal system;
+   - cells built from the symmetry elements (`derivedBases()`), each basis vector the **shortest
+     lattice vector** of the full translation lattice $\mathbb Z^3 + T$ along its direction (the
+     candidates, `shortLatticeVectors()`, are $\mathbf n + \boldsymbol\tau$ with $\mathbf n$ over a
+     $\pm3$ box of a **reduced** basis of $\mathbb Z^3$ — `reduceBasis()`, Step 7 — so the axes of a
+     crystal on a strongly oblique cell are in reach; $\pm3$ covers the $c$ axis of an R lattice on
+     a reduced rhombohedral basis):
+     cubic — $a,b,c$ on the three 4-fold ($\bar4$ for $\bar43m$, 2-fold for $23$, $m\bar3$) axes;
+     tetragonal — $c$ on the 4 / $\bar4$ axis, $a$ the shortest lattice vector $\perp c$ (and its
+     45° diagonal), $b = 4\cdot a$; trigonal/hexagonal — $c$ on the 3-fold, $a = \pm$ the shortest
+     lattice vector $\perp c$, $b = 3\cdot a$; orthorhombic — the three 2-fold axes / mirror normals
+     in all six orders; monoclinic — $b$ on the unique axis and $(a, c)$ every unimodular pair from
+     the two shortest lattice vectors $\perp b$ (covers the cell choices, e.g. I2/a → C2/c, and
+     P2₁/n → P2₁/c), tried shortest $|a|^2+|c|^2$ first and then non-acute β — the reduced cell
+     choice, so where several cell choices spell the symbol the letters are those of the reduced
+     cell (the cell choices $a' = a + kc$ of P2₁/c swap which inversion centres are 2b and 2d).
+     "Perpendicular" and "along" are decided by the rotations themselves
+     ($R\mathbf v = \pm\mathbf v$, $\sum_k R^k\mathbf v = 0$), exactly, not by the metric.
 
-and looks the string up in a 69-entry `SG_NUMBER` table for the international number; a miss yields
-`null` (the card then shows the symbol and point group without a number). The table does cover every
-*producible* combination (allowed centering × point group, given that `R` is unreachable), so in
-practice a number is always found except through the Step-12 fallback. **This is a symmorphic
-symbol only** — screw axes and glide planes are never detected or named. A diamond-type structure
-(`Fd-3m`, No. 227) is reported as `Fm-3m` (No. 225); a `P2₁` structure is reported as `P2`.
+   The new cell's translation set is $\mathbb Z^3 + T$ modulo $Q\mathbb Z^3$, generated mod 1 from
+   $Q^{-1}\mathbf e_i$ and $Q^{-1}\boldsymbol\tau$ by closure (no search box), and must have
+   $|T|\det Q$ members. A cell is kept only if its basis vectors are lattice vectors, it is
+   right-handed, every rotation is an integer matrix in it, its translation set is exactly a
+   Bravais centering (Step 10c) that a
+   standard setting of the system uses (monoclinic P, C; orthorhombic P, A, C, I, F; tetragonal P,
+   I; trigonal P, R obverse; hexagonal P; cubic P, I, F), every rotation has the **block form** of a
+   conventional cell (`elementsFitSetting()` → `conventionalForm()`: the monoclinic $b$, or the
+   tetragonal / trigonal / hexagonal $c$, is perpendicular to the other two basis vectors, so $R$
+   maps it onto $\pm$ itself and the other two into their own plane — $R_{01}=R_{10}=R_{12}=R_{21}=0$,
+   resp. $R_{02}=R_{12}=R_{20}=R_{21}=0$; orthorhombic rotations diagonal, cubic ones signed
+   permutations), and every element lies along a direction family that may carry its type
+   (`elementsFitSetting()`: a tetragonal 4-fold only on [001], cubic 3-folds only on
+   $\langle111\rangle$, …). The element directions alone do not show that a cell is conventional:
+   on the primitive cell $((\mathbf a+\mathbf b)/2, \mathbf b, \mathbf c)$ of a C-monoclinic lattice
+   the 2-fold still runs along the second basis vector, and on
+   $((\mathbf a+\mathbf b+\mathbf c)/2, (-\mathbf a+\mathbf b+\mathbf c)/2, \mathbf c)$ of an I-tetragonal
+   one the 4-fold along the third, but the other vectors lean on the axis and the cell's pure
+   translations are primitive where the conventional cell's are centred. Before the block-form
+   check (and on 0.x) C2, Cm, Cc, C2/m, C2/c read `P2` No. 3 … `P2/c` No. 13, I4, I-4, I4/m
+   `P4` No. 75, `P-4` No. 81, `P4/m` No. 83, and R3, R-3 `P3` No. 143, `P-3` No. 147 on such cells,
+   with the P group's Wyckoff letters; and every monoclinic rung of a hexagonal or trigonal ladder
+   was a P group — a 2-fold along $a_\text{hex}$ (or a mirror normal to it) of a P-hexagonal lattice
+   has the orthohexagonal C lattice, so noisy wurtzite's `Pm` is `Cm` No. 8 and bismuth's
+   `P2`, `P2/m` are `C2` No. 5, `C2/m` No. 12. Because derived cells use the full translation lattice,
+   a supercell of the true cell is named in the true cell (CsCl in a $2\times2\times2$ cell: `Pm-3m`), and
+   a subgroup that keeps its parent's centering is named in its own conventional cell (Ga shifted
+   along [111] in the F-cubic lacunar spinel: `R3m` on hexagonal axes; tetragonally strained
+   rocksalt in its F cell: `I4/mmm`).
+3. **Symbol** (`hmSymbolCandidates()`): the system's ordered symmetry directions
+   (`SYSTEM_DIRECTIONS`) are the positions of the Hermann–Mauguin symbol; each is filled with the
+   elements along it by the short-symbol rules, and all defensible spellings are listed best-first.
+   A candidate is **accepted** only if it is a tabulated standard symbol (230 groups plus the
+   pre-2002 `e`-glide spellings, `spaceGroupTable.js`) **of the detected crystal class**
+   (`pointGroupOfSymbol()`) and starts with the cell's centering letter. The number is looked up
+   only for an accepted symbol; `Cmca`-style spellings are shown in the current form.
+4. **Lower bound** (`allLatticeOpsTested()`, `latticeFullyTested()`). The finder only tries
+   rotations that map the **given** cell's lattice $\mathbb Z^3$ onto itself (Step 7). When the
+   given cell is a supercell of the crystal's own translation lattice $\mathbb Z^3+T$, rotations of
+   that lattice which do not preserve $\mathbb Z^3$ were never tested — a perovskite in a
+   $\sqrt2\times\sqrt2\times2$ or $2\times2\times1$ cell, or rocksalt in a $1\times1\times2$ cell, cannot test the
+   cubic 3-folds. The check takes a primitive basis $P$ of $\mathbb Z^3+T$ (`primitiveBasis()`: its
+   successive minima, which in three dimensions always form a basis), lists that lattice's
+   rotations with the Step 7 scan at a strain of the group's worst residual (at least
+   $10^{-3}$ Å), and requires every one, carried to the given cell ($PRP^{-1}$), to be an integer
+   matrix. If one is not, the result is only a lower bound and is shown as `≥ P4/mmm`
+   (`lowerBoundLabel()`), with no number and no Wyckoff letters — whatever the branch: a named
+   symbol, `P1`/`P-1`, or a crystal class (`≥ 4/mmm class`). Before 1.0 only the naming cell's own
+   rotations were checked, so rocksalt in a $1\times1\times2$ cell read `I4/mmm` No. 139.
+5. **Crystal class.** If no cell gives an accepted symbol, the card shows `"<point group> class"`
+   (e.g. `4/mmm class`, `classLabel()`) with no number and no letters. Positional assembly on a cell
+   that is not conventional can spell another group's symbol (rocksalt on its primitive cell gives
+   `Pmmm`); before 1.0 such spellings, and the symmorphic `centering + point group` fallback, were
+   shown with that group's ITA number.
 
-**Code**: `symmetry.js` → `classifyOperations()`, `matchCentering()`, `classifyRotation()`,
-`pointGroupOf()`, `spaceGroupHM()`, constants `CENTERING_SETS`, `POINT_GROUP_ORDER`, `PG_SYSTEM`,
-`ALLOWED_CENTERING`, `SG_NUMBER`.
+Checked on all 230 groups (the test fixtures) in all six axis orders, and on four oblique cells
+(a 60° cell, a sheared cell and two strongly oblique unimodular cells: 839 group–cell pairs, exact
+and with 0.005 Å noise): every group is named correctly (the two location-degenerate pairs by
+Step 10g). Before 1.0, 753 of those 839 oblique descriptions got another group's number (rutile on
+a 60° cell: `Cmmm` No. 65), because the Step 7 scan missed the rotations that need entries of
+magnitude 2 there. The centred groups above on their primitive axis-keeping cells get the
+conventional description's number and Wyckoff labels, and no P-named rung of the noisy
+trigonal/hexagonal fixture ladders hides a centring (an independent check: along the principal
+axis, the axial part $\tfrac1n\sum_k R^k\mathbf g$ of every lattice vector $\mathbf g$ is itself a
+lattice vector; `symmetryHiddenCentring.test.js`).
 
-#### Step 11. Group-validity (coset-count) test
+**Code**: `symmetry.js` → `classifyOperations()`, `classifyRotation()`, `pointGroupOf()`,
+`spaceGroupHM()`, `classLabel()`, `lowerBoundLabel()`, `POINT_GROUP_ORDER`; `spaceGroupSymbol.js` →
+`intrinsicTranslation()`, `classifyElement()`, `cosetElements()`, `centeringOfOps()`, `bravaisCentering()`,
+`applySetting()`, `derivedBases()`, `elementsFitSetting()`, `hmSymbolCandidates()`,
+`hmSymbolInStandardSetting()`, `reduceBasis()`, `shortLatticeVectors()`, `primitiveBasis()`,
+`allLatticeOpsTested()`, `latticeFullyTested()`, `pureTranslations()`, `twoFoldsMeet()`, `transformOps()`;
+`spaceGroupTable.js` →
+`SPACE_GROUPS`, `spaceGroupNumber()`, `pointGroupOfSymbol()`, `canonicalSymbol()`.
 
-A partial, mid-transition operation set is not a group and would classify to a nonsense symbol such
-as `B-43m`. `isValidGroup(cls)` rejects those with two conditions:
+**(g) Location-degenerate pairs** (`twoFoldsMeet()`, `resolveLocationPair()`). I222/I2₁2₁2₁
+(Nos. 23/24) and I23/I2₁3 (Nos. 197/199) contain the same element types along the same directions
+(the I centering turns every 2-fold into a 2₁ half a cell away and vice versa), so the symbol
+candidates cannot separate them; they differ in where the axes sit. In the standard setting a pure
+2-fold along axis $i$, $\{R|\mathbf t\}$ with $t_i\equiv0$, fixes the line $2p_j \equiv t_j$ ($j\ne i$); the
+2-folds along $a$, $b$, $c$ have a common point iff, for some choice of one pure 2-fold per axis,
+their translations agree mod 1 on the shared components. They meet in I222 and I23 and never in
+I2₁2₁2₁ and I2₁3, whatever the origin. Before 1.0 both members of each pair were reported as the
+symmorphic one (with its number).
 
-$$\text{(i)}\quad n_\mathrm{space} \;=\; |P|\times \max(n_\mathrm{trans},1)
-\qquad\text{(ii)}\quad \texttt{centering}\in \texttt{ALLOWED\_CENTERING}[\,\mathrm{system}(P)\,]$$
+#### Step 11. Group closure: the largest closed group at each threshold
 
-where $|P|$ is the tabulated order of the detected point group (`POINT_GROUP_ORDER`, 0 for an
-unknown symbol → automatic reject) and $n_\mathrm{trans}$ is the number of distinct pure translations
-counted in Step 10(b). Condition (i) says the operation set is exactly a union of $|P|$ cosets of
-the detected translation subgroup — the cardinality any real space-group operation set restricted to
-one cell must have. Counting $n_\mathrm{trans}$ rather than assuming a standard centering multiplicity
-is what makes the test survive a cell that is itself a tiling (extra lattice translations).
+With noise, every operation of the true group has its own residual, so the operations with
+$\varrho \le r$ are an arbitrary **subset** of the group — and a subset of the right *size* is not a
+group. (Before 1.0 only the size was checked, and the ladder of the bundled demo showed sets such as
+`{E, 2, m, m'}` with a missing product as "P2 (No. 3)".) Nothing is classified unless it is
+**closed under composition** modulo lattice translations.
 
-Allowed centerings per system:
+**Products.** $\{R_a|\mathbf t_a\}\{R_b|\mathbf t_b\} = \{R_aR_b\,|\,R_a\mathbf t_b+\mathbf t_a\}$ (`composeOps()`),
+matched to the detected operation $k$ with the same rotation and the nearest translation, accepted
+when the Cartesian translation mismatch is at most $\varrho_a+\varrho_b+\varrho_k+10^{-5}$ Å
+(`productTable()`, evaluated lazily and memoised). The bound follows from the residuals: each
+operation maps every site to within its residual of a same-element site, so the product maps every
+site to within $\varrho_a+\varrho_b$, and two same-rotation operations sending a site to the same
+partner differ by at most the sum of all three. Translations of one rotation are at least $\tau$
+apart (Step 8 dedup), so the nearest one is the only candidate.
 
-| System | tri | mono | orth | tet | trig | hex | cub |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Centerings | `P` | `P C` | `P C I F A B` | `P I` | `P R` | `P` | `P F I` |
+**The walk** (`groupsByThreshold()`). The distinct residuals are visited tight → loose; at each
+threshold $r$ the newly admitted operations are offered, best residual first, to the current group
+$H$ (which starts as the identity):
 
-This is a **cardinality/consistency check, not an explicit closure check** — the code never verifies
-that composing two accepted operations yields a third accepted operation.
+1. **Growth** (`growingGroup().extend()`): the group generated by $H$ and the candidate $x$ is built
+   from generators — add $H\cdot x$, then right-multiply every new element by every generator (a
+   finite set holding the identity and closed under right multiplication by the generators *is* the
+   group they generate). It replaces $H$ only if every element of it has $\varrho \le r$. A candidate
+   that fails waits for the operation that blocked it to be admitted; a product that does not exist
+   among the detected operations blocks it for good.
+2. **Elimination** (`closeUnder()`, only when there are at most 256 candidate operations): starting
+   from every operation with $\varrho\le r$, repeatedly drop the one with the **worst** residual among
+   those taking part in a missing product, until the set is closed. If that group is larger than
+   $H$, it replaces $H$ (growth from a smaller group cannot reach a group that does not contain it).
 
-**Code**: `symmetry.js` → `isValidGroup()`.
+A group closed at a tighter threshold is still a closed subset at a looser one, so the reported
+group never shrinks as the tolerance loosens. Both procedures are greedy: the result is always
+closed, and maximal in practice, but maximality is not proven.
+
+**Cardinality pre-filter.** `isValidGroup(cls)` additionally requires
+
+$$n_\mathrm{space} \;=\; |P|\times \max(n_\mathrm{trans},1),$$
+
+which any closed set satisfies ($|P|$ = tabulated order of the point group, `POINT_GROUP_ORDER`;
+$n_\mathrm{trans}$ = distinct pure translations, keyed on a $10^{-3}$ grid **after folding mod 1**, so
+0.9997 and 0 count once). `classifyOperations(ops, tolFrac, { closed })` names a set only if it
+passes this and is closed — by construction when the walk built it (`closed: true`), otherwise by an
+all-pairs check (`isClosedSet()`, products matched within $3\cdot$`tolFrac` per fractional
+component). A set that fails is labelled `not a group` with no number. The walk's products are
+matched within the residuals, so this is not excluded by construction at loose thresholds. Before
+1.0 it was reached through the Step 8 near-duplicates (a noisy $P4_322$ ladder ended in `not a
+group`). It can still be reached: a 4-site noisy Pm structure read `not a group` (6–7 operations
+with two pure translations) at 0.90–0.98 Å in a pass at that τ. In the ladder's 1 Å pass —
+the one the card uses for its headline too (Step 12) — that structure reads `Pm` and `≥ Amm2`. The
+ladder itself can still end in one: in two sweeps of noisy fixture groups at physical density in
+random cells (2065 rungs), one rung was `not a group` (a two-orbit Ccc2 from 0.98 Å to the 1 Å
+end); the earlier sweeps of 1380 noisy fixture ladders to 1 Å in their conventional cells and 790
+well-known structures in eight cells found none. The card shows it as such, with no number.
+
+**Code**: `symmetry.js` → `composeOps()`, `productTable()`, `growingGroup()`, `closeUnder()`,
+`groupsByThreshold()`, `isClosedSet()`, `isValidGroup()`.
 
 #### Step 12. The reported space group at the selected tolerance
 
-`spaceGroupAtTolerance(A, basis, τ, metricTol)` produces the headline of the Detected SG card:
+`spaceGroupAtTolerance(A, basis, τ, passTol)` produces the headline of the Detected SG card:
 
-1. Run one full detection pass (Steps 7–9) at $\tau' = \max(\tau, 10^{-3})$ Å.
-2. Collect the distinct residual values $\le \tau + 10^{-9}$ and sort them **descending**.
-3. For each such threshold $r$, classify the subset $\{\mathrm{ops}: \varrho \le r + 10^{-9}\}$ and
-   return the **first one that passes `isValidGroup`**. That is, the loosest closed group at or
-   below $\tau$.
-4. If nothing closes, fall back to the identity-rotation operations only (identity plus any accepted
-   pure translations), classify those, and report `maxResidual = 0`.
+1. Run one detection pass (Steps 7–9) at $\tau' = \max(\text{passTol}, \tau, 10^{-3})$ Å — its
+   lattice strain bound, pairing radius $2\tau'$ and near-duplicate radius $\tau'$.
+   `describeSymmetry` passes `passTol = max(τ, 1 Å)`, the ladder's own pass (Step 13); the default
+   `passTol = τ` is a cheaper pass at τ alone.
+2. Walk its residual thresholds $\le\tau$ (Step 11) and take the group holding at the last one.
+3. Classify it (Step 10) with `tolFrac = max(τ, 10⁻⁶)/meanEdge(A)`.
 
-**Two different floors on $\tau$.** The detection pass in step 1 uses $\max(\tau, 10^{-3})$ Å, but
-the classification tolerance handed to `classifyOperations` is built from a *separate*, looser floor:
-`tolFrac = Math.max(tol, 1e-6) / meanEdge(A)`. Meanwhile the threshold filter in step 2 uses the
-**raw** $\tau$. So for $\tau < 10^{-3}$ Å the detection runs looser than the filter that selects from
-its output, and the centering test runs at a tolerance floored at $10^{-6}$ Å rather than $10^{-3}$ Å.
+`maxResidual` is the **worst residual of the operations returned** (0 only when that group is the
+identity alone, whose residual is exactly 0) — shown in the card's tooltip as `fits to <maxResidual>
+Å`. `nSpace` is the number of operations of that group ("Operations"). On an empty basis, or when no
+operation survives — not even the identity: a lattice with a non-finite entry, or a singular one,
+rejects every candidate in Step 7 — the result is `undetermined` (`UNDETERMINED`: no number, point
+group `—`, 0 operations, `maxResidual` `NaN`), `describeSymmetry` returns no orbits, and the ladder
+is empty. Before 1.0 it was `P1` / No. 1 — a space-group number for a structure never analysed.
 
-`maxResidual` in the returned object is the threshold $r$ that was accepted — displayed in the card's
-tooltip as `fits to <maxResidual> Å` with 3 decimals. `nSpace` is the number of operations in the
-accepted subset and is shown as the "Operations" figure.
+With the ladder's pass the headline is **exactly** the group the ladder shows at $\tau$: the same
+operations with the same residuals (the refinement of a seed does not depend on the acceptance
+threshold, and the near-duplicate merge keeps the best fit first, so the operations kept below τ
+are those the ladder keeps below τ), and the same walk up to τ over the same product table. A pass
+at τ alone need not agree: its smaller pairing radius drops seeds the 1 Å pass refines, and its
+smaller merge radius keeps near-duplicates the 1 Å pass merges. Before 1.0 the card's headline ran
+such a pass, and in sweeps of noisy fixture groups (physical density, random cells) about 1 brick
+midpoint in 400 disagreed with its brick: a noisy P-6m2 whose ladder read `P3m1` at 0.15 Å had the
+headline `Cm` there, and a 4-site Pm read `not a group` (Step 11) inside a `Pm` brick
+(`symmetryHeadlineLadder.test.js`). The price is that every headline runs the ladder's 1 Å pass —
+tens of milliseconds for the 52-site GaNb₄Se₈ and GaTa₄Se₈ bases.
 
-Three honest edge cases:
-
-- **Two hard-coded guards, not one.** `findSpaceGroupOps` itself returns
-  `{ops: [], nSpace: 0, nPoint: 0, order: 0, maxResidual: 0, centering: 'P', pointGroup: '1', spaceGroup: 'P1', spaceGroupNumber: 1}`
-  on an empty basis, and `spaceGroupAtTolerance` carries its own `empty` object with the same values,
-  returned whenever `full.ops` is empty. `describeSymmetry` already bails on an empty basis, so in
-  practice the second guard is the one that fires — on a structure where *no* operation is accepted
-  (e.g. the NaN-lattice case of Step 1), giving `P1` / No. 1 / 0 operations.
-- **The fallback's `maxResidual` is a placeholder, not a fit quality.** Step 4 hard-codes
-  `maxResidual: 0` while returning `idOps`, whose members may carry residuals all the way up to
-  $\tau'$. The card then reports `fits to 0.000 Å` for a group that fits to nothing of the sort. The
-  same is true of the empty guard.
-- **The fallback bypasses `isValidGroup`**, so on a centred but badly distorted structure it can emit
-  a non-standard symbol such as `F1` or `I1` with `spaceGroupNumber = null`.
-
-One piece of dead code worth naming for anyone reading along: `findSpaceGroupOps` accumulates a
-`rotSeen` set that is never returned or read. `nPoint` comes exclusively from `rotMap.size` inside
-`classifyOperations`.
-
-**Code**: `symmetry.js` → `spaceGroupAtTolerance()`; glue in `symmetryModel.js` → `describeSymmetry()`.
+**Code**: `symmetry.js` → `spaceGroupAtTolerance()`, `UNDETERMINED`; glue in `symmetryModel.js` → `describeSymmetry()`.
 
 #### Step 13. The tolerance ladder
 
-`symmetryLadder(A, basis, tolMax, metricTol)` builds the coloured brick strip. Crucially it does
-**one** detection pass, at the loosest tolerance, and then *thresholds*:
+`symmetryLadder(A, basis, tolMax, latticeTol)` builds the coloured brick strip from **one** detection
+pass at the loosest tolerance (`tolMax`; the app passes **1.0 Å**):
 
-1. `full = findSpaceGroupOps(A, basis, tolMax, metricTol)` — every candidate operation with its
-   residual, at $\tau = $ `tolMax` (the app passes **1.0 Å**; the function's own default of 1.5 Å is
-   never used).
-2. `thresholds` = the sorted distinct residual values, ascending. These are the only tolerances at
-   which the qualifying set can change.
-3. Walk them tight→loose. At threshold $r_i$ the qualifying set is $\{\varrho \le r_i+10^{-9}\}$ and
-   the rung spans $[r_i, r_{i+1})$, with the last rung extending to `tolMax`.
-4. If the classification at $r_i$ fails `isValidGroup`, the previous rung is simply **extended** to
-   cover it (no brick is emitted for a non-group) — but only `if (bricks.length)`. If the *first*
-   thresholds all fail there is no previous brick, so those ranges are **dropped outright**; they are
-   masked afterwards by step 6 forcing `bricks[0].from = 0`, which means the leftmost brick's `from`
-   is cosmetic and does not mean the group actually holds there.
-5. Consecutive rungs with the same space-group symbol are **merged** — and the merge overwrites only
-   `to` and `nSpace` (`last.to = to; last.nSpace = cls.nSpace;`). `from`, `spaceGroupNumber` and
-   `pointGroup` are kept from the *first* rung of the run. So a merged brick shows the operation count
-   of its **loosest** rung over the full merged range, while its `from` is that of its tightest rung.
-6. The first rung's lower bound is finally forced to 0.
+1. Walk every distinct residual threshold $r_i$ (Step 11). The group at $r_i$ holds over
+   $[r_i, r_{i+1})$; the last one extends to `tolMax`.
+2. Classify each distinct group once (`tolFrac = tolMax/meanEdge`).
+3. Consecutive thresholds with the same symbol are **merged**; the merged brick keeps its first
+   `from` and takes the latest `to` and `nSpace`.
 
-Because the operation sets are nested by construction ($\varrho \le r_i \subset \varrho \le r_{i+1}$),
-symmetry is **non-decreasing** left→right: looser tolerance ⇒ more operations ⇒ equal-or-higher
-symmetry. The leftmost rung is *not* guaranteed to be `P1`-like, though — that wording appears only
-in the source doc comment ("P1 → … → full group"). The first threshold is the smallest distinct
-residual, which is always 0 (the identity always maps every site onto itself), and the first rung's
-qualifying set is every operation with $\varrho \le 0 + 10^{-9}$. On a well-ordered average structure
-that set can already be the full group, so the ladder can legitimately be a **single brick**. In
-practice a disordered RMC configuration does start near `P1`, which is what makes the ladder useful.
+The first threshold is always 0 — the identity maps every site onto itself with residual exactly 0
+— so the first brick starts at 0 without being forced there. Operation counts are non-decreasing
+left → right (Step 11). Each brick carries `{ from, to, spaceGroup, spaceGroupNumber, pointGroup, nSpace }`.
 
-Each brick carries `{ from, to, spaceGroup, spaceGroupNumber, pointGroup, nSpace }`.
-
-**One-pass caveat.** Thresholding a single pass is *not* exactly identical to re-running the
-detection at each tolerance, for two reasons: the translation dedup radius (Step 8) is `tolMax`
-throughout, so genuinely distinct translations closer than 1.0 Å are merged at every rung; and
-`tolFrac` passed to `classifyOperations` is `tolMax / meanEdge` for every rung, not the rung's own
-tolerance. Consequently the headline group (Step 12, a fresh pass at $\tau$) and the brick label at
-the same $\tau$ can in principle disagree.
+**One-pass caveat.** The ladder's translation dedup radius (Step 8) is `tolMax` for every rung
+(the card's headline shares it, Step 12): distinct translations of one rotation closer than 1 Å are
+one operation at every tolerance.
 
 **Code**: `symmetry.js` → `symmetryLadder()`; `symmetryModel.js` → `toleranceLadder()`.
 
@@ -3136,58 +3310,80 @@ the same $\tau$ can in principle disagree.
 `siteOrbits(A, basis, ops, τ)` partitions the basis into symmetry orbits with a union–find
 (disjoint-set with path halving):
 
-- For every accepted operation and every site $i$: map $\mathbf x_i \to \mathbf y$, find the
+- For every operation of the reported group and every site $i$: map $\mathbf x_i \to \mathbf y$, find the
   **nearest same-element** site $j$ with $d(\mathbf y,\mathbf x_j) < \tau$, and `union(i, j)`.
-- Group members by root. The orbit's `size` is its multiplicity in the conventional cell; the
+- Group members by root. The orbit's `size` is its multiplicity **in the given cell**; the
   representative is its **first member in basis order** (i.e. lowest reference number).
-- The **site symmetry** is computed as the stabiliser of the representative: the set of *distinct
-  rotation parts* $R$ of operations $\{R|\mathbf t\}$ with $d(\operatorname{frac}(R\mathbf x_\mathrm{rep}+\mathbf t),\ \mathbf x_\mathrm{rep}) < \tau$,
-  fed through the same `pointGroupOf()`. No Wyckoff tables are consulted for this — it is derived
-  from the detected operations directly.
+- The **site symmetry** is the stabiliser of the representative: the distinct rotation parts $R$ of
+  operations with $d(R\mathbf x_\mathrm{rep}+\mathbf t,\ \mathbf x_\mathrm{rep}) < \tau$, fed through the same
+  `pointGroupOf()`. It is derived from the operations, not looked up.
 - Orbits are returned largest-first.
 
-**Tolerance asymmetry (worth naming).** `describeSymmetry` calls
-`siteOrbits(A, structure.basis, sg.ops, tol)` with the **raw user tolerance** $\tau$ — not with
-`sg.maxResidual`, the threshold $r \le \tau$ at which the group was actually accepted. The orbit
-union–find and the stabiliser test therefore use a matching radius strictly looser than any accepted
-operation's residual. On a structure where $r \ll \tau$ this makes the reported multiplicities and
-site symmetries *more generous than the reported space group justifies*: orbits can merge sites, and
-stabilisers admit rotations, that the group itself does not. `siteOrbits`' own signature default is
-`tol = 0.1` Å, never used from the app.
+`describeSymmetry` calls `siteOrbits` with the user tolerance $\tau$, which is at least the worst
+residual of the reported group (`maxResidual`), so the orbit and stabiliser tests are at least as
+generous as the group itself.
 
-`wyckoffLetter(sgNumber, centering, mult, site, rep)` then attempts a letter, from a **hard-coded
-partial table covering four space groups only**:
+**Wyckoff letters** (`symmetryModel.js` → `lettersInSetting()`, `wyckoff.js` →
+`assignWyckoffLetters()`). The table (`wyckoffTable.js`) lists the Wyckoff positions of all 230
+groups in their ITA standard setting (all 1731 positions; for the groups with two origin choices, the
+one the table was built from — origin choice 2 for the centrosymmetric ones, e.g. Fd-3m). Each row
+was checked against the group's own operations (its coordinate expanded to exactly its
+multiplicity), and its site symmetry is the stabiliser computed the same way as above, so the two
+are comparable.
 
-| SG number | Symbol | Listed positions (letter, multiplicity, site symmetry) |
-| --- | --- | --- |
-| 216 | `F-43m` | 4a, 4b, 4c, 4d (`-43m`), 16e (`3m`), 96i (`1`) |
-| 225 | `Fm-3m` | 4a, 4b (`m-3m`), 8c (`-43m`), 32f (`3m`), 192l (`1`) |
-| 229 | `Im-3m` | 2a (`m-3m`), 6b (`4/mmm`), 8c (`-3m`), 16f (`3m`), 96l (`1`) |
-| 221 | `Pm-3m` | 1a, 1b (`m-3m`), 3c, 3d (`4/mmm`), 8g (`3m`), 48n (`1`) |
+1. Letters are read in the **standard cell the group was named in** (Step 10f). Each orbit's members
+   are carried there, $\mathbf x' = Q^{-1}\mathbf x$, together with every translation of that cell, and
+   its multiplicity is scaled by the cell-volume ratio (the four Ga of a lacunar spinel in its
+   F-cubic cell are one 3a orbit of R3m on hexagonal axes). With no such cell — a crystal class,
+   a `≥` lower bound, or P1/P-1 in a non-primitive cell — every letter is withheld.
+2. The candidates are the rows with the orbit's multiplicity **and** site symmetry. One candidate
+   → that letter. Several (Pm-3m 3c and 3d are both 3 × 4/mmm) → the tie is broken by the
+   **coordinate form**: a letter is kept if some member of the orbit (any lattice-equivalent
+   representative) fits its form, e.g. $(x,x,0)$, within `tolFrac` $= \tau/\overline{a'}$ per
+   component ($\overline{a'}$ = mean edge of the naming cell; `fitsForm()` solves for the free
+   parameters by ridge-regularised least squares and checks the residual). Exactly one fit → that
+   letter; otherwise none.
+3. A letter is returned with the multiplicity **of the cell it is read in**,
+   `wyckoffMultiplicity`, beside the given-cell `size`: a Wyckoff label pairs the two, so the Ga
+   of the lacunar spinel is `3a` (never `4a`, which R3m does not have) and rocksalt on its
+   primitive cell is `4a`/`4b` (never `1a`/`1b`). `orbitLabel()` prints
+   `"<wyckoffMultiplicity><letter>"`.
+4. No letter is ever guessed: with none, `wyckoffMultiplicity` is `null` and `orbitLabel()` shows
+   `"<given-cell multiplicity> (<site symmetry>)"`.
 
-Matching rule: filter table rows by exact `multiplicity` **and** `site symmetry`. If exactly one row
-matches and it is a *free* position (no fixed coordinate), return its letter. Otherwise compare the
-representative against each candidate's fixed coordinate **modulo the centering vectors**
-(`CEN_VECS` for P/I/F/C/A/B), accepting a component match when the wrapped difference is
-$<0.15$ fractional. Exactly one hit → that letter; else, if only one candidate survived the
-multiplicity+site filter, return it; else `null` (the UI falls back to `"<multiplicity> (<site symmetry>)"`
-via `symmetryModel.orbitLabel()`).
-
-Any other space group returns `null` for every orbit. The four tables are also **incomplete** (they
-omit, e.g., 24f/24g of 216), so a genuine unlisted position that happens to share a multiplicity and
-site symmetry with a listed one will be given the listed letter.
+**Origin.** The standard cell is found by a change of basis only (Step 10f), so letters that need
+the coordinate form assume the structure's origin is the table's origin or an equivalent one.
+Letters that multiplicity and site symmetry fix alone do not depend on the origin; a tie at a
+shifted origin usually fits no form and gets no letter (diamond described with its atoms at 0 and
+¼ — origin choice 1 — gets no letter for its 8-fold site, because the table uses origin choice 2).
 
 Orbits are not rendered on the Run Dashboard card itself; they flow into the AI-assistant context
 (`runContext.js` → `symmetryContext()` → `symmetry.sites`, ranked by mean displacement, capped at 12
-sites).
+sites), where `multiplicity` is the orbit's size in the given cell and `wyckoff` should be the
+naming-cell pair `wyckoffMultiplicity` + letter. **Open:** `symmetryContext()` still builds the
+label as `` `${orbit.size}${orbit.wyckoff}` ``, so wherever the naming cell is not the given cell
+the assistant is handed a label the named group does not have: `16i` for the Nb of the 5 K
+GaNb₄Se₈ run at τ = 0.02 Å (P-4n2 is named in a cell half the F-cubic one; the card's pair is
+`8i`), `4a`/`12b` for the R3m lacunar spinel in its F cell (`3a`/`9b`), `1a`/`1b` for rocksalt on
+its primitive cell (`4a`/`4b`). The fix is one line in `runContext.js`,
+`` `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}` ``; it reads a field of the
+`symmetry` prop, so the `llm/` import boundary holds (it needs no `orbitLabel()` import). It is
+outside the symmetry finder's files and handed to the `llm/` module's owner, with a test.
 
-**Code**: `symmetry.js` → `siteOrbits()`, `wyckoffLetter()`, constants `WYCKOFF`, `CEN_VECS`;
-`symmetryModel.js` → `describeSymmetry()`, `orbitLabel()`.
+**Code**: `symmetry.js` → `siteOrbits()`; `symmetryModel.js` → `describeSymmetry()`,
+`lettersInSetting()`, `orbitLabel()`; `wyckoff.js` → `wyckoffPositions()`, `parseCoordinateForm()`,
+`fitsForm()`, `assignWyckoffLetters()`; data in `wyckoffTable.js`.
 
 #### Step 15. What the card renders
 
 - **Space group**: `symmetry.spaceGroup`, with `No. <n> · <pointGroup>` beneath, and a tooltip
-  `Point group <pg> · fits to <maxResidual.toFixed(3)> Å`.
+  `Point group <pg> · fits to <maxResidual.toFixed(3)> Å`. The `No.` part is omitted whenever
+  `spaceGroupNumber` is `null` — a crystal class, a `≥` lower bound, `undetermined` or
+  `not analysed`. For the last two `maxResidual` is `NaN` and the tooltip currently prints
+  `fits to NaN Å`, and the `reason` of a skipped structure is not shown anywhere on the card;
+  the card's info badge also still says the symbol is reported in the given cell "up to an axis
+  permutation", which Step 10f superseded. Those are `ModelSummary.jsx` wording issues, not
+  finder results.
 - **Operations**: `symmetry.nSpace`.
 - **Space group vs. tolerance**: the ladder bricks. Brick **fill** is
   `color-mix(in srgb, var(--accent) P%, var(--panel-raised))` with
@@ -3210,7 +3406,7 @@ sites).
 - Clicking a brick sets $\tau \leftarrow (\texttt{from}+\texttt{to})/2$; the brick is marked active
   when $\texttt{from} \le \tau < \texttt{to}$ — **a half-open interval, closed at `from` and open at
   `to`**. In practice this covers
-  every reachable $\tau$: `bricks[0].from` is forced to 0 and the last brick's `to` is `tolMax`, the
+  every reachable $\tau$: `bricks[0].from` is 0 (the identity's residual) and the last brick's `to` is `tolMax`, the
   bricks are contiguous, and the only setter is the midpoint click (which always yields
   $\tau < \texttt{tolMax}$), so exactly one brick highlights for any $\tau\in[0,1)$. A $\tau$ of
   exactly 1.0 Å would highlight nothing, but no code path produces it.
@@ -3238,18 +3434,39 @@ Flask mode the equivalent work happens server-side in Python). The **symmetry fi
 `describeSymmetry` / `toleranceLadder`) is the part that runs **synchronously on the main thread**
 inside `useMemo`, unlike the KDE and PCA-KDE paths, which use Web Workers.
 
-Two further costs are worth naming: `findSpaceGroupOps` internally runs a full `classifyOperations`
-whose result both `symmetryLadder` and `spaceGroupAtTolerance` **discard** (they re-classify from
-`full.ops` themselves); and the $3^9$ `latticePointOps` scan is re-run on **every** pass with no
-memoisation across the 2–3 passes per structure. Cost:
+**Cost and the basis cap.** The $3^9$ lattice scan (Step 7) is repeated on every pass. The
+partner search of Steps 9 and 14 uses a **cell list** (`partnerIndex()`): same-element sites are
+binned on a fractional grid whose bins are at least $r\,|\mathbf b_i|$ wide ($r$ = the matching
+radius, $\mathbf b_i$ = reciprocal vectors), so an image only visits its own and the neighbouring
+bins; each seed costs about $N$ times a few neighbours instead of $N\cdot\bar N_e$. Measured on a
+random two-species basis (Node, one pass each): 2000 sites — `describeSymmetry` ≈ 0.1 s and the
+ladder ≈ 0.1 s; 4000 sites ≈ 0.4 s + 0.2 s (before 1.0: 1.8 s + 5.3 s at 2000 sites, quadratic).
+The closure walk (Step 11) adds $O(n\cdot\text{generators})$ product look-ups per group growth for
+$n$ operations, plus the quadratic elimination only up to 256 operations; a $2\times2\times2$ supercell
+of rocksalt (1536 operations) with noise takes ≈ 0.8 s per pass.
 
-$$O\big(3^9\big)\ \text{for the point-op scan}\ +\ O\big(|P|\cdot n_\mathrm{ref}\cdot N \cdot \bar N_e\big)$$
+Because all of it is synchronous on the main thread, `symmetryModel.js` refuses a basis of more than
+**`MAX_SYMMETRY_SITES` = 2000** sites: `describeSymmetry` returns
+`{ skipped: true, spaceGroup: 'not analysed', pointGroup: '<N> sites > 2000 limit', nSpace: '—',
+maxResidual: NaN, orbits: [], reason }` (the card shows the first two as headline and subtitle;
+the residual is `NaN`, never `0`, because nothing was fitted and `0` would read as an exact fit — the
+LLM context omits a non-finite residual), and `toleranceLadder` returns no bricks. A box whose `.rmc6f` declares a $1\times1\times1$ supercell with
+one reference number per atom (a glass, an imported P1 configuration) reaches this; it is not a
+unit-cell configuration, and a symmetry search on it would only ever return `P1`.
 
-with $|P|\le 48$ the holohedry order, $n_\mathrm{ref}$ the site multiplicity of the rarest element,
-$N$ the basis size (sites per conventional cell), and $\bar N_e$ the mean number of same-element
-sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
-
----
+The site cap alone does not bound the time. If such a box is **crystalline**, every lattice rotation
+holds with every pure translation of its repeat unit, so the candidate operations grow with the
+square of the box: a $4\times4\times4$ rocksalt box (512 sites) has $48\times256 = 12\,288$, and the
+ladder of a noisy $3\times3\times3$ one (216 sites, 5184) took over a minute (Node). Before either pass, `symmetryModel.js` therefore asks
+`operationEstimate(A, basis, tol, limit)` (`symmetry.js`) for the lattice rotations admitted at the
+tolerance (Step 7) times the pure translations $\{I\,|\,\mathbf t\}$ of the structure there
+(Steps 8–9 for the identity alone, stopped as soon as the product passes `limit`). It is judged at
+the ladder's loosest tolerance, $\max(\tau, 1.0)$ Å, for the headline as well, so the card either
+analyses a structure at every tolerance or says why not. Above **`MAX_SYMMETRY_OPS` = 384** — twice
+the 48 × 4 = 192 a correctly declared cell can reach (F centring), enough for a $2\times2\times2$
+supercell of a primitive cubic cell — `describeSymmetry` returns the same `skipped` shape with
+`pointGroup: '≥ <t> translations per cell'` and a reason naming the supercell, and
+`toleranceLadder` returns no bricks.
 
 ### Parameters and defaults — model summary and symmetry
 
@@ -3260,13 +3477,14 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 | `tol` | `findSpaceGroupOps()` | `0.1` | Å | never used from the app (callers always pass) |
 | `tolMax` | `toleranceLadder()` (called with `1.0`) | `1.0` | Å | loosest tolerance the ladder explores |
 | `tolMax` | `symmetryLadder()` signature | `1.5` | Å | never used (callers pass `1.0`) |
-| `metricTol` ($\epsilon_G$) | `findSpaceGroupOps`, `symmetryLadder`, `spaceGroupAtTolerance` | `1e-2` | dimensionless | relative tolerance on $R^{\mathsf T}GR=G$; absolute threshold $=\epsilon_G\cdot\tfrac13\operatorname{tr}G$ Å². **Never forwarded** by `symmetryModel.js`, so the default is hard-wired app-wide |
-| `tol` | `latticePointOps()` signature | `1e-3` | dimensionless | documented default, **never reached** from the app |
+| `latticeTol` ($\tau_L$) | `findSpaceGroupOps`, `symmetryLadder`, `spaceGroupAtTolerance` | $\tau$ (the pass tolerance) | Å | largest Cartesian lattice strain $\varrho_L(R)$ of an admitted point operation (Step 7); the strain is also a floor on that operation's residual. Not forwarded by `symmetryModel.js`, so it follows $\tau$ |
+| `tol` | `latticePointOps()` signature | `0.01` | Å | exported wrapper only; the finder calls `latticeCandidates()` with $\tau_L$ |
 | `tol` | `siteOrbits()` signature | `0.1` | Å | never used (`describeSymmetry` always passes `symTol`) |
 | `tolFrac` | `classifyOperations()` signature | `0.02` | cell fractions | never used (all callers pass `tol / meanEdge(A)`) |
-| centering match tolerance | `matchCentering()` | `0.1` | cell fractions | per-component match to a Bravais centering vector |
+| translation snap | `pureTranslations()` (`spaceGroupSymbol.js`) | grid $1/d$, $d$ = the smallest order dividing the group order $n$ with every component within `0.02`; $d\le25$ | cell fractions | pure translations are snapped as a group before the exact Bravais match (Step 10c) |
+| lattice-completeness strain | `spaceGroupHM()` → `allLatticeOpsTested()` | the group's worst residual, at least `1e-3` | Å | strain up to which a rotation of the translation lattice counts in the lower-bound check (Step 10f) |
 | translation-key granularity | `classifyOperations()` | `1e-3` | cell fractions | rounding used to count distinct pure translations (no fold of 1000 → 0) |
-| Wyckoff coordinate tolerance | `wyckoffLetter()` | `0.15` | cell fractions | per-component match to a tabulated special position |
+| Wyckoff coordinate tolerance | `assignWyckoffLetters()` (from `describeSymmetry`) | $\tau/\overline{a'}$ | cell fractions | per-component fit to a tabulated coordinate form, in the naming cell |
 | threshold epsilon | `symmetryLadder`, `spaceGroupAtTolerance` | `1e-9` | Å | float-safety slack on `residual ≤ r` |
 | $\tau$ floor (detection) | `spaceGroupAtTolerance()` | `1e-3` | Å | `Math.max(tol, 1e-3)` for the full detection pass |
 | $\tau$ floor (`tolFrac`) | `spaceGroupAtTolerance()` | `1e-6` | Å | `Math.max(tol, 1e-6)` before dividing by `meanEdge(A)` for the classification tolerance — **distinct** from the `1e-3` detection floor |
@@ -3277,66 +3495,65 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 | brick fill span | `ModelSummary.jsx` `brickStyle()` | `12 %`–`86 %` accent | — | $P = 12 + 74\lambda$ with $\lambda=\ln n/\ln n_{\max}$, and $\lambda = 0$ when $n_{\max}\le1$ |
 | widest-brick width | `ModelSummary.jsx` `brickWidth()` | `34 %` | — | remaining `66 %` split evenly |
 | search space | `latticePointOps()` | $3^9=19\,683$ | — | 6960 have $\lvert\det R\rvert=1$ |
+| `MAX_SYMMETRY_SITES` | `symmetryModel.js` | `2000` | sites | larger bases are not analysed (`skipped: true`), and the ladder is empty |
+| `MAX_SYMMETRY_OPS` | `symmetryModel.js` | `384` | operations | lattice rotations × pure translations (`operationEstimate`, at $\max(\tau,1.0)$ Å) above which a structure is not analysed (`skipped: true`) and the ladder is empty |
+| `ELIMINATION_MAX_OPS` | `symmetry.js` | `256` | operations | the quadratic elimination of Step 11 runs only up to this many candidate operations |
 
 ### Caveats / what this is not
 
 - **This is not spglib, and not FINDSYM.** It is a bounded approximation written for interactive use
-  in a browser, with **no external space-group database** (no spglib tables, no WASM) — but it is not
-  literally "table-free" as the source comment says: classification rests on small in-file lookup
-  tables (`POINT_GROUP_ORDER`, `PG_SYSTEM`, `ALLOWED_CENTERING`, `CENTERING_SETS`, the 69-entry
-  `SG_NUMBER` map, and `WYCKOFF` / `CEN_VECS`). Use it to see *how* symmetry changes with tolerance on
-  a disordered configuration, not to produce a published space-group assignment.
-- **Symmorphic symbols only.** Screw axes and glide planes are never detected. The symbol is
-  literally `centering letter + point-group symbol`, so `Fd-3m` → `Fm-3m` (225), `P2₁/c` → `P2/m`,
-  `Pnma` → `Pmmm`. The source comment names this as a known follow-up.
-- **Setting variants are not distinguished**: `-42m` vs `-4m2`, `3m1` vs `31m`, `321` vs `312`, the
-  monoclinic unique-axis choice, and the orthorhombic axis ordering all collapse to one symbol. Two
-  concrete consequences: the printed symbol `P32` is `P` + point group `32`, which reads
-  identically to the screw-axis space group P3₂ (No. 145) but is mapped to **No. 149 (P312)**; and
-  the table's trigonal choices are internally inconsistent (`P3m` → 156 = P3m1, but `P-3m` → 162 =
-  P-31m).
-- **`R` centering is unreachable.** `matchCentering()` only tests F, I, A, B, C, so a rhombohedral
-  structure in hexagonal axes will report `P`-something. The `R3`/`R-3m` rows in `SG_NUMBER` and the
-  `R` in `ALLOWED_CENTERING['trig']` are dead.
-- **The metric tolerance is loose.** With $\epsilon_G=10^{-2}$ the absolute threshold on
-  $R^{\mathsf T}GR-G$ is $10^{-2}\cdot\tfrac13\operatorname{tr}G$ Å² — about 1 Å² for a 10 Å cell.
-  A pseudo-cubic cell with a ~0.5 % axial difference is therefore treated as cubic by the lattice
-  search. The lattice's *metric* symmetry is admitted generously; the atom-position test is what
-  actually gates the answer. **There is no knob for this**: `symmetryModel.js` never forwards a
-  `metricTol` (`spaceGroupAtTolerance(A, basis, tol)` and `symmetryLadder(A, basis, tolMax)` are both
-  called without it), so $10^{-2}$ is hard-wired. The only user-adjustable parameter on this page is
-  $\tau$, and the only way to change it is clicking a ladder brick (which sets $\tau$ to the brick
-  midpoint) — there is no numeric input.
+  in a browser, with **no external space-group database** (no spglib tables, no WASM); it rests on
+  the in-repo tables listed at the top of Part B (`SPACE_GROUPS`, `POINT_GROUP_SYSTEM`,
+  `SYSTEM_DIRECTIONS`, `BRAVAIS`, `STANDARD_CENTERING`, `POINT_GROUP_ORDER`, the Wyckoff table). Use it
+  to see *how* symmetry changes with tolerance on a disordered configuration, not to produce a
+  published space-group assignment.
+- **A group that cannot be named is shown as its crystal class.** The symbol is built positionally
+  and accepted only when it is a tabulated symbol of the detected class and centering (Step 10f);
+  otherwise the card shows e.g. `4/mmm class` with no number and no Wyckoff letters.
+- **Supercells of the true cell give a lower bound.** Rotations are found on any basis of the given
+  cell's lattice (Step 7, in a reduced basis), but only those that map that lattice onto itself. A
+  symmetry of the crystal's own translation lattice that does not — the cubic 3-folds of a
+  structure modelled in a $\sqrt2\times\sqrt2\times2$, $2\times2\times1$ or $1\times1\times2$ cell — is never
+  tested, and the result is marked `≥ <symbol>` with no number (Step 10f). The cell handed to the
+  finder is the `.rmc6f` box divided by its declared supercell, so this happens only when that
+  declared cell is itself a supercell.
+- **Lattice strain is measured on the atom scale.** A point operation is admitted when the Cartesian
+  displacement it implies for the cell edges, $\varrho_L$ (Step 7), is within $\tau$, and that
+  strain is a floor on the operation's residual. A strained cell therefore reads as the lower
+  symmetry below its strain and as the higher one above it, and the ladder shows where. The strain
+  is measured on the three cell edges; an atom far from the origin of a large cell can be displaced
+  more by the same strain than an edge-length figure suggests. There is still no separate knob: the
+  only user-adjustable parameter on this page is $\tau$, set by clicking a ladder brick.
 - **The answer is tolerance-dependent by design.** An RMC configuration is disordered; the basis is
   a circular mean over supercell copies, and residual displacements of 0.05–0.5 Å are normal. There
   is no "correct" $\tau$ — the ladder exists precisely because the reported group is a function of
   $\tau$, and the default 0.2 Å is a UI convenience, not a physical constant.
 - **The acceptance test is a covering test, not a bijection.** Distinct sites may map onto the same
   partner without being rejected. There is no check that an accepted operation permutes the basis.
-- **Group closure is checked only by cardinality** ($n_\mathrm{space} = |P|\cdot n_\mathrm{trans}$ plus a
-  system/centering compatibility rule), never by composing operations.
+- **Closure is enforced, maximality is heuristic.** Every reported operation set is closed under
+  composition (Step 11), but the largest closed group at a threshold is found greedily (growth, plus
+  elimination for up to 256 operations), not by enumerating subgroups.
 - **Minimum image is component-wise.** `cartDist()` rounds each fractional component independently,
   which is exact for orthogonal cells and can over-estimate distances for strongly oblique ones.
 - **Translation dedup radius equals the detection tolerance.** At the ladder's `tolMax = 1.0` Å,
   distinct translations less than 1 Å apart are merged for *every* rung. On a small cell this can
   suppress real centering vectors.
-- **Ladder and headline are separate computations.** The ladder thresholds one pass at 1.0 Å; the
-  headline runs a fresh pass at $\tau$. Clicking a brick sets $\tau$ to the brick midpoint but the
-  headline is re-derived independently, so the two can disagree in edge cases.
-- **A brick's reported range and op count are not from the same rung.** Merging overwrites only `to`
-  and `nSpace`, so a merged brick shows its loosest rung's operation count; and the leftmost brick's
-  `from` is forced to 0 even when the tightest thresholds produced no valid group at all (Step 13).
-- **Wyckoff letters exist for four space groups only** (216, 221, 225, 229) and those tables are
-  partial. Everything else shows multiplicity + derived site symmetry. Site symmetry itself is
-  always derived from the detected operations and is trustworthy to the same tolerance.
-- **Conventional-setting assumption.** Restricting $R$ to entries in $\{-1,0,1\}$ assumes the
-  `.rmc6f` lattice vectors divided by the declared supercell form a conventional crystallographic
-  cell. No Niggli/Delaunay reduction, no primitive-cell search, and no origin shift to a standard
-  setting is performed; the origin is whatever the `.rmc6f` uses.
+- **The headline pays for the ladder's pass.** The card's headline is walked from the ladder's
+  own 1 Å detection pass (Step 12), so it is exactly the ladder's group at $\tau$, and every τ change
+  reruns that pass. A direct `spaceGroupAtTolerance(A, basis, τ)` call without `passTol` runs a
+  cheaper pass at $\tau$ and can differ from the ladder at a brick midpoint.
+- **A merged brick shows its loosest rung's operation count.** Merging keeps `from` and takes the
+  latest `to` and `nSpace` (Step 13).
+- **Wyckoff letters assume the table's origin.** Letters are read in the standard cell the group is
+  named in, for all 230 groups, but no origin shift is searched: a tie between positions of equal
+  multiplicity and site symmetry is broken only if the structure's origin is the table's (or an
+  equivalent one), and otherwise left without a letter (Step 14).
+- **No origin shift.** The standard cell is found by a change of basis only; the origin stays where
+  the `.rmc6f` puts it. Space-group names do not depend on the origin, Wyckoff letters do (Step 14).
 - **Header input is unvalidated.** Neither the `Lattice` numbers nor the `Supercell` multiplicities
-  are checked. `NaN` lattice entries make `latticePointOps` accept all 6960 unimodular patterns (all
-  `NaN` comparisons are false) and then make every mapping residual `NaN`, so the card silently
-  degrades to `P1` / 0 operations with an empty ladder and `NaN` cell edges. A zero or non-integer
+  are checked. A non-finite or singular lattice gives `NaN` strains, every candidate operation is
+  rejected (Step 7), and the card shows `undetermined` with 0 operations, no ladder and `NaN` cell
+  edges (Step 12). A zero or non-integer
   supercell entry is guarded in the *cell* division but not in the *fold into one cell*, giving a
   collapsed one-site basis and a spurious high-symmetry answer (Steps 1 and 5).
 - **A reference site's species is whatever appeared first.** `acc.element` is set once and never
@@ -3345,19 +3562,35 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
   sub-labels can exceed the number of basis sites actually analysed (Step 5).
 - **Orbits and site symmetries are evaluated at a looser radius than the group.** `siteOrbits` is
   called with the raw $\tau$, not with the `maxResidual` at which the group was accepted (Step 14).
-- **`nTrans` is not folded modulo 1.** A translation recovered as 0.9997 instead of 0 counts as
-  distinct from the identity translation, and since `isValidGroup` is an exact cardinality test one
-  such off-by-one can silently invalidate a real group (Step 10b).
-- **`fits to 0.000 Å` can be a placeholder.** The Step-12 fallback hard-codes `maxResidual = 0`
-  regardless of the residuals of the operations it returns.
 - **No cell volume, no number density** is reported by this page (see the note after Step 5).
 - **Flask/server-directory mode has no Detected SG card** — `/api/structure` returns no basis. It is
   also a different parser: the Python `iter_rmc6f_atoms()` skips every line with fewer than 9 fields,
   so coords-only `.rmc6f` files yield zero atoms there, and it capitalizes element tokens while
   `read_atom_indices()` (same response) does not (Step 2).
-- **No unit tests cover `symmetry.js`.** The frontend vitest suite covers `browserData.js`
-  (including the circular-mean basis and `dispA`), `rmc6f.js`, `autoScale.js`, `pcaKde.js` and the
-  LLM context builder, but there is no test file importing `symmetry.js`; only `symmetryModel.js`
-  imports it. The numbers quoted above for the enumeration counts (6960 unimodular patterns, 48
-  cubic and 24 hexagonal-P point operations) were verified by re-running the code's own algorithm,
-  not by an existing test.
+- **What the tests pin.** `symmetry.test.js` recovers all 230 fixture groups (built from ITA
+  generators) from their atoms, names rocksalt, perovskite, diamond, hcp and an I4/mcm perovskite,
+  and checks the point-group and space-group tables; `symmetrySettings.test.js` names the 230
+  groups in all six axis orders and well-known structures in centred, primitive, rhombohedral and
+  supercell cells, with the principal axis off $c$, and as subgroups of a centred parent;
+  `symmetryObliqueCells.test.js` pins the lattice-rotation count on oblique bases, naming on oblique
+  and strongly oblique cells, the lower bound and the translation snap; `symmetryFinder.test.js`
+  covers basis-order independence, lattice strain, closure of every rung (the bundled GTS_250K demo,
+  a noisy lacunar spinel) and class-consistent symbols; `symmetryRepresentatives.test.js` checks
+  that a symbol does not depend on the lattice representative of a translation, and that every
+  noisy trigonal, hexagonal and cubic subgroup is named after a group with the same element types
+  per coset (rotation or screw, mirror or glide); `symmetryHiddenCentring.test.js` names the
+  centred groups C2 … C2/c, I4 … I4/m, R3 and R-3 on primitive cells that keep the axis as a basis
+  vector (with the conventional description's Wyckoff labels) and checks that no P-named rung of a
+  noisy trigonal or hexagonal ladder hides a centring; `symmetryHeadlineLadder.test.js` that the
+  card's headline is the ladder's group at every brick midpoint and that the bricks do not move
+  with the order of the basis; `symmetryDuplicates.test.js` checks that of two
+  near-duplicate operations the better-fitting one is kept, so the ladder reaches the group the
+  headline finds whatever the site order;
+  `symmetryWyckoff.test.js` and `wyckoff.test.js` check every Wyckoff row against its group's
+  operations, the demo's letters and letters in permuted settings, and
+  `symmetryWyckoffLabels.test.js` that a letter is paired with the multiplicity of the cell it is
+  read in; `symmetryLimits.test.js`, `symmetryPerformance.test.js` and
+  `symmetryUndetermined.test.js` cover the basis cap, the operation budget and an unanalysable
+  lattice. The two GaNb₄Se₈ runs are gitignored, so they are not
+  in the suite; every rung of their ladders was checked by hand to be closed and to have the
+  element types of the group it is named after.

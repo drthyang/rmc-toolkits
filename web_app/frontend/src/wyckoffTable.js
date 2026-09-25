@@ -3,7 +3,7 @@
 
 // web_app/frontend/src/wyckoffTable.js
 //
-// Wyckoff positions for 230 space groups (1724 positions), packed one string
+// Wyckoff positions for 230 space groups (1731 positions), packed one string
 // per group to keep the static bundle small. Parsed on demand by wyckoff.js.
 //
 // Row format:  letter : multiplicity : site symmetry : coordinate
@@ -16,8 +16,10 @@
 // it is the stabiliser of that representative, computed the same way symmetry.js computes
 // it for a detected orbit, so the two are guaranteed to be expressed alike and comparable.
 //
-// Groups where a position failed that check are still present, minus the failing rows;
-// wyckoff.js returns no letter rather than a guess when an orbit matches nothing.
+// Every ITA position is present. The check needs operations at the ITA origin: the seven
+// P222_1 (#17) and I2_12_12_1 (#24) special positions were once dropped because the test
+// fixtures described those two groups about a shifted origin, not because the rows were
+// wrong. wyckoff.js returns no letter rather than a guess when an orbit matches nothing.
 
 export const WYCKOFF_DATA = {
   1: 'a:1:1:x,y,z',
@@ -36,14 +38,14 @@ export const WYCKOFF_DATA = {
   14: 'a:2:-1:0,0,0;b:2:-1:1/2,0,0;c:2:-1:0,0,1/2;d:2:-1:1/2,0,1/2;e:4:1:x,y,z',
   15: 'a:4:-1:0,0,0;b:4:-1:0,1/2,0;c:4:-1:1/4,1/4,0;d:4:-1:1/4,1/4,1/2;e:4:2:0,y,1/4;f:8:1:x,y,z',
   16: 'a:1:222:0,0,0;b:1:222:1/2,0,0;c:1:222:0,1/2,0;d:1:222:0,0,1/2;e:1:222:1/2,1/2,0;f:1:222:1/2,0,1/2;g:1:222:0,1/2,1/2;h:1:222:1/2,1/2,1/2;i:2:2:x,0,0;j:2:2:x,0,1/2;k:2:2:x,1/2,0;l:2:2:x,1/2,1/2;m:2:2:0,y,0;n:2:2:0,y,1/2;o:2:2:1/2,y,0;p:2:2:1/2,y,1/2;q:2:2:0,0,z;r:2:2:1/2,0,z;s:2:2:0,1/2,z;t:2:2:1/2,1/2,z;u:4:1:x,y,z',
-  17: 'e:4:1:x,y,z',
+  17: 'a:2:2:x,0,0;b:2:2:x,1/2,0;c:2:2:0,y,1/4;d:2:2:1/2,y,1/4;e:4:1:x,y,z',
   18: 'a:2:2:0,0,z;b:2:2:0,1/2,z;c:4:1:x,y,z',
   19: 'a:4:1:x,y,z',
   20: 'a:4:2:x,0,0;b:4:2:0,y,1/4;c:8:1:x,y,z',
   21: 'a:2:222:0,0,0;b:2:222:0,1/2,0;c:2:222:1/2,0,1/2;d:2:222:0,0,1/2;e:4:2:x,0,0;f:4:2:x,0,1/2;g:4:2:0,y,0;h:4:2:0,y,1/2;i:4:2:0,0,z;j:4:2:0,1/2,z;k:4:2:1/4,1/4,z;l:8:1:x,y,z',
   22: 'a:4:222:0,0,0;b:4:222:0,0,1/2;c:4:222:1/4,1/4,1/4;d:4:222:1/4,1/4,3/4;e:8:2:x,0,0;f:8:2:0,y,0;g:8:2:0,0,z;h:8:2:1/4,1/4,z;i:8:2:1/4,y,1/4;j:8:2:x,1/4,1/4;k:16:1:x,y,z',
   23: 'a:2:222:0,0,0;b:2:222:1/2,0,0;c:2:222:0,0,1/2;d:2:222:0,1/2,0;e:4:2:x,0,0;f:4:2:x,0,1/2;g:4:2:0,y,0;h:4:2:1/2,y,0;i:4:2:0,0,z;j:4:2:0,1/2,z;k:8:1:x,y,z',
-  24: 'd:8:1:x,y,z',
+  24: 'a:4:2:x,0,1/4;b:4:2:1/4,y,0;c:4:2:0,1/4,z;d:8:1:x,y,z',
   25: 'a:1:mm2:0,0,z;b:1:mm2:0,1/2,z;c:1:mm2:1/2,0,z;d:1:mm2:1/2,1/2,z;e:2:m:x,0,z;f:2:m:x,1/2,z;g:2:m:0,y,z;h:2:m:1/2,y,z;i:4:1:x,y,z',
   26: 'a:2:m:0,y,z;b:2:m:1/2,y,z;c:4:1:x,y,z',
   27: 'a:2:2:0,0,z;b:2:2:0,1/2,z;c:2:2:1/2,0,z;d:2:2:1/2,1/2,z;e:4:1:x,y,z',

@@ -201,7 +201,8 @@ export const SPACE_GROUP_FIXTURES = [
     },
     {
         number: 17, symbol: 'P222_1', system: 'orthorhombic', multiplicity: 4,
-        generators: ['-x,-y,z+1/2', 'x,-y,-z+1/2'],
+        // ITA origin: the 2-fold along a passes through y = z = 0 (x,-y,-z).
+        generators: ['-x,-y,z+1/2', '-x,y,-z+1/2'],
         centering: ['0,0,0'],
     },
     {
@@ -236,7 +237,8 @@ export const SPACE_GROUP_FIXTURES = [
     },
     {
         number: 24, symbol: 'I2_12_12_1', system: 'orthorhombic', multiplicity: 8,
-        generators: ['-x+1/2,-y,z', '-x,y,-z+1/2'],
+        // ITA origin (the previous generators described the group about a shifted origin).
+        generators: ['-x+1/2,-y,z+1/2', '-x,y+1/2,-z+1/2'],
         centering: ['0,0,0', '1/2,1/2,1/2'],
     },
     {
