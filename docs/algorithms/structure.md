@@ -101,7 +101,7 @@ the canvas both read *"The Flask app uses SciPy KDE for reference-grade values"*
 | $N_\mathrm{img}$ | slab rows including periodic images | count |
 | $n$ | fit points actually handed to the estimator (`fitCount`) | count |
 | $m$ | periodic-image margin | fractional |
-| $\mathbf{C}$ | $2\times2$ sample covariance of the fit points | fractional² |
+| $\mathbf{C}$ | $2\times2$ sample covariance of the slab's **source atoms** (one row per atom, images excluded) | fractional² |
 | $f$ | bandwidth factor (`bw`) | dimensionless |
 | $\mathbf{H} = f^2\mathbf{C}$ | kernel bandwidth (covariance) matrix | fractional² |
 | $\rho(u,v)$ | estimated density | per unit fractional area of the slice plane |
@@ -358,16 +358,24 @@ More importantly, images *beyond* $m$ are simply dropped, so the periodic wrap i
 the margin. The effective kernel truncation radius is $m/\sigma$ standard deviations, where
 $\sigma = f\sqrt{\lambda}$ (Step 6):
 
-| Case | $m$ | $\sigma$ (cell-filling slab) | truncation | dropped kernel weight |
+| Case | $m$ | major $\sigma$ (cell-filling slab) | truncation | $e^{-(m/\sigma)^2/2}$ |
 | --- | --- | --- | --- | --- |
-| defaults, $f=0.03$ | 0.1 | $\approx 0.0105$ | $\approx 9.5\sigma$ | $\sim e^{-45} \approx 3\times10^{-20}$ |
-| slider max, $f=0.15$ | 0.3 | $\approx 0.0525$ | $\approx 5.7\sigma$ | $\sim e^{-16} \approx 9\times10^{-8}$ |
+| defaults, $f=0.03$ | 0.1 | $0.0098$ | $10.2\sigma$ | $\approx 2\times10^{-23}$ |
+| slider max, $f=0.15$ | 0.3 | $0.0488$ | $6.1\sigma$ | $\approx 6\times10^{-9}$ |
+
+(Measured on the all-element GaNb₄Se₈ `c` slab at $z_c=0.39$, $\Delta z=0.08$, whose source-atom
+covariance has $\sqrt{\lambda}=0.23/0.33$; a uniform cell-filling slab has $\sqrt\lambda=0.289$.
+Since 1.0 the kernel comes from the source atoms only (Step 6), so $\sigma$ no longer grows with
+$m$. Before, the images entered $\mathbf{C}$ and the slider-maximum row read $\sigma=0.069$ at
+$m=0.3$, i.e. $4.3\sigma$ and $8.7\times10^{-5}$ — about $10^3\times$ the $9\times10^{-8}$ this
+table then claimed, which had reused the $m=0.1$ spread.) The last column is the Gaussian factor at
+the margin; the one-sided mass lost beyond it is smaller still.
 
 The browser's `exponent > -60` guard (Step 7) is a *second*, independent truncation at a Mahalanobis
 radius of $\sqrt{120}\approx 11\sigma$. Which of the two binds depends on $f$: with $m=0.1$ the
-crossover is near $f\approx0.026$, so at the default and above **the image margin is the binding
-approximation**, and below it the exponent guard is. The image truncation applies to the SciPy
-reference path as well — SciPy has no exponent cutoff, but it never sees the discarded images.
+crossover is near $f\approx0.028$ for this slab, so at the default and above **the image margin is
+the binding approximation**, and below it the exponent guard is. The image truncation applies to the
+SciPy reference path as well — SciPy has no exponent cutoff, but it never sees the discarded images.
 
 **Verification.** Python: `tests/test_kde.py::test_oriented_kde_slice_wraps_density_across_the_cell_boundary`
 plants a cluster hugging the $x=0$ face and asserts the $x=1$ edge of the slice sees it to within
@@ -577,8 +585,9 @@ always yields the same picture:
 
 Because the streams differ — and because the augmented arrays are in a different row order to begin
 with (Step 3) — **the two runtimes fit different 6000-point subsets of the same slab**. They are
-both unbiased, so the two density fields agree in expectation, but they are not bitwise comparable,
-and (see Step 6) they do not even share the same bandwidth matrix.
+both unbiased, so the two density fields agree in expectation, but they are not bitwise comparable.
+They do share the bandwidth matrix: since 1.0 $\mathbf{C}$ comes from all the slab's source atoms,
+before and independently of the subsample (Step 6).
 
 **Statistical consequence.** The KDE is an average of $n$ kernels; subsampling raises the
 pointwise standard error of the estimate by roughly $\sqrt{N_\mathrm{img}/n}$ relative to using all $N_\mathrm{img}$ points.
@@ -617,36 +626,66 @@ $$\rho(\mathbf{p}) \;=\; \frac{\kappa}{n}\sum_{i=1}^{n}
 \exp\!\left[-\tfrac{1}{2}\,(\mathbf{p}-\mathbf{p}_i)^{\!\top}\mathbf{H}^{-1}(\mathbf{p}-\mathbf{p}_i)\right],$$
 
 $$\mathbf{H} \;=\; f^{2}\,\mathbf{C}, \qquad
-\mathbf{C} \;=\; \frac{1}{n-1}\sum_{i=1}^{n}(\mathbf{p}_i-\bar{\mathbf{p}})(\mathbf{p}_i-\bar{\mathbf{p}})^{\!\top},$$
+\mathbf{C} \;=\; \frac{1}{N_\mathrm{src}-1}\sum_{a=1}^{N_\mathrm{src}}(\mathbf{q}_a-\bar{\mathbf{q}})(\mathbf{q}_a-\bar{\mathbf{q}})^{\!\top},$$
 
-with $\kappa$ the periodic-image correction defined below. This is exactly SciPy's convention:
+where the sum over $i$ runs over the $n$ (subsampled) slab rows, periodic images included, and the
+covariance runs over the **source atoms**: $\mathbf{q}_a$ is the in-plane position of source atom
+$a$'s representative row — among its rows in the slab, the one with the smallest periodic shift
+(`_image_rank()` / `imageRank()`: fewest shifted axes, ties broken by the $(o_x,o_y,o_z)$ loop
+order, so an atom inside the slab is represented by itself and a depth-wrapped one by its nearest
+image). $\kappa$ is the periodic-image correction defined below. For a preset normal this is the
+covariance of the folded in-cell $(x,y)$ of the slab's atoms.
+
+This is SciPy's kernel with the covariance taken from a different point set than the one summed.
 `gaussian_kde` with a **scalar** `bw_method` sets `kde.factor = bw` and then
 `self.covariance = self._data_covariance * self.factor**2` with
 `_data_covariance = atleast_2d(cov(self.dataset, rowvar=1, bias=False, aweights=self.weights))`,
-which with the default uniform weights $w_i = 1/n$ is exactly the $n-1$ divisor. `gaussian_kde`
-then evaluates $\sum_i w_i \mathcal{N}(\mathbf{p};\mathbf{p}_i,\mathbf{H})$ with those same uniform
-weights (SciPy 1.13.1, `scipy/stats/_kde.py`). SciPy evaluates it through the lower Cholesky factor
+which with the default uniform weights $w_i = 1/n$ is exactly the $n-1$ divisor, and evaluates
+$\sum_i w_i \mathcal{N}(\mathbf{p};\mathbf{p}_i,\mathbf{H})$ with those same uniform weights (SciPy
+1.13.1, `scipy/stats/_kde.py`). `kde.py` → `_FixedCovarianceKDE` subclasses it and overrides only
+`_compute_covariance()` to install $\mathbf{C}$ (`np.cov` of the source-atom rows,
+`_source_atom_rows()`) instead of the dataset's covariance, setting the same attributes SciPy's
+version sets; the density is still SciPy's compiled sum. Because that leans on SciPy internals, the
+constructor evaluates one point against the direct formula and raises `RuntimeError` if a SciPy
+version stops honouring the supplied covariance, rather than silently drawing a different kernel.
+SciPy evaluates the sum through the lower Cholesky factor
 $\mathbf{L}=f\,\mathrm{chol}(\mathbf{C})$ of $\mathbf{H}$ (`cho_cov`): whitened offsets
 $\mathbf{w}=\mathbf{L}^{-1}(\mathbf{p}-\mathbf{p}_i)$, kernel $e^{-|\mathbf{w}|^2/2}$, normalization
 $1/(2\pi\,L_{00}L_{11})$. The JavaScript `makeKernel()` reproduces it term for term: it forms
-$\mathbf{C}$ with the same $n-1$ divisor, takes its $2\times2$ Cholesky factor, scales it by $f$, and
-hands the loop the whitening matrix $\mathbf{W}=\mathbf{L}^{-1}$ (`w00`, `w10`, `w11`) and
-`normalizer = imageFactor / (2π·L00·L11·samples.length)`. **There is no ridge and no fallback kernel:
+$\mathbf{C}$ from the same source-atom rows (`makeSlab()` returns them as `atoms`) with the same
+$n-1$ divisor, takes its $2\times2$ Cholesky factor, scales it by $f$, and hands the loop the whitening
+matrix $\mathbf{W}=\mathbf{L}^{-1}$ (`w00`, `w10`, `w11`) and
+`normalizer = (imageFactor / samples.length) / (2π·L00·L11)`. **There is no ridge and no fallback kernel:
 the browser draws exactly $f^2\mathbf{C}$ or declines the slab** (see *Degenerate-slab handling*
 below). `tests/generate_kde_fixture.py` writes Python goldens on the committed demo run, the
 GaNb₄Se₈ sample run and synthetic slabs, and `workers/__tests__/kdeParity.test.js` requires the
 worker to reproduce them to $10^{-6}$ of the peak (measured: $\le 2\times10^{-12}$), with identical
 kernels, counts and decline messages.
 
-**$\mathbf{C}$ is estimated from the *subsampled* fit points, not from all $N_\mathrm{img}$ slab rows.** Both
-runtimes do the subsample first and hand the reduced array to the covariance step (`slab = slab[choice]`
-immediately precedes `gaussian_kde(slab.T, bw_method=bw)`; `makeKernel(samples, …)` receives the
-output of `sampleWithoutReplacement`). Two consequences: the smoothing width is itself
-**seed- and subsample-dependent**, and because Python and JavaScript draw different 6000-point
-subsets (Step 5) **they use slightly different $\mathbf{H}$ for the same slab**. The divergence
-between the runtimes is therefore not confined to the kernel centres; it is in the kernel width too.
-(For $n=6000$ the sampling error on each covariance entry is $O(n^{-1/2})\approx1.3\,\%$, so
-$\sigma$ differs by a few tenths of a percent — small, but not zero.)
+**$\mathbf{C}$ depends on neither the periodic images nor the subsample** (since 1.0). The images
+and the 6000-point cap are evaluation devices — they decide which rows the fixed kernel is summed
+over — and the kernel is fitted to the atoms. Before 1.0 both runtimes fitted $\mathbf{C}$ to the
+subsampled slab rows, images included, and that made the kernel depend on things that are not the
+slab's atoms:
+
+* **the margin.** $m=\min(0.5,\max(0.1,2f,\Delta z))$ decides which images exist, so moving the
+  *Thickness* slider past 0.25 or the *Bandwidth* slider past 0.125 admitted the $x/y$ images of
+  sites at $\tfrac14,\tfrac34$ and rewrote $\mathbf{C}$ without adding a single atom. On the
+  GaNb₄Se₈ Ga layer at $z_c=0.75$ (the same 2000 atoms for every $\Delta z$, $f=0.03$) the kernel's
+  principal $\sigma$ went from $0.0019\times0.110$ Å at $\Delta z\le0.2$ to $0.156\times0.191$ Å at
+  $\Delta z\ge0.3$, and the peak fell from 1260 to 259; across the bandwidth step $f=0.12\to0.13$
+  ($\Delta z=0.08$) the kernel went from $0.26\times0.45$ to $0.67\times0.81$ Å for an 8 % change in
+  $f$. Even a handful of image rows mattered: in the Nb layer at $z_c=0.15$, ten image rows (0.25 %
+  of 3988) set the kernel's minor $\sigma$ to 0.0107 Å; the source atoms alone give 0.0022 Å. (Now:
+  $0.0019\times0.110$ Å and a peak of 1260–1269 for every $\Delta z$ on the Ga layer, the small
+  spread being the subsample's Monte-Carlo noise once the slab exceeds 6000 rows.)
+* **the subsample seed**, and hence the runtime (PCG64 vs mulberry32): $\sigma$ differed by a few
+  tenths of a percent between Python and the browser above the cap.
+
+`tests/test_kde_bandwidth_source.py` and `workers/__tests__/kdeBandwidthSource.test.js` pin the new
+behaviour: the kernel is $f^2$ times the covariance of the folded source atoms, identical across a
+thickness or bandwidth margin step and across subsample seeds, and a depth-wrapped atom is
+represented by its nearest image; the Python file repeats the thickness check on the real Ga layer.
 
 #### Scott / Silverman: neither is used here
 
@@ -672,17 +711,16 @@ standard deviation is
 
 $$\sigma \;=\; f\sqrt{\lambda} \quad \text{(fractional units)} .$$
 
-A slab that fills the cell has $\mathbf{C}\approx \tfrac{1}{12}\mathbf{I}$ before augmentation
-($\sqrt\lambda\approx0.289$); with the $m=0.1$ margin the padded support widens it to
-$\sqrt\lambda \approx 0.35$. So the default $f=0.03$ corresponds to $\sigma \approx 0.009$–$0.010$
-in fractional units — roughly **0.09–0.11 Å for a 10.4 Å cell** (the GNSe sample). Three honest
-corollaries:
+A slab whose atoms fill the cell uniformly has $\mathbf{C}\approx \tfrac{1}{12}\mathbf{I}$
+($\sqrt\lambda\approx0.289$); the real all-element GaNb₄Se₈ `c` slab at $z_c=0.39$ measures
+$\sqrt\lambda = 0.23$ and $0.33$. So the default $f=0.03$ corresponds to $\sigma \approx 0.007$–$0.010$
+in fractional units — roughly **0.07–0.10 Å for a 10.4 Å cell**. Three honest corollaries:
 
 1. The smoothing width **changes when you change the element filter, the slab thickness, or the
    normal**, because all of those change $\mathbf{C}$. The same `bw = 0.03` is a different physical
    width on different slices.
-2. Because the periodic images inflate $\mathbf{C}$ slightly, adding them widens the kernel a few
-   percent relative to a non-augmented fit. This is a real (small) side effect of Step 3.
+2. The periodic images and the subsample do **not** change $\mathbf{C}$ (see above). Before 1.0 they
+   did, by far more than the "few percent" this document used to state.
 3. In a non-orthogonal cell, $\mathbf{H}$ is a covariance in *fractional* space, so a kernel that is
    near-circular in the computation is an ellipse in Å after the affine map to the real cell
    (Step 10). The smoothing is anisotropic in real space for any non-cubic cell.
@@ -1321,7 +1359,7 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
 | Slab selection in depth | **Exact** (algebraically identical, inclusive both ends) |
 | `slabCount` (unique source atoms with an image in the slab) | **Exact** |
 | Subsample size (6000) | **Exact**; the **selected subset differs** (PCG64 vs mulberry32, and a different row order) |
-| Bandwidth matrix $\mathbf{H}=f^2\mathbf{C}$ | **Exact** below the fit cap (tested, $<10^{-9}$ relative); above it $\mathbf{C}$ is fitted to the **subsampled** points, so the two runtimes use slightly **different $\mathbf{H}$**. No ridge, no substitution for $f$ |
+| Bandwidth matrix $\mathbf{H}=f^2\mathbf{C}$ | **Exact** (tested, $<10^{-9}$ relative): $\mathbf{C}$ from the same source-atom rows in both, before and independently of the subsample. No ridge, no substitution for $f$ |
 | Kernel normalization $1/(2\pi n\sqrt{\det\mathbf{H}})$ | **Exact** (both through the Cholesky factor: $1/(2\pi n L_{00}L_{11})$) |
 | Periodic renormalization $\kappa=N_\mathrm{img}/N_\mathrm{src}$ | **Exact** |
 | Evaluation grid nodes | **Exact** on the CPU paths; grid clamp maxima differ (400 vs 260); the GPU path recomputes node positions in `f32` |
@@ -1351,10 +1389,10 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
    switches the page to the browser worker. Below the 6000-point fit cap the browser CPU path draws
    the same kernel and reproduces the reference to $10^{-6}$ of the peak (tested); above it the two
    draw different subsamples, and the GPU branch is float32.
-3. **The bandwidth is not a length.** $f$ multiplies the *sample covariance of the slab points*, so
-   the physical smoothing width changes with the element filter, the slab thickness, the slice
-   normal, and even the periodic margin. It is also computed from the ≤6000 *subsampled* points, so
-   the smoothing width is seed-dependent and differs slightly between runtimes. `bw = 0.03` is
+3. **The bandwidth is not a length.** $f$ multiplies the *covariance of the slab's atoms*, so
+   the physical smoothing width changes with the element filter, the slab position and thickness
+   (through which atoms are selected), and the slice normal — but no longer with the periodic
+   margin or the subsample. `bw = 0.03` is
    roughly $8\times$ narrower than Scott's rule at $n=6000$ — the map is deliberately under-smoothed
    to resolve sites, which means fine structure in the map can be sampling noise rather than real
    density.
@@ -1385,8 +1423,8 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
 11. **In log mode the Flask path can silently drop all contours** when the peak density is below 1
     per unit fractional area, while the browser path draws them.
 12. **The periodic wrap is exact only out to the margin $m$.** Images farther than $m$ from the cube
-    are discarded, which truncates the kernel at $\approx9.5\sigma$ at the defaults and
-    $\approx5.7\sigma$ at $f=0.15$. This applies to the SciPy path too.
+    are discarded, which truncates a cell-filling slab's kernel at $\approx10\sigma$ at the defaults
+    and $\approx6\sigma$ at $f=0.15$ (Step 3). This applies to the SciPy path too.
 13. **`slabCount` is "atoms with at least one image in the slab"**, and one atom can contribute
     several rows near an edge or corner. The drawn band and the highlighted atoms in the side view
     are clamped/unwrapped and so **understate** the selection for $z_c$ near 0 or 1.

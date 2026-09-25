@@ -80,7 +80,7 @@ describe('makeKernel is exactly H = f^2 C', () => {
         for (const factor of [0.005, 0.01, 0.03]) {
             it(`${name}, bw=${factor}`, () => {
                 const samples = build(makeRandom(7));
-                const kernel = makeKernel(samples, factor);
+                const kernel = makeKernel(covariance(samples), factor, 1 / samples.length);
                 // A 41 x 41 window of +-6 major kernel sigmas around the first
                 // atom, so even the narrowest kernel is resolved by the nodes.
                 const half = 6 * kernel.sigmaMajor;

@@ -16,6 +16,7 @@ from itertools import combinations, product
 from pathlib import Path
 
 import numpy as np
+from scipy.linalg import cholesky, solve_triangular
 from scipy.stats import gaussian_kde
 
 from .parsers import iter_rmc6f_atoms, read_cell_vectors
@@ -179,26 +180,41 @@ def _contour_segments(
     return segments
 
 
+def _image_rank(offset: tuple[float, float, float]) -> int:
+    """Order of preference among an atom's periodic images: fewest, then earliest shifts.
+
+    ``|offset|^2 * 27`` plus the offset's position in ``product((-1, 0, 1), repeat=3)``
+    (the loop order of both runtimes), so the unshifted atom ranks first among
+    its images and every rank is unique. ``imageRank`` in localKdeWorker.js.
+    """
+    ox, oy, oz = (int(value) for value in offset)
+    return (ox * ox + oy * oy + oz * oz) * 27 + (ox + 1) * 9 + (oy + 1) * 3 + (oz + 1)
+
+
 def _augment_periodic_images(
     positions: np.ndarray,
     margin: float,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Tile fractional positions into neighbor cells within ``margin`` of the cube.
 
     Folding atoms into one unit cell drops their periodic neighbors, so a KDE
     evaluated near a cell face misses the density that should wrap around from
     the opposite face. Adding the images restores those contributions. Returns
     the augmented positions plus, for every row, the index of its source atom
-    so callers can count unique atoms and normalize out the image duplicates.
+    (so callers can count unique atoms and normalize out the image duplicates)
+    and its image rank (``_image_rank``; lower is a smaller shift), which picks
+    one representative row per source atom for the bandwidth.
     """
     positions = np.asarray(positions, dtype=float)
     n = positions.shape[0]
     source_index = np.arange(n)
+    identity_rank = np.full(n, _image_rank((0.0, 0.0, 0.0)))
     if n == 0 or margin <= 0:
-        return positions, source_index
+        return positions, source_index, identity_rank
 
     augmented = [positions]
     sources = [source_index]
+    ranks = [identity_rank]
     for offset in product((-1.0, 0.0, 1.0), repeat=3):
         if offset == (0.0, 0.0, 0.0):
             continue
@@ -207,7 +223,8 @@ def _augment_periodic_images(
         if inside.any():
             augmented.append(shifted[inside])
             sources.append(source_index[inside])
-    return np.concatenate(augmented), np.concatenate(sources)
+            ranks.append(np.full(int(inside.sum()), _image_rank(offset)))
+    return np.concatenate(augmented), np.concatenate(sources), np.concatenate(ranks)
 
 
 def _normalize_vector(vector: np.ndarray, name: str) -> np.ndarray:
@@ -312,7 +329,7 @@ def oriented_kde_slice(
     # bandwidth contributes nothing here; kde_slice declines it.
     bw_reach = float(bw) if _valid_bandwidth(bw) else 0.0
     margin = min(0.5, max(0.1, 2.0 * bw_reach, thickness))
-    positions, source_index = _augment_periodic_images(positions, margin)
+    positions, source_index, image_rank = _augment_periodic_images(positions, margin)
 
     normal, u_axis, v_axis = _plane_basis(normal, u_axis, v_axis)
     corner_depths = _CUBE_CORNERS @ normal
@@ -341,6 +358,7 @@ def oriented_kde_slice(
         n_levels=n_levels,
         rng_seed=rng_seed,
         source_index=source_index,
+        image_rank=image_rank,
     )
 
     slab_start = max(depth_min, center_depth - thickness_depth / 2)
@@ -372,6 +390,75 @@ def oriented_kde_slice(
     return result
 
 
+def _source_atom_rows(
+    slab: np.ndarray,
+    mask: np.ndarray,
+    source_index: np.ndarray | None,
+    image_rank: np.ndarray | None,
+) -> np.ndarray:
+    """One in-plane row per source atom in the slab: the bandwidth's data.
+
+    Among an atom's slab rows the one with the lowest image rank (its smallest
+    periodic shift) represents it; ties cannot occur because ranks are unique
+    per atom. Rows come out ordered by source index, which is also the order
+    the worker's makeSlab() collects them in.
+    """
+    if source_index is None:
+        return slab
+    sources = np.asarray(source_index)[mask]
+    if sources.size == 0:
+        return slab
+    ranks = np.asarray(image_rank)[mask] if image_rank is not None else np.flatnonzero(mask)
+    order = np.lexsort((ranks, sources))
+    ordered_sources = sources[order]
+    first = np.ones(order.size, dtype=bool)
+    first[1:] = ordered_sources[1:] != ordered_sources[:-1]
+    return slab[order[first]]
+
+
+class _FixedCovarianceKDE(gaussian_kde):
+    """``scipy.stats.gaussian_kde`` with a supplied data covariance.
+
+    gaussian_kde estimates ``C`` from its own dataset. Here the dataset is the
+    slab rows -- periodic images included, possibly subsampled -- while ``C``
+    must come from the source atoms alone, so that the kernel ``bw**2 * C``
+    depends on neither the image margin nor the subsample. Only the covariance
+    estimate is replaced: ``_compute_covariance`` sets the attributes scipy's
+    own ``_compute_covariance`` sets (``factor``, ``covariance``, ``cho_cov``,
+    ``log_det``), and the density is still scipy's compiled Gaussian sum.
+    Because that relies on scipy's internals, construction checks one value
+    against the direct formula and raises rather than return a different
+    kernel on a scipy version that evaluates differently.
+    """
+
+    def __init__(self, dataset: np.ndarray, data_covariance: np.ndarray, bw: float):
+        self._fixed_covariance = np.atleast_2d(np.asarray(data_covariance, dtype=float))
+        super().__init__(dataset, bw_method=bw)
+        self._check_scipy_honours_the_covariance()
+
+    def _compute_covariance(self):
+        self.factor = self.covariance_factor()
+        self._data_covariance = self._fixed_covariance
+        self._data_cho_cov = cholesky(self._data_covariance, lower=True)
+        self.covariance = self._data_covariance * self.factor**2
+        self.cho_cov = (self._data_cho_cov * self.factor).astype(np.float64)
+        self.log_det = 2 * np.log(np.diag(self.cho_cov * np.sqrt(2 * np.pi))).sum()
+
+    def _check_scipy_honours_the_covariance(self) -> None:
+        point = self.dataset[:, :1]
+        whitened = solve_triangular(self.cho_cov, self.dataset - point, lower=True)
+        expected = float(
+            np.exp(-0.5 * np.sum(whitened * whitened, axis=0)).sum()
+            / (self.n * 2 * np.pi * self.cho_cov[0, 0] * self.cho_cov[1, 1])
+        )
+        actual = float(self.evaluate(point)[0])
+        if not abs(actual - expected) <= 1e-9 * expected:
+            raise RuntimeError(
+                "scipy.stats.gaussian_kde no longer evaluates a supplied covariance "
+                f"(scipy internals changed: {actual!r} != {expected!r}); update rmc_toolkits.kde"
+            )
+
+
 def kde_slice(
     positions: np.ndarray,
     z_center: float,
@@ -385,16 +472,28 @@ def kde_slice(
     n_levels: int = 8,
     rng_seed: int = 0,
     source_index: np.ndarray | None = None,
+    image_rank: np.ndarray | None = None,
 ) -> dict:
     """Compute an XY ``gaussian_kde`` density for a z-slab of a structure.
 
     Returns a JSON-serializable dict with the density grid, plot extent,
-    contour polylines, and the slab atom count.
+    contour polylines, the slab atom count, the kernel, and (when no density
+    was drawn) a ``message`` saying why.
+
+    The kernel is scipy's: ``H = bw**2 * C``. ``C`` is the covariance of the
+    slab's *source atoms*, one row per atom, and the density sums that fixed
+    kernel over every slab row (periodic images included, subsampled to
+    ``MAX_KDE_FIT_POINTS``), so neither the image margin nor the subsample
+    changes the kernel.
 
     ``source_index`` maps each position row to its source atom when the input
     contains periodic images. The reported ``slabCount`` is then the number of
     unique atoms in the slab, and the density is rescaled to per-atom
     normalization (``gaussian_kde`` divides by every fit point, images included).
+    ``image_rank`` orders a source atom's rows (lower = smaller periodic shift,
+    see ``_augment_periodic_images``); the lowest-ranked slab row represents
+    the atom in ``C``. Without it the first slab row of each atom does; without
+    ``source_index`` every row is its own atom.
     """
     positions = np.asarray(positions, dtype=float)
     if positions.ndim != 2 or positions.shape[1] != 3:
@@ -417,10 +516,8 @@ def kde_slice(
         mask = (z >= z_center - half) & (z <= z_center + half)
         slab = np.column_stack([x[mask], y[mask]])
         slab_total = int(slab.shape[0])
-        if source_index is not None:
-            slab_count = int(np.unique(np.asarray(source_index)[mask]).size)
-        else:
-            slab_count = slab_total
+        atoms = _source_atom_rows(slab, mask, source_index, image_rank)
+        slab_count = int(atoms.shape[0])
 
         # Decline reasons, in the order the browser worker checks them.
         if slab_total == 0:
@@ -429,22 +526,23 @@ def kde_slice(
             message = KDE_MESSAGES["bandwidth"]
         elif slab_total < 5:
             message = KDE_MESSAGES["too_few"]
-        elif np.unique(slab, axis=0).shape[0] < 3:
+        elif np.unique(atoms, axis=0).shape[0] < 3:
             message = KDE_MESSAGES["few_unique"]
-        elif np.linalg.matrix_rank(slab - slab.mean(axis=0)) < 2:
+        elif np.linalg.matrix_rank(atoms - atoms.mean(axis=0)) < 2:
             message = KDE_MESSAGES["collinear"]
         else:
+            covariance = np.cov(atoms, rowvar=False)
             if slab_total > MAX_KDE_FIT_POINTS:
                 rng = np.random.default_rng(rng_seed)
                 choice = rng.choice(slab_total, MAX_KDE_FIT_POINTS, replace=False)
                 slab = slab[choice]
             try:
-                if not _well_conditioned(np.cov(slab, rowvar=False)):
+                if not _well_conditioned(covariance):
                     raise np.linalg.LinAlgError("slab covariance is numerically singular")
-                kde = gaussian_kde(slab.T, bw_method=float(bw))
+                kde = _FixedCovarianceKDE(slab.T, covariance, float(bw))
             except (np.linalg.LinAlgError, ValueError):
-                # The fit points' covariance is not (safely) positive definite
-                # even though the slab passed the rank test.
+                # The source atoms' covariance is not (safely) positive
+                # definite even though they passed the rank test.
                 message = KDE_MESSAGES["singular"]
             else:
                 sample = np.vstack([mesh_x.ravel(), mesh_y.ravel()])

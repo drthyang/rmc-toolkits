@@ -70,14 +70,22 @@ const planeSectionVertices = (normal, offset) => {
     });
 };
 
+// Order of preference among an atom's periodic images: fewest, then earliest
+// shifts. |offset|^2 * 27 plus the offset's position in the (ox, oy, oz) loop
+// below, so the unshifted atom ranks first and every rank is unique; the same
+// numbers as _image_rank() in kde.py.
+export const imageRank = (ox, oy, oz) => (ox * ox + oy * oy + oz * oz) * 27 + (ox + 1) * 9 + (oy + 1) * 3 + (oz + 1);
+
 // Folding atoms into one unit cell drops their periodic neighbors, so a KDE
 // evaluated near a cell face misses the density that should wrap around from
 // the opposite face. Tile images from neighbor cells within `margin` of the
 // unit cube; sourceIndex maps every kept point back to its source atom so the
-// kernel can be normalized by unique atoms rather than by image duplicates.
+// kernel can be normalized by unique atoms rather than by image duplicates,
+// and imageRank (see above) picks each atom's representative for the bandwidth.
 export const augmentPeriodicImages = (points, margin) => {
     const augmented = [];
     const sourceIndex = [];
+    const imageRanks = [];
     points.forEach((point, index) => {
         for (let ox = -1; ox <= 1; ox += 1) {
             for (let oy = -1; oy <= 1; oy += 1) {
@@ -92,27 +100,36 @@ export const augmentPeriodicImages = (points, margin) => {
                     ) {
                         augmented.push({ x, y, z });
                         sourceIndex.push(index);
+                        imageRanks.push(imageRank(ox, oy, oz));
                     }
                 }
             }
         }
     });
-    return { augmented, sourceIndex };
+    return { augmented, sourceIndex, imageRanks };
 };
 
-const makeSlab = ({ points, sourceIndex, normal, uVector, vVector, range, zCenter, thickness }) => {
+// Slab rows (every image in the slab, for the density sum) and one row per
+// source atom (its lowest-ranked image in the slab, for the bandwidth), as
+// _source_atom_rows() in kde.py; atoms come out in source-index order.
+const makeSlab = ({ points, sourceIndex, imageRanks, normal, uVector, vVector, range, zCenter, thickness }) => {
     const depthSpan = range[1] - range[0] || 1;
     const slab = [];
-    const sources = new Set();
+    const atoms = new Map();
     points.forEach((point, index) => {
         const fraction = [point.x, point.y, point.z];
         const normalizedDepth = (dot(fraction, normal) - range[0]) / depthSpan;
         if (Math.abs(normalizedDepth - zCenter) <= thickness / 2) {
-            slab.push([dot(fraction, uVector), dot(fraction, vVector)]);
-            sources.add(sourceIndex ? sourceIndex[index] : index);
+            const row = [dot(fraction, uVector), dot(fraction, vVector)];
+            slab.push(row);
+            const source = sourceIndex ? sourceIndex[index] : index;
+            const rank = imageRanks ? imageRanks[index] : index;
+            const current = atoms.get(source);
+            if (!current || rank < current.rank) atoms.set(source, { rank, row });
         }
     });
-    return { slab, sourceCount: sources.size };
+    const atomRows = [...atoms.entries()].sort(([a], [b]) => a - b).map(([, entry]) => entry.row);
+    return { slab, atoms: atomRows, sourceCount: atoms.size };
 };
 
 const randomUnit = (seed) => {
@@ -259,17 +276,18 @@ const kernelSummary = (h00, h01, h11, rootDet) => {
 };
 
 // The Gaussian kernel of scipy.stats.gaussian_kde with a scalar bw_method f:
-// H = f^2 C, C the n-1 covariance of the fit points, evaluated exactly (no
-// ridge, no fallback). The density at a node is
-//   normalizer * sum_i exp(-0.5 |W (p - p_i)|^2),
-// with W = L^-1 the inverse of the lower Cholesky factor L = f chol(C) of H (the
-// whitening SciPy applies through cho_cov) and normalizer = imageFactor /
-// (2 pi det(L) n). Returns null when C is not positive definite, where SciPy
-// raises LinAlgError. imageFactor (slab rows / unique source atoms, >= 1)
-// rescales the sum to per-source-atom normalization when the samples include
-// periodic images.
-export const makeKernel = (samples, factor, imageFactor = 1) => {
-    const cov = covariance(samples);
+// H = f^2 C, evaluated exactly (no ridge, no fallback). `cov` is C: the n-1
+// covariance of the slab's source atoms (one row per atom, see makeSlab), so the
+// periodic images and the subsample leave the kernel alone. The density at a
+// node is
+//   normalizer * sum_i exp(-0.5 |W (p - p_i)|^2)
+// over the summed rows p_i, with W = L^-1 the inverse of the lower Cholesky
+// factor L = f chol(C) of H (the whitening SciPy applies through cho_cov) and
+// normalizer = weight / (2 pi det(L)). `weight` is the per-row weight: 1 / (rows
+// summed), times slab rows / unique source atoms (>= 1) when the rows include
+// periodic images, so the map is normalized per source atom. Returns null when
+// C is not safely positive definite, where kde.py declines.
+export const makeKernel = (cov, factor, weight) => {
     const chol = cholesky2(cov);
     if (!chol) return null;
     const l00 = factor * chol.l00;
@@ -280,7 +298,7 @@ export const makeKernel = (samples, factor, imageFactor = 1) => {
         w00: 1 / l00,
         w10: -l10 / (l00 * l11),
         w11: 1 / l11,
-        normalizer: imageFactor / (2 * Math.PI * l00 * l11 * samples.length),
+        normalizer: weight / (2 * Math.PI * l00 * l11),
         ...kernelSummary(cov.c00 * scaleFactor, cov.c01 * scaleFactor, cov.c11 * scaleFactor, l00 * l11)
     };
 };
@@ -386,10 +404,11 @@ export const computeKde = async (payload) => {
     // data spread, which is O(1) in fractional units) and the slab depth, so
     // both the in-plane density and the depth selection wrap correctly.
     const margin = Math.min(0.5, Math.max(0.1, 2 * (validBandwidth ? factor : 0), thickness));
-    const { augmented, sourceIndex } = augmentPeriodicImages(points, margin);
-    const { slab, sourceCount } = makeSlab({
+    const { augmented, sourceIndex, imageRanks } = augmentPeriodicImages(points, margin);
+    const { slab, atoms, sourceCount } = makeSlab({
         points: augmented,
         sourceIndex,
+        imageRanks,
         normal,
         uVector,
         vVector,
@@ -411,13 +430,14 @@ export const computeKde = async (payload) => {
         message = KDE_MESSAGES.bandwidth;
     } else if (slab.length < 5) {
         message = KDE_MESSAGES.tooFew;
-    } else if (!hasDistinctPoints(slab, 3)) {
+    } else if (!hasDistinctPoints(atoms, 3)) {
         message = KDE_MESSAGES.fewUnique;
-    } else if (!hasTwoDimensionalSpread(slab)) {
+    } else if (!hasTwoDimensionalSpread(atoms)) {
         message = KDE_MESSAGES.collinear;
     } else {
         const samples = sampleWithoutReplacement(slab, FIT_LIMIT, 0);
-        const kernel = makeKernel(samples, factor, slab.length / Math.max(sourceCount, 1));
+        const imageFactor = slab.length / Math.max(sourceCount, 1);
+        const kernel = makeKernel(covariance(atoms), factor, imageFactor / samples.length);
         if (!kernel) {
             message = KDE_MESSAGES.singular;
         } else {

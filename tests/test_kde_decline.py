@@ -78,12 +78,15 @@ class KdeDeclineTests(unittest.TestCase):
         result = _slice(_plane(points), bw=0.03, grid=24)
         self.assertIsNone(result["message"])
         self.assertEqual(result["fitCount"], 40)
+        # No images, no subsample: kde_slice's kernel is gaussian_kde's own. The
+        # covariances differ only by round-off (np.cov vs scipy's weighted
+        # cov), which this needle's conditioning (~1e6) amplifies to ~1e-10.
         reference = gaussian_kde(points.T, bw_method=0.03)
         np.testing.assert_allclose(result["kernel"]["covariance"], reference.covariance, rtol=1e-12)
         axis = np.linspace(0.0, 1.0, 24)
         mesh_x, mesh_y = np.meshgrid(axis, axis)
         expected = reference(np.vstack([mesh_x.ravel(), mesh_y.ravel()])).reshape(mesh_x.shape)
-        np.testing.assert_allclose(result["density"], expected, rtol=1e-12, atol=0)
+        np.testing.assert_allclose(result["density"], expected, rtol=1e-9, atol=1e-9 * expected.max())
 
     def test_kernel_summary_reports_principal_sigmas(self):
         rng = np.random.default_rng(5)

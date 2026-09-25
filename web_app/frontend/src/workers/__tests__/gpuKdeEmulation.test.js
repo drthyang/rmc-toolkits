@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { KDE_WGSL, packKdeParams, packKdeSamples } from '../gpuKde';
-import { computeDensityCpu, makeKernel } from '../localKdeWorker';
+import { computeDensityCpu, covariance, makeKernel } from '../localKdeWorker';
 
 const f32 = Math.fround;
 
@@ -57,7 +57,7 @@ const emulateShader = (paramData, sampleData) => {
 };
 
 const compare = (samples, factor, grid = 48) => {
-    const kernel = makeKernel(samples, factor);
+    const kernel = makeKernel(covariance(samples), factor, 1 / samples.length);
     const args = { samples, kernel, grid, xMin: 0, yMin: 0, xStep: 1 / (grid - 1), yStep: 1 / (grid - 1) };
     const cpu = computeDensityCpu(args);
     const paramData = packKdeParams({ ...args, sampleCount: samples.length });
