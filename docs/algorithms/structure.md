@@ -1039,9 +1039,10 @@ At the default $G=120$ that threshold is crossed at $n \ge 139$ fit points, so a
 
 **Fallback guarantee, stated precisely.** The device/pipeline promise is created once per worker
 and cached; *any* failure — no `navigator.gpu`, `requestAdapter()` returning null, `requestDevice()`
-or pipeline creation rejecting, a runtime error inside `computeDensityGpu`, or sub-threshold work —
-resolves to `null` and `computeKde()` falls through to `computeDensityCpu()` (`density = mapped ??
-computeDensityCpu(args)`). A lost device clears the cached promise so a later message can
+or pipeline creation rejecting, a runtime error inside `computeDensityGpu`, a read-back map with a
+non-finite node (since 1.0; pinned by `workers/__tests__/gpuNonFiniteFallback.test.js`), or
+sub-threshold work — resolves to `null` and `computeKde()` falls through to `computeDensityCpu()`
+(`density = mapped ?? computeDensityCpu(args)`). A lost device clears the cached promise so a later message can
 re-initialize. The result object reports which one ran via `backend: 'gpu' | 'cpu'`.
 
 The repo's own wording — `AGENTS.md`: *"fall back to the CPU loop with identical output"*;
@@ -1169,6 +1170,22 @@ it; the payload still holds the density, unchanged. A map that underflows to all
 same way. Pinned by `tests/test_kde_unresolved.py` and `workers/__tests__/unresolvedMap.test.js`
 (a synthetic two-site needle between the node rows, fully underflowed and resolved variants, and the
 `5KAVERAGE` layer when `data/` is present) and by the `unresolved-needle` case of the parity fixture.
+
+**A kernel below `KERNEL_MIN_SIGMA` $=10^{-10}$ is not evaluated.** Both engines compute the kernel
+summary first and, when $\sigma_{\min}<10^{-10}$ (in-plane fractional units), skip the Gaussian sum
+and return the all-zero map with that summary, `fitCount` set, `message = null` and the warnings
+`subgrid` + `unresolved` (grid mass 0). SciPy whitens the *absolute* coordinates, $x/\sigma$, so a
+node's residual carries a round-off of $\sim\varepsilon|x|/\sigma$ whitened units: harmless at
+$10^{-10}$ (the value at an atom is off by $<10^{-7}$ for $|x|\le100$), of order 1 near
+$\sigma\sim10^{-13}|x|$, where SciPy returns 0 at an atom. Before 1.0 that made
+`_FixedCovarianceKDE`'s self-check fail, and the slice declined with the SciPy `engine` message for
+what was a bandwidth $f\lesssim10^{-14}$; below $f\sim10^{-150}$ the normaliser
+$1/(2\pi\det L)$ overflows too, and the worker's map came out NaN at every node ($\infty\cdot0$).
+A kernel this narrow sits at least $10^{7}$ times below any grid step, so a node farther than
+$\sim40\sigma$ from every atom is an exact float64 zero anyway. `/api/kde/slice` therefore answers
+200 with that flagged zero map (e.g. `bw=1e-200`), never a NaN map and never a silent one; a result
+that still came out non-finite would be a 400 (`_strict_result_response`). Pinned by
+`tests/test_kde_unresolved.py`, `unresolvedMap.test.js` and `tests/test_backend_validation.py`.
 
 Before 1.0 the Python guard was `density.max() <= 0` applied **after** the log transform, so any map
 whose peak linear density was $\le 1$ per unit fractional area lost every contour on the SciPy path

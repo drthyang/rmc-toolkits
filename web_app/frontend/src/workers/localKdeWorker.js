@@ -187,6 +187,14 @@ export const KDE_WARNINGS = {
         + 'Raise the bandwidth or the grid.'
 };
 
+// The narrowest kernel a map is evaluated for (minor sigma, in-plane fractional
+// units): KERNEL_MIN_SIGMA in kde.py, where SciPy's whitening of the absolute
+// coordinates stops resolving the kernel. Below ~1e-150 the normalizer
+// 1 / (2 pi det L) overflows and Inf * 0 would make every node NaN. A kernel this
+// narrow is >= 1e7 times below any grid step, so both runtimes skip the sum and
+// return the zero map with its kernel summary, flagged `subgrid` + `unresolved`.
+export const KERNEL_MIN_SIGMA = 1e-10;
+
 const kernelWarnings = (kernel, gridStep) => (
     kernel.sigmaMinor < KERNEL_SUBGRID_RATIO * gridStep
         ? [{ code: 'subgrid', message: KDE_WARNINGS.subgrid }]
@@ -476,21 +484,27 @@ export const computeKde = async (payload) => {
                 sigmaMajor: kernel.sigmaMajor
             };
             warnings = kernelWarnings(kernel, Math.max(xStep, yStep));
-            const args = { samples, kernel, grid, xMin, yMin, xStep, yStep };
+            // A kernel below KERNEL_MIN_SIGMA is not evaluated: the zero map
+            // (filled below), flagged `unresolved` by its zero grid mass.
+            if (kernel.sigmaMinor >= KERNEL_MIN_SIGMA) {
+                const args = { samples, kernel, grid, xMin, yMin, xStep, yStep };
 
-            // Run the density map on the GPU when the workload is large enough to
-            // amortize the setup cost. Any failure or unavailability falls back to
-            // the CPU loop, which evaluates the same kernel in float64.
-            let mapped = null;
-            if (shouldUseGpu(grid, samples.length)) {
-                try {
-                    mapped = await computeDensityGpu(args);
-                } catch {
-                    mapped = null;
+                // Run the density map on the GPU when the workload is large enough
+                // to amortize the setup cost. Any failure or unavailability, or a
+                // map with a non-finite node, falls back to the CPU loop, which
+                // evaluates the same kernel in float64.
+                let mapped = null;
+                if (shouldUseGpu(grid, samples.length)) {
+                    try {
+                        mapped = await computeDensityGpu(args);
+                    } catch {
+                        mapped = null;
+                    }
+                    if (mapped && !mapped.every((row) => row.every(Number.isFinite))) mapped = null;
                 }
+                density = mapped ?? computeDensityCpu(args);
+                if (mapped) backend = 'gpu';
             }
-            density = mapped ?? computeDensityCpu(args);
-            if (mapped) backend = 'gpu';
         }
     }
 

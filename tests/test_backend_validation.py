@@ -19,6 +19,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -155,10 +156,33 @@ class KdeSliceValidationTests(_ValidationCase):
     def test_zero_custom_normal_is_bad_request(self):
         self.assertBadRequest(self.slice(orientation="custom", nx=0, ny=0, nz=0), "normal")
 
-    def test_underflowing_bandwidth_is_an_error_not_a_nan_map(self):
-        # Finite and positive, so it passes the range check, but the float64
-        # kernel underflows: the density comes out NaN.
-        self.assertBadRequest(self.slice(bw="1e-200"), "NaN or Infinity")
+    def test_underflowing_bandwidth_is_a_flagged_zero_map_not_a_nan_map(self):
+        # Finite and positive, so it passes the range check, but the kernel is
+        # far below double precision (det H underflows, the normaliser would
+        # overflow). The contract: never a silent empty or NaN map -- a finite
+        # zero map that carries the `unresolved` warning (the page draws the
+        # warning, not the map), not NaN, not a decline that blames SciPy.
+        assert_flagged_zero_map(self, self.assertOk(self.slice(bw="1e-200")))
+
+    def test_a_bandwidth_below_the_coordinate_resolution_is_flagged_too(self):
+        # bw = 1e-30: det H is representable, but scipy's whitening of the
+        # absolute coordinates cannot resolve the kernel (its self-check used
+        # to fail and the slice declined with the SciPy "engine" message).
+        assert_flagged_zero_map(self, self.assertOk(self.slice(bw="1e-30")))
+
+
+def assert_flagged_zero_map(case, payload):
+    """An unresolvable kernel's slice: finite zeros, the kernel, `unresolved`."""
+    density = payload["density"]
+    case.assertTrue(
+        all(isinstance(value, float) and np.isfinite(value) for row in density for value in row),
+        "every node must be a finite number (no NaN, no null)",
+    )
+    case.assertEqual(payload["vmax"], 0.0)
+    case.assertIsNone(payload["message"])
+    case.assertIsNotNone(payload["kernel"])
+    case.assertEqual([warning["code"] for warning in payload["warnings"]], ["subgrid", "unresolved"])
+    case.assertEqual(payload["contours"], [])
 
 
 def _nulls(value):
@@ -215,14 +239,36 @@ class NonFiniteResultUnderAnyProviderTests(_ValidationCase):
         backend_app.app.json = provider_class(backend_app.app)
         self.addCleanup(setattr, backend_app.app, "json", original)
 
-    def test_underflowing_kde_slice_is_a_bad_request(self):
+    def test_underflowing_kde_slice_is_a_flagged_finite_map(self):
+        # A NaN map would come out as nulls under _NullingProvider and as bare
+        # NaN tokens (rejected by strict_json) under _NanTokenProvider; the
+        # engine returns finite zeros with the `unresolved` warning instead.
         for provider_class in self.PROVIDERS:
             with self.subTest(provider=provider_class.__name__):
                 self.with_provider(provider_class)
-                self.assertBadRequest(
-                    self.get("/api/kde/slice", **{**KdeSliceValidationTests.BASE, "bw": "1e-200"}),
-                    "NaN or Infinity",
+                assert_flagged_zero_map(
+                    self,
+                    self.assertOk(self.get("/api/kde/slice", **{**KdeSliceValidationTests.BASE, "bw": "1e-200"})),
                 )
+
+    def test_a_nan_kde_slice_is_a_bad_request(self):
+        # The guard itself: were the engine to return a NaN map, the route
+        # answers 400 whatever the provider, never a 200 with nulls or tokens.
+        real = backend_app.oriented_kde_slice
+
+        def nan_slice(*args, **kwargs):
+            result = real(*args, **kwargs)
+            result["density"][0][0] = float("nan")
+            return result
+
+        for provider_class in self.PROVIDERS:
+            with self.subTest(provider=provider_class.__name__):
+                self.with_provider(provider_class)
+                with mock.patch.object(backend_app, "oriented_kde_slice", nan_slice):
+                    self.assertBadRequest(
+                        self.get("/api/kde/slice", **{**KdeSliceValidationTests.BASE, "bw": "0.07"}),
+                        "NaN or Infinity",
+                    )
 
     def test_extreme_pca_kde_is_a_bad_request(self):
         base = {"referenceNumber": 1, "grid": 12, "projections": "false"}

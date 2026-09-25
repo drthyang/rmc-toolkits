@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { structureFromRmc6f } from '../../browserData.js';
-import { KDE_WARNINGS, UNRESOLVED_MASS_LIMIT, computeKde } from '../localKdeWorker';
+import { KDE_WARNINGS, KERNEL_MIN_SIGMA, UNRESOLVED_MASS_LIMIT, computeKde } from '../localKdeWorker';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../../', import.meta.url));
 const AVERAGE_5K = `${REPO_ROOT}data/5K_try1/GaNb4Se8_5KAVERAGE.rmc6f`;
@@ -72,6 +72,31 @@ describe('unresolved (between-node) kernels', () => {
         expect(result.vmax).toBe(0);
         expect(codes(result)).toEqual(['subgrid', 'unresolved']);
         expect(result.contours).toEqual([]);
+    });
+
+    it('returns a kernel below the evaluable floor as a flagged zero map, never NaN', async () => {
+        // kde.py: test_a_kernel_below_the_evaluable_floor_is_a_flagged_zero_map.
+        // At bw = 1e-200 the normalizer 1 / (2 pi det L) overflows and every
+        // node used to come out Inf * 0 = NaN.
+        for (const bandwidth of [1e-30, 1e-200]) {
+            const result = await cSlice(twoSiteNeedle(0.01), { bandwidth });
+            expect(result.density.flat().every((value) => value === 0)).toBe(true);
+            expect(result.message).toBeNull();
+            expect(result.kernel).not.toBeNull();
+            expect(result.kernel.sigmaMinor).toBeLessThan(KERNEL_MIN_SIGMA);
+            expect(result.fitCount).toBe(8);
+            expect(codes(result)).toEqual(['subgrid', 'unresolved']);
+            expect(result.contours).toEqual([]);
+        }
+    });
+
+    it('evaluates a narrow kernel above the floor', async () => {
+        const points = twoSiteNeedle(0.01);
+        points[0] = { ...points[0], x: 0, y: 0 };
+        const result = await cSlice(points, { bandwidth: 1e-6 });
+        expect(result.kernel.sigmaMinor).toBeGreaterThan(KERNEL_MIN_SIGMA);
+        expect(result.vmax).toBeGreaterThan(1e9);
+        expect(result.density.flat().every(Number.isFinite)).toBe(true);
     });
 
     it('leaves the same layer alone when a wider kernel reaches the nodes', async () => {

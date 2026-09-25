@@ -110,6 +110,23 @@ KDE_WARNINGS = {
 }
 
 
+# The narrowest kernel a map is evaluated for: minor sigma in the in-plane
+# units of the positions (fractional for the structure slices, whose
+# coordinates are O(1)). SciPy whitens the absolute coordinates, x / sigma, so
+# the residual of a node next to an atom carries a round-off of ~eps |x| / sigma
+# whitened units; that is harmless at 1e-10 (the kernel's value is off by
+# < 1e-7 for |x| <= 100) but reaches order 1 near sigma ~ 1e-13 |x|, where
+# SciPy returns 0 at an atom and _FixedCovarianceKDE's self-check fails --
+# blaming the SciPy release for what is a bandwidth ~1e-13. Below ~1e-150 the
+# normalisation 1 / (2 pi det L) overflows too (the worker's Inf * 0 is NaN).
+# A kernel this narrow sits >= 1e7 times below any grid step (<= 400 nodes per
+# axis): a node farther than ~40 sigma from every atom is an exact float64 zero,
+# so both runtimes skip the sum and return the zero map with its kernel summary,
+# flagged ``subgrid`` and ``unresolved`` -- never a NaN map, never a silent
+# one. The worker uses the same constant (localKdeWorker.js).
+KERNEL_MIN_SIGMA = 1e-10
+
+
 def _kernel_warnings(kernel: dict, grid_step: float, grid_mass: float) -> list[dict]:
     """``subgrid`` and ``unresolved`` diagnostics for a drawn map.
 
@@ -666,18 +683,30 @@ def kde_slice(
                 choice = rng.choice(slab_total, MAX_KDE_FIT_POINTS, replace=False)
                 slab = slab[choice]
             kde = None
+            x_step = (float(xlim[1]) - float(xlim[0])) / (grid - 1)
+            y_step = (float(ylim[1]) - float(ylim[0])) / (grid - 1)
             try:
                 if not _well_conditioned(covariance):
                     raise np.linalg.LinAlgError("slab covariance is numerically singular")
-                kde = _FixedCovarianceKDE(slab.T, covariance, float(bw))
+                kernel_factor = cholesky(covariance, lower=True) * float(bw)
+                kernel = _kernel_summary(covariance * float(bw) ** 2, kernel_factor)
+                message = None
+                if kernel["sigmaMinor"] >= KERNEL_MIN_SIGMA:
+                    kde = _FixedCovarianceKDE(slab.T, covariance, float(bw))
+                else:
+                    # Too narrow to evaluate (KERNEL_MIN_SIGMA): the zero map.
+                    fit_count = int(slab.shape[0])
+                    warnings = _kernel_warnings(kernel, max(x_step, y_step), 0.0)
             except (np.linalg.LinAlgError, ValueError):
                 # The source atoms' covariance is not (safely) positive
                 # definite even though they passed the rank test.
+                kernel = None
                 message = KDE_MESSAGES["singular"]
             except ScipyKdeUnsupported as exc:
                 # Decline rather than fail the request: the reason is the
                 # installed SciPy, not the slab.
                 _LOG.warning("%s", exc)
+                kernel = None
                 message = KDE_MESSAGES["engine"]
             if kde is not None:
                 sample = np.vstack([mesh_x.ravel(), mesh_y.ravel()])
@@ -688,9 +717,6 @@ def kde_slice(
                     # amplitude matches the cell interior.
                     density *= slab_total / slab_count
                 fit_count = int(slab.shape[0])
-                kernel = _kernel_summary(kde.covariance, kde.cho_cov)
-                x_step = (float(xlim[1]) - float(xlim[0])) / (grid - 1)
-                y_step = (float(ylim[1]) - float(ylim[0])) / (grid - 1)
                 grid_mass = float(np.sum(density)) * x_step * y_step
                 warnings = _kernel_warnings(kernel, max(x_step, y_step), grid_mass)
                 message = None
