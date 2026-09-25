@@ -225,11 +225,13 @@ const makeProjectionWall = (projection, axes, mean, boxHalfWidths, colormap) => 
         return mesh;
     };
 
+    // The texture is sRGB-tagged, so the backing's colour is given in sRGB too --
+    // otherwise it would be read as linear and render visibly lighter.
     const zero = sampleColormap(colormap, 0);
     const backing = place(new THREE.Mesh(
         new THREE.PlaneGeometry(2 * boxHalfWidths[first], 2 * boxHalfWidths[second]),
         new THREE.MeshBasicMaterial({
-            color: new THREE.Color(zero[0] / 255, zero[1] / 255, zero[2] / 255),
+            color: new THREE.Color().setRGB(zero[0] / 255, zero[1] / 255, zero[2] / 255, THREE.SRGBColorSpace),
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.96,
@@ -853,7 +855,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     // --- Rebuild the isosurface, ellipsoid, and axis triad when data changes. --
     useEffect(() => {
         const handle = sceneRef.current;
-        if (!handle || !kde) return;
+        if (!handle) return;
         const { surfaceGroup, ellipsoidGroup, axesGroup, crystalAxesGroup, wallsGroup, camera, controls } = handle;
 
         const dispose = (group) => {
@@ -871,6 +873,9 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         dispose(axesGroup);
         dispose(crystalAxesGroup);
         dispose(wallsGroup);
+        // No volume (a failed request, e.g. a zero-spread site, or no site): leave the
+        // scene empty rather than keep drawing the previous site's density.
+        if (!kde) return;
 
         const axes = kde.axes;
         const mean = kde.mean;
@@ -1541,9 +1546,13 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                 <tr>
                                                     <th scope="row">Anisotropy</th>
                                                     <td>
+                                                        {/* Degenerate means λ3/λ1 < 1e-6, i.e. anisotropy ≥ 1000: the
+                                                            floored ratio beyond that is round-off, not a measurement. */}
                                                         {selectedEllipsoid.zeroSpread
                                                             ? 'no displacement'
-                                                            : `${numberFormat(selectedEllipsoid.anisotropy, 2)}${selectedEllipsoid.degenerate ? ' · degen.' : ''}`}
+                                                            : selectedEllipsoid.degenerate
+                                                                ? '≥ 1000 · degen.'
+                                                                : numberFormat(selectedEllipsoid.anisotropy, 2)}
                                                     </td>
                                                 </tr>
                                                 <tr>

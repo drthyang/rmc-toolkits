@@ -89,7 +89,14 @@ export default function useSiteCloud({ directory, localRun, probability = 0.5, c
         }[kind] ?? '/api/pca/kde';
         return axios
             .get(`${API_BASE_URL}${endpoint}`, { params: { dir: directory || '.', ...params } })
-            .then((response) => response.data);
+            .then((response) => response.data)
+            .catch((error) => {
+                // Surface the server's own message ("displacement cloud has zero
+                // spread", a non-finite coordinate, ...) rather than axios's generic
+                // "Request failed with status code 400".
+                const message = error?.response?.data?.error;
+                throw message ? new Error(message) : error;
+            });
     }, [rmc6fText, directory]);
 
     // --- Load the per-site ellipsoid table. -----------------------------------

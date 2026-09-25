@@ -451,8 +451,11 @@ the CSS twins of the 3D triad colours):
 
 Beside it a *Covariance U (Å²)* table prints $\mathbf{U}$ as a $3\times3$ Cartesian matrix to 4
 decimals. The *Summary* block prints $U_\mathrm{iso}$ (4), $B_\mathrm{iso}$ (3), anisotropy (2) and
-non-Gaussianity (2); the anisotropy cell appends `· degen.` when the `degenerate` flag is set, and
-non-Gaussianity falls back to the KDE result's `nonGaussianity` when the site record lacks one.
+non-Gaussianity (2). The anisotropy cell prints *no displacement* for a zero-spread site and
+`≥ 1000 · degen.` for any other degenerate one — `degenerate` means $\lambda_3/\lambda_1<10^{-6}$,
+i.e. an anisotropy of at least 1000, and the floored ratio beyond that (e.g. $4\times10^{12}$ for an
+exactly planar cloud) is round-off, not a measurement; the payload keeps the number. Non-Gaussianity
+falls back to the KDE result's `nonGaussianity` when the site record lacks one.
 Non-finite values render as an em dash (`numberFormat` returns `'—'`).
 
 A fourth column, *Crystal orientation*, prints where each principal axis points in the crystal:
@@ -481,10 +484,13 @@ $\lambda_a=0$, `rms` $=$ `semiAxes` $=0$, $U_\mathrm{iso}=B_\mathrm{iso}=0$; `ze
 the Summary prints *no displacement* and *Non-Gaussianity* `—`, and the Principal-axes table shows a
 one-line explanation instead of axes. The KDE request for that site **throws** — `pca_kde_volume()` /
 `pcaKdeVolume()` raise *"a 3D KDE needs at least four points"* for $n<4$ and *"displacement cloud has
-zero spread"* for $\lambda_1<10^{-8}$ Å² (Step 6) — and the page shows the red `pca-badge is-error`
-overlay in the viewport. Because the sites table and the KDE volume are two independent requests,
-the tables render while the 3D view shows only the error badge, and the metadata line above (which
-needs `kde`) does not render at all.
+zero spread"* for $\lambda_1<10^{-8}$ Å² (Step 6) — and the page shows that message in the red
+`pca-badge is-error` overlay in an **emptied** viewport (the scene is cleared whenever there is no
+volume, so the previous site's density is never left on screen; in server mode `requestPca` rethrows
+the route's `{"error": …}` text rather than axios's generic "Request failed with status code 400").
+Because the sites table and the KDE volume are two independent requests, the tables render while the
+3D view shows only the error badge, and the metadata line above (which needs `kde`) does not render
+at all.
 
 **What the code does *not* compute.** There is no conversion of the Cartesian $\mathbf{U}$ to the
 crystallographic $U^{ij}$ / $U_\mathrm{cif}$ basis (components on the reciprocal-cell axes) and no
