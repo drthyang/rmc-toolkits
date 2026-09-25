@@ -62,6 +62,9 @@ RHO0_PHYSICAL_RANGE = (0.005, 0.25)
 RHO0_SEED = 0.05
 #: Width (A^-1) of the low-Q head the Faber-Ziman Q->0 extrapolation is fitted on.
 FZ_FIT_WIDTH = 1.0
+#: Largest relative standard error of a_fz (from S_meas(0) - level) for which
+#: the Faber-Ziman amplitude is reported as reliable (|denominator| >= 5 sigma).
+FZ_REL_SE_MAX = 0.2
 #: Relative rounding slack of the <b^2> >= <b>^2 (Cauchy-Schwarz) check: a
 #: single-element sample has <b^2> = <b>^2 exactly, i.e. S(0) = 0.
 B_SQ_RTOL = 1.0e-9
@@ -738,6 +741,81 @@ def _low_r_rms(r: np.ndarray, g_filtered: np.ndarray, config: ScalingConfig) -> 
     return float(np.sqrt(np.mean(g_filtered[window] ** 2)))
 
 
+def fz_limit_fit(
+    q: np.ndarray,
+    sq: np.ndarray,
+    level: float,
+    config: ScalingConfig,
+    *,
+    fit_width: float = FZ_FIT_WIDTH,
+    level_uncertainty: float = 0.0,
+) -> dict[str, Any] | None:
+    """The Q->0 Faber-Ziman amplitude with its conditioning.
+
+    ``a_fz = (s0_target - 1) / (S_meas(0) - level)`` (see
+    :func:`amplitude_from_fz_limit`). The denominator is a difference of two
+    measured numbers that can nearly cancel, so the Huber head fit also
+    returns the standard error of its Q = 0 intercept (weighted residual
+    variance of the final IRLS solve), combined in quadrature with the level's
+    uncertainty (``level_uncertainty``, the level sweep's spread) into
+    ``denominator_se`` and the relative error ``a_fz_rel_se`` of ``a_fz``
+    (= ``denominator_se / |denominator|``). ``reliable`` is False when that
+    exceeds :data:`FZ_REL_SE_MAX` — the head (e.g. Bragg-contaminated
+    crystalline data) cannot pin S_meas(0) against the level: on the Mn3Sn
+    59438 run a_fz = 74-141 at Qmin 0.82-1.02 with a 30-49 % relative error, and
+    512 (174 %) at Qmin 1.05 (the 300 K run: 10.4-10.9, 6-9 %). The flag is
+    statistical: a systematic head bias below the threshold (55537: 11 -> 6
+    at 9-18 %) still needs the concordance cross-check. Returns None
+    when ``b_sq_avg`` is missing, the
+    head has < 8 points, or the denominator vanishes.
+    """
+    if config.b_sq_avg is None:
+        return None
+    s0_target = 1.0 - config.b_sq_avg / config.b_avg_sq
+    head = q <= q[0] + fit_width
+    if head.sum() < 8:
+        return None
+    q_head, s_head = q[head], sq[head]
+    q_mean = q_head.mean()
+    design = np.column_stack([np.ones_like(q_head), q_head - q_mean])
+    weights = np.ones_like(q_head)
+    solution = np.array([np.median(s_head), 0.0])
+    used = weights
+    for _ in range(4):
+        used = weights
+        solution, *_ = np.linalg.lstsq(
+            design * used[:, np.newaxis], s_head * used, rcond=None
+        )
+        residuals = design @ solution - s_head
+        weights = _huber_weights(residuals)
+    s_meas_0 = float(solution[0] - solution[1] * q_mean)  # value at Q = 0
+    denom = s_meas_0 - level
+    if abs(denom) < 1e-9:
+        return None
+    # Standard error of the extrapolated intercept of the final weighted solve.
+    w2 = used * used
+    dof = max(int(head.sum()) - 2, 1)
+    sigma2 = float(np.sum(w2 * residuals**2) / dof)
+    normal = design.T @ (design * w2[:, np.newaxis])
+    at_zero = np.array([1.0, -q_mean])
+    s_meas_0_se = float(np.sqrt(max(sigma2 * at_zero @ np.linalg.solve(normal, at_zero), 0.0)))
+    level_se = float(level_uncertainty) if np.isfinite(level_uncertainty) else 0.0
+    denom_se = float(np.hypot(s_meas_0_se, level_se))
+    rel_se = denom_se / abs(denom)
+    return {
+        "a_fz": float((s0_target - 1.0) / denom),
+        "s_meas_0": s_meas_0,
+        "s_meas_0_se": s_meas_0_se,
+        "level": float(level),
+        "level_uncertainty": level_se,
+        "denominator": float(denom),
+        "denominator_se": denom_se,
+        "a_fz_rel_se": float(rel_se),
+        "reliable": bool(rel_se <= FZ_REL_SE_MAX),
+        "fit_width": float(fit_width),
+    }
+
+
 def amplitude_from_fz_limit(
     q: np.ndarray,
     sq: np.ndarray,
@@ -753,32 +831,15 @@ def amplitude_from_fz_limit(
     ``a_fz = (s0_target - 1) / (S_meas(0) - level)`` where ``S_meas(0)`` is a
     robust linear extrapolation of the first ``fit_width`` of measured data.
     Requires ``config.b_sq_avg``; returns None when unavailable or the
-    extrapolation is degenerate. The caller should treat long extrapolations
-    (Qmin >> fit_width) and Bragg-contaminated low-Q regions with suspicion —
-    compare against the density-limit amplitude (``diagnostics_summary``'s
-    concordance) rather than trusting either alone.
+    extrapolation is degenerate. The number alone says nothing about how well
+    the head pins S_meas(0) against the level — :func:`fz_limit_fit` returns
+    its relative standard error and a ``reliable`` flag (reported as
+    ``a_fz_rel_se`` / ``a_fz_reliable`` by :func:`diagnostics_summary`); long
+    extrapolations (Qmin >> fit_width) and Bragg-contaminated heads are the
+    usual culprits.
     """
-    if config.b_sq_avg is None:
-        return None
-    s0_target = 1.0 - config.b_sq_avg / config.b_avg_sq
-    head = q <= q[0] + fit_width
-    if head.sum() < 8:
-        return None
-    qc = q[head] - q[head].mean()
-    design = np.column_stack([np.ones_like(qc), qc])
-    weights = np.ones_like(qc)
-    solution = np.array([np.median(sq[head]), 0.0])
-    for _ in range(4):
-        solution, *_ = np.linalg.lstsq(
-            design * weights[:, np.newaxis], sq[head] * weights, rcond=None
-        )
-        residuals = design @ solution - sq[head]
-        weights = _huber_weights(residuals)
-    s_meas_0 = float(solution[0] - solution[1] * q[head].mean())  # value at Q = 0
-    denom = s_meas_0 - level
-    if abs(denom) < 1e-9:
-        return None
-    return float((s0_target - 1.0) / denom)
+    fit = fz_limit_fit(q, sq, level, config, fit_width=fit_width)
+    return None if fit is None else fit["a_fz"]
 
 
 def _despike_mask(sq: np.ndarray, window: int, nsigma: float) -> np.ndarray:
@@ -1229,7 +1290,10 @@ def _autoscale_pass(
                 "flat high-Q window, so there is no measured level to anchor; "
                 "inspect the tail or use the density-limit fit"
             )
-        a_fz = amplitude_from_fz_limit(q, sq, level, config)
+        fz_fit = fz_limit_fit(
+            q, sq, level, config, level_uncertainty=sweep.level_uncertainty
+        )
+        a_fz = None if fz_fit is None else fz_fit["a_fz"]
         if a_fz is None or not np.isfinite(a_fz) or a_fz <= 0:
             raise ValueError(
                 "amplitude_criterion='fz': the Q->0 extrapolation is "
@@ -1250,6 +1314,7 @@ def _autoscale_pass(
         result.provenance["mode"] = "auto"
         result.provenance["c1_mode_effective"] = "sweep"
         result.provenance["level_sweep"] = _sweep_provenance(sweep)
+        result.provenance["fz_limit"] = fz_fit
         return result
 
     delta_sq = np.zeros_like(q)
@@ -1285,9 +1350,12 @@ def _autoscale_pass(
             f"low-r window [{lo:.4g}, {hi:.4g}] A"
         )
 
-    a_fz = None
+    a_fz = fz_fit = None
     if level is not None:
-        a_fz = amplitude_from_fz_limit(q, sq, level, config)
+        fz_fit = fz_limit_fit(
+            q, sq, level, config, level_uncertainty=sweep.level_uncertainty
+        )
+        a_fz = None if fz_fit is None else fz_fit["a_fz"]
 
     result = scale_pipeline(
         q_raw,
@@ -1304,6 +1372,7 @@ def _autoscale_pass(
     result.provenance["mode"] = "auto"
     result.provenance["c1_mode_effective"] = "sweep" if level is not None else "joint"
     result.provenance["fit_failure"] = fit_failure
+    result.provenance["fz_limit"] = fz_fit
     if sweep is not None:
         result.provenance["level_sweep"] = _sweep_provenance(sweep)
     return result
@@ -1381,6 +1450,7 @@ def estimate_rho0(
     converged = False
     stopped: str | None = None
     reason: str | None = None
+    fz_fit: dict[str, Any] | None = None
     for _ in range(max_iter):
         work = replace(work, rho0=rho)
         try:
@@ -1400,6 +1470,7 @@ def estimate_rho0(
                 "density cannot be anchored on this data"
             )
         concordance = float(result.a_fz / result.a)
+        fz_fit = result.provenance.get("fz_limit")
         history.append((rho, float(result.a), float(result.a_fz), concordance))
         if abs(concordance - 1.0) <= rtol:
             # The amplitudes agree; the root is the density only if the fit it
@@ -1453,6 +1524,10 @@ def estimate_rho0(
         # rests on. Judged on the data, not on config.qmin.
         "extrapolated": bool(q_first > FZ_FIT_WIDTH),
         "q_first": q_first,
+        # The density is anchored on a_fz: an ill-conditioned Q->0 limit
+        # (fz_limit_fit) makes the estimate as uncertain as a_fz itself.
+        "a_fz_rel_se": None if not fz_fit else fz_fit["a_fz_rel_se"],
+        "a_fz_reliable": None if not fz_fit else fz_fit["reliable"],
         "history": [list(row) for row in history],
         "stopped": stopped,
         "reason": None if converged else reason,
@@ -1533,6 +1608,12 @@ def diagnostics_summary(result: ScalingResult, config: ScalingConfig) -> dict[st
             )
     if result.a_fz is not None:
         summary["a_fz"] = result.a_fz
+        fz_fit = result.provenance.get("fz_limit")
+        if fz_fit:
+            # Conditioning of the Q->0 extrapolation: a_fz = (s0-1)/(S_meas(0)-L)
+            # blows up when S_meas(0) ~ L within their errors.
+            summary["a_fz_rel_se"] = fz_fit["a_fz_rel_se"]
+            summary["a_fz_reliable"] = fz_fit["reliable"]
         if amplitude_criterion != "fz":
             # Concordance of the two independent amplitude criteria: the
             # density-limit amplitude (result.a) vs the Q->0 Faber-Ziman-limit

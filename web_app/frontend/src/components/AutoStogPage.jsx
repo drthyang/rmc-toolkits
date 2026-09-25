@@ -1050,6 +1050,15 @@ const AutoStogPage = () => {
               </span>
             </div>
           )}
+          {diagnostics.a_fz_reliable === false && (
+            <div className="autostog-stat is-warn">
+              <span className="autostog-stat-label">Q→0 amplitude</span>
+              <span className="autostog-stat-value">a_fz ill-conditioned (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</span>
+              <span className="autostog-stat-sub">
+                S_meas(0) − level is not resolved from its error (Bragg-contaminated or long low-Q head) — trust neither a_fz nor the concordance
+              </span>
+            </div>
+          )}
           {diagnostics.rmax_beyond_alias_limit && (
             <div className="autostog-stat is-warn">
               <span className="autostog-stat-label">Aliasing</span>

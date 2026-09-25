@@ -440,6 +440,8 @@ export const RHO0_PHYSICAL_RANGE = [0.005, 0.25];
 export const RHO0_SEED = 0.05;
 /** Width (Å⁻¹) of the low-Q head the Faber-Ziman extrapolation is fitted on (scaling.FZ_FIT_WIDTH). */
 export const FZ_FIT_WIDTH = 1.0;
+/** Largest relative error of aFz for a reliable Faber-Ziman amplitude (scaling.FZ_REL_SE_MAX). */
+export const FZ_REL_SE_MAX = 0.2;
 /** Rounding slack of the <b^2> >= <b>^2 check (scaling.B_SQ_RTOL). */
 export const B_SQ_RTOL = 1e-9;
 /** <b>^2 values closer than this (relative) are the same scattering-length set (scaling_cli.COEFFICIENT_RTOL). */
@@ -839,7 +841,16 @@ const lowRRmsOf = (r, gFiltered, config) => {
   return Math.sqrt(total / count);
 };
 
-export const amplitudeFromFzLimit = (q, sq, level, config, { fitWidth = FZ_FIT_WIDTH } = {}) => {
+/**
+ * The Q->0 Faber-Ziman amplitude with its conditioning (port of
+ * scaling.fz_limit_fit — same fit, same error model): a_fz = (s0 - 1) /
+ * (S_meas(0) - level), the standard error of the Huber head fit's Q = 0
+ * intercept (final weighted solve) combined in quadrature with the level's
+ * uncertainty, aFzRelSe = denominatorSe / |denominator|, and reliable =
+ * aFzRelSe <= FZ_REL_SE_MAX. null when bSqAvg is missing, the head has < 8
+ * points, or the denominator vanishes.
+ */
+export const fzLimitFit = (q, sq, level, config, { fitWidth = FZ_FIT_WIDTH, levelUncertainty = 0 } = {}) => {
   if (config.bSqAvg == null) return null;
   const s0Target = 1 - config.bSqAvg / config.bAvgSq;
   const headIdx = [];
@@ -852,21 +863,60 @@ export const amplitudeFromFzLimit = (q, sq, level, config, { fitWidth = FZ_FIT_W
   const onesCol = new Float64Array(qc.length).fill(1);
   const qcCol = Float64Array.from(qc);
   let weights = new Float64Array(qc.length).fill(1);
+  let used = weights;
   let solution = [median(yHead), 0];
+  let residuals = [];
   for (let pass = 0; pass < 4; pass += 1) {
+    used = weights;
     const wCols = [
-      Float64Array.from(onesCol, (value, i) => value * weights[i]),
-      Float64Array.from(qcCol, (value, i) => value * weights[i]),
+      Float64Array.from(onesCol, (value, i) => value * used[i]),
+      Float64Array.from(qcCol, (value, i) => value * used[i]),
     ];
-    const wRhs = Float64Array.from(yHead, (value, i) => value * weights[i]);
+    const wRhs = Float64Array.from(yHead, (value, i) => value * used[i]);
     solution = solveLeastSquares(wCols, wRhs);
-    const residuals = yHead.map((value, i) => solution[0] + solution[1] * qc[i] - value);
+    residuals = yHead.map((value, i) => solution[0] + solution[1] * qc[i] - value);
     weights = huberWeights(residuals);
   }
   const sMeas0 = solution[0] - solution[1] * qMean;
   const denom = sMeas0 - level;
   if (Math.abs(denom) < 1e-9) return null;
-  return (s0Target - 1) / denom;
+  // Standard error of the extrapolated intercept of the final weighted solve.
+  let s00 = 0;
+  let s01 = 0;
+  let s11 = 0;
+  let rss = 0;
+  for (let i = 0; i < qc.length; i += 1) {
+    const w2 = used[i] * used[i];
+    s00 += w2;
+    s01 += w2 * qc[i];
+    s11 += w2 * qc[i] * qc[i];
+    rss += w2 * residuals[i] * residuals[i];
+  }
+  const sigma2 = rss / Math.max(qc.length - 2, 1);
+  const det = s00 * s11 - s01 * s01;
+  // x = [1, -qMean]: x^T N^-1 x with N = [[s00, s01], [s01, s11]].
+  const quad = (s11 + 2 * qMean * s01 + qMean * qMean * s00) / det;
+  const sMeas0Se = Math.sqrt(Math.max(sigma2 * quad, 0));
+  const levelSe = Number.isFinite(levelUncertainty) ? levelUncertainty : 0;
+  const denomSe = Math.hypot(sMeas0Se, levelSe);
+  const relSe = denomSe / Math.abs(denom);
+  return {
+    aFz: (s0Target - 1) / denom,
+    sMeas0,
+    sMeas0Se,
+    level,
+    levelUncertainty: levelSe,
+    denominator: denom,
+    denominatorSe: denomSe,
+    aFzRelSe: relSe,
+    reliable: relSe <= FZ_REL_SE_MAX,
+    fitWidth,
+  };
+};
+
+export const amplitudeFromFzLimit = (q, sq, level, config, { fitWidth = FZ_FIT_WIDTH } = {}) => {
+  const fit = fzLimitFit(q, sq, level, config, { fitWidth });
+  return fit == null ? null : fit.aFz;
 };
 
 /**
@@ -934,6 +984,7 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
     r0Detected: extras.r0Detected !== undefined ? extras.r0Detected : null,
     windowRefined: Boolean(extras.windowRefined),
     fitFailure: extras.fitFailure || null,
+    fzLimit: extras.fzLimit || null,
     rAliasLimit,
   };
 };
@@ -1234,7 +1285,8 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
         + 'there is no measured level to anchor'
       );
     }
-    const aFz = amplitudeFromFzLimit(q, sq, level, config);
+    const fzFit = fzLimitFit(q, sq, level, config, { levelUncertainty: sweep.levelUncertainty });
+    const aFz = fzFit == null ? null : fzFit.aFz;
     if (aFz == null || !isNum(aFz) || aFz <= 0) {
       throw new Error(`amplitudeCriterion='fz': degenerate Q->0 extrapolation (aFz=${aFz})`);
     }
@@ -1243,6 +1295,7 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
       iterations: 0,
       sweep,
       aFz,
+      fzLimit: fzFit,
       mode: 'auto',
       c1ModeEffective: 'sweep',
     });
@@ -1298,11 +1351,16 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
   }
 
   let aFz = null;
-  if (level != null) aFz = amplitudeFromFzLimit(q, sq, level, config);
+  let fzFit = null;
+  if (level != null) {
+    fzFit = fzLimitFit(q, sq, level, config, { levelUncertainty: sweep.levelUncertainty });
+    aFz = fzFit == null ? null : fzFit.aFz;
+  }
 
   return scalePipeline(qIn, sqIn, config, a, b, {
     converged,
     fitFailure,
+    fzLimit: fzFit,
     iterations,
     history,
     sweep,
@@ -1350,6 +1408,7 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
   let stopped = null;
   let reason = null;
   let exhausted = true;
+  let fzFit = null;
   for (let iteration = 0; iteration < maxIter; iteration += 1) {
     work = { ...work, rho0: rho };
     let result;
@@ -1372,6 +1431,7 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
       );
     }
     const concordance = result.aFz / result.a;
+    fzFit = result.fzLimit;
     history.push([rho, result.a, result.aFz, concordance]);
     if (Math.abs(concordance - 1) <= rtol) {
       // The amplitudes agree; the root is the density only if the fit it
@@ -1423,6 +1483,9 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
     // Judged on the first measured Q, not config.qmin (scaling.estimate_rho0).
     extrapolated: qFirst > FZ_FIT_WIDTH,
     qFirst,
+    // The density is anchored on aFz (scaling.estimate_rho0).
+    aFzRelSe: fzFit ? fzFit.aFzRelSe : null,
+    aFzReliable: fzFit ? fzFit.reliable : null,
     history,
     stopped,
     reason: converged ? null : reason,
@@ -1499,6 +1562,11 @@ export const diagnosticsSummary = (result, config) => {
   }
   if (result.aFz != null) {
     summary.a_fz = result.aFz;
+    if (result.fzLimit) {
+      // Conditioning of the Q->0 extrapolation (scaling.diagnostics_summary).
+      summary.a_fz_rel_se = result.fzLimit.aFzRelSe;
+      summary.a_fz_reliable = result.fzLimit.reliable;
+    }
     if (config.amplitudeCriterion !== 'fz') {
       summary.amplitude_concordance = result.aFz / result.a;
       summary.amplitudes_concordant = Math.abs(result.aFz / result.a - 1) < 0.1;

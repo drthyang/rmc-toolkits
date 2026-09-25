@@ -689,9 +689,10 @@ class Mn3SnNeutronTests(unittest.TestCase):
 
     def test_fz_amplitude_uses_the_composition(self):
         # The FZ criterion injects S(0) = 1 - <b^2>/<b>^2 = -12.06 and lands
-        # at O(10) amplitudes — the only route consistent across runs (the
-        # density-limit amplitudes sit at O(1) and the hand values disagree
-        # with each other by 5x).
+        # at O(10) amplitudes on these three runs (the density-limit
+        # amplitudes sit at O(1) and the hand values disagree by 5x). NOT on
+        # the 59438 run: its Bragg-dominated head gives a_fz = 74-512 and is
+        # flagged a_fz_reliable = False (tests/test_stog_b_fz_conditioning.py).
         for name in MN3SN_RUNS:
             with self.subTest(run=name):
                 q, sq = self.data[name][0], self.data[name][1]

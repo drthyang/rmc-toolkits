@@ -26,6 +26,7 @@ from rmc_toolkits.scaling import (
     first_shell_candidates,
     first_shell_foot,
     estimate_rho0,
+    fz_limit_fit,
     level_sweep,
     scale_pipeline,
 )
@@ -271,6 +272,22 @@ def main() -> None:
     sq_glitch[rng.choice(np.where(q > 20)[0], 12, replace=False)] += 0.3
     despiked = autoscale(q, sq_glitch, replace(config, despike=True))
 
+    # Faber-Ziman conditioning: the clean model, and a head whose S_meas(0)
+    # sits within noise of the level (an ill-conditioned a_fz).
+    fz_base = ScalingConfig(**base, b_sq_avg=float(B2 * (1.0 - s_true_0)))
+    fz_good = fz_limit_fit(
+        q, sq_meas, sweep.level, fz_base, level_uncertainty=sweep.level_uncertainty
+    )
+    rng_head = np.random.default_rng(11)
+    sq_flat_head = sq_meas.copy()
+    flat = q <= 1.6
+    sq_flat_head[flat] = sweep.level - 0.08 + rng_head.normal(0.0, 0.05, int(flat.sum()))
+    sweep_flat = level_sweep(q, sq_flat_head)
+    fz_bad = fz_limit_fit(
+        q, sq_flat_head, sweep_flat.level, fz_base,
+        level_uncertainty=sweep_flat.level_uncertainty,
+    )
+
     manual = scale_pipeline(q, sq_meas, config, A_TRUE, B_TRUE)
     r_sample_idx = [50, 200, 500, 999]   # on the r grid (nr = 1000)
     q_sample_idx = [50, 200, 500, 950]   # on the cropped q grid (961 pts)
@@ -305,6 +322,13 @@ def main() -> None:
             },
             "fz": {"a": fz.a, "b": fz.b},
             "autoComposition": composition_cases,
+            "fzLimit": {
+                "good": fz_good,
+                "badSqMeas": sq_flat_head.tolist(),
+                "bad": fz_bad,
+                "badLevel": sweep_flat.level,
+                "badLevelUncertainty": sweep_flat.level_uncertainty,
+            },
             "despike": {
                 "sqMeas": sq_glitch.tolist(),
                 "a": despiked.a,

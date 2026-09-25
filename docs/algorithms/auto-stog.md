@@ -3053,11 +3053,34 @@ absolute scale is real, disagreement quantifies what the data cannot decide — 
 of them moves with $\rho_0$, the disagreement is also a $\rho_0$ measurement (Step 10). On the
 Mn₃Sn runs, where $\langle b^2\rangle/\langle b\rangle^2 = 13.06$ and $S(0) = -12.06$, the density
 limit is degenerate on every run (`density_limit_satisfied = False`) and the historical hand
-scalings disagree with each other by 5× (×2.5, ×2.05, ×10 for the same material); the FZ criterion
-lands consistently at $a \in (5, 25)$ — `test_fz_amplitude_uses_the_composition`.
+scalings disagree with each other by 5× (×2.5, ×2.05, ×10 for the same material). The FZ criterion
+lands at $a \in (5, 25)$ on three of the four runs (55537, 300 K, 500 K:
+`test_fz_amplitude_uses_the_composition`) — **but not on the 59438 reference run**, whose head
+$[Q_0, Q_0+1]$ is Bragg-dominated and extrapolates to $S_\mathrm{meas}(0)$ within noise of the level:
+there $a_\mathrm{fz} = 74$ at $Q_\mathrm{min} = 0.82$, 98 / 91 / 141 at 0.98 / 1.00 / 1.02, **512**
+at 1.05, and negative (refused) at 1.08–1.10 Å⁻¹ — 7–50× the other runs and the expert's $a = 10$.
+So the FZ amplitude is not "consistent across the Mn₃Sn runs", and on its own it is not a
+defensible scale.
 
-**Code:** `amplitude_from_fz_limit()`, the `if config.amplitude_criterion == "fz":` branch of
-`_autoscale_pass()`; JS `amplitudeFromFzLimit()`.
+**Conditioning (since 1.0).** `fz_limit_fit()` / JS `fzLimitFit()` return, with $a_\mathrm{fz}$,
+the standard error of the Huber head fit's $Q = 0$ intercept (weighted residual variance of the
+final IRLS solve, $\mathbf x^\top(A^\top W A)^{-1}\mathbf x$ at $Q = 0$), combined in quadrature
+with the level sweep's `level_uncertainty` into the error of the denominator
+$S_\mathrm{meas}(0) - L$; `a_fz_rel_se` is its ratio to $|S_\mathrm{meas}(0) - L|$, and the
+amplitude is **reliable** only when `a_fz_rel_se` ≤ `FZ_REL_SE_MAX` = 0.2 (the denominator
+resolved at ≥ 5σ). `diagnostics_summary` reports `a_fz_rel_se` / `a_fz_reliable` (provenance
+`fz_limit` holds the full fit), the CLI prints a WARNING, the page shows a *Q→0 amplitude* card,
+and `estimate_rho0` reports `a_fz_reliable` for its anchor. Measured over $Q_\mathrm{min}$
+0.82–1.08 Å⁻¹: Mn₃Sn 59438 30–465 % (flagged everywhere); 300 K 6–9 % ($a_\mathrm{fz}$ 10.4–10.9);
+FeCoSn 199 K 2.2 %; the parity fixture 4.5 %. The flag is statistical — it catches a denominator
+lost in the scatter of the head, not every systematic head bias: the 55537 run's $a_\mathrm{fz}$
+drifts 11 → 6 at 9–18 % and the 500 K run's 16 → 26 at 10–19 %, both below the threshold, so the
+concordance with the density-limit amplitude (and agreement across runs) remains the cross-check. Tests: `tests/test_stog_b_fz_conditioning.py`,
+`src/__tests__/autoScaleFzConditioning.test.js`.
+
+**Code:** `fz_limit_fit()` / `amplitude_from_fz_limit()`, the
+`if config.amplitude_criterion == "fz":` branch of `_autoscale_pass()`; JS `fzLimitFit()` /
+`amplitudeFromFzLimit()`.
 
 > Discrepancy to know about: `amplitude_from_fz_limit()` computes its own
 > $s_0^{\mathrm{target}} = 1 - \langle b^2\rangle/\langle b\rangle^2$ and **ignores an explicitly

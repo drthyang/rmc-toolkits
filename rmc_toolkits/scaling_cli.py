@@ -712,6 +712,14 @@ def _print_report(
             f"  amplitude concordance: a_fz/a = "
             f"{summary['amplitude_concordance']:.3f} ({verdict})"
         )
+    if summary.get("a_fz_reliable") is False:
+        use = "the concordance" if "amplitude_concordance" in summary else "it as the scale"
+        print(
+            f"  WARNING   : the Q->0 Faber-Ziman amplitude a_fz = {summary['a_fz']:.4g} is "
+            f"ill-conditioned (relative error {summary['a_fz_rel_se']:.0%}: S_meas(0) - "
+            "level is not resolved from its uncertainty — Bragg-contaminated or long "
+            f"low-Q head); do not trust {use}"
+        )
     if enforcement is not None:
         cutoff, peak_rmin, peak_rmax = enforcement
         where = (
@@ -809,6 +817,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if rho0_estimate["extrapolated"]
                 else ""
             )
+            if rho0_estimate.get("a_fz_reliable") is False:
+                note += (
+                    "; WARNING: its Faber-Ziman anchor is ill-conditioned (a_fz "
+                    f"relative error {rho0_estimate['a_fz_rel_se']:.0%})"
+                )
             print(
                 f"rho0 self-consistency: {rho0_estimate['rho0']:.6f} 1/A^3 "
                 f"(concordance {rho0_estimate['concordance']:.4f}, "
