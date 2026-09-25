@@ -764,16 +764,13 @@ user sees or reads off a chart are:
 `browserData.js` → `plotDataFromText()`, `plotMetadataFromFile()`;
 `InteractivePlot.jsx` → `orderedSeries`, `domains`, `seriesShapes`, `nearestHover`, `formatNumber`.
 
-> **PNG-path discrepancies (matplotlib only).** The figures built by `_series_plot()` differ from
-> the interactive charts in two places in their **axis labels** (the styling differences — `lw=1.0,
-> alpha=0.65` strokes, and a legend and title baked into the figure — are covered in Step 16b and in
-> item 1 of "Screen vs. export"):
-> * **y label** — `_series_plot()`'s default `ylabel="data"` is used for
->   `xpdf`/`npdf`/`pdf_partials`/`xray_sq`/`neutron_sq`/`bragg`, instead of `G(r)`/`S(Q)`/`Intensity`.
-> * **x label** — only `xray_sq` and `neutron_sq` pass `labels[0]`, the file's **raw first-column
->   header**, instead of `Q (Å⁻¹)`. `xpdf`, `npdf` and `pdf_partials` pass the literal
->   `r ($\mathrm{\AA}$)` and `bragg` passes the same ToF/Q label the interactive path derives from
->   `bragg_is_tof()`, so those match (in LaTeX form).
+> **PNG path (matplotlib only).** Since 1.0 the figures built by `_series_plot()` carry the same
+> axis-label strings as the interactive charts (in LaTeX form): the x label is the table's
+> (`Q (Å⁻¹)` for `xray_sq`/`neutron_sq`, `r (Å)` for the real-space kinds, the `bragg_is_tof()`
+> ToF/Q label for `bragg`) and the y label is the `series_titles()` one. Before 1.0 the PNG left the
+> y label at `_series_plot()`'s default `"data"` and passed the raw first CSV header as the
+> `xray_sq`/`neutron_sq` x label. What still differs is styling — `lw=1.0, alpha=0.65` strokes, and
+> a legend and title baked into the figure (Step 16b and item 1 of "Screen vs. export").
 >
 > `_stog_plot()` additionally draws a **dashed black horizontal reference line** at $y = 1$ (or
 > $y = 0$ when the name ends `.fq`) spanning `data[0][0]` to `data[0][-1]`, colours its single

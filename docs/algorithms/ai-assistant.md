@@ -387,15 +387,18 @@ either by the static-mode worker [`workers/pcaKde.js`](../../web_app/frontend/sr
 | `element` | element symbol | — | yes (verbatim) |
 | `U_iso_A2` | $U_\mathrm{eq}$, mean of the three PCA eigenvalues | Å² | **no** — assigned with no finite check |
 | `rms_axes_A` | principal RMS amplitudes $\sqrt{\lambda_1}\ge\sqrt{\lambda_2}\ge\sqrt{\lambda_3}$ | Å | **no** — assigned `undefined` unless `site.rms` is an array |
-| `anisotropy` | $\sqrt{\lambda_1/\lambda_3}$ = rms₁/rms₃ | — | **no** — assigned with no finite check |
-| `non_gaussianity` | mean over the three PCs of the excess kurtosis $m_4/m_2^2 - 3$ | — | only when `Number.isFinite(site.nonGaussianity)` |
+| `anisotropy` | $\sqrt{\lambda_1/\lambda_3}$ = rms₁/rms₃ | — | **no** — assigned with no finite check; `null` for a zero-spread site |
+| `non_gaussianity` | Mardia's multivariate excess kurtosis $(b_2-15)/5$, $b_2=\langle(\mathbf u^\top S^{-1}\mathbf u)^2\rangle$ — rotation-invariant; 0 for a Gaussian, **negative** for a flat-topped or bimodal cloud (a symmetric split site) | — | only when `Number.isFinite(site.nonGaussianity)` |
 | `degenerate` | present only when `true` (see below) | — | conditional |
+| `zero_spread` | present only when `true`: $\lambda_1 <$ `ZERO_SPREAD_VARIANCE` $=10^{-8}$ Å² (e.g. an `*AVERAGE.rmc6f`); `anisotropy` is then `null` and `non_gaussianity` absent | — | conditional |
+| `mixed`, `element_counts` | present only for a mixed-occupancy site: `element` is then the majority species only, and `element_counts` the full tally | — | conditional |
 
-**Silent field dropping.** `U_iso_A2`, `rms_axes_A` and `anisotropy` are assigned unconditionally; when
-the source value is missing or non-finite, `roundSig` returns `undefined` and `JSON.stringify` deletes
-the key. There is no `null` and no `*_omitted` marker, so an incomplete PCA row can arrive at the model
-as `{ref, element}` alone with nothing explaining why. `non_gaussianity` is the only field with an
-explicit finite guard.
+**Silent field dropping.** `U_iso_A2`, `rms_axes_A` and `anisotropy` are assigned unconditionally, and
+`roundSig` passes a non-finite value through unchanged: an `undefined` source deletes the key in
+`JSON.stringify`, a `NaN` is serialised as `null`, and a `null` (a zero-spread site's `anisotropy`, as
+both engines send it) stays `null`. There is no `*_omitted` marker, so an incomplete PCA row can arrive
+at the model as `{ref, element}` alone with nothing explaining why; only a zero-spread site says so,
+through `zero_spread`. `non_gaussianity` is the only field with an explicit finite guard.
 
 **`degenerate` means rank-deficient, not isotropic.** It is set when the *smallest* eigenvalue is
 negligible against the largest:
@@ -417,9 +420,14 @@ re-clusters and **re-numbers** the sites. `pcaContext()` copies `site.referenceN
 reference-site partition from a reconstructed one, and the same run can produce different `ref` numbering
 in two different chat sessions.
 
-**Ordering:** descending `non_gaussianity`, ties broken by descending `U_iso_A2` (missing values sort as
-$-\infty$), then truncated to `MAX_SITES = 12` with `sites_omitted`. A fixed `note` string travels with
-the block defining every symbol, because small models otherwise misread the kurtosis sign convention.
+**Ordering:** descending $|$`non_gaussianity`$|$ (a missing value counts as 0), ties broken by
+descending `U_iso_A2` (missing values sort as $-\infty$), then truncated to `MAX_SITES = 12` with
+`sites_omitted`. The ranking is by magnitude because a symmetric split site is *negative*: before 1.0
+the signed ranking listed split sites last, where the cap trims first. A fixed `note` string travels
+with the block defining every symbol and stating the sign convention (>0 peaked / heavy-tailed or a
+minority off-centre component, <0 flat-topped or bimodal), because small models otherwise misread it;
+the system prompt repeats the definition and asks the model to call out large $|$`non_gaussianity`$|$
+of either sign.
 
 **Code:** `runContext.js` → `pcaContext()`. The ellipsoid math itself is documented in the PCA
 Ellipsoid section; nothing is recomputed here — this step is a projection, a sort, and a truncation.
