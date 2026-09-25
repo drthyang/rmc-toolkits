@@ -414,7 +414,8 @@ solves
 by fixed-point iteration `ρ ← ρ·concordance` (a_density is ~linear in ρ0, so this is
 Newton-like; 2–4 `autoscale` passes from seeds spanning a 10× range). Preconditions: a
 composition (⟨b²⟩) and a statistically flat level; the `extrapolated` flag marks
-Qmin > the FZ fit width (~1 Å⁻¹), where the Q→0 extrapolation owns the estimate — a
+data whose first measured Q (after cropping, not the configured Qmin) exceeds the FZ fit
+width (~1 Å⁻¹), where the Q→0 extrapolation owns the estimate — a
 starting point, not a measurement. Validation: synthetic truth ρ0 = 0.05 recovered to
 0.0510 from seeds 0.02/0.05/0.2; FeCoSn 199 K x-ray → 0.0600 vs the hand 0.057329 (4.7%),
 100 K → 0.0640 (11.7%) — the distance from a hand value is a property of the measured

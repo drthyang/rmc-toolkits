@@ -58,6 +58,8 @@ MAX_WINDOW_REFITS = 4
 #: Number densities (atoms/A^3) :func:`estimate_rho0` may return: liquid Cs
 #: (~0.0085) to beyond diamond (0.176), with margin on both sides.
 RHO0_PHYSICAL_RANGE = (0.005, 0.25)
+#: Width (A^-1) of the low-Q head the Faber-Ziman Q->0 extrapolation is fitted on.
+FZ_FIT_WIDTH = 1.0
 
 
 @dataclass(frozen=True)
@@ -722,7 +724,7 @@ def amplitude_from_fz_limit(
     level: float,
     config: ScalingConfig,
     *,
-    fit_width: float = 1.0,
+    fit_width: float = FZ_FIT_WIDTH,
 ) -> float | None:
     """Independent amplitude estimate from the Q->0 Faber-Ziman limit.
 
@@ -1308,13 +1310,15 @@ def estimate_rho0(
 
     Caveats: requires ``config.b_sq_avg`` (without a composition the
     degeneracy is fundamental) and a statistically flat high-Q level; the
-    returned ``extrapolated`` flag marks data whose Qmin exceeds the FZ fit
-    width — there the Q->0 extrapolation owns the estimate, so treat it as a
-    starting point, not a measurement. ``config.rho0`` seeds the iteration
-    (clipped into the physical range).
+    returned ``extrapolated`` flag marks data whose first measured Q (``q_first``,
+    after cropping — not ``config.qmin``, which may lie below NaN-padded rows)
+    exceeds the FZ fit width :data:`FZ_FIT_WIDTH` — there the Q->0
+    extrapolation owns the estimate, so treat it as a starting point, not a
+    measurement. ``config.rho0`` seeds the iteration (clipped into the
+    physical range).
 
     Returns a JSON-friendly dict: ``rho0``, ``converged``, ``iterations``,
-    ``concordance``, ``a_density``, ``a_fz``, ``extrapolated``, ``history``
+    ``concordance``, ``a_density``, ``a_fz``, ``extrapolated``, ``q_first``, ``history``
     rows ``[rho0, a_density, a_fz, concordance]``, ``stopped`` — None, or
     why the iteration stopped early because :func:`autoscale` could not fit a
     trial density (the last usable iterate is reported, ``converged=False``)
@@ -1332,6 +1336,9 @@ def estimate_rho0(
     # The FZ amplitude needs the measured level; the density-limit amplitude
     # is the quantity being matched.
     work = replace(config, amplitude_criterion="density", c1_mode="sweep")
+    # Where the measured data actually start (NaN padding and a qmin below the
+    # data are common): the Q->0 extrapolation spans [0, q_first].
+    q_first = float(crop_sq(q, sq, work)[0][0])
     rho = float(np.clip(work.rho0, rho_min, rho_max))
     history: list[tuple[float, float, float, float]] = []
     converged = False
@@ -1404,9 +1411,11 @@ def estimate_rho0(
         "concordance": history[-1][3],
         "a_density": history[-1][1],
         "a_fz": history[-1][2],
-        # FZ head fit spans ~1 A^-1 from Qmin; beyond that the Q->0
-        # extrapolation is longer than the data it rests on.
-        "extrapolated": bool(config.qmin > 1.0),
+        # The FZ head fit spans FZ_FIT_WIDTH (1 A^-1) from the first measured
+        # Q; beyond that the Q->0 extrapolation is longer than the data it
+        # rests on. Judged on the data, not on config.qmin.
+        "extrapolated": bool(q_first > FZ_FIT_WIDTH),
+        "q_first": q_first,
         "history": [list(row) for row in history],
         "stopped": stopped,
         "reason": None if converged else reason,

@@ -362,6 +362,8 @@ export const ONSET_TOLERANCE = 0.15;
 export const MAX_WINDOW_REFITS = 4;
 /** Number densities (atoms/Å³) estimateRho0 may return (scaling.RHO0_PHYSICAL_RANGE). */
 export const RHO0_PHYSICAL_RANGE = [0.005, 0.25];
+/** Width (Å⁻¹) of the low-Q head the Faber-Ziman extrapolation is fitted on (scaling.FZ_FIT_WIDTH). */
+export const FZ_FIT_WIDTH = 1.0;
 
 export const defaultConfig = {
   qmin: NaN,
@@ -689,7 +691,7 @@ const lowRRmsOf = (r, gFiltered, config) => {
   return Math.sqrt(total / count);
 };
 
-export const amplitudeFromFzLimit = (q, sq, level, config, { fitWidth = 1.0 } = {}) => {
+export const amplitudeFromFzLimit = (q, sq, level, config, { fitWidth = FZ_FIT_WIDTH } = {}) => {
   if (config.bSqAvg == null) return null;
   const s0Target = 1 - config.bSqAvg / config.bAvgSq;
   const headIdx = [];
@@ -1158,8 +1160,9 @@ const autoscalePass = (qIn, sqIn, config, sigmaIn = null) => {
  * therefore the root of concordance(rho0) = aFz / aDensity(rho0) = 1; since
  * aDensity grows ~linearly with rho0 the fixed-point update
  * rho *= concordance converges in a few autoscale passes. Requires
- * config.bSqAvg; `extrapolated` flags data whose Qmin exceeds the FZ fit
- * width (the estimate is then a starting point, not a measurement). The
+ * config.bSqAvg; `extrapolated` flags data whose first measured Q (qFirst,
+ * after cropping) exceeds the FZ fit width (the estimate is then a starting
+ * point, not a measurement). The
  * iterate stays in [rhoMin, rhoMax] (RHO0_PHYSICAL_RANGE) and a concordant
  * root counts only where the density limit holds; every non-converged exit
  * sets `reason`.
@@ -1177,6 +1180,8 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
     throw new Error(`need 0 < rhoMin < rhoMax, got [${rhoMin}, ${rhoMax}]`);
   }
   let work = { ...config, amplitudeCriterion: 'density', c1Mode: 'sweep' };
+  // Where the measured data actually start: the Q->0 extrapolation spans [0, qFirst].
+  const qFirst = cropSq(qIn, sqIn, work).q[0];
   let rho = Math.min(Math.max(work.rho0, rhoMin), rhoMax);
   const history = [];
   let converged = false;
@@ -1253,7 +1258,9 @@ export const estimateRho0 = (qIn, sqIn, config, sigmaIn = null, {
     concordance: last[3],
     aDensity: last[1],
     aFz: last[2],
-    extrapolated: config.qmin > 1.0,
+    // Judged on the first measured Q, not config.qmin (scaling.estimate_rho0).
+    extrapolated: qFirst > FZ_FIT_WIDTH,
+    qFirst,
     history,
     stopped,
     reason: converged ? null : reason,

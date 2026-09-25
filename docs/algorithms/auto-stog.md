@@ -580,7 +580,9 @@ fixed-point update $\rho \leftarrow \rho\cdot\mathrm{concordance}$, with `rtol =
 `max_iter = 8`, and clipping to the physical range $[0.005, 0.25]$ Å⁻³ (`RHO0_PHYSICAL_RANGE`);
 a concordant root is accepted only where the density limit holds. It **requires**
 $\langle b^2\rangle$, and
-sets an `extrapolated` flag when $Q_\mathrm{min} > 1$ Å⁻¹ (the $Q\to0$ extrapolation then owns
+sets an `extrapolated` flag when the first measured $Q$ (`q_first` / `qFirst`, after cropping —
+not the configured $Q_\mathrm{min}$, which may lie below NaN-padded rows) exceeds 1 Å⁻¹
+(`FZ_FIT_WIDTH`; the $Q\to0$ extrapolation then owns
 the estimate — a starting point, not a measurement). The iteration is deterministic and takes the
 same steps in both engines, so the *iterated* result agrees across engines to round-off (asserted
 to 1e-10 relative, same iteration count).
@@ -1103,7 +1105,7 @@ without a composition-derived $S(0)$ target), level to 1e-9, sampled $G_K(r)$/fi
   $\langle b^2\rangle$) whenever the contrast is not simple.
 - **A wrong $\rho_0$ produces a confidently wrong scale**, because the C2 target line scales with it.
   The self-consistent estimate is not a substitute for a measured density when
-  $Q_\mathrm{min} \gtrsim 1$ Å⁻¹ (it is flagged `extrapolated` there), and it refuses to run
+  the data start at $Q \gtrsim 1$ Å⁻¹ (it is flagged `extrapolated` there), and it refuses to run
   without $\langle b^2\rangle$.
 - **Despiking is not a general cleanup.** It removes narrow rolling-median outliers, which on
   crystalline data includes genuine Bragg peaks. It is off by default. When on, check the
@@ -3060,7 +3062,11 @@ browser path.
 **Returned dict:** `rho0`, `converged`, `iterations`, `concordance`, `a_density`, `a_fz`,
 `extrapolated`, `history` (rows `[rho0, a_density, a_fz, concordance]`), `stopped`, `reason`. `rho0` is the density at
 which the **last** pass ran, so on success it is the value that produced the accepted concordance.
-`extrapolated` is simply `config.qmin > 1.0` Å⁻¹ — a flag meaning the $Q\to 0$ extrapolation is
+`extrapolated` is `q_first > FZ_FIT_WIDTH` (1.0 Å⁻¹), where `q_first` (also returned) is the first
+$Q$ that survives the crop — the data's real start, so a NaN-padded file or a `stog.inp` $Q_\mathrm{min}$
+below the first finite point no longer hides the flag (before 1.0 it read `config.qmin > 1.0`, and a
+22 %-biased FeCoSn estimate from data starting at 1.6 Å⁻¹ was reported unflagged under
+`qmin = 0.5`) — a flag meaning the $Q\to 0$ extrapolation is
 longer than the data it rests on, so the estimate is *a starting point, not a measurement*.
 
 **Validation:** synthetic truth $\rho_0 = 0.05$ Å⁻³ recovered from seeds 0.02 and 0.2 to within 5 %
@@ -4155,7 +4161,7 @@ Entry 9 of the zip, `JSON.stringify(..., null, 2)`:
 | `stogInpReference` | `{a, b, yscale, yoffset}` from the loaded stog.inp, else `null` — so an auto run's zip still records the expert's hand values |
 | `history` | the iteration trajectory, rows `[a, b, low_r_rms]` |
 | `enforcement` | `{cutoff, peakRmin, peakRmax}` or `null` |
-| `rho0Estimate` | `{rho0, converged, iterations, concordance, aDensity, aFz, extrapolated, history}` or `null` |
+| `rho0Estimate` | `{rho0, converged, iterations, concordance, aDensity, aFz, extrapolated, qFirst, history, stopped, reason}` or `null` |
 | `config` | the **effective** engine config (camelCase keys), with `rho0` replaced by the value actually used |
 | `diagnostics` | the full `diagnosticsSummary()` dict (snake_case keys: `a`, `b`, `converged`, `iterations`, `c1_tail_mean`, `low_r_rms_pre_enforcement`, `g_window_mean`, `r_fit_window`, `gk_low_r_theory`, `d_r_low_r_slope_theory`, `density_limit_satisfied`, plus `r0_detected`/`window_refined`, `level`/`level_uncertainty`/`level_window`/`asymptote_found`, `a_fz`/`amplitude_concordance`/`amplitudes_concordant`, `fk_qmin`/`fk_q0_theory` when available) |
 
@@ -4322,7 +4328,7 @@ floating-point noise):
   The page warns when
   overrides shadow a typed composition by > 2 %, but it cannot know which is correct.
 - **$\rho_0$ estimation needs a composition and a flat high-$Q$ level**, and is flagged
-  `extrapolated` whenever $Q_\mathrm{min} > 1.0$ Å⁻¹ (the $Q\to0$ extrapolation is then longer
+  `extrapolated` whenever the data's first measured $Q$ exceeds 1.0 Å⁻¹ (the $Q\to0$ extrapolation is then longer
   than the ~1 Å⁻¹ of data it rests on) — treat such an estimate as a starting point, not a
   measurement. A non-converged estimate aborts the run with the physics message rather than
   fitting with a garbage density. The estimator also forces `amplitudeCriterion = 'density'`
