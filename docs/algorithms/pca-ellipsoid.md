@@ -473,10 +473,23 @@ needs `kde`) does not render at all.
 **What the code does *not* compute.** There is no conversion of the Cartesian $\mathbf{U}$ to the
 crystallographic $U^{ij}$ / $U_\mathrm{cif}$ basis (components on the reciprocal-cell axes) and no
 $\beta_{ij}$ form. The tensor shown in the UI is labelled "Covariance U (Å²) … in Cartesian (x, y, z)
-axes", which is accurate. Any comparison against CIF `U_11 … U_23` values must be done by the reader,
-applying $\mathbf{U}_\mathrm{cif}=\mathsf{A}^{-1}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-\top}$ with the
-appropriate cell matrix — **the app never does this**. For an orthogonal cell aligned with the
-Cartesian axes the diagonal entries coincide; for anything else they do not.
+axes", which is accurate. Any comparison against CIF `U_11 … U_23` values must be done by the reader
+— **the app never does this** — with
+
+$$\mathbf{U}_\mathrm{cif}=\mathsf{D}^{-1}\,\mathsf{A}^{-\top}\,\mathbf{U}_\mathrm{cart}\,\mathsf{A}^{-1}\,\mathsf{D}^{-1},
+\qquad \mathsf{D}=\mathrm{diag}\big(\lvert\mathbf a^\ast\rvert,\lvert\mathbf b^\ast\rvert,\lvert\mathbf c^\ast\rvert\big),$$
+
+where $\mathsf{A}$ has rows $\mathbf a,\mathbf b,\mathbf c$ (Å, the notation table), the rows of
+$\mathsf{A}^{-\top}$ are the reciprocal vectors $\mathbf a^\ast,\mathbf b^\ast,\mathbf c^\ast$ (no
+$2\pi$), and $\mathsf{D}$ their lengths. Derivation: a Cartesian displacement is
+$\mathbf u=\mathsf{A}^{\!\top}\Delta\mathbf f$, so $\langle\Delta\mathbf f\,\Delta\mathbf f^{\top}\rangle
+=\mathsf{A}^{-\top}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-1}$, and the CIF convention defines
+$\langle\Delta f_i\Delta f_j\rangle=a^\ast_i a^\ast_j\,U^{ij}$. For an orthogonal cell aligned with the
+Cartesian axes ($\mathsf A=\mathrm{diag}(a,b,c)$, $\mathsf D=\mathsf A^{-1}$) $\mathbf U_\mathrm{cif}=
+\mathbf U_\mathrm{cart}$; for anything else the components differ. (Before 1.0 this page gave
+$\mathsf{A}^{-1}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-\top}$ — transposes in the wrong order and no
+reciprocal-length normalisation, so it returned dimensionless $\langle\Delta f\Delta f\rangle$-like
+numbers about $U/a^2$, e.g. $2.5\times10^{-4}$ for a 0.012 Å² $U_{11}$ in a 7 Å cell.)
 
 Note also that `pca_kde_volume()` returns its own `uIso`/`bIso`/`anisotropy` computed from the
 **floored** eigenvalues (Step 6) and from the possibly-subsampled cloud; the UI table reads the
@@ -1145,7 +1158,9 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    and should be read from the KDE, not as an ADP.
 6. **`U` is Cartesian.** No $U_\mathrm{cif}$/$U^{ij}$/$\beta_{ij}$ conversion is performed anywhere;
    the tabulated tensor is not directly comparable to CIF ADP components unless the cell is
-   orthogonal and axis-aligned.
+   orthogonal and axis-aligned. Convert with
+   $\mathbf{U}_\mathrm{cif}=\mathsf{D}^{-1}\mathsf{A}^{-\top}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-1}\mathsf{D}^{-1}$
+   (Step 4b).
 7. **Non-Gaussianity is Mardia's multivariate kurtosis**, normalised to the marginal excess
    kurtosis of an elliptical distribution (Step 12). It is frame-independent but carries no
    information about skewness or the direction of a feature, and a one-axis feature is diluted by
