@@ -2630,11 +2630,11 @@ Part B is pure JavaScript (no React, no I/O) in six modules under `web_app/front
 
 | Module | Role |
 | --- | --- |
-| [`symmetry.js`](../../web_app/frontend/src/symmetry.js) | lattice rotations, operation search and refinement, closure walk, ladder, point group, orbits (Steps 7–13) |
+| [`symmetry.js`](../../web_app/frontend/src/symmetry.js) | lattice rotations, operation search and refinement, closure walk, ladder, point group, orbits (Steps 7–13), the operation estimate |
 | [`spaceGroupSymbol.js`](../../web_app/frontend/src/spaceGroupSymbol.js) | screw/glide analysis, centering, the standard-setting search, the H–M symbol, the lower-bound check (Step 10) |
 | [`spaceGroupTable.js`](../../web_app/frontend/src/spaceGroupTable.js) | the 230 groups: number, standard short symbol, crystal class, pre-2002 `e`-glide spellings |
 | [`wyckoff.js`](../../web_app/frontend/src/wyckoff.js) + [`wyckoffTable.js`](../../web_app/frontend/src/wyckoffTable.js) | Wyckoff positions of the 230 groups and the letter assignment (Step 14) |
-| [`symmetryModel.js`](../../web_app/frontend/src/symmetryModel.js) | structure → finder glue: the cell, the basis-size cap, orbits and letters in the naming cell |
+| [`symmetryModel.js`](../../web_app/frontend/src/symmetryModel.js) | structure → finder glue: the cell, the basis-size cap and operation budget, orbits and letters in the naming cell |
 
 Tests: `web_app/frontend/src/__tests__/symmetry*.test.js` and `wyckoff.test.js` (the 230-group
 fixtures in `__tests__/fixtures/spaceGroups.js`, well-known structures in
@@ -3234,6 +3234,20 @@ LLM context omits a non-finite residual), and `toleranceLadder` returns no brick
 one reference number per atom (a glass, an imported P1 configuration) reaches this; it is not a
 unit-cell configuration, and a symmetry search on it would only ever return `P1`.
 
+The site cap alone does not bound the time. If such a box is **crystalline**, every lattice rotation
+holds with every pure translation of its repeat unit, so the candidate operations grow with the
+square of the box: a $4\times4\times4$ rocksalt box (512 sites) has $48\times256 = 12\,288$, and the
+ladder of a noisy $3\times3\times3$ one (216 sites, 5184) took over a minute (Node). Before either pass, `symmetryModel.js` therefore asks
+`operationEstimate(A, basis, tol, limit)` (`symmetry.js`) for the lattice rotations admitted at the
+tolerance (Step 7) times the pure translations $\{I\,|\,\mathbf t\}$ of the structure there
+(Steps 8–9 for the identity alone, stopped as soon as the product passes `limit`). It is judged at
+the ladder's loosest tolerance, $\max(\tau, 1.0)$ Å, for the headline as well, so the card either
+analyses a structure at every tolerance or says why not. Above **`MAX_SYMMETRY_OPS` = 384** — twice
+the 48 × 4 = 192 a correctly declared cell can reach (F centring), enough for a $2\times2\times2$
+supercell of a primitive cubic cell — `describeSymmetry` returns the same `skipped` shape with
+`pointGroup: '≥ <t> translations per cell'` and a reason naming the supercell, and
+`toleranceLadder` returns no bricks.
+
 ### Parameters and defaults — model summary and symmetry
 
 | Name | Where | Default | Units | Meaning |
@@ -3262,6 +3276,7 @@ unit-cell configuration, and a symmetry search on it would only ever return `P1`
 | widest-brick width | `ModelSummary.jsx` `brickWidth()` | `34 %` | — | remaining `66 %` split evenly |
 | search space | `latticePointOps()` | $3^9=19\,683$ | — | 6960 have $\lvert\det R\rvert=1$ |
 | `MAX_SYMMETRY_SITES` | `symmetryModel.js` | `2000` | sites | larger bases are not analysed (`skipped: true`), and the ladder is empty |
+| `MAX_SYMMETRY_OPS` | `symmetryModel.js` | `384` | operations | lattice rotations × pure translations (`operationEstimate`, at $\max(\tau,1.0)$ Å) above which a structure is not analysed (`skipped: true`) and the ladder is empty |
 | `ELIMINATION_MAX_OPS` | `symmetry.js` | `256` | operations | the quadratic elimination of Step 11 runs only up to this many candidate operations |
 
 ### Caveats / what this is not
@@ -3341,6 +3356,7 @@ unit-cell configuration, and a symmetry search on it would only ever return `P1`
   covers basis-order independence, lattice strain, closure of every rung (the bundled GTS_250K demo,
   a noisy lacunar spinel) and class-consistent symbols; `symmetryWyckoff.test.js` and
   `wyckoff.test.js` check every Wyckoff row against its group's operations, the demo's letters and
-  letters in permuted settings; `symmetryLimits.test.js` and `symmetryUndetermined.test.js` cover
-  the basis cap and an unanalysable lattice. The two GaNb₄Se₈ runs are gitignored, so they are not
+  letters in permuted settings; `symmetryLimits.test.js`, `symmetryPerformance.test.js` and
+  `symmetryUndetermined.test.js` cover the basis cap, the operation budget and an unanalysable
+  lattice. The two GaNb₄Se₈ runs are gitignored, so they are not
   in the suite; their ladders were checked by hand to consist only of closed, correctly named groups.

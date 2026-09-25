@@ -7,7 +7,7 @@
 // pure symmetry finder (symmetry.js): builds the conventional cell + basis and
 // returns a space-group description + tolerance ladder for the UI.
 
-import { spaceGroupAtTolerance, symmetryLadder, siteOrbits } from './symmetry.js';
+import { spaceGroupAtTolerance, symmetryLadder, siteOrbits, operationEstimate } from './symmetry.js';
 import { assignWyckoffLetters } from './wyckoff.js';
 
 /**
@@ -19,6 +19,40 @@ import { assignWyckoffLetters } from './wyckoff.js';
 export const MAX_SYMMETRY_SITES = 2000;
 
 const tooLarge = (structure) => structure.basis.length > MAX_SYMMETRY_SITES;
+
+/**
+ * Most candidate operations (lattice rotations × pure translations, operationEstimate) the
+ * page analyses. A correctly declared cell has at most 48 × 4 = 192; this allows twice
+ * that (a 2×2×2 supercell of a primitive cubic cell). A crystalline box declared as a
+ * 1×1×1 supercell has one pure translation per repeat unit, and the candidates then grow
+ * with the square of the box: a 4×4×4 rocksalt box (12 288) took seconds, a noisy 3×3×3
+ * one (5184) minutes, on the main thread.
+ */
+export const MAX_SYMMETRY_OPS = 384;
+
+/**
+ * The loosest tolerance the card's ladder explores (ModelSummary calls toleranceLadder
+ * with it). The operation budget is judged there for the headline too, so the card
+ * either analyses a structure at every tolerance or explains why it does not.
+ */
+const LADDER_TOL_MAX = 1.0;
+
+/** A 'not analysed' description, rendered as-is by the card (headline + subtitle). */
+const notAnalysed = (subtitle, reason) => ({
+  skipped: true,
+  reason,
+  spaceGroup: 'not analysed',
+  spaceGroupNumber: null,
+  pointGroup: subtitle,
+  centering: null,
+  nSpace: '—',
+  nPoint: 0,
+  maxResidual: Number.NaN,   // nothing was fitted — never 0, which would read as an exact fit
+  orbits: [],
+});
+
+// The operation budget at the ladder's loosest tolerance (or `tol`, if looser).
+const overBudget = (A, basis, tol) => operationEstimate(A, basis, Math.max(tol, LADDER_TOL_MAX, 1e-3), MAX_SYMMETRY_OPS);
 
 /** Conventional unit cell A_conv (rows, Å) = supercell lattice / supercell dims. */
 export function conventionalCell(structure) {
@@ -75,23 +109,21 @@ export function describeSymmetry(structure, tol = 0.2) {
   if (!structure?.basis?.length || !structure?.latticeVectors) return null;
   if (tooLarge(structure)) {
     const n = structure.basis.length;
-    // Rendered as-is by the card: spaceGroup is the headline, pointGroup its subtitle.
-    return {
-      skipped: true,
-      reason: `The average structure has ${n} reference sites; symmetry detection runs in the browser `
-        + `and is limited to ${MAX_SYMMETRY_SITES} sites (a box with one reference site per atom is not `
-        + 'a unit-cell configuration).',
-      spaceGroup: 'not analysed',
-      spaceGroupNumber: null,
-      pointGroup: `${n} sites > ${MAX_SYMMETRY_SITES} limit`,
-      centering: null,
-      nSpace: '—',
-      nPoint: 0,
-      maxResidual: Number.NaN,   // nothing was fitted — never 0, which would read as an exact fit
-      orbits: [],
-    };
+    return notAnalysed(`${n} sites > ${MAX_SYMMETRY_SITES} limit`,
+      `The average structure has ${n} reference sites; symmetry detection runs in the browser `
+      + `and is limited to ${MAX_SYMMETRY_SITES} sites (a box with one reference site per atom is not `
+      + 'a unit-cell configuration).');
   }
   const A = conventionalCell(structure);
+  const budget = overBudget(A, structure.basis, tol);
+  if (budget.exceeds) {
+    const t = budget.translations;
+    return notAnalysed(`≥ ${t} translations per cell`,
+      `At least ${t} pure translations map the average structure onto itself within `
+      + `${Math.max(tol, LADDER_TOL_MAX)} Å, so the cell is a supercell of the structure's repeat unit `
+      + '(check the .rmc6f "Supercell dimensions"). With its lattice rotations that is more than '
+      + `${MAX_SYMMETRY_OPS} candidate operations, too many to analyse on the page.`);
+  }
   const sg = spaceGroupAtTolerance(A, structure.basis, tol);   // a closed group, or 'undetermined'
   // No operation at all (a broken lattice): no orbits either — not one orbit per site.
   const found = sg.ops.length ? siteOrbits(A, structure.basis, sg.ops, tol) : [];
@@ -121,7 +153,9 @@ export function describeSymmetry(structure, tol = 0.2) {
 /** Symmetry-vs-tolerance ladder (bricks tight→loose) for the structure. */
 export function toleranceLadder(structure, tolMax = 1.0) {
   if (!structure?.basis?.length || !structure?.latticeVectors || tooLarge(structure)) return [];
-  return symmetryLadder(conventionalCell(structure), structure.basis, tolMax);
+  const A = conventionalCell(structure);
+  if (overBudget(A, structure.basis, tolMax).exceeds) return [];
+  return symmetryLadder(A, structure.basis, tolMax);
 }
 
 /** Wyckoff label for an orbit: multiplicity + letter, or multiplicity + site symmetry. */

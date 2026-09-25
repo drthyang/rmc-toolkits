@@ -288,8 +288,9 @@ export const UNDETERMINED = Object.freeze({
 });
 
 // Every candidate operation of (A, basis) within `tol`, with its residual (Steps 7–9).
-function detectOperations(A, basis, tol, latticeTol) {
-  const pointOps = latticeCandidates(A, Math.min(latticeTol, tol));
+// `pointOps` restricts the rotations tried (operationEstimate passes the identity alone);
+// the search stops once `maxOps` operations are found.
+function detectOperations(A, basis, tol, latticeTol, pointOps = latticeCandidates(A, Math.min(latticeTol, tol)), maxOps = Infinity) {
   const byEl = new Map();
   for (const s of basis) { if (!byEl.has(s.el)) byEl.set(s.el, []); byEl.get(s.el).push(s); }
 
@@ -314,9 +315,33 @@ function detectOperations(A, basis, tol, latticeTol) {
       const residual = Math.max(op.residual, strain);
       ops.push({ R, t: op.t, residual });
       if (residual > maxResidual) maxResidual = residual;
+      if (ops.length >= maxOps) return { ops, maxResidual };
     }
   }
   return { ops, maxResidual };
+}
+
+/**
+ * How many operations a pass at `tol` would have to examine, estimated cheaply before
+ * it runs: the lattice rotations admitted at `tol` (Step 7) times the pure translations
+ * {I|t} of the structure at `tol` (Steps 8–9 for the identity alone). Every rotation that
+ * holds does so with each pure translation, so this bounds the candidate set, and the
+ * closure walk and naming scale with it. A correctly declared cell has at most 48 × 4 =
+ * 192 (F centring); far more means the cell is a supercell of the structure's repeat
+ * unit. Counting stops once rotations × translations exceeds `limit` (then `exceeds` is
+ * true and `translations` is a lower bound), so declining a large box stays cheap.
+ *
+ * @returns {{ translations:number, rotations:number, operations:number, exceeds:boolean }}
+ */
+export function operationEstimate(A, basis, tol, limit = Infinity) {
+  if (!basis || !basis.length) return { translations: 0, rotations: 0, operations: 0, exceeds: false };
+  const rotations = latticeCandidates(A, tol).length;
+  if (!rotations) return { translations: 0, rotations: 0, operations: 0, exceeds: false };
+  const identity = [{ R: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], strain: 0 }];
+  const cap = Number.isFinite(limit) ? Math.floor(limit / rotations) + 1 : Infinity;
+  const translations = detectOperations(A, basis, tol, tol, identity, cap).ops.length;
+  const operations = translations * rotations;
+  return { translations, rotations, operations, exceeds: operations > limit };
 }
 
 /* ── group closure ───────────────────────────────────────────────────────────
