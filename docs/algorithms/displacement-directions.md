@@ -263,8 +263,21 @@ Code: `orientation_histogram` in [orientation.py](../../rmc_toolkits/orientation
 - **`pca`** — every direction is rotated into the cloud's own principal axes before binning:
   $\mathbf{u}' = \mathbf{A}\,\mathbf{u}$, where the rows of $\mathbf{A}$ are the three PCA axes
   in descending eigenvalue order. PC1 lands on local $+x$, PC2 on $+y$, PC3 on $+z$, which
-  makes different sites (and different elements) directly superimposable. The rods drawn in this
-  mode are the literal identity triad, not `pcaAxes` — in the rotated frame they *are* PC1/2/3.
+  aligns the principal axes of different sites (and different elements). It does **not** make
+  every feature superimposable: see "Axis signs" below. The rods drawn in this mode are the
+  literal identity triad, not `pcaAxes` — in the rotated frame they *are* PC1/2/3.
+
+**Axis signs are a lab-frame convention, so only centrosymmetric features superimpose.** An
+eigenvector is defined up to sign; the shared canonicalisation (largest-magnitude component
+positive, then right-handedness — Step 8) fixes it from the axis's *lab-frame* components, not
+from anything physical. Two sites related by a proper 2-fold rotation get identical canonical
+axes while their clouds differ by that rotation, so any map feature without 2-fold symmetry about
+the PC axes — including exactly the antipodally asymmetric lobes this page exists to show — lands
+on **opposite poles**. Verified: a skewed 4000-point cloud and its $C_{2z}$ image have the same
+canonical PC1 ($[1.000, -0.006, 0.000]$) but PCA-frame `peakDirection` $[1, 0, 0]$ vs
+$[-1, 0, 0]$, with identical $\mathcal{A} = 0.174$. Compare symmetry-related sites' *axes* and
+centrosymmetric shape in the PCA frame; compare one-sided features in the crystal frame (or fix the
+sign by a physical rule such as a positive third moment along PC1 — not implemented).
 
 Five details matter for interpretation:
 
@@ -1632,6 +1645,9 @@ independently computed in each language — not a shared-golden parity suite.
     mean (odd-order anharmonicity, unequal well occupation), not "the site is off-centre"; and with
     partial off-centring the peak can point *away* from the displacement. Compare `siteFractional`
     with the ideal position for the coherent part.
+16. **The PCA frame does not superimpose one-sided features across sites** (Step 2, "Axis
+    signs"). PC axis signs follow a lab-frame convention, so symmetry-related sites can put the
+    same one-sided lobe on opposite poles. Compare asymmetric maps in the crystal frame.
 
 
 ## Displacement Directions — the sphere view, axis views, and site picker
@@ -2948,7 +2964,9 @@ and the "c up" of the "down a" view is only the component of c perpendicular to 
 the sphere's own $x,y,z$ *are* PC1/2/3 by construction (the engine rotated the directions), so the
 crystal rods are correctly not drawn — but that also means a map in the PCA frame carries no
 crystallographic reference at all, and for a near-isotropic site the PCA frame itself is arbitrary
-within its degenerate subspace (engine section, caveat 9).
+within its degenerate subspace (engine section, caveat 9). Its axis *signs* are a lab-frame
+convention too, so two symmetry-related sites can show the same one-sided lobe on opposite poles
+in the PCA frame (engine section, caveat 16) — compare asymmetric maps in the Crystal frame.
 
 **8. The mini panes can go stale**, and in the no-cell-metadata case their labels (`x, y, z`) disagree
 with the rods actually drawn (the site's PC axes — unless the site has fewer than 4 vectors, in which

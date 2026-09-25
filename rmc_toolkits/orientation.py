@@ -748,7 +748,11 @@ def orientation_histogram(
     frame:
         ``"cartesian"`` keeps the crystal frame. ``"pca"`` rotates directions
         into the cloud's own principal axes first, which puts PC1 on +x and
-        makes different sites directly comparable.
+        aligns the principal axes of different sites. Each axis's sign comes
+        from the lab-frame canonical convention, not from the physics, so two
+        symmetry-related sites (e.g. related by a 2-fold rotation) can land
+        with +PC1 and -PC1 swapped: only centrosymmetric features superimpose
+        across sites; a one-sided lobe may sit on opposite poles.
     geometry:
         Include cell polygons in the result. They depend only on ``frequency``,
         so a caller that caches the tiling can turn this off.
