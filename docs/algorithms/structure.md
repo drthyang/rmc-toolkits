@@ -77,6 +77,12 @@ available. `/api/kde/slice` is used only when a server-side directory is the act
 Static mode (GitHub Pages / no backend) is always a browser-loaded run, so it always uses the
 worker.
 
+> **Read blob shapes with care.** The smoothing kernel is $f^2\times$ the covariance of the slab's
+> atoms, so its shape follows how the slab's *sites* are laid out, not how the atoms move: an
+> isotropic Ga site in the element-filtered GaNb₄Se₈ layer is drawn 2 : 1 elongated at the defaults.
+> The map prints the kernel's $\sigma$ in Å and flags sub-grid and strongly anisotropic kernels. See
+> [*The kernel's shape follows the slab's site layout*](#the-kernels-shape-follows-the-slabs-site-layout-read-this-before-reading-blob-shapes).
+
 The app says so itself: the in-app `InfoBadge` on the KDE panel and the `local-density-note` under
 the canvas both read *"The Flask app uses SciPy KDE for reference-grade values"*
 ([`StructurePage.jsx`](../../web_app/frontend/src/components/StructurePage.jsx)).
@@ -749,9 +755,68 @@ in fractional units — roughly **0.07–0.10 Å for a 10.4 Å cell**. Three hon
    width on different slices.
 2. The periodic images and the subsample do **not** change $\mathbf{C}$ (see above). Before 1.0 they
    did, by far more than the "few percent" this document used to state.
-3. In a non-orthogonal cell, $\mathbf{H}$ is a covariance in *fractional* space, so a kernel that is
-   near-circular in the computation is an ellipse in Å after the affine map to the real cell
-   (Step 10). The smoothing is anisotropic in real space for any non-cubic cell.
+3. The kernel's **shape** — not only its width — comes from $\mathbf{C}$, i.e. from how the slab's
+   sites are laid out; see the next section. (This document used to attribute the anisotropy to
+   the fractional frame: "Euclidean-isotropic in fractional coordinates, hence anisotropic in Å for
+   any non-cubic cell". That was wrong on both counts. A full-covariance KDE is affine-equivariant —
+   mapping the points by $\mathbf{M}$ maps $\mathbf{C}$ and $\mathbf{H}$ to $\mathbf{M}\mathbf{C}\mathbf{M}^\top$ and
+   $\mathbf{M}\mathbf{H}\mathbf{M}^\top$ — so computing in fractional or in Cartesian coordinates draws the
+   same map, and $\mathbf{H}$ is anisotropic in fractional coordinates as well, cubic cells included.)
+
+#### The kernel's shape follows the slab's site layout (read this before reading blob shapes)
+
+$\mathbf{H}=f^2\mathbf{C}$ with $\mathbf{C}$ the covariance of **all** the slab's atoms. A slab holds
+many sites, so $\mathbf{C}$ measures how the sites are *laid out* across the slab, not how wide any
+one site is, and every site is convolved with that layout-shaped kernel: the second moments of a
+drawn blob are the site's own in-plane covariance **plus $\mathbf{H}$**. This is SciPy's convention
+for a scalar bandwidth factor and it is kept as the reference estimator for 1.0; it is an artefact of
+the method, not of the atoms, and it is largest exactly where the map is most tempting to read —
+element-filtered layers holding one or two sites.
+
+**Measured example** (`data/5K_try1/GaNb4Se8_5K.rmc6f`, cubic $a = 10.395$ Å, element Ga, preset `c`,
+$z_c = 0.25$ as auto-centred, $\Delta z = 0.08$, default $f = 0.03$). The layer holds two Ga sites on
+the face diagonal, at $(\tfrac14,\tfrac34)$ and $(\tfrac34,\tfrac14)$. $\mathbf{C}$ has eigenvalues
+$3.5\times10^{-5}$ and $0.125$, so the kernel is a needle: $\sigma = 0.0018 \times 0.110$ Å, 60 : 1,
+along $[1\bar10]$. The Ga cloud at $(\tfrac34,\tfrac14)$ is isotropic in the plane
+($\sigma = 0.061/0.062$ Å, 1000 atoms), yet its blob in the map has $\sigma = 0.062 \times 0.126$ Å:
+**drawn 2.0 : 1 elongated along $[1\bar10]$** (3.7 : 1 at $f = 0.06$). The Nb layer at $z_c = 0.15$
+gives a 54 : 1 kernel along $[110]$ and turns a 1.24 : 1 cloud into a 2.1 : 1 blob. The same
+mechanism acts in every geometry, only more mildly when the slab's sites fill the plane:
+
+* all atoms, same cell, $(110)$ slice: kernel aspect 1.3 at $z_c = 0.5$ but 8.1 at $z_c = 0.1$;
+* a hexagonal layer (three sites of a triangular net, $a = 5$ Å, isotropic 0.08 Å clouds): kernel
+  1.61 : 1, so each 3-fold site is drawn as a 1.16 : 1 ellipse; the same crystal written in the
+  orthohexagonal cell gives a 1.38 : 1 kernel along a different direction — the picture depends on the
+  cell setting;
+* even the origin matters: shifting the Ga coordinates by $(\tfrac14,\tfrac14,0)$ — the same
+  structure — splits both sites across the cell faces, the folded in-cell covariance becomes round,
+  and the kernel is $0.109 \times 0.109$ Å instead of $0.0018 \times 0.110$ Å.
+
+**When the minor axis collapses below the grid the map is aliased.** The Ga needle's
+$\sigma_{\min} = 0.0018$ Å is 1/47 of the $G = 120$ node spacing (0.087 Å); the peak reads
+1296 / 1352 / 1372 / 1385 and the grid-summed mass 0.967 / 0.856 / 0.924 / 0.960 at
+$G = 80 / 120 / 160 / 220$, where it should be 1. A slab holding a single site (an element-filtered
+perovskite $B$ layer, say) has $\mathbf{C}$ = the thermal covariance and $\sigma = f\times$ the thermal
+spread, $\approx 0.002$ Å.
+
+**What the page does about it.** It does not remove the artefact. It makes it visible: the map's
+overlay prints the kernel's principal $\sigma$ in Å (`kernelSigmaAngstrom()` in
+`workers/slabSelection.js` maps $\mathbf{H}$ through the in-plane metric: the nonzero eigenvalues of
+$\mathbf{M}\mathbf{H}\mathbf{M}^\top$ are those of $\mathbf{H}\mathbf{G}$, $\mathbf{G}=\mathbf{M}^\top\mathbf{M}$);
+both engines attach a `subgrid` warning (`KDE_WARNINGS`) when $\sigma_{\min}$ is below half the larger
+grid step (`KERNEL_SUBGRID_RATIO = 0.5`: a Gaussian sampled at spacing $h$ keeps its integral to
+~1 % while $\sigma\ge h/2$); and the page adds a note when the kernel is more than 3 : 1 in Å
+(`KERNEL_ANISOTROPY_NOTE`) saying that elongation along its long axis is an artefact. Read blob
+shapes against the printed kernel, and take displacement shapes from the
+[PCA Ellipsoid](pca-ellipsoid.md) page, which fits each site's cloud directly. A kernel that is a
+physical length (isotropic in the plane, width in Å through the cell metric) would remove the
+artefact; it is a different estimator and not part of 1.0.
+
+**Verification.** `tests/test_kde_kernel_diagnostics.py` and
+`workers/__tests__/kernelDiagnostics.test.js` pin the `subgrid` warning (a two-site needle warns at
+$G = 120$; a cell-filling slab is quiet at $G = 120$ and warns at $G = 16$) and the Å readout; the
+parity golden compares the warning codes between the runtimes. The numbers above come from
+`oriented_kde_slice()` on the sample run (blob moments as site covariance $+\ \mathbf{H}$).
 
 #### Periodic-image renormalization $\kappa$
 
@@ -1080,7 +1145,7 @@ the reader must know:
 * The scale is **re-normalized on every recompute**. Moving the slider, changing the element,
   changing the bandwidth, or changing the grid all rescale the colours. **Colours are not comparable
   between two screenshots.** There is no colorbar and no numeric legend anywhere on the panel — only
-  the text overlay giving `slabCount`, `fitCount`, $z_c$, $\Delta z$ and `bw`.
+  the text overlay giving `slabCount`, `fitCount`, $z_c$, $\Delta z$, `bw` and the kernel's $\sigma$ in Å.
 
 #### An empty canvas says why
 
@@ -1280,6 +1345,7 @@ the distinct element labels before assigning colours) shown in the legend **belo
 | `density`, `extent`, `grid`, `bw`, `log`, `slabCount`, `fitCount`, `vmin`, `vmax`, `contours` | ✓ | ✓ | same meaning (`bw` is `null` when the bandwidth was rejected) |
 | `kernel` | ✓ | ✓ | $\mathbf{H}$ as `covariance` (in-plane fractional²) plus its principal `sigmaMinor`/`sigmaMajor`; `null` when declined |
 | `message` | ✓ | ✓ | why no density was drawn (Step 6), the same string in both; `null` when drawn |
+| `warnings` | ✓ | ✓ | `[{code, message}]` about a drawn map — `subgrid` when the kernel is narrower than half a grid step (Step 6); `[]` otherwise |
 | `center`, `thickness` | ✓ | ✓ | the raw slider fractions in **both** — this is what the UI reads |
 | `normal`, `uVector`, `vVector`, `planeVertices`, `planePolygon` | ✓ | ✓ | `uVector`/`vVector` differ for custom normals (Step 2) |
 | `z`, `dz` | ✓ | ✓ | the slider fractions in both (since 1.0; see below) |
@@ -1429,8 +1495,11 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
    the display.
 7. **The colormaps are 5-anchor approximations** of the matplotlib maps of the same name and are not
    perceptually uniform.
-8. **Everything geometric happens in fractional space.** The kernel is Euclidean-isotropic in
-   fractional coordinates and therefore anisotropic in Å for any non-cubic cell; the custom
+8. **The kernel's shape follows the slab's site layout** (Step 6), in cubic cells too: an isotropic
+   site can be drawn 2 : 1 or more along the line joining the slab's sites, the shape depends on the
+   cell setting and origin, and a one- or two-site slab can collapse the kernel below the grid
+   (flagged `subgrid`). The overlay prints the kernel's $\sigma$ in Å. **Everything geometric
+   happens in fractional space**: the custom
    plane is a Miller index triple $(hkl)$ (and labelled as one), not a real-space vector; and the slab thickness in
    Å must be reconstructed by hand as $\Delta z(|h|+|k|+|l|)d_{hkl}$.
 9. **The slider auto-jumps.** Changing the element filter or the normal — including typing a single
@@ -2359,8 +2428,10 @@ machinery, plus a set of fallbacks worth knowing when a panel looks empty. **Cod
    payload's `message` is then shown under the canvas), otherwise `No atoms in this slab`.
 6. Overlay text (drawn with a dark stroke `rgba(13, 18, 28, 0.62)`, `lineWidth 3`, under a white fill,
    so it stays legible over any colormap) reports `<slabCount> atoms in slab (fit <fitCount>)` at
-   $(12,22)$, `<label>=<center>  d=<thickness>  bw=<bw>` at $(12,40)$, and `log10 density` at
-   $(12,58)$ when the log toggle is on. Recall from Step 3c/5.5 that `slabCount` counts unique source
+   $(12,22)$, `<label>=<center>  d=<thickness>  bw=<bw>` at $(12,40)$, `kernel σ <minor> × <major> Å`
+   at $(12,58)$ when a kernel was drawn (KDE Step 6), and `log10 density` on the next line (18 px
+   lower) when the log toggle is on. The engine's `warnings` and the page's kernel-anisotropy note are
+   shown under the canvas. Recall from Step 3c/5.5 that `slabCount` counts unique source
    atoms of the **periodic-image-augmented** set, not the markers highlighted in the Slab panel.
 
 **Fixed draw order:** background fill → heatmap (clipped) → contours → cell outline → overlay text, so

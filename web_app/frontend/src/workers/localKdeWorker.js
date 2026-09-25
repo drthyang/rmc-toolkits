@@ -170,6 +170,22 @@ export const KDE_MESSAGES = {
         + 'so the KDE bandwidth is undefined.'
 };
 
+// Warnings attached to a drawn map, as { code, message }: the same codes,
+// strings and threshold as kde.py (KDE_WARNINGS, KERNEL_SUBGRID_RATIO). A
+// Gaussian sampled at spacing h keeps its integral to ~1 % while sigma >= h/2.
+export const KERNEL_SUBGRID_RATIO = 0.5;
+export const KDE_WARNINGS = {
+    subgrid: 'The kernel is narrower than half a grid step along its minor axis, so the map is '
+        + 'aliased: peak values, contours and the integrated density depend on the grid size. '
+        + 'Raise the bandwidth or the grid.'
+};
+
+const kernelWarnings = (kernel, gridStep) => (
+    kernel.sigmaMinor < KERNEL_SUBGRID_RATIO * gridStep
+        ? [{ code: 'subgrid', message: KDE_WARNINGS.subgrid }]
+        : []
+);
+
 // Decline a covariance with 1 - rho^2 <= this limit (rho = the in-plane
 // correlation coefficient) as numerically singular: below it the Cholesky pivot
 // is at the level of summation round-off, so its sign would depend on the
@@ -421,6 +437,7 @@ export const computeKde = async (payload) => {
     let density = null;
     let fitCount = 0;
     let kernelInfo = null;
+    let warnings = [];
     let message = KDE_MESSAGES.empty;
     let backend = 'cpu';
 
@@ -451,6 +468,7 @@ export const computeKde = async (payload) => {
             };
             const xStep = (xMax - xMin) / Math.max(grid - 1, 1);
             const yStep = (yMax - yMin) / Math.max(grid - 1, 1);
+            warnings = kernelWarnings(kernel, Math.max(xStep, yStep));
             const args = { samples, kernel, grid, xMin, yMin, xStep, yStep };
 
             // Run the density map on the GPU when the workload is large enough to
@@ -504,6 +522,7 @@ export const computeKde = async (payload) => {
         fitCount,
         kernel: kernelInfo,
         message,
+        warnings,
         vmin: Number.isFinite(vmin) ? vmin : 0,
         vmax: Number.isFinite(vmax) ? vmax : 0,
         contours: linearMax > 0 ? extractContours({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax }) : [],

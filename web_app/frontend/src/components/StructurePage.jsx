@@ -10,7 +10,13 @@ import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { canvasToPngBlob, downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
-import { isInSlab, millerPlaneFileLabel, millerPlaneLabel } from '../workers/slabSelection';
+import {
+    KERNEL_ANISOTROPY_NOTE,
+    isInSlab,
+    kernelSigmaAngstrom,
+    millerPlaneFileLabel,
+    millerPlaneLabel
+} from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
 import SaveMenu from './SaveMenu';
 import InfoBadge from './InfoBadge';
@@ -726,6 +732,19 @@ const StructurePage = ({ directory, localRun, theme }) => {
     // (width, height) CSS units. The caller sets the backing resolution and the
     // matching transform, so the same draw serves the live canvas and a
     // higher-resolution offscreen canvas for export.
+    // The kernel's principal sigmas in Angstrom (through the cell metric), for the
+    // overlay and the anisotropy note; null when no kernel was drawn.
+    const kernelAngstrom = useMemo(() => {
+        if (!kde?.kernel) return null;
+        const uVector = kde.uVector || sliceConfig.u;
+        const vVector = kde.vVector || sliceConfig.v;
+        return kernelSigmaAngstrom(
+            kde.kernel.covariance,
+            vectorFromFraction(uVector, unitCell.unitVectors),
+            vectorFromFraction(vVector, unitCell.unitVectors)
+        );
+    }, [kde, sliceConfig, unitCell]);
+
     const drawKdeSlice = useCallback((ctx, width, height) => {
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = themeVars.canvasBg;
@@ -829,9 +848,18 @@ const StructurePage = ({ directory, localRun, theme }) => {
         if (kde) {
             drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
             drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}  bw=${kde.bw}`, 12, 40);
-            if (kde.log) drawOverlayText('log10 density', 12, 58);
+            let nextLine = 58;
+            if (kernelAngstrom) {
+                drawOverlayText(
+                    `kernel σ ${kernelAngstrom.minor.toPrecision(2)} × ${kernelAngstrom.major.toPrecision(2)} Å`,
+                    12,
+                    nextLine
+                );
+                nextLine += 18;
+            }
+            if (kde.log) drawOverlayText('log10 density', 12, nextLine);
         }
-    }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell, sliceConfig]);
+    }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell, sliceConfig, kernelAngstrom]);
 
     // Colormap and contour visibility are pure client-side re-renders (no refetch).
     useEffect(() => {
@@ -1354,6 +1382,12 @@ const StructurePage = ({ directory, localRun, theme }) => {
                                             scales the kernel width, so smaller values resolve finer detail.
                                         </p>
                                         <p>
+                                            The kernel is bandwidth² × the covariance of the slab&apos;s atoms
+                                            (SciPy&apos;s convention), so its width and shape follow how the
+                                            slab&apos;s sites are laid out, not how atoms move. Its σ is printed
+                                            on the map in Å; read blob shapes against it.
+                                        </p>
+                                        <p>
                                             It runs in your browser (GPU when available, CPU otherwise).
                                             The Flask app uses SciPy KDE for reference-grade values.
                                         </p>
@@ -1365,6 +1399,20 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             {kde?.message && kde.slabCount > 0 && (
                                 <div className="local-density-note kde-message-note" role="status">
                                     {kde.message}
+                                </div>
+                            )}
+                            {kde?.warnings?.map((warning) => (
+                                <div key={warning.code} className="local-density-note kde-message-note" role="status">
+                                    {warning.message}
+                                </div>
+                            ))}
+                            {kernelAngstrom && kernelAngstrom.major > KERNEL_ANISOTROPY_NOTE * kernelAngstrom.minor && (
+                                <div className="local-density-note kde-message-note" role="status">
+                                    {`The kernel is ${Math.round(kernelAngstrom.major / kernelAngstrom.minor)}:1 anisotropic: `
+                                        + 'its shape is bw times the covariance of all the slab\'s atoms, so it follows how '
+                                        + 'the sites are laid out in the slab, not how any atom moves. Elongation of the '
+                                        + 'blobs along the kernel\'s long axis is an artefact; use the PCA Ellipsoid page '
+                                        + 'for displacement shapes.'}
                                 </div>
                             )}
                             {isLocalStructure && (

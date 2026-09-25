@@ -82,8 +82,10 @@ describe('browser KDE vs Python reference (kde_parity_fixture.json)', () => {
             expect(worst).toBeLessThan(1e-6);
             expect(Math.abs(result.vmax / expected.vmax - 1)).toBeLessThan(1e-6);
 
-            // Because it is the same kernel H = f^2 C, entry by entry.
+            // Because it is the same kernel H = f^2 C, entry by entry, with the
+            // same diagnostics.
             expect(result.message).toBeNull();
+            expect(result.warnings.map((warning) => warning.code)).toEqual(expected.warnings);
             const scale = expected.kernel.sigmaMajor ** 2;
             expected.kernel.covariance.flat().forEach((value, index) => {
                 expect(Math.abs(result.kernel.covariance.flat()[index] - value) / scale).toBeLessThan(1e-9);

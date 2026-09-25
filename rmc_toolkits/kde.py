@@ -75,6 +75,30 @@ def _well_conditioned(covariance: np.ndarray) -> bool:
     return 1.0 - (c01 * c01) / (c00 * c11) > COVARIANCE_CONDITION_LIMIT
 
 
+# Warnings attached to a drawn map (``warnings`` in the payload, as
+# {"code", "message"}); the worker returns the same codes and strings.
+KERNEL_SUBGRID_RATIO = 0.5
+KDE_WARNINGS = {
+    "subgrid": (
+        "The kernel is narrower than half a grid step along its minor axis, so the map is "
+        "aliased: peak values, contours and the integrated density depend on the grid size. "
+        "Raise the bandwidth or the grid."
+    ),
+}
+
+
+def _kernel_warnings(kernel: dict, grid_step: float) -> list[dict]:
+    """``subgrid`` when the minor kernel sigma is below ``KERNEL_SUBGRID_RATIO`` grid steps.
+
+    A Gaussian sampled at spacing h keeps its integral to ~1 % while
+    sigma >= h/2; below that most atoms fall between nodes and the few that land
+    on one spike, so the drawn map is set by the grid, not the atoms.
+    """
+    if kernel["sigmaMinor"] < KERNEL_SUBGRID_RATIO * grid_step:
+        return [{"code": "subgrid", "message": KDE_WARNINGS["subgrid"]}]
+    return []
+
+
 def _valid_bandwidth(bw) -> bool:
     """A usable bandwidth factor: a finite number > 0 (booleans excluded)."""
     if isinstance(bw, bool) or not isinstance(bw, (int, float, np.integer, np.floating)):
@@ -545,6 +569,7 @@ def kde_slice(
     slab_count = 0
     fit_count = 0
     kernel = None
+    warnings: list[dict] = []
     message = KDE_MESSAGES["empty"]
     if positions.shape[0]:
         x, y, z = positions[:, 0], positions[:, 1], positions[:, 2]
@@ -590,6 +615,11 @@ def kde_slice(
                     density *= slab_total / slab_count
                 fit_count = int(slab.shape[0])
                 kernel = _kernel_summary(kde.covariance, kde.cho_cov)
+                grid_step = max(
+                    (float(xlim[1]) - float(xlim[0])) / (grid - 1),
+                    (float(ylim[1]) - float(ylim[0])) / (grid - 1),
+                )
+                warnings = _kernel_warnings(kernel, grid_step)
                 message = None
 
     # Contour only a map with positive density, tested on the linear values:
@@ -617,6 +647,7 @@ def kde_slice(
         # sigmas; None when the slab was declined, and then `message` says why.
         "kernel": kernel,
         "message": message,
+        "warnings": warnings,
         "vmin": float(np.nanmin(density)) if density.size else 0.0,
         "vmax": float(np.nanmax(density)) if density.size else 0.0,
         "contours": contours,

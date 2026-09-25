@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Slice-definition helpers shared by the Structure page, the KDE worker and tests.
+// Slice-definition and kernel-readout helpers shared by the Structure page, the
+// KDE worker and tests (pure functions, no side effects).
 //
 // Slab membership, shared by the KDE worker (localKdeWorker.js makeSlab) and the
 // Structure page's Slab-In-Cell highlight (StructurePage.jsx inActiveSlab), and
@@ -36,3 +37,27 @@ export const millerPlaneFileLabel = (indices) => `(${indices
         return Number.isFinite(number) ? String(Math.round(number * 100) / 100) : '0';
     })
     .join('_')})`;
+
+// The KDE kernel in Angstrom. `covariance` is H in the slice's (u, v)
+// fractional coordinates (the payload's kernel.covariance); uCartesian and
+// vCartesian are the Cartesian (Angstrom) images of the in-plane axes u and v.
+// In real space the kernel is M H M^T with M = [uCartesian vCartesian], whose two
+// nonzero eigenvalues are those of H G, G = M^T M the in-plane metric. Returns
+// the principal sigmas { minor, major } in Angstrom.
+export const kernelSigmaAngstrom = (covariance, uCartesian, vCartesian) => {
+    const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const g00 = dot3(uCartesian, uCartesian);
+    const g01 = dot3(uCartesian, vCartesian);
+    const g11 = dot3(vCartesian, vCartesian);
+    const [[h00, h01], [, h11]] = covariance;
+    const trace = h00 * g00 + 2 * h01 * g01 + h11 * g11;
+    const determinant = (h00 * h11 - h01 * h01) * (g00 * g11 - g01 * g01);
+    const major = 0.5 * trace + Math.sqrt(Math.max(0, 0.25 * trace * trace - determinant));
+    const minor = major > 0 ? determinant / major : 0;
+    return { minor: Math.sqrt(Math.max(minor, 0)), major: Math.sqrt(Math.max(major, 0)) };
+};
+
+// Above this aspect ratio (in Angstrom) the page notes that the kernel's shape
+// is an artefact of the slab's site layout (docs/algorithms/structure.md,
+// "The kernel's shape follows the slab's site layout").
+export const KERNEL_ANISOTROPY_NOTE = 3;

@@ -170,6 +170,7 @@ def compute_case(case: dict, positions: np.ndarray) -> dict:
         "slabCount": result["slabCount"],
         "fitCount": result["fitCount"],
         "message": result["message"],
+        "warnings": [warning["code"] for warning in result["warnings"]],
         "kernel": result["kernel"],
         "vmax": result["vmax"],
         # The grid relative to its peak, rounded to 1e-8: far below the 1e-6

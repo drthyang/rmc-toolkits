@@ -38,6 +38,7 @@ class KdeParityFixtureTests(unittest.TestCase):
                 self.assertEqual(actual["slabCount"], expected["slabCount"])
                 self.assertEqual(actual["fitCount"], expected["fitCount"])
                 self.assertEqual(actual["message"], expected["message"])
+                self.assertEqual(actual["warnings"], expected["warnings"])
                 if expected["kernel"] is None:
                     self.assertIsNone(actual["kernel"])
                 else:
