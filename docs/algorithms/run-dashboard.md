@@ -2698,16 +2698,19 @@ for the hexagonal setting, where the six-fold is
 $\big[\begin{smallmatrix}1&-1&0\\ 1&0&0\\ 0&0&1\end{smallmatrix}\big]$. The code comment in
 `symmetry.js` lists the settings it claims to cover as "cubic, tetragonal, orthorhombic, hexagonal,
 rhombohedral-in-hex, monoclinic, triclinic" — i.e. rhombohedral **only in hexagonal axes**.
-(Independently of that comment: the primitive-rhombohedral setting also has $\{-1,0,1\}$ matrices,
-its three-fold being a cyclic permutation of the axes — but as Step 10(c) notes, `R` centering is
-never actually produced by the classifier.)
+(The primitive-rhombohedral setting also has $\{-1,0,1\}$ matrices, its three-fold being a cyclic
+permutation of the axes; a group found there is named on hexagonal axes, Step 10f.)
 
 **What it excludes.** Any setting in which a lattice automorphism requires an integer entry with
 magnitude $\ge 2$: sheared, doubled, or otherwise non-conventional cell choices, orthohexagonal
 descriptions of a hexagonal lattice, and in general any cell that is not (close to) a reduced
 conventional cell. It also excludes, by construction, any symmetry of the **supercell** that is not
 already a symmetry of the declared conventional cell, because $A$ is divided by $N$ before the
-search. The finder does **not** attempt cell reduction (Niggli/Delaunay) first.
+search, and any symmetry of the structure that does not map the declared cell's lattice onto itself
+(the cubic 3-folds of a structure declared on a $2\times2\times1$ or $\sqrt2\times\sqrt2\times2$ cell). No
+Niggli/Delaunay reduction is attempted before the search; the naming step (Step 10f) re-expresses
+the group found in a conventional cell and flags a result that such untested symmetries could
+enlarge (`≥ <symbol>`).
 
 **Output**: an array of integer $3\times3$ matrices (row-major), typically 2–48 entries.
 
@@ -2824,34 +2827,26 @@ with the classification of Step 10. (`maxResidual` here is the max over *accepte
 `nTrans`, uses the key `Math.round(wrap01(t_i) * 1000) % 1000` per component — a fixed $10^{-3}$
 fractional grid, folded mod 1 so that a translation recovered as 0.9997 and an exact 0 count once.
 
-Any identity-rotation translation with **at least one** component farther than `tolFrac` from an
-integer is additionally pushed onto the centering-candidate list, where
+`tolFrac` $=\tau/\overline a$ with $\overline a = \tfrac13(|\mathbf a_1|+|\mathbf a_2|+|\mathbf a_3|)$
+(`meanEdge()`) is used only by the closure check of a set handed in directly (Step 11).
 
-$$\texttt{tolFrac} = \frac{\tau}{\overline{a}},\qquad
-\overline{a}=\tfrac13\big(|\mathbf a_1|+|\mathbf a_2|+|\mathbf a_3|\big)\ [\text{Å}]$$
+**(c) Centering letter** (`centeringOfOps()` → `bravaisCentering()`, `spaceGroupSymbol.js`). The
+pure translations are snapped to the $1/24$ grid (within 0.02 per component; one that does not snap
+gives no letter) and the **whole set**, zero included, must equal one Bravais centering exactly:
 
-(`meanEdge()` — the mean of the three conventional edge lengths, not just $|\mathbf a_1|$).
-
-**(c) Centering letter.** `matchCentering()` compares the candidate translations against the Bravais
-centering vector sets, **in this order**:
-
-| Letter | Required vectors (fractional) |
+| Letter | Translations besides 0 (fractional) |
 | --- | --- |
-| `F` | $(0,\tfrac12,\tfrac12)$, $(\tfrac12,0,\tfrac12)$, $(\tfrac12,\tfrac12,0)$ |
+| `P` | none |
+| `A` / `B` / `C` | $(0,\tfrac12,\tfrac12)$ / $(\tfrac12,0,\tfrac12)$ / $(\tfrac12,\tfrac12,0)$ |
 | `I` | $(\tfrac12,\tfrac12,\tfrac12)$ |
-| `A` | $(0,\tfrac12,\tfrac12)$ |
-| `B` | $(\tfrac12,0,\tfrac12)$ |
-| `C` | $(\tfrac12,\tfrac12,0)$ |
+| `F` | $(0,\tfrac12,\tfrac12)$, $(\tfrac12,0,\tfrac12)$, $(\tfrac12,\tfrac12,0)$ |
+| `R` | obverse $(\tfrac23,\tfrac13,\tfrac13)$, $(\tfrac13,\tfrac23,\tfrac23)$; reverse $(\tfrac13,\tfrac23,\tfrac13)$, $(\tfrac23,\tfrac13,\tfrac23)$ |
 
-A vector is "present" if every component matches modulo 1 within a **hard-coded 0.1 fractional**
-tolerance ($\big|((t_i-v_i+0.5)\bmod 1)-0.5\big| < 0.1$; implemented with JavaScript `%`, a
-sign-following *remainder* rather than a true modulus — equivalent here only because `t` has already
-been wrapped into $[0,1)$ by `wrap01` and the centering components are 0 or ½, so the argument is
-never negative) — note `classifyOperations` calls
-`matchCentering(centerings)` without passing `tolFrac`, so the 0.1 default is always used. The first
-letter whose *whole* vector set is present wins; otherwise `P`. **`R` (rhombohedral) centering is
-never produced** — it is not in the table, even though `ALLOWED_CENTERING` lists it as permitted for
-the trigonal system.
+A translation set that is not exactly one of these — the finer lattice of a **supercell** of the
+true cell (a perovskite in a $2\times2\times2$ cell has all eight $(i/2, j/2, k/2)$, which contain the F
+vectors but are not an F lattice) — gives `centering = null`. Before 1.0 the letter came from the
+mere presence of the vectors, so such cells were read as F, I or C. The letter is the centering of
+the **given** cell; the symbol is named in whatever cell Step 10(f) finds, with that cell's letter.
 
 **(d) Rotation type from determinant and trace.** Both are similarity invariants, so this is
 basis-independent. With $t = \operatorname{tr}R$:
@@ -2891,42 +2886,73 @@ deliberate, so that a structure whose symmetry is a proper subgroup of its latti
 generic case partway up the tolerance ladder) is classified correctly.
 
 **(f) Space-group symbol** (`spaceGroupHM()` → `spaceGroupSymbol.js`). Triclinic groups are `P1`
-(No. 1) or `P-1` (No. 2) whatever cell describes them. Every other group is named from its
-operations:
+(No. 1) or `P-1` (No. 2) whatever cell describes them. Every other group is named in a **standard
+setting**, which the RMC cell need not be:
 
-1. Each operation is classified into a symmetry element (`classifyElement()`): its characteristic
-   direction (rotation axis, or mirror normal), order, and — from the **intrinsic translation**
-   $\mathbf t_\text{int} = \tfrac1n\sum_{k<n}R^k\mathbf t$ (reduced mod 1, snapped to quarters) — whether a
-   rotation is a screw $n_m$ and which glide ($a,b,c,n,d$, or $e$ for two axial glides in one plane) a
-   reflection is. $\mathbf t_\text{int}$ does not depend on the origin.
-2. The crystal system's ordered **symmetry directions** (blickrichtungen; `SYSTEM_DIRECTIONS`) fix the
-   positions of the Hermann–Mauguin symbol; each position is filled with the elements lying along it
-   (axis for rotations, normal for planes), rendered by the short-symbol rules, and all defensible
-   spellings are listed best-first (`hmSymbolCandidates()`).
-3. A candidate is **accepted** only if (`hmSymbolInStandardSetting()`):
-   - it is a tabulated standard symbol (230 groups plus pre-2002 `e`-glide spellings,
-     `spaceGroupTable.js`) **whose crystal class is the detected point group** (`pointGroupOfSymbol()`),
-   - it starts with the centering letter of the setting it was built in, and
-   - every element lies along a direction family that may carry an element of its type
-     (`elementsFitSetting()`: e.g. a tetragonal 4-fold only on [001], cubic 3-folds only on
-     $\langle111\rangle$).
+1. **Symmetry elements** (`classifyElement()`): each operation's characteristic direction (rotation
+   axis, or mirror normal), order, and — from the **intrinsic translation**
+   $\mathbf t_\text{int} = \tfrac1n\sum_{k<n}R^k\mathbf t$ (reduced mod 1, snapped to quarters, independent of
+   the origin) — whether a rotation is a screw $n_m$ and which glide ($a,b,c,n,d$, or $e$) a reflection is.
+2. **Candidate cells** (`hmSymbolInStandardSetting()`). The group is re-expressed (`applySetting()`:
+   $R' = Q^{-1}RQ$, $\mathbf t' = Q^{-1}\mathbf t$, and the new cell's translations $Q^{-1}(\mathbb Z^3 + T)$
+   mod 1) in a sequence of cells $Q$ (columns = new basis vectors in the old fractional basis), and
+   named in the first that is conventional:
+   - the given cell and its five other axis orders (`PERMUTATIONS`, all right-handed so a screw's
+     handedness survives), for every crystal system;
+   - cells built from the symmetry elements (`derivedBases()`), each basis vector the **shortest
+     lattice vector** of the full translation lattice $\mathbb Z^3 + T$ along its direction:
+     cubic — $a,b,c$ on the three 4-fold ($\bar4$ for $\bar43m$, 2-fold for $23$, $m\bar3$) axes;
+     tetragonal — $c$ on the 4 / $\bar4$ axis, $a$ the shortest lattice vector $\perp c$ (and its
+     45° diagonal), $b = 4\cdot a$; trigonal/hexagonal — $c$ on the 3-fold, $a = \pm$ the shortest
+     lattice vector $\perp c$, $b = 3\cdot a$; orthorhombic — the three 2-fold axes / mirror normals
+     in all six orders; monoclinic — $b$ on the unique axis and $(a, c)$ every unimodular pair from
+     the two shortest lattice vectors $\perp b$ (covers the cell choices, e.g. I2/a → C2/c, and
+     P2₁/n → P2₁/c). "Perpendicular" and "along" are decided by the rotations themselves
+     ($R\mathbf v = \pm\mathbf v$, $\sum_k R^k\mathbf v = 0$), exactly, not by the metric.
 
-   Monoclinic and orthorhombic groups are also tried in the other five axis orders
-   (`PERMUTATIONS`, $R' = P^{-1}RP$, $\mathbf t' = P^{-1}\mathbf t$).
-4. If nothing is accepted the card shows the **crystal class** — `"<point group> class"`, e.g.
-   `4/mmm class` — with **no number** (`classLabel()`). Positional assembly on a cell that is not
-   conventional can spell another group's symbol (rocksalt on its primitive cell gives `Pmmm`, an
-   `mm2` set on diagonal axes gives `P2`, rutile with its $4_2$ axis along $a$ gives the symmorphic
-   `P4/mmm`); before 1.0 those were shown with that group's ITA number. The number is looked up only
-   for an accepted symbol (`spaceGroupNumber()`), and `Cmca`-style legacy spellings are shown in the
-   current form (`canonicalSymbol()`).
+   A cell is kept only if its basis vectors are lattice vectors, it is right-handed, every rotation
+   is an integer matrix in it, its translation set is exactly a Bravais centering (Step 10c) that a
+   standard setting of the system uses (monoclinic P, C; orthorhombic P, A, C, I, F; tetragonal P,
+   I; trigonal P, R obverse; hexagonal P; cubic P, I, F), and every element lies along a direction
+   family that may carry its type (`elementsFitSetting()`: a tetragonal 4-fold only on [001], cubic
+   3-folds only on $\langle111\rangle$, …). Because derived cells use the full translation lattice,
+   a supercell of the true cell is named in the true cell (CsCl in a $2\times2\times2$ cell: `Pm-3m`), and
+   a subgroup that keeps its parent's centering is named in its own conventional cell (Ga shifted
+   along [111] in the F-cubic lacunar spinel: `R3m` on hexagonal axes; tetragonally strained
+   rocksalt in its F cell: `I4/mmm`).
+3. **Symbol** (`hmSymbolCandidates()`): the system's ordered symmetry directions
+   (`SYSTEM_DIRECTIONS`) are the positions of the Hermann–Mauguin symbol; each is filled with the
+   elements along it by the short-symbol rules, and all defensible spellings are listed best-first.
+   A candidate is **accepted** only if it is a tabulated standard symbol (230 groups plus the
+   pre-2002 `e`-glide spellings, `spaceGroupTable.js`) **of the detected crystal class**
+   (`pointGroupOfSymbol()`) and starts with the cell's centering letter. The number is looked up
+   only for an accepted symbol; `Cmca`-style spellings are shown in the current form.
+4. **Lower bound** (`allLatticeOpsTested()`). The finder only tries rotations that are integer
+   matrices in the **given** cell (Step 7). When the naming cell has lattice symmetries (that also
+   keep its centering) which do not map the given cell's lattice onto itself and are not in the
+   group, those were never tested — a perovskite in a $\sqrt2\times\sqrt2\times2$ or $2\times2\times1$ cell
+   cannot test the cubic 3-folds. The group found is then only a lower bound and is shown as
+   `≥ P4/mmm` (`lowerBoundLabel()`), with no number and no Wyckoff letters.
+5. **Crystal class.** If no cell gives an accepted symbol, the card shows `"<point group> class"`
+   (e.g. `4/mmm class`, `classLabel()`) with no number and no letters. Positional assembly on a cell
+   that is not conventional can spell another group's symbol (rocksalt on its primitive cell gives
+   `Pmmm`); before 1.0 such spellings, and the symmorphic `centering + point group` fallback, were
+   shown with that group's ITA number.
 
-**Code**: `symmetry.js` → `classifyOperations()`, `matchCentering()`, `classifyRotation()`,
-`pointGroupOf()`, `spaceGroupHM()`, `classLabel()`, constants `CENTERING_SETS`,
-`POINT_GROUP_ORDER`, `ALLOWED_CENTERING`; `spaceGroupSymbol.js` → `intrinsicTranslation()`,
-`classifyElement()`, `hmSymbolCandidates()`, `elementsFitSetting()`, `coversAllElements()`,
-`transformOps()`, `hmSymbolInStandardSetting()`; `spaceGroupTable.js` → `SPACE_GROUPS`,
-`spaceGroupNumber()`, `pointGroupOfSymbol()`, `canonicalSymbol()`.
+Checked on all 230 groups (the test fixtures) in all six axis orders: every group is named
+correctly except the two location-degenerate pairs of Step 10(g).
+
+**Code**: `symmetry.js` → `classifyOperations()`, `classifyRotation()`, `pointGroupOf()`,
+`spaceGroupHM()`, `classLabel()`, `lowerBoundLabel()`, `POINT_GROUP_ORDER`; `spaceGroupSymbol.js` →
+`intrinsicTranslation()`, `classifyElement()`, `centeringOfOps()`, `bravaisCentering()`,
+`applySetting()`, `derivedBases()`, `elementsFitSetting()`, `hmSymbolCandidates()`,
+`hmSymbolInStandardSetting()`, `allLatticeOpsTested()`, `transformOps()`; `spaceGroupTable.js` →
+`SPACE_GROUPS`, `spaceGroupNumber()`, `pointGroupOfSymbol()`, `canonicalSymbol()`.
+
+**(g) Location-degenerate pairs.** I222/I2₁2₁2₁ (Nos. 23/24) and I23/I2₁3 (Nos. 197/199) contain the
+same element types along the same directions (the I centering turns every 2-fold into a 2₁ half a
+cell away and vice versa); they differ only in where the axes sit. Named from element types alone,
+both members of each pair read as the symmorphic one.
 
 #### Step 11. Group closure: the largest closed group at each threshold
 
@@ -3150,7 +3176,7 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 | `tol` | `latticePointOps()` signature | `0.01` | Å | exported wrapper only; the finder calls `latticeCandidates()` with $\tau_L$ |
 | `tol` | `siteOrbits()` signature | `0.1` | Å | never used (`describeSymmetry` always passes `symTol`) |
 | `tolFrac` | `classifyOperations()` signature | `0.02` | cell fractions | never used (all callers pass `tol / meanEdge(A)`) |
-| centering match tolerance | `matchCentering()` | `0.1` | cell fractions | per-component match to a Bravais centering vector |
+| translation snap | `snapTranslation()` (`spaceGroupSymbol.js`) | $1/24$ grid, within `0.02` | cell fractions | pure translations are snapped before the exact Bravais match (Step 10c) |
 | translation-key granularity | `classifyOperations()` | `1e-3` | cell fractions | rounding used to count distinct pure translations (no fold of 1000 → 0) |
 | Wyckoff coordinate tolerance | `wyckoffLetter()` | `0.15` | cell fractions | per-component match to a tabulated special position |
 | threshold epsilon | `symmetryLadder`, `spaceGroupAtTolerance` | `1e-9` | Å | float-safety slack on `residual ≤ r` |
@@ -3175,9 +3201,12 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 - **A group that cannot be named is shown as its crystal class.** The symbol is built positionally
   and accepted only when it is a tabulated symbol of the detected class and centering (Step 10f);
   otherwise the card shows e.g. `4/mmm class` with no number and no Wyckoff letters.
-- **`R` centering is unreachable.** `matchCentering()` only tests F, I, A, B, C, so a rhombohedral
-  structure in hexagonal axes will report `P`-something. The `R3`/`R-3m` rows in `SG_NUMBER` and the
-  `R` in `ALLOWED_CENTERING['trig']` are dead.
+- **Cells the finder cannot see through.** Rotations are tried only as $\{-1,0,1\}$ integer matrices of
+  the given cell (Step 7). A symmetry that does not map the given cell's lattice onto itself — the
+  cubic 3-folds of a structure modelled in a $\sqrt2\times\sqrt2\times2$ or $2\times2\times1$ cell, or any
+  rotation needing an entry of magnitude 2 in an oblique cell — is never tested. When the naming
+  cell shows that such symmetries exist the result is marked `≥ <symbol>` (Step 10f); in a strongly
+  oblique cell it can go unnoticed.
 - **Lattice strain is measured on the atom scale.** A point operation is admitted when the Cartesian
   displacement it implies for the cell edges, $\varrho_L$ (Step 7), is within $\tau$, and that
   strain is a floor on the operation's residual. A strained cell therefore reads as the lower
@@ -3207,10 +3236,8 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 - **Wyckoff letters exist for four space groups only** (216, 221, 225, 229) and those tables are
   partial. Everything else shows multiplicity + derived site symmetry. Site symmetry itself is
   always derived from the detected operations and is trustworthy to the same tolerance.
-- **Conventional-setting assumption.** Restricting $R$ to entries in $\{-1,0,1\}$ assumes the
-  `.rmc6f` lattice vectors divided by the declared supercell form a conventional crystallographic
-  cell. No Niggli/Delaunay reduction, no primitive-cell search, and no origin shift to a standard
-  setting is performed; the origin is whatever the `.rmc6f` uses.
+- **No origin shift.** The standard cell is found by a change of basis only; the origin stays where
+  the `.rmc6f` puts it. Space-group names do not depend on the origin, Wyckoff letters do (Step 14).
 - **Header input is unvalidated.** Neither the `Lattice` numbers nor the `Supercell` multiplicities
   are checked. `NaN` lattice entries make `latticePointOps` accept all 6960 unimodular patterns (all
   `NaN` comparisons are false) and then make every mapping residual `NaN`, so the card silently

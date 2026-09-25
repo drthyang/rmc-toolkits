@@ -11,25 +11,27 @@
 // tolerance on a disordered RMC average structure — no external dependency, no
 // WASM, runs client-side in the static dashboard.
 //
-// Method (spglib-lite, but table-free and bounded):
-//   1. Point operations = integer matrices R (entries in {-1,0,1}) that preserve
-//      the lattice metric G = A·Aᵀ, i.e. RᵀGR = G. These are the lattice
-//      automorphisms in the CONVENTIONAL direct basis; |det R| = 1.
-//   2. For each R, the space-group translations t are found from atom images:
-//      t = frac(b) − R·frac(a0) for candidate partners b (same element), kept when
-//      {R|t} maps every atom onto a same-element atom within `tol` (cartesian Å).
-//   3. The operations are named by spaceGroupSymbol.js, which reads the screw/glide
-//      part of each t, and looked up in the 230-group table of spaceGroupTable.js.
+// Method (spglib-lite, bounded):
+//   1. Point operations = integer matrices R (entries in {-1,0,1}, |det R| = 1) whose
+//      Cartesian lattice strain is within the tolerance (latticeStrain).
+//   2. For each R, candidate translations are seeded from atom images, t = x_b − R·x_a0,
+//      refined by least squares over every site, and kept when {R|t} maps every atom
+//      onto a same-element atom within `tol` (cartesian Å); the residual is the worst site.
+//   3. Along the tolerance ladder only CLOSED groups are reported (groupsByThreshold).
+//   4. A group is named by spaceGroupSymbol.js in a standard setting it searches for
+//      (axis orders, cells built from the symmetry elements, supercell reduction), reading
+//      the screw/glide part of each t, and checked against the 230-group table of
+//      spaceGroupTable.js. What cannot be named reliably is reported as its crystal class.
 //
-// What this still does NOT do, and FINDSYM does: no cell reduction or primitive-cell
-// search (A_conv is taken as given), no origin shift or transformation to a standard
-// setting beyond an axis permutation, and no idealized/symmetrized structure output.
+// What this still does NOT do, and FINDSYM does: no origin shift, no Niggli reduction
+// before the search (rotations that do not map the given cell's lattice onto itself are
+// never tested; see spaceGroupHM's lower-bound flag), and no idealized structure output.
 //
 // Fractional coords are COLUMN vectors here: x' = R·x + t. Lattice rows: A = [a1,a2,a3].
 // NOTE: entries in {-1,0,1} cover the standard conventional settings (cubic,
 // tetragonal, orthorhombic, hexagonal, rhombohedral-in-hex, monoclinic, triclinic).
 
-import { hmSymbolInStandardSetting, POINT_GROUP_SYSTEM } from './spaceGroupSymbol.js';
+import { hmSymbolInStandardSetting, centeringOfOps } from './spaceGroupSymbol.js';
 import { spaceGroupNumber, canonicalSymbol, pointGroupOfSymbol } from './spaceGroupTable.js';
 
 /** Determinant of a 3×3 matrix (rows). */
@@ -217,7 +219,7 @@ export function findSpaceGroupOps(A, basis, tol = 0.1, latticeTol = tol) {
   // The raw set need not be closed (Step 11): classify the largest closed group in it.
   const walk = groupsByThreshold(ops, A, Infinity);
   const group = walk.length ? walk[walk.length - 1].members.map(k => ops[k]) : [];
-  return { ops, order: ops.length, maxResidual, ...classifyOperations(group, tol / meanEdge(A), { closed: true }) };
+  return { ops, order: ops.length, maxResidual, ...classifyOperations(group, tol / meanEdge(A), { closed: true, A }) };
 }
 
 // Every candidate operation of (A, basis) within `tol`, with its residual (Steps 7–9).
@@ -507,29 +509,31 @@ const isIdentityR = (R) => R[0][0] === 1 && R[1][1] === 1 && R[2][2] === 1
  * Classify a set of operations {R,t} into point group + centering → H–M symbol.
  * Only a group is named: pass `{ closed: true }` when the set was built closed
  * (groupsByThreshold); otherwise closure is checked here, products matched within
- * 3·tolFrac per fractional component.
+ * 3·tolFrac per fractional component. `A` (the cell's lattice rows, Å) lets the naming
+ * search cells other than the given one (spaceGroupSymbol.js → derivedBases).
+ *
+ * `centering` is the centering of the GIVEN cell read from all its pure translations,
+ * or null when they are not exactly a Bravais centering (a supercell of the true cell).
+ * `setting` is the standard cell the symbol belongs to (null when there is none, or when
+ * Wyckoff positions cannot be placed — see spaceGroupHM).
  */
-export function classifyOperations(ops, tolFrac = 0.02, { closed = false } = {}) {
+export function classifyOperations(ops, tolFrac = 0.02, { closed = false, A = null } = {}) {
   const rotMap = new Map();
-  const centerings = [];
   const transSeen = new Set();          // distinct pure (identity-rotation) translations
   for (const { R, t } of ops) {
     const key = R.flat().join(',');
     if (!rotMap.has(key)) rotMap.set(key, R);
-    if (isIdentityR(R)) {
-      // Folded mod 1 before keying: 0.9997 and 0 are the same translation.
-      transSeen.add(t.map(x => Math.round(wrap01(x) * 1000) % 1000).join(','));
-      if (Math.min(t[0], 1 - t[0]) > tolFrac || Math.min(t[1], 1 - t[1]) > tolFrac || Math.min(t[2], 1 - t[2]) > tolFrac) centerings.push(t);
-    }
+    // Folded mod 1 before keying: 0.9997 and 0 are the same translation.
+    if (isIdentityR(R)) transSeen.add(t.map(x => Math.round(wrap01(x) * 1000) % 1000).join(','));
   }
-  const centering = matchCentering(centerings);
+  const centering = centeringOfOps(ops);
   const pointGroup = pointGroupOf([...rotMap.values()]);
   const base = { centering, pointGroup, nSpace: ops.length, nPoint: rotMap.size, nTrans: transSeen.size };
   const group = isValidGroup(base) && (closed || isClosedSet(ops, Math.max(3 * tolFrac, 1e-6)));
   // Naming reads every operation's screw/glide part, so it is the expensive step and
   // meaningless for a set that is not a group.
-  const sg = group ? spaceGroupHM(centering, pointGroup, ops) : { symbol: 'not a group', number: null };
-  return { ...base, spaceGroup: sg.symbol, spaceGroupNumber: sg.number };
+  const sg = group ? spaceGroupHM(centering, pointGroup, ops, A, A ? tolFrac * meanEdge(A) : 0) : { symbol: 'not a group', number: null, setting: null };
+  return { ...base, spaceGroup: sg.symbol, spaceGroupNumber: sg.number, setting: sg.setting ?? null };
 }
 
 const POINT_GROUP_ORDER = {
@@ -539,21 +543,15 @@ const POINT_GROUP_ORDER = {
   '622': 12, '6mm': 12, '-6m2': 12, '6/mmm': 24,
   '23': 12, 'm-3': 24, '432': 24, '-43m': 24, 'm-3m': 48,
 };
-// Centerings each crystal system allows. The point group → system map lives in
-// spaceGroupSymbol.js, which needs it to pick symmetry directions.
-const ALLOWED_CENTERING = {
-  triclinic: 'P', monoclinic: 'PC', orthorhombic: 'PCIFAB', tetragonal: 'PI',
-  trigonal: 'PR', hexagonal: 'P', cubic: 'PFI',
-};
 // Cheap pre-filter for a group (closure itself is checked separately — isClosedSet, or
-// by construction in groupsByThreshold): (a) the op count equals point-group order × the
+// by construction in groupsByThreshold): the op count equals point-group order × the
 // actual number of pure translations, as it must for any closed set (a tiled supercell
-// has extra translations, so they are counted rather than assumed), and (b) the
-// centering is compatible with the point group's crystal system.
+// has extra translations, so they are counted rather than assumed). There is no
+// centering allow-list: a subgroup keeps its parent cell's centering (R3m or I2/a in an
+// F-cubic cell), which is only a matter of which cell names it (spaceGroupHM).
 function isValidGroup(cls) {
   const pg = POINT_GROUP_ORDER[cls.pointGroup] || 0;
-  if (pg === 0 || cls.nSpace !== pg * (cls.nTrans || 1)) return false;
-  return (ALLOWED_CENTERING[POINT_GROUP_SYSTEM[cls.pointGroup]] || 'P').includes(cls.centering);
+  return pg !== 0 && cls.nSpace === pg * (cls.nTrans || 1);
 }
 
 /**
@@ -579,7 +577,7 @@ export function symmetryLadder(A, basis, tolMax = 1.5, latticeTol = tolMax) {
     const { r, members } = walk[i];
     const to = i + 1 < walk.length ? walk[i + 1].r : tolMax;  // the last group holds for all looser tol
     if (members !== lastMembers) {
-      cls = classifyOperations(members.map(k => ops[k]), tolFrac, { closed: true });
+      cls = classifyOperations(members.map(k => ops[k]), tolFrac, { closed: true, A });
       lastMembers = members;
     }
     const last = bricks[bricks.length - 1];
@@ -606,24 +604,7 @@ export function spaceGroupAtTolerance(A, basis, tol = 0.2, latticeTol = Math.max
   const ops = walk[walk.length - 1].members.map(k => all[k]);
   const tolFrac = Math.max(tol, 1e-6) / meanEdge(A);
   const maxResidual = ops.reduce((m, o) => Math.max(m, o.residual), 0);
-  return { ...classifyOperations(ops, tolFrac, { closed: true }), maxResidual, ops };
-}
-
-// Match a set of fractional centering translations against the Bravais centerings.
-// Ordered list rather than an object because R appears twice: a rhombohedral lattice
-// on hexagonal axes may be described in either the obverse or the reverse setting.
-const CENTERING_SETS = [
-  ['F', [[0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0]]],
-  ['I', [[0.5, 0.5, 0.5]]],
-  ['R', [[2 / 3, 1 / 3, 1 / 3], [1 / 3, 2 / 3, 2 / 3]]],   // obverse
-  ['R', [[1 / 3, 2 / 3, 1 / 3], [2 / 3, 1 / 3, 2 / 3]]],   // reverse
-  ['A', [[0, 0.5, 0.5]]], ['B', [[0.5, 0, 0.5]]], ['C', [[0.5, 0.5, 0]]],
-];
-function matchCentering(translations, tol = 0.1) {
-  const has = (v) => translations.some(t => Math.abs(((t[0] - v[0] + 0.5) % 1) - 0.5) < tol
-    && Math.abs(((t[1] - v[1] + 0.5) % 1) - 0.5) < tol && Math.abs(((t[2] - v[2] + 0.5) % 1) - 0.5) < tol);
-  for (const [letter, vecs] of CENTERING_SETS) if (vecs.every(has)) return letter;
-  return 'P';
+  return { ...classifyOperations(ops, tolFrac, { closed: true, A }), maxResidual, ops };
 }
 
 /* ── Space-group identification ──────────────────────────────────────────────
@@ -680,6 +661,8 @@ export function pointGroupOf(rotations) {
 
 /** Label shown when a group cannot be named reliably: its crystal class, no number. */
 export const classLabel = (pointGroup) => `${pointGroup} class`;
+/** Label for a verified group that may be a subgroup of the true one (see spaceGroupHM). */
+export const lowerBoundLabel = (symbol) => `≥ ${symbol}`;
 
 /**
  * Hermann–Mauguin symbol + ITA number for a detected group.
@@ -693,15 +676,23 @@ export const classLabel = (pointGroup) => `${pointGroup} class`;
  *
  * @returns {{ symbol:string, number:number|null, standard:boolean }}
  */
-export function spaceGroupHM(centering, pointGroup, ops) {
+export function spaceGroupHM(centering, pointGroup, ops, A = null, latticeTol = 0) {
   if (pointGroup === '1' || pointGroup === '-1') {
+    // P1 / P-1 whatever cell describes them; Wyckoff positions only in a primitive cell.
     const symbol = pointGroup === '1' ? 'P1' : 'P-1';
-    return { symbol, number: spaceGroupNumber(symbol), standard: true };
+    const primitive = centering === 'P';
+    const I = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    return { symbol, number: spaceGroupNumber(symbol), standard: true, setting: primitive ? { Q: I, Qinv: I, translations: [[0, 0, 0]], ratio: 1 } : null };
   }
-  if (!ops || !ops.length) return { symbol: classLabel(pointGroup), number: null, standard: false };
-  const found = hmSymbolInStandardSetting(ops, centering || 'P', pointGroup, pointGroupOfSymbol);
-  if (!found.symbol) return { symbol: classLabel(pointGroup), number: null, standard: false };
-  return { symbol: canonicalSymbol(found.symbol) ?? found.symbol, number: spaceGroupNumber(found.symbol), standard: true };
+  if (!ops || !ops.length) return { symbol: classLabel(pointGroup), number: null, standard: false, setting: null };
+  const holohedry = (As) => latticeCandidates(As, Math.max(latticeTol, 1e-3)).map(c => c.R);
+  const found = hmSymbolInStandardSetting(ops, centering, pointGroup, pointGroupOfSymbol, { A, holohedry });
+  if (!found.symbol) return { symbol: classLabel(pointGroup), number: null, standard: false, setting: null };
+  const symbol = canonicalSymbol(found.symbol) ?? found.symbol;
+  // A group named in a cell whose lattice symmetries the given cell could not all test is
+  // only a lower bound: shown as such, with no number and no Wyckoff letters.
+  if (found.complete === false) return { symbol: lowerBoundLabel(symbol), number: null, standard: false, setting: null };
+  return { symbol, number: spaceGroupNumber(found.symbol), standard: true, setting: found.setting };
 }
 
 /**
