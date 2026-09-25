@@ -285,7 +285,15 @@ def _site_compositions(
 
 @lru_cache(maxsize=8)
 def cached_site_displacements(path: str, mtime: float) -> SiteDisplacements:
-    """``load_site_displacements`` memoized on (path, mtime) for API callers."""
+    """:func:`load_site_displacements` memoized on (path, ``mtime``) for library callers.
+
+    ``mtime`` is whatever the CALLER passes: the file is not re-stat'ed here,
+    so a stale value (or a coarse mtime that a quick rewrite does not change)
+    returns the previous configuration's clouds. For files that change while
+    they are served (Live Data), call the uncached
+    :func:`load_site_displacements` under a cache keyed on the full file
+    signature, as ``app.py``'s ``_SITES_CACHE`` does.
+    """
     return load_site_displacements(path)
 
 
