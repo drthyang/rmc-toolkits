@@ -823,26 +823,28 @@ that carry no per-atom cell index.
 subsampled (`sampledAtoms`). The element rows and totals a user reads off the card are therefore
 exact even though the plotted cloud is a sample.
 
-**Fields only static mode produces.** The Flask `/api/structure` response contains **no `basis` and
-no `moves`**:
+**The field only static mode produces.** The Flask `/api/structure` response contains **no `basis`**:
+one representative site per `reference_number`, built from per-axis **circular means** of the
+within-cell fraction, with a per-site rms displacement `dispA` in Å (the Cartesian rms through the full
+cell metric). The derivation is documented in the **Model summary and the Detected SG symmetry
+finder** section; it is not repeated here.
 
-* `basis` — one representative site per `reference_number`, built from per-axis **circular means** of
-  the within-cell fraction, with a per-site rms displacement `dispA` in Å derived from the circular
-  resultant. The full derivation (circular mean, the $\sigma = \sqrt{-2\ln R}/2\pi$ wrapped-normal
-  relation, the resultant floor of `1e-6`, and the cell-edge normalization
-  $a_i = |\text{lattice row } i| / \max(\mathrm{supercell}_i, 1)$) is documented in the
-  **Model summary and the Detected SG symmetry finder** section; it is not repeated here.
-* `moves` — run-history counters scraped from the `.rmc6f` header by `readMovesMetadata()` with four
-  regexes (`Number of moves generated/tried/accepted:`, `Accumulated time (s)…:`). It reads only the
-  text before the `Atoms:` marker, or the **first 4000 characters** if that marker is not found in
-  the leading text. These feed the AI-assistant run context only.
+**Fields both runtimes produce.**
 
-**Element names are normalized differently.** Python `iter_rmc6f_atoms()` stores
-`parts[1].capitalize()`; the browser's `parseAtomLine()` keeps the raw token. A `.rmc6f` written with
-`SE` or `se` yields one merged `Se` row in Flask mode and one or two raw `SE`/`se` rows in static
-mode — **the element table of the model summary differs between runtimes for such a file**. The
-browser parser also accepts a 5–6 field coordinates-only line (`referenceNumber = null`, excluded
-from the site basis); the Python requires ≥ 9 fields and drops those lines entirely.
+* `moves` — run-history counters from the `.rmc6f` header: `readMovesMetadata()` in the browser and
+  `parsers.read_moves_metadata()` on the Flask `/api/structure` path, the same four regexes
+  (`Number of moves generated/tried/accepted:`, `Accumulated time (s)…:`) over the text before the
+  Atoms marker (or the **first 4000 characters** if that marker is not found in the leading text).
+  Python returns only the counters it found (keys absent otherwise); the browser returns all four
+  keys with `null` for a missing one. Both render on the **Model information card** as
+  Generated / atom, Accepted / atom and Accepted / generated (`ModelSummary.jsx` → `moveRatios()` in
+  `moveStats.js`), and both feed the AI context's `configuration_optimization` block — which reports the
+  acceptance ratio as accepted / **tried**, whereas the card's is accepted / **generated**.
+* `parseReport` / `parseWarning` — the atom-line parse report (Model summary, Part A Step 2).
+
+**Element names are normalized the same way.** Both parsers store the element token like Python's
+`str.capitalize()` (`SE`/`se` → `Se`), and both accept the legacy coords-only line
+(`referenceNumber = null`, excluded from the site basis): they share one atom-line grammar.
 
 **What `ModelSummary.jsx` computes on top of this** — box lengths $|\text{lattice row}|$,
 conventional cell lengths $|\text{lattice row}_i| / \max(\mathrm{supercell}_i, 1)$, the three cell
@@ -2400,7 +2402,8 @@ issue `GET /api/structure`, and the endpoint
 ([`web_app/backend/app.py`](../../web_app/backend/app.py) → `structure()`) returns
 `latticeVectors`, `supercell`, `elementCounts`, `atomIndices`, `totalAtoms` and sampled `points`
 produced by the Python parsers; only the *derived* quantities (edge lengths, angles) are computed in
-JS on that path. The response carries **no `basis` field**, so in Flask mode the *Detected SG* card
+JS on that path. It also carries the header's move counters (`moves`, Step 2b) and the atom-line
+`parseReport` / `parseWarning` (Step 2). The response carries **no `basis` field**, so in Flask mode the *Detected SG* card
 is suppressed entirely (`describeSymmetry` returns `null` without a basis). The symmetry analysis
 exists only on the browser-parsed path (`browserData.structureFromRmc6f`), which is used in static
 mode and whenever a local run folder is selected.
@@ -2598,12 +2601,18 @@ absent or at index 0, and applies four regexes:
 `Accumulated time \(s\)[^:]*:\s*([\d.]+)`. Each field is `Number(match[1])` or `null`, and the whole
 object collapses to `null` unless at least one value is finite.
 
-It is **not rendered on either card**. It feeds the AI-assistant run context
-(`runContext.js`: acceptance ratio $=$ accepted/tried, accepted moves per atom, accumulated time in
-hours). There is no Python equivalent on the `/api/structure` path, so `structure.moves` is absent in
-Flask mode.
+The **Python equivalent** is `parsers.read_moves_metadata()`, which `/api/structure` returns as
+`moves` in Flask mode (same regexes and header slice; keys present only for the counters found, as
+floats). In both runtimes the counters are **rendered on the Model information card** —
+`ModelSummary.jsx` shows Generated / atom, Accepted / atom and Accepted / generated via `moveRatios()`
+([`moveStats.js`](../../web_app/frontend/src/moveStats.js)), each row only when its inputs exist — and
+they feed the AI-assistant run context (`runContext.js`: acceptance ratio $=$ accepted/**tried**,
+accepted moves per atom, accumulated time in hours). Note the two acceptance ratios use different
+denominators: the card divides by moves **generated**, the context by moves **tried**.
 
-**Code**: `browserData.js` → `readMovesMetadata()`, called from `structureFromRmc6f()`.
+**Code**: `browserData.js` → `readMovesMetadata()`, called from `structureFromRmc6f()`;
+`parsers.py` → `read_moves_metadata()`, called from `app.py` → `structure()`; `moveStats.js` →
+`moveRatios()`; `ModelSummary.jsx`.
 
 #### Step 3. Conventional-cell edge lengths
 

@@ -231,11 +231,14 @@ the same quantities.
 ### Step 3 — Sampling counters (`context.configuration_optimization`)
 
 **Input:** `structure.moves`, parsed from the `.rmc6f` header by `readMovesMetadata()` in
-[`browserData.js`](../../web_app/frontend/src/browserData.js). **Static mode only** — the Flask
-`/api/structure` response carries no `moves` key.
+[`browserData.js`](../../web_app/frontend/src/browserData.js) in static mode, and by
+`parsers.read_moves_metadata()` in Flask mode (the `/api/structure` response carries `moves` as a
+keys-only dict: a counter absent from the header is simply absent). **Both runtimes** therefore produce
+this block, and the same counters are also rendered on the Model information card.
 
-**Parse gate.** `readMovesMetadata()` scans **only the header**: `text.slice(0, …)` up to the index of
-the literal `Atoms:` marker, or the **first 4,000 characters** when that marker is absent or at index 0.
+**Parse gate.** Both readers scan **only the header**: the text up to the Atoms marker
+(case-insensitive `/^[ \t]*atoms\b/im`, the same rule as the atom parser), or the **first 4,000
+characters** when that marker is absent or at index 0.
 Four regexes are applied (`Number of moves generated/tried/accepted:` and
 `Accumulated time (s)…:`), and the function returns `null` unless **at least one** of them matched a
 finite number. A run whose header uses different wording therefore yields no block at all rather than a
@@ -249,7 +252,9 @@ $$\text{acceptance\_ratio} = \frac{N_{\mathrm{acc}}}{N_{\mathrm{tried}}}\ \ (\te
 \text{accepted\_moves\_per\_atom} = \frac{N_{\mathrm{acc}}}{N_{\mathrm{atoms}}}\ \ (\text{3 s.f.}), \qquad
 \text{accumulated\_time\_h} = \frac{t}{3600}\ \ (\text{3 s.f.})$$
 
-Ratios are emitted only when the denominator is $>0$; the block is dropped entirely if empty.
+Ratios are emitted only when the denominator is $>0$; the block is dropped entirely if empty. Note the
+denominator: the context's `acceptance_ratio` is accepted / **tried**, while the Model information
+card's "Accepted / generated" row (`moveStats.js` → `moveRatios()`) divides by moves **generated**.
 
 **Code:** `runContext.js` → `configurationOptimizationContext()`; `browserData.js` → `readMovesMetadata()`.
 
@@ -958,7 +963,7 @@ in each mode:
 |---|---|---|
 | `run`, `live_mode` | yes | yes |
 | `structure` (cell, angles, composition) | yes | yes (`/api/structure`) |
-| `configuration_optimization` | yes | **no** — `/api/structure` returns no move counters |
+| `configuration_optimization` | yes | yes — `/api/structure` returns the header's move counters (`moves`) |
 | `run_settings` | yes | **no** — the `.dat` is read only from a locally picked folder |
 | `symmetry` (+ per-site displacements, `frac`) | yes | **no** — `/api/structure` returns no `basis`, so `describeSymmetry()` returns `null` |
 | `pair_correlations` | yes (needs parsed partials) | **no** — plot files carry no `plotData.series` |
