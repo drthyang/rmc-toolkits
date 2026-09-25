@@ -113,13 +113,17 @@ from rmc_toolkits import (
 
 demo = "web_app/frontend/public/demo"  # bundled GaTa4Se8 250 K example run
 
-frac_path = write_frac_from_rmc6f(f"{demo}/GTS_250K.rmc6f", overwrite=True)
-structure = read_structure(demo)
+# With no destination the Frac file is written beside the input (into the tracked demo folder);
+# point it at scratch space. read_structure pairs it with GTS_250K.rmc6f by stem.
+frac_path = write_frac_from_rmc6f(
+    f"{demo}/GTS_250K.rmc6f", "/tmp/Frac_coord_GTS_250K.txt", overwrite=True
+)
+structure = read_structure(demo, frac_path=frac_path)
 
-positions = load_unit_cell_positions(f"{demo}/GTS_250K.rmc6f", element="Ga")
+positions = load_unit_cell_positions(f"{demo}/GTS_250K.rmc6f", element="Se")
 payload = kde_slice(
     positions.positions,
-    z_center=0.5 * positions.cell_lengths[2],
+    z_center=0.12 * positions.cell_lengths[2],
     dz=0.08 * positions.cell_lengths[2],
     xlim=(0.0, float(positions.cell_lengths[0])),
     ylim=(0.0, float(positions.cell_lengths[1])),
@@ -129,7 +133,13 @@ png_bytes = plot_to_png(make_plot(f"{demo}/GTS_250K_FQ1.csv"))
 ```
 
 Lower-level parser helpers are also exported: `read_rmc_csv`, `read_exafs_csv`, `read_chi`,
-`read_atom_indices`, `read_cell_vectors`, `iter_rmc6f_atoms`, `frac_lines_from_rmc6f`, `rwp`.
+`read_chi_log`, `read_atom_indices`, `read_cell_vectors`, `iter_rmc6f_atoms` /
+`parse_rmc6f_atoms` / `classify_rmc6f_atom_line` (the `.rmc6f` atom-line grammar shared with the
+browser, with its `Rmc6fParseReport`), `find_run_configuration` (which `.rmc6f` of a run folder the
+app and the CLIs analyse), `frac_lines_from_rmc6f`, `rwp` / `fit_rwp` / `rwp_columns`. The engines
+are exported too: `pca_kde_volume`, `site_ellipsoids`, `site_orientation_histogram`,
+`bond_angle_summary` / `bond_angle_summary_from_file`, `autoscale`, `estimate_rho0` and the
+`transforms` functions; `rmc_toolkits.__all__` lists them all.
 
 ## Backend API
 
@@ -141,13 +151,17 @@ paths are rejected unless inside the configured root or a folder selected via th
 booleans, `NaN` and `±Infinity` are rejected), integer parameters must be integral, and each value
 must lie in its documented range. A violation is **HTTP 400** with an `error` message naming the
 parameter; a missing or blank parameter takes its default. Grid sizes are the exception: they are
-clamped to the engine's limits instead of rejected. The KDE-slice, PCA-KDE and orientation routes
-also refuse to serialize a result that came out `NaN`/`Infinity` for finite but extreme values
-(e.g. a bandwidth of `1e-200`, which underflows the float64 kernel): that is a 400 too, never a
-200 whose body is invalid JSON or whose map is all `null`. That check runs the strict stdlib
-encoder itself (`_strict_result_response()`), so it holds whatever JSON provider the app installs:
-writing a non-finite value as `null` is right for a masked *data series* (a gap in a chart), never
-for a computed density. Error statuses: 400 bad parameter or unusable input, 403 path
+clamped to the engine's limits instead of rejected (and `z` is clamped to [0, 1] and echoed as
+`center`). The KDE-slice, PCA-KDE and orientation routes also refuse to serialize a result that
+came out `NaN`/`Infinity` for finite but extreme values (e.g. a PCA-KDE `extent` or `bwScale` of
+`1e300`): that is a 400 too, never a 200 whose body is invalid JSON or whose map is all `null`.
+That check runs the strict stdlib encoder itself (`_strict_result_response()`), so it holds
+whatever JSON provider the app installs: writing a non-finite value as `null` is right for a masked
+*data series* (a gap in a chart), never for a computed density. The scaling routes apply the same
+rule to their fitted `a`/`b` and output series (a manual `a = b = 1e308` is a 400, and nothing is
+written). A KDE-slice bandwidth so small that the kernel cannot be evaluated (σ below $10^{-10}$
+in-plane fractional units, e.g. `bw=1e-200`) is not an error: both runtimes return the finite zero
+map with its `kernel`, flagged `subgrid` + `unresolved`. Error statuses: 400 bad parameter or unusable input, 403 path
 outside the data roots, 404 missing file/folder, 409 output exists (`/api/scaling/run` without
 `force`) or source file still being written (see below), 500 unexpected failure.
 
@@ -174,11 +188,11 @@ query strings are true for `1`/`true`/`yes`. Defaults are in parentheses.
 | `GET /api/plot/data` | `path` | Metadata plus `xLabel`, `yLabel` and `series` (`label`, `x`, `y`) for the SVG plots; 400 for an unsupported file. |
 | `POST /api/convert/frac` | JSON `path` (a `.rmc6f`), `outputPath` (next to the source), `overwrite` (false) | `path`, `name` of the written `Frac_coord_<stem>.txt`; 409 if it exists and `overwrite` is false. |
 | `GET /api/structure` | `dir`; `maxPoints` (1 000 000; integer, clamped to [100, 1 000 000]) | Atoms folded into one unit cell (sampled per site above `maxPoints`), `totalAtoms`, `elementCounts`, `atomIndices`, `supercell`, `latticeVectors`, and the `.rmc6f` move counters `moves` (`generated`, `tried`, `accepted`, `accumulatedTimeS`) when the header has them. |
-| `GET /api/kde/slice` | `dir`; `element` (all); `orientation` `a`/`b`/`c` (`c`), any other value = custom normal `nx`, `ny`, `nz` (0, 0, 1; finite, not all zero); `z` (0.5; finite, clamped to [0, 1]); `dz` (0.08; 0 < dz ≤ 1); `bw` (0.03; > 0, SciPy `gaussian_kde` scalar factor); `grid` (120; integer, clamped to [16, 400]); `levels` (8; integer in [0, 64]); `log` (false) | Density grid, `extent`, contour polylines, `slabCount`, `fitCount`, slab/plane geometry. **`z` and `dz` are fractions of the unit cube's projection range along the slice normal** (equal to cell-edge fractions only for the `a`/`b`/`c` presets); the slab, bandwidth and grid stay in fractional coordinates, with no conversion to Å. The KDE fit uses at most 6000 slab points. |
-| `GET /api/pca/sites` | `dir`; `probability` (0.5; 0 < p < 1) | Per-site displacement tensor and thermal ellipsoid table (`sites`), `referenceNumbers`, `elements`, `totalAtoms`, `latticeVectors`, `supercell`, `parseWarning` (atom lines the `.rmc6f` grammar skipped — non-finite coordinates, unparsed lines, a header count mismatch — or `null`). |
-| `GET /api/pca/kde` | `dir`; `referenceNumber` (integer) or `element` (pools that element's sites; neither pools every atom); `bw` (`scott`; `scott`, `silverman` or a number > 0); `bwScale` (1.0; > 0); `grid` (48; integer, clamped to [8, 128]); `extent` (3.0; > 0, box half-width in kernel-broadened σ); `cubicBox` (false); `probability` (0.5; 0 < p < 1); `projections` (true) | PCA frame, ellipsoid, and the separable 3D KDE volume (+ three wall projections), with the captured `mass`. |
-| `GET /api/pca/orientation` | `dir`; `referenceNumber` or `element` as above; `frequency` (auto: the recommended value; integer in [1, 64]); `weight` (`count`; `count`, `amplitude`, `amplitude2`); `minAmplitude` (0 Å; ≥ 0); `minAmplitudeQuantile` (0; in [0, 1)); `smoothing` (0; integer in [0, 64]); `frame` (`cartesian`; or `pca`); `geometry` (true: include cell polygons) | Goldberg-cell histogram of displacement directions: `enhancement`, `zScore`, antipodal asymmetry, peak direction; `parseWarning` as in `/api/pca/sites`. |
-| `GET /api/triplets` | `dir`; `end1`, `apex`, `end2` (elements, case-insensitive; `apex` is the central atom); `r12Min` + `r12Max` (required, Å, inclusive; `r12Max` ≤ 15); `r23Min` + `r23Max` (optional pair, default = the 1-2 window; `r23Max` ≤ 15); `binWidth` (1.0°; ≥ 0.05) | Bond-angle histogram, bond-length statistics, coordination histogram (payload of `triplets.bond_angle_summary`). The 15 Å and 0.05° caps are API limits; the engine itself is unrestricted. |
+| `GET /api/kde/slice` | `dir`; `element` (all); `orientation` `a`/`b`/`c` (`c`), any other value = custom normal `nx`, `ny`, `nz` (0, 0, 1; finite, not all zero); `z` (0.5; finite, clamped to [0, 1]); `dz` (0.08; 0 < dz ≤ 1); `bw` (0.03; > 0, SciPy `gaussian_kde` scalar factor); `grid` (120; integer, clamped to [16, 400]); `levels` (8; integer in [0, 64]); `log` (false) | Density grid, `extent`, contour polylines, `slabCount`, `fitCount`, slab/plane geometry, `kernel` (`covariance`, `sigmaMinor`, `sigmaMajor`; in-plane fractional units; `H = bw²·C`, `C` the covariance of the slab's atoms), `message` (why nothing was drawn — the same texts as the browser worker, plus `engine` when the server's SciPy cannot evaluate the kernel) and `warnings` (`subgrid`, `unresolved`). **`z` and `dz` are fractions of the unit cube's projection range along the slice normal** (equal to cell-edge fractions only for the `a`/`b`/`c` presets) and are echoed as given; `depth`/`depthThickness` are in depth-projection units. The slab, bandwidth and grid stay in fractional coordinates, with no conversion to Å. The KDE fit uses at most 6000 slab points. |
+| `GET /api/pca/sites` | `dir`; `probability` (0.5; 0 < p < 1) | Per-site displacement tensor and thermal ellipsoid table (`sites`: per site also `nonGaussianity` — Mardia's multivariate excess kurtosis — `excessKurtosis` with `axisResolved`, `zeroSpread`, `elementCounts` and `mixed`), `referenceNumbers`, `elements`, `totalAtoms`, `latticeVectors`, `supercell`, `parseWarning` (atom lines the `.rmc6f` grammar skipped — non-finite coordinates, unparsed lines, a header count mismatch — or `null`). |
+| `GET /api/pca/kde` | `dir`; `referenceNumber` (integer) or `element` (pools that element's sites; neither pools every atom); `bw` (`scott`; `scott`, `silverman` or a number > 0); `bwScale` (1.0; > 0); `grid` (48; integer, clamped to [8, 128]); `extent` (3.0; > 0, box half-width in kernel-broadened σ); `cubicBox` (false: only sizes the display box `boxHalfWidths`; the volume is always sampled on the per-axis box `halfWidths`); `probability` (0.5; 0 < p < 1); `projections` (true) | PCA frame, ellipsoid, and the separable 3D KDE volume (+ three wall projections), with the captured `mass`, `nonGaussianity`, `axisResolved` and `boxHalfWidths`. A zero-spread site (λ₁ < 10⁻⁸ Å², e.g. an average configuration) is a 400. |
+| `GET /api/pca/orientation` | `dir`; `referenceNumber` or `element` as above; `frequency` (auto: the recommended value; integer in [1, 64]); `weight` (`count`; `count`, `amplitude`, `amplitude2`); `minAmplitude` (0 Å; ≥ 0); `minAmplitudeQuantile` (0; in [0, 1)); `smoothing` (0; integer in [0, 64]); `frame` (`cartesian`; or `pca`); `geometry` (true: include cell polygons) | Goldberg-cell histogram of displacement directions: `enhancement`, `zScore` (local, uncorrected), peak direction with `peakSignificance` (exact Poisson tail, Šidák over all cells), `mapSignificance` / `mapPValue` (Pearson's X² against its exact-moment isotropic reference; `null` below 0.1 expected coincident pairs) with `mapNullSd`, `mapNullSkewness`, `mapExpectedPairs`, `antipodalAsymmetry` against its exact null (`…Null`, `…NullSd`, `…Z`, `…Significant` at z > 3), `orientationAnisotropySignificance` (Bingham); the legacy `significance` (an RMS local z) and `peakZScore` are kept but are not significances. `parseWarning` as in `/api/pca/sites`. |
+| `GET /api/triplets` | `dir`; `end1`, `apex`, `end2` (elements, case-insensitive; `apex` is the central atom); `r12Min` + `r12Max` (required, Å, inclusive; `r12Max` ≤ 15); `r23Min` + `r23Max` (optional pair, default = the 1-2 window; `r23Max` ≤ 15); `binWidth` (1.0°; ≥ 0.05) | Bond-angle histogram, bond-length statistics (`count` = B-centred bond vectors, `uniqueBonds` = physical bonds), coordination histogram (payload of `triplets.bond_angle_summary`), `parseWarning`. A spec that would form more than `APP_MAX_ANGLES` = 5×10⁷ angles is a 400 naming the count, before any angle is formed. The 15 Å, 0.05° and 5×10⁷ caps are API limits; the engine itself is unrestricted. |
 | `POST /api/scaling/preview` | JSON `path` (a `stog.inp` or an S(Q) data file); `kind` (`auto`; `inp`, `data`); `inspect` (false: only parse the source). Numeric overrides, each a finite number: `qmin`, `qmax`, `rho0`, `bAvgSq`, `bSqAvg`, `massDensity`, `rCutoff` (data mode 1.0), `rmax` (data mode 50), `nr` (data mode 5000; integer), `r0`, `rFitMin`, `rFitMax`. Text: `formula`, `c1Mode` (`sweep`), `amplitude` (`density`). Booleans (JSON `true`/`false`; the strings `1`/`true`/`yes` are true): `lorch` (data mode false), `lowQCorrection` (true), `robust` (true), `despike` (false), `useSigma` (true). `mode` (`auto`; `manual` takes `a`, a finite non-zero number, and `b` (0; finite), falling back to the `stog.inp` values); low-r enforcement controls `enforce` (boolean), `enforceCutoff` (finite number), `peakWindow` (`[rmin, rmax]`, two finite numbers) — defaults in [auto-stog.md](algorithms/auto-stog.md) | Fitted `a`, `b`, convergence history, diagnostics, provenance, plot guides, `warnings` (the coefficient warnings the CLI prints, e.g. a `formula`'s ⟨b²⟩ left unused because its ⟨b⟩² disagrees with `bAvgSq`; `[]` when none), and the S(Q)/G_K(r)/D(r) series (+ low-r–enforced versions). A `stog.inp` supplies every value not overridden; data mode requires `qmin`, `qmax`, a density (`rho0`, `massDensity` + `formula`, or a `NUMBER_DENSITY ::` header) and ⟨b⟩² (`bAvgSq` or `formula`). |
 | `POST /api/scaling/run` | As `preview`, plus `outDir` (`<source folder>/autoscale`), `outStem`, `force` (false) | Writes the classic stog file family + `stog_provenance.json` (the `rmc-autoscale` CLI writer); returns `a`, `b`, `outputs`, `outDir`, diagnostics, `warnings` (as `preview`). 409 when an output exists and `force` is false. |
 
@@ -189,7 +203,7 @@ query strings are true for `1`/`true`/`yes`. Defaults are in parentheses.
 - RMCProfile EXAFS dataset outputs: `*-EXAFS-*_Q_OUTPUT.csv` (`k` vs `χ(k) k²`) and
   `*-EXAFS-*_R_OUTPUT.csv` (`r` vs Fourier-transform components)
 - Bragg profiles: `*_bragg.csv`
-- R-value logs: `*.log`
+- χ² logs: `*.log` (the run's `<stem>-NN.log` files; the last column is charted)
 - Structure files: `*.rmc6f`, `Frac*.txt`
 
 Most RMCProfile CSV parsers expect first-row labels followed by numeric rows. RMCProfile EXAFS
@@ -213,6 +227,6 @@ python src/RMC_3D.py            # needs mayavi
 source .venv/bin/activate
 MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
 
-# Frontend unit tests (vitest — AI assistant module)
+# Frontend unit tests (vitest: engine ports and their Python goldens, components, AI assistant)
 cd web_app/frontend && npm test
 ```
