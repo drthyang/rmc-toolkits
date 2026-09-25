@@ -396,7 +396,9 @@ def assert_golden(case, table):
             if isinstance(value, (bool, int)) or value is None:
                 case.assertEqual(result[key], value, msg=message)
             else:
-                case.assertLess(abs(result[key] - value), 1e-9 * max(1.0, abs(value)), msg=message)
+                # Relative tolerance -- p-values here reach 1e-142, so an
+                # absolute bound would check nothing.
+                case.assertLessEqual(abs(result[key] - value), 1e-9 * abs(value), msg=message)
 
 
 # Shared verbatim with orientationFixes.test.js (GOLDEN_PEAK there):
@@ -657,7 +659,7 @@ class AnisotropyNullTests(unittest.TestCase):
             golden_cloud(), frequency=6, smoothing=1, weight="amplitude2", geometry=False
         )
         for key, value in GOLDEN_ANISOTROPY_AMPLITUDE2.items():
-            self.assertLess(abs(weighted[key] - value), 1e-9 * max(1.0, abs(value)), msg=key)
+            self.assertLessEqual(abs(weighted[key] - value), 1e-9 * abs(value), msg=key)
 
 
 # Shared verbatim with GOLDEN_ANISOTROPY in orientationFixes.test.js.

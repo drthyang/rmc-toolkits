@@ -391,8 +391,9 @@ const assertGolden = (table) => {
             if (typeof value === 'boolean' || Number.isInteger(value) || value === null) {
                 expect(result[key], `${frequency}/${smoothing}/${nLobe} ${key}`).toBe(value);
             } else {
+                // Relative tolerance: p-values reach 1e-142.
                 expect(Math.abs(result[key] - value), `${frequency}/${smoothing}/${nLobe} ${key}`)
-                    .toBeLessThanOrEqual(1e-9 * Math.max(1, Math.abs(value)));
+                    .toBeLessThanOrEqual(1e-9 * Math.abs(value));
             }
         });
     });
@@ -550,7 +551,7 @@ describe('orientation anisotropy null (Bingham test)', () => {
         assertGolden(GOLDEN_ANISOTROPY);
         const weighted = orientationHistogram(goldenCloud(), { frequency: 6, smoothing: 1, weight: 'amplitude2', geometry: false });
         Object.entries(GOLDEN_ANISOTROPY_AMPLITUDE2).forEach(([key, value]) => {
-            expect(Math.abs(weighted[key] - value), key).toBeLessThanOrEqual(1e-9 * Math.max(1, Math.abs(value)));
+            expect(Math.abs(weighted[key] - value), key).toBeLessThanOrEqual(1e-9 * Math.abs(value));
         });
     });
 
