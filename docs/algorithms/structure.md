@@ -65,7 +65,7 @@ Two code paths produce it:
 | Runtime | Density engine | Status |
 | --- | --- | --- |
 | **Server-side run source** (a Flask backend with a run *directory*) | `scipy.stats.gaussian_kde` in [`rmc_toolkits/kde.py`](../../rmc_toolkits/kde.py), served by `/api/kde/slice` | **Reference-grade.** Use this for numbers that go in a paper. |
-| **Browser-loaded run** (`localRun`) | hand-written kernel sum in [`web_app/frontend/src/workers/localKdeWorker.js`](../../web_app/frontend/src/workers/localKdeWorker.js), optionally on the GPU via [`gpuKde.js`](../../web_app/frontend/src/workers/gpuKde.js) | **Visualization path.** Same estimator, float32 arithmetic on the GPU branch, a different random subsample, a different bandwidth matrix, and a cruder contour tracer. |
+| **Browser-loaded run** (`localRun`) | hand-written kernel sum in [`web_app/frontend/src/workers/localKdeWorker.js`](../../web_app/frontend/src/workers/localKdeWorker.js), optionally on the GPU via [`gpuKde.js`](../../web_app/frontend/src/workers/gpuKde.js) | **Visualization path.** Same estimator and the same kernel $\mathbf{H}=f^2\mathbf{C}$ (parity-tested against Python goldens to $10^{-6}$ of the peak on slabs below the 6000-point fit cap), but float32 arithmetic on the GPU branch, a different random subsample above the cap, and a cruder contour tracer. |
 
 **The discriminator is *not* static-vs-Flask mode.** `StructurePage.jsx` branches on
 `const isLocalStructure = Boolean(localRun)` and nothing else; `isStaticMode()` is used on this page
@@ -625,10 +625,18 @@ with $\kappa$ the periodic-image correction defined below. This is exactly SciPy
 `_data_covariance = atleast_2d(cov(self.dataset, rowvar=1, bias=False, aweights=self.weights))`,
 which with the default uniform weights $w_i = 1/n$ is exactly the $n-1$ divisor. `gaussian_kde`
 then evaluates $\sum_i w_i \mathcal{N}(\mathbf{p};\mathbf{p}_i,\mathbf{H})$ with those same uniform
-weights (SciPy 1.13.1, `scipy/stats/_kde.py`). The JavaScript `makeKernel()` reproduces it term for term:
-it forms $\mathbf{C}$ with the same $n-1$ divisor, scales by $f^2$, inverts the $2\times2$ matrix in
-closed form, and sets `normalizer = imageFactor / (2π·sqrt(det)·samples.length)`. **The browser
-normalization is exact, not an approximation.**
+weights (SciPy 1.13.1, `scipy/stats/_kde.py`). SciPy evaluates it through the lower Cholesky factor
+$\mathbf{L}=f\,\mathrm{chol}(\mathbf{C})$ of $\mathbf{H}$ (`cho_cov`): whitened offsets
+$\mathbf{w}=\mathbf{L}^{-1}(\mathbf{p}-\mathbf{p}_i)$, kernel $e^{-|\mathbf{w}|^2/2}$, normalization
+$1/(2\pi\,L_{00}L_{11})$. The JavaScript `makeKernel()` reproduces it term for term: it forms
+$\mathbf{C}$ with the same $n-1$ divisor, takes its $2\times2$ Cholesky factor, scales it by $f$, and
+hands the loop the whitening matrix $\mathbf{W}=\mathbf{L}^{-1}$ (`w00`, `w10`, `w11`) and
+`normalizer = imageFactor / (2π·L00·L11·samples.length)`. **There is no ridge and no fallback kernel:
+the browser draws exactly $f^2\mathbf{C}$ or declines the slab** (see *Degenerate-slab handling*
+below). `tests/generate_kde_fixture.py` writes Python goldens on the committed demo run, the
+GaNb₄Se₈ sample run and synthetic slabs, and `workers/__tests__/kdeParity.test.js` requires the
+worker to reproduce them to $10^{-6}$ of the peak (measured: $\le 2\times10^{-12}$), with identical
+kernels, counts and decline messages.
 
 **$\mathbf{C}$ is estimated from the *subsampled* fit points, not from all $N_\mathrm{img}$ slab rows.** Both
 runtimes do the subsample first and hand the reduced array to the covariance step (`slab = slab[choice]`
@@ -702,39 +710,68 @@ it is **not divided by the slab thickness** — thickening the slab pulls in mor
 is renormalized, so absolute values are not comparable between different $\Delta z$, different
 elements, or different bandwidths. The per-atom amplitude is $1/N_\mathrm{src}$ of the field.
 
-#### Degenerate-slab handling (the two paths differ)
+#### Degenerate-slab handling (identical in both runtimes)
 
-| Condition | `kde.py` | `localKdeWorker.js` |
+Both runtimes run the same tests in the same order, and a slab that fails one is **declined**:
+all-zero grid, `fitCount = 0`, `kernel = null`, and a `message` naming the reason (the strings are
+shared verbatim: `KDE_MESSAGES` in `kde.py` and in `localKdeWorker.js`).
+
+| Order | Condition | `message` key |
 | --- | --- | --- |
-| slab rows $< 5$ | zero grid, `fitCount = 0` | zero grid, `fitCount = 0` |
-| $<3$ distinct $(u,v)$ pairs | zero grid (`has_enough_unique_points`) | no such check |
-| points collinear (`matrix_rank < 2`) | zero grid (`has_two_dimensional_spread`) | ridge-regularized and drawn anyway |
-| singular / near-singular $\mathbf{H}$ | `suppress(LinAlgError, ValueError)` → zero grid | `k00,k11 += 1e-8`; if $\det \le 10^{-12}$, inflate both diagonals by $\max(c_{00},c_{11},10^{-4})f^2+10^{-6}$ and zero the cross term |
+| 1 | no slab rows | `empty` — "No atoms in this slab." |
+| 2 | $f$ not a finite number $>0$ | `bandwidth` |
+| 3 | slab rows $< 5$ | `too_few` / `tooFew` |
+| 4 | $<3$ distinct $(u,v)$ pairs | `few_unique` / `fewUnique` |
+| 5 | centred points of rank $<2$ with numpy's tolerance $\sigma_{\min}\le\sigma_{\max}\max(N,2)\,\varepsilon$ | `collinear` |
+| 6 | $\mathbf{C}$ not safely positive definite: $c_{00}\le0$, $c_{11}\le0$, $1-\rho^2\le10^{-10}$ (`COVARIANCE_CONDITION_LIMIT`), or a failed Cholesky | `singular` |
 
-So the browser path adds a $10^{-8}$ ridge to the diagonal of $\mathbf{H}$ **always**, not only in
-the degenerate case. For the default $f=0.03$ and a cell-filling slab, $H_{00}\approx7.5\times10^{-5}$,
-so the ridge is a $\sim1.3\times10^{-4}$ relative perturbation — negligible but non-zero, and it means
-the browser kernel is never *exactly* $f^2\mathbf{C}$.
+Test 5 is `np.linalg.matrix_rank` in Python; the worker's `hasTwoDimensionalSpread()` gets the two
+singular values from a twice-orthogonalized Gram–Schmidt QR of the centred columns and the
+closed-form SVD of the $2\times2$ triangle, which is as accurate as numpy's SVD, and applies the
+same tolerance. Test 6 exists because a slab can pass the rank test and still be collinear to within
+round-off — coordinates written with a finite number of decimals put the perpendicular spread at
+$\sim10^{-10}$ — and there the sign of the Cholesky pivot $c_{11}-c_{01}^2/c_{00}$ depends on the
+summation order, so the two runtimes could disagree on whether to draw. $\rho$ is the in-plane
+correlation coefficient of the fit points; $1-\rho^2\le10^{-10}$ corresponds to a kernel aspect ratio
+above $\sim2\times10^5$, i.e. a needle far below any grid spacing, and the limit sits about 100× above
+the worst-case summation round-off for 6000 points. The worker's `cholesky2()` applies test 6 and
+then fails exactly where LAPACK's `potrf` raises; Python checks test 6 on `np.cov(slab)` and then
+lets `gaussian_kde` raise `LinAlgError`.
 
-**Parameter coercion: a silent substitution, not a floor.** The browser writes
-`const factor = Math.max(Number(bandwidth) || 0.03, 1e-4)`. The `|| 0.03` short-circuit fires for
-`0`, `NaN`, `null` and any non-numeric value, so **`bw = 0` becomes 0.03, not $10^{-4}$**; the
-$10^{-4}$ floor is only reachable for values in $(0, 10^{-4})$. The same idiom appears twice more
-and inconsistently: the periodic margin in `computeKde()` uses the **un-floored**
-`2 * (Number(bandwidth) || 0.03)`, so for a sub-$10^{-4}$ bandwidth the margin and the kernel
-disagree about $f$; and the grid uses `Number(gridSize) || 120`, so `gridSize = 0` becomes 120, not
-the 16 lower clamp. **Python applies none of this.** A request with `bw=0` reaches `gaussian_kde`,
-raises inside the `with suppress(np.linalg.LinAlgError, ValueError)` block, and returns an
-**all-zero density grid with `fitCount = 0` and HTTP 200** — verified directly: `bw=0` on 200
-coplanar points gives `vmin = vmax = 0`, `slabCount = 200`, `fitCount = 0`, zero contours, and no
-error reaches the client.
+**Before 1.0 the two paths differed here**, and not only on degenerate input: the browser added a
+fixed $10^{-8}$ (fractional²) ridge to the diagonal of $\mathbf{H}$ on every slab, and whenever
+$\det\mathbf{H}\le10^{-12}$ it inflated both diagonals by $\max(c_{00},c_{11},10^{-4})f^2+10^{-6}$ and
+zeroed the cross term. Both constants were absolute while $\mathbf{H}$ scales as $f^2$ times the
+slab spread, so they fired on ordinary, full-rank element-filtered slabs: on the GaNb₄Se₈ Ga layer
+($z_c=0.25$, two sites on the cell diagonal, minor eigenvalue of $f^2\mathbf{C}$ ≈ $3\times10^{-8}$ at
+$f=0.03$) the ridge alone widened the minor kernel axis 15 %, and at $f\le0.015$ the inflation
+branch replaced SciPy's needle by a round kernel $60\times$ wider — maps differing by 36–55 % of the
+peak from the SciPy reference, and changing shape discontinuously between two slider steps. Both
+constants are gone.
 
-`tests/test_kde.py::test_kde_slice_handles_degenerate_slab_without_error` pins the Python behaviour:
-five perfectly collinear points give `slabCount = 5`, `fitCount = 0`, `vmin = vmax = 0`.
+**Bandwidth input.** Both runtimes use $f$ exactly as given. A value that is not a finite number
+$>0$ (`0`, negative, `NaN`, `±∞`, or a non-number) declines the slab with the `bandwidth` message
+and echoes `bw: null`; it contributes $0$ to the periodic margin. (Before 1.0 the worker silently
+substituted `0.03` for any falsy value and floored the rest at $10^{-4}$, while Python drew a
+negative $f$ as $|f|$ and returned an unexplained zero grid for `0`.) Only the grid still has a
+browser-side substitution: `Number(gridSize) || 120`, so `gridSize = 0` becomes 120, not the 16
+lower clamp.
 
-**Code.** `rmc_toolkits/kde.py` → `kde_slice()` (the `gaussian_kde(slab.T, bw_method=bw)` call and
-the `density *= slab_total / slab_count` rescale); `localKdeWorker.js` → `covariance()`,
-`makeKernel()`, and the `margin`/`grid` coercions in `computeKde()`.
+**Verification.** `tests/test_kde.py::test_kde_slice_handles_degenerate_slab_without_error` (five
+collinear points → `slabCount = 5`, `fitCount = 0`, `vmin = vmax = 0`) and `tests/test_kde_decline.py`
+(every row of the table, plus exact agreement with `scipy.stats.gaussian_kde` on a near-collinear
+slab that must be drawn) pin Python; `workers/__tests__/localKdeKernel.test.js` pins the worker's
+kernel to an in-test brute force ($<10^{-9}$ of the peak, including needle and single-site kernels)
+and its decline rules; the synthetic cases of the parity fixture (`single-site`, `two-site-needle`,
+`collinear`, `collinear-to-round-off`, `near-collinear`, `two-positions`, `three-atoms`,
+`zero-bandwidth`) pin the two runtimes to each other.
+
+**Code.** `rmc_toolkits/kde.py` → `KDE_MESSAGES`, `COVARIANCE_CONDITION_LIMIT`, `_valid_bandwidth()`,
+`_well_conditioned()`, `_kernel_summary()`, `kde_slice()` (the decline chain, the
+`gaussian_kde(slab.T, bw_method=bw)` call and the `density *= slab_total / slab_count` rescale);
+`localKdeWorker.js` → `KDE_MESSAGES`, `COVARIANCE_CONDITION_LIMIT`, `hasDistinctPoints()`,
+`hasTwoDimensionalSpread()`, `covariance()`, `cholesky2()`, `kernelSummary()`, `makeKernel()`, and the
+decline chain in `computeKde()`.
 
 ---
 
@@ -780,13 +817,21 @@ browser. `tests/test_kde.py::test_kde_slice_clamps_grid_and_empty_slab` pins the
 dispatches to SciPy's compiled `gaussian_kernel_estimate` using the Cholesky factor of $\mathbf{H}$.
 Full float64. No distance cutoff — every kernel contributes to every node.
 
-**CPU path (browser).** `computeDensityCpu()` is the direct $O(G^2 n)$ triple loop:
+**CPU path (browser).** `computeDensityCpu()` is the direct $O(G^2 n)$ triple loop, in SciPy's
+whitened (Cholesky) form:
 
 ```js
-const exponent = -0.5*(inv00*dx*dx + 2*inv01*dx*dy + inv11*dy*dy);
+const w0 = w00*dx;
+const w1 = w10*dx + w11*dy;
+const exponent = -0.5*(w0*w0 + w1*w1);
 if (exponent > -60) sum += Math.exp(exponent);
-density[y][x] = sum * kernel.normalizer;
+density[y][x] = sum * normalizer;
 ```
+
+The whitened form keeps the round-off of a needle kernel inside the squares; the quadratic form
+$\mathbf{d}^\top\mathbf{H}^{-1}\mathbf{d}$ used before 1.0 summed terms up to
+$\mathrm{cond}(\mathbf{H})$ times larger than the result and cancelled them, which matters on the
+float32 GPU branch.
 
 Note the **exponent cutoff at $-60$**: terms with $e^{-60}\approx 8.8\times10^{-27}$ are dropped,
 i.e. the kernel is truncated at a Mahalanobis radius $\sqrt{120}\approx11\sigma$. SciPy applies no
@@ -799,11 +844,11 @@ per grid cell:
 
 * Workgroup size `(8, 8)`; dispatch $\lceil G/8\rceil$ workgroups in each dimension with an
   in-shader bounds guard `if (gid.x >= grid || gid.y >= grid) { return; }`.
-* Bindings: a 48-byte uniform buffer packed as three `vec4` lanes — `(inv00, inv01, inv11,
-  normalizer)`, `(xMin, yMin, xStep, yStep)`, `(grid, sampleCount, pad, pad)` read through a
-  `Uint32Array` view of the same `ArrayBuffer`; a read-only storage buffer of tightly packed
-  `vec2<f32>` samples; a read-write storage buffer of $G^2$ `f32` outputs, copied to a
-  `MAP_READ` buffer and read back with `mapAsync`.
+* Bindings: a 48-byte uniform buffer packed by `packKdeParams()` as three `vec4` lanes — `(w00, w10,
+  w11, normalizer)` (exactly the fields the CPU loop reads), `(xMin, yMin, xStep, yStep)`, `(grid,
+  sampleCount, pad, pad)` read through a `Uint32Array` view of the same `ArrayBuffer`; a read-only
+  storage buffer of tightly packed `vec2<f32>` samples (`packKdeSamples()`); a read-write storage
+  buffer of $G^2$ `f32` outputs, copied to a `MAP_READ` buffer and read back with `mapAsync`.
 * The shader body is line-for-line the CPU expression, including the `e > -60.0` guard.
 
 **When the GPU is used.** Only when the work is big enough to amortize device setup, buffer
@@ -822,13 +867,13 @@ computeDensityCpu(args)`). A lost device clears the cached promise so a later me
 re-initialize. The result object reports which one ran via `backend: 'gpu' | 'cpu'`.
 
 The repo's own wording — `AGENTS.md`: *"fall back to the CPU loop with identical output"*;
-`gpuKde.js`: *"devices without WebGPU behave exactly as before"* — is true **structurally** (same
+`gpuKde.js`: the CPU loop *"evaluates the same kernel in float64"* — is true **structurally** (same
 formula, same grid, same normalizer, same cutoff, reshaped to the same nested JS array) but not
 **bitwise**, and the float32 narrowing is broader than the accumulator alone. Everything crosses the
 boundary as `f32`:
 
 * the sample coordinates (`new Float32Array(sampleCount * 2)`);
-* all four kernel parameters and the grid geometry (`paramFloats[0..7]` = `inv00, inv01, inv11,
+* all four kernel parameters and the grid geometry (`paramFloats[0..7]` = `w00, w10, w11,
   normalizer, xMin, yMin, xStep, yStep`);
 * the **node positions themselves**, which the shader reconstructs as
   `xMin + f32(gid.x) * xStep` rather than receiving them from the JS loop, so the grid coordinates
@@ -837,14 +882,20 @@ boundary as `f32`:
 
 For a sum of up to 6000 positive float32 terms the expected relative difference is of order
 $10^{-6}$–$10^{-5}$ — invisible in an 8-bit colormap, but it should not be described as identical
-arithmetic.
+arithmetic. For a needle kernel the float32 rounding of the node and atom *positions* ($\sim6\times10^{-8}$)
+becomes a visible fraction of the minor kernel $\sigma$ and dominates.
+`workers/__tests__/gpuKdeEmulation.test.js` replays `KDE_WGSL` in float32 (`Math.fround` after every
+operation) on the buffers `packKdeParams()`/`packKdeSamples()` produce and compares with the CPU loop:
+$2.8\times10^{-6}$ of the peak on a cell-filling slab and $2.0\times10^{-4}$ on a two-site needle
+($\sigma_{\min}\approx6\times10^{-5}$). A real GPU may fuse multiply-adds and its `exp` is not
+correctly rounded, so this bounds the formula, not a particular device — verify on a WebGPU browser.
 
 **Outputs.** `density[G][G]` (nested plain JS numbers / Python list of lists), plus the CPU/GPU
 backend flag in static mode.
 
 **Code.** `localKdeWorker.js` → `computeDensityCpu()`, `computeKde()`; `gpuKde.js` → `KDE_WGSL`,
-`GPU_MIN_WORK`, `shouldUseGpu()`, `getGpu()`, `computeDensityGpu()`; `rmc_toolkits/kde.py` →
-`kde_slice()`.
+`packKdeParams()`, `packKdeSamples()`, `GPU_MIN_WORK`, `shouldUseGpu()`, `getGpu()`,
+`computeDensityGpu()`; `rmc_toolkits/kde.py` → `kde_slice()`.
 
 ---
 
@@ -972,18 +1023,14 @@ the reader must know:
   between two screenshots.** There is no colorbar and no numeric legend anywhere on the panel — only
   the text overlay giving `slabCount`, `fitCount`, $z_c$, $\Delta z$ and `bw`.
 
-#### `"No atoms in this slab"` really means *no drawable density*
+#### An empty canvas says why
 
-The draw gate is `density && grid > 0 && kde.vmax > kde.vmin`; when it fails the canvas prints
-`"No atoms in this slab"` (or `"Computing KDE..."` while a request is in flight). But **every**
-degenerate bail-out of Step 6 returns an all-zero grid, hence $v_{\min}=v_{\max}$, hence the same
-message: fewer than 5 slab rows, fewer than 3 distinct $(u,v)$ pairs, a rank-deficient spread, or a
-suppressed `LinAlgError` (including `bw = 0`). In those cases the overlay simultaneously prints
-`"{slabCount} atoms in slab (fit 0)"` with a non-zero `slabCount` — the repo's own fixture
-`test_kde_slice_handles_degenerate_slab_without_error` produces exactly that state
-(`slabCount = 5`, `fitCount = 0`, `vmin = vmax = 0`). The two statements on screen contradict each
-other and there is no indication that the estimator declined the slab; **read `fitCount = 0` with a
-non-zero `slabCount` as "the estimator bailed", not "the slab is empty".**
+The draw gate is `density && grid > 0 && kde.vmax > kde.vmin`. When it fails the canvas prints
+`"Computing KDE..."` while a request is in flight, `"No atoms in this slab"` when `slabCount = 0`, and
+`"No density drawn for this slab"` when the slab has atoms but the estimator declined it (Step 6); in
+that case the payload's `message` — the same string from either runtime — is shown under the canvas
+(`kde-message-note`). The overlay still prints `"{slabCount} atoms in slab (fit 0)"`, and
+`fitCount = 0` with a non-zero `slabCount` always means "declined", never "empty".
 
 **The colormaps are 5-anchor approximations.** [`colormaps.js`](../../web_app/frontend/src/colormaps.js)
 defines five maps — `viridis`, `magma`, `seismic`, `reds`, `greys` (default **viridis**) — each as a
@@ -1171,7 +1218,9 @@ the distinct element labels before assigning colours) shown in the legend **belo
 
 | Key | SciPy path | Browser worker | Notes |
 | --- | --- | --- | --- |
-| `density`, `extent`, `grid`, `bw`, `log`, `slabCount`, `fitCount`, `vmin`, `vmax`, `contours` | ✓ | ✓ | same meaning |
+| `density`, `extent`, `grid`, `bw`, `log`, `slabCount`, `fitCount`, `vmin`, `vmax`, `contours` | ✓ | ✓ | same meaning (`bw` is `null` when the bandwidth was rejected) |
+| `kernel` | ✓ | ✓ | $\mathbf{H}$ as `covariance` (in-plane fractional²) plus its principal `sigmaMinor`/`sigmaMajor`; `null` when declined |
+| `message` | ✓ | ✓ | why no density was drawn (Step 6), the same string in both; `null` when drawn |
 | `center`, `thickness` | ✓ | ✓ | the raw slider fractions in **both** — this is what the UI reads |
 | `normal`, `uVector`, `vVector`, `planeVertices`, `planePolygon` | ✓ | ✓ | `uVector`/`vVector` differ for custom normals (Step 2) |
 | `z`, `dz` | `center_depth`, `thickness_depth` | `zCenter`, `thickness` | **different meanings** — see below |
@@ -1212,15 +1261,21 @@ The Python tests in `tests/test_kde.py` are:
 cell-boundary wrap and the depth wrap for the worker (with the different third assertion noted in
 Step 3).
 
-**Two gaps the parity table below cannot paper over.**
+Added for 1.0:
 
-1. **No test compares the Python and JavaScript density fields numerically.** The two suites run in
-   different languages on different fixtures; nothing cross-checks a grid value, a `vmin`, or a
-   contour coordinate between runtimes. Every "Exact" in the parity table is derived by **reading the
-   code**, not by measurement.
-2. **The GPU path has no automated coverage at all.** No test file imports `gpuKde.js`, and WebGPU is
-   absent under vitest, so `computeDensityGpu`, the WGSL shader and the fallback chain are exercised
-   only by hand in a real browser.
+| Test | What it pins |
+| --- | --- |
+| `tests/test_kde_decline.py` | every decline rule of Step 6 (with its `message`), the bandwidth validation, exact agreement with `scipy.stats.gaussian_kde` on a near-collinear slab, and the `kernel` summary |
+| `tests/test_kde_parity_fixture.py` | the committed browser-parity golden is still what `kde.py` computes (re-run `tests/generate_kde_fixture.py` when it fails) |
+| `workers/__tests__/kdeParity.test.js` | **cross-runtime**: the worker reproduces the Python golden — demo run, GaNb₄Se₈ run (skipped when `data/` is absent), synthetic slabs — to $10^{-6}$ of the peak, with identical `slabCount`, `fitCount`, kernel and `message` |
+| `workers/__tests__/localKdeKernel.test.js` | the worker's kernel equals an in-test brute-force $f^2\mathbf{C}$ mixture; its rank test and decline rules |
+| `workers/__tests__/gpuKdeEmulation.test.js` | the WGSL shader, replayed in float32 on the packed buffers, against the CPU loop |
+
+**What is still not covered.** The cross-runtime golden uses slabs below the 6000-point fit cap, where
+both runtimes sum the same rows; above it they draw different subsamples (Step 5) and agree only
+statistically. Contour polylines are not compared (the tracers differ by design, Step 9). WebGPU itself
+cannot run under vitest: the emulation pins the formula and the packing, not a device's `exp` or its
+fused multiply-adds.
 
 ---
 
@@ -1233,7 +1288,7 @@ Step 3).
 | Custom direction | 3 number inputs | `[1, 1, 0]` | any (step 0.1) | Miller indices, dimensionless | `StructurePage.jsx` → `customDirection`; zero vector → silent $(0,0,1)$ |
 | Slice centre $z_c$ | range slider | auto-set to densest of 50 depth bins; state default 0.5 | 0 – 1, step 0.001 | fraction of depth span $\Delta_d$ | slider; Python clamps to $[0,1]$ |
 | Thickness $\Delta z$ | range slider | **0.08** | 0.01 – 0.5, step 0.01 | fraction of depth span $\Delta_d$ | slider; Python floors at $10^{-12}$ |
-| Bandwidth $f$ | range slider | **0.03** | 0.005 – 0.15, step 0.005 | dimensionless covariance factor | slider; JS substitutes 0.03 for any falsy value then floors at $10^{-4}$; Python neither |
+| Bandwidth $f$ | range slider | **0.03** | 0.005 – 0.15, step 0.005 | dimensionless covariance factor | slider; both runtimes use it as given and decline a non-finite or non-positive value (`bandwidth` message) |
 | Grid $G$ | select | **120** | 80 / 120 / 160 / 220 | nodes per side | clamp 16–400 (Py), 16–260 (JS, after substituting 120 for any falsy value) |
 | Contour levels $K$ | none (fixed) | **8** | request param `levels` | count | frontend always sends 8; empty levels are dropped from the output |
 | Colormap | select | `viridis` | viridis, magma, seismic, reds, greys | — | `colormaps.js` |
@@ -1241,11 +1296,11 @@ Step 3).
 | Log scale | switch | **on** | on/off | — | `kde.py` / worker |
 | Fit-point cap | none | **6000** | fixed | count | `MAX_KDE_FIT_POINTS`, `fitLimit` |
 | Subsample seed | none | **0** | fixed | — | `rng_seed=0`; `randomUnit(0)` |
-| Periodic margin $m$ | none | $\min(0.5,\max(0.1,2f,\Delta z))$ | derived | fractional | both paths; JS uses the **un-floored** $f$ here |
+| Periodic margin $m$ | none | $\min(0.5,\max(0.1,2f,\Delta z))$ | derived | fractional | both paths; a rejected $f$ counts as 0 |
 | Augmentation factor | none | $(1+2m)^3$ | derived | ratio | 1.73× at $m=0.1$, 8× at $m=0.5$ |
 | Log floor | none | $10^{-12}$ | fixed | density | both paths |
 | Exponent cutoff | none | $-60$ (browser only) $\Rightarrow 11\sigma$ | fixed | — | `localKdeWorker.js`, `gpuKde.js` |
-| Kernel ridge | none | $10^{-8}$ on diag (browser only) | fixed | fractional² | `makeKernel()` |
+| Covariance conditioning limit | none | $1-\rho^2\le10^{-10}$ declines | fixed | — | `COVARIANCE_CONDITION_LIMIT` in `kde.py` and `localKdeWorker.js` |
 | GPU work threshold | none | $G^2 n \ge 2{,}000{,}000$ | fixed | work units | `GPU_MIN_WORK` |
 | Display atom cap | none | 1 000 000 (clamped to $\ge100$ in Flask) | fixed | atoms | `STRUCTURE_MAX_POINTS`, `MAX_STRUCTURE_POINTS` |
 | Plane-section tolerances | none | $10^{-9}$ (on-plane corner), $10^{-8}$ (dedup), $\ge3$ vertices | fixed | fractional | `_plane_section_vertices()` / `planeSectionVertices()` |
@@ -1256,7 +1311,8 @@ Step 3).
 
 ### Python vs JavaScript: exact parity table
 
-Derived by code reading — see the gaps noted above; no cross-runtime numerical test exists.
+Derived by code reading, and for the kernel, the counts, the decline rules and the density grid **measured**
+by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the test-suite section).
 
 | Stage | Agreement |
 | --- | --- |
@@ -1265,12 +1321,12 @@ Derived by code reading — see the gaps noted above; no cross-runtime numerical
 | Slab selection in depth | **Exact** (algebraically identical, inclusive both ends) |
 | `slabCount` (unique source atoms with an image in the slab) | **Exact** |
 | Subsample size (6000) | **Exact**; the **selected subset differs** (PCG64 vs mulberry32, and a different row order) |
-| Bandwidth matrix $\mathbf{H}=f^2\mathbf{C}$ | Same formula, but $\mathbf{C}$ is fitted to the **subsampled** points, so the two runtimes use **different $\mathbf{H}$**; JS additionally adds a $10^{-8}$ diagonal ridge and coerces $f$ (0/NaN → 0.03, then a $10^{-4}$ floor) |
-| Kernel normalization $1/(2\pi n\sqrt{\det\mathbf{H}})$ | **Exact** (the browser constant is analytically correct, not a fudge) |
+| Bandwidth matrix $\mathbf{H}=f^2\mathbf{C}$ | **Exact** below the fit cap (tested, $<10^{-9}$ relative); above it $\mathbf{C}$ is fitted to the **subsampled** points, so the two runtimes use slightly **different $\mathbf{H}$**. No ridge, no substitution for $f$ |
+| Kernel normalization $1/(2\pi n\sqrt{\det\mathbf{H}})$ | **Exact** (both through the Cholesky factor: $1/(2\pi n L_{00}L_{11})$) |
 | Periodic renormalization $\kappa=N_\mathrm{img}/N_\mathrm{src}$ | **Exact** |
 | Evaluation grid nodes | **Exact** on the CPU paths; grid clamp maxima differ (400 vs 260); the GPU path recomputes node positions in `f32` |
-| Kernel sum | SciPy: full float64, no cutoff. Browser CPU: float64 with $e<-60$ cutoff. Browser GPU: **float32 inputs, parameters, node grid and accumulator**, same cutoff |
-| Degenerate slabs | Python bails to a zero grid on rank/uniqueness tests; JS regularizes and draws |
+| Kernel sum | SciPy: full float64, no cutoff. Browser CPU: float64 with $e<-60$ cutoff; **measured $\le2\times10^{-12}$ of the peak** against SciPy on the parity fixture. Browser GPU: **float32 inputs, parameters, node grid and accumulator**, same cutoff (emulated: $\sim3\times10^{-6}$, $2\times10^{-4}$ for a needle kernel) |
+| Degenerate slabs | **Identical** (tested): the same six decline tests in the same order, the same `message` strings |
 | $\log_{10}$ transform + $10^{-12}$ floor | **Exact** |
 | Contour level values | **Exact** (same formula; both drop levels that yield no polylines) |
 | Contour tracing | contourpy stitched polylines with saddle handling vs. per-cell 2-point segments with arbitrary saddle pairing |
@@ -1292,7 +1348,9 @@ Derived by code reading — see the gaps noted above; no cross-runtime numerical
 2. **The browser path is a visualization path.** The SciPy path served by `/api/kde/slice` is the
    reference. If a number is going into a figure caption or a paper, take it from a Flask session
    pointed at a run **directory** — note that loading the bundled **Demo** run, even in Flask mode,
-   switches the page to the browser worker.
+   switches the page to the browser worker. Below the 6000-point fit cap the browser CPU path draws
+   the same kernel and reproduces the reference to $10^{-6}$ of the peak (tested); above it the two
+   draw different subsamples, and the GPU branch is float32.
 3. **The bandwidth is not a length.** $f$ multiplies the *sample covariance of the slab points*, so
    the physical smoothing width changes with the element filter, the slab thickness, the slice
    normal, and even the periodic margin. It is also computed from the ≤6000 *subsampled* points, so
@@ -1322,7 +1380,8 @@ Derived by code reading — see the gaps noted above; no cross-runtime numerical
    That search runs on the unwrapped, display-sampled population.
 10. **The GPU result is float32** in its inputs, its kernel parameters, its reconstructed node grid
     and its accumulator. Structurally identical to the CPU loop, numerically equal to about
-    $10^{-6}$–$10^{-5}$ relative — fine for a picture, not a bit-for-bit guarantee, and untested.
+    $10^{-6}$–$10^{-5}$ relative ($2\times10^{-4}$ for a needle kernel) in a float32 emulation of the
+    shader — fine for a picture, not a bit-for-bit guarantee, and no test runs a real GPU.
 11. **In log mode the Flask path can silently drop all contours** when the peak density is below 1
     per unit fractional area, while the browser path draws them.
 12. **The periodic wrap is exact only out to the margin $m$.** Images farther than $m$ from the cube
@@ -1331,9 +1390,10 @@ Derived by code reading — see the gaps noted above; no cross-runtime numerical
 13. **`slabCount` is "atoms with at least one image in the slab"**, and one atom can contribute
     several rows near an edge or corner. The drawn band and the highlighted atoms in the side view
     are clamped/unwrapped and so **understate** the selection for $z_c$ near 0 or 1.
-14. **`"No atoms in this slab"` also means "the estimator declined this slab"** — fewer than 5 rows,
-    fewer than 3 distinct in-plane points, a rank-deficient spread, or a suppressed `LinAlgError`
-    (e.g. `bw=0` on the API). Look at `fitCount`.
+14. **A declined slab draws nothing, in both runtimes, and says why** — fewer than 5 rows, fewer than
+    3 distinct in-plane points, a collinear spread, a covariance singular to round-off, or an invalid
+    bandwidth (Step 6). The canvas reads "No density drawn for this slab" and the reason is printed
+    under it; `fitCount` is 0.
 15. **A missing lattice block degrades silently.** If `structure.latticeVectors` or
     `structure.supercell` is absent the frontend draws a 1 Å cubic cell with no warning.
 16. **The page may not be analysing the file you think.** In a folder with several `.rmc6f`
@@ -2233,8 +2293,9 @@ machinery, plus a set of fallbacks worth knowing when a panel looks empty. **Cod
 4. Contour polylines are mapped point-by-point through the same `mapper.map` (1 px, `themeVars.contour`).
    They are drawn inside the same branch as the heatmap, and they are *not* clipped to the cell polygon.
 5. When the gate in (3) fails, the panel instead shows a single placeholder string in `--muted`,
-   `500 13px Inter`, at $(14, 28)$: `Computing KDE...` while a request is in flight, otherwise
-   `No atoms in this slab`.
+   `500 13px Inter`, at $(14, 28)$: `Computing KDE...` while a request is in flight,
+   `No density drawn for this slab` when the slab has atoms but the estimator declined it (the
+   payload's `message` is then shown under the canvas), otherwise `No atoms in this slab`.
 6. Overlay text (drawn with a dark stroke `rgba(13, 18, 28, 0.62)`, `lineWidth 3`, under a white fill,
    so it stays legible over any colormap) reports `<slabCount> atoms in slab (fit <fitCount>)` at
    $(12,22)$, `<label>=<center>  d=<thickness>  bw=<bw>` at $(12,40)$, and `log10 density` at
@@ -2318,7 +2379,7 @@ run), a direction component of 1.5 gives `Slab_In_Cell__1.5_1_0.png` in an en-US
 | In-slab / out-of-slab marker | `drawSlab` | 2×2 / 1×1 | — | CSS px |
 | Out-of-slab colour | `drawSlab` | `rgba(166,176,188,0.22)` | — | — |
 | Band fill / stroke | `drawSlab` | `rgba(79,140,255,0.18)` / `#74a7ff` | — | — |
-| KDE placeholder text | `drawKdeSlice` | `Computing KDE...` / `No atoms in this slab` at (14, 28), `500 13px Inter`, `--muted` | — | CSS px |
+| KDE placeholder text | `drawKdeSlice` | `Computing KDE...` / `No density drawn for this slab` / `No atoms in this slab` at (14, 28), `500 13px Inter`, `--muted` | — | CSS px |
 | 3D point size | `PointsMaterial` | 0.018, `sizeAttenuation: true` | — | normalized cell units ($\ell_{\max}=1$) |
 | 3D position precision | `Float32Array` | single precision | ~10⁻⁷ relative | ≈10⁻⁶ Å for a 10 Å cell |
 | 3D cell edge / slab edge / slab face colour | Three.js materials | `#737c86` / `#8c96a3` (α 0.95) / `#4f8cff` (α 0.12) | — | — |

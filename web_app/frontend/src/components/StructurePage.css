@@ -358,6 +358,10 @@
     line-height: 1.35;
 }
 
+.kde-message-note {
+    color: var(--text);
+}
+
 .slab-panel {
     background: var(--panel-bg);
 }

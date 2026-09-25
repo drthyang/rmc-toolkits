@@ -790,7 +790,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
         } else {
             ctx.fillStyle = themeVars.muted;
             ctx.font = '500 13px Inter, system-ui';
-            ctx.fillText(kdeLoading ? 'Computing KDE...' : 'No atoms in this slab', 14, 28);
+            // A slab with atoms but no density was declined by the estimator;
+            // the reason (kde.message) is printed under the canvas.
+            const emptyText = kde?.slabCount > 0 ? 'No density drawn for this slab' : 'No atoms in this slab';
+            ctx.fillText(kdeLoading ? 'Computing KDE...' : emptyText, 14, 28);
         }
 
         ctx.strokeStyle = themeVars.border;
@@ -1340,6 +1343,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
                                 <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
                             </h3>
                             <canvas ref={canvasRef} className="kde-canvas" />
+                            {kde?.message && kde.slabCount > 0 && (
+                                <div className="local-density-note kde-message-note" role="status">
+                                    {kde.message}
+                                </div>
+                            )}
                             {isLocalStructure && (
                                 <div className="local-density-note">
                                     Browser-side Gaussian KDE. The Flask app uses SciPy KDE for reference-grade values.

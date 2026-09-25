@@ -10,7 +10,7 @@ density with its own colormap and contour styling.
 
 from __future__ import annotations
 
-from contextlib import suppress
+import math
 from dataclasses import dataclass
 from itertools import combinations, product
 from pathlib import Path
@@ -24,6 +24,72 @@ from .parsers import iter_rmc6f_atoms, read_cell_vectors
 # stable well below the full population, and the eval cost scales with the
 # number of fit points, so subsampling keeps slider interaction responsive.
 MAX_KDE_FIT_POINTS = 6000
+
+# Why a slab produced no density. The browser worker
+# (web_app/frontend/src/workers/localKdeWorker.js, KDE_MESSAGES) returns the
+# same strings for the same conditions, checked in the same order, so both
+# runtimes either draw the same kernel or decline with the same reason.
+KDE_MESSAGES = {
+    "empty": "No atoms in this slab.",
+    "bandwidth": "The bandwidth must be a positive finite number.",
+    "too_few": "Fewer than 5 slab rows: too few atoms for a 2D KDE.",
+    "few_unique": (
+        "The slab atoms occupy fewer than 3 distinct in-plane positions, "
+        "so their covariance (the KDE bandwidth) is undefined."
+    ),
+    "collinear": (
+        "The slab atoms are collinear in the slice plane, "
+        "so their covariance (the KDE bandwidth) is singular."
+    ),
+    "singular": (
+        "The slab covariance is singular to within round-off, "
+        "so the KDE bandwidth is undefined."
+    ),
+}
+
+# A covariance whose in-plane correlation coefficient rho satisfies
+# 1 - rho^2 <= this limit is declined as numerically singular. Below it the
+# Cholesky pivot of C sits at the level of summation round-off (~N*eps), so
+# whether it comes out positive depends on the summation order, and the two
+# runtimes could disagree on whether (and how) to draw. The corresponding
+# kernel would be a needle with an aspect ratio above ~2e5, far below any
+# grid spacing. localKdeWorker.js applies the same test.
+COVARIANCE_CONDITION_LIMIT = 1e-10
+
+
+def _well_conditioned(covariance: np.ndarray) -> bool:
+    """True when ``covariance`` is safely positive definite (see COVARIANCE_CONDITION_LIMIT)."""
+    c00, c01, c11 = float(covariance[0, 0]), float(covariance[0, 1]), float(covariance[1, 1])
+    if not (c00 > 0.0 and c11 > 0.0):
+        return False
+    return 1.0 - (c01 * c01) / (c00 * c11) > COVARIANCE_CONDITION_LIMIT
+
+
+def _valid_bandwidth(bw) -> bool:
+    """A usable bandwidth factor: a finite number > 0 (booleans excluded)."""
+    if isinstance(bw, bool) or not isinstance(bw, (int, float, np.integer, np.floating)):
+        return False
+    return math.isfinite(float(bw)) and float(bw) > 0.0
+
+
+def _kernel_summary(covariance: np.ndarray, cholesky: np.ndarray) -> dict:
+    """Kernel matrix H and its principal standard deviations (in-plane units).
+
+    ``cholesky`` is the lower Cholesky factor of ``covariance``. The minor
+    eigenvalue is taken as det(H)/lambda_max with det(H) from the Cholesky
+    diagonal, which stays accurate for needle-shaped kernels where the
+    closed-form ``mean - radius`` would cancel. The worker computes the same
+    closed form (``kernelSummary`` in localKdeWorker.js).
+    """
+    h00, h01, h11 = float(covariance[0, 0]), float(covariance[0, 1]), float(covariance[1, 1])
+    root_det = float(cholesky[0, 0]) * float(cholesky[1, 1])
+    lambda_major = 0.5 * (h00 + h11) + math.hypot(0.5 * (h00 - h11), h01)
+    lambda_minor = root_det * root_det / lambda_major if lambda_major > 0 else 0.0
+    return {
+        "covariance": [[h00, h01], [h01, h11]],
+        "sigmaMinor": math.sqrt(max(lambda_minor, 0.0)),
+        "sigmaMajor": math.sqrt(max(lambda_major, 0.0)),
+    }
 _CUBE_CORNERS = np.asarray(
     [[float(x), float(y), float(z)] for x in (0, 1) for y in (0, 1) for z in (0, 1)],
     dtype=float,
@@ -242,8 +308,10 @@ def oriented_kde_slice(
 
     # Margin must cover the kernel reach (sigma scales with bw times the data
     # spread, which is O(1) in fractional units) and the slab depth, so both
-    # the in-plane density and the depth selection wrap correctly.
-    margin = min(0.5, max(0.1, 2.0 * bw, thickness))
+    # the in-plane density and the depth selection wrap correctly. An invalid
+    # bandwidth contributes nothing here; kde_slice declines it.
+    bw_reach = float(bw) if _valid_bandwidth(bw) else 0.0
+    margin = min(0.5, max(0.1, 2.0 * bw_reach, thickness))
     positions, source_index = _augment_periodic_images(positions, margin)
 
     normal, u_axis, v_axis = _plane_basis(normal, u_axis, v_axis)
@@ -341,6 +409,8 @@ def kde_slice(
     density = np.zeros_like(mesh_x)
     slab_count = 0
     fit_count = 0
+    kernel = None
+    message = KDE_MESSAGES["empty"]
     if positions.shape[0]:
         x, y, z = positions[:, 0], positions[:, 1], positions[:, 2]
         half = 0.5 * max(dz, 1e-12)
@@ -352,21 +422,31 @@ def kde_slice(
         else:
             slab_count = slab_total
 
-        if slab_total >= 5:
-            has_enough_unique_points = np.unique(slab, axis=0).shape[0] >= 3
-            centered_slab = slab - slab.mean(axis=0)
-            has_two_dimensional_spread = np.linalg.matrix_rank(centered_slab) >= 2
+        # Decline reasons, in the order the browser worker checks them.
+        if slab_total == 0:
+            message = KDE_MESSAGES["empty"]
+        elif not _valid_bandwidth(bw):
+            message = KDE_MESSAGES["bandwidth"]
+        elif slab_total < 5:
+            message = KDE_MESSAGES["too_few"]
+        elif np.unique(slab, axis=0).shape[0] < 3:
+            message = KDE_MESSAGES["few_unique"]
+        elif np.linalg.matrix_rank(slab - slab.mean(axis=0)) < 2:
+            message = KDE_MESSAGES["collinear"]
         else:
-            has_enough_unique_points = False
-            has_two_dimensional_spread = False
-
-        if has_enough_unique_points and has_two_dimensional_spread:
             if slab_total > MAX_KDE_FIT_POINTS:
                 rng = np.random.default_rng(rng_seed)
                 choice = rng.choice(slab_total, MAX_KDE_FIT_POINTS, replace=False)
                 slab = slab[choice]
-            with suppress(np.linalg.LinAlgError, ValueError):
-                kde = gaussian_kde(slab.T, bw_method=bw)
+            try:
+                if not _well_conditioned(np.cov(slab, rowvar=False)):
+                    raise np.linalg.LinAlgError("slab covariance is numerically singular")
+                kde = gaussian_kde(slab.T, bw_method=float(bw))
+            except (np.linalg.LinAlgError, ValueError):
+                # The fit points' covariance is not (safely) positive definite
+                # even though the slab passed the rank test.
+                message = KDE_MESSAGES["singular"]
+            else:
                 sample = np.vstack([mesh_x.ravel(), mesh_y.ravel()])
                 density = kde(sample).reshape(mesh_x.shape)
                 if slab_total > slab_count > 0:
@@ -375,6 +455,8 @@ def kde_slice(
                     # amplitude matches the cell interior.
                     density *= slab_total / slab_count
                 fit_count = int(slab.shape[0])
+                kernel = _kernel_summary(kde.covariance, kde.cho_cov)
+                message = None
 
     if log:
         density = np.log10(density + 1e-12)
@@ -387,10 +469,14 @@ def kde_slice(
         "grid": grid,
         "z": float(z_center),
         "dz": float(dz),
-        "bw": float(bw),
+        "bw": float(bw) if _valid_bandwidth(bw) else None,
         "log": bool(log),
         "slabCount": slab_count,
         "fitCount": fit_count,
+        # H = bw^2 * Cov (in-plane units of `positions`) and its principal
+        # sigmas; None when the slab was declined, and then `message` says why.
+        "kernel": kernel,
+        "message": message,
         "vmin": float(np.nanmin(density)) if density.size else 0.0,
         "vmax": float(np.nanmax(density)) if density.size else 0.0,
         "contours": contours,

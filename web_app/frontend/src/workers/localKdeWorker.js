@@ -137,7 +137,85 @@ const sampleWithoutReplacement = (items, limit, seed = 0) => {
     return indices.slice(0, limit).map((index) => items[index]);
 };
 
-const covariance = (samples) => {
+// Why a slab produced no density. rmc_toolkits/kde.py (KDE_MESSAGES) returns the
+// same strings for the same conditions, checked in the same order, so the two
+// runtimes either draw the same kernel or decline with the same reason.
+export const KDE_MESSAGES = {
+    empty: 'No atoms in this slab.',
+    bandwidth: 'The bandwidth must be a positive finite number.',
+    tooFew: 'Fewer than 5 slab rows: too few atoms for a 2D KDE.',
+    fewUnique: 'The slab atoms occupy fewer than 3 distinct in-plane positions, '
+        + 'so their covariance (the KDE bandwidth) is undefined.',
+    collinear: 'The slab atoms are collinear in the slice plane, '
+        + 'so their covariance (the KDE bandwidth) is singular.',
+    singular: 'The slab covariance is singular to within round-off, '
+        + 'so the KDE bandwidth is undefined.'
+};
+
+// Decline a covariance with 1 - rho^2 <= this limit (rho = the in-plane
+// correlation coefficient) as numerically singular: below it the Cholesky pivot
+// is at the level of summation round-off, so its sign would depend on the
+// summation order. Same constant and test as kde.py (COVARIANCE_CONDITION_LIMIT).
+export const COVARIANCE_CONDITION_LIMIT = 1e-10;
+
+// np.unique(points, axis=0).shape[0] >= minimum, without materializing the set
+// beyond what the answer needs. String keys are exact for doubles (shortest
+// round-trip form) and fold -0 onto 0, matching numpy's float comparison.
+const hasDistinctPoints = (points, minimum) => {
+    const seen = new Set();
+    for (let index = 0; index < points.length; index += 1) {
+        seen.add(`${points[index][0]},${points[index][1]}`);
+        if (seen.size >= minimum) return true;
+    }
+    return false;
+};
+
+// np.linalg.matrix_rank(points - mean) >= 2 for an N x 2 point set, with numpy's
+// default tolerance S.max() * max(N, 2) * eps. The singular values come from a
+// twice-orthogonalized Gram-Schmidt QR of the two centered columns (as accurate
+// as Householder QR) and the closed-form SVD of the 2 x 2 triangle, so exactly
+// collinear points give sigma_min at round-off level, as numpy's SVD does.
+export const hasTwoDimensionalSpread = (points) => {
+    const n = points.length;
+    if (n < 2) return false;
+    let meanU = 0;
+    let meanV = 0;
+    for (let index = 0; index < n; index += 1) {
+        meanU += points[index][0];
+        meanV += points[index][1];
+    }
+    meanU /= n;
+    meanV /= n;
+    const x = new Float64Array(n);
+    const y = new Float64Array(n);
+    let r00Squared = 0;
+    for (let index = 0; index < n; index += 1) {
+        x[index] = points[index][0] - meanU;
+        y[index] = points[index][1] - meanV;
+        r00Squared += x[index] * x[index];
+    }
+    const r00 = Math.sqrt(r00Squared);
+    if (!(r00 > 0)) return false;
+    let r01 = 0;
+    for (let pass = 0; pass < 2; pass += 1) {
+        let projection = 0;
+        for (let index = 0; index < n; index += 1) projection += (x[index] / r00) * y[index];
+        for (let index = 0; index < n; index += 1) y[index] -= projection * (x[index] / r00);
+        r01 += projection;
+    }
+    let r11Squared = 0;
+    for (let index = 0; index < n; index += 1) r11Squared += y[index] * y[index];
+    const r11 = Math.sqrt(r11Squared);
+    const frobeniusSquared = r00 * r00 + r01 * r01 + r11 * r11;
+    const determinant = Math.abs(r00 * r11);
+    const sigmaMax = 0.5 * (Math.sqrt(frobeniusSquared + 2 * determinant)
+        + Math.sqrt(Math.max(0, frobeniusSquared - 2 * determinant)));
+    const sigmaMin = sigmaMax > 0 ? determinant / sigmaMax : 0;
+    return sigmaMin > sigmaMax * Math.max(n, 2) * Number.EPSILON;
+};
+
+// Sample covariance with the n-1 divisor (numpy.cov / scipy's gaussian_kde).
+export const covariance = (samples) => {
     const n = samples.length;
     const mean = samples.reduce((acc, sample) => [acc[0] + sample[0], acc[1] + sample[1]], [0, 0])
         .map((value) => value / Math.max(n, 1));
@@ -155,31 +233,56 @@ const covariance = (samples) => {
     return { c00: c00 / denom, c01: c01 / denom, c11: c11 / denom };
 };
 
-const makeKernel = (samples, bandwidth, imageFactor = 1) => {
+// Lower Cholesky factor of a 2 x 2 covariance, or null when the covariance is
+// not safely positive definite: _well_conditioned() in kde.py, then the
+// non-positive (or NaN) pivot where LAPACK's potrf raises LinAlgError.
+const cholesky2 = ({ c00, c01, c11 }) => {
+    if (!(c00 > 0 && c11 > 0)) return null;
+    if (!(1 - (c01 * c01) / (c00 * c11) > COVARIANCE_CONDITION_LIMIT)) return null;
+    const l00 = Math.sqrt(c00);
+    const l10 = c01 / l00;
+    const pivot = c11 - l10 * l10;
+    if (!(pivot > 0)) return null;
+    return { l00, l10, l11: Math.sqrt(pivot) };
+};
+
+// Kernel matrix H and its principal sigmas: the same closed form as
+// _kernel_summary() in kde.py (minor eigenvalue from det(H) / lambda_max).
+const kernelSummary = (h00, h01, h11, rootDet) => {
+    const lambdaMajor = 0.5 * (h00 + h11) + Math.hypot(0.5 * (h00 - h11), h01);
+    const lambdaMinor = lambdaMajor > 0 ? (rootDet * rootDet) / lambdaMajor : 0;
+    return {
+        covariance: [[h00, h01], [h01, h11]],
+        sigmaMinor: Math.sqrt(Math.max(lambdaMinor, 0)),
+        sigmaMajor: Math.sqrt(Math.max(lambdaMajor, 0))
+    };
+};
+
+// The Gaussian kernel of scipy.stats.gaussian_kde with a scalar bw_method f:
+// H = f^2 C, C the n-1 covariance of the fit points, evaluated exactly (no
+// ridge, no fallback). The density at a node is
+//   normalizer * sum_i exp(-0.5 |W (p - p_i)|^2),
+// with W = L^-1 the inverse of the lower Cholesky factor L = f chol(C) of H (the
+// whitening SciPy applies through cho_cov) and normalizer = imageFactor /
+// (2 pi det(L) n). Returns null when C is not positive definite, where SciPy
+// raises LinAlgError. imageFactor (slab rows / unique source atoms, >= 1)
+// rescales the sum to per-source-atom normalization when the samples include
+// periodic images.
+export const makeKernel = (samples, factor, imageFactor = 1) => {
     const cov = covariance(samples);
-    const factor = Math.max(Number(bandwidth) || 0.03, 1e-4);
+    const chol = cholesky2(cov);
+    if (!chol) return null;
+    const l00 = factor * chol.l00;
+    const l10 = factor * chol.l10;
+    const l11 = factor * chol.l11;
     const scaleFactor = factor * factor;
-    const regularizer = 1e-8;
-    let k00 = cov.c00 * scaleFactor + regularizer;
-    let k01 = cov.c01 * scaleFactor;
-    let k11 = cov.c11 * scaleFactor + regularizer;
-    let det = k00 * k11 - k01 * k01;
-
-    if (det <= 1e-12) {
-        const spread = Math.max(cov.c00, cov.c11, 1e-4) * scaleFactor + 1e-6;
-        k00 += spread;
-        k11 += spread;
-        k01 = 0;
-        det = k00 * k11;
-    }
-
-    const inv00 = k11 / det;
-    const inv01 = -k01 / det;
-    const inv11 = k00 / det;
-    // imageFactor (slab points / unique source atoms, >= 1) rescales the sum to
-    // per-source-atom normalization when the samples include periodic images.
-    const normalizer = imageFactor / (2 * Math.PI * Math.sqrt(det) * samples.length);
-    return { inv00, inv01, inv11, normalizer };
+    return {
+        w00: 1 / l00,
+        w10: -l10 / (l00 * l11),
+        w11: 1 / l11,
+        normalizer: imageFactor / (2 * Math.PI * l00 * l11 * samples.length),
+        ...kernelSummary(cov.c00 * scaleFactor, cov.c01 * scaleFactor, cov.c11 * scaleFactor, l00 * l11)
+    };
 };
 
 const extractContours = ({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax, levels = 8 }) => {
@@ -225,12 +328,15 @@ const extractContours = ({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax, le
     return contours;
 };
 
-// The density map is the worker's hot loop: for every grid cell, sum an
-// anisotropic 2D Gaussian over every sample (O(grid^2 * samples)). This is the
-// CPU implementation, used directly on devices without WebGPU and as the
-// fallback whenever the GPU path is unavailable or errors.
-const computeDensityCpu = ({ samples, kernel, grid, xMin, yMin, xStep, yStep }) => {
+// The density map is the worker's hot loop: for every grid cell, sum the
+// kernel over every sample (O(grid^2 * samples)). This is the CPU
+// implementation, used directly on devices without WebGPU and as the fallback
+// whenever the GPU path is unavailable or errors. The WGSL shader in gpuKde.js
+// evaluates the same expression from the same kernel fields (w00, w10, w11,
+// normalizer); packKdeParams() is the one place that hands them over.
+export const computeDensityCpu = ({ samples, kernel, grid, xMin, yMin, xStep, yStep }) => {
     const density = Array.from({ length: grid }, () => new Array(grid).fill(0));
+    const { w00, w10, w11, normalizer } = kernel;
     for (let y = 0; y < grid; y += 1) {
         const gy = yMin + y * yStep;
         for (let x = 0; x < grid; x += 1) {
@@ -239,14 +345,18 @@ const computeDensityCpu = ({ samples, kernel, grid, xMin, yMin, xStep, yStep }) 
             for (let index = 0; index < samples.length; index += 1) {
                 const dx = gx - samples[index][0];
                 const dy = gy - samples[index][1];
-                const exponent = -0.5 * (kernel.inv00 * dx * dx + 2 * kernel.inv01 * dx * dy + kernel.inv11 * dy * dy);
+                const w0 = w00 * dx;
+                const w1 = w10 * dx + w11 * dy;
+                const exponent = -0.5 * (w0 * w0 + w1 * w1);
                 if (exponent > -60) sum += Math.exp(exponent);
             }
-            density[y][x] = sum * kernel.normalizer;
+            density[y][x] = sum * normalizer;
         }
     }
     return density;
 };
+
+const FIT_LIMIT = 6000;
 
 export const computeKde = async (payload) => {
     const {
@@ -268,10 +378,14 @@ export const computeKde = async (payload) => {
     const xMax = Math.max(...xValues);
     const yMin = Math.min(...yValues);
     const yMax = Math.max(...yValues);
+    // The bandwidth factor is used as given, like kde.py: no substitution and no
+    // floor. A non-positive or non-finite value declines the slab below.
+    const factor = Number(bandwidth);
+    const validBandwidth = typeof bandwidth === 'number' && Number.isFinite(factor) && factor > 0;
     // Margin must cover the kernel reach (sigma scales with bandwidth times the
     // data spread, which is O(1) in fractional units) and the slab depth, so
     // both the in-plane density and the depth selection wrap correctly.
-    const margin = Math.min(0.5, Math.max(0.1, 2 * (Number(bandwidth) || 0.03), thickness));
+    const margin = Math.min(0.5, Math.max(0.1, 2 * (validBandwidth ? factor : 0), thickness));
     const { augmented, sourceIndex } = augmentPeriodicImages(points, margin);
     const { slab, sourceCount } = makeSlab({
         points: augmented,
@@ -286,22 +400,41 @@ export const computeKde = async (payload) => {
     const grid = Math.max(16, Math.min(Number(gridSize) || 120, 260));
     let density = null;
     let fitCount = 0;
+    let kernelInfo = null;
+    let message = KDE_MESSAGES.empty;
     let backend = 'cpu';
 
-    if (slab.length >= 5) {
-        const fitLimit = 6000;
-        const samples = sampleWithoutReplacement(slab, fitLimit, 0);
-        fitCount = samples.length;
-
-        if (samples.length >= 5) {
-            const kernel = makeKernel(samples, bandwidth, slab.length / Math.max(sourceCount, 1));
+    // Decline reasons, in the order kde_slice() checks them.
+    if (slab.length === 0) {
+        message = KDE_MESSAGES.empty;
+    } else if (!validBandwidth) {
+        message = KDE_MESSAGES.bandwidth;
+    } else if (slab.length < 5) {
+        message = KDE_MESSAGES.tooFew;
+    } else if (!hasDistinctPoints(slab, 3)) {
+        message = KDE_MESSAGES.fewUnique;
+    } else if (!hasTwoDimensionalSpread(slab)) {
+        message = KDE_MESSAGES.collinear;
+    } else {
+        const samples = sampleWithoutReplacement(slab, FIT_LIMIT, 0);
+        const kernel = makeKernel(samples, factor, slab.length / Math.max(sourceCount, 1));
+        if (!kernel) {
+            message = KDE_MESSAGES.singular;
+        } else {
+            message = null;
+            fitCount = samples.length;
+            kernelInfo = {
+                covariance: kernel.covariance,
+                sigmaMinor: kernel.sigmaMinor,
+                sigmaMajor: kernel.sigmaMajor
+            };
             const xStep = (xMax - xMin) / Math.max(grid - 1, 1);
             const yStep = (yMax - yMin) / Math.max(grid - 1, 1);
             const args = { samples, kernel, grid, xMin, yMin, xStep, yStep };
 
             // Run the density map on the GPU when the workload is large enough to
             // amortize the setup cost. Any failure or unavailability falls back to
-            // the CPU loop so the output is identical on every device.
+            // the CPU loop, which evaluates the same kernel in float64.
             let mapped = null;
             if (shouldUseGpu(grid, samples.length)) {
                 try {
@@ -340,10 +473,12 @@ export const computeKde = async (payload) => {
         grid,
         z: zCenter,
         dz: thickness,
-        bw: bandwidth,
+        bw: validBandwidth ? factor : null,
         log: logScale,
         slabCount: sourceCount,
         fitCount,
+        kernel: kernelInfo,
+        message,
         vmin: Number.isFinite(vmin) ? vmin : 0,
         vmax: Number.isFinite(vmax) ? vmax : 0,
         contours: extractContours({ density, grid, xMin, xMax, yMin, yMax, vmin, vmax }),
