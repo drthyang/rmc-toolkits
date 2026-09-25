@@ -957,9 +957,9 @@ within the same tick to the same byte length would not be noticed. A file whose 
 `OSError` carries `modified = size = null` and can never trigger a refresh (Step 1). And a file that
 is being written when the poll lands may be read half-complete. That is handled explicitly rather
 than hoped to fail loudly: a `.log`'s unterminated last line is dropped and rows are checked against
-the header's column count (Step 4d), and an `.rmc6f` read that comes back short of its header's
-`Number of atoms:` keeps the previous complete model summary on screen with a notice (Model summary,
-Part A Step 2). A CSV caught mid-write fails the strict column-count check (4a) and surfaces as a
+the header's column count (Step 4d), and an `.rmc6f` read whose atom lines are still missing
+against its header's `Number of atoms:` keeps the previous complete model summary on screen with a
+notice (Model summary, Part A Step 2). A CSV caught mid-write fails the strict column-count check (4a) and surfaces as a
 per-card alert until the next poll. That holds for the Dashboard cards; the backend's parsed-file
 caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`st_mtime_ns`,
 `st_ctime_ns`, `st_size`, `st_ino`) and never keep a parse of a file that changed during the read
@@ -2527,9 +2527,12 @@ runtimes), e.g. `parsed 31196 of 52000 atoms declared in the header; 1 of 31197 
 **Parse warning** cell (full sentence in the tooltip). **Zero parsed atoms is an error**, not an
 empty card: the browser throws `<file>: no atoms could be parsed — <warning>` and Flask answers the
 same message; a file with no Atoms marker fails with `<file> does not contain an Atoms section` in
-both. On a **Live Data** re-read that comes back short of the declared count (a configuration
-RMCProfile is still writing), the Dashboard keeps the previous complete summary and says so
-(`Dashboard.jsx` → `isIncompleteStructure()`), in both runtimes.
+both. On a **Live Data** re-read whose atom lines are *missing* — parsed plus coords-only plus
+non-finite lines short of the declared count, i.e. a configuration RMCProfile is still writing
+(a line cut mid-write counts as missing, since it is unparsed) — the Dashboard keeps the previous
+complete summary and says so (`structureReport.js` → `isIncompleteStructure()`), in both runtimes.
+A complete file whose atom blew up to NaN/Inf/`****` has every line present, so it is shown at once
+with its parse warning (before 1.0's review fix such a read was held back as "still being written").
 
 The grammar is pinned on 17 variants of a real configuration (CRLF, bare CR, tabs, BOM, no label,
 split label, E and D exponents, trailing blank lines, three marker spellings, upper-case elements,

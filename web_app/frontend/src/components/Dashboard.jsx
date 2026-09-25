@@ -16,6 +16,7 @@ import {
 import { saveSvgFiguresAsZip } from '../figureExport';
 import { WatchdogBadge } from '../llm';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
+import { isIncompleteStructure } from '../structureReport';
 import { SymTolContext } from '../symTolContext';
 import InteractivePlot from './InteractivePlot';
 import SaveMenu from './SaveMenu';
@@ -48,14 +49,6 @@ const comparePlotFiles = (a, b) => {
     }
 
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-};
-
-// A structure read that came back short of the header's `Number of atoms:` —
-// on a Live Data poll that is a configuration RMCProfile is still writing.
-const isIncompleteStructure = (structure) => {
-    const report = structure?.parseReport;
-    if (!report || !Number.isFinite(report.declaredAtoms)) return false;
-    return (report.parsedAtoms || 0) + (report.coordsOnlyAtoms || 0) < report.declaredAtoms;
 };
 
 const INCOMPLETE_STRUCTURE_NOTICE = 'The structure file is shorter than its header declares (it may still be '
