@@ -308,6 +308,25 @@ describe('structure file choice (buildLocalRun)', () => {
         expect(run.structureFile.name).toBe('b.rmc6f');
     });
 
+    it('breaks ties in code-point order, as parsers.find_run_configuration does', async () => {
+        // Two equal-priority logs whose names differ only by '-' vs '_':
+        // localeCompare ranks '_' first, Python's sorted() (code points) '-'.
+        const tie = await buildLocalRun([
+            withPath('run_a-00.log', 'h\nh\n1 2 3\n'),
+            withPath('run-a-00.log', 'h\nh\n1 2 3\n'),
+            withPath('run_a.rmc6f', RMC6F_STUB),
+            withPath('run-a.rmc6f', RMC6F_STUB),
+        ]);
+        expect(tie.structureFile.name).toBe('run-a.rmc6f');
+        // No stem match: the first by path, not the picked folder's file order.
+        const fallback = await buildLocalRun([
+            withPath('zeta.rmc6f', RMC6F_STUB),
+            withPath('Beta.rmc6f', RMC6F_STUB),
+            withPath('alpha.rmc6f', RMC6F_STUB),
+        ]);
+        expect(fallback.structureFile.name).toBe('Beta.rmc6f');
+    });
+
     it('says why when no candidate is usable', async () => {
         const run = await buildLocalRun([withPath('a-00.log', 'h\nh\n1 2 3\n'), withPath('a.rmc6f', '')]);
         expect(run.structureFile).toBeNull();

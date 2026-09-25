@@ -94,8 +94,18 @@ export const structureFileProblem = async (file) => {
     return head.split(LINE_BREAK).some(isAtomsMarker) ? null : 'no Atoms section in its first 64 KiB';
 };
 
+// Code-point order, as Python's sorted() on str: localeCompare (and a picked
+// folder's enumeration order) can rank '-'/'_' and upper/lower case
+// differently from the backend and the CLI.
+const byCodePoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// The run's configuration, by the rule of parsers.find_run_configuration():
+// the usable .rmc6f whose stem matches the highest-priority run output (ties by
+// lower-cased output name), else the first usable one by path.
 const chooseStructureFile = async (files) => {
-    const allRmc6f = files.filter((file) => file.name.endsWith('.rmc6f'));
+    const allRmc6f = files
+        .filter((file) => file.name.endsWith('.rmc6f'))
+        .sort((a, b) => byCodePoint(a.path, b.path));
     if (!allRmc6f.length) return { file: null, skipped: [] };
     const problems = await Promise.all(allRmc6f.map(structureFileProblem));
     const skipped = allRmc6f
@@ -117,7 +127,9 @@ const chooseStructureFile = async (files) => {
             };
         })
         .filter(Boolean)
-        .sort((a, b) => a.priority - b.priority || a.sortName.localeCompare(b.sortName));
+        .sort((a, b) => a.priority - b.priority
+            || byCodePoint(a.sortName, b.sortName)
+            || byCodePoint(a.stem, b.stem));
 
     for (const output of outputStems) {
         const match = rmc6fByLocationAndStem.get(`${output.directory}/${output.stem}`);
