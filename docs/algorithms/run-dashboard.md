@@ -3204,11 +3204,15 @@ shifted origin usually fits no form and gets no letter (diamond described with i
 Orbits are not rendered on the Run Dashboard card itself; they flow into the AI-assistant context
 (`runContext.js` → `symmetryContext()` → `symmetry.sites`, ranked by mean displacement, capped at 12
 sites), where `multiplicity` is the orbit's size in the given cell and `wyckoff` should be the
-naming-cell pair `wyckoffMultiplicity` + letter. (`runContext.js` still builds the label from the
-given-cell `size`, so where the naming cell is not the given cell — a primitive or rhombohedral
-description, an R subgroup kept in its F-cubic parent cell — the assistant is handed a label such
-as `4a` that the named group does not have; the fix belongs to the `llm/` module, which may not
-import `orbitLabel()`.)
+naming-cell pair `wyckoffMultiplicity` + letter. **Open:** `symmetryContext()` still builds the
+label as `` `${orbit.size}${orbit.wyckoff}` ``, so wherever the naming cell is not the given cell
+the assistant is handed a label the named group does not have: `16i` for the Nb of the 5 K
+GaNb₄Se₈ run at τ = 0.02 Å (P-4n2 is named in a cell half the F-cubic one; the card's pair is
+`8i`), `4a`/`12b` for the R3m lacunar spinel in its F cell (`3a`/`9b`), `1a`/`1b` for rocksalt on
+its primitive cell (`4a`/`4b`). The fix is one line in `runContext.js`,
+`` `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}` ``; it reads a field of the
+`symmetry` prop, so the `llm/` import boundary holds (it needs no `orbitLabel()` import). It is
+outside the symmetry finder's files and handed to the `llm/` module's owner, with a test.
 
 **Code**: `symmetry.js` → `siteOrbits()`; `symmetryModel.js` → `describeSymmetry()`,
 `lettersInSetting()`, `orbitLabel()`; `wyckoff.js` → `wyckoffPositions()`, `parseCoordinateForm()`,
