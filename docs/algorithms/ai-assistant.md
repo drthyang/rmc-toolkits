@@ -791,7 +791,9 @@ Treat all three as prompt-level assertions from the app author, not as validated
 in the parameters table below for completeness.
 
 **Watchdog** (`buildWatchdogMessages()`): the same system prompt plus one user message containing
-`JSON.stringify(stats)` (Step 14), the heuristic label, the previous label if any, and a demand for
+`JSON.stringify(stats)` (Step 14) — introduced as the ln χ² of the named fit term (`chiColumn`, e.g.
+`X_ray_(R)1`, "one .log column, not the total") when the column is known — the heuristic label, the
+previous label if any, and a demand for
 exactly one line of the form `` `STATUS: improving|converged|stalled|diverging — <one short sentence
 citing a number>` ``. **This payload is not fenced** — unlike the chat context, the stats JSON is
 interpolated into the middle of an English sentence, so the data/instruction separation the chat path
@@ -918,10 +920,14 @@ history has ≥2 points.
   state.
 - **No timers of its own.** It observes the `rValueFile` prop, which the existing 3-second Live Data poll
   already refreshes. The effect is keyed off *content* — its dependency array is
-  `[enabled, nSteps, lastValue, baseUrl, model, apiKey, watchdogIntervalMin]` — not object identity,
+  `[enabled, nSteps, lastValue, baseUrl, model, apiKey, watchdogIntervalMin, column]` — not object identity,
   because Live Data produces a fresh object on every poll. **Blind spot:** a history whose *length and
   final value* are unchanged but whose interior changed does not re-classify. During Live Data this is a
   real (if brief) staleness window.
+- **The badge names its χ² term.** The history is the last `.log` column only (one fit term, e.g.
+  `X_ray_(R)1`), so the badge reads `X_ray_(R)1: Improving` and its tooltip adds "χ² of X_ray_(R)1
+  only, not the total" (`WatchdogBadge.jsx`, from `rValueFile.plotData.chiColumn`). Classifying on
+  every χ² term or on the total is deferred beyond 1.0.
 - **The badge status is always the heuristic.** `classifyConvergence()` runs on every change and sets the
   badge for free. The LLM's parsed `status` is discarded; only `parsed.note` (or, if the format was
   ignored, the first 200 characters of the raw reply) becomes the tooltip, with `source` flipping to

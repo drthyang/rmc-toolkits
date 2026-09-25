@@ -24,13 +24,17 @@ const WatchdogBadge = ({ rValueFile }) => {
     if (watch.status === 'off') return null;
 
     const source = watch.source === 'llm' ? settings.model || 'LLM' : 'heuristic';
+    // The status is classified from ONE fit term's chi^2 (the last .log
+    // column), so the badge names that term instead of implying the total.
+    const term = watch.column ? `${watch.column}: ` : '';
+    const scope = watch.column ? ` — χ² of ${watch.column} only, not the total` : '';
     const title = watch.note
-        ? `${watch.note} — ${source}`
-        : `Convergence watchdog (${source})`;
+        ? `${watch.note} — ${source}${scope}`
+        : `Convergence watchdog (${source})${scope}`;
 
     return (
         <span className={`llm-watchdog-badge is-${watch.status}`} title={title} role="status">
-            {STATUS_LABELS[watch.status] || watch.status}
+            {term}{STATUS_LABELS[watch.status] || watch.status}
             {watch.source === 'llm' && <span className="llm-watchdog-source">AI</span>}
         </span>
     );

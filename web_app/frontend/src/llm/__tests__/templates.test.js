@@ -40,6 +40,13 @@ describe('watchdog prompt round trip', () => {
         expect(messages[1].content).toContain('"stalled"');
     });
 
+    it('names the chi^2 term the history comes from', () => {
+        const messages = buildWatchdogMessages({ n_steps: 5 }, 'improving', null, 'X_ray_(R)1');
+        expect(messages[1].content).toContain('fit term X_ray_(R)1');
+        expect(messages[1].content).toContain('not the total');
+        expect(buildWatchdogMessages({ n_steps: 5 }, 'improving', null)[1].content).not.toContain('fit term');
+    });
+
     it('parses well-formed replies', () => {
         expect(parseWatchdogReply('STATUS: improving — chi dropped to 0.87')).toEqual({
             status: 'improving',

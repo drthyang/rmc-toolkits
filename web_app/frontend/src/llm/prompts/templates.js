@@ -29,12 +29,16 @@ export const WATCHDOG_STATUSES = ['improving', 'converged', 'stalled', 'divergin
 
 // The watchdog gets a minimal context (recent-window stats, not the full run)
 // and must answer in a rigid one-line format so the reply is machine-parseable.
-export const buildWatchdogMessages = (stats, heuristicStatus, prevStatus) => [
+// `column` names the .log column the statistics come from (e.g. X_ray_(R)1):
+// the history is ONE fit term's chi^2, not the total, so the reply must not
+// read it as the whole run's convergence.
+export const buildWatchdogMessages = (stats, heuristicStatus, prevStatus, column = null) => [
     { role: 'system', content: SYSTEM_PROMPT },
     {
         role: 'user',
         content: 'You are watching a live RMC modeling run. Recent convergence statistics '
-            + `(values are ln of chi^2, lower is better): ${JSON.stringify(stats)}. `
+            + `(values are ln of chi^2${column ? ` of the fit term ${column} — one .log column, not the total` : ''}, `
+            + `lower is better): ${JSON.stringify(stats)}. `
             + `A simple slope heuristic classifies this as "${heuristicStatus}"`
             + `${prevStatus ? `; the previous assessment was "${prevStatus}"` : ''}. `
             + 'Reply with EXACTLY one line in the form '

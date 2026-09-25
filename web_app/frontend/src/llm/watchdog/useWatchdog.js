@@ -18,6 +18,8 @@ const MS_PER_MINUTE = 60000;
 export const useWatchdog = ({ rValueFile, settings }) => {
     const enabled = Boolean(settings?.watchdogEnabled);
     const history = rValueFile?.plotData?.series?.[0]?.y || null;
+    // The .log column the history is (one fit term's chi^2, not the total).
+    const column = rValueFile?.plotData?.chiColumn || null;
     // Key effects off content (length + last value), not object identity:
     // Live Data produces a fresh rValueFile object every poll even when the
     // underlying log did not change.
@@ -72,7 +74,7 @@ export const useWatchdog = ({ rValueFile, settings }) => {
             baseUrl,
             model,
             apiKey,
-            messages: buildWatchdogMessages(stats, status, lastLlmRef.current.status),
+            messages: buildWatchdogMessages(stats, status, lastLlmRef.current.status, column),
             temperature: 0,
             signal: controller.signal
         }).then((reply) => {
@@ -92,10 +94,10 @@ export const useWatchdog = ({ rValueFile, settings }) => {
             lastLlmRef.current = { status, stats, at: Date.now() };
             inFlightRef.current = false;
         });
-    }, [enabled, nSteps, lastValue, baseUrl, model, apiKey, watchdogIntervalMin]);
+    }, [enabled, nSteps, lastValue, baseUrl, model, apiKey, watchdogIntervalMin, column]);
 
     if (!enabled || nSteps < 2) {
-        return { status: 'off', source: 'heuristic', note: null, lastCheckedAt: null };
+        return { status: 'off', source: 'heuristic', note: null, lastCheckedAt: null, column };
     }
-    return state;
+    return { ...state, column };
 };
