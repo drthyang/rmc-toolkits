@@ -40,6 +40,7 @@ from rmc_toolkits.parsers import (
     read_cell_vectors,
     read_moves_metadata,
     read_chi,
+    rmc6f_problem,
     read_dat_header,
     read_exafs_csv,
     read_rmc_csv,
@@ -229,9 +230,14 @@ def _run_stem_from_output_name(name: str) -> tuple[int, str] | None:
 def _find_rmc6f(directory: Path) -> Path:
     if directory.is_file() and directory.suffix == ".rmc6f":
         return directory
-    rmc6f_files = sorted(directory.glob("*.rmc6f"))
-    if not rmc6f_files:
+    all_rmc6f = sorted(directory.glob("*.rmc6f"))
+    if not all_rmc6f:
         raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    # A 0-byte or marker-less configuration (e.g. left by a killed run) must not
+    # hide the valid ones beside it: skip it and fall through to the next match.
+    # With no usable candidate at all the stem rule still names one, and the
+    # caller's reader reports what is wrong with it (see _require_usable_rmc6f).
+    rmc6f_files = [path for path in all_rmc6f if rmc6f_problem(path) is None] or all_rmc6f
     rmc6f_by_stem = {path.stem: path for path in rmc6f_files}
     output_stems: list[tuple[int, str, str]] = []
     for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
@@ -245,6 +251,16 @@ def _find_rmc6f(directory: Path) -> Path:
         if stem in rmc6f_by_stem:
             return rmc6f_by_stem[stem]
     return rmc6f_files[0]
+
+
+def _require_usable_rmc6f(rmc6f_path: Path, target: Path) -> None:
+    """Raise a FileNotFoundError that lists every candidate when none is usable."""
+    if rmc6f_problem(rmc6f_path) is None:
+        return
+    directory = target if target.is_dir() else rmc6f_path.parent
+    candidates = sorted(directory.glob("*.rmc6f")) if target.is_dir() else [rmc6f_path]
+    listing = ", ".join(f"{path.name} ({rmc6f_problem(path)})" for path in candidates)
+    raise FileNotFoundError(f"No usable .rmc6f file in {directory}: {listing}")
 
 
 def _sample_atoms_by_site(atoms: list[dict], max_points: int) -> tuple[list[dict], int]:
@@ -475,6 +491,7 @@ def structure():
         target = _resolve_inside_root(request.args.get("dir", "."))
         max_points = max(100, min(int(request.args.get("maxPoints", MAX_STRUCTURE_POINTS)), MAX_STRUCTURE_POINTS))
         rmc6f_path = _find_rmc6f(target)
+        _require_usable_rmc6f(rmc6f_path, target)
         lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
         moves = read_moves_metadata(rmc6f_path)
 

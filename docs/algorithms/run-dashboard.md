@@ -240,15 +240,33 @@ last column names the kind of output file the pattern matches, not the value ext
 | 1 | `^(.+)_PDF(?:partials\|\d+)?\.csv$` | PDF |
 | 2 | `^Frac_coord_(.+)\.txt$` | fractional-coordinate export |
 
-Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
-`.rmc6f` wins; otherwise the **first** `.rmc6f` in the list is used. Python sorts the directory
-alphabetically before this scan, so "first" is alphabetical; the browser uses the enumeration order
-of the directory pick, so the two can disagree on the fallback. The browser additionally keys the
-stem map by `dirname/stem`, so matching is per-subfolder; the Python only ever looks at one
-directory.
+**Only usable candidates take part.** A `.rmc6f` that is empty (0 bytes) or shows no Atoms marker
+(`/^\s*atoms\b/i`) in its first 64 KiB — typically left by a killed run — is skipped
+(`parsers.py` → `rmc6f_problem()`, `browserData.js` → `structureFileProblem()`, same rule). Before
+2026-09 a stem match was taken unconditionally, so in `data/250K_try1/supercell` the empty
+`new_x.rmc6f` (stem-matched by `Frac_coord_new_x.txt`) hid six valid configurations and the page
+failed with an unhelpful metadata error. When no candidate is usable the error lists each file and
+why (`No usable .rmc6f file: new_x.rmc6f (empty (0 bytes))`).
 
-**Code:** `app.py` → `_run_stem_from_output_name()`, `_find_rmc6f()`; `browserData.js` →
-`runStemFromOutputName()`, `chooseStructureFile()`.
+Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
+usable `.rmc6f` wins; otherwise the **first** usable `.rmc6f` in the list is used. Python sorts the
+directory alphabetically before this scan, so "first" is alphabetical; the browser uses the
+enumeration order of the directory pick, so the two can disagree on the fallback. The browser
+additionally keys the stem map by `dirname/stem`, so matching is per-subfolder; the Python only
+ever looks at one directory.
+
+The package function `read_structure(directory)` (a `Frac_coord_*.txt` reader, not used by the
+page) applies the same principle to its **pair** of files: `Frac_coord_<stem>.txt` is paired with
+`<stem>.rmc6f` (usable candidates only); a folder with exactly one Frac file and one usable `.rmc6f`
+pairs them regardless of name; any other ambiguity raises; `frac_path=` / `rmc6f_path=` choose
+explicitly; and the pair is cross-checked (every Frac cell index inside the `.rmc6f` supercell, every
+Frac reference number a site of it). It used to take the alphabetically first file of each kind
+independently, which in `data/250K_try1/supercell` folded a 5×10×10 configuration with a 10×10×10
+supercell and dropped every atom on sites 53–104.
+
+**Code:** `app.py` → `_run_stem_from_output_name()`, `_find_rmc6f()`; `parsers.py` →
+`rmc6f_problem()`, `read_structure()`; `browserData.js` → `runStemFromOutputName()`,
+`structureFileProblem()`, `chooseStructureFile()`.
 
 **Run-control file (static mode only).** `chooseSettingsEntry()` computes
 `wanted = structureFile.path.replace(/\.rmc6f$/, '.dat')` and returns the raw entry whose `path`
@@ -2381,8 +2399,9 @@ run's output files:
 2. Those candidates are sorted by `(priority, lowercase file name)`.
 3. Each is looked up in a map keyed `` `${dirname(path)}/${rmc6f stem}` `` — the match is
    **directory-scoped**, so a stem only matches an `.rmc6f` sitting in the same folder. The first hit
-   wins.
-4. If nothing matches, the fallback is `rmc6fFiles[0]` — the first `.rmc6f` in the **unsorted** input
+   wins. Only usable candidates are in the map: empty or marker-less files are skipped
+   (`structureFileProblem()`, Run Dashboard Step 3).
+4. If nothing matches, the fallback is the first usable `.rmc6f` in the **unsorted** input
    file list, i.e. directory-enumeration order, not alphabetical order.
 
 `readCellVectors()` scans every line and takes:

@@ -84,7 +84,7 @@ VARIANTS: dict[str, str] = {
     "crlf": _with_atoms(ATOM_LINES, newline="\r\n"),
     "cr_only": _with_atoms(ATOM_LINES, newline="\r"),
     "tabs": _with_atoms(["\t".join(line.split()) for line in ATOM_LINES]),
-    "bom": "﻿" + _with_atoms(ATOM_LINES),
+    "bom": "\uFEFF" + _with_atoms(ATOM_LINES),
     "no_label": _with_atoms(_edit_tokens(lambda t: t[:2] + t[3:])),
     "split_label": _with_atoms(_edit_tokens(lambda t: t[:2] + ["[", t[2][1:]] + t[3:])),
     "e_notation": _with_atoms(_edit_tokens(lambda t: t[:3] + [f"{float(v):.15E}" for v in t[3:6]] + t[6:])),

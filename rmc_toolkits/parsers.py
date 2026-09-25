@@ -844,21 +844,111 @@ def write_frac_from_rmc6f(
     return output_path
 
 
+_RMC6F_HEAD_BYTES = 65536
+_FRAC_STEM_RE = re.compile(r"^Frac_coord_(.+)\.txt$")
+
+
+def rmc6f_problem(path: str | Path) -> str | None:
+    """Why ``path`` cannot be a run's configuration, or ``None`` when it can.
+
+    A killed run can leave a 0-byte (or header-only) ``.rmc6f`` beside valid
+    ones; picking it hid every usable model in the folder. A candidate must be
+    non-empty and show the ``Atoms`` marker (see :func:`is_rmc6f_atoms_marker`)
+    within its first 64 KiB. Mirrors ``structureFileProblem()`` in browserData.js.
+    """
+    path = Path(path)
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        return f"unreadable ({exc.strerror or exc})"
+    if size == 0:
+        return "empty (0 bytes)"
+    with path.open("rb") as handle:
+        head = handle.read(_RMC6F_HEAD_BYTES).decode("utf-8", errors="replace")
+    if not any(is_rmc6f_atoms_marker(line) for line in head.splitlines()):
+        return "no Atoms section in its first 64 KiB"
+    return None
+
+
+def _structure_pair(directory: Path, frac_path, rmc6f_path) -> tuple[Path, Path]:
+    """The (Frac*.txt, .rmc6f) pair of ONE configuration for :func:`read_structure`."""
+    frac_files = sorted(directory.glob("Frac*.txt"))
+    rmc6f_files = sorted(directory.glob("*.rmc6f"))
+    usable = [path for path in rmc6f_files if rmc6f_problem(path) is None]
+
+    def rmc6f_for(frac: Path) -> Path | None:
+        match = _FRAC_STEM_RE.match(frac.name)
+        candidate = frac.with_name(f"{match.group(1)}.rmc6f") if match else None
+        return candidate if candidate is not None and candidate in usable else None
+
+    def frac_for(rmc6f: Path) -> Path | None:
+        candidate = rmc6f.with_name(f"Frac_coord_{rmc6f.stem}.txt")
+        return candidate if candidate.exists() else None
+
+    if frac_path is not None and rmc6f_path is not None:
+        return Path(frac_path), Path(rmc6f_path)
+    if rmc6f_path is not None:
+        rmc6f_path = Path(rmc6f_path)
+        frac = frac_for(rmc6f_path) or (frac_files[0] if len(frac_files) == 1 else None)
+        if frac is None:
+            raise FileNotFoundError(
+                f"No Frac_coord_{rmc6f_path.stem}.txt beside {rmc6f_path}; pass frac_path="
+            )
+        return frac, rmc6f_path
+    if frac_path is not None:
+        frac_path = Path(frac_path)
+        rmc6f = rmc6f_for(frac_path) or (usable[0] if len(usable) == 1 else None)
+        if rmc6f is None:
+            raise FileNotFoundError(f"No usable .rmc6f pairs with {frac_path.name}; pass rmc6f_path=")
+        return frac_path, rmc6f
+
+    if not frac_files:
+        raise FileNotFoundError(f"No Frac*.txt file found in {directory}")
+    if not rmc6f_files:
+        raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    for frac in frac_files:
+        rmc6f = rmc6f_for(frac)
+        if rmc6f is not None:
+            return frac, rmc6f
+    if len(frac_files) == 1 and len(usable) == 1:
+        # A single-configuration folder whose files do not share a stem.
+        return frac_files[0], usable[0]
+    skipped = [f"{path.name} ({rmc6f_problem(path)})" for path in rmc6f_files if path not in usable]
+    raise ValueError(
+        f"Cannot tell which configuration the Frac*.txt files in {directory} belong to: "
+        f"no Frac_coord_<stem>.txt pairs with a usable <stem>.rmc6f "
+        f"(Frac: {', '.join(path.name for path in frac_files)}; "
+        f".rmc6f: {', '.join(path.name for path in usable) or 'none usable'}"
+        f"{'; skipped ' + ', '.join(skipped) if skipped else ''}). "
+        "Pass frac_path= and rmc6f_path= explicitly."
+    )
+
+
 def read_structure(
     directory: str | Path,
     element: str | int | None = None,
     mode: str = "cartesian",
+    *,
+    frac_path: str | Path | None = None,
+    rmc6f_path: str | Path | None = None,
 ) -> RmcStructure:
+    """Folded unit-cell positions from a ``Frac_coord_<stem>.txt`` and its ``<stem>.rmc6f``.
+
+    The two files must describe the SAME configuration — the ``.rmc6f`` supplies
+    the supercell used for the fold and the element → reference-number map — so
+    they are paired by stem (``Frac_coord_<stem>.txt`` ⟷ ``<stem>.rmc6f``),
+    skipping empty or marker-less ``.rmc6f`` candidates. A folder with exactly
+    one Frac file and one usable ``.rmc6f`` pairs them regardless of name; any
+    other ambiguity raises instead of pairing files from different runs. Pass
+    ``frac_path`` and/or ``rmc6f_path`` to choose explicitly. The pair is
+    cross-checked: every Frac cell index must lie inside the ``.rmc6f``
+    supercell and every Frac reference number must be one of its sites.
+    """
     if mode not in {"cartesian", "fractional"}:
         raise ValueError("mode must be either 'cartesian' or 'fractional'")
 
     directory = Path(directory)
-    frac_path = next(iter(sorted(directory.glob("Frac*.txt"))), None)
-    rmc6f_path = next(iter(sorted(directory.glob("*.rmc6f"))), None)
-    if frac_path is None:
-        raise FileNotFoundError(f"No Frac*.txt file found in {directory}")
-    if rmc6f_path is None:
-        raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    frac_path, rmc6f_path = _structure_pair(directory, frac_path, rmc6f_path)
 
     atom_indices = read_atom_indices(rmc6f_path)
     lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
@@ -874,6 +964,9 @@ def read_structure(
             )
         selected_indices = set(atom_indices[element_key])
 
+    known_references = {index for indices in atom_indices.values() for index in indices}
+    max_cells = np.full(3, -1)
+    frac_references: set[int] = set()
     atom_types: list[str] = []
     positions: list[np.ndarray] = []
     with frac_path.open("r", encoding="utf-8") as handle:
@@ -884,6 +977,9 @@ def read_structure(
         if len(parts) < 4:
             continue
         atom_id = int(parts[0])
+        frac_references.add(atom_id)
+        if len(parts) >= 7:
+            max_cells = np.maximum(max_cells, [int(value) for value in parts[4:7]])
         if selected_indices is not None and atom_id not in selected_indices:
             continue
         frac = np.asarray(parts[1:4], dtype=float) * supercell
@@ -897,6 +993,21 @@ def read_structure(
                 + folded[1] * unit_vectors[1]
                 + folded[2] * unit_vectors[2]
             )
+
+    outside = np.nonzero(max_cells >= supercell)[0]
+    unknown = sorted(frac_references - known_references)
+    if outside.size or unknown:
+        details = []
+        if outside.size:
+            details.append(
+                f"cell indices up to {max_cells.tolist()} exceed the supercell {supercell.tolist()}"
+            )
+        if unknown:
+            details.append(f"reference numbers {unknown[:5]}{'…' if len(unknown) > 5 else ''} are not sites of it")
+        raise ValueError(
+            f"{frac_path.name} does not belong to {rmc6f_path.name}: {'; '.join(details)}. "
+            "Pass the matching frac_path= / rmc6f_path=."
+        )
 
     return RmcStructure(
         atom_indices=atom_indices,

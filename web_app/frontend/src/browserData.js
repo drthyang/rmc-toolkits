@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import { LINE_BREAK, parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from './rmc6f.js';
+import { isAtomsMarker, LINE_BREAK, parseRmc6fAtoms, readRmc6fCellVectors, rmc6fParseWarning } from './rmc6f.js';
 
 const SUPPORTED_NAMES = new Set(['scale_ft.gr', 'scale_ft.sq', 'scale_ft_rmc.fq', 'stog_input.dat']);
 
@@ -75,9 +75,32 @@ const runStemFromOutputName = (name) => {
     return null;
 };
 
-const chooseStructureFile = (files) => {
-    const rmc6fFiles = files.filter((file) => file.name.endsWith('.rmc6f'));
-    if (!rmc6fFiles.length) return null;
+// Why a `.rmc6f` cannot be the run's configuration, or null when it can: a
+// killed run can leave a 0-byte (or header-only) file beside valid ones, and
+// picking it hid every usable model in the folder. Mirrors rmc6f_problem() in
+// parsers.py: non-empty, with the Atoms marker in the first 64 KiB.
+const RMC6F_HEAD_BYTES = 65536;
+
+export const structureFileProblem = async (file) => {
+    if (!file.size) return 'empty (0 bytes)';
+    let head;
+    try {
+        head = await file.sourceFile.slice(0, RMC6F_HEAD_BYTES).text();
+    } catch (error) {
+        return `unreadable (${error.message || error})`;
+    }
+    return head.split(LINE_BREAK).some(isAtomsMarker) ? null : 'no Atoms section in its first 64 KiB';
+};
+
+const chooseStructureFile = async (files) => {
+    const allRmc6f = files.filter((file) => file.name.endsWith('.rmc6f'));
+    if (!allRmc6f.length) return { file: null, skipped: [] };
+    const problems = await Promise.all(allRmc6f.map(structureFileProblem));
+    const skipped = allRmc6f
+        .map((file, index) => (problems[index] ? `${file.name} (${problems[index]})` : null))
+        .filter(Boolean);
+    const rmc6fFiles = allRmc6f.filter((_, index) => !problems[index]);
+    if (!rmc6fFiles.length) return { file: null, skipped };
     const rmc6fByLocationAndStem = new Map(
         rmc6fFiles.map((file) => [`${dirname(file.path)}/${file.name.replace(/\.rmc6f$/, '')}`, file])
     );
@@ -96,9 +119,9 @@ const chooseStructureFile = (files) => {
 
     for (const output of outputStems) {
         const match = rmc6fByLocationAndStem.get(`${output.directory}/${output.stem}`);
-        if (match) return match;
+        if (match) return { file: match, skipped };
     }
-    return rmc6fFiles[0];
+    return { file: rmc6fFiles[0], skipped };
 };
 
 // The RMCProfile run-control file: <structure stem>.dat, `KEY :: value` lines
@@ -633,7 +656,7 @@ const makeRunFromEntries = async (entries) => {
         throw new Error(`No supported RMCProfile files found in ${entries.length} selected files`);
     }
 
-    const rmc6f = chooseStructureFile(files);
+    const { file: rmc6f, skipped: skippedStructures } = await chooseStructureFile(files);
     const settingsEntry = chooseSettingsEntry(entries, rmc6f);
     await pairFitTypes(files, entries, settingsEntry);
     const directoryRoot = files
@@ -655,7 +678,11 @@ const makeRunFromEntries = async (entries) => {
                 modified: settingsEntry.file.lastModified
             }
             : null,
-        structureError: rmc6f ? 'Structure data loads when needed' : 'No model structure detected',
+        structureError: rmc6f
+            ? 'Structure data loads when needed'
+            : skippedStructures.length
+                ? `No usable .rmc6f file: ${skippedStructures.join(', ')}`
+                : 'No model structure detected',
         diagnostics: {
             selectedFileCount: entries.length,
             supportedFileCount: files.length,

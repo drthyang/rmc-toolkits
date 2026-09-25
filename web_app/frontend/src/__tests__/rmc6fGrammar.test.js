@@ -45,7 +45,7 @@ const VARIANTS = {
     crlf: withAtoms(ATOM_LINES, HEADER, '\r\n'),
     cr_only: withAtoms(ATOM_LINES, HEADER, '\r'),
     tabs: withAtoms(ATOM_LINES.map((line) => line.trim().split(/\s+/).join('\t'))),
-    bom: `﻿${withAtoms(ATOM_LINES)}`,
+    bom: `\uFEFF${withAtoms(ATOM_LINES)}`,
     no_label: withAtoms(editTokens((t) => [...t.slice(0, 2), ...t.slice(3)])),
     split_label: withAtoms(editTokens((t) => [...t.slice(0, 2), '[', t[2].slice(1), ...t.slice(3)])),
     e_notation: withAtoms(editTokens((t) => [...t.slice(0, 3), ...t.slice(3, 6).map(eNotation), ...t.slice(6)])),
