@@ -34,6 +34,9 @@ describe('basis-size cap', () => {
         expect(found).toMatchObject({ skipped: true, spaceGroup: 'not analysed', spaceGroupNumber: null, orbits: [] });
         expect(found.pointGroup).toMatch(/2001 sites/);
         expect(found.reason).toMatch(/2000/);
+        // Nothing was fitted: no residual, not a perfect 0 Å (the LLM context and the
+        // card tooltip would read 0 as an exact fit).
+        expect(Number.isNaN(found.maxResidual)).toBe(true);
         expect(ladder).toEqual([]);
     });
 

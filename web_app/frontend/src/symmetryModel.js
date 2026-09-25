@@ -87,7 +87,7 @@ export function describeSymmetry(structure, tol = 0.2) {
       centering: null,
       nSpace: '—',
       nPoint: 0,
-      maxResidual: 0,
+      maxResidual: Number.NaN,   // nothing was fitted — never 0, which would read as an exact fit
       orbits: [],
     };
   }

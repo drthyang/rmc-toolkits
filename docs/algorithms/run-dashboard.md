@@ -3228,8 +3228,9 @@ of rocksalt (1536 operations) with noise takes ≈ 0.8 s per pass.
 Because all of it is synchronous on the main thread, `symmetryModel.js` refuses a basis of more than
 **`MAX_SYMMETRY_SITES` = 2000** sites: `describeSymmetry` returns
 `{ skipped: true, spaceGroup: 'not analysed', pointGroup: '<N> sites > 2000 limit', nSpace: '—',
-orbits: [], reason }` (the card shows the first two as headline and subtitle), and
-`toleranceLadder` returns no bricks. A box whose `.rmc6f` declares a $1\times1\times1$ supercell with
+maxResidual: NaN, orbits: [], reason }` (the card shows the first two as headline and subtitle;
+the residual is `NaN`, never `0`, because nothing was fitted and `0` would read as an exact fit — the
+LLM context omits a non-finite residual), and `toleranceLadder` returns no bricks. A box whose `.rmc6f` declares a $1\times1\times1$ supercell with
 one reference number per atom (a glass, an imported P1 configuration) reaches this; it is not a
 unit-cell configuration, and a symmetry search on it would only ever return `P1`.
 
