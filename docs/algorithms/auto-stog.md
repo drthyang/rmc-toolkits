@@ -1851,11 +1851,13 @@ to $r \le c$, identical to `enforce_low_r`. The same convention is used by the C
 foot)"` (the page's also `firstShellOnset`). Two control-flow branches on the page deserve
 stating:
 
-- **`'auto'` enforcement is not guaranteed to happen.** The worker first tries to recover `r0`
-  when the engine did not detect one (manual runs skip `autoscale`'s first-shell detection, so the
-  worker re-runs `detectFirstPeakOnset` with `searchMin: config.rCutoff + 0.3`, exactly like the
-  CLI's post-run detection). But if detection still returns `null`, `effectiveEnforcement` is set
-  to `null` and **no enforcement is applied at all**: `gkEnforced` / `drEnforced` come back
+- **`'auto'` enforcement is not guaranteed to happen.** The worker first tries to recover the
+  onset when the engine did not detect one (manual runs skip `autoscale`'s first-shell detection,
+  so the worker re-runs `detectFirstPeakOnset` with `searchMin: config.rCutoff + 0.3`, exactly
+  like the CLI's post-run detection), and a given $r_0$ anchors the cutoff on its own. But if
+  there is neither a detected shell nor a given $r_0$ (possible only in manual runs, with a pinned
+  `rFitMax`, or in FZ mode — an unpinned density-mode auto-fit now stops with an error instead),
+  `effectiveEnforcement` is set to `null` and **no enforcement is applied at all**: `gkEnforced` / `drEnforced` come back
   `null`, the exported `_rmc.gr` / `_rmc.dr` fall back to the un-enforced arrays, and a checked
   "Enforce low-r" box has silently become a no-op. The only signal is that the page reports
   `r0_detected` as absent. The worker's own comment flags this as the failure mode the recovery
@@ -2071,10 +2073,12 @@ test suite (whose committed thresholds are the looser 2×10⁻³ above).
   "$g \equiv 0$ below $r_\mathrm{cut}$". It is a data-conditioning step, not a measurement, and
   it does part of the normalization work in the classic workflow.
 - **Enforcement makes the Keen limits true by construction.** Any assessment of fit quality must
-  use the reported pre-enforcement residual. In `'auto'` mode the boundary itself comes from a
-  five-constant heuristic (`detect_first_peak_onset`, Step 9) with no test pinning its
-  sensitivity — and if that heuristic returns `None`, the browser applies **no enforcement at
-  all** while the checkbox still reads as checked.
+  use the reported pre-enforcement residual. In `'auto'` mode the boundary is the foot of the
+  first shell located by a relative-threshold heuristic (`detect_first_peak_onset`, Step 8;
+  pinned by `tests/test_stog_a_detection.py` / `test_stog_a_enforcement.py`, not by a
+  sensitivity sweep of its constants) — and with neither a detected shell nor a given $r_0$
+  (manual / pinned-window / FZ runs) the browser applies **no enforcement at all** while the
+  checkbox still reads as checked (the CLI prints `enforcement: none: …`).
 - **No uncertainty propagation through the transforms.** Per-point $\sigma$ from the data file is
   used to weight the high-$Q$ fit rows only; it is never transformed into real space, and no
   error bars are produced on $g(r)$, $G_K(r)$, or $D(r)$.
@@ -3765,11 +3769,11 @@ computes them outside the engine too and the outputs must match — items 2 and 
    ticked "Enforce low-r" would silently become a no-op. This mirrors `scaling_cli.main()`'s
    post-run block (`if enforcement is None and args.enforce is not False`).
 
-   > **Enforcement can still silently become a no-op.** If the descriptor is `'auto'` and
-   > `detectFirstPeakOnset()` returns `null` — the dominant $|g|$ feature in
-   > $[r_\mathrm{cutoff}+0.3,\ 6.0]$ Å peaks below the `floor = 0.5`, or its left flank never
-   > drops below $\max(0.5,\ 0.35\,|g|_\mathrm{peak})$ — the worker sets
-   > `effectiveEnforcement = null`. The `*_rmc.gr` / `*_rmc.dr` entries then fall back to the
+   > **Enforcement can still silently become a no-op.** If the descriptor is `'auto'`, no $r_0$
+   > was given and `detectFirstPeakOnset()` returns `null` — no $|g|$ maximum in
+   > $[r_\mathrm{cutoff}+0.3+2\pi/Q_\max,\ 6.0]$ Å reaches the `floor = 0.5` and stands out of
+   > the ripple field below it (Step 8) — `autoEnforcementCutoff` returns `null` and the worker
+   > sets `effectiveEnforcement = null`. The `*_rmc.gr` / `*_rmc.dr` entries then fall back to the
    > **un-enforced** `gk` / `dr`, the provenance JSON records `enforcement: null`, and nothing
    > on the page says the tick was ignored: the only place enforcement is reported is the
    > **First shell $r_0$** card, which is itself gated on `diagnostics.r0_detected != null` and so
