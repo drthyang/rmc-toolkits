@@ -1090,8 +1090,9 @@ class CliTests(unittest.TestCase):
             header = output.read_text(encoding="utf-8")
         self.assertIn("# bonds in window12: 6 physical bonds", header)
         self.assertIn("12 bond vectors counted from the central atoms", header)
-        self.assertIn("bonds 1-2:     6 ", stdout.getvalue())
-        self.assertIn("3.00 per central atom", stdout.getvalue())
+        # stdout names both counts, as the CSV header does (review: triplets).
+        self.assertIn("bonds 1-2:     6 physical bonds (12 bond vectors counted from the central atoms", stdout.getvalue())
+        self.assertIn("coordination 3.00 per central atom", stdout.getvalue())
 
     def test_run_folder_picks_the_run_configuration(self):
         # triplets.parity.26: RMCProfile folders often hold the input

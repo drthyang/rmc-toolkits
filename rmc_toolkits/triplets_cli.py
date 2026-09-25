@@ -248,16 +248,18 @@ def main(argv: list[str] | None = None) -> int:
         # the atoms that remain, so say so instead of reporting a short model.
         print(f"rmc-triplets: warning: {result.parse_warning}", file=sys.stderr)
     print(f"triplet:       {label} (central {result.triplet[1]})")
-    for name, unique, directed, mean in (
-        ("bonds 1-2", result.unique_bonds12, result.bond12_count, result.mean_length12),
-        ("bonds 2-3", result.unique_bonds23, result.bond23_count, result.mean_length23),
+    for name, end, unique, directed, mean in (
+        ("bonds 1-2", result.triplet[0], result.unique_bonds12, result.bond12_count, result.mean_length12),
+        ("bonds 2-3", result.triplet[2], result.unique_bonds23, result.bond23_count, result.mean_length23),
     ):
-        # Bonds once each; "per central atom" is the B-centred count per B
-        # (the coordination), which counts a B-B bond at both of its ends.
+        # Physical bonds once each (with the B-centred bond-vector count when
+        # the end element is the central one, as in the CSV header); the
+        # coordination is the B-centred count per B, which sees a B-B bond
+        # from both of its ends.
         print(
-            f"{name}:     {unique} "
+            f"{name}:     {bond_count_text(unique, directed, end, result.triplet[1])}"
             + (
-                f" (mean length {mean:.4f} Ang, "
+                f" (mean length {mean:.4f} Ang; coordination "
                 f"{directed / result.apex_count:.2f} per central atom)"
                 if directed
                 else ""
