@@ -70,8 +70,10 @@ class BackendApiTests(unittest.TestCase):
             directory = Path(tmpdir)
             earlier = directory / "alpha.rmc6f"
             expected = directory / "beta.rmc6f"
-            earlier.write_text("", encoding="utf-8")
-            expected.write_text("", encoding="utf-8")
+            # Both USABLE, so the stem preference is what is tested (an empty
+            # candidate is skipped whenever a usable one exists).
+            earlier.write_text("(Version 6f format configuration file)\nAtoms:\n", encoding="utf-8")
+            expected.write_text("(Version 6f format configuration file)\nAtoms:\n", encoding="utf-8")
             (directory / "beta-01.log").write_text("", encoding="utf-8")
 
             self.assertEqual(backend_app._find_rmc6f(directory), expected)
@@ -110,7 +112,10 @@ class BackendApiTests(unittest.TestCase):
             selected = Path(tmpdir).resolve()
             backend_app._choose_folder = lambda _initial_dir: selected
             try:
-                response = self.client.post("/api/dialog/folder", json={"dir": "data"})
+                # The dialog's starting folder must lie inside the data root; the
+                # repo root always does (data/ may be a symlink out of it, e.g. in
+                # a git worktree). The folder the user PICKS is the external one.
+                response = self.client.post("/api/dialog/folder", json={"dir": "."})
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.get_json()["path"], str(selected))
 
@@ -135,7 +140,7 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(metadata_response.status_code, 200)
         metadata = metadata_response.get_json()
         self.assertEqual(metadata["kind"], "xray_sq")
-        self.assertEqual(metadata["title"], "S(Q) (x-ray)")
+        self.assertEqual(metadata["title"], "F(Q)")
         self.assertGreater(metadata["metrics"]["rwp"], 0.0)
 
         self.assertEqual(data_response.status_code, 200)
