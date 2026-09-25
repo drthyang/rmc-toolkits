@@ -81,7 +81,7 @@ Pre-processing: putting a measured total-scattering $S(Q)$ on absolute scale and
 
 **Auto StoG** is the app's *pre*-processing tab. It takes a measured total-scattering
 structure factor $S(Q)$ — the rebinned output of a data-reduction pipeline — and produces the
-classic stog / RMCProfile-ready file family ($S(Q)$, $g(r)-1$, filtered pair, $F_K(Q)$,
+classic stog / RMCProfile-ready file family ($S(Q)$, $g(r)$, filtered pair, $F_K(Q)$,
 $G_K(r)$, $D(r)$, `ft.dat`) with the scale and offset determined from physics instead of the
 classic stog interactive "try again" loop.
 
@@ -1779,28 +1779,30 @@ F_K(Q) = \langle b\rangle^2\left[S_\mathrm{filt}(Q) - 1\right]$$
 `gk_to_dr`, `sq_to_fk`); `scalePipeline()` in
 [`autoScale.js`](../../web_app/frontend/src/workers/autoScale.js) (inlined).
 
-The classic file family maps onto these as follows (`docs/STOG_SCALING_PLAN.md` §1.3, pinned
-empirically against the Fortran run, and `scaling_cli.py::_write_outputs`):
+The classic file family maps onto these as follows (the Fortran conventions, verified on all
+five reference runs in `data/stog_tests`, and `scaling_cli.py::_write_outputs`):
 
 | Classic file | Contents written by this repo |
 | --- | --- |
 | `scale.fq` | the scaled $S(Q)$ (S-convention despite the name) |
-| `scale.gr` | $g(r) - 1$ from the **unfiltered** transform, recomputed with the same discretization |
+| `scale.gr` | $g(r)$ from the **unfiltered** transform (oscillates about 1), recomputed with the same discretization |
 | `ft.dat` | $S_\mathrm{ft}(Q)$, the filter correction (Step 7.5) |
 | `scale_ft.sq` | $S_\mathrm{filt}(Q)$ |
-| `scale_ft.gr` | column 1 = $r$, column 2 = $g_\mathrm{filt}-1$, column 3 = $4\pi\rho_0 r (g_\mathrm{filt}-1) = G_\mathrm{PDF}$ |
+| `scale_ft.gr` | column 1 = $r$, column 2 = $g_\mathrm{filt}(r)$, column 3 = $r\,(g_\mathrm{filt}-1)$ |
 | `scale_ft_rmc.fq` | $F_K(Q)$ (barn) |
 | `scale_ft_rmc.gr` | $G_K(r)$ (barn), **after enforcement if enabled** |
 | `scale_ft_rmc.dr` | $D(r)$ (barn·Å⁻²), **after enforcement if enabled** |
 
 Every one of these is written by `write_stog_xy(path, x, y, extra=…)`, which emits $x$ first, so
-**column 1 is always $r$ (or $Q$)**; the table numbers physical columns. Note that
-`docs/STOG_SCALING_PLAN.md` §1.3 numbers only the *value* columns and labels `scale_ft.gr`'s
-second value column "D(r)" — but the code writes
-$4\pi\rho_0 r (g-1) = G_\mathrm{PDF} = D(r)/\langle b\rangle^2$, which for the 59438 run
-differs from $D(r)$ by a factor $\langle b\rangle^2 = 0.015407$ barn. The code is what ships;
-a reader cross-checking against
-§1.3 will hit this contradiction, so it is flagged here rather than papered over.
+**column 1 is always $r$ (or $Q$)**; the table numbers physical columns. In every Fortran run the
+`scale.gr` / `scale_ft.gr` value column averages 1.0006–1.019 over $r \ge 20$ Å (it is $g$, not
+$g-1$) and `scale_ft.gr`'s third column equals $r\,(g-1)$ to the last digit. Before 1.0 the
+writers (CLI/API and page) put $g-1$ in column 2 and $4\pi\rho_0 r(g-1) = G_\mathrm{PDF}$ in
+column 3 under these classic names — a shift of 1 and a factor $4\pi\rho_0$, and the plan
+document mis-stated the Fortran convention; both are corrected
+(`tests/test_stog_b_classic_files.py` checks the conventions on the reference runs and a manual
+FeCoSn run against the Fortran files to rms < 0.01). The RMC files are unchanged: Keen
+$G_K = \langle b\rangle^2(g-1)$, $D = 4\pi\rho_0 r\,G_K$, $F_K$.
 
 `scale_ft.gr` always holds **pre-enforcement** values; only the three `_rmc` files carry the
 enforced arrays (and only `.gr`/`.dr` — `_rmc.fq` is a $Q$-space function and is untouched).
@@ -1808,14 +1810,14 @@ enforced arrays (and only `.gr`/`.dr` — `_rmc.fq` is a $Q$-space function and 
 **The browser export path re-derives these columns on the main thread, not in the worker.**
 `AutoStogPage.jsx::writeFiles` recovers $g-1$ from the already-converted Keen function as
 `gm1 = series.gk.map(v => v / config.bAvgSq)` — an exact float round-trip of the Step-8
-conversion — and builds the `_ft.gr` third column as `4πρ₀ r · gm1` there. The CLI does not round
-trip: `scaling_cli.py::_write_outputs` uses `result.g_filtered - 1.0` directly. Two further
-browser-only details:
+conversion — and writes `_ft.gr` as $g = $ `gm1 + 1` with the third column `r · gm1`. The CLI
+does not round trip: `scaling_cli.py::_write_outputs` uses `result.g_filtered` directly. Two
+further browser-only details:
 
-- The unfiltered `scale.gr` uses the worker's separately recomputed `gm1Unfiltered`
+- The unfiltered `scale.gr` uses the worker's separately recomputed `gUnfiltered`
   (`autoScaleWorker.js` re-runs `fqToGpdf` on the scaled $F(Q)$ with the full config, exactly as
   the CLI does, because it is not part of the engine result) — **falling back to the *filtered*
-  `gm1` if that array is missing** (`series.gm1Unfiltered || gm1`), which would silently
+  $g$ if that array is missing** (`series.gUnfiltered || gFiltered`), which would silently
   substitute filtered for unfiltered content.
 - `_rmc.gr` / `_rmc.dr` likewise fall back to the un-enforced `series.gk` / `series.dr` when
   `gkEnforced` / `drEnforced` are absent (see Step 9 for when that happens).
@@ -2069,7 +2071,7 @@ gitignored, so these tests skip in CI** and only run on a machine that has the f
 | Comparison | Tolerance asserted |
 | --- | --- |
 | Scaled $S(Q)$ vs `scale.fq` | `atol=1e-9` |
-| Forward transform vs `scale.gr` | $\mathrm{rms}/\max\lvert\mathrm{ref}\rvert < 5\times10^{-3}$ |
+| Forward transform ($g$) vs `scale.gr` | absolute rms < 0.1 (0.04 measured; $g-1$ would give 1.0), and the reference averages 1 over $r \ge 20$ Å (before 1.0 the check was $\mathrm{rms}/\max\lvert\mathrm{ref}\rvert < 5\times10^{-3}$ on $g-1$, which a constant offset of 1 against $\max\lvert\mathrm{ref}\rvert \approx 400$ could not fail) |
 | Filter correction vs `ft.dat` | rms < 2×10⁻³ |
 | Filtered $S(Q)$ vs `scale_ft.sq` | rms < 2×10⁻³ |
 | Enforced $G_K$, $D$ below the cutoff vs `scale_ft_rmc.{gr,dr}` | `atol=1e-9`; and $-\langle b\rangle^2$ / the density line to `atol=1e-12` |
@@ -3180,12 +3182,12 @@ With $(a, b)$ fixed, `scale_pipeline()` runs the full chain once more on the cro
 3. Keen conversions: $G_K = \langle b\rangle^2 (g_\mathrm{filtered} - 1)$,
    $D(r) = 4\pi\rho_0 r\,G_K(r)$, $F_K(Q) = \langle b\rangle^2 (S_\mathrm{filtered} - 1)$.
 4. **Optional low-$r$ enforcement** — see below.
-5. **A fifth series the engine does not produce.** The *unfiltered* $g(r)-1$ (the classic
+5. **A fifth series the engine does not produce.** The *unfiltered* $g(r)$ (the classic
    `scale.gr`) is not part of `ScalingResult`. Both the CLI (`scaling_cli.py` → `_write_outputs()`)
    and the browser worker (`autoScaleWorker.js`) recompute it separately: forward-transform
    $F(Q) = Q(S_\mathrm{scaled}-1)$ of the **scaled but unfiltered** data with the same
-   `lorch` / `low_q_correction` / `s0_target` settings, then divide by $4\pi\rho_0 r$ (no $+1$),
-   giving `gm1Unfiltered`. It is what the exported `<stem>.gr` contains, and it is plotted nowhere —
+   `lorch` / `low_q_correction` / `s0_target` settings, then $g = G_\mathrm{PDF}/(4\pi\rho_0 r) + 1$,
+   giving `gUnfiltered`. It is what the exported `<stem>.gr` contains, and it is plotted nowhere —
    it exists only in the file family.
 
 #### Low-$r$ enforcement, precisely
@@ -3229,9 +3231,9 @@ The page's deliverable is a zip of nine entries, written by `AutoStogPage.jsx` �
 | File | Contents |
 | --- | --- |
 | `<stem>.sq` | $S_\mathrm{scaled} = aS_\mathrm{meas}+b$, unfiltered |
-| `<stem>.gr` | the **unfiltered** $g(r)-1$ (`gm1Unfiltered`, item 5 above) |
+| `<stem>.gr` | the **unfiltered** $g(r)$ (`gUnfiltered`, item 5 above) — classic `scale.gr` |
 | `<stem>_ft.sq` | $S_\mathrm{filtered}$ |
-| `<stem>_ft.gr` | $g_\mathrm{filtered}-1 = G_K/\langle b\rangle^2$, **plus a third column** $4\pi\rho_0 r\,(g-1) = G_\mathrm{PDF}(r)$ — a *different function*, not an error bar |
+| `<stem>_ft.gr` | $g_\mathrm{filtered}(r)$, **plus a third column** $r\,(g_\mathrm{filtered}-1)$ — classic `scale_ft.gr`; a *different function*, not an error bar |
 | `<stem>_rmc.fq` | $F_K(Q)$, barn (RMCProfile input) |
 | `<stem>_rmc.gr` | $G_K(r)$, barn — the **enforced** array when enforcement is on |
 | `<stem>_rmc.dr` | $D(r)$ — likewise enforced |
@@ -3878,7 +3880,7 @@ Two job kinds:
 sweep, aFz, r0Detected, windowRefined, rFitWindowUsed, enforcement, rho0Estimate, rho0Used`,
 the `summary` dict from `diagnosticsSummary()`, and ten (twelve with enforcement)
 `Float64Array` buffers
-(`q, sqRaw, sqScaled, sqFiltered, sqFt, r, gk, dr, fk, gm1Unfiltered` plus
+(`q, sqRaw, sqScaled, sqFiltered, sqFt, r, gk, dr, fk, gUnfiltered` plus
 `gkEnforced, drEnforced` when enforcement is active) — all transferred back.
 
 **What a fixed-$(a,b)$ run skips.** `mode === 'manual'` takes the `scalePipeline()` path, which
@@ -3934,12 +3936,12 @@ computes them outside the engine too and the outputs must match — items 2 and 
    > is not rendered either. If you rely on enforcement, check `enforcement` in the provenance
    > JSON. *Code:* `autoScaleWorker.js` (the `effectiveEnforcement` block),
    > `autoScale.js` → `detectFirstPeakOnset()`, `AutoStogPage.jsx` (the $r_0$ card guard).
-2. **The unfiltered $g(r)-1$** (the classic `scale.gr`), which is not part of the engine
+2. **The unfiltered $g(r)$** (the classic `scale.gr`), which is not part of the engine
    result:
    $$F(Q) = Q\,[S_\mathrm{corr}(Q)-1],\qquad
      G_\mathrm{PDF}^{\,\mathrm{unfilt}}(r) = \frac{2}{\pi}\!\int F(Q)\sin(Qr)\,\mathrm{d}Q
        \;+\; \mathrm{low-}Q\text{ correction},$$
-   $$\big[g(r)-1\big]_\mathrm{unfilt} = \frac{G_\mathrm{PDF}^{\,\mathrm{unfilt}}(r)}{4\pi\rho_0 r},$$
+   $$g_\mathrm{unfilt}(r) = \frac{G_\mathrm{PDF}^{\,\mathrm{unfilt}}(r)}{4\pi\rho_0 r} + 1,$$
    evaluated with `fqToGpdf(..., {lorch, lowQCorrection, s0Target: effectiveS0Target(config)})`
    — i.e. the *same* discretization (trapezoid sine transform on the data grids) the filter
    used internally. Python twin: `scaling_cli._write_outputs()` →
@@ -4160,9 +4162,9 @@ files use the full `rGrid(config)` ($n_r$ points) regardless.
 | # | File | x column | y column | 3rd column | Units / convention |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `<stem>.sq` | Q | `sqScaled` = $aS_\mathrm{meas}+b$ | — | dimensionless S(Q), unfiltered |
-| 2 | `<stem>.gr` | r | `gm1Unfiltered` = $g_\mathrm{unfilt}(r)-1$ (see fallback below) | — | dimensionless; unfiltered transform |
+| 2 | `<stem>.gr` | r | `gUnfiltered` = $g_\mathrm{unfilt}(r)$ (see fallback below) | — | dimensionless; unfiltered transform (classic `scale.gr`) |
 | 3 | `<stem>_ft.sq` | Q | `sqFiltered` | — | dimensionless S(Q), Fourier-filtered |
-| 4 | `<stem>_ft.gr` | r | `gk / $\langle b\rangle^2$` = $g_\mathrm{filtered}(r)-1$, **pre-enforcement** | $4\pi\rho_0 r[g-1]$ | y dimensionless; 3rd column Å⁻² |
+| 4 | `<stem>_ft.gr` | r | `gk / $\langle b\rangle^2$ + 1` = $g_\mathrm{filtered}(r)$, **pre-enforcement** | $r\,[g-1]$ | y dimensionless; 3rd column Å (classic `scale_ft.gr`) |
 | 5 | `<stem>_rmc.fq` | Q | `fk` = $\langle b\rangle^2[S_\mathrm{filtered}-1]$ | — | **barns** — RMCProfile $F_K(Q)$ |
 | 6 | `<stem>_rmc.gr` | r | `gkEnforced` (else `gk`) | — | **barns** — RMCProfile Keen $G_K(r)$ |
 | 7 | `<stem>_rmc.dr` | r | `drEnforced` (else `dr`) | — | **barns·Å⁻²** — RMCProfile $D(r)$ |
@@ -4172,10 +4174,11 @@ files use the full `rGrid(config)` ($n_r$ points) regardless.
 Two things about these entries that the table cannot carry:
 
 - **Entry 4 is reconstructed, and is never enforced.** The page does not receive
-  $g_\mathrm{filtered}-1$ from the worker; it rebuilds it by dividing the transferred $G_K$ back
-  by $\langle b\rangle^2$ — `const gm1 = series.gk.map((value) => value / config.bAvgSq);` —
-  so the y column (and the third column $4\pi\rho_0 r\,[g(r)-1]$ derived from it) differ from the
-  CLI's direct `result.g_filtered - 1.0` by one multiply/divide float round-trip (~1 ulp).
+  $g_\mathrm{filtered}$ from the worker; it rebuilds it by dividing the transferred $G_K$ back
+  by $\langle b\rangle^2$ — `const gm1 = series.gk.map((value) => value / config.bAvgSq);`,
+  written as `gm1 + 1` — so the y column (and the third column $r\,[g(r)-1]$ derived from it)
+  differ from the CLI's direct `result.g_filtered` by one multiply/divide float round-trip
+  (~1 ulp).
   And `series.gk` is **always the pre-enforcement curve**: only entries 6 and 7 carry the
   enforced curve, so with "Enforce low-r" on, `_ft.gr` keeps the sub-$r_0$ ripples while
   `_rmc.gr` is flat. That disagreement below the cutoff is deliberate.

@@ -14,10 +14,11 @@ Drop-in replacement for an interactive classic-stog session, with the manual
 
 Reads the classic ``stog.inp`` (or direct arguments), fits the affine
 correction ``S_corr = a*S_meas + b`` unless a fixed scaling is requested, and
-writes the classic stog output family — scaled S(Q), unfiltered g(r)-1,
-filtered S(Q), filtered g(r)-1 (+ D(r) column), and the RMCProfile-ready
-``FK(Q)`` / ``GK(r)`` / ``D(r)`` — plus a provenance JSON with the full
-configuration and fit diagnostics.
+writes the classic stog output family in the Fortran's own conventions —
+scaled S(Q), unfiltered g(r), filtered S(Q), filtered g(r) (+ an r*[g(r)-1]
+column), the ``ft.dat`` correction, and the RMCProfile-ready ``FK(Q)`` /
+``GK(r)`` / ``D(r)`` — plus a provenance JSON with the full configuration and
+fit diagnostics.
 
 Safety: outputs default into an ``autoscale/`` directory next to the input, and
 nothing is ever overwritten without ``--force`` — so the tool cannot silently
@@ -80,9 +81,9 @@ class CliError(Exception):
 #: Output family, in write order: (logical key, stem-mode suffix, description).
 _OUTPUTS = (
     ("sq_scaled", ".sq", "scaled S(Q), unfiltered"),
-    ("gr_unfiltered", ".gr", "g(r) - 1, unfiltered transform"),
+    ("gr_unfiltered", ".gr", "g(r), unfiltered transform (classic scale.gr)"),
     ("sq_filtered", "_ft.sq", "Fourier-filtered S(Q)"),
-    ("gr_filtered", "_ft.gr", "filtered g(r) - 1 (+ 4*pi*rho0*r*[g-1] column)"),
+    ("gr_filtered", "_ft.gr", "filtered g(r) (+ r*[g(r)-1] column, classic scale_ft.gr)"),
     ("rmc_fq", "_rmc.fq", "FK(Q), barns (RMCProfile input)"),
     ("rmc_gr", "_rmc.gr", "Keen GK(r), barns (RMCProfile input)"),
     ("rmc_dr", "_rmc.dr", "D(r) (RMCProfile input)"),
@@ -620,16 +621,18 @@ def _write_outputs(
         gk_out, dr_out = result.gk, result.d_r
 
     label = f"rmc-autoscale {__version__}: a={result.a:.8g} b={result.b:.8g}"
-    gm1 = result.g_filtered - 1.0
+    # Classic stog conventions (verified against the Fortran runs in
+    # data/stog_tests: scale.gr column 2 is g(r), oscillating about 1, and
+    # scale_ft.gr column 3 is exactly r*[g(r) - 1]).
     write_stog_xy(targets["sq_scaled"], result.q, result.sq_scaled, title=label)
-    write_stog_xy(targets["gr_unfiltered"], result.r, g_unfiltered - 1.0, title=label)
+    write_stog_xy(targets["gr_unfiltered"], result.r, g_unfiltered, title=label)
     write_stog_xy(targets["sq_filtered"], result.q, result.sq_filtered, title=label)
     write_stog_xy(
         targets["gr_filtered"],
         result.r,
-        gm1,
+        result.g_filtered,
         title=label,
-        extra=4.0 * np.pi * config.rho0 * result.r * gm1,
+        extra=result.r * (result.g_filtered - 1.0),
     )
     write_stog_xy(targets["rmc_fq"], result.q, result.fk, title=label)
     write_stog_xy(targets["rmc_gr"], result.r, gk_out, title=label)

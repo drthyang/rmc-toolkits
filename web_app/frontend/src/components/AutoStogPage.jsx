@@ -59,9 +59,9 @@ const EMPTY_FORM = {
 
 const OUTPUT_LIST = [
   ['sq_scaled', 'scaled S(Q)'],
-  ['gr_unfiltered', 'unfiltered g(r)−1'],
+  ['gr_unfiltered', 'unfiltered g(r)'],
   ['sq_filtered', 'filtered S(Q)'],
-  ['gr_filtered', 'filtered g(r)−1 + D(r)'],
+  ['gr_filtered', 'filtered g(r) + r·[g(r)−1]'],
   ['rmc_fq', 'FK(Q) → RMCProfile'],
   ['rmc_gr', 'GK(r) → RMCProfile'],
   ['rmc_dr', 'D(r) → RMCProfile'],
@@ -396,7 +396,7 @@ const AutoStogPage = () => {
           q: arr(raw.q), sqRaw: arr(raw.sqRaw), sqScaled: arr(raw.sqScaled),
           sqFiltered: arr(raw.sqFiltered), sqFt: arr(raw.sqFt), r: arr(raw.r),
           gk: arr(raw.gk), dr: arr(raw.dr), fk: arr(raw.fk),
-          gm1Unfiltered: arr(raw.gm1Unfiltered),
+          gUnfiltered: arr(raw.gUnfiltered),
           gkEnforced: arr(raw.gkEnforced), drEnforced: arr(raw.drEnforced),
         },
       });
@@ -446,15 +446,18 @@ const AutoStogPage = () => {
       const stem = sanitizeFilename(
         exportStem.trim() || dataRef.current?.name?.replace(/\.[^.]+$/, '') || 'autoscale'
       );
+      // Classic stog conventions (the Fortran scale.gr / scale_ft.gr, CLI
+      // parity): column 2 is g(r), scale_ft.gr's column 3 is r·[g(r) − 1].
       const gm1 = series.gk.map((value) => value / config.bAvgSq);
+      const gFiltered = gm1.map((value) => value + 1);
       const encoder = new TextEncoder();
       const entries = [
         [`${stem}.sq`, writeStogXy(series.q, series.sqScaled, { title: label })],
-        [`${stem}.gr`, writeStogXy(series.r, series.gm1Unfiltered || gm1, { title: label })],
+        [`${stem}.gr`, writeStogXy(series.r, series.gUnfiltered || gFiltered, { title: label })],
         [`${stem}_ft.sq`, writeStogXy(series.q, series.sqFiltered, { title: label })],
-        [`${stem}_ft.gr`, writeStogXy(series.r, gm1, {
+        [`${stem}_ft.gr`, writeStogXy(series.r, gFiltered, {
           title: label,
-          extra: series.r.map((radius, i) => 4 * Math.PI * config.rho0 * radius * gm1[i]),
+          extra: series.r.map((radius, i) => radius * gm1[i]),
         })],
         [`${stem}_rmc.fq`, writeStogXy(series.q, series.fk, { title: label })],
         [`${stem}_rmc.gr`, writeStogXy(series.r, series.gkEnforced || series.gk, { title: label })],
