@@ -795,6 +795,12 @@ def kde_slice_endpoint():
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:  # includes numpy.linalg.LinAlgError
         return jsonify({"error": str(exc)}), 400
+    except OverflowError:
+        # A finite but huge bw passes _number(); forming the kernel bw**2 * C
+        # then overflows a Python float. Bad input, not a server failure.
+        return jsonify(
+            {"error": "the kernel overflows for this bw (an extreme bandwidth); use a smaller bw"}
+        ), 400
     except SourceChangedError as exc:
         return jsonify({"error": str(exc)}), 409
     except Exception as exc:

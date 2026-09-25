@@ -161,7 +161,8 @@ whatever JSON provider the app installs: writing a non-finite value as `null` is
 rule to their fitted `a`/`b` and output series (a manual `a = b = 1e308` is a 400, and nothing is
 written). A KDE-slice bandwidth so small that the kernel cannot be evaluated (σ below $10^{-10}$
 in-plane fractional units, e.g. `bw=1e-200`) is not an error: both runtimes return the finite zero
-map with its `kernel`, flagged `subgrid` + `unresolved`. Error statuses: 400 bad parameter or unusable input, 403 path
+map with its `kernel`, flagged `subgrid` + `unresolved`. A bandwidth so large that forming
+`bw²·C` overflows (e.g. `bw=1e300`) is a 400 naming `bw`. Error statuses: 400 bad parameter or unusable input, 403 path
 outside the data roots, 404 missing file/folder, 409 output exists (`/api/scaling/run` without
 `force`) or source file still being written (see below), 500 unexpected failure.
 
