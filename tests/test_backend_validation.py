@@ -332,6 +332,34 @@ class TripletsValidationTests(_ValidationCase):
                     self.assertBadRequest(self.triplets(**{key: raw}), key)
 
 
+@unittest.skipUnless(
+    hasattr(backend_app, "TRIPLETS_MAX_ANGLES"),
+    "this backend has no /api/triplets work budget (TRIPLETS_MAX_ANGLES)",
+)
+class TripletsWorkBudgetTests(_ValidationCase):
+    """Integration guard: once the backend has a triplets work budget, the route
+    must forward it to the engine AND key its cache on it.
+
+    /api/triplets calls the uncached engine body under the file-signature cache
+    with one ``params`` tuple that is both the cache key and the argument list;
+    a budget left out of that tuple would silently fall back to the engine's
+    unrestricted default (``max_angles=None``).
+    """
+
+    PARAMS = {"end1": "Se", "apex": "Nb", "end2": "Se", "r12Min": 6.0, "r12Max": 7.5}
+
+    def test_budget_is_forwarded_to_the_engine_and_part_of_the_cache_key(self):
+        backend_app._TRIPLETS_CACHE.clear()
+        # Under the real budget: computed and cached.
+        self.assertGreater(self.assertOk(self.get("/api/triplets", **self.PARAMS))["angleCount"], 1)
+        original = backend_app.TRIPLETS_MAX_ANGLES
+        backend_app.TRIPLETS_MAX_ANGLES = 1
+        self.addCleanup(setattr, backend_app, "TRIPLETS_MAX_ANGLES", original)
+        # Same request under a budget of one angle: refused, not served from
+        # the entry computed under the larger budget.
+        self.assertBadRequest(self.get("/api/triplets", **self.PARAMS), "limit")
+
+
 class ScalingValidationTests(unittest.TestCase):
     RUN = "results/backend_validation_scaling"
     RHO0 = 0.05

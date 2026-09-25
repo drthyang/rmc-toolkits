@@ -874,7 +874,9 @@ def triplets_endpoint():
         )
         # The library function's own lru_cache is keyed on the caller's mtime;
         # call the uncached body (__wrapped__, which ignores that key) under
-        # the file-signature cache instead.
+        # the file-signature cache instead. `params` is both that cache key and
+        # the engine's argument list, so every engine argument -- a work budget
+        # included -- belongs in it (TripletsWorkBudgetTests guards this).
         result = dict(
             _TRIPLETS_CACHE.get(
                 rmc6f_path,
