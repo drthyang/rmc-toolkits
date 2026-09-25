@@ -23,7 +23,7 @@
 //
 // Keep this file in sync with orientation.py -- same constants, same outputs.
 
-import { eigenDecomposition } from './pcaKde.js';
+import { displacementCloud, eigenDecomposition } from './pcaKde.js';
 
 export const MIN_FREQUENCY = 1;
 export const MAX_FREQUENCY = 64;
@@ -1102,23 +1102,12 @@ export const orientationHistogram = (vectors, options = {}) => {
  * `site_orientation_histogram`.
  */
 export const siteOrientationHistogram = (parsed, { referenceNumber = null, element = null, ...options } = {}) => {
-    let cloud = [];
-    let tagged = null;
-    // '' and 'all' are the pooled-everything default, exactly as in Python.
+    // The same selection as the PCA volume and as Python's displacement_cloud():
+    // one site's cloud, or every atom of an element picked by its OWN species
+    // (a mixed-occupancy site contributes only its matching atoms), or every
+    // atom ('' / 'all' / null).
+    const { cloud, site: tagged } = displacementCloud(parsed, { referenceNumber, element });
     const pooledAll = element === null || element === undefined || element === '' || element === 'all';
-    if (referenceNumber !== null) {
-        tagged = parsed.sites.find((site) => site.referenceNumber === referenceNumber);
-        if (!tagged) throw new Error(`Unknown reference number ${referenceNumber}`);
-        cloud = tagged.displacements;
-    } else if (!pooledAll) {
-        const matches = parsed.sites.filter(
-            (site) => site.element.toLowerCase() === String(element).toLowerCase()
-        );
-        if (!matches.length) throw new Error(`Unknown element ${element}`);
-        matches.forEach((site) => { cloud = cloud.concat(site.displacements); });
-    } else {
-        parsed.sites.forEach((site) => { cloud = cloud.concat(site.displacements); });
-    }
 
     const result = orientationHistogram(cloud, options);
     if (tagged) {

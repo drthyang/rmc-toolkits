@@ -18,6 +18,7 @@ import {
     sitePcaKde
 } from '../pcaKde.js';
 import { handlePcaMessage } from '../pcaKdeWorker.js';
+import { siteOrientationHistogram } from '../orientation.js';
 
 const AVERAGE_RMC6F = fileURLToPath(new URL('../../../../../data/5K_try1/GaNb4Se8_5KAVERAGE.rmc6f', import.meta.url));
 
@@ -287,6 +288,16 @@ describe('mixed-occupancy sites (pca.parity.4 / numerics.17 / parity.20 / parity
         expect(displacementCloud(parsed, { element: 'Se' }).cloud).toHaveLength(64);
         expect(() => displacementCloud(parsed, { element: 'Nb' })).toThrow(/Unknown element/);
         expect(sitePcaKde(parsed, { element: 'In', grid: 8, projections: false }).count).toBe(nMinor);
+        // The orientation histogram selects through the same rule (as Python's
+        // site_orientation_histogram -> displacement_cloud): the minority
+        // species of a mixed site is found, and a pooled label pulls only its
+        // own atoms, never the whole majority-labelled site.
+        const orientationOf = (element) => siteOrientationHistogram(parsed, { element, frequency: 3, geometry: false });
+        expect(orientationOf('In').totalPoints).toBe(nMinor);
+        expect(orientationOf('In').element).toBe('In');
+        expect(orientationOf('Ga').totalPoints).toBe(nMajor);
+        expect(orientationOf('all').totalPoints).toBe(nMajor + nMinor + 64);
+        expect(() => orientationOf('Nb')).toThrow(/Unknown element Nb; available: Ga, In, Se/);
     });
 
     it('breaks a tie toward the alphabetically first species', () => {
