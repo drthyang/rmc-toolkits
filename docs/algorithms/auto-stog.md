@@ -236,12 +236,19 @@ JS port `autoScale.js` → `readStogXy()`. Writer counterpart: `write_stog_xy()`
 **Python ↔ JS parity of accepted inputs:**
 
 - Both engines use the same token grammar, a regex gate
-  `^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$` (case-insensitive) followed
-  by a `D→e` rewrite (Python `parsers._NUMERIC_TOKEN` / `_stog_token`, JS `NUMERIC_TOKEN` /
-  `tokenToFloat`). A **Fortran `D` exponent** (`1.234D+00`) parses in both. Before 1.0 Python
-  used bare `float(token)`: it skipped `D`-exponent rows (raising "does not contain STOG numeric
-  rows" when all rows used `D`) and accepted `1_0` or non-ASCII digits the browser skips, so the
-  two engines could read different rows from the same file.
+  `^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$` (case-insensitive,
+  `\d` = ASCII `[0-9]` in both: Python compiles it with `re.ASCII`, JS has no `u` flag)
+  followed by a `D→e` rewrite (Python `parsers._NUMERIC_TOKEN` / `_stog_token`, JS
+  `NUMERIC_TOKEN` / `tokenToFloat`). A **Fortran `D` exponent** (`1.234D+00`) parses in both.
+  Before 1.0 Python used bare `float(token)`: it skipped `D`-exponent rows (raising "does not
+  contain STOG numeric rows" when all rows used `D`) and accepted `1_0` or non-ASCII
+  (Arabic-Indic, fullwidth) digits the browser skips, so the two engines could read different
+  rows from the same file.
+- Both split a row into tokens on the **ECMAScript `\s` set** (Python
+  `parsers._STOG_WHITESPACE`): NBSP, the Unicode spaces and U+FEFF separate tokens; U+001C–U+001F
+  and NEL (U+0085), which Python's `str.split()` would also split on, do not. The shared inputs
+  are pinned in `tests/test_stog_b_readers.py::NumericTokenTests` and
+  `src/__tests__/autoScaleNumericTokens.test.js`.
 - Tie-breaking when two column-count groups have the same number of rows follows insertion
   order in both engines, i.e. the group whose first row appeared earliest wins.
 - **Decoding matches the browser in all three readers**: UTF-8 with a leading BOM dropped and

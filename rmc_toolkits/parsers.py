@@ -315,9 +315,19 @@ def read_stog_inp(path: str | Path) -> StogInput:
 #: ``NUMERIC_TOKEN`` (readStogXy): decimal with an optional e/E or Fortran d/D
 #: exponent, or nan / inf / infinity (any case, optional sign). Python's
 #: float() alone would also take '1_0' or non-ASCII digits and reject '1.0D+00',
-#: so the two engines read different rows from the same file.
+#: so the two engines read different rows from the same file. ``re.ASCII``
+#: keeps ``\d`` to [0-9] like JS ``\d`` without the ``u`` flag (Unicode ``\d``
+#: would still admit Arabic-Indic or fullwidth digits).
 _NUMERIC_TOKEN = re.compile(
-    r"^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$", re.IGNORECASE
+    r"^[+-]?((\d+\.?\d*|\.\d+)([eEdD][+-]?\d+)?|nan|inf(inity)?)$",
+    re.IGNORECASE | re.ASCII,
+)
+
+#: Token separators of a STOG data row — the ECMAScript ``\s`` set that
+#: readStogXy splits on. ``str.split()`` differs at the edges: it also splits on
+#: U+001C..U+001F and NEL (U+0085) and does not split on U+FEFF.
+_STOG_WHITESPACE = re.compile(
+    "[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"
 )
 
 
@@ -340,7 +350,7 @@ def read_stog_xy(path: str | Path) -> np.ndarray:
     groups: dict[int, list[list[float]]] = {}
     with Path(path).open("r", encoding=_TEXT_ENCODING, errors="replace") as handle:
         for line in handle:
-            parts = line.split()
+            parts = [part for part in _STOG_WHITESPACE.split(line) if part]
             if len(parts) < 2:
                 continue
             try:

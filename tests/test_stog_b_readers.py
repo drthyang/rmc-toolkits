@@ -133,6 +133,32 @@ class NumericTokenTests(unittest.TestCase):
         self.assertTrue(np.isnan(xy[1][0]))
         self.assertEqual(list(xy[1][1:]), [-np.inf, np.inf])
 
+    def test_only_ascii_digits_are_numeric(self):
+        # JS \d (no u flag) is [0-9]; Python's Unicode \d also took Arabic-Indic
+        # and fullwidth digits, so the engines read different rows.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "u.dat"
+            path.write_text(
+                " 0.5 1.0\n 0.6 1.1\n \u0660.7 1.2\n 0.8 \u0661.5\n 0.9 \uff11.0\n",
+                encoding="utf-8",
+            )
+            xy = read_stog_xy(path)
+        self.assertEqual(xy.tolist(), [[0.5, 0.6], [1.0, 1.1]])
+
+    def test_tokens_split_on_the_ecmascript_whitespace_set(self):
+        # readStogXy splits on JS \s: NBSP, em space and U+FEFF separate tokens;
+        # the ASCII separators U+001C..U+001F and NEL (U+0085), which Python's
+        # str.split() also treats as whitespace, do not.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "w.dat"
+            path.write_text(
+                " 0.5 1.0\n 0.6\u00a01.1\n 0.7\u20031.2\n 0.8\ufeff1.3\n"
+                " 0.9\x1f1.4\n 1.0\x851.5\n 1.1\x1c1.6\n",
+                encoding="utf-8",
+            )
+            xy = read_stog_xy(path)
+        self.assertEqual(xy.tolist(), [[0.5, 0.6, 0.7, 0.8], [1.0, 1.1, 1.2, 1.3]])
+
 
 if __name__ == "__main__":
     unittest.main()
