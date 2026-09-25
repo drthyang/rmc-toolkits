@@ -405,9 +405,10 @@ grid and the contour coordinates are all dimensionless — doubling every lattic
 leaves `slabCount`, the density and `depthThickness` unchanged. Ångströms enter only at draw time,
 when `StructurePage.jsx` maps $\hat{\mathbf u},\hat{\mathbf v}$ through `unitCell.unitVectors`.
 The Å conversion $\Delta z\,\Delta_d\lVert\mathbf h\rVert_2 d_{hkl}$ is derived in §8 but performed
-nowhere in the app. (Older wording in `AGENTS.md` — "cell-edge fractions … converted to Ångström
-inside `kde.py`" — never matched the code.) The route validates the pair: $z_c$ must be finite
-and is clamped to $[0, 1]$ by the engine (echoed as `center`); $0 < \Delta z \le 1$.
+nowhere in the app. (`AGENTS.md` still states that `z`/`dz` are "cell-edge fractions … converted
+to Ångström inside `kde.py`", pending a maintainer correction; that wording never matched the
+code — [structure.md](structure.md) Step 4 shows why.) The route validates the pair: $z_c$ must
+be finite and is clamped to $[0, 1]$ by the engine (echoed as `center`); $0 < \Delta z \le 1$.
 
 **The three display frames** (§10 Step 13, §12 Steps 5–9, §13 Step 2, §14 Step 10):
 
