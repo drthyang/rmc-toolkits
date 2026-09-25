@@ -17,7 +17,8 @@ import {
     DEFAULT_CLUSTER_THRESHOLD,
     siteDisplacementsFromRmc6f,
     siteEllipsoids,
-    sitePcaKde
+    sitePcaKde,
+    siteSpecies
 } from './pcaKde.js';
 import { siteOrientationHistogram } from './orientation.js';
 import { APP_MAX_ANGLES, bondAngleSummary, isBlankValue } from './triplets.js';
@@ -54,7 +55,9 @@ const summarizeSites = (parsed, probability) => {
     const ellipsoids = siteEllipsoids(parsed.sites, probability);
     return {
         referenceNumbers: parsed.referenceNumbers,
-        elements: [...new Set(parsed.sites.map((site) => site.element))].sort(),
+        // Every species present, including the minority species of a mixed-
+        // occupancy site (site labels carry only the majority) -- as /api/pca/sites.
+        elements: siteSpecies(parsed.sites),
         totalAtoms: parsed.sites.reduce((sum, site) => sum + site.count, 0),
         latticeVectors: parsed.latticeVectors,
         supercell: parsed.supercell,

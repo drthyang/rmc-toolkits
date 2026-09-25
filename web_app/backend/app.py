@@ -770,7 +770,9 @@ def pca_sites_endpoint():
             {
                 "source": str(rmc6f_path),
                 "referenceNumbers": sites.reference_numbers.tolist(),
-                "elements": sorted(set(sites.elements)),
+                # Every species present, including the minority species of a
+                # mixed-occupancy site (site labels carry only the majority).
+                "elements": sites.species,
                 "totalAtoms": int(sites.counts.sum()),
                 "latticeVectors": sites.lattice_vectors.tolist(),
                 "supercell": sites.supercell.tolist(),
@@ -783,6 +785,8 @@ def pca_sites_endpoint():
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
+        # Bad input (a non-finite coordinate, probability outside (0, 1)): a
+        # clear 400 naming the problem, not a 500.
         return jsonify({"error": str(exc)}), 400
     except SourceChangedError as exc:
         return jsonify({"error": str(exc)}), 409

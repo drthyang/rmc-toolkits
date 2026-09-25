@@ -573,6 +573,12 @@
     font-variant-numeric: normal;
 }
 
+/* Part of the density shell lies outside the sampled box and is drawn grey. */
+.pca-legend-warning {
+    color: var(--danger);
+    font-variant-numeric: normal;
+}
+
 /* Crystal a/b/c legend: three colored letters grouped as one item with a trailing
    "crystal axes" note, so they read as one frame rather than three loose swatches. */
 .pca-legend-cellaxes {
@@ -810,6 +816,13 @@
     color: var(--text-strong);
 }
 
+/* An axis inside a degenerate eigenvalue pair: its direction is sampling noise,
+   so its crystal orientation is dimmed rather than presented as a result. */
+.pca-matrix--crystal tr.is-unresolved td {
+    color: var(--subtle);
+    font-style: italic;
+}
+
 /* The [u v w] direction is one bracketed token, not three numbers to compare down
    the column — center it (header included) rather than right-align its closing
    bracket, and keep it a shade quieter than the angles beside it. */
@@ -824,6 +837,15 @@
 .pca-matrix--axes abbr {
     text-decoration: none;
     cursor: help;
+}
+
+/* A full-width explanatory row (no displacement / unresolved axes): wraps, reads
+   as prose rather than a number. */
+.pca-matrix td.pca-axes-note {
+    text-align: left;
+    white-space: normal;
+    color: var(--muted);
+    line-height: 1.25;
 }
 
 /* Color dot tying each PC row to the 3D triad (PC1 red, PC2 green, PC3 blue). */

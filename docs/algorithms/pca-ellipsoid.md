@@ -32,9 +32,9 @@ The second moment of each site's displacement cloud: anisotropic displacement pa
   - [Step 5 — Unit-cell vectors in the shared Cartesian basis](#step-5--unit-cell-vectors-in-the-shared-cartesian-basis)
   - [Step 6 — Frame transforms between fractional and PCA coordinates](#step-6--frame-transforms-between-fractional-and-pca-coordinates)
   - [Step 7 — Orientation of each principal axis against $a$, $b$, $c$](#step-7--orientation-of-each-principal-axis-against-a-b-c)
-  - [Step 8 — How much of this the statistics panel prints: none of it](#step-8--how-much-of-this-the-statistics-panel-prints-none-of-it)
+  - [Step 8 — What the statistics panel prints: the Crystal orientation table](#step-8--what-the-statistics-panel-prints-the-crystal-orientation-table)
   - [Step 9 — What the UI shows in 3D: the PC ↔ Crystal frame switch](#step-9--what-the-ui-shows-in-3d-the-pc--crystal-frame-switch)
-  - [Step 10 — Computed but not currently displayed](#step-10--computed-but-not-currently-displayed)
+  - [Step 10 — What is displayed, and what is computed but not](#step-10--what-is-displayed-and-what-is-computed-but-not)
   - [Step 11 — A different displacement measure: `dispA`](#step-11--a-different-displacement-measure-dispa)
   - [Parameters and defaults](#parameters-and-defaults-1)
   - [Caveats — what this is not](#caveats--what-this-is-not-1)
@@ -70,7 +70,7 @@ estimator.
 | Engine | [`rmc_toolkits/pca_kde.py`](../../rmc_toolkits/pca_kde.py) (source of truth) | [`web_app/frontend/src/workers/pcaKde.js`](../../web_app/frontend/src/workers/pcaKde.js) |
 | Entry points | `/api/pca/sites`, `/api/pca/kde` in [`web_app/backend/app.py`](../../web_app/backend/app.py) | `pcaKdeWorker.js` messages `{kind:'sites'}` / `{kind:'kde'}` |
 | Eigensolver | `numpy.linalg.eigh` (LAPACK) | 3×3 cyclic **Jacobi** (`jacobiEigenSymmetric`) |
-| $\chi^2$ quantile | `scipy.stats.chi2.ppf` | 12-point table + linear interpolation |
+| $\chi^2$ quantile | `scipy.stats.chi2.ppf` | exact inverse of the closed-form CDF (`chiSquare3Quantile`, Newton) |
 | Contraction | BLAS `dgemm` via `numpy` | hand-rolled triple loop with a reused buffer |
 | Site reconstruction for old files | **not implemented** | fold-and-cluster fallback (`sitesByClustering`) |
 
@@ -94,7 +94,7 @@ became its own page; the pieces below are the current owners of each concern.
 | [`components/PcaKdePage.jsx`](../../web_app/frontend/src/components/PcaKdePage.jsx) | the KDE request, the main three.js viewport (isosurface, shell, walls, cameras), the statistics panel, the controls |
 | [`components/SiteStructurePanel.jsx`](../../web_app/frontend/src/components/SiteStructurePanel.jsx) | the unit-cell Site-ellipsoids picker (Step 14), shared with the Displacement Directions page |
 | [`components/sceneAxes.js`](../../web_app/frontend/src/components/sceneAxes.js) | the PC and a/b/c colour palettes and the `buildAxisTriad` / `buildCrystalAxes` rod builders, shared by every panel |
-| [`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js) | the crystal-frame algebra (Step 13; only `unitCellVectors` is wired in) |
+| [`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js) | the crystal-frame algebra (Step 13): `unitCellVectors` (via `useSiteCloud.js`) and `crystalOrientationRows` → `principalAxisOrientation` → `crystalPcaTransforms` (the *Crystal orientation* table in `PcaKdePage.jsx`), and `projectVolumeOntoFrame` (the crystal-frame walls, Step 10b) |
 
 Which engine runs is **not** decided by the runtime mode alone. The decision lives in
 [`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js) → `requestPca(kind, params)`, not in the
@@ -151,22 +151,51 @@ of label columns between element and coordinates is tolerated:
 Lines with fewer than 9 whitespace-separated fields are **silently skipped** by the Python parser.
 The browser parser `web_app/frontend/src/rmc6f.js` → `parseAtomLine()` additionally accepts the old
 5–6-field coordinates-only form, returning `referenceNumber = null` and `cellIndices = null`.
+**Non-finite coordinates.** Python's `iter_rmc6f_atoms` accepts `NaN`/`inf` tokens, and one such
+coordinate used to poison its site's mean and fail the *batched* eigensolve for every site
+(`LinAlgError: Eigenvalues did not converge`, an HTTP 500 for the whole page).
+`load_site_displacements()` now raises a `ValueError` naming the atom and its reference site
+(`/api/pca/sites` returns it as a 400), and `site_ellipsoids()` refuses a `SiteDisplacements` whose
+cloud is non-finite, naming the sites. The browser parser (`rmc6f.js` → `parseAtomLine()`) instead
+drops such a line silently, so the static app still shows that site with one copy fewer; making the
+two *parsers* agree is outside this engine.
+
+Element symbols are normalised identically in both engines — Python's `str.capitalize()` in
+`iter_rmc6f_atoms`, and `capitalizeElement()` in `siteDisplacementsFromRmc6f()` (`SE` → `Se`) — so
+a site and its pooling carry the same label in either runtime.
 
 **The displacement convention** (`pca_kde.py` → `load_site_displacements()`; JS
 `sitesByReferenceNumber()` + `buildSite()`):
 
-$$\mathbf{o}_n \;=\; \mathbf{f}_n - \frac{\mathbf{c}_n}{\mathbf{N}}, \qquad
-\mathbf{o}_n \leftarrow \mathbf{o}_n - \mathrm{round}(\mathbf{o}_n)$$
+$$\mathbf{o}_n \;=\; \mathbf{f}_n - \frac{\mathbf{c}_n}{\mathbf{N}},\qquad
+\mathbf{m}_s=\frac{1}{2\pi}\arg\!\sum_{n\in s}e^{2\pi i\,\mathbf{o}_n},\qquad
+\mathbf{o}_n \leftarrow \mathbf{o}_n - \mathrm{round}\big(\mathbf{o}_n-\mathbf{m}_{s(n)}\big)$$
 
-componentwise. The subtraction removes the origin of the atom's own box copy, leaving the offset
-*within* one cell expressed as a supercell fraction. The `round` fold is a **half-box minimum image
-over the supercell boundary only** — an atom that drifted across the outer edge of the box (stored
-as $\approx 0.999$ when it belongs at $\approx -0.001$) comes back on the correct side. Genuine
-thermal offsets are a small fraction of one cell — of order $1/N_i$ of the folding period — and never
-fold. `tests/test_pca_kde.py::test_supercell_boundary_wrap_folds` and the JS
-`pcaKde.test.js` "folds an atom that drifted across the supercell boundary" pin this: four atoms
-straddling the edge of a $1\times1\times1$, 8 Å box must all end up within 0.1 Å of each other, not
-8 Å apart.
+componentwise. The subtraction removes the origin of the atom's own box copy, leaving
+$\mathbf{o}_n=(\mathbf{s}+\boldsymbol{\delta}_n)/\mathbf{N}$ — the site's position $\mathbf{s}$ inside
+the unit cell plus the atom's displacement, as a supercell fraction — known only **modulo one
+supercell period**, because the stored coordinate wraps at the box edge (an atom that drifted across
+the outer edge is stored as $\approx 0.999$ when it belongs at $\approx -0.001$). The unwrap is taken
+about each site's own **circular mean** $\mathbf{m}_s$ per axis (period 1; `_circular_site_centres`
+in Python, `circularMean` in JS), which no wrap of an individual offset can move: every offset is
+shifted by the whole number of periods that brings it within half a period of its site's centre. JS
+rounds half to even (`roundHalfEven`) so a tie folds exactly as `np.round` does.
+
+**Why not a fold about zero.** Up to 1.0 both engines applied $\mathbf{o}\leftarrow\mathbf{o}-\mathrm{round}(\mathbf{o})$,
+a half-box minimum image about the copy's *origin*. That is only safe while
+$(s_i+\delta_i)/N_i<\tfrac12$ — always true for $N_i\ge3$, but not for a site at $s_i\approx\tfrac12$ in
+a one-cell-thick box ($N_i=1$, a common special position) or at $s_i\approx1$ with $N_i=2$. There the
+copies on either side of the cut landed a whole box edge apart, the site mean fell between the two
+lumps, $U$ came out $10^3$–$10^4$ times too large and the site marker was misplaced — silently, in both
+engines, and in the Displacement Directions page that reads the same clouds. About the site centre
+only a genuine displacement of half a *supercell* could fold. On the repository's GaNb₄Se₈ and GTS
+runs the two rules give bit-identical results.
+
+`tests/test_pca_kde.py::test_supercell_boundary_wrap_folds` and the JS `pcaKde.test.js` "folds an
+atom that drifted across the supercell boundary" pin the edge wrap (four atoms straddling the edge
+of a $1\times1\times1$, 8 Å box end up within 0.1 Å of each other); `tests/test_pca_regressions.py`
+`SiteCentredFoldTests` and `pcaKdeRegressions.test.js` pin the special positions ($N_i=1$ at
+$s=\tfrac12$, $N_i=2$ at $s=0.99$, and a $1\times8\times8$ box) with nonzero spread.
 
 Each site $s$ is then centred on its own mean and mapped to Cartesian Å through the **full supercell
 lattice**:
@@ -185,8 +214,22 @@ $\;\mathrm{mod}(\bar{\mathbf{o}}_s\odot\mathbf{N},\,1)$ (`site_fractional`, seri
 `siteFractional`), which is what `SiteStructurePanel.jsx` uses to place each marker (Step 14).
 
 **Outputs.** `SiteDisplacements` (Python dataclass) / `{referenceNumbers, sites, latticeVectors,
-supercell, reconstructed}` (JS): per-site element, copy count, centred Cartesian cloud (Å),
-fractional site position.
+supercell, reconstructed}` (JS): per-site element label, copy count, centred Cartesian cloud (Å),
+fractional site position, and each row's **own** species (`atom_elements` / `atomElements`).
+
+**Mixed-occupancy sites.** A reference number can be carried by atoms of more than one species — a
+solid solution, or the result of RMCProfile swap moves. Both engines apply one rule
+(`_site_compositions` / `siteComposition`): the site's `element` label is its **majority species**,
+ties going to the alphabetically first (code-point order, never locale); `elementCounts` holds the
+full composition (species → copies, in name order) and `mixed` is true when it has more than one
+entry. Both appear in every `sites` row and in a per-site KDE payload. The site's cloud is still all
+of its atoms about their common mean position, so $\mathbf U$, $\kappa$ and the KDE describe the
+site as a whole. The payload's `elements` list (Python `SiteDisplacements.species`, JS
+`siteSpecies()`) is every species present, minority species of mixed sites included. (Before 1.0
+Python labelled such a site by the *last* atom in file order and JS by the *first*, so the same file
+showed `#1 In` in one runtime and `#1 Ga` in the other, and the minority species vanished from the
+element list.) The page shows a mixed site as its composition — `Ga0.75In0.25` in the picker and the
+viewport heading — with a `mixed · Ga 48 · In 16` tag in the Summary column.
 
 **Caching.** Python: `cached_site_displacements()` is `functools.lru_cache(maxsize=8)` keyed on
 `(path, st_mtime)`. JS: `pcaKdeWorker.js` → `parseCached()` keys on a **cheap content signature** —
@@ -216,8 +259,16 @@ a strict `tagged.length > atoms.length / 2`, so an exact half also falls through
    full unit-cell metric (`clusterPeriodic`), with a union–find over a uniform bin grid. Bins are
    sized by each axis's *perpendicular* width (cell volume ÷ opposite-face area), so a fractional
    step of $1/\mathrm{bins}$ always spans at least the threshold even for an oblique cell; the
-   minimum-image distance searches all 27 neighbouring images because an oblique cell's nearest copy
-   can be diagonal;
+   minimum-image test searches the 27 neighbouring images because an oblique cell's nearest copy
+   can be diagonal (for an orthogonal cell the per-axis primary image is exactly the closest copy, so
+   one evaluation decides), and it stops at the first image within the threshold. All copies of a
+   site fold into the same few bins, so candidate pairs grow as (copies)², not linearly; a pair is
+   distance-tested only when its two points are not already in one cluster (a union-find lookup —
+   a no-op union skipped, the result unchanged; `pcaKdeRegressions.test.js` checks it against
+   brute-force single linkage in orthogonal and oblique cells). On the 52 000-atom 5 K run stripped
+   to coordinates this cut reconstruction from 8.3 s to 2.4 s at 1.5 Å and from 24 s to 3.8 s at the
+   slider's 2.5 Å (0.4 Å: 2.6 s → 0.4 s); it is still super-linear, and every slider step re-runs it
+   on the shared worker;
 3. unwrap each cluster about its **circular mean** per axis
    ($\bar{u}=\arg(\sum e^{2\pi i u})/2\pi$) rather than about an arbitrary member, so a wide cluster
    (e.g. an orientationally disordered rotor shell) is not split;
@@ -243,8 +294,10 @@ path.
 `pca_kde.py` → `displacement_cloud()` / JS `sitePcaKde()`:
 
 - `reference_number=` → the rows of that one site;
-- `element=` (not `""`/`"all"`) → **all sites of that element concatenated**, matched
-  case-insensitively;
+- `element=` (not `""`/`"all"`) → **every atom of that species**, matched case-insensitively
+  against each atom's own element (`atom_elements` / `atomElements`), not against the site label —
+  so a mixed site contributes only its matching atoms, still centred on the site's all-species
+  mean. JS: `displacementCloud()`, which `sitePcaKde()` calls;
 - neither → every atom in the configuration.
 
 Pooling across sites is meaningful *because each site was already centred on its own average
@@ -259,9 +312,14 @@ the API/engine only.
 `np.random.default_rng(rng_seed).choice(n, limit, replace=False)` then sorts the indices; JS runs a
 partial Fisher–Yates with a `mulberry32(seed)` PRNG then sorts. Both are deterministic with default
 seed 0, but they draw **different subsets** — so above 20 000 points the two engines agree only
-statistically, not to round-off. A single site in an $n\times n\times n$ box has $n^3$ copies (1000
-for a 10³ box), so the cap binds only for element-pooled clouds. The result reports both `count`
-(total) and `fitCount` (used).
+statistically, not to round-off. A single site in an $n\times n\times n$ box has $n^3$ copies — 1000
+for a 10³ box, but 21 952 for 28³ and 27 000 for 30³ (a normal ~54k-atom box for a two-atom cell) —
+so the cap binds for **per-site clouds in boxes of 28 or more cells per edge** as well as for
+element-pooled clouds. There the KDE volume, its mass levels, its axes and eigenvalues come from
+20 000 of the copies, and the Flask and static apps use different ones (a 27 000-copy Gaussian site:
+eigenvalues differ by up to 0.6%; the audit measured up to 6% of $v_\mathrm{max}$ in the density).
+The result reports both `count` (total) and `fitCount` (used), and the panel's metadata line prints
+`fit {fitCount}/{count}`.
 
 Note `site_ellipsoids()` (the ADP table) **never** subsamples — it always uses every atom of every
 site.
@@ -286,7 +344,7 @@ walkthrough at the end of Step 4.
 **Where the mean is removed.** The two engines differ in bookkeeping, not in result. Python centres
 **once**, in `load_site_displacements()` (`centered = offsets - site_mean[site_index]`), so
 `site_ellipsoids()` and its kurtosis pass operate on already-centred arrays and subtract nothing
-further. The JS `covariance3()` and `excessKurtosisPca()` re-derive the mean of the array they are
+further. The JS `covariance3()` and `shapeStatistics()` re-derive the mean of the array they are
 handed — numerically $\approx\mathbf{0}$ — and subtract it again. Every formula in this section is
 written with the explicit $-\bar{\mathbf{u}}$; in Python that term is identically zero by
 construction, and the results agree to round-off.
@@ -299,13 +357,13 @@ $\lambda_1\ge\lambda_2\ge\lambda_3\ge0$.
   transpose so axes are **rows**.
 - JS `eigenDecomposition()`: `jacobiEigenSymmetric()` — cyclic Jacobi rotations over the pairs
   $(0,1),(0,2),(1,2)$, at most **50 sweeps**, early exit when
-  $|a_{01}|+|a_{02}|+|a_{12}| < 10^{-18}$, and an individual rotation skipped when
-  $|a_{pq}|<10^{-300}$ (which would otherwise divide by zero forming
-  $\theta=(a_{qq}-a_{pp})/2a_{pq}$). Note the convergence test is **absolute**, not scaled by the
-  matrix norm; for displacement covariances (order $10^{-4}$–$10^{-1}$ Å²) it lies ~16 orders below
-  the data, so in practice the loop runs until the off-diagonals underflow to zero (capped at 50
-  sweeps) rather than until a meaningful relative tolerance is met. For a matrix with entries near or
-  below $10^{-18}$ it would exit immediately and return the raw diagonal.
+  $|a_{01}|+|a_{02}|+|a_{12}| \le 10^{-15}\,\lVert\mathbf{U}\rVert_F$, and an individual rotation
+  skipped when $|a_{pq}|<10^{-300}$ (which would otherwise divide by zero forming
+  $\theta=(a_{qq}-a_{pp})/2a_{pq}$). The convergence test is **relative** to the Frobenius norm, so a
+  matrix of any scale is diagonalised to the same precision. (Before 1.0 it was an absolute
+  $<10^{-18}$, which returned a round-off covariance of $\sim10^{-28}$ Å² — an average configuration —
+  undiagonalised with identity axes while `eigh` returned rotated noise, so the two engines disagreed
+  on axes, anisotropy and the `degenerate` flag for the same file.)
 
   Cyclic Jacobi was chosen over a closed-form $3\times3$ eigenvalue formula because it stays accurate
   on the near-degenerate clouds (planar or linear disorder) that trip cubic-root solvers, and a few
@@ -348,8 +406,9 @@ Everything in the *Displacement statistics* panel comes from Step 3 (`site_ellip
 | $U_\mathrm{iso}$ | $U_\mathrm{eq}=\tfrac13\sum_a\lambda_a=\tfrac13\,\mathrm{tr}\,\mathbf{U}$ | Å² | `uIso` |
 | $B_\mathrm{iso}$ | $8\pi^2U_\mathrm{eq}$ | Å² | `bIso` |
 | $\langle u^2\rangle^{1/2}$ | $\sqrt{U_\mathrm{eq}}$ | Å | `rmsIso` (not displayed) |
-| Anisotropy | $\sqrt{\max(\lambda_1,10^{-30})/\max(\lambda_3,10^{-30})}$ | — | `anisotropy` |
-| Degenerate flag | $\lambda_3/\max(\lambda_1,10^{-30}) < 10^{-6}$ (`DEGENERATE_RATIO`) | — | `degenerate` |
+| Anisotropy | $\sqrt{\max(\lambda_1,10^{-30})/\max(\lambda_3,10^{-30})}$; `null` for a zero-spread site | — | `anisotropy` |
+| Zero-spread flag | $\lambda_1 <$ `ZERO_SPREAD_VARIANCE` $=10^{-8}$ Å² (RMS $<10^{-4}$ Å on every axis) | — | `zeroSpread` |
+| Degenerate flag | `zeroSpread` **or** $\lambda_3/\max(\lambda_1,10^{-30}) < 10^{-6}$ (`DEGENERATE_RATIO`) | — | `degenerate` |
 
 $\mathrm{tr}\,\mathbf{U}$ is rotation-invariant, so $U_\mathrm{eq}=\mathrm{tr}\,\mathbf{U}/3$ is the
 standard equivalent isotropic displacement parameter and $B_\mathrm{iso}=8\pi^2U_\mathrm{eq}$ the
@@ -359,6 +418,18 @@ Note that **both** the numerator and the denominator of `anisotropy` carry the $
 that the same floored "largest" also serves as the denominator of the degeneracy ratio. The
 unfloored expression $\sigma_1/\sigma_3$ agrees with it for every real site but not in the limit —
 see the walkthrough below.
+
+**Zero spread.** In an RMCProfile `*AVERAGE.rmc6f`, or an ideal starting configuration, every copy of
+a site sits at the same offset and the covariance is floating-point round-off
+($\sim10^{-26}$–$10^{-29}$ Å²; e.g. `data/5K_try1/GaNb4Se8_5KAVERAGE.rmc6f`). A ratio test cannot see
+that — ratios of noise are noise — so both engines apply one **absolute** floor,
+`ZERO_SPREAD_VARIANCE = 1e-8` Å² (RMS $10^{-4}$ Å, five orders below any physical ADP and far above
+round-off or the $\sim10^{-5}$ Å quantisation of a 7-decimal coordinate in a 100 Å box). Such a site
+reports `zeroSpread: true`, `degenerate: true`, `axes: null`, `anisotropy: null`,
+`excessKurtosis: [null, null, null]` and `nonGaussianity: null` (JSON `null`, never a `NaN` token);
+$\mathbf{U}$, $\lambda_a$, `rms`, $U_\mathrm{iso}$ and $B_\mathrm{iso}$ keep their (round-off) values.
+The panel prints *no displacement* in the anisotropy cell and explains the missing axes, and the KDE
+request raises *"displacement cloud has zero spread"* (Step 6).
 
 #### Step 4b — What the statistics panel actually prints
 
@@ -376,15 +447,26 @@ the CSS twins of the 3D triad colours):
 | `x`, `y`, `z` | components of $\mathbf{p}_a$ (`axes[a]`) | — (unit vector) | 3 |
 | `λ (Å²)` | $\lambda_a$ | Å² | 4 |
 | `RMS (Å)` | $\sigma_a$ | Å | 3 |
-| `κ` | $\kappa_a$ (Step 12) | — | 2 |
+| `κ` | $\kappa_a$ (Step 12b); `—` when the axis is not resolved (`axisResolved[a]` false) or undefined | — | 2 |
 
 Beside it a *Covariance U (Å²)* table prints $\mathbf{U}$ as a $3\times3$ Cartesian matrix to 4
 decimals. The *Summary* block prints $U_\mathrm{iso}$ (4), $B_\mathrm{iso}$ (3), anisotropy (2) and
-non-Gaussianity (2); the anisotropy cell appends `· degen.` when the `degenerate` flag is set, and
-non-Gaussianity falls back to the KDE result's `nonGaussianity` when the site record lacks one.
-Non-finite values render as an em dash (`numberFormat` returns `'—'`). The axis directions are
-printed as **Cartesian components only** — no angle to a crystal axis and no $[uvw]$ appears
-anywhere; see Step 13.
+non-Gaussianity (2). The anisotropy cell prints *no displacement* for a zero-spread site and
+`≥ 1000 · degen.` for any other degenerate one — `degenerate` means $\lambda_3/\lambda_1<10^{-6}$,
+i.e. an anisotropy of at least 1000, and the floored ratio beyond that (e.g. $4\times10^{12}$ for an
+exactly planar cloud) is round-off, not a measurement; the payload keeps the number. Non-Gaussianity
+falls back to the KDE result's `nonGaussianity` when the site record lacks one.
+Non-finite values render as an em dash (`numberFormat` returns `'—'`).
+
+A fourth column, *Crystal orientation*, prints where each principal axis points in the crystal:
+∠a/∠b/∠c, the angles to the unit-cell edges (1 decimal, degrees, the closest edge shaded), and the
+direct-lattice direction $[u\,v\,w]$ it runs along (2 decimals, largest component $\pm1$, components
+with $\lvert\cdot\rvert<5\times10^{-3}$ printed as `0.00`, never `-0.00`, by `uvwFormat`). Each row is
+the sign-canonical representative from `crystalOrientationRows()` — the sense that makes the closest
+edge acute. The column is omitted when the payload carries no lattice metadata or the cell is
+singular, and a row is dimmed when its axis is not resolved (Step 12b). The algebra, the sign fold
+and what $[u\,v\,w]$ does and does not mean are in "Principal axes in the crystallographic frame",
+Steps 7–8.
 
 The panel heading carries a metadata line, rendered exactly as
 
@@ -397,23 +479,39 @@ with `fitCount`/`count` through `toLocaleString()`, captured mass to **1 decimal
 line renders only when a `kde` payload exists.
 
 **A degenerate site, end to end.** For a site with a single box copy: $\mathbf{U}=\mathbf 0$, so
-$\lambda_a=0$, `rms` $=$ `semiAxes` $=0$, $U_\mathrm{iso}=B_\mathrm{iso}=0$; `degenerate` is true
-($0/10^{-30}<10^{-6}$); `anisotropy` is $\sqrt{10^{-30}/10^{-30}}=1$; and
-$\kappa_a=0/\text{floor}-3=-3$ on every axis, so *Non-Gaussianity* prints $-3.00$. Meanwhile the KDE
-request for that site **throws** — `pca_kde_volume()` / `pcaKdeVolume()` raise *"a 3D KDE needs at
-least four points"* for $n<4$ and *"displacement cloud has zero spread"* for $\lambda_1\le0$ (Step 6)
-— and the page shows the red `pca-badge is-error` overlay in the viewport. Because the sites table
-and the KDE volume are two independent requests, the tables render fine while the 3D view shows only
-the error badge, and the metadata line above (which needs `kde`) does not render at all. The numbers
-look like bugs and are not.
+$\lambda_a=0$, `rms` $=$ `semiAxes` $=0$, $U_\mathrm{iso}=B_\mathrm{iso}=0$; `zeroSpread` and
+`degenerate` are true; `axes`, `anisotropy`, every $\kappa_a$ and the non-Gaussianity are `null`, so
+the Summary prints *no displacement* and *Non-Gaussianity* `—`, and the Principal-axes table shows a
+one-line explanation instead of axes. The KDE request for that site **throws** — `pca_kde_volume()` /
+`pcaKdeVolume()` raise *"a 3D KDE needs at least four points"* for $n<4$ and *"displacement cloud has
+zero spread"* for $\lambda_1<10^{-8}$ Å² (Step 6) — and the page shows that message in the red
+`pca-badge is-error` overlay in an **emptied** viewport (the scene is cleared whenever there is no
+volume, so the previous site's density is never left on screen; in server mode `requestPca` rethrows
+the route's `{"error": …}` text rather than axios's generic "Request failed with status code 400").
+Because the sites table and the KDE volume are two independent requests, the tables render while the
+3D view shows only the error badge, and the metadata line above (which needs `kde`) does not render
+at all.
 
 **What the code does *not* compute.** There is no conversion of the Cartesian $\mathbf{U}$ to the
 crystallographic $U^{ij}$ / $U_\mathrm{cif}$ basis (components on the reciprocal-cell axes) and no
 $\beta_{ij}$ form. The tensor shown in the UI is labelled "Covariance U (Å²) … in Cartesian (x, y, z)
-axes", which is accurate. Any comparison against CIF `U_11 … U_23` values must be done by the reader,
-applying $\mathbf{U}_\mathrm{cif}=\mathsf{A}^{-1}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-\top}$ with the
-appropriate cell matrix — **the app never does this**. For an orthogonal cell aligned with the
-Cartesian axes the diagonal entries coincide; for anything else they do not.
+axes", which is accurate. Any comparison against CIF `U_11 … U_23` values must be done by the reader
+— **the app never does this** — with
+
+$$\mathbf{U}_\mathrm{cif}=\mathsf{D}^{-1}\,\mathsf{A}^{-\top}\,\mathbf{U}_\mathrm{cart}\,\mathsf{A}^{-1}\,\mathsf{D}^{-1},
+\qquad \mathsf{D}=\mathrm{diag}\big(\lvert\mathbf a^\ast\rvert,\lvert\mathbf b^\ast\rvert,\lvert\mathbf c^\ast\rvert\big),$$
+
+where $\mathsf{A}$ has rows $\mathbf a,\mathbf b,\mathbf c$ (Å, the notation table), the rows of
+$\mathsf{A}^{-\top}$ are the reciprocal vectors $\mathbf a^\ast,\mathbf b^\ast,\mathbf c^\ast$ (no
+$2\pi$), and $\mathsf{D}$ their lengths. Derivation: a Cartesian displacement is
+$\mathbf u=\mathsf{A}^{\!\top}\Delta\mathbf f$, so $\langle\Delta\mathbf f\,\Delta\mathbf f^{\top}\rangle
+=\mathsf{A}^{-\top}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-1}$, and the CIF convention defines
+$\langle\Delta f_i\Delta f_j\rangle=a^\ast_i a^\ast_j\,U^{ij}$. For an orthogonal cell aligned with the
+Cartesian axes ($\mathsf A=\mathrm{diag}(a,b,c)$, $\mathsf D=\mathsf A^{-1}$) $\mathbf U_\mathrm{cif}=
+\mathbf U_\mathrm{cart}$; for anything else the components differ. (Before 1.0 this page gave
+$\mathsf{A}^{-1}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-\top}$ — transposes in the wrong order and no
+reciprocal-length normalisation, so it returned dimensionless $\langle\Delta f\Delta f\rangle$-like
+numbers about $U/a^2$, e.g. $2.5\times10^{-4}$ for a 0.012 Å² $U_{11}$ in a 7 Å cell.)
 
 Note also that `pca_kde_volume()` returns its own `uIso`/`bIso`/`anisotropy` computed from the
 **floored** eigenvalues (Step 6) and from the possibly-subsampled cloud; the UI table reads the
@@ -434,34 +532,28 @@ rejects $p\notin(0,1)$. The crystallographic 50% convention gives
 $k(0.5)=\sqrt{2.3659739}=1.5381722$, asserted to 5 places by
 `ProbabilityScaleTests::test_fifty_percent_is_crystallographic_constant`.
 
-**JavaScript** (`probabilityScale()`) has no special-function library, so it interpolates a 12-point
-table of $F^{-1}_{\chi^2_3}$ **linearly in $q=k^2$**, clamping outside the table:
+**JavaScript** (`probabilityScale()` → `chiSquare3Quantile()`) inverts the closed-form
+$\chi^2_3$ CDF,
 
-```
-p : 0.10 0.20 0.30 0.40 0.50 0.6827 0.70 0.80 0.90 0.95 0.99 0.9973
-q : .584 1.005 1.424 1.869 2.366 3.5059 3.665 4.642 6.251 7.815 11.345 14.156
-```
+$$F(x)=\mathrm{erf}\!\big(\sqrt{x/2}\big)-\sqrt{2x/\pi}\,e^{-x/2}=P\big(\tfrac32,\tfrac x2\big),\qquad
+f(x)=\sqrt{x/2\pi}\,e^{-x/2},$$
 
-Consequences a reader should know:
+by safeguarded Newton iteration (bracket $[0,2^m]$, bisection whenever a Newton step leaves the
+bracket, stop at a relative step of $4\times10^{-16}$). $F$ and its complement are evaluated by
+`chiSquare3Tails()` without cancellation: the positive series of the regularised incomplete gamma
+function $P(a,t)$ below $t=a+1$ and the modified-Lentz continued fraction of $Q(a,t)=1-P$ above it
+(Numerical Recipes `gser`/`gcf`, $a=\tfrac32$, $t=x/2$); the residual is taken from the lower tail for
+$p\le\tfrac12$ and from the upper tail (with the exact $1-p$) above, so both ends keep full relative
+precision. The result equals `scipy.stats.chi2.ppf(p, 3)` to $\sim10^{-15}$;
+`pcaKdeProbabilityScale.test.js` pins it at $10^{-10}$ against scipy on $p=0.01,0.02,\dots,0.99$ plus
+0.6827, 0.995, 0.9973 and 0.999, and checks monotonicity out to $p=10^{-12}$ and $1-10^{-12}$.
 
-- At the tabulated probabilities the JS values match SciPy to ~7 significant figures — **except the
-  $p=0.6827$ node**, whose tabulated $q=3.5058779$ differs from `chi2.ppf(0.6827, 3) = 3.5268222`;
-  that is a $-0.30\%$ error in $k$ at the "1σ" preset.
-- Between nodes the interpolation error has **both signs**. $q(p)=F^{-1}_{\chi^2_3}(p)$ has
-  $q''=-f'(q)/f(q)^3$, and the $\chi^2_3$ density peaks at $x=1$, so $q$ is convex only above
-  $p=F_{\chi^2_3}(1)\approx0.199$ and **concave below it**. On the UI's slider grid (0.10–0.99, step
-  0.01):
-  - Above $p\approx0.20$ the chords lie above the curve, so interpolation **over**estimates. Worst
-    case $p=0.97$: JS $k=3.0951$ vs true $2.9912$, i.e. $+3.5\%$ in every semi-axis. Other examples:
-    $p=0.85$ $+1.2\%$, $p=0.75$ $+0.55\%$, $p=0.60$ $+0.74\%$.
-  - In the concave stretch $p=0.11$–$0.19$ it **under**estimates, by up to $-0.21\%$ at $p=0.13$.
-  - The low $p=0.6827$ node above additionally drags its two neighbouring segments below truth:
-    $p=0.67$ $-0.04\%$, $p=0.68$ $-0.24\%$, $p=0.69$ $-0.16\%$.
-- The default $p=0.5$, and $0.10/0.20/0.30/0.40/0.70/0.80/0.90/0.95/0.99$, are exact nodes.
-
-So the ellipsoid drawn in the browser at a non-tabulated probability can be a few percent too large
-(and, in the low-$p$ and near-$0.6827$ stretches, a fraction of a percent too small). The server path
-has no such error.
+*History.* Before 1.0 the browser interpolated a 12-node table linearly in $q=k^2$, clamping outside
+$[0.10, 0.9973]$. $q(p)$ is convex above $p\approx0.2$, so the chords overestimated — up to
+$+3.5\%$ in every semi-axis at $p=0.97$ ($+1.2\%$ at 0.85) — and the $p=0.6827$ node held
+$q=3.5058779$ instead of $3.5268222$ ($-0.30\%$ in $k$). The drawn ellipsoid and the KDE shell sampled
+on it therefore differed between the static and the Flask app at every non-node slider value; they
+now agree.
 
 The scale factor multiplies only the **drawn** ellipsoid (`semiAxes`); no other quantity depends on
 it.
@@ -491,20 +583,44 @@ $\mathsf{H}$ singular, so `pca_kde_volume()` floors
 $\lambda_a\leftarrow\max(\lambda_a,\lambda_1\cdot\texttt{EIGENVALUE\_FLOOR\_RATIO})$ with
 `EIGENVALUE_FLOOR_RATIO = 1e-8` — bounding $\mathrm{cond}(\mathsf{H})$ at $10^8$ (a bandwidth ratio
 of $10^4$) without visibly moving a well-conditioned site. The pre-floor ratio is what sets the
-`degenerate` flag. If $\lambda_1\le0$ the call raises *"displacement cloud has zero spread"*; fewer
-than 4 points raises *"a 3D KDE needs at least four points"*.
+`degenerate` flag. If $\lambda_1<$ `ZERO_SPREAD_VARIANCE` ($10^{-8}$ Å², Step 4) the call raises
+*"displacement cloud has zero spread (RMS below 1e-4 A on every axis)"* — before 1.0 the test was
+$\lambda_1\le0$, which a round-off covariance passes, so an average configuration drew a
+$10^{-14}$ Å "cloud" with $v_\mathrm{max}\approx10^{42}$ Å⁻³; fewer than 4 points raises *"a 3D KDE
+needs at least four points"*.
+
+**Input validation.** `pca_kde_volume()` / `pcaKdeVolume()` reject non-finite points
+(*"displacement cloud contains non-finite coordinates"*) and require `extent`, `bw_scale` and a
+numeric `bw` to be positive **and finite**, and `grid` finite. Before 1.0 the checks were `<= 0`,
+which NaN passes: a NaN `extent`, `bwScale` or `bw` returned an all-NaN volume that Flask serialised
+as bare `NaN` tokens (HTTP 200, invalid JSON for `JSON.parse`), and JS accepted `Infinity`. Both
+routes now answer a bad parameter with HTTP 400.
 
 **Box half-widths.** The KDE convolves the cloud with the kernel, so the *estimate*'s variance along
 axis $a$ is $\lambda_a+h_a^2=\lambda_a(1+f^2)$. The sampling box is sized on that broadened width:
 
-$$w_a=\texttt{extent}\cdot\sigma_a\sqrt{1+f^2},\qquad
-\texttt{cubicBox}\Rightarrow w_a\leftarrow\max_b w_b\ \forall a .$$
+$$w_a=\texttt{extent}\cdot\sigma_a\sqrt{1+f^2}\quad(\texttt{halfWidths}),\qquad
+\texttt{boxHalfWidths}=\begin{cases}(\max_b w_b)\,(1,1,1) & \texttt{cubicBox}\\ (w_1,w_2,w_3) & \text{otherwise.}\end{cases}$$
 
-The page **always** requests `cubicBox: true` (so the three wall projections come out the same
-size), with `extent` from a slider (2–5 σ, step 0.5, default **4**); the engine defaults are
-`extent = 3.0`, `cubic_box = False`. For a Gaussian the fraction of mass inside a $\pm e\sigma$ box
-per axis is $\mathrm{erf}(e/\sqrt2)^3$: 0.870 at $e=2$, **0.992** at $e=3$, 0.99981 at $e=4$. With
-`cubicBox` the short axes get many more σ, so the captured mass is higher still.
+The volume, `mass`, `massLevels` and the PC wall projections are **always** sampled on the per-axis
+box $\pm w_a$, on whose $G$ nodes every axis's kernel $h_a=f\sigma_a$ is resolved
+($\Delta_a/h_a=2\,\texttt{extent}\sqrt{1+f^2}/(f(G-1))\approx0.6$ at the UI defaults, whatever the
+anisotropy). `cubicBox` only sizes the **display** box, `boxHalfWidths`: the cube the page draws the
+shadow box and its walls on. The page always requests `cubicBox: true`, with `extent` from a slider
+(2–5 σ, step 0.5, default **4**); the engine defaults are `extent = 3.0`, `cubic_box = False`. For a
+Gaussian the fraction of mass inside a $\pm e\sigma$ box per axis is $\mathrm{erf}(e/\sqrt2)^3$:
+0.870 at $e=2$, **0.992** at $e=3$, 0.99981 at $e=4$.
+
+*Why the cube is display-only (changed in 1.0).* Until 1.0 `cubicBox` also sampled every axis over
+the cube, with the same $G$ nodes, so the grid spacing along a short axis grew to
+$\Delta=2\,\texttt{extent}\,\sigma_1\sqrt{1+f^2}/(G-1)$ while its kernel stayed $f\sigma_3$. Once
+$\sigma_1/\sigma_3\gtrsim3$ ($G=40$) the narrow kernels fell between nodes and the rectangle-rule mass,
+the HDR levels $\tau(p)$ (the isosurface) and the shell all aliased: 36% captured mass at
+$\sigma_1/\sigma_3=20$, and for a planar or collinear cloud **0%** on the UI's even grids (no node on
+the plane, no isosurface) or $\approx2\times10^5$% on an odd one (one node on the plane weighted by the
+wide $\Delta$). The volume is now independent of `cubicBox` —
+`CubicDisplayBoxTests` / `pcaKdeRegressions.test.js` assert identical densities and unit mass for
+those clouds.
 
 **Grid.** $G$ points per axis on `np.linspace(-w_a, +w_a, G)`, clamped to $8\le G\le128$ in both
 engines. UI options 24/32/40/48/56/64, default **40**; engine default 48. Grid spacing
@@ -605,7 +721,10 @@ holds, i.e. the truncation error of the box. Displayed as "captured mass NN.N%".
 **Density levels.** `densityLevels[i] = vmin + p*(vmax − vmin)` — a linear ramp on the density range.
 Computed and returned by both engines but **not used by the UI**.
 
-**UI wiring.** The slider *Level* (1–99%, default **25**) picks `kde.massLevels[isoPercent].level`,
+**UI wiring.** The slider *Level* (1–99%, default **50** — the same level as the ellipsoid's default
+probability, because the two surfaces are only comparable at equal $p$; the pre-1.0 default of 25%
+against a 50% ellipsoid put a Gaussian site's surface ~16% *inside* the ellipsoid, the very cue the
+tooltip calls anharmonic) picks `kde.massLevels[isoPercent].level`,
 with a fallback of `vmax * (1 − isoPercent/100)` when mass levels are unavailable
 (`PcaKdePage.jsx`, the `massLevel` line in the scene-rebuild effect). `test_mass_levels_bracket_the_cloud`
 pins the monotonicity: higher enclosed probability ⇒ lower density threshold.
@@ -672,15 +791,20 @@ sum of the volume over the dropped axis:
 and the JS twin (`grid=80, extent=5`, max relative error $<3\times10^{-3}$). The tolerance is loose
 because the check itself is a discrete sum, not because the marginal is approximate.
 
-**Placement** (`makeProjectionWall`): a `PlaneGeometry` of size $2w_u\times2w_v$, basis
-$(\mathbf{p}_u,\mathbf{p}_v,\mathbf{p}_u\times\mathbf{p}_v)$, positioned at
-$-1.06\,w_t$ along the remaining axis $t=3-u-v$ — i.e. on the far wall, pushed 6% outward so it sits
-just past the cloud; `MeshBasicMaterial`, `DoubleSide`, `opacity 0.96`, `depthWrite: false`.
+**Placement** (`makeProjectionWall`): on the far face of the **display** box, at $-1.06\,W_t$ along
+the remaining axis $t=3-u-v$ ($W$ = `boxHalfWidths`, the cube), pushed 6% outward so it sits just past
+the cloud, with basis $(\mathbf{p}_u,\mathbf{p}_v,\mathbf{p}_u\times\mathbf{p}_v)$. Each face gets two
+coplanar quads (`MeshBasicMaterial`, `DoubleSide`, `opacity 0.96`, `depthWrite: false`): a
+$2W_u\times2W_v$ backing in the colormap's zero colour (`renderOrder 0`), and the density texture sized
+to the range the projection was **evaluated** on — its `extent`, the per-axis box $2w_u\times2w_v$ —
+centred on it (`renderOrder 1`). A short axis therefore shows its true, narrow marginal inside a
+full-size face instead of an under-sampled one stretched over it.
 Texture (`projectionTexture`): `density/(vmax || 1)` clipped to $[0,1]$ through the colormap LUT, so
 **each wall is normalised to its own maximum** (walls are not comparable to each other in absolute
 density). The texture row index is written flipped, `(nSecond − 1 − j)`, to cancel `CanvasTexture`'s
 vertical flip on upload, so the second axis increases along the plane's local $+Y$. A wireframe box
-at $\pm w_a$ (`makeBoundingBox`) completes the shadow-box.
+at $\pm W_a$ (`makeBoundingBox`) completes the shadow-box. Contour lines map their grid indices through
+the same per-projection range (`projectionRange`).
 
 **Contours** (`makeProjectionContours`): marching *squares* (`contourSegments`) at the fixed
 fractions
@@ -693,7 +817,7 @@ emitted as two segments without a saddle-point disambiguation, so a saddle may b
 "wrong" way). Lines are drawn at $-1.05\,w_t$ (just inside the wall) with `renderOrder = 2` so the
 translucent wall cannot paint over them.
 
-#### 10b. Crystal-frame walls — re-binned, not analytic
+#### 10b. Crystal-frame walls — line integrals through the volume
 
 When the *Frame* switch is set to **Crystal**, `orthonormalCrystalFrame()` (in `PcaKdePage.jsx`)
 builds a Gram–Schmidt orthonormal frame from the unit cell —
@@ -704,46 +828,49 @@ look-down-a/b/c cameras use the true (possibly oblique) cell edges. What its thr
 not mean for an oblique cell, and its missing singularity guard, are covered in "Principal axes in
 the crystallographic frame", Step 9b.
 
-`projectDensityOntoFrame(kde, frame, half, nBins)` then re-bins the *same* sampled volume. For every
-**grid node** $(i,j,k)$ — `axisCoords` are `linspace(-w_a, +w_a, G)`, so the samples are nodes, with
-the first and last sitting exactly on the box faces, **not** voxel centres — it maps the node to a
-Cartesian offset $\mathbf{c}$ from the cloud mean through `axes`, takes the three in-frame
-coordinates $\mathbf{c}\cdot\mathbf{e}_t$, converts each to a continuous bin coordinate
+`projectVolumeOntoFrame(kde, frame, half, nBins)` (in
+[`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js)) computes the marginal of the
+*same* sampled volume on each frame plane. For the $\mathbf{e}_i$–$\mathbf{e}_j$ plane and every
+texel $(u,v)$ of an $n_\mathrm{bins}\times n_\mathrm{bins}$ grid on $[-\texttt{half},\texttt{half}]^2$
+($\texttt{half}=\max_a w_a$, $n_\mathrm{bins}=G$),
 
-$$\texttt{toBin}(c)=\frac{c+\texttt{half}}{\texttt{span}}\,(n_\mathrm{bins}-1),\qquad
-\texttt{half}=\max_a w_a,\ \ \texttt{span}=2\,\texttt{half},\ \ n_\mathrm{bins}=G,$$
+$$\rho^{(ij)}(u,v)=\int\rho\big(u\,\mathbf{e}_i+v\,\mathbf{e}_j+t\,\mathbf{e}_k\big)\,dt\qquad[\text{Å}^{-2}],$$
 
-and **bilinearly splats** the weight $w=\rho_{ijk}\Delta V$ into three 2D accumulators (the
-$\mathbf{e}_0$–$\mathbf{e}_1$, $\mathbf{e}_0$–$\mathbf{e}_2$ and $\mathbf{e}_1$–$\mathbf{e}_2$
-planes, integrating out the remaining axis). Nodes with $\rho\le0$ are skipped. Each accumulator is
-finally divided by $\texttt{binArea}=(\texttt{span}/(n_\mathrm{bins}-1))^2$ to give a surface density
-in Å⁻². Three defensive fallbacks guard the arithmetic: `cellVolume || 1`, `span || 1`,
-`binArea || 1`. So:
+with the line expressed in the PCA frame, clipped to the sampled box $\lvert q_a\rvert\le w_a$ (outside
+it the volume has no samples and is **not** extrapolated), and integrated by the trapezoid rule with
+at least two steps per grid cell along every PCA axis, each sample a trilinear interpolation of the
+volume (`sampleFieldTrilinear`). So:
 
-- these walls are a **numerical** projection of the discretised volume, whereas the PC walls are the
-  analytic marginal;
-- density that falls outside $\pm\max_a w_a$ in the crystal frame is silently dropped. Since the PCA
-  sampling box is a cube of half-width $w$ (the page always sets `cubicBox`), its corners reach
-  $w\sqrt3$ along a crystal direction, so corner cells are lost. At the default `extent = 4` those
-  corners carry a negligible fraction of the mass, but the crystal-frame walls do not integrate to
-  the same total as the PC-frame ones;
-- the bilinear splat adds a small smoothing of order one bin, so the crystal walls read blockier and
-  slightly more diffuse than the PC ones;
-- $\Delta V$ is the **node-spacing product** $(2w_a/(G-1))^3$, so $\sum\rho\,\Delta V$ is a
-  node-sampled Riemann sum in which the edge nodes are over-weighted by roughly $2\times$ per axis —
-  the same convention `mass` uses in both engines (Step 8), but not a cell-centred quadrature.
+- the walls are a **quadrature** of the discretised volume, whereas the PC walls are the analytic
+  marginal. Their error is the trilinear interpolation error of the volume: against the exact 2D
+  marginal of the KDE, $\lesssim1\%$ of the peak in L1 and $\lesssim3\%$ maximum relative error where
+  $\rho>10\%$ of the peak at $G=40$ (PCs rotated 0°/30°/45° against the frame, and a thin
+  $\sigma_1/\sigma_3=15$ cloud), and $\lesssim3\%$ L1 / 4% of the peak at the coarsest UI grid $G=24$ —
+  pinned by `pcaCrystalFrameProjection.test.js`, which also checks that each wall carries the
+  volume's captured mass to 2%;
+- density outside the sampled PCA box is absent from both the volume and the walls, and texels whose
+  line misses the box are 0. The PC box's corners reach up to $\sqrt3\max_a w_a$ along a crystal
+  direction, beyond the wall grid's $\pm\texttt{half}$, but at the default `extent = 4` the density
+  there is negligible.
+
+*History.* Before 1.0 `projectDensityOntoFrame` (in the page) **splatted** every grid node's mass
+$\rho_{ijk}\Delta V$ bilinearly into 2D bins of the node spacing. When the PCA axes are rotated
+against the frame the projected node lattice beats against the bin lattice: a periodic moiré of
+stripes and lobes, up to 21% (audit, cubic volume) or 6–9% (per-axis volume) maximum error at 30–45°
+and 15–22% at $G=24$ or for thin clouds — visible structure that is not in the data.
 
 The crystal-frame projections are shaped exactly like the PC ones (`{pc12, pc13, pc23}` with
-`density`, `axes`, `vmax`), so the same wall/contour builders draw them unchanged — including the
-same per-plane `vmax` normalisation and the same relative contour fractions. Two naming traps: the
-keys stay `pc12`/`pc13`/`pc23` in crystal mode, where they actually mean the
+`density`, `axes`, `extent`, `vmax`), so the same wall/contour builders draw them unchanged —
+including the same per-plane `vmax` normalisation and the same relative contour fractions. Two
+naming traps: the keys stay `pc12`/`pc13`/`pc23` in crystal mode, where they actually mean the
 $\mathbf{e}_0$–$\mathbf{e}_1$, $\mathbf{e}_0$–$\mathbf{e}_2$ and $\mathbf{e}_1$–$\mathbf{e}_2$
 planes; and `kde.cellVolume` is the KDE grid's node-spacing volume (Å³), not the crystallographic
 unit-cell volume.
 
-**Cost.** `crystalDisplay` is an $O(G^3)$ **main-thread** `useMemo` keyed on `[kde, unitCell]` only —
-not on `axisFrame`. It therefore re-runs for every new volume even while the viewport is in PC mode,
-where its result is unused.
+**Cost.** $3G^2$ lines of at most $\sim2\sqrt3\,G$ samples each — a few milliseconds per plane at
+$G=40$ — on the **main thread**, inside the `crystalDisplay` `useMemo` keyed on
+`[kde, unitCell, axisFrame]`; the walls are computed only while the viewport is in crystal mode
+(the frame itself, needed for camera framing, always is).
 
 ---
 
@@ -754,7 +881,16 @@ maps each vertex $\hat{\mathbf{s}}$ to the ellipsoid surface point
 $\mathbf{q}=(k\sigma_1\hat s_x,\,k\sigma_2\hat s_y,\,k\sigma_3\hat s_z)$ in the PCA frame (using
 `selectedEllipsoid.semiAxes`), bakes the world position
 $\mathbf{x}=\texttt{mean}+\sum_a q_a\mathbf{p}_a$, and samples the KDE volume there by **trilinear
-interpolation** on the flat grid (`sampleDensityTrilinear`, with clamping at the borders).
+interpolation** on the flat grid (`sampleFieldTrilinear` in `marchingCubes.js`).
+
+**Outside the sampled box there is no data.** The shell reaches $k(p)\sigma_a$ along each axis, the
+box only $\texttt{extent}\cdot\sigma_a\sqrt{1+f^2}$, so a small Box with a high Level pokes the PC1
+tips out ($k(p)>\texttt{extent}\sqrt{1+f^2}$: $p\gtrsim0.79$ at Box 2, $0.93$ at 2.5, $0.99$ at 3). The
+sampler returns `NaN` there and the page paints those vertices neutral grey (`NO_DATA_RGB`), leaves
+them out of the colour stretch, and adds a legend note naming the Box that would cover the shell
+(`shellBoxNeeded`, $\lceil 2\,\texttt{extent}\max_a k\sigma_a/w_a\rceil/2$). Before 1.0 the sampler
+clamped to the border node and painted the box-face density — nearer the centre, so 1.4–2.3× too
+dense — as bright false caps along PC1.
 
 Colouring is stretched to the **shell's own** min/max density (not the global $0..v_\mathrm{max}$), then
 a user contrast gain is applied symmetrically about the mid-tone:
@@ -763,11 +899,13 @@ $$t=\mathrm{clip}\!\left[\,0.5+\left(\frac{\rho_v-\rho_\mathrm{min}^\mathrm{shel
 {\rho_\mathrm{max}^\mathrm{shell}-\rho_\mathrm{min}^\mathrm{shell}}-0.5\right)\cdot\texttt{contrast},\;0,\;1\right],
 \qquad \texttt{contrast}\in[0.5,3],\ \text{default }1.$$
 
-Interpretation: for a perfectly Gaussian cloud an iso-probability ellipsoid *is* a level set of the
-density, so the shell would be a uniform colour; hotter/colder patches mark where the real density
-departs from the harmonic reference. **Because the range is auto-stretched, a uniform shell will still
-be rendered with the full colour range** — read the magnitude from the numeric non-Gaussianity, not
-from the shell's colours.
+Interpretation: for a Gaussian *population* an iso-probability ellipsoid is a level set of the
+density, so an infinite sample would paint one colour; a systematic pattern (caps along an axis, a
+band) marks where the real density departs from the harmonic reference. A **finite** cloud does not
+paint one colour: at $n=1000$ the KDE on the 50% ellipsoid of a truly Gaussian cloud varies by about
+$2\times$ ($(\max-\min)/\text{mean}\approx0.7$) from sampling noise alone, and **because the range is
+auto-stretched, that noise is rendered with the full colour range**. Read the magnitude from the
+numeric non-Gaussianity, not from the shell's colours; the Shell tooltip says so.
 
 The wireframe ellipsoid itself (`showEllipsoid`) is a unit sphere transformed by
 $\mathsf{P}^{\!\top}\mathrm{diag}(k\sigma_a)$ with translation `mean`, drawn as a translucent
@@ -777,54 +915,99 @@ wireframe (opacity 0.4) in a user-chosen colour.
 
 ### Step 12 — The non-Gaussianity readout
 
-Both engines project the cloud onto its own principal axes and compute **per-axis excess kurtosis**
-from raw (biased, $1/n$) moments:
+Code: `_shape_statistics()` in Python (called by `site_ellipsoids()`, batched — one `einsum` projects
+every atom onto its own site's axes, then `bincount` moments — and by `pca_kde_volume()`), and its
+line-for-line port `shapeStatistics()` in JS (called by `siteEllipsoids()` and `pcaKdeVolume()`). All
+moments are population ($1/n$) moments of the cloud projected onto its principal axes,
 
 $$q_{ma}=(\mathbf{u}_m-\bar{\mathbf{u}})\cdot\mathbf{p}_a,\qquad
-m_2^{(a)}=\frac1n\sum_m q_{ma}^2,\quad m_4^{(a)}=\frac1n\sum_m q_{ma}^4,\qquad
-\kappa_a=\frac{m_4^{(a)}}{D_a}-3 .$$
+m_2^{(a)}=\frac1n\sum_m q_{ma}^2,\qquad m_4^{(a)}=\frac1n\sum_m q_{ma}^4 .$$
 
-**The guard denominator $D_a$ is not the same in the two engines**, and the difference is not
-cosmetic:
+**12a. The headline number — Mardia's multivariate kurtosis** (`nonGaussianity`, the
+*Non-Gaussianity* summary row):
 
-$$D_a^{\text{Python}}=\bigl(\max(m_2^{(a)},\,10^{-30})\bigr)^2\ \ \text{(effective floor }10^{-60}),
+$$b_2=\frac1n\sum_m\Big(\sum_{a\in D}\frac{q_{ma}^2}{m_2^{(a)}}\Big)^{2}
+=\frac1n\sum_m\big[(\mathbf{u}_m-\bar{\mathbf{u}})^{\!\top}\mathbf{S}^{-1}(\mathbf{u}_m-\bar{\mathbf{u}})\big]^2,
 \qquad
-D_a^{\text{JS}}=\max\bigl((m_2^{(a)})^{2},\,10^{-30}\bigr)\ \ \text{(effective floor }10^{-30}).$$
+\texttt{nonGaussianity}=\frac{3\,\big(b_2-d(d+2)\big)}{d(d+2)}\;\overset{d=3}{=}\;\frac{b_2-15}{5},$$
 
-They agree for every ordinary axis and diverge only once $m_2^{(a)}\lesssim10^{-15}$ Å², where the JS
-floor binds and the Python one does not: at $m_2=10^{-20}$ Å² the JS denominator is $10^{-30}$
-against Python's $10^{-40}$, so the JS $\kappa_a$ comes out ten orders of magnitude smaller. Only a
-frozen or literally zero-width axis reaches that regime — but the constant is not shared between the
-engines, and nothing pins them together.
+with $\mathbf{S}$ the ML ($1/n$) covariance and $D$ the $d$ defined axes (12c; $d=3$ for every
+ordinary site). $b_2$ is **affine invariant** — it cannot depend on how the eigenvectors of a
+(near-)isotropic site happen to be oriented — and for any elliptical distribution (Gaussian,
+Student-$t$, any scale mixture of normals) $b_2=d(d+2)(1+\kappa/3)$, so the normalised value equals
+the excess kurtosis $\kappa$ along **every** direction. For a non-elliptical cloud it is a
+rotation-invariant summary: with independent components it is $\tfrac15\sum_a\kappa_a$ (three
+fifths of the axial mean), so a feature confined to one axis (a split along $x$) is diluted by $1/5$ —
+read that axis's own $\kappa$ (12b) when it is resolved. Small-sample bias: for a Gaussian
+$\mathbb E[b_2]=d(d+2)(n-1)/(n+1)$, i.e. $-6/n$ in the normalised value ($-0.006$ at $n=1000$).
 
-Note also that the moments use $n$ (population moments) while the covariance of Step 3 uses $n-1$:
-$\kappa_a$ is internally consistent, but $m_2^{(a)}\neq\lambda_a$ exactly.
+*Why not the mean of the per-axis kurtoses (the pre-1.0 readout).* When two or three eigenvalues
+are equal up to sampling error — every cubic site (isotropic $\mathbf U$), the in-plane pair of
+every uniaxial one — the eigenvectors are simply the directions of largest and smallest *sample*
+variance, and those correlate with the fourth moments: PC1 leans toward the biggest outliers. On the
+repository's GTS_250K Ga site 8 ($\bar{4}3m$, eigenvalue gaps 2.1% and 6.9%) the old mean was 2.50,
+while the same cloud gives 1.38 on the cube axes and anything from 1.36 to 3.58 over random
+orthonormal frames. `test_non_gaussianity_is_affine_invariant` (Python and JS) pins the new value to
+$10^{-9}$ under an arbitrary linear map and under $10^{-7}$ perturbations that re-orient a degenerate
+frame; the old readout moved by 0.33 on the same test.
 
-Reported as `excessKurtosis` (three values, the `κ` column of the Principal-axes table) and
-`nonGaussianity` $=\frac13\sum_a\kappa_a$ (the *Non-Gaussianity* summary row). Code:
-`site_ellipsoids()` (batched — one `einsum` projects every atom onto its own site's axes, then
-`bincount` moments) and `pca_kde_volume()` in Python; `excessKurtosisPca()` in JS, called from both
-`siteEllipsoids()` and `pcaKdeVolume()`. The panel reads the **sites-table** value (full cloud); the
-KDE payload carries its own, computed on the possibly-subsampled fit.
+**12b. Per-axis excess kurtosis** (`excessKurtosis`, the `κ` column):
+$\kappa_a=m_4^{(a)}/\big(m_2^{(a)}\big)^2-3$, **shown only when the axis is resolved**
+(`axisResolved`). An axis is resolved when its eigenvalue is separated from each neighbour's by more
+than `AXIS_RESOLUTION_SIGMAS = 3` standard errors of the gap,
 
-Interpretation, as the code comments and the UI tooltip state it:
+$$\big(m_2^{(a)}-m_2^{(a+1)}\big)\;>\;3\sqrt{\mathrm{SE}_a^2+\mathrm{SE}_{a+1}^2},\qquad
+\mathrm{SE}_a=\sqrt{\big(m_4^{(a)}-(m_2^{(a)})^2\big)/n},$$
 
-- $\kappa\approx0$ — harmonic/Gaussian motion; the ellipsoid is a faithful description;
-- $\kappa>0$ — peaked, fat-tailed: anharmonic motion or an unresolved split site. The covariance
-  ellipsoid then *overstates* the concentrated core, which is what makes a KDE isosurface look
-  tighter than its ellipsoid;
-- $\kappa<0$ — platykurtic/flat-topped, e.g. a nearly uniform (box-like or shell-like) distribution.
+PC1 needing the 1–2 gap, PC3 the 2–3 gap and PC2 both. $\mathrm{SE}_a$ is the asymptotic standard
+error of a sample variance along a fixed direction. The factor 3 is calibrated by simulation: for a
+truly degenerate pair the statistic has median $\approx1$ (eigenvalue repulsion), a 95th percentile
+of $\approx2$ and exceeds 3 in under 1% of samples at $n=216$–$8000$ for Gaussian, $t_8$ and
+$\langle111\rangle$-split clouds — a "gap larger than its sampling error" (factor 1) rule would call
+half of all degenerate pairs resolved. The price is power: at $n=1000$ a 17% eigenvalue gap is
+resolved about a third of the time, and heavy tails (large $m_4$) widen the error further — on the
+5 K GaNb₄Se₈ run, whose clouds have $\kappa\approx5$–$35$, PC2 is never resolved. The panel prints
+`—` for an unresolved $\kappa_a$, dims that axis's crystal-orientation row, and adds a one-line note
+naming the degenerate pair. The raw values stay in the payload with their flags.
 
-Note this is a **marginal, per-axis** measure (three 1D kurtoses averaged), *not* Mardia's
-multivariate kurtosis, and it is blind to skew: a double-well split along an axis and a
-heavy-tailed single well can give similar values. It is computed on the raw cloud, not on the KDE.
+**12c. Definedness — one rule, no floor constant, in both engines.** $\kappa_a$ (and axis $a$'s
+share of $b_2$) exists only when the site has spread ($\lambda_1\ge$ `ZERO_SPREAD_VARIANCE`) and axis
+$a$ has not collapsed ($\lambda_a\ge10^{-6}\lambda_1$, the `DEGENERATE_RATIO` of the degenerate flag);
+otherwise $m_2^{(a)}$ is round-off, the ratio is $0/0$, and $\kappa_a$ is reported as `null`. A planar
+cloud therefore has no $\kappa_3$ and its non-Gaussianity is the $d=2$ Mardia value; a zero-spread
+site has neither. (Before 1.0 the engines guarded the denominator with different floors —
+$\max(m_2,10^{-30})^2$ in Python, $\max(m_2^2,10^{-30})$ in JS — and printed unrelated noise, e.g.
+$-0.74$ against exactly $-3.00$, for the same frozen site.)
 
-Test evidence: a Gaussian cloud gives $|\overline{\kappa}|<0.3$ (Python) / $<0.4$ (JS); a Student-$t_3$
-cloud gives $\overline{\kappa}>1.0$; a synthetic Gaussian-displaced site gives $|\overline{\kappa}|<0.5$.
+**How to read the sign.** For the multivariate value and for a resolved axis alike:
+
+- $\approx0$ — harmonic/Gaussian motion; the ellipsoid is a faithful description;
+- $>0$ — a peaked, heavy-tailed well, or a minority off-centre component (a strongly unequal split).
+  The covariance ellipsoid then *overstates* the concentrated core, which is what makes a KDE
+  isosurface look tighter than its ellipsoid;
+- $<0$ — flat-topped or **bimodal**. An equal-occupancy double well $N(\pm d,s^2)$ has excess
+  kurtosis $-2d^4/(s^2+d^2)^2$ along the split — always negative, tending to $-2$ as $d/s$ grows,
+  whether or not the two wells are resolved. A symmetric split site and a heavy-tailed single well
+  therefore give **opposite** signs (`test_symmetric_split_site_is_platykurtic` pins $-0.50$ along the
+  split for $d=0.15$, $s=0.08$ Å). Before 1.0 the UI tooltip said "positive = split sites", which was
+  the wrong way round.
+
+Kurtosis is computed on the raw cloud, not on the KDE, is blind to skew, and — as a fourth moment —
+is dominated by the tails: a handful of outlying copies can set it.
+
+The panel reads the **sites-table** values (full cloud); the KDE payload carries its own, computed
+on the possibly-subsampled fit with the same function.
+
+Test evidence: a Gaussian cloud gives $|\texttt{nonGaussianity}|<0.3$ (Python) / $<0.4$ (JS); a
+Student-$t_3$ cloud gives $>1.0$; a synthetic Gaussian-displaced site gives $|\cdot|<0.5$; an elliptical
+scale mixture recovers its analytic 1.6875 within 0.12; `axisResolved` is `[F,F,F]` for an isotropic,
+`[T,F,F]` for a uniaxial and `[T,T,T]` for a triaxial Gaussian cloud (both engines).
 
 The per-site table (including `nonGaussianity`) is published upward to the AI-assistant context
 (`web_app/frontend/src/llm/context/runContext.js` → `pcaContext()`), which ranks sites by
 non-Gaussianity and ships a `note` string defining the quantity so the model does not misread it.
+That module is outside this engine; its note still describes the pre-1.0 mean-of-axes readout and
+"split site" sign (tracked as a hand-off).
 
 ---
 
@@ -845,15 +1028,16 @@ Two facts this page depends on:
    — the clouds were mapped through the supercell lattice $\mathsf{L}$ (Step 1) and the unit-cell
    vectors are that same lattice divided by the supercell counts — so a dot product between a
    principal axis and a cell edge is immediately meaningful and the relations are exact.
-2. **Only `unitCellVectors` is wired into the running app**, and it is imported by
-   [`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js) (not by `PcaKdePage.jsx`, which
-   receives the resulting `unitCell` from the hook). `crystalPcaTransforms` and
-   `principalAxisOrientation` are fully implemented and unit-tested but imported only by
-   `pcaCrystalFrame.test.js`, so **no transformation matrix, direction cosine or $[uvw]$ is rendered
-   anywhere in the current UI**. What the *Crystal* frame toggle actually changes is the drawn axis
-   triad, the shadow-box orientation and its re-binned wall projections (Step 10b), and the
-   camera-snap directions — all built from `unitCell` and `orthonormalCrystalFrame()` inside the page
-   itself. The next section, Step 10, enumerates exactly what is missing.
+2. **Two entry points are wired into the running app.** `unitCellVectors` is imported by
+   [`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js), which hands the resulting
+   `unitCell` to the page; and `PcaKdePage.jsx` imports `crystalOrientationRows`, which calls
+   `principalAxisOrientation` → `crystalPcaTransforms`, to render the *Crystal orientation* table
+   (Step 4b; next section, Step 8). The transformation matrices themselves (`fracToPca`,
+   `pcaToFrac`) and the direction cosines are computed on that path but not printed. What the
+   *Crystal* frame toggle changes is separate: the drawn axis triad, the shadow-box orientation and
+   its line-integral wall projections (Step 10b), and the camera-snap directions — all built from
+   `unitCell` and `orthonormalCrystalFrame()` inside the page. The next section, Step 10, lists
+   what is displayed and what is not.
 
 ---
 
@@ -920,7 +1104,8 @@ the cell **once** (radius $1.7\times$ the longest cell edge) and then keeps the 
 across rebuilds; `Reset view` restores that framing.
 
 **The dropdown picker** in the controls bar (still in `PcaKdePage.jsx`) is the other way to select a
-site. Each option reads ``#{referenceNumber} {element} — U={uIso} Å²`` (4 decimals), with
+site. Each option reads ``#{referenceNumber} {label} — U={uIso} Å²`` (4 decimals; `label` is the
+element, or the composition such as `Ga0.75In0.25` for a mixed site — `siteLabel()`), with
 `` ({count}/{copiesPerCell})`` appended only when `copiesPerCell` is set — i.e. only for
 browser-reconstructed, coordinates-only files. The matching tag renders **not** next to the picker
 but at the top of the *Displacement statistics* summary column (`pca-site-tag`, in the
@@ -940,9 +1125,9 @@ direction information appears in the picker.
 | `bw` | Bandwidth select | `scott` | `scott` | `scott`, `silverman`, or a positive float (API/engine only) | — |
 | `bwScale` | *not exposed* | 1.0 | 1.0 | $>0$ | — |
 | `extent` | Box slider | **4.0** | 3.0 | 2–5, step 0.5 | broadened σ |
-| `cubicBox` | *forced* | **true** | `False` | — | — |
+| `cubicBox` | *forced* | **true** | `False` | display box only (`boxHalfWidths`); the volume is always per-axis | — |
 | `probability` $p$ | Level slider (ellipsoid) | **0.5** | 0.5 | 0.10–0.99, step 0.01 | — |
-| `isoPercent` | Level slider (isosurface) | **25** | — | 1–99, step 1 | % of captured mass |
+| `isoPercent` | Level slider (isosurface) | **50** (= ellipsoid default) | — | 1–99, step 1 | % of captured mass |
 | `projections` | Projections toggle | on | `True` | — | — |
 | `clusterThreshold` | Cluster slider (reconstructed files only) | **1.5** | 1.5 (`DEFAULT_CLUSTER_THRESHOLD`) | 0.4–2.5, step 0.1 | Å |
 | `shellContrast` | Contrast slider | 1.0 | — | 0.5–3.0, step 0.1 | gain |
@@ -950,9 +1135,10 @@ direction information appears in the picker.
 | `MAX_PCA_FIT_POINTS` | — | — | **20 000** | — | points |
 | `EIGENVALUE_FLOOR_RATIO` | — | — | **1e-8** | — | fraction of $\lambda_1$ |
 | `DEGENERATE_RATIO` | — | — | **1e-6** | — | $\lambda_3/\max(\lambda_1,10^{-30})$ |
-| kurtosis guard (Python) | — | — | $\max(m_2,10^{-30})^2$ | — | effective floor $10^{-60}$ |
-| kurtosis guard (JS) | — | — | $\max(m_2^2,10^{-30})$ | — | effective floor $10^{-30}$ |
-| Jacobi sweeps / tolerance | — | — | 50 sweeps; off-diagonal sum $<10^{-18}$ (**absolute**); rotation skipped at $\lvert a_{pq}\rvert<10^{-300}$ | — | — |
+| `ZERO_SPREAD_VARIANCE` | — | — | **1e-8** (both engines) | — | Å² on $\lambda_1$; below it `zeroSpread` |
+| kurtosis definedness | — | — | $\lambda_1\ge10^{-8}$ Å² and $\lambda_a\ge10^{-6}\lambda_1$, else `null` (both engines) | — | — |
+| `AXIS_RESOLUTION_SIGMAS` | — | — | **3** (both engines) | — | standard errors of an eigenvalue gap for `axisResolved` |
+| Jacobi sweeps / tolerance | — | — | 50 sweeps; off-diagonal sum $\le10^{-15}\lVert\mathbf U\rVert_F$ (**relative**); rotation skipped at $\lvert a_{pq}\rvert<10^{-300}$ | — | — |
 | `rng_seed` | — | — | 0 | — | — |
 | $k(0.5)$ | — | — | 1.5381722 | — | — |
 | contour fractions | — | — | 0.10, 0.25, 0.40, 0.55, 0.70, 0.85 | — | × plane's $v_\mathrm{max}$ |
@@ -975,9 +1161,10 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    $\lambda_a(1+f^2)$, while the drawn ellipsoid uses $\lambda_a$. With Scott's rule that is a
    $\sqrt{1+f^2}$ inflation of $+10.2\%$ at $n=216$, $+6.7\%$ at $n=1000$, $+3.8\%$ at $n=8000$. For a
    *perfectly Gaussian* cloud the $p\%$ mass isosurface therefore sits **outside** the $p\%$ ellipsoid
-   by exactly that factor. A surface that hugs or falls inside the ellipsoid is the anharmonic signal;
-   a surface slightly outside it may be nothing but the bandwidth. Neither engine corrects for this,
-   and the UI does not warn about it.
+   by exactly that factor (`KernelBroadeningGuidanceTests` pins it). A surface that hugs or falls
+   inside the ellipsoid is the anharmonic signal; a surface slightly outside it may be nothing but the
+   bandwidth. Neither engine corrects for this; the isosurface tooltip states it with the current
+   factor ($\sqrt{1+f^2}$ from the loaded volume), and the two levels default to the same 50%.
 2. **A KDE is a smoother, not a model.** It has no physics in it: no harmonic approximation, no
    temperature, no separation of static from dynamic disorder. Everything shown is the RMC
    configuration's *static snapshot* of positions.
@@ -988,10 +1175,7 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    clouds.
 4. **The two engines are not proven equal to each other.** Each is pinned against its own reference.
    There is no golden-file parity test between `pca_kde.py` and `pcaKde.js`. The known systematic
-   differences are the $\chi^2$ quantile table (up to $+3.5\%$ on the ellipsoid semi-axes at
-   $p=0.97$, exact at the tabulated $p$, and $-0.30\%$ at the 0.6827 node), the different
-   subsample draws above 20 000 points, and the **different kurtosis guard floors** (Step 12), which
-   bind only for a literally zero-width axis. Eigenvector signs follow the same canonicalisation rule
+   difference is the different subsample draw above 20 000 points (Step 2). Eigenvector signs follow the same canonicalisation rule
    in both engines (with one unreachable difference in how the handedness flip is written — next
    section, Step 3), so they do not differ.
 5. **Server mode cannot read coordinates-only `.rmc6f` files.** The fold-and-cluster site
@@ -1000,25 +1184,31 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    and should be read from the KDE, not as an ADP.
 6. **`U` is Cartesian.** No $U_\mathrm{cif}$/$U^{ij}$/$\beta_{ij}$ conversion is performed anywhere;
    the tabulated tensor is not directly comparable to CIF ADP components unless the cell is
-   orthogonal and axis-aligned.
-7. **Non-Gaussianity is three marginal kurtoses averaged**, computed in the site's own PCA frame. It
-   is not a multivariate kurtosis and carries no information about skewness or multimodality
-   direction. Split sites and heavy tails are not distinguished by it.
+   orthogonal and axis-aligned. Convert with
+   $\mathbf{U}_\mathrm{cif}=\mathsf{D}^{-1}\mathsf{A}^{-\top}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-1}\mathsf{D}^{-1}$
+   (Step 4b).
+7. **Non-Gaussianity is Mardia's multivariate kurtosis**, normalised to the marginal excess
+   kurtosis of an elliptical distribution (Step 12). It is frame-independent but carries no
+   information about skewness or the direction of a feature, and a one-axis feature is diluted by
+   $1/5$. Its sign separates a heavy-tailed well ($>0$) from a symmetric split site ($<0$); per-axis
+   $\kappa$ is shown only for resolved axes.
 8. **Element-pooled clouds mix orientations.** The engine supports `element=`, and pooling is valid
    because each site is pre-centred, but the resulting single ellipsoid is only meaningful when the
    pooled sites are symmetry-equivalent *and* similarly oriented.
 9. **Mass fractions are box-relative and quadrature-limited.** `mass` reports how much of the unit
-   total the box captured (≈0.992 at `extent=3` for a Gaussian, higher with `cubicBox`); isosurface
+   total the box captured (≈0.992 at `extent=3` for a Gaussian); isosurface
    levels enclose $p$ of *that* captured mass, from a rectangle-rule sum on the grid.
 10. **Wall projections are per-plane normalised** (each texture is `density/vmax` of its own plane)
     and their contour levels are fixed fractions of that plane's peak — they are **not** enclosed-mass
     contours and are not comparable between walls. The crystal-frame walls are additionally a
-    bilinear re-binning of the sampled volume that discards density outside the cube half-width, so
-    they do not carry the same total as the PC-frame analytic marginals.
+    quadrature of the sampled volume (line integrals with trilinear interpolation, ~1% of the peak
+    at $G=40$), not the analytic marginal the PC walls are.
 11. **The drawn ellipsoid mixes two computations.** `semiAxes` come from the sites table (full cloud,
     unfloored eigenvalues) while the orientation and centre come from the KDE result (possibly
-    subsampled, floored eigenvalues). These coincide for a per-site cloud — the only case the UI
-    requests — but would diverge for a pooled cloud above the 20 000-point cap.
+    subsampled, floored eigenvalues). They coincide whenever the cloud has at most 20 000 copies, and
+    diverge slightly above the cap — for a pooled cloud, or for a single site in a box of $\ge28$
+    cells per edge (the UI's only request is per-site, so the second case is reachable from the
+    page).
 12. **Marching-cubes normals are recomputed by the renderer**, discarding the field-gradient normals
     the module produces; the 4-crossing (saddle) case in the 2D contour code is emitted without
     disambiguation. Both affect appearance only, not the reported numbers.
@@ -1029,9 +1219,10 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
 14. **The Site-ellipsoids markers are magnified by a per-configuration constant**, not drawn at a
     probability level. Shapes and orientations are exact; absolute sizes are not, and changing the
     site set rescales every marker at once (Step 14).
-15. **The site picker shows no direction information**, and neither does the statistics panel: axes
-    are printed as Cartesian components only. Angles to $a$/$b$/$c$ and $[uvw]$ indices are computed
-    by `pcaCrystalFrame.js` but rendered nowhere (Step 13).
+15. **Directions appear only in the statistics panel.** The site picker carries no direction
+    information; the panel prints the Cartesian axis components and, in the *Crystal orientation*
+    column, the angles to $a$/$b$/$c$ and $[u\,v\,w]$ of the sign-canonical representative
+    (Step 4b). An unresolved axis's orientation is sampling noise and is dimmed.
 
 
 ## Principal axes in the crystallographic frame
@@ -1072,8 +1263,9 @@ current owner of each module, including the shared hook
 The crystal-frame geometry itself — cell vectors, frame transforms, direction cosines — lives in a
 pure-JavaScript module,
 [`web_app/frontend/src/pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js), with no
-Python counterpart. **Two of its three exported analyses are not wired into the UI**; see
-[Computed but not currently displayed](#step-10--computed-but-not-currently-displayed).
+Python counterpart. The page's *Crystal orientation* table uses it through `crystalOrientationRows`
+(Step 8); what is displayed and what is only computed is listed in
+[Step 10](#step-10--what-is-displayed-and-what-is-computed-but-not).
 
 #### Notation used in this section
 
@@ -1191,16 +1383,17 @@ not the individual axes: an arbitrary rotation inside a degenerate subspace pass
 ### Step 4 — Per-axis excess kurtosis $\kappa_i$ (pointer)
 
 Each axis also carries a shape number, the excess kurtosis $\kappa_i$ of the cloud's projection
-onto $\hat{\mathbf e}_i$ — reported as `excessKurtosis[i]` and averaged into `nonGaussianity`. It
-is **derived in the previous section, Step 12**, including the population ($N$) moments, the two
-engines' differing guard floors, and how to read the sign.
+onto $\hat{\mathbf e}_i$ — reported as `excessKurtosis[i]` with a resolution flag
+`axisResolved[i]`. It is **derived in the previous section, Step 12**, including the population
+($N$) moments, the definedness rule, the resolution test and how to read the sign; the headline
+`nonGaussianity` is Mardia's rotation-invariant kurtosis, not an average of the $\kappa_i$.
 
-The only thing to carry into a *direction* statement: $\kappa_i$ is a **marginal** number attached
-to one axis. A large $\kappa_1$ says the distribution along PC1 is peaked and fat-tailed — an
-anharmonic mode, or a split site with the two wells separated along that line — but it cannot tell
-those apart, it says nothing about the sign of the displacement (Step 3), and it is not a
-multivariate measure. Combine it with the KDE isosurface before attributing a mechanism to a
-direction.
+The things to carry into a *direction* statement: $\kappa_i$ means something only when
+`axisResolved[i]` is true — inside a degenerate eigenvalue pair the axis itself is sampling noise.
+A resolved $\kappa_i$ is a **marginal** number attached to one axis: $\kappa_1>0$ says the
+distribution along PC1 is peaked and heavy-tailed, $\kappa_1<0$ that it is flat-topped or bimodal
+(a symmetric split along that line); it says nothing about the sign of the displacement (Step 3).
+Combine it with the KDE isosurface before attributing a mechanism to a direction.
 
 ### Step 5 — Unit-cell vectors in the shared Cartesian basis
 
@@ -1407,9 +1600,10 @@ $$\text{dominant}(i)=\arg\max_j\bigl\lvert\cos\theta_{ij}\bigr\rvert,$$
 
 reported as `{ index, label: 'a'|'b'|'c', angleDeg }` where `angleDeg` is $\theta_{ij}$ for that
 $j$. Because the **absolute value** of the cosine is compared, a direction and its negative are
-treated as the same axis: an axis at $170°$ to $b$ is "closest to $b$", and the reported
-`angleDeg` is then $170°$, not $10°$. Ties (two equal $\lvert\cos\rvert$) resolve to the lowest
-index by the strict `>` in the scan.
+treated as the same axis: an axis at $170°$ to $b$ is "closest to $b$", and
+`principalAxisOrientation` then reports `angleDeg` $=170°$. The page never shows that raw value — it
+goes through `crystalOrientationRows` (Step 8), which prints the $10°$ representative. Ties (two
+equal $\lvert\cos\rvert$) resolve to the lowest index by the strict `>` in the scan.
 
 **Code:** `principalAxisOrientation` in
 [`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js). Tests assert $0°/90°$ and
@@ -1431,25 +1625,46 @@ conflated:
 
 ---
 
-### Step 8 — How much of this the statistics panel prints: none of it
+### Step 8 — What the statistics panel prints: the Crystal orientation table
 
 The *Displacement statistics* panel and the site picker are specified in the previous section
-(Step 4b and Step 14 respectively) — columns, formulas, decimal places, the metadata line. What
-matters here is what they contain **as direction information**, and the answer is: only raw
-Cartesian components.
+(Step 4b and Step 14 respectively) — columns, formulas, decimal places, the metadata line. As
+**direction information** the panel carries two things:
 
 - The *Principal axes* table prints $\hat{\mathbf e}_i$ as $x,y,z$ to 3 decimals, i.e. the axis as
-  a unit vector **in the `.rmc6f` Cartesian frame**. It is not expressed in $a$, $b$, $c$.
-- No angle to a crystal axis, no $[u\,v\,w]$, no `dominant` label and no $a$/$b$/$c$ magnitude is
-  printed anywhere in the panel. Everything Step 7 computes is absent from the UI (Step 10).
-- The site picker labels carry element, $U_\mathrm{iso}$ and, for reconstructed files, the
-  copies-per-cell ratio — no direction content.
-- The *Covariance $U$* table prints $C$ in the same Cartesian frame, with no conversion to the
-  crystallographic $U^{ij}$ basis anywhere in the app.
+  a unit vector **in the `.rmc6f` Cartesian frame**.
+- The *Crystal orientation* table (`PcaKdePage.jsx`, `crystalOrientation` memo) prints, per
+  principal axis, the angles ∠a/∠b/∠c to the unit-cell edges and the direction $[u\,v\,w]$ — the
+  output of `crystalOrientationRows(selectedEllipsoid.axes, unitCell)`.
 
-So the only direction a user can read off numerically is a Cartesian triple whose relation to the
-cell must be worked out by hand, with $M$ from Step 5 and the contraction of Step 7b. The one
-direction comparison the app does offer is visual: the PC ↔ Crystal frame switch of Step 9.
+`crystalOrientationRows` is `principalAxisOrientation` (Step 7) folded to **one representative per
+axis**. An eigenvector's sign is arbitrary (Step 3), and negating an axis sends every angle
+$\theta\to180°-\theta$, every cosine to its negative and $[u\,v\,w]\to[-u\,-v\,-w]$. Of the $\pm$ pair
+it returns the sense whose **closest crystal edge is acute** (`cosines[dominant] >= 0`), flipping
+the cosines, angles and $[u\,v\,w]$ together so a row stays internally consistent (the `negate`
+helper keeps a zero at $+0$), and recomputes `dominant.angleDeg` from the flipped angles. So the
+shaded cell is always the smallest angle ($\le90°$) and $[u\,v\,w]$ points along it — how a
+direction is quoted. It returns `null` when `principalAxisOrientation` does (non-array axes, a falsy
+or singular cell), and the page then omits the column; it is also omitted when `unitCell` is `null`
+(no lattice metadata) or `axes` is `null` (a zero-spread site).
+
+Formatting in the table: angles `numberFormat(deg, 1)` + `°`, the closest edge's cell shaded
+(`is-diagonal`); $[u\,v\,w]$ through `uvwFormat`, 2 decimals, largest component exactly $\pm1$,
+$\lvert v\rvert<5\times10^{-3}$ printed as `0.00`. A row whose axis is not resolved from a neighbour
+(`axisResolved`, previous section Step 12b) is dimmed and italic, with a tooltip saying its
+direction is sampling noise.
+
+- The site picker labels carry element (or composition), $U_\mathrm{iso}$ and, for reconstructed
+  files, the copies-per-cell ratio — no direction content.
+- The *Covariance $U$* table prints $C$ in the same Cartesian frame, with no conversion to the
+  crystallographic $U^{ij}$ basis anywhere in the app (the conversion is given in the previous
+  section, Step 4b).
+
+`pcaCrystalFrame.test.js` → `crystalOrientationRows` pins the fold: an already-acute axis is left
+untouched; an axis $170°$ from $a$ is reported as the $10°$ representative with every angle
+$\theta\to180°-\theta$ and $[u\,v\,w]$ exactly negated (a zero component staying $+0$); in a
+$\beta=110°$ monoclinic cell the dominant angle is never obtuse and equals that edge's printed angle;
+and a collapsed cell returns `null`.
 
 ### Step 9 — What the UI shows in 3D: the PC ↔ Crystal frame switch
 
@@ -1519,11 +1734,11 @@ $\mathbf e_1$–$\mathbf e_2$ face is the plane perpendicular to $a$, not the $b
 #### 9c. What gets drawn on the frame's three faces (pointer)
 
 The density painted on the crystal-mode shadow box is the *same* KDE volume as in PC mode,
-re-binned onto the three faces of the frame above by `projectDensityOntoFrame` — a bilinear splat
-of each grid node's mass into 2D accumulators, divided by the bin area. The algorithm, its
-node-sampled (not cell-centred) quadrature, the density it silently drops outside the cube
-half-width, the per-plane `vmax` normalisation, the wall/contour constants and the main-thread cost
-are all in the previous section, Step 10b.
+integrated along the third frame axis onto the three faces of the frame above by
+`projectVolumeOntoFrame` — line integrals through the volume with trilinear interpolation. The
+algorithm, its error bound against the exact marginal, what happens outside the sampled box, the
+per-plane `vmax` normalisation, the wall/contour constants and the main-thread cost are all in the
+previous section, Step 10b.
 
 Two things belong here because they are statements about the **frame**, not about the density:
 
@@ -1564,43 +1779,41 @@ The button row's label switches between `PC` (buttons `1`, `2`, `3`) and `Cell` 
 
 #### 9e. Degenerate clouds — what the viewport shows (pointer)
 
-A one-copy site gives $C=\mathbf 0$: the panel prints zeros, `1.00 · degen.` and a non-Gaussianity
-of $-3.00$, while the KDE request throws and the viewport shows only an error badge. The full
-walkthrough is in the previous section, Step 4b.
+A one-copy site, or any site of an average/ideal configuration, has no spread
+($\lambda_1<10^{-8}$ Å²): the panel prints *no displacement*, `—` for the non-Gaussianity, and no
+axes, while the KDE request throws and the viewport shows only an error badge. The full walkthrough
+is in the previous section, Step 4 and 4b.
 
-The consequence *for directions* is the part that belongs here: with $C=\mathbf 0$ the eigenvectors
-are whatever the solver returns for a zero matrix, canonicalised into a right-handed frame by
-Step 3 — so the panel prints three perfectly clean-looking unit axes that mean **nothing**. The
-`degenerate` flag is the only signal that they are arbitrary, and it fires only at the extreme
-$\lambda_3/\lambda_1<10^{-6}$; a near-tie between $\lambda_1$ and $\lambda_2$, which makes PC1 and
-PC2 individually meaningless in exactly the same way, does not raise it.
+The consequence *for directions* is the part that belongs here: the eigenvectors of a round-off
+covariance are whatever the solver returns, so both engines return `axes: null` for such a site and
+no crystal-orientation row is drawn. A planar or linear cloud keeps its axes (the spanned plane or
+line is well defined) and is flagged by `degenerate` at $\lambda_3/\lambda_1<10^{-6}$. A near-tie
+between two non-zero eigenvalues, which makes the axes inside that pair individually meaningless,
+is flagged per axis by `axisResolved` (previous section, Step 12b).
 
-### Step 10 — Computed but not currently displayed
+### Step 10 — What is displayed, and what is computed but not
 
-**`crystalPcaTransforms` and `principalAxisOrientation` are not reachable from the UI.** A
-repository-wide search for their identifiers finds them defined in
-[`pcaCrystalFrame.js`](../../web_app/frontend/src/pcaCrystalFrame.js), used by each other, and
-imported **only** by
-[`pcaCrystalFrame.test.js`](../../web_app/frontend/src/__tests__/pcaCrystalFrame.test.js).
+The module's application importers are
+[`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js), which calls `unitCellVectors` inside
+the `unitCell` `useMemo` as `unitCellVectors(sites.latticeVectors, sites.supercell)` (guarded by
+`sites?.latticeVectors && sites?.supercell`), and `PcaKdePage.jsx`, which calls
+`crystalOrientationRows` → `principalAxisOrientation` → `crystalPcaTransforms`. Because
+`useSiteCloud` is the shared hook for **both** the PCA Ellipsoid page and the Displacement Directions
+page, both receive the same `unitCell`.
 
-The module's only importer in application code is
-[`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js) line 17, which imports
-`unitCellVectors` alone and calls it inside the `unitCell` `useMemo` (lines 130–135) as
-`unitCellVectors(sites.latticeVectors, sites.supercell)`, guarded by
-`sites?.latticeVectors && sites?.supercell`. Because `useSiteCloud` is the shared hook for
-**both** the PCA Ellipsoid page and the Displacement Directions page, `PcaKdePage.jsx` receives the
-resulting `unitCell` from the hook and never imports the module itself. (Before the hook was
-extracted the import sat in `PcaKdePage.jsx`; the set of used exports is unchanged.)
+**Displayed** (PCA Ellipsoid page, *Crystal orientation* table, Step 8): the angle $\theta_{ij}$
+between each principal axis and $a$, $b$, $c$; the closest edge (shaded); the $[u\,v\,w]$ direction —
+all for the acute-sense representative.
 
-Concretely, **the app does not currently display**:
+**Computed but not displayed:**
 
-- any direction cosine or angle $\theta_{ij}$ between a principal axis and $a$, $b$, or $c$;
-- any $[u\,v\,w]$ crystallographic direction for a principal axis;
-- the "closest crystal axis" (`dominant`) label;
+- the direction cosines themselves (only their angles are printed);
 - the `fracToPca` / `pcaToFrac` matrices;
-- `cellLengths` (the panel prints no $a$, $b$, $c$ magnitudes).
+- `cellLengths` (the panel prints no $a$, $b$, $c$ magnitudes);
+- the raw, un-folded `principalAxisOrientation` output (an axis at $170°$ to $b$ — the table shows
+  $10°$).
 
-The AI-assistant run context does not carry them either. `pcaContext` in
+The AI-assistant run context carries none of them. `pcaContext` in
 [`runContext.js`](../../web_app/frontend/src/llm/context/runContext.js) emits per site only
 `ref`, `element`, `U_iso_A2`, `rms_axes_A`, `anisotropy` (documented there as `rms1/rms3`),
 `non_gaussianity`, and `degenerate` — **no axis directions at all**. The model therefore never
@@ -1612,10 +1825,9 @@ sorts by `non_gaussianity` then `U_iso_A2` descending, and emits at most `MAX_SI
 appending `sites_omitted` with the remainder. On a 52-site run the assistant is shown 12 sites,
 not 52. (`symmetryContext` applies the same cap; see Step 11.)
 
-Everything in Step 7 is implemented and unit-tested; it is simply not surfaced. What a user can
-observe about direction today is (a) the Cartesian components in the Principal axes table and
-(b) the visual comparison enabled by the PC ↔ Crystal switch. This document makes no claim about
-whether that will change.
+What a user can observe about direction today is therefore (a) the Cartesian components in the
+Principal axes table, (b) the Crystal orientation table, and (c) the visual comparison enabled by
+the PC ↔ Crystal switch.
 
 ### Step 11 — A different displacement measure: `dispA`
 
@@ -1699,7 +1911,7 @@ the user having opened the AI Assistant page
 
 Engine-side constants — the covariance denominator, eigenvalue ordering and clamp,
 `EIGENVALUE_FLOOR_RATIO`, `DEGENERATE_RATIO`, `MAX_PCA_FIT_POINTS`, `rngSeed`, the grid clamp, the
-Jacobi sweep budget and tolerances, the two kurtosis guard floors, the anisotropy floors — and every
+Jacobi sweep budget and tolerances, `ZERO_SPREAD_VARIANCE` and the kurtosis definedness rule, the anisotropy floors — and every
 UI default of the PCA Ellipsoid page are tabulated in the previous section, "Parameters and
 defaults". The table below lists only what this section owns.
 
@@ -1734,13 +1946,15 @@ defaults". The table below lists only what this section owns.
   "largest component positive" rule is guaranteed only for PC1 and PC2.
 - **Near-degenerate eigenvalues make individual axes meaningless.** For an isotropic or
   near-isotropic site, the axes within the degenerate subspace are arbitrary; only the subspace
-  is determined. The `degenerate` flag catches only the extreme case
+  is determined. `axisResolved` (previous section, Step 12b) flags such axes — the panel then prints
+  no $\kappa$ and dims their crystal-orientation row. The `degenerate` flag catches only the extreme case
   ($\lambda_3/\max(\lambda_1,10^{-30})<10^{-6}$), not the far more common near-tie between
   $\lambda_1$ and $\lambda_2$. Check the printed $\lambda$ column before reading a direction.
-- **The app shows no crystal-frame direction today.** As stated in Step 10,
-  `principalAxisOrientation` and `crystalPcaTransforms` are exercised only by unit tests. Angles
-  to $a$/$b$/$c$, $[u\,v\,w]$ indices, and the fractional↔PCA matrices are computed nowhere in
-  the running application.
+- **The crystal-frame direction the app shows is a folded representative.** The *Crystal
+  orientation* table prints angles to $a$/$b$/$c$ and $[u\,v\,w]$ for the sense of each axis that
+  makes its closest edge acute (`crystalOrientationRows`, Step 8); the opposite sense is the same
+  axis. The fractional↔PCA matrices are computed but not shown (Step 10), and an unresolved axis's
+  row is sampling noise (dimmed).
 - **$[u\,v\,w]$ is not $(hkl)$.** Even when it is displayed elsewhere or computed by hand from
   `pcaToFrac`: unless the cell metric is isotropic, the lattice direction $[u\,v\,w]$ is not
   perpendicular to the lattice plane $(u\,v\,w)$, and $[u\,v\,w]$ is not a unit vector.
@@ -1758,7 +1972,7 @@ defaults". The table below lists only what this section owns.
   (Step 11). It never appears in a UI panel, and it exists only in the browser structure parser.
 - **Where the numbers themselves come from is the previous section's problem.** The estimator
   choices that set the *magnitudes* — the subsample cap and the two engines' different draws, the
-  browser's Jacobi solver and its interpolated $\chi^2_3$ quantile, the KDE bandwidth broadening,
+  browser's Jacobi solver, the KDE bandwidth broadening,
   the display magnification of the Site-ellipsoids markers — are all documented in "PCA Ellipsoid
   page", Caveats. None of them changes a *direction*, except through the eigenframe of a
   subsampled cloud.

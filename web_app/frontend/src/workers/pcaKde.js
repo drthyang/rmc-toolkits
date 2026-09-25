@@ -32,41 +32,111 @@ import { parseAtomLine } from '../rmc6f.js';
 
 const EIGENVALUE_FLOOR_RATIO = 1e-8;
 const DEGENERATE_RATIO = 1e-6;
+// Absolute floor on the largest displacement variance (A^2): below (1e-4 A)^2 a
+// site has no displacement at all (an *AVERAGE.rmc6f or ideal configuration). Same
+// constant and rule as ZERO_SPREAD_VARIANCE in pca_kde.py.
+export const ZERO_SPREAD_VARIANCE = 1e-8;
 
-// Chi-square(3) inverse-CDF sampled on a fine grid, so the ellipsoid scale for a
-// given enclosed probability needs no special-function library. k = sqrt(q).
-const CHI2_3_TABLE = [
-    [0.10, 0.5843744], [0.20, 1.0051740], [0.30, 1.4236522], [0.40, 1.8691684],
-    [0.50, 2.3659739], [0.6827, 3.5058779], [0.70, 3.6648530], [0.80, 4.6415889],
-    [0.90, 6.2513886], [0.95, 7.8147279], [0.99, 11.3448667], [0.9973, 14.1560750]
-];
+// --- Chi-square(3) quantile ------------------------------------------------------
+// The squared Mahalanobis radius of a 3D Gaussian is chi-square with 3 degrees of
+// freedom, whose CDF has the closed form F(x) = erf(sqrt(x/2)) - sqrt(2x/pi) e^(-x/2)
+// = P(3/2, x/2), the regularised lower incomplete gamma function. It is evaluated
+// here without cancellation -- by its positive series below t = a + 1 and by the
+// continued fraction of the complement Q above (Numerical Recipes gser/gcf) -- and
+// inverted by safeguarded Newton, so k(p) = sqrt(F^-1(p)) equals the server's
+// sqrt(scipy.stats.chi2.ppf(p, 3)) to ~1e-15 (pinned at 1e-10 by the tests).
+const GAMMA_A = 1.5;
+const LOG_GAMMA_A = Math.log(Math.sqrt(Math.PI) / 2);   // ln Gamma(3/2)
 
-export const probabilityScale = (probability) => {
+// { lower: F(x), upper: 1 - F(x) }, each computed directly (never as 1 - tiny).
+const chiSquare3Tails = (x) => {
+    if (!(x > 0)) return { lower: 0, upper: 1 };
+    const t = x / 2;
+    const prefactor = Math.exp(-t + GAMMA_A * Math.log(t) - LOG_GAMMA_A);
+    if (t < GAMMA_A + 1) {
+        // P(a, t) = e^-t t^a / Gamma(a) * sum_k t^k / (a (a+1) ... (a+k)), all terms positive.
+        let term = 1 / GAMMA_A;
+        let sum = term;
+        let ap = GAMMA_A;
+        for (let k = 0; k < 1000; k += 1) {
+            ap += 1;
+            term *= t / ap;
+            sum += term;
+            if (term <= sum * 1e-17) break;
+        }
+        const lower = prefactor * sum;
+        return { lower, upper: 1 - lower };
+    }
+    // Q(a, t) by the modified-Lentz continued fraction.
+    const TINY = 1e-300;
+    let b = t + 1 - GAMMA_A;
+    let c = 1 / TINY;
+    let d = 1 / b;
+    let h = d;
+    for (let i = 1; i < 1000; i += 1) {
+        const an = -i * (i - GAMMA_A);
+        b += 2;
+        d = an * d + b;
+        if (Math.abs(d) < TINY) d = TINY;
+        c = b + an / c;
+        if (Math.abs(c) < TINY) c = TINY;
+        d = 1 / d;
+        const delta = d * c;
+        h *= delta;
+        if (Math.abs(delta - 1) <= 1e-16) break;
+    }
+    const upper = prefactor * h;
+    return { lower: 1 - upper, upper };
+};
+
+/** Exact chi-square(3) quantile F^-1(p), 0 < p < 1 (scipy.stats.chi2.ppf(p, 3)). */
+export const chiSquare3Quantile = (probability) => {
     const p = Number(probability);
     if (!(p > 0 && p < 1)) throw new Error('probability must lie strictly between 0 and 1');
-    const table = CHI2_3_TABLE;
-    if (p <= table[0][0]) return Math.sqrt(table[0][1]);
-    if (p >= table[table.length - 1][0]) return Math.sqrt(table[table.length - 1][1]);
-    for (let i = 1; i < table.length; i += 1) {
-        if (p <= table[i][0]) {
-            const [p0, q0] = table[i - 1];
-            const [p1, q1] = table[i];
-            const t = (p - p0) / (p1 - p0);
-            return Math.sqrt(q0 + t * (q1 - q0));
-        }
+    const q = 1 - p;   // exact for p >= 1/2 (Sterbenz); used only there
+    // Residual F(x) - p from whichever tail keeps full relative precision.
+    const residual = (x) => {
+        const { lower, upper } = chiSquare3Tails(x);
+        return p <= 0.5 ? lower - p : q - upper;
+    };
+    let lo = 0;
+    let hi = 1;
+    while (residual(hi) < 0 && hi < 1e4) { lo = hi; hi *= 2; }
+    let x = 0.5 * (lo + hi);
+    for (let iter = 0; iter < 300; iter += 1) {
+        const r = residual(x);
+        if (r === 0) break;
+        if (r > 0) hi = x; else lo = x;
+        const density = Math.sqrt(x / (2 * Math.PI)) * Math.exp(-x / 2);
+        let next = x - r / density;
+        // Safeguard: fall back to bisection whenever Newton leaves the bracket.
+        if (!(next > lo && next < hi)) next = 0.5 * (lo + hi);
+        const step = Math.abs(next - x);
+        x = next;
+        if (step <= 4e-16 * x || hi - lo <= 4e-16 * hi) break;
     }
-    return Math.sqrt(table[table.length - 1][1]);
+    return x;
 };
+
+// Ellipsoid scale factor k such that k*sigma encloses `probability`:
+// k = sqrt(chi2_3^-1(p)), 1.5381722 at the crystallographic 50% convention.
+export const probabilityScale = (probability) => Math.sqrt(chiSquare3Quantile(probability));
 
 // Symmetric 3x3 eigendecomposition by cyclic Jacobi rotation. Robust for the
 // near-degenerate clouds (flat or linear disorder) that trip analytic formulas,
 // and three iterations of a 3x3 sweep are negligible next to the KDE itself.
+// The stopping test is RELATIVE to the matrix's Frobenius norm, so a matrix of
+// any scale (1e-28 A^2 round-off included) is rotated to the same precision
+// instead of being returned undiagonalised.
 const jacobiEigenSymmetric = (matrix) => {
     const a = matrix.map((row) => row.slice());
     const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    let norm = 0;
+    for (let i = 0; i < 3; i += 1) for (let j = 0; j < 3; j += 1) norm += a[i][j] * a[i][j];
+    const tolerance = 1e-15 * Math.sqrt(norm);
     for (let sweep = 0; sweep < 50; sweep += 1) {
         const off = Math.abs(a[0][1]) + Math.abs(a[0][2]) + Math.abs(a[1][2]);
-        if (off < 1e-18) break;
+        if (off <= tolerance) break;
         for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
             if (Math.abs(a[p][q]) < 1e-300) continue;
             const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
@@ -148,32 +218,72 @@ const covariance3 = (points) => {
     return { mean, cov };
 };
 
-// Per-axis excess kurtosis of a centered cloud in its PCA frame (0 = Gaussian).
-// Positive means a peaked, fat-tailed distribution whose covariance ellipsoid is
-// wider than the KDE isosurface -- the anharmonicity signal the view reveals.
-const excessKurtosisPca = (points, mean, axes) => {
+// Standard errors of the eigenvalue gap an axis must clear to count as resolved
+// (AXIS_RESOLUTION_SIGMAS in pca_kde.py): a truly degenerate pair passes in < 1%.
+const AXIS_RESOLUTION_SIGMAS = 3;
+
+// Kurtosis of a centered cloud in its PCA frame -- the port of `_shape_statistics`:
+//  - excessKurtosis[a] = m4/m2^2 - 3 along each principal axis (population
+//    moments), null where undefined: no spread (lambda_1 < ZERO_SPREAD_VARIANCE)
+//    or a collapsed axis (lambda_a < DEGENERATE_RATIO * lambda_1), where m2 is
+//    round-off and the ratio 0/0. One rule, no floor constant.
+//  - nonGaussianity: Mardia's b2 = mean[(u^T S^-1 u)^2] over the d defined axes,
+//    normalised 3 (b2 - d(d+2)) / (d(d+2)) = (b2 - 15)/5 for d = 3. Affine
+//    invariant (so noise in a near-isotropic site's frame cannot move it) and,
+//    for any elliptical distribution, the excess kurtosis along every direction.
+//  - axisResolved[a]: the eigenvalue gap to each neighbour exceeds
+//    AXIS_RESOLUTION_SIGMAS standard errors, SE(lambda_a) = sqrt((m4 - m2^2)/n);
+//    otherwise the axis direction (its kappa, its crystal orientation) is noise.
+const shapeStatistics = (points, mean, axes, eigenvalues) => {
     const n = points.length;
     const m2 = [0, 0, 0];
     const m4 = [0, 0, 0];
-    points.forEach((point) => {
+    const project = (point, out) => {
         const dx = point[0] - mean[0];
         const dy = point[1] - mean[1];
         const dz = point[2] - mean[2];
+        for (let a = 0; a < 3; a += 1) out[a] = dx * axes[a][0] + dy * axes[a][1] + dz * axes[a][2];
+        return out;
+    };
+    const q = [0, 0, 0];
+    points.forEach((point) => {
+        project(point, q);
         for (let a = 0; a < 3; a += 1) {
-            const p = dx * axes[a][0] + dy * axes[a][1] + dz * axes[a][2];
-            const p2 = p * p;
+            const p2 = q[a] * q[a];
             m2[a] += p2;
             m4[a] += p2 * p2;
         }
     });
-    return [0, 1, 2].map((a) => (m4[a] / n) / Math.max((m2[a] / n) ** 2, 1e-30) - 3);
+    const count = Math.max(n, 1);
+    for (let a = 0; a < 3; a += 1) { m2[a] /= count; m4[a] /= count; }
+
+    const hasSpread = eigenvalues[0] >= ZERO_SPREAD_VARIANCE;
+    const defined = [0, 1, 2].map((a) => hasSpread && eigenvalues[a] >= DEGENERATE_RATIO * eigenvalues[0]);
+    const excessKurtosis = [0, 1, 2].map((a) => (defined[a] ? m4[a] / (m2[a] * m2[a]) - 3 : null));
+
+    const inverse = [0, 1, 2].map((a) => (defined[a] ? 1 / m2[a] : 0));
+    let b2 = 0;
+    points.forEach((point) => {
+        project(point, q);
+        const r2 = q[0] * q[0] * inverse[0] + q[1] * q[1] * inverse[1] + q[2] * q[2] * inverse[2];
+        b2 += r2 * r2;
+    });
+    b2 /= count;
+    const d = defined.filter(Boolean).length;
+    const reference = d * (d + 2);
+    const nonGaussianity = d > 0 ? (3 * (b2 - reference)) / reference : null;
+
+    const error = [0, 1, 2].map((a) => Math.sqrt(Math.max(m4[a] - m2[a] * m2[a], 0) / count));
+    const gap = [0, 1].map((a) => (m2[a] - m2[a + 1]) > AXIS_RESOLUTION_SIGMAS * Math.hypot(error[a], error[a + 1]));
+    const axisResolved = [gap[0], gap[0] && gap[1], gap[1]].map((value) => value && hasSpread);
+    return { excessKurtosis, nonGaussianity, axisResolved };
 };
 
 // --- Bandwidth and sampling ---------------------------------------------------
 
 const bandwidthFactor = (method, count, dimensions) => {
     if (typeof method === 'number') {
-        if (!(method > 0)) throw new Error('numeric bandwidth must be positive');
+        if (!(Number.isFinite(method) && method > 0)) throw new Error('numeric bandwidth must be a positive finite number');
         return method;
     }
     const name = String(method).toLowerCase();
@@ -204,6 +314,9 @@ const subsample = (points, limit, seed) => {
     return indices.slice(0, limit).sort((i, j) => i - j).map((index) => points[index]);
 };
 
+// Same cap as pca_kde.py. It binds for pooled clouds and for a single site in a
+// box of >= 28 cells per edge; this draw (mulberry32 Fisher-Yates) differs from
+// numpy's, so above the cap the two runtimes agree only statistically.
 export const MAX_PCA_FIT_POINTS = 20000;
 
 // One 1D Gaussian kernel matrix, laid out row-major as grid x N in a Float64Array
@@ -318,9 +431,15 @@ export const pcaKdeVolume = (points, options = {}) => {
     if (!Array.isArray(points) || points.length < 4) {
         throw new Error('a 3D KDE needs at least four points');
     }
+    if (!points.every((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]) && Number.isFinite(point[2]))) {
+        throw new Error('displacement cloud contains non-finite coordinates');
+    }
+    // NaN fails every `> 0` test but Infinity passes it, so each parameter is
+    // checked for finiteness too (as pca_kde_volume does).
+    if (!Number.isFinite(Number(gridOption))) throw new Error('grid must be a finite number');
     const grid = Math.max(8, Math.min(Math.round(gridOption), 128));
-    if (!(bwScale > 0)) throw new Error('bwScale must be positive');
-    if (!(extent > 0)) throw new Error('extent must be positive');
+    if (!(Number.isFinite(bwScale) && bwScale > 0)) throw new Error('bwScale must be a positive finite number');
+    if (!(Number.isFinite(extent) && extent > 0)) throw new Error('extent must be a positive finite number');
 
     const total = points.length;
     const fit = subsample(points, maxFitPoints, rngSeed);
@@ -331,21 +450,27 @@ export const pcaKdeVolume = (points, options = {}) => {
     const axes = decomposition.axes;
     let eigenvalues = decomposition.eigenvalues;
 
+    // No spread at all (an average/ideal configuration): nothing to estimate.
     const largest = eigenvalues[0];
-    if (!(largest > 0)) throw new Error('displacement cloud has zero spread');
+    if (!(largest >= ZERO_SPREAD_VARIANCE)) {
+        throw new Error('displacement cloud has zero spread (RMS below 1e-4 A on every axis)');
+    }
+    // A flat direction would make the bandwidth singular; floor it, and say so.
     const ratio = eigenvalues[2] / largest;
+    const rawEigenvalues = eigenvalues;
     eigenvalues = eigenvalues.map((value) => Math.max(value, largest * EIGENVALUE_FLOOR_RATIO));
 
     const factor = bandwidthFactor(bw, count, 3) * bwScale;
     const sigma = eigenvalues.map(Math.sqrt);
     const bandwidths = sigma.map((value) => factor * value);
 
+    // The volume (and mass, iso levels, walls) is always sampled on the per-axis
+    // box, whose nodes resolve every axis's kernel; cubicBox only sizes the display
+    // box (boxHalfWidths), exactly as in pca_kde_volume.
     const broaden = Math.sqrt(1 + factor * factor);
-    let halfWidths = sigma.map((value) => extent * value * broaden);
-    if (cubicBox) {
-        const maxHalf = Math.max(...halfWidths);
-        halfWidths = [maxHalf, maxHalf, maxHalf];
-    }
+    const halfWidths = sigma.map((value) => extent * value * broaden);
+    const maxHalf = Math.max(...halfWidths);
+    const boxHalfWidths = cubicBox ? [maxHalf, maxHalf, maxHalf] : halfWidths.slice();
 
     // Project the centered cloud onto the principal axes: projected[axis][m].
     const projected = [new Float64Array(count), new Float64Array(count), new Float64Array(count)];
@@ -393,7 +518,7 @@ export const pcaKdeVolume = (points, options = {}) => {
     const cellVolume = axisCoords.reduce((product, coords) => product * (coords[1] - coords[0]), 1);
     const { massLevels, densityLevels, mass, vmin, vmax } = isoLevels(density, cellVolume, probabilities);
 
-    const excessKurtosis = excessKurtosisPca(fit, mean, axes);
+    const { excessKurtosis, nonGaussianity, axisResolved } = shapeStatistics(fit, mean, axes, rawEigenvalues);
     const scale = probabilityScale(probability);
     const result = {
         count: total,
@@ -409,8 +534,10 @@ export const pcaKdeVolume = (points, options = {}) => {
         bIso: 8 * Math.PI * Math.PI * ((eigenvalues[0] + eigenvalues[1] + eigenvalues[2]) / 3),
         anisotropy: sigma[0] / sigma[2],
         excessKurtosis,
-        nonGaussianity: (excessKurtosis[0] + excessKurtosis[1] + excessKurtosis[2]) / 3,
+        axisResolved,
+        nonGaussianity,
         degenerate: ratio < DEGENERATE_RATIO,
+        zeroSpread: false,
         bw,
         bwScale,
         factor,
@@ -419,6 +546,7 @@ export const pcaKdeVolume = (points, options = {}) => {
         extent,
         cubicBox,
         halfWidths,
+        boxHalfWidths,
         axisCoords: axisCoords.map((coords) => Array.from(coords)),
         cellVolume,
         density,
@@ -471,11 +599,33 @@ const readCellVectors = (text) => {
 // but well above thermal spread, so genuine sites separate; exposed as a UI knob.
 export const DEFAULT_CLUSTER_THRESHOLD = 1.5;
 
+// Element symbols as Python's str.capitalize() normalises them in iter_rmc6f_atoms
+// ('SE' -> 'Se'), so both engines label and pool the same species.
+const capitalizeElement = (symbol) => {
+    const text = String(symbol);
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+};
+
+// Code-point string order (Python's default), never locale-dependent.
+const byCodePoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// A site's composition and label: species counts in name order, and the majority
+// species (ties to the alphabetically first) -- the rule of `_site_compositions`.
+const siteComposition = (atomElements) => {
+    const tally = new Map();
+    atomElements.forEach((element) => tally.set(element, (tally.get(element) || 0) + 1));
+    const names = [...tally.keys()].sort(byCodePoint);
+    const elementCounts = Object.fromEntries(names.map((name) => [name, tally.get(name)]));
+    const element = names.reduce((best, name) => (best === null || tally.get(name) > tally.get(best) ? name : best), null) ?? '';
+    return { element, elementCounts, mixed: names.length > 1 };
+};
+
 // Turn one site's fractional offsets (each atom's position within its own cell, in
 // supercell-fractional units) into the site record: mean-centered Cartesian
 // displacements (Å) and the site's within-unit-cell fractional position. Offsets
 // must already be unwrapped (no boundary split) so the plain mean is the true mean.
-const buildSite = (referenceNumber, element, offsets, latticeVectors, supercell, copiesPerCell = null) => {
+// `atomElements` is each row's own species (a reference number can carry several).
+const buildSite = (referenceNumber, atomElements, offsets, latticeVectors, supercell, copiesPerCell = null) => {
     const n = offsets.length;
     const mean = [0, 0, 0];
     offsets.forEach((offset) => { mean[0] += offset[0]; mean[1] += offset[1]; mean[2] += offset[2]; });
@@ -493,36 +643,63 @@ const buildSite = (referenceNumber, element, offsets, latticeVectors, supercell,
         const frac = (value * supercell[i]) % 1;
         return (frac + 1) % 1;
     });
-    return { referenceNumber, element, count: n, displacements, siteFractional, copiesPerCell };
+    const { element, elementCounts, mixed } = siteComposition(atomElements);
+    return {
+        referenceNumber, element, elementCounts, mixed, atomElements,
+        count: n, displacements, siteFractional, copiesPerCell
+    };
+};
+
+// numpy's np.round: round half to even, so a tie folds the same way in both engines.
+const roundHalfEven = (x) => {
+    const r = Math.round(x);
+    return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
+};
+
+// Circular mean of period-1 values: arg(sum exp(2 pi i v)) / 2 pi. Mirrors
+// `_circular_site_centres`; used only as the reference an unwrap is taken about.
+const circularMean = (values) => {
+    let sin = 0;
+    let cos = 0;
+    values.forEach((value) => { sin += Math.sin(2 * Math.PI * value); cos += Math.cos(2 * Math.PI * value); });
+    return Math.atan2(sin, cos) / (2 * Math.PI);
 };
 
 // Current path: RMCProfile tags every atom with its reference site and box copy, so
 // grouping by reference number and subtracting the cell origin gives each cloud.
+// The offset `coords - cellIndices / supercell` is the site position plus its
+// displacement, known only modulo one supercell period; it is unwrapped about the
+// site's own circular mean (o -= round(o - centre)), never about zero -- a fold
+// about zero tears a site at x = 1/2 in a one-cell-thick box (or near x = 1 in a
+// two-cell one) into halves a box edge apart. Mirrors `load_site_displacements`.
 const sitesByReferenceNumber = (atoms, latticeVectors, supercell) => {
-    const clouds = new Map();   // referenceNumber -> { element, offsets: [[dfx,dfy,dfz], ...] }
+    const clouds = new Map();   // referenceNumber -> { elements: [...], offsets: [[dfx,dfy,dfz], ...] }
     atoms.forEach(({ element, referenceNumber, coords, cellIndices }) => {
-        const offset = coords.map((value, i) => {
-            let delta = value - cellIndices[i] / supercell[i];
-            delta -= Math.round(delta);
-            return delta;
-        });
+        const offset = coords.map((value, i) => value - cellIndices[i] / supercell[i]);
         let cloud = clouds.get(referenceNumber);
-        if (!cloud) { cloud = { element, offsets: [] }; clouds.set(referenceNumber, cloud); }
+        if (!cloud) { cloud = { elements: [], offsets: [] }; clouds.set(referenceNumber, cloud); }
+        cloud.elements.push(element);
         cloud.offsets.push(offset);
     });
     const referenceNumbers = [...clouds.keys()].sort((a, b) => a - b);
     const sites = referenceNumbers.map((referenceNumber) => {
-        const { element, offsets } = clouds.get(referenceNumber);
-        return buildSite(referenceNumber, element, offsets, latticeVectors, supercell);
+        const { elements, offsets } = clouds.get(referenceNumber);
+        const centre = [0, 1, 2].map((i) => circularMean(offsets.map((offset) => offset[i])));
+        const unwrapped = offsets.map((offset) => offset.map((value, i) => value - roundHalfEven(value - centre[i])));
+        return buildSite(referenceNumber, elements, unwrapped, latticeVectors, supercell);
     });
     return { referenceNumbers, sites };
 };
 
 // Periodic single-linkage clustering of unit-cell fractional points by minimum-image
 // Cartesian distance. A uniform grid with bins at least `thresholdA` wide bounds each
-// point's neighbour search to its own and adjacent bins (wrapped), so this stays near
-// linear even when a large supercell folds thousands of atoms into one cell. Returns
-// arrays of point indices, one per cluster.
+// point's neighbour search to its own and adjacent bins (wrapped). All copies of a
+// site fold into the same few bins, so the candidate pairs still grow as copies^2;
+// what keeps that affordable is testing a pair's distance (a 27-image loop) only
+// when the two points are not yet in the same cluster -- a cheap union-find lookup
+// that is true for almost every pair once a site has linked up, and that cannot
+// change the result (the union would be a no-op). Returns arrays of point indices,
+// one per cluster.
 const clusterPeriodic = (points, unitVec, thresholdA) => {
     const n = points.length;
     const parent = Array.from({ length: n }, (_, i) => i);
@@ -554,26 +731,34 @@ const clusterPeriodic = (points, unitVec, thresholdA) => {
     });
 
     const thr2 = thresholdA * thresholdA;
-    // Minimum-image distance under the FULL unit-cell metric. Per-axis reduction gives
-    // the primary image, then the 27 neighbouring images are searched for the true
-    // minimum: an oblique cell's closest copy can be diagonal, which per-axis rounding
-    // alone would miss. For an orthogonal cell the primary image always wins.
-    const dist2 = (a, b) => {
-        const f = [0, 1, 2].map((i) => { const d = a[i] - b[i]; return d - Math.round(d); });
-        let best = Infinity;
-        for (let ix = -1; ix <= 1; ix += 1) {
-            for (let iy = -1; iy <= 1; iy += 1) {
-                for (let iz = -1; iz <= 1; iz += 1) {
-                    const d0 = f[0] + ix; const d1 = f[1] + iy; const d2 = f[2] + iz;
+    // Is the minimum-image distance under the FULL unit-cell metric below the
+    // threshold? Per-axis reduction gives the primary image. For an orthogonal cell
+    // (edges mutually perpendicular) |sum d_i a_i|^2 = sum d_i^2 |a_i|^2, so that
+    // primary image IS the closest copy and one evaluation decides. An oblique
+    // cell's closest copy can be diagonal, which per-axis rounding alone would miss,
+    // so the 27 neighbouring images are searched -- stopping at the first within
+    // the threshold, since only the yes/no answer is used.
+    const orthogonal = [[0, 1], [0, 2], [1, 2]].every(([i, j]) => (
+        Math.abs(dot(unitVec[i], unitVec[j])) <= 1e-12 * norm(unitVec[i]) * norm(unitVec[j])
+    ));
+    const within = (a, b) => {
+        let f0 = a[0] - b[0]; f0 -= Math.round(f0);
+        let f1 = a[1] - b[1]; f1 -= Math.round(f1);
+        let f2 = a[2] - b[2]; f2 -= Math.round(f2);
+        const lo = orthogonal ? 0 : -1;
+        const hi = orthogonal ? 0 : 1;
+        for (let ix = lo; ix <= hi; ix += 1) {
+            for (let iy = lo; iy <= hi; iy += 1) {
+                for (let iz = lo; iz <= hi; iz += 1) {
+                    const d0 = f0 + ix; const d1 = f1 + iy; const d2 = f2 + iz;
                     const x = d0 * unitVec[0][0] + d1 * unitVec[1][0] + d2 * unitVec[2][0];
                     const y = d0 * unitVec[0][1] + d1 * unitVec[1][1] + d2 * unitVec[2][1];
                     const z = d0 * unitVec[0][2] + d1 * unitVec[1][2] + d2 * unitVec[2][2];
-                    const s = x * x + y * y + z * z;
-                    if (s < best) best = s;
+                    if (x * x + y * y + z * z < thr2) return true;
                 }
             }
         }
-        return best;
+        return false;
     };
     points.forEach((uf, idx) => {
         const b = binOf(uf);
@@ -591,7 +776,9 @@ const clusterPeriodic = (points, unitVec, thresholdA) => {
                     seen.add(key);
                     const bucket = buckets.get(key);
                     if (!bucket) continue;
-                    bucket.forEach((j) => { if (j > idx && dist2(uf, points[j]) < thr2) union(idx, j); });
+                    bucket.forEach((j) => {
+                        if (j > idx && find(idx) !== find(j) && within(uf, points[j])) union(idx, j);
+                    });
                 }
             }
         }
@@ -656,7 +843,8 @@ const sitesByClustering = (atoms, latticeVectors, supercell, thresholdA) => {
 
     const sites = clusters.map((cluster, index) => {
         const offsets = cluster.unwrapped.map((uf) => uf.map((v, i) => v / supercell[i]));
-        return buildSite(index + 1, cluster.element, offsets, latticeVectors, supercell, copiesPerCell);
+        const atomElements = offsets.map(() => cluster.element);
+        return buildSite(index + 1, atomElements, offsets, latticeVectors, supercell, copiesPerCell);
     });
     return { referenceNumbers: sites.map((site) => site.referenceNumber), sites };
 };
@@ -677,7 +865,7 @@ export const siteDisplacementsFromRmc6f = (text, { clusterThreshold = DEFAULT_CL
         if (parts[0] === 'Atoms:') { inAtoms = true; return; }
         if (!inAtoms) return;
         const atom = parseAtomLine(parts);
-        if (atom) atoms.push(atom);
+        if (atom) atoms.push({ ...atom, element: capitalizeElement(atom.element) });
     });
     if (atoms.length === 0) throw new Error('No atoms found in structure');
 
@@ -711,53 +899,82 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
         const { eigenvalues, axes } = eigenDecomposition(cov);
         const uEq = (eigenvalues[0] + eigenvalues[1] + eigenvalues[2]) / 3;
         const largest = Math.max(eigenvalues[0], 1e-30);
-        const excessKurtosis = excessKurtosisPca(site.displacements, mean, axes);
+        const zeroSpread = eigenvalues[0] < ZERO_SPREAD_VARIANCE;
+        const { excessKurtosis, nonGaussianity, axisResolved } = shapeStatistics(site.displacements, mean, axes, eigenvalues);
         return {
             referenceNumber: site.referenceNumber,
             element: site.element,
+            mixed: Boolean(site.mixed),
+            elementCounts: site.elementCounts ?? { [site.element]: site.count },
             count: site.count,
             copiesPerCell: site.copiesPerCell ?? null,
             siteFractional: site.siteFractional,
             covariance: cov,
             eigenvalues,
-            axes,
+            // A zero-spread site's eigenvectors are round-off: no axes.
+            axes: zeroSpread ? null : axes,
             rms: eigenvalues.map(Math.sqrt),
             semiAxes: eigenvalues.map((value) => scale * Math.sqrt(value)),
             probability,
             uIso: uEq,
             bIso: 8 * Math.PI * Math.PI * uEq,
             rmsIso: Math.sqrt(Math.max(uEq, 0)),
-            anisotropy: Math.sqrt(largest / Math.max(eigenvalues[2], 1e-30)),
+            anisotropy: zeroSpread ? null : Math.sqrt(largest / Math.max(eigenvalues[2], 1e-30)),
             excessKurtosis,
-            nonGaussianity: (excessKurtosis[0] + excessKurtosis[1] + excessKurtosis[2]) / 3,
-            degenerate: eigenvalues[2] / largest < DEGENERATE_RATIO
+            axisResolved,
+            nonGaussianity,
+            degenerate: zeroSpread || eigenvalues[2] / largest < DEGENERATE_RATIO,
+            zeroSpread
         };
     });
 };
 
+/**
+ * One site's cloud, one element's pooled atoms, or every atom -- the port of
+ * `displacement_cloud`. Element pooling selects each atom by its OWN species
+ * (`atomElements`), so a mixed-occupancy site contributes only the matching
+ * atoms. Returns `{ cloud, site }`, `site` being the record for a reference number.
+ */
+export const displacementCloud = (parsed, { referenceNumber = null, element = null } = {}) => {
+    if (referenceNumber !== null) {
+        const site = parsed.sites.find((entry) => entry.referenceNumber === referenceNumber);
+        if (!site) throw new Error(`Unknown reference number ${referenceNumber}`);
+        return { cloud: site.displacements, site };
+    }
+    if (element !== null && element !== '' && element !== 'all') {
+        const wanted = String(element).toLowerCase();
+        const cloud = [];
+        parsed.sites.forEach((site) => {
+            const own = site.atomElements ?? site.displacements.map(() => site.element);
+            site.displacements.forEach((row, i) => { if (own[i].toLowerCase() === wanted) cloud.push(row); });
+        });
+        if (!cloud.length) {
+            throw new Error(`Unknown element ${element}; available: ${siteSpecies(parsed.sites).join(', ')}`);
+        }
+        return { cloud, site: null };
+    }
+    const cloud = [];
+    parsed.sites.forEach((site) => { site.displacements.forEach((row) => cloud.push(row)); });
+    return { cloud, site: null };
+};
+
+/** Every species present across the sites (minority species of mixed sites included), sorted. */
+export const siteSpecies = (sites) => {
+    const names = new Set();
+    sites.forEach((site) => Object.keys(site.elementCounts ?? { [site.element]: 1 }).forEach((name) => names.add(name)));
+    return [...names].sort(byCodePoint);
+};
+
 /** One site's (or one element's pooled) cloud, then `pcaKdeVolume`. */
 export const sitePcaKde = (parsed, { referenceNumber = null, element = null, ...options } = {}) => {
-    let cloud = [];
-    let tagged = null;
-    if (referenceNumber !== null) {
-        tagged = parsed.sites.find((site) => site.referenceNumber === referenceNumber);
-        if (!tagged) throw new Error(`Unknown reference number ${referenceNumber}`);
-        cloud = tagged.displacements;
-    } else if (element !== null && element !== '' && element !== 'all') {
-        const matches = parsed.sites.filter(
-            (site) => site.element.toLowerCase() === String(element).toLowerCase()
-        );
-        if (!matches.length) throw new Error(`Unknown element ${element}`);
-        matches.forEach((site) => { cloud = cloud.concat(site.displacements); });
-    } else {
-        parsed.sites.forEach((site) => { cloud = cloud.concat(site.displacements); });
-    }
-
+    const { cloud, site } = displacementCloud(parsed, { referenceNumber, element });
     const result = pcaKdeVolume(cloud, options);
-    if (tagged) {
-        result.referenceNumber = tagged.referenceNumber;
-        result.element = tagged.element;
-        result.siteFractional = tagged.siteFractional;
+    if (site) {
+        result.referenceNumber = site.referenceNumber;
+        result.element = site.element;
+        result.elementCounts = site.elementCounts;
+        result.mixed = Boolean(site.mixed);
+        result.siteFractional = site.siteFractional;
     } else if (element) {
         result.element = String(element);
     }
