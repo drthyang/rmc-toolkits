@@ -470,10 +470,13 @@ image in the slab"*.
 
 #### The units gotcha (read this before quoting a slab thickness)
 
-`AGENTS.md` states: *"`z` / `dz` are cell-edge fractions at the API/slider boundary, converted to
-Ångström inside `kde.py`."* **The first half is right only for the `a`/`b`/`c` presets, and the
-second half is stale.** In the code as it stands, nothing is converted to Å anywhere in the KDE
-slice pipeline:
+**$z_c$ and $\Delta z$ are fractions of the projection range of the unit cube along the chosen
+normal, and nothing in the KDE pipeline is converted to Å.** They equal cell-edge fractions only for
+the `a`/`b`/`c` presets. (`AGENTS.md` used to say *"`z` / `dz` are cell-edge fractions at the
+API/slider boundary, converted to Ångström inside `kde.py`"*; the first half holds only for the
+presets and the second half was never true of this code — checked by running `oriented_kde_slice()`
+with $\mathbf{h}=(1,1,1)$: `depthThickness = 0.1386 = 0.08·√3`, extents in dimensionless
+fractional projections, no Å anywhere.)
 
 * `/api/kde/slice` passes `positions.fractional_positions` — *not* `positions.positions` (the Å
   array) — into `oriented_kde_slice()`, with an inline comment saying "Keep the KDE slice in
@@ -485,9 +488,11 @@ slice pipeline:
   $\hat{\mathbf{u}},\hat{\mathbf{v}}$ through `unitCell.unitVectors` to get the real parallelogram
   (`makeProjectedPlane(vectorFromFraction(uVector, unitCell.unitVectors), …)`).
 
-So the honest statement of the contract is: **$z_c$ and $\Delta z$ are fractions of the projection
-range of the unit cube along the chosen normal**, and they only coincide with "fraction of a cell
-edge" for the `a`/`b`/`c` presets (where $\Delta_d=1$).
+So the contract is: **$z_c$ and $\Delta z$ are fractions of the projection range of the unit cube
+along the chosen normal**, and they only coincide with "fraction of a cell edge" for the
+`a`/`b`/`c` presets (where $\Delta_d=1$). Both payloads echo them unchanged as `z`/`dz` (and
+`center`/`thickness`); the Flask payload also gives `depth`/`depthThickness` in absolute
+depth-projection units (see *The two JSON payloads are not the same shape* below).
 
 **Converting $\Delta z$ to Ångström.** Combining the code's definitions with the standard
 interplanar spacing $d_{hkl}$ of the plane family $(hkl)=\mathbf{h}$, a depth increment
@@ -500,8 +505,12 @@ $$\text{slab thickness (Å)} \;=\; \Delta z \; \Delta_d \; \lVert\mathbf{h}\rVer
 Sanity checks: for the `c` preset in an orthogonal cell this is $\Delta z\cdot c$ (the naive
 reading); for $\mathbf{h}=(1,1,0)$ in a cubic cell it is $\Delta z\cdot 2 \cdot a/\sqrt2 = \sqrt2\,a\,\Delta z$,
 which is $\Delta z$ times the full $[110]$ diagonal of the cell — as it must be, since $z_c$ sweeps
-$0\to1$ across the whole cube. This conversion is *not* performed anywhere in the app; the readout
-shows only the dimensionless $z_c$ and $\Delta z$ values.
+$0\to1$ across the whole cube. For $(111)$ in the 10.395 Å GaNb₄Se₈ cell, $\Delta z = 0.08$ is 1.44 Å,
+not the 0.83 Å a "cell-edge fraction" reading suggests (1.73×). The page prints this value next to
+`d` on the map, `d=0.080 (1.44 Å)`: `slabThicknessAngstrom()` in `workers/slabSelection.js` computes
+$\Delta z\,\Delta_d/\lVert\mathbf{A}^{-1}\hat{\mathbf{h}}\rVert$ — the depth gradient
+$\mathbf{A}^{-1}\hat{\mathbf{h}} = \hat h_1\mathbf{a}^*+\hat h_2\mathbf{b}^*+\hat h_3\mathbf{c}^*$ is the same
+formula written with the reciprocal vectors — pinned by `workers/__tests__/slabThickness.test.js`.
 
 #### Auto-centring (it overwrites the slider, and more often than you would guess)
 
@@ -831,11 +840,24 @@ and folded into the JavaScript normalizer as `imageFactor`. Because the subsampl
 the pre-subsample $N_\mathrm{img}$ with the post-subsample $n$ in the denominator is consistent: the sampling
 fraction cancels in expectation. For a roughly uniform slab the image count per source atom is the
 same $(1+2m)^2$ factor by which the padded in-plane support exceeds the cell, which is exactly what
-has to be undone.
+has to be undone — **for the `a`/`b`/`c` presets**, where each source atom has exactly one image in
+the drawn cross-section (the unit square). For an oblique normal the section is a triangle to
+hexagon whose area changes with $z_c$, and an atom can have zero, one or several images inside it
+(the depth window $\Delta z\,\Delta_d$ can exceed the plane period $1/\lVert\mathbf{h}\rVert$), so $\kappa$
+no longer makes the section integrate to 1 (below).
 
 **The resulting units.** $\rho$ is a probability density **per unit fractional area of the slice
-plane**, normalized so that $\int_{\mathrm{cell}}\rho\,\mathrm{d}u\,\mathrm{d}v \approx 1$: the
-**cell** carries unit mass, and the amplitude no longer decays toward the faces. It is **not** one
+plane**. For the `a`/`b`/`c` presets it is normalized so that
+$\int_{\mathrm{cell}}\rho\,\mathrm{d}u\,\mathrm{d}v \approx 1$: the **cell** carries unit mass, and the
+amplitude no longer decays toward the faces. **For an oblique normal it does not**: integrated over
+the drawn section polygon, 40 000 uniform random points give 1.004 for $(001)$ at every $z_c$, but
+for $(110)$ 1.00 / 0.76 / 0.49 and for $(111)$ 0.79 / 0.60 / 0.24 at $z_c = 0.5 / 0.3 / 0.1$
+($\Delta z = 0.08$, $f = 0.03$, $G = 220$) — the level of a *uniform* structure then depends on the
+slice position (mean density 0.61 → 3.08 across $z_c$ for $(111)$). On the GaNb₄Se₈ sample the
+integral is 1.000 for $(110)$ at $z_c=0.5$ but 1.18 for $(111)$ with $\Delta z = 0.5$ and 0.69 for
+$(123)$ with $\Delta z = 0.3$. Only absolute values are affected — the colour scale is per-slice
+min–max (Step 10) — but do not compare amplitudes of oblique slices with each other or with presets.
+It is **not** one
 unit of mass per slab atom (that would integrate to $N_\mathrm{src}$), **not** atoms Å⁻², **not** atoms Å⁻³, and
 it is **not divided by the slab thickness** — thickening the slab pulls in more atoms but the field
 is renormalized, so absolute values are not comparable between different $\Delta z$, different
@@ -1486,9 +1508,10 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
    estimate stays unbiased but its pointwise noise grows as $\sqrt{N_\mathrm{img}/6000}$. The canvas always
    prints both counts.
 5. **The density units are fractional, not Å⁻².** With $\kappa = N_\mathrm{img}/N_\mathrm{src}$ applied, the field integrates
-   to about **1 over the whole cell** — the cell carries unit mass; it is *not* 1 per slab atom. It
-   is not divided by the slab thickness, so values are not comparable across different $\Delta z$,
-   elements, bandwidths or slices.
+   to about **1 over the whole cell for the `a`/`b`/`c` presets** — the cell carries unit mass; it is
+   *not* 1 per slab atom. For an oblique normal the integral over the drawn section varies with
+   $z_c$ and $\Delta z$ (0.24–1.18 measured, Step 6). It is not divided by the slab thickness, so values
+   are not comparable across different $\Delta z$, elements, bandwidths or slices.
 6. **The colour scale is per-slice.** No colorbar, no shared normalization, no numeric legend. Two
    screenshots of this panel cannot be compared quantitatively. For an oblique normal the scale is
    additionally set by grid nodes that lie **outside** the drawn cross-section and are clipped from
@@ -1607,7 +1630,7 @@ describing which code runs.
 | $W_{px}, H_{px}$ | canvas width / height | CSS px |
 | $k$ | canvas scale factor | CSS px / Å |
 | $o_x,o_y$ | centring offsets of the fitted content | CSS px |
-| $\rho$ | KDE density sample on the grid (see the KDE section for its normalization) | probability density per in-plane fractional unit² (integrates to ≈1 over the cell — KDE Step 6) |
+| $\rho$ | KDE density sample on the grid (see the KDE section for its normalization) | probability density per in-plane fractional unit² (integrates to ≈1 over the cell for the a/b/c presets only — KDE Step 6) |
 | $v_{\min},v_{\max}$ | min / max of the density grid actually drawn (after the $\log_{10}$ toggle) | as $\rho$ |
 | $R_{sph}$ | camera framing radius (Step 7.5) | normalized cell units |
 
@@ -2428,7 +2451,8 @@ machinery, plus a set of fallbacks worth knowing when a panel looks empty. **Cod
    payload's `message` is then shown under the canvas), otherwise `No atoms in this slab`.
 6. Overlay text (drawn with a dark stroke `rgba(13, 18, 28, 0.62)`, `lineWidth 3`, under a white fill,
    so it stays legible over any colormap) reports `<slabCount> atoms in slab (fit <fitCount>)` at
-   $(12,22)$, `<label>=<center>  d=<thickness>  bw=<bw>` at $(12,40)$, `kernel σ <minor> × <major> Å`
+   $(12,22)$, `<label>=<center>  d=<thickness> (<Å> Å)  bw=<bw>` at $(12,40)$ (the Å value from
+   `slabThicknessAngstrom()`, KDE Step 4), `kernel σ <minor> × <major> Å`
    at $(12,58)$ when a kernel was drawn (KDE Step 6), and `log10 density` on the next line (18 px
    lower) when the log toggle is on. The engine's `warnings` and the page's kernel-anisotropy note are
    shown under the canvas. Recall from Step 3c/5.5 that `slabCount` counts unique source

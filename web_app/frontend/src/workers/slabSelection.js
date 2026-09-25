@@ -61,3 +61,24 @@ export const kernelSigmaAngstrom = (covariance, uCartesian, vCartesian) => {
 // is an artefact of the slab's site layout (docs/algorithms/structure.md,
 // "The kernel's shape follows the slab's site layout").
 export const KERNEL_ANISOTROPY_NOTE = 3;
+
+// The slab's real thickness in Angstrom. The sliders' zCenter/thickness are
+// fractions of the unit cube's projection range along the (unit) normal n
+// (range = [d_min, d_max]); the depth d = n . x of a fractional position x has
+// the Cartesian gradient A^-1 n = n1 a* + n2 b* + n3 c* (rows of A = unitVectors,
+// in Angstrom; reciprocal vectors without the 2 pi), so a depth interval
+// thickness * (d_max - d_min) is thickness * (d_max - d_min) / |A^-1 n| Angstrom
+// = thickness * (|h| + |k| + |l|) * d_hkl.
+export const slabThicknessAngstrom = (thickness, normal, range, unitVectors) => {
+    const [a, b, c] = unitVectors;
+    const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const bc = cross(b, c);
+    const ca = cross(c, a);
+    const ab = cross(a, b);
+    const volume = a[0] * bc[0] + a[1] * bc[1] + a[2] * bc[2];
+    if (!(Math.abs(volume) > 0)) return Number.NaN;
+    const gradient = [0, 1, 2].map((i) => (normal[0] * bc[i] + normal[1] * ca[i] + normal[2] * ab[i]) / volume);
+    const length = Math.hypot(...gradient);
+    const span = range[1] - range[0] || 1;
+    return length > 0 ? (thickness * span) / length : Number.NaN;
+};

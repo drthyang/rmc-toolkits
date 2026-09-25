@@ -15,7 +15,8 @@ import {
     isInSlab,
     kernelSigmaAngstrom,
     millerPlaneFileLabel,
-    millerPlaneLabel
+    millerPlaneLabel,
+    slabThicknessAngstrom
 } from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
 import SaveMenu from './SaveMenu';
@@ -847,7 +848,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
         ctx.font = '500 12px Inter, system-ui';
         if (kde) {
             drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
-            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}  bw=${kde.bw}`, 12, 40);
+            // d is a fraction of the depth span along the normal; its real
+            // thickness in Angstrom follows from the cell metric.
+            const thicknessA = slabThicknessAngstrom(kde.thickness, sliceConfig.normal, sliceConfig.range, unitCell.unitVectors);
+            const thicknessText = Number.isFinite(thicknessA) ? ` (${thicknessA.toPrecision(3)} Å)` : '';
+            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}${thicknessText}  bw=${kde.bw}`, 12, 40);
             let nextLine = 58;
             if (kernelAngstrom) {
                 drawOverlayText(
