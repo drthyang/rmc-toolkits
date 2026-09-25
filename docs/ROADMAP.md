@@ -177,7 +177,8 @@ and MFA aware) — the app never stores credentials.
 
 ## Suggested Immediate Backlog
 
-1. Add a committed standard example run or trimmed fixtures so sample-backed tests run in CI.
+1. Add trimmed fixtures of the GaNb₄Se₈ and `stog_tests` runs so their real-data tests run in CI
+   (since 1.0 the committed demo run backs the parser, KDE-golden and plot-parity tests there).
 2. Refactor `src/RMC_plot.py` into a CLI wrapper around `rmc_toolkits.plots`.
 3. Refactor `src/RMC_3D.py` to avoid Mayavi import and execution at import time.
 4. Add `/api/project/scan` for directory-level summaries.
