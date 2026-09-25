@@ -918,7 +918,11 @@ def triplets_endpoint():
     rmax <= 15 A bounds the neighbour search, binWidth >= 0.05 deg the
     response size, and TRIPLETS_MAX_ANGLES -- the engine's APP_MAX_ANGLES,
     checked against the exact angle count before any angle is formed -- the
-    pairing work, which grows ~rmax^6 and which the rmax cap does not bound.
+    angles formed, which grow ~rmax^6 and which the rmax cap does not bound.
+    That also bounds the pairing work, except for A = C with two distinct
+    windows: there every pair of the combined bond list is a candidate, so
+    the work can exceed the angle count (docs/algorithms/bond-geometry.md,
+    Step 8).
     """
     try:
         target = _resolve_inside_root(request.args.get("dir", "."))
