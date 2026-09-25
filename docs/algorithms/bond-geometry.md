@@ -316,11 +316,42 @@ $$S_k = \frac{N_k/N}{\bigl(\cos\theta_k - \cos\theta_{k+1}\bigr)/2},\qquad
 \int_{\theta_k}^{\theta_{k+1}} \tfrac{1}{2}\sin\theta\,d\theta
 = \tfrac{\cos\theta_k - \cos\theta_{k+1}}{2}.$$
 
-For bonds pointing in independent uniformly-random directions this is flat at $1.0$ — the
-RMCProfile `sinth` view — so anything above 1 is real structure, and a peak near 180° (the
-octahedral *trans* angle) is no longer suppressed by geometry. Dividing by the **bin integral**
-rather than by $1/\sin\theta_c$ at the bin center is what keeps the 0° and 180° bins finite,
-where $1/\sin\theta_c$ diverges.
+For bonds pointing in independent uniformly-random directions this is flat at $1.0$, so
+anything above 1 is real structure, and a peak near 180° (the octahedral *trans* angle) is no
+longer suppressed by geometry.
+
+**What the bin integral is — and is not.** By
+$\cos(\theta_c - \tfrac{\Delta}{2}) - \cos(\theta_c + \tfrac{\Delta}{2}) = 2\sin\theta_c\sin\tfrac{\Delta}{2}$
+(bin centre $\theta_c$, width $\Delta$ in radians), the reference is *exactly*
+$\sin\theta_c\,\sin(\Delta/2)$:
+
+$$S_k = \frac{N_k/N}{\sin\theta_c\,\sin(\Delta/2)} .$$
+
+So `sin_corrected` is the familiar bin-centre $1/\sin\theta_c$ correction times the global
+constant $1/\sin(\Delta/2)$ — the same shape, scaled so that random directions read exactly 1
+(`SinCorrectionIdentityTests` pins the identity to $10^{-12}$). Neither form diverges: the bin
+centres lie at $\Delta/2 \dots 180° - \Delta/2$, where $\sin\theta_c \ge \sin(\Delta/2) > 0$. Only a
+per-angle weight $1/\sin\theta_i$, applied to each angle before binning, blows up at 0°/180°.
+(Earlier versions of this page said the bin integral was needed to keep the end bins finite;
+it is not — its benefit is the exact normalization.)
+
+**Relation to RMCProfile's `triplets` output.** RMCProfile's TRIPLETS writes, per bin, `norm` —
+the per-degree density, i.e. `density` here — and `norm/sin(theta)` $= D_k/\sin\theta_c$. With
+$D_k = N_k/(N\,\Delta_\text{deg})$,
+
+$$\texttt{norm/sin(theta)} \;=\; S_k\,\frac{\sin(\Delta/2)}{\Delta_\text{deg}}
+\;\approx\; S_k\,\frac{\pi}{360}\quad(0.0087265\ \text{at } 1°),$$
+
+a constant factor: **the same shape, not the same numbers** — `sin_corrected` is RMCProfile's
+curve rescaled so that random is 1, not RMCProfile's normalization itself. The CLI writes the
+exact factor for the realized bin width into its CSV header. Cross-check on the 5 K run folder,
+which holds RMCProfile's own TRIPLETS output for the same configuration (`bonds_hist.pct`:
+$r_\mathrm{max} = 3.5$ Å for every pair, 1000 bins of 0.18°): for Se–Nb–Se, Nb–Nb–Nb,
+Se–Ga–Se, Nb–Se–Nb and Se–Nb–Nb the angle totals are identical (239 326, 47 078, 24 132,
+95 731, 284 483); per-bin counts differ only by a few angles across a neighbouring edge
+(RMCProfile bins in single precision; cumulative difference ≤ 4); `density` equals `norm`;
+and `norm/sin(theta)` equals `sin_corrected` × $\sin(\Delta/2)/\Delta_\text{deg}$ to single
+precision (`RmcProfileTripletsTests`, sample-backed, skipped without `data/`).
 
 With zero angles both curves are all-zero rather than NaN.
 

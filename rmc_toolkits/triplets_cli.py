@@ -19,6 +19,7 @@ Example
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import sys
 from pathlib import Path
@@ -105,6 +106,17 @@ def bond_count_text(unique: int, directed: int, end: str, apex: str) -> str:
     )
 
 
+def rmcprofile_sinth_factor(width_deg: float) -> float:
+    """sin_corrected -> RMCProfile TRIPLETS ``norm/sin(theta)`` for ``width_deg`` bins.
+
+    RMCProfile's column is the per-degree density over sin(bin centre); the
+    engine's sin_corrected is the count fraction over sin(centre) sin(w/2).
+    Their ratio is the constant ``sin(w/2) / w`` (``w/2`` in radians, ``w`` in
+    degrees), ~pi/360 for small bins.
+    """
+    return math.sin(math.radians(width_deg) / 2.0) / width_deg
+
+
 def write_csv(path: Path, config: Path, result: BondAngleDistribution) -> None:
     end1, apex, end2 = result.triplet
     lines = [
@@ -123,6 +135,11 @@ def write_csv(path: Path, config: Path, result: BondAngleDistribution) -> None:
         f"# angles: {result.angle_count}",
         "# density is per degree with unit integral over [0, 180];",
         "# sin_corrected divides by the exact isotropic bin fraction (flat 1 = random).",
+        # Same shape as RMCProfile's TRIPLETS norm/sin(theta), another scale:
+        # its column is density / sin(centre) = sin_corrected * sin(w/2) / w.
+        "# RMCProfile TRIPLETS norm/sin(theta) = sin_corrected * "
+        f"{rmcprofile_sinth_factor(float(result.bin_edges[1] - result.bin_edges[0])):.10g}"
+        " for this bin width (sin(w/2) / w, w/2 in rad, w in deg; ~pi/360).",
         "angle_deg,counts,density_per_deg,sin_corrected",
     ]
     for center, count, density, corrected in zip(

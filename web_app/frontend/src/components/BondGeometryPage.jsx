@@ -597,8 +597,13 @@ export default function BondGeometryPage({ directory, localRun }) {
                                 <p>
                                     <b>Sin-corrected</b> — divides that geometric factor out. Random
                                     bonds now read as a flat 1, anything above it is real structure,
-                                    and a peak near 180{DEGREES} is no longer flattened. This is
-                                    RMCProfile's <code>sinth</code> view.
+                                    and a peak near 180{DEGREES} is no longer flattened.
+                                </p>
+                                <p>
+                                    Same shape as the <code>norm/sin(theta)</code> column of
+                                    RMCProfile's <code>triplets</code>, on another scale: that
+                                    column is this curve × sin(w/2)/w for w-degree bins
+                                    (≈ π/360 ≈ 0.00873), so compare shapes, or rescale.
                                 </p>
                             </InfoBadge>
                         </span>

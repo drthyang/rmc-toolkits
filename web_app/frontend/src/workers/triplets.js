@@ -23,8 +23,10 @@
 // The summary payload (bondAngleSummary) is the contract shared with the
 // Flask /api/triplets route — camelCase keys, plain arrays — so the page
 // renders identical numbers in both runtimes. `sinCorrected` divides each
-// bin's count fraction by the exact isotropic fraction (cosθ₁ − cosθ₂)/2,
-// flat 1.0 for random directions and finite at 0°/180°.
+// bin's count fraction by the exact isotropic fraction (cosθ₁ − cosθ₂)/2 =
+// sin θc · sin(w/2): the bin-centre 1/sin θc correction times the constant
+// 1/sin(w/2), flat 1.0 for random directions (RMCProfile's TRIPLETS
+// norm/sin(theta) is the same curve × sin(w/2)/w_deg ≈ π/360).
 //
 // Bin edges (also documented in triplets.py): an undisplaced configuration
 // puts every symmetry angle (60/90/120° …) exactly on a bin edge up to float

@@ -84,9 +84,16 @@ the result carries:
   reference fraction per bin, ``(cos(edge_lo) - cos(edge_hi)) / 2``. For bonds
   pointing in independent uniformly-random directions the angle density is
   proportional to sin(theta); dividing by the bin-integrated reference makes
-  that case flat at 1.0, which is the "sinth" normalization -- computed from
-  the bin integral rather than ``1 / sin(theta_center)`` so the 0 and 180
-  degree bins stay finite.
+  that case flat at exactly 1.0. Since ``cos(c - w/2) - cos(c + w/2) =
+  2 sin(c) sin(w/2)``, the reference *is* ``sin(c) sin(w/2)``: the curve is
+  the bin-centre ``1 / sin(c)`` correction times the constant
+  ``1 / sin(w/2)`` -- the same shape, scaled so random reads 1. Neither form
+  diverges (bin centres lie in [w/2, 180 - w/2]); only a per-angle
+  ``1 / sin(theta_i)`` weight would.
+- Relation to RMCProfile's TRIPLETS output: its ``norm`` column is
+  ``density`` and its ``norm/sin(theta)`` column is ``density / sin(c)`` =
+  ``sin_corrected * sin(w/2) / w_deg`` (``w/2`` in radians), ~``pi / 360``
+  -- a constant factor, so the same shape but not the same numbers.
 
 Conventions
 -----------

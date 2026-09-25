@@ -19,6 +19,8 @@ from rmc_toolkits.triplets_cli import main as triplets_main
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_RMC6F = ROOT / "data" / "5K_try1" / "GaNb4Se8_5K.rmc6f"
+# RMCProfile's own TRIPLETS output for the same 5 K configuration.
+SAMPLE_TRIPLETS = ROOT / "data" / "5K_try1" / "bonds_hist.pct"
 
 requires_sample = unittest.skipUnless(
     SAMPLE_RMC6F.exists(), "GaNb4Se8 sample data not present in data/ (gitignored)"
@@ -543,6 +545,88 @@ class IdealConfigurationTests(unittest.TestCase):
         self.assertEqual(int(np.flatnonzero(result.counts)[0]), 59)
 
 
+class SinCorrectionIdentityTests(unittest.TestCase):
+    """What sin_corrected is (triplets.physics.19, physics.2).
+
+    The bin-integral reference (cos a - cos b) / 2 equals sin(c) sin(w/2)
+    exactly, so the curve is the bin-centre 1/sin(c) correction times the
+    constant 1/sin(w/2) -- finite either way at the end bins -- and
+    RMCProfile's TRIPLETS norm/sin(theta) is it times sin(w/2)/w_deg.
+    """
+
+    def test_bin_integral_is_centre_sine_times_a_constant(self):
+        rng = np.random.default_rng(4)
+        positions = rng.uniform(size=(60, 3))
+        elements = ["Se" if index % 3 else "Nb" for index in range(60)]
+        for width in (1.0, 5.0, 15.0):
+            result = bond_angle_distribution(
+                positions, elements, CUBIC_10, triplet=("Se", "Nb", "Se"),
+                bond12=(0.5, 5.0), bin_width=width,
+            )
+            half = math.radians(width) / 2
+            centre_form = (result.counts / result.angle_count) / (
+                np.sin(np.radians(result.bin_centers)) * math.sin(half)
+            )
+            np.testing.assert_allclose(result.sin_corrected, centre_form, rtol=1e-12)
+            # Both forms are finite in the 0 and 180 degree bins.
+            self.assertTrue(np.all(np.isfinite(centre_form)))
+            # Density / sin(centre) -- RMCProfile's norm/sin(theta) -- is the
+            # same curve times sin(w/2) / w, i.e. ~pi/360 at small widths.
+            rmcprofile = result.density / np.sin(np.radians(result.bin_centers))
+            np.testing.assert_allclose(
+                rmcprofile, result.sin_corrected * math.sin(half) / width, rtol=1e-12
+            )
+
+
+@unittest.skipUnless(
+    SAMPLE_TRIPLETS.exists() and SAMPLE_RMC6F.exists(),
+    "RMCProfile TRIPLETS output for the 5 K sample not present in data/ (gitignored)",
+)
+class RmcProfileTripletsTests(unittest.TestCase):
+    """Cross-check against RMCProfile's TRIPLETS on the same configuration.
+
+    bonds_hist.pct: rmax 3.5 A for every pair, 1000 bins of 0.18 deg,
+    columns theta, norm/sin(theta), norm, un_norm; type 1 = Ga, 2 = Nb,
+    3 = Se.
+    """
+
+    WIDTH = 0.18
+
+    @classmethod
+    def setUpClass(cls):
+        cls.lines = SAMPLE_TRIPLETS.read_text(encoding="utf-8").splitlines()
+
+    def section(self, tag):
+        start = next(n for n, line in enumerate(self.lines) if line.strip() == tag)
+        rows = self.lines[start + 4:start + 4 + 1000]
+        return np.array([[float(value) for value in row.split()] for row in rows])
+
+    def test_totals_density_and_scale_match(self):
+        factor = math.sin(math.radians(self.WIDTH) / 2) / self.WIDTH
+        for tag, triplet, total in [
+            ("b323", ("Se", "Nb", "Se"), 239326),
+            ("b222", ("Nb", "Nb", "Nb"), 47078),
+            ("b313", ("Se", "Ga", "Se"), 24132),
+            ("b232", ("Nb", "Se", "Nb"), 95731),
+            ("b322", ("Se", "Nb", "Nb"), 284483),
+        ]:
+            reference = self.section(tag)
+            result = bond_angles_from_rmc6f(
+                SAMPLE_RMC6F, triplet=triplet, bond12=(0.0, 3.5), bin_width=self.WIDTH
+            )
+            self.assertEqual(result.angle_count, total, tag)
+            self.assertEqual(int(reference[:, 3].sum()), total, tag)
+            # RMCProfile bins in single precision: a few angles sit across a
+            # neighbouring edge, never further.
+            drift = np.abs(np.cumsum(result.counts) - np.cumsum(reference[:, 3])).max()
+            self.assertLessEqual(drift, 5, tag)
+            same = (result.counts == reference[:, 3]) & (result.counts > 0)
+            np.testing.assert_allclose(result.density[same], reference[same, 2], rtol=1e-5)
+            np.testing.assert_allclose(
+                reference[same, 1], result.sin_corrected[same] * factor, rtol=1e-4
+            )
+
+
 class HistogramConventionTests(unittest.TestCase):
     def test_bin_count_rounds_half_up_like_the_js_port(self):
         # 180/8 = 22.5 exactly: banker's rounding would give 22 bins while
@@ -917,6 +1001,10 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 0)
             content = output.read_text(encoding="utf-8")
             self.assertIn("angle_deg,counts,density_per_deg,sin_corrected", content)
+            # The exact factor to RMCProfile's norm/sin(theta) at 1-degree bins.
+            self.assertIn(
+                "RMCProfile TRIPLETS norm/sin(theta) = sin_corrected * 0.008726535498", content
+            )
             data_lines = [
                 line for line in content.splitlines() if line and not line.startswith("#")
             ]
