@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
+from collections import OrderedDict
 from pathlib import Path
 import io
 import math
@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 
 import numpy as np
 from flask import Flask, jsonify, request, send_file, send_from_directory
@@ -27,7 +28,7 @@ from rmc_toolkits.kde import UnitCellPositions, load_unit_cell_positions, orient
 from rmc_toolkits.orientation import site_orientation_histogram
 from rmc_toolkits.pca_kde import (
     SiteDisplacements,
-    cached_site_displacements,
+    load_site_displacements,
     site_ellipsoids,
     site_pca_kde,
 )
@@ -307,6 +308,81 @@ def _finite_json(payload):
     return app.response_class(f"{body}\n", mimetype=app.json.mimetype)
 
 
+# --- Parsed-file caches ----------------------------------------------------------
+# Parsing a 50k-atom .rmc6f takes about a second, so the analysis routes keep
+# small LRU caches of parsed files. Every cache is keyed on the file signature
+# below, never on st_mtime alone: sshfs/SFTP mounts, `scp -p` and rsync from a
+# coarse filesystem report whole-second mtimes, so a half-written file and the
+# finished one can share an mtime -- and a parse of the half-written file would
+# then be served until the server restarted.
+
+
+def _file_signature(path: str | Path) -> tuple[int, int, int, int]:
+    """Freshness key of a file: ``(st_mtime_ns, st_ctime_ns, st_size, st_ino)``.
+
+    The size catches a completed write, the inode an atomic replace (write a
+    temporary file, then rename), and the ctime -- set by the kernel on every
+    write or utime, never by the writer -- a same-size rewrite whose mtime was
+    reset (``scp -p``, ``rsync -t``) on a filesystem with sub-second ctimes.
+    """
+    stat = os.stat(path)
+    return (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
+
+
+class SourceChangedError(RuntimeError):
+    """The source file kept changing while it was being read (HTTP 409)."""
+
+
+class _FileCache:
+    """Thread-safe LRU of values parsed from one file, keyed on its signature.
+
+    ``get`` re-takes the signature after loading and stores the value only if
+    the file did not change during the read. A file that changed is read once
+    more under its new signature; if it changes again (a writer still busy),
+    ``SourceChangedError`` is raised -- a torn read is never cached or served.
+    Storing a fresh entry drops the entries of older signatures of that path.
+    """
+
+    def __init__(self, maxsize: int):
+        self.maxsize = maxsize
+        self._entries: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, path: str | Path, params: tuple, load):
+        path = str(path)
+        for _attempt in range(2):
+            signature = _file_signature(path)
+            key = (path, signature, params)
+            with self._lock:
+                if key in self._entries:
+                    self._entries.move_to_end(key)
+                    return self._entries[key]
+            value = load()
+            if _file_signature(path) != signature:
+                continue
+            with self._lock:
+                for stale in [k for k in self._entries if k[0] == path and k[1] != signature]:
+                    del self._entries[stale]
+                self._entries[key] = value
+                while len(self._entries) > self.maxsize:
+                    self._entries.popitem(last=False)
+            return value
+        raise SourceChangedError(
+            f"{Path(path).name} changed while it was being read (it is probably still "
+            "being written); retry in a moment"
+        )
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+
+_POSITIONS_CACHE = _FileCache(16)  # /api/kde/slice: per (file, element)
+_SITES_CACHE = _FileCache(8)  # /api/pca/sites, /api/pca/kde, /api/pca/orientation
+_TRIPLETS_CACHE = _FileCache(16)  # /api/triplets: per (file, every parameter)
+_SCALING_CACHE = _FileCache(8)  # /api/scaling/*: per (data file, config, mode, a, b, sigma)
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "dataRoot": str(DATA_ROOT)})
@@ -555,9 +631,10 @@ def structure():
         return jsonify({"error": str(exc)}), 500
 
 
-@lru_cache(maxsize=16)
-def _cached_positions(path_str: str, mtime: float, element: str | None) -> UnitCellPositions:
-    return load_unit_cell_positions(path_str, element=element)
+def _cached_positions(rmc6f_path: Path, element: str | None) -> UnitCellPositions:
+    return _POSITIONS_CACHE.get(
+        rmc6f_path, (element,), lambda: load_unit_cell_positions(str(rmc6f_path), element=element)
+    )
 
 
 SLICE_ORIENTATIONS = {
@@ -620,7 +697,7 @@ def kde_slice_endpoint():
         levels = _query_number("levels", 8, integer=True, ge=0, le=KDE_MAX_LEVELS)
         log = request.args.get("log", "false").lower() in ("1", "true", "yes")
 
-        positions = _cached_positions(str(rmc6f_path), rmc6f_path.stat().st_mtime, element)
+        positions = _cached_positions(rmc6f_path, element)
         cell_lengths = positions.cell_lengths
 
         result = oriented_kde_slice(
@@ -647,12 +724,15 @@ def kde_slice_endpoint():
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:  # includes numpy.linalg.LinAlgError
         return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
 
 def _cached_site_displacements(rmc6f_path: Path) -> SiteDisplacements:
-    return cached_site_displacements(str(rmc6f_path), rmc6f_path.stat().st_mtime)
+    # Looked up at call time (not bound here) so tests can intercept the loader.
+    return _SITES_CACHE.get(rmc6f_path, (), lambda: load_site_displacements(str(rmc6f_path)))
 
 
 @app.route("/api/pca/sites", methods=["GET"])
@@ -686,6 +766,8 @@ def pca_sites_endpoint():
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -728,6 +810,8 @@ def pca_kde_endpoint():
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -765,17 +849,23 @@ def triplets_endpoint():
         bin_width = _query_number("binWidth", 1.0)
         if bin_width < 0.05:
             raise ValueError(f"binWidth is capped at >= 0.05 deg for API requests, got {bin_width}")
+        params = (
+            # Normalized here so 'se' and 'Se' share one cache entry.
+            request.args.get("end1", "").strip().capitalize(),
+            request.args.get("apex", "").strip().capitalize(),
+            request.args.get("end2", "").strip().capitalize(),
+            *window12,
+            *window23,
+            bin_width,
+        )
+        # The library function's own lru_cache is keyed on the caller's mtime;
+        # call the uncached body (__wrapped__, which ignores that key) under
+        # the file-signature cache instead.
         result = dict(
-            cached_bond_angle_summary(
-                str(rmc6f_path),
-                rmc6f_path.stat().st_mtime,
-                # Normalized here so 'se' and 'Se' share one cache entry.
-                request.args.get("end1", "").strip().capitalize(),
-                request.args.get("apex", "").strip().capitalize(),
-                request.args.get("end2", "").strip().capitalize(),
-                *window12,
-                *window23,
-                bin_width,
+            _TRIPLETS_CACHE.get(
+                rmc6f_path,
+                params,
+                lambda: cached_bond_angle_summary.__wrapped__(str(rmc6f_path), None, *params),
             )
         )
         result["source"] = str(rmc6f_path)
@@ -786,6 +876,8 @@ def triplets_endpoint():
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -834,6 +926,8 @@ def pca_orientation_endpoint():
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -1013,8 +1107,15 @@ def _resolve_scaling_mode(payload: dict, inp) -> tuple[str, float, float]:
     return mode, 0.0, 0.0
 
 
-@lru_cache(maxsize=8)
-def _cached_scaling(path_str: str, mtime: float, config: ScalingConfig, mode: str, a: float, b: float, use_sigma: bool):
+def _cached_scaling(data_path: Path, config: ScalingConfig, mode: str, a: float, b: float, use_sigma: bool):
+    return _SCALING_CACHE.get(
+        data_path,
+        (config, mode, a, b, use_sigma),
+        lambda: _compute_scaling(str(data_path), config, mode, a, b, use_sigma),
+    )
+
+
+def _compute_scaling(path_str: str, config: ScalingConfig, mode: str, a: float, b: float, use_sigma: bool):
     data = read_stog_xy(path_str)
     q, sq = data[0], data[1]
     sigma = None
@@ -1034,9 +1135,7 @@ def _scaling_request(payload: dict):
     enforcement = _resolve_scaling_enforcement(payload, inp)
     mode, a, b = _resolve_scaling_mode(payload, inp)
     use_sigma = _payload_bool(payload, "useSigma", True)
-    result = _cached_scaling(
-        str(data_path), data_path.stat().st_mtime, config, mode, a, b, use_sigma
-    )
+    result = _cached_scaling(data_path, config, mode, a, b, use_sigma)
     # No explicit cutoff and enforcement not refused: enforce at the
     # data-derived closest approach (CLI-mirroring auto default).
     if enforcement is None and payload.get("enforce") is not False:
@@ -1169,6 +1268,8 @@ def scaling_preview():
         return jsonify({"error": str(exc)}), 404
     except (CliError, ValueError, NotImplementedError) as exc:
         return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -1229,6 +1330,8 @@ def scaling_run():
         return jsonify({"error": str(exc)}), status
     except (ValueError, NotImplementedError) as exc:
         return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

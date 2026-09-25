@@ -146,7 +146,16 @@ also refuse to serialize a result that came out `NaN`/`Infinity` for finite but 
 (e.g. a bandwidth of `1e-200`, which underflows the float64 kernel): that is a 400 too, never a
 200 whose body is invalid JSON. Error statuses: 400 bad parameter or unusable input, 403 path
 outside the data roots, 404 missing file/folder, 409 output exists (`/api/scaling/run` without
-`force`), 500 unexpected failure.
+`force`) or source file still being written (see below), 500 unexpected failure.
+
+**Caching and freshness.** The KDE-slice, PCA (`sites`/`kde`/`orientation`), triplets and scaling
+routes keep small in-process LRU caches of parsed files (`_FileCache` in `app.py`). Every cache key
+is the file's signature `(st_mtime_ns, st_ctime_ns, st_size, st_ino)` from `_file_signature()`,
+never `st_mtime` alone, so a file rewritten within the same whole-second mtime (sshfs/SFTP mounts,
+`scp -p`, rsync from a coarse filesystem) is re-parsed. The signature is taken again after each
+parse: a parse of a file that changed while it was being read is never cached — it is re-read once
+under the new signature, and if the file changes again (a writer still busy) the request fails
+with **409** and a "changed while it was being read" message instead of returning a torn result.
 
 | Method & path | Description |
 | --- | --- |
