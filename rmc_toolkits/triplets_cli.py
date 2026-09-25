@@ -19,20 +19,69 @@ Example
 from __future__ import annotations
 
 import argparse
+import math
+import re
 import sys
 from pathlib import Path
 
 from .triplets import BondAngleDistribution, bond_angles_from_rmc6f
 
 
+# RMCProfile output names that carry the run's stem, with their priority
+# (lower wins). Identical to the web app's rules -- web_app/backend/app.py
+# (_run_stem_from_output_name / _find_rmc6f) and browserData.js
+# (chooseStructureFile) -- so a run folder resolves to one configuration
+# everywhere; keep the three in sync.
+_RUN_OUTPUT_PATTERNS = (
+    (0, r"^(.+)-\d{2,}\.log$"),
+    (1, r"^(.+)-EXAFS-.+_[QR]_OUTPUT\.csv$"),
+    (1, r"^(.+)_FT_XFQ\d+\.csv$"),
+    (1, r"^(.+)_[FS]Q\d+\.csv$"),
+    (1, r"^(.+)_bragg(?:_.+)?\.csv$"),
+    (1, r"^(.+)_PDF(?:partials|\d+)?\.csv$"),
+    (2, r"^Frac_coord_(.+)\.txt$"),
+)
+
+
+def _run_stem(name: str) -> tuple[int, str] | None:
+    for priority, pattern in _RUN_OUTPUT_PATTERNS:
+        match = re.match(pattern, name)
+        if match:
+            return priority, match.group(1)
+    return None
+
+
+def find_run_configuration(directory: Path) -> Path:
+    """The ``.rmc6f`` of a run folder, chosen exactly as the web app does.
+
+    A run folder often holds more than one configuration -- e.g. the input
+    supercell ``<compound>.rmc6f`` beside the refined ``<compound>_5K.rmc6f``.
+    The run's own outputs (``<stem>-NN.log``, ``<stem>_PDFpartials.csv`` ...)
+    name the refined one: the ``.rmc6f`` whose stem matches the
+    highest-priority output wins; with no match, the first sorted file.
+    """
+    rmc6f_files = sorted(directory.glob("*.rmc6f"))
+    if not rmc6f_files:
+        raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    by_stem = {path.stem: path for path in rmc6f_files}
+    stems: list[tuple[int, str, str]] = []
+    for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
+        if not item.is_file():
+            continue
+        match = _run_stem(item.name)
+        if match:
+            stems.append((match[0], item.name.lower(), match[1]))
+    for _, _, stem in sorted(stems):
+        if stem in by_stem:
+            return by_stem[stem]
+    return rmc6f_files[0]
+
+
 def resolve_config(target: str | Path) -> Path:
-    """Accept an ``.rmc6f`` file or a directory holding one (first sorted)."""
+    """Accept an ``.rmc6f`` file or a run folder (see ``find_run_configuration``)."""
     target = Path(target)
     if target.is_dir():
-        candidates = sorted(target.glob("*.rmc6f"))
-        if not candidates:
-            raise FileNotFoundError(f"No .rmc6f file found in {target}")
-        return candidates[0]
+        return find_run_configuration(target)
     if not target.exists():
         raise FileNotFoundError(f"{target} does not exist")
     return target
@@ -43,21 +92,54 @@ def default_output_name(config: Path, triplet: tuple[str, str, str]) -> str:
     return f"triplets_{label}_{config.stem}.csv"
 
 
+def bond_count_text(unique: int, directed: int, end: str, apex: str) -> str:
+    """Physical bond count, with the B-centred count when the two differ.
+
+    An A-B bond with A = B is found from both of its ends, so the count of
+    bond vectors seen from the central atoms is twice the number of bonds.
+    """
+    if end != apex:
+        return f"{unique} physical bonds"
+    return (
+        f"{unique} physical bonds ({directed} bond vectors counted from the central "
+        f"atoms: {end} is the central element, so each bond is seen from both ends)"
+    )
+
+
+def rmcprofile_sinth_factor(width_deg: float) -> float:
+    """sin_corrected -> RMCProfile TRIPLETS ``norm/sin(theta)`` for ``width_deg`` bins.
+
+    RMCProfile's column is the per-degree density over sin(bin centre); the
+    engine's sin_corrected is the count fraction over sin(centre) sin(w/2).
+    Their ratio is the constant ``sin(w/2) / w`` (``w/2`` in radians, ``w`` in
+    degrees), ~pi/360 for small bins.
+    """
+    return math.sin(math.radians(width_deg) / 2.0) / width_deg
+
+
 def write_csv(path: Path, config: Path, result: BondAngleDistribution) -> None:
+    end1, apex, end2 = result.triplet
     lines = [
         f"# rmc-triplets bond-angle distribution",
         f"# configuration: {config}",
-        f"# triplet (B central): {result.triplet[0]}-{result.triplet[1]}-{result.triplet[2]}",
+        f"# triplet (B central): {end1}-{apex}-{end2}",
         f"# bond12 window (Ang): {result.bond12[0]:g} .. {result.bond12[1]:g}",
         f"# bond23 window (Ang): {result.bond23[0]:g} .. {result.bond23[1]:g}",
         f"# central atoms: {result.apex_count}",
-        f"# bonds in window12: {result.bond12_count}"
+        "# bonds in window12: "
+        + bond_count_text(result.unique_bonds12, result.bond12_count, end1, apex)
         + (f" (mean {result.mean_length12:.4f} Ang)" if result.mean_length12 else ""),
-        f"# bonds in window23: {result.bond23_count}"
+        "# bonds in window23: "
+        + bond_count_text(result.unique_bonds23, result.bond23_count, end2, apex)
         + (f" (mean {result.mean_length23:.4f} Ang)" if result.mean_length23 else ""),
         f"# angles: {result.angle_count}",
         "# density is per degree with unit integral over [0, 180];",
         "# sin_corrected divides by the exact isotropic bin fraction (flat 1 = random).",
+        # Same shape as RMCProfile's TRIPLETS norm/sin(theta), another scale:
+        # its column is density / sin(centre) = sin_corrected * sin(w/2) / w.
+        "# RMCProfile TRIPLETS norm/sin(theta) = sin_corrected * "
+        f"{rmcprofile_sinth_factor(float(result.bin_edges[1] - result.bin_edges[0])):.10g}"
+        " for this bin width (sin(w/2) / w, w/2 in rad, w in deg; ~pi/360).",
         "angle_deg,counts,density_per_deg,sin_corrected",
     ]
     for center, count, density, corrected in zip(
@@ -86,7 +168,9 @@ def write_plot(path: Path, result: BondAngleDistribution) -> None:
         color="#c05640",
         linestyle="--",
         linewidth=1.0,
-        label="density (rescaled)",
+        # One axis: the density is drawn for its shape only, scaled so its
+        # peak meets the sin-corrected peak (values are in the CSV).
+        label="density, rescaled to the sin-corrected peak",
     )
     axes.set_xlim(0, 180)
     axes.set_xlabel("angle (deg)")
@@ -208,24 +292,21 @@ def main(argv: list[str] | None = None) -> int:
     label = "-".join(result.triplet)
     print(f"configuration: {config}")
     print(f"triplet:       {label} (central {result.triplet[1]})")
-    print(
-        f"bonds 1-2:     {result.bond12_count}"
-        + (
-            f"  (mean length {result.mean_length12:.4f} Ang, "
-            f"{result.bond12_count / result.apex_count:.2f} per central atom)"
-            if result.bond12_count
-            else ""
+    for name, unique, directed, mean in (
+        ("bonds 1-2", result.unique_bonds12, result.bond12_count, result.mean_length12),
+        ("bonds 2-3", result.unique_bonds23, result.bond23_count, result.mean_length23),
+    ):
+        # Bonds once each; "per central atom" is the B-centred count per B
+        # (the coordination), which counts a B-B bond at both of its ends.
+        print(
+            f"{name}:     {unique} "
+            + (
+                f" (mean length {mean:.4f} Ang, "
+                f"{directed / result.apex_count:.2f} per central atom)"
+                if directed
+                else ""
+            )
         )
-    )
-    print(
-        f"bonds 2-3:     {result.bond23_count}"
-        + (
-            f"  (mean length {result.mean_length23:.4f} Ang, "
-            f"{result.bond23_count / result.apex_count:.2f} per central atom)"
-            if result.bond23_count
-            else ""
-        )
-    )
     print(
         f"angles:        {result.angle_count}"
         + (

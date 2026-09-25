@@ -6,7 +6,7 @@
 // tests/generate_triplets_fixture.py, plus self-contained geometry checks.
 
 import { describe, expect, it } from 'vitest';
-import { bondAngleSummary } from '../triplets';
+import { APP_MAX_ANGLES, EDGE_SNAP_DEG, WINDOW_TOL, bondAngleSummary } from '../triplets';
 import fixture from '../../__tests__/fixtures/triplets_fixture.json';
 
 const runSpec = (testCase, spec) =>
@@ -58,8 +58,10 @@ describe('Python parity (triplets_fixture.json)', () => {
         const summary = expected.summary;
         expect(result.coordination).toEqual(summary.coordination);
         expect(result.lengths12.counts).toEqual(summary.lengths12.counts);
+        expect(result.lengths12.uniqueBonds).toBe(summary.lengths12.uniqueBonds);
         if (summary.lengths23) {
           expect(result.lengths23.counts).toEqual(summary.lengths23.counts);
+          expect(result.lengths23.uniqueBonds).toBe(summary.lengths23.uniqueBonds);
         } else {
           expect(result.lengths23).toBeNull();
         }
@@ -69,6 +71,88 @@ describe('Python parity (triplets_fixture.json)', () => {
       });
     }
   }
+});
+
+describe('bin edges (ideal geometries)', () => {
+  it('the snap tolerance is the Python engine\'s EDGE_SNAP_DEG', () => {
+    expect(EDGE_SNAP_DEG).toBe(fixture.edgeSnapDeg);
+  });
+
+  it('the window tolerance is the Python engine\'s WINDOW_TOL; a bound on a shell keeps it', () => {
+    expect(WINDOW_TOL).toBe(fixture.windowTol);
+    // Simple cubic, 10^3 atoms at spacing 3 Å, rmax typed as exactly 3.
+    const grid = [];
+    for (let i = 0; i < 10; i += 1) for (let j = 0; j < 10; j += 1) for (let k = 0; k < 10; k += 1) {
+      grid.push([i / 10, j / 10, k / 10]);
+    }
+    const result = bondAngleSummary(grid, grid.map(() => 'Cu'), [[30, 0, 0], [0, 30, 0], [0, 0, 30]], {
+      triplet: ['Cu', 'Cu', 'Cu'], bond12: [1.5, 3]
+    });
+    expect(result.lengths12.uniqueBonds).toBe(3000);
+    expect(result.lengths12.counts.reduce((acc, value) => acc + value, 0)).toBe(6000);
+  });
+
+  const threeAtoms = (degrees) => {
+    const theta = (degrees * Math.PI) / 180;
+    return [[0.5, 0.5, 0.5], [0.6, 0.5, 0.5], [0.5 + 0.1 * Math.cos(theta), 0.5 + 0.1 * Math.sin(theta), 0.5]];
+  };
+  const cubic = [[10, 0, 0], [0, 10, 0], [0, 0, 10]];
+  const binOf = (degrees) => bondAngleSummary(threeAtoms(degrees), ['Nb', 'Se', 'Se'], cubic, {
+    triplet: ['Se', 'Nb', 'Se'], bond12: [0.5, 1.5]
+  }).counts.findIndex((count) => count > 0);
+
+  it('an angle a few ulp off an edge bins on the edge; a real offset does not', () => {
+    expect(binOf(60)).toBe(60);
+    expect(binOf(60 - 1e-12)).toBe(60);
+    expect(binOf(60 + 1e-12)).toBe(60);
+    expect(binOf(60 - 1e-7)).toBe(59);
+    expect(binOf(180)).toBe(179);
+  });
+});
+
+describe('work budget (maxAngles)', () => {
+  const cubic = [[10, 0, 0], [0, 10, 0], [0, 0, 10]];
+  const rng = (() => {
+    let state = 7;
+    return () => {
+      state = (state * 1664525 + 1013904223) % 4294967296;
+      return state / 4294967296;
+    };
+  })();
+  const fractional = Array.from({ length: 200 }, () => [rng(), rng(), rng()]);
+  const elements = fractional.map((_, index) => (index % 3 ? 'Se' : 'Nb'));
+  const specs = [
+    { triplet: ['Se', 'Nb', 'Se'], bond12: [1, 3] },
+    { triplet: ['Se', 'Nb', 'Nb'], bond12: [1, 3], bond23: [1.5, 3.4] },
+    { triplet: ['Se', 'Nb', 'Se'], bond12: [1, 3], bond23: [1.5, 3.4] },
+    { triplet: ['Se', 'Se', 'Se'], bond12: [1, 2], bond23: [2.5, 3.4] }
+  ];
+
+  it('the app budget is the Python engine\'s APP_MAX_ANGLES', () => {
+    expect(APP_MAX_ANGLES).toBe(fixture.appMaxAngles);
+  });
+
+  for (const spec of specs) {
+    it(`counts exactly before pairing: ${spec.triplet.join('-')} ${spec.bond23 ? 'distinct' : 'shared'}`, () => {
+      const exact = bondAngleSummary(fractional, elements, cubic, spec).angleCount;
+      expect(exact).toBeGreaterThan(10);
+      expect(bondAngleSummary(fractional, elements, cubic, { ...spec, maxAngles: exact }).angleCount)
+        .toBe(exact);
+      expect(() => bondAngleSummary(fractional, elements, cubic, { ...spec, maxAngles: exact - 1 }))
+        .toThrow(new RegExp(`${exact.toLocaleString('en-US')} angles.*${(exact - 1).toLocaleString('en-US')}`));
+    });
+  }
+
+  it('streams: no raw angle list unless collectAngles asks for it', () => {
+    const spec = { triplet: ['Se', 'Nb', 'Se'], bond12: [1, 3] };
+    const plain = bondAngleSummary(fractional, elements, cubic, spec);
+    const collected = bondAngleSummary(fractional, elements, cubic, { ...spec, collectAngles: true });
+    expect(plain.sortedAngles).toBeUndefined();
+    expect(collected.sortedAngles).toHaveLength(plain.angleCount);
+    expect(collected.counts).toEqual(plain.counts);
+    const mean = collected.sortedAngles.reduce((acc, value) => acc + value, 0) / plain.angleCount;
+    expect(plain.meanAngle).toBeCloseTo(mean, 9);
+  });
 });
 
 describe('geometry invariants', () => {
@@ -104,6 +188,45 @@ describe('geometry invariants', () => {
     expect(result.lengths12.count).toBe(2);
     expect(result.angleCount).toBe(1);
     expect(result.sortedAngles[0]).toBeCloseTo(180, 9);
+  });
+
+  it('same-element ends: a 1e-4 A window nudge does not double the count', () => {
+    // triplets.physics.21: {x, B, y} is one physical triplet whichever window
+    // each bond is assigned to, so distinct-but-touching windows must agree
+    // with the shared-window count.
+    const fractional = [
+      [0.5, 0.5, 0.5],
+      [0.7, 0.5, 0.5], [0.3, 0.5, 0.5],
+      [0.5, 0.7, 0.5], [0.5, 0.3, 0.5],
+      [0.5, 0.5, 0.7], [0.5, 0.5, 0.3]
+    ];
+    const elements = ['Nb', 'O', 'O', 'O', 'O', 'O', 'O'];
+    const base = { triplet: ['O', 'Nb', 'O'], bond12: [1, 3], binWidth: 5 };
+    const shared = bondAngleSummary(fractional, elements, cubic, base);
+    const nudged = bondAngleSummary(fractional, elements, cubic, { ...base, bond23: [1, 3.0001] });
+    expect(shared.angleCount).toBe(15);
+    expect(nudged.sharedEnds).toBe(false);
+    expect(nudged.angleCount).toBe(15);
+    expect(nudged.counts).toEqual(shared.counts);
+    expect(nudged.lengths23.count).toBe(6);
+  });
+
+  it('bonds between two central atoms are counted once (uniqueBonds)', () => {
+    // One Nb4 tetrahedron: 12 Nb-centred bond vectors, six physical edges.
+    const s = 3 / (2 * Math.SQRT2) / 10;
+    const fractional = [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]
+      .map((corner) => corner.map((value) => 0.5 + value * s));
+    const result = bondAngleSummary(fractional, ['Nb', 'Nb', 'Nb', 'Nb'], cubic, {
+      triplet: ['Nb', 'Nb', 'Nb'], bond12: [2.5, 3.5]
+    });
+    expect(result.lengths12.count).toBe(12);
+    expect(result.lengths12.uniqueBonds).toBe(6);
+    // A single atom and its six face images: 3 periodic bonds, 6 vectors.
+    const image = bondAngleSummary([[0.1, 0.2, 0.3]], ['Se'], [[3, 0, 0], [0, 3, 0], [0, 0, 3]], {
+      triplet: ['Se', 'Se', 'Se'], bond12: [2.5, 3.5]
+    });
+    expect(image.lengths12.count).toBe(6);
+    expect(image.lengths12.uniqueBonds).toBe(3);
   });
 
   it('rejects an unknown element with the available list', () => {
