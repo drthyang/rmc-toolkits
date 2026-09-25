@@ -242,6 +242,12 @@ JS port `autoScale.js` → `readStogXy()`. Writer counterpart: `write_stog_xy()`
   STOG numeric rows").
 - Tie-breaking when two column-count groups have the same number of rows follows insertion
   order in both engines, i.e. the group whose first row appeared earliest wins.
+- **Decoding matches the browser in all three readers**: UTF-8 with a leading BOM dropped and
+  undecodable bytes replaced (`parsers._TEXT_ENCODING = "utf-8-sig"`, `errors="replace"`; the page
+  decodes with `File.text()`). Only numeric tokens are consumed, so a replacement character in a
+  title or comment line is harmless. Before 1.0 `read_stog_xy` / `read_stog_inp` decoded strictly:
+  one latin-1 `Å` in a title line made the CLI and the API refuse a file the page scaled, and a
+  BOM-prefixed `stog.inp` failed on `int('\ufeff1')`.
 - **Line endings are universal in all three readers** (`read_stog_xy`, `read_stog_inp`,
   `read_dat_header` and their JS ports): LF, CRLF and a bare CR (classic Mac) all end a line —
   Python by text-mode universal newlines (`read_stog_inp` then splits on `\n` only, not
@@ -291,9 +297,9 @@ there are three edge divergences:
   hex; JS's `Number()` accepts `0x10` (→ 16) and rejects `1_0`.
 - **Empty values and encoding.** Python sets `title` whenever the key is present (`if "TITLE" in
   raw`), including for an empty value; JS uses a truthiness test (`if (raw.TITLE)`) and omits
-  the key entirely for `TITLE ::` with nothing after it. Python opens the file with
-  `errors="replace"`, the browser decodes with `File.text()` (UTF-8), so a latin-1 byte inside a
-  key can produce a different key string in the two engines.
+  the key entirely for `TITLE ::` with nothing after it. Decoding is the same in both engines:
+  UTF-8 with undecodable bytes replaced by U+FFFD and a leading BOM dropped (Python
+  `encoding="utf-8-sig", errors="replace"`; the browser's `File.text()`).
 
 Test: `autoScale.test.js` → *"readDatHeader parses :: metadata"*;
 `tests/test_scaling_cli.py::DataModeTests::test_header_metadata_and_formula` asserts the header

@@ -226,6 +226,14 @@ class StogInput:
         return self.yoffset
 
 
+#: Text decoding of the STOG readers, matching the browser's File.text(): UTF-8
+#: with a leading BOM dropped and undecodable bytes (a latin-1 'A-ring' in a
+#: title line) replaced — only numeric tokens are consumed, so a replacement
+#: character in a text line is harmless, and a strict decode refused files the
+#: Auto StoG page accepts.
+_TEXT_ENCODING = "utf-8-sig"
+
+
 def _stog_flag(token: str) -> bool:
     return token.strip().upper().startswith("Y")
 
@@ -243,7 +251,8 @@ def read_stog_inp(path: str | Path) -> StogInput:
     # read_text translates LF / CRLF / CR (universal newlines); split on those
     # only — str.splitlines would also break on form feeds etc., which the JS
     # port (readStogInp) does not.
-    lines = [line.strip() for line in path.read_text(encoding="utf-8").split("\n")]
+    text = path.read_text(encoding=_TEXT_ENCODING, errors="replace")
+    lines = [line.strip() for line in text.split("\n")]
     lines = [line for line in lines if line]
     if len(lines) < 22:
         raise ValueError(f"{path} has {len(lines)} non-empty lines; expected >= 22")
@@ -311,7 +320,7 @@ def read_stog_xy(path: str | Path) -> np.ndarray:
     Returns the columns transposed, matching :func:`read_stog`.
     """
     groups: dict[int, list[list[float]]] = {}
-    with Path(path).open("r", encoding="utf-8") as handle:
+    with Path(path).open("r", encoding=_TEXT_ENCODING, errors="replace") as handle:
         for line in handle:
             parts = line.split()
             if len(parts) < 2:
@@ -338,7 +347,7 @@ def read_dat_header(path: str | Path) -> dict[str, object]:
     (float, the smallest ``MINIMUM_DISTANCES`` entry) when present.
     """
     raw: dict[str, str] = {}
-    with Path(path).open("r", encoding="utf-8", errors="replace") as handle:
+    with Path(path).open("r", encoding=_TEXT_ENCODING, errors="replace") as handle:
         for line in handle:
             if "::" not in line:
                 continue
