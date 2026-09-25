@@ -218,36 +218,65 @@ const covariance3 = (points) => {
     return { mean, cov };
 };
 
-// Per-axis excess kurtosis of a centered cloud in its PCA frame (0 = Gaussian),
-// null where undefined: the site has no spread (lambda_1 < ZERO_SPREAD_VARIANCE)
-// or the axis has collapsed (lambda_a < DEGENERATE_RATIO * lambda_1), where m2 is
-// round-off and m4 / m2^2 is 0/0. Same rule as `_axis_excess_kurtosis`.
-const axisDefined = (eigenvalues, a) => eigenvalues[0] >= ZERO_SPREAD_VARIANCE
-    && eigenvalues[a] >= DEGENERATE_RATIO * eigenvalues[0];
+// Standard errors of the eigenvalue gap an axis must clear to count as resolved
+// (AXIS_RESOLUTION_SIGMAS in pca_kde.py): a truly degenerate pair passes in < 1%.
+const AXIS_RESOLUTION_SIGMAS = 3;
 
-const meanOfDefined = (values) => {
-    const defined = values.filter((value) => value !== null);
-    return defined.length ? defined.reduce((sum, value) => sum + value, 0) / defined.length : null;
-};
-
-const excessKurtosisPca = (points, mean, axes, eigenvalues) => {
+// Kurtosis of a centered cloud in its PCA frame -- the port of `_shape_statistics`:
+//  - excessKurtosis[a] = m4/m2^2 - 3 along each principal axis (population
+//    moments), null where undefined: no spread (lambda_1 < ZERO_SPREAD_VARIANCE)
+//    or a collapsed axis (lambda_a < DEGENERATE_RATIO * lambda_1), where m2 is
+//    round-off and the ratio 0/0. One rule, no floor constant.
+//  - nonGaussianity: Mardia's b2 = mean[(u^T S^-1 u)^2] over the d defined axes,
+//    normalised 3 (b2 - d(d+2)) / (d(d+2)) = (b2 - 15)/5 for d = 3. Affine
+//    invariant (so noise in a near-isotropic site's frame cannot move it) and,
+//    for any elliptical distribution, the excess kurtosis along every direction.
+//  - axisResolved[a]: the eigenvalue gap to each neighbour exceeds
+//    AXIS_RESOLUTION_SIGMAS standard errors, SE(lambda_a) = sqrt((m4 - m2^2)/n);
+//    otherwise the axis direction (its kappa, its crystal orientation) is noise.
+const shapeStatistics = (points, mean, axes, eigenvalues) => {
     const n = points.length;
     const m2 = [0, 0, 0];
     const m4 = [0, 0, 0];
-    points.forEach((point) => {
+    const project = (point, out) => {
         const dx = point[0] - mean[0];
         const dy = point[1] - mean[1];
         const dz = point[2] - mean[2];
+        for (let a = 0; a < 3; a += 1) out[a] = dx * axes[a][0] + dy * axes[a][1] + dz * axes[a][2];
+        return out;
+    };
+    const q = [0, 0, 0];
+    points.forEach((point) => {
+        project(point, q);
         for (let a = 0; a < 3; a += 1) {
-            const p = dx * axes[a][0] + dy * axes[a][1] + dz * axes[a][2];
-            const p2 = p * p;
+            const p2 = q[a] * q[a];
             m2[a] += p2;
             m4[a] += p2 * p2;
         }
     });
-    return [0, 1, 2].map((a) => (axisDefined(eigenvalues, a)
-        ? (m4[a] / n) / ((m2[a] / n) * (m2[a] / n)) - 3
-        : null));
+    const count = Math.max(n, 1);
+    for (let a = 0; a < 3; a += 1) { m2[a] /= count; m4[a] /= count; }
+
+    const hasSpread = eigenvalues[0] >= ZERO_SPREAD_VARIANCE;
+    const defined = [0, 1, 2].map((a) => hasSpread && eigenvalues[a] >= DEGENERATE_RATIO * eigenvalues[0]);
+    const excessKurtosis = [0, 1, 2].map((a) => (defined[a] ? m4[a] / (m2[a] * m2[a]) - 3 : null));
+
+    const inverse = [0, 1, 2].map((a) => (defined[a] ? 1 / m2[a] : 0));
+    let b2 = 0;
+    points.forEach((point) => {
+        project(point, q);
+        const r2 = q[0] * q[0] * inverse[0] + q[1] * q[1] * inverse[1] + q[2] * q[2] * inverse[2];
+        b2 += r2 * r2;
+    });
+    b2 /= count;
+    const d = defined.filter(Boolean).length;
+    const reference = d * (d + 2);
+    const nonGaussianity = d > 0 ? (3 * (b2 - reference)) / reference : null;
+
+    const error = [0, 1, 2].map((a) => Math.sqrt(Math.max(m4[a] - m2[a] * m2[a], 0) / count));
+    const gap = [0, 1].map((a) => (m2[a] - m2[a + 1]) > AXIS_RESOLUTION_SIGMAS * Math.hypot(error[a], error[a + 1]));
+    const axisResolved = [gap[0], gap[0] && gap[1], gap[1]].map((value) => value && hasSpread);
+    return { excessKurtosis, nonGaussianity, axisResolved };
 };
 
 // --- Bandwidth and sampling ---------------------------------------------------
@@ -479,7 +508,7 @@ export const pcaKdeVolume = (points, options = {}) => {
     const cellVolume = axisCoords.reduce((product, coords) => product * (coords[1] - coords[0]), 1);
     const { massLevels, densityLevels, mass, vmin, vmax } = isoLevels(density, cellVolume, probabilities);
 
-    const excessKurtosis = excessKurtosisPca(fit, mean, axes, rawEigenvalues);
+    const { excessKurtosis, nonGaussianity, axisResolved } = shapeStatistics(fit, mean, axes, rawEigenvalues);
     const scale = probabilityScale(probability);
     const result = {
         count: total,
@@ -495,7 +524,8 @@ export const pcaKdeVolume = (points, options = {}) => {
         bIso: 8 * Math.PI * Math.PI * ((eigenvalues[0] + eigenvalues[1] + eigenvalues[2]) / 3),
         anisotropy: sigma[0] / sigma[2],
         excessKurtosis,
-        nonGaussianity: meanOfDefined(excessKurtosis),
+        axisResolved,
+        nonGaussianity,
         degenerate: ratio < DEGENERATE_RATIO,
         zeroSpread: false,
         bw,
@@ -817,7 +847,7 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
         const uEq = (eigenvalues[0] + eigenvalues[1] + eigenvalues[2]) / 3;
         const largest = Math.max(eigenvalues[0], 1e-30);
         const zeroSpread = eigenvalues[0] < ZERO_SPREAD_VARIANCE;
-        const excessKurtosis = excessKurtosisPca(site.displacements, mean, axes, eigenvalues);
+        const { excessKurtosis, nonGaussianity, axisResolved } = shapeStatistics(site.displacements, mean, axes, eigenvalues);
         return {
             referenceNumber: site.referenceNumber,
             element: site.element,
@@ -836,7 +866,8 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
             rmsIso: Math.sqrt(Math.max(uEq, 0)),
             anisotropy: zeroSpread ? null : Math.sqrt(largest / Math.max(eigenvalues[2], 1e-30)),
             excessKurtosis,
-            nonGaussianity: meanOfDefined(excessKurtosis),
+            axisResolved,
+            nonGaussianity,
             degenerate: zeroSpread || eigenvalues[2] / largest < DEGENERATE_RATIO,
             zeroSpread
         };

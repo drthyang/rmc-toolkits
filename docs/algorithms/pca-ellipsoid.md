@@ -406,7 +406,7 @@ the CSS twins of the 3D triad colours):
 | `x`, `y`, `z` | components of $\mathbf{p}_a$ (`axes[a]`) | — (unit vector) | 3 |
 | `λ (Å²)` | $\lambda_a$ | Å² | 4 |
 | `RMS (Å)` | $\sigma_a$ | Å | 3 |
-| `κ` | $\kappa_a$ (Step 12) | — | 2 |
+| `κ` | $\kappa_a$ (Step 12b); `—` when the axis is not resolved (`axisResolved[a]` false) or undefined | — | 2 |
 
 Beside it a *Covariance U (Å²)* table prints $\mathbf{U}$ as a $3\times3$ Cartesian matrix to 4
 decimals. The *Summary* block prints $U_\mathrm{iso}$ (4), $B_\mathrm{iso}$ (3), anisotropy (2) and
@@ -804,51 +804,99 @@ wireframe (opacity 0.4) in a user-chosen colour.
 
 ### Step 12 — The non-Gaussianity readout
 
-Both engines project the cloud onto its own principal axes and compute **per-axis excess kurtosis**
-from raw (biased, $1/n$) moments:
+Code: `_shape_statistics()` in Python (called by `site_ellipsoids()`, batched — one `einsum` projects
+every atom onto its own site's axes, then `bincount` moments — and by `pca_kde_volume()`), and its
+line-for-line port `shapeStatistics()` in JS (called by `siteEllipsoids()` and `pcaKdeVolume()`). All
+moments are population ($1/n$) moments of the cloud projected onto its principal axes,
 
 $$q_{ma}=(\mathbf{u}_m-\bar{\mathbf{u}})\cdot\mathbf{p}_a,\qquad
-m_2^{(a)}=\frac1n\sum_m q_{ma}^2,\quad m_4^{(a)}=\frac1n\sum_m q_{ma}^4,\qquad
-\kappa_a=\frac{m_4^{(a)}}{\big(m_2^{(a)}\big)^2}-3 .$$
+m_2^{(a)}=\frac1n\sum_m q_{ma}^2,\qquad m_4^{(a)}=\frac1n\sum_m q_{ma}^4 .$$
 
-**One definedness rule, no floor constant, in both engines** (`_axis_excess_kurtosis` /
-`axisDefined`): $\kappa_a$ exists only when the site has spread
-($\lambda_1\ge$ `ZERO_SPREAD_VARIANCE`) and axis $a$ has not collapsed
-($\lambda_a\ge10^{-6}\lambda_1$, the `DEGENERATE_RATIO` of the degenerate flag); otherwise
-$m_2^{(a)}$ is round-off, the ratio is $0/0$, and $\kappa_a$ is reported as `null`. A planar cloud
-therefore has no $\kappa_3$, and a zero-spread site no $\kappa$ at all. (Before 1.0 the engines
-guarded the denominator with different floors — $\max(m_2,10^{-30})^2$ in Python,
-$\max(m_2^2,10^{-30})$ in JS — and printed unrelated noise, e.g. $-0.74$ against exactly $-3.00$, for
-the same frozen site.)
+**12a. The headline number — Mardia's multivariate kurtosis** (`nonGaussianity`, the
+*Non-Gaussianity* summary row):
 
-Note also that the moments use $n$ (population moments) while the covariance of Step 3 uses $n-1$:
-$\kappa_a$ is internally consistent, but $m_2^{(a)}\neq\lambda_a$ exactly.
+$$b_2=\frac1n\sum_m\Big(\sum_{a\in D}\frac{q_{ma}^2}{m_2^{(a)}}\Big)^{2}
+=\frac1n\sum_m\big[(\mathbf{u}_m-\bar{\mathbf{u}})^{\!\top}\mathbf{S}^{-1}(\mathbf{u}_m-\bar{\mathbf{u}})\big]^2,
+\qquad
+\texttt{nonGaussianity}=\frac{3\,\big(b_2-d(d+2)\big)}{d(d+2)}\;\overset{d=3}{=}\;\frac{b_2-15}{5},$$
 
-Reported as `excessKurtosis` (three values, the `κ` column of the Principal-axes table) and
-`nonGaussianity` $=\frac13\sum_a\kappa_a$ (the *Non-Gaussianity* summary row). Code:
-`site_ellipsoids()` (batched — one `einsum` projects every atom onto its own site's axes, then
-`bincount` moments) and `pca_kde_volume()` in Python; `excessKurtosisPca()` in JS, called from both
-`siteEllipsoids()` and `pcaKdeVolume()`. The panel reads the **sites-table** value (full cloud); the
-KDE payload carries its own, computed on the possibly-subsampled fit.
+with $\mathbf{S}$ the ML ($1/n$) covariance and $D$ the $d$ defined axes (12c; $d=3$ for every
+ordinary site). $b_2$ is **affine invariant** — it cannot depend on how the eigenvectors of a
+(near-)isotropic site happen to be oriented — and for any elliptical distribution (Gaussian,
+Student-$t$, any scale mixture of normals) $b_2=d(d+2)(1+\kappa/3)$, so the normalised value equals
+the excess kurtosis $\kappa$ along **every** direction. For a non-elliptical cloud it is a
+rotation-invariant summary: with independent components it is $\tfrac15\sum_a\kappa_a$ (three
+fifths of the axial mean), so a feature confined to one axis (a split along $x$) is diluted by $1/5$ —
+read that axis's own $\kappa$ (12b) when it is resolved. Small-sample bias: for a Gaussian
+$\mathbb E[b_2]=d(d+2)(n-1)/(n+1)$, i.e. $-6/n$ in the normalised value ($-0.006$ at $n=1000$).
 
-Interpretation, as the code comments and the UI tooltip state it:
+*Why not the mean of the per-axis kurtoses (the pre-1.0 readout).* When two or three eigenvalues
+are equal up to sampling error — every cubic site (isotropic $\mathbf U$), the in-plane pair of
+every uniaxial one — the eigenvectors are simply the directions of largest and smallest *sample*
+variance, and those correlate with the fourth moments: PC1 leans toward the biggest outliers. On the
+repository's GTS_250K Ga site 8 ($\bar{4}3m$, eigenvalue gaps 2.1% and 6.9%) the old mean was 2.50,
+while the same cloud gives 1.38 on the cube axes and anything from 1.36 to 3.58 over random
+orthonormal frames. `test_non_gaussianity_is_affine_invariant` (Python and JS) pins the new value to
+$10^{-9}$ under an arbitrary linear map and under $10^{-7}$ perturbations that re-orient a degenerate
+frame; the old readout moved by 0.33 on the same test.
 
-- $\kappa\approx0$ — harmonic/Gaussian motion; the ellipsoid is a faithful description;
-- $\kappa>0$ — peaked, fat-tailed: anharmonic motion or an unresolved split site. The covariance
-  ellipsoid then *overstates* the concentrated core, which is what makes a KDE isosurface look
-  tighter than its ellipsoid;
-- $\kappa<0$ — platykurtic/flat-topped, e.g. a nearly uniform (box-like or shell-like) distribution.
+**12b. Per-axis excess kurtosis** (`excessKurtosis`, the `κ` column):
+$\kappa_a=m_4^{(a)}/\big(m_2^{(a)}\big)^2-3$, **shown only when the axis is resolved**
+(`axisResolved`). An axis is resolved when its eigenvalue is separated from each neighbour's by more
+than `AXIS_RESOLUTION_SIGMAS = 3` standard errors of the gap,
 
-Note this is a **marginal, per-axis** measure (three 1D kurtoses averaged), *not* Mardia's
-multivariate kurtosis, and it is blind to skew: a double-well split along an axis and a
-heavy-tailed single well can give similar values. It is computed on the raw cloud, not on the KDE.
+$$\big(m_2^{(a)}-m_2^{(a+1)}\big)\;>\;3\sqrt{\mathrm{SE}_a^2+\mathrm{SE}_{a+1}^2},\qquad
+\mathrm{SE}_a=\sqrt{\big(m_4^{(a)}-(m_2^{(a)})^2\big)/n},$$
 
-Test evidence: a Gaussian cloud gives $|\overline{\kappa}|<0.3$ (Python) / $<0.4$ (JS); a Student-$t_3$
-cloud gives $\overline{\kappa}>1.0$; a synthetic Gaussian-displaced site gives $|\overline{\kappa}|<0.5$.
+PC1 needing the 1–2 gap, PC3 the 2–3 gap and PC2 both. $\mathrm{SE}_a$ is the asymptotic standard
+error of a sample variance along a fixed direction. The factor 3 is calibrated by simulation: for a
+truly degenerate pair the statistic has median $\approx1$ (eigenvalue repulsion), a 95th percentile
+of $\approx2$ and exceeds 3 in under 1% of samples at $n=216$–$8000$ for Gaussian, $t_8$ and
+$\langle111\rangle$-split clouds — a "gap larger than its sampling error" (factor 1) rule would call
+half of all degenerate pairs resolved. The price is power: at $n=1000$ a 17% eigenvalue gap is
+resolved about a third of the time, and heavy tails (large $m_4$) widen the error further — on the
+5 K GaNb₄Se₈ run, whose clouds have $\kappa\approx5$–$35$, PC2 is never resolved. The panel prints
+`—` for an unresolved $\kappa_a$, dims that axis's crystal-orientation row, and adds a one-line note
+naming the degenerate pair. The raw values stay in the payload with their flags.
+
+**12c. Definedness — one rule, no floor constant, in both engines.** $\kappa_a$ (and axis $a$'s
+share of $b_2$) exists only when the site has spread ($\lambda_1\ge$ `ZERO_SPREAD_VARIANCE`) and axis
+$a$ has not collapsed ($\lambda_a\ge10^{-6}\lambda_1$, the `DEGENERATE_RATIO` of the degenerate flag);
+otherwise $m_2^{(a)}$ is round-off, the ratio is $0/0$, and $\kappa_a$ is reported as `null`. A planar
+cloud therefore has no $\kappa_3$ and its non-Gaussianity is the $d=2$ Mardia value; a zero-spread
+site has neither. (Before 1.0 the engines guarded the denominator with different floors —
+$\max(m_2,10^{-30})^2$ in Python, $\max(m_2^2,10^{-30})$ in JS — and printed unrelated noise, e.g.
+$-0.74$ against exactly $-3.00$, for the same frozen site.)
+
+**How to read the sign.** For the multivariate value and for a resolved axis alike:
+
+- $\approx0$ — harmonic/Gaussian motion; the ellipsoid is a faithful description;
+- $>0$ — a peaked, heavy-tailed well, or a minority off-centre component (a strongly unequal split).
+  The covariance ellipsoid then *overstates* the concentrated core, which is what makes a KDE
+  isosurface look tighter than its ellipsoid;
+- $<0$ — flat-topped or **bimodal**. An equal-occupancy double well $N(\pm d,s^2)$ has excess
+  kurtosis $-2d^4/(s^2+d^2)^2$ along the split — always negative, tending to $-2$ as $d/s$ grows,
+  whether or not the two wells are resolved. A symmetric split site and a heavy-tailed single well
+  therefore give **opposite** signs (`test_symmetric_split_site_is_platykurtic` pins $-0.50$ along the
+  split for $d=0.15$, $s=0.08$ Å). Before 1.0 the UI tooltip said "positive = split sites", which was
+  the wrong way round.
+
+Kurtosis is computed on the raw cloud, not on the KDE, is blind to skew, and — as a fourth moment —
+is dominated by the tails: a handful of outlying copies can set it.
+
+The panel reads the **sites-table** values (full cloud); the KDE payload carries its own, computed
+on the possibly-subsampled fit with the same function.
+
+Test evidence: a Gaussian cloud gives $|\texttt{nonGaussianity}|<0.3$ (Python) / $<0.4$ (JS); a
+Student-$t_3$ cloud gives $>1.0$; a synthetic Gaussian-displaced site gives $|\cdot|<0.5$; an elliptical
+scale mixture recovers its analytic 1.6875 within 0.12; `axisResolved` is `[F,F,F]` for an isotropic,
+`[T,F,F]` for a uniaxial and `[T,T,T]` for a triaxial Gaussian cloud (both engines).
 
 The per-site table (including `nonGaussianity`) is published upward to the AI-assistant context
 (`web_app/frontend/src/llm/context/runContext.js` → `pcaContext()`), which ranks sites by
 non-Gaussianity and ships a `note` string defining the quantity so the model does not misread it.
+That module is outside this engine; its note still describes the pre-1.0 mean-of-axes readout and
+"split site" sign (tracked as a hand-off).
 
 ---
 
@@ -976,6 +1024,7 @@ direction information appears in the picker.
 | `DEGENERATE_RATIO` | — | — | **1e-6** | — | $\lambda_3/\max(\lambda_1,10^{-30})$ |
 | `ZERO_SPREAD_VARIANCE` | — | — | **1e-8** (both engines) | — | Å² on $\lambda_1$; below it `zeroSpread` |
 | kurtosis definedness | — | — | $\lambda_1\ge10^{-8}$ Å² and $\lambda_a\ge10^{-6}\lambda_1$, else `null` (both engines) | — | — |
+| `AXIS_RESOLUTION_SIGMAS` | — | — | **3** (both engines) | — | standard errors of an eigenvalue gap for `axisResolved` |
 | Jacobi sweeps / tolerance | — | — | 50 sweeps; off-diagonal sum $\le10^{-15}\lVert\mathbf U\rVert_F$ (**relative**); rotation skipped at $\lvert a_{pq}\rvert<10^{-300}$ | — | — |
 | `rng_seed` | — | — | 0 | — | — |
 | $k(0.5)$ | — | — | 1.5381722 | — | — |
@@ -1022,9 +1071,11 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
 6. **`U` is Cartesian.** No $U_\mathrm{cif}$/$U^{ij}$/$\beta_{ij}$ conversion is performed anywhere;
    the tabulated tensor is not directly comparable to CIF ADP components unless the cell is
    orthogonal and axis-aligned.
-7. **Non-Gaussianity is three marginal kurtoses averaged**, computed in the site's own PCA frame. It
-   is not a multivariate kurtosis and carries no information about skewness or multimodality
-   direction. Split sites and heavy tails are not distinguished by it.
+7. **Non-Gaussianity is Mardia's multivariate kurtosis**, normalised to the marginal excess
+   kurtosis of an elliptical distribution (Step 12). It is frame-independent but carries no
+   information about skewness or the direction of a feature, and a one-axis feature is diluted by
+   $1/5$. Its sign separates a heavy-tailed well ($>0$) from a symmetric split site ($<0$); per-axis
+   $\kappa$ is shown only for resolved axes.
 8. **Element-pooled clouds mix orientations.** The engine supports `element=`, and pooling is valid
    because each site is pre-centred, but the resulting single ellipsoid is only meaningful when the
    pooled sites are symmetry-equivalent *and* similarly oriented.
@@ -1212,16 +1263,17 @@ not the individual axes: an arbitrary rotation inside a degenerate subspace pass
 ### Step 4 — Per-axis excess kurtosis $\kappa_i$ (pointer)
 
 Each axis also carries a shape number, the excess kurtosis $\kappa_i$ of the cloud's projection
-onto $\hat{\mathbf e}_i$ — reported as `excessKurtosis[i]` and averaged into `nonGaussianity`. It
-is **derived in the previous section, Step 12**, including the population ($N$) moments, the two
-engines' differing guard floors, and how to read the sign.
+onto $\hat{\mathbf e}_i$ — reported as `excessKurtosis[i]` with a resolution flag
+`axisResolved[i]`. It is **derived in the previous section, Step 12**, including the population
+($N$) moments, the definedness rule, the resolution test and how to read the sign; the headline
+`nonGaussianity` is Mardia's rotation-invariant kurtosis, not an average of the $\kappa_i$.
 
-The only thing to carry into a *direction* statement: $\kappa_i$ is a **marginal** number attached
-to one axis. A large $\kappa_1$ says the distribution along PC1 is peaked and fat-tailed — an
-anharmonic mode, or a split site with the two wells separated along that line — but it cannot tell
-those apart, it says nothing about the sign of the displacement (Step 3), and it is not a
-multivariate measure. Combine it with the KDE isosurface before attributing a mechanism to a
-direction.
+The things to carry into a *direction* statement: $\kappa_i$ means something only when
+`axisResolved[i]` is true — inside a degenerate eigenvalue pair the axis itself is sampling noise.
+A resolved $\kappa_i$ is a **marginal** number attached to one axis: $\kappa_1>0$ says the
+distribution along PC1 is peaked and heavy-tailed, $\kappa_1<0$ that it is flat-topped or bimodal
+(a symmetric split along that line); it says nothing about the sign of the displacement (Step 3).
+Combine it with the KDE isosurface before attributing a mechanism to a direction.
 
 ### Step 5 — Unit-cell vectors in the shared Cartesian basis
 
@@ -1595,7 +1647,7 @@ covariance are whatever the solver returns, so both engines return `axes: null` 
 no crystal-orientation row is drawn. A planar or linear cloud keeps its axes (the spanned plane or
 line is well defined) and is flagged by `degenerate` at $\lambda_3/\lambda_1<10^{-6}$. A near-tie
 between two non-zero eigenvalues, which makes the axes inside that pair individually meaningless,
-does not raise either flag.
+is flagged per axis by `axisResolved` (previous section, Step 12b).
 
 ### Step 10 — Computed but not currently displayed
 
@@ -1756,7 +1808,8 @@ defaults". The table below lists only what this section owns.
   "largest component positive" rule is guaranteed only for PC1 and PC2.
 - **Near-degenerate eigenvalues make individual axes meaningless.** For an isotropic or
   near-isotropic site, the axes within the degenerate subspace are arbitrary; only the subspace
-  is determined. The `degenerate` flag catches only the extreme case
+  is determined. `axisResolved` (previous section, Step 12b) flags such axes — the panel then prints
+  no $\kappa$ and dims their crystal-orientation row. The `degenerate` flag catches only the extreme case
   ($\lambda_3/\max(\lambda_1,10^{-30})<10^{-6}$), not the far more common near-tie between
   $\lambda_1$ and $\lambda_2$. Check the printed $\lambda$ column before reading a direction.
 - **The app shows no crystal-frame direction today.** As stated in Step 10,

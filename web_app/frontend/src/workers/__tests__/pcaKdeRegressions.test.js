@@ -177,3 +177,75 @@ describe('zero-spread sites (pca.parity.3 / parity.24 / parity.30)', () => {
         });
     });
 });
+
+describe('rotation-invariant non-Gaussianity and axis resolution (pca.physics.8 / physics.40)', () => {
+    // Spherical scale mixture of normals (elliptical): scale 1 (80%) or 2 (20%);
+    // its excess kurtosis is 3 E[s^4] / E[s^2]^2 - 3 = 1.6875 along every direction.
+    const scaleMixture = (n, seed, scale = [1, 1, 1]) => {
+        const gauss = makeGauss(seed);
+        let state = (seed * 2654435761) >>> 0;
+        const uniform = () => {
+            state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+            return state / 4294967296;
+        };
+        return Array.from({ length: n }, () => {
+            const s = uniform() < 0.8 ? 1 : 2;
+            return [gauss() * s * scale[0], gauss() * s * scale[1], gauss() * s * scale[2]];
+        });
+    };
+    const transform = (cloud, m) => cloud.map((p) => [0, 1, 2].map((j) => p[0] * m[0][j] + p[1] * m[1][j] + p[2] * m[2][j]));
+
+    it('is affine invariant, so a noise-oriented frame cannot move it', () => {
+        const cloud = scaleMixture(3000, 1).map((p) => p.map((v) => 0.05 * v));
+        const base = pcaKdeVolume(cloud, { grid: 8, projections: false }).nonGaussianity;
+        const matrices = [
+            [[1.0, 0.4, -0.3], [0.0, 0.8, 0.5], [0.2, 0.0, 0.6]],
+            [[1, 0, 0], [0, 1 + 1e-7, 0], [0, 0, 1 + 2e-7]],
+            [[1 + 2e-7, 0, 0], [0, 1, 0], [0, 0, 1 + 1e-7]]
+        ];
+        matrices.forEach((m) => {
+            const moved = pcaKdeVolume(transform(cloud, m), { grid: 8, projections: false }).nonGaussianity;
+            expect(Math.abs(moved - base)).toBeLessThan(1e-9);
+        });
+    });
+
+    it('equals the marginal excess kurtosis of an elliptical cloud', () => {
+        const cloud = scaleMixture(40000, 2, [0.12, 0.08, 0.05]);
+        const result = pcaKdeVolume(cloud, { grid: 8, projections: false, maxFitPoints: 40000 });
+        expect(Math.abs(result.nonGaussianity - 1.6875)).toBeLessThan(0.12);
+    });
+
+    it('flags axes inside a degenerate eigenvalue pair as unresolved', () => {
+        const gauss = makeGauss(4);
+        const cloudOf = (sigma) => Array.from({ length: 1000 }, () => sigma.map((s) => s * gauss()));
+        expect(pcaKdeVolume(cloudOf([0.1, 0.1, 0.1]), { grid: 8, projections: false }).axisResolved)
+            .toEqual([false, false, false]);
+        expect(pcaKdeVolume(cloudOf([0.2, 0.1, 0.1]), { grid: 8, projections: false }).axisResolved)
+            .toEqual([true, false, false]);
+        expect(pcaKdeVolume(cloudOf([0.2, 0.1, 0.05]), { grid: 8, projections: false }).axisResolved)
+            .toEqual([true, true, true]);
+    });
+
+    it('site table and volume report the same statistics', () => {
+        const supercell = [10, 10, 10];
+        const cellEdge = 8;
+        const text = [...header(supercell, cellEdge),
+            ...wrappedSiteLines([0.25, 0.25, 0.25], 0.08, { supercell, cellEdge, seed: 9 })].join('\n');
+        const parsed = siteDisplacementsFromRmc6f(text);
+        const [entry] = siteEllipsoids(parsed.sites);
+        const volume = pcaKdeVolume(parsed.sites[0].displacements, { grid: 8, projections: false });
+        expect(entry.axisResolved).toEqual([false, false, false]);
+        expect(Math.abs(entry.nonGaussianity - volume.nonGaussianity)).toBeLessThan(1e-9);
+    });
+
+    it('reads a symmetric split site as platykurtic', () => {
+        const gauss = makeGauss(6);
+        const [d, s] = [0.15, 0.08];
+        const cloud = Array.from({ length: 8000 }, (_, i) => [(i % 2 ? d : -d) + s * gauss(), s * gauss(), s * gauss()]);
+        const result = pcaKdeVolume(cloud, { grid: 8, projections: false });
+        const analytic = (-2 * d ** 4) / (s * s + d * d) ** 2;
+        expect(result.axisResolved[0]).toBe(true);
+        expect(Math.abs(result.excessKurtosis[0] - analytic)).toBeLessThan(0.08);
+        expect(result.nonGaussianity).toBeLessThan(0);
+    });
+});

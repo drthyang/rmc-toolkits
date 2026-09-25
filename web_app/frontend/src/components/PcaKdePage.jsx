@@ -1049,6 +1049,20 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         : null;
     const noRun = staticMode && !localFile;
 
+    // Which principal axes are resolved from their neighbours (eigenvalue gap above
+    // three standard errors). Older payloads without the flag count as resolved.
+    const axisResolved = [0, 1, 2].map((i) => selectedEllipsoid?.axisResolved?.[i] ?? true);
+    const unresolvedNote = (() => {
+        if (!selectedEllipsoid?.axes) return null;
+        const flags = axisResolved;
+        if (flags.every(Boolean)) return null;
+        if (!flags[0] && !flags[1] && !flags[2]) {
+            return 'PC1 ≈ PC2 ≈ PC3: the eigenvalues agree within their sampling error, so the axis directions (and their κ and crystal orientation) are arbitrary — only U, λ and the non-Gaussianity describe this site.';
+        }
+        const pair = !flags[0] ? 'PC1 ≈ PC2' : 'PC2 ≈ PC3';
+        return `${pair}: those eigenvalues agree within their sampling error, so the directions inside that plane (and their κ and crystal orientation) are arbitrary.`;
+    })();
+
     return (
         <div className="pca-page">
             <div className="pca-controls">
@@ -1469,9 +1483,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                             <p>
                                                 U<sub>iso</sub>/B<sub>iso</sub> are the isotropic
                                                 displacement equivalents (Å²); anisotropy is the ratio of the
-                                                largest to smallest principal amplitude; non-Gaussianity is the
-                                                mean excess kurtosis of the cloud (0 = harmonic/Gaussian,
-                                                positive = anharmonic motion or split sites).
+                                                largest to smallest principal amplitude.
+                                            </p>
+                                            <p>
+                                                Non-Gaussianity is Mardia&rsquo;s multivariate excess
+                                                kurtosis, (b<sub>2</sub> − 15)/5: 0 for a Gaussian
+                                                (harmonic) cloud and, for any elliptical distribution, the
+                                                excess kurtosis along every direction. It does not depend on
+                                                how the principal axes happen to be chosen. Positive means a
+                                                peaked, heavy-tailed well (or a minority off-centre
+                                                component); negative means flat-topped or bimodal &mdash;
+                                                a symmetric split site is negative, not positive.
                                             </p>
                                         </InfoBadge>
                                     </div>
@@ -1554,6 +1576,16 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                     (variance, Å²), RMS the amplitude (Å), and κ the
                                                     excess kurtosis along it (0 = Gaussian).
                                                 </p>
+                                                <p>
+                                                    κ is shown only for an axis whose eigenvalue is
+                                                    separated from its neighbours&rsquo; by more than
+                                                    three standard errors. Inside a (near-)degenerate
+                                                    pair &mdash; a cubic site, the in-plane pair of a
+                                                    uniaxial one &mdash; the axis direction is set by
+                                                    sampling noise and leans toward the outliers, so its
+                                                    κ (and its crystal orientation) is not a property of
+                                                    the site.
+                                                </p>
                                             </InfoBadge>
                                         </div>
                                         <div className="pca-matrix-scroll">
@@ -1567,7 +1599,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                         <th scope="col">λ (Å²)</th>
                                                         <th scope="col">RMS (Å)</th>
                                                         <th scope="col">
-                                                            <abbr title="Excess kurtosis along this axis (0 = Gaussian)">κ</abbr>
+                                                            <abbr title="Excess kurtosis along this axis (0 = Gaussian); — when the axis is not resolved from a neighbour">κ</abbr>
                                                         </th>
                                                     </tr>
                                                 </thead>
@@ -1597,9 +1629,16 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                             ))}
                                                             <td>{numberFormat(selectedEllipsoid.eigenvalues[i], 4)}</td>
                                                             <td>{numberFormat(selectedEllipsoid.rms[i], 3)}</td>
-                                                            <td>{numberFormat(selectedEllipsoid.excessKurtosis?.[i], 2)}</td>
+                                                            <td title={axisResolved[i] ? undefined : `PC${i + 1} is not resolved from a neighbouring axis: its direction and κ are sampling noise`}>
+                                                                {axisResolved[i] ? numberFormat(selectedEllipsoid.excessKurtosis?.[i], 2) : '—'}
+                                                            </td>
                                                         </tr>
                                                     ))}
+                                                    {unresolvedNote && (
+                                                        <tr>
+                                                            <td colSpan={7} className="pca-axes-note">{unresolvedNote}</td>
+                                                        </tr>
+                                                    )}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -1650,7 +1689,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                     </thead>
                                                     <tbody>
                                                         {crystalOrientation.map((row, i) => (
-                                                            <tr key={i}>
+                                                            <tr
+                                                                key={i}
+                                                                className={axisResolved[i] ? '' : 'is-unresolved'}
+                                                                title={axisResolved[i] ? undefined : `PC${i + 1} is not resolved from a neighbouring axis: this direction is sampling noise`}
+                                                            >
                                                                 <th scope="row">
                                                                     <span
                                                                         className="pca-pc-dot"

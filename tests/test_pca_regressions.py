@@ -175,5 +175,74 @@ class ZeroSpreadTests(unittest.TestCase):
         self.assertTrue(all(entry["nonGaussianity"] is None for entry in entries))
 
 
+class RotationInvariantKurtosisTests(unittest.TestCase):
+    """pca.physics.8 / physics.40.
+
+    nonGaussianity was the mean of three marginal kurtoses along the site's own
+    PCA axes. For a (near-)isotropic site those axes are set by sampling noise
+    and correlate with the fourth moments, so the headline number depended on
+    an arbitrary frame. It is now Mardia's b2, normalised as (b2 - 15)/5 --
+    affine invariant, and equal to the marginal excess kurtosis of any
+    elliptical distribution -- and per-axis kappa carries a resolution flag.
+    """
+
+    @staticmethod
+    def _scale_mixture(n, seed):
+        # Spherical scale mixture of normals (elliptical): scale 1 (80%) or 2 (20%).
+        # Marginal excess kurtosis along EVERY direction: 3*E[s^4]/E[s^2]^2 - 3.
+        rng = np.random.default_rng(seed)
+        scales = np.where(rng.random(n) < 0.8, 1.0, 2.0)
+        return rng.normal(size=(n, 3)) * scales[:, None]
+
+    def test_non_gaussianity_is_affine_invariant(self):
+        cloud = self._scale_mixture(3000, 1) * 0.05
+        transform = np.array([[1.0, 0.4, -0.3], [0.0, 0.8, 0.5], [0.2, 0.0, 0.6]])
+        base = pca_kde_volume(cloud, grid=8, projections=False)["nonGaussianity"]
+        for matrix in (transform, np.diag([1.0, 1.0 + 1e-7, 1.0 + 2e-7]), np.diag([1.0 + 2e-7, 1.0, 1.0 + 1e-7])):
+            moved = pca_kde_volume(cloud @ matrix, grid=8, projections=False)["nonGaussianity"]
+            self.assertAlmostEqual(moved, base, places=9)
+
+    def test_non_gaussianity_is_the_elliptical_marginal_kurtosis(self):
+        truth = 3.0 * (0.8 + 0.2 * 16.0) / (0.8 + 0.2 * 4.0) ** 2 - 3.0  # 1.6875
+        cloud = self._scale_mixture(40000, 2) @ np.diag([0.12, 0.08, 0.05])
+        result = pca_kde_volume(cloud, grid=8, projections=False, max_fit_points=40000)
+        self.assertAlmostEqual(result["nonGaussianity"], truth, delta=0.12)
+
+    def test_degenerate_axes_are_flagged_unresolved(self):
+        rng = np.random.default_rng(4)
+        isotropic = pca_kde_volume(rng.normal(size=(1000, 3)) * 0.1, grid=8, projections=False)
+        self.assertEqual(isotropic["axisResolved"], [False, False, False])
+        uniaxial = pca_kde_volume(rng.normal(size=(1000, 3)) * [0.2, 0.1, 0.1], grid=8, projections=False)
+        self.assertEqual(uniaxial["axisResolved"], [True, False, False])
+        triaxial = pca_kde_volume(rng.normal(size=(1000, 3)) * [0.2, 0.1, 0.05], grid=8, projections=False)
+        self.assertEqual(triaxial["axisResolved"], [True, True, True])
+
+    def test_site_table_carries_the_same_statistics(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "iso.rmc6f"
+            supercell = (10, 10, 10)
+            lattice = np.diag(np.asarray(supercell, dtype=float) * 8.0)
+            lines = wrapped_site_lines((0.25, 0.25, 0.25), 0.08, supercell=supercell,
+                                       cell_edge=8.0, seed=9)
+            write_rmc6f(path, lines, supercell=supercell, lattice=lattice)
+            sites = load_site_displacements(path)
+        entry = site_ellipsoids(sites)[0]
+        volume = pca_kde_volume(sites.displacements, grid=8, projections=False)
+        self.assertEqual(entry["axisResolved"], [False, False, False])
+        self.assertAlmostEqual(entry["nonGaussianity"], volume["nonGaussianity"], places=9)
+
+    def test_symmetric_split_site_is_platykurtic(self):
+        # A symmetric double well along x: excess kurtosis -2 d^4/(s^2+d^2)^2 < 0.
+        rng = np.random.default_rng(6)
+        n, d, s = 8000, 0.15, 0.08
+        x = rng.choice([-d, d], size=n) + rng.normal(size=n) * s
+        cloud = np.column_stack([x, rng.normal(size=n) * s, rng.normal(size=n) * s])
+        result = pca_kde_volume(cloud, grid=8, projections=False)
+        analytic = -2 * d**4 / (s**2 + d**2) ** 2
+        self.assertTrue(result["axisResolved"][0])
+        self.assertAlmostEqual(result["excessKurtosis"][0], analytic, delta=0.08)
+        self.assertLess(result["nonGaussianity"], 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

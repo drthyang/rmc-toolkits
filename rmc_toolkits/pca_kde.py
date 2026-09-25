@@ -92,6 +92,15 @@ DEGENERATE_RATIO = 1e-6
 # coordinate in a ~100 A box.
 ZERO_SPREAD_VARIANCE = 1e-8
 
+# A principal axis is "resolved" -- its direction, per-axis kurtosis and crystal
+# orientation mean something -- only when its eigenvalue is separated from each
+# neighbour's by more than this many standard errors of the gap. For a truly
+# degenerate pair (a cubic site, the in-plane pair of a uniaxial one) the gap
+# statistic exceeds 3 in < 1% of samples at n = 216..8000 (Gaussian, t8 and
+# <111>-split clouds, by simulation); its median is ~1, so a 1-SE rule would
+# call half of all degenerate pairs resolved.
+AXIS_RESOLUTION_SIGMAS = 3.0
+
 
 @dataclass(frozen=True)
 class SiteDisplacements:
@@ -270,7 +279,10 @@ def _canonical_axes(vectors: np.ndarray) -> np.ndarray:
     the LAPACK build. Force the largest-magnitude component of every axis
     positive, then flip the last axis if needed to keep the frame right-handed.
     Axes of a near-isotropic cloud stay arbitrary within their degenerate
-    subspace -- no convention can fix that, and nothing physical depends on it.
+    subspace -- no convention can fix that. Anything measured *along* such an
+    axis (its kurtosis, its crystal orientation) is then frame noise, which is
+    why ``_shape_statistics`` reports a rotation-invariant non-Gaussianity and
+    flags unresolved axes.
     """
     vectors = np.array(vectors, dtype=float, copy=True)
     lead = np.argmax(np.abs(vectors), axis=-2)
@@ -330,16 +342,12 @@ def site_ellipsoids(
     largest = np.maximum(eigenvalues[:, 0], 1e-30)
     ratio = eigenvalues[:, 2] / largest
 
-    # Per-axis excess kurtosis in each site's own PCA frame (0 for a Gaussian).
-    # Projecting per atom onto its site axes costs one einsum.
+    # Shape statistics in each site's own PCA frame. Projecting per atom onto its
+    # site axes costs one einsum.
     projected = np.einsum("nij,nj->ni", axes[site_index], displacements)
-    m2 = np.column_stack(
-        [np.bincount(site_index, weights=projected[:, a] ** 2, minlength=site_count) for a in range(3)]
-    ) / np.maximum(counts, 1.0)[:, None]
-    m4 = np.column_stack(
-        [np.bincount(site_index, weights=projected[:, a] ** 4, minlength=site_count) for a in range(3)]
-    ) / np.maximum(counts, 1.0)[:, None]
-    excess_kurtosis = _axis_excess_kurtosis(m2, m4, eigenvalues)
+    excess_kurtosis, non_gaussianity, resolved = _shape_statistics(
+        projected, site_index, site_count, eigenvalues
+    )
 
     ellipsoids: list[dict] = []
     for index in range(site_count):
@@ -361,7 +369,8 @@ def site_ellipsoids(
                 "bIso": float(8.0 * np.pi**2 * u_eq[index]),
                 "rmsIso": float(np.sqrt(max(u_eq[index], 0.0))),
                 "excessKurtosis": _nullable(excess_kurtosis[index]),
-                "nonGaussianity": _nullable_mean(excess_kurtosis[index]),
+                "axisResolved": resolved[index].tolist(),
+                "nonGaussianity": _nullable(non_gaussianity[index:index + 1])[0],
                 # sqrt of the eigenvalue ratio: the ellipsoid's long/short axis.
                 "anisotropy": None if zero
                 else float(np.sqrt(largest[index] / max(eigenvalues[index, 2], 1e-30))),
@@ -372,32 +381,69 @@ def site_ellipsoids(
     return ellipsoids
 
 
-def _axis_excess_kurtosis(m2: np.ndarray, m4: np.ndarray, eigenvalues: np.ndarray) -> np.ndarray:
-    """Per-axis excess kurtosis ``m4 / m2**2 - 3``, NaN where it is undefined.
+def _shape_statistics(
+    projected: np.ndarray,
+    site_index: np.ndarray,
+    site_count: int,
+    eigenvalues: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Kurtosis of every site's cloud: per axis, multivariate, and axis resolution.
 
-    ``m2``/``m4`` are the population (1/n) moments along each principal axis and
-    ``eigenvalues`` the matching descending variances (last axis = the three PCs).
-    An axis is defined only when the site has spread at all (``lambda_1 >=
-    ZERO_SPREAD_VARIANCE``) and the axis itself has not collapsed (``lambda_a >=
-    DEGENERATE_RATIO * lambda_1``); otherwise ``m2`` is round-off and the ratio is
-    0/0. One rule, no floor constant -- ``workers/pcaKde.js`` applies the same.
+    ``projected`` holds each (centred) atom in its own site's PCA frame and
+    ``eigenvalues`` the sites' descending covariance eigenvalues, shape (S, 3).
+    Moments are population (1/n) moments. Returns, per site:
+
+    * ``kappa`` (S, 3) -- excess kurtosis ``m4 / m2**2 - 3`` along each principal
+      axis; NaN where undefined: no spread (``lambda_1 < ZERO_SPREAD_VARIANCE``)
+      or a collapsed axis (``lambda_a < DEGENERATE_RATIO * lambda_1``), where m2 is
+      round-off and the ratio 0/0. One rule, no floor constant.
+    * ``non_gaussianity`` (S,) -- Mardia's multivariate kurtosis
+      ``b2 = mean[(u^T S^-1 u)^2]`` over the d defined axes, normalised as
+      ``3 (b2 - d(d+2)) / (d(d+2))`` -- ``(b2 - 15)/5`` for d = 3. It is affine
+      invariant, so it cannot depend on how sampling noise orients the PCA
+      frame of a (near-)isotropic site, and for any elliptical distribution it
+      equals the excess kurtosis along every direction. NaN when d = 0.
+    * ``resolved`` (S, 3) bool -- the axis is separated from each neighbour by
+      more than ``AXIS_RESOLUTION_SIGMAS`` standard errors of the eigenvalue gap,
+      ``SE(lambda_a) = sqrt((m4_a - m2_a**2) / n)``. An unresolved axis lies in a
+      (near-)degenerate subspace: its direction, and so its kappa and crystal
+      orientation, is set by sampling noise and biased toward the outliers.
+
+    ``workers/pcaKde.js`` (``shapeStatistics``) is the line-for-line port.
     """
-    defined = (eigenvalues[..., :1] >= ZERO_SPREAD_VARIANCE) & (
-        eigenvalues >= DEGENERATE_RATIO * eigenvalues[..., :1]
-    )
+    counts = np.maximum(np.bincount(site_index, minlength=site_count).astype(float), 1.0)
+    m2 = np.column_stack(
+        [np.bincount(site_index, weights=projected[:, a] ** 2, minlength=site_count) for a in range(3)]
+    ) / counts[:, None]
+    m4 = np.column_stack(
+        [np.bincount(site_index, weights=projected[:, a] ** 4, minlength=site_count) for a in range(3)]
+    ) / counts[:, None]
+
+    has_spread = eigenvalues[:, :1] >= ZERO_SPREAD_VARIANCE
+    defined = has_spread & (eigenvalues >= DEGENERATE_RATIO * eigenvalues[:, :1])
     with np.errstate(divide="ignore", invalid="ignore"):
-        kurtosis = m4 / (m2 * m2) - 3.0
-    return np.where(defined, kurtosis, np.nan)
+        kappa = np.where(defined, m4 / (m2 * m2) - 3.0, np.nan)
+        inverse = np.where(defined, 1.0 / m2, 0.0)
+
+    radius2 = np.einsum("ni,ni->n", projected * projected, inverse[site_index])
+    b2 = np.bincount(site_index, weights=radius2 * radius2, minlength=site_count) / counts
+    d = defined.sum(axis=1)
+    reference = d * (d + 2.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        non_gaussianity = np.where(d > 0, 3.0 * (b2 - reference) / reference, np.nan)
+
+    error = np.sqrt(np.maximum(m4 - m2 * m2, 0.0) / counts[:, None])
+    gap = [
+        (m2[:, a] - m2[:, a + 1]) > AXIS_RESOLUTION_SIGMAS * np.hypot(error[:, a], error[:, a + 1])
+        for a in (0, 1)
+    ]
+    resolved = np.column_stack([gap[0], gap[0] & gap[1], gap[1]]) & has_spread
+    return kappa, non_gaussianity, resolved
 
 
 def _nullable(values: np.ndarray) -> list:
     """List of floats with NaN (undefined) mapped to None -- JSON null, never a NaN token."""
     return [None if not np.isfinite(value) else float(value) for value in np.asarray(values)]
-
-
-def _nullable_mean(values: np.ndarray) -> float | None:
-    finite = np.asarray(values)[np.isfinite(values)]
-    return float(finite.mean()) if finite.size else None
 
 
 def _bandwidth_factor(method: str | float, count: int, dimensions: int) -> float:
@@ -586,11 +632,10 @@ def pca_kde_volume(
     probabilities = np.asarray(probabilities, dtype=float)
     mass_levels, density_levels, mass = _iso_levels(density, cell_volume, probabilities)
 
-    # Per-axis excess kurtosis in the PCA frame (0 = Gaussian), undefined on a
-    # collapsed axis -- the same rule as ``site_ellipsoids``.
-    m2 = (projected**2).mean(axis=0)
-    m4 = (projected**4).mean(axis=0)
-    excess_kurtosis = _axis_excess_kurtosis(m2, m4, raw_eigenvalues)
+    # Kurtosis of the fit cloud -- the same statistics as ``site_ellipsoids``.
+    kappa, non_gaussianity, resolved = _shape_statistics(
+        projected, np.zeros(count, dtype=int), 1, raw_eigenvalues[None, :]
+    )
 
     scale = probability_scale(probability)
     result = {
@@ -606,8 +651,9 @@ def pca_kde_volume(
         "uIso": float(eigenvalues.mean()),
         "bIso": float(8.0 * np.pi**2 * eigenvalues.mean()),
         "anisotropy": float(sigma[0] / sigma[2]),
-        "excessKurtosis": _nullable(excess_kurtosis),
-        "nonGaussianity": _nullable_mean(excess_kurtosis),
+        "excessKurtosis": _nullable(kappa[0]),
+        "axisResolved": resolved[0].tolist(),
+        "nonGaussianity": _nullable(non_gaussianity)[0],
         "degenerate": bool(ratio < DEGENERATE_RATIO),
         "zeroSpread": False,
         "bw": bw if isinstance(bw, str) else float(bw),

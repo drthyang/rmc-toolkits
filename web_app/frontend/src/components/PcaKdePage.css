@@ -810,6 +810,13 @@
     color: var(--text-strong);
 }
 
+/* An axis inside a degenerate eigenvalue pair: its direction is sampling noise,
+   so its crystal orientation is dimmed rather than presented as a result. */
+.pca-matrix--crystal tr.is-unresolved td {
+    color: var(--subtle);
+    font-style: italic;
+}
+
 /* The [u v w] direction is one bracketed token, not three numbers to compare down
    the column — center it (header included) rather than right-align its closing
    bracket, and keep it a shade quieter than the angles beside it. */
