@@ -60,9 +60,9 @@ def run_cli(args):
 def cli_outputs(tmp, stem):
     """(r, GK written for RMCProfile, GK before enforcement, provenance)."""
     rmc = read_stog_xy(Path(tmp) / f"{stem}_rmc.gr")
-    ft = read_stog_xy(Path(tmp) / f"{stem}_ft.gr")  # g - 1 before enforcement
+    ft = read_stog_xy(Path(tmp) / f"{stem}_ft.gr")  # classic scale_ft.gr: column 2 is g(r)
     provenance = json.loads((Path(tmp) / f"{stem}_provenance.json").read_text())
-    return rmc[0], rmc[1], ft[1], provenance
+    return rmc[0], rmc[1], ft[1] - 1.0, provenance  # g - 1 before enforcement
 
 
 class AutoEnforcementCoordinationTests(unittest.TestCase):
