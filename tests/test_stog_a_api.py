@@ -140,6 +140,29 @@ class ScalingApiStogATests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_cached_result_is_never_mutated(self):
+        # Manual data mode with a pinned r0: scale_pipeline records no
+        # r0_detected, and the auto-enforcement branch used to write it into the
+        # shared lru-cached ScalingResult, leaking into later enforce=false calls.
+        body = self.data_body(r0=2.65, mode="manual", a=10.0, b=-9.0)
+
+        def diagnostics(**extra):
+            payload = self.client.post("/api/scaling/preview", json={**body, **extra}).get_json()
+            return payload["diagnostics"], payload["guides"]["r0Detected"], payload["provenance"]
+
+        cold, cold_guide, cold_provenance = diagnostics(enforce=False)
+        self.assertNotIn("r0_detected", cold)
+        self.assertIsNone(cold_guide)
+        auto, auto_guide, _ = diagnostics()
+        self.assertIn("r0_detected", auto)
+        self.assertIsNotNone(auto_guide)
+        again, again_guide, again_provenance = diagnostics(enforce=False)
+        self.assertEqual(again, cold)
+        self.assertIsNone(again_guide)
+        self.assertNotIn("r0_detected", again_provenance)
+        cached = backend_app._cached_scaling.cache_info()
+        self.assertGreaterEqual(cached.hits, 2)  # the same cached object served all three
+
 
 if __name__ == "__main__":
     unittest.main()

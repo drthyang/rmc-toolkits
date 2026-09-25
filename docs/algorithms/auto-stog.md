@@ -3392,7 +3392,11 @@ and no `argv`, a `source` key holding `str(inp_path or data_path)`, and a trunca
 `stog_inp_reference` of only `{a, b}` (no `yscale`/`yoffset`). The API also exposes **no $\rho_0$
 self-consistency** (`--estimate-rho0` has no HTTP counterpart — `estimate_rho0` is never
 imported by `app.py`) and memoizes engine results in an `@lru_cache(maxsize=8)` keyed on
-`(data path, mtime, config, mode, a, b, use_sigma)` (`app.py` → `_cached_scaling()`).
+`(data path, mtime, config, mode, a, b, use_sigma)` (`app.py` → `_cached_scaling()`). The
+cached `ScalingResult` is shared by every identical request, so `_scaling_request` annotates a
+per-request copy (`dataclasses.replace(result, provenance=dict(...))`) — pre-1.0 it wrote
+`r0_detected` into the cached object, so a request's diagnostics and written provenance depended
+on which requests the server had handled before.
 The browser engine
 [`workers/autoScale.js`](../../web_app/frontend/src/workers/autoScale.js) is a straight port of
 [`scaling.py`](../../rmc_toolkits/scaling.py) + [`transforms.py`](../../rmc_toolkits/transforms.py)

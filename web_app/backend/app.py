@@ -951,6 +951,11 @@ def _scaling_request(payload: dict):
     result = _cached_scaling(
         str(data_path), data_path.stat().st_mtime, config, mode, a, b, use_sigma
     )
+    # The lru-cached ScalingResult is shared by every identical request (and
+    # request thread): annotate a per-request copy, never the cached object.
+    from dataclasses import replace as _replace_result
+
+    result = _replace_result(result, provenance=dict(result.provenance))
     # No explicit cutoff and enforcement not refused: enforce automatically
     # at the foot of the first shell (CLI-mirroring auto default).
     if enforcement is None and enforce_flag is not False:
