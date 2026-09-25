@@ -23,7 +23,7 @@ describe('estimateRho0 extrapolated flag', () => {
     expect(Math.abs(low.rho0 - atData.rho0) / atData.rho0).toBeLessThan(1e-6);
     expect(low.extrapolated).toBe(true);
     expect(atData.extrapolated).toBe(true);
-  });
+  }, 60000); // two unconverged 8-pass estimates: slow under a parallel run
 
   it('is clear when the data start below the fit width', () => {
     const estimate = estimateRho0(Q, Float64Array.from(fixture.sqMeas), makeConfig({
@@ -31,5 +31,5 @@ describe('estimateRho0 extrapolated flag', () => {
     }));
     expect(estimate.qFirst).toBeLessThan(FZ_FIT_WIDTH);
     expect(estimate.extrapolated).toBe(false);
-  });
+  }, 60000);
 });

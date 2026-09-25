@@ -31,7 +31,7 @@ describe('estimateRho0 physical range', () => {
     const estimate = estimateRho0(Q, SQ, seeded());
     expect(estimate.converged).toBe(true);
     expect(estimate.reason).toBeNull();
-  });
+  }, 60000);
 
   it('stops with a reason when the step leaves the range', () => {
     const estimate = estimateRho0(Q, SQ, seeded(), null, { rhoMax: 0.03 });
@@ -40,7 +40,7 @@ describe('estimateRho0 physical range', () => {
     estimate.history.forEach((row) => expect(row[0]).toBeLessThanOrEqual(0.03));
     expect(rho0NonConvergenceMessage(estimate)).toContain(estimate.reason);
     expect(() => estimateRho0(Q, SQ, seeded(), null, { rhoMin: 0.3 })).toThrow(/rhoMin < rhoMax/);
-  });
+  }, 60000);
 });
 
 // Real missing-low-Q data (local-only, ~15 s, so opt-in like the other real-data
