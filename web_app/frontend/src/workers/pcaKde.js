@@ -588,11 +588,33 @@ const readCellVectors = (text) => {
 // but well above thermal spread, so genuine sites separate; exposed as a UI knob.
 export const DEFAULT_CLUSTER_THRESHOLD = 1.5;
 
+// Element symbols as Python's str.capitalize() normalises them in iter_rmc6f_atoms
+// ('SE' -> 'Se'), so both engines label and pool the same species.
+const capitalizeElement = (symbol) => {
+    const text = String(symbol);
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+};
+
+// Code-point string order (Python's default), never locale-dependent.
+const byCodePoint = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// A site's composition and label: species counts in name order, and the majority
+// species (ties to the alphabetically first) -- the rule of `_site_compositions`.
+const siteComposition = (atomElements) => {
+    const tally = new Map();
+    atomElements.forEach((element) => tally.set(element, (tally.get(element) || 0) + 1));
+    const names = [...tally.keys()].sort(byCodePoint);
+    const elementCounts = Object.fromEntries(names.map((name) => [name, tally.get(name)]));
+    const element = names.reduce((best, name) => (best === null || tally.get(name) > tally.get(best) ? name : best), null) ?? '';
+    return { element, elementCounts, mixed: names.length > 1 };
+};
+
 // Turn one site's fractional offsets (each atom's position within its own cell, in
 // supercell-fractional units) into the site record: mean-centered Cartesian
 // displacements (Å) and the site's within-unit-cell fractional position. Offsets
 // must already be unwrapped (no boundary split) so the plain mean is the true mean.
-const buildSite = (referenceNumber, element, offsets, latticeVectors, supercell, copiesPerCell = null) => {
+// `atomElements` is each row's own species (a reference number can carry several).
+const buildSite = (referenceNumber, atomElements, offsets, latticeVectors, supercell, copiesPerCell = null) => {
     const n = offsets.length;
     const mean = [0, 0, 0];
     offsets.forEach((offset) => { mean[0] += offset[0]; mean[1] += offset[1]; mean[2] += offset[2]; });
@@ -610,7 +632,11 @@ const buildSite = (referenceNumber, element, offsets, latticeVectors, supercell,
         const frac = (value * supercell[i]) % 1;
         return (frac + 1) % 1;
     });
-    return { referenceNumber, element, count: n, displacements, siteFractional, copiesPerCell };
+    const { element, elementCounts, mixed } = siteComposition(atomElements);
+    return {
+        referenceNumber, element, elementCounts, mixed, atomElements,
+        count: n, displacements, siteFractional, copiesPerCell
+    };
 };
 
 // numpy's np.round: round half to even, so a tie folds the same way in both engines.
@@ -636,19 +662,20 @@ const circularMean = (values) => {
 // about zero tears a site at x = 1/2 in a one-cell-thick box (or near x = 1 in a
 // two-cell one) into halves a box edge apart. Mirrors `load_site_displacements`.
 const sitesByReferenceNumber = (atoms, latticeVectors, supercell) => {
-    const clouds = new Map();   // referenceNumber -> { element, offsets: [[dfx,dfy,dfz], ...] }
+    const clouds = new Map();   // referenceNumber -> { elements: [...], offsets: [[dfx,dfy,dfz], ...] }
     atoms.forEach(({ element, referenceNumber, coords, cellIndices }) => {
         const offset = coords.map((value, i) => value - cellIndices[i] / supercell[i]);
         let cloud = clouds.get(referenceNumber);
-        if (!cloud) { cloud = { element, offsets: [] }; clouds.set(referenceNumber, cloud); }
+        if (!cloud) { cloud = { elements: [], offsets: [] }; clouds.set(referenceNumber, cloud); }
+        cloud.elements.push(element);
         cloud.offsets.push(offset);
     });
     const referenceNumbers = [...clouds.keys()].sort((a, b) => a - b);
     const sites = referenceNumbers.map((referenceNumber) => {
-        const { element, offsets } = clouds.get(referenceNumber);
+        const { elements, offsets } = clouds.get(referenceNumber);
         const centre = [0, 1, 2].map((i) => circularMean(offsets.map((offset) => offset[i])));
         const unwrapped = offsets.map((offset) => offset.map((value, i) => value - roundHalfEven(value - centre[i])));
-        return buildSite(referenceNumber, element, unwrapped, latticeVectors, supercell);
+        return buildSite(referenceNumber, elements, unwrapped, latticeVectors, supercell);
     });
     return { referenceNumbers, sites };
 };
@@ -791,7 +818,8 @@ const sitesByClustering = (atoms, latticeVectors, supercell, thresholdA) => {
 
     const sites = clusters.map((cluster, index) => {
         const offsets = cluster.unwrapped.map((uf) => uf.map((v, i) => v / supercell[i]));
-        return buildSite(index + 1, cluster.element, offsets, latticeVectors, supercell, copiesPerCell);
+        const atomElements = offsets.map(() => cluster.element);
+        return buildSite(index + 1, atomElements, offsets, latticeVectors, supercell, copiesPerCell);
     });
     return { referenceNumbers: sites.map((site) => site.referenceNumber), sites };
 };
@@ -812,7 +840,7 @@ export const siteDisplacementsFromRmc6f = (text, { clusterThreshold = DEFAULT_CL
         if (parts[0] === 'Atoms:') { inAtoms = true; return; }
         if (!inAtoms) return;
         const atom = parseAtomLine(parts);
-        if (atom) atoms.push(atom);
+        if (atom) atoms.push({ ...atom, element: capitalizeElement(atom.element) });
     });
     if (atoms.length === 0) throw new Error('No atoms found in structure');
 
@@ -851,6 +879,8 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
         return {
             referenceNumber: site.referenceNumber,
             element: site.element,
+            mixed: Boolean(site.mixed),
+            elementCounts: site.elementCounts ?? { [site.element]: site.count },
             count: site.count,
             copiesPerCell: site.copiesPerCell ?? null,
             siteFractional: site.siteFractional,
@@ -874,29 +904,52 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
     });
 };
 
+/**
+ * One site's cloud, one element's pooled atoms, or every atom -- the port of
+ * `displacement_cloud`. Element pooling selects each atom by its OWN species
+ * (`atomElements`), so a mixed-occupancy site contributes only the matching
+ * atoms. Returns `{ cloud, site }`, `site` being the record for a reference number.
+ */
+export const displacementCloud = (parsed, { referenceNumber = null, element = null } = {}) => {
+    if (referenceNumber !== null) {
+        const site = parsed.sites.find((entry) => entry.referenceNumber === referenceNumber);
+        if (!site) throw new Error(`Unknown reference number ${referenceNumber}`);
+        return { cloud: site.displacements, site };
+    }
+    if (element !== null && element !== '' && element !== 'all') {
+        const wanted = String(element).toLowerCase();
+        const cloud = [];
+        parsed.sites.forEach((site) => {
+            const own = site.atomElements ?? site.displacements.map(() => site.element);
+            site.displacements.forEach((row, i) => { if (own[i].toLowerCase() === wanted) cloud.push(row); });
+        });
+        if (!cloud.length) {
+            throw new Error(`Unknown element ${element}; available: ${siteSpecies(parsed.sites).join(', ')}`);
+        }
+        return { cloud, site: null };
+    }
+    const cloud = [];
+    parsed.sites.forEach((site) => { site.displacements.forEach((row) => cloud.push(row)); });
+    return { cloud, site: null };
+};
+
+/** Every species present across the sites (minority species of mixed sites included), sorted. */
+export const siteSpecies = (sites) => {
+    const names = new Set();
+    sites.forEach((site) => Object.keys(site.elementCounts ?? { [site.element]: 1 }).forEach((name) => names.add(name)));
+    return [...names].sort(byCodePoint);
+};
+
 /** One site's (or one element's pooled) cloud, then `pcaKdeVolume`. */
 export const sitePcaKde = (parsed, { referenceNumber = null, element = null, ...options } = {}) => {
-    let cloud = [];
-    let tagged = null;
-    if (referenceNumber !== null) {
-        tagged = parsed.sites.find((site) => site.referenceNumber === referenceNumber);
-        if (!tagged) throw new Error(`Unknown reference number ${referenceNumber}`);
-        cloud = tagged.displacements;
-    } else if (element !== null && element !== '' && element !== 'all') {
-        const matches = parsed.sites.filter(
-            (site) => site.element.toLowerCase() === String(element).toLowerCase()
-        );
-        if (!matches.length) throw new Error(`Unknown element ${element}`);
-        matches.forEach((site) => { cloud = cloud.concat(site.displacements); });
-    } else {
-        parsed.sites.forEach((site) => { cloud = cloud.concat(site.displacements); });
-    }
-
+    const { cloud, site } = displacementCloud(parsed, { referenceNumber, element });
     const result = pcaKdeVolume(cloud, options);
-    if (tagged) {
-        result.referenceNumber = tagged.referenceNumber;
-        result.element = tagged.element;
-        result.siteFractional = tagged.siteFractional;
+    if (site) {
+        result.referenceNumber = site.referenceNumber;
+        result.element = site.element;
+        result.elementCounts = site.elementCounts;
+        result.mixed = Boolean(site.mixed);
+        result.siteFractional = site.siteFractional;
     } else if (element) {
         result.element = String(element);
     }

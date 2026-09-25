@@ -16,6 +16,7 @@ import unittest
 import numpy as np
 
 from rmc_toolkits.pca_kde import (
+    displacement_cloud,
     load_site_displacements,
     pca_kde_volume,
     site_ellipsoids,
@@ -242,6 +243,68 @@ class RotationInvariantKurtosisTests(unittest.TestCase):
         self.assertTrue(result["axisResolved"][0])
         self.assertAlmostEqual(result["excessKurtosis"][0], analytic, delta=0.08)
         self.assertLess(result["nonGaussianity"], 0.0)
+
+
+def mixed_site_file(path, *, supercell=(4, 4, 4), cell_edge=8.0, minority_every=4,
+                    majority="Ga", minority="In", other_token="SE"):
+    """Reference 1 is mixed (majority first in the file, minority LAST, the way
+    RMCProfile groups atoms by type); reference 2 is a single species written
+    with an upper-case token."""
+    lattice = np.diag(np.asarray(supercell, dtype=float) * cell_edge)
+    lines = wrapped_site_lines((0.25, 0.25, 0.25), 0.06, supercell=supercell,
+                               cell_edge=cell_edge, seed=11, element=majority, reference=1)
+    # Re-label every `minority_every`-th copy and move those lines to the end.
+    major = [line for k, line in enumerate(lines) if k % minority_every]
+    minor = [line.replace(f" {majority} ", f" {minority} ", 1)
+             for k, line in enumerate(lines) if not k % minority_every]
+    other = wrapped_site_lines((0.6, 0.1, 0.3), 0.07, supercell=supercell, cell_edge=cell_edge,
+                               seed=12, element=other_token, reference=2)
+    write_rmc6f(path, major + other + minor, supercell=supercell, lattice=lattice)
+    return len(major), len(minor)
+
+
+class MixedOccupancySiteTests(unittest.TestCase):
+    """pca.parity.4 / numerics.17 / parity.20 / parity.26 / numerics.33 / physics.39.
+
+    A reference number carried by several species (a solid solution, swap
+    moves) was labelled by the LAST atom in Python and the FIRST in JS, the
+    minority species vanished from the element list, and element pooling
+    selected whole sites by that label.
+    """
+
+    def test_majority_label_with_composition(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "mixed.rmc6f"
+            n_major, n_minor = mixed_site_file(path)
+            sites = load_site_displacements(path)
+        mixed, pure = site_ellipsoids(sites)
+        self.assertEqual(mixed["element"], "Ga")          # majority, not the last atom
+        self.assertTrue(mixed["mixed"])
+        self.assertEqual(mixed["elementCounts"], {"Ga": n_major, "In": n_minor})
+        self.assertEqual(pure["element"], "Se")           # 'SE' normalised
+        self.assertFalse(pure["mixed"])
+        self.assertEqual(pure["elementCounts"], {"Se": 64})
+        self.assertEqual(sites.species, ["Ga", "In", "Se"])
+
+    def test_element_pooling_selects_atoms_by_their_own_element(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "mixed.rmc6f"
+            n_major, n_minor = mixed_site_file(path)
+            sites = load_site_displacements(path)
+        self.assertEqual(len(displacement_cloud(sites, element="In")), n_minor)
+        self.assertEqual(len(displacement_cloud(sites, element="ga")), n_major)
+        self.assertEqual(len(displacement_cloud(sites, element="Se")), 64)
+        with self.assertRaisesRegex(ValueError, "Unknown element"):
+            displacement_cloud(sites, element="Nb")
+
+    def test_tie_goes_to_the_alphabetically_first_species(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tie.rmc6f"
+            mixed_site_file(path, minority_every=2, majority="Fe", minority="Co")
+            sites = load_site_displacements(path)
+        entry = site_ellipsoids(sites)[0]
+        self.assertEqual(entry["elementCounts"], {"Co": 32, "Fe": 32})
+        self.assertEqual(entry["element"], "Co")
 
 
 if __name__ == "__main__":

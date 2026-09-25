@@ -576,7 +576,9 @@ def pca_sites_endpoint():
             {
                 "source": str(rmc6f_path),
                 "referenceNumbers": sites.reference_numbers.tolist(),
-                "elements": sorted(set(sites.elements)),
+                # Every species present, including the minority species of a
+                # mixed-occupancy site (site labels carry only the majority).
+                "elements": sites.species,
                 "totalAtoms": int(sites.counts.sum()),
                 "latticeVectors": sites.lattice_vectors.tolist(),
                 "supercell": sites.supercell.tolist(),

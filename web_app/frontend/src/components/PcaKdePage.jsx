@@ -42,6 +42,18 @@ const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercen
 const numberFormat = (value, digits = 4) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
 
+// A mixed-occupancy site (one reference number, several species) reads as its
+// composition, e.g. Ga0.75In0.25 (majority first); a pure site as its element.
+const siteLabel = (site) => {
+    if (!site?.mixed || !site.elementCounts) return site?.element ?? '';
+    const entries = Object.entries(site.elementCounts);
+    const total = entries.reduce((sum, [, count]) => sum + count, 0) || 1;
+    return entries
+        .sort(([nameA, a], [nameB, b]) => b - a || (nameA < nameB ? -1 : nameA > nameB ? 1 : 0))
+        .map(([name, count]) => `${name}${(count / total).toFixed(2)}`)
+        .join('');
+};
+
 // One component of a [u v w] direction. Components that round to zero print as a
 // clean 0.00 (never "-0.00"), so a direction along a cell axis reads as [1 0 0].
 const uvwFormat = (value) => numberFormat(Math.abs(value) < 5e-3 ? 0 : value, 2);
@@ -1087,7 +1099,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         >
                             {sites?.sites.map((site) => (
                                 <option key={site.referenceNumber} value={site.referenceNumber}>
-                                    {`#${site.referenceNumber} ${site.element} — U=${numberFormat(site.uIso, 4)} Å²`}
+                                    {`#${site.referenceNumber} ${siteLabel(site)} — U=${numberFormat(site.uIso, 4)} Å²`}
                                     {site.copiesPerCell ? ` (${site.count}/${site.copiesPerCell})` : ''}
                                 </option>
                             ))}
@@ -1299,7 +1311,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                     <h3>
                         <span className="panel-title-label">
                             {selectedEllipsoid
-                                ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber}`
+                                ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber}`
                                 : 'PCA ellipsoid'}
                         </span>
                         <span className="panel-title-actions">
@@ -1459,6 +1471,25 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         {selectedEllipsoid ? (
                             <div className={`pca-stats-grid${crystalOrientation ? ' has-crystal' : ''}`}>
                                 <div className="pca-stats-col pca-stats-col--summary">
+                                {selectedEllipsoid.mixed && selectedEllipsoid.elementCounts && (
+                                    <p className="pca-site-tag is-flagged">
+                                        <span className="pca-site-tag-count">mixed</span>
+                                        <span>
+                                            {Object.entries(selectedEllipsoid.elementCounts)
+                                                .map(([name, count]) => `${name} ${count}`)
+                                                .join(' · ')}
+                                        </span>
+                                        <InfoBadge label="About the mixed site" align="end">
+                                            <p>
+                                                Atoms of more than one species share this reference
+                                                number (a solid solution, or RMCProfile swap moves). The
+                                                site is labelled by its majority species; U, κ and the
+                                                KDE describe all its atoms together, about their common
+                                                mean position.
+                                            </p>
+                                        </InfoBadge>
+                                    </p>
+                                )}
                                 {siteTag && (
                                     <p className={`pca-site-tag ${siteTag.clean ? 'is-clean' : 'is-flagged'}`}>
                                         <span className="pca-site-tag-count">{siteTag.count}/{siteTag.per}</span>

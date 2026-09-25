@@ -10,12 +10,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 
 import {
+    displacementCloud,
     eigenDecomposition,
     pcaKdeVolume,
     siteDisplacementsFromRmc6f,
     siteEllipsoids,
     sitePcaKde
 } from '../pcaKde.js';
+import { handlePcaMessage } from '../pcaKdeWorker.js';
 
 const AVERAGE_RMC6F = fileURLToPath(new URL('../../../../../data/5K_try1/GaNb4Se8_5KAVERAGE.rmc6f', import.meta.url));
 
@@ -247,5 +249,50 @@ describe('rotation-invariant non-Gaussianity and axis resolution (pca.physics.8 
         expect(result.axisResolved[0]).toBe(true);
         expect(Math.abs(result.excessKurtosis[0] - analytic)).toBeLessThan(0.08);
         expect(result.nonGaussianity).toBeLessThan(0);
+    });
+});
+
+describe('mixed-occupancy sites (pca.parity.4 / numerics.17 / parity.20 / parity.26 / numerics.33 / physics.39)', () => {
+    // Reference 1 is mixed (majority first in the file, minority LAST, as RMCProfile
+    // groups atoms by type); reference 2 is one species written with an upper-case token.
+    const mixedText = ({ minorityEvery = 4, majority = 'Ga', minority = 'In', otherToken = 'SE' } = {}) => {
+        const supercell = [4, 4, 4];
+        const cellEdge = 8;
+        const lines = wrappedSiteLines([0.25, 0.25, 0.25], 0.06, { supercell, cellEdge, seed: 11, element: majority, reference: 1 });
+        const major = lines.filter((_, k) => k % minorityEvery);
+        const minor = lines.filter((_, k) => !(k % minorityEvery)).map((line) => line.replace(` ${majority} `, ` ${minority} `));
+        const other = wrappedSiteLines([0.6, 0.1, 0.3], 0.07, { supercell, cellEdge, seed: 12, element: otherToken, reference: 2 });
+        return { text: [...header(supercell, cellEdge), ...major, ...other, ...minor].join('\n'), nMajor: major.length, nMinor: minor.length };
+    };
+
+    it('labels a mixed site by its majority species and reports its composition', async () => {
+        const { text, nMajor, nMinor } = mixedText();
+        const parsed = siteDisplacementsFromRmc6f(text);
+        const [mixed, pure] = siteEllipsoids(parsed.sites);
+        expect(mixed.element).toBe('Ga');
+        expect(mixed.mixed).toBe(true);
+        expect(mixed.elementCounts).toEqual({ Ga: nMajor, In: nMinor });
+        expect(pure.element).toBe('Se');
+        expect(pure.mixed).toBe(false);
+        expect(pure.elementCounts).toEqual({ Se: 64 });
+        const summary = await handlePcaMessage({ kind: 'sites' }, async () => text);
+        expect(summary.elements).toEqual(['Ga', 'In', 'Se']);
+    });
+
+    it('pools atoms by their own element', () => {
+        const { text, nMajor, nMinor } = mixedText();
+        const parsed = siteDisplacementsFromRmc6f(text);
+        expect(displacementCloud(parsed, { element: 'In' }).cloud).toHaveLength(nMinor);
+        expect(displacementCloud(parsed, { element: 'ga' }).cloud).toHaveLength(nMajor);
+        expect(displacementCloud(parsed, { element: 'Se' }).cloud).toHaveLength(64);
+        expect(() => displacementCloud(parsed, { element: 'Nb' })).toThrow(/Unknown element/);
+        expect(sitePcaKde(parsed, { element: 'In', grid: 8, projections: false }).count).toBe(nMinor);
+    });
+
+    it('breaks a tie toward the alphabetically first species', () => {
+        const { text } = mixedText({ minorityEvery: 2, majority: 'Fe', minority: 'Co' });
+        const [entry] = siteEllipsoids(siteDisplacementsFromRmc6f(text).sites);
+        expect(entry.elementCounts).toEqual({ Co: 32, Fe: 32 });
+        expect(entry.element).toBe('Co');
     });
 });

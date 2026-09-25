@@ -151,6 +151,9 @@ of label columns between element and coordinates is tolerated:
 Lines with fewer than 9 whitespace-separated fields are **silently skipped** by the Python parser.
 The browser parser `web_app/frontend/src/rmc6f.js` → `parseAtomLine()` additionally accepts the old
 5–6-field coordinates-only form, returning `referenceNumber = null` and `cellIndices = null`.
+Element symbols are normalised identically in both engines — Python's `str.capitalize()` in
+`iter_rmc6f_atoms`, and `capitalizeElement()` in `siteDisplacementsFromRmc6f()` (`SE` → `Se`) — so
+a site and its pooling carry the same label in either runtime.
 
 **The displacement convention** (`pca_kde.py` → `load_site_displacements()`; JS
 `sitesByReferenceNumber()` + `buildSite()`):
@@ -202,8 +205,22 @@ $\;\mathrm{mod}(\bar{\mathbf{o}}_s\odot\mathbf{N},\,1)$ (`site_fractional`, seri
 `siteFractional`), which is what `SiteStructurePanel.jsx` uses to place each marker (Step 14).
 
 **Outputs.** `SiteDisplacements` (Python dataclass) / `{referenceNumbers, sites, latticeVectors,
-supercell, reconstructed}` (JS): per-site element, copy count, centred Cartesian cloud (Å),
-fractional site position.
+supercell, reconstructed}` (JS): per-site element label, copy count, centred Cartesian cloud (Å),
+fractional site position, and each row's **own** species (`atom_elements` / `atomElements`).
+
+**Mixed-occupancy sites.** A reference number can be carried by atoms of more than one species — a
+solid solution, or the result of RMCProfile swap moves. Both engines apply one rule
+(`_site_compositions` / `siteComposition`): the site's `element` label is its **majority species**,
+ties going to the alphabetically first (code-point order, never locale); `elementCounts` holds the
+full composition (species → copies, in name order) and `mixed` is true when it has more than one
+entry. Both appear in every `sites` row and in a per-site KDE payload. The site's cloud is still all
+of its atoms about their common mean position, so $\mathbf U$, $\kappa$ and the KDE describe the
+site as a whole. The payload's `elements` list (Python `SiteDisplacements.species`, JS
+`siteSpecies()`) is every species present, minority species of mixed sites included. (Before 1.0
+Python labelled such a site by the *last* atom in file order and JS by the *first*, so the same file
+showed `#1 In` in one runtime and `#1 Ga` in the other, and the minority species vanished from the
+element list.) The page shows a mixed site as its composition — `Ga0.75In0.25` in the picker and the
+viewport heading — with a `mixed · Ga 48 · In 16` tag in the Summary column.
 
 **Caching.** Python: `cached_site_displacements()` is `functools.lru_cache(maxsize=8)` keyed on
 `(path, st_mtime)`. JS: `pcaKdeWorker.js` → `parseCached()` keys on a **cheap content signature** —
@@ -260,8 +277,10 @@ path.
 `pca_kde.py` → `displacement_cloud()` / JS `sitePcaKde()`:
 
 - `reference_number=` → the rows of that one site;
-- `element=` (not `""`/`"all"`) → **all sites of that element concatenated**, matched
-  case-insensitively;
+- `element=` (not `""`/`"all"`) → **every atom of that species**, matched case-insensitively
+  against each atom's own element (`atom_elements` / `atomElements`), not against the site label —
+  so a mixed site contributes only its matching atoms, still centred on the site's all-species
+  mean. JS: `displacementCloud()`, which `sitePcaKde()` calls;
 - neither → every atom in the configuration.
 
 Pooling across sites is meaningful *because each site was already centred on its own average
@@ -992,7 +1011,8 @@ the cell **once** (radius $1.7\times$ the longest cell edge) and then keeps the 
 across rebuilds; `Reset view` restores that framing.
 
 **The dropdown picker** in the controls bar (still in `PcaKdePage.jsx`) is the other way to select a
-site. Each option reads ``#{referenceNumber} {element} — U={uIso} Å²`` (4 decimals), with
+site. Each option reads ``#{referenceNumber} {label} — U={uIso} Å²`` (4 decimals; `label` is the
+element, or the composition such as `Ga0.75In0.25` for a mixed site — `siteLabel()`), with
 `` ({count}/{copiesPerCell})`` appended only when `copiesPerCell` is set — i.e. only for
 browser-reconstructed, coordinates-only files. The matching tag renders **not** next to the picker
 but at the top of the *Displacement statistics* summary column (`pca-site-tag`, in the

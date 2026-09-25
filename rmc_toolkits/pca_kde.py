@@ -109,10 +109,16 @@ class SiteDisplacements:
     ``displacements`` holds every atom's Cartesian (Angstrom) offset from the
     average position of its own reference site, so each site's rows are already
     centered. ``site_index`` maps a row to its site in ``reference_numbers``.
+
+    A reference number may be carried by more than one species (a solid
+    solution, or RMCProfile swap moves). ``elements`` then holds the site's
+    *majority* species (ties to the alphabetically first), ``element_counts`` its
+    full composition, and ``atom_elements`` every row's own species -- element
+    pooling selects atoms by the latter, never by the site label.
     """
 
     reference_numbers: np.ndarray  # (S,) RMCProfile reference number per site
-    elements: list[str]  # (S,)
+    elements: list[str]  # (S,) majority species per site
     counts: np.ndarray  # (S,) box copies per site
     displacements: np.ndarray  # (N, 3) Cartesian Angstrom, centered per site
     site_index: np.ndarray  # (N,) row -> site
@@ -120,6 +126,15 @@ class SiteDisplacements:
     lattice_vectors: np.ndarray  # (3, 3) supercell vectors (Angstrom)
     supercell: np.ndarray  # (3,)
     unit_vectors: np.ndarray  # (3, 3) single-cell vectors (Angstrom)
+    atom_elements: np.ndarray | None = None  # (N,) each row's own species
+    element_counts: tuple[dict[str, int], ...] | None = None  # (S,) composition per site
+
+    @property
+    def species(self) -> list[str]:
+        """Every species present, sorted -- including minority species of mixed sites."""
+        if self.atom_elements is not None:
+            return sorted({str(element) for element in self.atom_elements})
+        return sorted(set(self.elements))
 
     def site_position(self, reference_number: int) -> int:
         """Index of ``reference_number`` in the per-site arrays."""
@@ -208,9 +223,8 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
     centered = offsets - site_mean[site_index]
     displacements = centered @ lattice_vectors
 
-    site_elements = [""] * site_count
-    for element, index in zip(elements, site_index):
-        site_elements[index] = element
+    atom_elements = np.asarray(elements, dtype=object)
+    element_counts, site_elements = _site_compositions(atom_elements, site_index, site_count)
 
     return SiteDisplacements(
         reference_numbers=reference_numbers,
@@ -222,7 +236,26 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
         lattice_vectors=lattice_vectors,
         supercell=supercell,
         unit_vectors=unit_vectors,
+        atom_elements=atom_elements,
+        element_counts=element_counts,
     )
+
+
+def _site_compositions(
+    atom_elements: np.ndarray, site_index: np.ndarray, site_count: int
+) -> tuple[tuple[dict[str, int], ...], list[str]]:
+    """Per-site species counts and the site label: the majority species, ties to
+    the alphabetically first -- the same rule as ``workers/pcaKde.js``."""
+    counts: list[dict[str, int]] = [{} for _ in range(site_count)]
+    for element, index in zip(atom_elements, site_index):
+        composition = counts[index]
+        composition[element] = composition.get(element, 0) + 1
+    ordered = tuple(dict(sorted(composition.items())) for composition in counts)
+    labels = [
+        min(composition, key=lambda name: (-composition[name], name)) if composition else ""
+        for composition in ordered
+    ]
+    return ordered, labels
 
 
 @lru_cache(maxsize=8)
@@ -248,13 +281,18 @@ def displacement_cloud(
         return sites.displacements[sites.site_index == position]
 
     if element not in (None, "", "all"):
-        positions = np.flatnonzero(
-            np.asarray([name.lower() for name in sites.elements]) == str(element).lower()
-        )
-        if positions.size == 0:
-            available = ", ".join(sorted(set(sites.elements)))
+        wanted = str(element).lower()
+        if sites.atom_elements is not None:
+            # Each atom by its OWN species: a mixed site contributes only the
+            # matching atoms (centred on the site's all-species mean position).
+            rows = np.asarray([str(name).lower() == wanted for name in sites.atom_elements], dtype=bool)
+        else:
+            positions = np.flatnonzero(np.asarray([name.lower() for name in sites.elements]) == wanted)
+            rows = np.isin(sites.site_index, positions)
+        if not rows.any():
+            available = ", ".join(sites.species)
             raise ValueError(f"Unknown element {element!r}; available: {available}")
-        return sites.displacements[np.isin(sites.site_index, positions)]
+        return sites.displacements[rows]
 
     return sites.displacements
 
@@ -349,6 +387,7 @@ def site_ellipsoids(
         projected, site_index, site_count, eigenvalues
     )
 
+    composition = sites.element_counts
     ellipsoids: list[dict] = []
     for index in range(site_count):
         zero = bool(zero_spread[index])
@@ -356,6 +395,9 @@ def site_ellipsoids(
             {
                 "referenceNumber": int(sites.reference_numbers[index]),
                 "element": sites.elements[index],
+                "mixed": composition is not None and len(composition[index]) > 1,
+                "elementCounts": dict(composition[index]) if composition is not None
+                else {sites.elements[index]: int(sites.counts[index])},
                 "count": int(sites.counts[index]),
                 "siteFractional": sites.site_fractional[index].tolist(),
                 "covariance": covariance[index].tolist(),
@@ -700,6 +742,9 @@ def site_pca_kde(
         position = sites.site_position(reference_number)
         result["referenceNumber"] = int(reference_number)
         result["element"] = sites.elements[position]
+        if sites.element_counts is not None:
+            result["elementCounts"] = dict(sites.element_counts[position])
+            result["mixed"] = len(sites.element_counts[position]) > 1
         result["siteFractional"] = sites.site_fractional[position].tolist()
     elif element not in (None, "", "all"):
         result["element"] = str(element)
