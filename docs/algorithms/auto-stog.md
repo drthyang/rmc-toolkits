@@ -1814,7 +1814,8 @@ part of the transparency story. The onset detection, with every constant:
    for the exact rules. **Absolute value**, so an *inverted* first shell (negative-$b$ pairs:
    Ti–O, Mn–Sn) counts.
 3. Walk left from that shell's maximum while $|g| > \max(0.5,\ 0.35 \times |g_\mathrm{peak}|)$;
-   `r[index + 1]` is the onset (the search edge if the flank never drops that far).
+   `r[index + 1]` is the onset (no onset — `None` — if the flank never drops that far inside the
+   range: the shell is not separable from the reference zone).
 
 All thresholds are relative to the data's own peaks and ripples. The regression tests in
 `tests/test_stog_a_detection.py` pin the behaviour on weak-first, inverted-first, ripple-field and
@@ -2804,8 +2805,9 @@ has at least one ripple crest below it). For a candidate maximum $p$ with $|g_p|
 The onset is taken on that shell's own flank: with
 $\ell = \max(\texttt{floor}, \texttt{fraction}\times|g_p|)$ (`fraction` $= 0.35$), walk left from
 $p$ while $|g| > \ell$ and return the $r$ of the **last point still above** $\ell$
-(`r[index + 1]`), or `r[search_min]` when the flank is still above $\ell$ at the search edge (the
-scan ends there). `first_shell_candidates()` returns the onsets of every shell the scan accepts, strictly
+(`r[index + 1]`). A shell whose flank is still above $\ell$ at the search edge is **not separable**
+from the reference zone and ends the scan (it inflates the ripple level of everything above it
+anyway). `first_shell_candidates()` returns the onsets of every shell the scan accepts, strictly
 increasing; `detect_first_peak_onset()` returns the first, or `None`.
 
 Design choices:
@@ -2828,6 +2830,9 @@ Design choices:
 - **Reference zone.** A candidate rising straight from the search edge would have no ripple field to
   be judged against; skipping the first $2\pi/Q_\max$ guarantees one. A real shell inside the zone
   inflates the ripple level of everything after it, so the result is `None`, never a later shell.
+  Likewise a flank that reaches the search edge is `None`, not an onset *at* the edge: the first
+  1.0 detector returned `search_min` there, which on the real Mn₃Sn data produced an "onset" of
+  exactly 1.30 Å and the advice to lower $r_\mathrm{cut}$ to 0.75 Å.
 - **$|g|$, not $g$.** Below the first shell $g \to 0$; a shell of either sign departs from that
   level.
 
@@ -2862,9 +2867,13 @@ fine). With neither `r0` nor `r_fit_max` pinned, and `amplitude_criterion="densi
    - No candidate survives → `ValueError` ("could not locate the first coordination shell",
      listing the trial scales and the dropped onsets; set r0 or r_fit_max, lower $r_\mathrm{cut}$
      for bonds shorter than ~1.75 Å).
-   - A candidate leaving less than `MIN_AUTO_WINDOW` $= 0.1$ Å above $lo$ → `ValueError`
-     naming the onset and the $r_\mathrm{cut}$ that would make room ($\le$ onset − 0.55,
-     rounded down to 0.05 Å).
+   - A **confirmed** shell leaving less than `MIN_AUTO_WINDOW` $= 0.1$ Å above $lo$ →
+     `ValueError` naming the onset and the $r_\mathrm{cut}$ that would make room ($\le$ onset −
+     0.55, rounded down to 0.05 Å). Such a candidate is still verified by a refit on the narrow
+     window below it (same rules: $a \le 0$ stops, not re-detected drops it), so this advice is
+     only given for a shell the data confirm. A candidate so close to $lo$ that no window fits
+     below it at all cannot be verified: the `ValueError` then makes the advice conditional ("if
+     it is the first coordination shell … lower r_cutoff …; otherwise set r0 or r_fit_max").
    - The refit budget runs out → `ValueError` listing the tried onsets.
 
    A fit across the first shell, or one with $a \le 0$, is never returned.
@@ -2887,7 +2896,7 @@ $r_\mathrm{cut} = 0.6$–$0.8$ (Si–O, P–O, SiO₂ supercell within 1–3 %).
 
 Tests: `tests/test_stog_a_window.py` (models), `tests/test_stog_a_placement.py` (the loop on
 scripted passes — ripple dropped, $a \le 0$ refit refused, lower shell uncovered, budget, the
-short-shell message — and the real 59438 run at $Q_\min$ 1.0, $Q_\max$ 29; the whole
+short-shell messages — and the real 59438 run at $Q_\min$ 1.0, $Q_\max$ 29; the whole
 $Q_\min \times Q_\max$ grid with `RMC_TOOLKITS_FULL_SWEEP=1`, ~5 min). JS parity: the fixture's
 `expected.window` cases and `expected.placement` scenarios (`autoScalePlacement.test.js` replays
 the scripted passes through `placeLowRWindow()` and compares outcomes, refit order and error
@@ -4196,7 +4205,7 @@ Two known gaps in the browser JSON, both harmless but worth stating:
 | — | `s0Target` | `null` | — | explicit low-Q target; the page never sets it, so it always resolves through `effectiveS0Target()` (no UI) |
 | — | `maxIter` / `tol` | 50 / 1e-6 | — | self-consistency loop stopping rule (no UI) |
 | — | level sweep | minWidth 3.0 Å⁻¹, 80 grid edges, ≥24 pts, 2σ slope test | — | not exposed |
-| — | $r_0$ detection | search rCutoff+0.3 … 6.0 Å, candidates from +2π/Qmax, first maximum ≥ 4× (or ≥ 2× and ≥ 50 % of range max) its ripple field, flank at 35 % of that shell, floor 0.5; window placement: onset tolerance 0.15 Å, ≤ 4 confirming refits | — | not exposed |
+| — | $r_0$ detection | search rCutoff+0.3 … 6.0 Å, candidates from +2π/Qmax, first maximum ≥ 4× (or ≥ 2× and ≥ 50 % of range max) its ripple field, flank at 35 % of that shell (none if it reaches the search edge), floor 0.5; window placement: onset tolerance 0.15 Å, ≤ 4 confirming refits | — | not exposed |
 | — | $\rho_0$ estimate | rtol 1e-3, ≤8 passes, ρ clamped to [1e-4, 1.0] Å⁻³; also exits on a ≤ 0 / concordance ≤ 0, a clamp-pinned update, or an autoscale failure at a trial density (`stopped`); throws when no usable a_fz | — | not exposed |
 
 ---

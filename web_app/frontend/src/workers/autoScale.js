@@ -692,8 +692,8 @@ export const scalePipeline = (qIn, sqIn, config, a, b, extras = {}) => {
  * the ripple field below them (max |g| from searchMin to the lobe start) by
  * strongProminence, or by prominence while being a major feature (>= major of
  * the range maximum); either sign, so inverted shells count. Each onset is on
- * its shell's own flank (|g| down to max(floor, fraction·peak)); searchMin if
- * the flank never drops that far (the scan stops there).
+ * its shell's own flank (|g| down to max(floor, fraction·peak)); a shell whose
+ * flank reaches below searchMin is not separable and ends the scan.
  */
 export const firstShellCandidates = (
   r, g, {
@@ -730,10 +730,7 @@ export const firstShellCandidates = (
     const level = Math.max(floor, fraction * peak);
     let onset = index;
     while (onset > first && a[onset] > level) onset -= 1;
-    if (a[onset] > level) { // the flank reaches below the search range
-      if (!onsets.length) onsets.push(r[first]);
-      break;
-    }
+    if (a[onset] > level) break; // the flank reaches below the search range: not separable
     const value = r[onset + 1];
     if (!onsets.length || value > onsets[onsets.length - 1]) onsets.push(value);
   }
@@ -821,8 +818,8 @@ const cutoffAdvice = (onset, config) => (config.rFitMin != null
  * shell onsets (whatever the sign of their scale); the smallest untried onset
  * c is refitted on [lo, c - 0.25]: a <= 0 throws, the refit re-detecting c
  * (within ONSET_TOLERANCE) confirms it, a lower re-detected shell is tried
- * next, and otherwise c is dropped as a feature of the trial's scale. An
- * onset too close to lo, no confirmable onset, or an exhausted refit
+ * next, and otherwise c is dropped as a feature of the trial's scale. A
+ * confirmed shell too close to lo, no confirmable onset, or an exhausted refit
  * budget throw — a fit across the first shell, or with a <= 0, is never
  * returned. r0Detected is the confirmed onset the window was built from.
  */
@@ -892,16 +889,6 @@ export const placeLowRWindow = (runPass, config) => {
     if (!live.length) break;
     const onset = Math.min(...live);
     const room = onset - R0_WINDOW_MARGIN - lo;
-    if (room < MIN_AUTO_WINDOW) {
-      const advice = cutoffAdvice(onset, config);
-      throw new Error(
-        `autoscale: the first coordination shell starts at ${onset.toFixed(2)} Å, `
-        + `leaving no low-r fit window between ${fmtG(lo)} Å and `
-        + `${(onset - R0_WINDOW_MARGIN).toFixed(2)} Å (onset - ${R0_WINDOW_MARGIN}); a window `
-        + 'across the shell would force it to zero and bias the scale. '
-        + `${advice[0].toUpperCase()}${advice.slice(1)}, or set r₀ / the fit-window maximum`
-      );
-    }
     if (!refits.has(onset)) {
       if (refits.size >= MAX_WINDOW_REFITS) {
         throw new Error(
@@ -911,9 +898,21 @@ export const placeLowRWindow = (runPass, config) => {
           + `${fixes[0].toUpperCase()}${fixes.slice(1)}`
         );
       }
-      const refined = runPass({ ...config, r0: onset });
+      let refined;
+      try {
+        refined = runPass({ ...config, r0: onset });
+      } catch (error) {
+        if (room >= MIN_AUTO_WINDOW) throw error;
+        throw new Error(
+          `autoscale: a shell-like feature starts at ${onset.toFixed(2)} Å, too close to `
+          + `the fit-window start ${fmtG(lo)} Å to place or verify a low-r window below it `
+          + `(${error.message}). If it is the first coordination shell (a bond that short), `
+          + `${cutoffAdvice(onset, config)}; otherwise ${fixes}`
+        );
+      }
       if (!(refined.a > 0)) {
-        const where = `[${fmtG(lo)}, ${(onset - R0_WINDOW_MARGIN).toFixed(2)}] Å`;
+        const where = `${room < MIN_AUTO_WINDOW ? 'the narrow window ' : ''}`
+          + `[${fmtG(lo)}, ${(onset - R0_WINDOW_MARGIN).toFixed(2)}] Å`;
         throw new Error(
           'autoscale: the density-limit fit below the first-shell candidate at '
           + `${onset.toFixed(2)} Å gives a non-physical scale (a = ${fmtP(refined.a, 4)} on `
@@ -930,6 +929,16 @@ export const placeLowRWindow = (runPass, config) => {
     const [refined, foundAll] = refits.get(onset);
     const found = foundAll.filter((value) => !near(value, dropped));
     if (found.length && Math.abs(found[0] - onset) <= ONSET_TOLERANCE) {
+      if (room < MIN_AUTO_WINDOW) {
+        const advice = cutoffAdvice(onset, config);
+        throw new Error(
+          `autoscale: the first coordination shell starts at ${onset.toFixed(2)} Å, `
+          + `leaving no low-r fit window between ${fmtG(lo)} Å and `
+          + `${(onset - R0_WINDOW_MARGIN).toFixed(2)} Å (onset - ${R0_WINDOW_MARGIN}); a window `
+          + 'across the shell would force it to zero and bias the scale. '
+          + `${advice[0].toUpperCase()}${advice.slice(1)}, or set r₀ / the fit-window maximum`
+        );
+      }
       refined.r0Detected = onset;
       refined.windowRefined = true;
       return refined;

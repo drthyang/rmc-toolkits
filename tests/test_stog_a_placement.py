@@ -127,13 +127,29 @@ SCENARIOS = {
         "default": [1.0, "flat"],
         "expect": {"error": "no first-shell onset was confirmed within"},
     },
-    # A shell too close to lo: the r_cutoff advice is given.
+    # A confirmed shell too close to lo: the r_cutoff advice is given.
     "shortConfirmed": {
         "qmax": 28.0,
         "trials": [[0.3, 5.0, "short"], [1.0, -1.0, "flat"]],
         "refits": [[1.54, 6.0, "short"]],
         "default": [1.0, "flat"],
         "expect": {"error": "the first coordination shell starts at"},
+    },
+    # A candidate so close to lo that no window fits below it: conditional advice.
+    "shortUnverifiable": {
+        "qmax": 40.0,
+        "trials": [[0.3, -1.5, "veryShort"], [1.0, -1.2, "veryShort"]],
+        "refits": [],
+        "default": [1.0, "flat"],
+        "expect": {"error": "shell-like feature starts at"},
+    },
+    # A no-room candidate whose narrow verification fit is non-physical.
+    "narrowNegative": {
+        "qmax": 28.0,
+        "trials": [[0.3, 5.0, "short"], [1.0, 5.0, "short"]],
+        "refits": [[1.54, -0.3, "short"]],
+        "default": [1.0, "flat"],
+        "expect": {"error": "non-physical scale"},
     },
     # The only candidate vanishes on its own refit: fail, naming it.
     "notRedetected": {
@@ -150,6 +166,7 @@ ERROR_KINDS = (
     "non-physical scale",
     "no first-shell onset was confirmed within",
     "the first coordination shell starts at",
+    "shell-like feature starts at",
     "could not locate the first coordination shell",
 )
 
@@ -193,6 +210,14 @@ class FirstShellMarginTests(unittest.TestCase):
         self.assertGreater(onset, 2.65)
         self.assertLess(onset, 2.84)
 
+    def test_flank_reaching_the_search_start_is_not_a_shell(self):
+        # A broad feature whose flank is still high at search_min: its onset is
+        # not separable. Pre-review this returned search_min itself (1.30 A),
+        # which then produced "lower r_cutoff to <= 0.75 A" on real Mn3Sn data.
+        g = 3.0 * gauss(R, 1.58, 0.2) + continuum(R)
+        self.assertIsNone(detect_first_peak_onset(R, g, 28.0, search_min=1.3))
+        self.assertEqual(first_shell_candidates(R, g, 28.0, search_min=1.3), [])
+
     def test_candidates_list_every_shell_in_order(self):
         g = PROFILES["twoShell"](R)
         onsets = first_shell_candidates(R, g, 28.0, search_min=1.3)
@@ -235,9 +260,11 @@ class ScriptedPlacementTests(unittest.TestCase):
         self.assertEqual([round(call[0], 2) for call in calls if call[0] is not None], [1.57, 2.76])
         self.assertEqual(result.a, 1.2)
 
-    def test_short_shell_advice(self):
+    def test_short_shell_advice_only_when_confirmed(self):
         with self.assertRaisesRegex(ValueError, r"starts at 1\.54 A.*Lower r_cutoff to <= 0\.95"):
             self.place("shortConfirmed")
+        with self.assertRaisesRegex(ValueError, r"1\.46 A.*If it is the first coordination shell"):
+            self.place("shortUnverifiable")
 
     def test_refit_budget_is_bounded(self):
         with self.assertRaises(ValueError):

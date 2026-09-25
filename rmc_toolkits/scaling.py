@@ -432,9 +432,10 @@ def first_shell_candidates(
     runs reach 2.9x their own ripple field at up to 44 % of the maximum, while
     their inverted Mn-Sn first shell is 2.1-3.9x at 82-100 %. A shell's onset
     is taken on its own flank: walk left from its maximum until |g| drops to
-    ``max(floor, fraction * |g_peak|)`` and take the next grid point
-    (``search_min`` if the flank never drops that far inside the range; the
-    scan stops there). Onsets are returned strictly increasing (a
+    ``max(floor, fraction * |g_peak|)`` and take the next grid point. A shell
+    whose flank reaches below ``search_min`` is not separable from the
+    reference zone: the scan stops there (it inflates the ripple level of
+    everything above it anyway). Onsets are returned strictly increasing (a
     maximum whose flank walk lands at or below an earlier onset belongs to that
     feature).
     """
@@ -471,9 +472,7 @@ def first_shell_candidates(
         while onset > first and a[onset] > level:
             onset -= 1
         if a[onset] > level:
-            if not onsets:
-                onsets.append(float(r[first]))  # the flank reaches below the search range
-            break
+            break  # the flank reaches below the search range: not separable
         value = float(r[onset + 1])
         if not onsets or value > onsets[-1]:
             onsets.append(value)
@@ -498,7 +497,8 @@ def detect_first_peak_onset(
     The first entry of :func:`first_shell_candidates` (same parameters): the
     smallest-r feature of g(r) that stands out of the ripple field below it,
     of either sign — not the tallest feature in the range. Returns None when
-    no maximum qualifies.
+    no maximum qualifies, or when the first qualifying shell's flank reaches
+    below ``search_min`` (not separable from the reference zone).
     """
     onsets = first_shell_candidates(
         r, g, qmax, search_min=search_min, search_max=search_max,
@@ -951,9 +951,10 @@ def autoscale(
        mean ``c`` was a feature of the trial's scale, not a shell — ``c`` is
        dropped (and ignored by later confirmations) and the next onset is
        tried. At most :data:`MAX_WINDOW_REFITS` refits run;
-    3. an onset that leaves less than :data:`MIN_AUTO_WINDOW` above ``lo``, no
-       confirmable onset, or an exhausted refit budget raise a ``ValueError``
-       that explains what to change (lower ``r_cutoff`` / ``r_fit_min``, or pin
+    3. a confirmed onset that leaves less than :data:`MIN_AUTO_WINDOW` above
+       ``lo``, no confirmable onset, or an exhausted refit budget raise a
+       ``ValueError`` that explains what to change (lower ``r_cutoff`` /
+       ``r_fit_min`` only when a shell is confirmed that close; otherwise pin
        ``r0`` / ``r_fit_max``) — a fit across the first shell, or one with
        ``a <= 0``, is never returned.
 
@@ -1029,15 +1030,6 @@ def _place_low_r_window(
             break
         onset = min(live)
         room = onset - R0_WINDOW_MARGIN - lo
-        if room < MIN_AUTO_WINDOW:
-            advice = _cutoff_advice(onset, config)
-            raise ValueError(
-                f"autoscale: the first coordination shell starts at {onset:.2f} A, "
-                f"leaving no low-r fit window between {lo:g} A and "
-                f"{onset - R0_WINDOW_MARGIN:.2f} A (onset - {R0_WINDOW_MARGIN:g}); a "
-                "window across the shell would force it to zero and bias the "
-                f"scale. {advice[0].upper() + advice[1:]}, or set r0 / r_fit_max"
-            )
         if onset not in refits:
             if len(refits) >= MAX_WINDOW_REFITS:
                 raise ValueError(
@@ -1046,9 +1038,24 @@ def _place_low_r_window(
                     + ", ".join(f"{value:.2f}" for value in sorted(refits))
                     + f" A). {fixes}"
                 )
-            refined = run_pass(replace(config, r0=onset))
+            try:
+                refined = run_pass(replace(config, r0=onset))
+            except ValueError as exc:
+                if room >= MIN_AUTO_WINDOW:
+                    raise
+                raise ValueError(
+                    f"autoscale: a shell-like feature starts at {onset:.2f} A, too "
+                    f"close to the fit-window start {lo:g} A to place or verify a "
+                    f"low-r window below it ({exc}). If it is the first "
+                    "coordination shell (a bond that short), "
+                    f"{_cutoff_advice(onset, config)}; otherwise {fixes[0].lower()}{fixes[1:]}"
+                ) from exc
             if not refined.a > 0:
-                where = f"[{lo:g}, {onset - R0_WINDOW_MARGIN:.2f}] A"
+                where = (
+                    f"the narrow window [{lo:g}, {onset - R0_WINDOW_MARGIN:.2f}] A"
+                    if room < MIN_AUTO_WINDOW
+                    else f"[{lo:g}, {onset - R0_WINDOW_MARGIN:.2f}] A"
+                )
                 raise ValueError(
                     "autoscale: the density-limit fit below the first-shell "
                     f"candidate at {onset:.2f} A gives a non-physical scale "
@@ -1066,6 +1073,15 @@ def _place_low_r_window(
         refined, found = refits[onset]
         found = [value for value in found if not _near(value, dropped)]
         if found and abs(found[0] - onset) <= ONSET_TOLERANCE:
+            if room < MIN_AUTO_WINDOW:
+                advice = _cutoff_advice(onset, config)
+                raise ValueError(
+                    f"autoscale: the first coordination shell starts at {onset:.2f} A, "
+                    f"leaving no low-r fit window between {lo:g} A and "
+                    f"{onset - R0_WINDOW_MARGIN:.2f} A (onset - {R0_WINDOW_MARGIN:g}); a "
+                    "window across the shell would force it to zero and bias the "
+                    f"scale. {advice[0].upper() + advice[1:]}, or set r0 / r_fit_max"
+                )
             refined.provenance["r0_detected"] = float(onset)
             refined.provenance["window_refined"] = True
             return refined

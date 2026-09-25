@@ -68,8 +68,10 @@ def detector_cases() -> dict:
         + _continuum(r, 4.4),
         "shellAtSearchStart": 6.0 * _gauss(r, 1.37, 0.045) + 3.0 * _gauss(r, 2.4, 0.08)
         + _continuum(r, 3.0),
-        # Review follow-up: the real Mn3Sn sub-shell lobe (2.9x, 35 %).
+        # Review follow-up: the real Mn3Sn sub-shell lobe (2.9x, 35 %) and a flank
+        # that reaches below search_min (not separable -> no shell).
         "mn3snLobe": mn3sn_lobe_g(r),
+        "flankToEdge": 3.0 * _gauss(r, 1.58, 0.2) + _continuum(r, 3.4),
         "twoShell": 1.5 * _gauss(r, 1.95, 0.06) + 4.0 * _gauss(r, 2.76, 0.08)
         + _continuum(r, 3.4),
     }
