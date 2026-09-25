@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
 import io
+import json
 import math
 import os
 import platform
@@ -290,22 +291,35 @@ def _query_number(name: str, default, **rules):
     return _number(raw, name, **rules)
 
 
-def _finite_json(payload):
-    """``jsonify`` for numeric results that refuses NaN/Infinity.
+def _strict_result_response(payload):
+    """JSON response for a computed numeric result; NaN/Infinity is a ValueError (400).
 
     Finite but extreme parameters (a bandwidth of 1e-200, an extent of 1e300)
-    pass the range checks yet make the float64 kernels underflow or overflow;
-    Flask would serialize the resulting NaN as a bare token, which is invalid
-    JSON for a browser. Raise ValueError (HTTP 400) instead.
+    pass the range checks yet make the float64 kernels underflow or overflow.
+    Such a result is an error, not data: never a 200 with bare NaN tokens
+    (invalid JSON for a browser) nor with nulls (a silently empty map).
+
+    The check calls the stdlib encoder with ``allow_nan=False`` itself instead
+    of going through ``app.json``, so it holds whatever JSON provider the app
+    installs -- including one that writes non-finite floats as ``null`` (the
+    right policy for a masked *data series*, the wrong one for a computed
+    density). The provider still supplies ``default`` for non-JSON types.
     """
+    provider = app.json
     try:
-        body = app.json.dumps(payload, allow_nan=False)
+        body = json.dumps(
+            payload,
+            allow_nan=False,
+            default=getattr(provider, "default", None),
+            ensure_ascii=getattr(provider, "ensure_ascii", True),
+            sort_keys=getattr(provider, "sort_keys", True),
+        )
     except ValueError:
         raise ValueError(
             "the result contains NaN or Infinity for these parameters (an extreme "
             "bandwidth, scale or extent?); use less extreme values"
         ) from None
-    return app.response_class(f"{body}\n", mimetype=app.json.mimetype)
+    return app.response_class(f"{body}\n", mimetype=getattr(provider, "mimetype", "application/json"))
 
 
 # --- Parsed-file caches ----------------------------------------------------------
@@ -717,7 +731,7 @@ def kde_slice_endpoint():
         result["orientation"] = orientation
         result["source"] = str(rmc6f_path)
         result["element"] = element or "all"
-        return _finite_json(result)
+        return _strict_result_response(result)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
@@ -803,7 +817,7 @@ def pca_kde_endpoint():
             projections=request.args.get("projections", "true").lower() in ("1", "true", "yes"),
         )
         result["source"] = str(rmc6f_path)
-        return _finite_json(result)
+        return _strict_result_response(result)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:
@@ -919,7 +933,7 @@ def pca_orientation_endpoint():
             geometry=request.args.get("geometry", "true").lower() in ("1", "true", "yes"),
         )
         result["source"] = str(rmc6f_path)
-        return _finite_json(result)
+        return _strict_result_response(result)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:

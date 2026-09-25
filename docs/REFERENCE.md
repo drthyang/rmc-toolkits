@@ -144,7 +144,10 @@ parameter; a missing or blank parameter takes its default. Grid sizes are the ex
 clamped to the engine's limits instead of rejected. The KDE-slice, PCA-KDE and orientation routes
 also refuse to serialize a result that came out `NaN`/`Infinity` for finite but extreme values
 (e.g. a bandwidth of `1e-200`, which underflows the float64 kernel): that is a 400 too, never a
-200 whose body is invalid JSON. Error statuses: 400 bad parameter or unusable input, 403 path
+200 whose body is invalid JSON or whose map is all `null`. That check runs the strict stdlib
+encoder itself (`_strict_result_response()`), so it holds whatever JSON provider the app installs:
+writing a non-finite value as `null` is right for a masked *data series* (a gap in a chart), never
+for a computed density. Error statuses: 400 bad parameter or unusable input, 403 path
 outside the data roots, 404 missing file/folder, 409 output exists (`/api/scaling/run` without
 `force`) or source file still being written (see below), 500 unexpected failure.
 

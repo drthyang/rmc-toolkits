@@ -32,6 +32,7 @@ Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
 Path(os.environ["XDG_CACHE_HOME"]).mkdir(parents=True, exist_ok=True)
 
 import numpy as np  # noqa: E402
+from flask.json.provider import DefaultJSONProvider  # noqa: E402
 
 import app as backend_app  # noqa: E402
 
@@ -158,6 +159,90 @@ class KdeSliceValidationTests(_ValidationCase):
         # Finite and positive, so it passes the range check, but the float64
         # kernel underflows: the density comes out NaN.
         self.assertBadRequest(self.slice(bw="1e-200"), "NaN or Infinity")
+
+
+def _nulls(value):
+    """``value`` with every non-finite float replaced by None."""
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _nulls(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_nulls(item) for item in value]
+    return value
+
+
+class _NullingProvider(DefaultJSONProvider):
+    """Writes non-finite floats as ``null`` whatever the caller asks for.
+
+    The shape of an app-wide policy for masked data series (a NaN region of an
+    RMCProfile CSV must reach the chart as a gap): it forces ``allow_nan=False``
+    and, when that raises, serializes a NaN-free copy -- so asking this provider
+    for ``allow_nan=False`` never raises.
+    """
+
+    def dumps(self, obj, **kwargs):
+        kwargs.setdefault("default", self.default)
+        kwargs["allow_nan"] = False
+        try:
+            return json.dumps(obj, **kwargs)
+        except ValueError:
+            return json.dumps(_nulls(obj), **kwargs)
+
+
+class _NanTokenProvider(DefaultJSONProvider):
+    """Always emits bare NaN/Infinity tokens (ignores ``allow_nan=False``)."""
+
+    def dumps(self, obj, **kwargs):
+        kwargs.setdefault("default", self.default)
+        kwargs["allow_nan"] = True
+        return json.dumps(obj, **kwargs)
+
+
+class NonFiniteResultUnderAnyProviderTests(_ValidationCase):
+    """A NaN/Infinity *computed result* is a 400 whatever JSON provider is installed.
+
+    The guard must not depend on ``app.json`` raising for ``allow_nan=False``:
+    a provider that writes NaN as null would otherwise turn an underflowed KDE
+    into a 200 with an all-null map -- the silently empty result the guard
+    exists to prevent.
+    """
+
+    PROVIDERS = (_NullingProvider, _NanTokenProvider)
+
+    def with_provider(self, provider_class):
+        original = backend_app.app.json
+        backend_app.app.json = provider_class(backend_app.app)
+        self.addCleanup(setattr, backend_app.app, "json", original)
+
+    def test_underflowing_kde_slice_is_a_bad_request(self):
+        for provider_class in self.PROVIDERS:
+            with self.subTest(provider=provider_class.__name__):
+                self.with_provider(provider_class)
+                self.assertBadRequest(
+                    self.get("/api/kde/slice", **{**KdeSliceValidationTests.BASE, "bw": "1e-200"}),
+                    "NaN or Infinity",
+                )
+
+    def test_extreme_pca_kde_is_a_bad_request(self):
+        base = {"referenceNumber": 1, "grid": 12, "projections": "false"}
+        for provider_class in self.PROVIDERS:
+            for key, raw in (("bw", "1e-300"), ("extent", "1e300")):
+                with self.subTest(provider=provider_class.__name__, key=key):
+                    self.with_provider(provider_class)
+                    self.assertBadRequest(
+                        self.get("/api/pca/kde", **{**base, key: raw}), "NaN or Infinity"
+                    )
+
+    def test_finite_results_are_unaffected(self):
+        for provider_class in self.PROVIDERS:
+            with self.subTest(provider=provider_class.__name__):
+                self.with_provider(provider_class)
+                payload = self.assertOk(self.get("/api/kde/slice", **KdeSliceValidationTests.BASE))
+                self.assertGreater(payload["vmax"], 0)
+                self.assertOk(
+                    self.get("/api/pca/orientation", referenceNumber=1, frequency=4, geometry="false")
+                )
 
 
 class StructureValidationTests(_ValidationCase):
