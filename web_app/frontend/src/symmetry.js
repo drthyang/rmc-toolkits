@@ -12,8 +12,9 @@
 // WASM, runs client-side in the static dashboard.
 //
 // Method (spglib-lite, bounded):
-//   1. Point operations = integer matrices R (entries in {-1,0,1}, |det R| = 1) whose
-//      Cartesian lattice strain is within the tolerance (latticeStrain).
+//   1. Point operations = integer matrices R (|det R| = 1; entries in {-1,0,1} in a reduced
+//      basis of the lattice, which finds all of them on any cell) whose Cartesian lattice
+//      strain is within the tolerance (latticeStrain).
 //   2. For each R, candidate translations are seeded from atom images, t = x_b − R·x_a0,
 //      refined by least squares over every site, and kept when {R|t} maps every atom
 //      onto a same-element atom within `tol` (cartesian Å); the residual is the worst site.
@@ -23,15 +24,14 @@
 //      the screw/glide part of each t, and checked against the 230-group table of
 //      spaceGroupTable.js. What cannot be named reliably is reported as its crystal class.
 //
-// What this still does NOT do, and FINDSYM does: no origin shift, no Niggli reduction
-// before the search (rotations that do not map the given cell's lattice onto itself are
-// never tested; see spaceGroupHM's lower-bound flag), and no idealized structure output.
+// What this still does NOT do, and FINDSYM does: no origin shift, no search in the
+// primitive cell of the crystal's own translation lattice (rotations that do not map the
+// GIVEN cell's lattice onto itself — the cubic 3-folds of a 2×2×1 supercell — are never
+// tested; see spaceGroupHM's lower-bound flag), and no idealized structure output.
 //
 // Fractional coords are COLUMN vectors here: x' = R·x + t. Lattice rows: A = [a1,a2,a3].
-// NOTE: entries in {-1,0,1} cover the standard conventional settings (cubic,
-// tetragonal, orthorhombic, hexagonal, rhombohedral-in-hex, monoclinic, triclinic).
 
-import { hmSymbolInStandardSetting, centeringOfOps } from './spaceGroupSymbol.js';
+import { hmSymbolInStandardSetting, centeringOfOps, latticeFullyTested, reduceBasis } from './spaceGroupSymbol.js';
 import { spaceGroupNumber, canonicalSymbol, pointGroupOfSymbol } from './spaceGroupTable.js';
 
 /** Determinant of a 3×3 matrix (rows). */
@@ -100,12 +100,24 @@ export function latticeStrain(A, R, G = metricTensor(A), Ainv = inv3(A)) {
   return worst;
 }
 
-// Every unimodular integer R with entries in {-1,0,1} whose lattice strain is ≤ tol (Å),
-// with that strain. The strain is a floor on the operation's residual, so a strained cell
-// shows up in the ladder at the tolerance that absorbs the strain.
+// reduceBasis() lives in spaceGroupSymbol.js (the naming step needs it too); re-exported here.
+export { reduceBasis };
+
+// Every lattice rotation R (|det R| = 1) whose lattice strain is ≤ tol (Å), with that
+// strain, as integer matrices in the GIVEN basis. They are enumerated as {-1,0,1}
+// matrices in a reduced basis of the lattice (reduceBasis), where that range is
+// complete, and carried back, so an oblique cell loses none of them. The strain is a
+// floor on the operation's residual, so a strained cell shows up in the ladder at the
+// tolerance that absorbs the strain.
 function latticeCandidates(A, tol) {
-  const G = metricTensor(A);
-  const Ainv = inv3(A);
+  const M = reduceBasis(A);
+  const Ar = [0, 1, 2].map((i) => [0, 1, 2].map((k) => M[i][0] * A[0][k] + M[i][1] * A[1][k] + M[i][2] * A[2][k]));
+  const Mt = [[M[0][0], M[1][0], M[2][0]], [M[0][1], M[1][1], M[2][1]], [M[0][2], M[1][2], M[2][2]]];
+  const Mi = inv3(M).map((row) => row.map((x) => Math.round(x)));
+  const MiT = [[Mi[0][0], Mi[1][0], Mi[2][0]], [Mi[0][1], Mi[1][1], Mi[2][1]], [Mi[0][2], Mi[1][2], Mi[2][2]]];
+  const mul = (X, Y) => X.map((row) => [0, 1, 2].map((j) => row[0] * Y[0][j] + row[1] * Y[1][j] + row[2] * Y[2][j]));
+  const G = metricTensor(Ar);
+  const Ainv = inv3(Ar);
   const out = [];
   const v = [-1, 0, 1];
   const R = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
@@ -115,15 +127,17 @@ function latticeCandidates(A, tol) {
     for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) { R[a][b] = v[c % 3]; c = (c / 3) | 0; }
     const d = det3(R);
     if (d !== 1 && d !== -1) continue;
-    const strain = latticeStrain(A, R, G, Ainv);
-    if (strain <= tol) out.push({ R: R.map(r => r.slice()), strain });
+    const strain = latticeStrain(Ar, R, G, Ainv);
+    // x_reduced = M⁻ᵀ·x, so R in the given basis is Mᵀ·R·M⁻ᵀ.
+    if (strain <= tol) out.push({ R: mul(mul(Mt, R), MiT).map((row) => row.map((x) => Math.round(x))), strain });
   }
   return out;
 }
 
 /**
- * Lattice point operations: integer R (entries in {-1,0,1}, |det|=1) that preserve the
- * metric to within a Cartesian lattice strain of `tol` Å (see latticeStrain).
+ * Lattice point operations: integer R (|det| = 1; entries in {-1,0,1} in a reduced
+ * basis) that preserve the metric to within a Cartesian lattice strain of `tol` Å (see
+ * latticeStrain), in the basis of A.
  */
 export function latticePointOps(A, tol = 0.01) {
   return latticeCandidates(A, tol).map(c => c.R);
@@ -573,7 +587,9 @@ export function classifyOperations(ops, tolFrac = 0.02, { closed = false, A = nu
   const group = isValidGroup(base) && (closed || isClosedSet(ops, Math.max(3 * tolFrac, 1e-6)));
   // Naming reads every operation's screw/glide part, so it is the expensive step and
   // meaningless for a set that is not a group.
-  const sg = group ? spaceGroupHM(centering, pointGroup, ops, A, A ? tolFrac * meanEdge(A) : 0) : { symbol: 'not a group', number: null, setting: null };
+  // Lattice symmetries that hold at least as well as the group's own operations.
+  const groupResidual = ops.reduce((m, o) => (o.residual > m ? o.residual : m), 0);
+  const sg = group ? spaceGroupHM(centering, pointGroup, ops, A, Math.max(groupResidual, 1e-3)) : { symbol: 'not a group', number: null, setting: null };
   return { ...base, spaceGroup: sg.symbol, spaceGroupNumber: sg.number, setting: sg.setting ?? null };
 }
 
@@ -715,20 +731,32 @@ export const lowerBoundLabel = (symbol) => `≥ ${symbol}`;
  * reported as its crystal class with no number — never as the symmorphic `centering +
  * point group` string, which spells a real but different group for most classes.
  *
- * @returns {{ symbol:string, number:number|null, standard:boolean }}
+ * Whatever the branch, when the operations' full translation lattice has rotations that
+ * are not integer matrices of the given cell (a supercell of the true cell: the cubic
+ * 3-folds of a 2×2×1 cell), those were never tested, and the result — symbol, P1/P-1 or
+ * crystal class — is only a lower bound: '≥ …', no number, no setting. `latticeTol` (Å)
+ * is the strain up to which a rotation of that lattice counts (the group's worst residual).
+ *
+ * @returns {{ symbol:string, number:number|null, standard:boolean, setting:object|null }}
  */
-export function spaceGroupHM(centering, pointGroup, ops, A = null, latticeTol = 0) {
+export function spaceGroupHM(centering, pointGroup, ops, A = null, latticeTol = 1e-3) {
+  const holohedry = (As, tol) => latticeCandidates(As, tol).map(c => c.R);
   if (pointGroup === '1' || pointGroup === '-1') {
     // P1 / P-1 whatever cell describes them; Wyckoff positions only in a primitive cell.
     const symbol = pointGroup === '1' ? 'P1' : 'P-1';
+    if (A && ops?.length && !latticeFullyTested(ops, A, holohedry, latticeTol)) {
+      return { symbol: lowerBoundLabel(symbol), number: null, standard: false, setting: null };
+    }
     const primitive = centering === 'P';
     const I = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
     return { symbol, number: spaceGroupNumber(symbol), standard: true, setting: primitive ? { Q: I, Qinv: I, translations: [[0, 0, 0]], ratio: 1 } : null };
   }
   if (!ops || !ops.length) return { symbol: classLabel(pointGroup), number: null, standard: false, setting: null };
-  const holohedry = (As) => latticeCandidates(As, Math.max(latticeTol, 1e-3)).map(c => c.R);
-  const found = hmSymbolInStandardSetting(ops, centering, pointGroup, pointGroupOfSymbol, { A, holohedry });
-  if (!found.symbol) return { symbol: classLabel(pointGroup), number: null, standard: false, setting: null };
+  const found = hmSymbolInStandardSetting(ops, centering, pointGroup, pointGroupOfSymbol, { A, holohedry, latticeTol });
+  if (!found.symbol) {
+    const untested = A && !latticeFullyTested(ops, A, holohedry, latticeTol);
+    return { symbol: untested ? lowerBoundLabel(classLabel(pointGroup)) : classLabel(pointGroup), number: null, standard: false, setting: null };
+  }
   const symbol = canonicalSymbol(found.symbol) ?? found.symbol;
   // A group named in a cell whose lattice symmetries the given cell could not all test is
   // only a lower bound: shown as such, with no number and no Wyckoff letters.

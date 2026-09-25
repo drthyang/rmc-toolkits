@@ -2658,12 +2658,20 @@ $(R\mathbf x)^{\mathsf T}G(R\mathbf x) = \mathbf x^{\mathsf T}G\mathbf x$ for al
 $$\boxed{\,R^{\mathsf T} G R = G\,}$$
 
 and it maps the lattice onto itself iff $R$ is an integer matrix with $|\det R| = 1$. The code
-enumerates candidates **exhaustively**:
+enumerates candidates **exhaustively, in a reduced basis** of the lattice:
 
+- **Reduce** (`reduceBasis()`): an integer matrix $M$ ($\det M=+1$, rows = new basis vectors in the
+  given basis) such that $A_r = MA$ is a reduced basis of the same lattice — each vector is
+  repeatedly shortened by integer multiples of the others (pairwise size reduction, then
+  $\mathbf b_k \pm \mathbf b_i \pm \mathbf b_j$), shortest first, until nothing shortens (the
+  Minkowski conditions in three dimensions). A conventional cell is already reduced, so this only
+  matters for an oblique cell.
 - Every $3\times3$ matrix with entries drawn from $\{-1,0,1\}$: $3^9 = 19\,683$ patterns, iterated
-  as a base-3 counter over `code = 0 … 19682`.
-- Keep those with $\det R \in \{+1,-1\}$ — **6960** of the 19 683 (verified by direct enumeration).
-- Keep those whose **Cartesian lattice strain** is at most $\tau_L$.
+  as a base-3 counter over `code = 0 … 19682`, taken as $R_r$ in the reduced basis.
+- Keep those with $\det R_r \in \{+1,-1\}$ — **6960** of the 19 683 (verified by direct enumeration).
+- Keep those whose **Cartesian lattice strain** (on $A_r$) is at most $\tau_L$, and carry each back to
+  the given basis, $R = M^{\mathsf T}R_rM^{-\mathsf T}$ (an integer matrix, since $M$ is unimodular;
+  fractional columns transform as $\mathbf x_r = M^{-\mathsf T}\mathbf x$).
 
 **Lattice strain** (`latticeStrain()`). Used as if it were an isometry, $R$ acts on Cartesian
 vectors as $M = A^{\mathsf T}RA^{-\mathsf T}$, whose Green strain is
@@ -2671,7 +2679,8 @@ vectors as $M = A^{\mathsf T}RA^{-\mathsf T}$, whose Green strain is
 $$E=\tfrac12\big(M^{\mathsf T}M-I\big)=\tfrac12\,A^{-1}DA^{-\mathsf T},\qquad D = R^{\mathsf T}GR-G\ [\text{Å}^2].$$
 
 The cell edge $\mathbf a_i = A^{\mathsf T}\mathbf e_i$ is displaced by $|E\mathbf a_i| = \tfrac12|A^{-1}D\mathbf e_i|$,
-and the strain of $R$ is the largest of the three,
+and the strain of $R$ is the largest of the three (evaluated with $A = A_r$, the reduced cell's
+edges — the same three edges as the given cell's for a conventional cell),
 
 $$\varrho_L(R) = \max_i\ \tfrac12\,\big|A^{-1}D\,\mathbf e_i\big|\quad[\text{Å}].$$
 
@@ -2689,33 +2698,36 @@ each strain the cell by $\le\tau_L$ can compose to one that strains it by more),
 assumed here: it is enforced on the final operation set (Step 11).
 
 Verified by enumeration: a cubic metric ($a=10$ Å) yields exactly 48 operations; a primitive
-hexagonal metric ($a=b=5$ Å, $c=8$ Å, $\gamma=120°$) yields exactly 24.
+hexagonal metric ($a=b=5$ Å, $c=8$ Å, $\gamma=120°$) yields exactly 24. The full holohedry order
+(48, 24, 16, 12, 8, 4) also comes out for cubic P/F/I, tetragonal P/I, hexagonal, rhombohedral,
+orthorhombic P/C/I/F and monoclinic P lattices each re-described by 59 random unimodular basis
+changes (products of six random shears; $\tau_L = 10^{-6}$ Å), and the test suite pins it on four
+strongly oblique cells (`symmetryObliqueCells.test.js`).
 
-**Why $\{-1,0,1\}$ suffices.** In a *conventional crystallographic setting*, the matrix of every
-point operation expressed in the direct basis has entries in $\{-1,0,1\}$. This holds for cubic,
-tetragonal, orthorhombic, monoclinic and triclinic settings (signed permutation matrices) and also
-for the hexagonal setting, where the six-fold is
-$\big[\begin{smallmatrix}1&-1&0\\ 1&0&0\\ 0&0&1\end{smallmatrix}\big]$. The code comment in
-`symmetry.js` lists the settings it claims to cover as "cubic, tetragonal, orthorhombic, hexagonal,
-rhombohedral-in-hex, monoclinic, triclinic" — i.e. rhombohedral **only in hexagonal axes**.
-(The primitive-rhombohedral setting also has $\{-1,0,1\}$ matrices, its three-fold being a cyclic
-permutation of the axes; a group found there is named on hexagonal axes, Step 10f.)
+**Why $\{-1,0,1\}$ suffices — in a reduced basis.** In a Minkowski-reduced basis every lattice
+automorphism has entries in $\{-1,0,1\}$ (the enumeration spglib uses after Delaunay reduction); a
+conventional cubic, tetragonal, orthorhombic, monoclinic, hexagonal (six-fold
+$\big[\begin{smallmatrix}1&-1&0\\ 1&0&0\\ 0&0&1\end{smallmatrix}\big]$) or rhombohedral cell is already such a
+basis. In an **oblique** description of the same lattice — a tetragonal crystal on a 60° cell
+($\mathbf a' = \mathbf a+\mathbf b$), a sheared cell — some automorphisms need entries of magnitude 2 or
+more in the given basis. Before 1.0 the scan ran in the given basis, missed them, and named the
+subgroup that was left with its own number (rutile on a 60° cell: `Cmmm` No. 65; a Pnma perovskite
+on a sheared cell: `P-1` No. 2). Scanning the reduced basis and carrying the matrices back finds
+every lattice rotation of the given cell, whatever its shape.
 
-**What it excludes.** Any setting in which a lattice automorphism requires an integer entry with
-magnitude $\ge 2$: sheared, doubled, or otherwise non-conventional cell choices, orthohexagonal
-descriptions of a hexagonal lattice, and in general any cell that is not (close to) a reduced
-conventional cell. It also excludes, by construction, any symmetry of the **supercell** that is not
-already a symmetry of the declared conventional cell, because $A$ is divided by $N$ before the
-search, and any symmetry of the structure that does not map the declared cell's lattice onto itself
-(the cubic 3-folds of a structure declared on a $2\times2\times1$ or $\sqrt2\times\sqrt2\times2$ cell). No
-Niggli/Delaunay reduction is attempted before the search; the naming step (Step 10f) re-expresses
-the group found in a conventional cell and flags a result that such untested symmetries could
-enlarge (`≥ <symbol>`).
+**What it still excludes.** Any symmetry of the structure that does not map the **declared cell's
+lattice** $\mathbb Z^3$ onto itself: the finder works in the declared cell, and $A$ is divided by $N$
+before the search. When the declared cell is a supercell of the crystal's own translation lattice
+$\mathbb Z^3+T$ (Step 10c) — a perovskite on a $2\times2\times1$ or $\sqrt2\times\sqrt2\times2$ cell,
+rocksalt on a $1\times1\times2$ cell — rotations of $\mathbb Z^3+T$ that do not preserve $\mathbb Z^3$
+(the cubic 3-folds there) are never tested. The naming step detects this and reports the result
+as a lower bound (`≥ <symbol>`, Step 10f).
 
 **Output**: an array of integer $3\times3$ matrices (row-major), typically 2–48 entries.
 
 **Code**: `symmetry.js` → `metricTensor()`, `det3()`, `inv3()`, `conjugate()`, `latticeStrain()`,
-`latticeCandidates()`, `latticePointOps()` (the exported wrapper, default $\tau_L = 0.01$ Å). The
+`latticeCandidates()`, `latticePointOps()` (the exported wrapper, default $\tau_L = 0.01$ Å);
+`spaceGroupSymbol.js` → `reduceBasis()` (re-exported by `symmetry.js`; the naming step uses it too). The
 finder passes $\tau_L = \min(\texttt{latticeTol}, \tau)$ with `latticeTol` defaulting to $\tau$.
 
 #### Step 8. Candidate translations
@@ -2831,8 +2843,17 @@ fractional grid, folded mod 1 so that a translation recovered as 0.9997 and an e
 (`meanEdge()`) is used only by the closure check of a set handed in directly (Step 11).
 
 **(c) Centering letter** (`centeringOfOps()` → `bravaisCentering()`, `spaceGroupSymbol.js`). The
-pure translations are snapped to the $1/24$ grid (within 0.02 per component; one that does not snap
-gives no letter) and the **whole set**, zero included, must equal one Bravais centering exactly:
+pure translations are snapped to exact fractions as a **group** (`pureTranslations()`): the $n$
+pure translations (zero included) form a finite group, so each has an order $d$ dividing $n$
+($d\boldsymbol\tau$ is a lattice vector), and each is snapped to $\operatorname{round}(d\boldsymbol\tau)/d$ with
+the smallest such $d$ for which every component lies within 0.02 of the $1/d$ grid. $d$ is capped
+at $1/(2\cdot0.02) = 25$, where neighbouring grid points are $2\cdot0.02$ apart and a snap would be a
+guess. This covers every centering and any supercell fraction up to $1/25$ (fifths, sevenths, …)
+with the loose tolerance a refined translation needs at a loose $\tau$ with few sites (0.0075 off
+on the noisy R-3m fixture at $\tau = 0.6$ Å). A set that does not snap, or in which two
+translations snap together, gives no letter. Before 1.0 each component was snapped to a fixed
+$1/24$ grid, which holds no fifths: CsCl in a $5\times5\times5$ cell went unnamed. The **whole
+set**, zero included, must equal one Bravais centering exactly:
 
 | Letter | Translations besides 0 (fractional) |
 | --- | --- |
@@ -2900,7 +2921,11 @@ setting**, which the RMC cell need not be:
    - the given cell and its five other axis orders (`PERMUTATIONS`, all right-handed so a screw's
      handedness survives), for every crystal system;
    - cells built from the symmetry elements (`derivedBases()`), each basis vector the **shortest
-     lattice vector** of the full translation lattice $\mathbb Z^3 + T$ along its direction:
+     lattice vector** of the full translation lattice $\mathbb Z^3 + T$ along its direction (the
+     candidates, `shortLatticeVectors()`, are $\mathbf n + \boldsymbol\tau$ with $\mathbf n$ over a
+     $\pm3$ box of a **reduced** basis of $\mathbb Z^3$ — `reduceBasis()`, Step 7 — so the axes of a
+     crystal on a strongly oblique cell are in reach; $\pm3$ covers the $c$ axis of an R lattice on
+     a reduced rhombohedral basis):
      cubic — $a,b,c$ on the three 4-fold ($\bar4$ for $\bar43m$, 2-fold for $23$, $m\bar3$) axes;
      tetragonal — $c$ on the 4 / $\bar4$ axis, $a$ the shortest lattice vector $\perp c$ (and its
      45° diagonal), $b = 4\cdot a$; trigonal/hexagonal — $c$ on the 3-fold, $a = \pm$ the shortest
@@ -2910,8 +2935,11 @@ setting**, which the RMC cell need not be:
      P2₁/n → P2₁/c). "Perpendicular" and "along" are decided by the rotations themselves
      ($R\mathbf v = \pm\mathbf v$, $\sum_k R^k\mathbf v = 0$), exactly, not by the metric.
 
-   A cell is kept only if its basis vectors are lattice vectors, it is right-handed, every rotation
-   is an integer matrix in it, its translation set is exactly a Bravais centering (Step 10c) that a
+   The new cell's translation set is $\mathbb Z^3 + T$ modulo $Q\mathbb Z^3$, generated mod 1 from
+   $Q^{-1}\mathbf e_i$ and $Q^{-1}\boldsymbol\tau$ by closure (no search box), and must have
+   $|T|\det Q$ members. A cell is kept only if its basis vectors are lattice vectors, it is
+   right-handed, every rotation is an integer matrix in it, its translation set is exactly a
+   Bravais centering (Step 10c) that a
    standard setting of the system uses (monoclinic P, C; orthorhombic P, A, C, I, F; tetragonal P,
    I; trigonal P, R obverse; hexagonal P; cubic P, I, F), and every element lies along a direction
    family that may carry its type (`elementsFitSetting()`: a tetragonal 4-fold only on [001], cubic
@@ -2927,26 +2955,38 @@ setting**, which the RMC cell need not be:
    pre-2002 `e`-glide spellings, `spaceGroupTable.js`) **of the detected crystal class**
    (`pointGroupOfSymbol()`) and starts with the cell's centering letter. The number is looked up
    only for an accepted symbol; `Cmca`-style spellings are shown in the current form.
-4. **Lower bound** (`allLatticeOpsTested()`). The finder only tries rotations that are integer
-   matrices in the **given** cell (Step 7). When the naming cell has lattice symmetries (that also
-   keep its centering) which do not map the given cell's lattice onto itself and are not in the
-   group, those were never tested — a perovskite in a $\sqrt2\times\sqrt2\times2$ or $2\times2\times1$ cell
-   cannot test the cubic 3-folds. The group found is then only a lower bound and is shown as
-   `≥ P4/mmm` (`lowerBoundLabel()`), with no number and no Wyckoff letters.
+4. **Lower bound** (`allLatticeOpsTested()`, `latticeFullyTested()`). The finder only tries
+   rotations that map the **given** cell's lattice $\mathbb Z^3$ onto itself (Step 7). When the
+   given cell is a supercell of the crystal's own translation lattice $\mathbb Z^3+T$, rotations of
+   that lattice which do not preserve $\mathbb Z^3$ were never tested — a perovskite in a
+   $\sqrt2\times\sqrt2\times2$ or $2\times2\times1$ cell, or rocksalt in a $1\times1\times2$ cell, cannot test the
+   cubic 3-folds. The check takes a primitive basis $P$ of $\mathbb Z^3+T$ (`primitiveBasis()`: its
+   successive minima, which in three dimensions always form a basis), lists that lattice's
+   rotations with the Step 7 scan at a strain of the group's worst residual (at least
+   $10^{-3}$ Å), and requires every one, carried to the given cell ($PRP^{-1}$), to be an integer
+   matrix. If one is not, the result is only a lower bound and is shown as `≥ P4/mmm`
+   (`lowerBoundLabel()`), with no number and no Wyckoff letters — whatever the branch: a named
+   symbol, `P1`/`P-1`, or a crystal class (`≥ 4/mmm class`). Before 1.0 only the naming cell's own
+   rotations were checked, so rocksalt in a $1\times1\times2$ cell read `I4/mmm` No. 139.
 5. **Crystal class.** If no cell gives an accepted symbol, the card shows `"<point group> class"`
    (e.g. `4/mmm class`, `classLabel()`) with no number and no letters. Positional assembly on a cell
    that is not conventional can spell another group's symbol (rocksalt on its primitive cell gives
    `Pmmm`); before 1.0 such spellings, and the symmorphic `centering + point group` fallback, were
    shown with that group's ITA number.
 
-Checked on all 230 groups (the test fixtures) in all six axis orders: every group is named
-correctly (the two location-degenerate pairs by Step 10g).
+Checked on all 230 groups (the test fixtures) in all six axis orders, and on four oblique cells
+(a 60° cell, a sheared cell and two strongly oblique unimodular cells: 839 group–cell pairs, exact
+and with 0.005 Å noise): every group is named correctly (the two location-degenerate pairs by
+Step 10g). Before 1.0, 753 of those 839 oblique descriptions got another group's number (rutile on
+a 60° cell: `Cmmm` No. 65), because the Step 7 scan missed the rotations that need entries of
+magnitude 2 there.
 
 **Code**: `symmetry.js` → `classifyOperations()`, `classifyRotation()`, `pointGroupOf()`,
 `spaceGroupHM()`, `classLabel()`, `lowerBoundLabel()`, `POINT_GROUP_ORDER`; `spaceGroupSymbol.js` →
 `intrinsicTranslation()`, `classifyElement()`, `centeringOfOps()`, `bravaisCentering()`,
 `applySetting()`, `derivedBases()`, `elementsFitSetting()`, `hmSymbolCandidates()`,
-`hmSymbolInStandardSetting()`, `allLatticeOpsTested()`, `twoFoldsMeet()`, `transformOps()`;
+`hmSymbolInStandardSetting()`, `reduceBasis()`, `shortLatticeVectors()`, `primitiveBasis()`,
+`allLatticeOpsTested()`, `latticeFullyTested()`, `pureTranslations()`, `twoFoldsMeet()`, `transformOps()`;
 `spaceGroupTable.js` →
 `SPACE_GROUPS`, `spaceGroupNumber()`, `pointGroupOfSymbol()`, `canonicalSymbol()`.
 
@@ -3191,7 +3231,8 @@ unit-cell configuration, and a symmetry search on it would only ever return `P1`
 | `tol` | `latticePointOps()` signature | `0.01` | Å | exported wrapper only; the finder calls `latticeCandidates()` with $\tau_L$ |
 | `tol` | `siteOrbits()` signature | `0.1` | Å | never used (`describeSymmetry` always passes `symTol`) |
 | `tolFrac` | `classifyOperations()` signature | `0.02` | cell fractions | never used (all callers pass `tol / meanEdge(A)`) |
-| translation snap | `snapTranslation()` (`spaceGroupSymbol.js`) | $1/24$ grid, within `0.02` | cell fractions | pure translations are snapped before the exact Bravais match (Step 10c) |
+| translation snap | `pureTranslations()` (`spaceGroupSymbol.js`) | grid $1/d$, $d$ = the smallest order dividing the group order $n$ with every component within `0.02`; $d\le25$ | cell fractions | pure translations are snapped as a group before the exact Bravais match (Step 10c) |
+| lattice-completeness strain | `spaceGroupHM()` → `allLatticeOpsTested()` | the group's worst residual, at least `1e-3` | Å | strain up to which a rotation of the translation lattice counts in the lower-bound check (Step 10f) |
 | translation-key granularity | `classifyOperations()` | `1e-3` | cell fractions | rounding used to count distinct pure translations (no fold of 1000 → 0) |
 | Wyckoff coordinate tolerance | `assignWyckoffLetters()` (from `describeSymmetry`) | $\tau/\overline{a'}$ | cell fractions | per-component fit to a tabulated coordinate form, in the naming cell |
 | threshold epsilon | `symmetryLadder`, `spaceGroupAtTolerance` | `1e-9` | Å | float-safety slack on `residual ≤ r` |
@@ -3218,12 +3259,13 @@ unit-cell configuration, and a symmetry search on it would only ever return `P1`
 - **A group that cannot be named is shown as its crystal class.** The symbol is built positionally
   and accepted only when it is a tabulated symbol of the detected class and centering (Step 10f);
   otherwise the card shows e.g. `4/mmm class` with no number and no Wyckoff letters.
-- **Cells the finder cannot see through.** Rotations are tried only as $\{-1,0,1\}$ integer matrices of
-  the given cell (Step 7). A symmetry that does not map the given cell's lattice onto itself — the
-  cubic 3-folds of a structure modelled in a $\sqrt2\times\sqrt2\times2$ or $2\times2\times1$ cell, or any
-  rotation needing an entry of magnitude 2 in an oblique cell — is never tested. When the naming
-  cell shows that such symmetries exist the result is marked `≥ <symbol>` (Step 10f); in a strongly
-  oblique cell it can go unnoticed.
+- **Supercells of the true cell give a lower bound.** Rotations are found on any basis of the given
+  cell's lattice (Step 7, in a reduced basis), but only those that map that lattice onto itself. A
+  symmetry of the crystal's own translation lattice that does not — the cubic 3-folds of a
+  structure modelled in a $\sqrt2\times\sqrt2\times2$, $2\times2\times1$ or $1\times1\times2$ cell — is never
+  tested, and the result is marked `≥ <symbol>` with no number (Step 10f). The cell handed to the
+  finder is the `.rmc6f` box divided by its declared supercell, so this happens only when that
+  declared cell is itself a supercell.
 - **Lattice strain is measured on the atom scale.** A point operation is admitted when the Cartesian
   displacement it implies for the cell edges, $\varrho_L$ (Step 7), is within $\tau$, and that
   strain is a floor on the operation's residual. A strained cell therefore reads as the lower

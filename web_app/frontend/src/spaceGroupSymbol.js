@@ -522,6 +522,73 @@ function inv3f(m) {
   return [[c(0, 0) / d, c(1, 0) / d, c(2, 0) / d], [c(0, 1) / d, c(1, 1) / d, c(2, 1) / d], [c(0, 2) / d, c(1, 2) / d, c(2, 2) / d]];
 }
 
+/**
+ * Integer matrix M (rows = new basis vectors in the given basis, det +1) such that M·A is
+ * a reduced basis of the same lattice: repeatedly shorten each vector by integer
+ * multiples of the others (pairwise size reduction, then b_k ± b_i ± b_j), shortest
+ * first, until nothing shortens. In a reduced basis every lattice rotation has entries in
+ * {-1, 0, 1}; in an oblique one (a cubic lattice on a 45° cell) some need ±2.
+ */
+export function reduceBasis(A) {
+  const M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const vec = (m) => [0, 1, 2].map((k) => m[0] * A[0][k] + m[1] * A[1][k] + m[2] * A[2][k]);
+  const len2 = (m) => { const v = vec(m); return v[0] * v[0] + v[1] * v[1] + v[2] * v[2]; };
+  const shorter = (cand, cur) => len2(cand) < len2(cur) * (1 - 1e-9);
+  for (let iter = 0; iter < 200; iter++) {
+    let changed = false;
+    M.sort((p, q) => len2(p) - len2(q));
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        if (i === j) continue;
+        const u = vec(M[i]), v = vec(M[j]);
+        const mu = Math.round((u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / len2(M[i]));
+        if (!mu) continue;
+        const cand = M[j].map((x, k) => x - mu * M[i][k]);
+        if (shorter(cand, M[j])) { M[j] = cand; changed = true; }
+      }
+    }
+    for (let k = 0; k < 3; k++) {
+      const [i, j] = [0, 1, 2].filter((x) => x !== k);
+      for (const si of [-1, 1]) for (const sj of [-1, 1]) {
+        const cand = M[k].map((x, c) => x + si * M[i][c] + sj * M[j][c]);
+        if (shorter(cand, M[k])) { M[k] = cand; changed = true; }
+      }
+    }
+    if (!changed) break;
+  }
+  if (det3i(M) < 0) M[2] = M[2].map((x) => -x);
+  return M;
+}
+
+/**
+ * The lattice vectors n + τ of ℤ³ + T (given fractional basis; τ ∈ T, the snapped pure
+ * translations), shortest first, with n over a ±3 box of a REDUCED basis of ℤ³
+ * (reduceBasis) and τ centred in that basis. Every short vector of the lattice is in it
+ * whatever the shape of the given cell — a ±2 box of an oblique given cell misses some
+ * (the conventional axes of a cubic crystal on a sheared cell) — and ±3 covers the
+ * c axis of an R lattice on a reduced rhombohedral basis (3·r − 2a − b).
+ * @returns {{v:number[], len:number}[]}  len = Cartesian length (Å) through A
+ */
+function shortLatticeVectors(translations, A, range = 3) {
+  const M = reduceBasis(A);
+  const Mi = inv3f(M).map((row) => row.map((x) => Math.round(x)));
+  const out = [];
+  for (const tau of translations) {
+    // τ in reduced coordinates (x_r = M⁻ᵀ·x), centred on the origin.
+    const tr = [0, 1, 2].map((i) => Mi[0][i] * tau[0] + Mi[1][i] * tau[1] + Mi[2][i] * tau[2]);
+    const tc = tr.map((x) => x - Math.round(x));
+    for (let a = -range; a <= range; a++) for (let b = -range; b <= range; b++) for (let c = -range; c <= range; c++) {
+      const r = [a + tc[0], b + tc[1], c + tc[2]];
+      // back to the given basis: x = Mᵀ·x_r
+      const v = [0, 1, 2].map((i) => M[0][i] * r[0] + M[1][i] * r[1] + M[2][i] * r[2]);
+      if (Math.abs(v[0]) + Math.abs(v[1]) + Math.abs(v[2]) < 1e-9) continue;
+      const x = [0, 1, 2].map((k) => v[0] * A[0][k] + v[1] * A[1][k] + v[2] * A[2][k]);
+      out.push({ v, len: Math.hypot(x[0], x[1], x[2]) });
+    }
+  }
+  return out.sort((p, q) => p.len - q.len);
+}
+
 /** Re-express the operations in another basis Q (columns = new basis vectors): R' = Q⁻¹RQ, t' = Q⁻¹t. */
 export function transformOps(ops, Q) {
   const Qi = inv3f(Q);
@@ -537,13 +604,41 @@ const nearMod1 = (u, v, tol) => Math.abs(cyc(u[0] - v[0])) <= tol && Math.abs(cy
   && Math.abs(cyc(u[2] - v[2])) <= tol;
 
 /**
- * Snap a pure translation to the 1/24 grid (which holds every centering and every
- * supercell fraction up to 1/12). Null when a component is not within `tol` of it — a
- * lattice that cannot be written exactly cannot be transformed exactly either.
+ * The group's pure translations (operations with R = I), snapped to exact fractions, with
+ * the zero translation first; null when they do not snap. They form a finite group of
+ * order n (zero included), so each has an order d dividing n — d·τ is a lattice vector —
+ * and is snapped to round(d·τ)/d with the SMALLEST such d for which every component lies
+ * within `tol` of the 1/d grid. d is capped at 1/(2·tol) (25), where neighbouring grid
+ * points are 2·tol apart and a snap would be a guess. Reading the grid from the group order
+ * covers every centering and any supercell fraction up to 1/25 (fifths, sevenths, ...)
+ * with the same loose tolerance a noisy structure needs: a refined translation is a mean
+ * over all sites, but at a loose τ with few sites it can sit 0.005 from its fraction.
  */
-function snapTranslation(t, tol = 0.02) {
-  const out = t.map((x) => { const y = Math.round(wrap1(x) * 24) / 24; return Math.abs(cyc(wrap1(x) - y)) <= tol ? y % 1 : null; });
-  return out.some((x) => x === null) ? null : out;
+export function pureTranslations(ops, tol = 0.02) {
+  const raw = [];
+  for (const { R, t } of ops) {
+    if (!sameMat(R, IDENTITY)) continue;
+    const w = t.map(wrap1);
+    if (!raw.some((u) => nearMod1(u, w, 1e-3))) raw.push(w);
+  }
+  if (!raw.some((u) => nearMod1(u, [0, 0, 0], tol))) raw.push([0, 0, 0]);
+  const n = raw.length;
+  const maxD = Math.floor(1 / (2 * tol) + 1e-9);
+  const orders = [];
+  for (let d = 1; d <= Math.min(n, maxD); d++) if (n % d === 0) orders.push(d);
+  const out = [];
+  for (const y of raw) {
+    let snapped = null;
+    for (const d of orders) {
+      const k = y.map((x) => Math.round(x * d));
+      if (y.every((x, i) => Math.abs(x - k[i] / d) <= tol)) { snapped = k.map((ki) => ((ki % d) + d) % d / d); break; }
+    }
+    if (!snapped) return null;
+    if (!out.some((u) => nearMod1(u, snapped, 1e-9))) out.push(snapped);
+  }
+  if (out.length !== n) return null;              // two translations snapped together
+  out.sort((u, v) => u[0] - v[0] || u[1] - v[1] || u[2] - v[2]);   // lexicographic: zero first
+  return out;
 }
 
 // Bravais centering vectors of a conventional cell. R is recognised in its reverse
@@ -580,13 +675,8 @@ export function bravaisCentering(translations, tol = 1e-3) {
  * translations are not exactly a Bravais centering (a supercell of the true cell).
  */
 export function centeringOfOps(ops) {
-  const translations = [[0, 0, 0]];
-  for (const { R, t } of ops) {
-    if (!sameMat(R, IDENTITY)) continue;
-    const s = snapTranslation(t);
-    if (!s) return null;
-    translations.push(s);
-  }
+  const translations = pureTranslations(ops);
+  if (!translations) return null;
   const letter = bravaisCentering(translations);
   return letter === 'R(reverse)' ? 'R' : letter;
 }
@@ -623,10 +713,15 @@ export function applySetting(ops, translations, Q) {
   const want = translations.length * d;
   if (!nearInt(want, 1e-6) || Math.round(want) < 1) return null;
   const count = Math.round(want);
-  const Tn = [];
-  for (let a = -3; a <= 3; a++) for (let b = -3; b <= 3; b++) for (let c = -3; c <= 3; c++) {
-    for (const tau of translations) {
-      const v = matVec(Qi, [a + tau[0], b + tau[1], c + tau[2]]).map((x) => { const y = wrap1(x); return nearInt(y, 1e-6) ? 0 : y; });
+  // The new cell's translations are ℤ³ + T modulo the new cell's lattice Qℤ³: the finite
+  // group generated, mod 1, by Q⁻¹ of the given basis vectors and of T (closed by adding
+  // generators until nothing new appears). No search box, so an oblique Q loses none.
+  const clean = (v) => v.map((x) => { const y = wrap1(x); return nearInt(y, 1e-6) ? 0 : y; });
+  const gens = [[1, 0, 0], [0, 1, 0], [0, 0, 1], ...translations].map((g) => clean(matVec(Qi, g)));
+  const Tn = [[0, 0, 0]];
+  for (let k = 0; k < Tn.length; k++) {
+    for (const g of gens) {
+      const v = clean([Tn[k][0] + g[0], Tn[k][1] + g[1], Tn[k][2] + g[2]]);
       if (!Tn.some((u) => nearMod1(u, v, 1e-6))) {
         Tn.push(v);
         if (Tn.length > count) return null;
@@ -667,19 +762,8 @@ function derivedBases(ops, translations, pointGroup, A) {
   const rotations = [];
   const seen = new Set();
   for (const { R } of ops) { const k = R.flat().join(','); if (!seen.has(k)) { seen.add(k); rotations.push(R); } }
-  // Lattice vectors n + τ, n ∈ [−2, 2]³, shortest first (Cartesian length through A).
-  const lattice = [];
-  for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) for (let c = -2; c <= 2; c++) {
-    for (const tau of translations) {
-      const v = [a + tau[0], b + tau[1], c + tau[2]];
-      if (Math.abs(v[0]) + Math.abs(v[1]) + Math.abs(v[2]) < 1e-9) continue;
-      const x = v[0] * A[0][0] + v[1] * A[1][0] + v[2] * A[2][0];
-      const y = v[0] * A[0][1] + v[1] * A[1][1] + v[2] * A[2][1];
-      const z = v[0] * A[0][2] + v[1] * A[1][2] + v[2] * A[2][2];
-      lattice.push({ v, len: Math.hypot(x, y, z) });
-    }
-  }
-  lattice.sort((p, q) => p.len - q.len);
+  // Short lattice vectors of ℤ³ + T, shortest first (Cartesian length through A).
+  const lattice = shortLatticeVectors(translations, A);
   const same = (u, v) => Math.abs(u[0] - v[0]) < 1e-9 && Math.abs(u[1] - v[1]) < 1e-9 && Math.abs(u[2] - v[2]) < 1e-9;
   const shortest = (pred) => lattice.find(({ v }) => pred(v))?.v ?? null;
   const fixedBy = (R, sign) => (v) => same(matVec(R, v), v.map((x) => sign * x));
@@ -819,25 +903,21 @@ function resolveLocationPair(symbol, ops) {
  *   read from the translations in each candidate cell)
  * @param {string} pointGroup
  * @param {(symbol:string)=>string|null} classOf
- * @param {{A?:number[][], holohedry?:function}} [options]  A = the cell's lattice rows
- *   (Å), used to pick the shortest lattice vectors of derived cells (without it only the
- *   axis orders are tried); holohedry(A') = the lattice rotations of a cell, used to tell
- *   whether the named cell has symmetries the given cell could not test (`complete`)
+ * @param {{A?:number[][], holohedry?:function, latticeTol?:number}} [options]  A = the
+ *   cell's lattice rows (Å), used to pick the shortest lattice vectors of derived cells
+ *   (without it only the axis orders are tried); holohedry(A', tol) = the lattice rotations
+ *   of a cell within a strain of tol Å, used to tell whether the translation lattice has
+ *   symmetries the given cell could not test (`complete`); latticeTol = that strain
+ *   tolerance (the group's worst residual)
  * @returns {{ symbol:string|null, standard:boolean, setting:object|null, placed:boolean,
  *   complete?:boolean }}
  */
-export function hmSymbolInStandardSetting(ops, centering, pointGroup, classOf, { A = null, holohedry = null } = {}) {
+export function hmSymbolInStandardSetting(ops, centering, pointGroup, classOf, { A = null, holohedry = null, latticeTol = 1e-3 } = {}) {
   const system = POINT_GROUP_SYSTEM[pointGroup];
   const none = { symbol: null, standard: false, setting: null, placed: coversAllElements(ops, pointGroup) };
   if (!system || system === 'triclinic' || typeof classOf !== 'function') return none;
-  const translations = [];
-  for (const { R, t } of ops) {
-    if (!sameMat(R, IDENTITY)) continue;
-    const s = snapTranslation(t);
-    if (!s) return none;
-    if (!translations.some((u) => nearMod1(u, s, 1e-9))) translations.push(s);
-  }
-  if (!translations.some((u) => nearMod1(u, [0, 0, 0], 1e-9))) translations.push([0, 0, 0]);
+  const translations = pureTranslations(ops);
+  if (!translations) return none;
 
   const allowed = STANDARD_CENTERING[system];
   const tryBasis = (Q) => {
@@ -856,7 +936,7 @@ export function hmSymbolInStandardSetting(ops, centering, pointGroup, classOf, {
   for (const Q of bases) {
     const found = tryBasis(Q);
     if (found) {
-      const complete = !A || typeof holohedry !== 'function' || allLatticeOpsTested(found.setting, A, holohedry);
+      const complete = !A || typeof holohedry !== 'function' || allLatticeOpsTested(translations, A, holohedry, latticeTol);
       return { symbol: found.symbol, standard: true, setting: found.setting, placed: true, complete };
     }
   }
@@ -864,28 +944,56 @@ export function hmSymbolInStandardSetting(ops, centering, pointGroup, classOf, {
 }
 
 /**
- * Whether every lattice symmetry of the cell the group was named in could have been
- * tested in the cell the operations were found in. The finder only tries rotations that
- * are integer matrices in the GIVEN cell; when that cell is a supercell of the named one
- * (a perovskite in a √2×√2×2 cell named in its 3.9 Å cubic cell), rotations of the named
- * cell that do not map the given cell's lattice onto itself — the cubic 3-folds there —
- * were never tried. Then the group found is only a lower bound on the symmetry.
- * `holohedry(A')` lists the integer lattice rotations of a cell with lattice rows A'.
+ * A primitive basis (columns, in the given cell's fractional basis) of the lattice
+ * ℤ³ + T, from its successive minima — in three dimensions the shortest vector, the
+ * shortest one not parallel to it and the shortest one not coplanar with both always form
+ * a basis. Null if they do not have the primitive volume 1/|T| (never expected).
  */
-function allLatticeOpsTested(setting, A, holohedry) {
-  const { Q, Qinv } = setting;
-  // Rows of the named cell: a'_i = Σ_j Q[j][i]·a_j.
-  const As = [0, 1, 2].map((i) => [0, 1, 2].map((k) => Q[0][i] * A[0][k] + Q[1][i] * A[1][k] + Q[2][i] * A[2][k]));
-  const found = new Set(setting.ops.map((o) => o.R.flat().join(',')));
-  const T = setting.translations;
-  // A lattice rotation must also map the centering translations onto themselves: the
-  // 6-folds of a hexagonal-axes cell are metric symmetries but not symmetries of an R
-  // lattice described on it.
-  const keepsLattice = (R) => T.every((tau) => { const v = matVec(R, tau); return T.some((u) => nearMod1(u, v, 1e-6)); });
-  for (const R of holohedry(As)) {
-    if (found.has(R.flat().join(',')) || !keepsLattice(R)) continue;
-    const back = matMul(matMul(Q, R), Qinv);
+function primitiveBasis(translations, A) {
+  const vectors = shortLatticeVectors(translations, A);
+  const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const v1 = vectors[0]?.v;
+  if (!v1) return null;
+  const v2 = vectors.find(({ v }) => cross(v1, v).some((x) => Math.abs(x) > 1e-9))?.v;
+  if (!v2) return null;
+  const n = cross(v1, v2);
+  const found = vectors.find(({ v }) => Math.abs(n[0] * v[0] + n[1] * v[1] + n[2] * v[2]) > 1e-9);
+  if (!found) return null;
+  let v3 = found.v;
+  const vol = n[0] * v3[0] + n[1] * v3[1] + n[2] * v3[2];
+  if (Math.abs(Math.abs(vol) - 1 / translations.length) > 1e-6) return null;
+  if (vol < 0) v3 = v3.map((x) => -x);
+  return [[v1[0], v2[0], v3[0]], [v1[1], v2[1], v3[1]], [v1[2], v2[2], v3[2]]];
+}
+
+/**
+ * Whether every symmetry of the crystal's translation lattice could have been tested in
+ * the cell the operations were found in. The finder only tries rotations that map the
+ * GIVEN cell's lattice ℤ³ onto itself (integer matrices there). When that cell is a
+ * supercell of the translation lattice ℤ³ + T — a perovskite in a √2×√2×2 or 2×2×1 cell,
+ * rocksalt in a 1×1×2 cell — rotations of the full lattice that do not preserve ℤ³ (the
+ * cubic 3-folds there) were never tried, and the group found is only a lower bound.
+ * `holohedry(A', tol)` lists the lattice rotations of a cell with lattice rows A' (strain
+ * ≤ tol Å); they are taken on a primitive basis of ℤ³ + T and carried to the given cell.
+ */
+function allLatticeOpsTested(translations, A, holohedry, tol) {
+  const P = primitiveBasis(translations, A);
+  if (!P) return false;
+  const Pi = inv3f(P);
+  const Ap = [0, 1, 2].map((i) => [0, 1, 2].map((k) => P[0][i] * A[0][k] + P[1][i] * A[1][k] + P[2][i] * A[2][k]));
+  for (const R of holohedry(Ap, tol)) {
+    const back = matMul(matMul(P, R), Pi);
     if (!back.every((row) => row.every((v) => nearInt(v)))) return false;
   }
   return true;
+}
+
+/**
+ * Whether the lattice symmetries of the operations' full translation lattice could all be
+ * tested in the given cell (see allLatticeOpsTested) — for callers naming a group without
+ * the setting search (P1 / P-1). False when a pure translation cannot be snapped.
+ */
+export function latticeFullyTested(ops, A, holohedry, tol = 1e-3) {
+  const translations = pureTranslations(ops);
+  return !!translations && allLatticeOpsTested(translations, A, holohedry, tol);
 }
