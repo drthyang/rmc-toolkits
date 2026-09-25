@@ -449,10 +449,9 @@ export default function OrientationView({
         [colormap, contrast, result]
     );
 
-    // A real inversion asymmetry: well above what Poisson noise alone produces.
-    const asymmetrySignificant = result
-        ? result.antipodalAsymmetry > 3 * result.antipodalAsymmetryNull
-        : false;
+    // A real inversion asymmetry: the engine's flag, A > null + 3 null SDs for
+    // an inversion-symmetric population with the same antipodal-pair totals.
+    const asymmetrySignificant = Boolean(result?.antipodalAsymmetrySignificant);
 
     // Bounds-guarded: a raycast fired between a resolution change and the hover
     // reset could carry an index from the previous, larger tiling.
@@ -604,13 +603,19 @@ export default function OrientationView({
                             </span>
                             <span className={`orient-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
                                 ± asymmetry <b>{numberFormat(result.antipodalAsymmetry, 2)}</b>
-                                {' '}<span className="orient-stat-null">(noise floor {numberFormat(result.antipodalAsymmetryNull, 2)})</span>
+                                {' '}<span className="orient-stat-null">
+                                    (symmetric null {numberFormat(result.antipodalAsymmetryNull, 2)} ± {numberFormat(result.antipodalAsymmetryNullSd, 2)})
+                                </span>
+                                {' '}· <b>{sigmaFormat(result.antipodalAsymmetryZ)}</b>
                                 <InfoBadge label="About the antipodal asymmetry" align="end">
                                     <p>
                                         The +u vs −u imbalance, Σ|n(u) − n(−u)| / N over antipodal cell
                                         pairs: 0 for an inversion-symmetric cloud, 1 for a fully
-                                        one-sided one. The thermal ellipsoid is blind to this — a value
-                                        well above the Poisson noise floor is real off-centring or
+                                        one-sided one. Counting noise alone makes it positive: the null
+                                        is its exact mean ± SD if every pair&apos;s atoms had split at
+                                        random between u and −u (same pair totals), and the readout
+                                        turns red above null + 3 SD. The thermal ellipsoid is blind to
+                                        this — a value well above the null is real off-centring or
                                         odd-order anharmonicity.
                                     </p>
                                 </InfoBadge>

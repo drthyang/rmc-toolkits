@@ -1020,49 +1020,72 @@ $|n_m - n_{\text{ant}(m)}| \le n_m + n_{\text{ant}(m)}$ and $\sum_m n_m = N$,
 
 $$\mathcal{A} \;\le\; \frac{1}{2N}\sum_m \big(n_m + n_{\text{ant}(m)}\big) \;=\; \frac{2N}{2N} \;=\; 1 .$$
 
-This matters for the flag below, because the null floor has no such bound.
+The null below respects the same bound.
 
-**The null floor.** Pure counting noise produces a non-zero $\mathcal{A}$, so a bare value is
-unreadable. For two i.i.d. $\mathrm{Poisson}(\mu)$ cells with $\mu = N/C$,
-$X - Y \approx \mathcal{N}(0, 2\mu)$ and $\operatorname{E}|X-Y| = \sqrt{4\mu/\pi} = 2\sqrt{\mu/\pi}$.
-Summing over $C$ cells and applying the $1/(2N)$ prefactor:
+**The null: inversion symmetry given the pair totals.** Counting noise alone makes $\mathcal{A}$
+positive, so a bare value is unreadable. The question $\mathcal{A}$ answers is "is
+$p(\mathbf{u}) = p(-\mathbf{u})$?", and its null is therefore *inversion symmetry*, not isotropy.
+Condition on what the data fix — the total $T_p = n(\mathbf{u}) + n(-\mathbf{u})$ of each antipodal
+pair $p$. Under inversion symmetry each atom of the pair is equally likely to sit at
+$+\mathbf{u}$ or $-\mathbf{u}$, independently, so
 
-$$\mathcal{A}_{\text{null}} \;=\; \frac{1}{2N}\,C\cdot 2\sqrt{\frac{N/C}{\pi}}
-\;=\; \boxed{\sqrt{\frac{C}{\pi N}}} \qquad (\texttt{antipodalAsymmetryNull}).$$
+$$X_p \sim \mathrm{Bin}(T_p, \tfrac12), \qquad D_p = |2X_p - T_p| ,
+\qquad \mathcal{A} = \frac{1}{N}\sum_p D_p ,$$
 
-The Gaussian step assumes $\mu = N/C \gg 1$. **At the UI's default operating point it is not:**
-$\nu = 10$, $C = 1002$, and a 216-copy site gives $\mu \approx 0.22$. The formula is still what
-both engines report; read it as an order-of-magnitude floor there, not as a calibrated
-expectation.
+independently across pairs, with the exact moments
 
-**The $3\times$ flag is structurally unreachable at high resolution.** The UI flags the pair red
-when $\mathcal{A} > 3\,\mathcal{A}_{\text{null}}$
-([OrientationView.jsx:447](../../web_app/frontend/src/components/OrientationView.jsx)). Because
-$\mathcal{A} \le 1$ while $\mathcal{A}_{\text{null}} = \sqrt{C/\pi N}$ can exceed $1/3$ — or
-exceed 1 outright — the condition can only ever fire when
+$$\operatorname{E}D_p \;=\; T_p\, c_{\lfloor T_p/2\rfloor},\quad c_k = \binom{2k}{k}4^{-k},
+\qquad \operatorname{E}D_p^2 = T_p ,
+\qquad \operatorname{Var}D_p = T_p - (\operatorname{E}D_p)^2 .$$
 
-$$3\sqrt{\frac{C}{\pi N}} < 1 \iff N > \frac{9C}{\pi} .$$
+($T = 1$: $D = 1$ always; $T = 2$: $D \in \{0, 2\}$, mean 1; $T = 3$: $D \in \{1, 3\}$, mean
+1.5.) The engines evaluate $c_k$ by the exact recurrence $c_k = c_{k-1}(2k-1)/(2k)$ as one
+sequential product (`_central_binomial` / `centralBinomial`, bit-identical across engines) and
+report
 
-| $\nu$ | $C$ | $N$ needed for the flag to be *possible* |
-|---|---|---|
-| 1 (Auto floor) | 12 | 35 |
-| 2 | 42 | 121 |
-| 6 | 362 | 1 038 |
-| 8 | 642 | 1 840 |
-| **10 (UI default)** | **1002** | **2 871** |
-| 24 | 5762 | 16 507 |
+$$\texttt{antipodalAsymmetryNull} = \frac1N\sum_p \operatorname{E}D_p ,\qquad
+\texttt{antipodalAsymmetryNullSd} = \frac1N\sqrt{\textstyle\sum_p \operatorname{Var}D_p} ,$$
 
-Measured, to make the failure concrete: a **perfectly one-sided** 216-point cloud at
-$\nu = 10$ reports `usedPoints = 216`, $\mathcal{A} = 1.000$ (its maximum),
-$\mathcal{A}_{\text{null}} = 1.215$, flag **False**, and the then-displayed legacy `significance` $= 1.35\sigma$ — the page
-reads a maximally asymmetric cloud as consistent with noise. The same cloud on *Auto*
-($\nu = 1$) gives $\mathcal{A} = 0.991$, $\mathcal{A}_{\text{null}} = 0.133$, flag **True**.
-**So the antipodal readout, exactly like the map itself, must be read on Auto resolution for
-typical site copy counts** (caveat 7).
+$$\texttt{antipodalAsymmetryZ} = \frac{\mathcal{A} - \texttt{Null}}{\texttt{NullSd}},\qquad
+\texttt{antipodalAsymmetrySignificant} = \big(\texttt{antipodalAsymmetryZ} > 3\big)
+\quad(\texttt{ASYMMETRY\_FLAG\_SIGMA} = 3).$$
 
-Both suites assert that a deliberately one-sided cloud clears $3\times$ the floor while a
-centrosymmetric Gaussian lands between $0.2\times$ and $2\times$ it — at test resolutions where
-$N > 9C/\pi$ holds.
+When every occupied pair holds a single atom, all $D_p$ are deterministic: $\mathcal{A}$ equals
+its null exactly, the spread is 0, `antipodalAsymmetryZ` is `null` and the flag is off — there is
+no information either way. The null mean is automatically $\le 1$ (each $\operatorname{E}D_p \le
+T_p$), valid at any count level, and correct for any *anisotropic* centrosymmetric site (a rod,
+a disc, eight $\langle 111\rangle$ spots), because it never assumes the pair totals are equal.
+
+**What it replaces — and why the old flag never fired.** Before the 1.0 audit the null was
+$\sqrt{C/(\pi N)}$: the Gaussian large-$\mu$ limit of $\operatorname{E}|X - Y|$ for two i.i.d.
+$\mathrm{Poisson}(N/C)$ cells — an isotropic, unconditional mean. It was wrong three ways. (i) At
+the UI default the cells hold $\mu \approx 0.2$–$1$, where the Gaussian limit is 8–50 % high and
+exceeds the statistic's own maximum (1.215 for 216 copies at $\nu = 10$; the exact Skellam mean
+is 0.82). (ii) For anisotropic sites the isotropic assumption overstates the floor by a further
+12–68 % (Jensen: $\sum_p\sqrt{\mu_p} < C\sqrt{\bar\mu}$). (iii) The UI flag compared
+$\mathcal{A}$ with **three times the null mean**, not with its spread (≈ 0.02 at $N = 1000$), so
+it needed an excess of 20–60 null SDs; with $\mathcal{A} \le 1$ it could not fire at all unless
+$N > 9C/\pi$ (2 871 copies at $\nu = 10$). Measured, old → new:
+
+| cloud ($N = 1000$ unless stated) | $\nu$ | $\mathcal{A}$ | old null (3× = flag) | new null ± SD | $z$ | flag old → new |
+|---|---|---|---|---|---|---|
+| every atom in one hemisphere, $N = 216$ | 10 | 1.000 | 1.215 (3.65) | 0.826 ± 0.027 | 6.3 | False → **True** |
+| same | 1 (Auto) | 0.731 | 0.133 | 0.134 ± 0.041 | 14.8 | True → True |
+| 25 % of atoms shifted 0.2 Å along $+z$, re-centred | 2 (Auto) | 0.328 | 0.109 (0.33) | 0.111 ± 0.019 | 11.4 | False → **True** |
+| 20 % shifted 0.4 Å | 10 | 0.684 | 0.565 (1.69) | 0.420 ± 0.018 | 14.5 | False → **True** |
+| 30 % shifted 0.3 Å | 10 | 0.570 | 0.565 (1.69) | 0.410 ± 0.018 | 8.8 | False → **True** |
+
+(The old page printed the last row as "± asymmetry 0.57 (noise floor 0.57)" — an 8.8σ imbalance
+shown as exactly noise.)
+
+**Calibration, measured** on centrosymmetric clouds (flag = $z > 3$, nominal 0.135 %; 2 000–10 000
+draws per row): isotropic, rod ($\sigma$ 0.2/0.03/0.03 Å), disc, eight $\langle111\rangle$ spots
+and sign-flipped skewed clouds all give $\bar z = 0.00 \pm 0.05$ and $\mathrm{sd}(z) = 0.97$–$1.03$
+at every resolution. The flag rate is 0.11 % (isotropic, 216 copies, $\nu = 10$), 0.21 % (rod,
+$\nu = 10$), and up to 0.35–0.5 % at the Auto resolutions $\nu \le 2$, where only 6–21 pairs
+enter the sum and its normal approximation is coarse. Both suites assert the exact binomial
+moments against a brute-force enumeration, a centrosymmetric flag rate $\le 2\,\%$, and that a
+one-sided and a partially off-centred cloud are flagged at the UI default.
 
 Note $\mathcal{A}$ is built from raw counts, so it is unaffected by smoothing and by the weight
 choice.
@@ -1201,7 +1224,10 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `meanCount`, `emptyFraction` | float | — | $N/C$; fraction of cells with **raw** count 0 | no |
 | `meanAmplitude`, `rmsAmplitude` | Å | — | $\langle a\rangle$, $\sqrt{\langle a^2\rangle}$ over survivors | `meanAmplitude` (relief scale) |
 | `cellMeanAmplitude` | $(C,)$ Å | — | per-cell $\langle a\rangle_m$, smoothed numerator **and** denominator | yes (relief + hover) |
-| `antipodalAsymmetry`, `…Null` | dimensionless | — | §7, from raw counts | yes |
+| `antipodalAsymmetry` | dimensionless | — | $\sum_p\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$, §7, from raw counts | yes |
+| `antipodalAsymmetryNull`, `…NullSd` | dimensionless | — | exact mean and SD of $\mathcal{A}$ for an inversion-symmetric population with the observed pair totals (§7) | yes |
+| `antipodalAsymmetryZ` | $\sigma$, or `null` | — | $(\mathcal{A} - \text{null})/\text{SD}$; `null` when the SD is 0 (every occupied pair holds one atom) | yes |
+| `antipodalAsymmetrySignificant` | bool | — | $z > $ `ASYMMETRY_FLAG_SIGMA` $= 3$ | yes (red flag) |
 | `orientationTensor`, `orientationEigenvalues` | 3×3 / 3 | req / — | §8 | no |
 | `orientationAxes` | 3×3, rows | **req** | §8 — PCA-frame axes when `frame="pca"` | no |
 | `orientationAnisotropy` | dimensionless | — | $3\lambda_1 - 1$ | yes |
@@ -1360,12 +1386,17 @@ independently computed in each language — not a shared-golden parity suite.
 
 **What is *not* covered, and where the two could diverge.**
 
-- **No cross-engine golden test exists.** Nothing in CI compares Python output to JS output for
-  the same input. The `recommendedFrequency` boundary table is pinned in both suites. In particular, if the two ever enumerated the icosahedron, its faces, the geodesic
-  lattice, or the angular ordering in a different order, `centers[i]` would mean different cells
-  in the two runtimes and **both suites would still pass** — every assertion above is
-  index-agnostic. (Contrast [autoScale.js](../../web_app/frontend/src/workers/autoScale.js), which
-  *is* parity-tested against committed Python goldens.)
+- **Cross-engine goldens (since the 1.0 audit).** The parallel suites above are index-agnostic
+  — if the two engines ever enumerated the icosahedron, its faces, the geodesic lattice or the
+  angular ordering in a different order, `centers[i]` would mean different cells and all of them
+  would still pass. [tests/test_orientation_fixes.py](../../tests/test_orientation_fixes.py) and
+  [orientationFixes.test.js](../../web_app/frontend/src/workers/__tests__/orientationFixes.test.js)
+  therefore share **pinned values verbatim**: the `recommendedFrequency` boundary table, the
+  $\pm$axis cells at $\nu = 3$, `neighbors` checksums at $\nu \in \{4,6,10,38\}$ and two $\nu = 38$
+  polygon starts, and — on an RNG-free "golden cloud" (a Fibonacci-spiral sphere plus a tight
+  lobe, built identically in both languages) — `peakCell`, the whole peak test, the map test and
+  the antipodal null at several $(\nu, \text{smoothing})$ settings, to $10^{-9}$ relative. The
+  JS special functions are additionally pinned against `scipy.special` values.
 - **Measured for this document, they do agree.** Running both engines on identical inputs on the
   dev machine: at $\nu = 4$, `centers`, `areas`, `sizes`, `antipode` and even the *per-cell
   polygon vertex order* match to $\le 9\times 10^{-16}$ (and, since the canonical cycle start of
@@ -1467,15 +1498,16 @@ independently computed in each language — not a shared-golden parity suite.
    a $+\mathbf{u}/-\mathbf{u}$ imbalance. Ties are measure-zero for real (noisy) data but *not* for
    idealised inputs: the crystal axes are exact ties at odd $\nu$. It is also why the brute-force
    parity tests assert $> 99.99\%$ rather than 100 %.
-7. **Over-binning is still possible on purpose — and it silently disables the asymmetry flag.**
+7. **Over-binning is still possible on purpose — it costs power, not calibration.**
    The UI defaults to a fixed $\nu = 10$, not to Auto, so a site with only a few hundred copies is
    over-binned out of the box (1002 cells, $< 1$ point per cell); Auto would have picked $\nu = 1$
-   (a few hundred copies) or 2 (~1000 copies) for the same data (§3). The 2× default smoothing hides this visually. Worse, because
-   $\mathcal{A} \le 1$ while $\mathcal{A}_{\text{null}} = \sqrt{C/\pi N}$ is not bounded, the
-   `A > 3·null` red flag **cannot fire at all** unless $N > 9C/\pi$ — 2 871 copies at $\nu = 10$
-   (§7). A perfectly one-sided 216-point site at the default resolution reports
-   $\mathcal{A} = 1.000$ against a floor of 1.215 and is displayed as unremarkable. Before
-   believing a lobe, read the calibrated `peakSignificance` (§6.3) — **not** the hover `z`, which
+   (a few hundred copies) or 2 (~1000 copies) for the same data (§3). The 2× default smoothing
+   hides this visually. The calibrated readouts stay honest there — the peak test, the map test and
+   the conditional asymmetry null (§6.3, §7) all hold their false-alarm rates at $\nu = 10$ — but a
+   real lobe spread over many sparsely filled cells is much harder to detect than on Auto. (Before
+   the 1.0 audit the over-binned default also silently disabled the asymmetry flag: its old null
+   $\sqrt{C/\pi N}$ exceeded 1/3, so `A > 3·null` could not fire below 2 871 copies at
+   $\nu = 10$.) Before believing a lobe, read the calibrated `peakSignificance` (§6.3) — **not** the hover `z`, which
    is a local, uncorrected value and routinely reads 3–5 on pure noise at the default resolution —
    and prefer the Resolution control's *Auto*, where cells hold enough atoms for a real lobe to
    reach significance at all.
@@ -2144,23 +2176,21 @@ isotropic expectation.
 | --- | --- | --- | --- |
 | `peak N.NN× at [x, y, z] · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakTieCount`, `peakSignificance` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction; and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 1.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
 | `anisotropy N.NN` | `orientationAnisotropy` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue. $T = I/3$ for a uniform sphere, so the value is **0 for isotropic, 2 for a perfect single axis**. Computed from the vectors, not the bins, so it is resolution-independent. | 2 dp |
-| `± asymmetry N.NN (noise floor N.NN)` | `antipodalAsymmetry`, `antipodalAsymmetryNull` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The floor is the level pure Poisson noise alone produces, $\sqrt{C/(\pi N)}$, from $\mathbb E\lvert X-Y\rvert \approx 2\sqrt{m/\pi}$ for two iid Poisson($m$) cells. | both 2 dp |
+| `± asymmetry N.NN (symmetric null N.NN ± N.NN) · N.Nσ` | `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`, `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The null is its exact mean ± SD if every antipodal pair's atoms had split at random between $\pm\mathbf u$ (same pair totals, engine §7), and $z = (\mathcal{A} - \text{null})/\text{SD}$. Until the 1.0 audit the slot printed "(noise floor $\sqrt{C/\pi N}$)", an isotropic Gaussian-limit mean that could exceed 1 | values 2 dp, σ 1 dp |
 | `map significance N.Nσ` | `mapSignificance` (InfoBadge also prints `mapChiSquare`, `mapDegreesOfFreedom`) | Pearson's $X^2 = \sum_c z_c^2$, $z_c = (n_c - e_c)/\sqrt{e_c}$, against $\chi^2_{C-1}$, as a one-sided normal deviate (engine §6.3); "not significant" when $\le 0$. Until the 1.0 audit this slot printed the RMS of $z_c$ with a σ unit, whose noise value is $1 \pm 1/\sqrt{2C}$ — "1.4σ" for a cloud with every atom in one hemisphere | σ 1 dp |
 
-The only *client-side* logic in the strip is the red flag:
+The red flag is **not** computed in the browser any more:
 
 ```js
-const asymmetrySignificant = result
-  ? result.antipodalAsymmetry > 3 * result.antipodalAsymmetryNull
-  : false;
+const asymmetrySignificant = Boolean(result?.antipodalAsymmetrySignificant);
 ```
 
-which adds `.is-flagged` (colour `var(--danger)`) to the asymmetry stat. The factor **3** is a UI
-constant ([`OrientationView.jsx:447`](../../web_app/frontend/src/components/OrientationView.jsx)), not
-an engine threshold. A genuine +u/−u imbalance is the headline finding of this page — it is exactly
+reads the engine's flag ($z > 3$ null SDs, `ASYMMETRY_FLAG_SIGMA`) and adds `.is-flagged` (colour
+`var(--danger)`) to the asymmetry stat. Until the 1.0 audit the page computed
+`antipodalAsymmetry > 3 * antipodalAsymmetryNull` itself — three times the null *mean*, not its
+spread — which could not fire at the default resolution (engine §7). A genuine +u/−u imbalance is the headline finding of this page — it is exactly
 the physics (static off-centring, odd-order anharmonicity) that a covariance ellipsoid is
-structurally blind to — which is why it gets the only coloured state in the strip. See Caveat 1 for
-when that flag cannot fire at all.
+structurally blind to — which is why it gets the only coloured state in the strip.
 
 The strip does **not** show the resolution actually used, the number of vectors that survived the
 amplitude cut, or the tensor's eigenvectors; see Step 14.
@@ -2655,7 +2685,9 @@ canvas alone:
 The engines return considerably more than this page shows. From the orientation response, the UI
 reads only `polygons`, `enhancement`, `vmax`, `cellMeanAmplitude`, `meanAmplitude`, `centers`,
 `counts`, `zScore`, `cellCount`, `peakEnhancement`, `peakDirection`, `peakSignificance`, `peakTieCount`,
-`orientationAnisotropy`, `antipodalAsymmetry`, `antipodalAsymmetryNull`, `significance`, `weight`,
+`orientationAnisotropy`, `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`,
+`antipodalAsymmetryZ`, `antipodalAsymmetrySignificant`, `mapSignificance`, `mapChiSquare`,
+`mapDegreesOfFreedom`, `weight`,
 `smoothing`, `browserOrientation`, and `pcaAxes` (fallback rods only). **Never rendered anywhere:**
 
 | Field | What it is | Why its absence matters |
@@ -2717,7 +2749,7 @@ destructure.
 | Outline inflation | 1.002 | `OrientationView` call site |
 | Outline material | `0x10151c`, opacity 0.35 | `OrientationView` |
 | Colorbar stops | 24 (25 colours) | `colorbarGradient` call |
-| Asymmetry flag | `antipodalAsymmetry > 3 × antipodalAsymmetryNull` | `OrientationView.jsx:447` |
+| Asymmetry flag | engine `antipodalAsymmetrySignificant` ($z > 3$ null SDs, `ASYMMETRY_FLAG_SIGMA`) | engines; read by `OrientationView` |
 | Sphere mount fallback | 640 × 520 px (dead in practice — see Step 1) | `OrientationView.jsx:226-227` |
 | Sphere camera | FOV 45°, near 0.01, far 100, default `(2.5, 1.85, 2.5)` | scene effect |
 | OrbitControls | damping 0.12, `enablePan: false` | both panels |
@@ -2755,8 +2787,7 @@ destructure.
 
 ### Caveats
 
-**1. The shipped default resolution over-bins by the engine's own criterion — and that silently
-disables one readout.** The `Resolution` default is ν = 10 (1002 cells), chosen for a legible picture
+**1. The shipped default resolution over-bins by the engine's own criterion.** The `Resolution` default is ν = 10 (1002 cells), chosen for a legible picture
 together with the 2× smoothing default. The engine's own guard, `recommendedFrequency`, keeps at least
 12 points per cell; for a typical site with ~1000 copies (one per unit cell of a 10×10×10 supercell) it
 returns **ν = 2** (42 cells). At ν = 10 the expected count per cell is ≈ 1. Three consequences:
@@ -2769,16 +2800,13 @@ returns **ν = 2** (42 cells). At ν = 10 the expected count per cell is ≈ 1. 
   twice as often as nominal, engine §6.3), and a smooth real anisotropy spread over a thousand cells
   has little power against a thousand degrees of freedom. The readout is **resolution-dependent**
   and is not comparable between two maps at different ν.
-* **The ± asymmetry flag can be unreachable.** The null floor is
-  $\text{null} = \sqrt{C/(\pi N)}$ with $C$ cells and $N$ surviving vectors, and the UI flags red only
-  when $\text{asymmetry} > 3\,\text{null}$. But `antipodalAsymmetry` is bounded above by 1 by
-  construction. At ν = 10 and $N = 1000$, $\text{null} = \sqrt{1002/(\pi\cdot1000)} = 0.565$ and the
-  threshold is $1.695 > 1$ — **no possible data can trigger the flag**. Reachability requires
-  $3\sqrt{C/(\pi N)} < 1$, i.e. $C < \pi N/9 \approx 0.35\,N$; at $N = 1000$ that means $C < 349$, and
-  the largest tiling the Resolution dropdown offers under that bound is **ν = 5** ($C = 252$), since
-  ν = 6 already gives 362. Users looking for off-centring must lower the resolution (or select a site
-  with many more copies) before the flag means anything. The numeric value and its floor are always printed, so
-  the information is on screen — only the red flag is dead at the default.
+* **The ± asymmetry flag used to be unreachable here.** Before the 1.0 audit the null floor was
+  $\sqrt{C/(\pi N)}$ and the UI flagged red only when $\text{asymmetry} > 3\,\text{null}$; with
+  `antipodalAsymmetry` $\le 1$ that was impossible at ν = 10 for $N = 1000$ (threshold 1.695). The
+  engine now reports the exact inversion-symmetric null given the pair totals and flags
+  $z > 3$ null SDs (engine §7), which fires at the default resolution — a hemisphere-only
+  216-copy cloud reads $z = 6.3$ — while centrosymmetric clouds trip it about 0.1–0.2 % of the
+  time.
 
 **2. Every surviving vector is binned — there is no point budget, and no RNG.** Unlike the PCA-KDE
 path, which explicitly caps its fit with `subsample(points, maxFitPoints, rngSeed)`

@@ -455,3 +455,62 @@ describe('map significance (Pearson chi-square)', () => {
         expect(oneSided.mapSignificance).toBeGreaterThan(10);
     });
 });
+
+// orientation.numerics.4/.13, orientation.physics.6 — shared verbatim with
+// GOLDEN_ASYMMETRY in tests/test_orientation_fixes.py.
+const GOLDEN_ASYMMETRY = [
+    [6, 1, 60, { antipodalAsymmetry: 0.2, antipodalAsymmetryNull: 0.3401168600567151,
+        antipodalAsymmetryNullSd: 0.019345746381926036,
+        antipodalAsymmetryZ: -7.2427735425923245, antipodalAsymmetrySignificant: false }],
+    [null, 0, 60, { antipodalAsymmetry: 0.08333333333333333,
+        antipodalAsymmetryNull: 0.11738132743663726,
+        antipodalAsymmetryNullSd: 0.01946344130131603,
+        antipodalAsymmetryZ: -1.7493306335813166,
+        antipodalAsymmetrySignificant: false }],
+    [10, 2, 0, { antipodalAsymmetry: 0.19111111111111112,
+        antipodalAsymmetryNull: 0.5672222222222222,
+        antipodalAsymmetryNullSd: 0.020957040126511128,
+        antipodalAsymmetryZ: -17.94676675907692, antipodalAsymmetrySignificant: false }],
+    [4, 0, 400, { antipodalAsymmetry: 0.3415384615384615,
+        antipodalAsymmetryNull: 0.1752318529176018,
+        antipodalAsymmetryNullSd: 0.01673666421475673,
+        antipodalAsymmetryZ: 9.936663990320547, antipodalAsymmetrySignificant: true }]
+];
+
+describe('antipodal asymmetry null (conditional binomial split)', () => {
+    it('matches the Python golden values', () => assertGolden(GOLDEN_ASYMMETRY));
+
+    it('stays below the statistic bound and rarely flags a centrosymmetric site', () => {
+        const gauss = makeRng(11);
+        const small = orientationHistogram(isotropicUnits(gauss, 216), { frequency: 10, smoothing: 2, geometry: false });
+        expect(small.antipodalAsymmetryNull).toBeLessThan(0.9);
+        let flagged = 0;
+        const zValues = [];
+        for (let k = 0; k < 60; k += 1) {
+            const rod = isotropicUnits(gauss, 1000).map(([x, y, z]) => [x * 0.2, y * 0.03, z * 0.03]);
+            const result = orientationHistogram(rod, { frequency: 10, geometry: false });
+            if (result.antipodalAsymmetrySignificant) flagged += 1;
+            zValues.push(result.antipodalAsymmetryZ);
+        }
+        expect(flagged).toBeLessThanOrEqual(1);
+        expect(Math.abs(zValues.reduce((sum, value) => sum + value, 0) / zValues.length)).toBeLessThan(0.4);
+    });
+
+    it('flags a one-sided cloud at the UI default resolution', () => {
+        const gauss = makeRng(12);
+        const hemisphere = isotropicUnits(gauss, 1000).map(([x, y, z]) => [Math.abs(x), y, z]);
+        const result = orientationHistogram(hemisphere, { frequency: 10, smoothing: 2, geometry: false });
+        expect(result.antipodalAsymmetrySignificant).toBe(true);
+        expect(result.antipodalAsymmetryZ).toBeGreaterThan(10);
+    });
+
+    it('reports no z when every occupied pair holds one atom', () => {
+        const tiling = goldbergTiling(4);
+        const cells = tiling.centers.map((center, cell) => cell).filter((cell) => cell < tiling.antipode[cell]).slice(0, 20);
+        const result = orientationHistogram(cells.map((cell) => tiling.centers[cell].map((value) => value * 0.1)), { frequency: 4, geometry: false });
+        expect(result.antipodalAsymmetryNullSd).toBe(0);
+        expect(result.antipodalAsymmetryZ).toBeNull();
+        expect(result.antipodalAsymmetrySignificant).toBe(false);
+        expect(result.antipodalAsymmetryNull).toBe(1);
+    });
+});

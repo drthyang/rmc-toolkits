@@ -484,5 +484,120 @@ GOLDEN_MAP = {
 }
 
 
+def _skewed_cloud(rng, n, fraction=0.2, shift=0.4, sigma=0.05):
+    """Partial one-sided off-centring about the (re-centred) site mean."""
+    v = rng.normal(size=(n, 3)) * sigma
+    moved = rng.random(n) < fraction
+    v[moved, 2] += shift
+    return v - v.mean(axis=0)
+
+
+class AntipodalNullTests(unittest.TestCase):
+    """orientation.numerics.4/.13, orientation.physics.6.
+
+    antipodalAsymmetryNull was sqrt(C/(pi N)): a Gaussian-limit, isotropic,
+    unconditional mean. It exceeded the statistic's own maximum of 1 at the
+    UI default (1.215 for 216 copies), overstated the floor of anisotropic
+    sites by 12-68%, and the UI flag compared A with 3x that *mean* instead of
+    its spread, so 5-20 sigma asymmetries were never flagged. The null is now
+    conditional on the observed antipodal-pair totals T: under inversion
+    symmetry each pair splits Bin(T, 1/2), with exact E|2X - T| and variance,
+    and the flag is A > null + 3 null SDs.
+    """
+
+    def test_null_matches_the_exact_binomial_split(self):
+        from scipy.stats import binom
+
+        result = orientation_histogram(golden_cloud(), frequency=4, geometry=False)
+        counts = np.asarray(result["counts"])
+        antipode = np.asarray(result["antipode"])
+        mean = variance = 0.0
+        for cell in range(counts.size):
+            if cell < antipode[cell]:
+                total = counts[cell] + counts[antipode[cell]]
+                x = np.arange(total + 1)
+                weights = binom.pmf(x, total, 0.5)
+                split = np.abs(2 * x - total)
+                mean += float((weights * split).sum())
+                variance += float((weights * split**2).sum()) - float((weights * split).sum()) ** 2
+        used = result["usedPoints"]
+        self.assertAlmostEqual(result["antipodalAsymmetryNull"], mean / used, places=12)
+        self.assertAlmostEqual(result["antipodalAsymmetryNullSd"], np.sqrt(variance) / used, places=12)
+        self.assertAlmostEqual(
+            result["antipodalAsymmetryZ"],
+            (result["antipodalAsymmetry"] - mean / used) / (np.sqrt(variance) / used),
+            places=9,
+        )
+
+    def test_null_never_exceeds_the_statistic_bound(self):
+        rng = np.random.default_rng(3)
+        result = orientation_histogram(_isotropic_units(rng, 216), frequency=10, smoothing=2, geometry=False)
+        self.assertLessEqual(result["antipodalAsymmetryNull"], 1.0)
+        # The old Gaussian-limit formula gave sqrt(1002 / (pi * 216)) = 1.215.
+        self.assertLess(result["antipodalAsymmetryNull"], 0.9)
+
+    def test_centrosymmetric_clouds_are_rarely_flagged(self):
+        rng = np.random.default_rng(11)
+        for frequency in (10, 5):
+            z_values, flags = [], []
+            for _ in range(150):
+                v = rng.normal(size=(1000, 3)) * np.array([0.2, 0.03, 0.03])
+                result = orientation_histogram(v, frequency=frequency, geometry=False)
+                z_values.append(result["antipodalAsymmetryZ"])
+                flags.append(result["antipodalAsymmetrySignificant"])
+            z_values = np.asarray(z_values)
+            self.assertLess(abs(z_values.mean()), 0.3, msg=f"nu={frequency}")
+            self.assertLess(abs(z_values.std() - 1.0), 0.25, msg=f"nu={frequency}")
+            self.assertLessEqual(np.mean(flags), 0.02, msg=f"nu={frequency}")
+
+    def test_real_asymmetry_is_flagged_at_the_ui_default(self):
+        rng = np.random.default_rng(12)
+        one_sided = orientation_histogram(_hemisphere_cloud(rng, 1000), frequency=10, smoothing=2, geometry=False)
+        self.assertTrue(one_sided["antipodalAsymmetrySignificant"])
+        self.assertGreater(one_sided["antipodalAsymmetryZ"], 10.0)
+        skewed = orientation_histogram(_skewed_cloud(rng, 1000), frequency=10, smoothing=2, geometry=False)
+        self.assertTrue(skewed["antipodalAsymmetrySignificant"])
+        self.assertGreater(skewed["antipodalAsymmetryZ"], 5.0)
+        # The old floor sqrt(C/(pi N)) = 0.565 made both invisible (3x > 1).
+        self.assertLess(skewed["antipodalAsymmetry"], 3.0 * np.sqrt(1002 / (np.pi * 1000)))
+
+    def test_all_pairs_singly_occupied_has_no_defined_z(self):
+        # One atom in each of 20 cells whose antipodes are empty: every pair
+        # total is 1, so |2X - 1| = 1 is deterministic -- A equals its null
+        # exactly, the spread is 0 and there is no evidence either way.
+        tiling = goldberg_tiling(4)
+        cells = np.flatnonzero(np.arange(tiling.cell_count) < tiling.antipode)[:20]
+        result = orientation_histogram(tiling.centers[cells] * 0.1, frequency=4, geometry=False)
+        self.assertEqual(result["antipodalAsymmetryNullSd"], 0.0)
+        self.assertIsNone(result["antipodalAsymmetryZ"])
+        self.assertFalse(result["antipodalAsymmetrySignificant"])
+        self.assertEqual(result["antipodalAsymmetry"], 1.0)
+        self.assertEqual(result["antipodalAsymmetryNull"], 1.0)
+
+    def test_golden_values_shared_with_the_js_engine(self):
+        assert_golden(self, GOLDEN_ASYMMETRY)
+
+
+# Shared verbatim with GOLDEN_ASYMMETRY in orientationFixes.test.js.
+GOLDEN_ASYMMETRY = {
+    (6, 1, 60): {"antipodalAsymmetry": 0.2, "antipodalAsymmetryNull": 0.3401168600567151,
+                 "antipodalAsymmetryNullSd": 0.019345746381926036,
+                 "antipodalAsymmetryZ": -7.2427735425923245, "antipodalAsymmetrySignificant": False},
+    (None, 0, 60): {"antipodalAsymmetry": 0.08333333333333333,
+                    "antipodalAsymmetryNull": 0.11738132743663726,
+                    "antipodalAsymmetryNullSd": 0.01946344130131603,
+                    "antipodalAsymmetryZ": -1.7493306335813166,
+                    "antipodalAsymmetrySignificant": False},
+    (10, 2, 0): {"antipodalAsymmetry": 0.19111111111111112,
+                 "antipodalAsymmetryNull": 0.5672222222222222,
+                 "antipodalAsymmetryNullSd": 0.020957040126511128,
+                 "antipodalAsymmetryZ": -17.94676675907692, "antipodalAsymmetrySignificant": False},
+    (4, 0, 400): {"antipodalAsymmetry": 0.3415384615384615,
+                  "antipodalAsymmetryNull": 0.1752318529176018,
+                  "antipodalAsymmetryNullSd": 0.01673666421475673,
+                  "antipodalAsymmetryZ": 9.936663990320547, "antipodalAsymmetrySignificant": True},
+}
+
+
 if __name__ == "__main__":
     unittest.main()

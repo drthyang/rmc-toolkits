@@ -119,6 +119,10 @@ PEAK_TIE_RTOL = 1e-9
 # the payload never carries an infinity (which JSON cannot represent).
 SIGNIFICANCE_TAIL_FLOOR = 1e-300
 
+# The antipodal-asymmetry flag: A exceeds its inversion-symmetric null mean by
+# more than this many null standard deviations.
+ASYMMETRY_FLAG_SIGMA = 3.0
+
 WEIGHTS = ("count", "amplitude", "amplitude2")
 FRAMES = ("cartesian", "pca")
 
@@ -613,6 +617,53 @@ def _peak_significance(count: int, expected: float, trials: int) -> dict:
     }
 
 
+def _central_binomial(kmax: int) -> np.ndarray:
+    """``c_k = C(2k, k) / 4**k`` for k = 0..kmax, by the exact recurrence.
+
+    ``c_k = c_{k-1} (2k - 1) / (2k)``, evaluated as one sequential product so
+    the JS port (same loop) reproduces it bit for bit.
+    """
+    k = np.arange(1, kmax + 1)
+    return np.concatenate([[1.0], np.cumprod((2 * k - 1) / (2 * k))])
+
+
+def _antipodal_asymmetry_test(counts: np.ndarray, antipode: np.ndarray, used: int) -> dict:
+    """A = sum_pairs |n+ - n-| / N and its inversion-symmetric null.
+
+    Conditional on each antipodal pair's total T (the data fix it), an
+    inversion-symmetric (p(u) = p(-u)) population splits every pair as
+    X ~ Bin(T, 1/2), independently across pairs. Then D = |2X - T| has
+    E[D] = T * c_{floor(T/2)} with c_k = C(2k, k)/4^k, and E[D^2] = T, so the
+    null mean and variance of A are exact sums over pairs -- valid for any
+    anisotropic, centrosymmetric site and any count level, and bounded by 1
+    like A itself.
+    """
+    first = np.arange(counts.size) < antipode  # each unordered pair once
+    plus = counts[first]
+    minus = counts[antipode[first]]
+    total = plus + minus
+    central = _central_binomial(int(total.max()) // 2 if total.size else 0)
+    pair_mean = total * central[total // 2]
+    pair_variance = np.maximum(total - pair_mean * pair_mean, 0.0)
+    asymmetry = float(np.abs(plus - minus).sum() / used)
+    null_mean = float(pair_mean.sum() / used)
+    null_sd = float(np.sqrt(pair_variance.sum()) / used)
+    if null_sd > 0.0:
+        z_value = (asymmetry - null_mean) / null_sd
+        significant = bool(z_value > ASYMMETRY_FLAG_SIGMA)
+    else:
+        # Every occupied pair holds a single atom: A equals its null exactly
+        # and carries no information either way.
+        z_value, significant = None, False
+    return {
+        "value": asymmetry,
+        "null": null_mean,
+        "nullSd": null_sd,
+        "z": z_value,
+        "significant": significant,
+    }
+
+
 def _smooth(mass: np.ndarray, neighbors: np.ndarray, passes: int) -> np.ndarray:
     """Neighbour diffusion on the cell graph; exactly mass-conserving.
 
@@ -691,7 +742,9 @@ def orientation_histogram(
         corrected over all cells, as a one-sided normal deviate);
         ``antipodalAsymmetry`` is ``sum_pairs |n(u) - n(-u)| / N`` (0 for an
         inversion-symmetric cloud, 1 for a fully one-sided one), with
-        ``antipodalAsymmetryNull`` the level pure Poisson noise would produce;
+        ``antipodalAsymmetryNull`` / ``...NullSd`` its exact mean and spread for
+        an inversion-symmetric population with the same pair totals, and
+        ``antipodalAsymmetrySignificant`` the flag ``A > null + 3 SD``;
         ``cellMeanAmplitude`` is the mean ``|dr|`` (Angstrom) of the atoms that
         moved into each cell (0 for empty cells) -- the radial-relief quantity.
 
@@ -798,16 +851,11 @@ def orientation_histogram(
     z_score = (counts - expected) / np.sqrt(np.maximum(expected, 1e-12))
 
     # Antipodal (inversion) asymmetry: the +u vs -u imbalance the ellipsoid is
-    # blind to, and the reason this view is never folded. Each unordered cell
-    # pair appears twice in the sum over cells, so the 0.5 makes the readout
-    # sum_pairs |n(u) - n(-u)| / N: 0 for an inversion-symmetric cloud, 1 for a
-    # fully one-sided one. Pure Poisson noise alone produces a nonzero floor --
-    # |X - Y| of two iid Poisson(m) cells averages ~2*sqrt(m/pi) -- reported as
-    # the null level so a small asymmetry is not over-read.
-    antipodal_asymmetry = float(
-        0.5 * np.abs(counts - counts[tiling.antipode]).sum() / used
-    )
-    antipodal_asymmetry_null = float(np.sqrt(cell_count / (np.pi * used)))
+    # blind to, and the reason this view is never folded --
+    # sum_pairs |n(u) - n(-u)| / N, 0 for an inversion-symmetric cloud, 1 for a
+    # fully one-sided one -- with its exact null conditional on the observed
+    # pair totals (see _antipodal_asymmetry_test).
+    asymmetry_test = _antipodal_asymmetry_test(counts, tiling.antipode, used)
 
     # Orientation tensor T = <u u^T>: I/3 exactly for a uniform sphere, so its
     # eigenvalues (summing to 1) read as the fraction of directional variance on
@@ -861,8 +909,14 @@ def orientation_histogram(
         "meanAmplitude": float(kept_amplitude.mean()),
         "rmsAmplitude": float(np.sqrt((kept_amplitude**2).mean())),
         "cellMeanAmplitude": cell_mean_amplitude.tolist(),
-        "antipodalAsymmetry": antipodal_asymmetry,
-        "antipodalAsymmetryNull": antipodal_asymmetry_null,
+        "antipodalAsymmetry": asymmetry_test["value"],
+        # Exact mean and standard deviation of A for an inversion-symmetric
+        # population with the observed antipodal-pair totals; the z-score
+        # (None when the spread is 0) and the flag A > null + 3 SD.
+        "antipodalAsymmetryNull": asymmetry_test["null"],
+        "antipodalAsymmetryNullSd": asymmetry_test["nullSd"],
+        "antipodalAsymmetryZ": asymmetry_test["z"],
+        "antipodalAsymmetrySignificant": asymmetry_test["significant"],
         "orientationTensor": tensor.tolist(),
         "orientationEigenvalues": tensor_eigenvalues.tolist(),
         "orientationAxes": tensor_axes.tolist(),

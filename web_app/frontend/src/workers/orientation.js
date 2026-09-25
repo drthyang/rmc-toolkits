@@ -34,6 +34,9 @@ export const PEAK_TIE_RTOL = 1e-9;
 // so |z| <= 37.04 and no infinity reaches the payload. Mirrors
 // SIGNIFICANCE_TAIL_FLOOR.
 export const SIGNIFICANCE_TAIL_FLOOR = 1e-300;
+// Antipodal-asymmetry flag: A > null mean + this many null SDs. Mirrors
+// ASYMMETRY_FLAG_SIGMA.
+export const ASYMMETRY_FLAG_SIGMA = 3;
 
 const WEIGHTS = ['count', 'amplitude', 'amplitude2'];
 const FRAMES = ['cartesian', 'pca'];
@@ -228,6 +231,46 @@ const peakSignificance = (count, expected, trials) => {
     else logLower = -Infinity;
     const corrected = -Math.expm1(logLower);
     return { local, corrected, deviate: normalDeviate(corrected, Math.exp(logLower)) };
+};
+
+// c_k = C(2k, k) / 4^k for k = 0..kmax by the exact recurrence
+// c_k = c_{k-1} (2k - 1) / (2k) -- the same sequential product as
+// `_central_binomial`, so the two engines agree bit for bit.
+const centralBinomial = (kmax) => {
+    const table = new Float64Array(kmax + 1);
+    table[0] = 1;
+    for (let k = 1; k <= kmax; k += 1) table[k] = table[k - 1] * ((2 * k - 1) / (2 * k));
+    return table;
+};
+
+// A = sum_pairs |n+ - n-| / N and its exact inversion-symmetric null,
+// conditional on each antipodal pair's total T: X ~ Bin(T, 1/2), so
+// D = |2X - T| has E[D] = T c_{floor(T/2)} and E[D^2] = T. Mirrors
+// `_antipodal_asymmetry_test`.
+const antipodalAsymmetryTest = (counts, antipode, used) => {
+    let maxTotal = 0;
+    for (let cell = 0; cell < counts.length; cell += 1) {
+        if (cell < antipode[cell]) maxTotal = Math.max(maxTotal, counts[cell] + counts[antipode[cell]]);
+    }
+    const central = centralBinomial(Math.floor(maxTotal / 2));
+    let observed = 0;
+    let meanSum = 0;
+    let varianceSum = 0;
+    for (let cell = 0; cell < counts.length; cell += 1) {
+        const other = antipode[cell];
+        if (cell >= other) continue;
+        const total = counts[cell] + counts[other];
+        const pairMean = total * central[Math.floor(total / 2)];
+        observed += Math.abs(counts[cell] - counts[other]);
+        meanSum += pairMean;
+        varianceSum += Math.max(total - pairMean * pairMean, 0);
+    }
+    const value = observed / used;
+    const nullMean = meanSum / used;
+    const nullSd = Math.sqrt(varianceSum) / used;
+    if (!(nullSd > 0)) return { value, null: nullMean, nullSd, z: null, significant: false };
+    const z = (value - nullMean) / nullSd;
+    return { value, null: nullMean, nullSd, z, significant: z > ASYMMETRY_FLAG_SIGMA };
 };
 
 // --- icosahedron + geodesic subdivision ---------------------------------------
@@ -818,16 +861,9 @@ export const orientationHistogram = (vectors, options = {}) => {
     }
 
     // Antipodal (inversion) asymmetry: sum_pairs |n(u) - n(-u)| / N -- 0 for an
-    // inversion-symmetric cloud, 1 for a fully one-sided one. The null level is
-    // what pure Poisson noise alone would produce (|X - Y| of two iid
-    // Poisson(m) cells averages ~2*sqrt(m/pi)); report both so a small
-    // asymmetry is not over-read.
-    let asymmetrySum = 0;
-    for (let cell = 0; cell < cellCount; cell += 1) {
-        asymmetrySum += Math.abs(counts[cell] - counts[tiling.antipode[cell]]);
-    }
-    const antipodalAsymmetry = 0.5 * asymmetrySum / used;
-    const antipodalAsymmetryNull = Math.sqrt(cellCount / (Math.PI * used));
+    // inversion-symmetric cloud, 1 for a fully one-sided one -- with its exact
+    // null conditional on the observed pair totals (antipodalAsymmetryTest).
+    const asymmetryTest = antipodalAsymmetryTest(counts, tiling.antipode, used);
 
     // Orientation tensor T = <u u^T> (I/3 for a uniform sphere), from the
     // points, not the binned map -- resolution independent.
@@ -905,8 +941,11 @@ export const orientationHistogram = (vectors, options = {}) => {
         meanAmplitude: amplitudeSum / used,
         rmsAmplitude: Math.sqrt(amplitudeSquares / used),
         cellMeanAmplitude,
-        antipodalAsymmetry,
-        antipodalAsymmetryNull,
+        antipodalAsymmetry: asymmetryTest.value,
+        antipodalAsymmetryNull: asymmetryTest.null,
+        antipodalAsymmetryNullSd: asymmetryTest.nullSd,
+        antipodalAsymmetryZ: asymmetryTest.z,
+        antipodalAsymmetrySignificant: asymmetryTest.significant,
         orientationTensor: tensor,
         orientationEigenvalues: tensorDecomposition.eigenvalues,
         orientationAxes: tensorDecomposition.axes,
