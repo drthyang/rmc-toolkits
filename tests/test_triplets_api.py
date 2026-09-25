@@ -96,5 +96,32 @@ class TripletsBudgetApiTests(unittest.TestCase):
         self.assertEqual(backend_app.TRIPLETS_MAX_ANGLES, APP_MAX_ANGLES)
 
 
+@unittest.skipIf(backend_app is None, "Flask backend not importable")
+class RunConfigurationParityTests(unittest.TestCase):
+    """rmc-triplets <run folder> analyses the configuration the app analyses."""
+
+    LAYOUTS = [
+        ["GaNb4Se8.rmc6f", "GaNb4Se8_5K.rmc6f", "GaNb4Se8_5K-00.log", "GaNb4Se8_5K_PDFpartials.csv"],
+        ["start.rmc6f", "run.rmc6f", "run_FQ1.csv"],
+        ["zeta.rmc6f", "alpha.rmc6f", "Frac_coord_zeta.txt"],
+        ["one.rmc6f", "two.rmc6f", "two_bragg.csv", "one-01.log"],
+        ["x.rmc6f", "y.rmc6f"],
+    ]
+
+    def test_cli_and_backend_choose_the_same_file(self):
+        import tempfile
+
+        from rmc_toolkits.triplets_cli import resolve_config
+
+        for layout in self.LAYOUTS:
+            with tempfile.TemporaryDirectory() as scratch:
+                run = Path(scratch)
+                for name in layout:
+                    (run / name).write_text("", encoding="utf-8")
+                self.assertEqual(
+                    resolve_config(run), backend_app._find_rmc6f(run), layout
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

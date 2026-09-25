@@ -19,20 +19,68 @@ Example
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
 from .triplets import BondAngleDistribution, bond_angles_from_rmc6f
 
 
+# RMCProfile output names that carry the run's stem, with their priority
+# (lower wins). Identical to the web app's rules -- web_app/backend/app.py
+# (_run_stem_from_output_name / _find_rmc6f) and browserData.js
+# (chooseStructureFile) -- so a run folder resolves to one configuration
+# everywhere; keep the three in sync.
+_RUN_OUTPUT_PATTERNS = (
+    (0, r"^(.+)-\d{2,}\.log$"),
+    (1, r"^(.+)-EXAFS-.+_[QR]_OUTPUT\.csv$"),
+    (1, r"^(.+)_FT_XFQ\d+\.csv$"),
+    (1, r"^(.+)_[FS]Q\d+\.csv$"),
+    (1, r"^(.+)_bragg(?:_.+)?\.csv$"),
+    (1, r"^(.+)_PDF(?:partials|\d+)?\.csv$"),
+    (2, r"^Frac_coord_(.+)\.txt$"),
+)
+
+
+def _run_stem(name: str) -> tuple[int, str] | None:
+    for priority, pattern in _RUN_OUTPUT_PATTERNS:
+        match = re.match(pattern, name)
+        if match:
+            return priority, match.group(1)
+    return None
+
+
+def find_run_configuration(directory: Path) -> Path:
+    """The ``.rmc6f`` of a run folder, chosen exactly as the web app does.
+
+    A run folder often holds more than one configuration -- e.g. the input
+    supercell ``<compound>.rmc6f`` beside the refined ``<compound>_5K.rmc6f``.
+    The run's own outputs (``<stem>-NN.log``, ``<stem>_PDFpartials.csv`` ...)
+    name the refined one: the ``.rmc6f`` whose stem matches the
+    highest-priority output wins; with no match, the first sorted file.
+    """
+    rmc6f_files = sorted(directory.glob("*.rmc6f"))
+    if not rmc6f_files:
+        raise FileNotFoundError(f"No .rmc6f file found in {directory}")
+    by_stem = {path.stem: path for path in rmc6f_files}
+    stems: list[tuple[int, str, str]] = []
+    for item in sorted(directory.iterdir(), key=lambda path: path.name.lower()):
+        if not item.is_file():
+            continue
+        match = _run_stem(item.name)
+        if match:
+            stems.append((match[0], item.name.lower(), match[1]))
+    for _, _, stem in sorted(stems):
+        if stem in by_stem:
+            return by_stem[stem]
+    return rmc6f_files[0]
+
+
 def resolve_config(target: str | Path) -> Path:
-    """Accept an ``.rmc6f`` file or a directory holding one (first sorted)."""
+    """Accept an ``.rmc6f`` file or a run folder (see ``find_run_configuration``)."""
     target = Path(target)
     if target.is_dir():
-        candidates = sorted(target.glob("*.rmc6f"))
-        if not candidates:
-            raise FileNotFoundError(f"No .rmc6f file found in {target}")
-        return candidates[0]
+        return find_run_configuration(target)
     if not target.exists():
         raise FileNotFoundError(f"{target} does not exist")
     return target

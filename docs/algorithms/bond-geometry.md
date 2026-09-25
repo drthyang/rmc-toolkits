@@ -382,8 +382,13 @@ parameter), mirroring `pca_kde.cached_site_displacements`. Errors map to 400 (ba
 
 Console entry point installed by `pip install -e .`
 ([triplets_cli.py](../../rmc_toolkits/triplets_cli.py); module form
-`python -m rmc_toolkits.triplets_cli`). Accepts an `.rmc6f` file or a run folder (first sorted
-match), writes a commented CSV (`angle_deg, counts, density_per_deg, sin_corrected` with the
+`python -m rmc_toolkits.triplets_cli`). Accepts an `.rmc6f` file or a run folder. A run folder
+resolves to **the configuration the app analyses** (`find_run_configuration`, the same rule as the
+backend's `_find_rmc6f` and the browser's `chooseStructureFile`): the `.rmc6f` whose stem matches
+the run's own outputs (`<stem>-NN.log` first, then `<stem>_PDFpartials.csv`, `_FQ1.csv`, …), the
+first sorted file only when nothing matches — so an input supercell `GaNb4Se8.rmc6f` beside the
+refined `GaNb4Se8_5K.rmc6f` no longer wins by sorting first (`'.'` < `'_'`). The CLI prints the
+path it chose. It writes a commented CSV (`angle_deg, counts, density_per_deg, sin_corrected` with the
 spec, physical bond counts — plus the B-centred count when the end element is the central one — and mean lengths in `#` headers), optionally a PNG plot (`--plot`, Agg
 backend, sin-corrected + density on twin axes) and the raw angle list (`--angles-out`). Nothing
 is overwritten without `--force`.

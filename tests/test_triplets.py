@@ -981,6 +981,26 @@ class CliTests(unittest.TestCase):
         self.assertIn("bonds 1-2:     6 ", stdout.getvalue())
         self.assertIn("3.00 per central atom", stdout.getvalue())
 
+    def test_run_folder_picks_the_run_configuration(self):
+        # triplets.parity.26: RMCProfile folders often hold the input
+        # supercell next to the refined one; '.' sorts before '_', so the
+        # first sorted .rmc6f was the start configuration, not the model the
+        # app shows. The run's own outputs name the refined one.
+        from rmc_toolkits.triplets_cli import resolve_config
+
+        with TemporaryDirectory() as scratch:
+            run = Path(scratch)
+            for name in ("GaNb4Se8.rmc6f", "GaNb4Se8_5K.rmc6f", "GaNb4Se8_5K-00.log",
+                         "GaNb4Se8_5K_PDFpartials.csv"):
+                (run / name).write_text("", encoding="utf-8")
+            self.assertEqual(resolve_config(run), run / "GaNb4Se8_5K.rmc6f")
+            # No run outputs: the first sorted file, as before.
+            bare = run / "bare"
+            bare.mkdir()
+            for name in ("b.rmc6f", "a.rmc6f"):
+                (bare / name).write_text("", encoding="utf-8")
+            self.assertEqual(resolve_config(bare), bare / "a.rmc6f")
+
     def test_missing_config_fails_cleanly(self):
         code = triplets_main(
             [
