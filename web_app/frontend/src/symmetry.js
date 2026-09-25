@@ -30,7 +30,7 @@
 // tetragonal, orthorhombic, hexagonal, rhombohedral-in-hex, monoclinic, triclinic).
 
 import { hmSymbolInStandardSetting, POINT_GROUP_SYSTEM } from './spaceGroupSymbol.js';
-import { isStandardSymbol, spaceGroupNumber, canonicalSymbol } from './spaceGroupTable.js';
+import { spaceGroupNumber, canonicalSymbol, pointGroupOfSymbol } from './spaceGroupTable.js';
 
 /** Determinant of a 3×3 matrix (rows). */
 export function det3(m) {
@@ -528,8 +528,7 @@ export function classifyOperations(ops, tolFrac = 0.02, { closed = false } = {})
   const group = isValidGroup(base) && (closed || isClosedSet(ops, Math.max(3 * tolFrac, 1e-6)));
   // Naming reads every operation's screw/glide part, so it is the expensive step and
   // meaningless for a set that is not a group.
-  const sg = group ? spaceGroupHM(centering, pointGroup, ops)
-    : { symbol: (centering || 'P') + pointGroup, number: null };
+  const sg = group ? spaceGroupHM(centering, pointGroup, ops) : { symbol: 'not a group', number: null };
   return { ...base, spaceGroup: sg.symbol, spaceGroupNumber: sg.number };
 }
 
@@ -679,21 +678,30 @@ export function pointGroupOf(rotations) {
   return inv ? '-1' : '1';                               // triclinic
 }
 
+/** Label shown when a group cannot be named reliably: its crystal class, no number. */
+export const classLabel = (pointGroup) => `${pointGroup} class`;
+
 /**
  * Hermann–Mauguin symbol + ITA number for a detected group.
  *
- * With the operations in hand this reads their screw and glide components and names
- * the actual space group (Pnma, I4/mcm, Fd-3m). Without them it can only fall back to
- * centering + point group, which is the symmorphic parent of the real group.
+ * With the operations in hand this reads their screw and glide components and names the
+ * actual space group (Pnma, I4/mcm, Fd-3m), accepting only a tabulated symbol of the
+ * detected crystal class and centering (hmSymbolInStandardSetting). Triclinic groups
+ * are P1 or P-1 whatever cell describes them. Anything that cannot be named that way is
+ * reported as its crystal class with no number — never as the symmorphic `centering +
+ * point group` string, which spells a real but different group for most classes.
+ *
+ * @returns {{ symbol:string, number:number|null, standard:boolean }}
  */
 export function spaceGroupHM(centering, pointGroup, ops) {
-  if (!ops || !ops.length) {
-    const symbol = (centering || 'P') + pointGroup;
-    return { symbol, number: spaceGroupNumber(symbol), standard: false };
+  if (pointGroup === '1' || pointGroup === '-1') {
+    const symbol = pointGroup === '1' ? 'P1' : 'P-1';
+    return { symbol, number: spaceGroupNumber(symbol), standard: true };
   }
-  const found = hmSymbolInStandardSetting(ops, centering || 'P', pointGroup, isStandardSymbol);
-  const symbol = canonicalSymbol(found.symbol) ?? found.symbol;   // Cmca → Cmce
-  return { symbol, number: spaceGroupNumber(found.symbol), standard: found.standard };
+  if (!ops || !ops.length) return { symbol: classLabel(pointGroup), number: null, standard: false };
+  const found = hmSymbolInStandardSetting(ops, centering || 'P', pointGroup, pointGroupOfSymbol);
+  if (!found.symbol) return { symbol: classLabel(pointGroup), number: null, standard: false };
+  return { symbol: canonicalSymbol(found.symbol) ?? found.symbol, number: spaceGroupNumber(found.symbol), standard: true };
 }
 
 /**

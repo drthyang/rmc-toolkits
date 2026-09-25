@@ -440,6 +440,54 @@ export function coversAllElements(ops, pointGroup) {
   return elements.every((e) => keys.has(dirKey(e.direction)));
 }
 
+// What each symmetry-direction family of a crystal system may carry, as element labels
+// reduced to their rotation part: '2' (2-fold axis, rotation or screw), '3', '4', '6'
+// (rotations or screws of that order), '-3', '-4', '-6' (rotoinversions), 'm' (mirror or
+// glide, by its normal). A conventional cell puts every element in a family that allows
+// it — the 4-fold of a tetragonal group along [001], the 3-folds of a cubic group along
+// <111>. Covering a family direction is not enough: on a primitive cubic-F cell the
+// 4-folds lie along primitive <111>, a direction the cubic symbol reserves for 3-folds.
+const FAMILY_ALLOWS = {
+  monoclinic: [['2', 'm']],
+  orthorhombic: [['2', 'm'], ['2', 'm'], ['2', 'm']],
+  tetragonal: [['2', '4', '-4', 'm'], ['2', 'm'], ['2', 'm']],
+  trigonal: [['3', '-3'], ['2', 'm'], ['2', 'm']],
+  hexagonal: [['2', '3', '6', '-3', '-6', 'm'], ['2', 'm'], ['2', 'm']],
+  cubic: [['2', '4', '-4', 'm'], ['3', '-3'], ['2', 'm']],
+};
+
+const elementType = (e) => (e.kind === 'mirror' || e.kind === 'glide' ? 'm'
+  : e.kind === 'rotoinversion' ? `-${e.order}` : `${e.order}`);
+
+/**
+ * Whether the operations are in a conventional setting of their crystal system: every
+ * symmetry element lies along a direction family of the system that may carry an element
+ * of its type (FAMILY_ALLOWS). Stronger than coversAllElements, which only asks that the
+ * direction belong to SOME family. Only a set that passes can be named positionally.
+ */
+export function elementsFitSetting(ops, pointGroup) {
+  const system = POINT_GROUP_SYSTEM[pointGroup];
+  if (!system) return false;
+  if (system === 'triclinic') return true;
+  const elements = [];
+  for (const { R, t } of ops) {
+    const e = classifyElement(R, t);
+    if (e) elements.push(e);
+  }
+  let families = SYSTEM_DIRECTIONS[system];
+  if (system === 'monoclinic') {
+    const unique = elements.find((x) => x.order === 2);
+    families = [[unique ? unique.direction : [0, 1, 0]]];
+  }
+  const familyKeys = families.map((family) => new Set(family.map(dirKey)));
+  const allows = FAMILY_ALLOWS[system];
+  return elements.every((e) => {
+    const key = dirKey(e.direction);
+    const type = elementType(e);
+    return familyKeys.some((keys, i) => keys.has(key) && allows[i].includes(type));
+  });
+}
+
 /* ── setting search ─────────────────────────────────────────────────────────── */
 
 // The 6 axis permutations. A monoclinic or orthorhombic cell coming out of an RMC
@@ -477,32 +525,36 @@ export function transformOps(ops, P) {
 /**
  * H–M symbol for an operation set, searching axis settings until one is recognised.
  *
- * Monoclinic and orthorhombic groups are only named in a standard setting, and an
- * RMC cell is under no obligation to be in one. `isKnown` decides which spellings
- * count as standard (injected so this module stays table-free); when nothing is
- * recognised the identity-setting symbol is returned with `standard: false`.
+ * Monoclinic and orthorhombic groups are only named in a standard setting, and an RMC
+ * cell is under no obligation to be in one. `classOf(symbol)` returns the crystal class
+ * of a standard (tabulated) symbol, or null for anything else — injected so this module
+ * stays table-free. A candidate is accepted only if it is a tabulated symbol OF THE
+ * DETECTED CLASS, starts with the centering letter of the setting it was built in, and
+ * every element of the operations lies where its type belongs in that setting
+ * (elementsFitSetting). Positional assembly on a cell that is not conventional can spell
+ * another group's symbol ("Pmmm" for rocksalt on its primitive cell, "P2" for an mm2 set
+ * on diagonal axes), which is why the class and placement are checked, not only the
+ * spelling. When nothing is accepted the symbol is null: the caller reports the crystal
+ * class, never a symbol that was not verified.
  *
- * @returns {{ symbol:string, standard:boolean, permutation:number }}
+ * @returns {{ symbol:string|null, standard:boolean, permutation:number, placed:boolean }}
  */
-export function hmSymbolInStandardSetting(ops, centering, pointGroup, isKnown) {
-  const accept = (s) => (typeof isKnown === 'function' ? isKnown(s) : false);
-  const direct = hmSymbolCandidates(ops, centering, pointGroup);
-  for (const cand of direct) if (accept(cand)) return { symbol: cand, standard: true, permutation: 0 };
+export function hmSymbolInStandardSetting(ops, centering, pointGroup, classOf) {
+  const accept = (s) => typeof classOf === 'function' && classOf(s) === pointGroup && s.startsWith(centering);
+  const trySetting = (moved) => {
+    if (!elementsFitSetting(moved, pointGroup)) return null;
+    for (const cand of hmSymbolCandidates(moved, centering, pointGroup)) if (accept(cand)) return cand;
+    return null;
+  };
+  const direct = trySetting(ops);
+  if (direct) return { symbol: direct, standard: true, permutation: 0, placed: true };
 
   const system = POINT_GROUP_SYSTEM[pointGroup];
   if (system === 'monoclinic' || system === 'orthorhombic') {
     for (let i = 1; i < PERMUTATIONS.length; i++) {
-      const moved = transformOps(ops, PERMUTATIONS[i]);
-      for (const cand of hmSymbolCandidates(moved, centering, pointGroup)) {
-        if (accept(cand)) return { symbol: cand, standard: true, permutation: i };
-      }
+      const found = trySetting(transformOps(ops, PERMUTATIONS[i]));
+      if (found) return { symbol: found, standard: true, permutation: i, placed: true };
     }
   }
-  // Nothing standard matched. A symbol assembled from elements the positions could not
-  // place is not a non-standard spelling, it is nonsense ("P2m"), so fall back to the
-  // crystal class — which is at least true, if less specific.
-  if (!coversAllElements(ops, pointGroup)) {
-    return { symbol: `${centering}${pointGroup}`, standard: false, permutation: 0, placed: false };
-  }
-  return { symbol: direct[0] ?? `${centering}${pointGroup}`, standard: false, permutation: 0, placed: true };
+  return { symbol: null, standard: false, permutation: 0, placed: coversAllElements(ops, pointGroup) };
 }

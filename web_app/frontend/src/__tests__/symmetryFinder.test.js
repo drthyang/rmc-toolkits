@@ -8,10 +8,12 @@ import { describe, it, expect } from 'vitest';
 
 import { spaceGroupAtTolerance, symmetryLadder, findSpaceGroupOps } from '../symmetry.js';
 import { conventionalCell } from '../symmetryModel.js';
+import { SPACE_GROUPS } from '../spaceGroupTable.js';
 import {
-    demoStructure, shuffled, withNoise, STRUCTURES, at, closureDefects, lacunarSpinel,
+    demoStructure, shuffled, withNoise, STRUCTURES, at, closureDefects, lacunarSpinel, redescribe,
+    AXIS_SETTINGS, cubicCell, tetragonalCell,
 } from './fixtures/symmetryStructures.js';
-import { cellVectors } from './fixtures/spaceGroups.js';
+import { cellVectors, SPACE_GROUP_FIXTURES, structureFor } from './fixtures/spaceGroups.js';
 
 const ladderKey = (ladder) => ladder.map((b) => `${b.spaceGroup}[${b.from.toFixed(6)},${b.to.toFixed(6)}]`).join(' > ');
 
@@ -142,6 +144,73 @@ describe('every reported operation set is a group', () => {
         for (let i = 1; i < ladder.length; i += 1) {
             expect(ladder[i].from).toBeCloseTo(ladder[i - 1].to, 12);
             expect(ladder[i].nSpace).toBeGreaterThan(ladder[i - 1].nSpace);
+        }
+    });
+});
+
+describe('a reported symbol always belongs to the detected crystal class', () => {
+    // Whatever the setting, the card may name the group or fall back to its crystal
+    // class — it must never print another group's symbol or number.
+    const classOfSymbol = (symbol) => SPACE_GROUPS.find((g) => g[1] === symbol || g[3] === symbol)?.[2] ?? null;
+    const expectHonest = (found, number) => {
+        if (found.spaceGroupNumber !== null) {
+            expect(found.spaceGroupNumber, found.spaceGroup).toBe(number);
+            expect(classOfSymbol(found.spaceGroup), found.spaceGroup).toBe(found.pointGroup);
+        } else {
+            expect(found.spaceGroup).toBe(`${found.pointGroup} class`);
+        }
+    };
+
+    it('does not call rocksalt on its primitive cell Pmmm', () => {
+        const prim = redescribe(STRUCTURES.rocksalt(), [[0, 0.5, 0.5], [0.5, 0, 0.5], [0.5, 0.5, 0]]);
+        const found = spaceGroupAtTolerance(prim.A, prim.basis, 0.05);
+        expect(found.pointGroup).toBe('m-3m');
+        expectHonest(found, 225);
+    });
+
+    it('does not call Amm2 BaTiO3 on its pseudo-cubic cell Pm', () => {
+        const d = 0.02;
+        const A = cubicCell(4.0);
+        const basis = [at('Ba', 0, 0, 0), at('Ti', 0.5 + d, 0.5 + d, 0.5), at('O', 0.5, 0.5, 0), at('O', 0.5, 0, 0.5), at('O', 0, 0.5, 0.5)];
+        const found = spaceGroupAtTolerance(A, basis, 0.01);
+        expect(found.pointGroup).toBe('mm2');
+        expectHonest(found, 38);
+    });
+
+    it('does not call Cmm2 on primitive tetragonal axes P2', () => {
+        const basis = [at('X', 0, 0, 0), at('Y', 0.2, 0.2, 0.3), at('Y', -0.2, -0.2, 0.3)];
+        const found = spaceGroupAtTolerance(tetragonalCell(4.1, 5.3), basis, 0.01);
+        expect(found.pointGroup).toBe('mm2');
+        expectHonest(found, 35);
+    });
+
+    it('does not give rutile with its 4_2 axis along a the symmorphic P4/mmm', () => {
+        const moved = redescribe(STRUCTURES.rutile(), AXIS_SETTINGS.cab);
+        const found = spaceGroupAtTolerance(moved.A, moved.basis, 0.01);
+        expect(found.pointGroup).toBe('4/mmm');
+        expectHonest(found, 136);
+    });
+
+    it('does not give hcp with c along a the symmorphic P6/mmm', () => {
+        const moved = redescribe(STRUCTURES.hcp(), AXIS_SETTINGS.cab);
+        const found = spaceGroupAtTolerance(moved.A, moved.basis, 0.01);
+        expect(found.pointGroup).toBe('6/mmm');
+        expectHonest(found, 194);
+    });
+
+    it('does not give a trigonal P321 on permuted axes the cubic P23', () => {
+        const fixture = SPACE_GROUP_FIXTURES.find((f) => f.number === 150);
+        const moved = redescribe(structureFor(fixture), AXIS_SETTINGS.bca);
+        const found = spaceGroupAtTolerance(moved.A, moved.basis, 0.01);
+        expect(found.pointGroup).toBe('32');
+        expectHonest(found, 150);
+    });
+
+    it('labels every rung of the demo ladder consistently with its class', { timeout: 60000 }, () => {
+        const demo = demoStructure();
+        for (const brick of symmetryLadder(conventionalCell(demo), demo.basis, 1.0)) {
+            if (brick.spaceGroupNumber === null) expect(brick.spaceGroup).toBe(`${brick.pointGroup} class`);
+            else expect(classOfSymbol(brick.spaceGroup), brick.spaceGroup).toBe(brick.pointGroup);
         }
     });
 });

@@ -21,7 +21,7 @@ import {
     hmSymbolInStandardSetting,
     coversAllElements,
 } from '../spaceGroupSymbol.js';
-import { SPACE_GROUPS, spaceGroupNumber, isStandardSymbol, canonicalSymbol } from '../spaceGroupTable.js';
+import { SPACE_GROUPS, spaceGroupNumber, isStandardSymbol, canonicalSymbol, pointGroupOfSymbol } from '../spaceGroupTable.js';
 import {
     SPACE_GROUP_FIXTURES,
     closeGroup,
@@ -135,19 +135,20 @@ describe('settings the symbol positions cannot describe', () => {
     });
 
     it('falls back to the crystal class rather than inventing a symbol', () => {
-        const found = hmSymbolInStandardSetting(cubicAxes3m, 'P', '3m', isStandardSymbol);
-        expect(found).toMatchObject({ symbol: 'P3m', standard: false, placed: false });
+        const found = hmSymbolInStandardSetting(cubicAxes3m, 'P', '3m', pointGroupOfSymbol);
+        expect(found).toMatchObject({ symbol: null, standard: false, placed: false });
     });
 
-    it('keeps a correct symbol that is merely in a non-standard setting', () => {
-        // Pn is a real n-glide, just not the standard spelling of #7 (Pc) — worth
-        // showing as-is, unlike an unplaceable set.
+    it('does not report a spelling it could not verify against the table', () => {
+        // Pn is an n-glide in a non-standard cell choice of #7 (Pc). Without a setting that
+        // turns it into a tabulated symbol it is not reported at all; the caller shows the
+        // crystal class instead.
         const nGlide = [
             { R: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], t: [0, 0, 0] },
             { R: [[1, 0, 0], [0, -1, 0], [0, 0, 1]], t: [0.5, 0, 0.5] },
         ];
-        const found = hmSymbolInStandardSetting(nGlide, 'P', 'm', isStandardSymbol);
-        expect(found).toMatchObject({ symbol: 'Pn', standard: false, placed: true });
+        const found = hmSymbolInStandardSetting(nGlide, 'P', 'm', pointGroupOfSymbol);
+        expect(found).toMatchObject({ symbol: null, standard: false, placed: true });
     });
 });
 

@@ -2890,20 +2890,43 @@ The crystal **class is derived from the rotation content itself**, not from the 
 deliberate, so that a structure whose symmetry is a proper subgroup of its lattice's holohedry (the
 generic case partway up the tolerance ladder) is classified correctly.
 
-**(f) Space-group symbol.** `spaceGroupHM(centering, pointGroup)` simply concatenates:
+**(f) Space-group symbol** (`spaceGroupHM()` → `spaceGroupSymbol.js`). Triclinic groups are `P1`
+(No. 1) or `P-1` (No. 2) whatever cell describes them. Every other group is named from its
+operations:
 
-$$\texttt{symbol} = \texttt{centering} \,\Vert\, \texttt{pointGroup}$$
+1. Each operation is classified into a symmetry element (`classifyElement()`): its characteristic
+   direction (rotation axis, or mirror normal), order, and — from the **intrinsic translation**
+   $\mathbf t_\text{int} = \tfrac1n\sum_{k<n}R^k\mathbf t$ (reduced mod 1, snapped to quarters) — whether a
+   rotation is a screw $n_m$ and which glide ($a,b,c,n,d$, or $e$ for two axial glides in one plane) a
+   reflection is. $\mathbf t_\text{int}$ does not depend on the origin.
+2. The crystal system's ordered **symmetry directions** (blickrichtungen; `SYSTEM_DIRECTIONS`) fix the
+   positions of the Hermann–Mauguin symbol; each position is filled with the elements lying along it
+   (axis for rotations, normal for planes), rendered by the short-symbol rules, and all defensible
+   spellings are listed best-first (`hmSymbolCandidates()`).
+3. A candidate is **accepted** only if (`hmSymbolInStandardSetting()`):
+   - it is a tabulated standard symbol (230 groups plus pre-2002 `e`-glide spellings,
+     `spaceGroupTable.js`) **whose crystal class is the detected point group** (`pointGroupOfSymbol()`),
+   - it starts with the centering letter of the setting it was built in, and
+   - every element lies along a direction family that may carry an element of its type
+     (`elementsFitSetting()`: e.g. a tetragonal 4-fold only on [001], cubic 3-folds only on
+     $\langle111\rangle$).
 
-and looks the string up in a 69-entry `SG_NUMBER` table for the international number; a miss yields
-`null` (the card then shows the symbol and point group without a number). The table does cover every
-*producible* combination (allowed centering × point group, given that `R` is unreachable), so in
-practice a number is always found except through the Step-12 fallback. **This is a symmorphic
-symbol only** — screw axes and glide planes are never detected or named. A diamond-type structure
-(`Fd-3m`, No. 227) is reported as `Fm-3m` (No. 225); a `P2₁` structure is reported as `P2`.
+   Monoclinic and orthorhombic groups are also tried in the other five axis orders
+   (`PERMUTATIONS`, $R' = P^{-1}RP$, $\mathbf t' = P^{-1}\mathbf t$).
+4. If nothing is accepted the card shows the **crystal class** — `"<point group> class"`, e.g.
+   `4/mmm class` — with **no number** (`classLabel()`). Positional assembly on a cell that is not
+   conventional can spell another group's symbol (rocksalt on its primitive cell gives `Pmmm`, an
+   `mm2` set on diagonal axes gives `P2`, rutile with its $4_2$ axis along $a$ gives the symmorphic
+   `P4/mmm`); before 1.0 those were shown with that group's ITA number. The number is looked up only
+   for an accepted symbol (`spaceGroupNumber()`), and `Cmca`-style legacy spellings are shown in the
+   current form (`canonicalSymbol()`).
 
 **Code**: `symmetry.js` → `classifyOperations()`, `matchCentering()`, `classifyRotation()`,
-`pointGroupOf()`, `spaceGroupHM()`, constants `CENTERING_SETS`, `POINT_GROUP_ORDER`, `PG_SYSTEM`,
-`ALLOWED_CENTERING`, `SG_NUMBER`.
+`pointGroupOf()`, `spaceGroupHM()`, `classLabel()`, constants `CENTERING_SETS`,
+`POINT_GROUP_ORDER`, `ALLOWED_CENTERING`; `spaceGroupSymbol.js` → `intrinsicTranslation()`,
+`classifyElement()`, `hmSymbolCandidates()`, `elementsFitSetting()`, `coversAllElements()`,
+`transformOps()`, `hmSymbolInStandardSetting()`; `spaceGroupTable.js` → `SPACE_GROUPS`,
+`spaceGroupNumber()`, `pointGroupOfSymbol()`, `canonicalSymbol()`.
 
 #### Step 11. Group closure: the largest closed group at each threshold
 
@@ -2950,7 +2973,7 @@ $n_\mathrm{trans}$ = distinct pure translations, keyed on a $10^{-3}$ grid **aft
 0.9997 and 0 count once). `classifyOperations(ops, tolFrac, { closed })` names a set only if it
 passes this and is closed — by construction when the walk built it (`closed: true`), otherwise by an
 all-pairs check (`isClosedSet()`, products matched within $3\cdot$`tolFrac` per fractional
-component). A set that fails is labelled `centering + pointGroup` with no number.
+component). A set that fails is labelled `not a group` with no number (never reached from the card).
 
 **Code**: `symmetry.js` → `composeOps()`, `productTable()`, `growingGroup()`, `closeUnder()`,
 `groupsByThreshold()`, `isClosedSet()`, `isValidGroup()`.
@@ -3149,15 +3172,9 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
   tables (`POINT_GROUP_ORDER`, `PG_SYSTEM`, `ALLOWED_CENTERING`, `CENTERING_SETS`, the 69-entry
   `SG_NUMBER` map, and `WYCKOFF` / `CEN_VECS`). Use it to see *how* symmetry changes with tolerance on
   a disordered configuration, not to produce a published space-group assignment.
-- **Symmorphic symbols only.** Screw axes and glide planes are never detected. The symbol is
-  literally `centering letter + point-group symbol`, so `Fd-3m` → `Fm-3m` (225), `P2₁/c` → `P2/m`,
-  `Pnma` → `Pmmm`. The source comment names this as a known follow-up.
-- **Setting variants are not distinguished**: `-42m` vs `-4m2`, `3m1` vs `31m`, `321` vs `312`, the
-  monoclinic unique-axis choice, and the orthorhombic axis ordering all collapse to one symbol. Two
-  concrete consequences: the printed symbol `P32` is `P` + point group `32`, which reads
-  identically to the screw-axis space group P3₂ (No. 145) but is mapped to **No. 149 (P312)**; and
-  the table's trigonal choices are internally inconsistent (`P3m` → 156 = P3m1, but `P-3m` → 162 =
-  P-31m).
+- **A group that cannot be named is shown as its crystal class.** The symbol is built positionally
+  and accepted only when it is a tabulated symbol of the detected class and centering (Step 10f);
+  otherwise the card shows e.g. `4/mmm class` with no number and no Wyckoff letters.
 - **`R` centering is unreachable.** `matchCentering()` only tests F, I, A, B, C, so a rhombohedral
   structure in hexagonal axes will report `P`-something. The `R3`/`R-3m` rows in `SG_NUMBER` and the
   `R` in `ALLOWED_CENTERING['trig']` are dead.
