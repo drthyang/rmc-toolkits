@@ -22,7 +22,9 @@ from rmc_toolkits.scaling import RHO0_SEED
 from rmc_toolkits.scaling_cli import main
 from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
 
-RHO0, B2 = 0.05, 0.02
+# The model's true density is far from the 0.05 seed, so recovering it shows
+# the self-consistency actually moved from the seed (1.0 review).
+RHO0, B2 = 0.08, 0.02
 
 
 def model():
@@ -59,6 +61,7 @@ class EstimateSeedTests(unittest.TestCase):
         line = [row for row in out.splitlines() if row.startswith("rho0 self-consistency")][0]
         estimate = float(line.split(":")[1].split()[0])
         self.assertLess(abs(estimate - RHO0) / RHO0, 0.05)
+        self.assertGreater(abs(estimate - RHO0_SEED) / RHO0_SEED, 0.4)
 
     def test_without_the_estimate_a_density_is_still_required(self):
         code, _, err = self.run_cli()
