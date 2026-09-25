@@ -190,6 +190,57 @@ class PinnedR0EnforcementTests(unittest.TestCase):
         self.assertFalse(diagnostics_summary(result, low)["first_shell_below_r0"])
 
 
+class PinnedR0WithoutDetectedShellTests(unittest.TestCase):
+    """A given r0 anchors the automatic cutoff when no shell is detected (review follow-up).
+
+    d6d646b let auto_enforcement_cutoff fall back to the given r0, but the report
+    note still formatted the (None) detected onset: the CLI died with a TypeError
+    before writing anything. A scale of 0.02 leaves every |g| feature below the
+    detector's floor, so detection returns None.
+    """
+
+    def run_faint(self, extra, header=""):
+        q, sq = exact_sq(0.10, 26.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "faint.dat"
+            rows = "\n".join(f"{x:.6f} {y:.10f}" for x, y in zip(q, sq))
+            data.write_text(header + rows + "\n")
+            code, out, err = run_cli([
+                "--data", data, "--qmin", "0.01", "--qmax", "26", "--rho0", RHO0,
+                "--b-avg-sq", "1.0", "--scale", "0.02", "--offset", "0",
+                "--rmax", "20", "--nr", "2000", "--out-dir", Path(tmp) / "out", *extra,
+            ])
+            self.assertEqual(code, 0, err)
+            written = sorted(p.name for p in (Path(tmp) / "out").glob("*"))
+            provenance = json.loads((Path(tmp) / "out" / "faint_provenance.json").read_text())
+        self.assertIn("faint_rmc.gr", written)
+        self.assertIsNone(provenance["diagnostics"].get("r0_detected"))
+        return provenance, out
+
+    def test_cli_r0_anchors_the_cutoff_when_no_shell_is_detected(self):
+        provenance, out = self.run_faint(["--r0", "2.4"])
+        self.assertAlmostEqual(provenance["enforcement"]["cutoff"], 2.4 - 0.25, places=6)
+        self.assertIn("given r0 2.4 A (no shell detected)", out)
+
+    def test_minimum_distances_header_anchors_the_cutoff(self):
+        provenance, out = self.run_faint([], header="MINIMUM_DISTANCES :: 2.4\n")
+        self.assertAlmostEqual(provenance["enforcement"]["cutoff"], 2.4 - 0.25, places=6)
+        self.assertIn("given r0 2.4 A (no shell detected)", out)
+
+    def test_note_names_the_given_r0_when_it_caps_the_detected_onset(self):
+        q, sq = exact_sq(0.10, 26.0)  # onset ~2.66 A, above the given 2.2
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "shell.sq"
+            write_stog_xy(data, q, sq)
+            code, out, err = run_cli([
+                "--data", data, "--qmin", "0.01", "--qmax", "26", "--rho0", RHO0,
+                "--b-avg-sq", "1.0", "--scale", "1", "--offset", "0", "--r0", "2.2",
+                "--rmax", "20", "--nr", "2000", "--out-dir", Path(tmp) / "out",
+            ])
+        self.assertEqual(code, 0, err)
+        self.assertIn("given r0 2.2 A", out)
+
+
 @unittest.skipUnless(FECOSN.exists(), "FeCoSn 199K run not present")
 class FeCoSnAutoEnforcementTests(unittest.TestCase):
     def test_first_peak_flank_survives(self):

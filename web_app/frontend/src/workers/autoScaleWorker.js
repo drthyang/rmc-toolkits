@@ -78,8 +78,12 @@ self.onmessage = (event) => {
           cutoff,
           peakRmin: cutoff,
           peakRmax: cutoff,
-          source: 'auto (first-shell foot)',
-          firstShellOnset: result.r0Detected,
+          // Name the anchor like the CLI: a given r0 caps the onset, and
+          // anchors the cutoff alone when no shell was detected.
+          source: config.r0 != null && (result.r0Detected == null || config.r0 < result.r0Detected)
+            ? 'auto (given r0)'
+            : 'auto (first-shell foot)',
+          firstShellOnset: result.r0Detected ?? null,
         }
         : null;
     }

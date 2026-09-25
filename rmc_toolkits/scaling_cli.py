@@ -711,10 +711,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             if cutoff is not None:
                 enforcement = (cutoff,) * 3
-                enforcement_source = "auto (first-shell foot)"
-                auto_note = (
-                    f"automatic: foot of the first shell, onset {r0_detected:.2f} A"
-                )
+                # Name what anchored the cutoff: the detected onset, or the
+                # given r0 when it caps the onset or no shell was detected.
+                if config.r0 is not None and (
+                    r0_detected is None or float(config.r0) < float(r0_detected)
+                ):
+                    enforcement_source = "auto (given r0)"
+                    auto_note = (
+                        f"automatic: anchored on the given r0 {config.r0:g} A "
+                        + (
+                            "(no shell detected)"
+                            if r0_detected is None
+                            else f"(below the detected onset {r0_detected:.2f} A)"
+                        )
+                    )
+                else:
+                    enforcement_source = "auto (first-shell foot)"
+                    auto_note = (
+                        f"automatic: foot of the first shell, onset {r0_detected:.2f} A"
+                    )
             else:
                 auto_note = (
                     "none: no first shell detected to anchor an automatic "

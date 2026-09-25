@@ -1830,7 +1830,11 @@ detection fails) — and `first_shell_foot()` walks left from the anchor while $
 shell's sign, stopping at the first local minimum of $|g|$ (or the point just across a sign
 change), and $0.25$ Å is `R0_WINDOW_MARGIN` — the same margin that separates the density-limit
 window from the onset, so the automatic enforcement never asserts $g = 0$ above the region the fit
-itself treated as $g = 0$. Sharp shells are bounded by the margin, broad ones by the foot. Measured
+itself treated as $g = 0$. The CLI report line and the provenance `enforcement.source` (and the
+page worker's `enforcement.source`) name the anchor actually used: `auto (first-shell foot)` with the
+detected onset, or `auto (given r0)` when the given $r_0$ caps the onset or no shell was detected
+(the report then says "anchored on the given r0 … (no shell detected)"). Sharp shells are bounded
+by the margin, broad ones by the foot. Measured
 (exact synthetic $S(Q)$ from $Q = 0.01$, one Gaussian shell at 2.8 Å): the first-shell coordination
 number over $[2.0, 3.2]$ Å changes by ≤ 0.3 % for $\sigma$ = 0.08–0.15 Å, $Q_\max$ = 26/40 Å⁻¹,
 Lorch on/off — the pre-1.0 cutoff at the onset removed 6–9 % (`tests/test_stog_a_enforcement.py`;
