@@ -110,16 +110,42 @@ class SiteDisplacements:
         return int(matches[0])
 
 
+def _circular_site_centres(offsets: np.ndarray, site_index: np.ndarray, site_count: int) -> np.ndarray:
+    """Per-site, per-axis circular mean of period-1 offsets, shape (S, 3).
+
+    ``atan2(sum sin 2 pi o, sum cos 2 pi o) / 2 pi`` -- the centre of a cloud on a
+    circle, which no wrap of an individual offset can move. Only used as the
+    reference that the unwrap is taken about; the site mean itself is the plain
+    arithmetic mean of the unwrapped offsets.
+    """
+    angle = 2.0 * np.pi * offsets
+    centres = np.empty((site_count, 3))
+    for axis in range(3):
+        sin_sum = np.bincount(site_index, weights=np.sin(angle[:, axis]), minlength=site_count)
+        cos_sum = np.bincount(site_index, weights=np.cos(angle[:, axis]), minlength=site_count)
+        centres[:, axis] = np.arctan2(sin_sum, cos_sum) / (2.0 * np.pi)
+    return centres
+
+
 def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
     """Read an ``.rmc6f`` file into per-site Cartesian displacement clouds.
 
     An atom's stored coordinate is a fraction of the *supercell*, and its cell
     indices locate the box copy it belongs to, so ``coords - cell_indices /
-    supercell`` is the offset from that copy's origin. Only the supercell
-    boundary wraps (an atom that drifted across it comes back on the far side),
-    which the half-box fold removes; the offsets themselves are a small fraction
-    of one cell and never fold. Subtracting each site's mean offset then leaves
-    the displacement about the average structure.
+    supercell`` is the offset from that copy's origin -- the site's own position
+    in the cell plus its displacement, ``(s + delta) / N``, known only modulo one
+    supercell period because the stored coordinate wraps at the box edge.
+
+    The wrap is undone about each site's own centre, not about zero: per site and
+    axis the circular mean ``c = arg(sum exp(2 pi i o)) / 2 pi`` of the offsets
+    (period 1) is the reference, and every offset is moved by the whole number of
+    periods that brings it within half a period of ``c``. A fold about zero (the
+    earlier half-box minimum image) cuts a site in two whenever ``s / N`` reaches
+    one half -- a site at x = 1/2 in a one-cell-thick box, or near x = 1 in a
+    two-cell one -- and puts the halves a whole box edge apart. About the
+    site's centre only a genuine displacement of half a supercell could fold.
+    Subtracting each site's mean offset then leaves the displacement about the
+    average structure.
     """
     rmc6f_path = Path(rmc6f_path)
     lattice_vectors, supercell = read_cell_vectors(rmc6f_path)
@@ -146,9 +172,10 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
     site_count = reference_numbers.size
     counts = np.bincount(site_index, minlength=site_count)
 
-    # Offset from the atom's own box copy, folded back over the supercell edge.
+    # Offset from the atom's own box copy, unwrapped over the supercell edge about
+    # the site's circular mean (see the docstring): o -= round(o - centre).
     offsets = coords_array - cells_array / supercell
-    offsets -= np.round(offsets)
+    offsets -= np.round(offsets - _circular_site_centres(offsets, site_index, site_count)[site_index])
 
     site_mean = np.column_stack(
         [

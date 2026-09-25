@@ -496,16 +496,32 @@ const buildSite = (referenceNumber, element, offsets, latticeVectors, supercell,
     return { referenceNumber, element, count: n, displacements, siteFractional, copiesPerCell };
 };
 
+// numpy's np.round: round half to even, so a tie folds the same way in both engines.
+const roundHalfEven = (x) => {
+    const r = Math.round(x);
+    return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
+};
+
+// Circular mean of period-1 values: arg(sum exp(2 pi i v)) / 2 pi. Mirrors
+// `_circular_site_centres`; used only as the reference an unwrap is taken about.
+const circularMean = (values) => {
+    let sin = 0;
+    let cos = 0;
+    values.forEach((value) => { sin += Math.sin(2 * Math.PI * value); cos += Math.cos(2 * Math.PI * value); });
+    return Math.atan2(sin, cos) / (2 * Math.PI);
+};
+
 // Current path: RMCProfile tags every atom with its reference site and box copy, so
 // grouping by reference number and subtracting the cell origin gives each cloud.
+// The offset `coords - cellIndices / supercell` is the site position plus its
+// displacement, known only modulo one supercell period; it is unwrapped about the
+// site's own circular mean (o -= round(o - centre)), never about zero -- a fold
+// about zero tears a site at x = 1/2 in a one-cell-thick box (or near x = 1 in a
+// two-cell one) into halves a box edge apart. Mirrors `load_site_displacements`.
 const sitesByReferenceNumber = (atoms, latticeVectors, supercell) => {
     const clouds = new Map();   // referenceNumber -> { element, offsets: [[dfx,dfy,dfz], ...] }
     atoms.forEach(({ element, referenceNumber, coords, cellIndices }) => {
-        const offset = coords.map((value, i) => {
-            let delta = value - cellIndices[i] / supercell[i];
-            delta -= Math.round(delta);
-            return delta;
-        });
+        const offset = coords.map((value, i) => value - cellIndices[i] / supercell[i]);
         let cloud = clouds.get(referenceNumber);
         if (!cloud) { cloud = { element, offsets: [] }; clouds.set(referenceNumber, cloud); }
         cloud.offsets.push(offset);
@@ -513,7 +529,9 @@ const sitesByReferenceNumber = (atoms, latticeVectors, supercell) => {
     const referenceNumbers = [...clouds.keys()].sort((a, b) => a - b);
     const sites = referenceNumbers.map((referenceNumber) => {
         const { element, offsets } = clouds.get(referenceNumber);
-        return buildSite(referenceNumber, element, offsets, latticeVectors, supercell);
+        const centre = [0, 1, 2].map((i) => circularMean(offsets.map((offset) => offset[i])));
+        const unwrapped = offsets.map((offset) => offset.map((value, i) => value - roundHalfEven(value - centre[i])));
+        return buildSite(referenceNumber, element, unwrapped, latticeVectors, supercell);
     });
     return { referenceNumbers, sites };
 };

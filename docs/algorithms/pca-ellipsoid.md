@@ -155,18 +155,35 @@ The browser parser `web_app/frontend/src/rmc6f.js` → `parseAtomLine()` additio
 **The displacement convention** (`pca_kde.py` → `load_site_displacements()`; JS
 `sitesByReferenceNumber()` + `buildSite()`):
 
-$$\mathbf{o}_n \;=\; \mathbf{f}_n - \frac{\mathbf{c}_n}{\mathbf{N}}, \qquad
-\mathbf{o}_n \leftarrow \mathbf{o}_n - \mathrm{round}(\mathbf{o}_n)$$
+$$\mathbf{o}_n \;=\; \mathbf{f}_n - \frac{\mathbf{c}_n}{\mathbf{N}},\qquad
+\mathbf{m}_s=\frac{1}{2\pi}\arg\!\sum_{n\in s}e^{2\pi i\,\mathbf{o}_n},\qquad
+\mathbf{o}_n \leftarrow \mathbf{o}_n - \mathrm{round}\big(\mathbf{o}_n-\mathbf{m}_{s(n)}\big)$$
 
-componentwise. The subtraction removes the origin of the atom's own box copy, leaving the offset
-*within* one cell expressed as a supercell fraction. The `round` fold is a **half-box minimum image
-over the supercell boundary only** — an atom that drifted across the outer edge of the box (stored
-as $\approx 0.999$ when it belongs at $\approx -0.001$) comes back on the correct side. Genuine
-thermal offsets are a small fraction of one cell — of order $1/N_i$ of the folding period — and never
-fold. `tests/test_pca_kde.py::test_supercell_boundary_wrap_folds` and the JS
-`pcaKde.test.js` "folds an atom that drifted across the supercell boundary" pin this: four atoms
-straddling the edge of a $1\times1\times1$, 8 Å box must all end up within 0.1 Å of each other, not
-8 Å apart.
+componentwise. The subtraction removes the origin of the atom's own box copy, leaving
+$\mathbf{o}_n=(\mathbf{s}+\boldsymbol{\delta}_n)/\mathbf{N}$ — the site's position $\mathbf{s}$ inside
+the unit cell plus the atom's displacement, as a supercell fraction — known only **modulo one
+supercell period**, because the stored coordinate wraps at the box edge (an atom that drifted across
+the outer edge is stored as $\approx 0.999$ when it belongs at $\approx -0.001$). The unwrap is taken
+about each site's own **circular mean** $\mathbf{m}_s$ per axis (period 1; `_circular_site_centres`
+in Python, `circularMean` in JS), which no wrap of an individual offset can move: every offset is
+shifted by the whole number of periods that brings it within half a period of its site's centre. JS
+rounds half to even (`roundHalfEven`) so a tie folds exactly as `np.round` does.
+
+**Why not a fold about zero.** Up to 1.0 both engines applied $\mathbf{o}\leftarrow\mathbf{o}-\mathrm{round}(\mathbf{o})$,
+a half-box minimum image about the copy's *origin*. That is only safe while
+$(s_i+\delta_i)/N_i<\tfrac12$ — always true for $N_i\ge3$, but not for a site at $s_i\approx\tfrac12$ in
+a one-cell-thick box ($N_i=1$, a common special position) or at $s_i\approx1$ with $N_i=2$. There the
+copies on either side of the cut landed a whole box edge apart, the site mean fell between the two
+lumps, $U$ came out $10^3$–$10^4$ times too large and the site marker was misplaced — silently, in both
+engines, and in the Displacement Directions page that reads the same clouds. About the site centre
+only a genuine displacement of half a *supercell* could fold. On the repository's GaNb₄Se₈ and GTS
+runs the two rules give bit-identical results.
+
+`tests/test_pca_kde.py::test_supercell_boundary_wrap_folds` and the JS `pcaKde.test.js` "folds an
+atom that drifted across the supercell boundary" pin the edge wrap (four atoms straddling the edge
+of a $1\times1\times1$, 8 Å box end up within 0.1 Å of each other); `tests/test_pca_regressions.py`
+`SiteCentredFoldTests` and `pcaKdeRegressions.test.js` pin the special positions ($N_i=1$ at
+$s=\tfrac12$, $N_i=2$ at $s=0.99$, and a $1\times8\times8$ box) with nonzero spread.
 
 Each site $s$ is then centred on its own mean and mapped to Cartesian Å through the **full supercell
 lattice**:
