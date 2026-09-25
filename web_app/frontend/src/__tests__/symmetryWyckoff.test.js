@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { describeSymmetry } from '../symmetryModel.js';
+import { WYCKOFF_DATA } from '../wyckoffTable.js';
 import { STRUCTURES, AXIS_SETTINGS, redescribe, lacunarSpinel, orbits } from './fixtures/symmetryStructures.js';
 
 const describe0 = ({ A, basis }, tol = 0.02) => describeSymmetry({ latticeVectors: A, supercell: [1, 1, 1], basis }, tol);
@@ -62,5 +63,33 @@ describe('letters in the naming cell', () => {
         const found = describe0(redescribe(STRUCTURES.perovskite(), [[2, 0, 0], [0, 2, 0], [0, 0, 1]]));
         expect(found.spaceGroupNumber).toBeNull();
         for (const o of found.orbits) expect(o.wyckoff).toBeNull();
+    });
+});
+
+describe('special positions of P222_1 and I2_12_12_1 at the ITA origin', () => {
+    it('tabulates all 1731 ITA positions', () => {
+        const rows = Object.values(WYCKOFF_DATA).reduce((n, packed) => n + packed.split(';').length, 0);
+        expect(rows).toBe(1731);
+        expect(WYCKOFF_DATA[17].split(';').map((r) => r.split(':')[0]).join('')).toBe('abcde');
+        expect(WYCKOFF_DATA[24].split(';').map((r) => r.split(':')[0]).join('')).toBe('abcd');
+    });
+
+    // ITA #17: (x,y,z) (-x,-y,z+1/2) (-x,y,-z+1/2) (x,-y,-z). 2a x,0,0 · 2c 0,y,1/4 · 4e.
+    it('labels P222_1 2a, 2c and 4e', () => {
+        const ops = [(x, y, z) => [x, y, z], (x, y, z) => [-x, -y, z + 0.5], (x, y, z) => [-x, y, -z + 0.5], (x, y, z) => [x, -y, -z]];
+        const basis = orbits(ops, [['A', 0.21, 0, 0], ['C', 0, 0.31, 0.25], ['G', 0.137, 0.213, 0.061]]);
+        const found = describe0({ A: [[8.1, 0, 0], [0, 5.3, 0], [0, 0, 6.7]], basis });
+        expect(found.spaceGroup).toBe('P222_1');
+        expect(letters(found)).toEqual({ A: '2a', C: '2c', G: '4e' });
+    });
+
+    // ITA #24: (x,y,z) (-x+1/2,-y,z+1/2) (-x,y+1/2,-z+1/2) (x+1/2,-y+1/2,-z) + I. 4a x,0,1/4 · 4c 0,1/4,z.
+    it('labels I2_12_12_1 4a, 4c and 8d', () => {
+        const gens = [(x, y, z) => [x, y, z], (x, y, z) => [-x + 0.5, -y, z + 0.5], (x, y, z) => [-x, y + 0.5, -z + 0.5], (x, y, z) => [x + 0.5, -y + 0.5, -z]];
+        const ops = gens.flatMap((g) => [g, (x, y, z) => g(x, y, z).map((v) => v + 0.5)]);
+        const basis = orbits(ops, [['A', 0.21, 0, 0.25], ['C', 0, 0.25, 0.37], ['G', 0.137, 0.213, 0.061]]);
+        const found = describe0({ A: [[8.1, 0, 0], [0, 5.3, 0], [0, 0, 6.7]], basis });
+        expect(found.spaceGroup).toBe('I2_12_12_1');
+        expect(letters(found)).toEqual({ A: '4a', C: '4c', G: '8d' });
     });
 });

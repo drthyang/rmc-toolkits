@@ -3069,7 +3069,7 @@ generous as the group itself.
 
 **Wyckoff letters** (`symmetryModel.js` → `lettersInSetting()`, `wyckoff.js` →
 `assignWyckoffLetters()`). The table (`wyckoffTable.js`) lists the Wyckoff positions of all 230
-groups in their ITA standard setting (1724 positions; for the groups with two origin choices, the
+groups in their ITA standard setting (all 1731 positions; for the groups with two origin choices, the
 one the table was built from — origin choice 2 for the centrosymmetric ones, e.g. Fd-3m). Each row
 was checked against the group's own operations (its coordinate expanded to exactly its
 multiplicity), and its site symmetry is the stabiliser computed the same way as above, so the two
