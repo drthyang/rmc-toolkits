@@ -295,7 +295,7 @@ const tilingCache = new Map();
  * Python engine.
  */
 export const goldbergTiling = (frequency = 8) => {
-    const nu = Math.trunc(frequency);
+    const nu = Math.trunc(Number(frequency));
     if (!(nu >= MIN_FREQUENCY && nu <= MAX_FREQUENCY)) {
         throw new Error(`frequency must lie in [${MIN_FREQUENCY}, ${MAX_FREQUENCY}]`);
     }
@@ -393,6 +393,14 @@ export const assignCells = (tiling, directions) => (
     directions.map((direction) => assignOne(tiling, normalize(direction)))
 );
 
+// `targetPerCell` as the integer the resolution guard divides by. Mirrors
+// `_validated_target`.
+const validatedTarget = (targetPerCell) => {
+    const value = Number(targetPerCell);
+    if (!Number.isFinite(value) || value < 1) throw new Error('targetPerCell must be a finite number >= 1');
+    return Math.trunc(value);
+};
+
 // Round half to even (banker's rounding) -- what Python's round() does. The
 // auto-resolution must round identically in both engines or the browser and
 // server pick different tilings for the same data at exact .5 boundaries
@@ -411,8 +419,13 @@ const roundHalfEven = (value) => {
  * over-binning guard. Mirrors `recommended_frequency`.
  */
 export const recommendedFrequency = (nPoints, { targetPerCell = DEFAULT_TARGET_PER_CELL, maxFrequency = 24 } = {}) => {
+    const target = validatedTarget(targetPerCell);
+    if (!Number.isFinite(Number(maxFrequency)) || Math.trunc(Number(maxFrequency)) < MIN_FREQUENCY) {
+        throw new Error(`maxFrequency must be a finite number >= ${MIN_FREQUENCY}`);
+    }
+    if (!Number.isFinite(Number(nPoints))) throw new Error('nPoints must be a finite number');
     if (!(nPoints > 0)) return MIN_FREQUENCY;
-    const cells = Math.max(12, nPoints / Math.max(Math.trunc(targetPerCell), 1));
+    const cells = Math.max(12, nPoints / target);
     const frequency = roundHalfEven(Math.sqrt(Math.max(cells - 2, 10) / 10));
     return Math.min(Math.max(frequency, MIN_FREQUENCY), Math.min(maxFrequency, MAX_FREQUENCY));
 };
@@ -493,6 +506,28 @@ export const orientationHistogram = (vectors, options = {}) => {
     if (!FRAMES.includes(frame)) throw new Error(`frame must be one of ${FRAMES.join(', ')}`);
     if (!(minAmplitudeQuantile >= 0 && minAmplitudeQuantile < 1)) {
         throw new Error('minAmplitudeQuantile must lie in [0, 1)');
+    }
+    if (!Number.isFinite(Number(minAmplitude))) throw new Error('minAmplitude must be a finite number');
+    if (!(Number.isFinite(Number(smoothing)) && Number(smoothing) >= 0)) {
+        throw new Error('smoothing must be a finite, non-negative number of passes');
+    }
+    if (frequency !== null && frequency !== undefined && !Number.isFinite(Number(frequency))) {
+        throw new Error(`frequency must lie in [${MIN_FREQUENCY}, ${MAX_FREQUENCY}]`);
+    }
+    validatedTarget(targetPerCell);
+    // A NaN/inf row would otherwise yield NaN PCA axes or a TypeError deep in
+    // the cell assignment (and the Python engine used to fail differently on
+    // it). Reject it by name instead -- same message as the Python engine.
+    let badRows = 0;
+    let firstBad = -1;
+    vectors.forEach((row, index) => {
+        if (!(Number.isFinite(row[0]) && Number.isFinite(row[1]) && Number.isFinite(row[2]))) {
+            badRows += 1;
+            if (firstBad < 0) firstBad = index;
+        }
+    });
+    if (badRows > 0) {
+        throw new Error(`vectors contain ${badRows} non-finite (NaN/inf) row(s); first at row ${firstBad}`);
     }
 
     const totalPoints = vectors.length;

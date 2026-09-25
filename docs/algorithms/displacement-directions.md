@@ -148,11 +148,9 @@ NEGLIGIBLE_AMPLITUDE = 1e-9   # Angstrom   orientation.py:91
 
 **User cutoffs.** Two optional, cumulative cuts sharpen a weak pattern:
 
-- `min_amplitude` / `minAmplitude` — an absolute floor in Å. **Not validated:** a negative value
-  is accepted, has no effect (the $10^{-9}$ floor dominates), and is then hidden by the
-  `max(threshold, 0)` in the reported `amplitudeCutoff`. In JS a non-numeric string becomes
-  `NaN` via `Number(minAmplitude)`, which makes every `>` comparison false and surfaces as the
-  survival error below, not as a type error.
+- `min_amplitude` / `minAmplitude` — an absolute floor in Å. It must be finite (`NaN`/`inf` is
+  rejected, see "Errors" below); a negative value is accepted, has no effect (the $10^{-9}$ floor
+  dominates), and is then hidden by the `max(threshold, 0)` in the reported `amplitudeCutoff`.
 - `min_amplitude_quantile` / `minAmplitudeQuantile` $\in [0, 1)$ — the $q$-quantile of the
   $\{a_i\}$ themselves (NumPy's default linear-interpolation quantile; the JS port
   reimplements that exact rule in `quantile`). The quantile is taken over **all $N_{\text{tot}}$
@@ -182,8 +180,9 @@ construction (their direction is noise), so including them dilutes any real anis
 uniform. A modest quantile cut therefore raises contrast without inventing structure — but it
 also discards data, so it moves the Poisson noise floor up. Both are reported.
 
-**Errors.** `orientation_histogram` / `orientationHistogram` raise six errors in all
-(`ValueError` in Python, `Error` in JS), four of them input validation before any work:
+**Errors.** `orientation_histogram` / `orientationHistogram` raise these errors (`ValueError` in
+Python, `Error` in JS; JS messages use the camelCase option names), all but the last two as input
+validation before any work:
 
 | Message | Raised when |
 |---|---|
@@ -191,8 +190,24 @@ also discards data, so it moves the Poisson noise floor up. Both are reported.
 | `weight must be one of ('count', 'amplitude', 'amplitude2')` | unknown weight |
 | `frame must be one of ('cartesian', 'pca')` | unknown frame |
 | `min_amplitude_quantile must lie in [0, 1)` | quantile outside $[0,1)$ |
+| `min_amplitude must be a finite number` | `NaN`/`inf` absolute cutoff |
+| `smoothing must be a finite, non-negative number of passes` | `NaN`, `inf` or negative `smoothing` |
+| `frequency must lie in [1, 64]` | a non-finite `frequency` (checked here; the range itself is checked by the tiling) |
+| `target_per_cell must be a finite number >= 1` | non-finite or $< 1$ |
+| `vectors contain k non-finite (NaN/inf) row(s); first at row i` | any `NaN`/`inf` component — identical message in both engines |
 | `no displacement vectors survive the amplitude cutoff` | $N = 0$ after the cut |
 | `displacement weights sum to zero` | $\sum_m M_m \le 0$ |
+
+**Non-finite rows are rejected, never dropped.** Before the 1.0 audit a single `NaN` or `inf` row
+reached `np.cov` for the PCA frame — which is fitted on every row, even for `frame="cartesian"` —
+and failed with LAPACK's `Eigenvalues did not converge`, while the JS port silently returned
+`NaN` `pcaAxes` (cartesian) or crashed in the cell assignment with a `TypeError` (pca frame, or an
+`inf` component). Both engines now reject the input by name. A corrupt displacement is a data error,
+not something to be quietly counted into `rejectedPoints` next to the physically meaningful
+amplitude cut. (The `.rmc6f` parsers differ upstream of this: the browser parser skips an atom line
+with a non-finite coordinate, the Python parser keeps it and its `NaN` then poisons the whole site
+mean — so the same corrupt file renders in the browser without that atom but is a 400 with the
+message above on the Flask route. That divergence belongs to the parsers, not to this engine.)
 
 The last is unreachable through the ordinary path — every surviving $a_i > 10^{-9}$ Å, so every
 weight is strictly positive — but it guards a caller who reaches the function directly.
@@ -346,6 +361,11 @@ Bounds: `MIN_FREQUENCY = 1` ([orientation.py:85](../../rmc_toolkits/orientation.
 `MAX_FREQUENCY = 64` (line 86, $C = 40\,962$ cells). `recommended_frequency` never exceeds 24 on
 its own; the UI dropdown offers `auto, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24` and **defaults to
 $\nu = 10$** (1002 cells), not Auto.
+
+**Validation.** `recommended_frequency` / `recommendedFrequency` raise on a non-finite point count
+(`n_points must be a finite number`), a non-finite or $< 1$ `target_per_cell`, and a
+`max_frequency` below `MIN_FREQUENCY` (`max_frequency must be a finite number >= 1`) — before the
+1.0 audit `max_frequency=0` returned the invalid frequency 0.
 
 ---
 
@@ -776,10 +796,9 @@ The $\max(d, 1)$ is in both engines ([orientation.py:500](../../rmc_toolkits/ori
 tiling, where every degree is 5 or 6.
 
 The pass count is **truncated toward zero**, not rounded: `int(passes)` / `Math.trunc(smoothing)`.
-A fractional `smoothing = 2.9` runs 2 passes. A negative value runs **none** (the whole block is
-guarded by `if smoothing > 0`) but is still echoed verbatim into the result as
-`"smoothing": int(smoothing)` — so a payload can report `smoothing: -3` on a completely unsmoothed
-map.
+A fractional `smoothing = 2.9` runs 2 passes (and is echoed as `2`). A negative, `NaN` or infinite
+value is rejected with `smoothing must be a finite, non-negative number of passes` (Step 1,
+"Errors"); before the 1.0 audit a negative value silently ran no passes and was echoed verbatim.
 
 Each cell keeps $1-\alpha$ of its mass and splits the rest evenly over its own neighbours, so
 **the total is invariant by construction** — the smoothed map still integrates to the same
@@ -1084,12 +1103,12 @@ through: **HTTP** = read by `pca_orientation_endpoint` in [app.py](../../web_app
 |---|---|---|---|---|---|---|
 | `frequency` | `frequency` | HTTP + worker + UI | 1 – 64, or `None`/absent = auto | `None` (auto) | **10** (1002 cells) | geodesic frequency; $C = 10\nu^2+2$ |
 | `weight` | `weight` | HTTP + worker + UI | `count` \| `amplitude` \| `amplitude2` | `count` | `count` | what each cell accumulates |
-| `min_amplitude` | `minAmplitude` | HTTP + worker, **never sent by the UI** | **not validated** — negatives are accepted and reported as `amplitudeCutoff = 0` | `0.0` | — | absolute short-displacement cut |
+| `min_amplitude` | `minAmplitude` | HTTP + worker, **never sent by the UI** | finite; negatives are accepted and reported as `amplitudeCutoff = 0` | `0.0` | — | absolute short-displacement cut |
 | `min_amplitude_quantile` | `minAmplitudeQuantile` | HTTP + worker + UI | $[0, 1)$, validated | `0.0` | `0` (slider caps at 0.5) | quantile short-displacement cut; skipped entirely at $q = 0$ |
-| `smoothing` | `smoothing` | HTTP + worker + UI | int, truncated toward 0; $\le 0$ = no passes | `0` | **2** (slider max 12) | neighbour-diffusion passes |
+| `smoothing` | `smoothing` | HTTP + worker + UI | finite $\ge 0$, truncated toward 0; negative/`NaN` rejected | `0` | **2** (slider max 12) | neighbour-diffusion passes |
 | `frame` | `frame` | HTTP + worker + UI | `cartesian` \| `pca` | `cartesian` | `cartesian` | crystal frame vs PCA frame |
 | `geometry` | `geometry` | HTTP + worker + UI | bool | `True` | `true` | include `polygons` + `neighbors` |
-| `target_per_cell` | `targetPerCell` | **library call only** — neither the Flask route nor the worker forwards it | int $\ge 1$ | `12` | not exposed | auto-resolution target |
+| `target_per_cell` | `targetPerCell` | **library call only** — neither the Flask route nor the worker forwards it | finite $\ge 1$, truncated to an int; otherwise rejected | `12` | not exposed | auto-resolution target |
 | `reference_number` / `element` | `referenceNumber` / `element` | HTTP + worker; UI sends `referenceNumber` only | — | both `None` → **all sites of all elements pooled** | from the site picker | site selection (`element` pools all sites of one element; `""`/`"all"` normalise to the pooled default in both transports) |
 | — | `clusterThreshold` | **browser worker only** — no Python equivalent | 0.4 – 2.5 Å, slider step 0.1 | `DEFAULT_CLUSTER_THRESHOLD = 1.5` Å ([pcaKde.js:472](../../web_app/frontend/src/workers/pcaKde.js)) | 1.5 Å, control shown only when `sites.reconstructed` | fold-and-cluster distance used to *reconstruct* sites when the file has no reference-site/cell columns; part of the worker's parse cache key, so changing it re-derives every displacement and therefore every number on the page |
 
@@ -1263,7 +1282,7 @@ independently computed in each language — not a shared-golden parity suite.
    that `peakCell`/`peakEnhancement` are argmax/value over the **smoothed** map while
    `peakZScore` is the **raw** $z$ at that cell, and `emptyFraction` is a raw-count quantity that
    does not shrink under smoothing.
-4. **`amplitudeCutoff` under-reports, and `min_amplitude` is unvalidated.** It is
+4. **`amplitudeCutoff` under-reports, and a negative `min_amplitude` is accepted.** It is
    `max(threshold, 0)`, so with no cutoff requested it reads 0 even though points below
    $10^{-9}$ Å were dropped — `usedPoints` can be less than `totalPoints` with
    `amplitudeCutoff == 0`. A **negative** `min_amplitude` is likewise accepted, has no effect, and

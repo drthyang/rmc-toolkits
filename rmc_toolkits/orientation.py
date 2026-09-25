@@ -382,6 +382,8 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
     Cached: the tiling depends on nothing but ``frequency``, and building one is
     far more expensive than binning into it.
     """
+    if not np.isfinite(float(frequency)):
+        raise ValueError(f"frequency must lie in [{MIN_FREQUENCY}, {MAX_FREQUENCY}]")
     nu = int(frequency)
     if not MIN_FREQUENCY <= nu <= MAX_FREQUENCY:
         raise ValueError(f"frequency must lie in [{MIN_FREQUENCY}, {MAX_FREQUENCY}]")
@@ -475,11 +477,23 @@ def recommended_frequency(
     confetti, and the confetti looks like structure. Callers should use this as
     the default resolution and let the user override it deliberately.
     """
+    target = _validated_target(target_per_cell)
+    if not np.isfinite(float(max_frequency)) or int(max_frequency) < MIN_FREQUENCY:
+        raise ValueError(f"max_frequency must be a finite number >= {MIN_FREQUENCY}")
+    if not np.isfinite(float(n_points)):
+        raise ValueError("n_points must be a finite number")
     if n_points <= 0:
         return MIN_FREQUENCY
-    cells = max(12.0, float(n_points) / max(int(target_per_cell), 1))
+    cells = max(12.0, float(n_points) / target)
     frequency = int(round(np.sqrt(max(cells - 2.0, 10.0) / 10.0)))
     return int(np.clip(frequency, MIN_FREQUENCY, min(max_frequency, MAX_FREQUENCY)))
+
+
+def _validated_target(target_per_cell) -> int:
+    """``target_per_cell`` as the integer the resolution guard divides by."""
+    if not np.isfinite(float(target_per_cell)) or float(target_per_cell) < 1:
+        raise ValueError("target_per_cell must be a finite number >= 1")
+    return int(target_per_cell)
 
 
 # --- Orientation histogram ----------------------------------------------------
@@ -563,6 +577,13 @@ def orientation_histogram(
         ``antipodalAsymmetryNull`` the level pure Poisson noise would produce;
         ``cellMeanAmplitude`` is the mean ``|dr|`` (Angstrom) of the atoms that
         moved into each cell (0 for empty cells) -- the radial-relief quantity.
+
+    Raises
+    ------
+    ValueError
+        For a wrong shape, an unknown ``weight``/``frame``, an out-of-range or
+        non-finite option, and for any non-finite (NaN/inf) displacement row --
+        a corrupt vector is rejected by name, never silently dropped.
     """
     vectors = np.asarray(vectors, dtype=float)
     if vectors.ndim != 2 or vectors.shape[1] != 3:
@@ -573,6 +594,22 @@ def orientation_histogram(
         raise ValueError(f"frame must be one of {FRAMES}")
     if not 0.0 <= float(min_amplitude_quantile) < 1.0:
         raise ValueError("min_amplitude_quantile must lie in [0, 1)")
+    if not np.isfinite(float(min_amplitude)):
+        raise ValueError("min_amplitude must be a finite number")
+    if not np.isfinite(float(smoothing)) or float(smoothing) < 0:
+        raise ValueError("smoothing must be a finite, non-negative number of passes")
+    if frequency is not None and not np.isfinite(float(frequency)):
+        raise ValueError(f"frequency must lie in [{MIN_FREQUENCY}, {MAX_FREQUENCY}]")
+    _validated_target(target_per_cell)
+    # A NaN/inf row would otherwise surface as LAPACK's opaque 'Eigenvalues did
+    # not converge' from the PCA fit (even in the cartesian frame), and the two
+    # engines used to fail differently on it. Reject it by name instead.
+    finite_rows = np.isfinite(vectors).all(axis=1)
+    if not finite_rows.all():
+        bad = np.flatnonzero(~finite_rows)
+        raise ValueError(
+            f"vectors contain {bad.size} non-finite (NaN/inf) row(s); first at row {int(bad[0])}"
+        )
 
     total_points = int(vectors.shape[0])
     amplitude = np.linalg.norm(vectors, axis=1)
