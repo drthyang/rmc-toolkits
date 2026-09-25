@@ -37,7 +37,10 @@ const BW_OPTIONS = [
     { value: 'scott', label: 'Scott' },
     { value: 'silverman', label: 'Silverman' }
 ];
-const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 25, colormap: 'viridis', shellColormap: 'viridis', shellContrast: 1, clusterThreshold: 1.5 };
+// The isosurface mass level and the ellipsoid probability default to the SAME level:
+// the two surfaces are only comparable at equal p (a 25% surface sits inside a 50%
+// ellipsoid by construction, which reads as false anharmonicity).
+const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 50, colormap: 'viridis', shellColormap: 'viridis', shellContrast: 1, clusterThreshold: 1.5 };
 
 const numberFormat = (value, digits = 4) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -1228,9 +1231,18 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             Shell
                             <InfoBadge label="About the KDE shell" align="end">
                                 <p>
-                                    Paints the KDE density onto the ellipsoid surface. A near-uniform
-                                    color means the motion is Gaussian; hotter and colder patches mark
-                                    where the real density departs from the harmonic ellipsoid.
+                                    Paints the KDE density onto the ellipsoid surface. For a Gaussian
+                                    site the ellipsoid is a level set of the density, so only a
+                                    systematic pattern &mdash; hot or cold caps along an axis, a band
+                                    &mdash; marks where the real density departs from the harmonic
+                                    ellipsoid.
+                                </p>
+                                <p>
+                                    The colours are stretched to the shell&rsquo;s own range, and a
+                                    finite cloud (10³ copies) shows sampling-noise patches of tens of
+                                    percent even when it is perfectly Gaussian: read the size of a
+                                    departure from Non-Gaussianity, not from the colours. Grey marks
+                                    shell outside the sampled box (no data).
                                 </p>
                                 <p>
                                     It shows the same density as the isosurface from the outside, so the
@@ -1264,7 +1276,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             <InfoBadge label="About the ellipsoid level">
                                 <p>
                                     The enclosed-probability level drawn as the thermal-ellipsoid
-                                    wireframe. 50% is the crystallographic convention.
+                                    wireframe. 50% is the crystallographic convention. Compare it with
+                                    the isosurface only at the same level (both default to 50%).
                                 </p>
                             </InfoBadge>
                         </span>
@@ -1303,8 +1316,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             <InfoBadge label="About the isosurface">
                                 <p>
                                     The KDE density isosurface enclosing this fraction of the cloud's
-                                    mass. Compare its shape to the harmonic ellipsoid — where it sits
-                                    inside, the motion is anharmonic (see Non-Gaussianity).
+                                    mass. Compare it with the harmonic ellipsoid only at the same level
+                                    (both default to 50%).
+                                </p>
+                                <p>
+                                    The KDE smooths the cloud with its kernel, so even a perfectly
+                                    Gaussian site gives a surface √(1+f²) outside the ellipsoid
+                                    {kde && Number.isFinite(kde.factor)
+                                        ? ` (×${Math.sqrt(1 + kde.factor * kde.factor).toFixed(3)} here, f = ${kde.factor.toFixed(3)})`
+                                        : ''}. Only a surface that falls inside the ellipsoid, or
+                                    departs from its shape, signals anharmonic motion (see
+                                    Non-Gaussianity).
                                 </p>
                             </InfoBadge>
                         </span>

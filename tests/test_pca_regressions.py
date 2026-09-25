@@ -19,6 +19,7 @@ from rmc_toolkits.pca_kde import (
     displacement_cloud,
     load_site_displacements,
     pca_kde_volume,
+    probability_scale,
     site_ellipsoids,
     site_pca_kde,
 )
@@ -381,6 +382,41 @@ class CubicDisplayBoxTests(unittest.TestCase):
         self.assertEqual(len(set(cubic["boxHalfWidths"])), 1)
         self.assertAlmostEqual(cubic["boxHalfWidths"][0], max(cubic["halfWidths"]))
         self.assertEqual(plain["boxHalfWidths"], plain["halfWidths"])
+
+
+class KernelBroadeningGuidanceTests(unittest.TestCase):
+    """pca.physics.12 / physics.41 -- the physics the page's guidance now states.
+
+    At EQUAL levels the p% mass isosurface of a Gaussian cloud sits sqrt(1+f^2)
+    outside the p% ellipsoid (kernel broadening), so only a surface inside the
+    ellipsoid signals anharmonicity; at the old defaults (25% surface, 50%
+    ellipsoid) a Gaussian site sat ~16% inside by construction.
+    """
+
+    def _surface_radius_along_pc1(self, result, level):
+        grid = result["grid"]
+        centre = grid // 2
+        density = np.asarray(result["density"]).reshape(grid, grid, grid)[:, centre, centre]
+        coords = np.asarray(result["axisCoords"][0])
+        outer = np.arange(centre, grid - 1)
+        crossing = outer[(density[outer] >= level) & (density[outer + 1] < level)][0]
+        t = (density[crossing] - level) / (density[crossing] - density[crossing + 1])
+        return coords[crossing] + t * (coords[crossing + 1] - coords[crossing])
+
+    def test_equal_level_gaussian_surface_sits_sqrt_one_plus_f2_outside(self):
+        rng = np.random.default_rng(12)
+        cloud = rng.normal(size=(20000, 3)) * np.array([0.12, 0.10, 0.08])
+        # A wide fixed kernel (f = 0.6, broadening 1.166) makes the offset unmistakable.
+        result = pca_kde_volume(cloud, bw=0.6, grid=41, extent=4.0, projections=False,
+                                max_fit_points=20000)
+        broadening = np.sqrt(1.0 + result["factor"] ** 2)
+        levels = {round(entry["p"], 2): entry["level"] for entry in result["massLevels"]}
+        sigma1 = result["rms"][0]
+        at_50 = self._surface_radius_along_pc1(result, levels[0.5]) / (probability_scale(0.5) * sigma1)
+        self.assertAlmostEqual(at_50, broadening, delta=0.03)
+        # The pre-1.0 default pairing: a 25% surface against the 50% ellipsoid.
+        at_25 = self._surface_radius_along_pc1(result, levels[0.25]) / (probability_scale(0.5) * sigma1)
+        self.assertLess(at_25, 0.9)
 
 
 if __name__ == "__main__":

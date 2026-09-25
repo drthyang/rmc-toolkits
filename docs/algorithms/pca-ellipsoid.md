@@ -681,7 +681,10 @@ holds, i.e. the truncation error of the box. Displayed as "captured mass NN.N%".
 **Density levels.** `densityLevels[i] = vmin + p*(vmax − vmin)` — a linear ramp on the density range.
 Computed and returned by both engines but **not used by the UI**.
 
-**UI wiring.** The slider *Level* (1–99%, default **25**) picks `kde.massLevels[isoPercent].level`,
+**UI wiring.** The slider *Level* (1–99%, default **50** — the same level as the ellipsoid's default
+probability, because the two surfaces are only comparable at equal $p$; the pre-1.0 default of 25%
+against a 50% ellipsoid put a Gaussian site's surface ~16% *inside* the ellipsoid, the very cue the
+tooltip calls anharmonic) picks `kde.massLevels[isoPercent].level`,
 with a fallback of `vmax * (1 − isoPercent/100)` when mass levels are unavailable
 (`PcaKdePage.jsx`, the `massLevel` line in the scene-rebuild effect). `test_mass_levels_bracket_the_cloud`
 pins the monotonicity: higher enclosed probability ⇒ lower density threshold.
@@ -853,11 +856,13 @@ $$t=\mathrm{clip}\!\left[\,0.5+\left(\frac{\rho_v-\rho_\mathrm{min}^\mathrm{shel
 {\rho_\mathrm{max}^\mathrm{shell}-\rho_\mathrm{min}^\mathrm{shell}}-0.5\right)\cdot\texttt{contrast},\;0,\;1\right],
 \qquad \texttt{contrast}\in[0.5,3],\ \text{default }1.$$
 
-Interpretation: for a perfectly Gaussian cloud an iso-probability ellipsoid *is* a level set of the
-density, so the shell would be a uniform colour; hotter/colder patches mark where the real density
-departs from the harmonic reference. **Because the range is auto-stretched, a uniform shell will still
-be rendered with the full colour range** — read the magnitude from the numeric non-Gaussianity, not
-from the shell's colours.
+Interpretation: for a Gaussian *population* an iso-probability ellipsoid is a level set of the
+density, so an infinite sample would paint one colour; a systematic pattern (caps along an axis, a
+band) marks where the real density departs from the harmonic reference. A **finite** cloud does not
+paint one colour: at $n=1000$ the KDE on the 50% ellipsoid of a truly Gaussian cloud varies by about
+$2\times$ ($(\max-\min)/\text{mean}\approx0.7$) from sampling noise alone, and **because the range is
+auto-stretched, that noise is rendered with the full colour range**. Read the magnitude from the
+numeric non-Gaussianity, not from the shell's colours; the Shell tooltip says so.
 
 The wireframe ellipsoid itself (`showEllipsoid`) is a unit sphere transformed by
 $\mathsf{P}^{\!\top}\mathrm{diag}(k\sigma_a)$ with translation `mean`, drawn as a translucent
@@ -1078,7 +1083,7 @@ direction information appears in the picker.
 | `extent` | Box slider | **4.0** | 3.0 | 2–5, step 0.5 | broadened σ |
 | `cubicBox` | *forced* | **true** | `False` | display box only (`boxHalfWidths`); the volume is always per-axis | — |
 | `probability` $p$ | Level slider (ellipsoid) | **0.5** | 0.5 | 0.10–0.99, step 0.01 | — |
-| `isoPercent` | Level slider (isosurface) | **25** | — | 1–99, step 1 | % of captured mass |
+| `isoPercent` | Level slider (isosurface) | **50** (= ellipsoid default) | — | 1–99, step 1 | % of captured mass |
 | `projections` | Projections toggle | on | `True` | — | — |
 | `clusterThreshold` | Cluster slider (reconstructed files only) | **1.5** | 1.5 (`DEFAULT_CLUSTER_THRESHOLD`) | 0.4–2.5, step 0.1 | Å |
 | `shellContrast` | Contrast slider | 1.0 | — | 0.5–3.0, step 0.1 | gain |
@@ -1112,9 +1117,10 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    $\lambda_a(1+f^2)$, while the drawn ellipsoid uses $\lambda_a$. With Scott's rule that is a
    $\sqrt{1+f^2}$ inflation of $+10.2\%$ at $n=216$, $+6.7\%$ at $n=1000$, $+3.8\%$ at $n=8000$. For a
    *perfectly Gaussian* cloud the $p\%$ mass isosurface therefore sits **outside** the $p\%$ ellipsoid
-   by exactly that factor. A surface that hugs or falls inside the ellipsoid is the anharmonic signal;
-   a surface slightly outside it may be nothing but the bandwidth. Neither engine corrects for this,
-   and the UI does not warn about it.
+   by exactly that factor (`KernelBroadeningGuidanceTests` pins it). A surface that hugs or falls
+   inside the ellipsoid is the anharmonic signal; a surface slightly outside it may be nothing but the
+   bandwidth. Neither engine corrects for this; the isosurface tooltip states it with the current
+   factor ($\sqrt{1+f^2}$ from the loaded volume), and the two levels default to the same 50%.
 2. **A KDE is a smoother, not a model.** It has no physics in it: no harmonic approximation, no
    temperature, no separation of static from dynamic disorder. Everything shown is the RMC
    configuration's *static snapshot* of positions.
