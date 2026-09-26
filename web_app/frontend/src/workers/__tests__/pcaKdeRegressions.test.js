@@ -229,6 +229,23 @@ describe('rotation-invariant non-Gaussianity and axis resolution (pca.physics.8 
             .toEqual([true, true, true]);
     });
 
+    it('never resolves the gap between two collapsed axes (pca_kde parity)', () => {
+        // A linear cloud: PC2/PC3 are round-off, so their directions are noise.
+        const gauss = makeGauss(8);
+        const linear = pcaKdeVolume(
+            Array.from({ length: 1000 }, () => [0.1 * gauss(), 1e-14 * gauss(), 3e-15 * gauss()]),
+            { grid: 8, projections: false }
+        );
+        expect(linear.degenerate).toBe(true);
+        expect(linear.axisResolved).toEqual([true, false, false]);
+        // One collapsed axis beside a defined one keeps its direction (the plane normal).
+        const planar = pcaKdeVolume(
+            Array.from({ length: 1000 }, () => [0.1 * gauss(), 0.05 * gauss(), 1e-14 * gauss()]),
+            { grid: 8, projections: false }
+        );
+        expect(planar.axisResolved).toEqual([true, true, true]);
+    });
+
     it('site table and volume report the same statistics', () => {
         const supercell = [10, 10, 10];
         const cellEdge = 8;

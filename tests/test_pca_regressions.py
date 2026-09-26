@@ -219,6 +219,22 @@ class RotationInvariantKurtosisTests(unittest.TestCase):
         triaxial = pca_kde_volume(rng.normal(size=(1000, 3)) * [0.2, 0.1, 0.05], grid=8, projections=False)
         self.assertEqual(triaxial["axisResolved"], [True, True, True])
 
+    def test_gap_between_two_collapsed_axes_is_not_resolved(self):
+        # A linear cloud: PC2 and PC3 are both round-off (~1e-28 A^2), so the
+        # 3-SE gap test compared two noise eigenvalues and called their noise
+        # directions resolved (Flask and the browser then drew different ones).
+        rng = np.random.default_rng(8)
+        noise = rng.normal(size=(1000, 2)) * [1e-14, 3e-15]
+        linear = pca_kde_volume(np.column_stack([rng.normal(size=1000) * 0.1, noise]),
+                                grid=8, projections=False)
+        self.assertTrue(linear["degenerate"])
+        self.assertEqual(linear["axisResolved"], [True, False, False])
+        # One collapsed axis beside a defined one keeps its direction (the plane normal).
+        planar = pca_kde_volume(np.column_stack([rng.normal(size=1000) * 0.1,
+                                                 rng.normal(size=1000) * 0.05, noise[:, 0]]),
+                                grid=8, projections=False)
+        self.assertEqual(planar["axisResolved"], [True, True, True])
+
     def test_site_table_carries_the_same_statistics(self):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "iso.rmc6f"

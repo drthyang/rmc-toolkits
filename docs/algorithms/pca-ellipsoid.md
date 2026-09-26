@@ -971,7 +971,11 @@ than `AXIS_RESOLUTION_SIGMAS = 3` standard errors of the gap,
 $$\big(m_2^{(a)}-m_2^{(a+1)}\big)\;>\;3\sqrt{\mathrm{SE}_a^2+\mathrm{SE}_{a+1}^2},\qquad
 \mathrm{SE}_a=\sqrt{\big(m_4^{(a)}-(m_2^{(a)})^2\big)/n},$$
 
-PC1 needing the 1–2 gap, PC3 the 2–3 gap and PC2 both. $\mathrm{SE}_a$ is the asymptotic standard
+PC1 needing the 1–2 gap, PC3 the 2–3 gap and PC2 both. A gap between two **collapsed** axes (both
+undefined, $\lambda_a < 10^{-6}\lambda_1$) never counts: it compares two round-off eigenvalues, so
+a linear cloud reads `[T,F,F]`, not `[T,T,T]` with noise directions that differ between the
+engines. One collapsed axis beside a defined one (a planar cloud's normal) is still resolved.
+$\mathrm{SE}_a$ is the asymptotic standard
 error of a sample variance along a fixed direction. The factor 3 is calibrated by simulation: for a
 truly degenerate pair the statistic has median $\approx1$ (eigenvalue repulsion), a 95th percentile
 of $\approx2$ and exceeds 3 in under 1% of samples at $n=216$–$8000$ for Gaussian, $t_8$ and
@@ -1013,7 +1017,8 @@ on the possibly-subsampled fit with the same function.
 Test evidence: a Gaussian cloud gives $|\texttt{nonGaussianity}|<0.3$ (Python) / $<0.4$ (JS); a
 Student-$t_3$ cloud gives $>1.0$; a synthetic Gaussian-displaced site gives $|\cdot|<0.5$; an elliptical
 scale mixture recovers its analytic 1.6875 within 0.12; `axisResolved` is `[F,F,F]` for an isotropic,
-`[T,F,F]` for a uniaxial and `[T,T,T]` for a triaxial Gaussian cloud (both engines).
+`[T,F,F]` for a uniaxial and `[T,T,T]` for a triaxial Gaussian cloud, and `[T,F,F]` for a linear
+cloud whose PC2/PC3 are round-off (both engines).
 
 The per-site table (including `nonGaussianity`) is published upward to the AI-assistant context
 (`web_app/frontend/src/llm/context/runContext.js` → `pcaContext()`), which ranks sites by

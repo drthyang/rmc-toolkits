@@ -484,7 +484,8 @@ def _shape_statistics(
       equals the excess kurtosis along every direction. NaN when d = 0.
     * ``resolved`` (S, 3) bool -- the axis is separated from each neighbour by
       more than ``AXIS_RESOLUTION_SIGMAS`` standard errors of the eigenvalue gap,
-      ``SE(lambda_a) = sqrt((m4_a - m2_a**2) / n)``. An unresolved axis lies in a
+      ``SE(lambda_a) = sqrt((m4_a - m2_a**2) / n)``; a gap between two collapsed
+      (undefined) axes never counts. An unresolved axis lies in a
       (near-)degenerate subspace: its direction, and so its kappa and crystal
       orientation, is set by sampling noise and biased toward the outliers.
 
@@ -512,8 +513,12 @@ def _shape_statistics(
         non_gaussianity = np.where(d > 0, 3.0 * (b2 - reference) / reference, np.nan)
 
     error = np.sqrt(np.maximum(m4 - m2 * m2, 0.0) / counts[:, None])
+    # A gap between two collapsed axes compares two round-off eigenvalues: it
+    # is never a resolution (a linear cloud's PC2/PC3 directions are noise).
+    # One collapsed axis beside a defined one is still resolved (plane normal).
     gap = [
-        (m2[:, a] - m2[:, a + 1]) > AXIS_RESOLUTION_SIGMAS * np.hypot(error[:, a], error[:, a + 1])
+        ((m2[:, a] - m2[:, a + 1]) > AXIS_RESOLUTION_SIGMAS * np.hypot(error[:, a], error[:, a + 1]))
+        & (defined[:, a] | defined[:, a + 1])
         for a in (0, 1)
     ]
     resolved = np.column_stack([gap[0], gap[0] & gap[1], gap[1]]) & has_spread

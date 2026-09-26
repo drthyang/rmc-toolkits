@@ -232,8 +232,9 @@ const AXIS_RESOLUTION_SIGMAS = 3;
 //    invariant (so noise in a near-isotropic site's frame cannot move it) and,
 //    for any elliptical distribution, the excess kurtosis along every direction.
 //  - axisResolved[a]: the eigenvalue gap to each neighbour exceeds
-//    AXIS_RESOLUTION_SIGMAS standard errors, SE(lambda_a) = sqrt((m4 - m2^2)/n);
-//    otherwise the axis direction (its kappa, its crystal orientation) is noise.
+//    AXIS_RESOLUTION_SIGMAS standard errors, SE(lambda_a) = sqrt((m4 - m2^2)/n),
+//    and a gap between two collapsed axes never counts; otherwise the axis
+//    direction (its kappa, its crystal orientation) is noise.
 const shapeStatistics = (points, mean, axes, eigenvalues) => {
     const n = points.length;
     const m2 = [0, 0, 0];
@@ -274,7 +275,11 @@ const shapeStatistics = (points, mean, axes, eigenvalues) => {
     const nonGaussianity = d > 0 ? (3 * (b2 - reference)) / reference : null;
 
     const error = [0, 1, 2].map((a) => Math.sqrt(Math.max(m4[a] - m2[a] * m2[a], 0) / count));
-    const gap = [0, 1].map((a) => (m2[a] - m2[a + 1]) > AXIS_RESOLUTION_SIGMAS * Math.hypot(error[a], error[a + 1]));
+    // A gap between two collapsed axes compares two round-off eigenvalues: never
+    // a resolution (a linear cloud's PC2/PC3 directions are noise). One collapsed
+    // axis beside a defined one is still resolved (the plane normal).
+    const gap = [0, 1].map((a) => (m2[a] - m2[a + 1]) > AXIS_RESOLUTION_SIGMAS * Math.hypot(error[a], error[a + 1])
+        && (defined[a] || defined[a + 1]));
     const axisResolved = [gap[0], gap[0] && gap[1], gap[1]].map((value) => value && hasSpread);
     return { excessKurtosis, nonGaussianity, axisResolved };
 };
