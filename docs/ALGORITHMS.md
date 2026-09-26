@@ -41,9 +41,9 @@ written.
 | **Auto StoG** | Absolute-scale $(a,b)$ for a measured $S(Q)$: composition constants, sine-transform pair with Lorch/low-$Q$ correction/Fourier filter, level sweep + closed-form affine fit + self-consistent loop, $\rho_0$ estimate, and the written stog/RMCProfile file family | [Auto StoG](algorithms/auto-stog.md) |
 | **Dashboard** | Run-folder detection and parsing, the "Rwp"/R-value metrics, the SVG plot renderer (ticks, zoom, hover, export), the model summary and the client-side space-group finder | [Run Dashboard](algorithms/run-dashboard.md) |
 | **Atomic Density** *(the nav label; this reference calls the page **Structure**, and the page heading itself reads "KDE And Folded Unit Cell")* | Supercell folded into one cell: the 2-D Gaussian KDE slice (CPU + WGSL), contours and colour mapping, the Slab In Cell projection, and the Three.js folded unit-cell view | [Structure](algorithms/structure.md) |
+| **Bond Geometry** | Bond angles at a central atom over the periodic configuration: linked-cell neighbour search with explicit image shifts, the three angle curves (counts, per-degree density, exact sin-corrected), bond-length histograms, coordination statistics, and the page's partial-g(r) helper and folded-cell bond view | [Bond Geometry](algorithms/bond-geometry.md) |
 | **PCA Ellipsoid** | Per-site displacement clouds: covariance, eigen-decomposition, ADP readouts, $\chi^2$ probability ellipsoid, separable 3-D Gaussian KDE + marching-cubes isosurface, wall projections, Mardia non-Gaussianity and per-axis kurtosis, and the PCA↔crystal frame algebra | [PCA Ellipsoid](algorithms/pca-ellipsoid.md) |
 | **Displacement Directions** | Directions only, amplitude discarded: Goldberg (hex + 12 pentagon) sphere tiling, exact solid-angle histogram, enhancement, calibrated peak/map/asymmetry/anisotropy significance tests, antipodal asymmetry, orientation tensor, and the sphere/axis-view rendering | [Displacement Directions](algorithms/displacement-directions.md) |
-| **Bond Geometry** | Bond angles at a central atom over the periodic configuration: linked-cell neighbour search with explicit image shifts, the three angle curves (counts, per-degree density, exact sin-corrected), bond-length histograms, coordination statistics, and the page's partial-g(r) helper and folded-cell bond view | [Bond Geometry](algorithms/bond-geometry.md) |
 | **AI Assistant** | The run context built *before* any model call: cell/composition, symmetry orbits, per-site PCA summary, average-structure neighbour distances, $g(r)$ peak extraction, residuals, convergence heuristics, character budget — and exactly what leaves the device | [AI Assistant](algorithms/ai-assistant.md) |
 
 ---
@@ -130,7 +130,7 @@ chart on the Dashboard — `isDashboardPlotFile` in `Dashboard.jsx` drops every 
 | Isosurface extraction | — | — | `workers/marchingCubes.js` (**browser only**) |
 | Orientation histogram on the Goldberg sphere | `orientation.py` | `/api/pca/orientation` | `workers/orientation.js` |
 | Bond-angle (triplet) distribution | `triplets.py` (`rmc-triplets` CLI; `bond_angle_summary` is the payload contract, `bond_angle_summary_from_file` the file entry point) | `/api/triplets` | `workers/triplets.js` (parity-tested vs Python goldens), UI in `BondGeometryPage.jsx` |
-| `.rmc6f` atoms + lattice → folded unit cell | `parsers.py` (`read_cell_vectors`, `read_atom_indices`, the shared atom-line grammar `classify_rmc6f_atom_line` → `iter_rmc6f_atoms` / `parse_rmc6f_atoms` with `Rmc6fParseReport`, and `find_run_configuration` for which `.rmc6f` a run folder means) | `/api/structure` (site-stratified subsample, `MAX_STRUCTURE_POINTS`) | `browserData.js` → `structureFromRmc6f()` (atom lines via `parseRmc6fAtoms()` / `classifyAtomLine()` in `rmc6f.js`, the same grammar), run off the main thread by `workers/localStructureWorker.js` (instantiated in `Dashboard.jsx` and `StructurePage.jsx`) |
+| `.rmc6f` atoms + lattice → folded unit cell | `parsers.py` (`read_cell_vectors`, `read_atom_indices`, the shared atom-line grammar `classify_rmc6f_atom_line` → `iter_rmc6f_atoms` / `parse_rmc6f_atoms` with `Rmc6fParseReport`, and `find_run_configuration` for which `.rmc6f` a run folder means) | `/api/structure` (site-stratified subsample, `MAX_STRUCTURE_POINTS`) | `browserData.js` → `structureFromRmc6f()` (atom lines via `parseRmc6fAtoms()` / `classifyAtomLine()` in `rmc6f.js`, the same grammar), run off the main thread by `workers/localStructureWorker.js` (instantiated in `Dashboard.jsx`, `StructurePage.jsx` and `BondGeometryPage.jsx`) |
 | PCA↔crystal frame algebra | — | — | `pcaCrystalFrame.js` — `unitCellVectors()` is on the **production UI path** (imported by `useSiteCloud.js`; drives the crystal-frame axis rods, the shadow box and the axis-framing cameras in `PcaKdePage.jsx`); `crystalOrientationRows` → `principalAxisOrientation` → `crystalPcaTransforms` render the *Crystal orientation* table, and `projectVolumeOntoFrame` computes the crystal-frame walls |
 | Assistant context, pair correlations, convergence heuristics | — | — | `src/llm/` (**browser only**; the backend is never involved in an assistant request) |
 
@@ -240,8 +240,8 @@ pip install -e .                                   # rmc_toolkits package (edita
 
 ```python
 from rmc_toolkits import (
-    detect_plot_kind, kde_slice, load_unit_cell_positions,
-    make_plot, plot_to_png, read_exafs_csv, read_structure, write_frac_from_rmc6f,
+    load_unit_cell_positions, make_plot, oriented_kde_slice, plot_to_png,
+    read_structure, write_frac_from_rmc6f,
 )
 
 demo = "web_app/frontend/public/demo"  # bundled GaTa4Se8 250 K example run
@@ -253,13 +253,13 @@ frac_path = write_frac_from_rmc6f(
 )
 structure = read_structure(demo, frac_path=frac_path)  # pairs it with GTS_250K.rmc6f by stem
 
+# The reference-grade Atomic Density map: the call /api/kde/slice makes (fractional positions,
+# periodic images, slab and bandwidth as the page's sliders). This equals
+# GET /api/kde/slice?dir=demo&element=Se&z=0.12&dz=0.08&bw=0.03 exactly. (kde_slice, on
+# Cartesian positions without periodic images, is a lower-level variant, not the app's map.)
 positions = load_unit_cell_positions(f"{demo}/GTS_250K.rmc6f", element="Se")
-payload = kde_slice(
-    positions.positions,
-    z_center=0.12 * positions.cell_lengths[2],
-    dz=0.08 * positions.cell_lengths[2],
-    xlim=(0.0, float(positions.cell_lengths[0])),
-    ylim=(0.0, float(positions.cell_lengths[1])),
+payload = oriented_kde_slice(
+    positions.fractional_positions, center=0.12, thickness=0.08, normal=(0, 0, 1), bw=0.03
 )
 
 png_bytes = plot_to_png(make_plot(f"{demo}/GTS_250K_FQ1.csv"))
@@ -268,8 +268,10 @@ png_bytes = plot_to_png(make_plot(f"{demo}/GTS_250K_FQ1.csv"))
 Lower-level helpers are exported too (`read_rmc_csv`, `read_chi_log`, `read_cell_vectors`,
 `iter_rmc6f_atoms` / `parse_rmc6f_atoms`, `find_run_configuration`, `fit_rwp`, …); the PCA,
 orientation, bond-angle and scaling engines are `rmc_toolkits.pca_kde`, `rmc_toolkits.orientation`,
-`rmc_toolkits.triplets`, `rmc_toolkits.scaling` + `rmc_toolkits.transforms`, and their public
-functions are re-exported from the package root. Full list in [REFERENCE.md](REFERENCE.md#python-package-usage).
+`rmc_toolkits.triplets`, `rmc_toolkits.scaling` + `rmc_toolkits.transforms`. Their main entry
+points are re-exported from the package root (`rmc_toolkits.__all__` is the list); the other
+public helpers, such as `sine_transform()`, import from their module. Full list in
+[REFERENCE.md](REFERENCE.md#python-package-usage).
 
 ### `rmc-autoscale` CLI (Auto StoG, reference-grade)
 
@@ -396,7 +398,7 @@ following, grouped by module:
 |---|---|
 | Python engines | [`rmc_toolkits/`](../rmc_toolkits) — `parsers.py`, `plots.py`, `kde.py`, `pca_kde.py`, `orientation.py`, `transforms.py`, `scaling.py`, `scattering.py`, `scaling_cli.py`, `triplets.py`, `triplets_cli.py` |
 | Flask API | [`web_app/backend/app.py`](../web_app/backend/app.py) (routes, data-root guard, `_number()` validation, `_FileCache` file-signature caches) |
-| Browser workers | [`web_app/frontend/src/workers/`](../web_app/frontend/src/workers) — `autoScale.js`, `autoScaleWorker.js`, `localKdeWorker.js`, `gpuKde.js`, `slabSelection.js`, `pcaKde.js`, `pcaKdeWorker.js`, `orientation.js`, `triplets.js`, `localStructureWorker.js`, `marchingCubes.js` |
+| Browser workers | [`web_app/frontend/src/workers/`](../web_app/frontend/src/workers) — `autoScale.js`, `autoScaleWorker.js`, `localKdeWorker.js`, `gpuKde.js`, `slabSelection.js`, `pcaKde.js`, `pcaKdeWorker.js`, `orientation.js`, `triplets.js`, `localStructureWorker.js`, `requestGuards.js`, `marchingCubes.js` |
 | Frontend pages | [`web_app/frontend/src/components/`](../web_app/frontend/src/components) — `AutoStogPage.jsx`, `Dashboard.jsx`, `InteractivePlot.jsx`, `StructurePage.jsx`, `PcaKdePage.jsx`, `OrientationPage.jsx`, `OrientationView.jsx`, `BondGeometryPage.jsx`, `FoldedCellPanel.jsx`, `SiteStructurePanel.jsx`, `ModelSummary.jsx`, `sceneAxes.js` |
 | Frontend modules | [`web_app/frontend/src/`](../web_app/frontend/src) — `App.jsx` (nav order, `SHOW_AUTO_STOG`, Live Data `configEpoch`), `browserData.js`, `plotDomain.js`, `useSiteCloud.js`, `symmetry.js`, `symmetryModel.js`, `spaceGroupSymbol.js`, `spaceGroupTable.js`, `wyckoff.js`, `wyckoffTable.js`, `pcaCrystalFrame.js`, `orientationSphere.js`, `rmc6f.js`, `siteLabel.js`, `moveStats.js`, `colormaps.js`, `atomColors.js`, `figureExport.js`, `zipArchive.js` |
 | Assistant | [`web_app/frontend/src/llm/`](../web_app/frontend/src/llm) — `context/`, `watchdog/`, `prompts/`, `provider/`, `useAssistant.js`, `components/` |

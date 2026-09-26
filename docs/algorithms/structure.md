@@ -523,8 +523,8 @@ fractional projections, no Å anywhere.)
 
 So the contract is: **$z_c$ and $\Delta z$ are fractions of the projection range of the unit cube
 along the chosen normal**, and they only coincide with "fraction of a cell edge" for the
-`a`/`b`/`c` presets (where $\Delta_d=1$). Both payloads echo them unchanged as `z`/`dz` (and
-`center`/`thickness`); the Flask payload also gives `depth`/`depthThickness` in absolute
+`a`/`b`/`c` presets (where $\Delta_d=1$). Both payloads echo them as `z`/`dz` (and
+`center`/`thickness`), Flask after clamping $z_c$ to $[0, 1]$; the Flask payload also gives `depth`/`depthThickness` in absolute
 depth-projection units (see *The two JSON payloads are not the same shape* below).
 
 **Converting $\Delta z$ to Ångström.** Combining the code's definitions with the standard

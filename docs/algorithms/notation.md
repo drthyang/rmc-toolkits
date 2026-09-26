@@ -402,8 +402,9 @@ $\Delta_d = 1$; for the $(111)$ normal $\Delta_d = \sqrt3$). **No Ångström con
 on the KDE path**: `/api/kde/slice` passes `positions.fractional_positions` (not the Å array) into
 `oriented_kde_slice()`, so the slab half-width, the KDE covariance, the evaluation grid and the
 contour coordinates are all dimensionless — doubling every lattice vector of a run leaves
-`slabCount`, the density and `depthThickness` unchanged. Both payloads echo `z`/`dz` as given
-(the Flask payload's `depth`/`depthThickness` are absolute depth-projection units). Ångströms
+`slabCount`, the density and `depthThickness` unchanged. Both payloads echo `z`/`dz`: `dz` as
+given, `z` after Flask's clamp to $[0, 1]$ (the page's slider never leaves that range); the Flask
+payload's `depth`/`depthThickness` are absolute depth-projection units. Ångströms
 enter only at draw time, when `StructurePage.jsx` maps $\hat{\mathbf u},\hat{\mathbf v}$ through
 `unitCell.unitVectors`; the real slab thickness $\Delta z\,\Delta_d\lVert\mathbf h\rVert_2 d_{hkl}
 = \Delta z\,(|h|+|k|+|l|)\,d_{hkl}$ is printed on the map (`slabThicknessAngstrom()` in
