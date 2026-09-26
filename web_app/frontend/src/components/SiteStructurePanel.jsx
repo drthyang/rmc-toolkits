@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
+import { Card, CardHeader, CardMeta, ToolButton } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import {
@@ -21,7 +22,7 @@ import {
     buildAxisTriad,
     buildCrystalAxes
 } from './sceneAxes';
-import './PcaKdePage.css';
+import './UnitCellPanel.css';
 
 const SAVE_OPTIONS = [
     { id: 'png', label: 'Standard PNG', hint: '1×' },
@@ -469,10 +470,10 @@ export default function SiteStructurePanel({
     }, []);
 
     return (
-        <div className="pca-panel pca-unitcell-panel">
-            <h3>
-                <span className="panel-title-label">
-                    {title}
+        <Card roundEnds className="pca-unitcell-panel">
+            <CardHeader
+                title={title}
+                help={(
                     <InfoBadge label="About the site ellipsoids" align="start">
                         <p>
                             Every reference site in the average unit cell, drawn as its
@@ -489,59 +490,59 @@ export default function SiteStructurePanel({
                             </p>
                         ) : null}
                     </InfoBadge>
-                </span>
-                <span className="panel-title-actions">
-                    {loadingSites && <span className="panel-title-count">Loading…</span>}
-                    <button
-                        type="button"
-                        className={`pca-reset-view pca-cell-toggle ${showCellAxes ? 'is-active' : ''}`}
-                        onClick={() => setShowCellAxes((value) => !value)}
-                        aria-pressed={showCellAxes}
-                        title="Show the crystallographic axes (a, b, c)"
-                    >
-                        <span style={{ color: CELL_AXIS_CSS[0] }}>a</span>
-                        <span style={{ color: CELL_AXIS_CSS[1] }}>b</span>
-                        <span style={{ color: CELL_AXIS_CSS[2] }}>c</span>
-                    </button>
-                    <button
-                        type="button"
-                        className="pca-reset-view"
-                        onClick={resetStructureView}
-                        disabled={!sites}
-                        title="Reset the camera to the default view"
-                    >
-                        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                            <path d="M3 3v5h5" />
-                        </svg>
-                        Reset view
-                    </button>
-                    <SaveMenu
-                        onSave={saveStructureView}
-                        options={SAVE_OPTIONS}
-                        label="Save"
-                        align="right"
-                        disabled={!sites}
-                    />
-                </span>
-            </h3>
-            <div className="pca-structure" ref={structureMountRef} />
+                )}
+                actions={(
+                    <>
+                        {loadingSites && <CardMeta>Loading…</CardMeta>}
+                        <ToolButton
+                            axes
+                            active={showCellAxes}
+                            onClick={() => setShowCellAxes((value) => !value)}
+                            aria-pressed={showCellAxes}
+                            title="Show the crystallographic axes (a, b, c)"
+                        >
+                            <span style={{ color: CELL_AXIS_CSS[0] }}>a</span>
+                            <span style={{ color: CELL_AXIS_CSS[1] }}>b</span>
+                            <span style={{ color: CELL_AXIS_CSS[2] }}>c</span>
+                        </ToolButton>
+                        <ToolButton
+                            onClick={resetStructureView}
+                            disabled={!sites}
+                            title="Reset the camera to the default view"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                <path d="M3 3v5h5" />
+                            </svg>
+                            Reset view
+                        </ToolButton>
+                        <SaveMenu
+                            onSave={saveStructureView}
+                            options={SAVE_OPTIONS}
+                            label="Save"
+                            align="right"
+                            disabled={!sites}
+                        />
+                    </>
+                )}
+            />
+            <div className="ui-stage ui-stage--glow-soft ui-stage--divided ui-stage--orbit pca-structure" ref={structureMountRef} />
             {sites?.elements?.length > 0 && (
-                <div className="pca-legend">
+                <div className="ui-legend">
                     {showCellAxes && (
-                        <span className="pca-legend-item pca-legend-cellaxes">
+                        <span className="ui-legend__item ui-legend__group">
                             {CELL_AXIS_LABELS.map((label, i) => (
-                                <span key={label} className="pca-legend-cellaxis">
-                                    <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
+                                <span key={label} className="ui-legend__subitem">
+                                    <i className="ui-legend__swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
                                 </span>
                             ))}
-                            <span className="pca-legend-note">crystal axes</span>
+                            <span className="ui-legend__note">crystal axes</span>
                         </span>
                     )}
                     {sites.elements.map((element) => (
-                        <span key={element} className="pca-legend-item">
+                        <span key={element} className="ui-legend__item">
                             <i
-                                className="pca-legend-swatch"
+                                className="ui-legend__swatch"
                                 style={{ background: elementColors[element] || DEFAULT_ELEMENT_COLOR }}
                             />
                             {element}
@@ -549,6 +550,6 @@ export default function SiteStructurePanel({
                     ))}
                 </div>
             )}
-        </div>
+        </Card>
     );
 }
