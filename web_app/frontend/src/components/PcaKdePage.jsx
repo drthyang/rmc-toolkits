@@ -1034,16 +1034,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
     // Which principal axes are resolved from their neighbours (eigenvalue gap above
     // three standard errors). Older payloads without the flag count as resolved.
     const axisResolved = [0, 1, 2].map((i) => selectedEllipsoid?.axisResolved?.[i] ?? true);
-    const unresolvedNote = (() => {
-        if (!selectedEllipsoid?.axes) return null;
-        const flags = axisResolved;
-        if (flags.every(Boolean)) return null;
-        if (!flags[0] && !flags[1] && !flags[2]) {
-            return 'PC1 ≈ PC2 ≈ PC3: the eigenvalues agree within their sampling error, so the axis directions (and their κ and crystal orientation) are arbitrary — only U, λ and the non-Gaussianity describe this site.';
-        }
-        const pair = !flags[0] ? 'PC1 ≈ PC2' : 'PC2 ≈ PC3';
-        return `${pair}: those eigenvalues agree within their sampling error, so the directions inside that plane (and their κ and crystal orientation) are arbitrary.`;
-    })();
 
     return (
         <div className="pca-page">
@@ -1672,11 +1662,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                             </td>
                                                         </tr>
                                                     ))}
-                                                    {unresolvedNote && (
-                                                        <tr>
-                                                            <td colSpan={7} className="pca-axes-note">{unresolvedNote}</td>
-                                                        </tr>
-                                                    )}
                                                 </tbody>
                                             </table>
                                         </div>
