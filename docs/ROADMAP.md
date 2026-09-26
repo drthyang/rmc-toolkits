@@ -6,8 +6,9 @@ Build a **browser-first** analysis app for RMCProfile modeling workflows: atomis
 optimization under experimental constraints. Anyone can open the hosted dashboard, import a run
 directory, inspect detected outputs, compare fits, explore atomic structures, generate KDE slices,
 monitor R-values, and export publication-ready figures — with no install and no data ever leaving
-their device. An optional Flask backend adds server-side file browsing, structure conversion, and
-reference-grade computation for local or self-hosted use.
+their device. An optional Flask backend adds server-side file browsing and reference-grade
+computation for local or self-hosted use (plus API routes, such as `.rmc6f` → `Frac_coord`
+conversion, that no page calls).
 
 The next frontier is lowering the technical barrier to *running* RMCProfile itself: guided run setup
 with validation and ready-to-use input files, so researchers spend less time hand-editing command
