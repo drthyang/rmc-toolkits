@@ -72,6 +72,11 @@ Open:
 
 Click `Select Folder`, choose your run folder, then turn on `Live Data`.
 
+The server listens on this machine only (`127.0.0.1`), with debug mode off; its first log line
+says where it listens. To share it on a network, see the Gunicorn and Docker instructions in
+[docs/REFERENCE.md](docs/REFERENCE.md#hosting-the-dashboard). Never turn on
+`RMC_TOOLKITS_DEBUG` on a server others can reach: its interactive debugger runs arbitrary code.
+
 ## 4. AI Assistant (Optional)
 
 The `AI Assistant` tab lets you chat about the loaded run using an LLM. It runs against a model on

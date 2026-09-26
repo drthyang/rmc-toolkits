@@ -1589,6 +1589,87 @@ def serve_frontend(path: str):
     ), 404
 
 
+# --- Development server (python web_app/backend/app.py) ----------------------
+# Loopback and debug off unless the environment opts in: the Werkzeug
+# interactive debugger executes arbitrary Python for anyone who can reach it,
+# and the data API reads every file under the data roots. Network hosting
+# goes through gunicorn (the Dockerfile), never through this block.
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 5000
+_TRUE_WORDS = ("1", "true", "yes", "on")
+_FALSE_WORDS = ("", "0", "false", "no", "off")
+
+
+def server_settings(environ=None) -> tuple[str, int, bool]:
+    """``(host, port, debug)`` for the development server, from the environment.
+
+    - ``RMC_TOOLKITS_HOST``: bind address (default ``127.0.0.1``, this machine
+      only; ``0.0.0.0`` listens on every interface).
+    - ``PORT`` (hosting providers), else ``RMC_TOOLKITS_PORT``, else 5000.
+    - ``RMC_TOOLKITS_DEBUG``: ``1``/``true``/``yes``/``on`` enables Flask
+      debug mode (reloader + interactive debugger); off by default.
+
+    A malformed value is a ValueError naming the variable, never a guess.
+    """
+    environ = os.environ if environ is None else environ
+    host = (environ.get("RMC_TOOLKITS_HOST") or "").strip() or DEFAULT_HOST
+
+    port_name = "PORT" if (environ.get("PORT") or "").strip() else "RMC_TOOLKITS_PORT"
+    raw_port = (environ.get(port_name) or "").strip()
+    if raw_port:
+        try:
+            port = int(raw_port)
+        except ValueError:
+            raise ValueError(f"{port_name} must be a port number (1-65535), got {raw_port!r}") from None
+        if not 1 <= port <= 65535:
+            raise ValueError(f"{port_name} must be a port number (1-65535), got {raw_port!r}")
+    else:
+        port = DEFAULT_PORT
+
+    raw_debug = (environ.get("RMC_TOOLKITS_DEBUG") or "").strip().lower()
+    if raw_debug in _TRUE_WORDS:
+        debug = True
+    elif raw_debug in _FALSE_WORDS:
+        debug = False
+    else:
+        raise ValueError(
+            "RMC_TOOLKITS_DEBUG must be one of 1/true/yes/on or 0/false/no/off, "
+            f"got {environ.get('RMC_TOOLKITS_DEBUG')!r}"
+        )
+    return host, port, debug
+
+
+def _is_loopback(host: str) -> bool:
+    return host in ("localhost", "::1") or host.startswith("127.")
+
+
+def startup_message(host: str, port: int, debug: bool) -> str:
+    """The one-line startup notice: where the server listens and whether debug is on."""
+    shown = f"[{host}]" if ":" in host else host
+    reach = (
+        "this machine only"
+        if _is_loopback(host)
+        else ("every network interface" if host in ("0.0.0.0", "::") else "the network")
+    )
+    line = (
+        f"rmc-toolkits backend listening on http://{shown}:{port}/ ({reach}; "
+        f"debug {'ON' if debug else 'off'}; data root {DATA_ROOT})"
+    )
+    if debug and not _is_loopback(host):
+        line += (
+            "\nWARNING: debug mode exposes the Werkzeug interactive debugger, which runs "
+            "arbitrary code, to the network. Never enable RMC_TOOLKITS_DEBUG on a "
+            "network-reachable server."
+        )
+    return line
+
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", os.environ.get("RMC_TOOLKITS_PORT", 5000)))
-    app.run(debug=True, host="0.0.0.0", port=port)
+    try:
+        _host, _port, _debug = server_settings()
+    except ValueError as exc:
+        print(f"rmc-toolkits backend: error: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    print(startup_message(_host, _port, _debug), flush=True)
+    app.run(debug=_debug, host=_host, port=_port)

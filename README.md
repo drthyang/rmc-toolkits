@@ -153,7 +153,7 @@ in-language reference — is stated per engine, along with the measured toleranc
 ## Run It Locally (optional)
 
 The hosted app needs no install. Run the Flask backend when you want server-side file browsing,
-`.rmc6f` conversion, reference-grade SciPy KDE, or to self-host on a network:
+`.rmc6f` conversion or reference-grade SciPy KDE on your own machine:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -162,8 +162,11 @@ pip install -r web_app/backend/requirements.txt && pip install -e .
 python web_app/backend/app.py                           # http://127.0.0.1:5000/
 ```
 
-Ports, data roots, dev servers, Docker/GitHub Pages deployment, the backend API, and supported
-file patterns are covered in [docs/REFERENCE.md](docs/REFERENCE.md).
+This development server listens on `127.0.0.1` only, with debug mode off. To self-host on a
+network, use Gunicorn or the Docker image, and never enable `RMC_TOOLKITS_DEBUG` on a server
+others can reach (its interactive debugger runs arbitrary code). Ports, bind address, data roots,
+dev servers, Docker/GitHub Pages deployment, the backend API, and supported file patterns are
+covered in [docs/REFERENCE.md](docs/REFERENCE.md).
 
 ## Python Package
 

@@ -40,8 +40,9 @@ npm install
 
 Most users don't need this — the [hosted app](https://drthyang.github.io/rmc-toolkits/) covers
 monitoring and visualization entirely in the browser. Run the Flask backend only when you want
-server-side file browsing, `.rmc6f` conversion, reference-grade SciPy KDE, or to self-host on a
-network.
+server-side file browsing, `.rmc6f` conversion or reference-grade SciPy KDE on your own machine.
+To self-host on a network, use Gunicorn or the Docker image ([Hosting The
+Dashboard](#hosting-the-dashboard)), not the development server below.
 
 Build the frontend once, then serve it from Flask:
 
@@ -62,6 +63,23 @@ By default the backend only serves paths under the repo root. To browse another 
 ```bash
 RMC_TOOLKITS_DATA_ROOT=/absolute/path/to/data python web_app/backend/app.py
 ```
+
+`python web_app/backend/app.py` is the Flask development server. It listens on `127.0.0.1`
+(this machine only) with debug mode off, and its first log line states the bind address. The
+environment variables that change that:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `PORT`, else `RMC_TOOLKITS_PORT` | `5000` | Port (1–65535). `PORT` wins when both are set. |
+| `RMC_TOOLKITS_HOST` | `127.0.0.1` | Bind address. `0.0.0.0` listens on every interface. |
+| `RMC_TOOLKITS_DEBUG` | off | `1`/`true`/`yes`/`on` enables Flask debug mode (auto-reload + interactive debugger). |
+| `RMC_TOOLKITS_DATA_ROOT` | repo root | The folder the API may read (see above). |
+
+A malformed value stops the server with an error naming the variable. Anyone who can reach the
+server can read every file under the data root through the API, so bind a network address only
+on a network you trust; for network hosting prefer Gunicorn or the Docker image (below).
+**Never set `RMC_TOOLKITS_DEBUG` on a network-reachable server**: the Werkzeug debugger runs
+arbitrary Python for whoever reaches it. It is for local development only.
 
 In the app, use `Select Folder` to pick a run folder and toggle `Live Data` for auto-refresh.
 
@@ -94,6 +112,17 @@ Two ways to deploy:
 
   For a public deployment (Render, Fly.io, Railway, a VPS), the container honors the provider's
   `PORT` and falls back to `5000`. Set `RMC_TOOLKITS_DATA_ROOT` to expose your run folders.
+
+  Without Docker, run the same production server from the repository root (Gunicorn is in
+  `web_app/backend/requirements.txt`; Flask debug mode is never on under it):
+
+  ```bash
+  RMC_TOOLKITS_DATA_ROOT=/absolute/path/to/runs \
+    gunicorn --bind 0.0.0.0:5000 --timeout 120 web_app.backend.app:app
+  ```
+
+  Either way the whole data root is readable by anyone who reaches the port: put it behind your
+  own authentication or firewall on anything but a trusted network.
 
 To test the static build locally:
 

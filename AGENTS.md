@@ -326,7 +326,8 @@ web_app/frontend/src/
 ## Run & test
 
 ```bash
-# Backend (venv with numpy scipy flask flask-cors matplotlib)
+# Backend (venv with numpy scipy flask flask-cors matplotlib). Binds 127.0.0.1, debug off;
+# RMC_TOOLKITS_HOST / RMC_TOOLKITS_DEBUG=1 opt in (server_settings() in app.py, docs/REFERENCE.md).
 source .venv/bin/activate
 RMC_TOOLKITS_PORT=5050 python web_app/backend/app.py
 

@@ -262,6 +262,12 @@ with 0.5.0.
   the CLI prints and never mutate a cached result.
 - [REFERENCE.md](REFERENCE.md) documents all 15 routes with their ranges and caps, and a
   contract test keeps it complete.
+- **The development server is local-only by default.** `python web_app/backend/app.py` used to
+  listen on every interface (`0.0.0.0`) with Flask debug mode on, which exposed the Werkzeug
+  interactive debugger (arbitrary code execution) and the data API to the network. It now binds
+  `127.0.0.1` with debug off and prints the bind address at startup; `RMC_TOOLKITS_HOST` and
+  `RMC_TOOLKITS_DEBUG=1` opt in (`server_settings()`), and a malformed `PORT` /
+  `RMC_TOOLKITS_PORT` / `RMC_TOOLKITS_DEBUG` stops it with an error naming the variable.
 
 ### Behaviour changes
 
@@ -359,6 +365,10 @@ Read these before comparing 1.0 numbers or files with earlier releases.
   and an overflowing bandwidth. 409 means the source file kept changing during the read.
 - **Live Data (Flask mode)** reloads the analysis pages when the `.rmc6f` changes. With Live Data
   off, press Load to pick up a newly saved configuration.
+- **`python web_app/backend/app.py` listens on 127.0.0.1 with debug off.** Other machines on the
+  network can no longer reach it, and the auto-reloader is off. Set `RMC_TOOLKITS_HOST=0.0.0.0`
+  to listen on the network (or use Gunicorn / Docker), and `RMC_TOOLKITS_DEBUG=1` for local
+  debugging only.
 
 ### Robustness and parity
 
