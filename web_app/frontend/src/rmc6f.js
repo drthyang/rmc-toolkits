@@ -110,24 +110,59 @@ export const classifyAtomLine = (parts, supercell = null) => {
  */
 export const parseAtomLine = (parts, supercell = null) => classifyAtomLine(parts, supercell).atom;
 
+// A lattice whose volume is below this fraction of |a|·|b|·|c| is singular
+// (collinear or coplanar vectors). Same constant as _SINGULAR_CELL_RATIO in parsers.py.
+const SINGULAR_CELL_RATIO = 1e-8;
+
 /**
- * Lattice vectors (rows, Å) and supercell multiplicities from the header. The
- * error names the file. Mirrors read_cell_vectors() in parsers.py.
+ * Lattice vectors (rows, Å) and supercell multiplicities from the header.
+ * Numbers use the atom lines' Fortran-aware reader (`0.2D+02` is 20). The
+ * supercell must be three positive integers and the lattice a finite,
+ * non-singular 3×3 matrix with a finite volume; anything else throws an Error
+ * naming the file and the problem. Mirrors read_cell_vectors() /
+ * _validate_cell_header() in parsers.py check for check, message for message
+ * (shared cases: __tests__/fixtures/rmc6f_header_cases.json).
  */
 export const readRmc6fCellVectors = (text, name = 'structure file') => {
     const lines = text.split(LINE_BREAK);
-    let latticeVectors = null;
-    let supercell = null;
+    let latticeRows = null;
+    let supercellTokens = null;
     lines.forEach((line, index) => {
         const parts = line.trim().split(/\s+/).filter(Boolean);
         if (!parts.length) return;
-        if (parts[0] === 'Supercell') supercell = parts.slice(-3).map(Number);
-        if (parts[0] === 'Lattice') {
-            latticeVectors = [lines[index + 1], lines[index + 2], lines[index + 3]]
-                .map((row) => (row ?? '').trim().split(/\s+/).map(Number));
-        }
+        if (parts[0] === 'Supercell') supercellTokens = parts.slice(-3);
+        else if (parts[0] === 'Lattice') latticeRows = [lines[index + 1], lines[index + 2], lines[index + 3]];
     });
-    if (!latticeVectors || !supercell) throw new Error(`${name} is missing lattice or supercell metadata`);
+    if (!latticeRows || !supercellTokens) throw new Error(`${name} is missing lattice or supercell metadata`);
+
+    const supercell = supercellTokens.map(parseFortranNumber);
+    if (supercell.length !== 3 || !supercell.every(
+        (value) => value !== null && Number.isFinite(value) && value >= 1 && Number.isInteger(value))) {
+        throw new Error(`${name}: supercell dimensions must be three positive integers, got '${supercellTokens.join(' ')}'`);
+    }
+
+    const latticeVectors = latticeRows.map((raw, index) => {
+        const rowText = (raw ?? '').trim();
+        if (!rowText) {
+            throw new Error(`${name}: the Lattice vectors block is truncated (expected three rows of three numbers)`);
+        }
+        const row = rowText.split(/\s+/).map(parseFortranNumber);
+        if (row.length !== 3 || !row.every((value) => value !== null && Number.isFinite(value))) {
+            throw new Error(`${name}: lattice vector ${index + 1} must be three finite numbers, got '${rowText}'`);
+        }
+        return row;
+    });
+
+    const [[a0, a1, a2], [b0, b1, b2], [c0, c1, c2]] = latticeVectors;
+    // a · (b × c), written out in the same order as parsers.py.
+    const det = a0 * (b1 * c2 - b2 * c1) + a1 * (b2 * c0 - b0 * c2) + a2 * (b0 * c1 - b1 * c0);
+    if (!Number.isFinite(det)) {
+        throw new Error(`${name}: lattice vectors give a non-finite cell volume (values too large)`);
+    }
+    const norms = Math.hypot(a0, a1, a2) * Math.hypot(b0, b1, b2) * Math.hypot(c0, c1, c2);
+    if (!(Math.abs(det) > SINGULAR_CELL_RATIO * norms)) {
+        throw new Error(`${name}: lattice vectors are singular (zero cell volume)`);
+    }
     return { latticeVectors, supercell };
 };
 

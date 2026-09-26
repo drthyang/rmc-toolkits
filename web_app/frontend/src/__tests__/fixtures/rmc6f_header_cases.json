@@ -1,0 +1,168 @@
+{
+ "note": "Shared .rmc6f header cases: tests/test_parsers_rmc6f_header.py (read_cell_vectors) and src/__tests__/rmc6fHeader.test.js (readRmc6fCellVectors) assert the same values and the same error text ({name} = the file name/path each runtime reports).",
+ "cases": [
+  {
+   "name": "fortran_d_exponents",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n  0.100000D+02  0.000000D+00  0.000000D+00\n  0.000000D+00  0.100000d+02  0.0\n  0.0  0.0  1.0E+01\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "latticeVectors": [
+    [
+     10,
+     0,
+     0
+    ],
+    [
+     0,
+     10,
+     0
+    ],
+    [
+     0,
+     0,
+     10
+    ]
+   ],
+   "supercell": [
+    2,
+    2,
+    2
+   ]
+  },
+  {
+   "name": "integral_decimal_supercell",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2.0 1 0.3D+01\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n    0.0000  10.0000   0.0000\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "latticeVectors": [
+    [
+     10,
+     0,
+     0
+    ],
+    [
+     0,
+     10,
+     0
+    ],
+    [
+     0,
+     0,
+     10
+    ]
+   ],
+   "supercell": [
+    2,
+    1,
+    3
+   ]
+  },
+  {
+   "name": "oblique_cell",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  1 1 1\nLattice vectors (Ang):\n  5.0 0.0 0.0\n  2.5 4.330127 0.0\n  0.0 0.0 7.0\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "latticeVectors": [
+    [
+     5,
+     0,
+     0
+    ],
+    [
+     2.5,
+     4.330127,
+     0
+    ],
+    [
+     0,
+     0,
+     7
+    ]
+   ],
+   "supercell": [
+    1,
+    1,
+    1
+   ]
+  },
+  {
+   "name": "zero_supercell",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  0 0 0\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n    0.0000  10.0000   0.0000\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: supercell dimensions must be three positive integers, got '0 0 0'"
+  },
+  {
+   "name": "negative_supercell",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 -1 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n    0.0000  10.0000   0.0000\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: supercell dimensions must be three positive integers, got '2 -1 2'"
+  },
+  {
+   "name": "nan_supercell",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  NaN 2 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n    0.0000  10.0000   0.0000\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: supercell dimensions must be three positive integers, got 'NaN 2 2'"
+  },
+  {
+   "name": "fractional_supercell",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2.5 2 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n    0.0000  10.0000   0.0000\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: supercell dimensions must be three positive integers, got '2.5 2 2'"
+  },
+  {
+   "name": "short_supercell",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n    0.0000  10.0000   0.0000\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: supercell dimensions must be three positive integers, got 'dimensions: 2 2'"
+  },
+  {
+   "name": "nan_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\nNaN 0 0\n    0.0000  10.0000   0.0000\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vector 1 must be three finite numbers, got 'NaN 0 0'"
+  },
+  {
+   "name": "text_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n0.0 abc 0.0\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vector 2 must be three finite numbers, got '0.0 abc 0.0'"
+  },
+  {
+   "name": "ragged_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n    0.0000  10.0000   0.0000\n0.0 10.0\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vector 3 must be three finite numbers, got '0.0 10.0'"
+  },
+  {
+   "name": "overflow_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n0 1e999 0\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vector 2 must be three finite numbers, got '0 1e999 0'"
+  },
+  {
+   "name": "collinear_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n10 0 0\n20 0 0\n0 0 10\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vectors are singular (zero cell volume)"
+  },
+  {
+   "name": "coplanar_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n10 0 0\n0 10 0\n10 10 0\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vectors are singular (zero cell volume)"
+  },
+  {
+   "name": "zero_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n0 0 0\n0 10 0\n0 0 10\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vectors are singular (zero cell volume)"
+  },
+  {
+   "name": "tiny_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n1e-300 0 0\n0 1e-300 0\n0 0 1e-300\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vectors are singular (zero cell volume)"
+  },
+  {
+   "name": "huge_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n1e300 0 0\n0 1e300 0\n0 0 1e300\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: lattice vectors give a non-finite cell volume (values too large)"
+  },
+  {
+   "name": "truncated_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n",
+   "error": "{name}: the Lattice vectors block is truncated (expected three rows of three numbers)"
+  },
+  {
+   "name": "blank_row_lattice",
+   "text": "(Version 6f format configuration file)\nSupercell dimensions:  2 2 2\nLattice vectors (Ang):\n   10.0000   0.0000   0.0000\n\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name}: the Lattice vectors block is truncated (expected three rows of three numbers)"
+  },
+  {
+   "name": "missing_supercell",
+   "text": "Lattice vectors (Ang):\n   10.0000   0.0000   0.0000\n    0.0000  10.0000   0.0000\n    0.0000   0.0000  10.0000\nAtoms:\n     1   Se  [1]   0.1000  0.2000  0.3000     1   0   0   0\n     2   Nb  [2]   0.6000  0.7000  0.8000     2   1   1   1\n",
+   "error": "{name} is missing lattice or supercell metadata"
+  }
+ ]
+}

@@ -206,6 +206,13 @@ with 0.5.0.
   share one anchored, validated grammar. It reads D exponents, any spelling of the `Atoms` marker,
   bare-CR files and coords-only lines. It skips and counts non-finite lines and reports
   "k of n atom lines unparsed".
+- **`.rmc6f` header.** `read_cell_vectors` and `readRmc6fCellVectors` read the header numbers
+  like the atom lines (D exponents) and require three positive-integer supercell dimensions and a
+  finite, non-singular lattice with a finite volume, with the same error text in both runtimes.
+  `Supercell dimensions: 0 0 0` used to fold every atom onto the origin, a NaN, collinear or
+  10³⁰⁰ lattice gave 200s with NaN cells, an anisotropy of 10¹⁴ or all-zero angle counts, and a
+  D-exponent lattice was a raw float error. Each is now a 400 on every route (and a thrown error
+  in every worker) naming the problem.
 - **Structure files.** 0-byte or marker-less candidates are skipped; an empty `.rmc6f` used to
   hide six valid configurations in `data/250K_try1/supercell`. `read_structure` pairs Frac/rmc6f
   files by stem. Before, it could fold a 5×10×10 Frac file with a 10×10×10 supercell.
@@ -356,6 +363,9 @@ Read these before comparing 1.0 numbers or files with earlier releases.
 - **PCA `cubicBox` is display-only.** It sizes `boxHalfWidths`. The volume, mass and levels are
   always sampled per axis, so API callers that relied on a cubic volume get per-axis
   `halfWidths`.
+- **`.rmc6f` headers are validated.** A zero, negative or fractional supercell, and a lattice
+  with a non-numeric, NaN or missing row, a zero volume (collinear or coplanar vectors) or an
+  overflowing volume, now stop the parse with an error in both runtimes.
 - **Browser parsing is stricter.** Element names are capitalised as in Python (SE → Se). A CSV
   with a stray non-numeric cell fails with a line-numbered error; it used to plot a silent NaN.
   A `.rmc6f` with zero parseable atoms is an error that says why, in both runtimes; it used to

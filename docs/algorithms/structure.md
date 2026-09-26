@@ -1774,7 +1774,11 @@ Both parsers scan for two headers and are otherwise position-independent:
 
 Python: `rmc_toolkits/parsers.py` → `read_cell_vectors()`. JavaScript:
 [rmc6f.js](../../web_app/frontend/src/rmc6f.js) → `readRmc6fCellVectors()`. The two agree
-exactly; both raise/throw if either header is missing. Note that the `Cell (Ang/deg): a b c α β γ`
+exactly; both raise/throw if either header is missing, and — since 1.0 — if the supercell is not
+three positive integers or the lattice is not a finite, non-singular 3×3 matrix with a finite
+volume (numbers read Fortran-aware, so `D` exponents work; checks and messages in
+[run-dashboard.md](run-dashboard.md), Step 1). `Supercell dimensions: 0 0 0` used to fold every
+atom onto the origin and still draw a map. Note that the `Cell (Ang/deg): a b c α β γ`
 line, when present, is **ignored** — the cell geometry always comes from the lattice-vector rows, so
 a triclinic cell is handled by construction.
 

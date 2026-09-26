@@ -833,27 +833,86 @@ def read_atom_indices(rmc6f_path: str | Path) -> dict[str, list[int]]:
     return {atom: sorted(indices) for atom, indices in atom_indices.items()}
 
 
+#: A lattice whose volume is below this fraction of |a|·|b|·|c| is singular
+#: (collinear or coplanar vectors). Real cells sit near 0.01-1; round-off on an
+#: exactly degenerate cell leaves ~1e-16. Same constant in rmc6f.js.
+_SINGULAR_CELL_RATIO = 1e-8
+
+
+def _validate_cell_header(
+    name: str | Path,
+    supercell_tokens: list[str] | None,
+    lattice_rows: list[str | None] | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Validate the raw ``Supercell`` tokens and the three ``Lattice`` rows.
+
+    Numbers use the atom lines' Fortran-aware reader (:func:`parse_fortran_number`,
+    so ``0.2D+02`` is 20). The supercell must be three positive integers and the
+    lattice a finite, non-singular 3×3 matrix with a finite volume; anything else
+    is a ``ValueError`` naming the file and the problem. Mirrors
+    ``readRmc6fCellVectors()`` in ``rmc6f.js`` check for check, message for
+    message (the shared cases are ``__tests__/fixtures/rmc6f_header_cases.json``).
+    """
+    if lattice_rows is None or supercell_tokens is None:
+        raise ValueError(f"{name} is missing lattice or supercell metadata")
+
+    values = [parse_fortran_number(token) for token in supercell_tokens]
+    if len(values) != 3 or not all(
+        value is not None and math.isfinite(value) and value >= 1 and float(value).is_integer()
+        for value in values
+    ):
+        raise ValueError(
+            f"{name}: supercell dimensions must be three positive integers, "
+            f"got '{' '.join(supercell_tokens)}'"
+        )
+    supercell = np.asarray(values, dtype=float)
+
+    rows: list[list[float]] = []
+    for index, raw in enumerate(lattice_rows):
+        text = (raw or "").strip()
+        if not text:
+            raise ValueError(
+                f"{name}: the Lattice vectors block is truncated (expected three rows of three numbers)"
+            )
+        row = [parse_fortran_number(token) for token in text.split()]
+        if len(row) != 3 or not all(value is not None and math.isfinite(value) for value in row):
+            raise ValueError(
+                f"{name}: lattice vector {index + 1} must be three finite numbers, got '{text}'"
+            )
+        rows.append(row)
+
+    (a0, a1, a2), (b0, b1, b2), (c0, c1, c2) = rows
+    # a · (b × c), written out in the same order as rmc6f.js.
+    det = a0 * (b1 * c2 - b2 * c1) + a1 * (b2 * c0 - b0 * c2) + a2 * (b0 * c1 - b1 * c0)
+    if not math.isfinite(det):
+        raise ValueError(f"{name}: lattice vectors give a non-finite cell volume (values too large)")
+    norms = math.hypot(a0, a1, a2) * math.hypot(b0, b1, b2) * math.hypot(c0, c1, c2)
+    if not abs(det) > _SINGULAR_CELL_RATIO * norms:
+        raise ValueError(f"{name}: lattice vectors are singular (zero cell volume)")
+    return np.asarray(rows, dtype=float), supercell
+
+
 def read_cell_vectors(rmc6f_path: str | Path) -> tuple[np.ndarray, np.ndarray]:
+    """Lattice vectors (rows, Å) and supercell multiplicities from the header.
+
+    Raises ``ValueError`` for missing, malformed or unphysical metadata (see
+    :func:`_validate_cell_header`): a zero or fractional supercell, a NaN,
+    singular or overflowing lattice. Mirrors ``readRmc6fCellVectors()`` in rmc6f.js.
+    """
     lines = Path(rmc6f_path).read_text(encoding="utf-8", errors="replace").splitlines()
-    lattice_vectors: np.ndarray | None = None
-    supercell: np.ndarray | None = None
+    lattice_rows: list[str | None] | None = None
+    supercell_tokens: list[str] | None = None
 
     for idx, line in enumerate(lines):
         parts = line.split()
         if not parts:
             continue
         if parts[0] == "Supercell":
-            supercell = np.asarray(parts[-3:], dtype=float)
+            supercell_tokens = parts[-3:]
         elif parts[0] == "Lattice":
-            lattice_vectors = np.asarray(
-                [lines[idx + 1].split(), lines[idx + 2].split(), lines[idx + 3].split()],
-                dtype=float,
-            )
+            lattice_rows = [lines[row] if row < len(lines) else None for row in range(idx + 1, idx + 4)]
 
-    if lattice_vectors is None or supercell is None:
-        raise ValueError(f"{rmc6f_path} is missing lattice or supercell metadata")
-
-    return lattice_vectors, supercell
+    return _validate_cell_header(rmc6f_path, supercell_tokens, lattice_rows)
 
 
 _MOVE_COUNTERS = {

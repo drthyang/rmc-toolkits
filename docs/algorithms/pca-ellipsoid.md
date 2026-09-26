@@ -137,7 +137,10 @@ followed by three rows, and an `Atoms:` section.
 **Header.** `rmc_toolkits/parsers.py` → `read_cell_vectors()` takes the last three tokens of the
 `Supercell` line as $\mathbf{N}$ and the three lines after `Lattice` as the rows of $\mathsf{L}$
 (Å). The JS twin is `rmc6f.js` → `readRmc6fCellVectors()` (its error names the file); both scan the whole file and keep the *last*
-match. Unit-cell vectors are $\mathsf{A}_{i\cdot} = \mathsf{L}_{i\cdot}/N_i$
+match. Both read the numbers Fortran-aware (`D` exponents) and require three positive-integer
+supercell dimensions and a finite, non-singular lattice with a finite volume, with identical
+error text ([run-dashboard.md](run-dashboard.md), Step 1): a collinear lattice used to reach the
+clouds and report an anisotropy of $10^{14}$. Unit-cell vectors are $\mathsf{A}_{i\cdot} = \mathsf{L}_{i\cdot}/N_i$
 (`SiteDisplacements.unit_vectors`; JS `pcaCrystalFrame.js` → `unitCellVectors()`).
 
 **Atom lines.** Both engines read atoms with the one shared `.rmc6f` grammar: `parsers.py` →

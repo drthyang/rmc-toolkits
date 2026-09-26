@@ -862,7 +862,7 @@ above.
 
 **Code:** `Dashboard.jsx` → the `localRun` effect (worker spawn, `maxPoints: 100`) and
 `loadServerDashboard()`; `workers/localStructureWorker.js`; `browserData.js` →
-`structureFromRmc6f()`, `readCellVectors()`, `readMovesMetadata()`; `rmc6f.js` → `parseAtomLine()`;
+`structureFromRmc6f()`, `readMovesMetadata()`; `rmc6f.js` → `readRmc6fCellVectors()`, `parseAtomLine()`;
 `app.py` → `structure()`, `_sample_atoms_by_site()`; `parsers.py` → `iter_rmc6f_atoms()`,
 `read_cell_vectors()`, `read_atom_indices()`; `ModelSummary.jsx`.
 
@@ -2470,12 +2470,11 @@ run's output files:
 4. If nothing matches, the fallback is the first usable `.rmc6f` in the **unsorted** input
    file list, i.e. directory-enumeration order, not alphabetical order.
 
-`readCellVectors()` scans every line and takes:
+`readRmc6fCellVectors()` scans every line and takes:
 
-- the line whose first token is `Supercell` → $N$ = the **last three** whitespace tokens, parsed as
-  numbers (`parts.slice(-3).map(Number)`);
-- the line whose first token is `Lattice` → the **next three lines**, each split on whitespace and
-  parsed as numbers, become the rows of $L$ (Å).
+- the line whose first token is `Supercell` → $N$ = the **last three** whitespace tokens;
+- the line whose first token is `Lattice` → the **next three lines**, each split on whitespace,
+  become the rows of $L$ (Å).
 
 If either is missing the parse throws `<file> is missing lattice or supercell metadata` (the Python
 wording; the browser error names the file too) and no summary is shown. Note that the last
@@ -2484,20 +2483,34 @@ wording; the browser error names the file too) and no summary is shown. Note tha
 `LINE_BREAK = /\r\n|\r|\n/`, so a file with bare-CR line endings (which Python's universal newlines
 always read) no longer throws in the browser.
 
-**No numeric validation.** `readCellVectors` checks only that the two *markers* exist. The three
-lattice rows are read as `row.trim().split(/\s+/).map(Number)` with no `filter(Boolean)`, no length
-check and no finiteness check, and the supercell tokens are `parts.slice(-3).map(Number)` with no
-positive-integer check. A blank or short line after `Lattice` therefore yields `NaN` (or `undefined`)
-entries that propagate silently into $G$. Because `Math.abs(NaN - NaN) > eps` is `false` and the
-`|| 1` guard turns a `NaN` trace into a scale of 1, `latticePointOps` then accepts **all 6960**
-unimodular $\{-1,0,1\}$ patterns instead of throwing (verified by running the code). Downstream the
-damage is contained rather than silent-but-wrong: `cartDist` returns `NaN` for every pair, so
-`mappingResidual` rejects every candidate and the card degrades to `P1` / No. 1 / **0 operations**
-with an empty ladder, while the Model information card prints `NaN` cell edges. Nothing is raised.
+**Numeric validation (1.0).** Every header number is read with the atom lines' Fortran-aware
+`parseFortranNumber()` (`0.207312D+02` is 20.7312), and the header must describe a real cell. Each
+check throws `<file>: …` and stops the parse, so no summary, map or table is built from it:
+
+| Check | Error text after `<file>: ` |
+|---|---|
+| $N$ = three positive integers (`2.0` and `0.3D+01` count; `0`, `-1`, `2.5`, `NaN` do not) | `supercell dimensions must be three positive integers, got '<tokens>'` |
+| no blank or missing row among the three lattice rows | `the Lattice vectors block is truncated (expected three rows of three numbers)` |
+| each row exactly three finite numbers | `lattice vector <i> must be three finite numbers, got '<row>'` |
+| $\det L = \mathbf{a}\cdot(\mathbf{b}\times\mathbf{c})$ finite | `lattice vectors give a non-finite cell volume (values too large)` |
+| $\lvert\det L\rvert > 10^{-8}\,\lvert\mathbf{a}\rvert\lvert\mathbf{b}\rvert\lvert\mathbf{c}\rvert$ | `lattice vectors are singular (zero cell volume)` |
+
+The checks run in that order. The singular threshold is relative, so it does not depend on the
+units or size of the box: real cells have a normalised volume of 0.01–1, while an exactly
+collinear or coplanar lattice leaves round-off near $10^{-16}$. Before 1.0 none of this was
+checked: `Supercell dimensions: 0 0 0` folded every atom onto the origin, a NaN row reached the
+symmetry finder as `NaN` distances (the card degraded to `P1` with 0 operations), a collinear lattice
+gave a PCA anisotropy of $10^{14}$, a $10^{300}$ lattice gave all-zero bond-angle counts, and a `D`
+exponent was a raw float error in Python and a `NaN` in the browser.
 
 **Code**: `rmc6f.js` → `readRmc6fCellVectors()`; Python equivalent
-`rmc_toolkits/parsers.py` → `read_cell_vectors()` uses the identical rule (`parts[-3:]` and the
-three following lines) and the two agree exactly.
+`rmc_toolkits/parsers.py` → `read_cell_vectors()` / `_validate_cell_header()` uses the identical
+rule, checks and messages. The shared cases are
+`web_app/frontend/src/__tests__/fixtures/rmc6f_header_cases.json`, asserted by
+`tests/test_parsers_rmc6f_header.py` and `src/__tests__/rmc6fHeader.test.js`. Every consumer —
+the dashboard, the KDE and 3D views, PCA, Displacement Directions, Bond Geometry, the Frac
+conversion — reads the header through these, so a bad header is a 400 on every Flask route and a
+thrown error in every worker.
 
 #### Step 2. Per-atom parsing, element counts, and reference sites
 
@@ -2694,13 +2707,14 @@ $$w_i = \big((x_i \, N_i) \bmod 1 + 1\big) \bmod 1,\qquad i=1,2,3$$
 where $x_i$ is the fractional box coordinate (the doubled modulo is the JavaScript idiom for a true
 modulus, since `%` is a sign-following remainder).
 
-**Supercell guard inconsistency.** This fold uses the **raw** `supercell[i]`, whereas every other use
-of the multiplicity divides by `Math.max(supercell[i], 1)` — the card's cell lengths
-(`ModelSummary.jsx`), `unitVectors` (the `dispA` pass) in `browserData.js`, and `conventionalCell()` in
-`symmetryModel.js`. Since `readCellVectors` never validates that the three `Supercell` tokens are
-positive integers, a header declaring `0` (or a non-integer) yields a *guarded*, finite conventional
-edge on that axis while collapsing every atom's $w_i$ to 0 — a one-site basis and a spurious
-high-symmetry answer, with no error raised.
+**Supercell guard.** This fold uses the **raw** `supercell[i]`, whereas every other use of the
+multiplicity divides by `Math.max(supercell[i], 1)` — the card's cell lengths (`ModelSummary.jsx`),
+`unitVectors` (the `dispA` pass) in `browserData.js`, and `conventionalCell()` in
+`symmetryModel.js`. Before 1.0 a header declaring `0` (or a non-integer) therefore gave a *guarded*,
+finite conventional edge on that axis while collapsing every atom's $w_i$ to 0 — a one-site basis
+and a spurious high-symmetry answer, with no error raised. `readRmc6fCellVectors()` now rejects such
+a header (Step 1, numeric validation), so the raw and guarded values always agree; the `Math.max`
+guards remain as defence only.
 
 The per-site representative is the **circular mean** of $w$ over all box copies of that reference
 number, computed independently on each axis:
