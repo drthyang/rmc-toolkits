@@ -55,7 +55,9 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
   standard setting, which the finder searches for from the detected symmetry elements (another axis
   order, a centred or primitive cell, or the true cell of a supercell); when it cannot be named
   reliably the panel shows the crystal class or a lower bound, never a guessed number. Unlike
-  FINDSYM it does no origin shift and outputs no idealized structure.
+  FINDSYM it does no origin shift and outputs no idealized structure. The panel needs the run
+  parsed in the browser (the hosted/static dashboard, or a locally picked folder); a run read
+  through the local Flask server has no site basis, so the panel does not appear there.
 - **AI Assistant (beta)** — chat about the loaded run with a local LLM (Ollama, LM Studio) or an
   opt-in cloud model (OpenAI, Gemini). Only compact run context is sent, never raw
   files.[^cloud-llm-privacy] Setup:

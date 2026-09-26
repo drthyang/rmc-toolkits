@@ -31,7 +31,9 @@ After loading, use:
 
 - `Dashboard` for plots, loaded-file badges, and hide/show chart toggles.
 - `Atomic Density` for model information, KDE slices, and the folded unit-cell view. Drag the
-  highlighted band in the `Slab In Cell` panel to move the slice position directly.
+  highlighted band in the `Slab In Cell` panel to move the slice position directly. The
+  `Detected SG` symmetry card appears when the run is parsed in the browser (hosted dashboard or
+  a locally picked folder), not for a run read through the local Flask server.
 - `PCA Ellipsoid` for per-site thermal ellipsoids: pick a site (from the list or by clicking an atom
   in the unit-cell view) to see its PCA displacement ellipsoid, the 3D KDE isosurface with density
   projected on the box walls, a non-Gaussianity readout, and — under `Crystal orientation` — the
