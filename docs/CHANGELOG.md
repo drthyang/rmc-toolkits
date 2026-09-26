@@ -210,6 +210,10 @@ with 0.5.0.
 - `rmc-triplets <run folder>` picks the same `.rmc6f` as the app.
 - The docs correct the sin θ rationale and give the factor to RMCProfile's `norm/sin(theta)`.
   Angle totals match RMCProfile's own TRIPLETS output for five triplets on the 5 K run.
+- **`rmc-triplets` checks its destinations before computing.** An unsupported `--plot` format,
+  outputs naming one file (`--dump-angles` = `--output` replaced the histogram with exit 0), the
+  configuration or a directory as a destination, and a folder that cannot be created are one-line
+  errors before any work; the outputs are written whole or not at all. `--version` added.
 
 #### Parsers and run dashboard (`parsers.py`, `plots.py`, `browserData.js`, `rmc6f.js`)
 

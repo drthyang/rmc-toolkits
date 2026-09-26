@@ -458,8 +458,15 @@ path it chose. Outputs:
   decimals, in the engine's pairing order (unsorted). This is the one output whose memory grows
   with the angle count — the engine keeps the list only for it.
 
-Nothing is overwritten without `--force`; every destination is checked before anything is
-written.
+Nothing is overwritten without `--force`, and every destination is checked **before the angles
+are computed** (`check_destinations`): `--output`, `--plot` and `--dump-angles` must be different
+files (compared case-insensitively), none may be the configuration or a directory, each folder
+must exist or be creatable, and the `--plot` extension must be a format this matplotlib can write
+(no extension: PNG). A violation is one line on stderr and exit 1; `--force` relaxes only the
+existing-file check. The outputs are then written through temporary files renamed into place
+only after all of them succeeded, so a failed write leaves no partial set. Before 1.0 an
+unsupported `--plot` format printed a traceback after the CSV was written, and `--dump-angles`
+equal to `--output` silently replaced the histogram. `--version` prints the package version.
 
 ```bash
 rmc-triplets data/5K_try1 --triplet Se Nb Se --bond12 2.2 2.9 --plot se_nb_se.png

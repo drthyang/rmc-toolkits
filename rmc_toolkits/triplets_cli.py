@@ -20,8 +20,12 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import sys
+import uuid
 from pathlib import Path
+
+from . import __version__
 
 # The run-folder rule is shared with the web app (both runtimes): one
 # configuration per folder everywhere.
@@ -101,7 +105,14 @@ def write_csv(path: Path, config: Path, result: BondAngleDistribution) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_plot(path: Path, result: BondAngleDistribution) -> None:
+def supported_plot_formats() -> dict[str, str]:
+    """Matplotlib's savefig formats on this install: {extension: description}."""
+    from matplotlib.figure import Figure
+
+    return Figure().canvas.get_supported_filetypes()
+
+
+def write_plot(path: Path, result: BondAngleDistribution, fmt: str | None = None) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -138,7 +149,7 @@ def write_plot(path: Path, result: BondAngleDistribution) -> None:
     )
     axes.legend(frameon=False)
     figure.tight_layout()
-    figure.savefig(path)
+    figure.savefig(path, format=fmt)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -193,15 +204,108 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="overwrite existing output files instead of refusing",
+        help="overwrite existing output files instead of refusing (never the "
+        "configuration, a directory, or two outputs onto one file)",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
+
+
+class DestinationError(ValueError):
+    """A destination that cannot be written: reported on one line, exit 1."""
+
+
+def _same_destination(first: Path, second: Path) -> bool:
+    # Case-folded: one file on the default macOS/Windows filesystems.
+    if os.path.normcase(str(first.resolve())).casefold() == os.path.normcase(str(second.resolve())).casefold():
+        return True
+    try:
+        return first.exists() and second.exists() and os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
+def check_destinations(destinations: dict[str, Path], config: Path, force: bool) -> None:
+    """Refuse, before computing, any destination set that cannot be written whole.
+
+    The histogram, plot and angle list must be different files, none of them
+    the configuration or a directory, each with a folder that exists or can be
+    created, the plot's extension a format matplotlib can write here, and --
+    unless ``force`` -- none may exist yet.
+    """
+    items = list(destinations.items())
+    for index, (flag, path) in enumerate(items):
+        for other_flag, other in items[index + 1:]:
+            if _same_destination(path, other):
+                raise DestinationError(f"{flag} and {other_flag} must be different files (both {path})")
+        if _same_destination(path, config):
+            raise DestinationError(f"{flag} {path} is the input configuration")
+        if path.is_dir():
+            raise DestinationError(f"{flag} {path} is a directory")
+        ancestor = path.parent
+        while not ancestor.exists() and ancestor != ancestor.parent:
+            ancestor = ancestor.parent
+        if not ancestor.is_dir():
+            raise DestinationError(f"{flag} {path}: its folder {ancestor} is not a directory")
+    plot = destinations.get("--plot")
+    if plot is not None and plot.suffix:
+        formats = supported_plot_formats()
+        if plot.suffix[1:].lower() not in formats:
+            raise DestinationError(
+                f"unsupported plot format '{plot.suffix}' for --plot {plot}; "
+                f"use one of: {', '.join(sorted(formats))}"
+            )
+    if not force:
+        existing = [str(path) for path in destinations.values() if path.exists()]
+        if existing:
+            raise DestinationError(
+                "refusing to overwrite " + ", ".join(existing) + "; pass --force to replace"
+            )
+
+
+def _temporary_sibling(path: Path) -> Path:
+    # Same folder (atomic rename) and same extension (matplotlib reads it).
+    return path.with_name(f".{path.stem}.{os.getpid()}.{uuid.uuid4().hex[:12]}.tmp{path.suffix}")
+
+
+def write_all(writers: list[tuple[Path, object]]) -> None:
+    """Write every file through a temporary sibling, then rename them all.
+
+    Nothing is renamed into place until every write has succeeded, so a
+    failure leaves no partial set of outputs (and any previous files intact).
+    """
+    temporaries: list[tuple[Path, Path]] = []
+    try:
+        for path, write in writers:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = _temporary_sibling(path)
+            temporaries.append((temporary, path))
+            write(temporary)
+        for temporary, path in temporaries:
+            os.replace(temporary, path)
+    except BaseException:
+        for temporary, _ in temporaries:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         config = resolve_config(args.config)
+        # Every destination is checked before any work: an unsupported plot
+        # format or a clash used to surface only after the CSV was written.
+        triplet = tuple(str(symbol).strip().capitalize() for symbol in args.triplet)
+        output = Path(args.output) if args.output else Path.cwd() / default_output_name(config, triplet)
+        destinations = {"--output": output}
+        if args.dump_angles:
+            destinations["--dump-angles"] = Path(args.dump_angles)
+        if args.plot:
+            destinations["--plot"] = Path(args.plot)
+        check_destinations(destinations, config, args.force)
         result = bond_angles_from_rmc6f(
             config,
             triplet=tuple(args.triplet),
@@ -216,29 +320,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"rmc-triplets: {error}", file=sys.stderr)
         return 1
 
-    output = Path(args.output) if args.output else Path.cwd() / default_output_name(
-        config, result.triplet
-    )
-    destinations = [output]
-    if args.dump_angles:
-        destinations.append(Path(args.dump_angles))
+    writers: list[tuple[Path, object]] = [(output, lambda path: write_csv(path, config, result))]
+    if args.dump_angles and result.angles is not None:
+        writers.append((
+            destinations["--dump-angles"],
+            lambda path: path.write_text(
+                "".join(f"{value:.6f}\n" for value in result.angles), encoding="utf-8"
+            ),
+        ))
     if args.plot:
-        destinations.append(Path(args.plot))
-    if not args.force:
-        existing = [str(path) for path in destinations if path.exists()]
-        if existing:
-            print(
-                "rmc-triplets: refusing to overwrite "
-                + ", ".join(existing)
-                + "; pass --force to replace",
-                file=sys.stderr,
-            )
-            return 1
+        plot = destinations["--plot"]
+        # The temporary name ends in .tmp + the suffix, so name the format
+        # (no suffix: PNG, as --help says).
+        writers.append((plot, lambda path: write_plot(path, result, plot.suffix[1:].lower() or "png")))
     try:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        write_csv(output, config, result)
-    except OSError as error:
-        print(f"rmc-triplets: cannot write {output}: {error}", file=sys.stderr)
+        write_all(writers)
+    except (OSError, ValueError) as error:
+        print(f"rmc-triplets: cannot write the outputs: {error}", file=sys.stderr)
         return 1
 
     label = "-".join(result.triplet)
@@ -274,25 +372,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     print(f"histogram:     {output}")
-
-    try:
-        if args.dump_angles and result.angles is not None:
-            angles_path = Path(args.dump_angles)
-            angles_path.parent.mkdir(parents=True, exist_ok=True)
-            angles_path.write_text(
-                "".join(f"{value:.6f}\n" for value in result.angles), encoding="utf-8"
-            )
-            print(f"angles list:   {angles_path}")
-
-        if args.plot:
-            plot_path = Path(args.plot)
-            plot_path.parent.mkdir(parents=True, exist_ok=True)
-            write_plot(plot_path, result)
-            print(f"plot:          {plot_path}")
-    except OSError as error:
-        print(f"rmc-triplets: cannot write output: {error}", file=sys.stderr)
-        return 1
-
+    if args.dump_angles and result.angles is not None:
+        print(f"angles list:   {destinations['--dump-angles']}")
+    if args.plot:
+        print(f"plot:          {destinations['--plot']}")
     return 0
 
 
