@@ -732,7 +732,13 @@ How the triple is resolved (`AutoStogPage.jsx::resolveEnforcement`,
   different explicit cutoff, and the `'auto'` path, both collapse the window to
   `peak_rmin = peak_rmax = cutoff` — a flat replacement of everything below the cutoff.
 - The CLI exposes `--peak-window RMIN RMAX` (same semantics) and rejects
-  `--no-enforce` combined with `--enforce-cutoff`/`--peak-window`. The browser has no
+  `--no-enforce` combined with `--enforce-cutoff`/`--peak-window`.
+- An explicit triple is validated before any computation by `validate_enforcement` (CLI, API)
+  and its port `validateEnforcement` (the page's worker): the cutoff must be finite, $\ge 0$ and
+  below $r_\mathrm{max}$, and the window finite with `peak_rmin` $\le$ `peak_rmax`. Before 1.0
+  `--enforce-cutoff nan` was reported as applied while nothing was enforced, a cutoff beyond
+  $r_\mathrm{max}$ replaced the whole $G_K(r)$ by $-\langle b\rangle^2$, and a reversed window
+  was taken silently. The browser has no
   peak-window control.
 - The API (`/api/scaling/preview|run`) reads `enforce` **once** as the same tri-state
   (`app.py::_scaling_enforce_flag`: absent/empty → default on; `true`/`"true"`/`"1"`/`"yes"` → on;
@@ -790,17 +796,15 @@ $\langle b^2\rangle$ and `c1_mode='sweep'`). The CLI implements the same intent 
 **Validation (eager, before any compute).** `ScalingConfig.__post_init__` / `makeConfig` reject:
 `c1_mode ∉ {sweep, joint}`; `amplitude_criterion ∉ {density, fz}`; `amplitude_criterion == 'fz'`
 without $\langle b^2\rangle$ or with `c1_mode != 'sweep'`; non-finite or non-positive $\rho_0$;
-non-finite or non-positive $\langle b\rangle^2$; $Q_\mathrm{max} \le Q_\mathrm{min}$;
-non-integer or non-positive `nr`; non-finite or non-positive `rmax`. The CLI, the API, and
+non-finite or non-positive $\langle b\rangle^2$; a non-finite or negative $Q_\mathrm{min}$, a
+non-finite $Q_\mathrm{max}$, and $Q_\mathrm{max} \le Q_\mathrm{min}$; non-integer or non-positive `nr`; non-finite or non-positive `rmax`. The CLI, the API, and
 `makeConfig` additionally evaluate the low-$r$ fit window immediately, so an empty window
 $[\,r_\mathrm{fit,lo}, r_\mathrm{fit,hi}\,]$ fails fast with a clean message instead of surfacing
 mid-fit.
 
-Two validation asymmetries:
+One validation asymmetry (the NaN-$Q$ one is gone: both engines now check each bound for
+finiteness first, and refuse a negative $Q_\mathrm{min}$, which used to shift the fit):
 
-- **NaN $Q$ bounds.** Python tests `if self.qmax <= self.qmin`, which is `False` when either is
-  NaN — so a config with NaN $Q$ bounds passes `__post_init__` and fails later. JS tests
-  `if (!(config.qmax > config.qmin))`, which throws on NaN.
 - **Fractional `nr`.** The browser never lets one reach validation: `resolveConfig` does
   `nr: Math.round(pick(form.nr, …))`, so a typed `4999.6` is silently snapped to 5000 and
   $\Delta r = r_\mathrm{max}/n_r$ changes accordingly. `ScalingConfig` would raise
@@ -1106,7 +1110,7 @@ provenance JSON).
 | Despike **pipeline** | applied **once** (fit and outputs on the same point set) | applied **once** | identical (golden `despike` case) |
 | `n_despiked` reporting | true single-pass count in the provenance | `nDespiked` on the *Fit quality* card and in the exported provenance | identical |
 | σ validity gate | `usable_sigma` (CLI/API) drops a broken column | `usableSigma` (page + worker) drops it too | identical — see Step 12 |
-| Config validation | `ScalingConfig.__post_init__` | `makeConfig` | same checks, same messages in spirit, except that JS's `!(qmax > qmin)` also rejects NaN $Q$ bounds that Python's `qmax <= qmin` lets through; both evaluate the low-$r$ fit window eagerly in the shipping paths |
+| Config validation | `ScalingConfig.__post_init__` | `makeConfig` | same checks, same messages in spirit (both refuse a NaN or negative $Q_\mathrm{min}$ and a non-finite $Q_\mathrm{max}$); both evaluate the low-$r$ fit window eagerly in the shipping paths |
 | Enforcement | `first_peak_zero` in `_write_outputs` | `firstPeakZero` in the worker | same function; the browser cannot reach the `.inp` peak window (Step 9) |
 
 Overall engine parity is asserted numerically at round-off: $(a,b)$ to 1e-10 relative (with and

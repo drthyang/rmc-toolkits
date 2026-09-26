@@ -70,6 +70,29 @@ FZ_REL_SE_MAX = 0.2
 B_SQ_RTOL = 1.0e-9
 
 
+def validate_enforcement(cutoff: float, peak_rmin: float, peak_rmax: float, *, rmax: float) -> None:
+    """Refuse an explicit low-r enforcement that cannot mean what it says.
+
+    ``cutoff`` must be finite, >= 0 and below ``rmax`` (at or beyond it the
+    whole RMC G(r) would be replaced by -<b>^2), and the kept first-peak window
+    ``[peak_rmin, peak_rmax]`` finite with ``peak_rmin <= peak_rmax``. A NaN
+    cutoff used to be reported as applied while nothing was enforced. Called
+    by the CLI, the API and (as ``validateEnforcement`` in autoScale.js) the
+    page's worker before any computation.
+    """
+    if not (np.isfinite(cutoff) and cutoff >= 0):
+        raise ValueError(f"enforcement cutoff must be finite and >= 0, got {cutoff}")
+    if not cutoff < rmax:
+        raise ValueError(
+            f"enforcement cutoff {cutoff:g} must be below rmax {rmax:g}: it would "
+            "replace the whole G(r)"
+        )
+    if not (np.isfinite(peak_rmin) and np.isfinite(peak_rmax) and peak_rmin <= peak_rmax):
+        raise ValueError(
+            f"first-peak window must be finite with rmin <= rmax, got [{peak_rmin}, {peak_rmax}]"
+        )
+
+
 @dataclass(frozen=True)
 class ScalingConfig:
     """Parameters for the auto-scaling pipeline.
@@ -202,6 +225,11 @@ class ScalingConfig:
                     "x-ray data need <b>^2 = 1 with <b^2> = <Z^2>/<Z>^2, not a neutron "
                     "composition's <b^2>"
                 )
+        # NaN passes `qmax <= qmin`, and a negative qmin shifted the fit.
+        if not np.isfinite(self.qmin) or self.qmin < 0:
+            raise ValueError(f"qmin must be finite and >= 0, got {self.qmin}")
+        if not np.isfinite(self.qmax):
+            raise ValueError(f"qmax must be finite, got {self.qmax}")
         if self.qmax <= self.qmin:
             raise ValueError("qmax must exceed qmin")
         if int(self.nr) != self.nr or self.nr <= 0:

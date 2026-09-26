@@ -71,6 +71,7 @@ from .scaling import (
     diagnostics_summary,
     estimate_rho0,
     scale_pipeline,
+    validate_enforcement,
 )
 from .scattering import faber_ziman, number_density_from_mass_density
 from .transforms import (
@@ -925,6 +926,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         config = _build_config(args, inp, header)
         enforcement = _resolve_enforcement(args, inp)
+        if enforcement is not None:
+            try:
+                validate_enforcement(*enforcement, rmax=config.rmax)
+            except ValueError as exc:
+                raise CliError(str(exc)) from None
         enforcement_source = None
         if enforcement is not None:
             enforcement_source = "user" if args.enforce_cutoff is not None else "stog.inp"

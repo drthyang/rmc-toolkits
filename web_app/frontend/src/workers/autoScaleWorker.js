@@ -21,6 +21,7 @@ import {
   rho0NonConvergenceMessage,
   scalePipeline,
   usableSigma,
+  validateEnforcement,
 } from './autoScale';
 import { isBlankRequestValue, requestNumber, requestObject } from './requestGuards.js';
 
@@ -81,6 +82,9 @@ export const runAutoScaleJob = (data) => {
   }
   const { mode, a, b } = resolveMode(rawMode, rawA, rawB);
   let config = makeConfig(rawConfig);
+  // An explicit enforcement (not 'auto' / off) is checked before any work,
+  // as the CLI and the API do (scaling.validate_enforcement).
+  if (enforcement && typeof enforcement === 'object') validateEnforcement(enforcement, config.rmax);
   let rho0Estimate = null;
   if (wantEstimate) {
     rho0Estimate = estimateRho0(qArr, sqArr, config, sigmaArr);

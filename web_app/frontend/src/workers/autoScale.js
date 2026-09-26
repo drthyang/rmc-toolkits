@@ -292,6 +292,24 @@ export const fourierFilter = (q, sq, r, { rho0, cutoff, lorch = false, lowQCorre
   return { sqFiltered, sqFt, gFiltered };
 };
 
+/**
+ * Refuse an explicit low-r enforcement that cannot mean what it says (port of
+ * scaling.validate_enforcement, same messages): the cutoff finite, >= 0 and
+ * below rmax (at or beyond it the whole G(r) would be replaced), the kept
+ * first-peak window finite with peakRmin <= peakRmax.
+ */
+export const validateEnforcement = ({ cutoff, peakRmin, peakRmax }, rmax) => {
+  if (!(Number.isFinite(cutoff) && cutoff >= 0)) {
+    throw new Error(`enforcement cutoff must be finite and >= 0, got ${cutoff}`);
+  }
+  if (!(cutoff < rmax)) {
+    throw new Error(`enforcement cutoff ${cutoff} must be below rmax ${rmax}: it would replace the whole G(r)`);
+  }
+  if (!(Number.isFinite(peakRmin) && Number.isFinite(peakRmax) && peakRmin <= peakRmax)) {
+    throw new Error(`first-peak window must be finite with rmin <= rmax, got [${peakRmin}, ${peakRmax}]`);
+  }
+};
+
 export const firstPeakZero = (r, g, { cutoff, peakRmin, peakRmax }) => {
   const out = Float64Array.from(g);
   for (let i = 0; i < r.length; i += 1) {
@@ -536,6 +554,9 @@ export const makeConfig = (options) => {
       );
     }
   }
+  // As ScalingConfig: a negative qmin shifted the fit, a NaN one crept through.
+  if (!isNum(config.qmin) || config.qmin < 0) throw new Error(`qmin must be finite and >= 0, got ${config.qmin}`);
+  if (!isNum(config.qmax)) throw new Error(`qmax must be finite, got ${config.qmax}`);
   if (!(config.qmax > config.qmin)) throw new Error('qmax must exceed qmin');
   if (!Number.isInteger(config.nr) || config.nr <= 0) throw new Error(`nr must be a positive integer, got ${config.nr}`);
   if (!isNum(config.rmax) || config.rmax <= 0) throw new Error(`rmax must be finite and positive, got ${config.rmax}`);

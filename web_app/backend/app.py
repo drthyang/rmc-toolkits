@@ -79,7 +79,7 @@ from rmc_toolkits.scaling_cli import (  # shared writer keeps CLI/API outputs id
     stog_inp_closest_approach,
     usable_sigma,
 )
-from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset
+from rmc_toolkits.scaling import auto_enforcement_cutoff, detect_first_peak_onset, validate_enforcement
 from rmc_toolkits.scattering import number_density_from_mass_density
 from rmc_toolkits.transforms import first_peak_zero, g_to_gk, gk_to_dr
 
@@ -1427,6 +1427,8 @@ def _scaling_request(payload: dict, source=None):
     config, warnings = _resolve_scaling_config(payload, inp, header)
     enforce_flag = _scaling_enforce_flag(payload)
     enforcement = _resolve_scaling_enforcement(payload, inp, enforce_flag)
+    if enforcement is not None:
+        validate_enforcement(*enforcement, rmax=config.rmax)  # ValueError -> 400
     mode, a, b = _resolve_scaling_mode(payload, inp)
     use_sigma = _payload_bool(payload, "useSigma", True)
     result = _cached_scaling(data_path, config, mode, a, b, use_sigma)

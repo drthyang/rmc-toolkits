@@ -119,6 +119,12 @@ with 0.5.0.
 - **CLI.** `--help` states the real enforcement default, which is on in every mode.
   `--scale`/`--offset` must be finite (and the scale non-zero): `--scale nan` exited 0 with nine
   all-NaN RMCProfile files.
+- **Range checks on Q and on the enforcement, in every entry point.** `ScalingConfig` /
+  `makeConfig` refuse a NaN or negative Qmin and a non-finite Qmax (a NaN Qmax passed Python's
+  `qmax <= qmin`), and `validate_enforcement` / `validateEnforcement` (CLI, API, page worker)
+  an explicit cutoff that is non-finite, negative or at/beyond rmax, and a reversed or non-finite
+  first-peak window. `--enforce-cutoff nan` used to be reported as applied, and a cutoff of 1000
+  with rmax 50 replaced the whole G(r).
   `--estimate-rho0` seeds ρ₀ = 0.05 when no density source exists. A given r₀ with no detected
   shell no longer crashes with a TypeError.
 - **stog readers.** Both engines read CR-only line endings, a BOM, bad bytes, Fortran D exponents
