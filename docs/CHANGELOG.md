@@ -279,6 +279,9 @@ with 0.5.0.
   analysis pages then reload in place, keeping the picks that still apply, so a page never mixes
   two configurations. Only Bond Geometry's computed distribution is dropped. Every Three.js view
   releases its WebGL context on teardown.
+- `/api/pca/kde` (and the browser engine) refuse a volume that captures less than 10⁻⁶ of the
+  density, a bandwidth far below the node spacing or an extent of 10⁶; it used to be a 200
+  all-zero volume with no warning.
 - `/api/kde/slice` reads `element` case-insensitively, as `/api/pca/*` and `/api/triplets` do. An
   element the file lacks, or a file with no parseable atom, is a 400 that says so; both used to be
   a 200 all-zero map reading "No atoms in this slab.".

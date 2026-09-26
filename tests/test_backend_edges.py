@@ -95,5 +95,45 @@ class KdeSliceElementTests(_EdgeCase):
                 self.assertIn("no atoms could be parsed", error)
 
 
+class PcaKdeEmptyVolumeTests(_EdgeCase):
+    """/api/pca/kde: a bandwidth or extent that leaves every kernel between the grid
+    nodes gave a 200 all-zero volume (mass 0) with no warning."""
+
+    def test_a_volume_that_captures_nothing_is_a_400(self):
+        for params in ({"bw": "1e-6"}, {"bwScale": "1e-6"}, {"extent": "1e6"}):
+            with self.subTest(**params):
+                response = self.client.get(
+                    "/api/pca/kde",
+                    query_string={"dir": RUN, "referenceNumber": 1, "grid": 16, "projections": "false", **params},
+                )
+                status, error = self.status_error(response)
+                self.assertEqual(status, 400, error)
+                self.assertIn("captures less than 1e-6 of the density", error)
+
+    def test_default_volume_is_unaffected(self):
+        response = self.client.get(
+            "/api/pca/kde", query_string={"dir": RUN, "referenceNumber": 1, "grid": 16, "projections": "false"}
+        )
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:200])
+        self.assertGreater(response.get_json()["mass"], 0.9)
+
+
+class PcaKdeVolumeLibraryTests(unittest.TestCase):
+    """The engine refuses the empty volume itself (pcaKde.js: the same limit and message)."""
+
+    def test_empty_volume_raises_and_a_normal_one_does_not(self):
+        import numpy as np
+        from rmc_toolkits.pca_kde import EMPTY_VOLUME_MESSAGE, pca_kde_volume
+
+        rng = np.random.default_rng(4)
+        points = rng.normal(size=(400, 3)) * np.array([0.1, 0.07, 0.05])
+        self.assertGreater(pca_kde_volume(points, grid=16)["mass"], 0.9)
+        for kwargs in ({"bw": 1e-6}, {"bw_scale": 1e-6}, {"extent": 1e6}):
+            with self.subTest(**kwargs):
+                with self.assertRaises(ValueError) as caught:
+                    pca_kde_volume(points, grid=16, **kwargs)
+                self.assertEqual(str(caught.exception), EMPTY_VOLUME_MESSAGE)
+
+
 if __name__ == "__main__":
     unittest.main()

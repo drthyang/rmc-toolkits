@@ -95,6 +95,18 @@ DEGENERATE_RATIO = 1e-6
 # coordinate in a ~100 A box.
 ZERO_SPREAD_VARIANCE = 1e-8
 
+#: A volume holding less than this fraction of the KDE's unit mass is empty:
+#: every kernel falls between the grid nodes (a bandwidth far below the node
+#: spacing, or an extent so large the cloud spans a node or two). It is refused
+#: rather than returned as an all-zero volume. Same limit as the Structure KDE's
+#: ``unresolved`` flag (kde.UNRESOLVED_MASS_LIMIT) and EMPTY_VOLUME_MASS_LIMIT in
+#: pcaKde.js, with the same message.
+EMPTY_VOLUME_MASS_LIMIT = 1e-6
+EMPTY_VOLUME_MESSAGE = (
+    "the KDE volume captures less than 1e-6 of the density: every kernel falls between "
+    "the grid nodes for this bandwidth and extent; raise the bandwidth or lower the extent"
+)
+
 # A principal axis is "resolved" -- its direction, per-axis kurtosis and crystal
 # orientation mean something -- only when its eigenvalue is separated from each
 # neighbour's by more than this many standard errors of the gap. For a truly
@@ -729,6 +741,9 @@ def pca_kde_volume(
         probabilities = np.linspace(0.0, 1.0, 101)
     probabilities = np.asarray(probabilities, dtype=float)
     mass_levels, density_levels, mass = _iso_levels(density, cell_volume, probabilities)
+    # A NaN/inf mass is left to the callers' non-finite result check.
+    if np.isfinite(mass) and mass < EMPTY_VOLUME_MASS_LIMIT:
+        raise ValueError(EMPTY_VOLUME_MESSAGE)
 
     # Kurtosis of the fit cloud -- the same statistics as ``site_ellipsoids``.
     kappa, non_gaussianity, resolved = _shape_statistics(

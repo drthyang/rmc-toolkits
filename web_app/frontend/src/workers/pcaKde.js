@@ -36,6 +36,12 @@ const DEGENERATE_RATIO = 1e-6;
 // site has no displacement at all (an *AVERAGE.rmc6f or ideal configuration). Same
 // constant and rule as ZERO_SPREAD_VARIANCE in pca_kde.py.
 export const ZERO_SPREAD_VARIANCE = 1e-8;
+// A volume holding less than this fraction of the KDE's unit mass is empty:
+// every kernel falls between the grid nodes. Same limit and message as
+// EMPTY_VOLUME_MASS_LIMIT / EMPTY_VOLUME_MESSAGE in pca_kde.py.
+export const EMPTY_VOLUME_MASS_LIMIT = 1e-6;
+export const EMPTY_VOLUME_MESSAGE = 'the KDE volume captures less than 1e-6 of the density: every kernel falls '
+    + 'between the grid nodes for this bandwidth and extent; raise the bandwidth or lower the extent';
 
 // --- Chi-square(3) quantile ------------------------------------------------------
 // The squared Mahalanobis radius of a 3D Gaussian is chi-square with 3 degrees of
@@ -522,6 +528,8 @@ export const pcaKdeVolume = (points, options = {}) => {
 
     const cellVolume = axisCoords.reduce((product, coords) => product * (coords[1] - coords[0]), 1);
     const { massLevels, densityLevels, mass, vmin, vmax } = isoLevels(density, cellVolume, probabilities);
+    // A NaN/Infinity mass is left to the worker's non-finite result check.
+    if (Number.isFinite(mass) && mass < EMPTY_VOLUME_MASS_LIMIT) throw new Error(EMPTY_VOLUME_MESSAGE);
 
     const { excessKurtosis, nonGaussianity, axisResolved } = shapeStatistics(fit, mean, axes, rawEigenvalues);
     const scale = probabilityScale(probability);

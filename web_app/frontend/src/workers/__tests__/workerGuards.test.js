@@ -212,3 +212,25 @@ describe('worker entry points always post an answer', () => {
         expect(unknownMode).toEqual({ id: 5, ok: false, error: "mode must be 'auto' or 'manual', got 'sideways'" });
     });
 });
+
+describe('pcaKdeVolume refuses an empty volume (as pca_kde_volume)', () => {
+    it('throws the shared message when every kernel falls between the nodes', async () => {
+        const { pcaKdeVolume, EMPTY_VOLUME_MESSAGE } = await import('../pcaKde.js');
+        let state = 7;
+        const gauss = () => {
+            // Box-Muller on a small LCG: deterministic, no dependency.
+            state = (state * 1103515245 + 12345) & 0x7fffffff;
+            const u1 = (state + 1) / 0x80000000;
+            state = (state * 1103515245 + 12345) & 0x7fffffff;
+            const u2 = state / 0x80000000;
+            return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        };
+        const points = Array.from({ length: 400 }, () => [0.1 * gauss(), 0.07 * gauss(), 0.05 * gauss()]);
+        expect(pcaKdeVolume(points, { grid: 16 }).mass).toBeGreaterThan(0.9);
+        for (const options of [{ bw: 1e-6 }, { bwScale: 1e-6 }, { extent: 1e6 }]) {
+            expect(() => pcaKdeVolume(points, { grid: 16, ...options })).toThrow(EMPTY_VOLUME_MESSAGE);
+        }
+        expect(EMPTY_VOLUME_MESSAGE).toBe('the KDE volume captures less than 1e-6 of the density: every kernel '
+            + 'falls between the grid nodes for this bandwidth and extent; raise the bandwidth or lower the extent');
+    });
+});

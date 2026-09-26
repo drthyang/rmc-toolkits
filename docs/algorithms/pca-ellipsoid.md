@@ -729,6 +729,13 @@ error.
 
 **`mass`.** $S_\infty=\Delta V\sum_{ijk}\rho_{ijk}$ — the fraction of the KDE's unit mass the box
 holds, i.e. the truncation error of the box. Displayed as "captured mass NN.N%".
+A volume with $S_\infty < 10^{-6}$ is refused in both engines (`EMPTY_VOLUME_MASS_LIMIT`, the
+Structure KDE's `unresolved` limit) with *"the KDE volume captures less than 1e-6 of the density:
+every kernel falls between the grid nodes for this bandwidth and extent; raise the bandwidth or
+lower the extent"* — a bandwidth far below the node spacing (`bw=1e-6`, `bwScale=1e-6`) or an
+extent so large the cloud spans a node or two (`extent=1e6`). Before 1.0 `/api/pca/kde` returned
+those as a 200 all-zero volume (`vmax` 0, `mass` 0, every level 0) with no warning. A non-finite
+mass is left to the non-finite result check (400 / worker error).
 `test_mass_recovers_probability_normalization` asserts $>0.99$ at `extent=4, grid=64` (JS: same at
 `extent=4, grid=56`).
 
