@@ -1,16 +1,7 @@
-/* Page chrome for the AI Assistant workspace page. Mirrors .dashboard-page /
-   .structure-page (padding, scroll, tokens) so it sits alongside the other
-   pages; the inner column is width-capped because this page is text-led. */
-
-.assistant-page {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-    background: var(--app-bg);
-    padding: 1.1rem 1.25rem 1.25rem;
-}
+/* Layout for the AI Assistant workspace page. The page shell, the chat
+   surface and the empty state use the host's UI-kit classes (ui-page,
+   ui-card, ui-empty); this file only lays out the inner column, which is
+   width-capped because this page is text-led. Token-only. */
 
 /* Fill the page height so the chat area grows with the window; the message log
    scrolls internally and the composer stays pinned at the bottom. */
@@ -49,20 +40,14 @@
     color: var(--text-strong);
 }
 
-/* Reuses .plot-card surface tokens; grows to fill the page (flex: 1) and holds
-   the chat, which manages its own internal scroll. Static (no hover lift). */
+/* The ui-card chat surface grows to fill the page (flex: 1) and holds the
+   chat, which manages its own internal scroll. */
 .assistant-surface {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
     padding: 1.15rem 1.25rem 1.3rem;
-    overflow: visible;
-}
-
-.assistant-surface:hover {
-    border-color: var(--border);
-    box-shadow: var(--shadow-xs);
 }
 
 /* Chat fills the surface; the log scrolls internally, composer pinned bottom. */
@@ -80,16 +65,4 @@
 .assistant-surface .llm-chat-empty {
     flex: 1;
     justify-content: center;
-}
-
-.assistant-empty {
-    flex: 1;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 2.4rem 1rem;
-    text-align: center;
-    color: var(--muted);
-    background: var(--panel-bg);
 }

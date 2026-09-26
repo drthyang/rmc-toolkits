@@ -118,6 +118,13 @@ This module is designed to be lifted into its own repository:
   `symmetryModel.js`, or any host component — the module is fully self-contained;
   cell math is deliberately duplicated from `ModelSummary.jsx`.
 - The host imports only `src/llm/index.js`.
+- Styling: the module's own CSS (`components/*.css`) is token-only. For the
+  page shell, the chat surface, the empty state and the (unrendered) dashboard
+  card it uses the host's UI-kit classes **by class name only** — `ui-page`,
+  `ui-card`, `ui-card__header-flush`, `ui-card__title`, `ui-empty`, `ui-pill`
+  (see `src/ui/README.md`) — never kit JS. `ui.css` is global (the host loads
+  it from `main.jsx`), so an extracted copy needs a host stylesheet defining
+  those class names, just as it previously needed `.plot-card`/`.panel-toggle`.
 
 To extract: copy `src/llm/` and feed the seven props from your own data source.
 

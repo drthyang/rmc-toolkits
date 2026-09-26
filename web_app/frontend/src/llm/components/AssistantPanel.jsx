@@ -15,16 +15,16 @@ const AssistantPanel = (props) => {
     const [expanded, setExpanded] = useState(false);
 
     return (
-        <article className={`plot-card llm-assistant-card${expanded ? '' : ' is-collapsed'}`}>
-            <div className="plot-card-header">
+        <article className={`ui-card ui-card--lift llm-assistant-card${expanded ? '' : ' is-collapsed'}`}>
+            <div className="ui-card__header-flush">
                 <div className="llm-assistant-heading">
-                    <h3>AI Assistant</h3>
+                    <h3 className="ui-card__title">AI Assistant</h3>
                     <span className="llm-beta-tag">Beta</span>
                 </div>
-                <div className="plot-card-header-actions">
+                <div className="ui-card__header-actions">
                     <button
                         type="button"
-                        className="panel-toggle"
+                        className="ui-pill"
                         onClick={() => setExpanded((value) => !value)}
                         aria-expanded={expanded}
                     >

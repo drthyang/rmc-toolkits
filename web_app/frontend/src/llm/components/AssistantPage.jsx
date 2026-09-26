@@ -10,7 +10,9 @@ import './AssistantPanel.css';
 import './AssistantPage.css';
 
 // Full-page presentation of the assistant, matching the app's other workspace
-// pages (Dashboard, KDE/3D). The connection controls (status, model switcher,
+// pages (Dashboard, KDE/3D): the page, surface and empty-state looks are the
+// host's UI-kit classes (ui-page, ui-card, ui-empty — by class name only, so
+// this module imports nothing from the host). The connection controls (status, model switcher,
 // settings) live in the page header beside the title; the settings drawer opens
 // below it; the tabs and active view sit in the content box.
 
@@ -19,7 +21,7 @@ const AssistantPage = ({ runName, plotFiles, rValueFile, structure, symmetry, ru
     const hasRun = Boolean((plotFiles && plotFiles.length) || structure);
 
     return (
-        <section className="assistant-page">
+        <section className="ui-page ui-page--column ui-page--pb-sm assistant-page">
             <div className="assistant-page-inner">
                 <header className="assistant-page-head">
                     <div className="assistant-page-title">
@@ -45,7 +47,7 @@ const AssistantPage = ({ runName, plotFiles, rValueFile, structure, symmetry, ru
                 )}
 
                 {hasRun ? (
-                    <div className="plot-card assistant-surface">
+                    <div className="ui-card ui-card--clip ui-card--lift assistant-surface">
                         <ChatView
                             context={assistant.context}
                             settings={assistant.settings}
@@ -53,7 +55,7 @@ const AssistantPage = ({ runName, plotFiles, rValueFile, structure, symmetry, ru
                         />
                     </div>
                 ) : (
-                    <div className="assistant-empty">Open a run folder to use the AI Assistant.</div>
+                    <div className="ui-empty ui-empty--fill">Open a run folder to use the AI Assistant.</div>
                 )}
             </div>
         </section>
