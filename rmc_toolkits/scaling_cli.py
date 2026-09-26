@@ -14,17 +14,27 @@ Drop-in replacement for an interactive classic-stog session, with the manual
 
 Reads the classic ``stog.inp`` (or direct arguments), fits the affine
 correction ``S_corr = a*S_meas + b`` unless a fixed scaling is requested, and
-writes the classic stog output family — scaled S(Q), unfiltered g(r)-1,
-filtered S(Q), filtered g(r)-1 (+ D(r) column), and the RMCProfile-ready
-``FK(Q)`` / ``GK(r)`` / ``D(r)`` — plus a provenance JSON with the full
-configuration and fit diagnostics.
+writes the classic stog output family in the Fortran's own conventions —
+scaled S(Q), unfiltered g(r), filtered S(Q), filtered g(r) (+ an r*[g(r)-1]
+column), the ``ft.dat`` correction, and the RMCProfile-ready ``FK(Q)`` /
+``GK(r)`` / ``D(r)`` — plus a provenance JSON with the full configuration and
+fit diagnostics.
 
 Safety: outputs default into an ``autoscale/`` directory next to the input, and
 nothing is ever overwritten without ``--force`` — so the tool cannot silently
-clobber the real STOG outputs a ``stog.inp`` typically sits beside. Classic
+clobber the real STOG outputs a ``stog.inp`` typically sits beside. An output
+that would land on the input data file or the ``stog.inp`` itself is refused
+even with ``--force``, as are two outputs naming one file, an output path that
+is a directory and an output folder that cannot be created -- all checked
+before any computation. The family is written through temporary files and
+renamed into place only once every write has succeeded, so a failure never
+leaves a half-written family. Classic
 low-r enforcement (the Fortran's final ripple removal) is applied to the RMC
-files by default in ``stog.inp`` mode for parity; the honest *pre*-enforcement
-low-r residual is always reported.
+files by default: at the ``stog.inp`` cutoff/first-peak window in ``stog.inp``
+mode (parity), at ``--enforce-cutoff`` when given, and otherwise at the foot of
+the detected first shell (:func:`rmc_toolkits.scaling.auto_enforcement_cutoff`,
+never above a given r0); ``--no-enforce`` disables it. The honest
+*pre*-enforcement low-r residual is always reported.
 """
 
 from __future__ import annotations
@@ -32,7 +42,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
+import uuid
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -48,13 +60,18 @@ from .parsers import (
     write_stog_xy,
 )
 from .scaling import (
+    MIN_AUTO_WINDOW,
+    R0_WINDOW_MARGIN,
+    RHO0_SEED,
     ScalingConfig,
     ScalingResult,
+    auto_enforcement_cutoff,
     autoscale,
     detect_first_peak_onset,
     diagnostics_summary,
     estimate_rho0,
     scale_pipeline,
+    validate_enforcement,
 )
 from .scattering import faber_ziman, number_density_from_mass_density
 from .transforms import (
@@ -74,9 +91,9 @@ class CliError(Exception):
 #: Output family, in write order: (logical key, stem-mode suffix, description).
 _OUTPUTS = (
     ("sq_scaled", ".sq", "scaled S(Q), unfiltered"),
-    ("gr_unfiltered", ".gr", "g(r) - 1, unfiltered transform"),
+    ("gr_unfiltered", ".gr", "g(r), unfiltered transform (classic scale.gr)"),
     ("sq_filtered", "_ft.sq", "Fourier-filtered S(Q)"),
-    ("gr_filtered", "_ft.gr", "filtered g(r) - 1 (+ 4*pi*rho0*r*[g-1] column)"),
+    ("gr_filtered", "_ft.gr", "filtered g(r) (+ r*[g(r)-1] column, classic scale_ft.gr)"),
     ("rmc_fq", "_rmc.fq", "FK(Q), barns (RMCProfile input)"),
     ("rmc_gr", "_rmc.gr", "Keen GK(r), barns (RMCProfile input)"),
     ("rmc_dr", "_rmc.dr", "D(r) (RMCProfile input)"),
@@ -128,7 +145,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="self-consistent number density: iterate the density-limit fit "
         "until its amplitude agrees with the rho0-independent Q->0 "
         "Faber-Ziman amplitude (requires <b^2> via --b-sq-avg or --formula); "
-        "the estimate replaces rho0 for the run",
+        "the estimate replaces rho0 for the run. rho0 (--rho0 / header / "
+        "--mass-density / stog.inp) seeds it; with no density source the seed "
+        "is 0.05 1/A^3",
     )
     data.add_argument(
         "--b-avg-sq",
@@ -151,7 +170,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--r0",
         type=float,
         help="closest interatomic approach (A); default: MINIMUM_DISTANCES :: header, "
-        "then the stog.inp first-peak line",
+        "then the stog.inp first-peak line (peak_rmin when its window starts below "
+        "the cutoff, else peak_cutoff), else detected from the data",
     )
     physics.add_argument("--r-fit-min", type=float, help="low-r fit window minimum (A)")
     physics.add_argument("--r-fit-max", type=float, help="low-r fit window maximum (A)")
@@ -215,7 +235,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use the stog.inp yscale/yoffset unchanged (classic-stog parity run)",
     )
-    manual.add_argument("--scale", type=float, help="fix a in S_corr = a*S + b (implies --manual)")
+    manual.add_argument(
+        "--scale", type=float,
+        help="fix a in S_corr = a*S + b (implies --manual; finite and non-zero)",
+    )
     manual.add_argument("--offset", type=float, help="fix b in S_corr = a*S + b (implies --manual)")
 
     enforce = parser.add_argument_group("classic low-r enforcement of the RMC outputs")
@@ -223,10 +246,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--enforce",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Fortran-stog final ripple removal on the RMC files "
-        "(default: on in stog.inp mode, off in --data mode)",
+        help="Fortran-stog final ripple removal on the RMC files (default: on — "
+        "at --enforce-cutoff when given, else the stog.inp cutoff and "
+        "first-peak window, else automatically at the foot of the detected "
+        "first shell, below its rising flank and never above a given r0; "
+        "--no-enforce to disable)",
     )
-    enforce.add_argument("--enforce-cutoff", type=float, help="enforcement r cutoff (A)")
+    enforce.add_argument(
+        "--enforce-cutoff",
+        type=float,
+        help="enforcement r cutoff (A); overrides the stog.inp / automatic cutoff",
+    )
     enforce.add_argument(
         "--peak-window",
         type=float,
@@ -247,7 +277,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="name outputs STEM.sq, STEM.gr, STEM_ft.sq, ... instead of the "
         "stog.inp declared names (default in --data mode: the data file's stem)",
     )
-    out.add_argument("--force", action="store_true", help="overwrite existing output files")
+    out.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite existing output files (never the input data or stog.inp, "
+        "never a directory, and never two outputs onto one file)",
+    )
     return parser
 
 
@@ -268,6 +303,21 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def usable_sigma(q: np.ndarray, sq: np.ndarray, sigma: Optional[np.ndarray]):
+    """The sigma column only when clean, else None (CLI, API; JS ``usableSigma``).
+
+    Any non-finite or non-positive sigma on a row with finite Q and S drops the
+    whole column: a zero sigma would get a 1e12 weight and one NaN sigma turns
+    every weight NaN, so a broken uncertainty column must not poison the fit.
+    """
+    if sigma is None:
+        return None
+    usable = np.isfinite(q) & np.isfinite(sq)
+    if not np.all(np.isfinite(sigma[usable])) or np.any(sigma[usable] <= 0):
+        return None
+    return sigma
+
+
 def _load_dataset(data_path: Path, use_sigma: bool):
     """Read (q, sq, sigma) from a STOG-style data file; sigma only when clean."""
     if not data_path.exists():
@@ -276,11 +326,111 @@ def _load_dataset(data_path: Path, use_sigma: bool):
     q, sq = columns[0], columns[1]
     sigma = None
     if use_sigma and columns.shape[0] >= 3:
-        sigma = columns[2]
-        usable = np.isfinite(q) & np.isfinite(sq)
-        if not np.all(np.isfinite(sigma[usable])) or np.any(sigma[usable] <= 0):
-            sigma = None  # a broken uncertainty column must not poison the fit
+        sigma = usable_sigma(q, sq, columns[2])
     return q, sq, sigma
+
+
+#: <b>^2 values closer than this (relative) are the same scattering-length set.
+COEFFICIENT_RTOL = 0.02
+
+
+def resolve_coefficients(
+    *,
+    b_avg_sq: Optional[float],
+    b_avg_sq_source: Optional[str],
+    b_sq_avg: Optional[float],
+    formula: Optional[str],
+) -> "dict[str, Any]":
+    """<b>^2 and <b^2> from ONE consistent source (CLI and scaling API).
+
+    Explicit values win. A ``formula`` (Sears neutron table) fills what is
+    missing, but its <b^2> is paired with a <b>^2 from elsewhere (``stog.inp``
+    or an explicit value) only when the two <b>^2 agree within
+    :data:`COEFFICIENT_RTOL` — then the formula's ratio <b^2>/<b>^2 (the S(0)
+    target) is kept on the configured <b>^2 scale. Otherwise the configured
+    <b>^2 belongs to another radiation or normalization (e.g. <b>^2 = 1 for
+    normalized x-ray data) and mixing would fabricate an S(0) target, so
+    <b^2> stays unset (pass it explicitly). Returns ``{"b_avg_sq", "b_sq_avg",
+    "b_avg_sq_source", "b_sq_avg_source", "warnings"}``.
+    """
+    warnings: list[str] = []
+    b_sq_avg_source = "explicit" if b_sq_avg is not None else None
+    formula = (formula or "").strip()
+    if formula:
+        coefficients = faber_ziman(formula)
+        if b_avg_sq is None:
+            b_avg_sq, b_avg_sq_source = coefficients.b_avg_sq_barn, f"formula {formula}"
+        agree = abs(coefficients.b_avg_sq_barn - b_avg_sq) <= COEFFICIENT_RTOL * abs(b_avg_sq)
+        if b_sq_avg is None:
+            if agree:
+                ratio = coefficients.b_sq_avg_barn / coefficients.b_avg_sq_barn
+                b_sq_avg, b_sq_avg_source = b_avg_sq * ratio, f"formula {formula}"
+            else:
+                warnings.append(
+                    f"<b>^2 from formula {formula} = {coefficients.b_avg_sq_barn:.6f} "
+                    f"barn differs from the {b_avg_sq_source} value {b_avg_sq:.6f} "
+                    "barn; using <b>^2 = "
+                    f"{b_avg_sq:.6f} barn and NOT the formula's <b^2> = "
+                    f"{coefficients.b_sq_avg_barn:.6f} barn (a pair from two sources "
+                    "fabricates the S(0) target) — pass <b^2> explicitly (--b-sq-avg; "
+                    "<Z^2>/<Z>^2 for normalized x-ray data) for the Q->0 criteria"
+                )
+        elif not agree:
+            warnings.append(
+                f"<b>^2 from formula {formula} = {coefficients.b_avg_sq_barn:.6f} "
+                f"barn differs from the {b_avg_sq_source} value {b_avg_sq:.6f} barn; "
+                f"using <b>^2 = {b_avg_sq:.6f} barn and the explicit <b^2> = "
+                f"{b_sq_avg:.6f} barn"
+            )
+    return {
+        "b_avg_sq": b_avg_sq,
+        "b_sq_avg": b_sq_avg,
+        "b_avg_sq_source": b_avg_sq_source,
+        "b_sq_avg_source": b_sq_avg_source,
+        "warnings": warnings,
+    }
+
+
+def refuse_failed_fit(result: ScalingResult) -> None:
+    """Raise :class:`CliError` when an auto-fit returned a non-physical scale.
+
+    ``autoscale`` flags ``a <= 0`` (or a non-finite scale) as
+    ``provenance["fit_failure"]`` with ``converged=False``; such a result must
+    not become RMCProfile input. Shared by the CLI and the scaling API.
+    """
+    failure = result.provenance.get("fit_failure")
+    if failure:
+        raise CliError(
+            f"auto-fit failed: {failure}. No files were written. Check that the "
+            "S(Q) is not sign-inverted or corrupted, pin the closest approach "
+            "(--r0 / --r-fit-max), or use '--amplitude fz' when the composition "
+            "is known"
+        )
+
+
+def stog_inp_closest_approach(inp: StogInput, r_cutoff: float) -> Optional[float]:
+    """Closest-approach proxy from a classic stog.inp first-peak line (line 22).
+
+    ``peak_cutoff peak_rmin peak_rmax`` zeroes g for ``r <= peak_cutoff``
+    *except* inside ``[peak_rmin, peak_rmax]`` (Fortran ``first_peak_zero``
+    semantics), so the region the expert asserts g = 0 ends at ``peak_rmin``
+    when a genuine first-peak window starts below the cutoff
+    (``0 < peak_rmin < peak_cutoff < ...``, ``peak_rmax > peak_rmin``) — the
+    window exists precisely for first peaks that begin inside the cleanup
+    radius — and at ``peak_cutoff`` otherwise (window outside ``[0, cutoff]``,
+    or ``'1.0 0 0'``-style lines). Returned only when the default fit window it
+    leaves above ``r_cutoff`` is at least :data:`MIN_AUTO_WINDOW` wide — the
+    floor the automatic placement uses (else None: r0 is detected). A sliver
+    used to pass: ``'1.46 0 0'`` at r_cutoff 1.0 pinned [1.2, 1.21] A and
+    FeCoSn's scale came out 15 % low. Shared by the CLI, the API and (ported)
+    the Auto StoG page.
+    """
+    candidate = float(inp.peak_cutoff)
+    if 0.0 < inp.peak_rmin < inp.peak_cutoff and inp.peak_rmax > inp.peak_rmin:
+        candidate = float(inp.peak_rmin)
+    if candidate - R0_WINDOW_MARGIN - (r_cutoff + 0.2) >= MIN_AUTO_WINDOW:
+        return candidate
+    return None
 
 
 def _default_r0(
@@ -295,12 +445,7 @@ def _default_r0(
     if "min_distance" in header:
         return float(header["min_distance"])
     if inp is not None:
-        # peak_cutoff is the ripple-cleanup radius and peak_rmin the first-peak
-        # start; the larger is the better closest-approach proxy — but only
-        # when it leaves a non-empty default fit window above r_cutoff.
-        candidate = max(inp.peak_cutoff, inp.peak_rmin)
-        if candidate - 0.25 > r_cutoff + 0.2:
-            return candidate
+        return stog_inp_closest_approach(inp, r_cutoff)
     return None
 
 
@@ -329,35 +474,51 @@ def _build_config(
             if not (args.formula or "").strip():
                 raise CliError("--mass-density needs --formula to convert to rho0")
             rho0 = number_density_from_mass_density(args.formula, args.mass_density)
-        if rho0 is None:
-            raise CliError(
-                "number density unknown: pass --rho0, or --mass-density with "
-                "--formula, or use a data file with a NUMBER_DENSITY :: header"
-            )
         b_avg_sq = args.b_avg_sq
         r_cutoff = args.r_cutoff if args.r_cutoff is not None else 1.0
         rmax = args.rmax if args.rmax is not None else 50.0
         nr = args.nr if args.nr is not None else 5000
         lorch = bool(args.lorch)
 
-    b_sq_avg = args.b_sq_avg
-    if args.formula:
-        coefficients = faber_ziman(args.formula)
-        if b_sq_avg is None:
-            b_sq_avg = coefficients.b_sq_avg_barn
-        if b_avg_sq is None:
-            b_avg_sq = coefficients.b_avg_sq_barn
-        elif abs(coefficients.b_avg_sq_barn - b_avg_sq) > 0.02 * abs(b_avg_sq):
-            print(
-                f"warning: <b>^2 from --formula {args.formula} = "
-                f"{coefficients.b_avg_sq_barn:.6f} barn differs from the "
-                f"configured {b_avg_sq:.6f} barn; keeping the configured value",
-                file=sys.stderr,
-            )
+    if args.b_avg_sq is not None:
+        b_avg_sq_source = "--b-avg-sq"
+    elif inp is not None:
+        b_avg_sq_source = "stog.inp"
+    else:
+        b_avg_sq_source = None
+    try:
+        resolved = resolve_coefficients(
+            b_avg_sq=b_avg_sq, b_avg_sq_source=b_avg_sq_source,
+            b_sq_avg=args.b_sq_avg, formula=args.formula,
+        )
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+    for warning in resolved["warnings"]:
+        print(f"warning: {warning}", file=sys.stderr)
+    b_avg_sq, b_sq_avg = resolved["b_avg_sq"], resolved["b_sq_avg"]
     if b_avg_sq is None:
         raise CliError("--data mode requires <b>^2: pass --b-avg-sq or --formula")
+    if rho0 is None:
+        if args.estimate_rho0 and b_sq_avg is not None:
+            # No density source, but the self-consistency is requested: seed it
+            # like the Auto StoG page (the estimate replaces the seed).
+            rho0 = RHO0_SEED
+            print(
+                f"rho0: no density source — seeding the self-consistency at "
+                f"{RHO0_SEED:g} 1/A^3",
+                file=sys.stderr,
+            )
+        else:
+            raise CliError(
+                "number density unknown: pass --rho0, or --mass-density with "
+                "--formula, or use a data file with a NUMBER_DENSITY :: header "
+                "(or --estimate-rho0 with <b^2> from --formula / --b-sq-avg)"
+            )
     if args.amplitude == "fz" and b_sq_avg is None:
-        raise CliError("--amplitude fz requires <b^2>: pass --b-sq-avg or --formula")
+        raise CliError(
+            "--amplitude fz requires <b^2>: pass --b-sq-avg, or --formula when "
+            "<b>^2 also comes from it"
+        )
 
     try:
         config = ScalingConfig(
@@ -410,6 +571,16 @@ def _resolve_enforcement(
     return float(cutoff), float(peak_rmin), float(peak_rmax)
 
 
+def _same_file(target: Path, source: Path) -> bool:
+    """True when ``target`` names ``source`` (same path, symlink or hard link)."""
+    try:
+        if target.exists() and source.exists():
+            return os.path.samefile(target, source)
+        return target.resolve() == source.resolve()
+    except OSError:
+        return False
+
+
 def _resolve_targets(
     args: argparse.Namespace,
     inp: Optional[StogInput],
@@ -437,6 +608,25 @@ def _resolve_targets(
     targets["ft_correction"] = out_dir / _FT_NAME
     targets["provenance"] = out_dir / json_name
 
+    # The inputs are never an output, --force or not: in --data mode the
+    # default stem makes <out-dir>/<stem>.sq the measured file itself when
+    # --out-dir is its own folder, and a stog.inp may declare an output name
+    # equal to its data file. Overwriting either destroys the measured data
+    # (and a rerun would silently re-scale already-scaled data).
+    inputs = [path for path in (data_path, inp_path) if path is not None]
+    clashes = [
+        str(target)
+        for target in targets.values()
+        if any(_same_file(target, source) for source in inputs)
+    ]
+    if clashes:
+        raise CliError(
+            "output would overwrite an input file (never allowed, even with "
+            "--force; pick --out-dir/--out-stem):\n  " + "\n  ".join(clashes)
+        )
+
+    _check_targets_writable(targets)
+
     if not args.force:
         existing = [str(path) for path in targets.values() if path.exists()]
         if existing:
@@ -445,6 +635,92 @@ def _resolve_targets(
                 "--out-dir/--out-stem):\n  " + "\n  ".join(existing)
             )
     return targets
+
+
+def _target_key(path: Path) -> str:
+    """Identity of an output path for the distinctness check.
+
+    Case-folded, so two names differing only in case count as one file: they
+    are one file on the default macOS and Windows filesystems, and nobody wants
+    both as separate outputs.
+    """
+    return os.path.normcase(str(path.resolve())).casefold()
+
+
+def _check_targets_writable(targets: "dict[str, Path]") -> None:
+    """Refuse, before any computation or write, a family that cannot be written whole.
+
+    Every target must be its own file: no two targets may name the same file
+    (a stog.inp declaring FK(Q) as ``ft.dat`` used to exit 0 with the RMCProfile
+    input overwritten by the Fourier-filter correction), none may be an existing
+    directory, and its nearest existing ancestor must be a directory (the
+    writer creates the missing folders). ``--force`` never relaxes these.
+    """
+    items = list(targets.items())
+    duplicates = [
+        f"{first_key} and {second_key} -> {second}"
+        for index, (first_key, first) in enumerate(items)
+        for second_key, second in items[index + 1:]
+        if _target_key(first) == _target_key(second) or _same_file(first, second)
+    ]
+    if duplicates:
+        raise CliError(
+            "two outputs would be the same file (never allowed, even with --force; "
+            "give them distinct names):\n  " + "\n  ".join(duplicates)
+        )
+
+    directories = [str(path) for path in targets.values() if path.is_dir()]
+    if directories:
+        raise CliError(
+            "output path is a directory (never replaced, even with --force):\n  "
+            + "\n  ".join(directories)
+        )
+
+    blocked = []
+    for path in targets.values():
+        ancestor = path.parent
+        while not ancestor.exists() and ancestor != ancestor.parent:
+            ancestor = ancestor.parent
+        if not ancestor.is_dir():
+            blocked.append(f"{path} (its folder {ancestor} is not a directory)")
+    if blocked:
+        raise CliError(
+            "cannot create the output folder, a path component is not a directory:\n  "
+            + "\n  ".join(blocked)
+        )
+
+
+def _temporary_sibling(path: Path) -> Path:
+    """A fresh hidden name beside ``path``: same folder, so the rename is atomic."""
+    return path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:12]}.tmp")
+
+
+def _write_family_atomically(targets: "dict[str, Path]", writers: "dict[str, Any]") -> None:
+    """Write every target through a temporary sibling, then rename them all.
+
+    ``writers`` maps a target key to a callable writing that file's content to
+    the path it is given. Nothing is renamed into place until every write has
+    succeeded, so a failure (disk full, permissions, an I/O error) removes the
+    temporaries and leaves the previous files -- or none -- exactly as they were:
+    never a half-written or mixed family.
+    """
+    for path in targets.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    temporaries: dict[str, Path] = {}
+    try:
+        for key, write in writers.items():
+            temporary = _temporary_sibling(targets[key])
+            temporaries[key] = temporary
+            write(temporary)
+        for key, temporary in temporaries.items():
+            os.replace(temporary, targets[key])
+    except BaseException:
+        for temporary in temporaries.values():
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+        raise
 
 
 def _write_outputs(
@@ -481,24 +757,32 @@ def _write_outputs(
         gk_out, dr_out = result.gk, result.d_r
 
     label = f"rmc-autoscale {__version__}: a={result.a:.8g} b={result.b:.8g}"
-    gm1 = result.g_filtered - 1.0
-    write_stog_xy(targets["sq_scaled"], result.q, result.sq_scaled, title=label)
-    write_stog_xy(targets["gr_unfiltered"], result.r, g_unfiltered - 1.0, title=label)
-    write_stog_xy(targets["sq_filtered"], result.q, result.sq_filtered, title=label)
-    write_stog_xy(
-        targets["gr_filtered"],
-        result.r,
-        gm1,
-        title=label,
-        extra=4.0 * np.pi * config.rho0 * result.r * gm1,
+
+    def xy(x, y, **kwargs):
+        return lambda path: write_stog_xy(path, x, y, title=label, **kwargs)
+
+    def provenance(path: Path) -> None:
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(_json_safe(payload), handle, indent=2)
+            handle.write("\n")
+
+    # Classic stog conventions (verified against the Fortran runs in
+    # data/stog_tests: scale.gr column 2 is g(r), oscillating about 1, and
+    # scale_ft.gr column 3 is exactly r*[g(r) - 1]).
+    _write_family_atomically(
+        targets,
+        {
+            "sq_scaled": xy(result.q, result.sq_scaled),
+            "gr_unfiltered": xy(result.r, g_unfiltered),
+            "sq_filtered": xy(result.q, result.sq_filtered),
+            "gr_filtered": xy(result.r, result.g_filtered, extra=result.r * (result.g_filtered - 1.0)),
+            "rmc_fq": xy(result.q, result.fk),
+            "rmc_gr": xy(result.r, gk_out),
+            "rmc_dr": xy(result.r, dr_out),
+            "ft_correction": xy(result.q, result.sq_ft),
+            "provenance": provenance,
+        },
     )
-    write_stog_xy(targets["rmc_fq"], result.q, result.fk, title=label)
-    write_stog_xy(targets["rmc_gr"], result.r, gk_out, title=label)
-    write_stog_xy(targets["rmc_dr"], result.r, dr_out, title=label)
-    write_stog_xy(targets["ft_correction"], result.q, result.sq_ft, title=label)
-    with targets["provenance"].open("w", encoding="utf-8") as handle:
-        json.dump(_json_safe(payload), handle, indent=2)
-        handle.write("\n")
 
 
 def _print_report(
@@ -509,11 +793,20 @@ def _print_report(
     manual: bool,
     enforcement: Optional[tuple[float, float, float]],
     n_points: int,
+    enforcement_note: Optional[str] = None,
+    config: Optional[ScalingConfig] = None,
 ) -> None:
     mode = "manual (fixed a, b)" if manual else f"auto ({summary.get('c1_mode', 'fit')})"
     print(f"Auto StoG (rmc-toolkits {__version__})")
     print(f"  mode      : {mode}")
     print(f"  data      : {n_points} S(Q) points used")
+    if config is not None:
+        # The coefficients actually in effect (after --formula / stog.inp /
+        # explicit-value resolution), with the S(0) target they imply.
+        pair = f"<b>^2 = {config.b_avg_sq:.6g} barn, <b^2> = " + (
+            "not set" if config.b_sq_avg is None else f"{config.b_sq_avg:.6g} barn"
+        )
+        print(f"  coeffs    : {pair}, S(0) target = {config.effective_s0_target:.4g}")
     line = f"  result    : a = {result.a:.6g}, b = {result.b:.6g}"
     if reference is not None and not manual:
         line += f"   [stog.inp hand values: a = {reference[0]:.6g}, b = {reference[1]:.6g}]"
@@ -538,21 +831,58 @@ def _print_report(
             "recoverable from this data alone (missing low-Q information); "
             "validate the scale externally"
         )
+    if summary.get("rmax_beyond_alias_limit"):
+        print(
+            f"  WARNING   : rmax = {config.rmax if config is not None else float('nan'):g} A "
+            f"exceeds the aliasing limit pi/dQ = {summary['r_alias_limit']:.4g} A of the "
+            "coarsest S(Q) step: G(r)/D(r) beyond it are folded (a negated mirror image "
+            "on a uniform grid) or corrupted by coarse steps (log binning, despike gaps) "
+            "— lower --rmax, or use finer, uniformly binned data"
+        )
     if summary.get("r0_detected") is not None:
         refined = " (fit window refined)" if summary.get("window_refined") else ""
         print(f"  r0 (data) : first-shell onset detected at {summary['r0_detected']:.2f} A{refined}")
+        if summary.get("first_shell_below_r0"):
+            print(
+                "  WARNING   : the first shell starts below the given r0 "
+                f"({summary['r0_detected']:.2f} A); the low-r window "
+                f"[{summary['r_fit_window'][0]:g}, {summary['r_fit_window'][1]:g}] A may "
+                "cut into it — check r0 (--r0 / MINIMUM_DISTANCES / stog.inp)"
+            )
     if "amplitude_concordance" in summary:
         verdict = "concordant" if summary["amplitudes_concordant"] else "DISCORDANT"
         print(
             f"  amplitude concordance: a_fz/a = "
             f"{summary['amplitude_concordance']:.3f} ({verdict})"
         )
+    if summary.get("a_fz_reliable") is True:
+        # The flag is statistical: a systematic head bias passes it (Mn3Sn
+        # 55537 / 54139: reliable a_fz drifting 11 -> 6 / 16 -> 24 with Qmin).
+        also = "; see also the concordance above" if "amplitude_concordance" in summary else ""
+        print(
+            f"  Q->0 amplitude: a_fz = {summary['a_fz']:.4g} (relative error "
+            f"{summary['a_fz_rel_se']:.0%}, resolved) — necessary, not sufficient: a biased "
+            f"low-Q head passes too; re-run at a few --qmin values to check a_fz is "
+            f"stable{also}"
+        )
+    if summary.get("a_fz_reliable") is False:
+        use = "the concordance" if "amplitude_concordance" in summary else "it as the scale"
+        print(
+            f"  WARNING   : the Q->0 Faber-Ziman amplitude a_fz = {summary['a_fz']:.4g} is "
+            f"ill-conditioned (relative error {summary['a_fz_rel_se']:.0%}: S_meas(0) - "
+            "level is not resolved from its uncertainty — Bragg-contaminated or long "
+            f"low-Q head); do not trust {use}"
+        )
     if enforcement is not None:
         cutoff, peak_rmin, peak_rmax = enforcement
-        print(
-            f"  enforcement: RMC outputs hard-set below r = {cutoff:g} A "
-            f"(first-peak window [{peak_rmin:g}, {peak_rmax:g}])"
+        where = (
+            enforcement_note
+            if enforcement_note
+            else f"first-peak window [{peak_rmin:g}, {peak_rmax:g}]"
         )
+        print(f"  enforcement: RMC outputs hard-set below r = {cutoff:.4g} A ({where})")
+    elif enforcement_note:
+        print(f"  enforcement: {enforcement_note}")
     print(f"Outputs -> {targets['provenance'].parent}")
     for key, _, description in _OUTPUTS:
         print(f"  {targets[key].name:<28s} {description}")
@@ -568,6 +898,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         if (args.stog_inp is None) == (args.data is None):
             raise CliError("pass exactly one input: a stog.inp path, or --data FILE")
+        # S_corr = a*S_meas + b: the fixed-scaling flags obey the rules
+        # read_stog_inp applies to yscale/yoffset and the API to a/b -- a NaN
+        # used to write nine all-NaN files with exit 0, and a = 0 discards the data.
+        if args.scale is not None and not (math.isfinite(args.scale) and args.scale != 0.0):
+            raise CliError(f"--scale must be a finite, non-zero number, got {args.scale:g}")
+        if args.offset is not None and not math.isfinite(args.offset):
+            raise CliError(f"--offset must be a finite number, got {args.offset:g}")
 
         inp: Optional[StogInput] = None
         inp_path: Optional[Path] = None
@@ -589,6 +926,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         config = _build_config(args, inp, header)
         enforcement = _resolve_enforcement(args, inp)
+        if enforcement is not None:
+            try:
+                validate_enforcement(*enforcement, rmax=config.rmax)
+            except ValueError as exc:
+                raise CliError(str(exc)) from None
+        enforcement_source = None
+        if enforcement is not None:
+            enforcement_source = "user" if args.enforce_cutoff is not None else "stog.inp"
         targets = _resolve_targets(args, inp, inp_path, data_path)
 
         manual = args.manual or args.scale is not None or args.offset is not None
@@ -607,15 +952,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
             if config.b_sq_avg is None:
                 raise CliError(
-                    "--estimate-rho0 requires <b^2>: pass --b-sq-avg or --formula"
+                    "--estimate-rho0 requires <b^2>: pass --b-sq-avg, or --formula "
+                    "when <b>^2 also comes from it"
                 )
             rho0_estimate = estimate_rho0(q, sq, config, sigma=sigma)
             if not rho0_estimate["converged"]:
+                if rho0_estimate.get("stopped"):
+                    reason = (
+                        "the iteration stopped at a density the auto-scale cannot "
+                        f"fit ({rho0_estimate['stopped']})"
+                    )
+                elif rho0_estimate.get("reason"):
+                    reason = rho0_estimate["reason"]
+                else:
+                    reason = (
+                        "the density-limit and Q->0 Faber-Ziman amplitudes "
+                        "disagree at every density — typically data missing "
+                        "structure below Qmin"
+                    )
                 raise CliError(
                     "rho0 self-consistency did not converge (final concordance "
-                    f"{rho0_estimate['concordance']:.3g}): the density-limit and "
-                    "Q->0 Faber-Ziman amplitudes disagree at every density — "
-                    "typically data missing structure below Qmin. Set rho0 "
+                    f"{rho0_estimate['concordance']:.3g}): {reason}. Set rho0 "
                     "explicitly (--rho0 / --mass-density / data header) and "
                     "consider '--amplitude fz' for the scale"
                 )
@@ -625,6 +982,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if rho0_estimate["extrapolated"]
                 else ""
             )
+            if rho0_estimate.get("a_fz_reliable") is False:
+                note += (
+                    "; WARNING: its Faber-Ziman anchor is ill-conditioned (a_fz "
+                    f"relative error {rho0_estimate['a_fz_rel_se']:.0%})"
+                )
             print(
                 f"rho0 self-consistency: {rho0_estimate['rho0']:.6f} 1/A^3 "
                 f"(concordance {rho0_estimate['concordance']:.4f}, "
@@ -647,9 +1009,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             result = scale_pipeline(q, sq, config, float(a), float(b))
         else:
             result = autoscale(q, sq, config, sigma=sigma)
+            refuse_failed_fit(result)
 
-        # Data mode without an explicit cutoff: enforce at the data-derived
-        # closest approach (classic-product parity, from physics not a guess).
+        # No explicit cutoff (data mode) and enforcement not refused: enforce
+        # automatically at the FOOT of the first shell, below its rising flank
+        # (auto_enforcement_cutoff), so no first-shell signal is removed.
+        auto_note: Optional[str] = None
         if enforcement is None and args.enforce is not False:
             r0_detected = result.provenance.get("r0_detected")
             if r0_detected is None:
@@ -659,8 +1024,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 )
                 if r0_detected is not None:
                     result.provenance["r0_detected"] = float(r0_detected)
-            if r0_detected is not None:
-                enforcement = (float(r0_detected),) * 3
+            cutoff = auto_enforcement_cutoff(
+                result.r, result.g_filtered, config, onset=r0_detected
+            )
+            if cutoff is not None:
+                enforcement = (cutoff,) * 3
+                # Name what anchored the cutoff: the detected onset, or the
+                # given r0 when it caps the onset or no shell was detected.
+                if config.r0 is not None and (
+                    r0_detected is None or float(config.r0) < float(r0_detected)
+                ):
+                    enforcement_source = "auto (given r0)"
+                    auto_note = (
+                        f"automatic: anchored on the given r0 {config.r0:g} A "
+                        + (
+                            "(no shell detected)"
+                            if r0_detected is None
+                            else f"(below the detected onset {r0_detected:.2f} A)"
+                        )
+                    )
+                else:
+                    enforcement_source = "auto (first-shell foot)"
+                    auto_note = (
+                        f"automatic: foot of the first shell, onset {r0_detected:.2f} A"
+                    )
+            else:
+                auto_note = (
+                    "none: no first shell detected to anchor an automatic "
+                    "cutoff (pass --enforce-cutoff to enforce)"
+                )
 
         summary = diagnostics_summary(result, config)
         summary["c1_mode"] = result.provenance.get("c1_mode_effective", "manual")
@@ -677,19 +1069,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             else {"a": inp.a, "b": inp.b, "yscale": inp.yscale, "yoffset": inp.yoffset},
             "enforcement": None
             if enforcement is None
-            else dict(zip(("cutoff", "peak_rmin", "peak_rmax"), enforcement)),
+            else {
+                **dict(zip(("cutoff", "peak_rmin", "peak_rmax"), enforcement)),
+                "source": enforcement_source,
+            },
             "outputs": {key: str(path) for key, path in targets.items()},
             "rho0_estimate": rho0_estimate,
             "diagnostics": summary,
             "provenance": result.provenance,
         }
 
-        targets["provenance"].parent.mkdir(parents=True, exist_ok=True)
         _write_outputs(result, config, targets, enforcement, payload)
         reference = None if inp is None else (inp.a, inp.b)
         _print_report(
             result, summary, targets, reference, manual, enforcement,
             n_points=int(result.provenance["n_q_points"]),
+            enforcement_note=auto_note,
+            config=config,
         )
         return 0
     except CliError as exc:

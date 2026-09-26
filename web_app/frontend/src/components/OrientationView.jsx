@@ -14,9 +14,11 @@
 // three-column grid next to the site picker.
 //
 // What to look for that the ellipsoid cannot show: discrete spots (hop sites),
-// and a +u/−u imbalance (static off-centring / odd anharmonicity) — the map is
-// never antipodally folded, and the asymmetry readout flags a real imbalance
-// against its Poisson noise floor.
+// and a +u/−u imbalance about the site mean (skewness: odd anharmonicity or
+// unequally occupied off-centre wells) — the map is never antipodally folded,
+// and the asymmetry readout flags a real imbalance against its exact
+// inversion-symmetric null. Directions are measured from the site's own mean
+// position, so a coherent off-centring of every copy is invisible here.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -32,6 +34,7 @@ import {
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
 import SaveMenu from './SaveMenu';
+import { siteLabel } from '../siteLabel';
 import {
     CELL_AXIS_COLORS,
     CELL_AXIS_CSS,
@@ -49,6 +52,13 @@ const SAVE_OPTIONS = [
 
 const numberFormat = (value, digits = 2) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
+
+// A calibrated one-sided deviate (engine field) as "N.Nσ"; a deviate at or
+// below 0 means the tail probability is >= 1/2, i.e. no evidence at all.
+const sigmaFormat = (value) => {
+    if (!Number.isFinite(value)) return '—';
+    return value > 0 ? `${value.toFixed(1)}σ` : 'not significant';
+};
 
 // Thin axis rods through the sphere centre along ±dir (both signs, since a
 // direction map has no preferred end of an axis), one mesh per sign.
@@ -418,7 +428,7 @@ export default function OrientationView({
         if (!handle) return;
         const { renderer, scene, camera } = handle;
         const name = selectedEllipsoid
-            ? `Orientation_${selectedEllipsoid.element}_site${selectedEllipsoid.referenceNumber}`
+            ? `Orientation_${siteLabel(selectedEllipsoid)}_site${selectedEllipsoid.referenceNumber}`
             : 'Orientation_sphere';
         if (format === 'png3x') {
             const size = renderer.getSize(new THREE.Vector2());
@@ -442,10 +452,9 @@ export default function OrientationView({
         [colormap, contrast, result]
     );
 
-    // A real inversion asymmetry: well above what Poisson noise alone produces.
-    const asymmetrySignificant = result
-        ? result.antipodalAsymmetry > 3 * result.antipodalAsymmetryNull
-        : false;
+    // A real inversion asymmetry: the engine's flag, A > null + 3 null SDs for
+    // an inversion-symmetric population with the same antipodal-pair totals.
+    const asymmetrySignificant = Boolean(result?.antipodalAsymmetrySignificant);
 
     // Bounds-guarded: a raycast fired between a resolution change and the hover
     // reset could carry an index from the previous, larger tiling.
@@ -481,7 +490,7 @@ export default function OrientationView({
                 <h3>
                     <span className="panel-title-label">
                         {selectedEllipsoid
-                            ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber} — displacement directions`
+                            ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber} — displacement directions`
                             : 'Displacement directions'}
                     </span>
                     <span className="panel-title-actions">
@@ -540,7 +549,7 @@ export default function OrientationView({
                             <div>{formatDirection(result.centers[hoverCell])}</div>
                             <div>{numberFormat(result.enhancement[hoverCell], 2)}× isotropic</div>
                             <div>
-                                {result.counts[hoverCell]} atoms · z = {numberFormat(result.zScore[hoverCell], 1)}
+                                {result.counts[hoverCell]} atoms · local z = {numberFormat(result.zScore[hoverCell], 1)}
                             </div>
                             {result.cellMeanAmplitude?.[hoverCell] > 0 && (
                                 <div>⟨|Δr|⟩ = {numberFormat(result.cellMeanAmplitude[hoverCell], 3)} Å</div>
@@ -567,39 +576,87 @@ export default function OrientationView({
                         <div className="orient-summary">
                             <span className="orient-stat">
                                 peak <b>{numberFormat(result.peakEnhancement, 2)}×</b> at {formatDirection(result.peakDirection)}
-                                {' '}(z = {numberFormat(result.peakZScore, 1)})
+                                {result.peakTieCount > 1 && (
+                                    <span className="orient-stat-null" title="Several cells share the maximum enhancement (within 1e-9); the lowest-index cell is reported">
+                                        {' '}(1 of {result.peakTieCount} equal cells)
+                                    </span>
+                                )}
+                                {' '}· <b>{sigmaFormat(result.peakSignificance)}</b>
+                                <InfoBadge label="About the peak significance" align="end">
+                                    <p>
+                                        How surprising the peak cell&apos;s raw count is for an isotropic
+                                        site: the exact Poisson probability of at least that many atoms
+                                        given the cell&apos;s expected count, corrected for having searched
+                                        all {result.cellCount} cells for the maximum (Šidák), as a
+                                        one-sided normal deviate. A pure-noise map exceeds 2σ in at most
+                                        ~2% of cases. The hover z is local and uncorrected — the largest
+                                        of many cells, so it is not a significance.
+                                    </p>
+                                </InfoBadge>
                             </span>
                             <span className="orient-stat">
                                 anisotropy <b>{numberFormat(result.orientationAnisotropy, 2)}</b>
+                                {' '}<span className="orient-stat-null">
+                                    (isotropic ≈ {numberFormat(result.orientationAnisotropyNull, 2)})
+                                </span>
+                                {' '}· <b>{sigmaFormat(result.orientationAnisotropySignificance)}</b>
                                 <InfoBadge label="About the orientation anisotropy" align="end">
                                     <p>
-                                        3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 0 for an isotropic
-                                        direction distribution, 2 for a perfect single axis. Resolution
-                                        independent (computed from the vectors, not the bins).
+                                        3λ₁ − 1 of the orientation tensor ⟨u uᵀ⟩: 2 for a perfect single
+                                        axis, and 0 for an isotropic site only in the limit of many
+                                        atoms — a finite isotropic sample reads about 1.6/√N (shown in
+                                        brackets). The σ is Bingham&apos;s test of isotropy on the same
+                                        tensor (χ² with 5 degrees of freedom). Resolution independent
+                                        (computed from the vectors, not the bins).
                                     </p>
                                 </InfoBadge>
                             </span>
                             <span className={`orient-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
                                 ± asymmetry <b>{numberFormat(result.antipodalAsymmetry, 2)}</b>
-                                {' '}<span className="orient-stat-null">(noise floor {numberFormat(result.antipodalAsymmetryNull, 2)})</span>
+                                {' '}<span className="orient-stat-null">
+                                    (symmetric null {numberFormat(result.antipodalAsymmetryNull, 2)} ± {numberFormat(result.antipodalAsymmetryNullSd, 2)})
+                                </span>
+                                {' '}· <b>{sigmaFormat(result.antipodalAsymmetryZ)}</b>
                                 <InfoBadge label="About the antipodal asymmetry" align="end">
                                     <p>
                                         The +u vs −u imbalance, Σ|n(u) − n(−u)| / N over antipodal cell
                                         pairs: 0 for an inversion-symmetric cloud, 1 for a fully
-                                        one-sided one. The thermal ellipsoid is blind to this — a value
-                                        well above the Poisson noise floor is real off-centring or
-                                        odd-order anharmonicity.
+                                        one-sided one. Counting noise alone makes it positive: the null
+                                        is its exact mean ± SD if every pair&apos;s atoms had split at
+                                        random between u and −u (same pair totals), and the readout
+                                        turns red above null + 3 SD. The thermal ellipsoid is blind to
+                                        this — a value well above the null means the cloud is skewed
+                                        about its mean: odd-order anharmonicity, or unequally occupied
+                                        opposite off-centre wells. Directions are measured from the
+                                        site&apos;s own mean position, so an off-centring shared by every
+                                        copy moves that mean and does not show here.
                                     </p>
                                 </InfoBadge>
                             </span>
                             <span className="orient-stat">
-                                map significance <b>{numberFormat(result.significance, 1)}σ</b>
+                                map significance <b>{Number.isFinite(result.mapSignificance) ? sigmaFormat(result.mapSignificance) : '— (too sparse)'}</b>
                                 <InfoBadge label="About the map significance" align="end">
                                     <p>
-                                        RMS of the per-cell Poisson z-scores against the isotropic null:
-                                        ≈1 means the pattern is consistent with pure counting noise;
-                                        well above 1 means real directional structure.
+                                        Pearson&apos;s χ² of the raw cell counts against an isotropic
+                                        site: χ² = {numberFormat(result.mapChiSquare, 0)}, where pure
+                                        counting noise gives {result.mapDegreesOfFreedom} ±{' '}
+                                        {numberFormat(result.mapNullSd, 0)}. Its tail comes from a gamma
+                                        curve matched to the exact isotropic mean, spread and skewness of
+                                        χ², not from the textbook χ² curve: with well under one atom per
+                                        cell, χ² mostly counts the few pairs of atoms that share a cell,
+                                        which is far more skewed. Reported as a one-sided normal deviate;
+                                        pure counting noise exceeds 2σ in about 2% of maps and 3σ in
+                                        under 0.25%, at any resolution.
                                     </p>
+                                    {!Number.isFinite(result.mapSignificance) && (
+                                        <p>
+                                            Not reported here: only{' '}
+                                            {numberFormat(result.mapExpectedPairs, 2)} pairs of atoms are
+                                            expected to share a cell (under 0.1), so χ² has almost nothing
+                                            to count. Use Auto resolution, or read the peak and anisotropy
+                                            tests.
+                                        </p>
+                                    )}
                                 </InfoBadge>
                             </span>
                         </div>

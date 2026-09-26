@@ -31,6 +31,30 @@ class PackageApiTests(unittest.TestCase):
         for name in expected:
             self.assertTrue(hasattr(rmc_toolkits, name), name)
 
+    def test_every_exported_name_resolves_once(self):
+        self.assertEqual(len(rmc_toolkits.__all__), len(set(rmc_toolkits.__all__)))
+        for name in rmc_toolkits.__all__:
+            self.assertTrue(hasattr(rmc_toolkits, name), name)
+
+    def test_top_level_exports_the_1_0_engine_api(self):
+        # Public functions and constants the CLIs, the API and the docs use,
+        # re-exported beside the rest of their modules' API.
+        from rmc_toolkits import scaling, transforms, triplets
+
+        expected = {
+            scaling: (
+                "auto_enforcement_cutoff", "first_shell_foot", "fz_limit_fit", "alias_limit",
+                "RHO0_PHYSICAL_RANGE", "RHO0_SEED", "FZ_REL_SE_MAX",
+            ),
+            transforms: ("gpdf_slope_at_zero",),
+            triplets: ("bond_angle_summary_from_file",),
+        }
+        for module, names in expected.items():
+            for name in names:
+                with self.subTest(name=name):
+                    self.assertIn(name, rmc_toolkits.__all__)
+                    self.assertIs(getattr(rmc_toolkits, name), getattr(module, name))
+
     def test_package_version_matches_pyproject(self):
         metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 

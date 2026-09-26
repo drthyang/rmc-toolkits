@@ -70,8 +70,10 @@ class BackendApiTests(unittest.TestCase):
             directory = Path(tmpdir)
             earlier = directory / "alpha.rmc6f"
             expected = directory / "beta.rmc6f"
-            earlier.write_text("", encoding="utf-8")
-            expected.write_text("", encoding="utf-8")
+            # Both USABLE, so the stem preference is what is tested (an empty
+            # candidate is skipped whenever a usable one exists).
+            earlier.write_text("(Version 6f format configuration file)\nAtoms:\n", encoding="utf-8")
+            expected.write_text("(Version 6f format configuration file)\nAtoms:\n", encoding="utf-8")
             (directory / "beta-01.log").write_text("", encoding="utf-8")
 
             self.assertEqual(backend_app._find_rmc6f(directory), expected)
@@ -110,7 +112,10 @@ class BackendApiTests(unittest.TestCase):
             selected = Path(tmpdir).resolve()
             backend_app._choose_folder = lambda _initial_dir: selected
             try:
-                response = self.client.post("/api/dialog/folder", json={"dir": "data"})
+                # The dialog's starting folder must lie inside the data root; the
+                # repo root always does (data/ may be a symlink out of it, e.g. in
+                # a git worktree). The folder the user PICKS is the external one.
+                response = self.client.post("/api/dialog/folder", json={"dir": "."})
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.get_json()["path"], str(selected))
 
@@ -135,7 +140,7 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(metadata_response.status_code, 200)
         metadata = metadata_response.get_json()
         self.assertEqual(metadata["kind"], "xray_sq")
-        self.assertEqual(metadata["title"], "S(Q) (x-ray)")
+        self.assertEqual(metadata["title"], "F(Q)")
         self.assertGreater(metadata["metrics"]["rwp"], 0.0)
 
         self.assertEqual(data_response.status_code, 200)
@@ -664,6 +669,33 @@ class ScalingApiTests(unittest.TestCase):
 
         forced = self.client.post("/api/scaling/run", json={**body, "force": True})
         self.assertEqual(forced.status_code, 200)
+
+    def test_run_force_never_overwrites_the_input_data(self):
+        # Data mode, outDir = the data file's own folder: the default stem
+        # makes the scaled-S(Q) target the input itself. force must not
+        # destroy the measured file; the refusal is a 400 naming the input.
+        from rmc_toolkits.parsers import write_stog_xy
+
+        data = self.run_dir / "victim.sq"
+        write_stog_xy(data, self.q, self.sq_meas, title="measured")
+        before = data.read_bytes()
+        body = {
+            "path": "results/scaling_api_test/victim.sq",
+            "qmin": 0.6, "qmax": 30, "rho0": self.RHO0, "bAvgSq": self.B2,
+            "r0": 2.65, "mode": "manual", "a": 10.0, "b": -9.0,
+            "outDir": "results/scaling_api_test",
+        }
+        try:
+            for force in (False, True):
+                response = self.client.post(
+                    "/api/scaling/run", json={**body, "force": force}
+                )
+                self.assertEqual(response.status_code, 400, msg=response.get_json())
+                self.assertIn("input", response.get_json()["error"])
+                self.assertEqual(data.read_bytes(), before)
+                self.assertFalse((self.run_dir / "victim.gr").exists())
+        finally:
+            data.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

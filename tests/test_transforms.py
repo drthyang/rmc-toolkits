@@ -247,13 +247,16 @@ class StogRunParityTests(unittest.TestCase):
         np.testing.assert_allclose(ours, ref[1], atol=1e-9)
 
     def test_forward_transform_matches_scale_gr(self):
-        # scale.gr stores g(r) - 1 (pinned by the pystog cross-run).
+        # scale.gr stores g(r) itself (oscillating about 1), not g(r) - 1: an
+        # absolute rms separates the two (0.04 vs 1.0 on this run), which the
+        # old rms/max|ref| < 5e-3 bound could not — max|ref| is ~400 at low r.
         ref = read_stog_xy(STOG_RUN / "scale.gr")
         gpdf = fq_to_gpdf(self.q, sq_to_fq(self.q, self.sq_scaled), self.r)
-        ours = gpdf_to_g(self.r, gpdf, self.inp.rho0) - 1.0
+        ours = gpdf_to_g(self.r, gpdf, self.inp.rho0)
         ref_on_ours = np.interp(self.r, ref[0], ref[1])
         rms = np.sqrt(np.mean((ours - ref_on_ours) ** 2))
-        self.assertLess(rms / np.abs(ref_on_ours).max(), 5e-3)
+        self.assertLess(rms, 0.1)
+        self.assertAlmostEqual(ref[1][ref[0] >= 20].mean(), 1.0, delta=0.03)
 
     def test_fourier_filter_matches_ft_dat_and_scale_ft_sq(self):
         sq_filtered, sq_ft, _ = fourier_filter(

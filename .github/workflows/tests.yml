@@ -8,8 +8,20 @@ on:
 
 jobs:
   python:
-    name: Python package & backend tests
+    name: Python ${{ matrix.python-version }} (${{ matrix.deps }} deps)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Oldest supported interpreter with the declared dependency floors
+          # (pyproject.toml) pinned exactly, so the floors stay honest.
+          - python-version: "3.9"
+            deps: oldest
+          - python-version: "3.11"
+            deps: latest
+          - python-version: "3.13"
+            deps: latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,14 +29,23 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           cache: pip
+
+      - name: Pin the dependency floors
+        if: matrix.deps == 'oldest'
+        run: |
+          python -m pip install --upgrade pip
+          pip install "numpy==1.22.4" "scipy==1.8.1" "matplotlib==3.6.3" "contourpy==1.0.7"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r web_app/backend/requirements.txt
-          pip install -e .
+          pip install -e ".[test]"
+
+      - name: Show resolved versions
+        run: python -c "import sys, numpy, scipy, matplotlib; print(sys.version, numpy.__version__, scipy.__version__, matplotlib.__version__)"
 
       - name: Run tests
         env:

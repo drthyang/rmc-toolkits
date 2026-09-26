@@ -175,15 +175,15 @@ The Python `detect_plot_kind()` ([plots.py](../../rmc_toolkits/plots.py)) and th
 | 3 | `_FT_XFQ\d+\.csv$` | `xpdf` | X-ray PDF obtained by Fourier-transforming F(Q) |
 | 4 | name contains `PDF` **and** ends `.csv`, and contains `PDFpartials` | `pdf_partials` | per-pair partial PDFs |
 | 5 | name contains `PDF` **and** ends `.csv` (otherwise) | `npdf` | neutron PDF |
-| 6 | ends `_FQ1.csv` | `xray_sq` | titled "S(Q) (x-ray)" |
-| 7 | ends `_SQ1.csv` | `neutron_sq` | titled "S(Q) (neutron)" |
+| 6 | `_FQ\d+\.csv$` | `xray_sq` | reciprocal-space fit, titled by its function (`F(Q)`, `F(Q) #2`, …) |
+| 7 | `_SQ\d+\.csv$` | `neutron_sq` | reciprocal-space fit, titled by its function (`S(Q)` unless the header says otherwise) |
 | 8 | `_bragg(?:_.+)?\.csv$` | `bragg` | Bragg profile |
 | 9 | `-\d{2,}\.log$` (an **inline** regex in both files, not `R_VALUE_LOG_RE`) | `r_value` | RMCProfile run log (χ history) |
 | 10 | **Python:** name ∈ `{scale_ft.gr, scale_ft.sq, scale_ft_rmc.fq}`<br>**JS:** `\.(gr\|sq\|fq)$` (case-insensitive) | `stog` | STOG/preprocessing data file |
 | — | anything else | `null` | not plotted |
 
 Ordering is load-bearing where the patterns genuinely overlap: **rules 4–5 fire before rules 6–7**,
-so a name containing both `PDF` and `_FQ1.csv` is classified as a PDF, never `xray_sq` — as
+so a name containing both `PDF` and `_FQ<n>.csv` is classified as a PDF, never `xray_sq` — as
 `pdf_partials` if it also contains `PDFpartials` (rule 4), otherwise as `npdf` (rule 5). Both are
 one `if "PDF" in name and name.endswith(".csv")` branch in the source, split into two rows here
 because they return different kinds. The rule-3-before-rules-4–5 ordering only bites for an xPDF
@@ -194,14 +194,17 @@ substring and would be `xpdf` under either ordering.
 **Known consequences of pattern-only classification** (all reproducible against the bundled demo
 folder, [web_app/frontend/public/demo/](../../web_app/frontend/public/demo/)):
 
-* `GTS_250K_XFQ1.csv` (the x-ray F(Q)) matches **nothing** — `_FQ1.csv` requires an underscore
-  immediately before `FQ1`, and `XFQ1.csv` supplies an `X`. That file is indexed but never charted.
-* `GTS_250K_FQ1partials.csv` matches nothing (it does not end in `_FQ1.csv`), so partial F(Q) files
+* `GTS_250K_XFQ1.csv` (the x-ray F(Q)) matches **nothing** — `_FQ\d+` requires an underscore
+  immediately before `FQ`, and `XFQ1.csv` supplies an `X`. That file is indexed but never charted
+  (in the demo run it duplicates `GTS_250K_FQ1.csv` at higher precision).
+* `GTS_250K_FQ1partials.csv` matches nothing (it does not end in `_FQ<n>.csv`), so partial F(Q) files
   are silently skipped. Partial *PDF* files are not, because rules 4–5 key on the substring `PDF`
   anywhere in the name (`GTS_250K_PDFpartials.csv` → rule 4).
-* Rule 6 asserts that `_FQ1.csv` is **x-ray** and rule 7 that `_SQ1.csv` is **neutron**. This is a
-  naming convention, not something read from the data; the title chip will say "S(Q) (x-ray)" for
-  any `*_FQ1.csv` regardless of radiation.
+* Rules 6–7 accept **any dataset number**, like rule 3 and the stem chooser; until 2026-09 they
+  matched only the literal `_FQ1.csv` / `_SQ1.csv`, so a second reciprocal-space dataset was never
+  classified, charted, given an Rwp or described to the assistant. The kind names `xray_sq` /
+  `neutron_sq` are internal identifiers only: the **title and y label name the function the file
+  holds** (Step 6) and claim no radiation type.
 * Rule 9 needs **two or more** digits: `run-01.log` is an R-value log, `run-1.log` and
   `derivative.log` are not (`tests/test_plots.py::test_detect_plot_kind_for_supported_outputs`
   pins `GNSe.log → None`, `run-info.log → None`, `GNSe-123.log → r_value`).
@@ -240,15 +243,35 @@ last column names the kind of output file the pattern matches, not the value ext
 | 1 | `^(.+)_PDF(?:partials\|\d+)?\.csv$` | PDF |
 | 2 | `^Frac_coord_(.+)\.txt$` | fractional-coordinate export |
 
-Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
-`.rmc6f` wins; otherwise the **first** `.rmc6f` in the list is used. Python sorts the directory
-alphabetically before this scan, so "first" is alphabetical; the browser uses the enumeration order
-of the directory pick, so the two can disagree on the fallback. The browser additionally keys the
-stem map by `dirname/stem`, so matching is per-subfolder; the Python only ever looks at one
-directory.
+**Only usable candidates take part.** A `.rmc6f` that is empty (0 bytes) or shows no Atoms marker
+(`/^\s*atoms\b/i`) in its first 64 KiB — typically left by a killed run — is skipped
+(`parsers.py` → `rmc6f_problem()`, `browserData.js` → `structureFileProblem()`, same rule). Before
+2026-09 a stem match was taken unconditionally, so in `data/250K_try1/supercell` the empty
+`new_x.rmc6f` (stem-matched by `Frac_coord_new_x.txt`) hid six valid configurations and the page
+failed with an unhelpful metadata error. When no candidate is usable the error lists each file and
+why (`No usable .rmc6f file: new_x.rmc6f (empty (0 bytes))`).
 
-**Code:** `app.py` → `_run_stem_from_output_name()`, `_find_rmc6f()`; `browserData.js` →
-`runStemFromOutputName()`, `chooseStructureFile()`.
+Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
+usable `.rmc6f` wins; otherwise the **first** usable `.rmc6f` by name is used. Both runtimes break
+ties in code-point order, as Python's `sorted()` compares strings: candidates by path, outputs by
+(priority, lower-cased name, stem). Before 1.0 the browser fell back to the enumeration order of the
+directory pick and ranked outputs with `localeCompare`, so the two could disagree. The browser
+additionally keys the stem map by `dirname/stem`, so matching is per-subfolder; the Python only
+ever looks at one directory. In Python the rule is one function, `parsers.find_run_configuration()`,
+shared by the backend (`_find_rmc6f()`) and the `rmc-triplets` CLI.
+
+The package function `read_structure(directory)` (a `Frac_coord_*.txt` reader, not used by the
+page) applies the same principle to its **pair** of files: `Frac_coord_<stem>.txt` is paired with
+`<stem>.rmc6f` (usable candidates only); a folder with exactly one Frac file and one usable `.rmc6f`
+pairs them regardless of name; any other ambiguity raises; `frac_path=` / `rmc6f_path=` choose
+explicitly; and the pair is cross-checked (every Frac cell index inside the `.rmc6f` supercell, every
+Frac reference number a site of it). It used to take the alphabetically first file of each kind
+independently, which in `data/250K_try1/supercell` folded a 5×10×10 configuration with a 10×10×10
+supercell and dropped every atom on sites 53–104.
+
+**Code:** `parsers.py` → `run_stem_from_output_name()`, `find_run_configuration()`,
+`rmc6f_problem()`, `read_structure()`; `app.py` → `_find_rmc6f()`, `_require_usable_rmc6f()`; `browserData.js` → `runStemFromOutputName()`,
+`structureFileProblem()`, `chooseStructureFile()`.
 
 **Run-control file (static mode only).** `chooseSettingsEntry()` computes
 `wanted = structureFile.path.replace(/\.rmc6f$/, '.dat')` and returns the raw entry whose `path`
@@ -295,33 +318,41 @@ gated on `wantAssistantData`, i.e. it stays idle until the user opens the AI Ass
 
 Used for `xpdf`, `npdf`, `pdf_partials`, `xray_sq`, `neutron_sq`, `bragg`.
 
-* Line 1 is the header; labels = comma-split, whitespace-stripped, **empties preserved**.
+* Lines are split on `\r\n|\r|\n`; **blank lines are ignored**, and the first non-blank line is the
+  header; labels = comma-split, whitespace-stripped, **empties preserved**.
 * Every subsequent line is comma-split, stripped, and **empty fields are dropped** (this is what
   lets RMCProfile's trailing-comma data rows, e.g. `GTS_250K_PDFpartials.csv`, parse against a
   header that has no trailing comma).
 * A row whose surviving field count ≠ the label count raises
-  `"<path> line <n> has <k> values; expected <m>"`.
+  `"<path> line <n> has <k> values; expected <m>"`, with `<n>` the **true file line** in both runtimes.
+* Every cell goes through `parse_fortran_number()` / `parseFortranNumber()`: a number (`E` or Fortran
+  `D` exponent) is kept, an explicit non-finite token (`NaN`, `Inf`, `Infinity`, `****`) becomes `NaN`
+  — a masked region — and anything else raises `"<path> line <n>: '<cell>' is not a number"`.
 * Result is `np.asarray(rows, float).T` — column 0 is x, columns 1… are the y series.
 
-**Blank-line handling differs, and it moves the header.** The JavaScript reader pre-filters *all*
-blank/whitespace-only lines (`text.split(/\r?\n/).filter((line) => line.trim())`) and then takes
-element 0 as the header; Python takes `lines[0]` of the raw file. A file with a leading blank line
-therefore gets its real header in the browser and a **blank header (label count 1)** in Flask. The
-same pre-filter shifts the error message's line number: Python enumerates true file lines
-(`enumerate(lines[1:], start=2)`) while JavaScript reports `index + 2` over the blank-filtered
-array. The message text is identical; **the line number is the true file line in Python and the
-index among non-blank lines in JavaScript**, so the two disagree on any file containing blank lines.
-
-**Python/JS discrepancy on non-numeric tokens:** Python calls `float(value)` and lets a `ValueError`
-propagate, so a stray non-numeric row **fails the whole file**. JavaScript calls `Number(value)`,
-which yields `NaN` silently; the SVG renderer then drops non-finite points at draw time
-(`Number.isFinite` guard in `InteractivePlot.jsx` → `seriesShapes`). The same file can therefore
-plot in static mode and error in Flask mode — and, as 5a shows, produce a *misleading metric* rather
-than an error.
+**Both runtimes apply these rules identically** (`read_rmc_csv()` ⟷ `readRmcCsv()`). Until 2026-09
+they did not: the browser pre-filtered blank lines while Python took the raw first line as the header
+(a leading blank line gave a one-label header in Flask), the browser numbered error lines among
+non-blank lines, and a stray non-numeric cell failed the whole file in Python but became a silent
+`NaN` in the browser. Pinned by `tests/test_parsers.py::test_read_rmc_csv_cell_rules_match_the_browser`
+and the matching block in `plotParity.test.js`.
 
 **For this reader only,** both runtimes accept the literal token `NaN` as a number and neither masks
 it before computing metrics (see 5a). That is not true of the other three readers: see 4b, 4c
 and 4d.
+
+**Transport: non-finite values reach the browser as JSON `null`.** Flask serializes every response
+through the app-wide `StrictJSONProvider` in [app.py](../../web_app/backend/app.py): any non-finite
+float (NaN, ±Inf) anywhere in the payload — series arrays, metrics, nested objects, NumPy scalars and
+arrays — is written as `null`, and `json.dumps(..., allow_nan=False)` guards the path, so no response
+can contain the bare tokens `NaN`/`Infinity` that `JSON.parse` rejects. Before 2026-09 a masked CSV
+region or a NaN χ² made `/api/plot/data` invalid JSON; axios then returned the raw text as
+`response.data` and the chart render threw. A masked region now plots in Flask exactly as in static
+mode: `null` and `NaN` are both non-finite, so the renderer drops the point (Plot rendering, Step 7)
+and the hover never snaps to it (Step 9). `InteractivePlot` also refuses a payload that is not an
+object with a `series` array (`plotDomain.js` → `plotPayloadError()`), showing a message instead of
+rendering. Pinned by `tests/test_parsers_json_transport.py` (strict `json.loads` with
+`parse_constant` raising) and `plotPayload.test.js` / `interactivePlotNull.test.jsx`.
 
 #### 4b. EXAFS CSV — `read_exafs_csv()` / `readExafsCsv()`
 
@@ -332,11 +363,11 @@ first line is already numeric (`data_start == 0`) is rejected — there would be
 `tests/test_parsers.py::test_read_exafs_csv_skips_q_output_title_row` and
 `…accepts_r_output_header`.
 
-**"Fully numeric" is defined differently in the two runtimes.** Python's `_numeric_csv_values()`
-uses `float()`, which accepts `NaN` and `Inf`; JavaScript's `numericCsvValues()` requires
-`parsed.every(Number.isFinite)`, which rejects them. A row of `NaN`s is therefore numeric to Python
-and non-numeric to JavaScript, so the same EXAFS file can pick a **different line as the header**
-and keep a **different number of rows** in the two runtimes.
+**"Fully numeric" is one rule in both runtimes.** `_numeric_csv_values()` / `numericCsvValues()` accept
+a row only when every cell passes `parse_fortran_number()` / `parseFortranNumber()` — a number, or an
+explicit non-finite token kept as `NaN` — so a NaN-masked row is a data row in both, the same line
+becomes the header, and both keep the same rows. (Python used `float()` and JavaScript demanded finite
+values until 2026-09, so a masked row was data to one and a header candidate to the other.)
 
 Typical columns: Q-space `k, calculated, experiment`; R-space
 `r, Re_Calc, Im_Calc, Mod_Calc, Re_Ex, Im_Ex, Mod_Ex`. Every column after the first is drawn as its
@@ -345,49 +376,66 @@ own series.
 #### 4c. STOG data file — `read_stog()` / `readStog()`
 
 Both skip **exactly the first two lines** (the classic STOG layout is `count`, then a title line),
-whitespace-split the rest, transpose, and plot only columns 0 and 1. Beyond that they are not the
-same function:
+whitespace-split the rest, transpose, and plot only columns 0 and 1 — one rule in both runtimes
+(`parsers.py` → `read_stog()`, `browserData.js` → `readStog()`):
 
-* **Python `read_stog()`** ([parsers.py](../../rmc_toolkits/parsers.py)) has **no** `try`/`except`. Every
-  remaining non-empty line goes through `[float(value) for value in parts]`, so a single
-  non-numeric token — a trailing text line, a units row — raises `ValueError` and **fails the whole
-  file**. `np.asarray(rows).T` is then built with no column-count check, so ragged rows raise as
-  well. `float('NaN')` succeeds, so `NaN` tokens are **retained**.
-* **JavaScript `readStog()`** delegates to `parseNumberRows(lines, 2)`, which keeps a row only when
-  `parsed.every(Number.isFinite)` and **silently drops** every other row — text rows and rows
-  containing `NaN` alike. `transpose()` then uses the first surviving row's length as the column
-  template, so a ragged row yields `undefined` entries rather than an error.
+* a row is kept when it has **at least two tokens** and **every token is a finite number**, read with
+  `parse_fortran_number()` / `parseFortranNumber()` (`E` or Fortran `D` exponents) — so a text row, a
+  stray scalar line and a row holding `NaN`/`Inf`/`****` are dropped;
+* only rows with the **modal column count** survive (the first-seen count wins a tie), so a torn final
+  row with fewer columns cannot make the array ragged;
+* undecodable bytes are replaced (Python reads `utf-8-sig` with `errors="replace"`, as
+  `read_stog_xy()` does; the browser's `File.text()` already replaces), so a latin-1 `Å` in the title
+  line is harmless;
+* no row at all → "`<file>` does not contain STOG numeric rows".
 
-(The tolerant "keep the rows that parse" behaviour that *does* exist in Python lives in
-`read_stog_xy()`, a different function the dashboard path never calls.)
+Until the 1.0 gate the two differed: Python `float()`-parsed every token, so a latin-1 title, a `D`
+exponent or a torn last row failed the whole file (HTTP 500), and it kept `NaN` rows; the browser
+dropped non-finite rows but let a torn row through. Pinned by `tests/test_parsers.py::ReadStogTests`
+and its twin in `__tests__/browserData.test.js` (the same `STOG_EDGE_BODY` text); on the Fortran
+outputs in `data/stog_tests` the arrays are unchanged.
 
-#### 4d. R-value log — `read_chi()` / `readChi()`
+#### 4d. R-value log — `read_chi_log()` / `readChi()`
 
-**Skips exactly the first two lines** of each `.log` (RMCProfile writes a column-name row and a
-`WEIGHT PARAMETERS` row), whitespace-splits the rest, and for every line with ≥ 2 tokens takes:
+Per `.log` file, identically in both runtimes (`parsers.py` → `read_chi_log()`, `read_chi()` a thin
+wrapper; `browserData.js` → `readChi()`):
 
-$$\chi_Q \leftarrow \texttt{parts[-2]} , \qquad \chi_r \leftarrow \texttt{parts[-1]}$$
+1. **Lines** are split on `\r\n|\r|\n`. The last element of that split is either `''` (the file ends
+   with a line break) or a line RMCProfile is **still writing** — it is dropped either way (and counted
+   in `skipped_rows` when it held data). Live Data re-reads a log while it grows, and until 2026-09 a
+   poll landing mid-line turned the partial row into the "final" χ²: cutting the demo 5 K log at each
+   of the 121 byte offsets of its final line gave a wrong last value at 89 of them (a move counter
+   `131863`, a lone `0.` → χ² = 0, or a truncated mantissa `0.117` for `0.117E-03`), in both runtimes.
+2. **Line 1 names the columns** — in the demo run
+   `Time, moves_acc, moves_gen, F(Q)_1, Curvature ×6, X_ray_(R)1` (11 names) — and **fixes the token
+   count a data row must have**. A row with any other count (a partial line that did get its line
+   break, a stray message) is skipped and counted. A log whose line 1 names fewer than two columns (no
+   column-name header, e.g. a synthetic test log) takes the count from its first data row.
+3. **Line 2** (`h/m/s/.th  WEIGHT PARAMETERS  0.100E+01 …`) is skipped. Those per-dataset weights are
+   **discarded here and never applied anywhere in the app** (see 5a).
+4. From every accepted row: $\chi_Q \leftarrow$ `parts[-2]`, $\chi_r \leftarrow$ `parts[-1]`, parsed with
+   `parse_fortran_number()` / `parseFortranNumber()` (`E` or Fortran `D` exponents). **A row is never
+   dropped for its value:** `NaN`, `Inf`, a Fortran `****` overflow or any non-number becomes `NaN`, so
+   a run that blew up keeps its rows (the browser used to drop them — the watchdog then judged only the
+   last finite points and could report `improving` for a NaN tail — while Python kept them: the two
+   runtimes now agree). The name of the last column (`X_ray_(R)1` here) is returned as `column`.
+   Across the logs of one run, each log that contributes a row adds its last-column name
+   (`ChiLog.columns`, in order, no repeats): a restart whose fit term changed is titled
+   `χ² history: X_ray_(R)1 / X_ray_(R)1_new`, and `chiColumn` is set only when every
+   contributing log agrees — the rule `combineRValueFiles()` applies in the browser. A header-only
+   log (a restart RMCProfile has just begun) contributes nothing and is skipped silently in both
+   runtimes (the browser used to report it as a parse error on the panel).
 
-i.e. **the last and second-to-last whitespace-separated columns, by position**. Neither
-implementation reads the header to identify which dataset those columns belong to. In the bundled
-demo run the log columns are
-`Time, moves_acc, moves_gen, F(Q)_1, Curvature ×6, X_ray_(R)1`, so `parts[-1]` is the X-ray R
-column and `parts[-2]` is a (identically zero) curvature-constraint column. **For a run with a
-different dataset/constraint ordering, a different quantity is plotted.** This is the single most
-fragile heuristic on the page.
+So $\chi_r$ is **the last log column by position** — in the demo run the χ² of the X-ray real-space fit
+term `X_ray_(R)1`, not a total (`F(Q)_1`, the reciprocal-space term of the same data, is the fourth
+column); `parts[-2]` is a (here identically zero) curvature-constraint column, parsed into `chi_q`
+(Python only) and never displayed. **For a run with a different dataset/constraint ordering, a
+different term is plotted**, which is why the series is labelled by its header name (Step 6).
 
-The skipped second line is where the run's own per-dataset weights live — in the demo run it reads
-`h/m/s/.th  WEIGHT PARAMETERS  0.100E+01 …`. Those weights are **discarded here and never applied
-anywhere in the app** (see 5a).
+Pinned by `tests/test_parsers.py::ReadChiLogTests` and `__tests__/chiLog.test.js` (the demo log cut at
+every byte of its final line; token-count, NaN/`****` and no-header cases).
 
-The JavaScript reads only the last column (it never builds `chi_q`) and keeps a value only
-`if (Number.isFinite(value))`. The Python builds both inside a `try`/`except ValueError`, which lets
-`NaN`/`Inf` through — so a log containing such a token yields a **longer series in Flask than in the
-browser**. The Python also has an ordering quirk worth knowing about: it appends to `chi_q` *before*
-parsing `parts[-1]`, so a line whose last token is non-numeric leaves `chi_q` one element longer
-than `chi_r`. Only `chi_r` is plotted, so the dashboard is unaffected.
-
-**Multiple logs are concatenated — but by different code in each mode.** Python
+**Multiple logs of ONE run are concatenated — the same rule in both modes.** Python
 `related_r_value_logs()` re-scans the log's parent directory for every file matching
 `^(.+)-(\d{2,})\.log$` (`R_VALUE_LOG_RE`) with the **same stem**, and `sort_r_value_logs()` orders
 them by (lowercase stem, integer sequence, lowercase name) — so `run-01.log, run-02.log, run-10.log`,
@@ -395,15 +443,24 @@ them by (lowercase stem, integer sequence, lowercase name) — so `run-01.log, r
 (`tests/test_parsers.py::test_related_r_value_logs_use_numeric_suffix_order`). This runs **server-side
 inside `/api/plot/data`**, on every request.
 
-The browser's `combineRValueFiles()` in `Dashboard.jsx` concatenates the already-parsed y arrays of
-the r-value files in `comparePlotFiles()` order (same stem/sequence rule, via a fourth copy of the
-pattern, `rValueLogParts`). It **short-circuits and returns `rValueFiles[0]` unchanged** when any of
-these hold:
+The browser's `combineRValueFiles()` (`browserData.js`, used by `Dashboard.jsx`) first **groups the
+visible logs by folder and exact stem** (`rValueGroupKey()`, the same `^(.+)-(\d{2,})\.log$` stem as
+Python) and picks **one group** (`chooseRValueGroup()`): the one whose folder and stem match the
+structure file the Model information card describes (`localRun.structureFile.path` in static mode,
+`structure.source` in Flask mode), else the first group in `comparePlotFiles()` order — which is the
+log Flask is handed, so both modes chart the same run. Only that group's already-parsed y arrays are
+concatenated; the other runs' stems are listed beside the panel title ("other runs not shown: …")
+and are never spliced in. Until 2026-09 the browser flat-mapped **every** visible log, so a folder
+holding two runs (a restart under a new stem, or a parent folder walked recursively) produced one
+"convergence" curve spliced from both — 2550 points with a jump from ln χ² = −9.05 to +0.10 at the
+join and `final_chi_r` from whichever stem sorted last — while Flask showed the single run.
+It then **short-circuits and returns the chosen group's first file unchanged** when any of these
+hold:
 
-1. there is only one r-value file;
+1. the group has only one log;
 2. no file carries `sourceFile`, `plotData` or `parseError` — which is exactly the **Flask** case,
-   where files come from `/api/files` and carry none of those;
-3. any browser-backed log is still being parsed (`sourceFile && !plotData && !parseError`).
+   where files come from `/api/files` and carry none of those (the server concatenates);
+3. any browser-backed log of the group is still being parsed (`sourceFile && !plotData && !parseError`).
 
 So the concatenation shown here happens **client-side only in static mode**. Condition 3 means that
 during a Live Data re-parse the strip transiently shows only the first log's curve. And the
@@ -435,12 +492,30 @@ residual = fitted[paired] - observed[paired]
 return sqrt(sum(residual**2) / denom)
 ```
 
-Called as `rwp(series.data[0], series.data[1], series.data[2])` — the x column is passed and
+Called through `fit_rwp(labels, data)` (`fitRwp(csv)` in the JS), which first resolves the
+**column roles** with `rwp_columns()` / `rwpColumns()` and then calls
+`rwp(x, observed=<experimental column>, fitted=<calculated column>)` — the x column is passed and
 **ignored** (`void x` in the JS). So the reported number is
 
-$$R \;=\; \sqrt{\dfrac{\sum_{i=1}^{N}\bigl(y^{(3)}_i - y^{(2)}_i\bigr)^2}{\sum_{i=1}^{N}\bigl(y^{(2)}_i\bigr)^2}}$$
+$$R \;=\; \sqrt{\dfrac{\sum_{i=1}^{N}\bigl(y^{\mathrm{calc}}_i - y^{\mathrm{expt}}_i\bigr)^2}{\sum_{i=1}^{N}\bigl(y^{\mathrm{expt}}_i\bigr)^2}}$$
 
-where $y^{(2)}$ is the file's **second** column and $y^{(3)}$ its **third**.
+the conventional normalization by the **measurement**. The roles:
+
+* **Default — RMCProfile's positional order.** RMCProfile writes its fit CSVs as
+  `(x, calculated, experimental)` — verified in the demo run: `Q, F(Q)_RMC, F(Q)_Expt` and
+  `r(A), X_ray-calc, X_ray_exp_renorm`. So column 2 is $y^\mathrm{calc}$ and column 3 is
+  $y^\mathrm{expt}$.
+* **A header that names both roles wins.** If one data-column label matches `/exp|obs/i` and another
+  matches `/calc|rmc|fit/i` (and not the experimental pattern), the first of each is used, whatever
+  their positions — a file written `(x, experimental, calculated)` is still normalized by its data.
+  The two patterns are identical in `parsers.py` (`_EXPERIMENTAL_LABEL` / `_CALCULATED_LABEL`) and
+  `browserData.js` (`EXPERIMENTAL_LABEL` / `CALCULATED_LABEL`).
+
+Until 2026-09 both runtimes called `rwp(data[0], data[1], data[2])`, i.e. normalized by the
+**calculated** column (`‖calc − expt‖ / ‖calc‖`): 0.1–0.3 % off for the converged demo fits, but
+43 % high (0.4286 instead of 0.3000) for a calculated curve at 0.7 × the data, as early in a run or
+with a wrong scale. `tests/test_plots.py::RwpColumnRoleTests` and `rwpColumns.test.js` pin the
+corrected roles for `_FQ1`, `_FT_XFQ1`, `_PDF1`, `_SQ1` and `_bragg` headers.
 
 Four things must be stated plainly:
 
@@ -448,17 +523,13 @@ Four things must be stated plainly:
    and the parameter names, this is the unweighted R-factor $R = \|\Delta\|_2 / \|y\|_2$. The run's
    own per-dataset weights *are* physically present, on line 2 of the `.log`
    (`WEIGHT PARAMETERS 0.100E+01 …`), and are skipped by `read_chi()`/`readChi()` and used nowhere.
-2. **The denominator is the calculated curve, not the data.** RMCProfile writes these CSVs in the
-   order `(x, calculated, experimental)` — verified in the demo run:
-   `Q, F(Q)_RMC, F(Q)_Expt` and `r(A), X_ray-calc, X_ray_exp_renorm`. The parameter named
-   `observed` therefore receives the **RMC-calculated** column and the one named `fitted` receives
-   the **experiment**. The numerator is symmetric so the residual is right, but the normalization
-   is $\sum y_\mathrm{calc}^2$, not the conventional $\sum y_\mathrm{obs}^2$. The two agree only
-   insofar as $\sum y_\mathrm{calc}^2 \approx \sum y_\mathrm{obs}^2$ — close for a good fit,
-   not identical, and **not** the standard crystallographic $R_\mathrm{wp}$.
-3. **Only columns 2 and 3 ever enter it.** For a file with four or more numeric columns (multi-bank
-   outputs, partial-inclusive exports) every column beyond the third is **drawn but contributes
-   nothing to the number**, and which two curves get compared is purely positional.
+2. **The denominator is the experiment** (see the roles above), as in the conventional
+   definition — but with unit weights it is still **not** the standard crystallographic
+   $R_\mathrm{wp}$.
+3. **Only two columns ever enter it.** For a file with four or more numeric columns (multi-bank
+   outputs, partial-inclusive exports) every other column is **drawn but contributes nothing to the
+   number**. Which two are compared follows the header roles when the header names them, and the
+   positional `(x, calculated, experimental)` order otherwise.
 4. **It is strictly per-dataset.** One value per file, over **every row in the file** — no Q or r
    window, no exclusion region, no point weighting by Δx (so a non-uniform grid is summed as a
    plain point sum). There is no combined/global R anywhere in the app, and the app never
@@ -473,9 +544,9 @@ sums sequentially) rather than bit-for-bit. **On degenerate input they now agree
 
 | Input | Python `rwp()` | JavaScript `rwp()` |
 |---|---|---|
-| `denom == 0` (flat-zero 2nd column) | `None` | `null` |
-| `NaN` throughout the **2nd** (calculated) column | `None` | `null` |
-| `NaN` throughout the **3rd** column | `None` | `null` |
+| `denom == 0` (flat-zero experimental column) | `None` | `null` |
+| `NaN` throughout the calculated column | `None` | `null` |
+| `NaN` throughout the experimental column | `None` | `null` |
 | `NaN` in *some* rows of either column | value over the finite rows | value over the finite rows |
 
 This matters because it is reachable in static mode: `readRmcCsv` turns unparseable cells into
@@ -502,9 +573,10 @@ number, and it is not currently surfaced in the dashboard UI.
 #### 5c. `final_chi_r`
 
 For `r_value`: the **last** element of the raw `chi_r` array — **not** log-transformed —
-after concatenating all related logs. `tests/test_plots.py::test_log_plot_combines_related_logs_in_numeric_order`
+after concatenating the logs of the one run (4d); `NaN` (JSON `null`) when that last row's χ² is
+non-finite. `tests/test_plots.py::test_log_plot_combines_related_logs_in_numeric_order`
 pins that three logs `run-01/02/10` yield the value from `run-10.log`. In static mode
-`combineRValueFiles()` takes `final_chi_r` from the **last parsed** log file, matching the Python;
+`combineRValueFiles()` takes `final_chi_r` from the **last parsed** log file of the chosen run, matching the Python;
 in Flask mode `combineRValueFiles()` short-circuits (4d) and the value is whatever the server
 computed from its own concatenation.
 
@@ -516,26 +588,27 @@ $$y_i \;=\; \ln\!\bigl(\max(v_i,\, 10^{-12})\bigr)$$
 
 where $v_i$ is the raw value from the last whitespace column of log row $i$.
 
-* `browserData.js` → `plotDataFromText()` (kind `r_value`): `Math.log(Math.max(value, 1e-12))`.
-* `app.py` → `plot_data()` (kind `r_value`): `math.log(max(value, 1e-12))`.
-* `plots.py` → `_chi_plot()` (matplotlib PNG path): `np.log(chi_r)` — **no clamp**. A zero or
-  negative entry produces `-inf`/`nan` and a NumPy warning here, where the other two paths floor at
-  $\ln(10^{-12}) \approx -27.63$.
+* `browserData.js` → `plotDataFromText()` (kind `r_value`): `Math.log(Math.max(value, 1e-12))`,
+  `NaN` for a non-finite value.
+* `app.py` → `plot_data()` and `plots.py` → `_chi_plot()` (JSON and PNG): `chi_history_ln()`, the same
+  clamp with the same `NaN` gaps (JSON `null`).
 
 The reason for the log is dynamic range: the metric falls by orders of magnitude over a run, and
 additive shifts in ln-space are *relative* changes in the metric, which is exactly what the
 convergence watchdog thresholds on.
 
-> **What is actually being plotted — flagged.** The axis label is `log(χ)` in all three paths
-> (`plots.py` `r"log($\chi$)"`, `app.py` `"log(χ)"`, `browserData.js` `'log(χ)'`), while
-> `src/llm/context/runContext.js` describes the same array as
-> `"ln of chi^2 goodness metric (natural log; lower is better)"` and names the metric key
-> `final_chi_r`. **Neither label is verified by the code**, which reads `parts[-1]` positionally and
-> never looks at the header. In the bundled demo run that column is headed `X_ray_(R)1` — an
-> R-factor for the X-ray dataset, not a χ² and not a χ. The only statements this document can stand
-> behind are: the transform is a **natural** log with a $10^{-12}$ floor, and the quantity is
-> *whatever the last whitespace column of the run's `.log` happens to hold*. Treat both `log(χ)` and
-> "ln(χ²)" as conventions the code does not check.
+> **What is actually being plotted.** The series is the **last column** of the run's `.log`, named by
+> its header: in the bundled demo run `X_ray_(R)1`, the χ² of the X-ray **real-space** fit term
+> (`(R)` = real space; RMCProfile's `.chi2` file lists the same term as `X-real_1` beside the
+> reciprocal-space `Expt_1` and the total `chi2`). It is **one term of the fit, not a total** and not an
+> R-factor: the reciprocal-space `F(Q)_1` column of the same data is ~26× larger at the end of the 5 K
+> run and can stall while the real-space term still improves. So every producer names it by that
+> header — panel title `χ² history: X_ray_(R)1`, series label `X_ray_(R)1`, y label `ln(χ²)`
+> (`plots.py` → `chi_history_labels()`, `CHI_HISTORY_Y_LABEL`; `browserData.js` → `chiHistoryLabels()`,
+> `CHI_HISTORY_Y_LABEL`; a log with no column header reads `χ² history: last log column`), and the AI
+> context says `ln of the chi^2 in the last .log column 'X_ray_(R)1' … one fit term of the run, not a
+> total` with `column: 'X_ray_(R)1'`. `final_chi_r` keeps its historical key name. The transform is a
+> **natural** log with a $10^{-12}$ floor.
 
 The x-axis is the **row index** (`0, 1, 2, …`) labelled `"Time steps"`. The `.log`'s actual first
 column is a wall-clock stamp (`hhmmss.sss`) and is discarded, so one "time step" is one log row,
@@ -593,25 +666,42 @@ matplotlib builder, so it applies even though the dashboard never uses the PNG.
 |---|---|---|---|---|
 | `exafs_q` | `EXAFS Q-space` | `k (Å⁻¹)` | `χ(k) k²` | no |
 | `exafs_r` | `EXAFS R-space` | `r (Å)` | `FT[χ(k) k²]` | no |
-| `xpdf` | `xPDF` | `r (Å)` | `G(r)` | yes |
-| `npdf` | last `_`-segment of the stem (e.g. `PDF1`) | `r (Å)` | `G(r)` | yes |
-| `pdf_partials` | last `_`-segment of the stem | `r (Å)` | `G(r)` | no |
-| `xray_sq` | `S(Q) (x-ray)` | `Q (Å⁻¹)` | `S(Q)` | yes |
-| `neutron_sq` | `S(Q) (neutron)` | `Q (Å⁻¹)` | `S(Q)` | yes |
+| `xpdf` | `xPDF` | `r (Å)` | header function, else `G(r)` | yes |
+| `npdf` | last `_`-segment of the stem (e.g. `PDF1`) | `r (Å)` | header function, else `G(r)` | yes |
+| `pdf_partials` | `Partial g(r)` | `r (Å)` | `g(r)` | no |
+| `xray_sq` | header function (`F(Q)`), `#n` for dataset n > 1 | `Q (Å⁻¹)` | header function, else `F(Q)` | yes |
+| `neutron_sq` | header function, `#n` for dataset n > 1 | `Q (Å⁻¹)` | header function, else `S(Q)` | yes |
 | `bragg` | `BRAGG` | `ToF (µs)` **or** `Q (Å⁻¹)` | `Intensity` | yes |
-| `r_value` | `R-value` | `Time steps` | `log(χ)` (see 5d) | no |
+| `r_value` | `χ² history: <last log column>` (e.g. `χ² history: X_ray_(R)1`) | `Time steps` | `ln(χ²)` (see 5d) | no |
 | `stog` † | see below | `r (Å)` if `.gr`, else `Q (Å⁻¹)` | see below | no |
 
 † **The `stog` row is unreachable from the Run Dashboard** (`isDashboardPlotFile` drops it, Step 2)
 and the three implementations do not agree on it, so it is recorded here only for completeness:
 
-* browser **metadata** (`plotMetadataFromFile`): `title = fitType` if known, else `G(r)`/`S(Q)` by
-  extension;
+* browser **metadata** (`plotMetadataFromFile`): `title = fitType` if known, else the name default
+  below;
 * browser **plot data** (`plotDataFromText`): `title = file.name`; the fit-function label lands in
   `yLabel` only;
-* **Flask**: no `fitType` concept at all — `/api/plot/data` returns
-  `yLabel = "G(r)" if name.endswith(".gr") else "S(Q)"`, and the title comes from `make_plot()` →
-  `_stog_plot()`, which sets `title = path.name`.
+* **Flask**: no `fitType` concept at all — `/api/plot/data` returns the extension default
+  `stog_function_label()` (`scale.gr` and `*_ft.gr` → `g(r)`, since they hold the classic stog
+  g(r) → 1 at large r; any other `.gr`, including Keen's `*_rmc.gr`, → `G(r)`; `.fq` → `F(Q)`;
+  else `S(Q)`; the browser's `stogFunctionLabel()` is the same rule), and the title comes from
+  `make_plot()` → `_stog_plot()`,
+  which sets `title = path.name`.
+
+**Where the function names come from.** `plots.py` → `series_titles(kind, name, labels)` is the one
+source for Flask (`/api/plot/data`), the matplotlib figures (`make_plot`) and — mirrored as
+`browserData.js` → `seriesTitles()` — the browser. `fit_function_label()` / `fitFunctionLabel()` reads
+the function from the file's own data-column headers (`/([A-Za-z])\(([QqRr])\)/` →
+`F(Q)_RMC` gives `F(Q)`); without one, a reciprocal-space file falls back to its name (`FQ` → `F(Q)`,
+`SQ` → `S(Q)`). This is not cosmetic: RMCProfile writes **F(Q)** into `*_FQ1.csv`
+(`Q, F(Q)_RMC, F(Q)_Expt`; the demo data tend to ≈ −1 at low Q and 0 at high Q, where an S(Q) would
+tend to 1), and **partial g_ij(r)** into `*_PDFpartials.csv` (exactly 0 below the closest approach,
+≈ 1 at large r, where a G(r) would oscillate about 0). Both used to be labelled `S(Q) (x-ray)` /
+`G(r)` — on every exported figure and in the assistant's dataset titles, contradicting the assistant's
+own `pairCorrelations.js`, which treats the partials as g(r). Pinned against the demo files (with the
+F(Q) → 0 and g(r) → 1 asymptotes checked from the data) by `tests/test_plots.py::FunctionLabelTests`,
+`tests/test_parsers_plot_payload.py` and `plotLabels.test.js`.
 
 **Bragg axis selection** — `bragg_is_tof(header)` (plots.py) / `braggAxis(header)`
 (browserData.js) is a case-insensitive regex on the **first column's header text**:
@@ -685,16 +775,13 @@ user sees or reads off a chart are:
 `browserData.js` → `plotDataFromText()`, `plotMetadataFromFile()`;
 `InteractivePlot.jsx` → `orderedSeries`, `domains`, `seriesShapes`, `nearestHover`, `formatNumber`.
 
-> **PNG-path discrepancies (matplotlib only).** The figures built by `_series_plot()` differ from
-> the interactive charts in two places in their **axis labels** (the styling differences — `lw=1.0,
-> alpha=0.65` strokes, and a legend and title baked into the figure — are covered in Step 16b and in
-> item 1 of "Screen vs. export"):
-> * **y label** — `_series_plot()`'s default `ylabel="data"` is used for
->   `xpdf`/`npdf`/`pdf_partials`/`xray_sq`/`neutron_sq`/`bragg`, instead of `G(r)`/`S(Q)`/`Intensity`.
-> * **x label** — only `xray_sq` and `neutron_sq` pass `labels[0]`, the file's **raw first-column
->   header**, instead of `Q (Å⁻¹)`. `xpdf`, `npdf` and `pdf_partials` pass the literal
->   `r ($\mathrm{\AA}$)` and `bragg` passes the same ToF/Q label the interactive path derives from
->   `bragg_is_tof()`, so those match (in LaTeX form).
+> **PNG path (matplotlib only).** Since 1.0 the figures built by `_series_plot()` carry the same
+> axis-label strings as the interactive charts (in LaTeX form): the x label is the table's
+> (`Q (Å⁻¹)` for `xray_sq`/`neutron_sq`, `r (Å)` for the real-space kinds, the `bragg_is_tof()`
+> ToF/Q label for `bragg`) and the y label is the `series_titles()` one. Before 1.0 the PNG left the
+> y label at `_series_plot()`'s default `"data"` and passed the raw first CSV header as the
+> `xray_sq`/`neutron_sq` x label. What still differs is styling — `lw=1.0, alpha=0.65` strokes, and
+> a legend and title baked into the figure (Step 16b and item 1 of "Screen vs. export").
 >
 > `_stog_plot()` additionally draws a **dashed black horizontal reference line** at $y = 1$ (or
 > $y = 0$ when the name ends `.fq`) spanning `data[0][0]` to `data[0][-1]`, colours its single
@@ -741,26 +828,28 @@ that carry no per-atom cell index.
 subsampled (`sampledAtoms`). The element rows and totals a user reads off the card are therefore
 exact even though the plotted cloud is a sample.
 
-**Fields only static mode produces.** The Flask `/api/structure` response contains **no `basis` and
-no `moves`**:
+**The field only static mode produces.** The Flask `/api/structure` response contains **no `basis`**:
+one representative site per `reference_number`, built from per-axis **circular means** of the
+within-cell fraction, with a per-site rms displacement `dispA` in Å (the Cartesian rms through the full
+cell metric). The derivation is documented in the **Model summary and the Detected SG symmetry
+finder** section; it is not repeated here.
 
-* `basis` — one representative site per `reference_number`, built from per-axis **circular means** of
-  the within-cell fraction, with a per-site rms displacement `dispA` in Å derived from the circular
-  resultant. The full derivation (circular mean, the $\sigma = \sqrt{-2\ln R}/2\pi$ wrapped-normal
-  relation, the resultant floor of `1e-6`, and the cell-edge normalization
-  $a_i = |\text{lattice row } i| / \max(\mathrm{supercell}_i, 1)$) is documented in the
-  **Model summary and the Detected SG symmetry finder** section; it is not repeated here.
-* `moves` — run-history counters scraped from the `.rmc6f` header by `readMovesMetadata()` with four
-  regexes (`Number of moves generated/tried/accepted:`, `Accumulated time (s)…:`). It reads only the
-  text before the `Atoms:` marker, or the **first 4000 characters** if that marker is not found in
-  the leading text. These feed the AI-assistant run context only.
+**Fields both runtimes produce.**
 
-**Element names are normalized differently.** Python `iter_rmc6f_atoms()` stores
-`parts[1].capitalize()`; the browser's `parseAtomLine()` keeps the raw token. A `.rmc6f` written with
-`SE` or `se` yields one merged `Se` row in Flask mode and one or two raw `SE`/`se` rows in static
-mode — **the element table of the model summary differs between runtimes for such a file**. The
-browser parser also accepts a 5–6 field coordinates-only line (`referenceNumber = null`, excluded
-from the site basis); the Python requires ≥ 9 fields and drops those lines entirely.
+* `moves` — run-history counters from the `.rmc6f` header: `readMovesMetadata()` in the browser and
+  `parsers.read_moves_metadata()` on the Flask `/api/structure` path, the same four regexes
+  (`Number of moves generated/tried/accepted:`, `Accumulated time (s)…:`) over the text before the
+  Atoms marker (or the **first 4000 characters** if that marker is not found in the leading text).
+  Python returns only the counters it found (keys absent otherwise); the browser returns all four
+  keys with `null` for a missing one. Both render on the **Model information card** as
+  Generated / atom, Accepted / atom and Accepted / generated (`ModelSummary.jsx` → `moveRatios()` in
+  `moveStats.js`), and both feed the AI context's `configuration_optimization` block — which reports the
+  acceptance ratio as accepted / **tried**, whereas the card's is accepted / **generated**.
+* `parseReport` / `parseWarning` — the atom-line parse report (Model summary, Part A Step 2).
+
+**Element names are normalized the same way.** Both parsers store the element token like Python's
+`str.capitalize()` (`SE`/`se` → `Se`), and both accept the legacy coords-only line
+(`referenceNumber = null`, excluded from the site basis): they share one atom-line grammar.
 
 **What `ModelSummary.jsx` computes on top of this** — box lengths $|\text{lattice row}|$,
 conventional cell lengths $|\text{lattice row}_i| / \max(\mathrm{supercell}_i, 1)$, the three cell
@@ -773,7 +862,7 @@ above.
 
 **Code:** `Dashboard.jsx` → the `localRun` effect (worker spawn, `maxPoints: 100`) and
 `loadServerDashboard()`; `workers/localStructureWorker.js`; `browserData.js` →
-`structureFromRmc6f()`, `readCellVectors()`, `readMovesMetadata()`; `rmc6f.js` → `parseAtomLine()`;
+`structureFromRmc6f()`, `readMovesMetadata()`; `rmc6f.js` → `readRmc6fCellVectors()`, `parseAtomLine()`;
 `app.py` → `structure()`, `_sample_atoms_by_site()`; `parsers.py` → `iter_rmc6f_atoms()`,
 `read_cell_vectors()`, `read_atom_indices()`; `ModelSummary.jsx`.
 
@@ -796,9 +885,10 @@ with `comparePlotFiles()`:
 `showRValue = false`, rendered in the `wide` 1440×320 viewport); everything else goes into the plot
 grid (720×450 cards).
 
-**Only one R-value card is ever rendered**, for the combined (or, per 4d, first) r-value file. The
-remaining logs still appear in the loaded-files list with an `r_value` badge but get no chart of
-their own.
+**Only one R-value card is ever rendered**, for the chosen run's combined (or, per 4d, first)
+r-value file, titled by its log column (`χ² history: X_ray_(R)1`). The remaining logs still appear in
+the loaded-files list with an `r_value` badge but get no chart of their own; logs of *other runs* in
+the folder are also named beside the card title.
 
 The **"Loaded N plot files"** panel lists every *chartable* plot file — i.e. those with a non-null
 `plotKind` other than `stog` — with its kind badge, and lets the user hide individual charts.
@@ -873,8 +963,16 @@ file listing.
 the runtime (milliseconds in the browser, `st_mtime` float seconds from `os.stat`) — a file rewritten
 within the same tick to the same byte length would not be noticed. A file whose `stat()` raised
 `OSError` carries `modified = size = null` and can never trigger a refresh (Step 1). And a file that
-is being written when the poll lands may be read half-complete; the resulting parse error surfaces
-as a per-card alert and is corrected on the next poll.
+is being written when the poll lands may be read half-complete. That is handled explicitly rather
+than hoped to fail loudly: a `.log`'s unterminated last line is dropped and rows are checked against
+the header's column count (Step 4d), and an `.rmc6f` read whose atom lines are still missing
+against its header's `Number of atoms:` keeps the previous complete model summary on screen with a
+notice (Model summary, Part A Step 2). A CSV caught mid-write fails the strict column-count check (4a) and surfaces as a
+per-card alert until the next poll. That holds for the Dashboard cards; the backend's parsed-file
+caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`st_mtime_ns`,
+`st_ctime_ns`, `st_size`, `st_ino`) and never keep a parse of a file that changed during the read
+(409 if it keeps changing), and in Flask mode Live Data reloads the analysis pages in place when the
+`.rmc6f` signature changes ([notation.md](notation.md) §3c).
 
 ---
 
@@ -894,10 +992,11 @@ as a per-card alert and is corrected on the next poll.
 | symmetry tolerance (default) | `0.2` Å | `ModelSummary.jsx` | model-summary space-group search |
 | symmetry ladder cap | `1.0` Å | `ModelSummary.jsx` → `toleranceLadder` | upper bound of the tolerance sweep |
 | χ² clamp | `1e-12` | `browserData.js`, `app.py` | floor before `ln`; ⇒ y ≥ −27.63. **Absent** in `plots.py` |
-| R-value log-header skip | first **2** lines | `read_chi()` / `readChi()` | fixed, not sniffed (line 2 holds the discarded `WEIGHT PARAMETERS`) |
+| R-value log-header skip | first **2** lines | `read_chi_log()` / `readChi()` | fixed, not sniffed (line 2 holds the discarded `WEIGHT PARAMETERS`) |
+| R-value row token count | = number of names on line 1 (first data row's count when line 1 names < 2) | `read_chi_log()` / `readChi()` | other counts are skipped; an unterminated final line is always dropped |
 | STOG header skip | first **2** lines | `read_stog()` / `readStog()` | fixed, not sniffed |
 | R-value classification | inline `-\d{2,}\.log$` | `plots.py`, `browserData.js` | ≥ 2 digits required |
-| R-value grouping/sorting | `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` | `parsers.py`; mirrored by `rValueLogParts` in `Dashboard.jsx` | anchored stem + integer sequence |
+| R-value grouping/sorting | `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` | `parsers.py`; mirrored by `rValueLogParts` (sort) in `Dashboard.jsx` and `R_VALUE_LOG_RE` / `rValueGroupKey()` (one run per folder + exact stem) in `browserData.js` | anchored stem + integer sequence |
 | run-control head read | `131072` bytes | `pairFitTypes()` | 128 KiB per candidate `.dat` |
 | run-control candidates | `6` | `runControlCandidates()` | max `.dat` files tried; stops at first non-empty map |
 | datasets parsed | `8` | `parseRunSettings()` | max `*_DATA` blocks kept |
@@ -931,10 +1030,10 @@ as a per-card alert and is corrected on the next poll.
   a file is. Rename a file and the app will plot it as something else; use a naming convention the
   patterns in Step 2 do not cover and the file is silently ignored. There is no "unrecognized files"
   report — the "Loaded N plot files" panel counts only *chartable* files.
-* **"Rwp" is neither weighted nor conventionally normalized.** It is
-  $\sqrt{\sum(\mathrm{col3}-\mathrm{col2})^2 / \sum \mathrm{col2}^2}$ with unit weights, and for
-  RMCProfile CSVs column 2 is the *calculated* curve. Columns 4 and beyond are drawn but never
-  enter it. The run's own `WEIGHT PARAMETERS` line is parsed past and discarded. Do not quote this
+* **"Rwp" is not weighted.** It is
+  $\sqrt{\sum(y^\mathrm{calc}-y^\mathrm{expt})^2 / \sum (y^\mathrm{expt})^2}$ with unit weights —
+  normalized by the experiment (column 3 of an RMCProfile CSV, or the column the header names as
+  experimental). Any further columns are drawn but never enter it. The run's own `WEIGHT PARAMETERS` line is parsed past and discarded. Do not quote this
   number as $R_\mathrm{wp}$ in a paper without recomputing from the columns yourself. It is
   per-file; there is no combined R across datasets.
 * **A degenerate R-factor is reported as unavailable, not as a number.** Both implementations sum
@@ -943,11 +1042,10 @@ as a per-card alert and is corrected on the next poll.
   denominator is zero. Neither case is a fit quality, so no number is offered for one. A *partly*
   NaN column still produces a value, computed over the finite points only and therefore over
   silently fewer rows than the file has; the chip does not say how many (5a).
-* **The R-value curve is "the last column of the log file".** No header is consulted, so neither
-  `log(χ)` (the axis text) nor `ln(χ²)` (the codebase's description) is verified by the code. In the
-  bundled demo run that column is headed `X_ray_(R)1`, an R-factor. The only verified statements are
-  the positional column choice and the transform `ln(max(v, 1e-12))`. The second-to-last column is
-  parsed into `chi_q` (Python only) and never displayed.
+* **The R-value curve is "the last column of the log file" — one χ² term, not a total.** It is
+  picked by position and named by its header (`X_ray_(R)1` in the demo run: the X-ray real-space
+  term); other terms (e.g. the reciprocal-space `F(Q)_1`) and the weighted total are not plotted
+  (5d). The second-to-last column is parsed into `chi_q` (Python only) and never displayed.
 * **"Time steps" are log rows**, one per RMCProfile print/save period — not Monte-Carlo steps, and
   not uniform wall-clock time (the actual timestamps in column 1 are discarded).
 * **The convergence badge is off by default.** It renders only when the user enables the watchdog in
@@ -973,24 +1071,33 @@ as a per-card alert and is corrected on the next poll.
   deployment** (`isStaticMode()`, four branches — a dev server without `VITE_API_BASE_URL` uses the
   JavaScript parsers). They agree on detection rules 1–9, on the Rwp formula for clean numeric data
   (to floating-point round-off) *and* on its degenerate cases (5a), on the χ² clamp, and on the
-  log-combination order. They differ on:
-  the `stog` rule (any `.gr/.sq/.fq` vs three fixed names); the file-listing patterns; non-numeric
-  and `NaN` handling in **all four** readers (raise vs `NaN` vs silently-dropped rows), including
-  which line becomes the EXAFS header; blank-line handling and error line numbers in the CSV reader;
-  the `.rmc6f` fallback pick; whether hidden logs are excluded
-  from the combined R-value curve; the atom-sampling strategy; the presence of `basis`/`moves` in
-  the structure payload; and element-name normalization (`parts[1].capitalize()` in Python vs the
-  raw token in the browser, so `SE`/`se`/`Se` merge in Flask and may not in the browser).
+  log-combination order, and — since 2026-09 — on the CSV, EXAFS and `.log` readers' cell, row and
+  line rules (4a, 4b, 4d), the function labels (Step 6) and the Rwp column roles (5a). That agreement
+  is pinned for layouts no real run on hand covers (neutron `*_PDFn` / `*_SQn`, ToF and Q `*_bragg`,
+  EXAFS Q/R, partials; NaN-masked regions, CRLF, trailing commas, a leading blank line, E-notation)
+  by a golden of the **Flask** payloads, `web_app/frontend/src/__tests__/fixtures/plot_parity_fixture.json`
+  (regenerate with `python tests/generate_plot_parity_fixture.py`), which `plotParity.test.js` holds
+  the browser to and `tests/test_parsers_plot_payload.py` keeps current, checking each case's R-factor
+  against the column roles it was built with. They still differ on:
+  the `stog` rule (any `.gr/.sq/.fq` vs three fixed names); the file-listing patterns; `NaN` handling
+  in the STOG reader (4c); the `.rmc6f` fallback pick; whether hidden logs are excluded
+  from the combined R-value curve; the atom-sampling strategy; and the presence of `basis` in
+  the structure payload. (The `.rmc6f` atom-line grammar, element-name normalization and the parse
+  report are shared — Model summary, Part A Step 2.)
 * **The repository's reference run folders are not in the repository.** `data/` is gitignored, so
   examples such as `scale_ft_rmc.fq` cannot be reproduced from a clean clone; the reproducible run
   is [web_app/frontend/public/demo/](../../web_app/frontend/public/demo/).
-* **Sample-backed tests skip in CI.** The GNSe reference dataset is likewise gitignored, so the
-  assertions that pin real-file shapes, `Rwp > 0`, and `final_chi_r ≈ 0.00405`
-  (`tests/test_plots.py`) do not run on CI — only the synthetic-fixture and pure-logic tests do
-  (`AGENTS.md`, "Current known issues").
+* **The GNSe-backed tests skip in CI, but the committed demo run is tested.** The GNSe reference
+  dataset is gitignored, so the assertions that pin `final_chi_r ≈ 0.00405` etc. do not run on CI.
+  Their counterparts run on the committed demo run (`web_app/frontend/public/demo/GTS_250K.*`) in
+  `tests/test_parsers_demo_run.py` and `__tests__/demoRun.test.js` — CSV shapes, the Rwp of the F(Q)
+  and xPDF fits, the three-restart log concatenation and final χ², the `.rmc6f` composition, sites and
+  move counters, Frac conversion, `read_structure`, and the Flask files/plot/structure/convert
+  endpoints — with every expected value read from the files by independent code.
 * **The matplotlib rendering path is effectively dead UI.** `PlotViewer.jsx` and `FileExplorer.jsx`
-  are not mounted; `GET /api/plot` still works as an API. Its axis labels, its STOG reference line,
-  and its unclamped `np.log(chi_r)` differ from what the dashboard draws — but its
+  are not mounted; `GET /api/plot` still works as an API. Its STOG reference line and its figure
+  styling differ from what the dashboard draws (its titles, axis labels and $\ln\max(\chi^2,
+  10^{-12})$ curve follow the same helpers since 1.0) — but its
   two-numeric-column precondition still gates the live Flask endpoints, because they build the
   figure to get the metrics.
 
@@ -1071,21 +1178,23 @@ There are two producers, one per runtime mode:
   on a locally-picked file. `Dashboard.jsx` passes the result down as the `plotData` prop, and the
   card heading/metrics come from `plotMetadataFromFile()`.
 
-#### 1a — Axis labels are hard-coded per plot kind, not read from the file
+#### 1a — Axis labels: the x axis by kind, the y axis by the function the file holds
 
-For every kind except the fallback branch, the axis strings are constants chosen by `kind` — i.e.
-**an assumption about the file's units**, not a measurement of them. Both producers use the same
+The x-axis strings are constants chosen by `kind` — **an assumption about the file's units**, not a
+measurement of them. The y label of a fit CSV is the function its own headers name, through
+`plots.series_titles()` / `browserData.seriesTitles()` (Parsing, Step 6). Both producers use the same
 table (`app.py::plot_data`, `browserData.js::plotDataFromText`):
 
 | kind | xLabel | yLabel |
 | --- | --- | --- |
 | `exafs_q` | `k (Å^{-1})` | `χ(k) k²` |
 | `exafs_r` | `r (Å)` | `FT[χ(k) k²]` |
-| `xpdf`, `npdf`, `pdf_partials` | `r (Å)` | `G(r)` |
-| `xray_sq`, `neutron_sq` | `Q (Å^{-1})` | `S(Q)` |
+| `xpdf`, `npdf` | `r (Å)` | header function, else `G(r)` |
+| `pdf_partials` | `r (Å)` | `g(r)` |
+| `xray_sq`, `neutron_sq` | `Q (Å^{-1})` | header function, else `F(Q)` / `S(Q)` by file name |
 | `bragg` | `ToF (µs)` or `Q (Å^{-1})` (see 1b) | `Intensity` |
-| `r_value` | `Time steps` | `log(χ)` |
-| `stog` | `r (Å)` if `.gr`, else `Q (Å^{-1})` | `G(r)`/`S(Q)` (Python) — see the third bullet in 1e |
+| `r_value` | `Time steps` | `ln(χ²)` |
+| `stog` | `r (Å)` if `.gr`, else `Q (Å^{-1})` | `G(r)` / `F(Q)` / `S(Q)` by extension (Python) — see the third bullet in 1e |
 | anything else | `cleanAxisLabel(header[0])` | `data` |
 
 Only the fallback branch reads the file's own first-column header, through
@@ -1109,12 +1218,13 @@ exactly. Two honest limitations:
 #### 1c — The R-value series is a concatenation of several log files
 
 R-value ("convergence") charts are not one file. In **Flask mode**, `plot_data()` calls
-`read_chi(related_r_value_logs(path))`; `parsers.related_r_value_logs` globs the *parent directory*
+`read_chi_log(related_r_value_logs(path))`; `parsers.related_r_value_logs` globs the *parent directory*
 for every sibling matching `R_VALUE_LOG_RE = ^(.+)-(\d{2,})\.log$` with the same stem, and
 `sort_r_value_logs` orders them by `(stem.lower(), sequence, name.lower())`. All of their chi values
-are concatenated into one array. In **static mode**, `Dashboard.jsx::combineRValueFiles` does the
-equivalent client-side: it `flatMap`s `plotData.series[0].y` over every parsed R-value file and
-re-indexes `x = 0 … N-1`.
+are concatenated into one array. In **static mode**, `browserData.js::combineRValueFiles` does the
+equivalent client-side for **one run**: it groups the parsed logs by folder and stem
+(`chooseRValueGroup()`, Parsing Step 4d), `flatMap`s `plotData.series[0].y` over the chosen group only,
+and re-indexes `x = 0 … N-1`.
 
 Consequences worth stating:
 
@@ -1127,15 +1237,15 @@ Consequences worth stating:
   is a locally-parsed file (Flask mode — the server does the concatenation instead), or while any of
   them is still parsing.
 
-**Which column is chi.** `parsers.read_chi` skips the first **2 lines** of every log, splits each
-remaining line on whitespace, requires ≥ 2 tokens, and takes `parts[-2]` as $\chi_Q$ and `parts[-1]`
-as $\chi_r$. **Only $\chi_r$ is ever plotted**; $\chi_Q$ is parsed and discarded. Lines that fail
-`float()` are skipped (Python) or dropped by `Number.isFinite` (JS `browserData.js::readChi`, which
-reads only the last token). So the plotted quantity is *the last whitespace-separated field of each
-post-header line*, and the sample index is an index into the **surviving** lines, not into the
-file's lines.
+**Which column is chi.** `parsers.read_chi_log` / `browserData.js::readChi` keep a data row only
+when it has as many tokens as line 1 names, drop an unterminated final line, and take `parts[-1]` as
+$\chi_r$ (Parsing, Step 4d). **Only $\chi_r$ is ever plotted.** A non-finite or non-numeric $\chi_r$
+stays in the series as `NaN` (JSON `null` from Flask), so the sample index is an index into the
+**complete data rows** of the logs.
 
-Both interactive producers plot $\ln\!\big(\max(\chi_r, 10^{-12})\big)$ against that index.
+All producers — both interactive ones and the matplotlib `_chi_plot()` — plot
+$\ln\!\big(\max(\chi_r, 10^{-12})\big)$ against that index (`plots.py` → `chi_history_ln()`), with a
+non-finite $\chi_r$ left as a gap.
 
 #### 1d — Metrics
 
@@ -1148,27 +1258,21 @@ matplotlib path.
 The two agree on structure, series ordering, and (with the exceptions below) axis-label strings and
 metrics.
 
-- **Non-numeric CSV cells.** `read_rmc_csv` (Python) calls `float(value)` and raises, so the request
-  fails with an error message. `readRmcCsv` (JS) uses `values.map(Number)`, which yields `NaN`
-  silently; those points are then dropped at draw time (Step 7) and the polyline bridges the gap.
-- **R-value log clamp.** Both interactive producers clamp with $\max(\chi,10^{-12})$; the matplotlib
-  path (`_chi_plot()`) uses `np.log(chi_r)` with **no** clamp, so a zero/negative entry gives
-  $-\infty$/NaN there but $\ln 10^{-12} = -27.63$ in the interactive chart.
+- **Non-numeric CSV cells — now the same.** Both readers keep `NaN`/`Inf`/`****` as masked `NaN`
+  cells (dropped at draw time, Step 7) and raise on any other non-number, naming the true file line.
+- **R-value log clamp.** Every producer (both interactive ones and matplotlib `_chi_plot()`) uses
+  the same $\ln\max(\chi,10^{-12})$ (`chi_history_ln()`), so a zero entry is $-27.63$ everywhere and
+  a non-finite one is a gap everywhere.
 - **STOG y-label and card title.** The browser prefers the fit-function form declared in the
   run-control `.dat` file (`file.fitType`, e.g. `D(r)`, harvested by `browserData.js::pairFitTypes`
   → `fitTypeByFilename`) for *both* the y-label (`plotDataFromText`) and the card heading
   (`plotMetadataFromFile`). The Flask path always uses the extension default for the y-label
-  (`"G(r)" if path.name.endswith(".gr") else "S(Q)"`) and the bare file name for the title (from
-  `_stog_plot`). The same file therefore shows y-label `D(r)` / heading `D(r)` in static mode but
-  y-label `G(r)` / heading `scale_ft.gr` in Flask mode. Python's `.gr` test is **case-sensitive**;
-  the JS one lower-cases first.
-- **CSV line numbering in error messages.** `readRmcCsv` (JS) filters blank lines *before* numbering
-  rows, so its reported "line N" counts non-blank lines; `read_rmc_csv` (Python) numbers against the
-  raw file. The EXAFS readers agree (both number against the raw line list).
-- **EXAFS data-row detection.** `readExafsCsv` (JS) locates the first data row by requiring
-  `Number.isFinite` on every token; `read_exafs_csv` (Python) uses `float()` in a `try/except`.
-  Tokens Python accepts as non-finite floats (`inf`, `nan`) make a row "numeric" for Python but not
-  for JS, which can shift the detected header line.
+  (`stog_function_label()`: `.gr` → `G(r)`, `.fq` → `F(Q)`, else `S(Q)` — the same default the browser
+  falls back to) and the bare file name for the title (from `_stog_plot`). The same file therefore
+  shows y-label `D(r)` / heading `D(r)` in static mode but y-label `G(r)` / heading `scale_ft.gr` in
+  Flask mode.
+- **CSV line numbering and EXAFS data-row detection — now the same** (Parsing, 4a/4b): true file
+  line numbers, and one "fully numeric" rule, in both runtimes.
 - **Strict column count (both).** Every data row must have exactly `len(labels)` values or the read
   raises — a hard failure, not a skipped row. In static mode this surfaces as the card's parse
   error; in Flask mode as a 500 from `/api/plot/data`.
@@ -1551,11 +1655,12 @@ Details that matter:
   clipped away but the tooltip still prints its value.
 - **There is no proximity cut-off.** The nearest point is always found, however far the cursor is;
   hovering an empty region snaps to the closest endpoint.
-- **Ties go to the lowest index.** `best` is initialised to `0` and the comparison is strictly
-  `distance < bestDistance`, so an exact tie keeps the earlier sample.
-- **A series with no finite x still reports index 0.** If every `x` is NaN (all comparisons false) or
-  the array is empty, `best` stays `0`, `series.x[0]` may be `undefined`, and the row's `cx`/`cy`
-  become NaN — a NaN dot and a NaN tooltip entry, with no error.
+- **Ties go to the lowest index.** The comparison is strictly `distance < bestDistance`, so an exact
+  tie keeps the earlier sample.
+- **Only drawable points are candidates.** The scan (`plotDomain.js` → `nearestFiniteIndex()`) skips
+  every point whose `x` or `y` is not finite — NaN, ±Inf, and the JSON `null` a masked region arrives
+  as from Flask (`null - x` would otherwise coerce to `0` and win near the origin). A series with no
+  finite point at all is left out of the tooltip; when no visible series has one, there is no hover.
 - **Series with different x-grids report different x.** Each series answers with *its own* nearest
   sample, but the crosshair position and the tooltip header x are taken from `values[0]` — the first
   visible non-guide series. If two series are on different grids (e.g. an experimental file and a
@@ -1965,7 +2070,7 @@ endpoint has no live consumer in the shipped UI.
 #### 16a — `detect_plot_kind(path)` and its precedence
 
 Classification is by **file name**, tested in this exact order (first match wins). It is not all
-regex — two branches are substring/`endswith` tests and the last is a set membership test:
+regex — one branch is a substring/`endswith` test and the last is a set membership test:
 
 | # | test on `Path(path).name` | kind |
 | --- | --- | --- |
@@ -1973,14 +2078,14 @@ regex — two branches are substring/`endswith` tests and the last is a set memb
 | 2 | `re.search(r"-EXAFS-.+_R_OUTPUT\.csv$")` | `exafs_r` |
 | 3 | `re.search(r"_FT_XFQ\d+\.csv$")` | `xpdf` |
 | 4 | `"PDF" in name and name.endswith(".csv")` | `pdf_partials` if `"PDFpartials" in name` else `npdf` |
-| 5 | `name.endswith("_FQ1.csv")` | `xray_sq` |
-| 6 | `name.endswith("_SQ1.csv")` | `neutron_sq` |
+| 5 | `re.search(r"_FQ\d+\.csv$")` | `xray_sq` |
+| 6 | `re.search(r"_SQ\d+\.csv$")` | `neutron_sq` |
 | 7 | `re.search(r"_bragg(?:_.+)?\.csv$")` | `bragg` |
 | 8 | `re.search(r"-\d{2,}\.log$")` | `r_value` |
 | 9 | `name in {"scale_ft.gr", "scale_ft.sq", "scale_ft_rmc.fq"}` | `stog` |
 | — | otherwise | `None` → `/api/plot/data` answers **400** |
 
-Note rule 4's precedence: it fires **before** the `_FQ1`/`_SQ1` tests, so a file whose name contains
+Note rule 4's precedence: it fires **before** the `_FQ<n>`/`_SQ<n>` tests, so a file whose name contains
 both `PDF` and `_SQ1.csv` is classified `npdf`, not `neutron_sq`.
 
 The JS counterpart is `browserData.js::detectPlotKind`, and the Python side is pinned by
@@ -2007,22 +2112,27 @@ file with a truthy `plotKind`, `stog` included — never in a chart.
   and substitutes `Series {idx}` for a *blank* header cell). Legend `loc=1` (upper right),
   `fontsize=9`, `frameon=False`; axis labels at 11 pt; `fig.suptitle(title, fontsize=14)`.
   $R_\mathrm{wp}$ is computed here only when `calculate_rwp` is set *and* the file has ≥ 3 columns.
-- `_chi_plot()` plots `np.log(chi_r)` against the implicit index — **unclamped**, unlike the
-  interactive path's $\max(\chi,10^{-12})$ guard — over the concatenated sibling logs of Step 1c, and
-  returns the metric `final_chi_r = float(chi_r[-1])`, the **raw, un-logged** last chi. The dashboard
-  and the static path report the same quantity.
+- `_chi_plot()` plots `chi_history_ln(chi_r)` $=\ln\max(\chi^2, 10^{-12})$ against the log-row
+  index, with non-finite rows left as `NaN` gaps — the same clamp as the interactive path — over the
+  concatenated sibling logs of Step 1c. Title and legend come from `chi_history_labels()`: the last
+  `.log` column's own header (`χ² history: X_ray_(R)1` in the demo), never "R-value". It returns the
+  metric `final_chi_r = float(chi_r[-1])`, the **raw, un-logged** last value. The dashboard and the
+  static path report the same quantity. (Before 1.0 it plotted an unclamped `np.log(chi_r)`.)
 - `_stog_plot()` uses `figsize=(6.75, 4.725)` and a single **opaque** red curve (`alpha=1.0,
   color="r"`). Its dashed black horizontal reference is `ax.hlines(y, data[0][0], data[0][-1],
   ls="--", lw=0.5, color="black")` with $y = 0$ for `.fq` and $y = 1$ otherwise — spanning the
   **first and last x samples**, not the axis limits. It emits **no `fig.suptitle`**: the only text
   identifying the file is the legend label.
-- `npdf` additionally reports `pdf_index` from `parsers.pdf_index`, the filename regex
-  `PDF(\d+)\.csv$` (default 0, matching the JS `pdfIndex`), and takes its title from
-  `path.stem.split("_")[-1]`; `pdf_partials` uses the same title rule.
-- The `xray_sq`, `neutron_sq` and `bragg` branches pass the **raw first CSV header** (or the
-  ToF/Q string) as the matplotlib x-label and leave the y-label at `_series_plot`'s default
-  `"data"` — so the matplotlib axis text differs from the interactive chart's hard-coded strings of
-  Step 1a.
+- Titles and y-labels come from `series_titles()`, the port of the browser's `seriesTitles()`:
+  `*_FQn.csv` / `*_SQn.csv` are titled by the function the headers (else the file name) name —
+  `F(Q)`, with `#n` for dataset $n>1$, and no radiation claimed; `*_PDFpartials.csv` is
+  `Partial g(r)` with y-label `g(r)`; `npdf` takes its title from `path.stem.split("_")[-1]` and
+  additionally reports `pdf_index` from `parsers.pdf_index`, the filename regex `PDF(\d+)\.csv$`
+  (default 0, matching the JS `pdfIndex`).
+- The `xray_sq` and `neutron_sq` branches label the x-axis `Q (Å⁻¹)` and `bragg` `ToF (µs)` or
+  `Q (Å⁻¹)` (`bragg_is_tof()` on the first header), with the `series_titles()` y-label — the
+  interactive chart's strings of Step 1a. Before 1.0 they passed the raw first CSV header as the
+  x-label and left the y-label at `"data"`.
 - `plot_to_png(result, dpi=150)` writes with `bbox_inches="tight"`, so the raster is
   $6.75\times150 = 1012$ px wide *before* the tight crop trims whitespace; the final pixel size is
   therefore layout-dependent and not a fixed number.
@@ -2042,9 +2152,9 @@ re-reads and re-parses the whole file (and re-globs the sibling logs, for R-valu
 | ticks | 1–2–5 `niceTicks`, target 7/6 (or 11/4) | matplotlib's own `MaxNLocator` |
 | curve opacity | opaque, including guides (Step 2) | `alpha=0.65` on every series **except** `_stog_plot`, which is opaque (`alpha=1.0`) |
 | markers | hollow circles for `*exp*` series when paired | none; all series are lines |
-| R-value log | $\ln\max(\chi,10^{-12})$ | $\ln\chi$, unclamped |
+| R-value log | $\ln\max(\chi,10^{-12})$ | $\ln\max(\chi,10^{-12})$ (`chi_history_ln`) |
 | title | HTML card header only (not in the figure) | `fig.suptitle` for `_series_plot`/`_chi_plot`; **`_stog_plot` adds none** (its file name appears only in the legend) |
-| axis label text | hard-coded per kind (Step 1a) | same for EXAFS/PDF; raw CSV header for `_FQ1`/`_SQ1`/bragg x, and y-label `"data"` |
+| axis label text | per kind (Step 1a) | the same strings: `Q (Å⁻¹)` / `ToF (µs)` x-labels and the `series_titles()` y-labels |
 | legend | HTML chips outside the SVG (not exported) | inside the figure, upper right |
 | interactivity | zoom/hover/legend toggles | none (static PNG) |
 | output size | fixed 1440 × 900 px (PNG) or true vector (SVG) | ≈1012 px wide at dpi 150, then `bbox_inches='tight'` |
@@ -2056,23 +2166,24 @@ The formula is computed identically in both languages — `parsers.rwp(x, observ
 
 $$R_\mathrm{wp} = \sqrt{\frac{\sum_i (f_i - o_i)^2}{\sum_i o_i^2}}$$
 
-with $o$ = CSV column 1 and $f$ = CSV column 2 **by position**, so $R_\mathrm{wp}$ is only meaningful when
-the file's column order really is (x, observed, calculated). The `x` argument is accepted and
-ignored by both. The two runtimes agree to floating-point round-off. The conditions and the display
+with $o$ = the **experimental** column and $f$ = the **calculated** column as resolved by
+`rwp_columns()` / `rwpColumns()` (5a): RMCProfile's positional `(x, calculated, experimental)` order,
+overridden by a header that names both roles. The `x` argument is accepted and ignored by both. The two runtimes agree to floating-point round-off. The conditions and the display
 rounding matter as much as the formula:
 
 - It is computed **only** for kinds `xpdf`, `npdf`, `xray_sq`, `neutron_sq` and `bragg` — never for
   `exafs_q`, `exafs_r`, `pdf_partials`, `stog` or `r_value` — and **only when the CSV has ≥ 3
   columns**. Otherwise the card shows no chip.
-- When the denominator $\sum_i o_i^2$ is exactly zero, both implementations return **`0.0` by
-  convention** — a silent "perfect fit" reading rather than an error or a blank.
+- When the denominator $\sum_i o_i^2$ is exactly zero, or no row is finite in both columns, both
+  implementations return the unavailable sentinel **`None`/`null`** (chip "Rwp —"), never `0.0`,
+  which would read as a perfect fit.
 - The dashboard chip prints `Number(rwp).toPrecision(4)` (4 significant figures). The unmounted
   `PlotViewer.jsx` metric strip prints every metric at `toPrecision(5)`.
 
 **Code:** `plots.py` → `detect_plot_kind`, `bragg_is_tof`, `_series_plot`, `_stog_plot`, `_chi_plot`,
-`make_plot`, `plot_to_png`, `close_plot`; `parsers.py` → `rwp`, `pdf_index`;
+`make_plot`, `plot_to_png`, `close_plot`; `parsers.py` → `rwp`, `rwp_columns`, `fit_rwp`, `pdf_index`;
 `app.py` → `plot_file`, `plot_metadata`, `plot_data`; `browserData.js` → `detectPlotKind`, `rwp`,
-`pdfIndex`.
+`rwpColumns`, `pdfIndex`.
 
 ---
 
@@ -2218,21 +2329,20 @@ rounding matter as much as the formula:
 
 ### Caveats / what this is not
 
-- **No decimation exists — and the failure mode is a crash, not slow rendering.** Nothing is hidden
-  by subsampling, but nothing protects you either. `domains` builds `visibleSeries.flatMap(s => s.x)`
-  (and a second flatMap for y) on **every** zoom step and legend toggle, and `niceDomain` then calls
-  `Math.min(...finite)` / `Math.max(...finite)` by argument spread. Argument-count limits (~10⁵ in
-  practice, engine-dependent) make that **throw `RangeError: Maximum call stack size exceeded`** once
-  the total point count across visible series passes the limit. Nothing catches it inside the memo
-  and there is no error boundary on that path, so the chart unmounts into a React error rather than
-  degrading. There is no point budget, no progressive rendering, and no warning. The same spread
-  pattern appears in `yAxisMax`/`xAxisMax` and in `makeProjectedPlane`, but those operate on tick
-  lists and polygon corners and are harmless.
+- **No decimation exists — large series cost time, not correctness.** Nothing is hidden by
+  subsampling, and nothing protects you from a slow chart either. `domains` builds
+  `visibleSeries.flatMap(s => s.x)` (and a second flatMap for y) on **every** zoom step and legend
+  toggle, and `niceDomain` ([`plotDomain.js`](../../web_app/frontend/src/plotDomain.js)) scans that
+  array in one pass. (Earlier versions spread it into `Math.min(...)`/`Math.max(...)`, which threw
+  `RangeError: Maximum call stack size exceeded` past ~10⁵ points; that was fixed before 1.0.)
+  There is no point budget, no progressive rendering, and no warning. The spread pattern survives
+  only in `yAxisMax`/`xAxisMax` and in `makeProjectedPlane`, which operate on tick lists and polygon
+  corners and are harmless.
 - **The hover search is x-only and unbounded.** It ignores y entirely, so with several overlapping
   curves the tooltip reports every visible series' value at (its own) nearest x, not the curve you
   are pointing at. There is no "snap radius", so a cursor far from any data still produces a reading.
-  Ties resolve to the lowest index, and a series whose x values are all NaN still reports index 0 —
-  yielding a NaN dot and a NaN tooltip row.
+  Ties resolve to the lowest index; non-finite (NaN / `null`) points are never snapped to, and a series
+  with no finite point is omitted from the tooltip.
 - **The tooltip header x belongs to the first visible non-guide series.** On mismatched x-grids the
   other rows' y values are sampled at slightly different x than the header states.
 - **Series identity is the label string.** Duplicate column headers merge into one legend chip, share
@@ -2296,11 +2406,13 @@ The Run Dashboard renders two cards side by side, both produced by
   *symmetry-vs-tolerance ladder*.
 
 **The Detected SG card is computed entirely in the browser**, in JavaScript, with no backend call,
-no `spglib`, and no WASM. It consults **no external space-group database**; classification uses only
-small in-file lookup tables (a 69-entry symmorphic `SG_NUMBER` map, the Bravais centering vectors,
-point-group orders and crystal systems, and Wyckoff lists for four space groups — all documented in
-Steps 10–14). There is **no Python counterpart** anywhere in `rmc_toolkits/` or `web_app/backend/` —
-a repo-wide search for `spglib`, `space_group`, or `point_group` in the Python tree returns nothing.
+no `spglib`, and no WASM. It consults **no external space-group database**; classification uses
+in-repo tables — the 230 space groups with their standard short symbols and crystal classes
+(`spaceGroupTable.js`), the Bravais centering vectors and the per-system symmetry directions
+(`spaceGroupSymbol.js`), point-group orders (`symmetry.js`), and the Wyckoff positions of all 230
+groups in their ITA standard setting (`wyckoffTable.js`) — all documented in Steps 10–14. There is
+**no Python counterpart** anywhere in `rmc_toolkits/` or `web_app/backend/` — a repo-wide search for
+`spglib`, `space_group`, or `point_group` in the Python tree returns nothing.
 
 The **Model information** card is browser-computed too in static / local-folder mode. In
 server-directory (Flask) mode its raw inputs come from Python: `Dashboard.jsx` and `StructurePage.jsx`
@@ -2308,7 +2420,8 @@ issue `GET /api/structure`, and the endpoint
 ([`web_app/backend/app.py`](../../web_app/backend/app.py) → `structure()`) returns
 `latticeVectors`, `supercell`, `elementCounts`, `atomIndices`, `totalAtoms` and sampled `points`
 produced by the Python parsers; only the *derived* quantities (edge lengths, angles) are computed in
-JS on that path. The response carries **no `basis` field**, so in Flask mode the *Detected SG* card
+JS on that path. It also carries the header's move counters (`moves`, Step 2b) and the atom-line
+`parseReport` / `parseWarning` (Step 2). The response carries **no `basis` field**, so in Flask mode the *Detected SG* card
 is suppressed entirely (`describeSymmetry` returns `null` without a basis). The symmetry analysis
 exists only on the browser-parsed path (`browserData.structureFromRmc6f`), which is used in static
 mode and whenever a local run folder is selected.
@@ -2326,7 +2439,7 @@ mode and whenever a local run folder is selected.
 | $\mathbf t$ | fractional translation part | dimensionless |
 | $\tau$ (`tol`, `symTol`) | Cartesian atomic-position tolerance for symmetry acceptance | Å |
 | $\varrho$ (`residual`) | worst-site Cartesian mapping error of one operation | Å |
-| $\epsilon_G$ (`metricTol`) | *relative* tolerance on the metric-preservation test | dimensionless |
+| $\tau_L$ (`latticeTol`) | Cartesian tolerance on the lattice strain of a point operation (default $\tau$) | Å |
 
 ---
 
@@ -2352,51 +2465,105 @@ run's output files:
 2. Those candidates are sorted by `(priority, lowercase file name)`.
 3. Each is looked up in a map keyed `` `${dirname(path)}/${rmc6f stem}` `` — the match is
    **directory-scoped**, so a stem only matches an `.rmc6f` sitting in the same folder. The first hit
-   wins.
-4. If nothing matches, the fallback is `rmc6fFiles[0]` — the first `.rmc6f` in the **unsorted** input
+   wins. Only usable candidates are in the map: empty or marker-less files are skipped
+   (`structureFileProblem()`, Run Dashboard Step 3).
+4. If nothing matches, the fallback is the first usable `.rmc6f` in the **unsorted** input
    file list, i.e. directory-enumeration order, not alphabetical order.
 
-`readCellVectors()` scans every line and takes:
+`readRmc6fCellVectors()` scans every line and takes:
 
-- the line whose first token is `Supercell` → $N$ = the **last three** whitespace tokens, parsed as
-  numbers (`parts.slice(-3).map(Number)`);
-- the line whose first token is `Lattice` → the **next three lines**, each split on whitespace and
-  parsed as numbers, become the rows of $L$ (Å).
+- the line whose first token is `Supercell` → $N$ = the **last three** whitespace tokens;
+- the line whose first token is `Lattice` → the **next three lines**, each split on whitespace,
+  become the rows of $L$ (Å).
 
-If either is missing the parse throws `Missing lattice or supercell metadata` and no summary is
-shown. Note that the last `Supercell`/`Lattice` occurrence in the file wins (the loop overwrites).
+If either is missing the parse throws `<file> is missing lattice or supercell metadata` (the Python
+wording; the browser error names the file too) and no summary is shown. Note that the last
+`Supercell`/`Lattice` occurrence in the file wins (the loop overwrites). The shared reader is
+`rmc6f.js` → `readRmc6fCellVectors(text, name)`; every browser reader splits lines on
+`LINE_BREAK = /\r\n|\r|\n/`, so a file with bare-CR line endings (which Python's universal newlines
+always read) no longer throws in the browser.
 
-**No numeric validation.** `readCellVectors` checks only that the two *markers* exist. The three
-lattice rows are read as `row.trim().split(/\s+/).map(Number)` with no `filter(Boolean)`, no length
-check and no finiteness check, and the supercell tokens are `parts.slice(-3).map(Number)` with no
-positive-integer check. A blank or short line after `Lattice` therefore yields `NaN` (or `undefined`)
-entries that propagate silently into $G$. Because `Math.abs(NaN - NaN) > eps` is `false` and the
-`|| 1` guard turns a `NaN` trace into a scale of 1, `latticePointOps` then accepts **all 6960**
-unimodular $\{-1,0,1\}$ patterns instead of throwing (verified by running the code). Downstream the
-damage is contained rather than silent-but-wrong: `cartDist` returns `NaN` for every pair, so
-`mappingResidual` rejects every candidate and the card degrades to `P1` / No. 1 / **0 operations**
-with an empty ladder, while the Model information card prints `NaN` cell edges. Nothing is raised.
+**Numeric validation (1.0).** Every header number is read with the atom lines' Fortran-aware
+`parseFortranNumber()` (`0.207312D+02` is 20.7312), and the header must describe a real cell. Each
+check throws `<file>: …` and stops the parse, so no summary, map or table is built from it:
 
-**Code**: `browserData.js` → `readCellVectors()`; Python equivalent
-`rmc_toolkits/parsers.py` → `read_cell_vectors()` uses the identical rule (`parts[-3:]` and the
-three following lines) and the two agree exactly.
+| Check | Error text after `<file>: ` |
+|---|---|
+| $N$ = three positive integers (`2.0` and `0.3D+01` count; `0`, `-1`, `2.5`, `NaN` do not) | `supercell dimensions must be three positive integers, got '<tokens>'` |
+| no blank or missing row among the three lattice rows | `the Lattice vectors block is truncated (expected three rows of three numbers)` |
+| each row exactly three finite numbers | `lattice vector <i> must be three finite numbers, got '<row>'` |
+| $\det L = \mathbf{a}\cdot(\mathbf{b}\times\mathbf{c})$ finite | `lattice vectors give a non-finite cell volume (values too large)` |
+| $\lvert\det L\rvert > 10^{-8}\,\lvert\mathbf{a}\rvert\lvert\mathbf{b}\rvert\lvert\mathbf{c}\rvert$ | `lattice vectors are singular (zero cell volume)` |
+
+The checks run in that order. The singular threshold is relative, so it does not depend on the
+units or size of the box: real cells have a normalised volume of 0.01–1, while an exactly
+collinear or coplanar lattice leaves round-off near $10^{-16}$. Before 1.0 none of this was
+checked: `Supercell dimensions: 0 0 0` folded every atom onto the origin, a NaN row reached the
+symmetry finder as `NaN` distances (the card degraded to `P1` with 0 operations), a collinear lattice
+gave a PCA anisotropy of $10^{14}$, a $10^{300}$ lattice gave all-zero bond-angle counts, and a `D`
+exponent was a raw float error in Python and a `NaN` in the browser.
+
+**Code**: `rmc6f.js` → `readRmc6fCellVectors()`; Python equivalent
+`rmc_toolkits/parsers.py` → `read_cell_vectors()` / `_validate_cell_header()` uses the identical
+rule, checks and messages. The shared cases are
+`web_app/frontend/src/__tests__/fixtures/rmc6f_header_cases.json`, asserted by
+`tests/test_parsers_rmc6f_header.py` and `src/__tests__/rmc6fHeader.test.js`. Every consumer —
+the dashboard, the KDE and 3D views, PCA, Displacement Directions, Bond Geometry, the Frac
+conversion — reads the header through these, so a bad header is a 400 on every Flask route and a
+thrown error in every worker.
 
 #### Step 2. Per-atom parsing, element counts, and reference sites
 
-`structureFromRmc6f(file, maxPoints = 100)` walks the lines after the `Atoms:` marker and hands each
-whitespace-split line to `parseAtomLine()` in
-[`rmc6f.js`](../../web_app/frontend/src/rmc6f.js). That function indexes **from the end** of the line so
-that any number of label columns between the element and the coordinates is tolerated:
+`structureFromRmc6f(file, maxPoints = 100)` hands the text to `parseRmc6fAtoms()` in
+[`rmc6f.js`](../../web_app/frontend/src/rmc6f.js), which implements **one atom-line grammar shared
+verbatim with Python** (`parsers.py` → `classify_rmc6f_atom_line()` / `iter_rmc6f_atoms()`):
 
-- $\ge 9$ fields ("full" format): the last four fields are the reference number and the three cell
-  indices $(c_1,c_2,c_3)$; the three before them are the fractional box coordinates.
-- 5–6 fields ("coords-only", oldest format): the last three fields are the coordinates;
-  `referenceNumber` and `cellIndices` come back `null`.
-- 7–8 fields, or non-finite numbers → `null` (line skipped).
+- **Section.** Atom lines are the non-blank lines after the first line matching `/^\s*atoms\b/i`
+  (`Atoms:`, `Atoms :`, `atoms:`, `Atoms (fractional coordinates):` …). Before it, the header's
+  `Number of atoms:` (the *declared* count) and `Supercell` line are read.
+- **Line layout**, anchored from the **front** — `id element [label] <data>`:
+  `id` a non-negative integer; `element` a token starting with a letter, normalized like Python's
+  `str.capitalize()` (`SE`/`se` → `Se`, in both runtimes); an optional label — a bracket group
+  (`[1]`, or split as `[ 1]`) or one non-numeric token; then `<data>` of **exactly 7** tokens
+  `x y z ref cx cy cz` (full layout) or **exactly 3** tokens `x y z` (legacy coords-only;
+  `referenceNumber`/`cellIndices` come back `null`).
+- **Numbers** accept Fortran `D` exponents (`0.743D-01`); `NaN`, `Inf`, `Infinity` and an all-`*`
+  Fortran overflow field are *non-finite*; anything else is not a number.
+- **Validation of every accepted line:** `ref` a positive integer, each cell index an integer in
+  $[0, N_i)$ ($N$ from the `Supercell` line), coordinates finite.
+- **Outcome per line:** a full atom, a coords-only atom, *skipped for non-finite coordinates*, or
+  *unparsed* (no layout fits, or validation failed). Nothing is inferred by indexing from the end of
+  the line any more: until 2026-09 the browser read the last seven fields, so one extra trailing
+  field shifted every column (y, z became x, y; a cell index became the reference number) with every
+  value still finite, while Python dropped the same lines and its `read_atom_indices()` reported cell
+  indices as "sites".
+
+The per-line outcomes are counted in a **parse report** — `{declaredAtoms, atomLines, parsedAtoms,
+coordsOnlyAtoms, nonFiniteLines, invalidLines, firstInvalidLine, firstNonFiniteLine}`, identical keys
+from `structureFromRmc6f` and from Flask `/api/structure` (`Rmc6fParseReport.to_dict()`) — and
+`rmc6fParseWarning()` / `Rmc6fParseReport.warning()` turn it into one sentence (same wording in both
+runtimes), e.g. `parsed 31196 of 52000 atoms declared in the header; 1 of 31197 atom lines unparsed
+(first: '…')` or `2 atom lines skipped for non-finite coordinates (first: '…')`. It is returned as
+`structure.parseWarning` (`null` when clean) and shown on the Model information card as a
+**Parse warning** cell (full sentence in the tooltip). **Zero parsed atoms is an error**, not an
+empty card: the browser throws `<file>: no atoms could be parsed — <warning>` and Flask answers the
+same message; a file with no Atoms marker fails with `<file> does not contain an Atoms section` in
+both. On a **Live Data** re-read whose atom lines are *missing* — parsed plus coords-only plus
+non-finite lines short of the declared count, i.e. a configuration RMCProfile is still writing
+(a line cut mid-write counts as missing, since it is unparsed) — the Dashboard keeps the previous
+complete summary and says so (`structureReport.js` → `isIncompleteStructure()`), in both runtimes.
+A complete file whose atom blew up to NaN/Inf/`****` has every line present, so it is shown at once
+with its parse warning (before 1.0's review fix such a read was held back as "still being written").
+
+The grammar is pinned on 17 variants of a real configuration (CRLF, bare CR, tabs, BOM, no label,
+split label, E and D exponents, trailing blank lines, three marker spellings, upper-case elements,
+an extra trailing field, a trailing `M: 2.5` pair, a label-without-reference line, coords-only),
+plus truncation, non-finite and index-validation cases, with the same expectations in
+`tests/test_parsers_rmc6f_grammar.py` and `__tests__/rmc6fGrammar.test.js`.
 
 From this:
 
-$$\texttt{totalAtoms} = \#\{\text{parsed atom lines}\},\qquad
+$$\texttt{totalAtoms} = \#\{\text{full + coords-only atoms}\},\qquad
 \texttt{elementCounts}[e] = \#\{\text{atoms with element } e\}$$
 
 $$\texttt{atomIndices}[e] = \{\, \text{distinct reference numbers of element } e \,\}\ \text{(sorted ascending)}$$
@@ -2443,44 +2610,43 @@ symmetry finder** — those use all atoms / all reference sites.
 additionally clamps the request to $[100, 10^6]$ (`app.py`, `MAX_STRUCTURE_POINTS = 1_000_000`) and
 samples *per reference site* (`_sample_atoms_by_site()`) rather than by a flat stride.
 
-The `.rmc6f` header's declared `Number of atoms:` is parsed for nothing and is **not** validated
-against the number of atom lines actually read (listed as a known issue in
-[AGENTS.md](../../AGENTS.md)).
+The `.rmc6f` header's declared `Number of atoms:` is compared with the atoms actually accepted
+(the parse report above); a mismatch is reported, never silently shown as the atom count.
 
-**Code**: `browserData.js` → `structureFromRmc6f()`; `rmc6f.js` → `parseAtomLine()`.
+**Code**: `browserData.js` → `structureFromRmc6f()`; `rmc6f.js` → `parseRmc6fAtoms()`,
+`classifyAtomLine()`, `parseAtomLine()`, `parseFortranNumber()`, `rmc6fParseWarning()`.
 
-**Python counterpart** (`rmc_toolkits/parsers.py`), used only in Flask mode — it differs from the JS
-parser in two ways, not one:
-
-- `iter_rmc6f_atoms()` uses the same index-from-the-end rule **for the ≥ 9-field full format only**:
-  it hard-rejects shorter lines (`n = len(parts); if n < 9: continue`). The 5–6-field "coords-only"
-  form that `parseAtomLine` tolerates yields **zero atoms** in Flask mode, so an old file that gives
-  a full Model information card in browser mode gives an empty one through `/api/structure`.
-- It **capitalizes** the element token (`parts[1].capitalize()`, which also lowercases the tail:
-  `SE → Se`) while the JavaScript parser keeps it verbatim. Element identity is compared by exact
-  string equality downstream, so a file mixing `SE` and `Se` is two species in browser mode and one
-  in Flask mode. Worse, the sibling function `read_atom_indices()` — which produces the `atomIndices`
-  in the same response — does **not** capitalize and accepts `len(parts) >= 5` with `int(parts[-4])`.
-  A file written with upper-case tokens therefore returns `elementCounts` keyed `Se` and
-  `atomIndices` keyed `SE`, and the card shows the element row with **no** "N sites" sub-label while
-  the "Total atoms" sub-label still counts those sites.
+**Python counterpart** (`rmc_toolkits/parsers.py`), used in Flask mode: `/api/structure` calls
+`parse_rmc6f_atoms(path, include_coords_only=True)`, the same grammar and report, so both runtimes
+count the same atoms (coords-only included) under the same element names, and `atomIndices` is built
+from the same accepted full-layout lines (`read_atom_indices()` now reuses `iter_rmc6f_atoms()`).
+`iter_rmc6f_atoms()` itself yields **only full-layout atoms by default** — its records promise an
+integer `reference_number` and `cell_indices` to the PCA and Frac-conversion consumers — and yields
+the coords-only records (with those two fields `None`) when called with `include_coords_only=True`;
+pass `report=Rmc6fParseReport()` to receive the counts.
 
 #### Step 2b. Run counters from the header (`readMovesMetadata`)
 
 `structureFromRmc6f` also calls `readMovesMetadata(file.text)` and returns the result as
-`structure.moves`. It slices the header —
-`text.slice(0, text.indexOf('Atoms:') > 0 ? text.indexOf('Atoms:') : 4000)`, i.e. a 4000-character
-fallback when the marker is absent or at index 0 — and applies four regexes:
+`structure.moves`. It slices the header up to the Atoms marker (the same case-insensitive
+`/^[ \t]*atoms\b/im` rule as the atom parser), with a 4000-character fallback when the marker is
+absent or at index 0, and applies four regexes:
 `Number of moves generated:`, `… tried:`, `… accepted:` (each `([\d.]+)`) and
 `Accumulated time \(s\)[^:]*:\s*([\d.]+)`. Each field is `Number(match[1])` or `null`, and the whole
 object collapses to `null` unless at least one value is finite.
 
-It is **not rendered on either card**. It feeds the AI-assistant run context
-(`runContext.js`: acceptance ratio $=$ accepted/tried, accepted moves per atom, accumulated time in
-hours). There is no Python equivalent on the `/api/structure` path, so `structure.moves` is absent in
-Flask mode.
+The **Python equivalent** is `parsers.read_moves_metadata()`, which `/api/structure` returns as
+`moves` in Flask mode (same regexes and header slice; keys present only for the counters found, as
+floats). In both runtimes the counters are **rendered on the Model information card** —
+`ModelSummary.jsx` shows Generated / atom, Accepted / atom and Accepted / generated via `moveRatios()`
+([`moveStats.js`](../../web_app/frontend/src/moveStats.js)), each row only when its inputs exist — and
+they feed the AI-assistant run context (`runContext.js`: acceptance ratio $=$ accepted/**tried**,
+accepted moves per atom, accumulated time in hours). Note the two acceptance ratios use different
+denominators: the card divides by moves **generated**, the context by moves **tried**.
 
-**Code**: `browserData.js` → `readMovesMetadata()`, called from `structureFromRmc6f()`.
+**Code**: `browserData.js` → `readMovesMetadata()`, called from `structureFromRmc6f()`;
+`parsers.py` → `read_moves_metadata()`, called from `app.py` → `structure()`; `moveStats.js` →
+`moveRatios()`; `ModelSummary.jsx`.
 
 #### Step 3. Conventional-cell edge lengths
 
@@ -2502,7 +2668,7 @@ grouping — a French locale renders 10.532 Å as `10,532`.
 duplicated verbatim in
 [`llm/context/runContext.js`](../../web_app/frontend/src/llm/context/runContext.js) →
 `structureContext()` (deliberate duplication — the `src/llm/` module is not allowed to import from
-the host app, per [AGENTS.md](../../AGENTS.md)), and again in `browserData.js` as `cellEdgeA`.
+the host app, per [AGENTS.md](../../AGENTS.md)), and the same division by `max(N_i, 1)` gives the unit-cell vectors of the `dispA` pass in `browserData.js` (`unitVectors`).
 
 #### Step 4. Cell angles
 
@@ -2541,13 +2707,14 @@ $$w_i = \big((x_i \, N_i) \bmod 1 + 1\big) \bmod 1,\qquad i=1,2,3$$
 where $x_i$ is the fractional box coordinate (the doubled modulo is the JavaScript idiom for a true
 modulus, since `%` is a sign-following remainder).
 
-**Supercell guard inconsistency.** This fold uses the **raw** `supercell[i]`, whereas every other use
-of the multiplicity divides by `Math.max(supercell[i], 1)` — the card's cell lengths
-(`ModelSummary.jsx`), `cellEdgeA` in `browserData.js`, and `conventionalCell()` in
-`symmetryModel.js`. Since `readCellVectors` never validates that the three `Supercell` tokens are
-positive integers, a header declaring `0` (or a non-integer) yields a *guarded*, finite conventional
-edge on that axis while collapsing every atom's $w_i$ to 0 — a one-site basis and a spurious
-high-symmetry answer, with no error raised.
+**Supercell guard.** This fold uses the **raw** `supercell[i]`, whereas every other use of the
+multiplicity divides by `Math.max(supercell[i], 1)` — the card's cell lengths (`ModelSummary.jsx`),
+`unitVectors` (the `dispA` pass) in `browserData.js`, and `conventionalCell()` in
+`symmetryModel.js`. Before 1.0 a header declaring `0` (or a non-integer) therefore gave a *guarded*,
+finite conventional edge on that axis while collapsing every atom's $w_i$ to 0 — a one-site basis
+and a spurious high-symmetry answer, with no error raised. `readRmc6fCellVectors()` now rejects such
+a header (Step 1, numeric validation), so the raw and guarded values always agree; the `Math.max`
+guards remain as defence only.
 
 The per-site representative is the **circular mean** of $w$ over all box copies of that reference
 number, computed independently on each axis:
@@ -2560,20 +2727,27 @@ A circular (not arithmetic) mean is required so that a site straddling the cell 
 by `structureFromRmc6f site displacement (dispA) › handles a boundary-wrapping site (mean at 0 ≡ 1)`
 in [`__tests__/browserData.test.js`](../../web_app/frontend/src/__tests__/browserData.test.js).
 
-The same accumulators give the per-site spread for free. With resultant length
-$\bar R_i = \big|\sum_c(\cos,\sin)\big| / N_c$ over the $N_c$ copies, the circular standard
-deviation in cell fractions is $\sigma_i^{\mathrm{frac}} = \sqrt{-2\ln \bar R_i}\,/\,2\pi$ (with $\bar R_i$ floored
-at $10^{-6}$, and $\sigma_i^{\mathrm{frac}}$ taken as 0 when $\bar R_i\ge1$, i.e. a single copy or zero spread), and
+The per-site spread comes from a **second pass** over the atoms. Each copy's within-cell offset from
+its site mean is wrapped to the nearest image, $d_i = w_i - \bar w_i - \operatorname{round}(w_i - \bar w_i)$,
+and mapped to Cartesian Å through the conventional-cell vectors $\mathbf a_i = \mathbf L_i / N_i$,
+$\Delta\mathbf r = \sum_i d_i\,\mathbf a_i$, so the **full metric** enters. The site's rms displacement is
 
-$$u_s \;\equiv\; \texttt{dispA} = \sqrt{\sum_{i=1}^{3}\big(\sigma_i^{\mathrm{frac}} \, a_i\big)^2}\ \ [\text{Å}]$$
+$$u_s \;\equiv\; \texttt{dispA} = \sqrt{\big\langle |\Delta\mathbf r|^2\big\rangle - \big|\langle\Delta\mathbf r\rangle\big|^2}
+= \sqrt{\operatorname{tr} C_\mathrm{cart}}\ \ [\text{Å}]$$
+
+— the square root of the trace of the site's Cartesian displacement covariance (population
+normalization), i.e. $\sqrt{3\,U_\mathrm{iso}}$ in the PCA page's terms, independent of the cell
+setting. Until 2026-09 it was $\sqrt{\sum_i(\sigma_i^{\mathrm{frac}} a_i)^2}$ with a per-axis circular
+standard deviation $\sigma_i^{\mathrm{frac}}$ and edge **lengths** $a_i$, which drops the metric
+cross-terms: for an isotropic cloud it read +10 % in a hexagonal cell and +23 % for fcc in its 60°
+rhombohedral primitive cell (the same crystal gave different values in different settings); on the
+orthogonal demo run the two agree within 0.2 %. `__tests__/dispMetric.test.js` pins the new value
+against a directly computed Cartesian rms for hexagonal, rhombohedral and cubic cells.
 
 This rms displacement is **not shown on the card**; it is consumed by the AI-assistant context
-(`runContext.js` → `symmetryContext()` aggregates `mean_disp_A` / `max_disp_A` per Wyckoff orbit).
-Two approximations are worth naming: (i) $\sigma_i^{\mathrm{frac}} a_i$ multiplies a fractional spread by an edge
-*length*, which ignores the metric cross-terms and is therefore exact only for orthogonal axes;
-(ii) the circular-std formula is the von-Mises/wrapped-normal relation, exact only for a wrapped
-Gaussian. The unit test pins the value for a two-copy $\pm0.02$-fraction case on a 10 Å edge at
-$0.2003$ Å.
+(`runContext.js` → `symmetryContext()` aggregates `mean_disp_A` / `max_disp_A` per Wyckoff orbit). It is
+a **single-snapshot** spread: static disorder and thermal motion together. The unit test pins the
+two-copy $\pm0.02$-fraction case on a 10 Å edge at exactly $0.2$ Å.
 
 Sites are keyed by reference number and emitted **sorted by reference number**, as
 `{ el, referenceNumber, frac, dispA }`. Per the early return above, an oldest-format file yields an
@@ -2624,9 +2798,19 @@ The scaling engines ([`rmc_toolkits/scaling.py`](../../rmc_toolkits/scaling.py),
 
 ### Part B — The Detected SG symmetry finder
 
-All of Part B lives in [`web_app/frontend/src/symmetry.js`](../../web_app/frontend/src/symmetry.js)
-(pure functions, no React, no I/O) with the structure→finder glue in
-[`web_app/frontend/src/symmetryModel.js`](../../web_app/frontend/src/symmetryModel.js).
+Part B is pure JavaScript (no React, no I/O) in six modules under `web_app/frontend/src/`:
+
+| Module | Role |
+| --- | --- |
+| [`symmetry.js`](../../web_app/frontend/src/symmetry.js) | lattice rotations, operation search and refinement, closure walk, ladder, point group, orbits (Steps 7–13), the operation estimate |
+| [`spaceGroupSymbol.js`](../../web_app/frontend/src/spaceGroupSymbol.js) | screw/glide analysis, centering, the standard-setting search, the H–M symbol, the lower-bound check (Step 10) |
+| [`spaceGroupTable.js`](../../web_app/frontend/src/spaceGroupTable.js) | the 230 groups: number, standard short symbol, crystal class, pre-2002 `e`-glide spellings |
+| [`wyckoff.js`](../../web_app/frontend/src/wyckoff.js) + [`wyckoffTable.js`](../../web_app/frontend/src/wyckoffTable.js) | Wyckoff positions of the 230 groups and the letter assignment (Step 14) |
+| [`symmetryModel.js`](../../web_app/frontend/src/symmetryModel.js) | structure → finder glue: the cell, the basis-size cap and operation budget, orbits and letters in the naming cell |
+
+Tests: `web_app/frontend/src/__tests__/symmetry*.test.js` and `wyckoff.test.js` (the 230-group
+fixtures in `__tests__/fixtures/spaceGroups.js`, well-known structures in
+`__tests__/fixtures/symmetryStructures.js`).
 
 **Convention**: fractional coordinates are **column vectors** and operations act as
 $\mathbf x' = R\,\mathbf x + \mathbf t$. The lattice matrix $A$ stores lattice vectors as **rows**,
@@ -2645,7 +2829,8 @@ built on a primitive cell, or on a non-standard setting, the finder analyses tha
 
 #### Step 7. Lattice point operations: integer automorphisms of the metric
 
-**Input**: $A$ (Å), relative tolerance $\epsilon_G$ (`metricTol`, default $10^{-2}$).
+**Input**: $A$ (Å), Cartesian lattice tolerance $\tau_L$ (`latticeTol`, Å; default: the pass
+tolerance $\tau$).
 
 The metric tensor is built explicitly,
 
@@ -2657,66 +2842,100 @@ $(R\mathbf x)^{\mathsf T}G(R\mathbf x) = \mathbf x^{\mathsf T}G\mathbf x$ for al
 $$\boxed{\,R^{\mathsf T} G R = G\,}$$
 
 and it maps the lattice onto itself iff $R$ is an integer matrix with $|\det R| = 1$. The code
-enumerates candidates **exhaustively**:
+enumerates candidates **exhaustively, in a reduced basis** of the lattice:
 
+- **Reduce** (`reduceBasis()`): an integer matrix $M$ ($\det M=+1$, rows = new basis vectors in the
+  given basis) such that $A_r = MA$ is a reduced basis of the same lattice — each vector is
+  repeatedly shortened by integer multiples of the others (pairwise size reduction, then
+  $\mathbf b_k \pm \mathbf b_i \pm \mathbf b_j$), shortest first, until nothing shortens (the
+  Minkowski conditions in three dimensions). A conventional cell is already reduced, so this only
+  matters for an oblique cell.
 - Every $3\times3$ matrix with entries drawn from $\{-1,0,1\}$: $3^9 = 19\,683$ patterns, iterated
-  as a base-3 counter over `code = 0 … 19682`.
-- Keep those with $\det R \in \{+1,-1\}$ — **6960** of the 19 683 (verified by direct enumeration).
-- Keep those satisfying $R^{\mathsf T}GR = G$ **componentwise** within an absolute threshold
+  as a base-3 counter over `code = 0 … 19682`, taken as $R_r$ in the reduced basis.
+- Keep those with $\det R_r \in \{+1,-1\}$ — **6960** of the 19 683 (verified by direct enumeration).
+- Keep those whose **Cartesian lattice strain** (on $A_r$) is at most $\tau_L$, and carry each back to
+  the given basis, $R = M^{\mathsf T}R_rM^{-\mathsf T}$ (an integer matrix, since $M$ is unimodular;
+  fractional columns transform as $\mathbf x_r = M^{-\mathsf T}\mathbf x$).
 
-$$\varepsilon = \epsilon_G \cdot \tfrac{1}{3}\operatorname{tr}G = \epsilon_G\cdot\tfrac13\big(a_1^2+a_2^2+a_3^2\big)\ \ [\text{Å}^2]$$
+**Lattice strain** (`latticeStrain()`). Used as if it were an isometry, $R$ acts on Cartesian
+vectors as $M = A^{\mathsf T}RA^{-\mathsf T}$, whose Green strain is
 
-  (the `|| 1` guard makes the scale 1 if the trace is 0).
+$$E=\tfrac12\big(M^{\mathsf T}M-I\big)=\tfrac12\,A^{-1}DA^{-\mathsf T},\qquad D = R^{\mathsf T}GR-G\ [\text{Å}^2].$$
 
-The surviving set is the **holohedry of the lattice in the conventional direct basis**. Verified by
-enumeration: a cubic metric ($a=10$ Å) yields exactly 48 operations; a primitive hexagonal metric
-($a=b=5$ Å, $c=8$ Å, $\gamma=120°$) yields exactly 24, at $\epsilon_G = 10^{-2}$.
+The cell edge $\mathbf a_i = A^{\mathsf T}\mathbf e_i$ is displaced by $|E\mathbf a_i| = \tfrac12|A^{-1}D\mathbf e_i|$,
+and the strain of $R$ is the largest of the three (evaluated with $A = A_r$, the reduced cell's
+edges — the same three edges as the given cell's for a conventional cell),
 
-**Why $\{-1,0,1\}$ suffices.** In a *conventional crystallographic setting*, the matrix of every
-point operation expressed in the direct basis has entries in $\{-1,0,1\}$. This holds for cubic,
-tetragonal, orthorhombic, monoclinic and triclinic settings (signed permutation matrices) and also
-for the hexagonal setting, where the six-fold is
-$\big[\begin{smallmatrix}1&-1&0\\ 1&0&0\\ 0&0&1\end{smallmatrix}\big]$. The code comment in
-`symmetry.js` lists the settings it claims to cover as "cubic, tetragonal, orthorhombic, hexagonal,
-rhombohedral-in-hex, monoclinic, triclinic" — i.e. rhombohedral **only in hexagonal axes**.
-(Independently of that comment: the primitive-rhombohedral setting also has $\{-1,0,1\}$ matrices,
-its three-fold being a cyclic permutation of the axes — but as Step 10(c) notes, `R` centering is
-never actually produced by the classifier.)
+$$\varrho_L(R) = \max_i\ \tfrac12\,\big|A^{-1}D\,\mathbf e_i\big|\quad[\text{Å}].$$
 
-**What it excludes.** Any setting in which a lattice automorphism requires an integer entry with
-magnitude $\ge 2$: sheared, doubled, or otherwise non-conventional cell choices, orthohexagonal
-descriptions of a hexagonal lattice, and in general any cell that is not (close to) a reduced
-conventional cell. It also excludes, by construction, any symmetry of the **supercell** that is not
-already a symmetry of the declared conventional cell, because $A$ is divided by $N$ before the
-search. The finder does **not** attempt cell reduction (Niggli/Delaunay) first.
+It is 0 for an exact lattice symmetry and is on the **same Å scale as an atomic-position residual**
+(Step 9). It is not an absolute threshold on $D$ scaled by the mean squared edge, so a long $c$ axis
+does not loosen the test on $a$ and $b$ (a 2.8 % $a/b$ splitting in a cell with $c = 20$ Å is a
+0.14 Å strain whatever $c$ is). A `NaN` lattice gives `NaN` strain and every $R$ is rejected.
+
+Each surviving $R$ carries its strain into the operation's residual: $\varrho = \max(\varrho_\text{atoms},
+\varrho_L)$ (Step 9). So a homogeneous strain of a higher-symmetry cell whose atoms still sit at
+parent-compatible *fractional* coordinates is no longer invisible: a perovskite with $c/a = 1.004$
+(0.016 Å) reads `P4/mmm` below 0.016 Å and `Pm-3m` above it, and the cubic rung of the ladder starts
+at ≈ 0.016 Å. Because the accepted set of lattice operations need not compose (two operations that
+each strain the cell by $\le\tau_L$ can compose to one that strains it by more), closure is not
+assumed here: it is enforced on the final operation set (Step 11).
+
+Verified by enumeration: a cubic metric ($a=10$ Å) yields exactly 48 operations; a primitive
+hexagonal metric ($a=b=5$ Å, $c=8$ Å, $\gamma=120°$) yields exactly 24. The full holohedry order
+(48, 24, 16, 12, 8, 4) also comes out for cubic P/F/I, tetragonal P/I, hexagonal, rhombohedral,
+orthorhombic P/C/I/F and monoclinic P lattices each re-described by 59 random unimodular basis
+changes (products of six random shears; $\tau_L = 10^{-6}$ Å), and the test suite pins it on four
+strongly oblique cells (`symmetryObliqueCells.test.js`).
+
+**Why $\{-1,0,1\}$ suffices — in a reduced basis.** In a Minkowski-reduced basis every lattice
+automorphism has entries in $\{-1,0,1\}$ (the enumeration spglib uses after Delaunay reduction); a
+conventional cubic, tetragonal, orthorhombic, monoclinic, hexagonal (six-fold
+$\big[\begin{smallmatrix}1&-1&0\\ 1&0&0\\ 0&0&1\end{smallmatrix}\big]$) or rhombohedral cell is already such a
+basis. In an **oblique** description of the same lattice — a tetragonal crystal on a 60° cell
+($\mathbf a' = \mathbf a+\mathbf b$), a sheared cell — some automorphisms need entries of magnitude 2 or
+more in the given basis. Before 1.0 the scan ran in the given basis, missed them, and named the
+subgroup that was left with its own number (rutile on a 60° cell: `Cmmm` No. 65; a Pnma perovskite
+on a sheared cell: `P-1` No. 2). Scanning the reduced basis and carrying the matrices back finds
+every lattice rotation of the given cell, whatever its shape.
+
+**What it still excludes.** Any symmetry of the structure that does not map the **declared cell's
+lattice** $\mathbb Z^3$ onto itself: the finder works in the declared cell, and $A$ is divided by $N$
+before the search. When the declared cell is a supercell of the crystal's own translation lattice
+$\mathbb Z^3+T$ (Step 10c) — a perovskite on a $2\times2\times1$ or $\sqrt2\times\sqrt2\times2$ cell,
+rocksalt on a $1\times1\times2$ cell — rotations of $\mathbb Z^3+T$ that do not preserve $\mathbb Z^3$
+(the cubic 3-folds there) are never tested. The naming step detects this and reports the result
+as a lower bound (`≥ <symbol>`, Step 10f).
 
 **Output**: an array of integer $3\times3$ matrices (row-major), typically 2–48 entries.
 
-**Code**: `symmetry.js` → `metricTensor()`, `det3()`, `conjugate()`, `latticePointOps()`.
-Note: `latticePointOps` documents a default `tol = 1e-3`, but **every call site in the app passes
-$10^{-2}$** (`findSpaceGroupOps(..., metricTol = 1e-2)`), so $10^{-2}$ is the effective default.
+**Code**: `symmetry.js` → `metricTensor()`, `det3()`, `inv3()`, `conjugate()`, `latticeStrain()`,
+`latticeCandidates()`, `latticePointOps()` (the exported wrapper, default $\tau_L = 0.01$ Å);
+`spaceGroupSymbol.js` → `reduceBasis()` (re-exported by `symmetry.js`; the naming step uses it too). The
+finder passes $\tau_L = \min(\texttt{latticeTol}, \tau)$ with `latticeTol` defaulting to $\tau$.
 
 #### Step 8. Candidate translations
 
 **Input**: the point-operation list, the basis $\{(e_s, \mathbf x_s)\}$ (element + fractional
 position), the Cartesian tolerance $\tau$ Å.
 
-The basis is bucketed by element (`byEl`). A reference atom is chosen as the **first site of the
-rarest element** (fewest sites in the cell) — purely a speed choice, since it minimises the number
-of candidate partners:
+The basis is bucketed by element (`byEl`). A reference atom $a_0$ is chosen from the **rarest
+element** (fewest sites in the cell) — a speed choice, since it minimises the number of candidate
+partners — and both choices are made from the sites themselves, not from their order:
 
 ```
-refEl   = basis[0].el                        // seed
-for (el, arr) of byEl: if (arr.length < |byEl[refEl]|) refEl = el   // STRICT <
-refAtom = byEl[refEl][0]                     // = a0
+refEl   = the element with fewest sites; ties → the smaller element name
+refAtom = the refEl site with the lexicographically smallest (x, y, z), each wrapped to [0, 1)
 ```
 
-The tie-break is therefore **not** arbitrary or alphabetical: `refEl` is seeded with `basis[0].el`
-and replaced only on a *strict* `<`, so when two elements have equally few sites the winner is the
-one whose first site comes earliest in `basis` — and `byEl` is a `Map` filled in basis order, which
-is ascending reference number (Step 5). `refAtom` is likewise the lowest-reference-number site of
-that element. Since the reference atom fixes the candidate translation set, this determines the
-enumeration order and is reproducibility-relevant.
+The reference atom fixes the *seed* translations, and a seed is refined by least squares (Step 9)
+to the nearest local optimum: at a tight pairing radius every seed of one operation reaches the
+same one, but at the ladder's 2 Å (Step 9) a seed can settle elsewhere. So $a_0$ must not depend on
+the order of the basis. Before 1.0 it was the first site of the rarest element in basis order (ties
+by first appearance), and a shuffled basis could move the ladder's bricks: a noisy $P6_3/mmc$
+(σ = 0.03 Å) had its $P6_3/mmc 	o P6/mmm$ boundary at 0.794 Å in one site order and 0.767 Å in
+another. With the order-free choice the operations, residuals and bricks are the same for any order
+of the basis (up to floating-point summation order in the mean offset).
 
 For each rotation $R$ and each same-element candidate partner $\mathbf x_b \in$ `byEl[refEl]`:
 
@@ -2725,37 +2944,55 @@ $$\mathbf t = \operatorname{frac}\!\big(\mathbf x_b - R\,\mathbf x_{a_0}\big),\q
 
 This is exhaustive over the possible images of $a_0$: any genuine operation $\{R|\mathbf t\}$ must
 send $a_0$ to *some* same-element site, so its translation part is one of these candidates (up to
-the mapping error at that site).
+the mapping error at that site). The candidate is only a **seed**: it carries the displacement noise
+of $a_0$ and of its partner, so Step 9 refines it by least squares over every site before the
+operation is accepted or its residual recorded. Seeds of the same operation from nearby
+starting points refine to the same translation; which atom is $a_0$ is fixed independently of the
+basis order (above), so even a seed that settles in another local optimum does so in every order.
 
-**Deduplication**: a candidate is skipped if it is within $\tau$ Å (minimum-image Cartesian
-distance, Step 9) of an already-**accepted** translation for the same $R$. Rejected translations are
-not remembered, so near-duplicates of a rejected candidate are re-tested.
+**Deduplication**: every seed is refined (Step 9). Refined translations of one $R$ closer than
+$\tau$ Å to each other — $\tau$ being the **pass** tolerance, 1 Å in the card's ladder and headline
+(Step 12) — (minimum-image Cartesian distance) are one operation at this resolution, and
+the **best-fitting** one is kept: they are taken in order of residual (ties by translation) and
+each is dropped if it lies within $\tau$ of one already kept. Before 1.0 the first one found, in
+seed order, was kept and seeds near it were skipped; at the ladder's loose 1 Å a poor
+near-duplicate could then shadow the true operation for good (a noisy $P4_322$: a 4-fold at 0.8 Å
+residual kept, 0.7 Å from the $4_3$ at 0.2 Å, so the ladder read `P222_1` up to 0.96 Å and then a
+set that was not a group, while the headline read `P4_322`).
 
-**Code**: `symmetry.js` → `findSpaceGroupOps()`, inner loop; `applyR()`.
+**Code**: `symmetry.js` → `detectOperations()`; `applyR()`.
 
 #### Step 9. Acceptance test and residual
 
-For a candidate $\{R|\mathbf t\}$, every basis site $s$ is mapped:
+For a candidate $\{R|\mathbf t\}$, every basis site $s$ is mapped,
 
-$$\mathbf y_s = \operatorname{frac}\big(R\,\mathbf x_s + \mathbf t\big)$$
+$$\mathbf y_s = R\,\mathbf x_s + \mathbf t ,$$
 
-and matched against the **same-element** sites $o$ using a minimum-image Cartesian distance:
+and paired with its **nearest same-element** site $o(s)$ under a minimum-image Cartesian distance:
 
-$$d(\mathbf y,\mathbf x_o) = \big\| A^{\mathsf T}\,\mathbf\delta \big\|_2,\qquad
-\delta_i = (y_i - x_{o,i}) - \operatorname{round}(y_i - x_{o,i})$$
+$$\boldsymbol\delta_s = (\mathbf x_{o} - \mathbf y_s) - \operatorname{round}(\mathbf x_{o} - \mathbf y_s),\qquad
+d_s = \big\| A^{\mathsf T}\boldsymbol\delta_s \big\|_2$$
 
-(the component-wise nearest-integer wrap; $\|\cdot\|_2$ via `Math.hypot`, result in Å). The
-operation is **accepted** iff
+(the component-wise nearest-integer wrap; result in Å).
 
-$$\max_{s}\ \min_{o\,:\,e_o=e_s} d(\mathbf y_s, \mathbf x_o)\ \le\ \tau$$
+**Least-squares translation** (`refineOperation()`). With the pairing fixed, the translation that
+minimises $\sum_s d_s^2$ is
 
-and its **residual** is that same quantity:
+$$\mathbf t \leftarrow \mathbf t + \frac1N\sum_s \boldsymbol\delta_s ,$$
 
-$$\varrho(R,\mathbf t) \;=\; \max_{s}\ \min_{o\,:\,e_o=e_s} d(\mathbf y_s,\mathbf x_o)\ \ [\text{Å}]$$
+because every pair shares the metric $G$. The sites are re-paired at the new $\mathbf t$ and the
+step repeated until the mean offset vanishes (at most four passes). Pairing is within $2\tau$ of
+the pass (the seed can be off by the noise of the two atoms that defined it; 2 Å in the card's
+1 Å pass), so the pass tolerance, not only the acceptance threshold, decides which local optimum a
+seed refines to; the refined operation is **accepted** iff every site then has a partner and
 
-i.e. the *worst-site* nearest-image error — an $L_\infty$-over-sites, $L_2$-in-space measure. The
-implementation short-circuits to $\infty$ (reject) as soon as one site has no same-element partner
-within $\tau$.
+$$\varrho(R,\mathbf t) \;=\; \max_{s}\ d_s \;\le\; \tau \quad [\text{Å}]$$
+
+i.e. the *worst-site* nearest-image error at the least-squares translation — an
+$L_\infty$-over-sites, $L_2$-in-space measure. It is independent of the basis order (with $a_0$
+chosen as above) and never
+larger than the error read off a single reference pair (on the bundled demo the full-group residual
+drops from 0.038 Å to 0.031 Å). `!(ϱ ≤ τ)` also rejects `NaN`.
 
 Three properties matter for interpretation:
 
@@ -2771,17 +3008,17 @@ difference is only visible at exactly the tolerance, so it is worth stating per 
 
 | Test | Code | Boundary |
 | --- | --- | --- |
-| operation acceptance (Step 9) | `if (best > tol) return Infinity` | **non-strict**: $d = \tau$ is accepted |
+| operation acceptance (Step 9) | `if (!m \|\| !(m.worst <= tol)) return null` | **non-strict**: $\varrho = \tau$ is accepted |
 | translation dedup (Step 8) | `cartDist(u, t, A) < tol` | strict |
 | orbit union + stabiliser (Step 14) | `bestD = tol; if (d < bestD)`, `cartDist(...) < tol` | strict |
-| centering match (Step 10c) | `… < tol` with `tol = 0.1` | strict |
-| Wyckoff coordinate match (Step 14) | `Math.abs(d) < 0.15` | strict |
+| Wyckoff coordinate form (Step 14) | `Math.abs(fitted - p[i]) > tol` rejects | **non-strict**: a deviation of exactly `tolFrac` fits |
+| translation snap (Step 10c) | `<= tol` with `tol = 0.02` | non-strict |
 | residual threshold filters (Steps 12–13) | `o.residual <= r + 1e-9` | non-strict, with $10^{-9}$ slack |
 
 `findSpaceGroupOps` returns `{ ops: [{R, t, residual}], order = ops.length, maxResidual }` merged
 with the classification of Step 10. (`maxResidual` here is the max over *accepted* ops.)
 
-**Code**: `symmetry.js` → `mappingResidual()`, `cartDist()`, `findSpaceGroupOps()`.
+**Code**: `symmetry.js` → `matchImages()`, `refineOperation()`, `offset()`, `findSpaceGroupOps()`.
 
 #### Step 10. Classification: centering, point group, Hermann–Mauguin symbol
 
@@ -2791,45 +3028,38 @@ with the classification of Step 10. (`maxResidual` here is the max over *accepte
 `nPoint = ` number of distinct $R$. This set *is* the point group of the detected space group.
 
 **(b) Pure translations.** Operations whose rotation is the identity are collected. Their count,
-`nTrans`, uses the key `Math.round((((t_i % 1) + 1) % 1) * 1000)` per component — a fixed $10^{-3}$
-fractional grid.
+`nTrans`, uses the key `Math.round(wrap01(t_i) * 1000) % 1000` per component — a fixed $10^{-3}$
+fractional grid, folded mod 1 so that a translation recovered as 0.9997 and an exact 0 count once.
 
-> **Wraparound aliasing.** The key does **not** fold 1000 back to 0. A translation numerically just
-> below 1 — e.g. $t = 0.9997$, recovered instead of an exact 0 because the basis positions are
-> circular means — keys to `1000` while the identity translation keys to `0`, so the same translation
-> modulo 1 is counted twice. Because `isValidGroup` compares $n_\mathrm{space}$ against
-> $|P|\cdot n_\mathrm{trans}$ *exactly* (Step 11), one such off-by-one silently invalidates an
-> otherwise real group; the ladder then absorbs it by extending the previous rung, and
-> `spaceGroupAtTolerance` falls back to a tighter threshold.
+`tolFrac` $=\tau/\overline a$ with $\overline a = \tfrac13(|\mathbf a_1|+|\mathbf a_2|+|\mathbf a_3|)$
+(`meanEdge()`) is used only by the closure check of a set handed in directly (Step 11).
 
-Any identity-rotation translation with **at least one** component greater than `tolFrac` is
-additionally pushed onto the centering-candidate list, where
+**(c) Centering letter** (`centeringOfOps()` → `bravaisCentering()`, `spaceGroupSymbol.js`). The
+pure translations are snapped to exact fractions as a **group** (`pureTranslations()`): the $n$
+pure translations (zero included) form a finite group, so each has an order $d$ dividing $n$
+($d\boldsymbol\tau$ is a lattice vector), and each is snapped to $\operatorname{round}(d\boldsymbol\tau)/d$ with
+the smallest such $d$ for which every component lies within 0.02 of the $1/d$ grid. $d$ is capped
+at $1/(2\cdot0.02) = 25$, where neighbouring grid points are $2\cdot0.02$ apart and a snap would be a
+guess. This covers every centering and any supercell fraction up to $1/25$ (fifths, sevenths, …)
+with the loose tolerance a refined translation needs at a loose $\tau$ with few sites (0.0075 off
+on the noisy R-3m fixture at $\tau = 0.6$ Å). A set that does not snap, or in which two
+translations snap together, gives no letter. Before 1.0 each component was snapped to a fixed
+$1/24$ grid, which holds no fifths: CsCl in a $5\times5\times5$ cell went unnamed. The **whole
+set**, zero included, must equal one Bravais centering exactly:
 
-$$\texttt{tolFrac} = \frac{\tau}{\overline{a}},\qquad
-\overline{a}=\tfrac13\big(|\mathbf a_1|+|\mathbf a_2|+|\mathbf a_3|\big)\ [\text{Å}]$$
-
-(`meanEdge()` — the mean of the three conventional edge lengths, not just $|\mathbf a_1|$).
-
-**(c) Centering letter.** `matchCentering()` compares the candidate translations against the Bravais
-centering vector sets, **in this order**:
-
-| Letter | Required vectors (fractional) |
+| Letter | Translations besides 0 (fractional) |
 | --- | --- |
-| `F` | $(0,\tfrac12,\tfrac12)$, $(\tfrac12,0,\tfrac12)$, $(\tfrac12,\tfrac12,0)$ |
+| `P` | none |
+| `A` / `B` / `C` | $(0,\tfrac12,\tfrac12)$ / $(\tfrac12,0,\tfrac12)$ / $(\tfrac12,\tfrac12,0)$ |
 | `I` | $(\tfrac12,\tfrac12,\tfrac12)$ |
-| `A` | $(0,\tfrac12,\tfrac12)$ |
-| `B` | $(\tfrac12,0,\tfrac12)$ |
-| `C` | $(\tfrac12,\tfrac12,0)$ |
+| `F` | $(0,\tfrac12,\tfrac12)$, $(\tfrac12,0,\tfrac12)$, $(\tfrac12,\tfrac12,0)$ |
+| `R` | obverse $(\tfrac23,\tfrac13,\tfrac13)$, $(\tfrac13,\tfrac23,\tfrac23)$; reverse $(\tfrac13,\tfrac23,\tfrac13)$, $(\tfrac23,\tfrac13,\tfrac23)$ |
 
-A vector is "present" if every component matches modulo 1 within a **hard-coded 0.1 fractional**
-tolerance ($\big|((t_i-v_i+0.5)\bmod 1)-0.5\big| < 0.1$; implemented with JavaScript `%`, a
-sign-following *remainder* rather than a true modulus — equivalent here only because `t` has already
-been wrapped into $[0,1)$ by `wrap01` and the centering components are 0 or ½, so the argument is
-never negative) — note `classifyOperations` calls
-`matchCentering(centerings)` without passing `tolFrac`, so the 0.1 default is always used. The first
-letter whose *whole* vector set is present wins; otherwise `P`. **`R` (rhombohedral) centering is
-never produced** — it is not in the table, even though `ALLOWED_CENTERING` lists it as permitted for
-the trigonal system.
+A translation set that is not exactly one of these — the finer lattice of a **supercell** of the
+true cell (a perovskite in a $2\times2\times2$ cell has all eight $(i/2, j/2, k/2)$, which contain the F
+vectors but are not an F lattice) — gives `centering = null`. Before 1.0 the letter came from the
+mere presence of the vectors, so such cells were read as F, I or C. The letter is the centering of
+the **given** cell; the symbol is named in whatever cell Step 10(f) finds, with that cell's letter.
 
 **(d) Rotation type from determinant and trace.** Both are similarity invariants, so this is
 basis-independent. With $t = \operatorname{tr}R$:
@@ -2868,130 +3098,246 @@ The crystal **class is derived from the rotation content itself**, not from the 
 deliberate, so that a structure whose symmetry is a proper subgroup of its lattice's holohedry (the
 generic case partway up the tolerance ladder) is classified correctly.
 
-**(f) Space-group symbol.** `spaceGroupHM(centering, pointGroup)` simply concatenates:
+**(f) Space-group symbol** (`spaceGroupHM()` → `spaceGroupSymbol.js`). Triclinic groups are `P1`
+(No. 1) or `P-1` (No. 2) whatever cell describes them (unless item 4 marks them as a lower bound).
+Every other group is named in a **standard setting**, which the RMC cell need not be:
 
-$$\texttt{symbol} = \texttt{centering} \,\Vert\, \texttt{pointGroup}$$
+1. **Symmetry elements** (`classifyElement()`): each operation's characteristic direction (rotation
+   axis, or mirror normal), order, and — from the **intrinsic translation**
+   $\mathbf t_\text{int} = \tfrac1n\sum_{k<n}R^k\mathbf t$ (independent of the origin) — whether a
+   rotation is a screw $n_m$ ($m = \mathrm{round}(n\,\mathbf t_\text{int}\!\cdot\mathbf d/\mathbf d\!\cdot\!\mathbf d) \bmod n$
+   along the axis $\mathbf d$, from the unreduced $\mathbf t_\text{int}$: reducing each component
+   mod 1 is not a lattice translation along an axis with components of both signs) and which
+   glide ($a,b,c,n,d$, or $e$) a reflection is ($\mathbf t_\text{int}$ reduced mod 1 and snapped to
+   quarters). An operation stands for its coset $\{R\,|\,\mathbf t+\boldsymbol\ell\}$, and where
+   the lattice projects onto the axis or plane in a fraction of its period ($\tfrac1n\sum_k R^k\boldsymbol\ell$
+   not a lattice vector) the representatives differ in kind: the $[100]$ 2-fold of a hexagonal cell
+   and the $2_1$ half a cell away, a cubic $\langle111\rangle$ 3-fold and its $3_1$, $3_2$, a mirror on
+   a tetragonal or cubic diagonal and an $n$-glide. Which representative the finder holds is an
+   accident of wrapping (noise turns an exact 0 into 0.9995), so the symbol reads **every** element
+   of each coset (`cosetElements()`, $\boldsymbol\ell\in\{-1,0,1\}^3$) and the short-symbol rules
+   pick the highest-priority one per position (rotation before screw, $m$ before glides). Before 1.0
+   the held representative decided: a noisy $\{E, 2_{[100]}\}$ subgroup of $P6_3/mmc$ read `P2_1`
+   No. 4 (it is `C2` No. 5 — item 2: its conventional cell is the orthohexagonal C cell).
+2. **Candidate cells** (`hmSymbolInStandardSetting()`). The group is re-expressed (`applySetting()`:
+   $R' = Q^{-1}RQ$, $\mathbf t' = Q^{-1}\mathbf t$, and the new cell's translations $Q^{-1}(\mathbb Z^3 + T)$
+   mod 1) in a sequence of cells $Q$ (columns = new basis vectors in the old fractional basis), and
+   named in the first that is conventional:
+   - the given cell and its five other axis orders (`PERMUTATIONS`, all right-handed so a screw's
+     handedness survives), for every crystal system;
+   - cells built from the symmetry elements (`derivedBases()`), each basis vector the **shortest
+     lattice vector** of the full translation lattice $\mathbb Z^3 + T$ along its direction (the
+     candidates, `shortLatticeVectors()`, are $\mathbf n + \boldsymbol\tau$ with $\mathbf n$ over a
+     $\pm3$ box of a **reduced** basis of $\mathbb Z^3$ — `reduceBasis()`, Step 7 — so the axes of a
+     crystal on a strongly oblique cell are in reach; $\pm3$ covers the $c$ axis of an R lattice on
+     a reduced rhombohedral basis):
+     cubic — $a,b,c$ on the three 4-fold ($\bar4$ for $\bar43m$, 2-fold for $23$, $m\bar3$) axes;
+     tetragonal — $c$ on the 4 / $\bar4$ axis, $a$ the shortest lattice vector $\perp c$ (and its
+     45° diagonal), $b = 4\cdot a$; trigonal/hexagonal — $c$ on the 3-fold, $a = \pm$ the shortest
+     lattice vector $\perp c$, $b = 3\cdot a$; orthorhombic — the three 2-fold axes / mirror normals
+     in all six orders; monoclinic — $b$ on the unique axis and $(a, c)$ every unimodular pair from
+     the two shortest lattice vectors $\perp b$ (covers the cell choices, e.g. I2/a → C2/c, and
+     P2₁/n → P2₁/c), tried shortest $|a|^2+|c|^2$ first and then non-acute β — the reduced cell
+     choice, so where several cell choices spell the symbol the letters are those of the reduced
+     cell (the cell choices $a' = a + kc$ of P2₁/c swap which inversion centres are 2b and 2d).
+     "Perpendicular" and "along" are decided by the rotations themselves
+     ($R\mathbf v = \pm\mathbf v$, $\sum_k R^k\mathbf v = 0$), exactly, not by the metric.
 
-and looks the string up in a 69-entry `SG_NUMBER` table for the international number; a miss yields
-`null` (the card then shows the symbol and point group without a number). The table does cover every
-*producible* combination (allowed centering × point group, given that `R` is unreachable), so in
-practice a number is always found except through the Step-12 fallback. **This is a symmorphic
-symbol only** — screw axes and glide planes are never detected or named. A diamond-type structure
-(`Fd-3m`, No. 227) is reported as `Fm-3m` (No. 225); a `P2₁` structure is reported as `P2`.
+   The new cell's translation set is $\mathbb Z^3 + T$ modulo $Q\mathbb Z^3$, generated mod 1 from
+   $Q^{-1}\mathbf e_i$ and $Q^{-1}\boldsymbol\tau$ by closure (no search box), and must have
+   $|T|\det Q$ members. A cell is kept only if its basis vectors are lattice vectors, it is
+   right-handed, every rotation is an integer matrix in it, its translation set is exactly a
+   Bravais centering (Step 10c) that a
+   standard setting of the system uses (monoclinic P, C; orthorhombic P, A, C, I, F; tetragonal P,
+   I; trigonal P, R obverse; hexagonal P; cubic P, I, F), every rotation has the **block form** of a
+   conventional cell (`elementsFitSetting()` → `conventionalForm()`: the monoclinic $b$, or the
+   tetragonal / trigonal / hexagonal $c$, is perpendicular to the other two basis vectors, so $R$
+   maps it onto $\pm$ itself and the other two into their own plane — $R_{01}=R_{10}=R_{12}=R_{21}=0$,
+   resp. $R_{02}=R_{12}=R_{20}=R_{21}=0$; orthorhombic rotations diagonal, cubic ones signed
+   permutations), and every element lies along a direction family that may carry its type
+   (`elementsFitSetting()`: a tetragonal 4-fold only on [001], cubic 3-folds only on
+   $\langle111\rangle$, …). The element directions alone do not show that a cell is conventional:
+   on the primitive cell $((\mathbf a+\mathbf b)/2, \mathbf b, \mathbf c)$ of a C-monoclinic lattice
+   the 2-fold still runs along the second basis vector, and on
+   $((\mathbf a+\mathbf b+\mathbf c)/2, (-\mathbf a+\mathbf b+\mathbf c)/2, \mathbf c)$ of an I-tetragonal
+   one the 4-fold along the third, but the other vectors lean on the axis and the cell's pure
+   translations are primitive where the conventional cell's are centred. Before the block-form
+   check (and on 0.x) C2, Cm, Cc, C2/m, C2/c read `P2` No. 3 … `P2/c` No. 13, I4, I-4, I4/m
+   `P4` No. 75, `P-4` No. 81, `P4/m` No. 83, and R3, R-3 `P3` No. 143, `P-3` No. 147 on such cells,
+   with the P group's Wyckoff letters; and every monoclinic rung of a hexagonal or trigonal ladder
+   was a P group — a 2-fold along $a_\text{hex}$ (or a mirror normal to it) of a P-hexagonal lattice
+   has the orthohexagonal C lattice, so noisy wurtzite's `Pm` is `Cm` No. 8 and bismuth's
+   `P2`, `P2/m` are `C2` No. 5, `C2/m` No. 12. Because derived cells use the full translation lattice,
+   a supercell of the true cell is named in the true cell (CsCl in a $2\times2\times2$ cell: `Pm-3m`), and
+   a subgroup that keeps its parent's centering is named in its own conventional cell (Ga shifted
+   along [111] in the F-cubic lacunar spinel: `R3m` on hexagonal axes; tetragonally strained
+   rocksalt in its F cell: `I4/mmm`).
+3. **Symbol** (`hmSymbolCandidates()`): the system's ordered symmetry directions
+   (`SYSTEM_DIRECTIONS`) are the positions of the Hermann–Mauguin symbol; each is filled with the
+   elements along it by the short-symbol rules, and all defensible spellings are listed best-first.
+   A candidate is **accepted** only if it is a tabulated standard symbol (230 groups plus the
+   pre-2002 `e`-glide spellings, `spaceGroupTable.js`) **of the detected crystal class**
+   (`pointGroupOfSymbol()`) and starts with the cell's centering letter. The number is looked up
+   only for an accepted symbol; `Cmca`-style spellings are shown in the current form.
+4. **Lower bound** (`allLatticeOpsTested()`, `latticeFullyTested()`). The finder only tries
+   rotations that map the **given** cell's lattice $\mathbb Z^3$ onto itself (Step 7). When the
+   given cell is a supercell of the crystal's own translation lattice $\mathbb Z^3+T$, rotations of
+   that lattice which do not preserve $\mathbb Z^3$ were never tested — a perovskite in a
+   $\sqrt2\times\sqrt2\times2$ or $2\times2\times1$ cell, or rocksalt in a $1\times1\times2$ cell, cannot test the
+   cubic 3-folds. The check takes a primitive basis $P$ of $\mathbb Z^3+T$ (`primitiveBasis()`: its
+   successive minima, which in three dimensions always form a basis), lists that lattice's
+   rotations with the Step 7 scan at a strain of the group's worst residual (at least
+   $10^{-3}$ Å), and requires every one, carried to the given cell ($PRP^{-1}$), to be an integer
+   matrix. If one is not, the result is only a lower bound and is shown as `≥ P4/mmm`
+   (`lowerBoundLabel()`), with no number and no Wyckoff letters — whatever the branch: a named
+   symbol, `P1`/`P-1`, or a crystal class (`≥ 4/mmm class`). Before 1.0 only the naming cell's own
+   rotations were checked, so rocksalt in a $1\times1\times2$ cell read `I4/mmm` No. 139.
+5. **Crystal class.** If no cell gives an accepted symbol, the card shows `"<point group> class"`
+   (e.g. `4/mmm class`, `classLabel()`) with no number and no letters. Positional assembly on a cell
+   that is not conventional can spell another group's symbol (rocksalt on its primitive cell gives
+   `Pmmm`); before 1.0 such spellings, and the symmorphic `centering + point group` fallback, were
+   shown with that group's ITA number.
 
-**Code**: `symmetry.js` → `classifyOperations()`, `matchCentering()`, `classifyRotation()`,
-`pointGroupOf()`, `spaceGroupHM()`, constants `CENTERING_SETS`, `POINT_GROUP_ORDER`, `PG_SYSTEM`,
-`ALLOWED_CENTERING`, `SG_NUMBER`.
+Checked on all 230 groups (the test fixtures) in all six axis orders, and on four oblique cells
+(a 60° cell, a sheared cell and two strongly oblique unimodular cells: 839 group–cell pairs, exact
+and with 0.005 Å noise): every group is named correctly (the two location-degenerate pairs by
+Step 10g). Before 1.0, 753 of those 839 oblique descriptions got another group's number (rutile on
+a 60° cell: `Cmmm` No. 65), because the Step 7 scan missed the rotations that need entries of
+magnitude 2 there. The centred groups above on their primitive axis-keeping cells get the
+conventional description's number and Wyckoff labels, and no P-named rung of the noisy
+trigonal/hexagonal fixture ladders hides a centring (an independent check: along the principal
+axis, the axial part $\tfrac1n\sum_k R^k\mathbf g$ of every lattice vector $\mathbf g$ is itself a
+lattice vector; `symmetryHiddenCentring.test.js`).
 
-#### Step 11. Group-validity (coset-count) test
+**Code**: `symmetry.js` → `classifyOperations()`, `classifyRotation()`, `pointGroupOf()`,
+`spaceGroupHM()`, `classLabel()`, `lowerBoundLabel()`, `POINT_GROUP_ORDER`; `spaceGroupSymbol.js` →
+`intrinsicTranslation()`, `classifyElement()`, `cosetElements()`, `centeringOfOps()`, `bravaisCentering()`,
+`applySetting()`, `derivedBases()`, `elementsFitSetting()`, `hmSymbolCandidates()`,
+`hmSymbolInStandardSetting()`, `reduceBasis()`, `shortLatticeVectors()`, `primitiveBasis()`,
+`allLatticeOpsTested()`, `latticeFullyTested()`, `pureTranslations()`, `twoFoldsMeet()`, `transformOps()`;
+`spaceGroupTable.js` →
+`SPACE_GROUPS`, `spaceGroupNumber()`, `pointGroupOfSymbol()`, `canonicalSymbol()`.
 
-A partial, mid-transition operation set is not a group and would classify to a nonsense symbol such
-as `B-43m`. `isValidGroup(cls)` rejects those with two conditions:
+**(g) Location-degenerate pairs** (`twoFoldsMeet()`, `resolveLocationPair()`). I222/I2₁2₁2₁
+(Nos. 23/24) and I23/I2₁3 (Nos. 197/199) contain the same element types along the same directions
+(the I centering turns every 2-fold into a 2₁ half a cell away and vice versa), so the symbol
+candidates cannot separate them; they differ in where the axes sit. In the standard setting a pure
+2-fold along axis $i$, $\{R|\mathbf t\}$ with $t_i\equiv0$, fixes the line $2p_j \equiv t_j$ ($j\ne i$); the
+2-folds along $a$, $b$, $c$ have a common point iff, for some choice of one pure 2-fold per axis,
+their translations agree mod 1 on the shared components. They meet in I222 and I23 and never in
+I2₁2₁2₁ and I2₁3, whatever the origin. Before 1.0 both members of each pair were reported as the
+symmorphic one (with its number).
 
-$$\text{(i)}\quad n_\mathrm{space} \;=\; |P|\times \max(n_\mathrm{trans},1)
-\qquad\text{(ii)}\quad \texttt{centering}\in \texttt{ALLOWED\_CENTERING}[\,\mathrm{system}(P)\,]$$
+#### Step 11. Group closure: the largest closed group at each threshold
 
-where $|P|$ is the tabulated order of the detected point group (`POINT_GROUP_ORDER`, 0 for an
-unknown symbol → automatic reject) and $n_\mathrm{trans}$ is the number of distinct pure translations
-counted in Step 10(b). Condition (i) says the operation set is exactly a union of $|P|$ cosets of
-the detected translation subgroup — the cardinality any real space-group operation set restricted to
-one cell must have. Counting $n_\mathrm{trans}$ rather than assuming a standard centering multiplicity
-is what makes the test survive a cell that is itself a tiling (extra lattice translations).
+With noise, every operation of the true group has its own residual, so the operations with
+$\varrho \le r$ are an arbitrary **subset** of the group — and a subset of the right *size* is not a
+group. (Before 1.0 only the size was checked, and the ladder of the bundled demo showed sets such as
+`{E, 2, m, m'}` with a missing product as "P2 (No. 3)".) Nothing is classified unless it is
+**closed under composition** modulo lattice translations.
 
-Allowed centerings per system:
+**Products.** $\{R_a|\mathbf t_a\}\{R_b|\mathbf t_b\} = \{R_aR_b\,|\,R_a\mathbf t_b+\mathbf t_a\}$ (`composeOps()`),
+matched to the detected operation $k$ with the same rotation and the nearest translation, accepted
+when the Cartesian translation mismatch is at most $\varrho_a+\varrho_b+\varrho_k+10^{-5}$ Å
+(`productTable()`, evaluated lazily and memoised). The bound follows from the residuals: each
+operation maps every site to within its residual of a same-element site, so the product maps every
+site to within $\varrho_a+\varrho_b$, and two same-rotation operations sending a site to the same
+partner differ by at most the sum of all three. Translations of one rotation are at least $\tau$
+apart (Step 8 dedup), so the nearest one is the only candidate.
 
-| System | tri | mono | orth | tet | trig | hex | cub |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Centerings | `P` | `P C` | `P C I F A B` | `P I` | `P R` | `P` | `P F I` |
+**The walk** (`groupsByThreshold()`). The distinct residuals are visited tight → loose; at each
+threshold $r$ the newly admitted operations are offered, best residual first, to the current group
+$H$ (which starts as the identity):
 
-This is a **cardinality/consistency check, not an explicit closure check** — the code never verifies
-that composing two accepted operations yields a third accepted operation.
+1. **Growth** (`growingGroup().extend()`): the group generated by $H$ and the candidate $x$ is built
+   from generators — add $H\cdot x$, then right-multiply every new element by every generator (a
+   finite set holding the identity and closed under right multiplication by the generators *is* the
+   group they generate). It replaces $H$ only if every element of it has $\varrho \le r$. A candidate
+   that fails waits for the operation that blocked it to be admitted; a product that does not exist
+   among the detected operations blocks it for good.
+2. **Elimination** (`closeUnder()`, only when there are at most 256 candidate operations): starting
+   from every operation with $\varrho\le r$, repeatedly drop the one with the **worst** residual among
+   those taking part in a missing product, until the set is closed. If that group is larger than
+   $H$, it replaces $H$ (growth from a smaller group cannot reach a group that does not contain it).
 
-**Code**: `symmetry.js` → `isValidGroup()`.
+A group closed at a tighter threshold is still a closed subset at a looser one, so the reported
+group never shrinks as the tolerance loosens. Both procedures are greedy: the result is always
+closed, and maximal in practice, but maximality is not proven.
+
+**Cardinality pre-filter.** `isValidGroup(cls)` additionally requires
+
+$$n_\mathrm{space} \;=\; |P|\times \max(n_\mathrm{trans},1),$$
+
+which any closed set satisfies ($|P|$ = tabulated order of the point group, `POINT_GROUP_ORDER`;
+$n_\mathrm{trans}$ = distinct pure translations, keyed on a $10^{-3}$ grid **after folding mod 1**, so
+0.9997 and 0 count once). `classifyOperations(ops, tolFrac, { closed })` names a set only if it
+passes this and is closed — by construction when the walk built it (`closed: true`), otherwise by an
+all-pairs check (`isClosedSet()`, products matched within $3\cdot$`tolFrac` per fractional
+component). A set that fails is labelled `not a group` with no number. The walk's products are
+matched within the residuals, so this is not excluded by construction at loose thresholds. Before
+1.0 it was reached through the Step 8 near-duplicates (a noisy $P4_322$ ladder ended in `not a
+group`). It can still be reached: a 4-site noisy Pm structure read `not a group` (6–7 operations
+with two pure translations) at 0.90–0.98 Å in a pass at that τ. In the ladder's 1 Å pass —
+the one the card uses for its headline too (Step 12) — that structure reads `Pm` and `≥ Amm2`. The
+ladder itself can still end in one: in two sweeps of noisy fixture groups at physical density in
+random cells (2065 rungs), one rung was `not a group` (a two-orbit Ccc2 from 0.98 Å to the 1 Å
+end); the earlier sweeps of 1380 noisy fixture ladders to 1 Å in their conventional cells and 790
+well-known structures in eight cells found none. The card shows it as such, with no number.
+
+**Code**: `symmetry.js` → `composeOps()`, `productTable()`, `growingGroup()`, `closeUnder()`,
+`groupsByThreshold()`, `isClosedSet()`, `isValidGroup()`.
 
 #### Step 12. The reported space group at the selected tolerance
 
-`spaceGroupAtTolerance(A, basis, τ, metricTol)` produces the headline of the Detected SG card:
+`spaceGroupAtTolerance(A, basis, τ, passTol)` produces the headline of the Detected SG card:
 
-1. Run one full detection pass (Steps 7–9) at $\tau' = \max(\tau, 10^{-3})$ Å.
-2. Collect the distinct residual values $\le \tau + 10^{-9}$ and sort them **descending**.
-3. For each such threshold $r$, classify the subset $\{\mathrm{ops}: \varrho \le r + 10^{-9}\}$ and
-   return the **first one that passes `isValidGroup`**. That is, the loosest closed group at or
-   below $\tau$.
-4. If nothing closes, fall back to the identity-rotation operations only (identity plus any accepted
-   pure translations), classify those, and report `maxResidual = 0`.
+1. Run one detection pass (Steps 7–9) at $\tau' = \max(\text{passTol}, \tau, 10^{-3})$ Å — its
+   lattice strain bound, pairing radius $2\tau'$ and near-duplicate radius $\tau'$.
+   `describeSymmetry` passes `passTol = max(τ, 1 Å)`, the ladder's own pass (Step 13); the default
+   `passTol = τ` is a cheaper pass at τ alone.
+2. Walk its residual thresholds $\le\tau$ (Step 11) and take the group holding at the last one.
+3. Classify it (Step 10) with `tolFrac = max(τ, 10⁻⁶)/meanEdge(A)`.
 
-**Two different floors on $\tau$.** The detection pass in step 1 uses $\max(\tau, 10^{-3})$ Å, but
-the classification tolerance handed to `classifyOperations` is built from a *separate*, looser floor:
-`tolFrac = Math.max(tol, 1e-6) / meanEdge(A)`. Meanwhile the threshold filter in step 2 uses the
-**raw** $\tau$. So for $\tau < 10^{-3}$ Å the detection runs looser than the filter that selects from
-its output, and the centering test runs at a tolerance floored at $10^{-6}$ Å rather than $10^{-3}$ Å.
+`maxResidual` is the **worst residual of the operations returned** (0 only when that group is the
+identity alone, whose residual is exactly 0) — shown in the card's tooltip as `fits to <maxResidual>
+Å`. `nSpace` is the number of operations of that group ("Operations"). On an empty basis, or when no
+operation survives — not even the identity: a lattice with a non-finite entry, or a singular one,
+rejects every candidate in Step 7 — the result is `undetermined` (`UNDETERMINED`: no number, point
+group `—`, 0 operations, `maxResidual` `NaN`), `describeSymmetry` returns no orbits, and the ladder
+is empty. Before 1.0 it was `P1` / No. 1 — a space-group number for a structure never analysed.
 
-`maxResidual` in the returned object is the threshold $r$ that was accepted — displayed in the card's
-tooltip as `fits to <maxResidual> Å` with 3 decimals. `nSpace` is the number of operations in the
-accepted subset and is shown as the "Operations" figure.
+With the ladder's pass the headline is **exactly** the group the ladder shows at $\tau$: the same
+operations with the same residuals (the refinement of a seed does not depend on the acceptance
+threshold, and the near-duplicate merge keeps the best fit first, so the operations kept below τ
+are those the ladder keeps below τ), and the same walk up to τ over the same product table. A pass
+at τ alone need not agree: its smaller pairing radius drops seeds the 1 Å pass refines, and its
+smaller merge radius keeps near-duplicates the 1 Å pass merges. Before 1.0 the card's headline ran
+such a pass, and in sweeps of noisy fixture groups (physical density, random cells) about 1 brick
+midpoint in 400 disagreed with its brick: a noisy P-6m2 whose ladder read `P3m1` at 0.15 Å had the
+headline `Cm` there, and a 4-site Pm read `not a group` (Step 11) inside a `Pm` brick
+(`symmetryHeadlineLadder.test.js`). The price is that every headline runs the ladder's 1 Å pass —
+tens of milliseconds for the 52-site GaNb₄Se₈ and GaTa₄Se₈ bases.
 
-Three honest edge cases:
-
-- **Two hard-coded guards, not one.** `findSpaceGroupOps` itself returns
-  `{ops: [], nSpace: 0, nPoint: 0, order: 0, maxResidual: 0, centering: 'P', pointGroup: '1', spaceGroup: 'P1', spaceGroupNumber: 1}`
-  on an empty basis, and `spaceGroupAtTolerance` carries its own `empty` object with the same values,
-  returned whenever `full.ops` is empty. `describeSymmetry` already bails on an empty basis, so in
-  practice the second guard is the one that fires — on a structure where *no* operation is accepted
-  (e.g. the NaN-lattice case of Step 1), giving `P1` / No. 1 / 0 operations.
-- **The fallback's `maxResidual` is a placeholder, not a fit quality.** Step 4 hard-codes
-  `maxResidual: 0` while returning `idOps`, whose members may carry residuals all the way up to
-  $\tau'$. The card then reports `fits to 0.000 Å` for a group that fits to nothing of the sort. The
-  same is true of the empty guard.
-- **The fallback bypasses `isValidGroup`**, so on a centred but badly distorted structure it can emit
-  a non-standard symbol such as `F1` or `I1` with `spaceGroupNumber = null`.
-
-One piece of dead code worth naming for anyone reading along: `findSpaceGroupOps` accumulates a
-`rotSeen` set that is never returned or read. `nPoint` comes exclusively from `rotMap.size` inside
-`classifyOperations`.
-
-**Code**: `symmetry.js` → `spaceGroupAtTolerance()`; glue in `symmetryModel.js` → `describeSymmetry()`.
+**Code**: `symmetry.js` → `spaceGroupAtTolerance()`, `UNDETERMINED`; glue in `symmetryModel.js` → `describeSymmetry()`.
 
 #### Step 13. The tolerance ladder
 
-`symmetryLadder(A, basis, tolMax, metricTol)` builds the coloured brick strip. Crucially it does
-**one** detection pass, at the loosest tolerance, and then *thresholds*:
+`symmetryLadder(A, basis, tolMax, latticeTol)` builds the coloured brick strip from **one** detection
+pass at the loosest tolerance (`tolMax`; the app passes **1.0 Å**):
 
-1. `full = findSpaceGroupOps(A, basis, tolMax, metricTol)` — every candidate operation with its
-   residual, at $\tau = $ `tolMax` (the app passes **1.0 Å**; the function's own default of 1.5 Å is
-   never used).
-2. `thresholds` = the sorted distinct residual values, ascending. These are the only tolerances at
-   which the qualifying set can change.
-3. Walk them tight→loose. At threshold $r_i$ the qualifying set is $\{\varrho \le r_i+10^{-9}\}$ and
-   the rung spans $[r_i, r_{i+1})$, with the last rung extending to `tolMax`.
-4. If the classification at $r_i$ fails `isValidGroup`, the previous rung is simply **extended** to
-   cover it (no brick is emitted for a non-group) — but only `if (bricks.length)`. If the *first*
-   thresholds all fail there is no previous brick, so those ranges are **dropped outright**; they are
-   masked afterwards by step 6 forcing `bricks[0].from = 0`, which means the leftmost brick's `from`
-   is cosmetic and does not mean the group actually holds there.
-5. Consecutive rungs with the same space-group symbol are **merged** — and the merge overwrites only
-   `to` and `nSpace` (`last.to = to; last.nSpace = cls.nSpace;`). `from`, `spaceGroupNumber` and
-   `pointGroup` are kept from the *first* rung of the run. So a merged brick shows the operation count
-   of its **loosest** rung over the full merged range, while its `from` is that of its tightest rung.
-6. The first rung's lower bound is finally forced to 0.
+1. Walk every distinct residual threshold $r_i$ (Step 11). The group at $r_i$ holds over
+   $[r_i, r_{i+1})$; the last one extends to `tolMax`.
+2. Classify each distinct group once (`tolFrac = tolMax/meanEdge`).
+3. Consecutive thresholds with the same symbol are **merged**; the merged brick keeps its first
+   `from` and takes the latest `to` and `nSpace`.
 
-Because the operation sets are nested by construction ($\varrho \le r_i \subset \varrho \le r_{i+1}$),
-symmetry is **non-decreasing** left→right: looser tolerance ⇒ more operations ⇒ equal-or-higher
-symmetry. The leftmost rung is *not* guaranteed to be `P1`-like, though — that wording appears only
-in the source doc comment ("P1 → … → full group"). The first threshold is the smallest distinct
-residual, which is always 0 (the identity always maps every site onto itself), and the first rung's
-qualifying set is every operation with $\varrho \le 0 + 10^{-9}$. On a well-ordered average structure
-that set can already be the full group, so the ladder can legitimately be a **single brick**. In
-practice a disordered RMC configuration does start near `P1`, which is what makes the ladder useful.
+The first threshold is always 0 — the identity maps every site onto itself with residual exactly 0
+— so the first brick starts at 0 without being forced there. Operation counts are non-decreasing
+left → right (Step 11). Each brick carries `{ from, to, spaceGroup, spaceGroupNumber, pointGroup, nSpace }`.
 
-Each brick carries `{ from, to, spaceGroup, spaceGroupNumber, pointGroup, nSpace }`.
-
-**One-pass caveat.** Thresholding a single pass is *not* exactly identical to re-running the
-detection at each tolerance, for two reasons: the translation dedup radius (Step 8) is `tolMax`
-throughout, so genuinely distinct translations closer than 1.0 Å are merged at every rung; and
-`tolFrac` passed to `classifyOperations` is `tolMax / meanEdge` for every rung, not the rung's own
-tolerance. Consequently the headline group (Step 12, a fresh pass at $\tau$) and the brick label at
-the same $\tau$ can in principle disagree.
+**One-pass caveat.** The ladder's translation dedup radius (Step 8) is `tolMax` for every rung
+(the card's headline shares it, Step 12): distinct translations of one rotation closer than 1 Å are
+one operation at every tolerance.
 
 **Code**: `symmetry.js` → `symmetryLadder()`; `symmetryModel.js` → `toleranceLadder()`.
 
@@ -3000,58 +3346,78 @@ the same $\tau$ can in principle disagree.
 `siteOrbits(A, basis, ops, τ)` partitions the basis into symmetry orbits with a union–find
 (disjoint-set with path halving):
 
-- For every accepted operation and every site $i$: map $\mathbf x_i \to \mathbf y$, find the
+- For every operation of the reported group and every site $i$: map $\mathbf x_i \to \mathbf y$, find the
   **nearest same-element** site $j$ with $d(\mathbf y,\mathbf x_j) < \tau$, and `union(i, j)`.
-- Group members by root. The orbit's `size` is its multiplicity in the conventional cell; the
+- Group members by root. The orbit's `size` is its multiplicity **in the given cell**; the
   representative is its **first member in basis order** (i.e. lowest reference number).
-- The **site symmetry** is computed as the stabiliser of the representative: the set of *distinct
-  rotation parts* $R$ of operations $\{R|\mathbf t\}$ with $d(\operatorname{frac}(R\mathbf x_\mathrm{rep}+\mathbf t),\ \mathbf x_\mathrm{rep}) < \tau$,
-  fed through the same `pointGroupOf()`. No Wyckoff tables are consulted for this — it is derived
-  from the detected operations directly.
+- The **site symmetry** is the stabiliser of the representative: the distinct rotation parts $R$ of
+  operations with $d(R\mathbf x_\mathrm{rep}+\mathbf t,\ \mathbf x_\mathrm{rep}) < \tau$, fed through the same
+  `pointGroupOf()`. It is derived from the operations, not looked up.
 - Orbits are returned largest-first.
 
-**Tolerance asymmetry (worth naming).** `describeSymmetry` calls
-`siteOrbits(A, structure.basis, sg.ops, tol)` with the **raw user tolerance** $\tau$ — not with
-`sg.maxResidual`, the threshold $r \le \tau$ at which the group was actually accepted. The orbit
-union–find and the stabiliser test therefore use a matching radius strictly looser than any accepted
-operation's residual. On a structure where $r \ll \tau$ this makes the reported multiplicities and
-site symmetries *more generous than the reported space group justifies*: orbits can merge sites, and
-stabilisers admit rotations, that the group itself does not. `siteOrbits`' own signature default is
-`tol = 0.1` Å, never used from the app.
+`describeSymmetry` calls `siteOrbits` with the user tolerance $\tau$, which is at least the worst
+residual of the reported group (`maxResidual`), so the orbit and stabiliser tests are at least as
+generous as the group itself.
 
-`wyckoffLetter(sgNumber, centering, mult, site, rep)` then attempts a letter, from a **hard-coded
-partial table covering four space groups only**:
+**Wyckoff letters** (`symmetryModel.js` → `lettersInSetting()`, `wyckoff.js` →
+`assignWyckoffLetters()`). The table (`wyckoffTable.js`) lists the Wyckoff positions of all 230
+groups in their ITA standard setting (all 1731 positions; for the groups with two origin choices, the
+one the table was built from — origin choice 2 for the centrosymmetric ones, e.g. Fd-3m). Each row
+was checked against the group's own operations (its coordinate expanded to exactly its
+multiplicity), and its site symmetry is the stabiliser computed the same way as above, so the two
+are comparable.
 
-| SG number | Symbol | Listed positions (letter, multiplicity, site symmetry) |
-| --- | --- | --- |
-| 216 | `F-43m` | 4a, 4b, 4c, 4d (`-43m`), 16e (`3m`), 96i (`1`) |
-| 225 | `Fm-3m` | 4a, 4b (`m-3m`), 8c (`-43m`), 32f (`3m`), 192l (`1`) |
-| 229 | `Im-3m` | 2a (`m-3m`), 6b (`4/mmm`), 8c (`-3m`), 16f (`3m`), 96l (`1`) |
-| 221 | `Pm-3m` | 1a, 1b (`m-3m`), 3c, 3d (`4/mmm`), 8g (`3m`), 48n (`1`) |
+1. Letters are read in the **standard cell the group was named in** (Step 10f). Each orbit's members
+   are carried there, $\mathbf x' = Q^{-1}\mathbf x$, together with every translation of that cell, and
+   its multiplicity is scaled by the cell-volume ratio (the four Ga of a lacunar spinel in its
+   F-cubic cell are one 3a orbit of R3m on hexagonal axes). With no such cell — a crystal class,
+   a `≥` lower bound, or P1/P-1 in a non-primitive cell — every letter is withheld.
+2. The candidates are the rows with the orbit's multiplicity **and** site symmetry. One candidate
+   → that letter. Several (Pm-3m 3c and 3d are both 3 × 4/mmm) → the tie is broken by the
+   **coordinate form**: a letter is kept if some member of the orbit (any lattice-equivalent
+   representative) fits its form, e.g. $(x,x,0)$, within `tolFrac` $= \tau/\overline{a'}$ per
+   component ($\overline{a'}$ = mean edge of the naming cell; `fitsForm()` solves for the free
+   parameters by ridge-regularised least squares and checks the residual). Exactly one fit → that
+   letter; otherwise none.
+3. A letter is returned with the multiplicity **of the cell it is read in**,
+   `wyckoffMultiplicity`, beside the given-cell `size`: a Wyckoff label pairs the two, so the Ga
+   of the lacunar spinel is `3a` (never `4a`, which R3m does not have) and rocksalt on its
+   primitive cell is `4a`/`4b` (never `1a`/`1b`). `orbitLabel()` prints
+   `"<wyckoffMultiplicity><letter>"`.
+4. No letter is ever guessed: with none, `wyckoffMultiplicity` is `null` and `orbitLabel()` shows
+   `"<given-cell multiplicity> (<site symmetry>)"`.
 
-Matching rule: filter table rows by exact `multiplicity` **and** `site symmetry`. If exactly one row
-matches and it is a *free* position (no fixed coordinate), return its letter. Otherwise compare the
-representative against each candidate's fixed coordinate **modulo the centering vectors**
-(`CEN_VECS` for P/I/F/C/A/B), accepting a component match when the wrapped difference is
-$<0.15$ fractional. Exactly one hit → that letter; else, if only one candidate survived the
-multiplicity+site filter, return it; else `null` (the UI falls back to `"<multiplicity> (<site symmetry>)"`
-via `symmetryModel.orbitLabel()`).
-
-Any other space group returns `null` for every orbit. The four tables are also **incomplete** (they
-omit, e.g., 24f/24g of 216), so a genuine unlisted position that happens to share a multiplicity and
-site symmetry with a listed one will be given the listed letter.
+**Origin.** The standard cell is found by a change of basis only (Step 10f), so letters that need
+the coordinate form assume the structure's origin is the table's origin or an equivalent one.
+Letters that multiplicity and site symmetry fix alone do not depend on the origin; a tie at a
+shifted origin usually fits no form and gets no letter (diamond described with its atoms at 0 and
+¼ — origin choice 1 — gets no letter for its 8-fold site, because the table uses origin choice 2).
 
 Orbits are not rendered on the Run Dashboard card itself; they flow into the AI-assistant context
 (`runContext.js` → `symmetryContext()` → `symmetry.sites`, ranked by mean displacement, capped at 12
-sites).
+sites), where `multiplicity` is the orbit's size in the given cell and `wyckoff` is the
+naming-cell pair `` `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}` `` — the rule of
+`orbitLabel()`, read from a field of the `symmetry` prop so the `llm/` import boundary holds.
+Before 1.0 the context used the given-cell orbit size, so wherever the naming cell is not the given
+cell the assistant was handed a label the named group does not have: `16i` for the Nb of the 5 K
+GaNb₄Se₈ run at τ = 0.02 Å (P-4n2 is named in a cell half the F-cubic one; the card's pair is
+`8i`), `4a`/`12b` for the R3m lacunar spinel in its F cell (`3a`/`9b`), `1a`/`1b` for rocksalt on
+its primitive cell (`4a`/`4b`). Pinned by `llm/__tests__/runContextWyckoff.test.js`.
 
-**Code**: `symmetry.js` → `siteOrbits()`, `wyckoffLetter()`, constants `WYCKOFF`, `CEN_VECS`;
-`symmetryModel.js` → `describeSymmetry()`, `orbitLabel()`.
+**Code**: `symmetry.js` → `siteOrbits()`; `symmetryModel.js` → `describeSymmetry()`,
+`lettersInSetting()`, `orbitLabel()`; `wyckoff.js` → `wyckoffPositions()`, `parseCoordinateForm()`,
+`fitsForm()`, `assignWyckoffLetters()`; data in `wyckoffTable.js`.
 
 #### Step 15. What the card renders
 
 - **Space group**: `symmetry.spaceGroup`, with `No. <n> · <pointGroup>` beneath, and a tooltip
-  `Point group <pg> · fits to <maxResidual.toFixed(3)> Å`.
+  `Point group <pg> · fits to <maxResidual.toFixed(3)> Å`. The `No.` part is omitted whenever
+  `spaceGroupNumber` is `null` — a crystal class, a `≥` lower bound, `undetermined` or
+  `not analysed`. For the last two `maxResidual` is `NaN` and the tooltip currently prints
+  `fits to NaN Å`, and the `reason` of a skipped structure is not shown anywhere on the card;
+  the card's info badge also still says the symbol is reported in the given cell "up to an axis
+  permutation", which Step 10f superseded. Those are `ModelSummary.jsx` wording issues, not
+  finder results.
 - **Operations**: `symmetry.nSpace`.
 - **Space group vs. tolerance**: the ladder bricks. Brick **fill** is
   `color-mix(in srgb, var(--accent) P%, var(--panel-raised))` with
@@ -3074,7 +3440,7 @@ sites).
 - Clicking a brick sets $\tau \leftarrow (\texttt{from}+\texttt{to})/2$; the brick is marked active
   when $\texttt{from} \le \tau < \texttt{to}$ — **a half-open interval, closed at `from` and open at
   `to`**. In practice this covers
-  every reachable $\tau$: `bricks[0].from` is forced to 0 and the last brick's `to` is `tolMax`, the
+  every reachable $\tau$: `bricks[0].from` is 0 (the identity's residual) and the last brick's `to` is `tolMax`, the
   bricks are contiguous, and the only setter is the midpoint click (which always yields
   $\tau < \texttt{tolMax}$), so exactly one brick highlights for any $\tau\in[0,1)$. A $\tau$ of
   exactly 1.0 Å would highlight nothing, but no code path produces it.
@@ -3102,18 +3468,39 @@ Flask mode the equivalent work happens server-side in Python). The **symmetry fi
 `describeSymmetry` / `toleranceLadder`) is the part that runs **synchronously on the main thread**
 inside `useMemo`, unlike the KDE and PCA-KDE paths, which use Web Workers.
 
-Two further costs are worth naming: `findSpaceGroupOps` internally runs a full `classifyOperations`
-whose result both `symmetryLadder` and `spaceGroupAtTolerance` **discard** (they re-classify from
-`full.ops` themselves); and the $3^9$ `latticePointOps` scan is re-run on **every** pass with no
-memoisation across the 2–3 passes per structure. Cost:
+**Cost and the basis cap.** The $3^9$ lattice scan (Step 7) is repeated on every pass. The
+partner search of Steps 9 and 14 uses a **cell list** (`partnerIndex()`): same-element sites are
+binned on a fractional grid whose bins are at least $r\,|\mathbf b_i|$ wide ($r$ = the matching
+radius, $\mathbf b_i$ = reciprocal vectors), so an image only visits its own and the neighbouring
+bins; each seed costs about $N$ times a few neighbours instead of $N\cdot\bar N_e$. Measured on a
+random two-species basis (Node, one pass each): 2000 sites — `describeSymmetry` ≈ 0.1 s and the
+ladder ≈ 0.1 s; 4000 sites ≈ 0.4 s + 0.2 s (before 1.0: 1.8 s + 5.3 s at 2000 sites, quadratic).
+The closure walk (Step 11) adds $O(n\cdot\text{generators})$ product look-ups per group growth for
+$n$ operations, plus the quadratic elimination only up to 256 operations; a $2\times2\times2$ supercell
+of rocksalt (1536 operations) with noise takes ≈ 0.8 s per pass.
 
-$$O\big(3^9\big)\ \text{for the point-op scan}\ +\ O\big(|P|\cdot n_\mathrm{ref}\cdot N \cdot \bar N_e\big)$$
+Because all of it is synchronous on the main thread, `symmetryModel.js` refuses a basis of more than
+**`MAX_SYMMETRY_SITES` = 2000** sites: `describeSymmetry` returns
+`{ skipped: true, spaceGroup: 'not analysed', pointGroup: '<N> sites > 2000 limit', nSpace: '—',
+maxResidual: NaN, orbits: [], reason }` (the card shows the first two as headline and subtitle;
+the residual is `NaN`, never `0`, because nothing was fitted and `0` would read as an exact fit — the
+LLM context omits a non-finite residual), and `toleranceLadder` returns no bricks. A box whose `.rmc6f` declares a $1\times1\times1$ supercell with
+one reference number per atom (a glass, an imported P1 configuration) reaches this; it is not a
+unit-cell configuration, and a symmetry search on it would only ever return `P1`.
 
-with $|P|\le 48$ the holohedry order, $n_\mathrm{ref}$ the site multiplicity of the rarest element,
-$N$ the basis size (sites per conventional cell), and $\bar N_e$ the mean number of same-element
-sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
-
----
+The site cap alone does not bound the time. If such a box is **crystalline**, every lattice rotation
+holds with every pure translation of its repeat unit, so the candidate operations grow with the
+square of the box: a $4\times4\times4$ rocksalt box (512 sites) has $48\times256 = 12\,288$, and the
+ladder of a noisy $3\times3\times3$ one (216 sites, 5184) took over a minute (Node). Before either pass, `symmetryModel.js` therefore asks
+`operationEstimate(A, basis, tol, limit)` (`symmetry.js`) for the lattice rotations admitted at the
+tolerance (Step 7) times the pure translations $\{I\,|\,\mathbf t\}$ of the structure there
+(Steps 8–9 for the identity alone, stopped as soon as the product passes `limit`). It is judged at
+the ladder's loosest tolerance, $\max(\tau, 1.0)$ Å, for the headline as well, so the card either
+analyses a structure at every tolerance or says why not. Above **`MAX_SYMMETRY_OPS` = 384** — twice
+the 48 × 4 = 192 a correctly declared cell can reach (F centring), enough for a $2\times2\times2$
+supercell of a primitive cubic cell — `describeSymmetry` returns the same `skipped` shape with
+`pointGroup: '≥ <t> translations per cell'` and a reason naming the supercell, and
+`toleranceLadder` returns no bricks.
 
 ### Parameters and defaults — model summary and symmetry
 
@@ -3124,13 +3511,14 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 | `tol` | `findSpaceGroupOps()` | `0.1` | Å | never used from the app (callers always pass) |
 | `tolMax` | `toleranceLadder()` (called with `1.0`) | `1.0` | Å | loosest tolerance the ladder explores |
 | `tolMax` | `symmetryLadder()` signature | `1.5` | Å | never used (callers pass `1.0`) |
-| `metricTol` ($\epsilon_G$) | `findSpaceGroupOps`, `symmetryLadder`, `spaceGroupAtTolerance` | `1e-2` | dimensionless | relative tolerance on $R^{\mathsf T}GR=G$; absolute threshold $=\epsilon_G\cdot\tfrac13\operatorname{tr}G$ Å². **Never forwarded** by `symmetryModel.js`, so the default is hard-wired app-wide |
-| `tol` | `latticePointOps()` signature | `1e-3` | dimensionless | documented default, **never reached** from the app |
+| `latticeTol` ($\tau_L$) | `findSpaceGroupOps`, `symmetryLadder`, `spaceGroupAtTolerance` | $\tau$ (the pass tolerance) | Å | largest Cartesian lattice strain $\varrho_L(R)$ of an admitted point operation (Step 7); the strain is also a floor on that operation's residual. Not forwarded by `symmetryModel.js`, so it follows $\tau$ |
+| `tol` | `latticePointOps()` signature | `0.01` | Å | exported wrapper only; the finder calls `latticeCandidates()` with $\tau_L$ |
 | `tol` | `siteOrbits()` signature | `0.1` | Å | never used (`describeSymmetry` always passes `symTol`) |
 | `tolFrac` | `classifyOperations()` signature | `0.02` | cell fractions | never used (all callers pass `tol / meanEdge(A)`) |
-| centering match tolerance | `matchCentering()` | `0.1` | cell fractions | per-component match to a Bravais centering vector |
+| translation snap | `pureTranslations()` (`spaceGroupSymbol.js`) | grid $1/d$, $d$ = the smallest order dividing the group order $n$ with every component within `0.02`; $d\le25$ | cell fractions | pure translations are snapped as a group before the exact Bravais match (Step 10c) |
+| lattice-completeness strain | `spaceGroupHM()` → `allLatticeOpsTested()` | the group's worst residual, at least `1e-3` | Å | strain up to which a rotation of the translation lattice counts in the lower-bound check (Step 10f) |
 | translation-key granularity | `classifyOperations()` | `1e-3` | cell fractions | rounding used to count distinct pure translations (no fold of 1000 → 0) |
-| Wyckoff coordinate tolerance | `wyckoffLetter()` | `0.15` | cell fractions | per-component match to a tabulated special position |
+| Wyckoff coordinate tolerance | `assignWyckoffLetters()` (from `describeSymmetry`) | $\tau/\overline{a'}$ | cell fractions | per-component fit to a tabulated coordinate form, in the naming cell |
 | threshold epsilon | `symmetryLadder`, `spaceGroupAtTolerance` | `1e-9` | Å | float-safety slack on `residual ≤ r` |
 | $\tau$ floor (detection) | `spaceGroupAtTolerance()` | `1e-3` | Å | `Math.max(tol, 1e-3)` for the full detection pass |
 | $\tau$ floor (`tolFrac`) | `spaceGroupAtTolerance()` | `1e-6` | Å | `Math.max(tol, 1e-6)` before dividing by `meanEdge(A)` for the classification tolerance — **distinct** from the `1e-3` detection floor |
@@ -3141,66 +3529,65 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
 | brick fill span | `ModelSummary.jsx` `brickStyle()` | `12 %`–`86 %` accent | — | $P = 12 + 74\lambda$ with $\lambda=\ln n/\ln n_{\max}$, and $\lambda = 0$ when $n_{\max}\le1$ |
 | widest-brick width | `ModelSummary.jsx` `brickWidth()` | `34 %` | — | remaining `66 %` split evenly |
 | search space | `latticePointOps()` | $3^9=19\,683$ | — | 6960 have $\lvert\det R\rvert=1$ |
+| `MAX_SYMMETRY_SITES` | `symmetryModel.js` | `2000` | sites | larger bases are not analysed (`skipped: true`), and the ladder is empty |
+| `MAX_SYMMETRY_OPS` | `symmetryModel.js` | `384` | operations | lattice rotations × pure translations (`operationEstimate`, at $\max(\tau,1.0)$ Å) above which a structure is not analysed (`skipped: true`) and the ladder is empty |
+| `ELIMINATION_MAX_OPS` | `symmetry.js` | `256` | operations | the quadratic elimination of Step 11 runs only up to this many candidate operations |
 
 ### Caveats / what this is not
 
 - **This is not spglib, and not FINDSYM.** It is a bounded approximation written for interactive use
-  in a browser, with **no external space-group database** (no spglib tables, no WASM) — but it is not
-  literally "table-free" as the source comment says: classification rests on small in-file lookup
-  tables (`POINT_GROUP_ORDER`, `PG_SYSTEM`, `ALLOWED_CENTERING`, `CENTERING_SETS`, the 69-entry
-  `SG_NUMBER` map, and `WYCKOFF` / `CEN_VECS`). Use it to see *how* symmetry changes with tolerance on
-  a disordered configuration, not to produce a published space-group assignment.
-- **Symmorphic symbols only.** Screw axes and glide planes are never detected. The symbol is
-  literally `centering letter + point-group symbol`, so `Fd-3m` → `Fm-3m` (225), `P2₁/c` → `P2/m`,
-  `Pnma` → `Pmmm`. The source comment names this as a known follow-up.
-- **Setting variants are not distinguished**: `-42m` vs `-4m2`, `3m1` vs `31m`, `321` vs `312`, the
-  monoclinic unique-axis choice, and the orthorhombic axis ordering all collapse to one symbol. Two
-  concrete consequences: the printed symbol `P32` is `P` + point group `32`, which reads
-  identically to the screw-axis space group P3₂ (No. 145) but is mapped to **No. 149 (P312)**; and
-  the table's trigonal choices are internally inconsistent (`P3m` → 156 = P3m1, but `P-3m` → 162 =
-  P-31m).
-- **`R` centering is unreachable.** `matchCentering()` only tests F, I, A, B, C, so a rhombohedral
-  structure in hexagonal axes will report `P`-something. The `R3`/`R-3m` rows in `SG_NUMBER` and the
-  `R` in `ALLOWED_CENTERING['trig']` are dead.
-- **The metric tolerance is loose.** With $\epsilon_G=10^{-2}$ the absolute threshold on
-  $R^{\mathsf T}GR-G$ is $10^{-2}\cdot\tfrac13\operatorname{tr}G$ Å² — about 1 Å² for a 10 Å cell.
-  A pseudo-cubic cell with a ~0.5 % axial difference is therefore treated as cubic by the lattice
-  search. The lattice's *metric* symmetry is admitted generously; the atom-position test is what
-  actually gates the answer. **There is no knob for this**: `symmetryModel.js` never forwards a
-  `metricTol` (`spaceGroupAtTolerance(A, basis, tol)` and `symmetryLadder(A, basis, tolMax)` are both
-  called without it), so $10^{-2}$ is hard-wired. The only user-adjustable parameter on this page is
-  $\tau$, and the only way to change it is clicking a ladder brick (which sets $\tau$ to the brick
-  midpoint) — there is no numeric input.
+  in a browser, with **no external space-group database** (no spglib tables, no WASM); it rests on
+  the in-repo tables listed at the top of Part B (`SPACE_GROUPS`, `POINT_GROUP_SYSTEM`,
+  `SYSTEM_DIRECTIONS`, `BRAVAIS`, `STANDARD_CENTERING`, `POINT_GROUP_ORDER`, the Wyckoff table). Use it
+  to see *how* symmetry changes with tolerance on a disordered configuration, not to produce a
+  published space-group assignment.
+- **A group that cannot be named is shown as its crystal class.** The symbol is built positionally
+  and accepted only when it is a tabulated symbol of the detected class and centering (Step 10f);
+  otherwise the card shows e.g. `4/mmm class` with no number and no Wyckoff letters.
+- **Supercells of the true cell give a lower bound.** Rotations are found on any basis of the given
+  cell's lattice (Step 7, in a reduced basis), but only those that map that lattice onto itself. A
+  symmetry of the crystal's own translation lattice that does not — the cubic 3-folds of a
+  structure modelled in a $\sqrt2\times\sqrt2\times2$, $2\times2\times1$ or $1\times1\times2$ cell — is never
+  tested, and the result is marked `≥ <symbol>` with no number (Step 10f). The cell handed to the
+  finder is the `.rmc6f` box divided by its declared supercell, so this happens only when that
+  declared cell is itself a supercell.
+- **Lattice strain is measured on the atom scale.** A point operation is admitted when the Cartesian
+  displacement it implies for the cell edges, $\varrho_L$ (Step 7), is within $\tau$, and that
+  strain is a floor on the operation's residual. A strained cell therefore reads as the lower
+  symmetry below its strain and as the higher one above it, and the ladder shows where. The strain
+  is measured on the three cell edges; an atom far from the origin of a large cell can be displaced
+  more by the same strain than an edge-length figure suggests. There is still no separate knob: the
+  only user-adjustable parameter on this page is $\tau$, set by clicking a ladder brick.
 - **The answer is tolerance-dependent by design.** An RMC configuration is disordered; the basis is
   a circular mean over supercell copies, and residual displacements of 0.05–0.5 Å are normal. There
   is no "correct" $\tau$ — the ladder exists precisely because the reported group is a function of
   $\tau$, and the default 0.2 Å is a UI convenience, not a physical constant.
 - **The acceptance test is a covering test, not a bijection.** Distinct sites may map onto the same
   partner without being rejected. There is no check that an accepted operation permutes the basis.
-- **Group closure is checked only by cardinality** ($n_\mathrm{space} = |P|\cdot n_\mathrm{trans}$ plus a
-  system/centering compatibility rule), never by composing operations.
+- **Closure is enforced, maximality is heuristic.** Every reported operation set is closed under
+  composition (Step 11), but the largest closed group at a threshold is found greedily (growth, plus
+  elimination for up to 256 operations), not by enumerating subgroups.
 - **Minimum image is component-wise.** `cartDist()` rounds each fractional component independently,
   which is exact for orthogonal cells and can over-estimate distances for strongly oblique ones.
 - **Translation dedup radius equals the detection tolerance.** At the ladder's `tolMax = 1.0` Å,
   distinct translations less than 1 Å apart are merged for *every* rung. On a small cell this can
   suppress real centering vectors.
-- **Ladder and headline are separate computations.** The ladder thresholds one pass at 1.0 Å; the
-  headline runs a fresh pass at $\tau$. Clicking a brick sets $\tau$ to the brick midpoint but the
-  headline is re-derived independently, so the two can disagree in edge cases.
-- **A brick's reported range and op count are not from the same rung.** Merging overwrites only `to`
-  and `nSpace`, so a merged brick shows its loosest rung's operation count; and the leftmost brick's
-  `from` is forced to 0 even when the tightest thresholds produced no valid group at all (Step 13).
-- **Wyckoff letters exist for four space groups only** (216, 221, 225, 229) and those tables are
-  partial. Everything else shows multiplicity + derived site symmetry. Site symmetry itself is
-  always derived from the detected operations and is trustworthy to the same tolerance.
-- **Conventional-setting assumption.** Restricting $R$ to entries in $\{-1,0,1\}$ assumes the
-  `.rmc6f` lattice vectors divided by the declared supercell form a conventional crystallographic
-  cell. No Niggli/Delaunay reduction, no primitive-cell search, and no origin shift to a standard
-  setting is performed; the origin is whatever the `.rmc6f` uses.
+- **The headline pays for the ladder's pass.** The card's headline is walked from the ladder's
+  own 1 Å detection pass (Step 12), so it is exactly the ladder's group at $\tau$, and every τ change
+  reruns that pass. A direct `spaceGroupAtTolerance(A, basis, τ)` call without `passTol` runs a
+  cheaper pass at $\tau$ and can differ from the ladder at a brick midpoint.
+- **A merged brick shows its loosest rung's operation count.** Merging keeps `from` and takes the
+  latest `to` and `nSpace` (Step 13).
+- **Wyckoff letters assume the table's origin.** Letters are read in the standard cell the group is
+  named in, for all 230 groups, but no origin shift is searched: a tie between positions of equal
+  multiplicity and site symmetry is broken only if the structure's origin is the table's (or an
+  equivalent one), and otherwise left without a letter (Step 14).
+- **No origin shift.** The standard cell is found by a change of basis only; the origin stays where
+  the `.rmc6f` puts it. Space-group names do not depend on the origin, Wyckoff letters do (Step 14).
 - **Header input is unvalidated.** Neither the `Lattice` numbers nor the `Supercell` multiplicities
-  are checked. `NaN` lattice entries make `latticePointOps` accept all 6960 unimodular patterns (all
-  `NaN` comparisons are false) and then make every mapping residual `NaN`, so the card silently
-  degrades to `P1` / 0 operations with an empty ladder and `NaN` cell edges. A zero or non-integer
+  are checked. A non-finite or singular lattice gives `NaN` strains, every candidate operation is
+  rejected (Step 7), and the card shows `undetermined` with 0 operations, no ladder and `NaN` cell
+  edges (Step 12). A zero or non-integer
   supercell entry is guarded in the *cell* division but not in the *fold into one cell*, giving a
   collapsed one-site basis and a spurious high-symmetry answer (Steps 1 and 5).
 - **A reference site's species is whatever appeared first.** `acc.element` is set once and never
@@ -3209,19 +3596,34 @@ sites. `siteOrbits` adds $O(n_\mathrm{space}\cdot N\cdot \bar N_e)$.
   sub-labels can exceed the number of basis sites actually analysed (Step 5).
 - **Orbits and site symmetries are evaluated at a looser radius than the group.** `siteOrbits` is
   called with the raw $\tau$, not with the `maxResidual` at which the group was accepted (Step 14).
-- **`nTrans` is not folded modulo 1.** A translation recovered as 0.9997 instead of 0 counts as
-  distinct from the identity translation, and since `isValidGroup` is an exact cardinality test one
-  such off-by-one can silently invalidate a real group (Step 10b).
-- **`fits to 0.000 Å` can be a placeholder.** The Step-12 fallback hard-codes `maxResidual = 0`
-  regardless of the residuals of the operations it returns.
 - **No cell volume, no number density** is reported by this page (see the note after Step 5).
-- **Flask/server-directory mode has no Detected SG card** — `/api/structure` returns no basis. It is
-  also a different parser: the Python `iter_rmc6f_atoms()` skips every line with fewer than 9 fields,
-  so coords-only `.rmc6f` files yield zero atoms there, and it capitalizes element tokens while
-  `read_atom_indices()` (same response) does not (Step 2).
-- **No unit tests cover `symmetry.js`.** The frontend vitest suite covers `browserData.js`
-  (including the circular-mean basis and `dispA`), `rmc6f.js`, `autoScale.js`, `pcaKde.js` and the
-  LLM context builder, but there is no test file importing `symmetry.js`; only `symmetryModel.js`
-  imports it. The numbers quoted above for the enumeration counts (6960 unimodular patterns, 48
-  cubic and 24 hexagonal-P point operations) were verified by re-running the code's own algorithm,
-  not by an existing test.
+- **Flask/server-directory mode has no Detected SG card** — `/api/structure` returns no basis. Its
+  parser is no longer the difference: since 1.0 both runtimes share one atom-line grammar, read
+  coords-only lines, and capitalize element tokens the same way (Step 2).
+- **What the tests pin.** `symmetry.test.js` recovers all 230 fixture groups (built from ITA
+  generators) from their atoms, names rocksalt, perovskite, diamond, hcp and an I4/mcm perovskite,
+  and checks the point-group and space-group tables; `symmetrySettings.test.js` names the 230
+  groups in all six axis orders and well-known structures in centred, primitive, rhombohedral and
+  supercell cells, with the principal axis off $c$, and as subgroups of a centred parent;
+  `symmetryObliqueCells.test.js` pins the lattice-rotation count on oblique bases, naming on oblique
+  and strongly oblique cells, the lower bound and the translation snap; `symmetryFinder.test.js`
+  covers basis-order independence, lattice strain, closure of every rung (the bundled GTS_250K demo,
+  a noisy lacunar spinel) and class-consistent symbols; `symmetryRepresentatives.test.js` checks
+  that a symbol does not depend on the lattice representative of a translation, and that every
+  noisy trigonal, hexagonal and cubic subgroup is named after a group with the same element types
+  per coset (rotation or screw, mirror or glide); `symmetryHiddenCentring.test.js` names the
+  centred groups C2 … C2/c, I4 … I4/m, R3 and R-3 on primitive cells that keep the axis as a basis
+  vector (with the conventional description's Wyckoff labels) and checks that no P-named rung of a
+  noisy trigonal or hexagonal ladder hides a centring; `symmetryHeadlineLadder.test.js` that the
+  card's headline is the ladder's group at every brick midpoint and that the bricks do not move
+  with the order of the basis; `symmetryDuplicates.test.js` checks that of two
+  near-duplicate operations the better-fitting one is kept, so the ladder reaches the group the
+  headline finds whatever the site order;
+  `symmetryWyckoff.test.js` and `wyckoff.test.js` check every Wyckoff row against its group's
+  operations, the demo's letters and letters in permuted settings, and
+  `symmetryWyckoffLabels.test.js` that a letter is paired with the multiplicity of the cell it is
+  read in; `symmetryLimits.test.js`, `symmetryPerformance.test.js` and
+  `symmetryUndetermined.test.js` cover the basis cap, the operation budget and an unanalysable
+  lattice. The two GaNb₄Se₈ runs are gitignored, so they are not
+  in the suite; every rung of their ladders was checked by hand to be closed and to have the
+  element types of the group it is named after.

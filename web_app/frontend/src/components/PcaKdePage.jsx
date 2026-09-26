@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
-import { marchingCubes } from '../workers/marchingCubes';
+import { marchingCubes, sampleFieldTrilinear } from '../workers/marchingCubes';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import InfoBadge from './InfoBadge';
 import SaveMenu from './SaveMenu';
@@ -22,7 +22,8 @@ import {
     buildCrystalAxes
 } from './sceneAxes';
 import useSiteCloud from '../useSiteCloud';
-import { crystalOrientationRows } from '../pcaCrystalFrame';
+import { crystalOrientationRows, projectVolumeOntoFrame } from '../pcaCrystalFrame';
+import { siteLabel } from '../siteLabel';
 import './PcaKdePage.css';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
@@ -37,7 +38,10 @@ const BW_OPTIONS = [
     { value: 'scott', label: 'Scott' },
     { value: 'silverman', label: 'Silverman' }
 ];
-const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 25, colormap: 'viridis', shellColormap: 'viridis', shellContrast: 1, clusterThreshold: 1.5 };
+// The isosurface mass level and the ellipsoid probability default to the SAME level:
+// the two surfaces are only comparable at equal p (a 25% surface sits inside a 50%
+// ellipsoid by construction, which reads as false anharmonicity).
+const DEFAULTS = { grid: 40, bw: 'scott', extent: 4, probability: 0.5, isoPercent: 50, colormap: 'viridis', shellColormap: 'viridis', shellContrast: 1, clusterThreshold: 1.5 };
 
 const numberFormat = (value, digits = 4) =>
     Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -58,40 +62,21 @@ const pcaVertexToCartesian = (fi, fj, fk, axisCoords, axes, mean, out) => {
     return out;
 };
 
-// Trilinear sample of the flat KDE density grid (C order over PC1, PC2, PC3:
-// index = (i*grid + j)*grid + k) at continuous grid indices (fi, fj, fk).
-const sampleDensityTrilinear = (density, grid, fi, fj, fk) => {
-    const clamp = (v) => (v < 0 ? 0 : v > grid - 1 ? grid - 1 : v);
-    const ci = clamp(fi);
-    const cj = clamp(fj);
-    const ck = clamp(fk);
-    const i0 = Math.floor(ci);
-    const j0 = Math.floor(cj);
-    const k0 = Math.floor(ck);
-    const i1 = Math.min(i0 + 1, grid - 1);
-    const j1 = Math.min(j0 + 1, grid - 1);
-    const k1 = Math.min(k0 + 1, grid - 1);
-    const di = ci - i0;
-    const dj = cj - j0;
-    const dk = ck - k0;
-    const at = (i, j, k) => density[(i * grid + j) * grid + k];
-    const c00 = at(i0, j0, k0) * (1 - di) + at(i1, j0, k0) * di;
-    const c01 = at(i0, j0, k1) * (1 - di) + at(i1, j0, k1) * di;
-    const c10 = at(i0, j1, k0) * (1 - di) + at(i1, j1, k0) * di;
-    const c11 = at(i0, j1, k1) * (1 - di) + at(i1, j1, k1) * di;
-    const c0 = c00 * (1 - dj) + c10 * dj;
-    const c1 = c01 * (1 - dj) + c11 * dj;
-    return c0 * (1 - dk) + c1 * dk;
-};
+// Shell vertices that fall outside the sampled KDE box carry no density: they are
+// drawn in this neutral grey and left out of the colour stretch.
+const NO_DATA_RGB = [0.56, 0.58, 0.62];
 
 // Solid p% ellipsoid whose surface is colored by the KDE density sampled at each
-// vertex -- "projecting" the density onto the harmonic reference shell. A perfectly
-// Gaussian cloud gives a near-uniform color; hotter/colder patches mark where the
-// real density departs from the ellipsoid (anharmonicity). The ellipsoid-surface
-// point for a unit-sphere vertex is (semi .* vertex) in the PCA frame, which both
-// maps to world coordinates (baked in, like the isosurface) and indexes the grid.
+// vertex -- "projecting" the density onto the harmonic reference shell. For an
+// infinitely large Gaussian sample the shell would be one colour; a finite cloud
+// adds sampling-noise patches of tens of percent (at 10^3 copies), so only a
+// systematic pattern marks anharmonicity. The ellipsoid-surface point for a
+// unit-sphere vertex is (semi .* vertex) in the PCA frame, which both maps to
+// world coordinates (baked in, like the isosurface) and indexes the grid.
 // Coloring is stretched to the shell's OWN density range (not the global 0..vmax),
 // so the small variation across an iso-probability shell reads with full contrast.
+// A vertex outside the sampled box is grey ("no data"), never the clamped box-face
+// density, which would paint a false hot cap.
 const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap, contrast = 1) => {
     const geometry = new THREE.SphereGeometry(1, 96, 64);
     const unit = geometry.attributes.position;
@@ -113,21 +98,29 @@ const makeEllipsoidKdeSurface = (semi, axes, mean, kde, colormap, contrast = 1) 
         world[3 * v] = mean[0] + p0 * axes[0][0] + p1 * axes[1][0] + p2 * axes[2][0];
         world[3 * v + 1] = mean[1] + p0 * axes[0][1] + p1 * axes[1][1] + p2 * axes[2][1];
         world[3 * v + 2] = mean[2] + p0 * axes[0][2] + p1 * axes[1][2] + p2 * axes[2][2];
-        const d = sampleDensityTrilinear(
-            kde.density, grid,
+        const d = sampleFieldTrilinear(
+            kde.density, grid, grid, grid,
             (p0 - axisCoords[0][0]) / step[0],
             (p1 - axisCoords[1][0]) / step[1],
             (p2 - axisCoords[2][0]) / step[2]
         );
         values[v] = d;
-        if (d < shellMin) shellMin = d;
-        if (d > shellMax) shellMax = d;
+        if (Number.isFinite(d)) {
+            if (d < shellMin) shellMin = d;
+            if (d > shellMax) shellMax = d;
+        }
     }
     // Second pass: stretch the shell's density range across the full colormap, then
     // apply the user contrast as a symmetric gain about the mid-tone (0.5) — >1
     // narrows the effective vmin/vmax so faint departures stand out, <1 flattens it.
     const shellRange = shellMax - shellMin || 1;
     for (let v = 0; v < count; v += 1) {
+        if (!Number.isFinite(values[v])) {
+            colors[3 * v] = NO_DATA_RGB[0];
+            colors[3 * v + 1] = NO_DATA_RGB[1];
+            colors[3 * v + 2] = NO_DATA_RGB[2];
+            continue;
+        }
         const t = 0.5 + ((values[v] - shellMin) / shellRange - 0.5) * contrast;
         const rgb = sampleColormap(colormap, t < 0 ? 0 : t > 1 ? 1 : t);
         colors[3 * v] = rgb[0] / 255;
@@ -182,38 +175,74 @@ const projectionTexture = (projection, colormap) => {
     return texture;
 };
 
-// Build the wall plane for one projection: a textured quad in the PCA frame on
-// the far wall along the axis not spanned by the projection (Maksim Eremenko's
-// shadow-box layout). first/second index the projection's axes; the plane's
-// local X → axes[first], local Y → axes[second], placed at -halfWidth of the
-// remaining axis and offset slightly outward so it sits just past the cloud.
-const makeProjectionWall = (projection, axes, mean, halfWidths, colormap) => {
+// In-plane coordinate range [lo, hi] of a projection's two axes: its own sampled
+// extent when it carries one (the per-axis box the engine evaluated it on),
+// otherwise the display box.
+const projectionRange = (projection, boxHalfWidths) => {
+    const [first, second] = projection.axes;
+    const e = projection.extent;
+    return e && e.length === 4
+        ? [e[0], e[1], e[2], e[3]]
+        : [-boxHalfWidths[first], boxHalfWidths[first], -boxHalfWidths[second], boxHalfWidths[second]];
+};
+
+// Build the wall for one projection on the far face of the (cubic) display box
+// along the axis not spanned by the projection (Maksim Eremenko's shadow-box
+// layout). first/second index the projection's axes; the plane's local X →
+// axes[first], local Y → axes[second], placed at -boxHalfWidth of the remaining
+// axis and offset slightly outward so it sits just past the cloud. The density
+// texture covers exactly the range the projection was evaluated on -- the
+// per-axis box, which resolves a thin axis -- over a face-sized backing in the
+// colormap's zero colour, so the face reads as one wall. Returns the meshes.
+const makeProjectionWall = (projection, axes, mean, boxHalfWidths, colormap) => {
     const [first, second] = projection.axes;
     const third = 3 - first - second;
     const texture = projectionTexture(projection, colormap);
-    if (!texture) return null;
-
-    const geometry = new THREE.PlaneGeometry(2 * halfWidths[first], 2 * halfWidths[second]);
-    const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.96,
-        depthWrite: false
-    });
-    const plane = new THREE.Mesh(geometry, material);
+    if (!texture) return [];
 
     const xAxis = new THREE.Vector3(axes[first][0], axes[first][1], axes[first][2]);
     const yAxis = new THREE.Vector3(axes[second][0], axes[second][1], axes[second][2]);
     const normal = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
-    const offset = -(halfWidths[third] + 0.06 * halfWidths[third]);
-    const position = new THREE.Vector3(
-        mean[0] + offset * axes[third][0],
-        mean[1] + offset * axes[third][1],
-        mean[2] + offset * axes[third][2]
-    );
-    plane.applyMatrix4(new THREE.Matrix4().makeBasis(xAxis, yAxis, normal).setPosition(position));
-    return plane;
+    const offset = -(boxHalfWidths[third] + 0.06 * boxHalfWidths[third]);
+    const place = (mesh, u, v) => {
+        const position = new THREE.Vector3(
+            mean[0] + offset * axes[third][0] + u * axes[first][0] + v * axes[second][0],
+            mean[1] + offset * axes[third][1] + u * axes[first][1] + v * axes[second][1],
+            mean[2] + offset * axes[third][2] + u * axes[first][2] + v * axes[second][2]
+        );
+        mesh.applyMatrix4(new THREE.Matrix4().makeBasis(xAxis, yAxis, normal).setPosition(position));
+        return mesh;
+    };
+
+    // The texture is sRGB-tagged, so the backing's colour is given in sRGB too --
+    // otherwise it would be read as linear and render visibly lighter.
+    const zero = sampleColormap(colormap, 0);
+    const backing = place(new THREE.Mesh(
+        new THREE.PlaneGeometry(2 * boxHalfWidths[first], 2 * boxHalfWidths[second]),
+        new THREE.MeshBasicMaterial({
+            color: new THREE.Color().setRGB(zero[0] / 255, zero[1] / 255, zero[2] / 255, THREE.SRGBColorSpace),
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.96,
+            depthWrite: false
+        })
+    ), 0, 0);
+    backing.renderOrder = 0;
+
+    const [u0, u1, v0, v1] = projectionRange(projection, boxHalfWidths);
+    const plane = place(new THREE.Mesh(
+        new THREE.PlaneGeometry(u1 - u0, v1 - v0),
+        new THREE.MeshBasicMaterial({
+            map: texture,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.96,
+            depthWrite: false
+        })
+    ), 0.5 * (u0 + u1), 0.5 * (v0 + v1));
+    // Coplanar with the backing and neither writes depth: draw order decides.
+    plane.renderOrder = 1;
+    return [backing, plane];
 };
 
 // Marching-squares line segments of a 2D field at one level. Each cell yields 0,
@@ -252,7 +281,7 @@ const contourSegments = (density, level) => {
 
 // Contour lines for one projection, drawn just in front of its wall so they read
 // on top of the colormap (like the projected contours in Maksim's Plotly figure).
-const makeProjectionContours = (projection, axes, mean, halfWidths, color) => {
+const makeProjectionContours = (projection, axes, mean, boxHalfWidths, color) => {
     const density = projection.density;
     const nFirst = density.length;
     const nSecond = density[0] ? density[0].length : 0;
@@ -261,16 +290,17 @@ const makeProjectionContours = (projection, axes, mean, halfWidths, color) => {
 
     const [first, second] = projection.axes;
     const third = 3 - first - second;
-    const stepFirst = (2 * halfWidths[first]) / Math.max(nFirst - 1, 1);
-    const stepSecond = (2 * halfWidths[second]) / Math.max(nSecond - 1, 1);
+    const [u0, u1, v0, v1] = projectionRange(projection, boxHalfWidths);
+    const stepFirst = (u1 - u0) / Math.max(nFirst - 1, 1);
+    const stepSecond = (v1 - v0) / Math.max(nSecond - 1, 1);
     // Sit the lines just inside the wall (toward the box interior).
-    const wallOffset = -(halfWidths[third] + 0.05 * halfWidths[third]);
+    const wallOffset = -(boxHalfWidths[third] + 0.05 * boxHalfWidths[third]);
 
     const points = [];
     [0.1, 0.25, 0.4, 0.55, 0.7, 0.85].forEach((fraction) => {
         contourSegments(density, fraction * vmax).forEach(([fi, fj]) => {
-            const pFirst = -halfWidths[first] + fi * stepFirst;
-            const pSecond = -halfWidths[second] + fj * stepSecond;
+            const pFirst = u0 + fi * stepFirst;
+            const pSecond = v0 + fj * stepSecond;
             points.push(new THREE.Vector3(
                 mean[0] + pFirst * axes[first][0] + pSecond * axes[second][0] + wallOffset * axes[third][0],
                 mean[1] + pFirst * axes[first][1] + pSecond * axes[second][1] + wallOffset * axes[third][1],
@@ -348,82 +378,6 @@ const orthonormalCrystalFrame = (unitCell) => {
     const e1 = norm([unitCell[1][0] - bDot * e0[0], unitCell[1][1] - bDot * e0[1], unitCell[1][2] - bDot * e0[2]]);
     const e2 = norm(cross(e0, e1));
     return [e0, e1, e2];
-};
-
-// Project the computed 3D KDE density onto the three planes of the orthonormal frame
-// `frame` (rows e0, e1, e2) by bilinearly splatting each PCA-grid cell's mass into 2D
-// bins of the two in-plane coordinates — the honest shadow of the SAME density the
-// panel shows, re-binned into the crystal frame. `half` is the cube half-width (all
-// axes equal, cubic box). Returns {pc12, pc13, pc23} shaped exactly like the worker's
-// PC-plane projections, so makeProjectionWall / makeProjectionContours draw them as-is.
-const projectDensityOntoFrame = (kde, frame, half, nBins) => {
-    const grid = kde.grid;
-    const axisCoords = kde.axisCoords;
-    const axes = kde.axes;
-    const density = kde.density;
-    const cellVolume = kde.cellVolume || 1;
-    const [e0, e1, e2] = frame;
-    const span = 2 * half || 1;
-    const toBin = (c) => ((c + half) / span) * (nBins - 1);
-    const alloc = () => Array.from({ length: nBins }, () => new Float64Array(nBins));
-    const d01 = alloc();
-    const d02 = alloc();
-    const d12 = alloc();
-    // Bilinear splat of weight w at continuous (u, v) into an accumulator grid.
-    const splat = (acc, u, v, w) => {
-        const u0 = Math.floor(u);
-        const v0 = Math.floor(v);
-        const fu = u - u0;
-        const fv = v - v0;
-        const put = (a, b, m) => { if (a >= 0 && a < nBins && b >= 0 && b < nBins) acc[a][b] += w * m; };
-        put(u0, v0, (1 - fu) * (1 - fv));
-        put(u0, v0 + 1, (1 - fu) * fv);
-        put(u0 + 1, v0, fu * (1 - fv));
-        put(u0 + 1, v0 + 1, fu * fv);
-    };
-    for (let i = 0; i < grid; i += 1) {
-        const px = axisCoords[0][i];
-        for (let j = 0; j < grid; j += 1) {
-            const py = axisCoords[1][j];
-            const base = (i * grid + j) * grid;
-            for (let k = 0; k < grid; k += 1) {
-                const val = density[base + k];
-                if (val <= 0) continue;
-                const pz = axisCoords[2][k];
-                // PCA-frame grid point -> Cartesian offset from the cloud mean.
-                const cx = px * axes[0][0] + py * axes[1][0] + pz * axes[2][0];
-                const cy = px * axes[0][1] + py * axes[1][1] + pz * axes[2][1];
-                const cz = px * axes[0][2] + py * axes[1][2] + pz * axes[2][2];
-                const u0c = toBin(cx * e0[0] + cy * e0[1] + cz * e0[2]);
-                const u1c = toBin(cx * e1[0] + cy * e1[1] + cz * e1[2]);
-                const u2c = toBin(cx * e2[0] + cy * e2[1] + cz * e2[2]);
-                const w = val * cellVolume;
-                splat(d01, u0c, u1c, w);   // integrate out e2 -> e0–e1 plane
-                splat(d02, u0c, u2c, w);   // integrate out e1 -> e0–e2 plane
-                splat(d12, u1c, u2c, w);   // integrate out e0 -> e1–e2 plane
-            }
-        }
-    }
-    const binArea = (span / (nBins - 1)) ** 2 || 1;
-    const finalize = (acc, pair) => {
-        let vmax = 0;
-        const dens = new Array(nBins);
-        for (let a = 0; a < nBins; a += 1) {
-            const row = new Array(nBins);
-            for (let b = 0; b < nBins; b += 1) {
-                const v = acc[a][b] / binArea;
-                row[b] = v;
-                if (v > vmax) vmax = v;
-            }
-            dens[a] = row;
-        }
-        return { density: dens, axes: pair, vmax };
-    };
-    return {
-        pc12: finalize(d01, [0, 1]),
-        pc13: finalize(d02, [0, 2]),
-        pc23: finalize(d12, [1, 2])
-    };
 };
 
 const PROJECTION_META = [
@@ -530,7 +484,7 @@ const frameAlongCellAxis = (camera, controls, kde, unitCell, axisIndex, aspect =
     placeMainCamera(camera, controls, kde, dir, [up.x, up.y, up.z], aspect);
 };
 
-export default function PcaKdePage({ directory, localRun, onSitesChange }) {
+export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpoch = 0 }) {
     const [kde, setKde] = useState(null);
     const [kdeError, setKdeError] = useState(null);
     const [loadingKde, setLoadingKde] = useState(false);
@@ -588,7 +542,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         rmc6fText,
         unitCell,
         datasetKey
-    } = useSiteCloud({ directory, localRun, probability, clusterThreshold });
+    } = useSiteCloud({ directory, localRun, probability, clusterThreshold, dataEpoch });
 
     // --- Load the KDE volume for the selected site. ---------------------------
     useEffect(() => {
@@ -649,16 +603,31 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         [selectedEllipsoid, unitCell]
     );
 
+    // The p% shell pokes out of the sampled KDE box when a semi-axis k(p)·σ_a exceeds
+    // the box half-width along that axis; those vertices are painted grey (no data).
+    // Report the Box (in the slider's σ units, rounded up to its 0.5 step) that
+    // would contain it, so the grey is explained rather than mistaken for density.
+    const shellBoxNeeded = useMemo(() => {
+        if (!kde || !selectedEllipsoid?.semiAxes || !showEllipsoidKde) return null;
+        const ratio = Math.max(...selectedEllipsoid.semiAxes.map(
+            (semi, a) => semi / (kde.halfWidths[a] || Number.POSITIVE_INFINITY)
+        ));
+        if (!(ratio > 1 + 1e-9)) return null;
+        return Math.ceil(kde.extent * ratio * 2) / 2;
+    }, [kde, selectedEllipsoid, showEllipsoidKde]);
+
     // Crystal-frame shadow box + wall projections: an orthonormal frame from the unit
-    // cell and the current KDE density re-binned onto its three planes. Used when the
-    // viewport is in crystal mode; recomputed only when the volume or the cell changes.
+    // cell and the marginals of the current KDE volume on its three planes (line
+    // integrals through the volume, projectVolumeOntoFrame). The frame is always
+    // available (the camera framing needs it); the walls are computed only while the
+    // viewport is in crystal mode.
     const crystalDisplay = useMemo(() => {
         if (!kde || !unitCell) return null;
         const frame = orthonormalCrystalFrame(unitCell);
         const half = Math.max(...kde.halfWidths);
-        const projections = projectDensityOntoFrame(kde, frame, half, kde.grid);
+        const projections = axisFrame === 'crystal' ? projectVolumeOntoFrame(kde, frame, half, kde.grid) : null;
         return { frame, halfWidths: [half, half, half], projections };
-    }, [kde, unitCell]);
+    }, [kde, unitCell, axisFrame]);
 
     // Current aspect ratio of the main canvas, needed to size the orthographic
     // frustum when (re)framing.
@@ -867,6 +836,10 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
             resizeObserver.disconnect();
             controls.dispose();
             renderer.dispose();
+            // dispose() frees GPU resources but not the WebGL context itself;
+            // without this, scene rebuilds and remounts pile up contexts until the browser drops
+            // the oldest ('Too many active WebGL contexts').
+            renderer.forceContextLoss();
             if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
             sceneRef.current = null;
         };
@@ -875,7 +848,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
     // --- Rebuild the isosurface, ellipsoid, and axis triad when data changes. --
     useEffect(() => {
         const handle = sceneRef.current;
-        if (!handle || !kde) return;
+        if (!handle) return;
         const { surfaceGroup, ellipsoidGroup, axesGroup, crystalAxesGroup, wallsGroup, camera, controls } = handle;
 
         const dispose = (group) => {
@@ -893,6 +866,9 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         dispose(axesGroup);
         dispose(crystalAxesGroup);
         dispose(wallsGroup);
+        // No volume (a failed request, e.g. a zero-spread site, or no site): leave the
+        // scene empty rather than keep drawing the previous site's density.
+        if (!kde) return;
 
         const axes = kde.axes;
         const mean = kde.mean;
@@ -904,17 +880,23 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         // shadow-box layout). In crystal mode the box + walls switch to the orthonormal
         // crystal frame, with the density re-binned onto the a/b/c planes; in PC mode
         // they stay in the principal-axis frame the volume was computed in.
+        // The display box is a cube (kde.boxHalfWidths) while the volume and its PC
+        // walls were sampled on the per-axis box (kde.halfWidths), which resolves
+        // a thin axis; each wall texture covers its own sampled range on the face.
         const useCrystalBox = axisFrame === 'crystal' && crystalDisplay;
         const boxAxes = useCrystalBox ? crystalDisplay.frame : axes;
-        const boxHalfWidths = useCrystalBox ? crystalDisplay.halfWidths : halfWidths;
+        const cube = Math.max(...halfWidths);
+        const boxHalfWidths = useCrystalBox
+            ? crystalDisplay.halfWidths
+            : (kde.boxHalfWidths ?? [cube, cube, cube]);
         const boxProjections = useCrystalBox ? crystalDisplay.projections : kde.projections;
         if (showProjections && boxProjections) {
             wallsGroup.add(makeBoundingBox(boxAxes, mean, boxHalfWidths, 0x8a97a8));
             PROJECTION_META.forEach(({ key }) => {
                 const projection = boxProjections[key];
                 if (!projection) return;
-                const wall = makeProjectionWall(projection, boxAxes, mean, boxHalfWidths, colormap);
-                if (wall) wallsGroup.add(wall);
+                makeProjectionWall(projection, boxAxes, mean, boxHalfWidths, colormap)
+                    .forEach((mesh) => wallsGroup.add(mesh));
                 const contours = makeProjectionContours(projection, boxAxes, mean, boxHalfWidths, 0xeef3f8);
                 if (contours) wallsGroup.add(contours);
             });
@@ -1049,6 +1031,20 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
         : null;
     const noRun = staticMode && !localFile;
 
+    // Which principal axes are resolved from their neighbours (eigenvalue gap above
+    // three standard errors). Older payloads without the flag count as resolved.
+    const axisResolved = [0, 1, 2].map((i) => selectedEllipsoid?.axisResolved?.[i] ?? true);
+    const unresolvedNote = (() => {
+        if (!selectedEllipsoid?.axes) return null;
+        const flags = axisResolved;
+        if (flags.every(Boolean)) return null;
+        if (!flags[0] && !flags[1] && !flags[2]) {
+            return 'PC1 ≈ PC2 ≈ PC3: the eigenvalues agree within their sampling error, so the axis directions (and their κ and crystal orientation) are arbitrary — only U, λ and the non-Gaussianity describe this site.';
+        }
+        const pair = !flags[0] ? 'PC1 ≈ PC2' : 'PC2 ≈ PC3';
+        return `${pair}: those eigenvalues agree within their sampling error, so the directions inside that plane (and their κ and crystal orientation) are arbitrary.`;
+    })();
+
     return (
         <div className="pca-page">
             <div className="pca-controls">
@@ -1073,7 +1069,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         >
                             {sites?.sites.map((site) => (
                                 <option key={site.referenceNumber} value={site.referenceNumber}>
-                                    {`#${site.referenceNumber} ${site.element} — U=${numberFormat(site.uIso, 4)} Å²`}
+                                    {`#${site.referenceNumber} ${siteLabel(site)} — U=${numberFormat(site.uIso, 4)} Å²`}
                                     {site.copiesPerCell ? ` (${site.count}/${site.copiesPerCell})` : ''}
                                 </option>
                             ))}
@@ -1159,9 +1155,18 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             Shell
                             <InfoBadge label="About the KDE shell" align="end">
                                 <p>
-                                    Paints the KDE density onto the ellipsoid surface. A near-uniform
-                                    color means the motion is Gaussian; hotter and colder patches mark
-                                    where the real density departs from the harmonic ellipsoid.
+                                    Paints the KDE density onto the ellipsoid surface. For a Gaussian
+                                    site the ellipsoid is a level set of the density, so only a
+                                    systematic pattern &mdash; hot or cold caps along an axis, a band
+                                    &mdash; marks where the real density departs from the harmonic
+                                    ellipsoid.
+                                </p>
+                                <p>
+                                    The colours are stretched to the shell&rsquo;s own range, and a
+                                    finite cloud (10³ copies) shows sampling-noise patches of tens of
+                                    percent even when it is perfectly Gaussian: read the size of a
+                                    departure from Non-Gaussianity, not from the colours. Grey marks
+                                    shell outside the sampled box (no data).
                                 </p>
                                 <p>
                                     It shows the same density as the isosurface from the outside, so the
@@ -1195,7 +1200,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             <InfoBadge label="About the ellipsoid level">
                                 <p>
                                     The enclosed-probability level drawn as the thermal-ellipsoid
-                                    wireframe. 50% is the crystallographic convention.
+                                    wireframe. 50% is the crystallographic convention. Compare it with
+                                    the isosurface only at the same level (both default to 50%).
                                 </p>
                             </InfoBadge>
                         </span>
@@ -1234,8 +1240,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             <InfoBadge label="About the isosurface">
                                 <p>
                                     The KDE density isosurface enclosing this fraction of the cloud's
-                                    mass. Compare its shape to the harmonic ellipsoid — where it sits
-                                    inside, the motion is anharmonic (see Non-Gaussianity).
+                                    mass. Compare it with the harmonic ellipsoid only at the same level
+                                    (both default to 50%).
+                                </p>
+                                <p>
+                                    The KDE smooths the cloud with its kernel, so even a perfectly
+                                    Gaussian site gives a surface √(1+f²) outside the ellipsoid
+                                    {kde && Number.isFinite(kde.factor)
+                                        ? ` (×${Math.sqrt(1 + kde.factor * kde.factor).toFixed(3)} here, f = ${kde.factor.toFixed(3)})`
+                                        : ''}. Only a surface that falls inside the ellipsoid, or
+                                    departs from its shape, signals anharmonic motion (see
+                                    Non-Gaussianity).
                                 </p>
                             </InfoBadge>
                         </span>
@@ -1279,13 +1294,19 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                 <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to view thermal ellipsoids.</p>
             )}
             {sitesError && <p className="pca-error-banner">{sitesError}</p>}
+            {!sitesError && sites?.parseWarning && (
+                <p className="pca-warning-banner" role="status">
+                    <strong>Atoms skipped while reading the structure file:</strong> {sites.parseWarning}.
+                    The sites below are built from the remaining atoms.
+                </p>
+            )}
 
             <div className="pca-layout">
                 <div className="pca-panel pca-viewport">
                     <h3>
                         <span className="panel-title-label">
                             {selectedEllipsoid
-                                ? `${selectedEllipsoid.element} site #${selectedEllipsoid.referenceNumber}`
+                                ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber}`
                                 : 'PCA ellipsoid'}
                         </span>
                         <span className="panel-title-actions">
@@ -1409,6 +1430,14 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                             </>
                         )}
                         <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        {shellBoxNeeded && (
+                            <span className="pca-legend-item pca-legend-warning">
+                                <i className="pca-legend-swatch" style={{ background: 'rgb(143, 148, 158)' }} />
+                                {shellBoxNeeded <= 5
+                                    ? `shell outside the sampled box (grey) — Box ≥ ${shellBoxNeeded.toFixed(1)}σ covers it`
+                                    : 'shell outside the sampled box (grey) — lower the Level to cover it'}
+                            </span>
+                        )}
                         <a
                             className="pca-legend-credit"
                             href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
@@ -1445,6 +1474,25 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                         {selectedEllipsoid ? (
                             <div className={`pca-stats-grid${crystalOrientation ? ' has-crystal' : ''}`}>
                                 <div className="pca-stats-col pca-stats-col--summary">
+                                {selectedEllipsoid.mixed && selectedEllipsoid.elementCounts && (
+                                    <p className="pca-site-tag is-flagged">
+                                        <span className="pca-site-tag-count">mixed</span>
+                                        <span>
+                                            {Object.entries(selectedEllipsoid.elementCounts)
+                                                .map(([name, count]) => `${name} ${count}`)
+                                                .join(' · ')}
+                                        </span>
+                                        <InfoBadge label="About the mixed site" align="end">
+                                            <p>
+                                                Atoms of more than one species share this reference
+                                                number (a solid solution, or RMCProfile swap moves). The
+                                                site is labelled by its majority species; U, κ and the
+                                                KDE describe all its atoms together, about their common
+                                                mean position.
+                                            </p>
+                                        </InfoBadge>
+                                    </p>
+                                )}
                                 {siteTag && (
                                     <p className={`pca-site-tag ${siteTag.clean ? 'is-clean' : 'is-flagged'}`}>
                                         <span className="pca-site-tag-count">{siteTag.count}/{siteTag.per}</span>
@@ -1469,9 +1517,17 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                             <p>
                                                 U<sub>iso</sub>/B<sub>iso</sub> are the isotropic
                                                 displacement equivalents (Å²); anisotropy is the ratio of the
-                                                largest to smallest principal amplitude; non-Gaussianity is the
-                                                mean excess kurtosis of the cloud (0 = harmonic/Gaussian,
-                                                positive = anharmonic motion or split sites).
+                                                largest to smallest principal amplitude.
+                                            </p>
+                                            <p>
+                                                Non-Gaussianity is Mardia&rsquo;s multivariate excess
+                                                kurtosis, (b<sub>2</sub> − 15)/5: 0 for a Gaussian
+                                                (harmonic) cloud and, for any elliptical distribution, the
+                                                excess kurtosis along every direction. It does not depend on
+                                                how the principal axes happen to be chosen. Positive means a
+                                                peaked, heavy-tailed well (or a minority off-centre
+                                                component); negative means flat-topped or bimodal &mdash;
+                                                a symmetric split site is negative, not positive.
                                             </p>
                                         </InfoBadge>
                                     </div>
@@ -1488,7 +1544,15 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                 </tr>
                                                 <tr>
                                                     <th scope="row">Anisotropy</th>
-                                                    <td>{numberFormat(selectedEllipsoid.anisotropy, 2)}{selectedEllipsoid.degenerate ? ' · degen.' : ''}</td>
+                                                    <td>
+                                                        {/* Degenerate means λ3/λ1 < 1e-6, i.e. anisotropy ≥ 1000: the
+                                                            floored ratio beyond that is round-off, not a measurement. */}
+                                                        {selectedEllipsoid.zeroSpread
+                                                            ? 'no displacement'
+                                                            : selectedEllipsoid.degenerate
+                                                                ? '≥ 1000 · degen.'
+                                                                : numberFormat(selectedEllipsoid.anisotropy, 2)}
+                                                    </td>
                                                 </tr>
                                                 <tr>
                                                     <th scope="row">Non-Gaussianity</th>
@@ -1550,6 +1614,16 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                     (variance, Å²), RMS the amplitude (Å), and κ the
                                                     excess kurtosis along it (0 = Gaussian).
                                                 </p>
+                                                <p>
+                                                    κ is shown only for an axis whose eigenvalue is
+                                                    separated from its neighbours&rsquo; by more than
+                                                    three standard errors. Inside a (near-)degenerate
+                                                    pair &mdash; a cubic site, the in-plane pair of a
+                                                    uniaxial one &mdash; the axis direction is set by
+                                                    sampling noise and leans toward the outliers, so its
+                                                    κ (and its crystal orientation) is not a property of
+                                                    the site.
+                                                </p>
                                             </InfoBadge>
                                         </div>
                                         <div className="pca-matrix-scroll">
@@ -1563,12 +1637,22 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                         <th scope="col">λ (Å²)</th>
                                                         <th scope="col">RMS (Å)</th>
                                                         <th scope="col">
-                                                            <abbr title="Excess kurtosis along this axis (0 = Gaussian)">κ</abbr>
+                                                            <abbr title="Excess kurtosis along this axis (0 = Gaussian); — when the axis is not resolved from a neighbour">κ</abbr>
                                                         </th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {selectedEllipsoid.axes.map((axis, i) => (
+                                                    {!selectedEllipsoid.axes && (
+                                                        <tr>
+                                                            <td colSpan={7} className="pca-axes-note">
+                                                                No displacement: every copy of this site sits at
+                                                                the same position (an average or ideal
+                                                                configuration), so its covariance is round-off and
+                                                                has no principal axes.
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    {(selectedEllipsoid.axes || []).map((axis, i) => (
                                                         <tr key={i}>
                                                             <th scope="row">
                                                                 <span
@@ -1583,9 +1667,16 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                             ))}
                                                             <td>{numberFormat(selectedEllipsoid.eigenvalues[i], 4)}</td>
                                                             <td>{numberFormat(selectedEllipsoid.rms[i], 3)}</td>
-                                                            <td>{numberFormat(selectedEllipsoid.excessKurtosis?.[i], 2)}</td>
+                                                            <td title={axisResolved[i] ? undefined : `PC${i + 1} is not resolved from a neighbouring axis: its direction and κ are sampling noise`}>
+                                                                {axisResolved[i] ? numberFormat(selectedEllipsoid.excessKurtosis?.[i], 2) : '—'}
+                                                            </td>
                                                         </tr>
                                                     ))}
+                                                    {unresolvedNote && (
+                                                        <tr>
+                                                            <td colSpan={7} className="pca-axes-note">{unresolvedNote}</td>
+                                                        </tr>
+                                                    )}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -1636,7 +1727,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange }) {
                                                     </thead>
                                                     <tbody>
                                                         {crystalOrientation.map((row, i) => (
-                                                            <tr key={i}>
+                                                            <tr
+                                                                key={i}
+                                                                className={axisResolved[i] ? '' : 'is-unresolved'}
+                                                                title={axisResolved[i] ? undefined : `PC${i + 1} is not resolved from a neighbouring axis: this direction is sampling noise`}
+                                                            >
                                                                 <th scope="row">
                                                                     <span
                                                                         className="pca-pc-dot"

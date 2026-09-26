@@ -65,6 +65,21 @@ describe('pcaKdeWorker cache is content-addressed', () => {
         expect(second.referenceNumbers).toEqual(first.referenceNumbers);
     });
 
+    it("kde requests read ''/'all' as no element filter, as /api/pca/kde does", async () => {
+        // Every site pooled, tagged with no element -- not a pseudo-element
+        // named '' or 'all' (the Flask route normalises both to None).
+        const dataset = buildRmc6f(['Ga', 'Se'], { seed: 9 });
+        const request = (element) => handlePcaMessage(
+            { kind: 'kde', element, grid: 12, projections: false }, async () => dataset);
+        const pooled = await request(null);
+        expect(pooled.element).toBeUndefined();
+        for (const element of ['', 'all']) {
+            const result = await request(element);
+            expect(result.element).toBeUndefined();
+            expect(result.count).toBe(pooled.count);
+        }
+    });
+
     it('kde requests also follow the current dataset', async () => {
         const datasetA = buildRmc6f(['Ga'], { seed: 7 });
         const datasetB = buildRmc6f(['Nb'], { seed: 8 });
@@ -72,5 +87,110 @@ describe('pcaKdeWorker cache is content-addressed', () => {
         expect(kdeA.element).toBe('Ga');
         const kdeB = await handlePcaMessage({ kind: 'kde', referenceNumber: 1, grid: 12, projections: false }, async () => datasetB);
         expect(kdeB.element).toBe('Nb');
+    });
+});
+
+// Integrated 1.0 rule, the same in both runtimes: an atom line with a
+// non-finite coordinate is skipped and counted by the shared grammar
+// (parseRmc6fAtoms / iter_rmc6f_atoms), and the sites and orientation
+// responses carry the report's warning -- the text /api/pca/sites and
+// /api/pca/orientation return as parseWarning (tests/test_pca_api.py).
+describe('pcaKdeWorker surfaces the .rmc6f parse report', () => {
+    const withLine = (text, index, edit) => {
+        const lines = text.split('\n');
+        const atomsAt = lines.findIndex((line) => line.startsWith('Atoms'));
+        lines[atomsAt + 1 + index] = edit(lines[atomsAt + 1 + index]);
+        return { text: lines.join('\n'), line: lines[atomsAt + 1 + index] };
+    };
+
+    it('reports null for a clean file', async () => {
+        const sites = await handlePcaMessage({ kind: 'sites' }, async () => buildRmc6f(['Ga'], { seed: 11 }));
+        expect(sites.parseWarning).toBeNull();
+    });
+
+    it('skips a NaN line, keeps the other atoms, and names the line in sites and orientation', async () => {
+        const { text, line } = withLine(buildRmc6f(['Se'], { seed: 12 }), 9, (row) => {
+            const parts = row.split(' ');
+            parts[3] = 'NaN';
+            return parts.join(' ');
+        });
+        const sites = await handlePcaMessage({ kind: 'sites' }, async () => text);
+        expect(sites.totalAtoms).toBe(63);
+        expect(sites.parseWarning).toBe(`1 atom lines skipped for non-finite coordinates (first: '${line}')`);
+        expect(sites.sites[0].uIso).toBeGreaterThan(0);
+        expect(Number.isFinite(sites.sites[0].uIso)).toBe(true);
+
+        const orientation = await handlePcaMessage(
+            { kind: 'orientation', referenceNumber: 1, frequency: 3, geometry: false }, async () => text);
+        expect(orientation.parseWarning).toBe(sites.parseWarning);
+
+        // ...and in the bond-angle summary, as /api/triplets returns it
+        // (bond_angle_summary_from_file).
+        const triplets = await handlePcaMessage(
+            { kind: 'triplets', end1: 'Se', apex: 'Se', end2: 'Se', r12Min: 7, r12Max: 9 }, async () => text);
+        expect(triplets.parseWarning).toBe(sites.parseWarning);
+        const clean = await handlePcaMessage(
+            { kind: 'triplets', end1: 'Se', apex: 'Se', end2: 'Se', r12Min: 7, r12Max: 9 },
+            async () => buildRmc6f(['Se'], { seed: 12 }));
+        expect(clean.parseWarning).toBeNull();
+    });
+
+    it('reads any Atoms-marker spelling and bare-CR files like the Dashboard parser', async () => {
+        const clean = buildRmc6f(['Ga', 'Se'], { seed: 13 });
+        const variants = [clean.replace('Atoms:', 'Atoms :'), clean.replace('Atoms:', 'atoms:'), clean.replace(/\n/g, '\r')];
+        for (const text of variants) {
+            const sites = await handlePcaMessage({ kind: 'sites' }, async () => text);
+            expect(sites.totalAtoms).toBe(128);
+            expect(sites.parseWarning).toBeNull();
+        }
+    });
+
+    it('rejects a cell index outside the declared supercell, as iter_rmc6f_atoms does', async () => {
+        const { text } = withLine(buildRmc6f(['Se'], { seed: 14 }), 0, (row) => {
+            const parts = row.split(' ');
+            parts[parts.length - 1] = '4';
+            return parts.join(' ');
+        });
+        const sites = await handlePcaMessage({ kind: 'sites' }, async () => text);
+        expect(sites.totalAtoms).toBe(63);
+        expect(sites.parseWarning).toMatch(/^1 of 64 atom lines unparsed \(first: '1 Se \[1\] /);
+    });
+
+    it('says why when no atom can be parsed', async () => {
+        const text = buildRmc6f(['Se'], { supercell: [2, 2, 2], seed: 15 })
+            .split('\n')
+            .map((row) => (/^\d+ Se /.test(row) ? row.replace(/^(\d+ Se \[1\] )\S+/, '$1inf') : row))
+            .join('\n');
+        await expect(handlePcaMessage({ kind: 'sites', file: { name: 'blown.rmc6f' } }, async () => text))
+            .rejects.toThrow("blown.rmc6f: no atoms could be parsed — 8 atom lines skipped for non-finite coordinates (first: '1 Se [1] inf ");
+    });
+});
+
+// The worker mirrors the Flask routes' request rules: /api/pca/orientation
+// caps smoothing at MAX_ORIENTATION_SMOOTHING (64), and /api/pca/kde's
+// _bw_argument reads a numeric-string bw as a number.
+describe('pcaKdeWorker accepts what the Flask routes accept', () => {
+    const dataset = buildRmc6f(['Ga', 'Se'], { seed: 11 });
+
+    it('rejects orientation smoothing above 64, as /api/pca/orientation does', async () => {
+        await expect(handlePcaMessage(
+            { kind: 'orientation', referenceNumber: 1, smoothing: 65 }, async () => dataset
+        )).rejects.toThrow('smoothing must be <= 64, got 65');
+        const ok = await handlePcaMessage(
+            { kind: 'orientation', referenceNumber: 1, smoothing: 64, geometry: false }, async () => dataset
+        );
+        expect(ok.smoothing).toBe(64);
+    });
+
+    it("reads a numeric-string bw as the number, as _bw_argument does", async () => {
+        const request = (bw) => handlePcaMessage(
+            { kind: 'kde', referenceNumber: 1, bw, grid: 12, projections: false }, async () => dataset);
+        const numeric = await request(0.25);
+        const text = await request(' 0.25 ');
+        expect(text.bw).toBe(0.25);
+        expect(text.factor).toBe(numeric.factor);
+        expect(text.bandwidth).toEqual(numeric.bandwidth);
+        expect(Array.from(text.density)).toEqual(Array.from(numeric.density));
+        await expect(request('wide')).rejects.toThrow(/bw/);
     });
 });

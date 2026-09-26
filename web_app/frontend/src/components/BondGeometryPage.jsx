@@ -23,11 +23,12 @@ import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import FoldedCellPanel from './FoldedCellPanel';
 import useSiteCloud from '../useSiteCloud';
+import { tripletRequestFromInputs } from '../workers/triplets';
 import './PcaKdePage.css';
 import './BondGeometryPage.css';
 
-// Same cap as StructurePage/Dashboard: the Model information + Detected SG
-// cards need the full basis and counts, and parsing is worker-side anyway.
+// Same cap as StructurePage/Dashboard: the Model information card needs the
+// full counts, and parsing is worker-side anyway.
 const STRUCTURE_MAX_POINTS = 1000000;
 
 const DEGREES = '°';
@@ -48,16 +49,17 @@ const useDebounced = (value, delay = 400) => {
     return debounced;
 };
 
-export default function BondGeometryPage({ directory, localRun }) {
+export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 }) {
     const {
         sites,
         sitesError,
         loadingSites,
         requestPca,
         localFile,
+        rmc6fText,
         ready,
         datasetKey
-    } = useSiteCloud({ directory, localRun });
+    } = useSiteCloud({ directory, localRun, dataEpoch });
 
     const elements = useMemo(() => sites?.elements ?? [], [sites]);
     const elementColors = useMemo(() => buildElementColors(sites?.elements ?? []), [sites]);
@@ -104,6 +106,9 @@ export default function BondGeometryPage({ directory, localRun }) {
     const [result, setResult] = useState(null);
     const [resultError, setResultError] = useState(null);
     const [computing, setComputing] = useState(false);
+    // Set when a new configuration of the SAME run replaced the one the
+    // shown result was computed from (see below); cleared by Compute.
+    const [configChanged, setConfigChanged] = useState(false);
     const [angleView, setAngleView] = useState('sin');
 
     const staticMode = isStaticMode();
@@ -113,33 +118,69 @@ export default function BondGeometryPage({ directory, localRun }) {
     // epoch, so a compute that was in flight for the old run can never land
     // its (stale) payload on the new one.
     const runEpoch = useRef(0);
+    // Whether a computed angle distribution is on screen (read by the
+    // configuration-change effect below without making it a dependency).
+    const hasResult = useRef(false);
+    // The configuration the page last saw: the Flask Live Data epoch and a
+    // browser-loaded run's .rmc6f text (null while a new file is being read).
+    const seenConfig = useRef({ epoch: dataEpoch, text: null });
     useEffect(() => {
         runEpoch.current += 1;
+        seenConfig.current = { ...seenConfig.current, text: null };
+        hasResult.current = false;
         setResult(null);
         setResultError(null);
+        // The in-flight compute (if any) can no longer land, so its
+        // `finally` will not clear the busy state: clear it here.
+        setComputing(false);
+        setConfigChanged(false);
     }, [datasetKey]);
+    // A new .rmc6f saved under the same run (Live Data) reloads the element
+    // list, the Model information card and the partials in place, keeping
+    // the triplet and the typed windows. The angle distribution is computed
+    // on demand, so it is dropped rather than recomputed unasked: a result
+    // from the previous configuration must never sit next to the new model.
+    useEffect(() => {
+        const seen = seenConfig.current;
+        const epochChanged = dataEpoch !== seen.epoch;
+        const textChanged = rmc6fText != null && seen.text != null && rmc6fText !== seen.text;
+        seenConfig.current = { epoch: dataEpoch, text: rmc6fText ?? seen.text };
+        if (!epochChanged && !textChanged) return;
+        runEpoch.current += 1;
+        if (hasResult.current) setConfigChanged(true);
+        hasResult.current = false;
+        setResult(null);
+        setResultError(null);
+        setComputing(false);
+    }, [dataEpoch, rmc6fText]);
 
     const compute = useCallback(async () => {
         const epoch = runEpoch.current;
+        setConfigChanged(false);
+        // A cleared or non-numeric box is an error naming the field — never
+        // sent as Number('') = 0, which silently widened the window to 0 Å.
+        let params;
+        try {
+            params = tripletRequestFromInputs({
+                end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth
+            });
+        } catch (error) {
+            hasResult.current = false;
+            setResult(null);
+            setResultError(error.message);
+            return;
+        }
         setComputing(true);
         setResultError(null);
         try {
-            const params = {
-                end1,
-                apex,
-                end2,
-                r12Min: Number(r12Min),
-                r12Max: Number(r12Max),
-                binWidth: Number(binWidth)
-            };
-            if (split23) {
-                params.r23Min = Number(r23Min);
-                params.r23Max = Number(r23Max);
-            }
             const data = await requestPca('triplets', params);
-            if (runEpoch.current === epoch) setResult(data);
+            if (runEpoch.current === epoch) {
+                hasResult.current = true;
+                setResult(data);
+            }
         } catch (error) {
             if (runEpoch.current === epoch) {
+                hasResult.current = false;
                 setResult(null);
                 setResultError(error.message);
             }
@@ -148,11 +189,12 @@ export default function BondGeometryPage({ directory, localRun }) {
         }
     }, [requestPca, end1, apex, end2, r12Min, r12Max, split23, r23Min, r23Max, binWidth]);
 
-    // --- Structure for the Model information / Detected SG cards. -----------
+    // --- Structure for the Model information card. ---------------------------
     // Same source as the Dashboard and Atomic Density pages: a local run's
     // .rmc6f parses in the structure worker (both runtimes); a typed backend
-    // directory asks /api/structure. ModelSummary then renders the model card
-    // and, when the payload carries a basis, the Detected SG card.
+    // directory asks /api/structure. ModelSummary renders the model card only
+    // (showSymmetry={false}): the Detected SG card stays on the Dashboard and
+    // Atomic Density pages.
     const [structure, setStructure] = useState(null);
     const structureWorkerRef = useRef(null);
     const structureRequestRef = useRef(0);
@@ -207,7 +249,7 @@ export default function BondGeometryPage({ directory, localRun }) {
             .then((response) => { if (!cancelled) setStructure(response.data); })
             .catch(() => { if (!cancelled) setStructure(null); });
         return () => { cancelled = true; };
-    }, [localRun, directory, datasetKey]);
+    }, [localRun, directory, datasetKey, dataEpoch]);
 
     // --- Partial g(r) for the window helper. ---------------------------------
     // The run's PDFpartials.csv (when present) shows where the first
@@ -248,7 +290,7 @@ export default function BondGeometryPage({ directory, localRun }) {
         };
         load();
         return () => { cancelled = true; };
-    }, [localRun, directory, datasetKey]);
+    }, [localRun, directory, datasetKey, dataEpoch]);
 
     // PDFpartials.csv labels a pair in one order only, so try both.
     const findPartial = useCallback((a, b) => {
@@ -372,7 +414,32 @@ export default function BondGeometryPage({ directory, localRun }) {
         };
     }, [result]);
 
-    const windowLabel = (window) => `${formatNumber(window[0])}–${formatNumber(window[1])} ${ANGSTROM}`;
+    // Bounds at the precision they were given (2–4 decimals): a B–C window
+    // nudged to 3.4001 must not read as the A–B window's 3.40.
+    const formatBound = (value) => {
+        if (!Number.isFinite(value)) return '—';
+        const decimals = (String(value).split('.')[1] ?? '').length;
+        return value.toFixed(Math.min(4, Math.max(2, decimals)));
+    };
+    const windowLabel = (window) => `${formatBound(window[0])}–${formatBound(window[1])} ${ANGSTROM}`;
+    const sameWindow = (one, two) => one[0] === two[0] && one[1] === two[1];
+    // One line per segment: triplet, then the window(s).
+    const resultSource = result && (
+        sameWindow(result.bond12, result.bond23)
+            ? [result.triplet.join('–'), windowLabel(result.bond12)]
+            : [result.triplet.join('–'), `A–B ${windowLabel(result.bond12)}`, `B–C ${windowLabel(result.bond23)}`]
+    );
+
+    // 'Bonds' chips show physical bonds, each once (uniqueBonds). With the
+    // end element equal to the central one every bond is found from both of
+    // its ends, so the B-centred count (lengths.count, which the coordination
+    // chip averages) is twice that; the tooltip says so.
+    const bondsTitle = (lengths, end) => (
+        end === result?.triplet[1]
+            ? `Each ${end}–${end} bond counted once. Counted from the central atoms, as the `
+                + `coordination is, there are ${lengths.count.toLocaleString()}: each bond is seen from both ends.`
+            : `Each ${end}–${result?.triplet[1]} bond counted once, from its central ${result?.triplet[1]} atom.`
+    );
 
     // Detected-bond overlay for the unit-cell panel: the computed windows,
     // A–B in the app accent, B–C in amber when the windows are distinct.
@@ -436,8 +503,8 @@ export default function BondGeometryPage({ directory, localRun }) {
                                 <p>
                                     Two atoms are bonded when their distance falls inside the window
                                     (inclusive). Read the window off the first-shell peak of the
-                                    partial g(r) — the helper panel shades it once a partials file is
-                                    in the run folder.
+                                    partial g(r) — the Partial PDF panel marks the current bounds
+                                    with dashed guides once a partials file is in the run folder.
                                 </p>
                             </InfoBadge>
                         </span>
@@ -487,7 +554,13 @@ export default function BondGeometryPage({ directory, localRun }) {
                 <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to analyse bond angles.</p>
             )}
             {(sitesError || resultError) && <p className="pca-error-banner">{sitesError || resultError}</p>}
-            {!noRun && !result && !resultError && !sitesError && (
+            {!noRun && !result && !resultError && !sitesError && configChanged && (
+                <p className="pca-hint">
+                    The run saved a new configuration, so the previous angle distribution was
+                    cleared. Compute again to update it; the triplet and windows are kept.
+                </p>
+            )}
+            {!noRun && !result && !resultError && !sitesError && !configChanged && (
                 <p className="pca-hint">
                     Pick the A{'–'}B{'–'}C triplet (B central), bound the bond lengths, then
                     Compute. Angles are counted over the periodic configuration exactly, images included.
@@ -498,11 +571,16 @@ export default function BondGeometryPage({ directory, localRun }) {
                 <div className="model-cards" role="status">
                     {/* Same presentation as the Model information card: labeled
                         columns, not badges. */}
-                    <section className="model-summary" aria-label="Triplet result">
+                    <section className="model-summary geom-result" aria-label="Triplet result">
                         <h2 className="model-summary-title">
                             Triplet result
-                            <span className="model-summary-source">
-                                {`${result.triplet.join('–')} · ${windowLabel(result.bond12)}`}
+                            {/* The windows the engine actually used (resolved
+                                payload values), the B–C one whenever it differs;
+                                wraps rather than truncating (geom-result). */}
+                            <span className="model-summary-source" title={resultSource.join(' · ')}>
+                                {resultSource.map((segment) => (
+                                    <span key={segment} className="geom-result-line">{segment}</span>
+                                ))}
                             </span>
                         </h2>
                         <dl className="model-stats">
@@ -515,8 +593,8 @@ export default function BondGeometryPage({ directory, localRun }) {
                             </div>
                             <div className="model-stat">
                                 <dt>{result.sharedEnds ? 'Bonds' : 'Bonds A–B'}</dt>
-                                <dd>
-                                    {result.lengths12.count.toLocaleString()}
+                                <dd title={bondsTitle(result.lengths12, result.triplet[0])}>
+                                    {result.lengths12.uniqueBonds.toLocaleString()}
                                     {result.lengths12.meanLength != null && (
                                         <span className="model-stat-sub">
                                             mean {formatNumber(result.lengths12.meanLength, 3)} {ANGSTROM}
@@ -527,8 +605,8 @@ export default function BondGeometryPage({ directory, localRun }) {
                             {!result.sharedEnds && result.lengths23 && (
                                 <div className="model-stat">
                                     <dt>Bonds B–C</dt>
-                                    <dd>
-                                        {result.lengths23.count.toLocaleString()}
+                                    <dd title={bondsTitle(result.lengths23, result.triplet[2])}>
+                                        {result.lengths23.uniqueBonds.toLocaleString()}
                                         {result.lengths23.meanLength != null && (
                                             <span className="model-stat-sub">
                                                 mean {formatNumber(result.lengths23.meanLength, 3)} {ANGSTROM}
@@ -580,8 +658,13 @@ export default function BondGeometryPage({ directory, localRun }) {
                                 <p>
                                     <b>Sin-corrected</b> — divides that geometric factor out. Random
                                     bonds now read as a flat 1, anything above it is real structure,
-                                    and a peak near 180{DEGREES} is no longer flattened. This is
-                                    RMCProfile's <code>sinth</code> view.
+                                    and a peak near 180{DEGREES} is no longer flattened.
+                                </p>
+                                <p>
+                                    Same shape as the <code>norm/sin(theta)</code> column of
+                                    RMCProfile's <code>triplets</code>, on another scale: that
+                                    column is this curve × sin(w/2)/w for w-degree bins
+                                    (≈ π/360 ≈ 0.00873), so compare shapes, or rescale.
                                 </p>
                             </InfoBadge>
                         </span>
@@ -614,9 +697,17 @@ export default function BondGeometryPage({ directory, localRun }) {
                                         The A{'–'}B partial pair distribution from the run's{' '}
                                         <code>PDFpartials.csv</code>. Set the bond window to bracket
                                         the first-shell peak; the dashed guides track the current
-                                        A{'–'}B bounds. With <b>distinct B{'–'}C</b> on, the B{'–'}C
-                                        partial is plotted alongside it with its own pair of guides,
-                                        so both windows can be set against their own shell.
+                                        bounds.
+                                    </p>
+                                    <p>
+                                        A second partial is drawn whenever A{'–'}B and B{'–'}C are
+                                        different pair types (Ga{'–'}Nb{'–'}Se: Ga{'–'}Nb and Nb{'–'}Se),
+                                        whether or not <b>Distinct B{'–'}C</b> is on; a same-type
+                                        triplet such as Se{'–'}Nb{'–'}Se has one shell and one curve.
+                                        The switch governs the guides: off, one neutral pair covers
+                                        both bonds; on, each window gets its own labelled pair
+                                        (A{'–'}B, B{'–'}C), colored like its shell's curve when the
+                                        two bonds are different types.
                                     </p>
                                 </InfoBadge>
                             </span>

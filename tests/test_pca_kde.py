@@ -152,12 +152,15 @@ class VolumePropertyTests(unittest.TestCase):
         self.assertAlmostEqual(result["anisotropy"], sigma[0] / sigma[2], delta=0.5)
 
     def test_cubic_box_uses_uniform_half_width(self):
+        # cubic_box sizes the DISPLAY box (walls, cage); the volume itself stays
+        # on the per-axis box where the separable estimator is exact.
         rng = np.random.default_rng(9)
         cloud = rng.normal(size=(800, 3)) * np.array([0.6, 0.2, 0.05])
         result = pca_kde_volume(cloud, bw="scott", grid=12, cubic_box=True, projections=False)
-        half = result["halfWidths"]
+        half = result["boxHalfWidths"]
         self.assertAlmostEqual(half[0], half[1])
         self.assertAlmostEqual(half[1], half[2])
+        self.assertAlmostEqual(half[0], max(result["halfWidths"]))
 
     def test_rejects_degenerate_input(self):
         with self.assertRaises(ValueError):

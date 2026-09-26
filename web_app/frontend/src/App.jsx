@@ -44,11 +44,21 @@ function App() {
   // Whether the bundled demo run is the one currently loaded (drives the header toggle).
   const [demoActive, setDemoActive] = useState(false);
   const [watchFiles, setWatchFiles] = useState(false);
+  // Flask-mode configuration epoch: bumped when the run's .rmc6f changes on disk
+  // (see the effect below); the analysis pages take it as `dataEpoch` and
+  // re-read their data in place when it changes.
+  const [configEpoch, setConfigEpoch] = useState(0);
+  // Bumped by every Load / Select Folder, even of the folder already shown:
+  // React skips an unchanged currentDirectory, so this is what makes loading
+  // the same folder again re-check its .rmc6f (with Live Data off, the only
+  // way short of a browser reload).
+  const [loadRequest, setLoadRequest] = useState(0);
   // Shared "Detected SG" tolerance, so the ladder selection persists across pages.
   const symTolState = useState(0.2);
   const directoryInputRef = useRef(null);
   const dirHandleRef = useRef(null);
   const lastSignatureRef = useRef('');
+  const configSignatureRef = useRef({ directory: null, signature: null });
   const runIdRef = useRef(0);
   const staticMode = isStaticMode();
   const fsAccess = staticMode && supportsFileSystemAccess();
@@ -123,10 +133,64 @@ function App() {
     };
   }, [fsAccess, watchFiles]);
 
+  // Flask-mode Live Data for the analysis pages. The Dashboard polls /api/files
+  // itself, but the Atomic Density, Bond Geometry, PCA Ellipsoid and Displacement
+  // Directions pages fetch from the backend on demand, and the backend always
+  // reads the file currently on disk: after RMCProfile saves a new .rmc6f, a page
+  // left alone would keep its old site table / slab points while its next request
+  // (a slider move, a site click) came from the new configuration — two
+  // configurations mixed in one view. So watch the .rmc6f signature in the same
+  // listing (checked on every Load of a folder -- the same one included -- then
+  // every poll while Live Data is on) and bump configEpoch when it changes: the
+  // pages receive it as `dataEpoch`, which is in the dependencies of their
+  // backend fetches, so they re-read everything from the one new file in
+  // place — keeping the picks and view settings that still apply, as static
+  // mode does when a picked folder's files change (docs/algorithms/notation.md
+  // §3c). A browser-loaded run (Demo, picked folder) is a snapshot and is not
+  // watched here.
+  useEffect(() => {
+    if (staticMode || localRun) return undefined;
+    let cancelled = false;
+    let inFlight = false;
+    const check = async () => {
+      if (inFlight || cancelled) return;
+      inFlight = true;
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/files`, {
+          params: { dir: currentDirectory || '.' }
+        });
+        if (cancelled) return;
+        const structureFiles = (response.data.files || []).filter(
+          (file) => file.type === 'file' && /\.rmc6f$/i.test(file.name)
+        );
+        const signature = fileSignature(structureFiles);
+        const known = configSignatureRef.current;
+        if (known.directory === currentDirectory && known.signature !== null && known.signature !== signature) {
+          setConfigEpoch((epoch) => epoch + 1);
+        }
+        configSignatureRef.current = { directory: currentDirectory, signature };
+      } catch {
+        // Listing errors surface through the Dashboard's own poll.
+      } finally {
+        inFlight = false;
+      }
+    };
+    check();
+    if (!watchFiles) {
+      return () => { cancelled = true; };
+    }
+    const interval = window.setInterval(check, WATCH_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [staticMode, localRun, watchFiles, currentDirectory, loadRequest]);
+
   const handleDirectorySubmit = (event) => {
     event.preventDefault();
     const nextDirectory = draftDirectory.trim() || '.';
     setCurrentDirectory(nextDirectory);
+    setLoadRequest((count) => count + 1);
   };
 
   const handleNativeBrowse = async () => {
@@ -138,6 +202,7 @@ function App() {
       const nextPath = response.data.path;
       setDraftDirectory(nextPath);
       setCurrentDirectory(nextPath);
+      setLoadRequest((count) => count + 1);
       setBrowseStatus(null);
     } catch (err) {
       const message = err.response?.data?.error || 'Could not open the folder picker';
@@ -472,7 +537,7 @@ function App() {
               className={`workspace-page${activePage === 'structure' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'structure'}
             >
-              <StructurePage directory={currentDirectory} localRun={localRun} theme="light" />
+              <StructurePage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" />
             </div>
           )}
           {visitedPages.ellipsoids && (
@@ -480,7 +545,7 @@ function App() {
               className={`workspace-page${activePage === 'ellipsoids' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'ellipsoids'}
             >
-              <PcaKdePage directory={currentDirectory} localRun={localRun} theme="light" onSitesChange={setPcaSites} />
+              <PcaKdePage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" onSitesChange={setPcaSites} />
             </div>
           )}
           {visitedPages.orientation && (
@@ -490,7 +555,7 @@ function App() {
             >
               {/* Displacement-direction histogram — independent of the PCA page
                   (shares only the site picker via useSiteCloud). */}
-              <OrientationPage directory={currentDirectory} localRun={localRun} />
+              <OrientationPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
             </div>
           )}
           {visitedPages.geometry && (
@@ -500,7 +565,7 @@ function App() {
             >
               {/* Bond-angle (triplet) distribution + bond-length/coordination
                   statistics — the RMCProfile `triplets` workflow. */}
-              <BondGeometryPage directory={currentDirectory} localRun={localRun} />
+              <BondGeometryPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
             </div>
           )}
           {visitedPages.assistant && (

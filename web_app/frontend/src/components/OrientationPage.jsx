@@ -19,6 +19,7 @@ import InfoBadge from './InfoBadge';
 import OrientationView from './OrientationView';
 import SiteStructurePanel from './SiteStructurePanel';
 import useSiteCloud from '../useSiteCloud';
+import { siteLabel } from '../siteLabel';
 import './PcaKdePage.css';
 
 const numberFormat = (value, digits = 4) =>
@@ -27,8 +28,8 @@ const numberFormat = (value, digits = 4) =>
 const DEFAULT_CLUSTER_THRESHOLD = 1.5;
 
 // Manual resolution choices (geodesic frequency ν → 10ν²+2 cells). 'auto' asks
-// the engine for recommended_frequency, the ~12-points-per-cell over-binning
-// guard.
+// the engine for recommended_frequency, the over-binning guard: the finest ν
+// whose cells still average at least 12 points.
 const FREQUENCY_OPTIONS = ['auto', 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24];
 
 const WEIGHT_OPTIONS = [
@@ -37,7 +38,7 @@ const WEIGHT_OPTIONS = [
     { value: 'amplitude2', label: '|Δr|²' }
 ];
 
-export default function OrientationPage({ directory, localRun }) {
+export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) {
     // Fold-and-cluster distance (Å), used only when the loaded file has no
     // reference-site/cell columns and its sites must be reconstructed.
     const [clusterThreshold, setClusterThreshold] = useState(DEFAULT_CLUSTER_THRESHOLD);
@@ -67,7 +68,7 @@ export default function OrientationPage({ directory, localRun }) {
         localFile,
         ready,
         unitCell
-    } = useSiteCloud({ directory, localRun, clusterThreshold });
+    } = useSiteCloud({ directory, localRun, clusterThreshold, dataEpoch });
 
     const staticMode = isStaticMode();
     const noRun = staticMode && !localFile;
@@ -89,8 +90,11 @@ export default function OrientationPage({ directory, localRun }) {
                                 <p>
                                     Each reference site (an RMCProfile reference number) is one
                                     crystallographic position. Only the <em>directions</em> of its
-                                    per-atom displacements are analysed here — the amplitude enters
-                                    solely through the optional weighting and the amplitude height.
+                                    per-atom displacements are analysed here — measured from the
+                                    site&apos;s own mean position in this configuration, so an
+                                    off-centring shared by every copy is not visible — and the
+                                    amplitude enters solely through the optional weighting and the
+                                    amplitude height.
                                 </p>
                             </InfoBadge>
                         </span>
@@ -102,7 +106,7 @@ export default function OrientationPage({ directory, localRun }) {
                         >
                             {sites?.sites.map((site) => (
                                 <option key={site.referenceNumber} value={site.referenceNumber}>
-                                    {`#${site.referenceNumber} ${site.element} — U=${numberFormat(site.uIso, 4)} Å²`}
+                                    {`#${site.referenceNumber} ${siteLabel(site)} — U=${numberFormat(site.uIso, 4)} Å²`}
                                     {site.copiesPerCell ? ` (${site.count}/${site.copiesPerCell})` : ''}
                                 </option>
                             ))}
@@ -115,8 +119,9 @@ export default function OrientationPage({ directory, localRun }) {
                                 <p>
                                     Geodesic frequency ν of the hex tiling (10ν² + 2 cells — hexagons
                                     plus the 12 pentagons every hexagonal tiling of a sphere must
-                                    contain). Auto targets ~12 displacements per cell, the guard
-                                    against reading Poisson noise as structure.
+                                    contain). Auto picks the finest ν whose cells still average at
+                                    least 12 displacements, the guard against reading Poisson noise
+                                    as structure.
                                 </p>
                             </InfoBadge>
                         </span>
@@ -283,6 +288,12 @@ export default function OrientationPage({ directory, localRun }) {
                 <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to view displacement orientations.</p>
             )}
             {sitesError && <p className="pca-error-banner">{sitesError}</p>}
+            {!sitesError && sites?.parseWarning && (
+                <p className="pca-warning-banner" role="status">
+                    <strong>Atoms skipped while reading the structure file:</strong> {sites.parseWarning}.
+                    The sites below are built from the remaining atoms.
+                </p>
+            )}
 
             {/* Three equal-height panels: axis views : sphere : site picker = 3 : 6.5 : 6.5. */}
             <div className="orient-layout">

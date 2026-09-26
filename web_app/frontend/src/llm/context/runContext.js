@@ -54,16 +54,29 @@ export const recentSlope = (values) => {
 };
 
 // Summary statistics computed on the FULL series (before downsampling), so
-// nothing important is lost to sampling.
+// nothing important is lost to sampling. A log row whose chi^2 is non-finite
+// (NaN / Inf / Fortran overflow — a blown-up run; JSON null from Flask) stays
+// in the series: `first`/`last` are the raw end values (so a non-finite latest
+// value is visible as such), min/max and the slope use the finite values only,
+// and `nonFiniteSteps` counts the rest. One pass for min/max — a spread onto
+// the argument stack throws past ~10^5 points.
 export const seriesStats = (values) => {
     if (!Array.isArray(values) || !values.length) return null;
+    const finite = values.filter(Number.isFinite);
+    let min = Infinity;
+    let max = -Infinity;
+    finite.forEach((value) => {
+        if (value < min) min = value;
+        if (value > max) max = value;
+    });
     return {
         nSteps: values.length,
         first: values[0],
         last: values[values.length - 1],
-        min: Math.min(...values),
-        max: Math.max(...values),
-        recentSlopePerStep: recentSlope(values)
+        min: finite.length ? min : NaN,
+        max: finite.length ? max : NaN,
+        recentSlopePerStep: recentSlope(finite),
+        nonFiniteSteps: values.length - finite.length
     };
 };
 
@@ -114,6 +127,9 @@ const symmetryContext = (structure, symmetry) => {
     if (Number.isFinite(symmetry.nSpace)) block.n_ops = symmetry.nSpace;
     if (Number.isFinite(symmetry.toleranceA)) block.tolerance_A = roundSig(symmetry.toleranceA, 2);
     if (Number.isFinite(symmetry.maxResidual)) block.max_residual_A = roundSig(symmetry.maxResidual, 2);
+    // A structure the finder did not analyse (too many sites, over the
+    // operation budget) says why, instead of a bare 'not analysed'.
+    if (symmetry.skipped && symmetry.reason) block.note = symmetry.reason;
     if (Array.isArray(symmetry.ladder) && symmetry.ladder.length > 1) {
         block.ladder = symmetry.ladder.map((brick) => ({
             sg: brick.spaceGroup,
@@ -125,7 +141,13 @@ const symmetryContext = (structure, symmetry) => {
         const basis = structure?.basis;
         const sites = symmetry.orbits.map((orbit) => {
             const site = { element: orbit.element, multiplicity: orbit.size };
-            if (orbit.wyckoff) site.wyckoff = `${orbit.size}${orbit.wyckoff}`;
+            // `multiplicity` is the orbit's size in the GIVEN cell; the letter is
+            // read in the standard cell the group is named in, so the label
+            // pairs it with that cell's multiplicity (wyckoffMultiplicity) --
+            // R3m's 3a for the Ga of a lacunar spinel kept in its F-cubic cell,
+            // not 4a. The same rule as symmetryModel's orbitLabel(), which this
+            // module may not import.
+            if (orbit.wyckoff) site.wyckoff = `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}`;
             if (orbit.site) site.site_sym = orbit.site;
             if (Array.isArray(orbit.rep)) site.frac = orbit.rep.map((value) => roundSig(value, 3));
             const disps = (orbit.members || [])
@@ -148,8 +170,9 @@ const symmetryContext = (structure, symmetry) => {
 // symmetry/mean-displacement stats can't express. `pcaSites` is the table the
 // PCA Ellipsoid page computes (worker or Flask /api/pca/sites) — one entry per
 // reference site with uIso, the three principal RMS amplitudes, anisotropy, and
-// mean excess kurtosis. Sites are ranked by non-Gaussianity (then uIso) so the
-// most anharmonic / split sites lead and survive budget trimming.
+// Mardia's multivariate excess kurtosis (b2 − 15)/5. Sites are ranked by
+// |non-Gaussianity| (then uIso): a symmetric split site is NEGATIVE
+// (platykurtic), so a signed ranking would list it last and trim it first.
 const pcaContext = (pcaSites) => {
     const rows = pcaSites?.sites;
     if (!Array.isArray(rows) || !rows.length) return null;
@@ -163,17 +186,26 @@ const pcaContext = (pcaSites) => {
         };
         if (Number.isFinite(site.nonGaussianity)) entry.non_gaussianity = roundSig(site.nonGaussianity, 3);
         if (site.degenerate) entry.degenerate = true;
+        // No spread at all: anisotropy and non_gaussianity are undefined (null).
+        if (site.zeroSpread) entry.zero_spread = true;
+        // A mixed-occupancy site: `element` is the majority species only.
+        if (site.mixed && site.elementCounts) {
+            entry.mixed = true;
+            entry.element_counts = site.elementCounts;
+        }
         return entry;
     }).sort((a, b) => (
-        (b.non_gaussianity ?? -Infinity) - (a.non_gaussianity ?? -Infinity)
+        Math.abs(b.non_gaussianity ?? 0) - Math.abs(a.non_gaussianity ?? 0)
         || (b.U_iso_A2 ?? -Infinity) - (a.U_iso_A2 ?? -Infinity)
     ));
     const block = {
         // Tell the model what the numbers mean, or it will misread the kurtosis.
         note: 'Per reference site, from PCA of RMC displacement clouds. U_iso_A2: isotropic '
             + 'ADP (Å²); rms_axes_A: principal RMS displacement amplitudes PC1≥PC2≥PC3 (Å); '
-            + 'anisotropy = rms1/rms3; non_gaussianity: mean excess kurtosis (0 = harmonic/Gaussian, '
-            + '>0 = peaked, fat-tailed — anharmonic motion or an unresolved split site).',
+            + 'anisotropy = rms1/rms3; non_gaussianity: Mardia multivariate excess kurtosis '
+            + '(b2-15)/5 — 0 = harmonic/Gaussian; >0 = peaked, heavy-tailed well or a minority '
+            + 'off-centre component; <0 = flat-topped or bimodal, including a symmetric split site. '
+            + 'Listed by |non_gaussianity|, largest first.',
         sites: sites.slice(0, MAX_SITES)
     };
     if (sites.length > MAX_SITES) block.sites_omitted = sites.length - MAX_SITES;
@@ -266,11 +298,17 @@ const convergenceContext = (rValueFile, historyPoints) => {
     const history = rValueFile?.plotData?.series?.[0]?.y;
     const stats = seriesStats(history);
     if (!stats) return null;
+    // The series is the LAST column of the RMCProfile .log — the chi^2 of one
+    // fit term, named by its header (e.g. X_ray_(R)1: the X-ray real-space
+    // fit), not a total over datasets and constraints. Say which, or the model
+    // will describe one term as the run's overall fit.
+    const column = rValueFile?.plotData?.chiColumn || null;
     const convergence = {
         // The dashboard stores ln(chi^2), not raw chi^2 (browserData.js applies
         // Math.log when parsing the .log files) — say so, or the model will
         // misread the magnitudes.
-        quantity: 'ln of chi^2 goodness metric (natural log; lower is better)',
+        quantity: `ln of the chi^2 in the last .log column${column ? ` '${column}'` : ''} `
+            + '(natural log; lower is better) — one fit term of the run, not a total',
         n_steps: stats.nSteps,
         first: roundSig(stats.first),
         last: roundSig(stats.last),
@@ -279,6 +317,14 @@ const convergenceContext = (rValueFile, historyPoints) => {
         recent_slope_per_step: roundSig(stats.recentSlopePerStep, 2),
         history: downsampleSeries(history, historyPoints)
     };
+    // Non-finite rows serialize as null; say how many and what they mean, or
+    // the model reads a blown-up run's null tail as missing data.
+    if (stats.nonFiniteSteps) {
+        convergence.non_finite_steps = stats.nonFiniteSteps;
+        convergence.non_finite_note = 'log rows whose chi^2 is NaN/Inf/overflow (null here) — '
+            + 'the run produced non-finite values there; `last` is null when the latest row is one';
+    }
+    if (column) convergence.column = column;
     const finalChi = rValueFile?.plotData?.metrics?.final_chi_r;
     if (Number.isFinite(finalChi)) convergence.final_chi_squared = roundSig(finalChi);
     return convergence;

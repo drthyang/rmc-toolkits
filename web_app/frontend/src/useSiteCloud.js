@@ -28,7 +28,12 @@ const getWorker = () => {
     return sharedWorker;
 };
 
-export default function useSiteCloud({ directory, localRun, probability = 0.5, clusterThreshold }) {
+// `dataEpoch` is App.jsx's Flask-mode configuration epoch: it changes when
+// the run's .rmc6f changes on disk. A typed backend directory keeps the same
+// `directory` across such a save, so the epoch is what tells this hook (and
+// every consumer of `requestPca`) to re-read. A browser-loaded run needs no
+// epoch — its new text changes `rmc6fText` instead.
+export default function useSiteCloud({ directory, localRun, probability = 0.5, clusterThreshold, dataEpoch = 0 }) {
     // The loaded .rmc6f text, tagged with the file it came from, so a
     // just-changed dataset never runs against the previous model's text.
     const [loadedText, setLoadedText] = useState({ file: null, text: null });
@@ -66,6 +71,11 @@ export default function useSiteCloud({ directory, localRun, probability = 0.5, c
 
     // A single request path for both data sources: the shared worker when a
     // local file is loaded, otherwise the Flask API against the run directory.
+    // Its identity is the configuration's identity: it changes with the
+    // loaded text, the directory, or (Flask Live Data) the configuration
+    // epoch, so every effect keyed on it — the site table below, the PCA
+    // page's KDE volume, the orientation histogram — re-reads in place when
+    // a new .rmc6f is saved, while the pages keep their picks and settings.
     const requestPca = useCallback((kind, params) => {
         if (rmc6fText) {
             return new Promise((resolve, reject) => {
@@ -89,8 +99,19 @@ export default function useSiteCloud({ directory, localRun, probability = 0.5, c
         }[kind] ?? '/api/pca/kde';
         return axios
             .get(`${API_BASE_URL}${endpoint}`, { params: { dir: directory || '.', ...params } })
-            .then((response) => response.data);
-    }, [rmc6fText, directory]);
+            .then((response) => response.data)
+            .catch((error) => {
+                // Surface the server's own message ("displacement cloud has zero
+                // spread", a non-finite coordinate, ...) rather than axios's generic
+                // "Request failed with status code 400".
+                const message = error?.response?.data?.error;
+                throw message ? new Error(message) : error;
+            });
+    // dataEpoch is deliberately a dependency the body never reads: it gives
+    // the callback (and so every effect keyed on it) a new identity when the
+    // backend's .rmc6f changes under an unchanged directory.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rmc6fText, directory, dataEpoch]);
 
     // --- Load the per-site ellipsoid table. -----------------------------------
     useEffect(() => {

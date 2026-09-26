@@ -9,7 +9,17 @@ import API_BASE_URL from '../api';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
-import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
+import { canvasToPngBlob, downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
+import {
+    KERNEL_ANISOTROPY_NOTE,
+    freePlaneBasis,
+    isInSlab,
+    kdeSliceQuery,
+    kernelSigmaAngstrom,
+    millerPlaneFileLabel,
+    millerPlaneLabel,
+    slabThicknessAngstrom
+} from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
 import SaveMenu from './SaveMenu';
 import InfoBadge from './InfoBadge';
@@ -20,11 +30,6 @@ const dot = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0)
 const add = (a, b) => a.map((value, index) => value + b[index]);
 const subtract = (a, b) => a.map((value, index) => value - b[index]);
 const scale = (vector, factor) => vector.map((value) => value * factor);
-const cross = (a, b) => [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0]
-];
 const normalize = (vector, fallback = [0, 0, 1]) => {
     const length = vectorLength(vector);
     if (length <= 1e-9) return fallback;
@@ -52,9 +57,11 @@ const NORMAL_OPTIONS = [
     { value: 'a', label: 'a' },
     { value: 'b', label: 'b' },
     { value: 'c', label: 'c' },
-    { value: 'custom', label: 'Custom' }
+    { value: 'custom', label: 'Plane (hkl)' }
 ];
-const CUSTOM_DIRECTION_LABELS = ['a', 'b', 'c'];
+// The custom slice is a lattice-plane family (h k l), not a direction [h k l]:
+// see millerPlaneLabel() in workers/slabSelection.js.
+const CUSTOM_DIRECTION_LABELS = ['h', 'k', 'l'];
 
 // KDE/3D panels are raster, so they export as PNG at native or 3x resolution.
 const PANEL_SAVE_OPTIONS = [
@@ -67,12 +74,9 @@ const projectionRange = (normal) => {
     return [Math.min(...values), Math.max(...values)];
 };
 
-const makeFreePlaneBasis = (normal) => {
-    const reference = Math.abs(normal[0]) < 0.85 ? [1, 0, 0] : [0, 1, 0];
-    const u = normalize(subtract(reference, scale(normal, dot(reference, normal))), [0, 1, 0]);
-    const v = normalize(cross(normal, u), [0, 0, 1]);
-    return { u, v };
-};
+// One frame for the KDE map (both runtimes), the Slab In Cell panel and the
+// panel aspect: see freePlaneBasis() in workers/slabSelection.js.
+const makeFreePlaneBasis = freePlaneBasis;
 
 const makeSliceConfig = (sliceDirection, customDirection) => {
     if (sliceDirection !== 'custom') {
@@ -93,7 +97,8 @@ const makeSliceConfig = (sliceDirection, customDirection) => {
     const { u, v } = makeFreePlaneBasis(normal);
     return {
         key: 'custom',
-        label: `[${customDirection.map((value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })).join(' ')}]`,
+        label: millerPlaneLabel(customDirection),
+        fileLabel: millerPlaneFileLabel(customDirection),
         normal,
         u,
         v,
@@ -280,7 +285,11 @@ const makeSectionEdgeGeometry = (sections) => {
     return new THREE.BufferGeometry().setFromPoints(points);
 };
 
-const StructurePage = ({ directory, localRun, theme }) => {
+// `dataEpoch` (Flask mode) changes when the run's .rmc6f changes on disk under
+// the same directory: the structure is re-read in place, which in turn
+// re-requests the KDE slice, while the element, slice normal and slab
+// position, KDE settings and 3D camera are kept.
+const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
     const [structure, setStructure] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -446,6 +455,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
             return;
         }
 
+        // The previous structure stays on screen until the new one arrives, so
+        // a Live Data reload does not blank the page; a response for a
+        // directory or configuration that has since been replaced is dropped.
+        let cancelled = false;
         const fetchStructure = async () => {
             setLoading(true);
             setError(null);
@@ -453,17 +466,19 @@ const StructurePage = ({ directory, localRun, theme }) => {
                 const response = await axios.get(`${API_BASE_URL}/api/structure`, {
                     params: { dir: directory || '.', maxPoints: STRUCTURE_MAX_POINTS }
                 });
-                setStructure(response.data);
+                if (!cancelled) setStructure(response.data);
             } catch (err) {
+                if (cancelled) return;
                 setStructure(null);
                 setError(err.response?.data?.error || 'No structure data available in this folder');
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         };
 
         fetchStructure();
-    }, [directory, localRun]);
+        return () => { cancelled = true; };
+    }, [directory, localRun, dataEpoch]);
 
     useEffect(() => {
         if (!normalMenuOpen) return undefined;
@@ -558,6 +573,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
 
     // Native PNG reads the live canvas; "png3x" re-renders the same drawing onto
     // a 3x offscreen canvas so the export is genuinely higher-resolution.
+    // `name` is used as the file name as given (see sliceFileName), so the
+    // Miller-index parentheses of a custom plane survive.
+    const savePngAs = async (canvas, name) => {
+        downloadBlob(await canvasToPngBlob(canvas), `${name}.png`);
+    };
     const save2dPanel = async (canvas, drawFn, name, minW, minH, format) => {
         if (!canvas) return;
         if (format === 'png3x') {
@@ -571,11 +591,17 @@ const StructurePage = ({ directory, localRun, theme }) => {
             const ctx = off.getContext('2d');
             ctx.setTransform(scale, 0, 0, scale, 0, 0);
             drawFn(ctx, width, height);
-            await saveCanvasAsPng(off, name);
+            await savePngAs(off, name);
         } else {
-            await saveCanvasAsPng(canvas, name);
+            await savePngAs(canvas, name);
         }
     };
+    // `KDE_Slice_c`, or `KDE_Slice_(1_1_0)` for a custom (h k l) plane.
+    const sliceFileName = (prefix) => (
+        sliceConfig.fileLabel
+            ? `${sanitizeFilename(prefix)}_${sliceConfig.fileLabel}`
+            : sanitizeFilename(`${prefix}_${sliceConfig.label}`)
+    );
 
     // Re-render the three.js scene at a higher pixel ratio, capture, then restore.
     const captureModelBlob = (scale) => new Promise((resolve) => {
@@ -597,8 +623,8 @@ const StructurePage = ({ directory, localRun, theme }) => {
         }, 'image/png');
     });
 
-    const saveKdeSlice = (format) => save2dPanel(canvasRef.current, drawKdeSlice, `KDE_Slice_${sliceConfig.label}`, 320, 260, format);
-    const saveSlab = (format) => save2dPanel(slabCanvasRef.current, drawSlab, `Slab_In_Cell_${sliceConfig.label}`, 220, 260, format);
+    const saveKdeSlice = (format) => save2dPanel(canvasRef.current, drawKdeSlice, sliceFileName('KDE_Slice'), 320, 260, format);
+    const saveSlab = (format) => save2dPanel(slabCanvasRef.current, drawSlab, sliceFileName('Slab_In_Cell'), 220, 260, format);
     const saveModel = async (format) => {
         if (format === 'png3x') {
             const blob = await captureModelBlob(3);
@@ -615,15 +641,28 @@ const StructurePage = ({ directory, localRun, theme }) => {
         return (rawDepth - sliceConfig.range[0]) / span;
     }, [sliceConfig]);
 
+    // Same membership test (and face tolerance) as the KDE in both runtimes.
     const inActiveSlab = useCallback(
-        (point) => Math.abs(pointDepth(point) - zCenter) <= thickness / 2,
+        (point) => isInSlab(pointDepth(point), zCenter, thickness),
         [pointDepth, zCenter, thickness]
     );
 
     // Default the slice to the densest band so the view is populated on load
-    // (the geometric midpoint can fall in a gap between atomic layers).
+    // (the geometric midpoint can fall in a gap between atomic layers). Only a
+    // new run, element or slice normal re-defaults it: a new configuration of
+    // the SAME run (Live Data, either runtime) keeps the band the user placed.
+    const datasetKey = localRun?.runId ?? directory ?? null;
+    const slabDefaultKeyRef = useRef(null);
     useEffect(() => {
         if (!points.length) return;
+        const previous = slabDefaultKeyRef.current;
+        slabDefaultKeyRef.current = { datasetKey, selectedElement, sliceConfig };
+        if (
+            previous
+            && previous.datasetKey === datasetKey
+            && previous.selectedElement === selectedElement
+            && previous.sliceConfig === sliceConfig
+        ) return;
         const bins = 50;
         const counts = new Array(bins).fill(0);
         points.forEach((point) => {
@@ -635,7 +674,11 @@ const StructurePage = ({ directory, localRun, theme }) => {
             if (count > counts[best]) best = index;
         });
         setZCenter((best + 0.5) / bins);
-    }, [points, sliceConfig, pointDepth]);
+    // datasetKey is read but deliberately not a dependency: a new directory
+    // must re-default against ITS points, which arrive later (the old
+    // structure stays on screen until then) and re-run this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [points, selectedElement, sliceConfig, pointDepth]);
 
     // Fetch a real server-side gaussian_kde slice, or compute a lightweight
     // browser-side density field for uploaded static-mode data.
@@ -676,10 +719,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
                     params: {
                         dir: directory || '.',
                         element: selectedElement,
-                        orientation: sliceDirection,
-                        nx: sliceConfig.normal[0],
-                        ny: sliceConfig.normal[1],
-                        nz: sliceConfig.normal[2],
+                        // Orientation, normal and -- for a custom plane -- the
+                        // in-plane frame (ux..vz) the page draws in, so the
+                        // Flask map is not rotated against the Slab In Cell panel.
+                        ...kdeSliceQuery(sliceDirection, sliceConfig),
                         z: zCenter,
                         dz: thickness,
                         bw: bandwidth,
@@ -710,6 +753,19 @@ const StructurePage = ({ directory, localRun, theme }) => {
     // (width, height) CSS units. The caller sets the backing resolution and the
     // matching transform, so the same draw serves the live canvas and a
     // higher-resolution offscreen canvas for export.
+    // The kernel's principal sigmas in Angstrom (through the cell metric), for the
+    // overlay and the anisotropy note; null when no kernel was drawn.
+    const kernelAngstrom = useMemo(() => {
+        if (!kde?.kernel) return null;
+        const uVector = kde.uVector || sliceConfig.u;
+        const vVector = kde.vVector || sliceConfig.v;
+        return kernelSigmaAngstrom(
+            kde.kernel.covariance,
+            vectorFromFraction(uVector, unitCell.unitVectors),
+            vectorFromFraction(vVector, unitCell.unitVectors)
+        );
+    }, [kde, sliceConfig, unitCell]);
+
     const drawKdeSlice = useCallback((ctx, width, height) => {
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = themeVars.canvasBg;
@@ -733,7 +789,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
         ];
         const density = kde?.density;
         const grid = kde?.grid || 0;
-        if (density && grid > 0 && kde.vmax > kde.vmin) {
+        // An `unresolved` map is kernel tails between the grid nodes; stretching
+        // the per-slice colour scale over it would paint round-off as structure.
+        const unresolved = kde?.warnings?.some((warning) => warning.code === 'unresolved');
+        if (density && grid > 0 && kde.vmax > kde.vmin && !unresolved) {
             const lut = getLut(colormap);
             const offscreen = document.createElement('canvas');
             offscreen.width = grid;
@@ -790,7 +849,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
         } else {
             ctx.fillStyle = themeVars.muted;
             ctx.font = '500 13px Inter, system-ui';
-            ctx.fillText(kdeLoading ? 'Computing KDE...' : 'No atoms in this slab', 14, 28);
+            // A slab with atoms but no density was declined by the estimator;
+            // the reason (kde.message) is printed under the canvas.
+            const emptyText = kde?.slabCount > 0 ? 'No density drawn for this slab' : 'No atoms in this slab';
+            ctx.fillText(kdeLoading ? 'Computing KDE...' : emptyText, 14, 28);
         }
 
         ctx.strokeStyle = themeVars.border;
@@ -809,10 +871,23 @@ const StructurePage = ({ directory, localRun, theme }) => {
         ctx.font = '500 12px Inter, system-ui';
         if (kde) {
             drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
-            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}  bw=${kde.bw}`, 12, 40);
-            if (kde.log) drawOverlayText('log10 density', 12, 58);
+            // d is a fraction of the depth span along the normal; its real
+            // thickness in Angstrom follows from the cell metric.
+            const thicknessA = slabThicknessAngstrom(kde.thickness, sliceConfig.normal, sliceConfig.range, unitCell.unitVectors);
+            const thicknessText = Number.isFinite(thicknessA) ? ` (${thicknessA.toPrecision(3)} Å)` : '';
+            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}${thicknessText}  bw=${kde.bw}`, 12, 40);
+            let nextLine = 58;
+            if (kernelAngstrom) {
+                drawOverlayText(
+                    `kernel σ ${kernelAngstrom.minor.toPrecision(2)} × ${kernelAngstrom.major.toPrecision(2)} Å`,
+                    12,
+                    nextLine
+                );
+                nextLine += 18;
+            }
+            if (kde.log) drawOverlayText('log10 density', 12, nextLine);
         }
-    }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell, sliceConfig]);
+    }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell, sliceConfig, kernelAngstrom]);
 
     // Colormap and contour visibility are pure client-side re-renders (no refetch).
     useEffect(() => {
@@ -1178,6 +1253,10 @@ const StructurePage = ({ directory, localRun, theme }) => {
             cancelAnimationFrame(frameId);
             controls.dispose();
             renderer.dispose();
+            // dispose() frees GPU resources but not the WebGL context itself;
+            // without this, scene rebuilds and remounts pile up contexts until the browser drops
+            // the oldest ('Too many active WebGL contexts').
+            renderer.forceContextLoss();
             slabGeometry.dispose();
             slabMaterial.dispose();
             cellEdgeGeometry.dispose();
@@ -1248,15 +1327,18 @@ const StructurePage = ({ directory, localRun, theme }) => {
                             </span>
                         </label>
                         {sliceDirection === 'custom' && (
-                            <label className="control custom-direction">
-                                <span className="control-name">Direction</span>
+                            <label
+                                className="control custom-direction"
+                                title="Miller indices of the lattice planes to slice along: the slab normal is h a* + k b* + l c*, which differs from the direction [h k l] in a non-orthogonal cell"
+                            >
+                                <span className="control-name">Plane (h k l)</span>
                                 {customDirection.map((value, index) => (
                                     <input
                                         key={CUSTOM_DIRECTION_LABELS[index]}
                                         type="number"
                                         step="0.1"
                                         value={value}
-                                        aria-label={`Direction ${CUSTOM_DIRECTION_LABELS[index]}`}
+                                        aria-label={`Miller index ${CUSTOM_DIRECTION_LABELS[index]}`}
                                         onChange={(event) => updateCustomDirection(index, event.target.value)}
                                     />
                                 ))}
@@ -1332,6 +1414,12 @@ const StructurePage = ({ directory, localRun, theme }) => {
                                             scales the kernel width, so smaller values resolve finer detail.
                                         </p>
                                         <p>
+                                            The kernel is bandwidth² × the covariance of the slab&apos;s atoms
+                                            (SciPy&apos;s convention), so its width and shape follow how the
+                                            slab&apos;s sites are laid out, not how atoms move. Its σ is printed
+                                            on the map in Å; read blob shapes against it.
+                                        </p>
+                                        <p>
                                             It runs in your browser (GPU when available, CPU otherwise).
                                             The Flask app uses SciPy KDE for reference-grade values.
                                         </p>
@@ -1340,6 +1428,25 @@ const StructurePage = ({ directory, localRun, theme }) => {
                                 <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
                             </h3>
                             <canvas ref={canvasRef} className="kde-canvas" />
+                            {kde?.message && kde.slabCount > 0 && (
+                                <div className="local-density-note kde-message-note" role="status">
+                                    {kde.message}
+                                </div>
+                            )}
+                            {kde?.warnings?.map((warning) => (
+                                <div key={warning.code} className="local-density-note kde-message-note" role="status">
+                                    {warning.message}
+                                </div>
+                            ))}
+                            {kernelAngstrom && kernelAngstrom.major > KERNEL_ANISOTROPY_NOTE * kernelAngstrom.minor && (
+                                <div className="local-density-note kde-message-note" role="status">
+                                    {`The kernel is ${Math.round(kernelAngstrom.major / kernelAngstrom.minor)}:1 anisotropic: `
+                                        + 'its shape is bw² times the covariance of the slab\'s atoms, so it follows how '
+                                        + 'the sites are laid out in the slab, not how any atom moves. Elongation of the '
+                                        + 'blobs along the kernel\'s long axis is an artefact; use the PCA Ellipsoid page '
+                                        + 'for displacement shapes.'}
+                                </div>
+                            )}
                             {isLocalStructure && (
                                 <div className="local-density-note">
                                     Browser-side Gaussian KDE. The Flask app uses SciPy KDE for reference-grade values.

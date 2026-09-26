@@ -88,3 +88,29 @@ describe('significantChange', () => {
         expect(significantChange(base, { n_steps: 1001, last: 0.9 - 0.01 })).toBe(false);
     });
 });
+
+// A log row whose chi^2 is non-finite (NaN / Inf / overflow; null from Flask)
+// means the run blew up; the parsers now keep those rows instead of dropping them.
+describe('non-finite values', () => {
+    const blownUp = [...improving.slice(0, 120), NaN, NaN, NaN];
+
+    it('a non-finite latest value is divergence, never improvement', () => {
+        expect(classifyConvergence(blownUp)).toBe('diverging');
+        expect(detectDivergence(blownUp)).toBe(true);
+        expect(detectStall(blownUp)).toBe(false);
+        expect(classifyConvergence([...improving, null])).toBe('diverging');
+    });
+
+    it('earlier non-finite points do not break the trend', () => {
+        const glitch = [...improving];
+        glitch[50] = NaN;
+        expect(classifyConvergence(glitch)).toBe('improving');
+    });
+
+    it('watchdog stats stay numeric where defined and count the gaps', () => {
+        const stats = watchdogStats(blownUp);
+        expect(stats.last).toBeNull();
+        expect(stats.non_finite_steps).toBe(3);
+        expect(Number.isFinite(stats.min)).toBe(true);
+    });
+});

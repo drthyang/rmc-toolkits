@@ -395,18 +395,23 @@ In all of these the storage rule is the same — **matrices hold basis vectors a
 `m[row][col]`** — and only the choice of writing vectors as columns (§7, §12) or rows (§11) varies.
 That is the difference to watch when moving a formula between sections.
 
-**The cell-edge-fraction contract at the KDE API boundary (§8 Step 4).** `AGENTS.md` says
-*"`z`/`dz` are cell-edge fractions at the API/slider boundary, converted to Ångström inside
-`kde.py`."* As the code stands, **the first half holds only for the `a`/`b`/`c` presets and the
-second half is stale**: `/api/kde/slice` passes `positions.fractional_positions` (not the Å array)
-into `oriented_kde_slice()`, so the slab half-width, the KDE covariance, the evaluation grid and
-the contour coordinates are all dimensionless. Ångströms enter only at draw time, when
-`StructurePage.jsx` maps $\hat{\mathbf u},\hat{\mathbf v}$ through `unitCell.unitVectors`. The
-honest statement of the contract is: **$z_c$ and $\Delta z$ are fractions of the projection range
-$\Delta_d$ of the unit cube along the chosen normal**, coinciding with "fraction of a cell edge"
-only for the presets (where $\Delta_d = 1$). The Å conversion
-$\Delta z\,\Delta_d\lVert\mathbf h\rVert_2 d_{hkl}$ is derived in §8 but performed nowhere in the
-app.
+**The depth-fraction contract at the KDE API boundary (§8 Step 4).** **$z_c$ and $\Delta z$ are
+fractions of the projection range $\Delta_d$ of the unit cube along the chosen normal**,
+coinciding with "fraction of a cell edge" only for the `a`/`b`/`c` presets (where
+$\Delta_d = 1$; for the $(111)$ normal $\Delta_d = \sqrt3$). **No Ångström conversion happens
+on the KDE path**: `/api/kde/slice` passes `positions.fractional_positions` (not the Å array) into
+`oriented_kde_slice()`, so the slab half-width, the KDE covariance, the evaluation grid and the
+contour coordinates are all dimensionless — doubling every lattice vector of a run leaves
+`slabCount`, the density and `depthThickness` unchanged. Both payloads echo `z`/`dz`: `dz` as
+given, `z` after Flask's clamp to $[0, 1]$ (the page's slider never leaves that range); the Flask
+payload's `depth`/`depthThickness` are absolute depth-projection units. Ångströms
+enter only at draw time, when `StructurePage.jsx` maps $\hat{\mathbf u},\hat{\mathbf v}$ through
+`unitCell.unitVectors`; the real slab thickness $\Delta z\,\Delta_d\lVert\mathbf h\rVert_2 d_{hkl}
+= \Delta z\,(|h|+|k|+|l|)\,d_{hkl}$ is printed on the map (`slabThicknessAngstrom()` in
+`workers/slabSelection.js`). `AGENTS.md` said until 1.0 that `z`/`dz` were "cell-edge fractions …
+converted to Ångström inside `kde.py`"; that never matched the code ([structure.md](structure.md)
+Step 4). The route validates the pair: $z_c$ must
+be finite and is clamped to $[0, 1]$ by the engine (echoed as `center`); $0 < \Delta z \le 1$.
 
 **The three display frames** (§10 Step 13, §12 Steps 5–9, §13 Step 2, §14 Step 10):
 
@@ -454,6 +459,37 @@ Only a **typed backend directory** goes through the HTTP routes. The PCA statist
 result carries `browserPcaKde: true`). §4 Step 0 gives the same split for Auto StoG; §11 notes
 that the AI Assistant has **no** Python counterpart at all — the Flask backend is never involved in
 an assistant request.
+
+**One configuration per view (Live Data).** A page's numbers must all come from the *same*
+`.rmc6f`. A browser-loaded run is a snapshot: the worker parses the text it was handed, and
+static-mode Live Data hands every page a new `localRun` when the folder changes. A typed backend
+directory is different — every `/api/*` request reads the file **currently on disk**, so a page
+that kept its first response (the site table, the slab points) while later requests (a slider
+move, a site click) went to a newly saved configuration would mix two configurations in one view.
+In Flask mode `App.jsx` therefore checks the `.rmc6f` entries of `/api/files` (on every **Load**
+or **Select Folder** — of the folder already shown too — then on every Live Data poll,
+`WATCH_INTERVAL_MS`) and, when their `fileSignature()` changes, bumps `configEpoch`. The Atomic
+Density, Bond Geometry, PCA Ellipsoid and Displacement Directions pages take it as a `dataEpoch`
+prop that sits in the dependencies of their backend fetches (`useSiteCloud`'s `requestPca` and
+site table — hence the PCA KDE volume and the orientation histogram — and the Atomic Density and
+Bond Geometry structure and partials requests, which the KDE slice follows), so they **re-read everything from the
+new file in place** and keep the picks that still apply, as static-mode Live Data does: the
+Atomic Density element, slice normal, $z_c$/$\Delta z$, bandwidth, grid, colormap, toggles and 3D
+camera; the PCA Ellipsoid site (when the new configuration still has it), settings and camera;
+the Displacement Directions site, histogram options and sphere camera; and the Bond Geometry
+triplet, typed windows and bin width. Only Bond Geometry's computed angle distribution is
+dropped, never recomputed unasked — a result from the previous configuration must not sit next
+to the new model — and the page says so (press Compute again). The pages are never remounted, and
+every Three.js view releases its WebGL context on teardown (`renderer.forceContextLoss()` after
+`dispose()`), so repeated saves do not pile up contexts. **Limitation:** with
+Live Data *off*, nothing is polled — a configuration saved while you are on an analysis page is
+picked up by that page's *next* request only. Before comparing numbers across a save, press
+**Load** again (it re-checks the `.rmc6f` and refreshes the analysis pages only if it changed),
+switch Live Data on (which re-checks at once), or reload the browser page. Load does not refresh
+the Dashboard's plots; those follow Live Data or a browser reload.
+On the server side the parsed-file caches are keyed on a full file signature and never keep a
+parse of a file that changed while it was read (see the backend API notes in
+[REFERENCE.md](../REFERENCE.md)).
 
 #### 3d. "Reference-grade" vs "visualization-grade"
 

@@ -5,7 +5,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
-import { niceDomain } from '../plotDomain';
+import { nearestFiniteIndex, niceDomain, plotPayloadError } from '../plotDomain';
 import { GUIDE_STROKE, PLOT_PALETTE } from '../plotPalette';
 import SaveMenu from './SaveMenu';
 import './InteractivePlot.css';
@@ -36,7 +36,7 @@ const formatNumber = (value) => {
 const SUPERSCRIPTS = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
 
 // Render `Q (Å^{-1})` style labels as plain text with unicode superscripts.
-const labelToText = (label) => label.replace(/\^\{([^}]+)\}/g, (_, exponent) =>
+const labelToText = (label = '') => String(label ?? '').replace(/\^\{([^}]+)\}/g, (_, exponent) =>
     exponent.split('').map((ch) => SUPERSCRIPTS[ch] || ch).join('')
 );
 
@@ -76,7 +76,8 @@ const niceTicks = (domain, count = 5) => {
     return { ticks, step };
 };
 
-const AxisLabel = ({ label, x, y, textAnchor = 'middle', rotate = false }) => {
+const AxisLabel = ({ label: rawLabel, x, y, textAnchor = 'middle', rotate = false }) => {
+    const label = String(rawLabel ?? '');
     const superscriptMatch = label.match(/^(.*)\^\{([^}]+)\}(.*)$/);
     const transform = rotate ? `rotate(-90 ${x} ${y})` : undefined;
     if (!superscriptMatch) {
@@ -143,6 +144,14 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                 const response = await axios.get(`${API_BASE_URL}/api/plot/data`, {
                     params: { path: file.path }
                 });
+                // A body that is not valid JSON arrives as a raw string; never
+                // hand that to the renderer — say what went wrong instead.
+                const payloadError = plotPayloadError(response.data);
+                if (payloadError) {
+                    setPlot(null);
+                    setError(payloadError);
+                    return;
+                }
                 if (loadedPathRef.current !== file.path) {
                     setHidden(new Set());
                     setXDomain(null);
@@ -324,16 +333,11 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
             return;
         }
         const dataX = xInvert(x);
+        // Only drawable (finite x AND y) points can be snapped to: a masked
+        // region arrives as null/NaN gaps, which must not win the search.
         const values = hoverSeries.map((series) => {
-            let best = 0;
-            let bestDistance = Infinity;
-            series.x.forEach((value, pointIndex) => {
-                const distance = Math.abs(value - dataX);
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    best = pointIndex;
-                }
-            });
+            const best = nearestFiniteIndex(series.x, series.y, dataX);
+            if (best < 0) return null;
             return {
                 label: series.label,
                 color: series.color,
@@ -342,8 +346,12 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                 cx: xScale(series.x[best]),
                 cy: yScale(series.y[best])
             };
-        });
-        setHover({ x: values[0]?.x ?? dataX, px: xScale(values[0]?.x ?? dataX), values });
+        }).filter(Boolean);
+        if (!values.length) {
+            setHover(null);
+            return;
+        }
+        setHover({ x: values[0].x, px: xScale(values[0].x), values });
     };
 
     const startDrag = (event) => {

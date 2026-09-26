@@ -28,10 +28,11 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
 ## Features
 
 - **Run dashboard** — auto-detects RMCProfile outputs (PDF/G(r), S(Q), Bragg profiles, partials,
-  EXAFS Q/R CSVs, R-value logs) and renders interactive charts with hover readouts, drag-to-zoom,
+  EXAFS Q/R CSVs, χ² logs) and renders interactive charts with hover readouts, drag-to-zoom,
   and PNG/SVG/`.zip` export.
 - **Live Data** — charts auto-refresh while your run writes new files: client-side in Chromium
-  browsers, or server-side through the optional Flask backend.
+  browsers, or server-side through the optional Flask backend, where the analysis pages also reload
+  in place when the run saves a new configuration.
 - **Atomic Density** — KDE density slices (WebGPU with automatic CPU fallback), a draggable
   slab-in-cell projection, and a Three.js folded unit-cell view of `.rmc6f` structures.
 - **PCA Ellipsoid** — per-site thermal ellipsoids from the RMC displacement clouds: anisotropic
@@ -42,7 +43,7 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
   (independent reimplementation).
 - **Displacement Directions** — the direction-space counterpart to the ellipsoid: displacement
   directions binned in solid angle on a hex-tiled sphere reveal discrete hop directions and ±u
-  asymmetry that the U tensor cannot see.
+  asymmetry that the U tensor cannot see, each with a calibrated significance test.
 - **Bond Geometry** — bond-angle distributions the RMCProfile `triplets` way: name an A–B–C
   triplet with **B central**, bracket the bond lengths against the run's partial g(r), and get the
   angle histogram over the periodic configuration with coordination statistics. The folded unit
@@ -50,8 +51,13 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
 - **Symmetry analysis** — a client-side, FINDSYM-like panel reports the detected space group and
   how it changes with tolerance. Screw axes and glide planes are read from each operation's
   translation part, so non-symmorphic groups are named as themselves (Pnma, I4/mcm, Fd-3m),
-  resolved against all 230 groups with Wyckoff letters per orbit. Unlike FINDSYM it takes the cell
-  as given — no cell search, origin shift, or idealized structure.
+  resolved against all 230 groups with Wyckoff letters per orbit. The group is named in its
+  standard setting, which the finder searches for from the detected symmetry elements (another axis
+  order, a centred or primitive cell, or the true cell of a supercell); when it cannot be named
+  reliably the panel shows the crystal class or a lower bound, never a guessed number. Unlike
+  FINDSYM it does no origin shift and outputs no idealized structure. The panel needs the run
+  parsed in the browser (the hosted/static dashboard, or a locally picked folder); a run read
+  through the local Flask server has no site basis, so the panel does not appear there.
 - **AI Assistant (beta)** — chat about the loaded run with a local LLM (Ollama, LM Studio) or an
   opt-in cloud model (OpenAI, Gemini). Only compact run context is sent, never raw
   files.[^cloud-llm-privacy] Setup:
@@ -89,19 +95,20 @@ Nothing here is a black box. [docs/ALGORITHMS.md](docs/ALGORITHMS.md) is a code-
 runs it, with the approximations stated rather than buried. The signature equations, one per
 analysis page:
 
-**Fit residual** — the chip on each dashboard chart, computed from a file's 2nd and 3rd columns:
+**Fit residual** — the chip on each dashboard chart:
 
-$$R=\sqrt{\frac{\sum_i\bigl(y^{(3)}_i-y^{(2)}_i\bigr)^2}{\sum_i\bigl(y^{(2)}_i\bigr)^2}}$$
+$$R=\sqrt{\frac{\sum_i\bigl(y^{\mathrm{calc}}_i-y^{\mathrm{expt}}_i\bigr)^2}{\sum_i\bigl(y^{\mathrm{expt}}_i\bigr)^2}}$$
 
-Labelled "Rwp", but **unweighted** — and since RMCProfile writes these CSVs as
-`(x, calculated, experimental)`, the denominator is the *calculated* curve. It is therefore not the
-crystallographic $R_\mathrm{wp}$; recompute from the columns before quoting it in a paper. Points
-where either column is non-finite are skipped, and if none remain — or the denominator is zero —
-the chip reads **—** instead of a number.
+normalized by the experiment. RMCProfile writes these CSVs as `(x, calculated, experimental)`; a
+header that names the roles overrides that order. Labelled "Rwp" but **unweighted**, so it is not
+the crystallographic $R_\mathrm{wp}$; recompute from the columns before quoting it in a paper.
+Points where either column is non-finite are skipped, and if none remain — or the denominator is
+zero — the chip reads **—**.
 → [derivation](docs/algorithms/run-dashboard.md#step-5--compute-the-numbers)
 
 **Atomic density** — a 2-D Gaussian KDE over the supercell folded into one unit cell, with
-bandwidth $\mathbf H$ scaled from the sample covariance $\mathbf C$ (SciPy's convention):
+bandwidth $\mathbf H$ scaled from the covariance $\mathbf C$ of the slab's atoms (SciPy's
+convention; the same kernel in the browser and in Python):
 
 $$\rho(\mathbf p)=\frac{\kappa}{n}\sum_{i=1}^{n}\frac{\exp\!\left[-\tfrac12(\mathbf p-\mathbf p_i)^{\!\top}\mathbf H^{-1}(\mathbf p-\mathbf p_i)\right]}{2\pi\sqrt{\det\mathbf H}},\qquad \mathbf H=f^2\mathbf C$$
 
@@ -127,13 +134,14 @@ is 1.8× more likely than chance".
 → [derivation](docs/algorithms/displacement-directions.md#step-6--the-histogram)
 
 **Bond angles** — the angle at the central atom B of every A–B–C triplet whose two bonds fall
-inside their windows, divided by the *exact* isotropic fraction of each bin rather than by
-$1/\sin\theta_c$:
+inside their windows, divided by the *exact* isotropic fraction of each bin:
 
 $$\theta=\arccos\frac{\mathbf r_{BA}\cdot\mathbf r_{BC}}{\lVert\mathbf r_{BA}\rVert\lVert\mathbf r_{BC}\rVert},\qquad S_k=\frac{N_k/N}{\bigl(\cos\theta_k-\cos\theta_{k+1}\bigr)/2}$$
 
-Taking the bin integral keeps the 0° and 180° bins finite, where $1/\sin\theta_c$ diverges. $S=1$ is
-randomly oriented bonds, so a peak above 1 is real structure. Neighbours are found by a linked-cell
+Because $(\cos\theta_k-\cos\theta_{k+1})/2=\sin\theta_c\,\sin(\Delta/2)$, this is the bin-centre
+$1/\sin\theta_c$ correction scaled so that $S=1$ is randomly oriented bonds; a peak above 1 is real
+structure. RMCProfile's `triplets` `norm/sin(theta)` column has the same shape on another scale
+($=S\cdot\sin(\Delta/2)/\Delta_{\deg}\approx S\cdot\pi/360$). Neighbours are found by a linked-cell
 search carrying explicit periodic-image shifts — exact for triclinic cells and for boxes smaller
 than the cutoff.
 → [derivation](docs/algorithms/bond-geometry.md#step-6--the-histogram-and-its-three-normalizations)
@@ -144,8 +152,8 @@ in-language reference — is stated per engine, along with the measured toleranc
 
 ## Run It Locally (optional)
 
-The hosted app needs no install. Run the Flask backend when you want server-side file browsing,
-`.rmc6f` conversion, reference-grade SciPy KDE, or to self-host on a network:
+The hosted app needs no install. Run the Flask backend when you want server-side file browsing or
+the reference-grade SciPy/NumPy engines on your own machine:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -154,29 +162,30 @@ pip install -r web_app/backend/requirements.txt && pip install -e .
 python web_app/backend/app.py                           # http://127.0.0.1:5000/
 ```
 
-Ports, data roots, dev servers, Docker/GitHub Pages deployment, the backend API, and supported
-file patterns are covered in [docs/REFERENCE.md](docs/REFERENCE.md).
+This development server listens on `127.0.0.1` only, with debug mode off. To self-host on a
+network, use Gunicorn or the Docker image, and never enable `RMC_TOOLKITS_DEBUG` on a server
+others can reach (its interactive debugger runs arbitrary code). Ports, bind address, data roots,
+dev servers, Docker/GitHub Pages deployment, the backend API, and supported file patterns are
+covered in [docs/REFERENCE.md](docs/REFERENCE.md).
 
 ## Python Package
 
 ```python
-from rmc_toolkits import kde_slice, load_unit_cell_positions, make_plot, plot_to_png
+from rmc_toolkits import load_unit_cell_positions, make_plot, oriented_kde_slice, plot_to_png
 
 demo = "web_app/frontend/public/demo"  # bundled GaTa4Se8 250 K example run
 
-positions = load_unit_cell_positions(f"{demo}/GTS_250K.rmc6f", element="Ga")
-density = kde_slice(
-    positions.positions,
-    z_center=0.5 * positions.cell_lengths[2],
-    dz=0.08 * positions.cell_lengths[2],
-    xlim=(0.0, float(positions.cell_lengths[0])),
-    ylim=(0.0, float(positions.cell_lengths[1])),
+# The Atomic Density map of Se in a c-slab at 0.12 of the cell edge, 0.08 thick, bw 0.03:
+# the same numbers GET /api/kde/slice returns for these parameters.
+positions = load_unit_cell_positions(f"{demo}/GTS_250K.rmc6f", element="Se")
+density = oriented_kde_slice(
+    positions.fractional_positions, center=0.12, thickness=0.08, normal=(0, 0, 1), bw=0.03
 )
 png_bytes = plot_to_png(make_plot(f"{demo}/GTS_250K_FQ1.csv"))
 ```
 
-Full usage, parser helpers, and the legacy CLI scripts:
-[docs/REFERENCE.md](docs/REFERENCE.md#python-package-usage).
+Full usage, parser helpers, the `rmc-autoscale` and `rmc-triplets` command-line tools, and the
+legacy CLI scripts: [docs/REFERENCE.md](docs/REFERENCE.md#python-package-usage).
 
 ## Documentation
 
@@ -185,7 +194,7 @@ Full usage, parser helpers, and the legacy CLI scripts:
   operation each page performs on your data, so you can audit how a plot, density map, symmetry
   label, scaled dataset, or direction map was produced — including the approximations.
 - [docs/REFERENCE.md](docs/REFERENCE.md) — repository layout, setup, self-hosting, backend API,
-  supported file patterns, package usage, legacy CLI scripts, tests.
+  supported file patterns, package usage, command-line tools, legacy CLI scripts, tests.
 - [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md) — plans and history.
 - [AGENTS.md](AGENTS.md) — architecture notes and contributor onboarding.
 

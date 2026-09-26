@@ -59,7 +59,7 @@ module docstring is the compact math reference). It is served three ways, all bu
 
 | Boundary | Entry point | Notes |
 |---|---|---|
-| Flask | `/api/triplets` in [app.py](../../web_app/backend/app.py) | `cached_bond_angle_summary`, an `lru_cache(16)` keyed on (path, mtime, every parameter) |
+| Flask | `/api/triplets` in [app.py](../../web_app/backend/app.py) | the uncached `bond_angle_summary_from_file`, memoized by `_TRIPLETS_CACHE` (a `_FileCache(16)`) keyed on (file signature, every parameter including the angle budget) |
 | Browser | `kind: 'triplets'` in [pcaKdeWorker.js](../../web_app/frontend/src/workers/pcaKdeWorker.js), engine [workers/triplets.js](../../web_app/frontend/src/workers/triplets.js) | line-for-line port; answers from the worker's cached parse of the already-loaded `.rmc6f` |
 | CLI | `rmc-triplets` ([triplets_cli.py](../../rmc_toolkits/triplets_cli.py)) | commented CSV + optional PNG and raw angle list |
 
@@ -90,19 +90,33 @@ deterministic to the last count.
 - `triplet = (A, B, C)` with **B central**, `bond12 = (rmin, rmax)` for A–B, and an optional
   `bond23` for B–C (`None` reuses `bond12`).
 
+From a file (`_read_configuration`, used by the Flask route and the CLI) the atoms come from the
+shared `.rmc6f` grammar with `include_coords_only=True`: bond angles need only element and position,
+so legacy coordinates-only lines count as well — the same atom set the browser worker takes from
+`parseRmc6fAtoms()`. Lines with a non-finite coordinate are skipped and counted: the payload's
+`parseWarning` names them in both runtimes (`null` when the file is clean; the `rmc-triplets` CLI
+prints it on stderr, and the Model information card reports the same lines), and a file with no parseable atom is a `ValueError` (HTTP 400) *"no atoms could be
+parsed — …"* naming what was found. Before 1.0 Flask read full-layout lines only, so a
+coordinates-only file had "no atoms" there but angles in the browser.
+
 Validation is strict and raises `ValueError` rather than coercing: coordinates must be finite
 $(N,3)$, the lattice a finite $(3,3)$ matrix, each window needs $0 \le r_\mathrm{min} <
 r_\mathrm{max}$ with finite bounds, and a triplet element with no atoms in the configuration
 reports the list of symbols that *are* available. The port
 ([workers/triplets.js](../../web_app/frontend/src/workers/triplets.js)) additionally rejects
-`null`/`''` bounds explicitly, because JavaScript's `Number(null)` would otherwise silently
-coerce a missing bound to `rmin = 0` where Python's `float()` raises.
+`null`, `''` and whitespace-only bounds explicitly (`isBlankValue`), because JavaScript's
+`Number()` turns every one of them into `0` — a missing bound would silently become
+`rmin = 0` — where Python's `float()` raises. The guard only protects callers that hand the
+engine the raw value, so neither app boundary converts a bound before the check (Step 8), and
+the page validates its input boxes before sending anything (page Step 2).
 
 Two flags fall out of the spec before any geometry runs:
 
-- `shared_ends` — true iff A and C are the same element **and** the two windows are equal. It
-  selects between the two counting rules of Step 5 and lets the B–C search be skipped entirely
-  (`bonds23 = bonds12`).
+- `same_end` — true iff A and C are the same element. It selects between the two counting rules
+  of Step 5, and it makes the engine run **one** neighbour search over both windows (each bond
+  tagged with the window(s) it falls in) instead of one search per end.
+- `shared_ends` — `same_end` **and** equal windows. The B–C bond list is then the A–B list
+  (`bonds23 = bonds12`), and the payload reports it as `sharedEnds` (one length histogram).
 - The bin count for a requested width (Step 6) is fixed here too:
   `_bin_count = max(1, floor(180/w + 0.5))` — **round half up**, matching JavaScript's
   `Math.round` exactly. Python's banker's `round()` would disagree at exact-.5 ratios (an
@@ -159,30 +173,52 @@ and multiple images of the *same* atom become genuine distinct neighbours
 (`SmallBoxImageTests`). The candidate's image is placed beside the center in fractional space,
 then mapped to Cartesian:
 
-$$\Delta\mathbf x = \bigl(\mathbf f_\text{cand} + \mathbf m - \mathbf f_\text{center}\bigr)\,\mathsf L$$
+$$\Delta\mathbf x = \bigl((\mathbf f_\text{cand} - \mathbf f_\text{center}) + \mathbf m\bigr)\,\mathsf L$$
 
-(One implementation note, recorded in the source: the fractional→Cartesian product uses
-`np.einsum` rather than `@`, because NumPy on Apple's Accelerate BLAS emits spurious
-divide/overflow warnings for large $(P,3)\times(3,3)$ matmuls of finite values. Results are
-identical; einsum skips that code path.)
+The order of operations is deliberate: the fractional difference is taken **before** the integer
+shift is added, so the same bond seen from its other end,
+$((\mathbf f_\text{center} - \mathbf f_\text{cand}) - \mathbf m)\,\mathsf L$, is the *exact*
+negative (IEEE rounding is symmetric under negation) and has bitwise the same length. A bond is
+therefore inside or outside a window from both of its ends alike. Before 1.0 the shift was added
+first, and on ideal lattices with a window bound exactly on a shell the two ends could disagree
+(one bond counted from one end only — an odd directed count, e.g. 2675 on a 5×5×5 two-atom
+cubic lattice with $r_\mathrm{max} = a$).
 
-The search is fully vectorized per offset: candidates are bucketed by flattened cell index once
-(`argsort` + `bincount` + prefix sums), and each of the $\prod_i (2k_i{+}1)$ offsets gathers all
-its (center, candidate) pairs in one shot via `_ragged_ranks`, a flattened 0..k−1 rank within
-consecutive groups.
+(One implementation note, recorded in the source: the fractional→Cartesian product, the
+squared length and the angle's dot product are written out term by term —
+$(\Delta f_1 L_{1j} + \Delta f_2 L_{2j}) + \Delta f_3 L_{3j}$ — in exactly the JavaScript port's
+evaluation order, so both engines produce bitwise-identical vectors, and no BLAS matmul is
+involved: NumPy on Apple's Accelerate BLAS emits spurious divide/overflow warnings for large
+$(P,3)\times(3,3)$ matmuls of finite values.)
+
+The search is vectorized per offset: candidates are bucketed by flattened cell index once
+(`argsort` + `bincount` + prefix sums), and each of the $\prod_i (2k_i{+}1)$ offsets gathers its
+(center, candidate) pairs in one shot via `_ragged_ranks`, a flattened 0..k−1 rank within
+consecutive groups. Centers are taken in blocks of $\lfloor$`SEARCH_CHUNK`$/\max(\text{atoms per
+cell})\rfloor$ ($2^{20}$ candidate pairs per offset, ~100 MB of transients), so the search's
+working memory is bounded whatever $r_\mathrm{max}$ and the box; the per-center bond order
+(stencil order) is the same with or without blocking. The same search runs in a
+**count-only** mode that stores nothing and returns, per center, how many bonds fall in each
+window-membership pattern — the exact counting pass of Step 8.
 
 ### Step 4 — Which pairs are bonds
 
 A candidate pair with squared distance $d^2$ survives iff
 
-$$r_\mathrm{min}^2 \le d^2 \le r_\mathrm{max}^2
+$$\max(r_\mathrm{min} - \varepsilon, 0)^2 \le d^2 \le (r_\mathrm{max} + \varepsilon)^2
 \quad\text{and}\quad d^2 > 0
-\quad\text{and not}\quad(\text{same row} \wedge \mathbf m = \mathbf 0).$$
+\quad\text{and not}\quad(\text{same row} \wedge \mathbf m = \mathbf 0),
+\qquad \varepsilon = \texttt{WINDOW\_TOL} = 10^{-9}\ \text{Å}.$$
 
 Three deliberate choices:
 
 - **Windows are inclusive at both ends** — read the bounds off the partial $g(r)$ and atoms at
-  exactly the bound count.
+  exactly the bound count. $\varepsilon$ makes that true for ideal geometries as well: a bound
+  typed exactly at an ideal shell distance used to keep whichever bonds float rounding left
+  inside (2400 of 3000 simple-cubic bonds at $r_\mathrm{max} = a$; a bond of exactly 1 Å dropped
+  from a 0.5–1 Å window). $\varepsilon$ is four orders above the rounding noise of a length and
+  far below any real distance difference (a bond $10^{-7}$ Å outside is still outside). The
+  bond-length histograms clip admitted lengths into the window, so they still total `count`.
 - **A zero-length pair is never a bond, even under `rmin = 0`.** Bitwise-coincident atoms have
   no direction; admitting the pair would put a $0/0$ NaN into every angle it joins
   (`CoincidentAtomTests`).
@@ -195,32 +231,93 @@ $\mathbf m$, Cartesian vector, length) — the `_Bonds` container.
 
 ### Step 5 — Pairing bonds into angles
 
-`_pair_angles` sorts both bond lists by central atom (stable sort, so order is deterministic)
-and forms the per-center pairing:
+`_sort_by_center` sorts the bond lists by central atom (stable sort, so order is deterministic)
+and `_Pairing` forms the per-center pairing, chunk by chunk:
 
-- **Shared ends** (`shared_ends = True`; one list paired with itself): keep the strict upper
-  triangle $i < j$, so each *unordered* pair of distinct bonds counts once. An octahedrally
-  coordinated B with six bonds gives exactly $\binom{6}{2} = 15$ angles — $12\times 90° +
-  3\times 180°$ (`OctahedronTests`, and the same invariant asserted from the JS side).
-- **Distinct ends or windows**: every (A-bond, C-bond) combination counts — *ordered* (1→2, 2→3)
-  assignments — **minus** combinations where both bonds reach the same atom row in the same
-  image $\mathbf m$: the degenerate zero-degree "angle" of a bond with itself, which arises when
-  A and C name the same element with overlapping windows
-  (`SameElementDistinctWindowTests`).
+- **Same end element** (`same_end`, A = C): the one search of Step 1 lists every bond image
+  $x$ once, with flags $x \in w_{12}$ and $x \in w_{23}$. The list is paired with itself over the
+  strict upper triangle $i < j$, so each *unordered* pair of distinct bond images — one physical
+  triplet $\{x, B, y\}$ — is considered once, and it contributes one angle iff
+  $$(x \in w_{12} \wedge y \in w_{23}) \;\vee\; (y \in w_{12} \wedge x \in w_{23}).$$
+  With equal windows that is every unordered pair: an octahedrally coordinated B with six bonds
+  gives exactly $\binom{6}{2} = 15$ angles — $12\times 90° + 3\times 180°$ (`OctahedronTests`,
+  and the same invariant asserted from the JS side). With distinct windows the rule is
+  **continuous**: moving a bound changes the count only by the triplets whose bonds cross it,
+  and at $w_{23} \to w_{12}$ it reduces to the shared-window count
+  (`SameElementDistinctWindowTests`). Disjoint windows (short vs long bonds) pair each short
+  bond with each long one once. A bond is never paired with itself, since $i < j$.
+- **Different end elements** (A ≠ C): every (A-bond, C-bond) combination counts; the A and C
+  atoms are necessarily different atoms.
+
+> Before 1.0 the same-element/distinct-window case counted *ordered* (1→2, 2→3) assignments, so
+> a triplet whose two bonds both lay in the overlap of the windows counted twice, and nudging a
+> B–C bound by $10^{-4}$ Å off the A–B one doubled every count (223 651 → 447 317 Se–Nb–Se
+> angles on the 5 K sample). The unordered rule counts each physical triplet once.
 
 The angle is then
 
 $$\theta = \frac{180°}{\pi}\arccos\!\Bigl(\operatorname{clip}\bigl(
 \tfrac{\mathbf v_1\cdot\mathbf v_2}{\lVert\mathbf v_1\rVert\lVert\mathbf v_2\rVert},\,-1,\,1\bigr)\Bigr)$$
 
-with the clip guarding the $\pm1$ boundary against rounding. There is no tolerance anywhere
-else: the whole calculation is exact geometry on float64.
+with the clip guarding the $\pm1$ boundary against rounding. Apart from the two $10^{-9}$
+tolerances that make ideal configurations deterministic — `WINDOW_TOL` on the window bounds
+(Step 4) and `EDGE_SNAP_DEG` on the bin edges (Step 6) — the calculation is exact geometry on
+float64.
+
+**The exact angle count comes first.** Before any angle is formed, the count per center follows
+from the bond lists alone (`_angles_per_center`):
+
+$$N_\text{angles} = \sum_B \begin{cases}
+n_{12}\,n_{23} & A \ne C,\\[2pt]
+\binom{a+b+c}{2} - \binom{a}{2} - \binom{b}{2} & A = C,
+\end{cases}$$
+
+with, for a same end element, $a$ bonds only in $w_{12}$, $b$ only in $w_{23}$ and $c$ in both
+(equal windows: $\binom{c}{2}$). It is what the work budget of Step 8 is checked against.
+
+**Angles are streamed, never all held.** `_stream_angles` walks the centers in consecutive runs
+whose combined bond-pair count stays within `PAIR_CHUNK` $= 2^{18}$ (a single center above it is
+a run of its own), forms that run's angles, adds them to the histogram, and folds their mean and
+variance into the running totals with Chan's parallel update
+($\delta = \bar x_\text{chunk} - \bar x$, $M_2 \mathrel{+}= M_{2,\text{chunk}} + \delta^2 n\,n_\text{chunk}/(n+n_\text{chunk})$).
+Pairing memory is therefore ~25 MB whatever the angle count; the raw list is kept only when
+`collect_angles` asks for it. The JS port streams inside its pairing loop (Welford per angle)
+and keeps angles only for `collectAngles`. Before 1.0 both engines materialized every angle
+(~200 B/angle in NumPy index arrays, one JS array capped by V8 at $2^{27}$ elements), so a
+window well inside the app's 15 Å cap needed tens to hundreds of GB in Flask and threw
+`RangeError: Invalid array length` in the worker.
 
 ### Step 6 — The histogram and its three normalizations
 
 Angles are binned uniformly over $[0°, 180°]$ into $K = \max(1,\lfloor 180/w_\text{req} +
 0.5\rfloor)$ bins of realized width $w = 180/K$ (a requested width that does not divide 180 is
-adjusted to the nearest exact tiling). Alongside the raw `counts` $N_k$ the result carries:
+adjusted to the nearest exact tiling).
+
+**Bin membership** (`_angle_bins`; `angleBin` in the port). Bins are half-open,
+$[\theta_k, \theta_{k+1})$ with $\theta_k = k\,w$ (the `linspace` values), the last one closed
+at 180° — numpy.histogram's convention, written out identically in both engines. Every edge is a
+multiple of $w$, so for the usual widths (1, 0.5, 2, 3, 5 …) **every symmetry angle of an
+undisplaced configuration sits exactly on an edge** — 60/90/120/180° of an ideal perovskite or
+fcc lattice, the Nb₄ tetrahedron's 60°, a CIF-built RMCProfile start configuration — and float
+noise puts the computed angle a few ulp (~$10^{-13}$°) either side of it. Left alone, that noise
+split one symmetry class between two bins in an arbitrary ratio that changed under a rigid shift
+of the configuration, and differently in the two engines (numpy's `arccos` and V8's
+`Math.acos` differ by 1 ulp on ~17% of inputs: `arccos(0.5)` gives 59.99999999999999°, V8
+60.00000000000001°). On a 3×3×3 ideal SrTiO₃, O–Sr–O at 1° bins came out
+`{59: 354, 60: 294, …}` in Python and `{59: 273, 60: 375, …}` in JS. So an angle within
+`EDGE_SNAP_DEG` $= 10^{-9}$° of an edge is binned **as exactly on it**:
+
+$$k^\ast = \lfloor \theta / w + \tfrac12 \rfloor,\qquad
+\lvert \theta - k^\ast w \rvert < 10^{-9}° \;\Rightarrow\; \text{bin } \min(k^\ast, K-1),$$
+
+i.e. into the bin the edge starts. A symmetry class then lands whole in one bin, deterministic
+and identical in both engines. The tolerance is four orders of magnitude above the noise and
+far below any bin width or real displacement (an angle $10^{-7}$° below an edge still bins
+below it). Only the binning snaps: `meanAngle`, `stdAngle` and raw angles keep the computed
+values. On displaced RMC configurations nothing changes (the 5 K sample and its AVERAGE file
+bin identically to `np.histogram`).
+
+Alongside the raw `counts` $N_k$ the result carries:
 
 **`density`** — a per-degree probability density with unit integral over $[0,180]$:
 
@@ -236,11 +333,42 @@ $$S_k = \frac{N_k/N}{\bigl(\cos\theta_k - \cos\theta_{k+1}\bigr)/2},\qquad
 \int_{\theta_k}^{\theta_{k+1}} \tfrac{1}{2}\sin\theta\,d\theta
 = \tfrac{\cos\theta_k - \cos\theta_{k+1}}{2}.$$
 
-For bonds pointing in independent uniformly-random directions this is flat at $1.0$ — the
-RMCProfile `sinth` view — so anything above 1 is real structure, and a peak near 180° (the
-octahedral *trans* angle) is no longer suppressed by geometry. Dividing by the **bin integral**
-rather than by $1/\sin\theta_c$ at the bin center is what keeps the 0° and 180° bins finite,
-where $1/\sin\theta_c$ diverges.
+For bonds pointing in independent uniformly-random directions this is flat at $1.0$, so
+anything above 1 is real structure, and a peak near 180° (the octahedral *trans* angle) is no
+longer suppressed by geometry.
+
+**What the bin integral is — and is not.** By
+$\cos(\theta_c - \tfrac{\Delta}{2}) - \cos(\theta_c + \tfrac{\Delta}{2}) = 2\sin\theta_c\sin\tfrac{\Delta}{2}$
+(bin centre $\theta_c$, width $\Delta$ in radians), the reference is *exactly*
+$\sin\theta_c\,\sin(\Delta/2)$:
+
+$$S_k = \frac{N_k/N}{\sin\theta_c\,\sin(\Delta/2)} .$$
+
+So `sin_corrected` is the familiar bin-centre $1/\sin\theta_c$ correction times the global
+constant $1/\sin(\Delta/2)$ — the same shape, scaled so that random directions read exactly 1
+(`SinCorrectionIdentityTests` pins the identity to $10^{-12}$). Neither form diverges: the bin
+centres lie at $\Delta/2 \dots 180° - \Delta/2$, where $\sin\theta_c \ge \sin(\Delta/2) > 0$. Only a
+per-angle weight $1/\sin\theta_i$, applied to each angle before binning, blows up at 0°/180°.
+(Earlier versions of this page said the bin integral was needed to keep the end bins finite;
+it is not — its benefit is the exact normalization.)
+
+**Relation to RMCProfile's `triplets` output.** RMCProfile's TRIPLETS writes, per bin, `norm` —
+the per-degree density, i.e. `density` here — and `norm/sin(theta)` $= D_k/\sin\theta_c$. With
+$D_k = N_k/(N\,\Delta_\text{deg})$,
+
+$$\texttt{norm/sin(theta)} \;=\; S_k\,\frac{\sin(\Delta/2)}{\Delta_\text{deg}}
+\;\approx\; S_k\,\frac{\pi}{360}\quad(0.0087265\ \text{at } 1°),$$
+
+a constant factor: **the same shape, not the same numbers** — `sin_corrected` is RMCProfile's
+curve rescaled so that random is 1, not RMCProfile's normalization itself. The CLI writes the
+exact factor for the realized bin width into its CSV header. Cross-check on the 5 K run folder,
+which holds RMCProfile's own TRIPLETS output for the same configuration (`bonds_hist.pct`:
+$r_\mathrm{max} = 3.5$ Å for every pair, 1000 bins of 0.18°): for Se–Nb–Se, Nb–Nb–Nb,
+Se–Ga–Se, Nb–Se–Nb and Se–Nb–Nb the angle totals are identical (239 326, 47 078, 24 132,
+95 731, 284 483); per-bin counts differ only by a few angles across a neighbouring edge
+(RMCProfile bins in single precision; cumulative difference ≤ 4); `density` equals `norm`;
+and `norm/sin(theta)` equals `sin_corrected` × $\sin(\Delta/2)/\Delta_\text{deg}$ to single
+precision (`RmcProfileTripletsTests`, sample-backed, skipped without `data/`).
 
 With zero angles both curves are all-zero rather than NaN.
 
@@ -255,43 +383,95 @@ change here. On top of the three angle curves it adds:
 |---|---|
 | `triplet`, `bond12`, `bond23`, `sharedEnds`, `binWidth` | the resolved spec (realized bin width, not the requested one) |
 | `angleCount`, `meanAngle`, `stdAngle`, `apexCount` | angle statistics and the central-atom count; means are `None` when empty |
-| `lengths12`, `lengths23` | bond-length histograms **inside each window**: fixed `LENGTH_BINS = 40` bins over the window (fixed count, not width, so any window renders at the same detail), plus `count` and `meanLength`. `lengths23` is `null` under shared ends — it would duplicate `lengths12` |
+| `lengths12`, `lengths23` | bond-length histograms **inside each window**: fixed `LENGTH_BINS = 40` bins over the window (fixed count, not width, so any window renders at the same detail), plus `count`, `uniqueBonds` and `meanLength`. `count` is the number of **B-centred bond vectors** (the histogram total); `uniqueBonds` the number of **physical bonds**, each once. They differ when the end element is the central element (A = B for `lengths12`, C = B for `lengths23`): every such bond is found from both of its ends, so `uniqueBonds = count / 2` exactly (Step 3's antisymmetry makes the halving exact; a self-image bond to $\pm\mathbf m$ is one periodic bond). Otherwise `uniqueBonds = count`. On the 5 K sample, Nb–Nb–Nb 2.6–3.4 Å has `count` 46 704 and `uniqueBonds` 23 352 — the number of distinct Nb–Nb pairs an independent `cKDTree` search finds. `lengths23` is `null` under shared ends — it would duplicate `lengths12` |
 | `coordination` | `coordination[n]` = how many central atoms have exactly $n$ window-1 bonds — a double `bincount` of the per-center bond counts |
 
 ### Step 8 — The two app boundaries and their caps
 
-The engine itself is **unrestricted** — library and CLI callers can ask for anything. The two
-app boundaries apply identical request caps, because one request could otherwise blow up the
-image stencil (volume grows $\sim r_\mathrm{max}^3$ and the candidate pair count with it) or the
-response size — and in the browser it would freeze the shared PCA worker:
+The engine itself is **unrestricted** — library and CLI callers can ask for anything. Step 5's
+streaming bounds the memory the *angles* take; the bond lists themselves are stored in full and
+grow as $\sim r_\mathrm{max}^3$, and the CLI has no $r_\mathrm{max}$ cap. The two app boundaries apply
+identical request caps, each bounding a different cost — and in the browser an unbounded request
+would freeze the shared PCA worker:
 
-| Cap | Flask `/api/triplets` | Worker `kind: 'triplets'` |
-|---|---|---|
-| $r_\mathrm{max} \le 15\,$Å (each window) | 400 | thrown `Error` |
-| `binWidth` $\ge 0.05°$ | 400 | thrown `Error` |
-| `r23Min`/`r23Max` required together | 400 | thrown `Error` |
+| Cap | Bounds | Flask `/api/triplets` | Worker `kind: 'triplets'` |
+|---|---|---|---|
+| $r_\mathrm{max} \le 15\,$Å (each window) | the neighbour search (bond count $\sim r_\mathrm{max}^3$) | 400 | thrown `Error` |
+| exact angle count $\le$ `APP_MAX_ANGLES` $= 5\times10^7$ | the angles formed (count $\sim r_\mathrm{max}^6$) — and with them the pairing work, except for A = C with distinct windows (below) | 400 | thrown `Error` |
+| `binWidth` $\ge 0.05°$ | the response size | 400 | thrown `Error` |
+| `r12Min`/`r12Max` present, `r23Min`/`r23Max` both or neither — `null`, `''` and whitespace count as missing | — | 400 | thrown `Error` |
+
+A missing bound is an error with the same text at both boundaries ("r12Min/r12Max are required
+together; missing r12Min") — never a bound of 0. Before 1.0 the worker ran `Number()` on every
+bound, so a cleared minimum reached the engine as `0` and silently widened the window (Nb–Nb–Nb
+3.5–4.6 Å became 0–4.6 Å on the 5 K sample: 235 883 angles, mean 107°, instead of 48 182 at
+62°), while Flask rejected the same request.
+
+The rmax cap alone does **not** bound the work: on the 52 000-atom 5 K sample a Se–Nb–Se window
+2.2–15 Å forms $1.27\times10^9$ angles (Se–Se–Se 2–15 Å: $2.45\times10^9$). So both boundaries
+pass the one shared budget — `APP_MAX_ANGLES` in [triplets.py](../../rmc_toolkits/triplets.py),
+mirrored in [workers/triplets.js](../../web_app/frontend/src/workers/triplets.js) and pinned
+equal by the parity fixture — as `max_angles` / `maxAngles`. A budgeted request first runs the
+count-only search (Step 3), which stores nothing, computes the exact count of Step 5, and
+refuses a spec above the budget with a message naming the count ("… would form 1,274,044,098
+angles, over the limit of 50,000,000 for one request; narrow the bond windows"). Measured on the
+5 K sample: refusing Se–Se–Se 2–15 Å costs ~0.2 GB and <1 s in the worker (~0.5 GB, ~8 s in
+Flask, parse included); an accepted Se–Nb–Se 2.2–8 Å request ($2.9\times10^7$ angles) takes
+~0.8 s / 0.4 GB in the worker and ~2 s / 0.5 GB in Flask.
+
+The budget counts angles, not candidate pairs. For A = C with **distinct** windows, Step 5 examines
+every pair of the centre's combined bond list ($n^2$ candidates per centre in Python, $n(n-1)/2$ in
+the JS loop, $n$ = bonds in either window) and keeps those with one bond in each window, so one
+narrow window paired with a wide one costs more time than its angle count suggests. Every number
+it produces is exact; only the run time is not bounded by `APP_MAX_ANGLES` there.
 
 Request parameters are flat scalars (`end1`, `apex`, `end2`, `r12Min`, `r12Max`, `r23Min`,
 `r23Max`, `binWidth`) so the identical request shape works as an HTTP query string and as a
 worker message. The Flask side normalizes element case **before** the cache key
 (`'se'` and `'Se'` share one entry) and resolves the `bond23` default before the call, so equal
-windows hit one cache entry; the cache is `lru_cache(maxsize=16)` keyed on (path, mtime, every
-parameter), mirroring `pca_kde.cached_site_displacements`. Errors map to 400 (bad parameters),
-403 (path escapes the data root), 404 (no `.rmc6f`).
+windows hit one cache entry; the cache is `_TRIPLETS_CACHE` (a `_FileCache(16)` in `app.py`) keyed on
+(file signature, every parameter), and a parse of a file that changed while it was read is never
+cached. Errors map to 400 (bad or non-finite parameters, a file with no parseable atom), 403 (path
+escapes the data root), 404 (no `.rmc6f`), 409 (the file kept changing while it was read).
 
 ### The `rmc-triplets` CLI
 
 Console entry point installed by `pip install -e .`
 ([triplets_cli.py](../../rmc_toolkits/triplets_cli.py); module form
-`python -m rmc_toolkits.triplets_cli`). Accepts an `.rmc6f` file or a run folder (first sorted
-match), writes a commented CSV (`angle_deg, counts, density_per_deg, sin_corrected` with the
-spec, bond counts and mean lengths in `#` headers), optionally a PNG plot (`--plot`, Agg
-backend, sin-corrected + density on twin axes) and the raw angle list (`--angles-out`). Nothing
-is overwritten without `--force`.
+`python -m rmc_toolkits.triplets_cli`). Accepts an `.rmc6f` file or a run folder. A run folder
+resolves to **the configuration the app analyses** (`find_run_configuration`, the same rule as the
+backend's `_find_rmc6f` and the browser's `chooseStructureFile`): the `.rmc6f` whose stem matches
+the run's own outputs (`<stem>-NN.log` first, then `<stem>_PDFpartials.csv`, `_FQ1.csv`, …), the
+first sorted file only when nothing matches — so an input supercell `GaNb4Se8.rmc6f` beside the
+refined `GaNb4Se8_5K.rmc6f` no longer wins by sorting first (`'.'` < `'_'`). The CLI prints the
+path it chose. Outputs:
+
+- the CSV (`--output`, default `triplets_<A-B-C>_<config>.csv`): columns `angle_deg, counts,
+  density_per_deg, sin_corrected`, with the spec, physical bond counts — plus the B-centred
+  count when the end element is the central one — mean lengths and the angle count in `#`
+  headers;
+- optionally a PNG (`--plot PATH`, Agg backend): **one** y-axis, the sin-corrected curve in
+  its own units, with the per-degree density drawn dashed and **rescaled** so its peak meets the
+  sin-corrected peak (legend "density, rescaled to the sin-corrected peak"). The dashed curve
+  shows shape only — read density values from the CSV;
+- optionally the raw angle list (`--dump-angles PATH`): one angle per line in degrees, 6
+  decimals, in the engine's pairing order (unsorted). This is the one output whose memory grows
+  with the angle count — the engine keeps the list only for it.
+
+Nothing is overwritten without `--force`, and every destination is checked **before the angles
+are computed** (`check_destinations`): `--output`, `--plot` and `--dump-angles` must be different
+files (compared case-insensitively), none may be the configuration or a directory, each folder
+must exist or be creatable, and the `--plot` extension must be a format this matplotlib can write
+(no extension: PNG). A violation is one line on stderr and exit 1; `--force` relaxes only the
+existing-file check. The outputs are then written through temporary files renamed into place
+only after all of them succeeded, so a failed write leaves no partial set. Before 1.0 an
+unsupported `--plot` format printed a traceback after the CSV was written, and `--dump-angles`
+equal to `--output` silently replaced the histogram. `--version` prints the package version.
 
 ```bash
 rmc-triplets data/5K_try1 --triplet Se Nb Se --bond12 2.2 2.9 --plot se_nb_se.png
 rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --bin-width 0.5
+rmc-triplets data/5K_try1 --triplet Nb Nb Nb --bond12 2.6 3.4 --dump-angles nb_angles.txt
 ```
 
 ### Parameters and defaults
@@ -300,27 +480,36 @@ rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --b
 |---|---|---|
 | `triplet` (A, B, C) | — (required) | element symbols, B central; matched after `capitalize()` |
 | `bond12` | — (required) | inclusive A–B window (Å), $0 \le r_\mathrm{min} < r_\mathrm{max}$ |
-| `bond23` | `None` → `bond12` | inclusive B–C window; equal ends + equal windows ⇒ unordered counting |
+| `bond23` | `None` → `bond12` | inclusive B–C window; A = C ⇒ unordered counting of each triplet once (Step 5) |
 | `bin_width` | `1.0`° | requested width; realized width is $180/\max(1,\lfloor 180/w+0.5\rfloor)$ |
-| `collect_angles` | `False` | `bond_angle_distribution` only: keep the raw angle list |
+| `collect_angles` | `False` | `bond_angle_distribution` only: keep the raw angle list (the one memory cost that grows with the angle count) |
+| `max_angles` | `None` (unlimited) | refuse, before pairing, a spec whose exact angle count exceeds it; the app boundaries pass `APP_MAX_ANGLES` |
+| `APP_MAX_ANGLES` | $5\times10^{7}$ | the shared app-boundary work budget (Python and JS constants must be equal) |
+| `PAIR_CHUNK` | $2^{18}$ | bond pairs formed per streaming chunk (~25 MB) |
+| `SEARCH_CHUNK` | $2^{20}$ | candidate pairs examined per search block and stencil offset (~100 MB) |
 | `MAX_CELLS_PER_AXIS` | 64 | linked-cell resolution cap per lattice direction |
 | `REACH_HEADROOM` | $10^{-9}$ | relative headroom on the layer reach against float rounding |
+| `WINDOW_TOL` | $10^{-9}$ Å | a distance this close to a window bound counts as on it (inside); Python and JS constants must be equal |
+| `EDGE_SNAP_DEG` | $10^{-9}$° | an angle this close to a bin edge bins as exactly on it (Step 6); Python and JS constants must be equal |
 | `LENGTH_BINS` | 40 | bond-length histogram bins per window (summary payload only) |
-| App-boundary caps | $r_\mathrm{max}\le15$ Å, `binWidth` ≥ 0.05° | Flask route and worker only; engine and CLI unrestricted |
+| App-boundary caps | $r_\mathrm{max}\le15$ Å, angles ≤ `APP_MAX_ANGLES`, `binWidth` ≥ 0.05° | Flask route and worker only; engine and CLI unrestricted |
 
 ### Parity: Python engine vs JavaScript port
 
 [workers/triplets.js](../../web_app/frontend/src/workers/triplets.js) is a line-for-line port of
 the Python engine, and the parity is pinned by golden fixtures rather than claimed:
 [tests/generate_triplets_fixture.py](../../tests/generate_triplets_fixture.py) evaluates the
-Python engine on two constructed configurations and writes
+Python engine on four constructed configurations (and records the shared constants
+`APP_MAX_ANGLES` and `EDGE_SNAP_DEG`, which the port must equal) and writes
 [triplets_fixture.json](../../web_app/frontend/src/__tests__/fixtures/triplets_fixture.json),
 which [workers/\_\_tests\_\_/triplets.test.js](../../web_app/frontend/src/workers/__tests__/triplets.test.js)
 replays against the port:
 
 | Fixture case | What it exercises |
 |---|---|
-| `random-triclinic` — 48 atoms, seeded RNG, lattice $[[6,0,0],[3,5,0],[1,1,7]]$; three specs incl. shared ends, distinct windows, and B = A = C | general triclinic geometry, both counting rules, 5° and 2° bins |
+| `ideal-perovskite` — undisplaced SrTiO₃ 3×3×3, fractions $(i+x)/3$; O–Ti–O, O–Sr–O, O–O–O and Sr–Ti–O (distinct windows) at 1°, 0.5° and 5° | symmetry angles exactly on bin edges (the edge snap); TiO₆ octahedra |
+| `ideal-fcc` — undisplaced Cu 3×3×3 conventional cells; Cu–Cu–Cu at 1° and 3° | the case where every 60° angle used to change bin between engines |
+| `random-triclinic` — 48 atoms, seeded RNG, lattice $[[6,0,0],[3,5,0],[1,1,7]]$; five specs: shared ends, different ends with distinct windows, B = A = C, and A = C with overlapping distinct windows (twice) | general triclinic geometry, both counting rules, 5°, 3° and 2° bins |
 | `small-box-images` — 3 atoms in a 4 Å cube with windows reaching 3.5 Å | multiple periodic images of one atom as distinct neighbours |
 
 Measured agreement, asserted per bin and per statistic:
@@ -333,17 +522,29 @@ Measured agreement, asserted per bin and per statistic:
 - Sorted raw angles (head/tail samples): $10^{-5}$ — these go through `acos` twice
   (compute, then fixture rounding).
 
+The work budget is pinned from both sides: `WorkBudgetTests` (exact count at the budget
+accepted, one over refused, for every counting rule; streamed and blocked results identical to
+unchunked ones; tracemalloc bounds on the streamed and refused paths), `TripletsBudgetApiTests`
+in [tests/test_triplets_api.py](../../tests/test_triplets_api.py) (the route's 400), and the JS
+`work budget` / worker-boundary suites.
+
 The Python engine itself is pinned to a brute-force all-images reference over a $\pm2$ image
 span on random triclinic configurations (`TriclinicBruteForceTests` in
 [tests/test_triplets.py](../../tests/test_triplets.py)), plus the constructed invariants:
 octahedron counting, bonds through the periodic wall, wrap invariance, zero-length exclusion,
-self-image bonds, and ordered-counting degeneracies. The backend route's caps and error paths
+self-image bonds, and the same-element distinct-window rule (continuity at touching windows,
+one count per overlap triplet, disjoint shells). The backend route's caps and error paths
 are covered by `TripletsApiTests` in [tests/test_backend_api.py](../../tests/test_backend_api.py).
 
-**The one documented residual divergence:** libm and V8 `acos` may differ by 1 ulp, so a
-*bitwise-ideal* geometry whose cosine lands exactly on a bin edge (e.g. $\cos\theta = 0.5$ in an
-undisplaced average configuration) can shift one count into the neighbouring bin between
-engines. Real RMC configurations — displaced by construction — never hit this.
+**No residual divergence on ideal geometries.** Bond vectors, lengths and cosines are computed
+in the same evaluation order in both engines (bitwise identical); only `acos` differs, by at
+most 1 ulp, and the edge snap of Step 6 makes that difference invisible to the histogram. An
+angle whose two engine values straddle an edge by more than float noise but less than
+$10^{-9}$° away from it is measure-zero. Beyond the fixture, the Flask and worker paths were
+compared on a CIF-built ideal GaNb₄Se₈ start configuration, the 5 K sample and its AVERAGE file
+(21 specs): identical counts, coordination and length histograms. `IdealConfigurationTests`
+pins the Python side (one bin per symmetry class at 1°, 0.5°, 5°; rigid-shift invariance; exact
+numpy.histogram agreement off the edges).
 
 ### Caveats
 
@@ -353,8 +554,20 @@ engines. Real RMC configurations — displaced by construction — never hit thi
   of B; the C-side coordination is not reported.
 - **The realized bin width may differ from the request** (nearest exact tiling of 180°). The
   payload reports the realized width; the CSV bin centers are authoritative.
-- **Inclusive windows mean boundary atoms count.** Two runs whose $g(r)$ peak touches the bound
-  can differ by exactly the boundary population — intentional, but worth knowing when comparing.
+- **Inclusive windows mean boundary atoms count** (to within `WINDOW_TOL` = $10^{-9}$ Å). Two
+  runs whose $g(r)$ peak touches the bound can differ by exactly the boundary population —
+  intentional, but worth knowing when comparing.
+- **Ideal geometries are handled by two tolerances, both $10^{-9}$** — a distance that close to
+  a window bound is on it, an angle that close to a bin edge is on it. They exist only to make
+  float noise irrelevant; neither moves a real configuration's numbers.
+- **App requests are refused above $5\times10^7$ angles** (`APP_MAX_ANGLES`, exact count, before
+  any work on angles). The budget bounds the angles, not the candidate pairs of an A = C request
+  with distinct windows (Step 8). Library and CLI calls are unrestricted: the angles stream in
+  bounded memory unless the raw angle list is requested, but the stored bond lists grow as
+  $\sim r_\mathrm{max}^3$.
+- **`count` vs `uniqueBonds`.** `lengths.count` (and `bond12_count`) counts B-centred bond
+  vectors — twice the physical bonds when the end element is the central one; `uniqueBonds`
+  counts each bond once. The coordination numbers are per B and use the B-centred count.
 - **The engine reports geometry, not chemistry.** A "bond" is a distance window and nothing
   else; there is no bond-valence, electronegativity, or connectivity analysis.
 
@@ -384,18 +597,34 @@ existing valid selection is never overwritten.
 
 ### Step 2 — The compute request and the epoch guard
 
-**Compute** issues `requestPca('triplets', {end1, apex, end2, r12Min, r12Max, r23Min?, r23Max?,
-binWidth})` — the B–C window included only when the split switch is on (the engine then receives
-`bond23 = null` and reuses `bond12`). A dataset switch clears any previous result immediately
+**Compute** first turns the input boxes into a request with `tripletRequestFromInputs`
+([workers/triplets.js](../../web_app/frontend/src/workers/triplets.js)): a cleared or non-numeric
+box shows an error naming it ("A–B window minimum is empty — enter a number.") and nothing is
+sent — it is never coerced to `0`. It then issues `requestPca('triplets', {end1, apex, end2,
+r12Min, r12Max, r23Min?, r23Max?, binWidth})` — the B–C window included only when the split
+switch is on (the engine then receives `bond23 = null` and reuses `bond12`). A dataset switch clears any previous result immediately
 and bumps a `runEpoch` ref; a compute that was in flight for the old run compares its captured
 epoch on resolve and can never land a stale payload on the new dataset.
 
+A **new configuration of the same run** — a Live Data save, picked up through the Flask
+`dataEpoch` prop (App.jsx's `configEpoch`) or a browser-loaded run's changed `.rmc6f` text — bumps
+the same epoch, keeps the triplet and the typed windows, reloads the element list, the Model
+information card and the partials in place, and **drops** the computed distribution with the
+note "The run saved a new configuration…". The distribution is computed on demand, so it is never
+recomputed unasked, and a result from the previous configuration never sits next to the new model.
+
 ### Step 3 — The result chips
 
-Straight reads of the payload: central-atom count (`apexCount`), bonds with mean length
-(`lengths12`, and `lengths23` when not shared), the coordination summary — mean bonds per B
-$\sum_n n\,c_n / \sum_n c_n$, plus the modal $n$ and its share — and the angle count with
-mean ± std.
+The card's header names the triplet and the windows **the engine actually used** (the
+resolved `bond12`/`bond23` of the payload) — both, labelled A–B and B–C, on their own lines
+whenever they differ, each bound printed at the precision it was given (2–4 decimals, so a B–C
+bound of 3.4001 does not read as 3.40). The header wraps instead of truncating.
+The chips are straight reads of the payload: central-atom count (`apexCount`), **Bonds** — the physical
+bond count `uniqueBonds`, each bond once, with its mean length (`lengths12`, and `lengths23`
+when not shared; a tooltip gives the B-centred count when the end element is the central one) —
+the coordination summary — mean bonds per B $\sum_n n\,c_n / \sum_n c_n$, which counts a B–B
+bond at both of its ends, as a coordination number should, plus the modal $n$ and its share —
+and the angle count with mean ± std.
 
 ### Step 4 — The angle plot and the `fit` variant
 
@@ -423,8 +652,13 @@ actual first shell:
   debounce so the plot's view state does not reset per keystroke. With the split **off**, one
   neutral-grey pair covers both bonds. With it **on**, each window gets its own pair, labelled
   `A–B rmin/rmax` and `B–C rmin/rmax` **by role** (pair names would collide for same-element
-  triplets) and colored to match the curve each brackets: guides consume no palette slot, so
-  shell $N$ is `PLOT_PALETTE[N]` ([plotPalette.js](../../web_app/frontend/src/plotPalette.js)).
+  triplets) and colored `PLOT_PALETTE[0]` / `PLOT_PALETTE[1]`: guides consume no palette slot,
+  so shell $N$ is `PLOT_PALETTE[N]` ([plotPalette.js](../../web_app/frontend/src/plotPalette.js))
+  and, when the bonds are different types, each pair matches the curve it brackets (for a
+  same-type triplet the B–C pair has the second color and no curve of its own).
+- **Nothing is shaded**: the window is marked only by the guides. The in-app help (the A–B
+  window and Partial PDF InfoBadges) states exactly these rules — the second curve follows the
+  bond types, the switch only the guides — pinned by `BondGeometryPage.test.jsx`.
 - **Crop**: the x-range is cut at $\max(6\,\text{Å},\ 2\times$ the furthest active
   $r_\mathrm{max})$ — beyond the first-shell region nothing informs a bond window.
 
@@ -456,7 +690,7 @@ shows instantaneous atoms: a stick is the average bond, not any single configura
 | Control | Default | Notes |
 |---|---|---|
 | Triplet A, B, C | seeded per sites payload | ends = most abundant element, central = next |
-| A–B window | 2.0 – 3.0 Å | inclusive; string state, validated at the boundary |
+| A–B window | 2.0 – 3.0 Å | inclusive; string state, validated before sending (a cleared box is an error, not 0) |
 | Distinct B–C | off | off ⇒ B–C reuses the A–B window and one guide pair |
 | B–C window | 2.0 – 3.0 Å | only sent when the split is on |
 | Bin width | 1.0° | realized width comes back in the payload |

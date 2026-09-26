@@ -88,7 +88,7 @@ describe('wyckoff table', () => {
         }
     });
 
-    // Re-deriving 1724 positions across 230 groups is real work — well past the 5 s default.
+    // Re-deriving 1731 positions across 230 groups is real work — well past the 5 s default.
     it('every tabulated position reproduces its multiplicity under the group', { timeout: 60000 }, () => {
         // The check the table was built with, re-run here so the committed data cannot
         // drift away from the operations it claims to describe.

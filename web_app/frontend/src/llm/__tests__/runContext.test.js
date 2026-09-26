@@ -238,6 +238,40 @@ describe('buildRunContext', () => {
         expect(pca.sites.find((site) => site.element === 'Ta').degenerate).toBeUndefined();
     });
 
+    it('ranks by |non_gaussianity|: a symmetric split site (negative) is not trimmed first', () => {
+        const fixture = pcaSitesFixture();
+        fixture.sites.push({ referenceNumber: 5, element: 'Nb', count: 1000, uIso: 0.02, rms: [0.2, 0.1, 0.1], anisotropy: 2, nonGaussianity: -1.1 });
+        const pca = buildRunContext({ ...fixtureProps(), pcaSites: fixture }).pca_displacements;
+        // By magnitude: 4.47 > 1.2 > |-1.1| > 0.8 -- the split site is not last.
+        expect(pca.sites.map((site) => site.non_gaussianity)).toEqual([4.47, 1.2, -1.1, 0.8]);
+        expect(pca.note).toMatch(/Mardia/);
+        expect(pca.note).toMatch(/<0 = flat-topped or bimodal, including a symmetric split site/);
+
+        const split = {
+            sites: historyOf(20, (index) => ({
+                referenceNumber: index + 1, element: 'X', uIso: 0.01, rms: [0.1, 0.09, 0.08], anisotropy: 1.2,
+                nonGaussianity: index === 0 ? -5 : 0.1
+            }))
+        };
+        const capped = buildRunContext({ runName: 'r', pcaSites: split }).pca_displacements;
+        expect(capped.sites[0]).toMatchObject({ ref: 1, non_gaussianity: -5 });
+    });
+
+    it('flags mixed-occupancy and zero-spread sites', () => {
+        const pcaSites = {
+            sites: [
+                { referenceNumber: 1, element: 'Ga', mixed: true, elementCounts: { Ga: 750, In: 250 }, count: 1000, uIso: 0.01, rms: [0.1, 0.1, 0.1], anisotropy: 1.1, nonGaussianity: 0.2 },
+                { referenceNumber: 2, element: 'Se', mixed: false, elementCounts: { Se: 1000 }, count: 1000, uIso: 0, rms: [0, 0, 0], anisotropy: null, nonGaussianity: null, zeroSpread: true, degenerate: true }
+            ]
+        };
+        const [ga, se] = buildRunContext({ runName: 'r', pcaSites }).pca_displacements.sites;
+        expect(ga).toMatchObject({ element: 'Ga', mixed: true, element_counts: { Ga: 750, In: 250 } });
+        expect(ga.zero_spread).toBeUndefined();
+        expect(se).toMatchObject({ element: 'Se', zero_spread: true, anisotropy: null });
+        expect(se.mixed).toBeUndefined();
+        expect(se.non_gaussianity).toBeUndefined();
+    });
+
     it('omits pca_displacements when no PCA sites are supplied', () => {
         expect(buildRunContext(fixtureProps()).pca_displacements).toBeUndefined();
         expect(buildRunContext({ ...fixtureProps(), pcaSites: { sites: [] } }).pca_displacements).toBeUndefined();

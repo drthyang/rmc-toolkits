@@ -65,7 +65,7 @@ N                       # "try again" manual loop → replaced by our minimizer
 Y                       # Fourier filter on
 1.0                     # r_cutoff for the filter
 scale_ft.sq             # filtered S(Q)
-scale_ft.gr             # filtered G(r) (2 value cols: G-like, D(r) = 4πρ0 r · col1  [✓data])
+scale_ft.gr             # filtered g(r) (2 value cols: g(r), r·[g(r) − 1]  [✓data, all 5 runs])
 0.015407                # "Faber-Ziman coefficient" = ⟨b⟩² = (Σ c_i b_i)² barns   [✓data: −⟨b⟩² is
                         #   exactly the flat low-r level of scale_ft_rmc.gr]
 scale_ft_rmc.fq         # F(Q) = ⟨b⟩²[S(Q) − 1]  (→ 0 at high Q  [✓data])
@@ -74,9 +74,12 @@ scale_ft_rmc.dr         # D(r) = 4πρ0 r G(r)  (slope −4πρ0⟨b⟩² = −1
 2.48 2.65 3.1           # cutoff, rmin, rmax of 1st peak (final ripple clean-up)
 ```
 
-File conventions, pinned empirically (pystog cross-run, 2026-07-17): `scale.gr` and
-`scale_ft.gr` column 1 hold **g(r) − 1 ≡ G_K(r)/⟨b⟩²** (dimensionless, oscillates about 0);
-`scale_ft.gr` column 2 = D(r). The `rmc` outputs are Keen G_K(r) (barns), F_K(Q), and D(r).
+File conventions (value columns; verified on all five Fortran runs in `data/stog_tests`,
+1.0 audit): `scale.gr` and `scale_ft.gr` value column 1 hold **g(r)** (dimensionless,
+oscillates about 1 — mean 1.0006–1.019 over r ≥ 20 Å); `scale_ft.gr` value column 2 is exactly
+**r·[g(r) − 1]**. (The 2026-07-17 note here said g(r) − 1 and D(r): the pystog cross-run's
+2.5e−3 relative rms could not tell g from g − 1 against max|ref| ≈ 400, and rmc-autoscale wrote
+those functions until 1.0.) The `rmc` outputs are Keen G_K(r) (barns), F_K(Q), and D(r).
 
 Verified relations (all exact against the example):
 
@@ -225,7 +228,7 @@ was run end-to-end against the example before any of our code exists
 | Stage | Comparison | Result |
 | --- | --- | --- |
 | Scaling | `a·S + b` vs `scale.fq` | rms 1.4e−13 (exact) |
-| Forward FT | pystog `g(r)−1` vs `scale.gr` | rel. rms 2.5e−3 of full scale → convention pinned |
+| Forward FT | pystog `g(r)−1` vs `scale.gr` | rel. rms 2.5e−3 of full scale — *not* a convention pin: an offset of 1 is 2.5e−3 of max\|ref\| ≈ 400; `scale.gr` holds g(r) (1.0 audit) |
 | Fourier filter | pystog filter section vs `ft.dat` | rms 6.1e−4 |
 | Filtered S(Q) | pystog vs `scale_ft.sq` | rms 6.1e−4 (rel. 3e−6) |
 | RMC outputs | pystog conversions vs `scale_ft_rmc.*` | 2–7% — explained: classic stog's final low-r enforcement + first-peak cleanup, absent in pystog (§1.5) |
@@ -414,10 +417,12 @@ solves
 by fixed-point iteration `ρ ← ρ·concordance` (a_density is ~linear in ρ0, so this is
 Newton-like; 2–4 `autoscale` passes from seeds spanning a 10× range). Preconditions: a
 composition (⟨b²⟩) and a statistically flat level; the `extrapolated` flag marks
-Qmin > the FZ fit width (~1 Å⁻¹), where the Q→0 extrapolation owns the estimate — a
+data whose first measured Q (after cropping, not the configured Qmin) exceeds the FZ fit
+width (~1 Å⁻¹), where the Q→0 extrapolation owns the estimate — a
 starting point, not a measurement. Validation: synthetic truth ρ0 = 0.05 recovered to
 0.0510 from seeds 0.02/0.05/0.2; FeCoSn 199 K x-ray → 0.0600 vs the hand 0.057329 (4.7%),
-100 K → 0.0640 (11.7%) — the distance from a hand value is a property of the measured
+100 K → 0.0640 (11.7%) (after the 1.0 Huber fix: 199 K 0.0564, −1.5%; 100 K 0.0601,
++4.8%) — the distance from a hand value is a property of the measured
 S(Q), not of the code, so the fixture tolerance is per temperature; both are
 seed-independent to <0.1%
 from seeds 0.03/0.057/0.12. In the workbench, ρ0 resolution is: user value →

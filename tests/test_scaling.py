@@ -54,15 +54,17 @@ XRAY_RUN = _first_existing_run("100K", "199K")
 # answer and its own distance from the hand value. Measured, converging to the same
 # figure from seeds spanning 0.02-0.20:
 #
-#     199 K -> 0.0600 A^-3   (4.7% from the hand 0.057329; the CHANGELOG figure)
-#     100 K -> 0.0640 A^-3   (11.7%)
+#     199 K -> 0.0564 A^-3   (-1.5% from the hand 0.057329; 0.0600, +4.7%, before the
+#                             1.0 Huber IRLS fix -- the 3% bound tells the two apart)
+#     100 K -> 0.0601 A^-3   (+4.8%; 0.0640, +11.7%, before the Huber fix -- the 6% bound
+#                             tells the two apart)
 #
-# One bound covering both would have to be ~13%, which would stop this test noticing a
+# One bound covering both would have to be ~6%, which would stop this test noticing a
 # regression on 199 K, so the bound is per run. A tolerance keyed on a directory that is
 # gitignored is admittedly awkward, but the alternative — an assertion that quietly means
 # something different depending on which dataset happens to be on disk — is worse.
 RHO0_HAND_VALUE = 0.057329
-RHO0_ESTIMATE_TOLERANCE = {"199K": 0.10, "100K": 0.13}
+RHO0_ESTIMATE_TOLERANCE = {"199K": 0.03, "100K": 0.06}
 
 # stog_59438: a complete Fortran stog run of Mn3Sn (POWGEN PG3), local-only. Its
 # parameters are recovered from the run's own outputs (scale.fq vs the rebinned
@@ -689,9 +691,10 @@ class Mn3SnNeutronTests(unittest.TestCase):
 
     def test_fz_amplitude_uses_the_composition(self):
         # The FZ criterion injects S(0) = 1 - <b^2>/<b>^2 = -12.06 and lands
-        # at O(10) amplitudes — the only route consistent across runs (the
-        # density-limit amplitudes sit at O(1) and the hand values disagree
-        # with each other by 5x).
+        # at O(10) amplitudes on these three runs (the density-limit
+        # amplitudes sit at O(1) and the hand values disagree by 5x). NOT on
+        # the 59438 run: its Bragg-dominated head gives a_fz = 54-309 and is
+        # flagged a_fz_reliable = False (tests/test_stog_b_fz_conditioning.py).
         for name in MN3SN_RUNS:
             with self.subTest(run=name):
                 q, sq = self.data[name][0], self.data[name][1]

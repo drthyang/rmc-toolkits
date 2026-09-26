@@ -20,7 +20,9 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY rmc_toolkits ./rmc_toolkits
 COPY web_app/backend ./web_app/backend
-COPY data ./data
+# data/ is gitignored and holds private runs: never bake it into the image.
+# Mount run folders at /app/data instead (docker run -v /path/to/runs:/app/data).
+RUN mkdir -p /app/data
 COPY assets ./assets
 COPY README.md ./README.md
 COPY --from=frontend /app/web_app/frontend/dist ./web_app/frontend/dist
