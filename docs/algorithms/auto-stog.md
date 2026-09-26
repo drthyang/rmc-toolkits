@@ -4527,7 +4527,10 @@ floating-point noise):
    a composition will seed 0.05, run the estimator (which internally does density-limit auto
    fits), and then apply your $(a,b)$ with the estimated $\rho_0$.
 3. **Fixed-b fallback.** With an inp loaded, a typed `a` and a cleared `b`, the page falls
-   back to the inp's `b`; the CLI with `--scale` and no `--offset` uses `b = 0`.
+   back to the inp's `b`; the CLI with `--scale` and no `--offset` uses `b = 0`. Every entry
+   point refuses a non-finite or zero `a` and a non-finite `b`: the CLI's `--scale`/`--offset`
+   (before 1.0 `--scale nan` wrote nine all-NaN files with exit 0), the API's `a`/`b`,
+   `read_stog_inp`'s yscale/yoffset, and the page's worker.
 4. **Enforcement window from a stog.inp.** The page keeps the inp's first-peak window while the
    Cutoff field holds the pre-filled `inp.peakCutoff`, exactly like the CLI without
    `--enforce-cutoff`. The one remaining difference: typing a cutoff *equal* to the inp's on the

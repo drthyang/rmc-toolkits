@@ -234,7 +234,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use the stog.inp yscale/yoffset unchanged (classic-stog parity run)",
     )
-    manual.add_argument("--scale", type=float, help="fix a in S_corr = a*S + b (implies --manual)")
+    manual.add_argument(
+        "--scale", type=float,
+        help="fix a in S_corr = a*S + b (implies --manual; finite and non-zero)",
+    )
     manual.add_argument("--offset", type=float, help="fix b in S_corr = a*S + b (implies --manual)")
 
     enforce = parser.add_argument_group("classic low-r enforcement of the RMC outputs")
@@ -894,6 +897,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         if (args.stog_inp is None) == (args.data is None):
             raise CliError("pass exactly one input: a stog.inp path, or --data FILE")
+        # S_corr = a*S_meas + b: the fixed-scaling flags obey the rules
+        # read_stog_inp applies to yscale/yoffset and the API to a/b -- a NaN
+        # used to write nine all-NaN files with exit 0, and a = 0 discards the data.
+        if args.scale is not None and not (math.isfinite(args.scale) and args.scale != 0.0):
+            raise CliError(f"--scale must be a finite, non-zero number, got {args.scale:g}")
+        if args.offset is not None and not math.isfinite(args.offset):
+            raise CliError(f"--offset must be a finite number, got {args.offset:g}")
 
         inp: Optional[StogInput] = None
         inp_path: Optional[Path] = None

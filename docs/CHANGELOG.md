@@ -117,6 +117,8 @@ with 0.5.0.
   succeeded, and declared subfolders are created. An API `outDir` that is a file is a 400, not a
   500 after the fit.
 - **CLI.** `--help` states the real enforcement default, which is on in every mode.
+  `--scale`/`--offset` must be finite (and the scale non-zero): `--scale nan` exited 0 with nine
+  all-NaN RMCProfile files.
   `--estimate-rho0` seeds ρ₀ = 0.05 when no density source exists. A given r₀ with no detected
   shell no longer crashes with a TypeError.
 - **stog readers.** Both engines read CR-only line endings, a BOM, bad bytes, Fortran D exponents
