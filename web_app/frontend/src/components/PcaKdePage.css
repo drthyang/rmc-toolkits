@@ -1,191 +1,10 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
-   Copyright (C) 2026 Tsung-Han Yang */
+   Copyright (C) 2026 Tsung-Han Yang
 
-/* Mirrors the KDE / 3D page's design language (see StructurePage.css): the same
-   controls bar, slim range sliders, pill toggle switches, 12px panels with
-   header bars, and uppercase control labels. */
-
-.pca-page {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: auto;
-    background: var(--app-bg);
-    padding: 1.1rem 1.25rem 1.5rem;
-}
-
-/* ── Controls bar ─────────────────────────────────────────────────────────── */
-.pca-controls {
-    display: flex;
-    flex-wrap: wrap;
-    /* Wider column gap than the within-cluster gap (1rem) so the clusters still
-       read as groups now that the labels/dividers are gone. */
-    gap: 0.5rem 1.75rem;
-    align-items: center;
-    margin-bottom: 0.85rem;
-    border: 1px solid var(--border);
-    background: var(--panel-bg);
-    border-radius: 12px;
-    padding: 0.55rem 0.95rem;
-    box-shadow: var(--shadow-xs);
-}
-
-/* Controls are grouped into clusters that wrap as a unit (so related controls
-   stay together). The category labels/dividers were removed; the clusters now
-   read from the wider inter-cluster gap on .pca-controls alone. */
-.control-group {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem 1rem;
-}
-
-.pca-controls .control {
-    display: flex;
-    gap: 0.55rem;
-    align-items: center;
-    min-height: 2.3rem;
-}
-
-.pca-controls .control-name {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    color: var(--subtle);
-    font-size: 0.68rem;
-    font-weight: 650;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    white-space: nowrap;
-}
-
-.pca-controls .control-value {
-    min-width: 2.6rem;
-    color: var(--text-strong);
-    font-size: 0.8rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-}
-
-.pca-controls select {
-    appearance: none;
-    -webkit-appearance: none;
-    background-color: var(--panel-bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 0.84rem;
-    font-weight: 550;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23667085' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.6rem center;
-    padding: 0.32rem 1.7rem 0.32rem 0.6rem;
-    cursor: pointer;
-}
-
-.pca-controls select:hover {
-    border-color: var(--border-strong);
-}
-
-/* Slim custom range sliders (identical to the KDE / 3D page). */
-.pca-controls input[type='range'] {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 118px;
-    height: 4px;
-    border-radius: 999px;
-    background: var(--border-strong);
-    cursor: pointer;
-}
-
-.pca-controls input[type='range']::-webkit-slider-thumb {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    background: #fff;
-    border: 2px solid var(--accent);
-    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.25);
-    cursor: grab;
-}
-
-.pca-controls input[type='range']::-webkit-slider-thumb:active {
-    cursor: grabbing;
-}
-
-.pca-controls input[type='range']::-moz-range-thumb {
-    width: 11px;
-    height: 11px;
-    border-radius: 50%;
-    background: #fff;
-    border: 2px solid var(--accent);
-    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.25);
-    cursor: grab;
-}
-
-.pca-controls input[type='range']::-moz-range-track {
-    height: 4px;
-    border-radius: 999px;
-    background: var(--border-strong);
-}
-
-/* The pill-only toggle label used inside .switch-with-info. */
-.pca-controls .control.switch.switch-pill {
-    flex: none;
-    gap: 0;
-}
-
-/* Pill toggle switches for boolean options. */
-.pca-controls .control.switch {
-    position: relative;
-    cursor: pointer;
-}
-
-.pca-controls .control.switch input {
-    position: absolute;
-    opacity: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    cursor: pointer;
-}
-
-.pca-controls .switch-track {
-    position: relative;
-    width: 2.15rem;
-    height: 1.2rem;
-    border-radius: 999px;
-    background: var(--border-strong);
-    transition: background 160ms ease;
-    flex: 0 0 auto;
-}
-
-.pca-controls .switch-track::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: calc(1.2rem - 4px);
-    height: calc(1.2rem - 4px);
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.3);
-    transition: transform 160ms ease;
-}
-
-.pca-controls .control.switch input:checked ~ .switch-track {
-    background: var(--accent);
-}
-
-.pca-controls .control.switch input:checked ~ .switch-track::after {
-    transform: translateX(0.95rem);
-}
-
-.pca-controls .control.switch input:focus-visible ~ .switch-track {
-    box-shadow: var(--focus-ring);
-}
+   PCA Ellipsoid page layout. The look (controls bar, cards, headers, stage,
+   overlays, legend, tables, tags, hints) is the UI kit's (src/ui/ui.css); the
+   unit-cell panel's sizing is shared in UnitCellPanel.css. This file only
+   places the panels, sizes the viewport, and lays out the statistics columns. */
 
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 /* Displacement statistics span the full width across the top (a 3-column table
@@ -211,182 +30,24 @@
     display: contents;
 }
 
+/* Both the viewport and the statistics panel are flex columns: a fixed header,
+   then a body that fills (3D canvas) or scrolls (statistics) within the row. */
 .pca-viewport {
     grid-area: viewport;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .pca-stats-panel {
     grid-area: stats;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .pca-unitcell-panel {
     grid-area: unitcell;
-}
-
-/* The statistics panel is a flex column: a fixed header, then a body that
-   scrolls within the equal-height row (the unit-cell panel is laid out the same
-   way by UnitCellPanel.css). */
-.pca-stats-panel {
-    display: flex;
-    flex-direction: column;
-}
-
-.pca-panel {
-    min-width: 0;
-    border: 1px solid var(--border);
-    background: var(--panel-bg);
-    border-radius: 12px;
-    box-shadow: var(--shadow-xs);
-    /* Visible so a header InfoBadge popover can extend past the card edge; the
-       first/last children round the corners in its place. */
-    overflow: visible;
-}
-
-.pca-panel > :first-child {
-    border-radius: 12px 12px 0 0;
-}
-
-.pca-panel > :last-child {
-    border-radius: 0 0 12px 12px;
-}
-
-.pca-panel > h3 {
-    margin: 0;
-    min-height: 2.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.6rem 0.9rem;
-    font-size: 0.9rem;
-    font-weight: 650;
-    color: var(--text-strong);
-    border-bottom: 1px solid var(--border);
-    background: var(--panel-bg);
-}
-
-.panel-title-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-width: 0;
-}
-
-.panel-title-count {
-    color: var(--muted);
-    font-size: 0.72rem;
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-/* Right-side header cluster: atom count + the reset-view button. */
-.panel-title-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.7rem;
-    flex: none;
-}
-
-.pca-reset-view {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.32rem;
-    padding: 0.26rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel-bg);
-    color: var(--subtle);
-    font-size: 0.72rem;
-    font-weight: 600;
-    line-height: 1;
-    cursor: pointer;
-    transition: border-color 140ms ease, color 140ms ease;
-}
-
-.pca-reset-view:hover:not(:disabled) {
-    border-color: var(--border-strong);
-    color: var(--text-strong);
-}
-
-.pca-reset-view:focus-visible {
-    outline: none;
-    box-shadow: var(--focus-ring);
-}
-
-.pca-reset-view:disabled {
-    opacity: 0.45;
-    cursor: default;
-}
-
-.pca-reset-view svg {
-    flex: none;
-}
-
-/* Segmented PC / Crystal reference-frame switch, sized to sit in the panel header
-   beside the Reset view / Save chips. */
-.pca-frame-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.1rem;
-    padding: 0.13rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--panel-bg);
-    flex: none;
-}
-
-.pca-frame-toggle button {
-    padding: 0.2rem 0.5rem;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--subtle);
-    font-size: 0.72rem;
-    font-weight: 650;
-    line-height: 1;
-    cursor: pointer;
-    transition: background 140ms ease, color 140ms ease;
-}
-
-.pca-frame-toggle button:hover:not(:disabled):not(.is-active) {
-    color: var(--text-strong);
-}
-
-.pca-frame-toggle button.is-active {
-    background: var(--accent);
-    color: #fff;
-}
-
-.pca-frame-toggle button:disabled {
-    opacity: 0.4;
-    cursor: default;
-}
-
-.pca-frame-toggle button:focus-visible {
-    outline: none;
-    box-shadow: var(--focus-ring);
-}
-
-/* The Site-ellipsoids "a b c" crystal-axis toggle reuses the reset-view chip shell
-   but shows three colored letters; when on it gets a faint wash + stronger border. */
-.pca-cell-toggle {
-    gap: 0.22rem;
-    font-weight: 800;
-    letter-spacing: 0.02em;
-}
-
-.pca-cell-toggle.is-active {
-    border-color: var(--border-strong);
-    background: color-mix(in srgb, var(--accent) 8%, var(--panel-bg));
-}
-
-/* ── 3D viewport ──────────────────────────────────────────────────────────── */
-.pca-viewport {
-    display: flex;
-    flex-direction: column;
 }
 
 .pca-canvas {
@@ -396,9 +57,9 @@
     min-height: 22rem;
 }
 
-/* ── Side panels: statistics + unit cell ──────────────────────────────────── */
+/* ── Statistics columns ───────────────────────────────────────────────────── */
 /* overflow stays visible so the title InfoBadge popovers can drop below the row
-   without being clipped; each table scrolls inside its own .pca-matrix-scroll. */
+   without being clipped; each table scrolls inside its own .ui-table-scroll. */
 .pca-stats-body {
     min-height: 0;
 }
@@ -430,7 +91,8 @@
 }
 
 /* Hairline divider centered in the gap to the left of the 2nd and 3rd columns,
-   so it never eats into a column's width. */
+   so it never eats into a column's width. (The one look rule kept here: the
+   divider is positioned from this page's grid gap.) */
 .pca-stats-col:not(:first-child)::before {
     content: '';
     position: absolute;
@@ -444,66 +106,6 @@
 /* Keep the dividers centered in the four-column layout's narrower gap. */
 .pca-stats-grid.has-crystal .pca-stats-col:not(:first-child)::before {
     left: -0.8rem;
-}
-
-/* ── Unit-cell structure view ─────────────────────────────────────────────── */
-/* Fill the space between the panel header and the element legend; the site-ellipsoid
-   panel takes whatever height is left after the statistics row, so keep the floor
-   small enough that it shrinks gracefully (a ResizeObserver on the mount keeps the
-   WebGL canvas in step). The single-column breakpoint restores a fixed square. */
-.pca-structure {
-    background:
-        radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 70%),
-        var(--canvas-bg);
-    border-bottom: 1px solid var(--border);
-}
-
-.pca-structure canvas {
-    display: block;
-    cursor: grab;
-}
-
-.pca-structure canvas:active {
-    cursor: grabbing;
-}
-
-/* ── Empty / error states ─────────────────────────────────────────────────── */
-.pca-hint {
-    margin: 0 0 0.85rem;
-    padding: 1rem;
-    border: 1px dashed var(--border-strong);
-    border-radius: 12px;
-    background: var(--panel-soft);
-    color: var(--muted);
-    font-size: 0.86rem;
-}
-
-.pca-error-banner {
-    margin: 0 0 0.85rem;
-    padding: 1rem;
-    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
-    border-radius: 12px;
-    background: var(--danger-soft);
-    color: var(--danger);
-    font-size: 0.86rem;
-}
-
-/* Atom lines the .rmc6f parser skipped (non-finite coordinates, unparsed
-   lines): the model is still shown, so a warning, not an error. */
-.pca-warning-banner {
-    margin: 0 0 0.85rem;
-    padding: 0.55rem 1rem;
-    border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
-    border-radius: 12px;
-    background: var(--panel-soft);
-    color: var(--text);
-    font-size: 0.82rem;
-    overflow-wrap: anywhere;
-}
-
-.pca-warning-banner strong {
-    color: var(--danger);
-    font-weight: 600;
 }
 
 @media (max-width: 980px) {
@@ -536,11 +138,5 @@
     .pca-stats-col:not(:first-child) {
         border-top: 1px solid var(--border);
         padding-top: 0.6rem;
-    }
-}
-
-@media (max-width: 760px) {
-    .pca-page {
-        padding: 0.9rem;
     }
 }

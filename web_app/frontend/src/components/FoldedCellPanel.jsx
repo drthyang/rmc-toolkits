@@ -13,10 +13,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
+import { Card, CardHeader, CardMeta, ToolButton } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import { buildCrystalAxes } from './sceneAxes';
-import './PcaKdePage.css';
+import './UnitCellPanel.css';
 
 const SAVE_OPTIONS = [
     { id: 'png', label: 'Standard PNG', hint: '1×' },
@@ -301,10 +302,11 @@ const FoldedCellPanel = ({
     }, []);
 
     return (
-        <div className="pca-panel pca-unitcell-panel">
-            <h3>
-                <span className="panel-title-label">
-                    {title}
+        <Card roundEnds className="pca-unitcell-panel">
+            <CardHeader
+                wrap
+                title={title}
+                help={(
                     <InfoBadge label="About the folded unit cell" align="start">
                         <p>
                             Every atom in the supercell folded back into one unit cell and
@@ -321,40 +323,40 @@ const FoldedCellPanel = ({
                             </p>
                         ) : null}
                     </InfoBadge>
-                </span>
-                <span className="panel-title-actions">
-                    {loading && <span className="panel-title-count">Loading…</span>}
-                    <button
-                        type="button"
-                        className={`pca-reset-view pca-cell-toggle ${showCellAxes ? 'is-active' : ''}`}
-                        onClick={() => setShowCellAxes((current) => !current)}
-                        aria-label="Show the crystallographic axes (a, b, c)"
-                    >
-                        a b c
-                    </button>
-                    <button
-                        type="button"
-                        className="pca-reset-view"
-                        onClick={resetView}
-                        aria-label="Reset the camera to the default view"
-                    >
-                        Reset view
-                    </button>
-                    <SaveMenu onSave={saveFigure} options={SAVE_OPTIONS} label="Save" align="right" />
-                </span>
-            </h3>
-            <div className="pca-structure" ref={mountRef} />
+                )}
+                actions={(
+                    <>
+                        {loading && <CardMeta>Loading…</CardMeta>}
+                        <ToolButton
+                            axes
+                            active={showCellAxes}
+                            onClick={() => setShowCellAxes((current) => !current)}
+                            aria-label="Show the crystallographic axes (a, b, c)"
+                        >
+                            a b c
+                        </ToolButton>
+                        <ToolButton
+                            onClick={resetView}
+                            aria-label="Reset the camera to the default view"
+                        >
+                            Reset view
+                        </ToolButton>
+                        <SaveMenu onSave={saveFigure} options={SAVE_OPTIONS} label="Save" align="right" />
+                    </>
+                )}
+            />
+            <div className="ui-stage ui-stage--glow-soft ui-stage--divided ui-stage--orbit pca-structure" ref={mountRef} />
             {Object.keys(elementColors).length > 0 && (
-                <div className="atom-legend" aria-label="Atom colors by element">
+                <div className="ui-legend" aria-label="Atom colors by element">
                     {Object.entries(elementColors).map(([element, color]) => (
-                        <span key={element} className="atom-legend-item">
-                            <span className="atom-legend-swatch" style={{ background: color }} />
+                        <span key={element} className="ui-legend__item">
+                            <span className="ui-legend__swatch" style={{ background: color }} />
                             {element}
                         </span>
                     ))}
                 </div>
             )}
-        </div>
+        </Card>
     );
 };
 
