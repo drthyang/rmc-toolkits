@@ -21,6 +21,7 @@ import {
   WATCH_INTERVAL_MS,
 } from './browserData';
 import { SymTolContext } from './symTolContext';
+import { IconButton, Segmented, SegmentedButton } from './ui';
 import './App.css';
 
 const REPO_URL = 'https://github.com/drthyang/rmc-toolkits';
@@ -306,7 +307,7 @@ function App() {
   const renderBrowseStatus = () => {
     if (!browseStatus) return null;
     return (
-      <div className={`browse-status ${browseStatus.kind}`} role="status">
+      <div className={`ui-status is-${browseStatus.kind}`} role="status">
         <span>
           {browseStatus.text}
           {browseStatus.link && (
@@ -318,15 +319,14 @@ function App() {
             </>
           )}
         </span>
-        <button
-          type="button"
-          className="notification-close"
+        <IconButton
+          variant="close"
           onClick={() => setBrowseStatus(null)}
           aria-label="Close notification"
           title="Close"
         >
           &times;
-        </button>
+        </IconButton>
       </div>
     );
   };
@@ -357,57 +357,57 @@ function App() {
                 </h1>
               </div>
             </div>
-            <nav className="page-tabs" aria-label="Workspace pages">
+            <Segmented as="nav" variant="nav" className="page-tabs" aria-label="Workspace pages">
               {SHOW_AUTO_STOG && (
-                <button
-                  className={activePage === 'autostog' ? 'active' : ''}
+                <SegmentedButton
+                  active={activePage === 'autostog'}
                   onClick={() => handlePageChange('autostog')}
                 >
                   Auto StoG
-                </button>
+                </SegmentedButton>
               )}
-              <button
-                className={activePage === 'dashboard' ? 'active' : ''}
+              <SegmentedButton
+                active={activePage === 'dashboard'}
                 onClick={() => handlePageChange('dashboard')}
               >
                 Dashboard
-              </button>
-              <button
-                className={activePage === 'structure' ? 'active' : ''}
+              </SegmentedButton>
+              <SegmentedButton
+                active={activePage === 'structure'}
                 onClick={() => handlePageChange('structure')}
               >
                 Atomic Density
-              </button>
-              <button
-                className={activePage === 'geometry' ? 'active' : ''}
+              </SegmentedButton>
+              <SegmentedButton
+                active={activePage === 'geometry'}
                 onClick={() => handlePageChange('geometry')}
               >
                 Bond Geometry
-              </button>
-              <button
-                className={activePage === 'ellipsoids' ? 'active' : ''}
+              </SegmentedButton>
+              <SegmentedButton
+                active={activePage === 'ellipsoids'}
                 onClick={() => handlePageChange('ellipsoids')}
               >
                 PCA Ellipsoid
-              </button>
-              <button
-                className={activePage === 'orientation' ? 'active' : ''}
+              </SegmentedButton>
+              <SegmentedButton
+                active={activePage === 'orientation'}
                 onClick={() => handlePageChange('orientation')}
               >
                 Displacement Directions
-              </button>
-              <button
-                className={activePage === 'assistant' ? 'active' : ''}
+              </SegmentedButton>
+              <SegmentedButton
+                active={activePage === 'assistant'}
                 onClick={() => handlePageChange('assistant')}
               >
                 AI Assistant
-              </button>
-            </nav>
+              </SegmentedButton>
+            </Segmented>
           </div>
           <div className="header-actions">
           {fsAccess ? (
             <div className="path-controls">
-              <label className="watch-toggle">
+              <label className="ui-switch-outline">
                 <input
                   type="checkbox"
                   checked={watchFiles}
@@ -416,9 +416,9 @@ function App() {
                 <span aria-hidden="true" />
                 <b>Live Data</b>
               </label>
-              <div className="path-bar local-file-bar">
+              <div className="ui-fieldbar ui-fieldbar--readonly path-bar local-file-bar">
                 <label>Local run</label>
-                <div className="selected-run-name">{localRun?.name || 'No folder selected'}</div>
+                <div className="ui-fieldbar__value">{localRun?.name || 'No folder selected'}</div>
                 <button
                   type="button"
                   onClick={handleSelectFolderFsAccess}
@@ -432,25 +432,25 @@ function App() {
             <div className="path-controls">
               <button
                 type="button"
-                className="watch-toggle watch-toggle-button"
+                className="ui-switch-outline ui-switch-outline--button"
                 onClick={handleStaticLiveDataNotice}
                 aria-pressed="false"
               >
                 <span aria-hidden="true" />
                 <b>Live Data</b>
               </button>
-              <div className="path-bar local-file-bar">
+              <div className="ui-fieldbar ui-fieldbar--readonly path-bar local-file-bar">
                 <label htmlFor="local-run-files">Local run</label>
                 <input
                   ref={directoryInputRef}
                   id="local-run-files"
-                  className="visually-hidden"
+                  className="ui-visually-hidden"
                   type="file"
                   multiple
                   webkitdirectory=""
                   onChange={handleLocalFiles}
                 />
-                <div className="selected-run-name">{localRun?.name || 'No folder selected'}</div>
+                <div className="ui-fieldbar__value">{localRun?.name || 'No folder selected'}</div>
                 <button
                   type="button"
                   onClick={() => directoryInputRef.current?.click()}
@@ -462,7 +462,7 @@ function App() {
             </div>
           ) : (
             <div className="path-controls">
-              <label className="watch-toggle">
+              <label className="ui-switch-outline">
                 <input
                   type="checkbox"
                   checked={watchFiles}
@@ -471,7 +471,7 @@ function App() {
                 <span aria-hidden="true" />
                 <b>Live Data</b>
               </label>
-              <form className="path-bar" onSubmit={handleDirectorySubmit}>
+              <form className="ui-fieldbar path-bar" onSubmit={handleDirectorySubmit}>
                 <label htmlFor="data-path">Run folder</label>
                 <input
                   id="data-path"
@@ -482,7 +482,7 @@ function App() {
                 />
                 <button
                   type="button"
-                  className="secondary-button"
+                  className="ui-fieldbar__ghost"
                   onClick={handleNativeBrowse}
                 >
                   Select Folder
@@ -495,7 +495,7 @@ function App() {
           )}
           <button
             type="button"
-            className={`demo-button${demoActive ? ' is-active' : ''}`}
+            className={`ui-btn-brand demo-button${demoActive ? ' is-active' : ''}`}
             onClick={handleToggleDemo}
             disabled={localLoading}
             aria-pressed={demoActive}

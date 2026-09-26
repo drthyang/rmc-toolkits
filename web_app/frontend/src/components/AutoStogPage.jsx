@@ -661,7 +661,7 @@ const AutoStogPage = () => {
               type="file"
               multiple
               accept=".sq,.fq,.dat,.inp"
-              className="visually-hidden"
+              className="ui-visually-hidden"
               onChange={(event) => { ingestFiles(event.target.files); event.target.value = ''; }}
             />
             <button type="button" className="autostog-pill" onClick={() => fileInputRef.current?.click()}>

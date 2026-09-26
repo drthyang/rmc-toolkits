@@ -91,7 +91,7 @@ describe('App Flask-mode Live Data', () => {
     const click = async (element) => {
         await act(async () => { element.click(); });
     };
-    const tab = (label) => [...container.querySelectorAll('nav.page-tabs button')]
+    const tab = (label) => [...container.querySelectorAll('nav[aria-label="Workspace pages"] button')]
         .find((button) => button.textContent.trim() === label);
     const poll = async () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(WATCH_INTERVAL_MS); });
@@ -105,7 +105,7 @@ describe('App Flask-mode Live Data', () => {
         for (const label of ['Atomic Density', 'Bond Geometry', 'PCA Ellipsoid', 'Displacement Directions']) {
             await click(tab(label));
         }
-        await click(container.querySelector('label.watch-toggle input[type="checkbox"]'));
+        await click(container.querySelector('label.ui-switch-outline input[type="checkbox"]'));
         await poll();
         expect(state.mounts).toEqual(once);
         expect(state.loads).toEqual(once);
@@ -139,7 +139,7 @@ describe('App Flask-mode Live Data', () => {
         expect(state.loads.ellipsoids).toBe(1);
 
         // ...until it is switched on, which re-reads the page at once.
-        await click(container.querySelector('label.watch-toggle input[type="checkbox"]'));
+        await click(container.querySelector('label.ui-switch-outline input[type="checkbox"]'));
         expect(state.loads.ellipsoids).toBe(2);
         expect(state.mounts.ellipsoids).toBe(1);
     });
