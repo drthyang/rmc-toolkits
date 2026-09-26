@@ -24,10 +24,13 @@ with 0.5.0.
   operation sets that are not groups ("P-42m No. 111" on the bundled demo).
 - **One answer in both runtimes.** The browser ports are held to committed Python goldens: Auto
   StoG to round-off (≤ 5×10⁻¹³ on every real run), the Structure KDE to 10⁻⁶ of the peak
-  (measured ≤ 2×10⁻¹²), bond angles to exact integer histograms, and displacement directions to
-  10⁻⁹ relative. The shared `.rmc6f` parser and the plot readers have goldens too. PCA is the
-  exception: each engine is pinned to its own reference, with no shared golden
-  ([ALGORITHMS.md](ALGORITHMS.md)).
+  (measured ≤ 2×10⁻¹²) on slabs within its 6000-row fit cap, bond angles to exact integer
+  histograms, and displacement directions to 10⁻⁹ relative. The cap counts the periodic-image
+  rows too, so a few thousand atoms reach it at larger bandwidths. Above it the two runtimes sum
+  different unbiased subsamples, and their maps differ by several percent of the peak (5.6–8.5 %
+  on over-cap slabs of the bundled 52 000-atom demo run); the Flask/SciPy map is the reference.
+  The shared `.rmc6f` parser and the plot readers have goldens too. PCA is the exception: each
+  engine is pinned to its own reference, with no shared golden ([ALGORITHMS.md](ALGORITHMS.md)).
 - **Auto StoG files match classic stog.** The classic-named files hold the Fortran stog
   functions, g(r) and r·[g(r) − 1], and the stog.inp r₀ rule is the classic one. Automatic
   low-r enforcement cuts at the foot of the first shell, and a fit with a non-physical scale is
