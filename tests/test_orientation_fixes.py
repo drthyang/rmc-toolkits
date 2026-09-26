@@ -601,7 +601,7 @@ class MapSignificanceTests(unittest.TestCase):
             np.testing.assert_allclose(_exact_pearson_moments(used, p), expected, rtol=1e-12)
 
     def test_value_is_the_three_moment_gamma_tail(self):
-        from scipy.stats import norm, pearson3
+        from scipy.stats import gamma, norm, pearson3
 
         tiling = goldberg_tiling(6)
         p = tiling.areas / (4.0 * np.pi)
@@ -617,9 +617,16 @@ class MapSignificanceTests(unittest.TestCase):
             self.assertAlmostEqual(
                 result["mapExpectedPairs"] / (0.5 * used * (used - 1) * np.sum(p * p)), 1.0, places=12
             )
-            # scipy's pearson3 is parameterized by exactly (skewness, mean, SD).
-            reference = pearson3(result["mapNullSkewness"], loc=p.size - 1, scale=result["mapNullSd"])
-            tail = reference.sf(result["mapChiSquare"])
+            # scipy's pearson3 is parameterized by exactly (skewness, mean, SD). Its
+            # far upper tail underflows to 0 on older SciPy (1.8), so take the tail
+            # from the equivalent shifted gamma: shape 4/g^2, scale sd*g/2, loc
+            # mean - 2*sd/g (g > 0 here), which stays accurate on every supported SciPy.
+            skew, sd = result["mapNullSkewness"], result["mapNullSd"]
+            self.assertGreater(skew, 0.0)
+            reference = pearson3(skew, loc=p.size - 1, scale=sd)
+            equivalent = gamma(4.0 / skew**2, loc=p.size - 1 - 2.0 * sd / skew, scale=sd * skew / 2.0)
+            tail = equivalent.sf(result["mapChiSquare"])
+            self.assertAlmostEqual(equivalent.cdf(result["mapChiSquare"]) / reference.cdf(result["mapChiSquare"]), 1.0, places=10)
             self.assertAlmostEqual(result["mapPValue"] / tail, 1.0, places=8)
             # One-sided deviate, from whichever tail is accurate.
             deviate = norm.isf(tail) if tail <= 0.5 else norm.ppf(reference.cdf(result["mapChiSquare"]))

@@ -80,11 +80,27 @@ class PlotParityFixtureTests(unittest.TestCase):
 
     def test_committed_fixture_matches_the_current_flask_payloads(self):
         regenerated = json.loads(json.dumps(parity.flask_payloads(), ensure_ascii=False))
-        self.assertEqual(
-            regenerated,
-            self.committed,
-            "plot_parity_fixture.json is stale: run `python tests/generate_plot_parity_fixture.py`",
-        )
+        # Floats compare to 1e-6 relative: a value rounded to 7 significant digits can land on
+        # either side of a rounding boundary across numpy versions (summation order).
+        stale = "plot_parity_fixture.json is stale: run `python tests/generate_plot_parity_fixture.py`"
+        self._assert_same(regenerated, self.committed, stale, "$")
+
+    def _assert_same(self, got, want, message, path):
+        if isinstance(want, float) or isinstance(got, float):
+            self.assertIsInstance(got, (int, float), f"{message} ({path})")
+            self.assertTrue(math.isclose(got, want, rel_tol=1e-6, abs_tol=1e-12), f"{message} ({path}: {got} != {want})")
+        elif isinstance(want, dict):
+            self.assertIsInstance(got, dict, f"{message} ({path})")
+            self.assertEqual(sorted(got), sorted(want), f"{message} ({path} keys)")
+            for key in want:
+                self._assert_same(got[key], want[key], message, f"{path}.{key}")
+        elif isinstance(want, list):
+            self.assertIsInstance(got, list, f"{message} ({path})")
+            self.assertEqual(len(got), len(want), f"{message} ({path} length)")
+            for index, (g, w) in enumerate(zip(got, want)):
+                self._assert_same(g, w, message, f"{path}[{index}]")
+        else:
+            self.assertEqual(got, want, f"{message} ({path})")
 
     def test_rwp_column_roles_match_the_construction(self):
         # Independent of both implementations: the case records which column is the

@@ -18,6 +18,9 @@ import unittest
 
 import numpy as np
 
+# numpy >= 2.0 renamed trapz; the package supports numpy >= 1.22.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
+
 from rmc_toolkits.parsers import read_stog_xy, write_stog_xy
 from rmc_toolkits.scaling import ScalingConfig, scale_pipeline
 from rmc_toolkits.scaling_cli import main
@@ -47,7 +50,7 @@ def exact_sq(sigma, qmax):
 def coordination(r, g, lo=2.0, hi=3.2):
     """First-shell coordination number 4 pi rho0 int r^2 g dr over [lo, hi]."""
     window = (r >= lo) & (r <= hi)
-    return 4 * np.pi * RHO0 * np.trapezoid(r[window] ** 2 * g[window], r[window])
+    return 4 * np.pi * RHO0 * _trapezoid(r[window] ** 2 * g[window], r[window])
 
 
 def run_cli(args):

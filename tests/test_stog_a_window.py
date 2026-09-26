@@ -18,6 +18,9 @@ so the true scale is a = 10.
 import unittest
 
 import numpy as np
+
+# numpy >= 2.0 renamed trapz; the package supports numpy >= 1.22.
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz
 from scipy.spatial import cKDTree
 
 from rmc_toolkits.scaling import ScalingConfig, autoscale, diagnostics_summary
@@ -79,7 +82,7 @@ def shell_sq(formula, rho0, shells, r_continuum, q=Q):
         g += amplitude * np.exp(-0.5 * ((r - distance) / sigma) ** 2) / (
             4 * np.pi * r**2 * rho0 * sigma * np.sqrt(2 * np.pi)
         )
-    s0 = 1.0 + 4 * np.pi * rho0 * np.trapezoid(r**2 * (g - 1.0), r)
+    s0 = 1.0 + 4 * np.pi * rho0 * _trapezoid(r**2 * (g - 1.0), r)
     sq_true = fq_to_sq(q, gpdf_to_fq(r, g_to_gpdf(r, g, rho0), q))
     config = dict(
         qmin=float(q[0]), qmax=30.0, rho0=rho0, b_avg_sq=fz.b_avg_sq_barn,
