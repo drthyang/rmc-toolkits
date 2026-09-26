@@ -135,5 +135,45 @@ class PcaKdeVolumeLibraryTests(unittest.TestCase):
                 self.assertEqual(str(caught.exception), EMPTY_VOLUME_MESSAGE)
 
 
+class ScalingEdgeTests(_EdgeCase):
+    """/api/scaling/*: a stog.inp naming '.' as its data file and a deeply nested JSON
+    body were 500s; inspect "false" entered inspect mode; booleans were coerced."""
+
+    def test_a_stog_inp_whose_data_file_is_a_folder_is_a_404(self):
+        inp = self.run_dir / "dot.inp"
+        inp.write_text(
+            "1\n.\n0.60 30.0\n-9 0.1\n0\nscale.fq\nscale.gr\n25\n1000\nN\n0.05\n0\nN\nY\n1.0\n"
+            "scale_ft.sq\nscale_ft.gr\n0.02\nscale_ft_rmc.fq\nscale_ft_rmc.gr\nscale_ft_rmc.dr\n2.48 2.65 3.1\n",
+            encoding="utf-8",
+        )
+        for route in ("/api/scaling/preview", "/api/scaling/run"):
+            with self.subTest(route=route):
+                status, error = self.status_error(self.client.post(route, json={"path": f"{RUN}/dot.inp"}))
+                self.assertEqual(status, 404, error)
+                self.assertIn("not a file", error)
+
+    def test_a_deeply_nested_body_is_a_400(self):
+        body = "[" * 5000 + "]" * 5000
+        for route in ("/api/scaling/preview", "/api/convert/frac"):
+            with self.subTest(route=route):
+                response = self.client.post(route, data=body, content_type="application/json")
+                status, error = self.status_error(response)
+                self.assertEqual(status, 400, error)
+
+    def test_inspect_false_is_not_inspect_mode(self):
+        response = self.client.post(
+            "/api/scaling/preview", json={"path": f"{RUN}/synthetic.rmc6f", "inspect": "false"}
+        )
+        status, error = self.status_error(response)
+        # Not the inspect reply ({"kind": "data", ...} with 200): a real preview,
+        # which needs qmin/qmax for a data file.
+        self.assertEqual(status, 400, error)
+        self.assertIn("qmin", error)
+        status, error = self.status_error(self.client.post(
+            "/api/scaling/preview", json={"path": f"{RUN}/synthetic.rmc6f", "inspect": "perhaps"}))
+        self.assertEqual(status, 400, error)
+        self.assertIn("inspect must be a boolean", error)
+
+
 if __name__ == "__main__":
     unittest.main()

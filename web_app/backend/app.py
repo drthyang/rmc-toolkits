@@ -164,7 +164,10 @@ def _resolve_inside_root(raw_path: str | None) -> Path:
 
 def _json_object() -> dict:
     """The request's JSON body as a dict ({} when absent); anything else is a 400."""
-    payload = request.get_json(silent=True)
+    try:
+        payload = request.get_json(silent=True)
+    except RecursionError:  # e.g. 5000 nested arrays: bad input, not a server failure
+        raise ValueError("request body is nested too deeply") from None
     if payload is None:
         return {}
     if not isinstance(payload, dict):
@@ -1152,13 +1155,29 @@ def _payload_float(payload: dict, key: str, **rules) -> float | None:
     return _number(value, key, **rules)
 
 
+_TRUE_WORDS = ("1", "true", "yes", "on")
+_FALSE_WORDS = ("0", "false", "no", "off")
+
+
 def _payload_bool(payload: dict, key: str, default: bool) -> bool:
+    """A boolean JSON-body field: true/false, 0/1, or the words 1/true/yes/on and
+    0/false/no/off (any case); missing, null or blank is ``default``. Anything
+    else is a 400 naming the field -- never coerced ('maybe' used to read as
+    false and {"a": 1} as true)."""
     value = payload.get(key)
-    if value is None:
+    if value is None or (isinstance(value, str) and not value.strip()):
         return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
     if isinstance(value, str):
-        return value.lower() in ("1", "true", "yes")
-    return bool(value)
+        word = value.strip().lower()
+        if word in _TRUE_WORDS:
+            return True
+        if word in _FALSE_WORDS:
+            return False
+    raise ValueError(f"{key} must be a boolean (true/false), got {value!r}")
 
 
 def _resolve_scaling_source(payload: dict):
@@ -1184,6 +1203,8 @@ def _resolve_scaling_source(payload: dict):
         raise PermissionError("stog input's data file lies outside the configured data roots")
     if not data_path.exists():
         raise FileNotFoundError(f"Data file not found: {data_path}")
+    if not data_path.is_file():  # e.g. a stog.inp naming '.' as its data file
+        raise FileNotFoundError(f"Data file is not a file: {data_path}")
     header: dict = {}
     try:
         header = read_dat_header(data_path)
@@ -1462,7 +1483,7 @@ def _inp_payload(inp) -> dict | None:
 def scaling_preview():
     try:
         payload = _json_object()
-        if payload.get("inspect"):
+        if _payload_bool(payload, "inspect", False):
             inp, inp_path, data_path, header = _resolve_scaling_source(payload)
             return jsonify(
                 {
@@ -1665,8 +1686,6 @@ def serve_frontend(path: str):
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 5000
-_TRUE_WORDS = ("1", "true", "yes", "on")
-_FALSE_WORDS = ("", "0", "false", "no", "off")
 
 
 def server_settings(environ=None) -> tuple[str, int, bool]:
@@ -1698,7 +1717,7 @@ def server_settings(environ=None) -> tuple[str, int, bool]:
     raw_debug = (environ.get("RMC_TOOLKITS_DEBUG") or "").strip().lower()
     if raw_debug in _TRUE_WORDS:
         debug = True
-    elif raw_debug in _FALSE_WORDS:
+    elif not raw_debug or raw_debug in _FALSE_WORDS:
         debug = False
     else:
         raise ValueError(

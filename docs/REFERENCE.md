@@ -196,7 +196,8 @@ written). A KDE-slice bandwidth so small that the kernel cannot be evaluated (σ
 in-plane fractional units, e.g. `bw=1e-200`) is not an error: both runtimes return the finite zero
 map with its `kernel`, flagged `subgrid` + `unresolved`. A bandwidth so large that forming
 `bw²·C` overflows (e.g. `bw=1e300`) is a 400 naming `bw`. Error statuses: 400 bad parameter or unusable input (including a
-plot file that cannot be parsed or decoded, a JSON body that is not an object, and a non-string
+plot file that cannot be parsed or decoded, a JSON body that is not an object or is nested too
+deeply, and a non-string
 `path`/`kind`/`mode`/`formula`/`outDir`… field), 403 path
 outside the data roots, 404 missing file/folder, 409 output exists (`/api/scaling/run` without
 `force`) or source file still being written (see below), 500 unexpected failure.
@@ -221,7 +222,11 @@ with **409** and a "changed while it was being read" message instead of returnin
 
 The table lists all 15 routes. A `dir` parameter names a run folder (the backend picks its
 `.rmc6f` by output-stem match, else the first alphabetically); `path` names one file. Booleans in
-query strings are true for `1`/`true`/`yes`. Defaults are in parentheses.
+query strings are true for `1`/`true`/`yes`. JSON-body booleans (`lorch`, `robust`, `force`,
+`overwrite`, `inspect`, …) must be `true`/`false`, `0`/`1`, or one of the words
+`1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off` (any case; missing or blank = the default);
+anything else is a 400 naming the field — `"maybe"` is no longer read as false, nor an object as
+true. Defaults are in parentheses.
 
 | Method & path | Parameters (default; accepted range) | Returns |
 | --- | --- | --- |

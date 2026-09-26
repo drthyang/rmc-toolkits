@@ -279,6 +279,10 @@ with 0.5.0.
   analysis pages then reload in place, keeping the picks that still apply, so a page never mixes
   two configurations. Only Bond Geometry's computed distribution is dropped. Every Three.js view
   releases its WebGL context on teardown.
+- JSON-body booleans are parsed strictly: `true`/`false`, `0`/`1` or the words
+  1/true/yes/on, 0/false/no/off; anything else is a 400 (`"maybe"` read as false, an object as
+  true, and `inspect: "false"` entered inspect mode). A stog.inp whose data file is a folder
+  (e.g. `.`) is a 404, and a JSON body nested thousands deep a 400; both were 500s.
 - `/api/pca/kde` (and the browser engine) refuse a volume that captures less than 10⁻⁶ of the
   density, a bandwidth far below the node spacing or an extent of 10⁶; it used to be a 200
   all-zero volume with no warning.
