@@ -21,6 +21,7 @@ import {
     slabThicknessAngstrom
 } from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
+import { Banner, Card, CardHeader, CardNote, Chip, Control, ControlsBar, Page, Switch } from '../ui';
 import SaveMenu from '../ui/SaveMenu';
 import InfoBadge from '../ui/InfoBadge';
 import AppFooter from './AppFooter';
@@ -1272,37 +1273,35 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
     }, [points, unitCell, zCenter, thickness, themeVars, sliceConfig, elementColors]);
 
     return (
-        <section className="structure-page">
-            <div className="structure-header">
+        <Page>
+            <div hidden>
                 <div>
                     <h2>KDE And Folded Unit Cell</h2>
                     <p>{localRun ? localRun.name : directory}</p>
                 </div>
-                {(loading || kdeLoading) && <span className="status-pill">{loading ? 'Loading' : isLocalStructure ? 'Density' : 'KDE'}</span>}
+                {(loading || kdeLoading) && <Chip tone="success" strong>{loading ? 'Loading' : isLocalStructure ? 'Density' : 'KDE'}</Chip>}
             </div>
 
-            {error && <div className="structure-error">{error}</div>}
+            {error && <Banner tone="danger" gapLg>{error}</Banner>}
 
             {structure && (
                 <>
                     <ModelSummary structure={structure} />
 
-                    <div className="structure-controls">
-                        <label className="control">
-                            <span className="control-name">Element</span>
-                            <select value={selectedElement} onChange={(event) => setSelectedElement(event.target.value)}>
+                    <ControlsBar variant="dense">
+                        <Control label="Element">
+                            <select className="ui-select" value={selectedElement} onChange={(event) => setSelectedElement(event.target.value)}>
                                 <option value="all">All</option>
                                 {structure.elements.map((element) => (
                                     <option key={element} value={element}>{element}</option>
                                 ))}
                             </select>
-                        </label>
-                        <label className="control">
-                            <span className="control-name">Normal</span>
-                            <span className="normal-menu" ref={normalMenuRef}>
+                        </Control>
+                        <Control label="Normal">
+                            <span className="ui-dropdown" ref={normalMenuRef}>
                                 <button
                                     type="button"
-                                    className="normal-menu-button"
+                                    className="ui-dropdown__button"
                                     aria-haspopup="listbox"
                                     aria-expanded={normalMenuOpen}
                                     onClick={() => setNormalMenuOpen((open) => !open)}
@@ -1310,7 +1309,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                     {NORMAL_OPTIONS.find((option) => option.value === sliceDirection)?.label || 'c'}
                                 </button>
                                 {normalMenuOpen && (
-                                    <span className="normal-menu-list" role="listbox" aria-label="Normal">
+                                    <span className="ui-dropdown__list" role="listbox" aria-label="Normal">
                                         {NORMAL_OPTIONS.map((option) => (
                                             <button
                                                 key={option.value}
@@ -1326,16 +1325,16 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                     </span>
                                 )}
                             </span>
-                        </label>
+                        </Control>
                         {sliceDirection === 'custom' && (
-                            <label
-                                className="control custom-direction"
+                            <Control
+                                label="Plane (h k l)"
                                 title="Miller indices of the lattice planes to slice along: the slab normal is h a* + k b* + l c*, which differs from the direction [h k l] in a non-orthogonal cell"
                             >
-                                <span className="control-name">Plane (h k l)</span>
                                 {customDirection.map((value, index) => (
                                     <input
                                         key={CUSTOM_DIRECTION_LABELS[index]}
+                                        className="ui-input-compact"
                                         type="number"
                                         step="0.1"
                                         value={value}
@@ -1343,11 +1342,11 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                         onChange={(event) => updateCustomDirection(index, event.target.value)}
                                     />
                                 ))}
-                            </label>
+                            </Control>
                         )}
-                        <label className="control">
-                            <span className="control-name">Slice</span>
+                        <Control label="Slice" valueWide value={<>{zCenter.toFixed(2)}</>}>
                             <input
+                                className="ui-range ui-range--lg"
                                 type="range"
                                 min="0"
                                 max="1"
@@ -1355,56 +1354,42 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                 value={zCenter}
                                 onChange={(event) => setZCenter(Number(event.target.value))}
                             />
-                            <span className="control-value">{zCenter.toFixed(2)}</span>
-                        </label>
-                        <label className="control">
-                            <span className="control-name">Thickness</span>
-                            <input type="range" min="0.01" max="0.5" step="0.01" value={thickness} onChange={(event) => setThickness(Number(event.target.value))} />
-                            <span className="control-value">{thickness.toFixed(2)}</span>
-                        </label>
-                        <label className="control">
-                            <span className="control-name">Bandwidth</span>
-                            <input type="range" min="0.005" max="0.15" step="0.005" value={bandwidth} onChange={(event) => setBandwidth(Number(event.target.value))} />
-                            <span className="control-value">{bandwidth.toFixed(3)}</span>
-                        </label>
-                        <label className="control">
-                            <span className="control-name">Colormap</span>
-                            <select value={colormap} onChange={(event) => setColormap(event.target.value)}>
+                        </Control>
+                        <Control label="Thickness" valueWide value={<>{thickness.toFixed(2)}</>}>
+                            <input className="ui-range ui-range--lg" type="range" min="0.01" max="0.5" step="0.01" value={thickness} onChange={(event) => setThickness(Number(event.target.value))} />
+                        </Control>
+                        <Control label="Bandwidth" valueWide value={<>{bandwidth.toFixed(3)}</>}>
+                            <input className="ui-range ui-range--lg" type="range" min="0.005" max="0.15" step="0.005" value={bandwidth} onChange={(event) => setBandwidth(Number(event.target.value))} />
+                        </Control>
+                        <Control label="Colormap">
+                            <select className="ui-select" value={colormap} onChange={(event) => setColormap(event.target.value)}>
                                 {COLORMAP_NAMES.map((name) => (
                                     <option key={name} value={name}>{name}</option>
                                 ))}
                             </select>
-                        </label>
-                        <label className="control">
-                            <span className="control-name">Grid</span>
-                            <select value={gridSize} onChange={(event) => setGridSize(Number(event.target.value))}>
+                        </Control>
+                        <Control label="Grid">
+                            <select className="ui-select" value={gridSize} onChange={(event) => setGridSize(Number(event.target.value))}>
                                 <option value={80}>80</option>
                                 <option value={120}>120</option>
                                 <option value={160}>160</option>
                                 <option value={220}>220</option>
                             </select>
-                        </label>
-                        <label className="control switch">
-                            <span className="control-name">Contours</span>
-                            <input type="checkbox" checked={showContours} onChange={(event) => setShowContours(event.target.checked)} />
-                            <i className="switch-track" aria-hidden="true" />
-                        </label>
-                        <label className="control switch">
-                            <span className="control-name">Log scale</span>
-                            <input type="checkbox" checked={logScale} onChange={(event) => setLogScale(event.target.checked)} />
-                            <i className="switch-track" aria-hidden="true" />
-                        </label>
-                    </div>
+                        </Control>
+                        <Switch label="Contours" checked={showContours} onChange={(event) => setShowContours(event.target.checked)} />
+                        <Switch label="Log scale" checked={logScale} onChange={(event) => setLogScale(event.target.checked)} />
+                    </ControlsBar>
 
-                    {kdeError && <div className="structure-error">{kdeError}</div>}
+                    {kdeError && <Banner tone="danger" gapLg>{kdeError}</Banner>}
 
                     <div className="analysis-layout">
-                        <div
+                        <Card
+                            roundEnds
                             className="kde-panel"
                             style={{ '--panel-aspect': slicePanelGeometry.planeAspect }}
                         >
-                            <h3>
-                                <span className="panel-title-label">
+                            <CardHeader>
+                                <span className="ui-card__label">
                                     KDE Slice
                                     <InfoBadge label="How the KDE slice works">
                                         <p>
@@ -1427,72 +1412,74 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                     </InfoBadge>
                                 </span>
                                 <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
-                            </h3>
-                            <canvas ref={canvasRef} className="kde-canvas" />
+                            </CardHeader>
+                            <canvas ref={canvasRef} className="ui-stage kde-canvas" />
                             {kde?.message && kde.slabCount > 0 && (
-                                <div className="local-density-note kde-message-note" role="status">
+                                <CardNote emph role="status">
                                     {kde.message}
-                                </div>
+                                </CardNote>
                             )}
                             {kde?.warnings?.map((warning) => (
-                                <div key={warning.code} className="local-density-note kde-message-note" role="status">
+                                <CardNote key={warning.code} emph role="status">
                                     {warning.message}
-                                </div>
+                                </CardNote>
                             ))}
                             {kernelAngstrom && kernelAngstrom.major > KERNEL_ANISOTROPY_NOTE * kernelAngstrom.minor && (
-                                <div className="local-density-note kde-message-note" role="status">
+                                <CardNote emph role="status">
                                     {`The kernel is ${Math.round(kernelAngstrom.major / kernelAngstrom.minor)}:1 anisotropic: `
                                         + 'its shape is bw² times the covariance of the slab\'s atoms, so it follows how '
                                         + 'the sites are laid out in the slab, not how any atom moves. Elongation of the '
                                         + 'blobs along the kernel\'s long axis is an artefact; use the PCA Ellipsoid page '
                                         + 'for displacement shapes.'}
-                                </div>
+                                </CardNote>
                             )}
                             {isLocalStructure && (
-                                <div className="local-density-note">
+                                <CardNote>
                                     Browser-side Gaussian KDE. The Flask app uses SciPy KDE for reference-grade values.
-                                </div>
+                                </CardNote>
                             )}
-                        </div>
-                        <div
+                        </Card>
+                        <Card
+                            clip
                             className="slab-panel"
                             style={{ '--panel-aspect': slicePanelGeometry.sideAspect }}
                         >
-                            <div className="slab-panel-header">
+                            <CardHeader as="div">
                                 <span>Slab In Cell</span>
-                                <div className="slab-panel-header-meta">
-                                    <strong>{sliceConfig.label} {(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
+                                <div className="ui-card__cluster">
+                                    <strong className="ui-card__readout">{sliceConfig.label} {(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
                                     <SaveMenu onSave={saveSlab} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
                                 </div>
-                            </div>
-                            <canvas ref={slabCanvasRef} />
-                        </div>
-                        <div
+                            </CardHeader>
+                            <canvas ref={slabCanvasRef} className="ui-stage" />
+                        </Card>
+                        <Card
+                            clip
                             className="model-panel"
                             style={{ '--panel-aspect': Math.max(slicePanelGeometry.planeAspect, 1) }}
                         >
-                            <h3>
+                            <CardHeader>
                                 Folded Unit Cell
                                 <SaveMenu onSave={saveModel} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
-                            </h3>
-                            <div ref={mountRef} className="three-mount" />
+                            </CardHeader>
+                            <div ref={mountRef} className="ui-stage ui-stage--orbit three-mount" />
                             {Object.keys(elementColors).length > 0 && (
-                                <div className="atom-legend" aria-label="Atom colors by element">
+                                <div className="ui-legend" aria-label="Atom colors by element">
                                     {Object.entries(elementColors).map(([element, color]) => (
-                                        <span key={element} className="atom-legend-item">
-                                            <span className="atom-legend-swatch" style={{ background: color }} />
+                                        <span key={element} className="ui-legend__item">
+                                            <span className="ui-legend__swatch" style={{ background: color }} />
                                             {element}
                                         </span>
                                     ))}
                                 </div>
                             )}
-                        </div>
+                        </Card>
                     </div>
                 </>
             )}
             
             <AppFooter />
-        </section>
+        </Page>
     );
 };
 
