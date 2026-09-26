@@ -268,14 +268,28 @@ def related_r_value_logs(path: str | Path) -> list[Path]:
 
 
 def read_stog(path: str | Path) -> np.ndarray:
-    rows: list[list[float]] = []
-    with Path(path).open("r", encoding="utf-8") as handle:
-        for line in handle.readlines()[2:]:
-            parts = line.split()
-            if parts:
-                rows.append([float(value) for value in parts])
-    if not rows:
+    """Columns of a classic stog output (``scale_ft.gr`` …), transposed.
+
+    Lines 1-2 (title, point count) are skipped. A row is kept when it has at
+    least two tokens and every token is a finite number (``E`` or Fortran ``D``
+    exponents, :func:`parse_fortran_number`), and only rows with the modal
+    column count survive, so a stray scalar line or a torn final row cannot
+    make the array ragged. Undecodable bytes (a latin-1 title) are replaced.
+    Mirrors ``readStog()`` in browserData.js.
+    """
+    text = Path(path).read_text(encoding=_TEXT_ENCODING, errors="replace")
+    groups: dict[int, list[list[float]]] = {}
+    for line in _LINE_BREAK_RE.split(text)[2:]:
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        values = [parse_fortran_number(token) for token in parts]
+        if any(value is None or not math.isfinite(value) for value in values):
+            continue
+        groups.setdefault(len(values), []).append(values)
+    if not groups:
         raise ValueError(f"{path} does not contain STOG numeric rows")
+    rows = max(groups.values(), key=len)
     return np.asarray(rows, dtype=float).T
 
 

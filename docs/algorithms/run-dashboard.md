@@ -376,21 +376,24 @@ own series.
 #### 4c. STOG data file — `read_stog()` / `readStog()`
 
 Both skip **exactly the first two lines** (the classic STOG layout is `count`, then a title line),
-whitespace-split the rest, transpose, and plot only columns 0 and 1. Beyond that they are not the
-same function:
+whitespace-split the rest, transpose, and plot only columns 0 and 1 — one rule in both runtimes
+(`parsers.py` → `read_stog()`, `browserData.js` → `readStog()`):
 
-* **Python `read_stog()`** ([parsers.py](../../rmc_toolkits/parsers.py)) has **no** `try`/`except`. Every
-  remaining non-empty line goes through `[float(value) for value in parts]`, so a single
-  non-numeric token — a trailing text line, a units row — raises `ValueError` and **fails the whole
-  file**. `np.asarray(rows).T` is then built with no column-count check, so ragged rows raise as
-  well. `float('NaN')` succeeds, so `NaN` tokens are **retained**.
-* **JavaScript `readStog()`** delegates to `parseNumberRows(lines, 2)`, which keeps a row only when
-  `parsed.every(Number.isFinite)` and **silently drops** every other row — text rows and rows
-  containing `NaN` alike. `transpose()` then uses the first surviving row's length as the column
-  template, so a ragged row yields `undefined` entries rather than an error.
+* a row is kept when it has **at least two tokens** and **every token is a finite number**, read with
+  `parse_fortran_number()` / `parseFortranNumber()` (`E` or Fortran `D` exponents) — so a text row, a
+  stray scalar line and a row holding `NaN`/`Inf`/`****` are dropped;
+* only rows with the **modal column count** survive (the first-seen count wins a tie), so a torn final
+  row with fewer columns cannot make the array ragged;
+* undecodable bytes are replaced (Python reads `utf-8-sig` with `errors="replace"`, as
+  `read_stog_xy()` does; the browser's `File.text()` already replaces), so a latin-1 `Å` in the title
+  line is harmless;
+* no row at all → "`<file>` does not contain STOG numeric rows".
 
-(The tolerant "keep the rows that parse" behaviour that *does* exist in Python lives in
-`read_stog_xy()`, a different function the dashboard path never calls.)
+Until the 1.0 gate the two differed: Python `float()`-parsed every token, so a latin-1 title, a `D`
+exponent or a torn last row failed the whole file (HTTP 500), and it kept `NaN` rows; the browser
+dropped non-finite rows but let a torn row through. Pinned by `tests/test_parsers.py::ReadStogTests`
+and its twin in `__tests__/browserData.test.js` (the same `STOG_EDGE_BODY` text); on the Fortran
+outputs in `data/stog_tests` the arrays are unchanged.
 
 #### 4d. R-value log — `read_chi_log()` / `readChi()`
 

@@ -215,6 +215,18 @@ describe('run-control fit-function labels on Dashboard plots', () => {
         expect(plotDataFromText(noFit).yLabel).toBe('G(r)');
     });
 
+    it('reads STOG rows by the read_stog rule (tests/test_parsers.py STOG_EDGE_BODY)', () => {
+        // Same body as the Python test: E and D exponents, a NaN row, a stray
+        // scalar line and a torn final row with fewer columns.
+        const body = '0.01 1.0E+00 2.0\n0.02 1.5D+00 3.0\n0.03 NaN 4.0\n7\n0.04 2.5 5.0\n0.05 3.0';
+        const text = `3\nFe\uFFFD g(r) title\n${body}`;
+        const data = plotDataFromText({ plotKind: 'stog', name: 'scale_ft.gr', text });
+        expect(data.series[0].x).toEqual([0.01, 0.02, 0.04]);
+        expect(data.series[0].y).toEqual([1.0, 1.5, 2.5]);
+        expect(() => plotDataFromText({ plotKind: 'stog', name: 'scale_ft.sq', text: 'title\n0\n' }))
+            .toThrow('scale_ft.sq does not contain STOG numeric rows');
+    });
+
     it('labels classic stog scale.gr / *_ft.gr as g(r), *_rmc.gr as G(r) (plots.stog_function_label parity)', () => {
         const stogText = 'STOG header\n2\n0.00 1.0 1.1\n0.10 2.0 2.1\n';
         const label = (name) => plotDataFromText({ plotKind: 'stog', name, text: stogText }).yLabel;

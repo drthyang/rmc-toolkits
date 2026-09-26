@@ -259,17 +259,6 @@ const pairFitTypes = async (files, entries, settingsEntry) => {
     }
 };
 
-const parseNumberRows = (lines, startIndex = 0, separator = /\s+/) => {
-    const rows = [];
-    lines.slice(startIndex).forEach((line) => {
-        const values = line.trim().split(separator).filter(Boolean);
-        if (!values.length) return;
-        const parsed = values.map(Number);
-        if (parsed.every(Number.isFinite)) rows.push(parsed);
-    });
-    return rows;
-};
-
 const transpose = (rows) => rows[0].map((_, index) => rows.map((row) => row[index]));
 
 // An RMCProfile fit/partials CSV: a header line, then numeric rows. Blank lines
@@ -364,8 +353,22 @@ export const readChi = (text) => {
     return { values, column, skippedRows };
 };
 
+// A classic stog output: lines 1-2 (title, count) skipped; a row is kept when it
+// has >= 2 tokens, all finite numbers (E or Fortran D exponents), and only the
+// modal column count survives (first seen wins a tie), so a stray scalar line or
+// a torn final row cannot enter the plot. Mirrors parsers.read_stog().
 const readStog = (text, name) => {
-    const rows = parseNumberRows(text.split(LINE_BREAK), 2);
+    const groups = new Map();
+    text.split(LINE_BREAK).slice(2).forEach((line) => {
+        const parts = line.trim().split(/\s+/).filter(Boolean);
+        if (parts.length < 2) return;
+        const values = parts.map(parseFortranNumber);
+        if (!values.every((value) => value !== null && Number.isFinite(value))) return;
+        if (!groups.has(values.length)) groups.set(values.length, []);
+        groups.get(values.length).push(values);
+    });
+    let rows = [];
+    groups.forEach((group) => { if (group.length > rows.length) rows = group; });
     if (!rows.length) throw new Error(`${name} does not contain STOG numeric rows`);
     return transpose(rows);
 };

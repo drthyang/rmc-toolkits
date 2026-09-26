@@ -17,6 +17,7 @@ from rmc_toolkits.parsers import (
     read_moves_metadata,
     read_exafs_csv,
     read_rmc_csv,
+    read_stog,
     read_structure,
     related_r_value_logs,
     rwp,
@@ -233,6 +234,40 @@ def _last_column(text: str) -> list[float]:
     """Last-column values of the complete data rows, read independently of the parser."""
     rows = [line.split() for line in text.split("\n")[2:] if line.strip()]
     return [float(row[-1]) for row in rows]
+
+
+# Shared with web_app/frontend/src/__tests__/browserData.test.js (readStog parity):
+# after the count and title lines, E and Fortran D exponents, a NaN row, a stray
+# scalar line and a torn final row with fewer columns.
+STOG_EDGE_BODY = (
+    "0.01 1.0E+00 2.0\n"
+    "0.02 1.5D+00 3.0\n"
+    "0.03 NaN 4.0\n"
+    "7\n"
+    "0.04 2.5 5.0\n"
+    "0.05 3.0"
+)
+
+
+class ReadStogTests(unittest.TestCase):
+    """read_stog (Flask plots of scale_ft.*) reads what the browser's readStog reads."""
+
+    def test_tolerant_rows_match_the_browser(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "scale_ft.gr"
+            # Classic layout: count, then a title line (here with a latin-1 byte).
+            path.write_bytes("3\nFe\u00e9 g(r) title\n".encode("latin-1") + STOG_EDGE_BODY.encode("ascii"))
+            data = read_stog(path)
+        # Rows with every token a finite number, in the modal column count;
+        # the NaN row, the scalar line and the torn 2-token row are dropped.
+        np.testing.assert_allclose(data, [[0.01, 0.02, 0.04], [1.0, 1.5, 2.5], [2.0, 3.0, 5.0]])
+
+    def test_no_numeric_rows_is_a_value_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "scale_ft.sq"
+            path.write_text("title\n0\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "does not contain STOG numeric rows"):
+                read_stog(path)
 
 
 class ReadChiLogTests(unittest.TestCase):
