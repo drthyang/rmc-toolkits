@@ -42,8 +42,13 @@ class KdeParityFixtureTests(unittest.TestCase):
                 if expected["kernel"] is None:
                     self.assertIsNone(actual["kernel"])
                 else:
+                    # rtol alone cannot compare an off-diagonal that is pure round-off
+                    # (2.97e-22 in the golden, exactly 0 on numpy 1.22): hold every entry
+                    # to 1e-12 of the matrix's largest entry as well.
+                    covariance = np.asarray(expected["kernel"]["covariance"], dtype=float)
                     np.testing.assert_allclose(
-                        actual["kernel"]["covariance"], expected["kernel"]["covariance"], rtol=1e-12
+                        actual["kernel"]["covariance"], covariance, rtol=1e-12,
+                        atol=1e-12 * np.abs(covariance).max(),
                     )
                     # The peak is SciPy's compiled sum, which whitens through
                     # chol(H) (>= 1.10) or chol(H^-1) (older) with release-
