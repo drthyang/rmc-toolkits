@@ -1660,6 +1660,49 @@ def scaling_run():
         return jsonify({"error": str(exc)}), 500
 
 
+def _is_api_path(path: str) -> bool:
+    return path == "/api" or path.startswith("/api/")
+
+
+@app.errorhandler(404)
+def _not_found(error):
+    """JSON for an unknown /api/* path; the SPA (or the build hint) elsewhere.
+
+    ``static_url_path=""`` registers ``/<path:filename>`` for the built assets,
+    and that rule matches before :func:`serve_frontend`, so without this
+    handler an unknown API path (or a client-side route) got Flask's HTML 404.
+    """
+    if _is_api_path(request.path):
+        return jsonify({"error": f"API endpoint not found: {request.path}"}), 404
+    if request.method == "GET":
+        index = Path(app.static_folder or FRONTEND_DIST) / "index.html"
+        if index.exists():
+            return send_from_directory(index.parent, "index.html")
+        return jsonify(
+            {
+                "error": "Frontend build not found",
+                "hint": "Run `npm run build` in web_app/frontend or use the Dockerfile.",
+            }
+        ), 404
+    return jsonify({"error": f"Not found: {request.path}"}), 404
+
+
+@app.errorhandler(405)
+def _method_not_allowed(error):
+    """JSON for a wrong method on an /api/* route (keeps the Allow header)."""
+    if not _is_api_path(request.path):
+        return error
+    allowed = sorted(getattr(error, "valid_methods", None) or [])
+    response = jsonify(
+        {"error": f"{request.method} is not allowed on {request.path}"
+         + (f"; use {', '.join(allowed)}" if allowed else "")}
+    )
+    response.status_code = 405
+    if allowed:
+        response.headers["Allow"] = ", ".join(allowed)
+    return response
+
+
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_frontend(path: str):

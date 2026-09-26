@@ -241,5 +241,29 @@ class ScalingEdgeTests(_EdgeCase):
         self.assertIn("inspect must be a boolean", error)
 
 
+class ApiNotFoundTests(_EdgeCase):
+    """Unknown /api/* paths and wrong methods answered Flask's HTML error pages."""
+
+    def test_unknown_api_paths_and_methods_answer_json(self):
+        for method, path, code in (
+            ("get", "/api/nope", 404),
+            ("get", "/api/", 404),
+            ("get", "/api/kde/slices", 404),
+            ("post", "/api/structure", 405),
+            ("delete", "/api/scaling/run", 405),
+        ):
+            with self.subTest(method=method, path=path):
+                response = getattr(self.client, method)(path)
+                status, error = self.status_error(response)
+                self.assertEqual(status, code)
+                self.assertTrue(error)
+
+    def test_non_api_paths_still_serve_the_app_or_its_hint(self):
+        response = self.client.get("/some/page")
+        self.assertIn(response.status_code, (200, 404))
+        if response.status_code == 404:
+            self.assertIn("Frontend build not found", json.loads(response.get_data(as_text=True))["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

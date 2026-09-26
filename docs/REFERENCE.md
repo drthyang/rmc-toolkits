@@ -200,7 +200,10 @@ plot file that cannot be parsed or decoded, a JSON body that is not an object or
 deeply, and a non-string
 `path`/`kind`/`mode`/`formula`/`outDir`… field), 403 path
 outside the data roots, 404 missing file/folder, 409 output exists (`/api/scaling/run` without
-`force`) or source file still being written (see below), 500 unexpected failure.
+`force`) or source file still being written (see below), 500 unexpected failure. Every API error
+is JSON: an unknown `/api/*` path is a 404 and a wrong method a 405 (with its `Allow` header), not
+Flask's HTML error page; other unknown paths serve the built app (`index.html`), or a JSON hint
+when the frontend is not built.
 
 **The static-mode workers apply the same rules** (`workers/requestGuards.js`: `requestNumber()`
 mirrors `_number()`, `assertFiniteResult()` mirrors `_strict_result_response()` with its exact

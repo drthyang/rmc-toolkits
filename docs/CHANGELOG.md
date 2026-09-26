@@ -279,6 +279,8 @@ with 0.5.0.
   analysis pages then reload in place, keeping the picks that still apply, so a page never mixes
   two configurations. Only Bond Geometry's computed distribution is dropped. Every Three.js view
   releases its WebGL context on teardown.
+- Unknown `/api/*` paths answer a JSON 404 and wrong methods a JSON 405 (with `Allow`); both were
+  Flask's HTML error pages, because the static-asset rule matched before the SPA route.
 - `/api/convert/frac` (`write_frac_from_rmc6f`) refuses a file with no full-layout atom line; it
   used to write a header-only Frac file with a 200. It returns the parse report's `parseWarning`
   (a torn file converted silently), refuses an output that is its own source or a directory (a
