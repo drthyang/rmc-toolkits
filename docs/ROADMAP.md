@@ -126,14 +126,14 @@ focus.**
 ### Preprocessing — Auto StoG (ACTIVE; shipped 2026-07-17)
 
 The former "deferred preprocessing" precondition — a dedicated preprocessing module with a clear
-user path — is met, so this workflow is now a headline feature rather than a deferred one:
-`rmc_toolkits.scaling`/`transforms`/`scattering` (the auto-scaling engine, validated against three
-complete classic-Fortran stog runs), the `rmc-autoscale` CLI, the `/api/scaling/preview|run`
-endpoints, and the **Auto StoG** tab (first in the tab row; Flask mode) replace the classic stog
-"try again" loop with an automatic physics-anchored fit (high-Q level sweep + low-r density limit,
-with the Faber-Ziman Q→0 limit as an independent amplitude criterion/cross-check). Full plan and
-validation record: [STOG_SCALING_PLAN.md](STOG_SCALING_PLAN.md). Remaining stretch: the
-static-mode Web-Worker port (plan Phase 5) so the hosted dashboard can run it browser-side.
+user path — is met: `rmc_toolkits.scaling`/`transforms`/`scattering` (the auto-scaling engine,
+validated against three complete classic-Fortran stog runs), the `rmc-autoscale` CLI and the
+`/api/scaling/preview|run` endpoints replace the classic stog "try again" loop with an automatic
+physics-anchored fit (high-Q level sweep + low-r density limit, with the Faber-Ziman Q→0 limit as
+an independent amplitude criterion/cross-check). The **Auto StoG** page runs the Web-Worker port
+(`workers/autoScale.js`) in both runtimes, but the tab is hidden in the shipped build
+(`SHOW_AUTO_STOG = false` in `App.jsx`); the engine, CLI and API are supported. Full plan and
+validation record: [STOG_SCALING_PLAN.md](STOG_SCALING_PLAN.md).
 
 ### Lowering the barrier end-to-end
 
@@ -191,3 +191,67 @@ and MFA aware) — the app never stores credentials.
 10. Draft RMCProfile input-file templates and a form-to-input generator with pre-flight validation.
 11. Prototype Phase 8a remote monitoring: a read-only SSH pull of an HPC run directory into a local
     cache, surfaced through the existing run-source abstraction (see `docs/HPC_MONITORING_PLAN.md`).
+
+## 1.x candidates
+
+Maintainer decisions the 1.0 audit considered and did not take, grouped by engine (moved here
+from the v1.0.0 entry of [CHANGELOG.md](CHANGELOG.md)). Until one is taken, the behaviour
+documented in [ALGORITHMS.md](ALGORITHMS.md) stands.
+
+- **Structure KDE:**
+  - A physical kernel, isotropic in the real plane with a width in Å, which would remove the
+    slab-layout kernel artefact. That artefact is documented and flagged on the map.
+  - Normalising oblique slices by the section integral.
+  - An `[uvw]` input mode, and `(100)`-style labels for the a/b/c presets.
+  - A decline instead of a warning for `unresolved` maps.
+- **χ² history:**
+  - Plotting every χ² column and the total, and having the watchdog classify on the total. Today
+    both the chart and the badge follow the last column, and the badge names it.
+  - A dedicated "blown-up" watchdog status.
+  - A weighted Rwp.
+- **Symmetry finder:**
+  - A Python port or an spglib cross-check in CI; the finder is browser-only.
+  - Moving it into a Web Worker so the 2000-site and 384-operation caps can rise.
+  - An origin-shift search, so Wyckoff letters are unique across origins (Ga 4c vs 4d).
+  - Cell reduction for boxes declared 1×1×1, and a reduced-cell re-description to name "≥"
+    lower bounds fully.
+  - Subgroup enumeration instead of the greedy maximal group.
+- **Displacement Directions:**
+  - Making Auto (or a coarser ν) the default resolution instead of ν = 10. Measured during the
+    audit, 1 of 52 real sites exceeded 2σ at ν = 10, against 8–11 on Auto.
+  - Removing or renaming the legacy `significance`/`peakZScore` fields.
+  - A variance-matched map test, and an exact antipodal null at coarse ν.
+  - A reference-position option, since coherent off-centring is invisible by construction.
+  - A physical sign rule for the PCA frame.
+- **PCA ellipsoid:**
+  - Identical subsamples in both engines above 20 000 copies.
+  - `AXIS_RESOLUTION_SIGMAS` = 2 instead of 3. At 3, PC2 is never resolved on the heavy-tailed
+    5 K sites, so the κ column mostly reads "—".
+  - U_cif/β_ij beside the Cartesian tensor.
+  - A fixed-band shell colour scale.
+  - Linking the isosurface and ellipsoid levels.
+  - Per-species clouds for mixed sites.
+  - Exact analytic crystal-frame marginals.
+- **Auto StoG:**
+  - A lower default `r_cutoff`, or lowering it automatically for short bonds.
+  - Switching to the FZ amplitude automatically when the density limit is degenerate (the Mn₃Sn
+    refusals).
+  - Refusing an unconverged, an unreliable-FZ or an r₀-above-the-shell fit.
+  - Exposing the ρ₀ physical range.
+  - An "enforcement not applied" chip and explicit first-peak-window fields on the page.
+- **Bond angles:**
+  - Pairing A = C distinct-window requests as (w12 bond, w23 bond), so the work and not only the
+    angle count is bounded by the budget.
+  - A different `APP_MAX_ANGLES`.
+  - A CLI `--max-angles`.
+  - Showing the exact count before Compute.
+  - Snapping the length-histogram bins.
+  - Checking the distinct-window convention against an RMCProfile TRIPLETS run.
+- **Parsers and API:**
+  - Flipping `iter_rmc6f_atoms`'s full-layout-only default in 2.0.
+  - Renaming the `xray_sq`/`neutron_sq` kinds.
+  - The mid-write guard on the analysis pages.
+  - A "configuration changed" banner with Live Data off.
+  - Rejecting out-of-range grids and z instead of clamping them.
+  - Caching `rmc6f_problem` per file signature (each request re-reads a 64 KiB head per
+    candidate, ~0.4 ms).

@@ -379,8 +379,8 @@ plot-parity tests, so those run in CI.
   triplets cross-checks — skip in CI; only the committed demo run and synthetic fixtures run there.
 - With Live Data **off**, a Flask analysis page picks up a newly saved configuration only on its
   next request (press Load, or switch Live Data on); notation.md §3c.
-- Maintainer decisions deferred beyond 1.0 are listed in [docs/CHANGELOG.md](docs/CHANGELOG.md)
-  (v1.0.0, "Deferred beyond 1.0").
+- Maintainer decisions deferred beyond 1.0 are listed in [docs/ROADMAP.md](docs/ROADMAP.md)
+  ("1.x candidates").
 
 ## Next best steps
 
