@@ -56,15 +56,15 @@ XRAY_RUN = _first_existing_run("100K", "199K")
 #
 #     199 K -> 0.0564 A^-3   (-1.5% from the hand 0.057329; 0.0600, +4.7%, before the
 #                             1.0 Huber IRLS fix -- the 3% bound tells the two apart)
-#     100 K -> 0.0640 A^-3   (11.7%, measured before that fix; not re-measured: the 100 K
-#                             run is not on the integration machine)
+#     100 K -> 0.0601 A^-3   (+4.8%; 0.0640, +11.7%, before the Huber fix -- the 6% bound
+#                             tells the two apart)
 #
-# One bound covering both would have to be ~13%, which would stop this test noticing a
+# One bound covering both would have to be ~6%, which would stop this test noticing a
 # regression on 199 K, so the bound is per run. A tolerance keyed on a directory that is
 # gitignored is admittedly awkward, but the alternative — an assertion that quietly means
 # something different depending on which dataset happens to be on disk — is worse.
 RHO0_HAND_VALUE = 0.057329
-RHO0_ESTIMATE_TOLERANCE = {"199K": 0.03, "100K": 0.13}
+RHO0_ESTIMATE_TOLERANCE = {"199K": 0.03, "100K": 0.06}
 
 # stog_59438: a complete Fortran stog run of Mn3Sn (POWGEN PG3), local-only. Its
 # parameters are recovered from the run's own outputs (scale.fq vs the rebinned

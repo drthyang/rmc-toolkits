@@ -421,7 +421,8 @@ data whose first measured Q (after cropping, not the configured Qmin) exceeds th
 width (~1 Å⁻¹), where the Q→0 extrapolation owns the estimate — a
 starting point, not a measurement. Validation: synthetic truth ρ0 = 0.05 recovered to
 0.0510 from seeds 0.02/0.05/0.2; FeCoSn 199 K x-ray → 0.0600 vs the hand 0.057329 (4.7%),
-100 K → 0.0640 (11.7%) — the distance from a hand value is a property of the measured
+100 K → 0.0640 (11.7%) (after the 1.0 Huber fix: 199 K 0.0564, −1.5%; 100 K 0.0601,
++4.8%) — the distance from a hand value is a property of the measured
 S(Q), not of the code, so the fixture tolerance is per temperature; both are
 seed-independent to <0.1%
 from seeds 0.03/0.057/0.12. In the workbench, ρ0 resolution is: user value →

@@ -3288,7 +3288,7 @@ longer than the data it rests on, so the estimate is *a starting point, not a me
 | run | recovered $\rho_0$ | vs hand | test tolerance |
 | --- | --- | --- | --- |
 | 199 K | 0.0564 Å⁻³ (0.0600 before the 1.0 Huber fix, Step 6) | −1.5 % (+4.7 %) | 3 % |
-| 100 K | 0.0640 Å⁻³ (measured before that fix) | 11.7 % | 13 % |
+| 100 K | 0.0601 Å⁻³ (0.0640 before the 1.0 Huber fix) | +4.8 % (+11.7 %) | 6 % |
 
 **How far the estimate lands from a hand value is a property of the measured $S(Q)$, not of the
 code** — the recovered density is the root of $a_\mathrm{fz}/a_\mathrm{density}(\rho_0) = 1$, so each
