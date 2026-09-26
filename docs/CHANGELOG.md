@@ -368,8 +368,10 @@ Read these before comparing 1.0 numbers or files with earlier releases.
 - Non-finite input is handled one way everywhere: `.rmc6f` lines with NaN/∞ coordinates are
   skipped, counted and reported in both runtimes (no batched `LinAlgError`). NaN in a data series
   is `null`. A NaN result is a 400.
-- Both runtimes resolve a run folder to the same configuration (`find_run_configuration`,
-  `chooseStructureFile`), with code-point tie-breaks.
+- Both runtimes resolve a flat run folder to the same configuration (`find_run_configuration`,
+  `chooseStructureFile`), with code-point tie-breaks. A picked folder with subfolders can differ:
+  the browser also searches the subfolders (and falls back to the first usable `.rmc6f` by full
+  path), while the server looks only at the folder itself.
 - The package root exports the 1.0 engine API (`first_shell_foot`, `auto_enforcement_cutoff`,
   `fz_limit_fit`, `alias_limit`, `bond_angle_summary_from_file`, …).
 - Coordinates-only site reconstruction on the PCA page is 3.5–6.5× faster. The `.rmc6f`
