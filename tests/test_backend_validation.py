@@ -509,5 +509,61 @@ class ScalingValidationTests(unittest.TestCase):
         self.assertFalse((self.run_dir / "out").exists())
 
 
+class ClientErrorStatusTests(_ValidationCase):
+    """A bad request or an unreadable input file is a 4xx with a JSON error, not a 500."""
+
+    RUN = "results/backend_validation_status"
+
+    def status_and_error(self, response):
+        body = response.get_data(as_text=True)
+        return response.status_code, strict_json(body).get("error", "")
+
+    def test_plot_routes_answer_4xx_for_bad_files(self):
+        torn = self.run_dir / "torn_FQ1.csv"
+        torn.write_text("Q, F(Q)_RMC, F(Q)_Expt\n1.0, 0.5, 0.6\n2.0\n", encoding="utf-8")
+        latin = self.run_dir / "latin_FQ1.csv"
+        latin.write_bytes("Q, F(Q)_RMC, F(Q)_Expt \u00c5\n1.0, 0.5, 0.6\n".encode("latin-1"))
+        for route in ("/api/plot", "/api/plot/metadata", "/api/plot/data"):
+            for name in ("torn_FQ1.csv", "latin_FQ1.csv"):
+                with self.subTest(route=route, name=name):
+                    status, error = self.status_and_error(
+                        self.client.get(route, query_string={"path": f"{self.RUN}/{name}"}))
+                    self.assertEqual(status, 400, error)
+                    self.assertTrue(error)
+            with self.subTest(route=route, case="missing"):
+                status, _ = self.status_and_error(
+                    self.client.get(route, query_string={"path": f"{self.RUN}/missing_FQ1.csv"}))
+                self.assertEqual(status, 404)
+        # /api/plot/metadata used to have no exists/kind check at all.
+        status, _ = self.status_and_error(
+            self.client.get("/api/plot/metadata", query_string={"path": self.RUN}))
+        self.assertEqual(status, 404)
+        status, error = self.status_and_error(
+            self.client.get("/api/plot/metadata", query_string={"path": f"{self.RUN}/synthetic.rmc6f"}))
+        self.assertEqual(status, 400)
+        self.assertIn("Unsupported plot file type", error)
+
+    def test_files_route_rejects_a_nul_byte(self):
+        status, _ = self.status_and_error(self.client.get("/api/files", query_string={"dir": "a\x00b"}))
+        self.assertEqual(status, 400)
+
+    def test_json_bodies_must_be_objects_with_string_fields(self):
+        cases = [
+            ("/api/scaling/preview", [1, 2]),
+            ("/api/scaling/run", "text"),
+            ("/api/convert/frac", [1]),
+            ("/api/scaling/preview", {"path": 5}),
+            ("/api/convert/frac", {"path": 5}),
+            ("/api/scaling/preview", {"path": f"{self.RUN}/synthetic.rmc6f", "kind": 5}),
+        ]
+        for route, body in cases:
+            with self.subTest(route=route, body=body):
+                status, error = self.status_and_error(self.client.post(route, json=body))
+                self.assertEqual(status, 400, error)
+        status, _ = self.status_and_error(
+            self.client.post("/api/convert/frac", json={"path": f"{self.RUN}/missing.rmc6f"}))
+        self.assertEqual(status, 404)
+
+
 if __name__ == "__main__":
     unittest.main()

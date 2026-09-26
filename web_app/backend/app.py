@@ -149,6 +149,8 @@ def _is_inside_root(candidate: Path, root: Path) -> bool:
 
 
 def _resolve_inside_root(raw_path: str | None) -> Path:
+    if raw_path is not None and not isinstance(raw_path, str):
+        raise ValueError(f"path must be a string, got {type(raw_path).__name__}")
     candidate = Path(raw_path or ".").expanduser()
     if not candidate.is_absolute():
         candidate = DATA_ROOT / candidate
@@ -158,6 +160,26 @@ def _resolve_inside_root(raw_path: str | None) -> Path:
         allowed = ", ".join(str(root) for root in allowed_roots)
         raise PermissionError(f"Path is outside configured data roots: {allowed}")
     return resolved
+
+
+def _json_object() -> dict:
+    """The request's JSON body as a dict ({} when absent); anything else is a 400."""
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"request body must be a JSON object, got {type(payload).__name__}")
+    return payload
+
+
+def _payload_text(payload: dict, key: str, default: str | None = None) -> str | None:
+    """A string field of a JSON body (``default`` when absent/null); a non-string is a 400."""
+    value = payload.get(key)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string, got {type(value).__name__}")
+    return value
 
 
 def _choose_folder(initial_dir: Path) -> Path | None:
@@ -471,6 +493,8 @@ def list_files():
         return jsonify({"root": str(DATA_ROOT), "currentPath": str(directory), "files": files})
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
+    except ValueError as exc:  # e.g. an embedded NUL byte in the path
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -478,7 +502,7 @@ def list_files():
 @app.route("/api/dialog/folder", methods=["POST"])
 def choose_folder():
     try:
-        payload = request.get_json(silent=True) or {}
+        payload = _json_object()
         initial_dir = _resolve_inside_root(payload.get("dir", "."))
         if initial_dir.is_file():
             initial_dir = initial_dir.parent
@@ -494,6 +518,8 @@ def choose_folder():
         return jsonify({"path": str(selected), "name": selected.name})
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -514,6 +540,10 @@ def plot_file():
         )
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:  # unparsable / unsupported file (UnicodeDecodeError included)
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -522,12 +552,20 @@ def plot_file():
 def plot_metadata():
     try:
         path = _resolve_inside_root(request.args.get("path"))
+        if not path.exists() or not path.is_file():
+            return jsonify({"error": "File not found"}), 404
+        if detect_plot_kind(path) is None:
+            return jsonify({"error": f"Unsupported plot file type: {path.name}"}), 400
         result = make_plot(path)
         metadata = {"kind": result.kind, "title": result.title, "metrics": result.metrics}
         close_plot(result)
         return jsonify(metadata)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:  # unparsable file (UnicodeDecodeError included)
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -604,6 +642,10 @@ def plot_data():
         return jsonify({**metadata, "xLabel": x_label, "yLabel": y_label, "series": payload_series})
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:  # unparsable file (UnicodeDecodeError included)
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -611,7 +653,7 @@ def plot_data():
 @app.route("/api/convert/frac", methods=["POST"])
 def convert_frac():
     try:
-        payload = request.get_json(silent=True) or {}
+        payload = _json_object()
         source = _resolve_inside_root(payload.get("path"))
         if source.suffix != ".rmc6f":
             return jsonify({"error": "Expected a .rmc6f file"}), 400
@@ -628,6 +670,10 @@ def convert_frac():
         return jsonify({"error": str(exc)}), 403
     except FileExistsError as exc:
         return jsonify({"error": str(exc)}), 409
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -1064,7 +1110,7 @@ def _resolve_scaling_source(payload: dict):
     source = _resolve_inside_root(payload.get("path"))
     if not source.exists() or not source.is_file():
         raise FileNotFoundError(f"Source file not found: {source}")
-    kind = (payload.get("kind") or "auto").lower()
+    kind = (_payload_text(payload, "kind") or "auto").lower()
     inp = None
     inp_path = None
     looks_like_inp = source.suffix == ".inp" or "input" in source.name.lower()
@@ -1120,7 +1166,7 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> tuple[ScalingCo
             rho0 = header.get("number_density")
         if rho0 is None:
             mass_density = _payload_float(payload, "massDensity")
-            formula_raw = (payload.get("formula") or "").strip()
+            formula_raw = (_payload_text(payload, "formula") or "").strip()
             if mass_density is not None and formula_raw:
                 rho0 = number_density_from_mass_density(formula_raw, mass_density)
         if rho0 is None:
@@ -1145,7 +1191,7 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> tuple[ScalingCo
     resolved = resolve_coefficients(
         b_avg_sq=b_avg_sq, b_avg_sq_source=b_avg_sq_source,
         b_sq_avg=_payload_float(payload, "bSqAvg"),
-        formula=payload.get("formula"),
+        formula=_payload_text(payload, "formula"),
     )
     b_avg_sq, b_sq_avg = resolved["b_avg_sq"], resolved["b_sq_avg"]
     if b_avg_sq is None:
@@ -1172,8 +1218,8 @@ def _resolve_scaling_config(payload: dict, inp, header: dict) -> tuple[ScalingCo
         lorch=lorch,
         low_q_correction=_payload_bool(payload, "lowQCorrection", True),
         robust=_payload_bool(payload, "robust", True),
-        c1_mode=(payload.get("c1Mode") or "sweep").lower(),
-        amplitude_criterion=(payload.get("amplitude") or "density").lower(),
+        c1_mode=(_payload_text(payload, "c1Mode") or "sweep").lower(),
+        amplitude_criterion=(_payload_text(payload, "amplitude") or "density").lower(),
         despike=_payload_bool(payload, "despike", False),
     )
     config.r_fit_window  # validate eagerly with a clean 400
@@ -1227,7 +1273,7 @@ def _resolve_scaling_enforcement(
 
 
 def _resolve_scaling_mode(payload: dict, inp) -> tuple[str, float, float]:
-    mode = (payload.get("mode") or "auto").lower()
+    mode = (_payload_text(payload, "mode") or "auto").lower()
     if mode not in ("auto", "manual"):
         raise CliError(f"mode must be 'auto' or 'manual', got {mode!r}")
     a = _payload_float(payload, "a")
@@ -1353,7 +1399,7 @@ def _inp_payload(inp) -> dict | None:
 @app.route("/api/scaling/preview", methods=["POST"])
 def scaling_preview():
     try:
-        payload = request.get_json(silent=True) or {}
+        payload = _json_object()
         if payload.get("inspect"):
             inp, inp_path, data_path, header = _resolve_scaling_source(payload)
             return jsonify(
@@ -1456,7 +1502,7 @@ def scaling_preview():
 @app.route("/api/scaling/run", methods=["POST"])
 def scaling_run():
     try:
-        payload = request.get_json(silent=True) or {}
+        payload = _json_object()
         inp, inp_path, data_path, header, config, enforcement, mode, result, warnings = (
             _scaling_request(payload)
         )
@@ -1466,10 +1512,10 @@ def scaling_run():
 
         from types import SimpleNamespace
 
-        out_dir = payload.get("outDir")
+        out_dir = _payload_text(payload, "outDir")
         args = SimpleNamespace(
             out_dir=str(_resolve_inside_root(out_dir)) if out_dir else None,
-            out_stem=(payload.get("outStem") or "").strip() or None,
+            out_stem=(_payload_text(payload, "outStem") or "").strip() or None,
             force=_payload_bool(payload, "force", False),
         )
         targets = _resolve_scaling_targets(args, inp, inp_path, data_path)
