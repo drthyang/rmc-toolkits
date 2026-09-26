@@ -279,6 +279,9 @@ with 0.5.0.
   analysis pages then reload in place, keeping the picks that still apply, so a page never mixes
   two configurations. Only Bond Geometry's computed distribution is dropped. Every Three.js view
   releases its WebGL context on teardown.
+- `/api/kde/slice` reads `element` case-insensitively, as `/api/pca/*` and `/api/triplets` do. An
+  element the file lacks, or a file with no parseable atom, is a 400 that says so; both used to be
+  a 200 all-zero map reading "No atoms in this slab.".
 - `/api/scaling/*` parse `enforce` once, as a tri-state. They return the coefficient warnings
   the CLI prints and never mutate a cached result.
 - [REFERENCE.md](REFERENCE.md) documents all 15 routes with their ranges and caps, and a

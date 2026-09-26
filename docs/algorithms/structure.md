@@ -200,7 +200,12 @@ and position.
   by `_cached_positions` → `_POSITIONS_CACHE`, a `_FileCache(16)` keyed on the file signature
   `(st_mtime_ns, st_ctime_ns, st_size, st_ino)` and the element). **Every atom**
   of the selected element enters the estimate; no display sampling is applied, and the element
-  filter is applied while parsing, before anything else.
+  filter is applied while parsing, before anything else. The `element` parameter is
+  case-insensitive (capitalized like the parser's labels, as on `/api/pca/*` and `/api/triplets`),
+  and an empty selection is explained, not drawn: an element the file lacks is a 400
+  `Unknown element 'Xx'; available: Ga, Se, Ta`, and a file with no parseable atom is the parser's
+  "no atoms could be parsed" 400 (`_require_kde_atoms`, run only when the selection is empty).
+  Before 1.0 both were a 200 all-zero map reading "No atoms in this slab.".
 * **Browser-loaded run** — the worker is posted the `points` **memo**, i.e. `structure.points`
   *filtered by `selectedElement`* (`StructurePage.jsx`, `points` `useMemo`). The element filter is
   therefore applied **client-side, after parsing**, and it is the whole mechanism by which the
@@ -1577,7 +1582,7 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
 | Zero / near-zero custom normal | **Differ**: JS falls back to $(0,0,1)$ at $\lVert\mathbf{h}\rVert\le10^{-9}$; Python raises at $\le10^{-12}$. The app never hits the raise because it sends the already-normalized fallback |
 | Input population | Flask: **all** atoms of the element, filtered while parsing. Browser: the element-filtered display array, globally strided (and hard-truncated) above 1 000 000 atoms **before** filtering |
 | Display sampler (companion panels) | Flask `/api/structure`: site-stratified quota sampler `_sample_atoms_by_site()`, so above the cap the panels and the KDE use different populations. Browser: the same strided array the KDE uses |
-| Element label case | Python `.capitalize()`s the element token, so `SE`, `se` and `Se` **merge into one entry**; the browser parser keeps the raw token, so they stay separate. The dropdown labels, the per-element counts, the legend colours (`buildElementColors` sorts the distinct labels) and hence the KDE population for a filtered element can all differ between runtimes for the same file |
+| Element label case | **Same**: both parsers `.capitalize()` the element token (`rmc6f.js` → `normalizeElement`), so `SE`, `se` and `Se` merge into one entry in both runtimes, and `/api/kde/slice` reads its `element` parameter case-insensitively |
 
 ---
 

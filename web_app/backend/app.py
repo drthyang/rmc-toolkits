@@ -748,6 +748,19 @@ def structure():
         return jsonify({"error": str(exc)}), 500
 
 
+def _require_kde_atoms(rmc6f_path: Path, element: str | None) -> None:
+    """Explain an empty KDE selection as a 400 instead of an all-zero map.
+
+    Runs only when the selection is empty, so a normal request never pays for
+    it: no parseable atom at all is ``parse_rmc6f_atoms``' ValueError (naming
+    what was found), and an element the file lacks is named with the ones it has.
+    """
+    atoms, _ = parse_rmc6f_atoms(rmc6f_path, include_coords_only=True)
+    available = sorted({atom["element"] for atom in atoms})
+    if element is not None and element not in available:
+        raise ValueError(f"Unknown element {element!r}; available: {', '.join(available)}")
+
+
 def _cached_positions(rmc6f_path: Path, element: str | None) -> UnitCellPositions:
     return _POSITIONS_CACHE.get(
         rmc6f_path, (element,), lambda: load_unit_cell_positions(str(rmc6f_path), element=element)
@@ -837,9 +850,10 @@ def kde_slice_endpoint():
         target = _resolve_inside_root(request.args.get("dir", "."))
         rmc6f_path = _find_rmc6f(target)
 
-        element = request.args.get("element") or None
-        if element in ("", "all"):
-            element = None
+        # Element names are case-insensitive, as on /api/pca/* and /api/triplets
+        # (the parser capitalizes them: 'se' and 'SE' are Se).
+        element = (request.args.get("element") or "").strip()
+        element = None if element.lower() in ("", "all") else element.capitalize()
 
         orientation, normal, u_axis, v_axis = _slice_orientation_from_request()
 
@@ -855,6 +869,8 @@ def kde_slice_endpoint():
         log = request.args.get("log", "false").lower() in ("1", "true", "yes")
 
         positions = _cached_positions(rmc6f_path, element)
+        if positions.fractional_positions.shape[0] == 0:
+            _require_kde_atoms(rmc6f_path, element)
         cell_lengths = positions.cell_lengths
 
         result = oriented_kde_slice(
