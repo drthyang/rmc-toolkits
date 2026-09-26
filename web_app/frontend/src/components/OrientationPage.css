@@ -1,0 +1,65 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
+
+   Displacement Directions page layout. The look (controls bar, cards, hints)
+   is the UI kit's; this only places the three panels. */
+
+/* Three equal-height panels in one row: axis views : sphere : site picker =
+   3 : 6.5 : 6.5. Height-bounded so the whole page (top controls, panels,
+   footer) fits a 16:9 monitor without scrolling; the clamp tracks the window. */
+.orient-layout {
+    /* Self-sized (not flex:1): the height clamp is authoritative, so a
+       flex-grow can't stretch the row past what fits and cause page scroll. */
+    flex: none;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 6.5fr) minmax(0, 6.5fr);
+    gap: 0.85rem;
+    align-items: stretch;
+    /* Fill the page height below the top controls bar: the subtracted amount is
+       header + controls + footer + padding, so the three panels reach nearly to
+       the footer on a 16:9 screen without introducing page scroll. */
+    height: clamp(20rem, calc(100vh - 17.75rem), 60rem);
+}
+
+/* OrientationView renders with display:contents, so its two panels (the mini
+   column and the sphere) drop straight into the grid; the site picker's named
+   grid-area from the PCA layout is neutralized so it takes the third column. */
+.orient-mini-panel,
+.orient-main-panel,
+.orient-layout .pca-unitcell-panel {
+    grid-area: auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.orient-layout .pca-structure {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Below the three-up width, stack: sphere first (tall), then site picker, then
+   the axis views as a short row-height panel. */
+@media (max-width: 1200px) {
+    .orient-layout {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
+    .orient-mini-panel {
+        order: 3;
+        height: 12rem;
+    }
+
+    .orient-main-panel {
+        order: 1;
+        height: clamp(20rem, 55vh, 34rem);
+    }
+
+    .orient-layout .pca-unitcell-panel {
+        order: 2;
+        height: clamp(18rem, 45vh, 30rem);
+    }
+}

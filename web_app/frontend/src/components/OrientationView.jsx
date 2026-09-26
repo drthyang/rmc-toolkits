@@ -32,6 +32,7 @@ import {
     vertexRadii
 } from '../orientationSphere';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
+import { Card, CardHeader, CardMeta, Segmented, SegmentedButton, ToolButton } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import { siteLabel } from '../siteLabel';
@@ -43,7 +44,7 @@ import {
     TRIAD_COLORS,
     TRIAD_UP
 } from './sceneAxes';
-import './PcaKdePage.css';
+import './OrientationView.css';
 
 const SAVE_OPTIONS = [
     { id: 'png', label: 'Standard PNG', hint: '1×' },
@@ -464,11 +465,9 @@ export default function OrientationView({
     // page's 3 : 6.5 : 6.5 layout, next to the site picker panel.
     return (
         <>
-            <div className="pca-panel orient-mini-panel">
-                <h3>
-                    <span className="panel-title-label">Axis views</span>
-                </h3>
-                <div className="orient-multiview" ref={miniMountRef}>
+            <Card roundEnds className="orient-mini-panel">
+                <CardHeader title="Axis views" />
+                <div className="ui-stage ui-stage--glow-faint orient-multiview" ref={miniMountRef}>
                     {[0, 1, 2].map((axisIndex) => (
                         <button
                             key={axisIndex}
@@ -484,66 +483,64 @@ export default function OrientationView({
                         </button>
                     ))}
                 </div>
-            </div>
+            </Card>
 
-            <div className="pca-panel pca-viewport orient-main-panel">
-                <h3>
-                    <span className="panel-title-label">
-                        {selectedEllipsoid
-                            ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber} — displacement directions`
-                            : 'Displacement directions'}
-                    </span>
-                    <span className="panel-title-actions">
-                        {selectedEllipsoid && (
-                            <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
-                        )}
-                        {/* Direction frame: crystal Cartesian vs this site's principal
-                            axes — mirrors the PCA page's PC | Crystal header toggle. */}
-                        <div className="pca-frame-toggle" role="group" aria-label="Direction frame">
-                            <button
-                                type="button"
-                                className={frame === 'cartesian' ? 'is-active' : ''}
-                                onClick={() => onFrameChange('cartesian')}
-                                aria-pressed={frame === 'cartesian'}
-                                title="Crystal Cartesian frame"
+            <Card roundEnds className="orient-main-panel">
+                <CardHeader
+                    title={selectedEllipsoid
+                        ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber} — displacement directions`
+                        : 'Displacement directions'}
+                    actions={(
+                        <>
+                            {selectedEllipsoid && (
+                                <CardMeta>{selectedEllipsoid.count.toLocaleString()} atoms</CardMeta>
+                            )}
+                            {/* Direction frame: crystal Cartesian vs this site's principal
+                                axes — mirrors the PCA page's PC | Crystal header toggle. */}
+                            <Segmented role="group" aria-label="Direction frame">
+                                <SegmentedButton
+                                    type="button"
+                                    active={frame === 'cartesian'}
+                                    onClick={() => onFrameChange('cartesian')}
+                                    aria-pressed={frame === 'cartesian'}
+                                    title="Crystal Cartesian frame"
+                                >
+                                    Crystal
+                                </SegmentedButton>
+                                <SegmentedButton
+                                    type="button"
+                                    active={frame === 'pca'}
+                                    onClick={() => onFrameChange('pca')}
+                                    aria-pressed={frame === 'pca'}
+                                    title="This site's principal-axis frame (PC1 = x)"
+                                >
+                                    PCA
+                                </SegmentedButton>
+                            </Segmented>
+                            <ToolButton
+                                onClick={resetView}
+                                disabled={!result}
+                                title="Reset the camera to the default view"
                             >
-                                Crystal
-                            </button>
-                            <button
-                                type="button"
-                                className={frame === 'pca' ? 'is-active' : ''}
-                                onClick={() => onFrameChange('pca')}
-                                aria-pressed={frame === 'pca'}
-                                title="This site's principal-axis frame (PC1 = x)"
-                            >
-                                PCA
-                            </button>
-                        </div>
-                        <button
-                            type="button"
-                            className="pca-reset-view"
-                            onClick={resetView}
-                            disabled={!result}
-                            title="Reset the camera to the default view"
-                        >
-                            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                                <path d="M3 3v5h5" />
-                            </svg>
-                            Reset view
-                        </button>
-                        <SaveMenu
-                            onSave={saveView}
-                            options={SAVE_OPTIONS}
-                            label="Save"
-                            align="right"
-                            disabled={!result}
-                        />
-                    </span>
-                </h3>
-                <div className="pca-canvas orient-canvas" ref={mountRef}>
-                    {loading && <div className="pca-badge">Computing…</div>}
-                    {error && <div className="pca-badge is-error">{error}</div>}
+                                <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                    <path d="M3 3v5h5" />
+                                </svg>
+                                Reset view
+                            </ToolButton>
+                            <SaveMenu
+                                onSave={saveView}
+                                options={SAVE_OPTIONS}
+                                label="Save"
+                                align="right"
+                                disabled={!result}
+                            />
+                        </>
+                    )}
+                />
+                <div className="ui-stage ui-stage--glow ui-stage--orbit orient-canvas" ref={mountRef}>
+                    {loading && <div className="ui-overlay-badge">Computing…</div>}
+                    {error && <div className="ui-overlay-badge is-error">{error}</div>}
                     {hoverCell != null && result && (
                         <div className="orient-tooltip" style={{ left: hover.x + 14, top: hover.y + 12 }}>
                             <div>{formatDirection(result.centers[hoverCell])}</div>
@@ -573,11 +570,11 @@ export default function OrientationView({
                             </div>
                             <span className="orient-colorbar-label">{numberFormat(result.vmax, 1)}× isotropic</span>
                         </div>
-                        <div className="orient-summary">
-                            <span className="orient-stat">
+                        <div className="ui-inline-stats">
+                            <span className="ui-inline-stat">
                                 peak <b>{numberFormat(result.peakEnhancement, 2)}×</b> at {formatDirection(result.peakDirection)}
                                 {result.peakTieCount > 1 && (
-                                    <span className="orient-stat-null" title="Several cells share the maximum enhancement (within 1e-9); the lowest-index cell is reported">
+                                    <span className="ui-inline-stat__null" title="Several cells share the maximum enhancement (within 1e-9); the lowest-index cell is reported">
                                         {' '}(1 of {result.peakTieCount} equal cells)
                                     </span>
                                 )}
@@ -594,9 +591,9 @@ export default function OrientationView({
                                     </p>
                                 </InfoBadge>
                             </span>
-                            <span className="orient-stat">
+                            <span className="ui-inline-stat">
                                 anisotropy <b>{numberFormat(result.orientationAnisotropy, 2)}</b>
-                                {' '}<span className="orient-stat-null">
+                                {' '}<span className="ui-inline-stat__null">
                                     (isotropic ≈ {numberFormat(result.orientationAnisotropyNull, 2)})
                                 </span>
                                 {' '}· <b>{sigmaFormat(result.orientationAnisotropySignificance)}</b>
@@ -611,9 +608,9 @@ export default function OrientationView({
                                     </p>
                                 </InfoBadge>
                             </span>
-                            <span className={`orient-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
+                            <span className={`ui-inline-stat ${asymmetrySignificant ? 'is-flagged' : ''}`}>
                                 ± asymmetry <b>{numberFormat(result.antipodalAsymmetry, 2)}</b>
-                                {' '}<span className="orient-stat-null">
+                                {' '}<span className="ui-inline-stat__null">
                                     (symmetric null {numberFormat(result.antipodalAsymmetryNull, 2)} ± {numberFormat(result.antipodalAsymmetryNullSd, 2)})
                                 </span>
                                 {' '}· <b>{sigmaFormat(result.antipodalAsymmetryZ)}</b>
@@ -633,7 +630,7 @@ export default function OrientationView({
                                     </p>
                                 </InfoBadge>
                             </span>
-                            <span className="orient-stat">
+                            <span className="ui-inline-stat">
                                 map significance <b>{Number.isFinite(result.mapSignificance) ? sigmaFormat(result.mapSignificance) : '— (too sparse)'}</b>
                                 <InfoBadge label="About the map significance" align="end">
                                     <p>
@@ -660,21 +657,21 @@ export default function OrientationView({
                                 </InfoBadge>
                             </span>
                         </div>
-                        <div className="pca-legend">
+                        <div className="ui-legend">
                             {frame === 'cartesian' && unitCell ? (
                                 CELL_AXIS_LABELS.map((label, i) => (
-                                    <span key={label} className="pca-legend-item">
-                                        <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
+                                    <span key={label} className="ui-legend__item">
+                                        <i className="ui-legend__swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
                                     </span>
                                 ))
                             ) : (
                                 ['PC1', 'PC2', 'PC3'].map((label, i) => (
-                                    <span key={label} className="pca-legend-item">
-                                        <i className="pca-legend-swatch" style={{ background: PC_CSS_COLORS[i] }} /> {label}
+                                    <span key={label} className="ui-legend__item">
+                                        <i className="ui-legend__swatch" style={{ background: PC_CSS_COLORS[i] }} /> {label}
                                     </span>
                                 ))
                             )}
-                            <span className="pca-legend-note">
+                            <span className="ui-legend__note">
                                 {result.weight === 'count' ? 'direction distribution' : `weighted by ${result.weight === 'amplitude' ? '|Δr|' : '|Δr|²'}`}
                                 {result.smoothing > 0 ? ` · smoothed ${result.smoothing}×` : ''}
                                 {result.browserOrientation ? ' · browser' : ' · server'}
@@ -682,7 +679,7 @@ export default function OrientationView({
                         </div>
                     </>
                 )}
-            </div>
+            </Card>
         </>
     );
 }
