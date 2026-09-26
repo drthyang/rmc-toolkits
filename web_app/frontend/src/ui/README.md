@@ -9,8 +9,10 @@ design tokens in [`../index.css`](../index.css).
 - Kit `.jsx` files import **no CSS**. Import components from `src/ui`
   (`import { Card, CardHeader } from '../ui'`) or `InfoBadge` / `SaveMenu`
   from their own files.
-- Page CSS **places** things; the kit **styles** them. A page never restyles a
-  kit class.
+- Page CSS **places** things; the kit **styles** them. A page may key layout
+  off a kit class (`.geom-layout .ui-card { display: flex }`) or wire data to a
+  kit token (`.ui-file-chip.kind-bragg { --kind-color: … }`), but never changes
+  a kit class's look.
 
 The kit was introduced as a zero-visual-change refactor (every page was moved
 onto it pixel for pixel). Near-duplicate looks that existed at that point were
@@ -153,6 +155,11 @@ case to `__tests__/markup.test.jsx`.
   index path of each element → its computed style, `::before`/`::after`
   included) — a class rename with identical styling must produce an identical
   dump.
+- Screenshot diffs of headless Chromium are not perfectly deterministic here: the page loads
+  Inter from Google Fonts (`display=swap`), and text advances occasionally come out 1/64 px
+  different between runs of the *same* build, which flips the sub-pixel phase of a few glyphs
+  (≈0.06 % of a phone screenshot, a handful of glyphs). Re-shoot before chasing such a diff; a
+  real CSS change reproduces.
 - Walk the states by hand (DevTools :hover / :focus-visible / :active):
   nav tabs (hover, active-tab hover, no focus ring), pills and the save trigger
   (incl. accent), info trigger, tool buttons, overlay and frame segments,

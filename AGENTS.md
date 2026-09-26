@@ -81,20 +81,20 @@ web_app/frontend/src/
     watchdog/                    convergence heuristics (source of truth) + LLM-narrated badge hook
     useAssistant.js              shared hook: settings, connection probe/auto-connect, run context
     components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
+  ui/                            the UI kit — every shared look: ui.css (ui- classes, loaded once from main.jsx right after index.css) + thin components (Page, Card/CardHeader, ControlsBar/Control/Switch, Segmented, Pill/ToolButton/IconButton/PrimaryButton, Chip, StatRail/Stat/StatCard, Banner/Hint/EmptyState, InfoBadge, SaveMenu); see ui/README.md
   components/
     AutoStogPage.jsx             Auto StoG tab (hidden in the shipped build: `SHOW_AUTO_STOG = false`) — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets w/ descriptions) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
     Dashboard.jsx                all-plots run dashboard
     ModelSummary.jsx             Model information + Detected SG cards (parse warning, move counters, tolerance ladder)
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
-    SaveMenu.jsx                 the save badge/menu every chart toolbar and 3D panel uses
-    InfoBadge.jsx                accessible "?" badge with a hover/focus explanation popover
+    AppFooter.jsx                the footer shared by the workspace pages (kit ui-footer class)
     FoldedCellPanel.jsx          Bond Geometry's folded unit cell with the detected bonds drawn over the atom cloud
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
     PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections; unit-cell picker via SiteStructurePanel
     OrientationPage.jsx          Displacement Directions tab (the nav label; the code says "orientation"; own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9
     BondGeometryPage.jsx        Bond Geometry tab (beside Atomic Density): triplet + window controls, Model information card (ModelSummary with showSymmetry={false} — no Detected SG card; same structure source as Dashboard/StructurePage), result chips, angle-distribution panel (sin-corrected|density toggle), bond-length step histogram, partial-g(r) window helper; 16:9 viewport-clamped grid with flush card edges; compute-on-demand via useSiteCloud requestPca('triplets') → worker or /api/triplets
     OrientationView.jsx          renders display:contents → its two panels drop into the page grid: the Axis-views mini panel (three fixed-angle a/b/c | PC1/2/3 views, click to snap) and the sphere panel (flat-shaded Goldberg cells, amplitude relief, only the selected frame's axis rods, header Crystal|PCA toggle + Reset + Save, per-cell hover, colorbar + asymmetry/significance strip)
-    SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages
+    SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages; sized by UnitCellPanel.css (shared with FoldedCellPanel)
     sceneAxes.js                 shared axis palettes (PC tricolor, a/b/c) + triad/rod builders for every Three.js panel
     PlotViewer.jsx, FileExplorer.jsx   UNUSED — imported nowhere (PlotViewer's "Generate Frac_coord" button was the only UI caller of /api/convert/frac)
   workers/
@@ -337,6 +337,16 @@ web_app/frontend/src/
   there: helpers such as `transforms.sine_transform` / `low_q_correction_basis`,
   `scaling.crop_sq` / `validate_enforcement` and the CLI internals import from their modules. Add
   a new user-facing function to `__all__`.
+- **One UI kit; page CSS only places.** Every border, colour, radius, shadow, type size and
+  control geometry lives in `src/ui/ui.css` (`ui-` classes over the `index.css` tokens); page and
+  component stylesheets keep layout only (grids, flex sizing, order, outer margins, size clamps,
+  canvas sizing) keyed by page hook classes (`pca-layout`, `geom-layout`, `orient-*`,
+  `analysis-layout`, …). Domain visualizations keep their look in their component CSS, token-only
+  (InteractivePlot marks/legend/tooltip, the ModelSummary ladder, OrientationView colorbar and
+  axis views). Selector *shapes* are part of the look — `index.css`'s `button:hover:not(:disabled)`
+  (0,2,1) and `button:focus-visible` (0,1,1) interact with kit rules — so never use `@layer`,
+  `:where()` or `!important`, and style `is-*` states only compounded with a `ui-` class. Adding a
+  variant or component: `src/ui/README.md`.
 - **`src/llm/` import boundary**: the AI assistant module receives run data **only as props**
   (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`, `liveData`) and must not import
   from the rest of the app except `figureExport.js` (`downloadBlob`/`sanitizeFilename`). Cell math
@@ -345,6 +355,9 @@ web_app/frontend/src/
   the last .log column** (named in `plotData.chiColumn`, e.g. `X_ray_(R)1` — one fit term, not the
   total; browserData applies `Math.log`); the context builder labels it so the model reads it
   correctly, and reads `non_gaussianity` as Mardia's kurtosis (sites ranked by its magnitude).
+  It uses the UI kit by **class-name strings only** (`ui-page`, `ui-card`, `ui-empty`, `ui-pill`),
+  never kit JS; a kit token its own CSS reads keeps the old literal as a fallback
+  (`var(--warning, #b45309)`), so an extracted copy still renders.
 
 ## Run & test
 

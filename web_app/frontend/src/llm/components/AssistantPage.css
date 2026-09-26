@@ -1,7 +1,7 @@
 /* Layout for the AI Assistant workspace page. The page shell, the chat
    surface and the empty state use the host's UI-kit classes (ui-page,
    ui-card, ui-empty); this file only lays out the inner column, which is
-   width-capped because this page is text-led. Token-only. */
+   width-capped because this page is text-led. */
 
 /* Fill the page height so the chat area grows with the window; the message log
    scrolls internally and the composer stays pinned at the bottom. */
