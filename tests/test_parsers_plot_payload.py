@@ -99,6 +99,24 @@ class PlotParityFixtureTests(unittest.TestCase):
             self.assertEqual(len(got), len(want), f"{message} ({path} length)")
             for index, (g, w) in enumerate(zip(got, want)):
                 self._assert_same(g, w, message, f"{path}[{index}]")
+        elif isinstance(want, str) and isinstance(got, str) and "\n" in want:
+            # A generated file's text: its 16-digit floats can differ in the last
+            # digit between platforms' libm, so numeric tokens compare to 1e-12.
+            got_tokens, want_tokens = got.replace(",", " , ").split(), want.replace(",", " , ").split()
+            self.assertEqual(len(got_tokens), len(want_tokens), f"{message} ({path} token count)")
+            for index, (g, w) in enumerate(zip(got_tokens, want_tokens)):
+                try:
+                    g_value, w_value = float(g), float(w)
+                except ValueError:
+                    self.assertEqual(g, w, f"{message} ({path} token {index})")
+                    continue
+                if math.isnan(w_value):  # masked values stay masked
+                    self.assertTrue(math.isnan(g_value), f"{message} ({path} token {index}: {g} != {w})")
+                    continue
+                self.assertTrue(
+                    math.isclose(g_value, w_value, rel_tol=1e-12, abs_tol=1e-300),
+                    f"{message} ({path} token {index}: {g} != {w})",
+                )
         else:
             self.assertEqual(got, want, f"{message} ({path})")
 

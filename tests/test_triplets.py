@@ -591,14 +591,16 @@ class SinCorrectionIdentityTests(unittest.TestCase):
             centre_form = (result.counts / result.angle_count) / (
                 np.sin(np.radians(result.bin_centers)) * math.sin(half)
             )
-            np.testing.assert_allclose(result.sin_corrected, centre_form, rtol=1e-12)
+            # Identical in exact arithmetic; the engine's (cos t1 - cos t2)/2 cancels in the
+            # bins next to 0 and 180 deg, where platforms' libm differ by ~1e-12 relative.
+            np.testing.assert_allclose(result.sin_corrected, centre_form, rtol=1e-10)
             # Both forms are finite in the 0 and 180 degree bins.
             self.assertTrue(np.all(np.isfinite(centre_form)))
             # Density / sin(centre) -- RMCProfile's norm/sin(theta) -- is the
             # same curve times sin(w/2) / w, i.e. ~pi/360 at small widths.
             rmcprofile = result.density / np.sin(np.radians(result.bin_centers))
             np.testing.assert_allclose(
-                rmcprofile, result.sin_corrected * math.sin(half) / width, rtol=1e-12
+                rmcprofile, result.sin_corrected * math.sin(half) / width, rtol=1e-10
             )
 
 
