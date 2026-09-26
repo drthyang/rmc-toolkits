@@ -135,6 +135,72 @@ class PcaKdeVolumeLibraryTests(unittest.TestCase):
                 self.assertEqual(str(caught.exception), EMPTY_VOLUME_MESSAGE)
 
 
+class FracConversionTests(_EdgeCase):
+    """/api/convert/frac: zero parseable atoms wrote a header-only Frac file (200), the
+    output could be the source itself, overwrite "false" counted as true, and an output
+    path that is a directory was a 500."""
+
+    def post(self, **payload):
+        return self.client.post("/api/convert/frac", json=payload)
+
+    def test_zero_parseable_atoms_writes_nothing(self):
+        folder = self.folder_with("frac_no_atoms", EMPTY_ATOMS)
+        status, error = self.status_error(self.post(path=f"{folder}/run.rmc6f"))
+        self.assertEqual(status, 400, error)
+        self.assertIn("no atoms could be parsed", error)
+        self.assertEqual(list((ROOT / folder).glob("Frac_coord*")), [])
+
+    def test_a_partial_file_reports_what_was_skipped(self):
+        text = (self.run_dir / "synthetic.rmc6f").read_text(encoding="utf-8")
+        lines = text.splitlines()
+        marker = lines.index("Atoms:")
+        lines[marker + 3] = lines[marker + 3].rsplit(" ", 1)[0]  # one torn atom line
+        folder = self.folder_with("frac_partial", "\n".join(lines) + "\n")
+        response = self.post(path=f"{folder}/run.rmc6f")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:200])
+        payload = response.get_json()
+        self.assertIn("1 of 54 atom lines unparsed", payload["parseWarning"])
+        written = (ROOT / folder / "Frac_coord_run.txt").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(written), 5 + 53)
+
+    def test_clean_file_has_a_null_parse_warning(self):
+        folder = self.folder_with("frac_clean", (self.run_dir / "synthetic.rmc6f").read_text())
+        response = self.post(path=f"{folder}/run.rmc6f")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:200])
+        self.assertIsNone(response.get_json()["parseWarning"])
+
+    def test_the_source_is_never_the_output(self):
+        folder = self.folder_with("frac_self", (self.run_dir / "synthetic.rmc6f").read_text())
+        before = (ROOT / folder / "run.rmc6f").read_bytes()
+        status, error = self.status_error(
+            self.post(path=f"{folder}/run.rmc6f", outputPath=f"{folder}/run.rmc6f", overwrite=True)
+        )
+        self.assertEqual(status, 400, error)
+        self.assertIn("would overwrite its source", error)
+        self.assertEqual((ROOT / folder / "run.rmc6f").read_bytes(), before)
+
+    def test_overwrite_is_a_strict_boolean(self):
+        folder = self.folder_with("frac_flag", (self.run_dir / "synthetic.rmc6f").read_text())
+        first = self.post(path=f"{folder}/run.rmc6f")
+        self.assertEqual(first.status_code, 200)
+        status, _ = self.status_error(self.post(path=f"{folder}/run.rmc6f", overwrite="false"))
+        self.assertEqual(status, 409)
+        status, error = self.status_error(self.post(path=f"{folder}/run.rmc6f", overwrite="maybe"))
+        self.assertEqual(status, 400, error)
+        self.assertIn("overwrite must be a boolean", error)
+        again = self.post(path=f"{folder}/run.rmc6f", overwrite="true")
+        self.assertEqual(again.status_code, 200)
+
+    def test_an_output_path_that_is_a_directory_is_a_400(self):
+        folder = self.folder_with("frac_dir", (self.run_dir / "synthetic.rmc6f").read_text())
+        (ROOT / folder / "out").mkdir(exist_ok=True)
+        status, error = self.status_error(
+            self.post(path=f"{folder}/run.rmc6f", outputPath=f"{folder}/out", overwrite=True)
+        )
+        self.assertEqual(status, 400, error)
+        self.assertIn("is a directory", error)
+
+
 class ScalingEdgeTests(_EdgeCase):
     """/api/scaling/*: a stog.inp naming '.' as its data file and a deeply nested JSON
     body were 500s; inspect "false" entered inspect mode; booleans were coerced."""

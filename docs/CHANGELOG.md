@@ -279,6 +279,11 @@ with 0.5.0.
   analysis pages then reload in place, keeping the picks that still apply, so a page never mixes
   two configurations. Only Bond Geometry's computed distribution is dropped. Every Three.js view
   releases its WebGL context on teardown.
+- `/api/convert/frac` (`write_frac_from_rmc6f`) refuses a file with no full-layout atom line; it
+  used to write a header-only Frac file with a 200. It returns the parse report's `parseWarning`
+  (a torn file converted silently), refuses an output that is its own source or a directory (a
+  500), and writes through a temporary file, so a failed conversion never replaces an existing
+  one. `overwrite: "false"` counted as true.
 - JSON-body booleans are parsed strictly: `true`/`false`, `0`/`1` or the words
   1/true/yes/on, 0/false/no/off; anything else is a 400 (`"maybe"` read as false, an object as
   true, and `inspect: "false"` entered inspect mode). A stog.inp whose data file is a folder

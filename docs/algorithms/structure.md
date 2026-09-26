@@ -1944,7 +1944,13 @@ row per atom,
 
 $$\mathrm{reduced}_i = f_i - \frac{n_i}{N_i} \quad\text{printed as}\quad \texttt{RN  x  y  z  Nx  Ny  Nz}$$
 
-with the coordinates formatted to **5 decimal places** of a *box* fraction. `read_structure()` pairs
+with the coordinates formatted to **5 decimal places** of a *box* fraction. Only full-layout atom
+lines convert (a row needs the reference number and cell indices); a file with none is a
+`ValueError` naming what was found — no Atoms section, only unparsed or non-finite lines, or
+coordinates-only lines — where it used to write a header-only file. Skipped lines are reported
+(`report=`, and `parseWarning` on the route). `write_frac_from_rmc6f()` refuses an output that is
+the source itself or a directory, and writes through a temporary sibling renamed into place, so a
+failed conversion leaves an existing file untouched. `read_structure()` pairs
 `Frac_coord_<stem>.txt` with the usable `<stem>.rmc6f` of the same configuration (a folder with
 exactly one of each pairs them regardless of name; any other ambiguity raises; `frac_path=` /
 `rmc6f_path=` choose explicitly), cross-checks the Frac cell indices against the `.rmc6f` supercell

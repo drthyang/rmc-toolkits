@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import os
 from pathlib import Path
 import re
+import uuid
 from typing import Iterator, TypedDict
 
 import numpy as np
@@ -1026,8 +1028,21 @@ def parse_rmc6f_atoms(
     return atoms, report
 
 
-def frac_lines_from_rmc6f(rmc6f_path: str | Path) -> list[str]:
-    """Build `Frac_coord*.txt` content from an RMCProfile `.rmc6f` file."""
+def frac_lines_from_rmc6f(
+    rmc6f_path: str | Path,
+    *,
+    report: Rmc6fParseReport | None = None,
+) -> list[str]:
+    """Build `Frac_coord*.txt` content from an RMCProfile `.rmc6f` file.
+
+    Each row needs the atom's reference number and cell indices, so only
+    full-layout atom lines convert. A file with none (no Atoms section, only
+    unparsed / non-finite / coords-only lines) is a ``ValueError`` naming what
+    was found -- it used to give a header-only Frac file. Pass a
+    :class:`Rmc6fParseReport` as ``report`` to learn which lines were skipped.
+    """
+    if report is None:
+        report = Rmc6fParseReport()
     _, supercell = read_cell_vectors(rmc6f_path)
     lines = [
         " RN - reference number (a column in rmc6f file indicating an atom type\n",
@@ -1037,7 +1052,7 @@ def frac_lines_from_rmc6f(rmc6f_path: str | Path) -> list[str]:
         " RN    X    Y     Z    Nx    Ny    Nz\n",
     ]
 
-    for atom in iter_rmc6f_atoms(rmc6f_path):
+    for atom in iter_rmc6f_atoms(rmc6f_path, report=report):
         reduced = atom["coords"] - (atom["cell_indices"] / supercell)
         rn = atom["reference_number"]
         nx, ny, nz = atom["cell_indices"]
@@ -1045,6 +1060,17 @@ def frac_lines_from_rmc6f(rmc6f_path: str | Path) -> list[str]:
             f"{rn:3d}    {reduced[0]:.5f}    {reduced[1]:.5f}    {reduced[2]:.5f}  "
             f"{nx:d}  {ny:d}  {nz:d}\n"
         )
+    if not report.has_atoms_section:
+        raise ValueError(f"{rmc6f_path} does not contain an Atoms section")
+    if not report.parsed_atoms:
+        if report.coords_only_atoms:
+            raise ValueError(
+                f"{rmc6f_path}: no full-layout atom lines to convert -- a Frac file needs each "
+                f"atom's reference number and cell indices, and the {report.coords_only_atoms} "
+                "atom lines carry coordinates only"
+            )
+        detail = report.warning() or "the Atoms section is empty"
+        raise ValueError(f"{rmc6f_path}: no atoms could be parsed — {detail}")
     return lines
 
 
@@ -1052,18 +1078,38 @@ def write_frac_from_rmc6f(
     rmc6f_path: str | Path,
     output_path: str | Path | None = None,
     overwrite: bool = False,
+    *,
+    report: Rmc6fParseReport | None = None,
 ) -> Path:
-    """Write a `Frac_coord*.txt` file derived from an RMCProfile `.rmc6f` file."""
+    """Write a `Frac_coord*.txt` file derived from an RMCProfile `.rmc6f` file.
+
+    The output is never the source itself, never a directory, and is written
+    through a temporary file renamed into place, so a failed conversion leaves
+    an existing file untouched. ``report`` (optional) receives the parse report
+    of the atom section (see :func:`frac_lines_from_rmc6f`).
+    """
     rmc6f_path = Path(rmc6f_path)
     if output_path is None:
         output_path = rmc6f_path.with_name(f"Frac_coord_{rmc6f_path.stem}.txt")
     output_path = Path(output_path)
+    if output_path.resolve() == rmc6f_path.resolve() or (
+        output_path.exists() and rmc6f_path.exists() and os.path.samefile(output_path, rmc6f_path)
+    ):
+        raise ValueError(f"{output_path} would overwrite its source {rmc6f_path.name}")
+    if output_path.is_dir():
+        raise ValueError(f"{output_path} is a directory, not a Frac_coord file path")
     if output_path.exists() and not overwrite:
         raise FileExistsError(f"{output_path} already exists; pass overwrite=True to replace it")
 
-    lines = frac_lines_from_rmc6f(rmc6f_path)
+    lines = frac_lines_from_rmc6f(rmc6f_path, report=report)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("".join(lines), encoding="utf-8")
+    temporary = output_path.with_name(f".{output_path.name}.{os.getpid()}.{uuid.uuid4().hex[:12]}.tmp")
+    try:
+        temporary.write_text("".join(lines), encoding="utf-8")
+        os.replace(temporary, output_path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
     return output_path
 
 

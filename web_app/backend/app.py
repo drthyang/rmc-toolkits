@@ -35,6 +35,7 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
 from rmc_toolkits.parsers import (
+    Rmc6fParseReport,
     find_run_configuration,
     parse_rmc6f_atoms,
     read_cell_vectors,
@@ -661,14 +662,18 @@ def convert_frac():
         if source.suffix != ".rmc6f":
             return jsonify({"error": "Expected a .rmc6f file"}), 400
 
-        output_raw = payload.get("outputPath")
+        output_raw = _payload_text(payload, "outputPath")
         output = _resolve_inside_root(output_raw) if output_raw else None
+        # The shared .rmc6f grammar's report: atom lines skipped (a torn or
+        # partial file) are named, never silently left out of the Frac file.
+        report = Rmc6fParseReport()
         out_path = write_frac_from_rmc6f(
             source,
             output_path=output,
-            overwrite=bool(payload.get("overwrite", False)),
+            overwrite=_payload_bool(payload, "overwrite", False),
+            report=report,
         )
-        return jsonify({"path": str(out_path), "name": out_path.name})
+        return jsonify({"path": str(out_path), "name": out_path.name, "parseWarning": report.warning()})
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileExistsError as exc:
