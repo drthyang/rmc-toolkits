@@ -152,8 +152,8 @@ in-language reference — is stated per engine, along with the measured toleranc
 
 ## Run It Locally (optional)
 
-The hosted app needs no install. Run the Flask backend when you want server-side file browsing,
-`.rmc6f` conversion or reference-grade SciPy KDE on your own machine:
+The hosted app needs no install. Run the Flask backend when you want server-side file browsing or
+the reference-grade SciPy/NumPy engines on your own machine:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -171,23 +171,21 @@ covered in [docs/REFERENCE.md](docs/REFERENCE.md).
 ## Python Package
 
 ```python
-from rmc_toolkits import kde_slice, load_unit_cell_positions, make_plot, plot_to_png
+from rmc_toolkits import load_unit_cell_positions, make_plot, oriented_kde_slice, plot_to_png
 
 demo = "web_app/frontend/public/demo"  # bundled GaTa4Se8 250 K example run
 
+# The Atomic Density map of Se in a c-slab at 0.12 of the cell edge, 0.08 thick, bw 0.03:
+# the same numbers GET /api/kde/slice returns for these parameters.
 positions = load_unit_cell_positions(f"{demo}/GTS_250K.rmc6f", element="Se")
-density = kde_slice(
-    positions.positions,
-    z_center=0.12 * positions.cell_lengths[2],
-    dz=0.08 * positions.cell_lengths[2],
-    xlim=(0.0, float(positions.cell_lengths[0])),
-    ylim=(0.0, float(positions.cell_lengths[1])),
+density = oriented_kde_slice(
+    positions.fractional_positions, center=0.12, thickness=0.08, normal=(0, 0, 1), bw=0.03
 )
 png_bytes = plot_to_png(make_plot(f"{demo}/GTS_250K_FQ1.csv"))
 ```
 
-Full usage, parser helpers, and the legacy CLI scripts:
-[docs/REFERENCE.md](docs/REFERENCE.md#python-package-usage).
+Full usage, parser helpers, the `rmc-autoscale` and `rmc-triplets` command-line tools, and the
+legacy CLI scripts: [docs/REFERENCE.md](docs/REFERENCE.md#python-package-usage).
 
 ## Documentation
 
@@ -196,7 +194,7 @@ Full usage, parser helpers, and the legacy CLI scripts:
   operation each page performs on your data, so you can audit how a plot, density map, symmetry
   label, scaled dataset, or direction map was produced — including the approximations.
 - [docs/REFERENCE.md](docs/REFERENCE.md) — repository layout, setup, self-hosting, backend API,
-  supported file patterns, package usage, legacy CLI scripts, tests.
+  supported file patterns, package usage, command-line tools, legacy CLI scripts, tests.
 - [docs/ROADMAP.md](docs/ROADMAP.md) · [docs/CHANGELOG.md](docs/CHANGELOG.md) — plans and history.
 - [AGENTS.md](AGENTS.md) — architecture notes and contributor onboarding.
 
