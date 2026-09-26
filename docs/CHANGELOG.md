@@ -421,6 +421,17 @@ Read these before comparing 1.0 numbers or files with earlier releases.
   and an overflowing bandwidth. 409 means the source file kept changing during the read.
 - **Live Data (Flask mode)** reloads the analysis pages when the `.rmc6f` changes. With Live Data
   off, press Load to pick up a newly saved configuration.
+- **More inputs are refused instead of guessed**, each with a message naming the problem (a 400,
+  a thrown worker error, or a CLI exit code): an `.rmc6f` header with a zero, negative or
+  fractional supercell or a NaN, singular or overflowing lattice; a KDE-slice element the file
+  lacks; an empty PCA-KDE volume; a Frac conversion with no full-layout atom, onto its own source
+  or onto a directory; a JSON boolean that is not a boolean; an Auto StoG output family with two
+  outputs on one file, a directory in the way or an uncreatable folder; a non-finite or zero
+  `--scale`, a non-finite `--offset`, a negative Qmin, and an explicit enforcement cutoff that is
+  non-finite, negative or at/beyond rmax; `rmc-triplets` destinations that clash or a plot format
+  matplotlib cannot write. A custom (hkl) Atomic Density map in Flask mode is drawn in the page's
+  frame, so for (1 1 0)-type planes it is rotated 90° from what 0.5.0 drew (it now matches the
+  browser map and the Slab In Cell panel).
 - **`python web_app/backend/app.py` listens on 127.0.0.1 with debug off.** Other machines on the
   network can no longer reach it, and the auto-reloader is off. Set `RMC_TOOLKITS_HOST=0.0.0.0`
   to listen on the network (or use Gunicorn / Docker), and `RMC_TOOLKITS_DEBUG=1` for local
