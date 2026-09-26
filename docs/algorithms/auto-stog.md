@@ -4336,7 +4336,10 @@ relation of `_ft.gr` (`rtol=1e-10`).
 stog.inp session will not reproduce those file names. `ft.dat` is a fixed name in both.
 There is no clobber risk in the browser (a zip is produced, nothing is written in place); the
 CLI refuses to overwrite existing outputs without `--force` and defaults into an
-`autoscale/` subdirectory.
+`autoscale/` subdirectory. An output path that names the input data file or the stog.inp
+(`_same_file` in `_resolve_targets`: same path, symlink or hard link) is refused even with
+`--force` — in `--data` mode the default stem is the data file's, so `--out-dir` pointing at the
+data folder would otherwise overwrite the measured `<stem>.sq` with the scaled one.
 
 **Zip container:** [`zipArchive.js`](../../web_app/frontend/src/zipArchive.js) → `buildZip()`
 writes a dependency-free ZIP with the **store** method (no compression), CRC-32 per entry,

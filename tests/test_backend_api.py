@@ -670,6 +670,33 @@ class ScalingApiTests(unittest.TestCase):
         forced = self.client.post("/api/scaling/run", json={**body, "force": True})
         self.assertEqual(forced.status_code, 200)
 
+    def test_run_force_never_overwrites_the_input_data(self):
+        # Data mode, outDir = the data file's own folder: the default stem
+        # makes the scaled-S(Q) target the input itself. force must not
+        # destroy the measured file; the refusal is a 400 naming the input.
+        from rmc_toolkits.parsers import write_stog_xy
+
+        data = self.run_dir / "victim.sq"
+        write_stog_xy(data, self.q, self.sq_meas, title="measured")
+        before = data.read_bytes()
+        body = {
+            "path": "results/scaling_api_test/victim.sq",
+            "qmin": 0.6, "qmax": 30, "rho0": self.RHO0, "bAvgSq": self.B2,
+            "r0": 2.65, "mode": "manual", "a": 10.0, "b": -9.0,
+            "outDir": "results/scaling_api_test",
+        }
+        try:
+            for force in (False, True):
+                response = self.client.post(
+                    "/api/scaling/run", json={**body, "force": force}
+                )
+                self.assertEqual(response.status_code, 400, msg=response.get_json())
+                self.assertIn("input", response.get_json()["error"])
+                self.assertEqual(data.read_bytes(), before)
+                self.assertFalse((self.run_dir / "victim.gr").exists())
+        finally:
+            data.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()

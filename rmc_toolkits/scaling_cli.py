@@ -22,7 +22,9 @@ fit diagnostics.
 
 Safety: outputs default into an ``autoscale/`` directory next to the input, and
 nothing is ever overwritten without ``--force`` — so the tool cannot silently
-clobber the real STOG outputs a ``stog.inp`` typically sits beside. Classic
+clobber the real STOG outputs a ``stog.inp`` typically sits beside. An output
+that would land on the input data file or the ``stog.inp`` itself is refused
+even with ``--force``. Classic
 low-r enforcement (the Fortran's final ripple removal) is applied to the RMC
 files by default: at the ``stog.inp`` cutoff/first-peak window in ``stog.inp``
 mode (parity), at ``--enforce-cutoff`` when given, and otherwise at the foot of
@@ -36,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -264,7 +267,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="name outputs STEM.sq, STEM.gr, STEM_ft.sq, ... instead of the "
         "stog.inp declared names (default in --data mode: the data file's stem)",
     )
-    out.add_argument("--force", action="store_true", help="overwrite existing output files")
+    out.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite existing output files (never the input data or stog.inp)",
+    )
     return parser
 
 
@@ -550,6 +557,16 @@ def _resolve_enforcement(
     return float(cutoff), float(peak_rmin), float(peak_rmax)
 
 
+def _same_file(target: Path, source: Path) -> bool:
+    """True when ``target`` names ``source`` (same path, symlink or hard link)."""
+    try:
+        if target.exists() and source.exists():
+            return os.path.samefile(target, source)
+        return target.resolve() == source.resolve()
+    except OSError:
+        return False
+
+
 def _resolve_targets(
     args: argparse.Namespace,
     inp: Optional[StogInput],
@@ -576,6 +593,23 @@ def _resolve_targets(
         json_name = f"{stem}_provenance.json"
     targets["ft_correction"] = out_dir / _FT_NAME
     targets["provenance"] = out_dir / json_name
+
+    # The inputs are never an output, --force or not: in --data mode the
+    # default stem makes <out-dir>/<stem>.sq the measured file itself when
+    # --out-dir is its own folder, and a stog.inp may declare an output name
+    # equal to its data file. Overwriting either destroys the measured data
+    # (and a rerun would silently re-scale already-scaled data).
+    inputs = [path for path in (data_path, inp_path) if path is not None]
+    clashes = [
+        str(target)
+        for target in targets.values()
+        if any(_same_file(target, source) for source in inputs)
+    ]
+    if clashes:
+        raise CliError(
+            "output would overwrite an input file (never allowed, even with "
+            "--force; pick --out-dir/--out-stem):\n  " + "\n  ".join(clashes)
+        )
 
     if not args.force:
         existing = [str(path) for path in targets.values() if path.exists()]

@@ -276,7 +276,9 @@ functions are re-exported from the package root. Full list in [REFERENCE.md](REF
 Console entry point installed by `pip install -e .`
 ([`rmc_toolkits/scaling_cli.py`](../rmc_toolkits/scaling_cli.py); module form
 `python -m rmc_toolkits.scaling_cli`). Outputs default into `autoscale/` beside the input and
-nothing is overwritten without `--force`.
+nothing is overwritten without `--force`; an output that would land on the input data file or the
+stog.inp is refused even with `--force` (in `--data` mode, `--out-dir` = the data folder needs an
+`--out-stem`).
 
 ```bash
 rmc-autoscale --help                      # every flag, grouped as in the reference

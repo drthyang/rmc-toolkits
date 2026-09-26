@@ -92,6 +92,12 @@ with 0.5.0.
   flagged unreliable.
 - **Aliasing limit.** `r_alias_limit` is π/max ΔQ of the transformed grid, and an r_max beyond it
   is flagged. Despike gaps lower it to 24 Å on 59438.
+- **The input is never an output.** In `--data` mode the default stem is the data file's, so
+  `--out-dir` pointing at the data folder made `<stem>.sq` the measured file itself, and
+  `--force` (which the refusal suggested) replaced it with the scaled, cropped S(Q); a rerun then
+  silently fitted already-scaled data (a = 1). The CLI and `/api/scaling/run` now refuse any
+  output that names the input data file or the stog.inp, even with `--force` (API: 400). 0.5.0
+  had the same hole.
 - **CLI.** `--help` states the real enforcement default, which is on in every mode.
   `--estimate-rho0` seeds ρ₀ = 0.05 when no density source exists. A given r₀ with no detected
   shell no longer crashes with a TypeError.

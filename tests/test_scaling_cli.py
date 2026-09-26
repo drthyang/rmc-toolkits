@@ -169,6 +169,25 @@ class StogInpModeTests(CliSyntheticBase):
             code, _, err = run_cli([run / "stog.inp", "--manual", "--force"])
             self.assertEqual(code, 0, msg=err)
 
+    def test_force_never_overwrites_the_input_data_or_stog_inp(self):
+        # A stog.inp whose declared output name is its own data file: with the
+        # outputs pointed at the run folder, --force must still refuse.
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            write_stog_xy(run / "scale.fq", self.q, self.sq_meas, title="measured")
+            (run / "stog.inp").write_text(
+                INP_TEMPLATE.format(data="scale.fq", rmax=25, nr=1000)
+            )
+            before = (run / "scale.fq").read_bytes()
+            code, _, err = run_cli(
+                [run / "stog.inp", "--manual", "--out-dir", run, "--force"]
+            )
+            self.assertEqual(code, 2, msg=err)
+            self.assertIn("input", err)
+            self.assertIn("scale.fq", err)
+            self.assertEqual((run / "scale.fq").read_bytes(), before)
+            self.assertFalse((run / "scale.gr").exists())  # nothing written
+
     def test_no_enforce_keeps_honest_low_r(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = self.make_run_dir(tmp)
@@ -297,6 +316,33 @@ class DataModeTests(CliSyntheticBase):
             )
             self.assertEqual(code, 2)
             self.assertIn("cannot be combined", err)
+
+    def test_force_never_overwrites_the_input_data(self):
+        # --data X.sq with the outputs in X's own folder: the default stem is
+        # X, so the scaled-S(Q) target IS the input. --force must not destroy
+        # the measured data (and the refusal must say it is the input).
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "sample.sq"
+            write_stog_xy(data, self.q, self.sq_meas, title="measured")
+            before = data.read_bytes()
+            base = [
+                "--data", data, "--qmin", "0.6", "--qmax", "30",
+                "--b-avg-sq", B2, "--rho0", RHO0, "--r0", "2.65",
+                "--rmax", "25", "--nr", "1000",
+                "--scale", A_TRUE, "--offset", B_TRUE, "--out-dir", tmp,
+            ]
+            for extra in ([], ["--force"]):
+                code, _, err = run_cli(base + extra)
+                self.assertEqual(code, 2, msg=f"{extra}: {err}")
+                self.assertIn("input", err)
+                self.assertIn("sample.sq", err)
+                self.assertEqual(data.read_bytes(), before)
+                self.assertFalse((Path(tmp) / "sample.gr").exists())
+            # A distinct stem in the same folder is fine.
+            code, _, err = run_cli(base + ["--out-stem", "sample_scaled"])
+            self.assertEqual(code, 0, msg=err)
+            self.assertEqual(data.read_bytes(), before)
+            self.assertTrue((Path(tmp) / "sample_scaled.sq").exists())
 
     def test_error_cases(self):
         with tempfile.TemporaryDirectory() as tmp:
