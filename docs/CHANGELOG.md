@@ -405,6 +405,14 @@ Read these before comparing 1.0 numbers or files with earlier releases.
   path), while the server looks only at the folder itself.
 - The package root exports the 1.0 engine API (`first_shell_foot`, `auto_enforcement_cutoff`,
   `fz_limit_fit`, `alias_limit`, `bond_angle_summary_from_file`, …).
+- The static-mode workers refuse what the Flask routes refuse (`workers/requestGuards.js`): the PCA
+  worker's orientation `frequency` must be an integer and `smoothing` an integer in [0, 64] (10⁹
+  passes used to pin the worker), a KDE or orientation result holding NaN/∞ is an error with
+  `_strict_result_response`'s message instead of a posted NaN volume, and an unknown `kind` is an
+  error instead of a silent KDE. The Auto StoG worker requires a finite, non-zero `a` and a finite
+  `b` in manual mode (a NaN `a` used to post `ok: true` with all-NaN curves) and refuses a
+  non-finite fit. The structure worker reads `maxPoints` as `/api/structure` does. Every worker
+  answers a null message with an error, so the caller's promise always settles.
 - Coordinates-only site reconstruction on the PCA page is 3.5–6.5× faster. The `.rmc6f`
   classifier's fast path parses 52 000 atoms in ~0.2 s.
 

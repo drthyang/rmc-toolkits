@@ -22,6 +22,7 @@ import {
 } from './pcaKde.js';
 import { siteOrientationHistogram } from './orientation.js';
 import { APP_MAX_ANGLES, bondAngleSummary, isBlankValue } from './triplets.js';
+import { assertFiniteResult, requestNumber, requestObject } from './requestGuards.js';
 
 // Parsing the whole configuration into clouds is the expensive part, so cache it
 // and re-parse only when the .rmc6f text itself changes. The key MUST come from
@@ -88,8 +89,13 @@ const summarizeSites = (parsed, probability) => {
     };
 };
 
+const KINDS = ['sites', 'kde', 'orientation', 'triplets'];
+
 export const handlePcaMessage = async (data, getText) => {
-    const { kind = 'kde', probability = 0.5, clusterThreshold = DEFAULT_CLUSTER_THRESHOLD } = data;
+    const { kind = 'kde', probability = 0.5, clusterThreshold = DEFAULT_CLUSTER_THRESHOLD } = requestObject(data);
+    if (!KINDS.includes(kind)) {
+        throw new Error(`unknown request kind '${kind}' (expected ${KINDS.join(', ')})`);
+    }
     const text = await getText();
     const name = data.file?.name || data.file?.sourceFile?.name || 'structure file';
     const parsed = parseCached(text, clusterThreshold, name);
@@ -155,28 +161,35 @@ export const handlePcaMessage = async (data, getText) => {
         // ''/'all' mean "every site pooled", normalised to null exactly as the
         // Flask route does, so both transports return the same payload shape.
         const element = data.element === '' || data.element === 'all' ? null : data.element ?? null;
-        if (Number(data.smoothing) > MAX_ORIENTATION_SMOOTHING) {
-            throw new Error(`smoothing must be <= ${MAX_ORIENTATION_SMOOTHING}, got ${data.smoothing}`);
-        }
+        // As /api/pca/orientation's _query_number rules: an integer frequency
+        // (its [1, 64] range is the tiling's own check) and an integer
+        // smoothing in [0, 64] -- 1e9 passes would pin the worker for minutes.
+        const frequency = requestNumber(data.frequency, 'frequency', { fallback: null, integer: true });
+        const smoothing = requestNumber(data.smoothing, 'smoothing', {
+            fallback: 0, integer: true, ge: 0, le: MAX_ORIENTATION_SMOOTHING
+        });
         const histogram = siteOrientationHistogram(parsed, {
             referenceNumber: data.referenceNumber ?? null,
             element,
-            frequency: data.frequency ?? null,
+            frequency,
             weight: data.weight ?? 'count',
             minAmplitude: data.minAmplitude ?? 0,
             minAmplitudeQuantile: data.minAmplitudeQuantile ?? 0,
-            smoothing: data.smoothing ?? 0,
+            smoothing,
             frame: data.frame ?? 'cartesian',
             geometry: data.geometry ?? true
         });
-        // As /api/pca/orientation: the parse warning rides along.
-        return { ...histogram, parseWarning: parsed.parseWarning ?? null };
+        // As /api/pca/orientation: the parse warning rides along, and a
+        // result holding NaN/Infinity is an error (_strict_result_response).
+        return assertFiniteResult({ ...histogram, parseWarning: parsed.parseWarning ?? null });
     }
 
     // ''/'all' mean "every site pooled" -> null, as /api/pca/kde normalises
     // them (and the orientation branch above), so both transports agree.
     const element = data.element === '' || data.element === 'all' ? null : data.element ?? null;
-    return sitePcaKde(parsed, {
+    // Extreme but finite bw / extent underflow or overflow the kernels: an
+    // error with the Flask message, never a posted NaN volume.
+    return assertFiniteResult(sitePcaKde(parsed, {
         referenceNumber: data.referenceNumber ?? null,
         element,
         bw: bwArgument(data.bw),
@@ -186,20 +199,22 @@ export const handlePcaMessage = async (data, getText) => {
         cubicBox: data.cubicBox ?? false,
         probability,
         projections: data.projections ?? true
-    });
+    }));
 };
 
 // Guarded so the module can be imported by tests outside a worker context.
 if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
     self.onmessage = async (event) => {
-        const { id, file, text } = event.data;
+        const data = event?.data;
+        const id = data !== null && typeof data === 'object' ? data.id : undefined;
         try {
+            const { file, text } = requestObject(data);
             const getText = async () => {
                 if (typeof text === 'string') return text;
                 if (file?.sourceFile) return file.sourceFile.text();
                 throw new Error('No browser structure file available');
             };
-            const result = await handlePcaMessage(event.data, getText);
+            const result = await handlePcaMessage(data, getText);
             self.postMessage({ id, result });
         } catch (error) {
             self.postMessage({ id, error: error.message || 'Browser PCA-KDE computation failed' });

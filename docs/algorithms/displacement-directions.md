@@ -1081,6 +1081,11 @@ The pass count is **truncated toward zero**, not rounded: `int(passes)` / `Math.
 A fractional `smoothing = 2.9` runs 2 passes (and is echoed as `2`). A negative, `NaN` or infinite
 value is rejected with `smoothing must be a finite, non-negative number of passes` (Step 1,
 "Errors"); before the 1.0 audit a negative value silently ran no passes and was echoed verbatim.
+That truncation is the *library* rule. The app's two request boundaries are stricter and agree:
+`/api/pca/orientation` and the static-mode worker (`pcaKdeWorker.js`, via
+`requestGuards.requestNumber`) both require `smoothing` to be an integer in [0, 64] and
+`frequency` to be an integer (`smoothing must be an integer, got 2.9`), and both refuse a result
+holding `NaN`/`Infinity` with the same message.
 
 Each cell keeps $1-\alpha$ of its mass and splits the rest evenly over its own neighbours, so
 **the total is invariant by construction** — the smoothed map still integrates to the same

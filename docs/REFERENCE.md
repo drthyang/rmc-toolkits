@@ -201,6 +201,15 @@ plot file that cannot be parsed or decoded, a JSON body that is not an object, a
 outside the data roots, 404 missing file/folder, 409 output exists (`/api/scaling/run` without
 `force`) or source file still being written (see below), 500 unexpected failure.
 
+**The static-mode workers apply the same rules** (`workers/requestGuards.js`: `requestNumber()`
+mirrors `_number()`, `assertFiniteResult()` mirrors `_strict_result_response()` with its exact
+message). The PCA worker requires an integer orientation `frequency` and an integer `smoothing`
+in [0, 64], refuses a KDE or orientation result holding `NaN`/`Infinity`, and rejects an unknown
+request `kind`; the Auto StoG worker requires a finite, non-zero `a` and a finite `b` in manual
+mode and refuses a non-finite fit (as `_require_finite_scaling()`); the structure worker reads
+`maxPoints` as an integer clamped to [100, 10⁶], as `/api/structure` does. Every worker answers a
+null or malformed message with an error, so the page's request always settles.
+
 **Caching and freshness.** The KDE-slice, PCA (`sites`/`kde`/`orientation`), triplets and scaling
 routes keep small in-process LRU caches of parsed files (`_FileCache` in `app.py`). Every cache key
 is the file's signature `(st_mtime_ns, st_ctime_ns, st_size, st_ino)` from `_file_signature()`,

@@ -3,6 +3,7 @@
 
 import { computeDensityGpu, shouldUseGpu } from './gpuKde.js';
 import { isInSlab } from './slabSelection.js';
+import { requestObject } from './requestGuards.js';
 
 const CUBE_CORNERS = [
     [0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
@@ -568,11 +569,15 @@ export const computeKde = async (payload) => {
 // Guarded so the module can be imported by tests outside a worker context.
 if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
     self.onmessage = async (event) => {
+        // Read the id defensively and validate inside the try, so a null or
+        // malformed message still gets an answer and the caller never hangs.
+        const data = event?.data;
+        const id = data !== null && typeof data === 'object' ? data.id : undefined;
         try {
-            const result = await computeKde(event.data);
-            self.postMessage({ id: event.data.id, result });
+            const result = await computeKde(requestObject(data));
+            self.postMessage({ id, result });
         } catch (error) {
-            self.postMessage({ id: event.data.id, error: error.message || 'Browser KDE computation failed' });
+            self.postMessage({ id, error: error.message || 'Browser KDE computation failed' });
         }
     };
 }

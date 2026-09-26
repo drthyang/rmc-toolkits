@@ -89,7 +89,8 @@ web_app/frontend/src/
     slabSelection.js             shared slab membership (isInSlab, SLAB_FACE_TOLERANCE), Miller-plane labels, kernel σ and slab thickness in Å — pure, used by the KDE worker and StructurePage
     pcaKde.js                    static-mode PCA-KDE engine (JS port of pca_kde.py): 3×3 Jacobi eigensolver, per-site clouds, separable volume + projections
     autoScale.js                 static-mode Auto StoG engine (JS port of scaling.py + transforms.py + stog parsers + Faber-Ziman); parity-tested against Python goldens (autoScale.test.js)
-    autoScaleWorker.js           off-thread runner for autoScale.js (transferable buffers)
+    autoScaleWorker.js           off-thread runner for autoScale.js (transferable buffers); runAutoScaleJob() is the testable core
+    requestGuards.js             Flask-boundary rules for every worker: requestNumber() (= app._number), assertFiniteResult() (= _strict_result_response), requestObject() (null message → error)
     orientation.js               static-mode displacement-orientation engine (JS port of orientation.py: Goldberg hex+pentagon sphere tiling, solid-angle histogram); parity-tested against Python goldens in orientationFixes.test.js (incl. JS regularizedGamma/normalQuantile pinned to scipy)
     triplets.js                  static-mode bond-angle engine (port of triplets.py; parity-tested against Python goldens in triplets_fixture.json — regenerate with tests/generate_triplets_fixture.py)
     pcaKdeWorker.js              static-mode PCA-KDE worker (parses clouds once, answers 'sites'/'kde'/'orientation'/'triplets' requests off-thread)
