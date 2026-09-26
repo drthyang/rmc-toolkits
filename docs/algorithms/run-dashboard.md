@@ -416,6 +416,12 @@ wrapper; `browserData.js` → `readChi()`):
    a run that blew up keeps its rows (the browser used to drop them — the watchdog then judged only the
    last finite points and could report `improving` for a NaN tail — while Python kept them: the two
    runtimes now agree). The name of the last column (`X_ray_(R)1` here) is returned as `column`.
+   Across the logs of one run, each log that contributes a row adds its last-column name
+   (`ChiLog.columns`, in order, no repeats): a restart whose fit term changed is titled
+   `χ² history: X_ray_(R)1 / X_ray_(R)1_new`, and `chiColumn` is set only when every
+   contributing log agrees — the rule `combineRValueFiles()` applies in the browser. A header-only
+   log (a restart RMCProfile has just begun) contributes nothing and is skipped silently in both
+   runtimes (the browser used to report it as a parse error on the panel).
 
 So $\chi_r$ is **the last log column by position** — in the demo run the χ² of the X-ray real-space fit
 term `X_ray_(R)1`, not a total (`F(Q)_1`, the reciprocal-space term of the same data, is the fourth

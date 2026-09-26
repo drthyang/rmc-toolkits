@@ -527,7 +527,7 @@ export const plotDataFromText = (file) => {
 
     if (kind === 'r_value') {
         const { values: yValues, column } = readChi(file.text);
-        if (!yValues.length) throw new Error(`${file.name} does not contain chi values`);
+        if (!yValues.length) throw new Error(`${file.name} ${NO_CHI_VALUES}`);
         const { title, label } = chiHistoryLabels(column);
         return {
             kind,
@@ -808,6 +808,11 @@ export const chooseRValueGroup = (rValueFiles, structurePath = null) => {
 // the Model card describes, else the first), exactly as Flask's
 // related_r_value_logs() does server-side. Logs of other runs in the folder are
 // named (otherRuns), never spliced in.
+// plotDataFromText's error for a log with no chi rows. A header-only restart log
+// (RMCProfile has just started it) is skipped silently when another log of the
+// run parsed, as parsers.read_chi_log does.
+const NO_CHI_VALUES = 'does not contain chi values';
+
 export const combineRValueFiles = (rValueFiles, structurePath = null) => {
     const { group, others } = chooseRValueGroup(rValueFiles, structurePath);
     if (!group.length) return null;
@@ -832,7 +837,7 @@ export const combineRValueFiles = (rValueFiles, structurePath = null) => {
     const yValues = parsedFiles.flatMap((file) => file.plotData.series[0].y);
     const lastParsed = parsedFiles[parsedFiles.length - 1];
     const parseErrors = group
-        .filter((file) => file.parseError)
+        .filter((file) => file.parseError && !file.parseError.endsWith(NO_CHI_VALUES))
         .map((file) => `${file.name}: ${file.parseError}`);
     // Label by the logs' own last-column header; say so if restarts disagree.
     const columns = [...new Set(parsedFiles.map((file) => file.plotData.chiColumn ?? null))];

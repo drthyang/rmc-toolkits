@@ -50,6 +50,30 @@ describe('chi² logs of one run', () => {
         expect(other.plotData.metrics.final_chi_r).toBe(1.0);
     });
 
+    it('skips a header-only restart log silently, as read_chi_log does', () => {
+        // The state right after RMCProfile starts a restart: header + WEIGHT line.
+        const name = 'GTS_250K-03.log';
+        let parseError = null;
+        try {
+            plotDataFromText({ plotKind: 'r_value', name, text: HEADER });
+        } catch (error) {
+            parseError = error.message;
+        }
+        expect(parseError).toContain('does not contain chi values');
+        const restarting = { name, path: `run/${name}`, plotKind: 'r_value', sourceFile: {}, parseError };
+        const combined = combineRValueFiles([...FILES.slice(0, 3), restarting], 'run/GTS_250K.rmc6f');
+        expect(combined.parseError).toBe('');
+        expect(combined.plotData.series[0].y).toHaveLength(GTS_ROWS);
+    });
+
+    it('names a restart whose fit term changed by both columns (read_chi_log parity)', () => {
+        const changed = parsedLog('run/GTS_250K-03.log',
+            `${HEADER.replace('X_ray_(R)1', 'X_ray_(R)1_new')}9.0 1 2 0.5E+00 0.110E+01\n`);
+        const combined = combineRValueFiles([...FILES.slice(0, 3), changed], 'run/GTS_250K.rmc6f');
+        expect(combined.plotData.title).toBe('χ² history: X_ray_(R)1 / X_ray_(R)1_new');
+        expect(combined.plotData.chiColumn).toBeNull();
+    });
+
     it('falls back to the first run (as Flask does) without a structure file', () => {
         expect(combineRValueFiles(FILES).plotData.series[0].y).toHaveLength(GTS_ROWS);
     });

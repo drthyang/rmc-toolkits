@@ -145,17 +145,27 @@ class ChiLog:
 
     ``chi_r`` is the LAST log column and ``chi_q`` the second-to-last, one entry
     per complete data row (``NaN`` where the token is non-finite — ``NaN``,
-    ``Inf``, a Fortran ``****`` overflow — or not a number). ``column`` is the
-    header name of the last column (e.g. ``X_ray_(R)1``: the chi^2 of one fit
-    term, not a total), ``None`` when the log has no column-name header.
-    ``skipped_rows`` counts data lines dropped for a token count that differs
-    from the header's, plus unterminated final lines.
+    ``Inf``, a Fortran ``****`` overflow — or not a number). ``columns`` holds
+    the header name of the last column of every log that contributed a row, in
+    order and without repeats (e.g. ``X_ray_(R)1``: the chi^2 of one fit term,
+    not a total; ``None`` for a log with no column-name header); a header-only
+    log (a restart RMCProfile has just begun) contributes nothing. ``column``
+    joins the names with `` / `` for the title (``None`` when there is none),
+    and ``chi_column`` is the one name when all contributing logs agree, else
+    ``None`` — as the browser's ``combineRValueFiles``. ``skipped_rows``
+    counts data lines dropped for a token count that differs from the
+    header's, plus unterminated final lines.
     """
 
     chi_q: np.ndarray
     chi_r: np.ndarray
     column: str | None
     skipped_rows: int
+    columns: tuple = ()
+
+    @property
+    def chi_column(self) -> str | None:
+        return self.columns[0] if len(self.columns) == 1 else None
 
 
 def read_chi_log(paths: list[str | Path]) -> ChiLog:
@@ -174,7 +184,7 @@ def read_chi_log(paths: list[str | Path]) -> ChiLog:
     """
     chi_q: list[float] = []
     chi_r: list[float] = []
-    column: str | None = None
+    columns: list[str | None] = []
     skipped = 0
     for path in paths:
         text = Path(path).read_text(encoding="utf-8", errors="replace")
@@ -186,8 +196,8 @@ def read_chi_log(paths: list[str | Path]) -> ChiLog:
             skipped += 1
         header = lines[0].split() if lines else []
         expected = len(header) if len(header) >= 2 else None
-        if expected is not None and column is None:
-            column = header[-1]
+        column = header[-1] if expected is not None else None
+        rows_before = len(chi_r)
         for line in lines[2:]:
             parts = line.split()
             if not parts:
@@ -200,11 +210,15 @@ def read_chi_log(paths: list[str | Path]) -> ChiLog:
             values = [parse_fortran_number(token) for token in parts[-2:]]
             chi_q.append(float("nan") if values[0] is None else values[0])
             chi_r.append(float("nan") if values[1] is None else values[1])
+        if len(chi_r) > rows_before and column not in columns:
+            columns.append(column)
+    named = [name for name in columns if name]
     return ChiLog(
         chi_q=np.asarray(chi_q, dtype=float),
         chi_r=np.asarray(chi_r, dtype=float),
-        column=column,
+        column=" / ".join(named) or None,
         skipped_rows=skipped,
+        columns=tuple(columns),
     )
 
 

@@ -556,7 +556,7 @@ def plot_data():
                     **metadata,
                     "xLabel": "Time steps",
                     "yLabel": CHI_HISTORY_Y_LABEL,
-                    "chiColumn": log.column,
+                    "chiColumn": log.chi_column,
                     "series": [
                         {
                             "label": series_label,

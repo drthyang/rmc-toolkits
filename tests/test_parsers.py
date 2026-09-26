@@ -277,6 +277,30 @@ class ReadChiLogTests(unittest.TestCase):
         self.assertEqual(log.chi_r[0], 0.2e-3)
         self.assertTrue(np.isnan(log.chi_r[1:]).all())
 
+    def test_restarts_name_every_column_and_skip_header_only_logs(self):
+        # A restart whose fit term changed: the curve is named by both columns
+        # (as the browser's combineRValueFiles does) and chi_column is None; a
+        # header-only log (a restart RMCProfile has just started) adds nothing.
+        weights = "h/m/s/.th WEIGHT PARAMETERS 0.1E+01 0.1E+01\n"
+        first = "Time moves_acc moves_gen F(Q)_1 X_ray_(R)1\n" + weights + "1.0 1 2 0.3E-02 0.2E-03\n"
+        changed = "Time moves_acc moves_gen F(Q)_1 X_ray_(R)1_new\n" + weights + "2.0 2 4 0.3E-02 0.1E-03\n"
+        same = "Time moves_acc moves_gen F(Q)_1 X_ray_(R)1\n" + weights + "3.0 3 6 0.3E-02 0.5E-04\n"
+        header_only = "Time moves_acc moves_gen F(Q)_1 X_ray_(R)1_other\n" + weights
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = []
+            for index, text in enumerate((first, changed, same, header_only)):
+                path = Path(tmpdir) / f"run-{index:02d}.log"
+                path.write_text(text, encoding="utf-8")
+                paths.append(path)
+            mixed = read_chi_log(paths[:2])
+            agreeing = read_chi_log([paths[0], paths[2], paths[3]])
+        self.assertEqual(mixed.column, "X_ray_(R)1 / X_ray_(R)1_new")
+        self.assertIsNone(mixed.chi_column)
+        np.testing.assert_allclose(mixed.chi_r, [0.2e-3, 0.1e-3])
+        self.assertEqual(agreeing.column, "X_ray_(R)1")
+        self.assertEqual(agreeing.chi_column, "X_ray_(R)1")
+        self.assertEqual(len(agreeing.chi_r), 2)
+
     def test_logs_without_a_column_header_use_the_first_row_count(self):
         log = self._read("header\nheader\n1 0.1 10.0\n2 0.2\n3 0.3 30.0\n")
         np.testing.assert_array_equal(log.chi_r, [10.0, 30.0])
