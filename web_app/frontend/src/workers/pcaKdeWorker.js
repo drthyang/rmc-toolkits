@@ -51,6 +51,21 @@ const parseCached = (text, clusterThreshold, name) => {
     return cache.parsed;
 };
 
+// As app.MAX_ORIENTATION_SMOOTHING (the UI offers 0-12).
+const MAX_ORIENTATION_SMOOTHING = 64;
+const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+// As app._bw_argument: blank -> 'scott', the two names in any case, and a
+// numeric string -> its number (anything else reaches sitePcaKde's own error).
+const bwArgument = (raw) => {
+    if (raw == null || (typeof raw === 'string' && !raw.trim())) return 'scott';
+    if (typeof raw !== 'string') return raw;
+    const text = raw.trim();
+    const name = text.toLowerCase();
+    if (name === 'scott' || name === 'silverman') return name;
+    return DECIMAL.test(text) ? Number(text) : raw;
+};
+
 const summarizeSites = (parsed, probability) => {
     const ellipsoids = siteEllipsoids(parsed.sites, probability);
     return {
@@ -140,6 +155,9 @@ export const handlePcaMessage = async (data, getText) => {
         // ''/'all' mean "every site pooled", normalised to null exactly as the
         // Flask route does, so both transports return the same payload shape.
         const element = data.element === '' || data.element === 'all' ? null : data.element ?? null;
+        if (Number(data.smoothing) > MAX_ORIENTATION_SMOOTHING) {
+            throw new Error(`smoothing must be <= ${MAX_ORIENTATION_SMOOTHING}, got ${data.smoothing}`);
+        }
         const histogram = siteOrientationHistogram(parsed, {
             referenceNumber: data.referenceNumber ?? null,
             element,
@@ -161,7 +179,7 @@ export const handlePcaMessage = async (data, getText) => {
     return sitePcaKde(parsed, {
         referenceNumber: data.referenceNumber ?? null,
         element,
-        bw: data.bw ?? 'scott',
+        bw: bwArgument(data.bw),
         bwScale: data.bwScale ?? 1,
         grid: data.grid ?? 48,
         extent: data.extent ?? 3,

@@ -165,3 +165,32 @@ describe('pcaKdeWorker surfaces the .rmc6f parse report', () => {
             .rejects.toThrow("blown.rmc6f: no atoms could be parsed — 8 atom lines skipped for non-finite coordinates (first: '1 Se [1] inf ");
     });
 });
+
+// The worker mirrors the Flask routes' request rules: /api/pca/orientation
+// caps smoothing at MAX_ORIENTATION_SMOOTHING (64), and /api/pca/kde's
+// _bw_argument reads a numeric-string bw as a number.
+describe('pcaKdeWorker accepts what the Flask routes accept', () => {
+    const dataset = buildRmc6f(['Ga', 'Se'], { seed: 11 });
+
+    it('rejects orientation smoothing above 64, as /api/pca/orientation does', async () => {
+        await expect(handlePcaMessage(
+            { kind: 'orientation', referenceNumber: 1, smoothing: 65 }, async () => dataset
+        )).rejects.toThrow('smoothing must be <= 64, got 65');
+        const ok = await handlePcaMessage(
+            { kind: 'orientation', referenceNumber: 1, smoothing: 64, geometry: false }, async () => dataset
+        );
+        expect(ok.smoothing).toBe(64);
+    });
+
+    it("reads a numeric-string bw as the number, as _bw_argument does", async () => {
+        const request = (bw) => handlePcaMessage(
+            { kind: 'kde', referenceNumber: 1, bw, grid: 12, projections: false }, async () => dataset);
+        const numeric = await request(0.25);
+        const text = await request(' 0.25 ');
+        expect(text.bw).toBe(0.25);
+        expect(text.factor).toBe(numeric.factor);
+        expect(text.bandwidth).toEqual(numeric.bandwidth);
+        expect(Array.from(text.density)).toEqual(Array.from(numeric.density));
+        await expect(request('wide')).rejects.toThrow(/bw/);
+    });
+});
