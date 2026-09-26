@@ -788,7 +788,47 @@ def _slice_orientation_from_request():
         _query_number("ny", 0.0),
         _query_number("nz", 1.0),
     )
-    return "custom", normal, None, None
+    u_axis, v_axis = _custom_slice_frame(normal)
+    return "custom", normal, u_axis, v_axis
+
+
+_FRAME_KEYS = ("ux", "uy", "uz", "vx", "vy", "vz")
+_FRAME_TOLERANCE = 1e-6
+
+
+def _custom_slice_frame(normal) -> tuple[tuple | None, tuple | None]:
+    """The in-plane axes (u, v) a custom slice is drawn in, as the page sends them.
+
+    StructurePage sends the frame its Slab In Cell panel, its panel aspect and
+    the browser worker use (``makeFreePlaneBasis``); without it the library's
+    default frame (``kde._orthogonal_axis``) is used, which for normals such as
+    (1 1 0) or (1 0 1) is the page's rotated by 90 degrees. All six components
+    or none; u and v must be non-zero, orthogonal to the normal and to each
+    other (a 400 otherwise, never a silently re-projected frame).
+    """
+    raw = {key: request.args.get(key) for key in _FRAME_KEYS}
+    given = [key for key, value in raw.items() if value is not None and value.strip()]
+    if not given:
+        return None, None
+    if len(given) != len(_FRAME_KEYS):
+        missing = [key for key in _FRAME_KEYS if key not in given]
+        raise ValueError(f"ux/uy/uz/vx/vy/vz are required together; missing {', '.join(missing)}")
+    values = [_number(raw[key], key) for key in _FRAME_KEYS]
+    u, v = np.asarray(values[:3], dtype=float), np.asarray(values[3:], dtype=float)
+    n = np.asarray(normal, dtype=float)
+    n_norm = float(np.linalg.norm(n))
+    if n_norm <= 1e-12:
+        return None, None  # the zero normal is rejected by kde._plane_basis
+    n = n / n_norm
+    for name, axis in (("u", u), ("v", v)):
+        length = float(np.linalg.norm(axis))
+        if not length > 1e-12:
+            raise ValueError(f"{name} must be a non-zero 3D vector")
+        if abs(float(np.dot(axis / length, n))) > _FRAME_TOLERANCE:
+            raise ValueError(f"{name} must be orthogonal to the slice normal (in the slice plane)")
+    if abs(float(np.dot(u / np.linalg.norm(u), v / np.linalg.norm(v)))) > _FRAME_TOLERANCE:
+        raise ValueError("u and v must be orthogonal")
+    return tuple(u.tolist()), tuple(v.tolist())
 
 
 @app.route("/api/kde/slice", methods=["GET"])

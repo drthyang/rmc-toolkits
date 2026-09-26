@@ -12,7 +12,9 @@ import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { canvasToPngBlob, downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import {
     KERNEL_ANISOTROPY_NOTE,
+    freePlaneBasis,
     isInSlab,
+    kdeSliceQuery,
     kernelSigmaAngstrom,
     millerPlaneFileLabel,
     millerPlaneLabel,
@@ -28,11 +30,6 @@ const dot = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0)
 const add = (a, b) => a.map((value, index) => value + b[index]);
 const subtract = (a, b) => a.map((value, index) => value - b[index]);
 const scale = (vector, factor) => vector.map((value) => value * factor);
-const cross = (a, b) => [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0]
-];
 const normalize = (vector, fallback = [0, 0, 1]) => {
     const length = vectorLength(vector);
     if (length <= 1e-9) return fallback;
@@ -77,12 +74,9 @@ const projectionRange = (normal) => {
     return [Math.min(...values), Math.max(...values)];
 };
 
-const makeFreePlaneBasis = (normal) => {
-    const reference = Math.abs(normal[0]) < 0.85 ? [1, 0, 0] : [0, 1, 0];
-    const u = normalize(subtract(reference, scale(normal, dot(reference, normal))), [0, 1, 0]);
-    const v = normalize(cross(normal, u), [0, 0, 1]);
-    return { u, v };
-};
+// One frame for the KDE map (both runtimes), the Slab In Cell panel and the
+// panel aspect: see freePlaneBasis() in workers/slabSelection.js.
+const makeFreePlaneBasis = freePlaneBasis;
 
 const makeSliceConfig = (sliceDirection, customDirection) => {
     if (sliceDirection !== 'custom') {
@@ -725,10 +719,10 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                     params: {
                         dir: directory || '.',
                         element: selectedElement,
-                        orientation: sliceDirection,
-                        nx: sliceConfig.normal[0],
-                        ny: sliceConfig.normal[1],
-                        nz: sliceConfig.normal[2],
+                        // Orientation, normal and -- for a custom plane -- the
+                        // in-plane frame (ux..vz) the page draws in, so the
+                        // Flask map is not rotated against the Slab In Cell panel.
+                        ...kdeSliceQuery(sliceDirection, sliceConfig),
                         z: zCenter,
                         dz: thickness,
                         bw: bandwidth,

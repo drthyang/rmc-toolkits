@@ -29,6 +29,39 @@ export const millerPlaneLabel = (indices) => `(${indices
     .map((value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 }))
     .join(' ')})`;
 
+// The in-plane frame (u, v) of a custom slice with unit normal `normal`: u is
+// the a axis projected into the plane (the b axis when the normal is within
+// ~32 deg of a), v = normal x u. The Structure page draws its KDE map, its Slab
+// In Cell panel and the panel aspect in this frame, and sends it to
+// /api/kde/slice (kdeSliceQuery below) so the Flask map is drawn in it too;
+// tests/generate_kde_fixture.py's browser_plane_basis() is the Python mirror.
+export const freePlaneBasis = (normal) => {
+    const unit = (vector, fallback) => {
+        const length = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+        return length <= 1e-9 ? fallback : vector.map((value) => value / length);
+    };
+    const reference = Math.abs(normal[0]) < 0.85 ? [1, 0, 0] : [0, 1, 0];
+    const along = reference.reduce((sum, value, index) => sum + value * normal[index], 0);
+    const u = unit(reference.map((value, index) => value - normal[index] * along), [0, 1, 0]);
+    const v = unit([
+        normal[1] * u[2] - normal[2] * u[1],
+        normal[2] * u[0] - normal[0] * u[2],
+        normal[0] * u[1] - normal[1] * u[0]
+    ], [0, 0, 1]);
+    return { u, v };
+};
+
+// The orientation part of a /api/kde/slice query for a slice config
+// ({ normal, u, v }): a preset sends its name (its frame is fixed and the same
+// in both runtimes); a custom plane sends its normal AND its in-plane frame, so
+// the server draws the map in the frame the page shows.
+export const kdeSliceQuery = (sliceDirection, sliceConfig) => {
+    const { normal, u, v } = sliceConfig;
+    const query = { orientation: sliceDirection, nx: normal[0], ny: normal[1], nz: normal[2] };
+    if (sliceDirection !== 'custom') return query;
+    return { ...query, ux: u[0], uy: u[1], uz: u[2], vx: v[0], vy: v[1], vz: v[2] };
+};
+
 // The same plane for a file name: locale-independent, only digits, '-', '.',
 // '_' and the parentheses, e.g. "(1_1_0)" or "(-1_0.5_2)".
 export const millerPlaneFileLabel = (indices) => `(${indices

@@ -47,8 +47,9 @@ PRESETS = {
 def browser_plane_basis(normal: list[float]) -> tuple[list[float], list[float], list[float]]:
     """The frame StructurePage.makeSliceConfig() hands the worker for a custom normal.
 
-    The worker and the Flask endpoint pick different in-plane axes for a custom
-    normal; the parity cases pin the browser's so both runtimes grid the same plane.
+    The library's default frame (``kde._orthogonal_axis``) differs for some
+    normals, so the page sends this frame to /api/kde/slice (ux..vz) and the
+    parity cases pin it: both runtimes grid the same plane the same way.
     """
     n = np.asarray(normal, dtype=float)
     n = n / np.sqrt(float(np.dot(n, n)))
@@ -138,6 +139,11 @@ def real_cases() -> list[dict]:
         _real("demo Ta a bw=0.005", DEMO, "Ta", "a", 0.13, 0.08, 0.005),
         _real("demo Se c bw=0.03", DEMO, "Se", "c", 0.37, 0.02, 0.03),
         _real("demo all (111) bw=0.03", DEMO, "all", None, 0.37, 0.01, 0.03, custom=[1, 1, 1]),
+        # The two custom planes whose browser frame differs from the Flask
+        # route's default one; tests/test_kde_custom_frame.py checks the route
+        # returns exactly these maps when the page sends its u/v.
+        _real("demo Ta (110) bw=0.06", DEMO, "Ta", None, 0.37, 0.02, 0.06, custom=[1, 1, 0]),
+        _real("demo Se (101) bw=0.05", DEMO, "Se", None, 0.37, 0.01, 0.05, custom=[1, 0, 1]),
         _real("5K Ga c bw=0.01", DATA_5K, "Ga", "c", 0.25, 0.08, 0.01, requires_data=True),
         _real("5K Ga c bw=0.015", DATA_5K, "Ga", "c", 0.25, 0.08, 0.015, requires_data=True),
         _real("5K Ga c bw=0.03", DATA_5K, "Ga", "c", 0.25, 0.08, 0.03, requires_data=True),

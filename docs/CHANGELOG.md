@@ -148,6 +148,12 @@ with 0.5.0.
   500 on SciPy < 1.10.
 - **Honest labels.** The custom slice is labelled as the Miller plane (h k l) it is. The map
   prints the slab thickness and the kernel σ in Å and warns on sub-grid kernels.
+- **Custom (hkl) slices are drawn in one frame.** For a custom plane the page now sends its
+  in-plane frame to `/api/kde/slice` (`ux`…`vz`), and the route draws the map in it
+  (`_custom_slice_frame`, validated orthogonal to the normal). Flask used to pick its own axes, so
+  the default (1 1 0) map — and (1 0 1) — came back rotated 90° against the browser map and against
+  the page's own Slab In Cell panel, letterboxed in a panel sized for the other orientation. The
+  densities were always the same; the parity golden now includes (1 1 0) and (1 0 1) demo slices.
 
 #### PCA ellipsoid (`pca_kde.py`, `pcaKde.js`, `pcaCrystalFrame.js`)
 

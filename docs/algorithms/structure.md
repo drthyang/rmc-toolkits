@@ -285,19 +285,32 @@ The normal is normalized in that same fractional space,
 $\hat{\mathbf{h}} = \mathbf{h}/\lVert\mathbf{h}\rVert_2$, which sets only the *scale* of the depth
 coordinate, not the plane family.
 
-For a custom normal the in-plane axes are built by Gram–Schmidt against $\hat{\mathbf{h}}$, but the
-two runtimes pick a **different seed vector**:
+For a custom normal the in-plane axes are built by Gram–Schmidt against $\hat{\mathbf{h}}$. **The
+page owns the frame, and both runtimes draw in it** (since 1.0):
 
-* Python `_orthogonal_axis()` seeds with the Cartesian unit vector along the *smallest-magnitude*
-  component of $\hat{\mathbf{h}}$ (`np.eye(3)[argmin(|n|)]`), then $\hat{\mathbf{v}} = \hat{\mathbf{h}}\times\hat{\mathbf{u}}$.
-* JavaScript `makeFreePlaneBasis()` seeds with $(1,0,0)$ when $|n_1| < 0.85$ and $(0,1,0)$
-  otherwise, then $\hat{\mathbf{v}} = \hat{\mathbf{h}}\times\hat{\mathbf{u}}$.
+* JavaScript `freePlaneBasis()` (`workers/slabSelection.js`; `StructurePage.jsx` calls it as
+  `makeFreePlaneBasis`) seeds with $(1,0,0)$ when $|n_1| < 0.85$ and $(0,1,0)$ otherwise, then
+  $\hat{\mathbf{v}} = \hat{\mathbf{h}}\times\hat{\mathbf{u}}$. The browser worker, the Slab In
+  Cell panel and the panel aspect all use this frame.
+* In Flask mode the page sends it with the request (`kdeSliceQuery()`: `ux, uy, uz, vx, vy, vz`
+  besides `nx, ny, nz`), and `/api/kde/slice` → `_custom_slice_frame()` passes it to
+  `oriented_kde_slice(u_axis=…, v_axis=…)`. All six components or none; $\hat{\mathbf u}$ and
+  $\hat{\mathbf v}$ must be non-zero and orthogonal to $\hat{\mathbf h}$ and to each other
+  (within $10^{-6}$), else a 400 — the route never silently re-projects a wrong frame.
+* Only a request without the frame (a hand-written API call, or a library call without
+  `u_axis`) falls back to Python's own seed, `_orthogonal_axis()`: the Cartesian unit vector along
+  the *smallest-magnitude* component of $\hat{\mathbf{h}}$ (`np.eye(3)[argmin(|n|)]`).
 
-Both give a right-handed orthonormal frame in the plane, but generally a *different* one. For
-$\mathbf{h}=(1,1,0)$, Python returns $\hat{\mathbf{u}}=(0,0,1)$ while JavaScript returns
-$\hat{\mathbf{u}}=(\tfrac{1}{\sqrt2},-\tfrac{1}{\sqrt2},0)$. The density field is the same up to
-that in-plane rotation/reflection, but **a custom-normal slice is drawn in a different in-plane
-orientation on the SciPy path than on the browser path.** The a/b/c presets are unaffected.
+The two seeds generally give *different* frames. For $\mathbf{h}=(1,1,0)$ the page's frame is
+$\hat{\mathbf{u}}=(\tfrac{1}{\sqrt2},-\tfrac{1}{\sqrt2},0)$, $\hat{\mathbf v}=(0,0,-1)$, while
+`_orthogonal_axis()` gives $\hat{\mathbf{u}}=(0,0,1)$ — a 90° rotation; $(1,0,1)$ is the same
+case ($\hat{\mathbf u}=(\tfrac{1}{\sqrt2},0,-\tfrac{1}{\sqrt2})$, $\hat{\mathbf v}=(0,1,0)$ on the
+page). Before 1.0 the page sent only the normal, so in Flask mode a (1 1 0) map — the default custom
+plane — came back rotated 90° against the browser map and against the page's own Slab In Cell panel,
+and letterboxed in a panel sized for the other orientation. `tests/test_kde_custom_frame.py` and
+`workers/__tests__/customSliceFrame.test.js` pin the frames, and the (1 1 0) / (1 0 1) cases of the
+browser-parity golden tie the route's maps to the worker's. The a/b/c presets have fixed frames in
+both runtimes and send no `u`/`v`.
 
 #### Zero and near-zero custom directions (the two runtimes disagree)
 
@@ -339,8 +352,9 @@ cell cross-section** — see Step 7, where it becomes the evaluation grid.
 extent.
 
 **Code.** `rmc_toolkits/kde.py` → `_plane_basis()`, `_orthogonal_axis()`, `_normalize_vector()`,
-`_CUBE_CORNERS`; `StructurePage.jsx` → `makeSliceConfig()`, `makeFreePlaneBasis()`, `normalize()`,
-`projectionRange()`; `localKdeWorker.js` → `makeFreePlaneBasis()`, `normalize()`.
+`_CUBE_CORNERS`; `app.py` → `_slice_orientation_from_request()`, `_custom_slice_frame()`;
+`workers/slabSelection.js` → `freePlaneBasis()`, `kdeSliceQuery()`; `StructurePage.jsx` →
+`makeSliceConfig()`, `normalize()`, `projectionRange()`; `localKdeWorker.js` → `normalize()`.
 
 ---
 
@@ -1558,7 +1572,7 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
 | Contour level values | **Exact** (same formula; both drop levels that yield no polylines) |
 | Contour tracing | contourpy stitched polylines with saddle handling vs. per-cell 2-point segments with arbitrary saddle pairing |
 | Contours in log mode | **Same rule** (tested): contour iff the *linear* density has a positive maximum |
-| In-plane axes for a **custom** normal | **Differ** (different Gram–Schmidt seed → in-plane rotation/reflection) |
+| In-plane axes for a **custom** normal | **Exact** in the app: the page sends its frame (`ux`…`vz`) and the route draws in it (Step 2). A request without it uses Python's own seed, which differs (a 90° rotation for (1 1 0)) |
 | In-plane axes for a/b/c presets | **Exact** |
 | Zero / near-zero custom normal | **Differ**: JS falls back to $(0,0,1)$ at $\lVert\mathbf{h}\rVert\le10^{-9}$; Python raises at $\le10^{-12}$. The app never hits the raise because it sends the already-normalized fallback |
 | Input population | Flask: **all** atoms of the element, filtered while parsing. Browser: the element-filtered display array, globally strided (and hard-truncated) above 1 000 000 atoms **before** filtering |
@@ -2026,17 +2040,17 @@ $\propto \hat{\mathbf{h}}$. So the two axes genuinely span the crystallographic 
 > `type="number"` input reports `''` (hence `0`) rather than `NaN` for unparseable text, so the
 > all-zero case is the reachable one.
 
-> **Cross-runtime difference (real).** `rmc_toolkits/kde.py` → `_plane_basis()` / `_orthogonal_axis()`
-> picks its seed axis as the Cartesian axis with the **smallest** $|h_i|$
-> (`np.eye(3)[argmin(|h|)]`), whereas `makeFreePlaneBasis()` picks $x$ unless $|h_1| \ge 0.85$. For
+> **One frame in both runtimes (1.0).** `rmc_toolkits/kde.py` → `_plane_basis()` /
+> `_orthogonal_axis()` would pick its seed axis as the Cartesian axis with the **smallest** $|h_i|$
+> (`np.eye(3)[argmin(|h|)]`), whereas `freePlaneBasis()` picks $x$ unless $|h_1| \ge 0.85$. For
 > $\hat{\mathbf{h}} \propto [1,1,0]$ the JS basis is $\hat{\mathbf{u}}=[0.7071,-0.7071,0]$,
-> $\hat{\mathbf{v}}=[0,0,-1]$ while the Python basis is $\hat{\mathbf{u}}=[0,0,1]$,
+> $\hat{\mathbf{v}}=[0,0,-1]$ while the Python default is $\hat{\mathbf{u}}=[0,0,1]$,
 > $\hat{\mathbf{v}}=[0.7071,-0.7071,0]$ — i.e.
 > $(\hat{\mathbf u},\hat{\mathbf v})_\mathrm{Py} = (-\hat{\mathbf v},\,\hat{\mathbf u})_\mathrm{JS}$,
-> a 90° rotation. The KDE canvas draws using the
-> `uVector`/`vVector` the server returns, so it stays internally consistent, but on the **backend path
-> with a custom normal the KDE panel and the Slab In Cell panel do not share an in-plane
-> orientation**. On the browser path the worker is handed `sliceConfig.u/v`, so the two panels agree.
+> a 90° rotation. The page therefore sends `sliceConfig.u/v` to `/api/kde/slice` as `ux`…`vz`
+> (`kdeSliceQuery()`), exactly as it hands them to the browser worker, so on both paths the KDE panel,
+> the Slab In Cell panel and the panel aspect share one in-plane orientation (Step 2). Before 1.0 the
+> backend path used the Python default, and the two panels were rotated 90° against each other.
 > Presets are unaffected (3a).
 
 #### 3c. Depth coordinate and range
@@ -2412,7 +2426,8 @@ Three copies of this routine exist: `StructurePage.jsx` → `planeSectionVertice
 `_plane_section_vertices()`. **The two JS copies are identical.** Python matches them on the clipping
 algorithm, on the $10^{-9}$ on-plane test and on the $10^{-8}$ dedupe — the vertex *set* is the same —
 but it sorts with a **different in-plane basis**: `_plane_basis(normal)` seeds from
-`np.eye(3)[argmin(|h|)]` whereas both JS copies use `makeFreePlaneBasis()` (Step 3b). For a custom
+`np.eye(3)[argmin(|h|)]` (the sort ignores the frame the page sends) whereas both JS copies use
+`makeFreePlaneBasis()` (Step 3b). For a custom
 normal the two bases differ (for $\hat{\mathbf h}\propto[1,1,0]$ the Python $(\hat{\mathbf u},\hat{\mathbf v})$
 equals $(-\hat{\mathbf v},\hat{\mathbf u})_\mathrm{JS}$, a 90° rotation of the sort angle), so the
 returned sequence is a **cyclic rotation** of the JS order: the same polygon, a different starting
@@ -2675,11 +2690,11 @@ file `KDE_Slice__1_1_0.png`, locale-dependent.)
   $\mathbf U\cdot\mathbf H = \mathbf V\cdot\mathbf H = 0$. In both panels the *in-plane* lengths and
   angles are true Å (the Gram matrix is preserved exactly); a length measured across the figure in a
   general direction is not.
-- **The two runtimes pick different in-plane axes for a custom normal.** See Step 3b and 7.4. The
-  consequences are a relative rotation between the KDE panel and the Slab panel on the backend path, a
-  cyclic rotation of the section-polygon vertex order between Python and JS, and a possible mismatch
-  between the CSS panel aspect ratio (always computed from the local basis and the cube corners) and
-  the drawn content (letterboxed, never distorted, because the mapper fits isotropically).
+- **The Python library's default in-plane axes differ from the page's for a custom normal.** The
+  app is unaffected since 1.0 — the page sends its frame and both runtimes draw in it (Step 2, 3b) —
+  so the KDE panel, the Slab panel and the CSS panel aspect agree on both paths. What remains is
+  a cyclic rotation of the section-polygon vertex order between Python and JS (the same polygon,
+  7.4), and a different frame for API or library calls that pass no `u`/`v`.
 - **The `b` preset triad is left-handed** ($\hat{\mathbf{u}}\times\hat{\mathbf{v}}=-\hat{\mathbf{h}}$),
   so the `b`-normal view is mirrored relative to a right-handed convention. Both runtimes share this,
   so they agree with each other but not with a right-handed drawing.

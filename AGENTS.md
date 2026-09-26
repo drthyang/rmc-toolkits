@@ -86,7 +86,7 @@ web_app/frontend/src/
   workers/
     localKdeWorker.js            static-mode KDE worker (same kernel, decline rules, warnings and slab test as kde.py; GPU-or-CPU density map, contours); parity-tested against Python goldens (kdeParity.test.js ← tests/generate_kde_fixture.py)
     gpuKde.js                    WGSL compute-shader density map + shouldUseGpu heuristic + cached device init
-    slabSelection.js             shared slab membership (isInSlab, SLAB_FACE_TOLERANCE), Miller-plane labels, kernel σ and slab thickness in Å — pure, used by the KDE worker and StructurePage
+    slabSelection.js             shared slab membership (isInSlab, SLAB_FACE_TOLERANCE), Miller-plane labels, the custom-slice frame (freePlaneBasis) and the /api/kde/slice orientation query that carries it (kdeSliceQuery: ux..vz, so Flask draws in the page's frame), kernel σ and slab thickness in Å — pure, used by the KDE worker and StructurePage
     pcaKde.js                    static-mode PCA-KDE engine (JS port of pca_kde.py): 3×3 Jacobi eigensolver, per-site clouds, separable volume + projections
     autoScale.js                 static-mode Auto StoG engine (JS port of scaling.py + transforms.py + stog parsers + Faber-Ziman); parity-tested against Python goldens (autoScale.test.js)
     autoScaleWorker.js           off-thread runner for autoScale.js (transferable buffers); runAutoScaleJob() is the testable core
