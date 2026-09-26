@@ -14,18 +14,22 @@ Post-processing for **RMCProfile** modeling outputs, in three layers. RMCProfile
 configuration optimization under experimental constraints; avoid calling those runs
 "refinements" (Rietveld-style parameter refinement is a different workflow). Since 2026-07-17 the
 app also covers the *pre*-processing step: **Auto StoG** (`rmc_toolkits/scaling.py` + the
-`rmc-autoscale` CLI + the Auto StoG tab) automatically scales measured total-scattering S(Q) and
-writes the classic stog/RMCProfile-ready file family — see
+`rmc-autoscale` CLI + the Auto StoG tab, which the shipped build hides with `SHOW_AUTO_STOG = false`
+in `App.jsx`) automatically scales measured total-scattering S(Q) and writes the classic
+stog/RMCProfile-ready file family — see
 [docs/STOG_SCALING_PLAN.md](docs/STOG_SCALING_PLAN.md) for the verified math and validation record.
 
-1. **`rmc_toolkits/`** — pure-Python package (parsing, plots, KDE). The source of truth; new app
-   code should call into this, not the legacy scripts.
+1. **`rmc_toolkits/`** — pure-Python package (parsing, plots, KDE, PCA ellipsoid, displacement
+   directions, bond angles, Auto StoG). The source of truth; new app code should call into this,
+   not the legacy scripts.
 2. **`web_app/`** — Flask API (`backend/app.py`) + React/Vite SPA (`frontend/`).
 3. **`src/`** — original standalone research scripts, kept for CLI workflows.
 
 The same React app ships in two runtime modes:
-- **Flask mode** — backend serves the built SPA and provides server-side file browsing, SciPy KDE,
-  conversion, and Live Data.
+- **Flask mode** — backend serves the built SPA and provides server-side file browsing, the
+  reference-grade engines (SciPy KDE, PCA, orientation, bond angles) and Live Data. The
+  `.rmc6f` → `Frac_coord` conversion (`POST /api/convert/frac`) is an API/library capability:
+  no mounted page calls it.
 - **Static mode** (`VITE_STATIC_MODE=true`) — GitHub Pages build. No backend; the browser parses
   files locally and computes KDE in a Web Worker (WebGPU + CPU fallback).
 
@@ -45,10 +49,12 @@ rmc_toolkits/
   triplets.py    bond-angle (triplet) distribution engine, RMCProfile triplets-style: A-B-C with B central, per-bond length windows, linked-cell periodic search with explicit image shifts (triclinic-safe), exact per-bin sin(θ) correction; bond_angle_summary is the JSON payload contract shared by /api/triplets and workers/triplets.js, bond_angle_summary_from_file the uncached file entry point (source of truth); angles streamed (PAIR_CHUNK) with an exact-count work budget (APP_MAX_ANGLES) checked by a count-only search at both app boundaries; EDGE_SNAP_DEG / WINDOW_TOL make ideal geometries deterministic
   triplets_cli.py rmc-triplets CLI: .rmc6f or run folder (same .rmc6f as the app) → angle histogram CSV (+ optional PNG plot / raw-angle dump)
 
-web_app/backend/app.py    Flask API; data-root guard; `_number()` numeric-parameter validation (bad input → 400); StrictJSONProvider (NaN → null in data series) + `_strict_result_response()` / `_require_finite_scaling()` (a non-finite computed result → 400); file-signature LRU caches (`_FileCache` keyed on `_file_signature()` = (st_mtime_ns, st_ctime_ns, st_size, st_ino); a torn read is never cached → 409) for KDE, PCA, triplets and scaling; /api/scaling/preview|run share the CLI writer
+web_app/backend/app.py    Flask API; `server_settings()` (bind 127.0.0.1, debug off unless RMC_TOOLKITS_HOST / RMC_TOOLKITS_DEBUG opt in); data-root guard; `_number()` numeric-parameter validation (bad input → 400); StrictJSONProvider (NaN → null in data series) + `_strict_result_response()` / `_require_finite_scaling()` (a non-finite computed result → 400); file-signature LRU caches (`_FileCache` keyed on `_file_signature()` = (st_mtime_ns, st_ctime_ns, st_size, st_ino); a torn read is never cached → 409) for KDE, PCA, triplets and scaling; /api/scaling/preview|run share the CLI writer
 
 web_app/frontend/src/
-  App.jsx                        shell, run-folder selection, page nav, Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop)
+  main.jsx                       React entry point (mounts App)
+  App.jsx                        shell, run-folder selection, page nav (Auto StoG hidden: `SHOW_AUTO_STOG = false`; Dashboard, Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions, AI Assistant), Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop)
+  symTolContext.js               shared Detected-SG tolerance ([symTol, setSymTol]) so the ladder pick survives page switches
   browserData.js                 static-mode local file parsing + run assembly (chooseStructureFile mirrors parsers.find_run_configuration, code-point tie-breaks)
   rmc6f.js                       shared .rmc6f atom-line grammar + parse report (classifyAtomLine, parseRmc6fAtoms, readRmc6fCellVectors) — mirror of parsers.py; keep in sync
   plotDomain.js                  one-pass axis domains, null-tolerant hover search (nearestFiniteIndex), plot payload checks
@@ -58,6 +64,12 @@ web_app/frontend/src/
   symmetryModel.js               structure → finder glue, 2000-site cap and 384-operation budget, orbitLabel()
   siteLabel.js                   mixed-occupancy site label (composition) shared by the PCA Ellipsoid and Displacement Directions pages
   colormaps.js                   colormap LUTs for the KDE canvas
+  atomColors.js                  per-element atom colours (CPK/Jmol table + distinct fallbacks) shared by every structure view
+  plotPalette.js                 InteractivePlot series colours (its own module for Fast Refresh)
+  figureExport.js                PNG/SVG figure export and downloadBlob/sanitizeFilename (the one host module src/llm may import)
+  zipArchive.js                  dependency-free store-only ZIP writer ("Save all figures", Auto StoG export)
+  moveStats.js                   per-atom sampling ratios from the .rmc6f move counters (Model information card)
+  structureReport.js             whether a structure read looks mid-write (Live Data keeps the previous summary)
   orientationSphere.js           pure helpers for the orientation sphere (cell mesh/outline typed arrays, relief radii, colorbar gradient) — unit-tested, no Three.js
   pcaCrystalFrame.js             pure crystallographic-frame math (3×3 algebra, unit-cell vectors from the supercell lattice, fractional ⟷ PCA transforms, per-PC angles to a/b/c + [u v w], `crystalOrientationRows` (the Crystal orientation table), `projectVolumeOntoFrame` (crystal-frame wall marginals by line integrals through the volume)) — unit-tested, no Three.js
   useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages); `dataEpoch` in its request dependencies reloads in place on a Flask Live Data save
@@ -70,20 +82,23 @@ web_app/frontend/src/
     useAssistant.js              shared hook: settings, connection probe/auto-connect, run context
     components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
   components/
-    AutoStogPage.jsx             Auto StoG tab — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets w/ descriptions) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
+    AutoStogPage.jsx             Auto StoG tab (hidden in the shipped build: `SHOW_AUTO_STOG = false`) — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets w/ descriptions) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
     Dashboard.jsx                all-plots run dashboard
     ModelSummary.jsx             Model information + Detected SG cards (parse warning, move counters, tolerance ladder)
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom)
-    PlotViewer.jsx               PNG plot rendering + metadata
+    SaveMenu.jsx                 the save badge/menu every chart toolbar and 3D panel uses
+    InfoBadge.jsx                accessible "?" badge with a hover/focus explanation popover
+    FoldedCellPanel.jsx          Bond Geometry's folded unit cell with the detected bonds drawn over the atom cloud
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
     PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections; unit-cell picker via SiteStructurePanel
-    OrientationPage.jsx          Orientation tab (own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9
+    OrientationPage.jsx          Displacement Directions tab (the nav label; the code says "orientation"; own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9
     BondGeometryPage.jsx        Bond Geometry tab (beside Atomic Density): triplet + window controls, Model information card (ModelSummary with showSymmetry={false} — no Detected SG card; same structure source as Dashboard/StructurePage), result chips, angle-distribution panel (sin-corrected|density toggle), bond-length step histogram, partial-g(r) window helper; 16:9 viewport-clamped grid with flush card edges; compute-on-demand via useSiteCloud requestPca('triplets') → worker or /api/triplets
     OrientationView.jsx          renders display:contents → its two panels drop into the page grid: the Axis-views mini panel (three fixed-angle a/b/c | PC1/2/3 views, click to snap) and the sphere panel (flat-shaded Goldberg cells, amplitude relief, only the selected frame's axis rods, header Crystal|PCA toggle + Reset + Save, per-cell hover, colorbar + asymmetry/significance strip)
     SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages
     sceneAxes.js                 shared axis palettes (PC tricolor, a/b/c) + triad/rod builders for every Three.js panel
-    FileExplorer.jsx             file navigation
+    PlotViewer.jsx, FileExplorer.jsx   UNUSED — imported nowhere (PlotViewer's "Generate Frac_coord" button was the only UI caller of /api/convert/frac)
   workers/
+    localStructureWorker.js      off-thread structureFromRmc6f for browser-parsed runs (a picked folder or the Demo, in either runtime) on the Dashboard, Atomic Density and Bond Geometry pages; maxPoints read as /api/structure reads it
     localKdeWorker.js            static-mode KDE worker (same kernel, decline rules, warnings and slab test as kde.py; GPU-or-CPU density map, contours); parity-tested against Python goldens (kdeParity.test.js ← tests/generate_kde_fixture.py)
     gpuKde.js                    WGSL compute-shader density map + shouldUseGpu heuristic + cached device init
     slabSelection.js             shared slab membership (isInSlab, SLAB_FACE_TOLERANCE), Miller-plane labels, the custom-slice frame (freePlaneBasis) and the /api/kde/slice orientation query that carries it (kdeSliceQuery: ux..vz, so Flask draws in the page's frame), kernel σ and slab thickness in Å — pure, used by the KDE worker and StructurePage
@@ -104,8 +119,10 @@ web_app/frontend/src/
   the range is √3. The KDE works entirely in fractional coordinates: nothing in `kde.py` or
   `/api/kde/slice` converts to Ångström, and Å enter only at draw time (`StructurePage.jsx`,
   through `unitCell.unitVectors`). The real slab thickness is `dz·(|h|+|k|+|l|)·d_hkl`, printed on
-  the map (`slabThicknessAngstrom()` in `workers/slabSelection.js`). Both payloads echo `z`/`dz` as
-  given; the Flask payload's `depth`/`depthThickness` are absolute depth-projection units. Keep
+  the map (`slabThicknessAngstrom()` in `workers/slabSelection.js`). Flask clamps `z` to [0, 1] and
+  echoes the clamped value as `z` and `center`; `dz` is echoed as given (the page's sliders never
+  leave that range, so the browser echoes its inputs). The Flask payload's
+  `depth`/`depthThickness` are absolute depth-projection units. Keep
   that contract when touching KDE code (docs/algorithms/notation.md §3b).
 - **Structure KDE: one kernel, one slab test, two runtimes.** `kde.py` (source of truth) and
   `localKdeWorker.js`/`gpuKde.js` draw the same kernel `H = bw²·C`, where `C` is the covariance of
@@ -261,15 +278,17 @@ web_app/frontend/src/
   `PYTHONPATH=. python tests/generate_triplets_fixture.py` — run as a script it otherwise imports
   whichever `rmc_toolkits` is installed (e.g. an editable install of another checkout). When A and C
   are the same element each physical triplet counts once (one bond in each window, either
-  assignment). `lengths.count` / `bond12_count` are B-centred (2× the bonds when the end element is
-  the central one); `uniqueBonds` / `unique_bonds12` count each bond once. The budget bounds the
+  assignment). `lengths12.count` / `lengths23.count` (CLI `bond12_count`) are B-centred (2× the
+  bonds when the end element is the central one); `lengths12/23.uniqueBonds` (CLI
+  `unique_bonds12/23`) count each bond once. The budget bounds the
   angles formed, not the n² candidate pairs of an A = C request with distinct windows.
 - **One `.rmc6f` atom-line grammar in both runtimes** (parsers.py ⟷ rmc6f.js): `id element [label]`
   then exactly 7 (`x y z ref cx cy cz`) or 3 (coords-only) fields, validated (Fortran `D` exponents,
   cell indices inside the supercell, any Atoms-marker spelling, bare-CR files); non-finite lines are
   skipped and counted; the count is compared with the header's `Number of atoms:`
-  (`Rmc6fParseReport` / `report`, surfaced as `parseWarning` by /api/structure, /api/pca/*,
-  /api/triplets and the worker). Element tokens are capitalized alike (`SE` → `Se`).
+  (`Rmc6fParseReport` / `report`, surfaced as `parseWarning` by /api/structure, /api/pca/sites,
+  /api/pca/orientation, /api/triplets, /api/convert/frac and the workers; /api/pca/kde has none).
+  Element tokens are capitalized alike (`SE` → `Se`).
   `iter_rmc6f_atoms` yields full-layout atoms by default; position-only consumers (KDE loader,
   triplets loader, /api/structure) pass `include_coords_only=True`. Zero parseable atoms is an error
   naming what was found (HTTP 400). The committed demo run is exercised by
@@ -312,9 +331,12 @@ web_app/frontend/src/
   no Python source of truth.
 - **Backend data-root guard**: relative paths resolve under `RMC_TOOLKITS_DATA_ROOT` (default repo
   root); absolute paths are rejected unless inside the root or a natively-picked folder.
-- **Package root exports**: the public engine API (parsers, KDE, PCA, orientation, triplets,
-  scaling, transforms) is re-exported from `rmc_toolkits`; `tests/test_package_api.py` checks that
-  every `__all__` name resolves. Add new public functions there.
+- **Package root exports**: the main entry points of every engine (parsers, KDE, PCA, orientation,
+  triplets, scaling, transforms) are re-exported from `rmc_toolkits`, and `__all__` is the list;
+  `tests/test_package_api.py` checks that every `__all__` name resolves. Not everything public is
+  there: helpers such as `transforms.sine_transform` / `low_q_correction_basis`,
+  `scaling.crop_sq` / `validate_enforcement` and the CLI internals import from their modules. Add
+  a new user-facing function to `__all__`.
 - **`src/llm/` import boundary**: the AI assistant module receives run data **only as props**
   (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`, `liveData`) and must not import
   from the rest of the app except `figureExport.js` (`downloadBlob`/`sanitizeFilename`). Cell math
@@ -327,8 +349,10 @@ web_app/frontend/src/
 ## Run & test
 
 ```bash
-# Backend (venv with numpy scipy flask flask-cors matplotlib). Binds 127.0.0.1, debug off;
-# RMC_TOOLKITS_HOST / RMC_TOOLKITS_DEBUG=1 opt in (server_settings() in app.py, docs/REFERENCE.md).
+# Backend (venv with numpy scipy flask flask-cors matplotlib). Binds 127.0.0.1:5000 with debug off.
+# Env (server_settings() in app.py; table in docs/REFERENCE.md): PORT, else RMC_TOOLKITS_PORT;
+# RMC_TOOLKITS_HOST (0.0.0.0 = every interface); RMC_TOOLKITS_DEBUG=1 (local only, never on a
+# network); RMC_TOOLKITS_DATA_ROOT (default: repo root). A malformed value stops the server.
 source .venv/bin/activate
 RMC_TOOLKITS_PORT=5050 python web_app/backend/app.py
 
