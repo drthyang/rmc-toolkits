@@ -268,9 +268,13 @@ Read these before comparing 1.0 numbers or files with earlier releases.
   unfiltered g(r), ≈ 1 at large r. `scale_ft.gr` / `<stem>_ft.gr` hold the filtered g(r) plus a
   third column r·[g(r) − 1]. They used to hold g − 1 and 4πρ₀r(g − 1). The `_rmc` files (Keen
   G_K, D, F_K) are unchanged.
-- **Low-r enforcement is automatic** at the first-shell foot when no cutoff is given: CLI
-  `--data`, API without a stog.inp, or a page with a blank Cutoff. A stog.inp or an explicit
-  `--enforce-cutoff` still wins, and `--no-enforce` turns it off.
+- **The automatic low-r cut moved from the onset to the first-shell foot.** When no cutoff is
+  given (CLI `--data`, API without a stog.inp, or a page with a blank Cutoff) enforcement was
+  already automatic in 0.5.0, at the detected onset; it now cuts at the foot of the first shell,
+  never above a given r₀. On Mn₃Sn 59438 (Q 1.0–27) the cut moves from 3.48 Å (0.5.0 had detected
+  the second shell) to 2.43 Å; with `--r0 2.67` at Q 1.0–29 0.5.0 cut at 3.56 Å, above the given
+  r₀, and 1.0 cuts at 2.42 Å. A stog.inp or an explicit `--enforce-cutoff` still wins, and
+  `--no-enforce` turns it off.
 - **Short first bonds stop the fit.** A first shell within ~0.55 Å of `r_cutoff` (Si–O, P–O,
   B–O, C–O at the default 1.0 Å) raises an error that names the `r_cutoff` to use; it used to
   return a biased scale. An unpinned density-mode fit that cannot confirm a first shell also
@@ -281,9 +285,23 @@ Read these before comparing 1.0 numbers or files with earlier releases.
 - **stog.inp r₀ rule.** Line 22 follows the classic semantics: `peak_rmin` when the first-peak
   window starts inside the cutoff, else `peak_cutoff`. '2.48 2.65 3.1' now gives r₀ = 2.48, where
   it gave 2.65.
-- **Auto StoG values move.** The Huber √w fix moves the Mn₃Sn density-limit scales down 8–16 %;
-  see the table in [auto-stog.md](algorithms/auto-stog.md). The aliasing flag now fires on
-  despiked runs at r_max = 50 Å.
+- **Auto StoG values move, several-fold where 0.5.0 fitted across the first shell.** Unpinned
+  density-limit scales on Mn₃Sn (composition given, ρ₀ 0.063049 Å⁻³, r₀ unset), 0.5.0 → 1.0:
+  - At Qmin 1.0, 0.5.0's onset detection took the second shell (3.43–3.49 Å), so its window
+    crossed the first shell. With detection and window placement fixed the scale rises 2.3–3.4×:
+    59438 Q 1.0–27 a = 0.335 → 1.105, 300 K 0.331 → 0.752, 500 K 0.272 → 0.936. 59438 at
+    Q 0.82–28 rises 0.362 → 1.289 for the same reason. 59438 Q 1.0–28 (0.5.0: 0.336) and 55537
+    Q 0.82–28 (0.870) now refuse.
+  - Where 0.5.0 already found the first shell, the Huber √w fix lowers the scale: 300 K
+    Q 0.82–28 1.309 → 1.208 (−7.7 %), 500 K 1.567 → 1.397 (−10.8 %), and 59438 Q 1.0–29 with
+    `--r0 2.67` 1.199 → 1.011 (−15.6 %).
+  - FeCoSn 199 K (its stog.inp): the density-limit scale barely moves (1.18293 → 1.18536), the
+    FZ amplitude with ⟨b²⟩ = 1.10426 drops 5.8 % (1.25116 → 1.1784), and the ρ₀ estimate 6.0 %
+    (0.060692 → 0.057045 Å⁻³; expert 0.057329).
+
+  Every Mn₃Sn fit is flagged `density_limit_satisfied = False`. The √w-only comparison is the
+  table in [auto-stog.md](algorithms/auto-stog.md). The aliasing flag now fires on despiked runs
+  at r_max = 50 Å.
 - **Rwp denominator** is the experimental column. Values change for every fit whose curves
   differ in amplitude.
 - **Labels.** `*_FQn.csv` fits are titled F(Q), without a radiation type, and PDF partials are

@@ -2804,11 +2804,13 @@ $w_i$**, an effective objective $\sum_i w_i^2 e_i^2$ — a redescending estimato
 equations, on a contaminated regression where the old weighting is far off) and its JS twin
 `src/__tests__/autoScaleHuber.test.js`.
 
-Effect of the 1.0 switch on the real runs (both engines, identical to round-off — see
+Effect of the √w switch alone on the real runs (both engines, identical to round-off — see
 the real-data check under [Python ↔ JavaScript parity](#python--javascript-parity-1); Mn₃Sn with $\rho_0 = 0.063049$ Å⁻³ and
-the Mn₃Sn composition, $Q_\mathrm{max}$ 28; FeCoSn from its `stog.inp`):
+the Mn₃Sn composition, $Q_\mathrm{max}$ 28; FeCoSn from its `stog.inp`). The "before" column is
+the 1.0 branch just before the switch — first-shell detection and window placement already
+fixed — **not 0.5.0**; the 0.5.0 → 1.0 comparison follows the table:
 
-| Run | criterion | $(a, b)$ before | $(a, b)$ since 1.0 |
+| Run | criterion | $(a, b)$ before the √w fix (1.0 branch) | $(a, b)$ since 1.0 |
 | --- | --- | --- | --- |
 | parity fixture (truth $a = 10$) | density / FZ | 9.96954 / 10.0346 | 9.96985 / 10.0137 |
 | FeCoSn 199 K (x-ray, `stog.inp`) | density | (1.18293, −0.19711) | (1.18536, −0.19957) |
@@ -2823,15 +2825,37 @@ the Mn₃Sn composition, $Q_\mathrm{max}$ 28; FeCoSn from its `stog.inp`):
 On the well-conditioned x-ray run the two independent amplitude criteria now agree to 0.6 %
 (5.8 % before), and the $\rho_0$ self-consistency lands 0.5 % from the expert density (5.9 %
 before). On the Mn₃Sn runs, whose density limit is degenerate
-(`density_limit_satisfied = False` throughout), the density-limit scale drops by 8–16 %; on 55537
+(`density_limit_satisfied = False` throughout), the √w switch lowers the density-limit scale by
+8–16 %; on 55537
 and 59438 the inverted Mn–Sn first shell of the trial fits then stands 1.85–1.99× above its ripple
 field, just under the detector's 2× margin (`first_shell_candidates`, calibrated at 2.1–3.9× on the
 pre-1.0 fits), so an unpinned density-mode run stops with "could not locate the first coordination
 shell" and asks for $r_0$ / `r_fit_max` or the FZ criterion — a refusal, never a window across the
 shell. Over the 56-configuration sweep (the four Mn₃Sn runs × $Q_\mathrm{min}$ {0.82, 1.0} ×
 $Q_\mathrm{max}$ 24–30, composition given, $r_0$ unset) the unpinned density-mode run refuses in 9
-(3 before): 55537 in 7, 300 K at $Q$ 1.0–25 (a non-physical refit scale) and 59438 at 1.0–28; every
+(3 before the √w fix): 55537 in 7, 300 K at $Q$ 1.0–25 (a non-physical refit scale) and 59438 at 1.0–28; every
 returned fit has $a > 0$ and a window top of 2.40–2.50 Å, below the first shell.
+
+**0.5.0 → 1.0 (all 1.0 changes together).** `rmc-autoscale --data`, Mn₃Sn composition,
+$\rho_0 = 0.063049$ Å⁻³, $r_0$ unset unless noted; density criterion:
+
+| Run ($Q$ window) | 0.5.0: $a$ (detected onset) | 1.0: $a$ (detected onset) | Main cause |
+| --- | --- | --- | --- |
+| Mn₃Sn 59438 (1.0–27) | 0.3353 (3.48 Å) | 1.1055 (2.68 Å) | detection: 0.5.0 took the second shell, window across the first |
+| Mn₃Sn 300 K (1.0–27) | 0.3311 (3.43 Å) | 0.7525 (2.70 Å) | detection |
+| Mn₃Sn 500 K (1.0–27) | 0.2722 (3.46 Å) | 0.9361 (2.68 Å) | detection |
+| Mn₃Sn 59438 (0.82–28) | 0.3617 (3.53 Å) | 1.2894 (2.74 Å) | detection |
+| Mn₃Sn 59438 (1.0–28) | 0.3360 (3.49 Å) | refuses | detection / confirmation |
+| Mn₃Sn 55537 (0.82–28) | 0.8700 (2.77 Å) | refuses | confirmation |
+| Mn₃Sn 300 K (0.82–28) | 1.3089 (2.75 Å) | 1.2081 (2.72 Å) | Huber √w (−7.7 %) |
+| Mn₃Sn 500 K (0.82–28) | 1.5670 (2.74 Å) | 1.3972 (2.71 Å) | Huber √w (−10.8 %) |
+| Mn₃Sn 59438 (1.0–29, `--r0 2.67`) | 1.1987 | 1.0111 | Huber √w (−15.6 %) |
+| FeCoSn 199 K (`stog.inp`), density / FZ / $\rho_0$ estimate | 1.18293 / 1.25116 / 0.060692 | 1.18536 / 1.17840 / 0.057045 | Huber √w |
+
+So at $Q_\mathrm{min}$ 1.0 the unpinned Mn₃Sn scale rises 2.3–3.4× between releases — the
+opposite direction to the √w effect in the table above, which only applies once the window is
+below the first shell. The automatic enforcement cut moves with the detection: 3.48 → 2.43 Å on
+59438 (1.0–27), and 3.56 Å (above the given $r_0$) → 2.42 Å with `--r0 2.67`.
 
 **Limitation, stated in the code:** IRLS cannot reject a detector glitch that has already been
 transformed — a spike in $S(Q)$ rings across the whole low-$r$ window, so its C2 residuals look like
