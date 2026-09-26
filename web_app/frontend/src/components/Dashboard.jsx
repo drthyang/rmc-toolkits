@@ -19,6 +19,7 @@ import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { isIncompleteStructure } from '../structureReport';
 import { SymTolContext } from '../symTolContext';
 import InteractivePlot from './InteractivePlot';
+import { Banner, Card, CardTitle, Chip, EmptyState, IconButton, Page, Pill } from '../ui';
 import SaveMenu from '../ui/SaveMenu';
 import ModelSummary from './ModelSummary';
 import AppFooter from './AppFooter';
@@ -62,9 +63,9 @@ const renderRwpChip = (meta) => {
     const value = meta?.metrics?.rwp;
     if (value === undefined) return null;
     return (
-        <span className="rwp-chip">
+        <Chip tone="success" strong>
             Rwp {Number.isFinite(value) ? Number(value).toPrecision(4) : '—'}
-        </span>
+        </Chip>
     );
 };
 
@@ -437,11 +438,11 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         try {
             const figures = [];
             let index = 0;
-            root.querySelectorAll('.plot-card').forEach((card) => {
+            root.querySelectorAll('[data-figure-card]').forEach((card) => {
                 const svg = card.querySelector('.interactive-plot svg');
                 if (!svg) return;
                 index += 1;
-                const title = card.querySelector('.plot-card-header h3')?.textContent?.trim();
+                const title = card.querySelector('.ui-card__title')?.textContent?.trim();
                 figures.push({ svgElement: svg, name: title || `figure-${index}` });
             });
             if (figures.length) {
@@ -463,24 +464,15 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     const renderDashboardError = (key, message) => {
         if (!message || dismissedErrors.has(key)) return null;
         return (
-            <div className="dashboard-error" role="alert">
-                <span>{message}</span>
-                <button
-                    type="button"
-                    className="notification-close"
-                    onClick={() => dismissError(key)}
-                    aria-label="Close notification"
-                    title="Close"
-                >
-                    &times;
-                </button>
-            </div>
+            <Banner tone="danger" flush role="alert" onDismiss={() => dismissError(key)}>
+                {message}
+            </Banner>
         );
     };
 
     const renderPlotBody = (file, variant) => {
         if (file.sourceFile && !file.plotData && !file.parseError) {
-            return <div className="plot-loading">Parsing plot file...</div>;
+            return <div className="ui-loading ui-loading--sm">Parsing plot file...</div>;
         }
         if (file.sourceFile && file.parseError) {
             return null;
@@ -499,19 +491,19 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         const meta = metadata[file.path];
         const title = meta?.title || file.name;
         return (
-            <article className="plot-card" key={file.path}>
-                <div className="plot-card-header">
-                    <div className="plot-card-heading">
-                        <h3>{title}</h3>
+            <Card as="article" clip lift data-figure-card="" key={file.path}>
+                <div className="ui-card__header-flush">
+                    <div className="ui-card__heading">
+                        <CardTitle>{title}</CardTitle>
                         {title !== file.name && (
-                            <span className="plot-card-source" title={file.path}>{file.name}</span>
+                            <span className="ui-card__source" title={file.path}>{file.name}</span>
                         )}
                     </div>
                     {renderRwpChip(meta)}
                 </div>
                 {renderPlotBody(file)}
                 {renderDashboardError(`plot:${file.path}:${file.parseError}`, file.parseError)}
-            </article>
+            </Card>
         );
     };
 
@@ -522,30 +514,34 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         const sourceLabel = (rValueFile.sourceNames?.join(', ') || rValueFile.name)
             + (rValueFile.otherRuns?.length ? ` · other runs not shown: ${rValueFile.otherRuns.join(', ')}` : '');
         return (
-            <article className={`plot-card r-value-card${showRValue ? '' : ' is-collapsed'}`}>
-                <div className="plot-card-header">
-                    <div className="plot-card-heading">
-                        <h3>{title}</h3>
+            <Card
+                as="article"
+                clip
+                lift
+                data-figure-card=""
+                className={`r-value-card${showRValue ? '' : ' is-collapsed'}`}
+            >
+                <div className="ui-card__header-flush ui-card__header-flush--padded">
+                    <div className="ui-card__heading">
+                        <CardTitle>{title}</CardTitle>
                         {sourceLabel !== title && (
-                            <span className="plot-card-source" title={sourceLabel}>{sourceLabel}</span>
+                            <span className="ui-card__source" title={sourceLabel}>{sourceLabel}</span>
                         )}
                     </div>
-                    <div className="plot-card-header-actions">
+                    <div className="ui-card__header-actions">
                         <WatchdogBadge rValueFile={rValueFile} />
                         {renderRwpChip(meta)}
-                        <button
-                            type="button"
-                            className="panel-toggle"
+                        <Pill
                             onClick={() => setShowRValue((value) => !value)}
                             aria-expanded={showRValue}
                         >
                             {showRValue ? 'Hide' : 'Show'}
-                        </button>
+                        </Pill>
                     </div>
                 </div>
                 {showRValue && renderPlotBody(rValueFile, 'wide')}
                 {renderDashboardError(`r-value:${rValueFile.parseError}`, rValueFile.parseError)}
-            </article>
+            </Card>
         );
     };
 
@@ -555,15 +551,15 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         }
 
         return (
-            <article className={`plot-card loaded-files-card${showLoadedFiles ? '' : ' is-collapsed'}`}>
-                <div className="plot-card-header">
+            <Card as="article" lift data-figure-card="" className={`loaded-files-card${showLoadedFiles ? '' : ' is-collapsed'}`}>
+                <div className="ui-card__header-flush ui-card__header-flush--padded">
                     <div>
-                        <h3>
+                        <CardTitle>
                             Loaded {allPlotFiles.length} plot {allPlotFiles.length === 1 ? 'file' : 'files'}
-                        </h3>
-                        {structureError && <p>{structureError}</p>}
+                        </CardTitle>
+                        {structureError && <p className="ui-card__subtitle">{structureError}</p>}
                     </div>
-                    <div className="plot-card-header-actions">
+                    <div className="ui-card__header-actions">
                         {hasFigures && (
                             <SaveMenu
                                 onSave={handleSaveAllFigures}
@@ -574,63 +570,60 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                                 className="ui-save--accent"
                             />
                         )}
-                        <button
-                            type="button"
-                            className="panel-toggle"
+                        <Pill
                             onClick={() => setShowLoadedFiles((value) => !value)}
                             aria-expanded={showLoadedFiles}
                         >
                             {showLoadedFiles ? 'Hide' : 'Show'}
-                        </button>
+                        </Pill>
                     </div>
                 </div>
                 {showLoadedFiles && (
-                    <ul className="loaded-files-list">
+                    <ul className="ui-card__section loaded-files-list">
                         {allPlotFiles.map((file) => {
                             const isHidden = hiddenPlotPaths.has(file.path);
                             const kindClass = `kind-${file.plotKind}`;
                             return (
                                 <li key={file.path}>
-                                    <span className={`loaded-file-badge ${kindClass}${isHidden ? ' is-hidden' : ''}`}>
-                                        <span className="loaded-file-kind">{file.plotKind}</span>
-                                        <span className="loaded-file-name">{file.name}</span>
-                                        <button
-                                            type="button"
-                                            className="loaded-file-hide"
+                                    <span className={`ui-file-chip ${kindClass}${isHidden ? ' is-hidden' : ''}`}>
+                                        <span className="ui-file-chip__kind">{file.plotKind}</span>
+                                        <span className="ui-file-chip__name">{file.name}</span>
+                                        <IconButton
+                                            variant="remove"
                                             onClick={() => handleTogglePlotVisibility(file.path)}
                                             aria-label={isHidden ? `Show ${file.name} chart` : `Hide ${file.name} chart`}
                                             aria-pressed={isHidden}
                                             title={isHidden ? 'Show chart' : 'Hide chart'}
                                         >
                                             &times;
-                                        </button>
+                                        </IconButton>
                                     </span>
                                 </li>
                             );
                         })}
                     </ul>
                 )}
-            </article>
+            </Card>
         );
     };
 
     const hasFigures = gridFiles.length > 0 || (rValueFile && showRValue);
 
     return (
-        <section className="dashboard-page" ref={pageRef}>
-            <div className="dashboard-toolbar">
+        <Page wide ref={pageRef}>
+            <div hidden>
                 <div>
                     <h2>Run Dashboard</h2>
                     <p>{localRun ? localRun.name : directory}</p>
                 </div>
-                {loading && <span className="status-pill">Loading</span>}
+                {loading && <Chip tone="success" strong>Loading</Chip>}
             </div>
 
             {renderDashboardError(`dashboard:${error}`, error)}
 
-            {localStatus && <div className="dashboard-local-status">{localStatus}</div>}
+            {localStatus && <Banner tone="neutral">{localStatus}</Banner>}
 
-            {structureNotice && <div className="dashboard-local-status" role="status">{structureNotice}</div>}
+            {structureNotice && <Banner tone="neutral" role="status">{structureNotice}</Banner>}
 
             <ModelSummary structure={structure} />
 
@@ -643,11 +636,11 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
             </div>
 
             {!loading && allPlotFiles.length === 0 && (
-                <div className="empty-state">Open a run folder to populate the dashboard.</div>
+                <EmptyState>Open a run folder to populate the dashboard.</EmptyState>
             )}
 
             <AppFooter />
-        </section>
+        </Page>
     );
 };
 
