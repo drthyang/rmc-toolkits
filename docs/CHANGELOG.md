@@ -298,6 +298,9 @@ with 0.5.0.
   (a torn file converted silently), refuses an output that is its own source or a directory (a
   500), and writes through a temporary file, so a failed conversion never replaces an existing
   one. `overwrite: "false"` counted as true.
+- A malformed `.inp` sent to `/api/scaling/*` with the default `kind: 'auto'` reports its own
+  parse error (400); it used to be re-read as S(Q) data (inspect: `{"kind": "data"}`, preview:
+  "data mode requires qmin and qmax").
 - JSON-body booleans are parsed strictly: `true`/`false`, `0`/`1` or the words
   1/true/yes/on, 0/false/no/off; anything else is a 400 (`"maybe"` read as false, an object as
   true, and `inspect: "false"` entered inspect mode). A stog.inp whose data file is a folder

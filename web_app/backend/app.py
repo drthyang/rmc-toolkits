@@ -1199,7 +1199,10 @@ def _resolve_scaling_source(payload: dict):
             inp = read_stog_inp(source)
             inp_path = source
         except (ValueError, NotImplementedError):
-            if kind == "inp":
+            # A .inp is never an S(Q) file: its parse error is the answer (it
+            # used to be re-read as data and reported as "data mode requires
+            # qmin and qmax"). Other names containing "input" may be data.
+            if kind == "inp" or source.suffix.lower() == ".inp":
                 raise
     data_path = (source.parent / inp.data_file).resolve() if inp is not None else source
     if inp is not None and not any(
