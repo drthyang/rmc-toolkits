@@ -10,7 +10,7 @@ see [ALGORITHMS.md](ALGORITHMS.md).
 
 | Path | Purpose |
 | --- | --- |
-| `rmc_toolkits/` | Reusable package: parsing, plots, KDE, PCA ellipsoid, displacement directions. |
+| `rmc_toolkits/` | Reusable package: parsing, plots, KDE, PCA ellipsoid, displacement directions, bond angles, Auto StoG; the `rmc-autoscale` and `rmc-triplets` CLIs. |
 | `web_app/backend/app.py` | Flask API server with data-root guarding. |
 | `web_app/frontend/` | React + Vite single-page app. |
 | `web_app/frontend/public/demo/` | Bundled GaTa₄Se₈ 250 K demo run (the app's **Demo** button). |
@@ -40,7 +40,9 @@ npm install
 
 Most users don't need this — the [hosted app](https://drthyang.github.io/rmc-toolkits/) covers
 monitoring and visualization entirely in the browser. Run the Flask backend only when you want
-server-side file browsing, `.rmc6f` conversion or reference-grade SciPy KDE on your own machine.
+server-side file browsing or the reference-grade SciPy/NumPy engines on your own machine.
+(`.rmc6f` → `Frac_coord` conversion is an API and library call, `POST /api/convert/frac` /
+`write_frac_from_rmc6f`; no page of the app offers it.)
 To self-host on a network, use Gunicorn or the Docker image ([Hosting The
 Dashboard](#hosting-the-dashboard)), not the development server below.
 
@@ -101,8 +103,9 @@ Two ways to deploy:
   browser-side KDE (WebGPU + CPU fallback), and the 3D view all run client-side. Live Data works in
   Chromium browsers (Chrome, Edge, Arc, Opera) via the File System Access API. Deployed automatically
   from `main` by `.github/workflows/pages.yml`.
-- **Flask web service** — full-featured: server-side file browsing, structure sampling, conversion,
-  SciPy KDE, and Live Data. The included `Dockerfile` builds the frontend and serves it via
+- **Flask web service** — full-featured: server-side file browsing, structure sampling, the
+  reference-grade engines (SciPy KDE, PCA, orientation, bond angles), the conversion and Auto StoG
+  API routes, and Live Data. The included `Dockerfile` builds the frontend and serves it via
   Flask/Gunicorn:
 
   ```bash
@@ -140,8 +143,8 @@ npm run preview
 
 ```python
 from rmc_toolkits import (
-    detect_plot_kind, kde_slice, load_unit_cell_positions,
-    make_plot, plot_to_png, read_exafs_csv, read_structure, write_frac_from_rmc6f,
+    load_unit_cell_positions, make_plot, oriented_kde_slice, plot_to_png,
+    read_structure, write_frac_from_rmc6f,
 )
 
 demo = "web_app/frontend/public/demo"  # bundled GaTa4Se8 250 K example run
@@ -153,17 +156,21 @@ frac_path = write_frac_from_rmc6f(
 )
 structure = read_structure(demo, frac_path=frac_path)
 
+# The Atomic Density map, as /api/kde/slice computes it: fractional positions folded into one
+# cell, a c-slab centred at 0.12 of the cell edge and 0.08 thick, bandwidth factor 0.03. The
+# result equals GET /api/kde/slice?dir=demo&element=Se&z=0.12&dz=0.08&bw=0.03.
 positions = load_unit_cell_positions(f"{demo}/GTS_250K.rmc6f", element="Se")
-payload = kde_slice(
-    positions.positions,
-    z_center=0.12 * positions.cell_lengths[2],
-    dz=0.08 * positions.cell_lengths[2],
-    xlim=(0.0, float(positions.cell_lengths[0])),
-    ylim=(0.0, float(positions.cell_lengths[1])),
+payload = oriented_kde_slice(
+    positions.fractional_positions, center=0.12, thickness=0.08, normal=(0, 0, 1), bw=0.03
 )
 
 png_bytes = plot_to_png(make_plot(f"{demo}/GTS_250K_FQ1.csv"))
 ```
+
+`oriented_kde_slice` is the path the app and the API use: fractional coordinates, periodic
+images across the cell faces, any slice normal. `kde_slice` is a lower-level, non-periodic variant
+that takes Cartesian Å positions and an x/y window; it is valid only for a c-slice of an
+orthogonal cell, and near a cell face it sees fewer atoms than the app does.
 
 Lower-level parser helpers are also exported: `read_rmc_csv`, `read_exafs_csv`, `read_chi`,
 `read_chi_log`, `read_atom_indices`, `read_cell_vectors`, `iter_rmc6f_atoms` /
@@ -171,8 +178,54 @@ Lower-level parser helpers are also exported: `read_rmc_csv`, `read_exafs_csv`, 
 browser, with its `Rmc6fParseReport`), `find_run_configuration` (which `.rmc6f` of a run folder the
 app and the CLIs analyse), `frac_lines_from_rmc6f`, `rwp` / `fit_rwp` / `rwp_columns`. The engines
 are exported too: `pca_kde_volume`, `site_ellipsoids`, `site_orientation_histogram`,
-`bond_angle_summary` / `bond_angle_summary_from_file`, `autoscale`, `estimate_rho0` and the
-`transforms` functions; `rmc_toolkits.__all__` lists them all.
+`bond_angle_summary` / `bond_angle_summary_from_file`, `autoscale`, `estimate_rho0` and the main
+`transforms` conversions. `rmc_toolkits.__all__` is the list of what the package root exports;
+other public helpers import from their modules (for example
+`from rmc_toolkits.transforms import sine_transform`).
+
+## Command-line tools
+
+`pip install -e .` installs two console scripts (module forms `python -m rmc_toolkits.scaling_cli`
+and `python -m rmc_toolkits.triplets_cli`). Both print their full flag list with `--help` and
+their version with `--version`, check every destination before computing, never overwrite an
+existing file without `--force`, and write their outputs whole or not at all.
+
+**`rmc-autoscale`** — Auto StoG: absolute scale and offset of a measured S(Q), the STOG-compatible
+Fourier filter, and the classic stog / RMCProfile file family plus `<stem>_provenance.json`.
+
+```bash
+rmc-autoscale stog.inp                    # classic stog.inp mode; auto-fit is the default
+rmc-autoscale stog.inp --manual           # classic-stog parity run (the inp's yscale/yoffset)
+rmc-autoscale --data sofq.dat --qmin 0.5 --qmax 28 --formula SrTiO3 --rho0 0.0853
+rmc-autoscale --data sofq.dat --qmin 0.5 --qmax 28 --formula SrTiO3 --estimate-rho0
+```
+
+Direct data mode needs `--qmin`, `--qmax`, a density (`--rho0`, `--mass-density` + `--formula`,
+or a `NUMBER_DENSITY ::` header) and ⟨b⟩² (`--b-avg-sq` or `--formula`). Fit options:
+`--amplitude density|fz`, `--c1-mode sweep|joint`, `--r0`, `--r-fit-min/--r-fit-max`,
+`--r-cutoff`, `--rmax`, `--nr`, `--lorch`, `--robust`, `--despike`, `--low-q-correction`,
+`--sigma`. `--scale A --offset B` fixes the scaling instead of fitting it (`--manual` alone
+keeps a stog.inp's yscale/yoffset). Low-r enforcement of the RMCProfile files is on in every mode
+(`--enforce-cutoff`, `--peak-window`, `--no-enforce`). Outputs go to `autoscale/` beside the input (`--out-dir`, `--out-stem`); an output that would
+land on the input data file or the stog.inp is refused even with `--force`.
+
+**`rmc-triplets`** — bond-angle distribution of an A–B–C triplet with B central, as the Bond
+Geometry page computes it; the argument is an `.rmc6f` or a run folder (the same configuration
+the app picks).
+
+```bash
+rmc-triplets web_app/frontend/public/demo --triplet Se Ta Se --bond12 2.3 2.9 \
+    --output /tmp/se_ta_se.csv --plot /tmp/se_ta_se.png
+rmc-triplets config.rmc6f --triplet O Ti O --bond12 1.7 2.3 --bond23 1.7 2.3 --bin-width 0.5
+```
+
+`--bond12 RMIN RMAX` (required) and `--bond23` (default: the same window) are inclusive Å
+windows; `--bin-width` is in degrees; `--output` (default `triplets_<A-B-C>_<config>.csv` in the
+current folder), `--plot` and `--dump-angles` name the outputs. The CLI has no angle cap (the app's
+5×10⁷ limit applies only to the page and `/api/triplets`).
+
+Flags, defaults and the math behind both tools:
+[ALGORITHMS.md › Reproducing these numbers yourself](ALGORITHMS.md#reproducing-these-numbers-yourself).
 
 ## Backend API
 
@@ -238,16 +291,16 @@ true. Defaults are in parentheses.
 | `POST /api/dialog/folder` | JSON `dir` (`.`): where the native picker opens | `path`, `name` of the chosen folder, which becomes an allowed data root; 400 when cancelled. |
 | `GET /api/plot` | `path` | One supported file rendered as a PNG. |
 | `GET /api/plot/metadata` | `path` | `kind`, `title`, `metrics` (`rwp`, `final_chi_r`). |
-| `GET /api/plot/data` | `path` | Metadata plus `xLabel`, `yLabel` and `series` (`label`, `x`, `y`) for the SVG plots; 400 for an unsupported file. |
+| `GET /api/plot/data` | `path` | Metadata plus `xLabel`, `yLabel` and `series` (`label`, `x`, `y`; a NaN point is `null`) for the SVG plots, and for a `.log` file `chiColumn`, the χ² column charted (the last one); 400 for an unsupported file. |
 | `POST /api/convert/frac` | JSON `path` (a `.rmc6f`), `outputPath` (next to the source), `overwrite` (false; a strict boolean) | `path`, `name` of the written `Frac_coord_<stem>.txt`, and `parseWarning` (atom lines the shared grammar skipped, or null); 409 if it exists and `overwrite` is false. A file with no full-layout atom line (none parsed, or coordinates-only lines), an output that is the source itself or a directory, and a bad header are 400s. The file is written through a temporary sibling renamed into place, so a failed conversion never replaces an existing one. |
-| `GET /api/structure` | `dir`; `maxPoints` (1 000 000; integer, clamped to [100, 1 000 000]) | Atoms folded into one unit cell (sampled per site above `maxPoints`), `totalAtoms`, `elementCounts`, `atomIndices`, `supercell`, `latticeVectors`, and the `.rmc6f` move counters `moves` (`generated`, `tried`, `accepted`, `accumulatedTimeS`) when the header has them. |
-| `GET /api/kde/slice` | `dir`; `element` (all; case-insensitive; an element the file lacks is a 400 naming those it has, and a file with no parseable atom is a 400); `orientation` `a`/`b`/`c` (`c`), any other value = custom normal `nx`, `ny`, `nz` (0, 0, 1; finite, not all zero) with an optional in-plane frame `ux`, `uy`, `uz`, `vx`, `vy`, `vz` (all six or none; each axis non-zero and orthogonal to the normal and to the other, within 10⁻⁶; ignored for the presets; the page always sends it, and without it the library's own frame is used, which for e.g. (1 1 0) is the page's rotated by 90°); `z` (0.5; finite, clamped to [0, 1]); `dz` (0.08; 0 < dz ≤ 1); `bw` (0.03; > 0, SciPy `gaussian_kde` scalar factor); `grid` (120; integer, clamped to [16, 400]); `levels` (8; integer in [0, 64]); `log` (false) | Density grid, `extent`, contour polylines, `slabCount`, `fitCount`, slab/plane geometry, `kernel` (`covariance`, `sigmaMinor`, `sigmaMajor`; in-plane fractional units; `H = bw²·C`, `C` the covariance of the slab's atoms), `message` (why nothing was drawn — the same texts as the browser worker, plus `engine` when the server's SciPy cannot evaluate the kernel) and `warnings` (`subgrid`, `unresolved`). **`z` and `dz` are fractions of the unit cube's projection range along the slice normal** (equal to cell-edge fractions only for the `a`/`b`/`c` presets) and are echoed as given; `depth`/`depthThickness` are in depth-projection units. The slab, bandwidth and grid stay in fractional coordinates, with no conversion to Å. The KDE fit uses at most 6000 rows — slab atoms plus their periodic images within the kernel margin, so at larger `bw` a few thousand atoms already reach the cap; above it the server and the browser sum different subsamples (maps differ by several percent of the peak). |
+| `GET /api/structure` | `dir`; `maxPoints` (1 000 000; integer, clamped to [100, 1 000 000]) | Atoms folded into one unit cell (sampled per site above `maxPoints`), `totalAtoms`, `elementCounts`, `atomIndices`, `supercell`, `latticeVectors`, the `.rmc6f` move counters `moves` (`generated`, `tried`, `accepted`, `accumulatedTimeS`) when the header has them, and the parse report `parseReport` with its one-line `parseWarning` (or `null`). An invalid header or a file with no parseable atom is a 400. |
+| `GET /api/kde/slice` | `dir`; `element` (all; case-insensitive; an element the file lacks is a 400 naming those it has, and a file with no parseable atom is a 400); `orientation` `a`/`b`/`c` (`c`), any other value = custom normal `nx`, `ny`, `nz` (0, 0, 1; finite, not all zero) with an optional in-plane frame `ux`, `uy`, `uz`, `vx`, `vy`, `vz` (all six or none; each axis non-zero and orthogonal to the normal and to the other, within 10⁻⁶; ignored for the presets; the page always sends it, and without it the library's own frame is used, which for e.g. (1 1 0) is the page's rotated by 90°); `z` (0.5; finite, clamped to [0, 1]); `dz` (0.08; 0 < dz ≤ 1); `bw` (0.03; > 0, SciPy `gaussian_kde` scalar factor); `grid` (120; integer, clamped to [16, 400]); `levels` (8; integer in [0, 64]); `log` (false) | Density grid, `extent`, contour polylines, `slabCount`, `fitCount`, slab/plane geometry, `kernel` (`covariance`, `sigmaMinor`, `sigmaMajor`; in-plane fractional units; `H = bw²·C`, `C` the covariance of the slab's atoms), `message` (why nothing was drawn — the same texts as the browser worker, plus `engine` when the server's SciPy cannot evaluate the kernel) and `warnings` (`subgrid`, `unresolved`). **`z` and `dz` are fractions of the unit cube's projection range along the slice normal** (equal to cell-edge fractions only for the `a`/`b`/`c` presets). `z` is clamped to [0, 1], and the payload's `z` and `center` echo the clamped value; `dz` is echoed as given. `depth`/`depthThickness` are in depth-projection units. The slab, bandwidth and grid stay in fractional coordinates, with no conversion to Å. The KDE fit uses at most 6000 rows — slab atoms plus their periodic images within the kernel margin, so at larger `bw` a few thousand atoms already reach the cap; above it the server and the browser sum different subsamples (maps differ by several percent of the peak). |
 | `GET /api/pca/sites` | `dir`; `probability` (0.5; 0 < p < 1) | Per-site displacement tensor and thermal ellipsoid table (`sites`: per site also `nonGaussianity` — Mardia's multivariate excess kurtosis — `excessKurtosis` with `axisResolved`, `zeroSpread`, `elementCounts` and `mixed`), `referenceNumbers`, `elements`, `totalAtoms`, `latticeVectors`, `supercell`, `parseWarning` (atom lines the `.rmc6f` grammar skipped — non-finite coordinates, unparsed lines, a header count mismatch — or `null`). |
 | `GET /api/pca/kde` | `dir`; `referenceNumber` (integer) or `element` (pools that element's sites; neither pools every atom); `bw` (`scott`; `scott`, `silverman` or a number > 0); `bwScale` (1.0; > 0); `grid` (48; integer, clamped to [8, 128]); `extent` (3.0; > 0, box half-width in kernel-broadened σ); `cubicBox` (false: only sizes the display box `boxHalfWidths`; the volume is always sampled on the per-axis box `halfWidths`); `probability` (0.5; 0 < p < 1); `projections` (true) | PCA frame, ellipsoid, and the separable 3D KDE volume (+ three wall projections), with the captured `mass`, `nonGaussianity`, `axisResolved` and `boxHalfWidths`. A zero-spread site (λ₁ < 10⁻⁸ Å², e.g. an average configuration) is a 400. A volume that captures less than 10⁻⁶ of the density (every kernel between the grid nodes: a tiny `bw`/`bwScale` or a huge `extent`) is a 400, not an all-zero volume. |
 | `GET /api/pca/orientation` | `dir`; `referenceNumber` or `element` as above; `frequency` (auto: the recommended value; integer in [1, 64]); `weight` (`count`; `count`, `amplitude`, `amplitude2`); `minAmplitude` (0 Å; ≥ 0); `minAmplitudeQuantile` (0; in [0, 1)); `smoothing` (0; integer in [0, 64]); `frame` (`cartesian`; or `pca`); `geometry` (true: include cell polygons) | Goldberg-cell histogram of displacement directions: `enhancement`, `zScore` (local, uncorrected), peak direction with `peakSignificance` (exact Poisson tail, Šidák over all cells), `mapSignificance` / `mapPValue` (Pearson's X² against its exact-moment isotropic reference; `null` below 0.1 expected coincident pairs) with `mapNullSd`, `mapNullSkewness`, `mapExpectedPairs`, `antipodalAsymmetry` against its exact null (`…Null`, `…NullSd`, `…Z`, `…Significant` at z > 3), `orientationAnisotropySignificance` (Bingham); the legacy `significance` (an RMS local z) and `peakZScore` are kept but are not significances. `parseWarning` as in `/api/pca/sites`. |
 | `GET /api/triplets` | `dir`; `end1`, `apex`, `end2` (elements, case-insensitive; `apex` is the central atom); `r12Min` + `r12Max` (required, Å, inclusive; `r12Max` ≤ 15); `r23Min` + `r23Max` (optional pair, default = the 1-2 window; `r23Max` ≤ 15); `binWidth` (1.0°; ≥ 0.05) | Bond-angle histogram, bond-length statistics (`count` = B-centred bond vectors, `uniqueBonds` = physical bonds), coordination histogram (payload of `triplets.bond_angle_summary`), `parseWarning`. A spec that would form more than `APP_MAX_ANGLES` = 5×10⁷ angles is a 400 naming the count, before any angle is formed. The 15 Å, 0.05° and 5×10⁷ caps are API limits; the engine itself is unrestricted. |
-| `POST /api/scaling/preview` | JSON `path` (a `stog.inp` or an S(Q) data file); `kind` (`auto`: a `.inp` or a name containing `input` is read as a stog input, a `.inp` that fails to parse is a 400 with its parse error, and any other name falls back to data; `inp`, `data`); `inspect` (false: only parse the source). Numeric overrides, each a finite number: `qmin` (≥ 0), `qmax`, `rho0`, `bAvgSq`, `bSqAvg`, `massDensity`, `rCutoff` (≥ 0; data mode 1.0), `rmax` (data mode 50), `nr` (data mode 5000; integer), `r0`, `rFitMin`, `rFitMax`. Text: `formula`, `c1Mode` (`sweep`), `amplitude` (`density`). Booleans (JSON `true`/`false`; the strings `1`/`true`/`yes` are true): `lorch` (data mode false), `lowQCorrection` (true), `robust` (true), `despike` (false), `useSigma` (true). `mode` (`auto`; `manual` takes `a`, a finite non-zero number, and `b` (0; finite), falling back to the `stog.inp` values); low-r enforcement controls `enforce` (boolean), `enforceCutoff` (finite, ≥ 0 and below `rmax`), `peakWindow` (`[rmin, rmax]`, two finite numbers with rmin ≤ rmax) — defaults in [auto-stog.md](algorithms/auto-stog.md) | Fitted `a`, `b`, convergence history, diagnostics, provenance, plot guides, `warnings` (the coefficient warnings the CLI prints, e.g. a `formula`'s ⟨b²⟩ left unused because its ⟨b⟩² disagrees with `bAvgSq`; `[]` when none), and the S(Q)/G_K(r)/D(r) series (+ low-r–enforced versions). A `stog.inp` supplies every value not overridden; data mode requires `qmin`, `qmax`, a density (`rho0`, `massDensity` + `formula`, or a `NUMBER_DENSITY ::` header) and ⟨b⟩² (`bAvgSq` or `formula`). |
-| `POST /api/scaling/run` | As `preview`, plus `outDir` (`<source folder>/autoscale`), `outStem`, `force` (false) | Writes the classic stog file family + `stog_provenance.json` (the `rmc-autoscale` CLI writer); returns `a`, `b`, `outputs`, `outDir`, diagnostics, `warnings` (as `preview`). 409 when an output exists and `force` is false; 400 (even with `force`) when an output would overwrite the input data file or the stog.inp, when two outputs name one file (names compared case-insensitively), when an output path is a directory, or when an output folder cannot be created (a path component is a file). These checks run before any computation, and the family is written through temporary files renamed into place only after every write succeeded, so a failed run leaves no partial family. |
+| `POST /api/scaling/preview` | JSON `path` (a `stog.inp` or an S(Q) data file); `kind` (`auto`: a `.inp` or a name containing `input` is read as a stog input, a `.inp` that fails to parse is a 400 with its parse error, and any other name falls back to data; `inp`, `data`); `inspect` (false: only parse the source). Numeric overrides, each a finite number: `qmin` (≥ 0), `qmax`, `rho0`, `bAvgSq`, `bSqAvg`, `massDensity`, `rCutoff` (≥ 0; data mode 1.0), `rmax` (data mode 50), `nr` (data mode 5000; integer), `r0`, `rFitMin`, `rFitMax`. Text: `formula`, `c1Mode` (`sweep`), `amplitude` (`density`). Booleans (strict, as above): `lorch` (data mode false), `lowQCorrection` (true), `robust` (true), `despike` (false), `useSigma` (true). `mode` (`auto`; `manual` takes `a`, a finite non-zero number, and `b` (0; finite), falling back to the `stog.inp` values); low-r enforcement controls `enforce` (boolean), `enforceCutoff` (finite, ≥ 0 and below `rmax`), `peakWindow` (`[rmin, rmax]`, two finite numbers with rmin ≤ rmax) — defaults in [auto-stog.md](algorithms/auto-stog.md) | `source`, `dataFile`, `kind`, `mode`, the parsed `inp` and data `header`; `result` (`a`, `b`, `converged`, `iterations`, `history`, `lowRRms`, `c1TailMean`); `diagnostics` (the CLI's diagnostics summary); `provenance`; `enforcement` (`cutoff`, `peakRmin`, `peakRmax`, or `null`); plot `guides`; `warnings` (the coefficient warnings the CLI prints, e.g. a `formula`'s ⟨b²⟩ left unused because its ⟨b⟩² disagrees with `bAvgSq`; `[]` when none); and `series`, the S(Q)/G_K(r)/D(r) curves (+ low-r–enforced versions). A `stog.inp` supplies every value not overridden; data mode requires `qmin`, `qmax`, a density (`rho0`, `massDensity` + `formula`, or a `NUMBER_DENSITY ::` header) and ⟨b⟩² (`bAvgSq` or `formula`). |
+| `POST /api/scaling/run` | As `preview`, plus `outDir` (`<source folder>/autoscale`), `outStem`, `force` (false) | Writes the classic stog file family + `<stem>_provenance.json` (the `rmc-autoscale` CLI writer: with a stog.inp and no `outStem`, the file names the stog.inp declares and `<stog.inp stem>_provenance.json`; otherwise `<stem>.sq`, `<stem>.gr`, … with `stem` = `outStem` or the data file's stem); returns `a`, `b`, `mode`, `outputs`, `outDir`, `diagnostics` and `warnings` (as `preview`). 409 when an output exists and `force` is false; 400 (even with `force`) when an output would overwrite the input data file or the stog.inp, when two outputs name one file (names compared case-insensitively), when an output path is a directory, or when an output folder cannot be created (a path component is a file). These checks run before any computation, and the family is written through temporary files renamed into place only after every write succeeded, so a failed run leaves no partial family. |
 
 ## Supported File Patterns
 
@@ -267,9 +320,17 @@ dataset Q-output files may include a descriptive title row before the column hea
 
 ```bash
 pip install numpy matplotlib scipy seaborn
-python src/RMC_plot.py --dir web_app/frontend/public/demo [--save --no-show]
+python src/RMC_plot.py --dir web_app/frontend/public/demo          # shows the plots
 python src/RMC_KDE.py [--el Mn]
 python src/RMC_3D.py            # needs mayavi
+```
+
+`RMC_plot.py --save` writes one PNG per plot (`GTS_250K_FQ1.png`, `R-value.png`, …) into the
+`--dir` folder, so save from a copy rather than the tracked demo folder:
+
+```bash
+cp -r web_app/frontend/public/demo /tmp/rmc_demo
+python src/RMC_plot.py --dir /tmp/rmc_demo --save --no-show
 ```
 
 `RMC_KDE.py` and `RMC_3D.py` expect `Frac*.txt` plus `.rmc6f` in the working directory.
