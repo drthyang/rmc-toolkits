@@ -166,6 +166,37 @@ class ShortBondTests(unittest.TestCase):
         np.testing.assert_allclose(result.provenance["r_fit_window"], [0.9, 1.25])
         self.assertNotIn("window_refined", result.provenance)
 
+    def test_pinned_sliver_window_is_refused(self):
+        # A pinned density-limit window narrower than MIN_AUTO_WINDOW (0.1 A)
+        # is set by one truncation ripple: on FeCoSn 199 K a 0.01-0.05 A window
+        # gave scales 11-43 % low, reported converged with no flag.
+        formula, rho0, shells, r_continuum = SIO2_GLASS
+        sq, values = shell_sq(formula, rho0, shells, r_continuum)
+        for pins in ({"r0": 1.2}, {"r_fit_max": 0.95}, {"r_fit_min": 1.2, "r_fit_max": 1.25}):
+            with self.subTest(**pins):
+                config = ScalingConfig(**values, r_cutoff=0.7, **pins)
+                with self.assertRaisesRegex(ValueError, "narrower than 0.1"):
+                    autoscale(Q, sq, config)
+        # The Q->0 amplitude does not depend on the window: fz still runs.
+        fz = ScalingConfig(**values, r_cutoff=0.7, r0=1.2, amplitude_criterion="fz")
+        self.assertTrue(np.isfinite(autoscale(Q, sq, fz).a))
+
+
+class RCutoffValidationTests(unittest.TestCase):
+    def test_r_cutoff_must_be_finite_and_non_negative(self):
+        base = dict(qmin=0.5, qmax=30.0, rho0=0.05, b_avg_sq=0.02)
+        for bad in (-1.0, -1e-9, float("nan"), float("inf")):
+            with self.subTest(r_cutoff=bad):
+                with self.assertRaisesRegex(ValueError, "r_cutoff"):
+                    ScalingConfig(**base, r_cutoff=bad)
+        ScalingConfig(**base, r_cutoff=0.0)  # no Fourier filter: allowed
+        for name in ("r0", "r_fit_min", "r_fit_max"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, name):
+                    ScalingConfig(**base, **{name: float("nan")})
+        with self.assertRaisesRegex(ValueError, "r_fit_min"):
+            ScalingConfig(**base, r_fit_min=-0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

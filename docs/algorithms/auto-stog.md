@@ -702,7 +702,7 @@ given"):
 | $\langle b^2\rangle$ (barn) | form → composition (never the `.inp`, never the header) | `None` (then $S(0)$ target = 0, no FZ amplitude, no $\rho_0$ estimate, no $Q\to0$ diagnostic) |
 | $\rho_0$ | see Step 8 | seed 0.05 + self-consistent estimate (browser only) |
 | $r_\mathrm{cut}$ | form → `stog.inp` line 15 | 1.0 Å |
-| $r_0$ | form → **header `MINIMUM_DISTANCES`** → `stog.inp` line 22: `peak_rmin` when a genuine first-peak window starts inside the cutoff ($0 <$ `peak_rmin` $<$ `peak_cutoff`, `peak_rmax` $>$ `peak_rmin`), else `peak_cutoff` — only if $r_0 - 0.25 > r_\mathrm{cut} + 0.2$ (`stog_inp_closest_approach`, shared by CLI/API, JS `stogInpClosestApproach`) | `None` → located from the data (Step 8) |
+| $r_0$ | form → **header `MINIMUM_DISTANCES`** → `stog.inp` line 22: `peak_rmin` when a genuine first-peak window starts inside the cutoff ($0 <$ `peak_rmin` $<$ `peak_cutoff`, `peak_rmax` $>$ `peak_rmin`), else `peak_cutoff` — only if $(r_0 - 0.25) - (r_\mathrm{cut} + 0.2) \ge$ `MIN_AUTO_WINDOW` $= 0.1$ Å (`stog_inp_closest_approach`, shared by CLI/API, JS `stogInpClosestApproach`) | `None` → located from the data (Step 8) |
 | `rmax`, `nr` | form → `stog.inp` | 50.0 Å, 5000 points |
 | Lorch | form → `stog.inp` flag | off |
 | enforcement `(cutoff, peak_rmin, peak_rmax)` | resolved *outside* the config — see below | `'auto'` → the foot of the first shell, $\min(\text{foot}, \text{onset} - 0.25)$ |
@@ -2997,7 +2997,12 @@ fine). With neither `r0` nor `r_fit_max` pinned, and `amplitude_criterion="densi
      it is the first coordination shell … lower r_cutoff …; otherwise set r0 or r_fit_max").
    - The refit budget runs out → `ValueError` listing the tried onsets.
 
-   A fit across the first shell, or one with $a \le 0$, is never returned.
+   A fit across the first shell, or one with $a \le 0$, is never returned. The same
+   `MIN_AUTO_WINDOW` floor binds a **pinned** window: with `r0` or `r_fit_max` set and the
+   density criterion, a window narrower than 0.1 Å raises before any fit
+   (`_require_pinned_window` / JS `requirePinnedWindow`) instead of fitting a few $r$ points
+   that one truncation ripple dominates. FZ mode is exempt (its amplitude does not use the
+   window).
 
 The result carries `provenance["r0_detected"]` — the **confirmed onset the window was built from**,
 so `r_fit_window` hi $=$ `r0_detected` $- 0.25$ always holds (the first 1.0 loop reported the onset
@@ -3524,7 +3529,10 @@ returns `None`); ≥8 points in the FZ head; ≥4 C2 rows for C2 IRLS re-weighti
 `makeConfig`): `c1_mode ∈ {sweep, joint}`; `amplitude_criterion ∈ {density, fz}`; `fz` requires
 `b_sq_avg` **and** `c1_mode="sweep"`; $\rho_0$ finite and $>0$; $\langle b\rangle^2$ finite and
 $>0$; $\langle b^2\rangle$, when set, finite, $>0$ and $\ge \langle b\rangle^2(1 - 10^{-9})$ (no
-$S(0) > 0$, Cauchy–Schwarz); `qmax > qmin`; `nr` a positive integer; `rmax` finite and $>0$. `r_fit_window` raises
+$S(0) > 0$, Cauchy–Schwarz); `qmax > qmin`; `nr` a positive integer; `rmax` finite and $>0$;
+`r_cutoff` finite and $\ge 0$ (0 = no Fourier filter; a negative one used to move the window below
+$r = 0$ and return a "converged" $a = 0.026$ on FeCoSn); `r0`, `r_fit_min`, `r_fit_max` finite when
+set, `r_fit_min` $\ge 0$. `r_fit_window` raises
 "empty low-r fit window" whenever the upper edge $\le$ the lower edge — the JS `makeConfig`
 evaluates this eagerly at construction, the Python property only when first accessed (the CLI
 touches `config.r_fit_window` deliberately so the error renders as a CLI error).
@@ -3919,7 +3927,13 @@ and the run mode (`'auto'` / `'manual'`).
    `stogInpClosestApproach()`: the classic line zeroes $g$ for $r \le$ `peakCutoff` *except*
    inside `[peakRmin, peakRmax]`, so the asserted $g = 0$ region ends at `peakRmin` when a
    genuine window starts inside the cutoff, else at `peakCutoff` — only if that leaves a
-   non-empty default fit window ($r_0 - 0.25 > r_\mathrm{cutoff} + 0.2$). (Pre-1.0 this was
+   default fit window at least `MIN_AUTO_WINDOW` $= 0.1$ Å wide
+   ($(r_0 - 0.25) - (r_\mathrm{cutoff} + 0.2) \ge 0.1$, the floor the automatic placement
+   uses); otherwise $r_0$ is detected from the data. Until the 1.0 gate a non-empty window
+   was enough, so a line-22 cutoff just above $r_\mathrm{cutoff} + 0.45$ pinned a sliver:
+   `1.46 0 0` pinned [1.2, 1.21] Å on FeCoSn 199 K ($a$ = 1.001 against 1.185), and `1.0 0 0`
+   with $r_\mathrm{cutoff}$ 0.5 pinned [0.7, 0.75] Å ($a$ = 0.672), both "converged" with the
+   density limit "satisfied"; they now detect $r_0$ and give 1.185 and 1.174. (Pre-1.0 this was
    $\max(\texttt{peakCutoff}, \texttt{peakRmin})$, which put the window over a first peak starting
    below the cutoff: `2.3 1.6 2.2` on a 1.7 Å shell gave $a = -4.9$.)
 4. **Q window** ← form → `inp`. Missing either is a hard error
@@ -3937,7 +3951,8 @@ and the run mode (`'auto'` / `'manual'`).
      composition and Auto StoG estimates ρ₀ self-consistently`.
 7. `makeConfig({...})` validates eagerly: $\rho_0>0$ finite, $\langle b\rangle^2>0$ finite,
    $Q_\mathrm{max}>Q_\mathrm{min}$, `nr` a positive integer, `rmax > 0`, `c1Mode` ∈
-   {sweep, joint}, `amplitudeCriterion` ∈ {density, fz} with its two preconditions, and a
+   {sweep, joint}, `amplitudeCriterion` ∈ {density, fz} with its two preconditions,
+   `rCutoff` finite and $\ge 0$, `r0`/`rFitMin`/`rFitMax` finite (`rFitMin` $\ge 0$), and a
    non-empty low-$r$ fit window.
 
 One deliberate mode-dependent override: for `mode === 'manual'` the amplitude criterion is

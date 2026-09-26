@@ -539,6 +539,13 @@ export const makeConfig = (options) => {
   if (!(config.qmax > config.qmin)) throw new Error('qmax must exceed qmin');
   if (!Number.isInteger(config.nr) || config.nr <= 0) throw new Error(`nr must be a positive integer, got ${config.nr}`);
   if (!isNum(config.rmax) || config.rmax <= 0) throw new Error(`rmax must be finite and positive, got ${config.rmax}`);
+  // scaling.ScalingConfig parity: rCutoff = 0 is "no Fourier filter"; a
+  // negative one moved the fit window below r = 0 (FeCoSn a = 0.026, converged).
+  if (!isNum(config.rCutoff) || config.rCutoff < 0) throw new Error(`rCutoff must be finite and >= 0, got ${config.rCutoff}`);
+  ['r0', 'rFitMin', 'rFitMax'].forEach((name) => {
+    if (config[name] != null && !isNum(config[name])) throw new Error(`${name} must be finite, got ${config[name]}`);
+  });
+  if (config.rFitMin != null && config.rFitMin < 0) throw new Error(`rFitMin must be >= 0, got ${config.rFitMin}`);
   if (config.c1Mode !== 'sweep' && config.c1Mode !== 'joint') throw new Error(`c1Mode must be 'sweep' or 'joint', got ${config.c1Mode}`);
   if (config.amplitudeCriterion !== 'density' && config.amplitudeCriterion !== 'fz') {
     throw new Error(`amplitudeCriterion must be 'density' or 'fz', got ${config.amplitudeCriterion}`);
@@ -1158,6 +1165,7 @@ const cutoffAdvice = (onset, config) => (config.rFitMin != null
 export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
   const lo = rFitWindow(config)[0];
   if (config.r0 != null || config.rFitMax != null) {
+    if (config.amplitudeCriterion === 'density') requirePinnedWindow(config);
     const result = autoscalePass(qIn, sqIn, config, sigmaIn);
     const onset = detectOnset(result, config);
     if (onset != null) result.r0Detected = onset;
@@ -1179,6 +1187,23 @@ export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
   }
 
   return placeLowRWindow((trialConfig) => autoscalePass(qIn, sqIn, trialConfig, sigmaIn), config);
+};
+
+/**
+ * Refuse a pinned density-limit window narrower than MIN_AUTO_WINDOW (port of
+ * scaling._require_pinned_window — keep in sync): the floor the automatic
+ * placement uses; a few r points are set by one truncation ripple.
+ */
+const requirePinnedWindow = (config) => {
+  const [lo, hi] = rFitWindow(config);
+  if (hi - lo < MIN_AUTO_WINDOW) {
+    throw new Error(
+      `autoscale: the pinned low-r fit window [${fmtG(lo)}, ${fmtG(hi)}] Å is narrower `
+      + `than ${fmtG(MIN_AUTO_WINDOW)} Å, too few r points to fit the density limit `
+      + '(one truncation ripple sets the scale). Widen it: lower the filter r-cut / '
+      + 'fit-window minimum, or raise r0 / the fit-window maximum',
+    );
+  }
 };
 
 /**
@@ -1690,14 +1715,16 @@ export const readStogInp = (text) => {
  * scaling_cli.stog_inp_closest_approach — keep in sync): the line zeroes g for
  * r <= peakCutoff except inside [peakRmin, peakRmax], so the asserted g = 0
  * region ends at peakRmin when a genuine window starts below the cutoff,
- * else at peakCutoff. null when it leaves no default fit window above rCutoff.
+ * else at peakCutoff. null (r0 is detected) unless the default fit window it
+ * leaves above rCutoff is at least MIN_AUTO_WINDOW wide — a sliver pinned
+ * [1.2, 1.21] Å for '1.46 0 0' and FeCoSn's scale came out 15 % low.
  */
 export const stogInpClosestApproach = (inp, rCutoff) => {
   let candidate = inp.peakCutoff;
   if (inp.peakRmin > 0 && inp.peakRmin < inp.peakCutoff && inp.peakRmax > inp.peakRmin) {
     candidate = inp.peakRmin;
   }
-  return candidate - R0_WINDOW_MARGIN > rCutoff + 0.2 ? candidate : null;
+  return candidate - R0_WINDOW_MARGIN - (rCutoff + 0.2) >= MIN_AUTO_WINDOW ? candidate : null;
 };
 
 /**

@@ -92,6 +92,13 @@ with 0.5.0.
   flagged unreliable.
 - **Aliasing limit.** `r_alias_limit` is π/max ΔQ of the transformed grid, and an r_max beyond it
   is flagged. Despike gaps lower it to 24 Å on 59438.
+- **No sliver fit windows.** A stog.inp line-22 cutoff pins r₀ only when the default window it
+  leaves is at least 0.1 Å wide (`MIN_AUTO_WINDOW`, the automatic placement's floor); otherwise
+  r₀ is detected. A cutoff just above r_cutoff + 0.45 Å used to pin a 1–6 point window: on
+  FeCoSn 199 K, `1.46 0 0` gave a = 1.001 and `1.0 0 0` with r_cutoff 0.5 gave a = 0.672 (1.185
+  with the shipped file), both "converged" with the density limit "satisfied". A pinned
+  density-limit window (r₀ / r_fit_max) narrower than 0.1 Å now raises. `r_cutoff` must be finite
+  and ≥ 0 in both engines (a negative value returned a "converged" a = 0.026 and was written).
 - **The input is never an output.** In `--data` mode the default stem is the data file's, so
   `--out-dir` pointing at the data folder made `<stem>.sq` the measured file itself, and
   `--force` (which the refusal suggested) replaced it with the scaled, cropped S(Q); a rerun then

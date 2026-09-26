@@ -208,6 +208,16 @@ class ScalingConfig:
             raise ValueError(f"nr must be a positive integer, got {self.nr}")
         if not np.isfinite(self.rmax) or self.rmax <= 0:
             raise ValueError(f"rmax must be finite and positive, got {self.rmax}")
+        # r_cutoff = 0 is "no Fourier filter"; a negative one used to move the
+        # fit window below r = 0 and return a converged a = 0.026 on FeCoSn.
+        if not np.isfinite(self.r_cutoff) or self.r_cutoff < 0:
+            raise ValueError(f"r_cutoff must be finite and >= 0, got {self.r_cutoff}")
+        for name in ("r0", "r_fit_min", "r_fit_max"):
+            value = getattr(self, name)
+            if value is not None and not np.isfinite(value):
+                raise ValueError(f"{name} must be finite, got {value}")
+        if self.r_fit_min is not None and self.r_fit_min < 0:
+            raise ValueError(f"r_fit_min must be >= 0, got {self.r_fit_min}")
 
     @property
     def effective_s0_target(self) -> float:
@@ -1157,13 +1167,17 @@ def autoscale(
 
     The result's provenance carries ``r0_detected`` — the confirmed onset the
     window was built from (``r_fit_window`` hi = ``r0_detected - 0.25``) — and
-    ``window_refined``. With a pinned window, or with
+    ``window_refined``. A pinned density-limit window (``r0`` or
+    ``r_fit_max``) narrower than :data:`MIN_AUTO_WINDOW` raises. With a pinned
+    window, or with
     ``amplitude_criterion="fz"`` (whose amplitude does not depend on the
     window), one pass runs and detection only annotates the result (the fz
     diagnostic window is still refined when the shell leaves room for it).
     """
     lo = config.r_fit_window[0]
     if config.r0 is not None or config.r_fit_max is not None:
+        if config.amplitude_criterion == "density":
+            _require_pinned_window(config)
         result = _autoscale_pass(q, sq, config, sigma)
         onset = _detect_onset(result, config)
         if onset is not None:
@@ -1186,6 +1200,23 @@ def autoscale(
     return _place_low_r_window(
         lambda trial_config: _autoscale_pass(q, sq, trial_config, sigma), config
     )
+
+
+def _require_pinned_window(config: ScalingConfig) -> None:
+    """Refuse a pinned density-limit window narrower than :data:`MIN_AUTO_WINDOW`.
+
+    The same floor the automatic placement uses: a window of a few r points
+    is set by one truncation ripple, not by the g = 0 region (FeCoSn 199 K:
+    0.01-0.05 A windows gave scales 11-43 % low, reported converged).
+    """
+    lo, hi = config.r_fit_window
+    if hi - lo < MIN_AUTO_WINDOW:
+        raise ValueError(
+            f"autoscale: the pinned low-r fit window [{lo:g}, {hi:g}] A is narrower "
+            f"than {MIN_AUTO_WINDOW:g} A, too few r points to fit the density limit "
+            "(one truncation ripple sets the scale). Widen it: lower r_cutoff / "
+            "r_fit_min, or raise r0 / r_fit_max"
+        )
 
 
 def _place_low_r_window(

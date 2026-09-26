@@ -55,6 +55,7 @@ from .parsers import (
     write_stog_xy,
 )
 from .scaling import (
+    MIN_AUTO_WINDOW,
     R0_WINDOW_MARGIN,
     RHO0_SEED,
     ScalingConfig,
@@ -407,14 +408,17 @@ def stog_inp_closest_approach(inp: StogInput, r_cutoff: float) -> Optional[float
     (``0 < peak_rmin < peak_cutoff < ...``, ``peak_rmax > peak_rmin``) — the
     window exists precisely for first peaks that begin inside the cleanup
     radius — and at ``peak_cutoff`` otherwise (window outside ``[0, cutoff]``,
-    or ``'1.0 0 0'``-style lines). Returned only when it leaves a non-empty
-    default fit window above ``r_cutoff`` (else None: r0 is detected). Shared
-    by the CLI, the API and (ported) the Auto StoG page.
+    or ``'1.0 0 0'``-style lines). Returned only when the default fit window it
+    leaves above ``r_cutoff`` is at least :data:`MIN_AUTO_WINDOW` wide — the
+    floor the automatic placement uses (else None: r0 is detected). A sliver
+    used to pass: ``'1.46 0 0'`` at r_cutoff 1.0 pinned [1.2, 1.21] A and
+    FeCoSn's scale came out 15 % low. Shared by the CLI, the API and (ported)
+    the Auto StoG page.
     """
     candidate = float(inp.peak_cutoff)
     if 0.0 < inp.peak_rmin < inp.peak_cutoff and inp.peak_rmax > inp.peak_rmin:
         candidate = float(inp.peak_rmin)
-    if candidate - R0_WINDOW_MARGIN > r_cutoff + 0.2:
+    if candidate - R0_WINDOW_MARGIN - (r_cutoff + 0.2) >= MIN_AUTO_WINDOW:
         return candidate
     return None
 

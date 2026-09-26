@@ -84,6 +84,52 @@ class StogInpClosestApproachTests(unittest.TestCase):
         self.assertEqual(stog_inp_closest_approach(inp_with(2.7, 2.3, 2.2), 1.0), 2.7)
         # '1.0 0 0' (FeCoSn): too low for a fit window -> detect from the data.
         self.assertIsNone(stog_inp_closest_approach(inp_with(1.0, 0.0, 0.0), 1.0))
+        # A sliver is no window: the proxy must leave >= MIN_AUTO_WINDOW (0.1 A)
+        # above r_cutoff + 0.2, else r0 is detected. '1.46 0 0' at r_cutoff 1.0
+        # left [1.2, 1.21] (FeCoSn a 15 % low); '1.0 0 0' at r_cutoff 0.5 left
+        # [0.7, 0.75] (a 43 % low), both reported converged.
+        self.assertIsNone(stog_inp_closest_approach(inp_with(1.46, 0.0, 0.0), 1.0))
+        self.assertIsNone(stog_inp_closest_approach(inp_with(1.5, 0.0, 0.0), 1.0))
+        self.assertIsNone(stog_inp_closest_approach(inp_with(1.0, 0.0, 0.0), 0.5))
+        self.assertIsNone(stog_inp_closest_approach(inp_with(1.0, 0.0, 0.0), 0.54))
+        self.assertEqual(stog_inp_closest_approach(inp_with(1.55, 0.0, 0.0), 1.0), 1.55)
+        self.assertEqual(stog_inp_closest_approach(inp_with(1.0, 0.0, 0.0), 0.4), 1.0)
+
+
+XRAY_RUN = Path(__file__).resolve().parents[1] / "data" / "stog_tests" / "199K"
+
+
+@unittest.skipUnless((XRAY_RUN / "stog_input.dat").exists(), "FeCoSn 199K run not present")
+class StogInpSliverWindowRealDataTests(unittest.TestCase):
+    """FeCoSn 199 K: a line-22 cutoff just above r_cutoff + 0.45 no longer pins a sliver."""
+
+    def run_cli(self, tmp, peak_line, extra=()):
+        lines = (XRAY_RUN / "stog_input.dat").read_text().splitlines()
+        lines[1] = str(XRAY_RUN / lines[1].strip())
+        lines[21] = peak_line
+        inp = Path(tmp) / "stog.inp"
+        inp.write_text("\n".join(lines) + "\n")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main([str(inp), "--out-dir", str(Path(tmp) / "out"), *extra])
+        self.assertEqual(code, 0, err.getvalue())
+        return json.loads((Path(tmp) / "out" / "stog_provenance.json").read_text())
+
+    def test_sliver_line_falls_back_to_detection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reference = self.run_cli(tmp, "1.0 0 0")["diagnostics"]["a"]
+        for peak_line, extra in (("1.46 0 0", ()), ("1.0 0 0", ("--r-cutoff", "0.54"))):
+            with self.subTest(peak_line=peak_line, extra=extra):
+                with tempfile.TemporaryDirectory() as tmp:
+                    payload = self.run_cli(tmp, peak_line, extra)
+                # r0 came from the data (placement), not from line 22.
+                self.assertTrue(payload["provenance"].get("window_refined"))
+                self.assertNotEqual(payload["provenance"]["r0_detected"], float(peak_line.split()[0]))
+                lo, hi = payload["diagnostics"]["r_fit_window"]
+                self.assertGreaterEqual(hi - lo, 0.1)
+                if not extra:
+                    # Pre-fix: [1.2, 1.21], a = 1.0013 (15 % low).
+                    self.assertLess(abs(payload["diagnostics"]["a"] / reference - 1), 0.01)
 
 
 if __name__ == "__main__":
