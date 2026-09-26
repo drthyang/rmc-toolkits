@@ -15,11 +15,12 @@ import React, { useMemo, useState } from 'react';
 import { isStaticMode } from '../browserData';
 import { buildElementColors } from '../atomColors';
 import { COLORMAP_NAMES } from '../colormaps';
-import InfoBadge from './InfoBadge';
+import InfoBadge from '../ui/InfoBadge';
 import OrientationView from './OrientationView';
 import SiteStructurePanel from './SiteStructurePanel';
 import useSiteCloud from '../useSiteCloud';
 import { siteLabel } from '../siteLabel';
+import AppFooter from './AppFooter';
 import './PcaKdePage.css';
 
 const numberFormat = (value, digits = 4) =>
@@ -326,24 +327,7 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
                 />
             </div>
 
-            <footer className="app-footer">
-                &copy; 2026 Tsung-Han Yang &middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    AGPLv3
-                </a>
-                {' '}&middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits#readme"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    About & documentation
-                </a>
-            </footer>
+            <AppFooter tight />
         </div>
     );
 }

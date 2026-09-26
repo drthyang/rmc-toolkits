@@ -13,8 +13,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
-import InfoBadge from './InfoBadge';
-import SaveMenu from './SaveMenu';
+import InfoBadge from '../ui/InfoBadge';
+import SaveMenu from '../ui/SaveMenu';
 import { buildCrystalAxes } from './sceneAxes';
 import './PcaKdePage.css';
 

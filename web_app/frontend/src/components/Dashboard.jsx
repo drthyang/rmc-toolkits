@@ -19,8 +19,9 @@ import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { isIncompleteStructure } from '../structureReport';
 import { SymTolContext } from '../symTolContext';
 import InteractivePlot from './InteractivePlot';
-import SaveMenu from './SaveMenu';
+import SaveMenu from '../ui/SaveMenu';
 import ModelSummary from './ModelSummary';
+import AppFooter from './AppFooter';
 import './Dashboard.css';
 
 const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'exafs_q', 'exafs_r', 'xpdf', 'npdf', 'pdf_partials'];
@@ -550,7 +551,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
 
     const renderLoadedFilesPanel = () => {
         if (allPlotFiles.length === 0) {
-            return structureError ? <div className="model-summary-empty">{structureError}</div> : null;
+            return structureError ? <div className="ui-card ui-card--clip ui-card--note model-summary-empty">{structureError}</div> : null;
         }
 
         return (
@@ -570,7 +571,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                                 label="Save all figures"
                                 align="right"
                                 busy={savingAll}
-                                className="save-menu--accent"
+                                className="ui-save--accent"
                             />
                         )}
                         <button
@@ -645,24 +646,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 <div className="empty-state">Open a run folder to populate the dashboard.</div>
             )}
 
-            <footer className="app-footer">
-                &copy; 2026 Tsung-Han Yang &middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    AGPLv3
-                </a>
-                {' '}&middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits#readme"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    About & documentation
-                </a>
-            </footer>
+            <AppFooter />
         </section>
     );
 };

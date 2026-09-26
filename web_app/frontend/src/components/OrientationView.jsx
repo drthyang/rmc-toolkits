@@ -32,8 +32,8 @@ import {
     vertexRadii
 } from '../orientationSphere';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
-import InfoBadge from './InfoBadge';
-import SaveMenu from './SaveMenu';
+import InfoBadge from '../ui/InfoBadge';
+import SaveMenu from '../ui/SaveMenu';
 import { siteLabel } from '../siteLabel';
 import {
     CELL_AXIS_COLORS,

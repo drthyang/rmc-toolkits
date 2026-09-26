@@ -21,8 +21,9 @@ import {
     slabThicknessAngstrom
 } from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
-import SaveMenu from './SaveMenu';
-import InfoBadge from './InfoBadge';
+import SaveMenu from '../ui/SaveMenu';
+import InfoBadge from '../ui/InfoBadge';
+import AppFooter from './AppFooter';
 import './StructurePage.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -1490,24 +1491,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                 </>
             )}
             
-            <footer className="app-footer">
-                &copy; 2026 Tsung-Han Yang &middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    AGPLv3
-                </a>
-                {' '}&middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits#readme"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    About & documentation
-                </a>
-            </footer>
+            <AppFooter />
         </section>
     );
 };

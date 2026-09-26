@@ -1,3 +1,10 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
+
+   InteractivePlot component CSS: plot layout, the SVG marks, the series legend
+   and the hover tooltip (token-only). Its chrome — the Reset-zoom pill, the
+   Save menu and the loading/error placeholders — comes from the UI kit. */
+
 .interactive-plot {
     min-height: 0;
 }
@@ -15,24 +22,6 @@
     flex: 0 0 auto;
     align-items: center;
     gap: 0.4rem;
-}
-
-.plot-reset {
-    flex: 0 0 auto;
-    min-height: 1.7rem;
-    padding: 0 0.6rem;
-    font-size: 0.74rem;
-    font-weight: 600;
-    color: var(--accent);
-    background: var(--accent-soft);
-    border: 1px solid transparent;
-    border-radius: 999px;
-    white-space: nowrap;
-}
-
-.plot-reset:hover:not(:disabled) {
-    background: var(--accent-soft);
-    border-color: var(--accent);
 }
 
 .plot-stage {
@@ -76,31 +65,31 @@
 }
 
 .plot-grid-line {
-    stroke: rgba(16, 24, 40, 0.06);
+    stroke: var(--chart-grid);
     stroke-width: 1;
 }
 
 .plot-tick-mark {
-    stroke: rgba(16, 24, 40, 0.35);
+    stroke: var(--chart-tick);
     stroke-width: 1;
 }
 
 .plot-frame {
     fill: none;
-    stroke: rgba(16, 24, 40, 0.18);
+    stroke: var(--chart-frame);
     stroke-width: 1;
 }
 
 .plot-tick {
-    fill: #475467;
-    font-size: 14.5px;
+    fill: var(--chart-tick-text);
+    font-size: var(--chart-fs-tick);
     font-weight: 450;
     font-variant-numeric: tabular-nums;
 }
 
 .axis-label {
-    fill: #1d2939;
-    font-size: 16px;
+    fill: var(--chart-axis-text);
+    font-size: var(--chart-fs-axis);
     font-weight: 600;
     letter-spacing: -0.01em;
 }
@@ -136,13 +125,13 @@
 }
 
 .hover-line {
-    stroke: rgba(16, 24, 40, 0.3);
+    stroke: var(--chart-hover);
     stroke-width: 1;
     stroke-dasharray: 3 4;
 }
 
 .hover-dot {
-    stroke: #fff;
+    stroke: var(--on-accent);
     stroke-width: 1.6;
 }
 
@@ -163,14 +152,14 @@
 }
 
 .plot-legend button {
-    min-height: 1.7rem;
+    min-height: var(--h-pill);
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     padding: 0.1rem 0.62rem 0.1rem 0.5rem;
-    font-size: 0.75rem;
+    font-size: var(--fs-75);
     font-weight: 550;
     color: var(--text);
     background: var(--panel-bg);
@@ -211,13 +200,13 @@
     gap: 0.22rem;
     max-width: min(17rem, calc(100% - 1.5rem));
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: color-mix(in srgb, var(--panel-bg) 86%, transparent);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     color: var(--text);
     padding: 0.5rem 0.65rem;
-    font-size: 0.76rem;
+    font-size: var(--fs-76);
     font-variant-numeric: tabular-nums;
     pointer-events: none;
     box-shadow: var(--shadow);
@@ -253,15 +242,3 @@
     color: var(--text-strong);
 }
 
-.interactive-plot-loading,
-.interactive-plot-error {
-    min-height: 14rem;
-    display: grid;
-    place-items: center;
-    color: var(--muted);
-    font-size: 0.88rem;
-}
-
-.interactive-plot-error {
-    color: var(--danger);
-}

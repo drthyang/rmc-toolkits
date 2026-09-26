@@ -18,12 +18,14 @@ import API_BASE_URL from '../api';
 import { isStaticMode, readAndParseLocalPlotFile } from '../browserData';
 import { buildElementColors } from '../atomColors';
 import { PLOT_PALETTE } from '../plotPalette';
-import InfoBadge from './InfoBadge';
+import { Stat, StatRail } from '../ui';
+import InfoBadge from '../ui/InfoBadge';
 import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import FoldedCellPanel from './FoldedCellPanel';
 import useSiteCloud from '../useSiteCloud';
 import { tripletRequestFromInputs } from '../workers/triplets';
+import AppFooter from './AppFooter';
 import './PcaKdePage.css';
 import './BondGeometryPage.css';
 
@@ -568,77 +570,67 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
             )}
 
             {result && (
-                <div className="model-cards" role="status">
+                <div className="ui-stack" role="status">
                     {/* Same presentation as the Model information card: labeled
                         columns, not badges. */}
-                    <section className="model-summary geom-result" aria-label="Triplet result">
-                        <h2 className="model-summary-title">
-                            Triplet result
-                            {/* The windows the engine actually used (resolved
-                                payload values), the B–C one whenever it differs;
-                                wraps rather than truncating (geom-result). */}
-                            <span className="model-summary-source" title={resultSource.join(' · ')}>
-                                {resultSource.map((segment) => (
-                                    <span key={segment} className="geom-result-line">{segment}</span>
-                                ))}
-                            </span>
-                        </h2>
-                        <dl className="model-stats">
-                            <div className="model-stat">
-                                <dt>Central atoms</dt>
-                                <dd>
-                                    {result.apexCount.toLocaleString()}
-                                    <span className="model-stat-sub">{result.triplet[1]}</span>
-                                </dd>
-                            </div>
-                            <div className="model-stat">
-                                <dt>{result.sharedEnds ? 'Bonds' : 'Bonds A–B'}</dt>
-                                <dd title={bondsTitle(result.lengths12, result.triplet[0])}>
-                                    {result.lengths12.uniqueBonds.toLocaleString()}
-                                    {result.lengths12.meanLength != null && (
-                                        <span className="model-stat-sub">
-                                            mean {formatNumber(result.lengths12.meanLength, 3)} {ANGSTROM}
-                                        </span>
-                                    )}
-                                </dd>
-                            </div>
-                            {!result.sharedEnds && result.lengths23 && (
-                                <div className="model-stat">
-                                    <dt>Bonds B–C</dt>
-                                    <dd title={bondsTitle(result.lengths23, result.triplet[2])}>
-                                        {result.lengths23.uniqueBonds.toLocaleString()}
-                                        {result.lengths23.meanLength != null && (
-                                            <span className="model-stat-sub">
-                                                mean {formatNumber(result.lengths23.meanLength, 3)} {ANGSTROM}
-                                            </span>
-                                        )}
-                                    </dd>
-                                </div>
+                    <StatRail
+                        aria-label="Triplet result"
+                        heading={(
+                            <>
+                                Triplet result
+                                {/* The windows the engine actually used (resolved
+                                    payload values), the B–C one whenever it differs;
+                                    wraps rather than truncating. */}
+                                <span className="ui-stat-rail__source ui-stat-rail__source--wrap" title={resultSource.join(' · ')}>
+                                    {resultSource.map((segment) => (
+                                        <span key={segment} className="ui-stat-rail__line">{segment}</span>
+                                    ))}
+                                </span>
+                            </>
+                        )}
+                    >
+                        <Stat label="Central atoms">
+                            {result.apexCount.toLocaleString()}
+                            <span className="ui-stat__sub">{result.triplet[1]}</span>
+                        </Stat>
+                        <Stat
+                            label={result.sharedEnds ? 'Bonds' : 'Bonds A–B'}
+                            ddProps={{ title: bondsTitle(result.lengths12, result.triplet[0]) }}
+                        >
+                            {result.lengths12.uniqueBonds.toLocaleString()}
+                            {result.lengths12.meanLength != null && (
+                                <span className="ui-stat__sub">
+                                    mean {formatNumber(result.lengths12.meanLength, 3)} {ANGSTROM}
+                                </span>
                             )}
-                            {coordinationSummary && (
-                                <div className="model-stat">
-                                    <dt>Coordination</dt>
-                                    <dd>
-                                        {formatNumber(coordinationSummary.mean)}
-                                        <span className="model-stat-sub">
-                                            {`per ${result.triplet[1]} · ${coordinationSummary.mode}-fold ${formatNumber(coordinationSummary.modeShare, 1)}%`}
-                                        </span>
-                                    </dd>
-                                </div>
+                        </Stat>
+                        {!result.sharedEnds && result.lengths23 && (
+                            <Stat label="Bonds B–C" ddProps={{ title: bondsTitle(result.lengths23, result.triplet[2]) }}>
+                                {result.lengths23.uniqueBonds.toLocaleString()}
+                                {result.lengths23.meanLength != null && (
+                                    <span className="ui-stat__sub">
+                                        mean {formatNumber(result.lengths23.meanLength, 3)} {ANGSTROM}
+                                    </span>
+                                )}
+                            </Stat>
+                        )}
+                        {coordinationSummary && (
+                            <Stat label="Coordination">
+                                {formatNumber(coordinationSummary.mean)}
+                                <span className="ui-stat__sub">
+                                    {`per ${result.triplet[1]} · ${coordinationSummary.mode}-fold ${formatNumber(coordinationSummary.modeShare, 1)}%`}
+                                </span>
+                            </Stat>
+                        )}
+                        <Stat label="Angles">
+                            {result.angleCount.toLocaleString()}
+                            {result.meanAngle != null && (
+                                <span className="ui-stat__sub">
+                                    {`mean ${formatNumber(result.meanAngle, 1)}${DEGREES} ± ${formatNumber(result.stdAngle, 1)}${DEGREES}`}
+                                </span>
                             )}
-                            <div className="model-stat">
-                                <dt>Angles</dt>
-                                <dd>
-                                    {result.angleCount.toLocaleString()}
-                                    {result.meanAngle != null && (
-                                        <span className="model-stat-sub">
-                                            {`mean ${formatNumber(result.meanAngle, 1)}${DEGREES} ± ${formatNumber(result.stdAngle, 1)}${DEGREES}`}
-                                        </span>
-                                    )}
-                                </dd>
-                            </div>
-                        </dl>
-                    </section>
+                        </Stat>
+                    </StatRail>
                 </div>
             )}
 
@@ -744,12 +736,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                 />
             </div>
 
-            <footer className="app-footer">
-                &copy; 2026 Tsung-Han Yang &middot;{' '}
-                <a href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE" target="_blank" rel="noreferrer">AGPLv3</a>
-                {' '}&middot;{' '}
-                <a href="https://github.com/drthyang/rmc-toolkits#readme" target="_blank" rel="noreferrer">About & documentation</a>
-            </footer>
+            <AppFooter tight />
         </div>
     );
 }

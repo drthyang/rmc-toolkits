@@ -1,162 +1,12 @@
-/* Model information, then Crystal Symmetry stacked below it — two matching
-   full-width cards sharing one design and an equal-width title cell. */
-.model-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-bottom: 1rem;
-}
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
 
-.model-summary,
-.model-summary-empty {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--panel-bg);
-    box-shadow: var(--shadow-xs);
-    overflow: hidden;
-}
+   ModelSummary component CSS: the Detected SG tolerance ladder only (token-only).
+   The cards themselves are the kit's stat rail (ui-stack / ui-stat-rail /
+   ui-stat); this file loads after ui.css, so `.sym-ladder-cell dd` still wins
+   its tie with `.ui-stat dd`. */
 
-.model-summary-empty {
-    margin-bottom: 1rem;
-}
-
-.model-summary {
-    flex: 0 0 auto;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    /* Visible so the "Detected SG" help popover can extend past the card edge;
-       the title cell rounds its own left corners to keep the card outline. */
-    overflow: visible;
-}
-
-.model-summary > .model-summary-title:first-child {
-    border-radius: 12px 0 0 12px;
-}
-
-.model-summary-title {
-    display: flex;
-    flex: 0 0 auto;
-    flex-wrap: wrap;
-    width: 10rem;                 /* identical width in both cards */
-    align-items: center;
-    align-content: center;
-    gap: 0.1rem 0.4rem;
-    margin: 0;
-    padding: 0.68rem 1.1rem;
-    border-right: 1px solid var(--border);
-    background: var(--panel-raised);
-    color: var(--text-strong);
-    font-size: 0.9rem;
-    font-weight: 650;
-    line-height: 1.3;
-    white-space: nowrap;
-}
-
-/* Source .rmc6f file name, so users can tell which data the model figures use. */
-.model-summary-source {
-    flex-basis: 100%;
-    min-width: 0;
-    overflow: hidden;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    font-weight: 500;
-    line-height: 1.3;
-    text-overflow: ellipsis;
-}
-
-.model-summary-title code {
-    padding: 0.05em 0.3em;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--accent) 12%, var(--panel-raised));
-    font-size: 0.92em;
-}
-
-.model-summary-empty {
-    padding: 0.9rem;
-    color: var(--muted);
-    font-size: 0.86rem;
-}
-
-.model-stats {
-    display: flex;
-    flex: 1 1 auto;
-    flex-wrap: wrap;
-    align-items: center;
-    row-gap: 0.6rem;
-    min-width: 0;
-    margin: 0;
-    padding: 0.68rem 1rem;
-}
-
-.model-stat {
-    display: grid;
-    align-content: start;
-    gap: 0.22rem;
-    padding: 0 1.15rem;
-}
-
-.model-stat:first-child {
-    padding-left: 0;
-}
-
-.model-stat + .model-stat {
-    border-left: 1px solid var(--border);
-}
-
-.model-stat dt {
-    color: var(--subtle);
-    font-size: 0.67rem;
-    font-weight: 650;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-
-.model-stat dd {
-    display: grid;
-    gap: 0.1rem;
-    margin: 0;
-    color: var(--text-strong);
-    font-size: 0.96rem;
-    font-weight: 650;
-    font-variant-numeric: tabular-nums;
-    line-height: 1.2;
-    white-space: nowrap;
-}
-
-.model-stat-sub {
-    color: var(--muted);
-    font-size: 0.7rem;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-}
-
-/* Move counters sit apart from the structural stats: the first one takes the free
-   space so the group is flushed to the right edge, and their text is right-aligned
-   with it. `margin-left: auto` only pushes when there is room left on the line, so a
-   narrow card still wraps them normally. */
-.model-stat:not(.model-stat-moves) + .model-stat-moves {
-    margin-left: auto;
-}
-
-.model-stat-moves {
-    justify-items: end;
-    text-align: right;
-}
-
-.model-stat-moves:last-child {
-    padding-right: 0;
-}
-
-/* ── Detected SG card — reuses .model-stats, plus the ladder cell ───────────── */
-.sym-orbits {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-}
-
-/* The tolerance color bar fills the rest of the row (the freed Wyckoff space). */
+/* The tolerance color bar fills the rest of the row. */
 .sym-ladder-cell {
     flex: 1 1 auto;
     min-width: 0;
@@ -189,29 +39,8 @@
     height: 22px;
     margin-top: 0.1rem;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
     overflow: hidden;
-}
-
-/* "Show WP" toggle + the revealed Wyckoff chips, below the color bar. */
-.sym-wp {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem;
-    margin-top: 0.4rem;
-}
-
-.sym-wp-toggle {
-    flex: 0 0 auto;
-    padding: 0.1rem 0.6rem;
-    color: var(--muted);
-    background: var(--panel-bg);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    white-space: nowrap;
 }
 
 .sym-brick {
@@ -224,7 +53,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: filter 140ms ease;
+    transition: filter var(--dur) ease;
 }
 
 .sym-brick:last-child {
@@ -248,46 +77,9 @@
 .sym-brick-label {
     padding: 0 5px;
     color: inherit;
-    font-size: 0.67rem;
+    font-size: var(--fs-67);
     font-weight: 650;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-/* Wyckoff-orbit chips — same pill idiom as .rwp-chip / loaded-file badges. */
-.sym-orbit {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.3rem;
-    padding: 0.2rem 0.55rem;
-    border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 8%, transparent);
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-.sym-orbit-el {
-    color: var(--text-strong);
-    font-weight: 650;
-}
-
-@media (max-width: 760px) {
-    .model-summary {
-        flex-direction: column;
-    }
-
-    .model-summary-title {
-        width: auto;
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .model-stats {
-        padding: 0.72rem 0.9rem 0.8rem;
-    }
 }

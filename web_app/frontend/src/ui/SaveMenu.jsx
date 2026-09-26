@@ -2,13 +2,15 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import React, { useEffect, useRef, useState } from 'react';
-import './SaveMenu.css';
+import cx from './cx';
 
 const DEFAULT_OPTIONS = [{ id: 'png', label: 'PNG image', hint: '.png' }];
 
 // A compact "save" badge. With several formats it opens a small menu; with a
 // single format it saves directly on click. Shared by the chart toolbars and
-// the KDE panels so every figure offers the same control.
+// the KDE panels so every figure offers the same control. Styled by the kit's
+// `ui-save` / `ui-menu` classes (ui.css); pass className="ui-save--accent" for
+// the accent look.
 const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', align = 'right', disabled = false, busy = false, className = '' }) => {
     const [open, setOpen] = useState(false);
     const rootRef = useRef(null);
@@ -42,27 +44,27 @@ const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', align = '
     const multiple = options.length > 1;
 
     return (
-        <div className={`save-menu ${className}`} ref={rootRef}>
+        <div className={cx('ui-save', className)} ref={rootRef}>
             <button
                 type="button"
-                className="save-menu-trigger"
+                className="ui-save__trigger"
                 onClick={handleTrigger}
                 disabled={disabled || busy}
                 aria-haspopup={multiple ? 'menu' : undefined}
                 aria-expanded={multiple ? open : undefined}
                 title="Save figure"
             >
-                <span className="save-menu-icon" aria-hidden="true">⤓</span>
+                <span className="ui-save__icon" aria-hidden="true">⤓</span>
                 {busy ? 'Saving…' : label}
             </button>
             {open && multiple && (
-                <div className={`save-menu-list save-menu-list--${align}`} role="menu">
+                <div className={`ui-menu ui-menu--${align}`} role="menu">
                     {options.map((option) => (
                         <button
                             key={option.id}
                             type="button"
                             role="menuitem"
-                            className="save-menu-item"
+                            className="ui-menu__item"
                             onClick={() => choose(option.id)}
                         >
                             {option.label}

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
     Banner, Card, CardHeader, CardMeta, CardNote, CardTitle, Chip, Control, ControlGroup, ControlsBar,
-    EmptyState, Hint, IconButton, Page, Pill, PrimaryButton, Segmented, SegmentedButton, Stat, StatCard,
+    EmptyState, Hint, IconButton, Page, Pill, PrimaryButton, SaveMenu, Segmented, SegmentedButton, Stat, StatCard,
     StatRail, Switch, ToolButton,
 } from '..';
 
@@ -163,5 +163,27 @@ describe('Feedback', () => {
     it('Hint and EmptyState', () => {
         expect(html(<Hint>h</Hint>)).toBe('<p class="ui-hint">h</p>');
         expect(html(<EmptyState fill>e</EmptyState>)).toBe('<div class="ui-empty ui-empty--fill">e</div>');
+    });
+});
+
+describe('SaveMenu', () => {
+    it('renders the trigger (single format: no menu semantics)', () => {
+        expect(html(<SaveMenu onSave={() => {}} />))
+            .toBe('<div class="ui-save"><button type="button" class="ui-save__trigger" title="Save figure">'
+                + '<span class="ui-save__icon" aria-hidden="true">⤓</span>Save</button></div>');
+    });
+
+    it('announces a menu for several formats and keeps the accent passthrough', () => {
+        const markup = html(<SaveMenu onSave={() => {}} className="ui-save--accent" label="Save all figures"
+            options={[{ id: 'png', label: 'PNG' }, { id: 'svg', label: 'SVG' }]} />);
+        expect(markup).toContain('<div class="ui-save ui-save--accent">');
+        expect(markup).toContain('aria-haspopup="menu"');
+        expect(markup).toContain('aria-expanded="false"');
+        expect(markup).toContain('Save all figures');
+    });
+
+    it('shows the busy label and disables the trigger', () => {
+        expect(html(<SaveMenu onSave={() => {}} busy />)).toContain('class="ui-save__trigger" disabled=""');
+        expect(html(<SaveMenu onSave={() => {}} busy />)).toContain('Saving…');
     });
 });

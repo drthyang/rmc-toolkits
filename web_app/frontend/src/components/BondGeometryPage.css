@@ -193,17 +193,3 @@
     opacity: 0.5;
     cursor: default;
 }
-
-/* The Triplet result presentation reuses the Model information card's
-   .model-summary / .model-stats classes. Its source line names the windows
-   the engine used — both of them when they differ — so it wraps instead of
-   truncating: an ellipsis there would hide exactly the B–C window. */
-.geom-result .model-summary-source {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-}
-
-.geom-result-line {
-    display: block;
-}

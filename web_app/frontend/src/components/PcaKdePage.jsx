@@ -9,8 +9,8 @@ import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { marchingCubes, sampleFieldTrilinear } from '../workers/marchingCubes';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
-import InfoBadge from './InfoBadge';
-import SaveMenu from './SaveMenu';
+import InfoBadge from '../ui/InfoBadge';
+import SaveMenu from '../ui/SaveMenu';
 import SiteStructurePanel from './SiteStructurePanel';
 import {
     CELL_AXIS_COLORS,
@@ -24,6 +24,7 @@ import {
 import useSiteCloud from '../useSiteCloud';
 import { crystalOrientationRows, projectVolumeOntoFrame } from '../pcaCrystalFrame';
 import { siteLabel } from '../siteLabel';
+import AppFooter from './AppFooter';
 import './PcaKdePage.css';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
@@ -1761,24 +1762,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                 </div>
             </div>
 
-            <footer className="app-footer">
-                &copy; 2026 Tsung-Han Yang &middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    AGPLv3
-                </a>
-                {' '}&middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits#readme"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    About & documentation
-                </a>
-            </footer>
+            <AppFooter tight />
         </div>
     );
 }

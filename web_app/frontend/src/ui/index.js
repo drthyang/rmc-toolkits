@@ -12,3 +12,5 @@ export { Pill, ToolButton, IconButton, PrimaryButton } from './Buttons';
 export { default as Chip } from './Chip';
 export { StatRail, Stat, StatCard } from './Stats';
 export { Banner, Hint, EmptyState } from './Feedback';
+export { default as InfoBadge } from './InfoBadge';
+export { default as SaveMenu } from './SaveMenu';

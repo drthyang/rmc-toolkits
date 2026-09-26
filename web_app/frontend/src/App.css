@@ -429,13 +429,6 @@
   opacity: 1;
 }
 
-.app-footer {
-  margin-top: 2rem;
-  color: var(--subtle);
-  font-size: 0.74rem;
-  text-align: center;
-}
-
 /* Below ~1040px the nav and the full data-source cluster no longer fit on one
    line; stack the header into rows so nothing clips or overflows. */
 @media (max-width: 1040px) {
@@ -496,10 +489,6 @@
 
   .path-bar label {
     display: none;
-  }
-
-  .app-footer {
-    padding-inline: 0.8rem;
   }
 }
 

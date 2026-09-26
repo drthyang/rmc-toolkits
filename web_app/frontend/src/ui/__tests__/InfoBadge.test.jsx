@@ -20,7 +20,7 @@ describe('InfoBadge', () => {
     });
 
     it('aligns the popover to the requested edge', () => {
-        expect(render({ align: 'end', children: 'x' })).toContain('info-badge-popover--end');
-        expect(render({ children: 'x' })).toContain('info-badge-popover--start');
+        expect(render({ align: 'end', children: 'x' })).toContain('ui-info__popover--end');
+        expect(render({ children: 'x' })).toContain('ui-info__popover--start');
     });
 });
