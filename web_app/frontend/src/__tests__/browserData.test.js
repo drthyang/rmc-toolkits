@@ -215,6 +215,16 @@ describe('run-control fit-function labels on Dashboard plots', () => {
         expect(plotDataFromText(noFit).yLabel).toBe('G(r)');
     });
 
+    it('labels classic stog scale.gr / *_ft.gr as g(r), *_rmc.gr as G(r) (plots.stog_function_label parity)', () => {
+        const stogText = 'STOG header\n2\n0.00 1.0 1.1\n0.10 2.0 2.1\n';
+        const label = (name) => plotDataFromText({ plotKind: 'stog', name, text: stogText }).yLabel;
+        expect(label('scale_ft.gr')).toBe('g(r)');
+        expect(label('scale.gr')).toBe('g(r)');
+        expect(label('FeCoSn_ft.gr')).toBe('g(r)');
+        expect(label('scale_ft_rmc.gr')).toBe('G(r)');
+        expect(plotMetadataFromFile({ plotKind: 'stog', name: 'scale_ft.gr', text: stogText }).title).toBe('g(r)');
+    });
+
     it('pairs the fit type from the stem-matched .dat onto the loaded .gr plot file (buildLocalRun)', async () => {
         const dat = [
             'TITLE :: PMN',

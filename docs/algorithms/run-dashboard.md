@@ -669,13 +669,15 @@ matplotlib builder, so it applies even though the dashboard never uses the PNG.
 † **The `stog` row is unreachable from the Run Dashboard** (`isDashboardPlotFile` drops it, Step 2)
 and the three implementations do not agree on it, so it is recorded here only for completeness:
 
-* browser **metadata** (`plotMetadataFromFile`): `title = fitType` if known, else `G(r)`/`S(Q)` by
-  extension;
+* browser **metadata** (`plotMetadataFromFile`): `title = fitType` if known, else the name default
+  below;
 * browser **plot data** (`plotDataFromText`): `title = file.name`; the fit-function label lands in
   `yLabel` only;
 * **Flask**: no `fitType` concept at all — `/api/plot/data` returns the extension default
-  `stog_function_label()` (`.gr` → `G(r)`, `.fq` → `F(Q)`, else `S(Q)`; the browser's
-  `stogFunctionLabel()` is the same rule), and the title comes from `make_plot()` → `_stog_plot()`,
+  `stog_function_label()` (`scale.gr` and `*_ft.gr` → `g(r)`, since they hold the classic stog
+  g(r) → 1 at large r; any other `.gr`, including Keen's `*_rmc.gr`, → `G(r)`; `.fq` → `F(Q)`;
+  else `S(Q)`; the browser's `stogFunctionLabel()` is the same rule), and the title comes from
+  `make_plot()` → `_stog_plot()`,
   which sets `title = path.name`.
 
 **Where the function names come from.** `plots.py` → `series_titles(kind, name, labels)` is the one

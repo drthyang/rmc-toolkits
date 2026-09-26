@@ -309,6 +309,8 @@ Read these before comparing 1.0 numbers or files with earlier releases.
   differ in amplitude.
 - **Labels.** `*_FQn.csv` fits are titled F(Q), without a radiation type, and PDF partials are
   titled `Partial g(r)`. The R-value chart is `χ² history: <column>` with y label ln(χ²).
+  Classic stog `scale.gr` / `scale_ft.gr` (and `<stem>_ft.gr`) plots are labelled g(r), which
+  they hold (→ 1 at large r); `*_rmc.gr` stays G(r).
 - **Orientation.** `recommended_frequency` floors, so Auto picks coarser tilings (N = 1000 →
   ν = 2, was 3; 300 → 1; 12 000 → 9). `antipodalAsymmetryNull` is the exact conditional null.
   Negative or NaN smoothing is rejected; it used to be a silent no-op. A direction exactly on a

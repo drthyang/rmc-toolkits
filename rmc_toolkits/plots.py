@@ -105,14 +105,18 @@ def series_titles(kind: str, name: str, labels: list[str]) -> tuple[str, str]:
 
 
 def stog_function_label(name: str) -> str:
-    """Extension default for a STOG file: ``.gr`` G(r), ``.fq`` F(Q), else S(Q).
+    """Name default for a STOG file: ``.gr`` G(r) or g(r), ``.fq`` F(Q), else S(Q).
 
+    Classic stog ``scale.gr`` and the filtered ``*_ft.gr`` (``scale_ft.gr``,
+    rmc-autoscale's ``<stem>_ft.gr``) hold g(r), → 1 at large r; ``*_rmc.gr``
+    is Keen's G_K(r) and any other ``.gr`` keeps the generic G(r).
     ``scale_ft_rmc.fq`` is Keen's F(Q) (→ 0 at high Q); only ``.sq`` holds S(Q).
-    The browser prefers the run-control ``FIT_TYPE`` when it knows it.
+    The browser (``stogFunctionLabel``, same rule) prefers the run-control
+    ``FIT_TYPE`` when it knows it.
     """
     lower = name.lower()
     if lower.endswith(".gr"):
-        return "G(r)"
+        return "g(r)" if lower == "scale.gr" or lower.endswith("_ft.gr") else "G(r)"
     if lower.endswith(".fq"):
         return "F(Q)"
     return "S(Q)"

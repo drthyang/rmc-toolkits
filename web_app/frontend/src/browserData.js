@@ -494,9 +494,12 @@ export const seriesTitles = (kind, name, labels = []) => {
 // Extension default for a STOG file: .gr G(r), .fq F(Q) (Keen's F(Q), → 0),
 // else S(Q). Mirrors stog_function_label() in plots.py; the run-control
 // FIT_TYPE wins when known.
+// Port of plots.stog_function_label (keep in sync): classic stog scale.gr and
+// the filtered *_ft.gr hold g(r) (-> 1 at large r); *_rmc.gr is Keen's G_K(r)
+// and any other .gr keeps the generic G(r).
 const stogFunctionLabel = (name) => {
     const lower = name.toLowerCase();
-    if (lower.endsWith('.gr')) return 'G(r)';
+    if (lower.endsWith('.gr')) return lower === 'scale.gr' || lower.endsWith('_ft.gr') ? 'g(r)' : 'G(r)';
     if (lower.endsWith('.fq')) return 'F(Q)';
     return 'S(Q)';
 };

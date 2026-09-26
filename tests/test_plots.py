@@ -269,7 +269,14 @@ class FunctionLabelTests(unittest.TestCase):
     def test_stog_extension_defaults(self):
         self.assertEqual(stog_function_label("scale_ft_rmc.fq"), "F(Q)")
         self.assertEqual(stog_function_label("scale_ft.sq"), "S(Q)")
-        self.assertEqual(stog_function_label("scale_ft.gr"), "G(r)")
+        # Classic stog scale.gr / scale_ft.gr (and rmc-autoscale's <stem>_ft.gr)
+        # hold g(r) -> 1 at large r; the _rmc.gr file is Keen's G_K(r); an
+        # unknown .gr keeps the generic G(r).
+        self.assertEqual(stog_function_label("scale_ft.gr"), "g(r)")
+        self.assertEqual(stog_function_label("scale.gr"), "g(r)")
+        self.assertEqual(stog_function_label("FeCoSn_ft.gr"), "g(r)")
+        self.assertEqual(stog_function_label("scale_ft_rmc.gr"), "G(r)")
+        self.assertEqual(stog_function_label("PMN_v2.gr"), "G(r)")
 
     def test_higher_numbered_reciprocal_datasets_are_charted_with_rwp(self):
         with tempfile.TemporaryDirectory() as tmpdir:
