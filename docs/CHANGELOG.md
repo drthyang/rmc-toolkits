@@ -284,7 +284,10 @@ Read these before comparing 1.0 numbers or files with earlier releases.
   stops, asking for r₀ or the FZ criterion. On Mn₃Sn this happens in 9 of 56
   (run, Qmin, Qmax) configurations.
 - **A fit with a ≤ 0 is never written** (CLI, API, page). Other failures that now stop instead
-  of passing: an S(Q) with overlapping Q banks, and ⟨b²⟩ < ⟨b⟩².
+  of passing: an S(Q) with overlapping Q banks, ⟨b²⟩ < ⟨b⟩², a negative `r_cutoff`, a pinned
+  density-limit window narrower than 0.1 Å, and an output path that names the input data file or
+  the stog.inp (refused even with `--force`; in `--data` mode, `--out-dir` = the data folder now
+  needs an `--out-stem`).
 - **stog.inp r₀ rule.** Line 22 follows the classic semantics: `peak_rmin` when the first-peak
   window starts inside the cutoff, else `peak_cutoff`. '2.48 2.65 3.1' now gives r₀ = 2.48, where
   it gave 2.65.
