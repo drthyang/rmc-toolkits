@@ -1,9 +1,17 @@
+# Keep the build context small and free of private or machine-local files.
 .DS_Store
 .git
+.github
+.claude
 .venv
 venv
 __pycache__
 *.pyc
-web_app/frontend/dist
-web_app/frontend/node_modules
+*.egg-info
+.pytest_cache
+# Private RMCProfile runs (gitignored); mount them at run time instead.
+data
 results
+node_modules
+**/node_modules
+web_app/frontend/dist

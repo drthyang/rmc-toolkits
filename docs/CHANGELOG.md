@@ -401,6 +401,10 @@ Read these before comparing 1.0 numbers or files with earlier releases.
   `tests/test_parsers_demo_run.py`, `__tests__/demoRun.test.js`, the KDE golden and the plot
   parity golden. The GaNb₄Se₈ and `stog_tests` real-data tests still skip without `data/`, and
   the full Mn₃Sn sweep is opt-in (`RMC_TOOLKITS_FULL_SWEEP=1`).
+- The Docker image builds from a clean clone. The `Dockerfile` used to `COPY data ./data`, which
+  failed where `data/` (gitignored) is absent and baked private runs into the image where it
+  exists. `.dockerignore` now excludes `data/` (and `node_modules`, virtualenvs, caches), and the
+  image has an empty `/app/data` to mount runs on (`docker run -v /path/to/runs:/app/data …`).
 - Version 1.0.0 (Production/Stable classifier). The Auto StoG tab stays hidden in the shipped
   build (`SHOW_AUTO_STOG = false`); the engine, CLI and API are supported.
 

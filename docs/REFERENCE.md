@@ -107,11 +107,15 @@ Two ways to deploy:
 
   ```bash
   docker build -t rmc-toolkits-dashboard .
-  docker run --rm -p 5000:5000 rmc-toolkits-dashboard
+  docker run --rm -p 5000:5000 -v /absolute/path/to/runs:/app/data rmc-toolkits-dashboard
   ```
 
-  For a public deployment (Render, Fly.io, Railway, a VPS), the container honors the provider's
-  `PORT` and falls back to `5000`. Set `RMC_TOOLKITS_DATA_ROOT` to expose your run folders.
+  The image builds from a clean clone and contains no run data: the local `data/` folder is
+  excluded by `.dockerignore`, and the image has an empty `/app/data` for you to mount run folders
+  on (writable, so Frac conversion and Auto StoG outputs can be written next to the runs). The
+  data root is `/app` (`RMC_TOOLKITS_DATA_ROOT`), so mounted runs appear under `data/` in the file
+  browser. For a public deployment (Render, Fly.io, Railway, a VPS), the container honors the
+  provider's `PORT` and falls back to `5000`; set `RMC_TOOLKITS_DATA_ROOT` to point elsewhere.
 
   Without Docker, run the same production server from the repository root (Gunicorn is in
   `web_app/backend/requirements.txt`; Flask debug mode is never on under it):
