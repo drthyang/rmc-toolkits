@@ -108,6 +108,14 @@ with 0.5.0.
   silently fitted already-scaled data (a = 1). The CLI and `/api/scaling/run` now refuse any
   output that names the input data file or the stog.inp, even with `--force` (API: 400). 0.5.0
   had the same hole.
+- **Outputs are written whole or not at all.** Before any computation the CLI and
+  `/api/scaling/run` refuse two outputs naming one file (case-insensitively), an output path that
+  is a directory and an output folder that cannot be created. A stog.inp declaring the FK(Q) name
+  as `ft.dat` used to exit 0 with the RMCProfile input replaced by the filter correction, and a
+  declared `sub/rmc.gr` or a directory at `ft.dat` failed after five or seven files were written.
+  The family is now written to temporary files and renamed into place only after every write
+  succeeded, and declared subfolders are created. An API `outDir` that is a file is a 400, not a
+  500 after the fit.
 - **CLI.** `--help` states the real enforcement default, which is on in every mode.
   `--estimate-rho0` seeds ρ₀ = 0.05 when no density source exists. A given r₀ with no detected
   shell no longer crashes with a TypeError.

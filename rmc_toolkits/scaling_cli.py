@@ -24,7 +24,11 @@ Safety: outputs default into an ``autoscale/`` directory next to the input, and
 nothing is ever overwritten without ``--force`` — so the tool cannot silently
 clobber the real STOG outputs a ``stog.inp`` typically sits beside. An output
 that would land on the input data file or the ``stog.inp`` itself is refused
-even with ``--force``. Classic
+even with ``--force``, as are two outputs naming one file, an output path that
+is a directory and an output folder that cannot be created -- all checked
+before any computation. The family is written through temporary files and
+renamed into place only once every write has succeeded, so a failure never
+leaves a half-written family. Classic
 low-r enforcement (the Fortran's final ripple removal) is applied to the RMC
 files by default: at the ``stog.inp`` cutoff/first-peak window in ``stog.inp``
 mode (parity), at ``--enforce-cutoff`` when given, and otherwise at the foot of
@@ -40,6 +44,7 @@ import json
 import math
 import os
 import sys
+import uuid
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -271,7 +276,8 @@ def build_parser() -> argparse.ArgumentParser:
     out.add_argument(
         "--force",
         action="store_true",
-        help="overwrite existing output files (never the input data or stog.inp)",
+        help="overwrite existing output files (never the input data or stog.inp, "
+        "never a directory, and never two outputs onto one file)",
     )
     return parser
 
@@ -615,6 +621,8 @@ def _resolve_targets(
             "--force; pick --out-dir/--out-stem):\n  " + "\n  ".join(clashes)
         )
 
+    _check_targets_writable(targets)
+
     if not args.force:
         existing = [str(path) for path in targets.values() if path.exists()]
         if existing:
@@ -623,6 +631,92 @@ def _resolve_targets(
                 "--out-dir/--out-stem):\n  " + "\n  ".join(existing)
             )
     return targets
+
+
+def _target_key(path: Path) -> str:
+    """Identity of an output path for the distinctness check.
+
+    Case-folded, so two names differing only in case count as one file: they
+    are one file on the default macOS and Windows filesystems, and nobody wants
+    both as separate outputs.
+    """
+    return os.path.normcase(str(path.resolve())).casefold()
+
+
+def _check_targets_writable(targets: "dict[str, Path]") -> None:
+    """Refuse, before any computation or write, a family that cannot be written whole.
+
+    Every target must be its own file: no two targets may name the same file
+    (a stog.inp declaring FK(Q) as ``ft.dat`` used to exit 0 with the RMCProfile
+    input overwritten by the Fourier-filter correction), none may be an existing
+    directory, and its nearest existing ancestor must be a directory (the
+    writer creates the missing folders). ``--force`` never relaxes these.
+    """
+    items = list(targets.items())
+    duplicates = [
+        f"{first_key} and {second_key} -> {second}"
+        for index, (first_key, first) in enumerate(items)
+        for second_key, second in items[index + 1:]
+        if _target_key(first) == _target_key(second) or _same_file(first, second)
+    ]
+    if duplicates:
+        raise CliError(
+            "two outputs would be the same file (never allowed, even with --force; "
+            "give them distinct names):\n  " + "\n  ".join(duplicates)
+        )
+
+    directories = [str(path) for path in targets.values() if path.is_dir()]
+    if directories:
+        raise CliError(
+            "output path is a directory (never replaced, even with --force):\n  "
+            + "\n  ".join(directories)
+        )
+
+    blocked = []
+    for path in targets.values():
+        ancestor = path.parent
+        while not ancestor.exists() and ancestor != ancestor.parent:
+            ancestor = ancestor.parent
+        if not ancestor.is_dir():
+            blocked.append(f"{path} (its folder {ancestor} is not a directory)")
+    if blocked:
+        raise CliError(
+            "cannot create the output folder, a path component is not a directory:\n  "
+            + "\n  ".join(blocked)
+        )
+
+
+def _temporary_sibling(path: Path) -> Path:
+    """A fresh hidden name beside ``path``: same folder, so the rename is atomic."""
+    return path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex[:12]}.tmp")
+
+
+def _write_family_atomically(targets: "dict[str, Path]", writers: "dict[str, Any]") -> None:
+    """Write every target through a temporary sibling, then rename them all.
+
+    ``writers`` maps a target key to a callable writing that file's content to
+    the path it is given. Nothing is renamed into place until every write has
+    succeeded, so a failure (disk full, permissions, an I/O error) removes the
+    temporaries and leaves the previous files -- or none -- exactly as they were:
+    never a half-written or mixed family.
+    """
+    for path in targets.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    temporaries: dict[str, Path] = {}
+    try:
+        for key, write in writers.items():
+            temporary = _temporary_sibling(targets[key])
+            temporaries[key] = temporary
+            write(temporary)
+        for key, temporary in temporaries.items():
+            os.replace(temporary, targets[key])
+    except BaseException:
+        for temporary in temporaries.values():
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+        raise
 
 
 def _write_outputs(
@@ -659,26 +753,32 @@ def _write_outputs(
         gk_out, dr_out = result.gk, result.d_r
 
     label = f"rmc-autoscale {__version__}: a={result.a:.8g} b={result.b:.8g}"
+
+    def xy(x, y, **kwargs):
+        return lambda path: write_stog_xy(path, x, y, title=label, **kwargs)
+
+    def provenance(path: Path) -> None:
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(_json_safe(payload), handle, indent=2)
+            handle.write("\n")
+
     # Classic stog conventions (verified against the Fortran runs in
     # data/stog_tests: scale.gr column 2 is g(r), oscillating about 1, and
     # scale_ft.gr column 3 is exactly r*[g(r) - 1]).
-    write_stog_xy(targets["sq_scaled"], result.q, result.sq_scaled, title=label)
-    write_stog_xy(targets["gr_unfiltered"], result.r, g_unfiltered, title=label)
-    write_stog_xy(targets["sq_filtered"], result.q, result.sq_filtered, title=label)
-    write_stog_xy(
-        targets["gr_filtered"],
-        result.r,
-        result.g_filtered,
-        title=label,
-        extra=result.r * (result.g_filtered - 1.0),
+    _write_family_atomically(
+        targets,
+        {
+            "sq_scaled": xy(result.q, result.sq_scaled),
+            "gr_unfiltered": xy(result.r, g_unfiltered),
+            "sq_filtered": xy(result.q, result.sq_filtered),
+            "gr_filtered": xy(result.r, result.g_filtered, extra=result.r * (result.g_filtered - 1.0)),
+            "rmc_fq": xy(result.q, result.fk),
+            "rmc_gr": xy(result.r, gk_out),
+            "rmc_dr": xy(result.r, dr_out),
+            "ft_correction": xy(result.q, result.sq_ft),
+            "provenance": provenance,
+        },
     )
-    write_stog_xy(targets["rmc_fq"], result.q, result.fk, title=label)
-    write_stog_xy(targets["rmc_gr"], result.r, gk_out, title=label)
-    write_stog_xy(targets["rmc_dr"], result.r, dr_out, title=label)
-    write_stog_xy(targets["ft_correction"], result.q, result.sq_ft, title=label)
-    with targets["provenance"].open("w", encoding="utf-8") as handle:
-        json.dump(_json_safe(payload), handle, indent=2)
-        handle.write("\n")
 
 
 def _print_report(
@@ -963,7 +1063,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "provenance": result.provenance,
         }
 
-        targets["provenance"].parent.mkdir(parents=True, exist_ok=True)
         _write_outputs(result, config, targets, enforcement, payload)
         reference = None if inp is None else (inp.a, inp.b)
         _print_report(

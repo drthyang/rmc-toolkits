@@ -278,7 +278,9 @@ Console entry point installed by `pip install -e .`
 `python -m rmc_toolkits.scaling_cli`). Outputs default into `autoscale/` beside the input and
 nothing is overwritten without `--force`; an output that would land on the input data file or the
 stog.inp is refused even with `--force` (in `--data` mode, `--out-dir` = the data folder needs an
-`--out-stem`).
+`--out-stem`). So are two outputs naming one file, an output path that is a directory and an
+output folder that cannot be created; all of these are checked before any computation, and the
+family is written through temporary files renamed into place only after every write succeeded.
 
 ```bash
 rmc-autoscale --help                      # every flag, grouped as in the reference

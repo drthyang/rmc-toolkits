@@ -4380,6 +4380,20 @@ CLI refuses to overwrite existing outputs without `--force` and defaults into an
 `--force` — in `--data` mode the default stem is the data file's, so `--out-dir` pointing at the
 data folder would otherwise overwrite the measured `<stem>.sq` with the scaled one.
 
+**Output integrity (CLI and `/api/scaling/run`, one writer).** Before any computation,
+`_check_targets_writable()` (called by `_resolve_targets`) refuses, even with `--force`: two
+targets naming one file (compared resolved and case-folded, so `Scale.fq`/`scale.fq` clash as
+they do on the default macOS and Windows filesystems; also same-inode links), a target that is
+an existing directory, and a target whose nearest existing ancestor is not a directory. A
+stog.inp that declares the FK(Q) name as `ft.dat` used to exit 0 with the RMCProfile input
+silently replaced by the Fourier-filter correction (8 files on disk, 9 reported), and a declared
+`sub/rmc.gr` or a directory at `ft.dat` failed only after five or seven files had been written.
+`_write_outputs()` then creates the missing folders and writes every file to a hidden temporary
+sibling (`.<name>.<pid>.<random>.tmp`, same folder, so `os.replace` is atomic); only after all
+nine writes succeed are they renamed into place. Any failure removes the temporaries and leaves
+the previous files (or none) untouched. The API resolves its targets before computing too, so an
+`outDir` that is a file is a 400, not a 500 after the fit.
+
 **Zip container:** [`zipArchive.js`](../../web_app/frontend/src/zipArchive.js) → `buildZip()`
 writes a dependency-free ZIP with the **store** method (no compression), CRC-32 per entry,
 zeroed timestamps, and a standard end-of-central-directory record; the archive name is

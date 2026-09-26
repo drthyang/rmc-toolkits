@@ -1334,8 +1334,14 @@ def _require_finite_scaling(result) -> None:
         )
 
 
-def _scaling_request(payload: dict):
-    inp, inp_path, data_path, header = _resolve_scaling_source(payload)
+def _scaling_request(payload: dict, source=None):
+    """Resolve, compute and annotate one scaling request.
+
+    ``source`` is a ``_resolve_scaling_source(payload)`` result the caller
+    already has (/api/scaling/run resolves it first, to check its output
+    targets before any computation).
+    """
+    inp, inp_path, data_path, header = source or _resolve_scaling_source(payload)
     config, warnings = _resolve_scaling_config(payload, inp, header)
     enforce_flag = _scaling_enforce_flag(payload)
     enforcement = _resolve_scaling_enforcement(payload, inp, enforce_flag)
@@ -1503,13 +1509,13 @@ def scaling_preview():
 def scaling_run():
     try:
         payload = _json_object()
-        inp, inp_path, data_path, header, config, enforcement, mode, result, warnings = (
-            _scaling_request(payload)
-        )
-        if mode == "auto":
-            refuse_failed_fit(result)  # a <= 0 never becomes RMCProfile input (CLI parity)
-        summary = diagnostics_summary(result, config)
+        source = _resolve_scaling_source(payload)
+        inp, inp_path, data_path, _header = source
 
+        # Output preflight BEFORE any computation (the CLI's order): distinct
+        # targets, none a directory or an input, every folder creatable, all
+        # inside the data roots. The shared writer then writes the family
+        # through temporary files and renames it only when every write worked.
         from types import SimpleNamespace
 
         out_dir = _payload_text(payload, "outDir")
@@ -1526,6 +1532,13 @@ def scaling_run():
             ):
                 raise PermissionError("Output directory is outside configured data roots")
 
+        inp, inp_path, data_path, header, config, enforcement, mode, result, warnings = (
+            _scaling_request(payload, source)
+        )
+        if mode == "auto":
+            refuse_failed_fit(result)  # a <= 0 never becomes RMCProfile input (CLI parity)
+        summary = diagnostics_summary(result, config)
+
         provenance_payload = {
             "tool": "rmc-autoscale (web API)",
             "source": str(inp_path or data_path),
@@ -1538,7 +1551,6 @@ def scaling_run():
             "diagnostics": summary,
             "provenance": result.provenance,
         }
-        targets["provenance"].parent.mkdir(parents=True, exist_ok=True)
         _write_outputs(result, config, targets, enforcement, provenance_payload)
         return jsonify(
             {
