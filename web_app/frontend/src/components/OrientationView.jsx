@@ -555,6 +555,12 @@ export default function OrientationView({
                     )}
                 </div>
 
+                {/* Nothing to draw and nothing pending: the same one-line empty
+                    state as the PCA Ellipsoid table card. */}
+                {!result && !loading && !error && (
+                    <p className="ui-card__caption">No site selected.</p>
+                )}
+
                 {result && (
                     <>
                         <div className="orient-colorbar-row">
