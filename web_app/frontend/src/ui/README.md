@@ -114,13 +114,29 @@ knob offsets). A new value becomes a token first.
   `geom-layout`, `orient-*`, `analysis-layout`, `r-value-card`, …). It may wire
   domain data to tokens (e.g. `.ui-file-chip.kind-bragg { --kind-color: … }`).
   Borders, colors, radii, shadows, typography and control geometry come from
-  the kit only.
+  the kit only, apart from the exceptions listed next.
 - **Domain visualizations keep their look in their component CSS**, token-only:
   the InteractivePlot SVG marks, legend and tooltip (`InteractivePlot.css`), the
   ModelSummary tolerance ladder (`ModelSummary.css`), the OrientationView
   colorbar, axis-view panel and tooltip (`OrientationView.css`).
-- **State classes** (`is-active`, `is-on`, `is-hidden`, `is-error`, …) are only
-  ever styled compounded with a `ui-` class — never a bare `.is-hidden {}`.
+- **The other look rules outside the kit** are these, and only these:
+  - the app shell in `App.css`, token-only: the `.app-container` background,
+    the `.app-header` bar (bottom border, background) and the brand lockup
+    (`.brand-mark` radius, fill, glow and ink; `.brand-copy h1` and its `span`
+    type);
+  - the statistics-column dividers in `PcaKdePage.css` (`.pca-stats-col`
+    `::before` hairline, and its `border-top` when stacked), token-only,
+    because they are positioned from that page's grid gap;
+  - the llm module's own stylesheets (`src/llm/components/*.css`; the module
+    is kept extractable);
+  - `FileExplorer.css` and `PlotViewer.css`, whose components nothing renders
+    (not moved onto the kit).
+- **State classes** (`is-active`, `is-on`, `is-hidden`, `is-error`, …) are
+  always compounded with a block class, never a bare `.is-hidden {}`. In
+  `ui.css` that block is a `ui-` class; outside it a state rule compounds with
+  its component's own class — today `.workspace-page.is-hidden` (`App.css`),
+  `.sym-brick.is-active` (the ModelSummary ladder); the llm module scopes its
+  states to its own `llm-*` classes.
 - **Specificity is part of the look.** `index.css` element rules interact with
   the kit, notably `button:hover:not(:disabled)` (0,2,1: panel-raised
   background + strong border) and `button:focus-visible` (0,1,1: the focus
@@ -128,7 +144,10 @@ knob offsets). A new value becomes a token first.
   button` (0,1,1) suppresses the ring because `ui.css` loads after `index.css`,
   and single-class buttons (`ui-pill`, `ui-save__trigger`, `ui-tool-btn`, …)
   still receive the global hover background. So: keep selector shapes when
-  editing, and never use `@layer`, `:where()` or `!important`.
+  editing, and never use `@layer`, `:where()` or `!important` in `ui.css`.
+  (The one `!important` in the app, `background: transparent` on the
+  InteractivePlot legend's dashed swatch in `InteractivePlot.css`, predates
+  the kit.)
 - **Order inside `ui.css`**: blocks in catalog order (page, footer, card,
   headers, notes, legend, stage, table, tag, controls, form widgets, switches,
   dropdown, buttons, segmented, chips, stats, feedback, floating, field bar /

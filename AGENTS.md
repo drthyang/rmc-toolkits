@@ -343,10 +343,18 @@ web_app/frontend/src/
   canvas sizing) keyed by page hook classes (`pca-layout`, `geom-layout`, `orient-*`,
   `analysis-layout`, …). Domain visualizations keep their look in their component CSS, token-only
   (InteractivePlot marks/legend/tooltip, the ModelSummary ladder, OrientationView colorbar and
-  axis views). Selector *shapes* are part of the look — `index.css`'s `button:hover:not(:disabled)`
-  (0,2,1) and `button:focus-visible` (0,1,1) interact with kit rules — so never use `@layer`,
-  `:where()` or `!important`, and style `is-*` states only compounded with a `ui-` class. Adding a
-  variant or component: `src/ui/README.md`.
+  axis views). The other look rules outside `ui.css` are listed exceptions: the app shell in
+  `App.css` (`.app-container` background, the `.app-header` bar's border and background, the
+  `.brand-mark` / `.brand-copy` lockup — token-only), the PCA statistics-column dividers in
+  `PcaKdePage.css` (positioned from that page's grid gap — token-only), the llm module's own
+  `components/*.css`, and the unused `FileExplorer.css` / `PlotViewer.css` (not on the kit).
+  Selector *shapes* are part of the look — `index.css`'s `button:hover:not(:disabled)` (0,2,1) and
+  `button:focus-visible` (0,1,1) interact with kit rules — so `ui.css` never uses `@layer`,
+  `:where()` or `!important` (the app's one `!important`, on the InteractivePlot legend swatch,
+  predates the kit). In `ui.css` an `is-*` state is styled only compounded with a `ui-` class;
+  outside it, a state rule compounds with its component's own class (`.workspace-page.is-hidden`
+  in `App.css`, `.sym-brick.is-active` in the ModelSummary ladder; the llm module scopes its
+  states to its own `llm-*` classes) — never a bare `.is-*` rule. Adding a variant or component: `src/ui/README.md`.
 - **`src/llm/` import boundary**: the AI assistant module receives run data **only as props**
   (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`, `liveData`) and must not import
   from the rest of the app except `figureExport.js` (`downloadBlob`/`sanitizeFilename`). Cell math
