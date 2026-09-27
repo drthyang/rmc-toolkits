@@ -67,10 +67,6 @@ export const CardTitle = ({ as = 'h3', className, ...rest }) => {
     );
 };
 
-export const CardActions = ({ className, ...rest }) => (
-    <span className={cx('ui-card__actions', className)} {...rest} />
-);
-
 export const CardMeta = ({ fixed, className, ...rest }) => (
     <span className={cx('ui-card__meta', fixed && 'ui-card__meta--fixed', className)} {...rest} />
 );

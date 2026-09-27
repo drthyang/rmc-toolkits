@@ -547,7 +547,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
 
     const renderLoadedFilesPanel = () => {
         if (allPlotFiles.length === 0) {
-            return structureError ? <div className="ui-card ui-card--clip ui-card--note model-summary-empty">{structureError}</div> : null;
+            return structureError ? <Card clip note className="model-summary-empty">{structureError}</Card> : null;
         }
 
         return (

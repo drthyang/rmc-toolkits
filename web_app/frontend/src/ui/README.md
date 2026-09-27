@@ -28,7 +28,6 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 | `Card` | `<div class="ui-card …">` | `as`, `clip`, `lift`, `roundEnds`, `pad` (`'plot'`/`'bar'`), `note` | any panel surface |
 | `CardHeader` | `<h3 class="ui-card__header">` label + meta/actions | `as` (`'div'` for a non-heading bar), `wrap`, `fixed`, slots `title`, `help`, `meta`, `actions` — or `children` | the bar header of a card |
 | `CardTitle` | `<h3 class="ui-card__title">` | `as` | title inside a flush header |
-| `CardActions` | `<span class="ui-card__actions">` | | right-hand cluster in a children-form header |
 | `CardMeta` | `<span class="ui-card__meta">` | `fixed` | a small count / run-meta readout in a header |
 | `CardNote` | `<div class="ui-card__note">` | `emph` | a note row under a card's canvas |
 | `ControlsBar` | `<div class="ui-controls …">` | `variant` (`'default'`/`'dense'`/`'stacked'`), `sub`, `footer` | the controls bar above a page's cards |
