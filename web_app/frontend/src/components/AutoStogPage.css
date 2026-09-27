@@ -2,17 +2,13 @@
    Copyright (C) 2026 Tsung-Han Yang */
 
 /* Auto StoG page layout. The look — controls bars, fieldsets, fields, pills,
-   chips, readout cards, plot cards, explainer — is the UI kit's; this places
+   chips, readout cards, plot cards — is the UI kit's; this places
    the readout strip and the plot grid (full-width S(Q) strip, G_K and D(r)
    side by side on 16:9 screens). */
 
 .autostog-cluster--source select {
   min-width: 220px;
   max-width: 340px;
-}
-
-.autostog-explainer {
-  margin-bottom: 0.85rem;
 }
 
 .autostog-readout {

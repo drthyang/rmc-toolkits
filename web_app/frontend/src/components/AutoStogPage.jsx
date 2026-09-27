@@ -9,8 +9,9 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Banner, Card, Chip, ControlsBar, Page, Pill, PrimaryButton, StatCard,
+  Banner, Card, Chip, ControlsBar, Hint, Page, Pill, PrimaryButton, StatCard,
 } from '../ui';
+import InfoBadge from '../ui/InfoBadge';
 import InteractivePlot from './InteractivePlot';
 import { downloadBlob, sanitizeFilename } from '../figureExport';
 import { buildZip } from '../zipArchive';
@@ -23,7 +24,7 @@ import {
   readStogXy,
   resolveCoefficients,
   resolveEnforcementDescriptor,
-  rho0NonConvergenceMessage,
+  rho0NonConvergenceError,
   stogInpClosestApproach,
   usableSigma,
   writeStogXy,
@@ -60,17 +61,26 @@ const EMPTY_FORM = {
   enforce: true, enforceCutoff: '', manualA: '', manualB: '',
 };
 
+// The zip's files, in writeFiles order (the EXPORT ? help is generated from
+// this list): key, file name (<stem> = the name stem), content.
 const OUTPUT_LIST = [
-  ['sq_scaled', 'scaled S(Q)'],
-  ['gr_unfiltered', 'unfiltered g(r)'],
-  ['sq_filtered', 'filtered S(Q)'],
-  ['gr_filtered', 'filtered g(r) + r·[g(r)−1]'],
-  ['rmc_fq', 'FK(Q) → RMCProfile'],
-  ['rmc_gr', 'GK(r) → RMCProfile'],
-  ['rmc_dr', 'D(r) → RMCProfile'],
-  ['ft_correction', 'ft.dat correction'],
-  ['provenance', 'provenance JSON'],
+  ['sq_scaled', '<stem>.sq', 'scaled S(Q)'],
+  ['gr_unfiltered', '<stem>.gr', 'unfiltered g(r)'],
+  ['sq_filtered', '<stem>_ft.sq', 'filtered S(Q)'],
+  ['gr_filtered', '<stem>_ft.gr', 'filtered g(r) + r·[g(r)−1]'],
+  ['rmc_fq', '<stem>_rmc.fq', 'F_K(Q) → RMCProfile'],
+  ['rmc_gr', '<stem>_rmc.gr', 'G_K(r) → RMCProfile'],
+  ['rmc_dr', '<stem>_rmc.dr', 'D(r) → RMCProfile'],
+  ['ft_correction', 'ft.dat', 'correction'],
+  ['provenance', '<stem>_provenance.json', 'provenance'],
 ];
+
+// Page error state: one line, plus the full engine message behind an
+// "Error details" help when the error carries a `summary` (engine errors
+// whose message mirrors scaling.py / the CLI; see autoScale.js).
+const errorState = (err, fallback) => (err?.summary
+  ? { line: err.summary, details: err.message }
+  : { line: err?.message || fallback, details: null });
 
 // Q extent / point count of the finite rows (NaN-padded rebin files are common).
 // Min/max, not first/last: a file in descending Q is valid (the engine sorts it).
@@ -135,10 +145,7 @@ const resolveConfig = (form, inp, header, mode = 'auto') => {
       rho0 = RHO0_SEED; // seed only — the worker adopts the self-consistent estimate
       wantEstimate = true;
     } else {
-      throw new Error(
-        'number density unknown: set ρ₀ or mass density — or give a '
-        + 'composition and Auto StoG estimates ρ₀ self-consistently'
-      );
+      throw new Error('number density unknown: set ρ₀, a mass density, or a composition (to estimate ρ₀)');
     }
   }
   const config = makeConfig({
@@ -222,7 +229,7 @@ const AutoStogPage = () => {
     const onMessage = (event) => {
       if (event.data.id !== id) return;
       worker.removeEventListener('message', onMessage);
-      if (!event.data.ok) reject(new Error(event.data.error));
+      if (!event.data.ok) reject(Object.assign(new Error(event.data.error), { summary: event.data.summary }));
       else resolve(event.data.result);
     };
     worker.addEventListener('message', onMessage);
@@ -291,7 +298,7 @@ const AutoStogPage = () => {
     } catch (err) {
       setInspect(null);
       dataRef.current = null;
-      setError(err.message || 'Could not read the uploaded file');
+      setError(errorState(err, 'Could not read the uploaded file'));
     }
   };
 
@@ -309,9 +316,12 @@ const AutoStogPage = () => {
       }
     }
     if (!accepted.length) {
-      setError(unreadable.length
-        ? `Could not read ${unreadable.join(', ')} — drop individual files, not a folder.`
-        : 'No usable files: upload a rebinned S(Q) (.sq / .fq / .dat, 2–3 columns), optionally with its classic stog.inp.');
+      setError({
+        line: unreadable.length
+          ? `Could not read ${unreadable.join(', ')} — drop individual files, not a folder.`
+          : 'No usable files: upload a rebinned S(Q) (.sq / .fq / .dat, 2–3 columns), optionally with its classic stog.inp.',
+        details: null,
+      });
       return;
     }
     const merged = [
@@ -405,7 +415,7 @@ const AutoStogPage = () => {
       });
     } catch (err) {
       setPreview(null);
-      setError(err.message || 'Scaling failed');
+      setError(errorState(err, 'Scaling failed'));
     } finally {
       setRunning(false);
     }
@@ -422,7 +432,7 @@ const AutoStogPage = () => {
       const result = await postJob({ kind: 'estimateRho0', config, ...payload }, transfers);
       if (!result.estimate.converged) {
         setRho0Info(null);
-        throw new Error(rho0NonConvergenceMessage(result.estimate));
+        throw rho0NonConvergenceError(result.estimate);
       }
       setRho0Info(result.estimate);
       setForm((current) => ({
@@ -430,7 +440,7 @@ const AutoStogPage = () => {
         rho0: String(Number(result.estimate.rho0.toPrecision(5))),
       }));
     } catch (err) {
-      setError(err.message || 'Could not estimate the density');
+      setError(errorState(err, 'Could not estimate the density'));
     } finally {
       setEstimating(false);
     }
@@ -496,7 +506,7 @@ const AutoStogPage = () => {
       downloadBlob(buildZip(entries), `${stem}_autoscale.zip`);
       setExportResult({ zip: `${stem}_autoscale.zip`, count: entries.length });
     } catch (err) {
-      setError(err.message || 'Could not build the output zip');
+      setError(errorState(err, 'Could not build the output zip'));
     }
   };
 
@@ -539,7 +549,7 @@ const AutoStogPage = () => {
     const parts = [];
     if (bAvgSq !== undefined) parts.push(`⟨b⟩² ${bAvgSq.toPrecision(4)}`);
     if (bSqAvg !== undefined) parts.push(`⟨b²⟩ ${bSqAvg.toPrecision(4)}`);
-    if (dropped) parts.push(`⟨b²⟩ not set (${formula}'s would mix sources)`);
+    if (dropped) parts.push('⟨b²⟩ unset');
     if (bAvgSq !== undefined && bSqAvg !== undefined) {
       parts.push(`S(0) ${(1 - bSqAvg / bAvgSq).toPrecision(3)}`);
     }
@@ -648,11 +658,38 @@ const AutoStogPage = () => {
     return history.slice(-6).map((entry) => fmt(entry[0], 5)).join(' → ');
   }, [preview]);
 
+  // The Q→0 amplitude card's label; the same ? help in both states.
+  const qZeroLabel = (
+    <>
+      Q→0 amplitude{' '}
+      <InfoBadge label="About the Q→0 amplitude" align="end">
+        <p>a_fz is the ρ₀-independent Faber-Ziman amplitude from S_meas(0) − level.</p>
+        <p>
+          Resolved: S_meas(0) − level is resolved from its error — necessary, not sufficient:
+          a biased low-Q head passes too; re-run at a few Q_min to check a_fz is stable.
+        </p>
+        <p>
+          Unresolved (Bragg-contaminated or long low-Q head): trust neither a_fz nor the
+          concordance.
+        </p>
+      </InfoBadge>
+    </>
+  );
+
   return (
     <Page as="div" column mobile={false} focusAll>
       <ControlsBar variant="stacked">
         <div className="ui-cluster ui-cluster--grow autostog-cluster--source">
-          <span className="ui-cluster-label">DATA</span>
+          <span className="ui-cluster-label">
+            DATA{' '}
+            <InfoBadge label="About the input">
+              <p>Upload a rebinned S(Q) file (.sq / .fq / .dat), optionally with its classic stog.inp.</p>
+              <p>
+                This page is independent of the run folder used by the other tabs: everything
+                runs in your browser and files never leave your device.
+              </p>
+            </InfoBadge>
+          </span>
           <div
             className={`ui-dropzone${dragActive ? ' is-drag' : ''}`}
             onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
@@ -705,7 +742,22 @@ const AutoStogPage = () => {
         </div>
 
         <div className="ui-cluster">
-          <span className="ui-cluster-label">SAMPLE</span>
+          <span className="ui-cluster-label">
+            SAMPLE{' '}
+            <InfoBadge label="About composition and ρ₀">
+              <p>
+                Composition → ⟨b⟩², ⟨b²⟩ (Sears neutron lengths) and the Keen Eq. 21 target
+                S(0) = 1 − ⟨b²⟩/⟨b⟩², which also anchors the analytic correction for the
+                unmeasured [0, Qmin] range.
+              </p>
+              <p>
+                ρ₀ comes from the data header, mass density, your value — or is estimated
+                self-consistently: the density-limit amplitude depends on ρ₀, the FZ amplitude
+                does not, and iterating ρ₀ until they agree recovers the density from the data
+                (needs a composition; long Q→0 extrapolations are flagged).
+              </p>
+            </InfoBadge>
+          </span>
           <label
             className="ui-field ui-field--formula"
             title="Chemical composition (neutron Sears table drives ⟨b⟩², ⟨b²⟩, and the S(0) target; for x-ray data set ⟨b⟩² (=1 for normalized data) and ⟨b²⟩ in Advanced instead)"
@@ -798,14 +850,46 @@ const AutoStogPage = () => {
           >
             Reset params
           </Pill>
+          <InfoBadge label="How Auto-scale works" align="end">
+            <p>
+              Only an S(Q), the composition and the [Qmin, Qmax] window are required; every
+              other parameter has a physics-based default.
+            </p>
+            <p>
+              Level sweep: every high-Q window is tested for statistical flatness; the measured
+              level pins the offset (b = 1 − a·level).
+            </p>
+            <p>
+              Amplitude: the low-r density limit (g → 0 below the first shell, self-consistent
+              with the Fourier filter), with the Q→0 Faber-Ziman limit as an independent
+              criterion — their concordance is the absolute-scale trust metric.
+            </p>
+            <p>
+              This replaces the classic stog “try again” loop and reports the honest fit
+              quality before any enforcement.
+            </p>
+            <p>
+              Read the flags: a violated density limit means the absolute scale needs the
+              composition (FZ) route or external validation.
+            </p>
+          </InfoBadge>
         </div>
       </ControlsBar>
 
       {advancedOpen && (
         <ControlsBar variant="stacked" sub>
           <fieldset className="ui-fieldset">
-            <legend>Amplitude &amp; offset</legend>
-            <p className="ui-fieldset__desc">How the correction S′ = a·S + b is determined.</p>
+            <legend>
+              Amplitude &amp; offset{' '}
+              <InfoBadge label="About amplitude & offset">
+                <p>
+                  How S′ = a·S + b is determined. High-Q: the level sweep ties b to the flat
+                  high-Q level (b = 1 − a·level); Joint fits a and b together. Amplitude: a is
+                  pinned by the low-r density limit (default) or by the composition&apos;s
+                  Faber-Ziman Q→0 limit S(0) = 1 − ⟨b²⟩/⟨b⟩².
+                </p>
+              </InfoBadge>
+            </legend>
             <div className="ui-fieldset__fields">
               <label className="ui-field ui-field--select" title="Level sweep (default): measure the flat high-Q level and tie b to it, leaving one amplitude dof. Joint: original 2-dof (a, b) fit">
                 <span>High-Q</span>
@@ -840,8 +924,15 @@ const AutoStogPage = () => {
           </fieldset>
 
           <fieldset className="ui-fieldset">
-            <legend>Coefficients</legend>
-            <p className="ui-fieldset__desc">Override the composition-derived neutron values (required for x-ray data).</p>
+            <legend>
+              Coefficients{' '}
+              <InfoBadge label="About the coefficients">
+                <p>
+                  Override the composition-derived (Sears neutron) values. Required for x-ray
+                  data: ⟨b⟩² = 1 for normalized data, ⟨b²⟩ = ⟨Z²⟩/⟨Z⟩².
+                </p>
+              </InfoBadge>
+            </legend>
             <div className="ui-fieldset__fields">
               <label className="ui-field" title="⟨b⟩² = (Σ cᵢbᵢ)² in barns — the classic stog 'Faber-Ziman coefficient' (x-ray normalized data: 1)">
                 <span>⟨b⟩² barn</span>
@@ -856,7 +947,6 @@ const AutoStogPage = () => {
 
           <fieldset className="ui-fieldset">
             <legend>Transform</legend>
-            <p className="ui-fieldset__desc">Fourier grid and filter — the defaults suit most data.</p>
             <div className="ui-fieldset__fields">
               <label className="ui-field" title="Classic stog Fourier filter: below this radius g(r) is unphysical and the corresponding S(Q) correction is subtracted">
                 <span>Filter r-cut Å</span>
@@ -882,8 +972,21 @@ const AutoStogPage = () => {
           </fieldset>
 
           <fieldset className="ui-fieldset">
-            <legend>Low-r region</legend>
-            <p className="ui-fieldset__desc">Below the first shell g(r) must vanish — where the density limit is read and outputs are cleaned.</p>
+            <legend>
+              Low-r region{' '}
+              <InfoBadge label="About the low-r region">
+                <p>
+                  Below the first shell g(r) must vanish — this is where the density limit is
+                  read and where the outputs are cleaned (Enforce low-r).
+                </p>
+                <p>
+                  r₀ detection: the first coordination shell — the smallest-r feature that stands
+                  out of the ripples, of either sign (inverted negative-b shells count) — is
+                  located from the data and refines the fit window and the classic low-r
+                  enforcement cutoff.
+                </p>
+              </InfoBadge>
+            </legend>
             <div className="ui-fieldset__fields">
               <label className="ui-field" title="Closest interatomic approach. Empty: taken from a MINIMUM_DISTANCES :: header or the stog.inp peak window, else detected from the data (first-shell flank)">
                 <span>r₀ approach Å</span>
@@ -911,8 +1014,12 @@ const AutoStogPage = () => {
           </fieldset>
 
           <fieldset className="ui-fieldset">
-            <legend>Fixed scaling</legend>
-            <p className="ui-fieldset__desc">Skip the auto-fit: apply a hand (a, b), e.g. to reproduce a classic stog run.</p>
+            <legend>
+              Fixed scaling{' '}
+              <InfoBadge label="About fixed scaling">
+                <p>Skips the auto-fit and applies a hand (a, b), e.g. to reproduce a classic stog run.</p>
+              </InfoBadge>
+            </legend>
             <div className="ui-fieldset__fields">
               <label className="ui-field" title="Fixed a in S′ = a·S + b">
                 <span>a</span>
@@ -934,51 +1041,20 @@ const AutoStogPage = () => {
         </ControlsBar>
       )}
 
-      {error && <Banner inline tone="danger-light">{error}</Banner>}
-
-      <Card as="details" pad="bar" className="ui-disclosure autostog-explainer">
-        <summary>How Auto StoG works</summary>
-        <ol>
-          <li><b>Inputs:</b> an uploaded S(Q), the composition, and the [Qmin, Qmax] window
-            are all that is required. ρ₀ comes from the data header, mass density, your
-            value — or is estimated self-consistently; every other parameter has a
-            physics-based default.</li>
-          <li><b>Composition →</b> ⟨b⟩², ⟨b²⟩ (Sears neutron lengths) and the Keen Eq. 21
-            target S(0) = 1 − ⟨b²⟩/⟨b⟩², which also anchors the analytic correction for the
-            unmeasured [0, Qmin] range.</li>
-          <li><b>Level sweep:</b> every high-Q window is tested for statistical flatness;
-            the measured level pins the offset (b = 1 − a·level).</li>
-          <li><b>Amplitude:</b> the low-r density limit (g → 0 below the first shell,
-            self-consistent with the Fourier filter), with the Q→0 Faber-Ziman limit as an
-            independent criterion — their concordance is the absolute-scale trust metric.</li>
-          <li><b>ρ₀ self-consistency:</b> the density-limit amplitude depends on ρ₀, the
-            FZ amplitude does not — iterating ρ₀ until they agree recovers the density
-            from the data (needs a composition; long Q→0 extrapolations are flagged).</li>
-          <li><b>r₀ detection:</b> the first coordination shell — the smallest-r feature that
-            stands out of the ripples, of either sign (inverted negative-b shells count) — is
-            located from the data and refines the fit window and the classic low-r
-            enforcement cutoff.</li>
-          <li><b>Outputs:</b> the classic stog file family (S(Q), g(r), filtered pair,
-            F<sub>K</sub>(Q), G<sub>K</sub>(r), D(r), ft.dat) + a provenance JSON. Read the
-            flags: a violated density limit means the absolute scale needs the composition
-            (FZ) route or external validation.</li>
-        </ol>
-      </Card>
+      {error && (
+        <Banner inline tone="danger-light">
+          {error.line}
+          {error.details && (
+            <>
+              {' '}
+              <InfoBadge label="Error details" align="end"><p>{error.details}</p></InfoBadge>
+            </>
+          )}
+        </Banner>
+      )}
 
       {!preview && !error && (
-        <div className="ui-intro">
-          <h2>Automatic total-scattering scaling</h2>
-          <p>
-            Upload a rebinned S(Q) file (optionally with its classic <code>stog.inp</code>),
-            enter the composition and Q window, then hit <b>Auto-scale</b>. The engine
-            determines the scale and offset from the physics — the statistically flat
-            high-Q level, the low-r density limit, and the composition&apos;s Faber-Ziman
-            constraints — replacing the classic stog “try again” loop, and reports the
-            honest fit quality before any enforcement. This page is independent of the
-            run folder used by the other tabs: everything runs in your browser and files
-            never leave your device.
-          </p>
-        </div>
+        <Hint>Upload an S(Q), enter the composition and Q window, then Auto-scale.</Hint>
       )}
 
       {preview && diagnostics && (
@@ -1061,12 +1137,23 @@ const AutoStogPage = () => {
           {diagnostics.r0_detected != null && (
             <StatCard
               tone={diagnostics.first_shell_below_r0 ? 'warn' : undefined}
-              label="First shell r₀"
+              label={(
+                <>
+                  First shell r₀{' '}
+                  <InfoBadge label="About the first shell" align="end">
+                    <p>
+                      The detected onset of the first coordination shell. When it lies below the
+                      r₀ you gave, the fit window [lo, r₀ − 0.25 Å] may cut into the shell; the
+                      given r₀ is still used.
+                    </p>
+                  </InfoBadge>
+                </>
+              )}
               value={<>{fmt(diagnostics.r0_detected, 4)} Å (detected)</>}
               sub={(
                 <>
                   {diagnostics.first_shell_below_r0
-                    ? 'below the given r₀ — the fit window may cut into it; check r₀'
+                    ? 'below given r₀ — check r₀'
                     : (diagnostics.window_refined ? 'fit window refined to it' : 'window unchanged')}
                   {preview.enforcement ? ` · enforced below ${fmt(preview.enforcement.cutoff ?? preview.enforcement[0], 3)} Å` : ''}
                 </>
@@ -1075,42 +1162,53 @@ const AutoStogPage = () => {
           )}
           {diagnostics.a_fz_reliable === true && (
             <StatCard
-              label="Q→0 amplitude"
+              label={qZeroLabel}
               value={<>a_fz {fmt(diagnostics.a_fz, 4)} (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</>}
-              sub={(
-                <>
-                  resolved from its error — necessary, not sufficient: a biased low-Q head passes too; re-run at a few Q_min to check a_fz is stable
-                  {diagnostics.amplitude_concordance != null ? ' · see also the concordance' : ''}
-                </>
-              )}
+              sub="resolved"
             />
           )}
           {diagnostics.a_fz_reliable === false && (
             <StatCard
               tone="warn"
-              label="Q→0 amplitude"
+              label={qZeroLabel}
               value={<>a_fz ill-conditioned (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</>}
-              sub="S_meas(0) − level is not resolved from its error (Bragg-contaminated or long low-Q head) — trust neither a_fz nor the concordance"
+              sub="unresolved — ignore a_fz"
             />
           )}
           {diagnostics.rmax_beyond_alias_limit && (
             <StatCard
               tone="warn"
-              label="Aliasing"
+              label={(
+                <>
+                  Aliasing{' '}
+                  <InfoBadge label="About aliasing" align="end">
+                    <p>
+                      r_max exceeds π/ΔQ of the coarsest S(Q) step: G(r) beyond it is a mirror
+                      image (uniform grid) or corrupted by coarse steps (log binning, despike gaps).
+                    </p>
+                  </InfoBadge>
+                </>
+              )}
               value={<>r &gt; {fmt(diagnostics.r_alias_limit, 3)} Å folded</>}
-              sub="r_max exceeds π/ΔQ of the coarsest S(Q) step: G(r) beyond it is a mirror image (uniform grid) or corrupted by coarse steps (log binning, despike gaps) — lower r_max"
+              sub="lower r_max"
             />
           )}
           {diagnostics.amplitude_concordance != null && (
+            // An unresolved a_fz makes the concordance meaningless: neutral
+            // tone, and the sub says so (the value stays for the record).
             <StatCard
-              tone={diagnostics.amplitudes_concordant ? 'good' : 'warn'}
+              tone={diagnostics.a_fz_reliable === false
+                ? undefined
+                : diagnostics.amplitudes_concordant ? 'good' : 'warn'}
               label="Concordance"
               value={<>a_fz / a = {fmt(diagnostics.amplitude_concordance, 3)}</>}
               sub={(
                 <>
-                  {diagnostics.amplitudes_concordant
-                    ? 'independent criteria agree'
-                    : 'disagree — check ρ₀ / low-Q, or use the Faber-Ziman Q→0 amplitude'}
+                  {diagnostics.a_fz_reliable === false
+                    ? 'a_fz unresolved — ignore'
+                    : diagnostics.amplitudes_concordant
+                      ? 'independent criteria agree'
+                      : 'disagree — check ρ₀ / low-Q, or FZ amplitude'}
                 </>
               )}
             />
@@ -1129,10 +1227,9 @@ const AutoStogPage = () => {
           {gkPlot && (
             <Card as="section" clip lift pad="plot">
               <header className="ui-card__header-inset">
-                <h3>{gkPlot.title}</h3>
-                <span>
+                <h3 title="Double-click the plot for the full amplitude">{gkPlot.title}</h3>
+                <span title="Double-click the plot for the full amplitude">
                   fit window {fmt(preview.guides.rFitWindow?.[0], 3)}–{fmt(preview.guides.rFitWindow?.[1], 3)} Å
-                  {' · double-click for full amplitude'}
                 </span>
               </header>
               <InteractivePlot file={{ path: 'autostog-gk', name: 'autostog-gk' }} plotData={gkPlot} />
@@ -1149,7 +1246,14 @@ const AutoStogPage = () => {
 
       {preview && (
         <ControlsBar variant="stacked" footer>
-          <span className="ui-cluster-label">EXPORT</span>
+          <span className="ui-cluster-label">
+            EXPORT{' '}
+            <InfoBadge label="What the zip contains">
+              {OUTPUT_LIST.map(([key, file, label]) => (
+                <p key={key}><code>{file}</code> {label}</p>
+              ))}
+            </InfoBadge>
+          </span>
           <label className="ui-field ui-field--wide">
             <span>Name stem</span>
             <input
@@ -1167,9 +1271,6 @@ const AutoStogPage = () => {
               {exportResult.zip} · {exportResult.count} files
             </Chip>
           )}
-          <span className="ui-controls__note">
-            {OUTPUT_LIST.length} files: {OUTPUT_LIST.map(([, label]) => label).join(' · ')}
-          </span>
         </ControlsBar>
       )}
     </Page>

@@ -654,12 +654,6 @@
     margin-bottom: 0;
 }
 
-.ui-controls__note {
-    flex-basis: 100%;
-    font-size: var(--fs-70);
-    color: var(--subtle);
-}
-
 .ui-control-group {
     display: flex;
     flex-wrap: wrap;
@@ -1985,26 +1979,6 @@ input.ui-range::-moz-range-track {
     place-items: center;
 }
 
-.ui-intro {
-    border: 1px dashed var(--border-strong);
-    background: var(--panel-bg);
-    border-radius: var(--radius-xl);
-    padding: 2.4rem 2.2rem;
-    color: var(--text);
-    max-width: 64ch;
-}
-
-.ui-intro h2 {
-    margin: 0 0 0.5rem;
-    color: var(--text-strong);
-    font-size: var(--fs-115);
-}
-
-.ui-intro p {
-    margin: 0;
-    line-height: 1.6;
-}
-
 /* Placeholder text centered inside an empty card body. */
 .ui-placeholder {
     margin: auto;
@@ -2206,7 +2180,7 @@ input.ui-range::-moz-range-track {
     margin-top: 0.45rem;
 }
 
-/* ── Header field bar, fieldsets, dropzone, disclosure, utilities ────────── */
+/* ── Header field bar, fieldsets, dropzone, utilities ────────────────────── */
 
 /* One joined field: label prefix, input, ghost + primary buttons. */
 .ui-fieldbar {
@@ -2322,14 +2296,6 @@ input.ui-range::-moz-range-track {
     padding: 0 0.35rem;
 }
 
-.ui-fieldset__desc {
-    margin: 0 0 0.5rem;
-    color: var(--subtle);
-    font-size: var(--fs-72);
-    line-height: 1.4;
-    max-width: 44ch;
-}
-
 .ui-fieldset__fields {
     display: flex;
     flex-wrap: wrap;
@@ -2357,31 +2323,6 @@ input.ui-range::-moz-range-track {
     color: var(--subtle);
     font-size: var(--fs-72);
     white-space: nowrap;
-}
-
-/* <details> explainer typography. */
-.ui-disclosure summary {
-    cursor: pointer;
-    font-size: var(--fs-80);
-    font-weight: 650;
-    color: var(--accent);
-}
-
-.ui-disclosure ol {
-    margin: 0.6rem 0 0.2rem;
-    padding-left: 1.3rem;
-    max-width: 78ch;
-    font-size: var(--fs-82);
-    line-height: 1.55;
-    color: var(--text);
-}
-
-.ui-disclosure li {
-    margin: 0.3rem 0;
-}
-
-.ui-disclosure li b {
-    color: var(--text-strong);
 }
 
 /* Every button on the page gets the focus ring (legend pills included). */

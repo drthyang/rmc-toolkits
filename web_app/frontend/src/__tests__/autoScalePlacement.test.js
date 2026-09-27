@@ -28,6 +28,17 @@ const NUMBER = /(?<![A-Za-z_\d.])-?\d+(?:\.\d+)?/g;
 const numbersIn = (message) => (message.match(NUMBER) || []).map(Number);
 
 const { r, profiles, config: baseConfig, cases } = fixture.expected.placement;
+
+// The page's one-line summary of each refusal (engine `error.summary`, JS
+// only — the message itself mirrors scaling.py).
+const SUMMARIES = {
+  negativeRefit: 'Non-physical scale below the shell at 1.57 Å — set r₀ or the fit-window maximum, or use the FZ amplitude.',
+  narrowNegative: 'Non-physical scale below the shell at 1.54 Å — set r₀ or the fit-window maximum, or use the FZ amplitude.',
+  budgetExhausted: 'First shell not confirmed — set r₀ or the fit-window maximum.',
+  shortConfirmed: 'No low-r window below the shell at 1.54 Å — lower the filter r-cut to <= 0.95 Å, or set r₀.',
+  shortUnverifiable: 'Shell at 1.46 Å is too close to the fit window — lower the filter r-cut to <= 0.90 Å.',
+  notRedetected: 'Could not locate the first shell — set r₀ or the fit-window maximum.',
+};
 const rArr = Float64Array.from(r);
 const profileArrays = Object.fromEntries(
   Object.entries(profiles).map(([name, g]) => [name, Float64Array.from(g)]),
@@ -57,14 +68,17 @@ describe('window placement parity with scaling._place_low_r_window', () => {
       const run = () => placeLowRWindow(scriptedPass(scenario, calls), config);
       if (scenario.error) {
         let message = null;
+        let summary = null;
         try {
           run();
         } catch (error) {
           message = error.message;
+          summary = error.summary;
         }
         expect(message).not.toBeNull();
         expect(message).toContain(scenario.error.kind);
         expect(numbersIn(message)).toEqual(scenario.error.numbers);
+        expect(summary).toBe(SUMMARIES[scenario.name]);
       } else {
         const result = run();
         expect(result.a).toBe(scenario.expected.a);

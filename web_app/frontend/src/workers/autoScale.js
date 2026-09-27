@@ -1166,6 +1166,12 @@ const fmtG = (value) => String(Number(value.toPrecision(6)));
 const fmtP = (value, digits) => String(Number(value.toPrecision(digits)));
 
 /** How to make room for a low-r window below a first shell at onset (scaling._cutoff_advice). */
+// An engine error with a one-line `summary` beside its full message: the page
+// shows the summary and keeps the message (which mirrors scaling.py and the
+// CLI word for word) behind an "Error details" help. Additive — the message
+// never changes.
+const errorWithSummary = (message, summary) => Object.assign(new Error(message), { summary });
+
 const cutoffAdvice = (onset, config) => (config.rFitMin != null
   ? `lower the fit-window minimum below ${(onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW).toFixed(2)} Å`
   : `lower the filter r-cut to <= ${(Math.floor((onset - R0_WINDOW_MARGIN - MIN_AUTO_WINDOW - 0.2) / 0.05) * 0.05).toFixed(2)} Å`);
@@ -1218,11 +1224,12 @@ export const autoscale = (qIn, sqIn, config, sigmaIn = null) => {
 const requirePinnedWindow = (config) => {
   const [lo, hi] = rFitWindow(config);
   if (hi - lo < MIN_AUTO_WINDOW) {
-    throw new Error(
+    throw errorWithSummary(
       `autoscale: the pinned low-r fit window [${fmtG(lo)}, ${fmtG(hi)}] Å is narrower `
       + `than ${fmtG(MIN_AUTO_WINDOW)} Å, too few r points to fit the density limit `
       + '(one truncation ripple sets the scale). Widen it: lower the filter r-cut / '
       + 'fit-window minimum, or raise r0 / the fit-window maximum',
+      'Low-r fit window too narrow — widen it under Advanced → Low-r region.',
     );
   }
 };
@@ -1269,11 +1276,12 @@ export const placeLowRWindow = (runPass, config) => {
     const room = onset - R0_WINDOW_MARGIN - lo;
     if (!refits.has(onset)) {
       if (refits.size >= MAX_WINDOW_REFITS) {
-        throw new Error(
+        throw errorWithSummary(
           'autoscale: no first-shell onset was confirmed within '
           + `${MAX_WINDOW_REFITS} refits of the low-r window (tried `
           + `${[...refits.keys()].sort((x, y) => x - y).map((value) => value.toFixed(2)).join(', ')} Å). `
-          + `${fixes[0].toUpperCase()}${fixes.slice(1)}`
+          + `${fixes[0].toUpperCase()}${fixes.slice(1)}`,
+          'First shell not confirmed — set r₀ or the fit-window maximum.',
         );
       }
       let refined;
@@ -1281,23 +1289,25 @@ export const placeLowRWindow = (runPass, config) => {
         refined = runPass({ ...config, r0: onset });
       } catch (error) {
         if (room >= MIN_AUTO_WINDOW) throw error;
-        throw new Error(
+        throw errorWithSummary(
           `autoscale: a shell-like feature starts at ${onset.toFixed(2)} Å, too close to `
           + `the fit-window start ${fmtG(lo)} Å to place or verify a low-r window below it `
           + `(${error.message}). If it is the first coordination shell (a bond that short), `
-          + `${cutoffAdvice(onset, config)}; otherwise ${fixes}`
+          + `${cutoffAdvice(onset, config)}; otherwise ${fixes}`,
+          `Shell at ${onset.toFixed(2)} Å is too close to the fit window — ${cutoffAdvice(onset, config)}.`,
         );
       }
       if (!(refined.a > 0)) {
         const where = `${room < MIN_AUTO_WINDOW ? 'the narrow window ' : ''}`
           + `[${fmtG(lo)}, ${(onset - R0_WINDOW_MARGIN).toFixed(2)}] Å`;
-        throw new Error(
+        throw errorWithSummary(
           'autoscale: the density-limit fit below the first-shell candidate at '
           + `${onset.toFixed(2)} Å gives a non-physical scale (a = ${fmtP(refined.a, 4)} on `
           + `${where}): the low-r region cannot be modelled as g = 0 there, so no `
           + 'automatic window is trustworthy (typical of data missing structure below '
           + `Qmin, where the density limit is degenerate). ${fixes[0].toUpperCase()}${fixes.slice(1)}, `
-          + 'or use the Faber-Ziman Q→0 amplitude criterion when the composition is known'
+          + 'or use the Faber-Ziman Q→0 amplitude criterion when the composition is known',
+          `Non-physical scale below the shell at ${onset.toFixed(2)} Å — set r₀ or the fit-window maximum, or use the FZ amplitude.`,
         );
       }
       const found = shellCandidates(refined, config);
@@ -1309,12 +1319,13 @@ export const placeLowRWindow = (runPass, config) => {
     if (found.length && Math.abs(found[0] - onset) <= ONSET_TOLERANCE) {
       if (room < MIN_AUTO_WINDOW) {
         const advice = cutoffAdvice(onset, config);
-        throw new Error(
+        throw errorWithSummary(
           `autoscale: the first coordination shell starts at ${onset.toFixed(2)} Å, `
           + `leaving no low-r fit window between ${fmtG(lo)} Å and `
           + `${(onset - R0_WINDOW_MARGIN).toFixed(2)} Å (onset - ${R0_WINDOW_MARGIN}); a window `
           + 'across the shell would force it to zero and bias the scale. '
-          + `${advice[0].toUpperCase()}${advice.slice(1)}, or set r₀ / the fit-window maximum`
+          + `${advice[0].toUpperCase()}${advice.slice(1)}, or set r₀ / the fit-window maximum`,
+          `No low-r window below the shell at ${onset.toFixed(2)} Å — ${advice}, or set r₀.`,
         );
       }
       refined.r0Detected = onset;
@@ -1328,7 +1339,7 @@ export const placeLowRWindow = (runPass, config) => {
   const tried = dropped.length
     ? `; onsets not confirmed by their own refit: ${dropped.map((value) => value.toFixed(2)).join(', ')} Å`
     : '';
-  throw new Error(
+  throw errorWithSummary(
     'autoscale: could not locate the first coordination shell in the data '
     + `(trial low-r windows [${fmtG(lo)}, ${fmtG(lo + START_WINDOW_WIDTHS[0])}] `
     + `and [${fmtG(lo)}, ${fmtG(lo + START_WINDOW_WIDTHS[START_WINDOW_WIDTHS.length - 1])}] Å, `
@@ -1336,7 +1347,8 @@ export const placeLowRWindow = (runPass, config) => {
     + 'stands out of the ripples and survives a refit below it), so the '
     + `density-limit window cannot be placed below it. ${fixes[0].toUpperCase()}${fixes.slice(1)}; `
     + `if the first bond is shorter than ~${(lo + 0.55).toFixed(1)} Å, also lower the filter `
-    + `r-cut (now ${fmtG(config.rCutoff)} Å)`
+    + `r-cut (now ${fmtG(config.rCutoff)} Å)`,
+    'Could not locate the first shell — set r₀ or the fit-window maximum.',
   );
 };
 
@@ -1588,6 +1600,17 @@ export const rho0NonConvergenceMessage = (estimate) => {
     + 'Set ρ₀ explicitly (value, data header, or mass density) and consider the '
     + 'Faber-Ziman Q→0 amplitude criterion for the scale.';
 };
+
+/** The page's one-line form of rho0NonConvergenceMessage (the full text stays behind "Error details"). */
+export const rho0NonConvergenceSummary = (estimate) => (
+  `ρ₀ did not converge (concordance ${Number(estimate.concordance.toPrecision(3))}) — set ρ₀, or use the FZ amplitude.`
+);
+
+/** The rho0 non-convergence error: full message plus its one-line summary. */
+export const rho0NonConvergenceError = (estimate) => errorWithSummary(
+  rho0NonConvergenceMessage(estimate),
+  rho0NonConvergenceSummary(estimate),
+);
 
 export const diagnosticsSummary = (result, config) => {
   const [lo, hi] = result.rFitWindowUsed || rFitWindow(config);
