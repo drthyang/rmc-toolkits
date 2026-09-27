@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Regression tests for the 1.0 symmetry-finder audit: the Detected SG card and its
+// Regression tests for the 0.6.0 symmetry-finder audit: the Detected SG card and its
 // tolerance ladder must never show a wrong space-group symbol or number.
 
 import { describe, it, expect } from 'vitest';

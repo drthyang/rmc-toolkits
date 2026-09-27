@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""The r range the discrete sine transform resolves: r < pi/dQ (1.0 audit, stog-b).
+"""The r range the discrete sine transform resolves: r < pi/dQ (0.6.0 audit, stog-b).
 
 The docs said the aliasing period is 2 pi/dQ and called r_max = 50 A safe at
 dQ = 0.1. On a uniform grid G(2 pi/dQ - r) = -G(r): beyond pi/dQ the output is a
@@ -77,7 +77,7 @@ def log_binned_shells():
 
 
 class NonUniformGridTests(unittest.TestCase):
-    """The limit is set by the coarsest step, not the median (1.0 review).
+    """The limit is set by the coarsest step, not the median (0.6.0 review).
 
     pi/median(dQ) = 203 A on the log-binned grid, while its coarse high-Q
     steps (dQ = 0.119) already fail beyond pi/dQ_max = 26.4 A: against a

@@ -3,7 +3,7 @@
 
 """Automatic low-r enforcement must never remove first-shell signal from the RMC files.
 
-Regression tests for the 1.0 audit (stog-a group). The automatic enforcement cutoff
+Regression tests for the 0.6.0 audit (stog-a group). The automatic enforcement cutoff
 used to be the detected first-shell onset itself -- a point ~35 % up the shell's
 rising flank -- and first_peak_zero zeroed every r <= onset, deleting 6-9 % of the
 first-shell pair density from <stem>_rmc.gr / _rmc.dr (the files RMCProfile fits).
@@ -85,7 +85,7 @@ class AutoEnforcementCoordinationTests(unittest.TestCase):
         enforcement = provenance["enforcement"]
         g_rmc, g_ft = gk_rmc + 1.0, gm1_ft + 1.0  # b_avg_sq = 1
         cn_rmc, cn_ft = coordination(r, g_rmc), coordination(r, g_ft)
-        # Pre-1.0 the cutoff was the onset (~2.66 A) and CN dropped by 7.4 %.
+        # Pre-0.6.0 the cutoff was the onset (~2.66 A) and CN dropped by 7.4 %.
         self.assertLess(abs(cn_rmc / cn_ft - 1.0), 0.005, (cn_rmc, cn_ft))
         self.assertLess(enforcement["cutoff"], 2.45)
         self.assertEqual(enforcement["source"], "auto (first-shell foot)")
@@ -112,7 +112,7 @@ class AutoEnforcementCoordinationTests(unittest.TestCase):
                     self.assertLess(abs(cn_enforced / cn_pre - 1.0), 0.005)
                     # And the shell itself: every point above the cutoff is untouched.
                     np.testing.assert_array_equal(enforced[r > cutoff], g[r > cutoff])
-                    # The pre-1.0 cutoff (the onset) lost 6-9 % of the shell.
+                    # The pre-0.6.0 cutoff (the onset) lost 6-9 % of the shell.
                     at_onset = first_peak_zero(r, g, cutoff=onset, peak_rmin=onset, peak_rmax=onset)
                     self.assertLess(coordination(r, at_onset) / cn_pre, 0.96)
 
@@ -255,7 +255,7 @@ class FeCoSnAutoEnforcementTests(unittest.TestCase):
             self.assertEqual(code, 0, err)
             r, gk_rmc, gm1_ft, provenance = cli_outputs(tmp, "FeCoSn_199K_rebinned")
         cutoff = provenance["enforcement"]["cutoff"]
-        # Pre-1.0: 2.53 A, on the flank of the 2.64 A shell (g(2.53) = 2.24 zeroed).
+        # Pre-0.6.0: 2.53 A, on the flank of the 2.64 A shell (g(2.53) = 2.24 zeroed).
         self.assertLess(cutoff, 2.4)
         shell = (r > 2.4) & (r < 3.0)
         np.testing.assert_allclose(gk_rmc[shell], gm1_ft[shell], atol=1e-6)
@@ -265,7 +265,7 @@ class FeCoSnAutoEnforcementTests(unittest.TestCase):
 class Mn3SnAutoEnforcementTests(unittest.TestCase):
     def test_cutoff_matches_the_expert_below_the_inverted_first_shell(self):
         # Qmax 27: at the expert's 28 the unpinned density fit refuses since
-        # 1.0 (tests/test_stog_a_detection.py), and writes nothing.
+        # 0.6.0 (tests/test_stog_a_detection.py), and writes nothing.
         with tempfile.TemporaryDirectory() as tmp:
             code, _, err = run_cli([
                 "--data", MN3SN_59438, "--qmin", "1.0", "--qmax", "28",
@@ -283,7 +283,7 @@ class Mn3SnAutoEnforcementTests(unittest.TestCase):
             r, gk_rmc, gm1_ft, provenance = cli_outputs(tmp, "PG3_59438_SQ_rebin")
         cutoff = provenance["enforcement"]["cutoff"]
         # The expert's hand cutoff (rmccut) is 2.48 A with the first peak at
-        # 2.65-3.1 A; pre-1.0 the auto cutoff was 3.49 A (the whole shell erased).
+        # 2.65-3.1 A; pre-0.6.0 the auto cutoff was 3.49 A (the whole shell erased).
         self.assertLess(cutoff, 2.55)
         self.assertGreater(cutoff, 2.2)
         b2 = provenance["diagnostics"]["gk_low_r_theory"] * -1.0

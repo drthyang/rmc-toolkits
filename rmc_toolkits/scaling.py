@@ -641,7 +641,7 @@ def _huber_weights(residuals: np.ndarray) -> np.ndarray:
     minimises ``sum w r^2``, so the IRLS passes scale each row (and its rhs)
     by ``sqrt(w)``: the fixed point then solves ``sum psi(r_i) x_i = 0`` with
     Huber's psi, the M-estimator ``c = 1.345`` gives 95 % Gaussian efficiency
-    for. (Before 1.0 the rows were scaled by ``w``, an effective weight ``w^2``
+    for. (Before 0.6.0 the rows were scaled by ``w``, an effective weight ``w^2``
     and a redescending psi.)
     """
     med = np.median(residuals)

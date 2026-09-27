@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// CR-only (classic Mac) line endings (1.0 audit, stog-b): Python reads text with
+// CR-only (classic Mac) line endings (0.6.0 audit, stog-b): Python reads text with
 // universal newlines, so a bare '\r' ends a line; the JS readers split only on
 // /\r?\n/ and saw one line ("no numeric rows" / "1 non-empty lines"). All three
 // readers now accept LF, CRLF and CR alike.

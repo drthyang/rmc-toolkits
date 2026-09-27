@@ -173,7 +173,7 @@ class KdeSliceValidationTests(_ValidationCase):
     def test_an_overflowing_bandwidth_is_a_bad_request_not_a_500(self):
         # Finite, so it passes the range check, but bw**2 overflows a Python
         # float (OverflowError, not a ValueError) when the kernel H = bw^2 C is
-        # formed. Before 1.0 it fell through to the generic 500 handler.
+        # formed. Before 0.6.0 it fell through to the generic 500 handler.
         for raw in ("1e155", "1e300"):
             with self.subTest(bw=raw):
                 self.assertBadRequest(self.slice(bw=raw), "bw")

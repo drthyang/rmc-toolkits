@@ -145,7 +145,7 @@ clouds and report an anisotropy of $10^{14}$. Unit-cell vectors are $\mathsf{A}_
 
 **Atom lines.** Both engines read atoms with the one shared `.rmc6f` grammar: `parsers.py` →
 `iter_rmc6f_atoms()` (`classify_rmc6f_atom_line()`) and its mirror `rmc6f.js` → `parseRmc6fAtoms()`
-(`classifyAtomLine()`), which `siteDisplacementsFromRmc6f()` calls since 1.0 (it used to split lines
+(`classifyAtomLine()`), which `siteDisplacementsFromRmc6f()` calls since 0.6.0 (it used to split lines
 itself and recognise only the exact `Atoms:` token):
 
 ```
@@ -159,8 +159,8 @@ only), **skipped for non-finite coordinates**, or unparsed (e.g. a cell index ou
 supercell). The counts are compared with the header's `Number of atoms:`.
 
 **Non-finite coordinates.** A `NaN`/`inf`/`****` coordinate would poison its site's mean and fail
-the *batched* eigensolve for every site (before 1.0: `LinAlgError: Eigenvalues did not converge`,
-an HTTP 500 for the whole page). Since 1.0 both parsers skip such a line and count it — the same
+the *batched* eigensolve for every site (before 0.6.0: `LinAlgError: Eigenvalues did not converge`,
+an HTTP 500 for the whole page). Since 0.6.0 both parsers skip such a line and count it — the same
 rule in both runtimes — and it is **never silent**: `load_site_displacements()` stores the report's
 warning (`Rmc6fParseReport.warning()`, e.g. *"1 atom lines skipped for non-finite coordinates
 (first: '10 Se [1] NaN …')"*) as `SiteDisplacements.parse_warning`, `/api/pca/sites` and
@@ -192,7 +192,7 @@ in Python, `circularMean` in JS), which no wrap of an individual offset can move
 shifted by the whole number of periods that brings it within half a period of its site's centre. JS
 rounds half to even (`roundHalfEven`) so a tie folds exactly as `np.round` does.
 
-**Why not a fold about zero.** Up to 1.0 both engines applied $\mathbf{o}\leftarrow\mathbf{o}-\mathrm{round}(\mathbf{o})$,
+**Why not a fold about zero.** Up to 0.6.0 both engines applied $\mathbf{o}\leftarrow\mathbf{o}-\mathrm{round}(\mathbf{o})$,
 a half-box minimum image about the copy's *origin*. That is only safe while
 $(s_i+\delta_i)/N_i<\tfrac12$ — always true for $N_i\ge3$, but not for a site at $s_i\approx\tfrac12$ in
 a one-cell-thick box ($N_i=1$, a common special position) or at $s_i\approx1$ with $N_i=2$. There the
@@ -236,7 +236,7 @@ full composition (species → copies, in name order) and `mixed` is true when it
 entry. Both appear in every `sites` row and in a per-site KDE payload. The site's cloud is still all
 of its atoms about their common mean position, so $\mathbf U$, $\kappa$ and the KDE describe the
 site as a whole. The payload's `elements` list (Python `SiteDisplacements.species`, JS
-`siteSpecies()`) is every species present, minority species of mixed sites included. (Before 1.0
+`siteSpecies()`) is every species present, minority species of mixed sites included. (Before 0.6.0
 Python labelled such a site by the *last* atom in file order and JS by the *first*, so the same file
 showed `#1 In` in one runtime and `#1 Ga` in the other, and the minority species vanished from the
 element list.) The page shows a mixed site as its composition — `Ga0.75In0.25` in the picker and the
@@ -374,7 +374,7 @@ $\lambda_1\ge\lambda_2\ge\lambda_3\ge0$.
   $|a_{01}|+|a_{02}|+|a_{12}| \le 10^{-15}\,\lVert\mathbf{U}\rVert_F$, and an individual rotation
   skipped when $|a_{pq}|<10^{-300}$ (which would otherwise divide by zero forming
   $\theta=(a_{qq}-a_{pp})/2a_{pq}$). The convergence test is **relative** to the Frobenius norm, so a
-  matrix of any scale is diagonalised to the same precision. (Before 1.0 it was an absolute
+  matrix of any scale is diagonalised to the same precision. (Before 0.6.0 it was an absolute
   $<10^{-18}$, which returned a round-off covariance of $\sim10^{-28}$ Å² — an average configuration —
   undiagonalised with identity axes while `eigh` returned rotated noise, so the two engines disagreed
   on axes, anisotropy and the `degenerate` flag for the same file.)
@@ -522,7 +522,7 @@ $\mathbf u=\mathsf{A}^{\!\top}\Delta\mathbf f$, so $\langle\Delta\mathbf f\,\Del
 =\mathsf{A}^{-\top}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-1}$, and the CIF convention defines
 $\langle\Delta f_i\Delta f_j\rangle=a^\ast_i a^\ast_j\,U^{ij}$. For an orthogonal cell aligned with the
 Cartesian axes ($\mathsf A=\mathrm{diag}(a,b,c)$, $\mathsf D=\mathsf A^{-1}$) $\mathbf U_\mathrm{cif}=
-\mathbf U_\mathrm{cart}$; for anything else the components differ. (Before 1.0 this page gave
+\mathbf U_\mathrm{cart}$; for anything else the components differ. (Before 0.6.0 this page gave
 $\mathsf{A}^{-1}\mathbf{U}_\mathrm{cart}\mathsf{A}^{-\top}$ — transposes in the wrong order and no
 reciprocal-length normalisation, so it returned dimensionless $\langle\Delta f\Delta f\rangle$-like
 numbers about $U/a^2$, e.g. $2.5\times10^{-4}$ for a 0.012 Å² $U_{11}$ in a 7 Å cell.)
@@ -562,7 +562,7 @@ precision. The result equals `scipy.stats.chi2.ppf(p, 3)` to $\sim10^{-15}$;
 `pcaKdeProbabilityScale.test.js` pins it at $10^{-10}$ against scipy on $p=0.01,0.02,\dots,0.99$ plus
 0.6827, 0.995, 0.9973 and 0.999, and checks monotonicity out to $p=10^{-12}$ and $1-10^{-12}$.
 
-*History.* Before 1.0 the browser interpolated a 12-node table linearly in $q=k^2$, clamping outside
+*History.* Before 0.6.0 the browser interpolated a 12-node table linearly in $q=k^2$, clamping outside
 $[0.10, 0.9973]$. $q(p)$ is convex above $p\approx0.2$, so the chords overestimated — up to
 $+3.5\%$ in every semi-axis at $p=0.97$ ($+1.2\%$ at 0.85) — and the $p=0.6827$ node held
 $q=3.5058779$ instead of $3.5268222$ ($-0.30\%$ in $k$). The drawn ellipsoid and the KDE shell sampled
@@ -598,14 +598,14 @@ $\lambda_a\leftarrow\max(\lambda_a,\lambda_1\cdot\texttt{EIGENVALUE\_FLOOR\_RATI
 `EIGENVALUE_FLOOR_RATIO = 1e-8` — bounding $\mathrm{cond}(\mathsf{H})$ at $10^8$ (a bandwidth ratio
 of $10^4$) without visibly moving a well-conditioned site. The pre-floor ratio is what sets the
 `degenerate` flag. If $\lambda_1<$ `ZERO_SPREAD_VARIANCE` ($10^{-8}$ Å², Step 4) the call raises
-*"displacement cloud has zero spread (RMS below 1e-4 A on every axis)"* — before 1.0 the test was
+*"displacement cloud has zero spread (RMS below 1e-4 A on every axis)"* — before 0.6.0 the test was
 $\lambda_1\le0$, which a round-off covariance passes, so an average configuration drew a
 $10^{-14}$ Å "cloud" with $v_\mathrm{max}\approx10^{42}$ Å⁻³; fewer than 4 points raises *"a 3D KDE
 needs at least four points"*.
 
 **Input validation.** `pca_kde_volume()` / `pcaKdeVolume()` reject non-finite points
 (*"displacement cloud contains non-finite coordinates"*) and require `extent`, `bw_scale` and a
-numeric `bw` to be positive **and finite**, and `grid` finite. Before 1.0 the checks were `<= 0`,
+numeric `bw` to be positive **and finite**, and `grid` finite. Before 0.6.0 the checks were `<= 0`,
 which NaN passes: a NaN `extent`, `bwScale` or `bw` returned an all-NaN volume that Flask serialised
 as bare `NaN` tokens (HTTP 200, invalid JSON for `JSON.parse`), and JS accepted `Infinity`. Both
 routes now answer a bad parameter with HTTP 400.
@@ -625,7 +625,7 @@ shadow box and its walls on. The page always requests `cubicBox: true`, with `ex
 Gaussian the fraction of mass inside a $\pm e\sigma$ box per axis is $\mathrm{erf}(e/\sqrt2)^3$:
 0.870 at $e=2$, **0.992** at $e=3$, 0.99981 at $e=4$.
 
-*Why the cube is display-only (changed in 1.0).* Until 1.0 `cubicBox` also sampled every axis over
+*Why the cube is display-only (changed in 0.6.0).* Until 0.6.0 `cubicBox` also sampled every axis over
 the cube, with the same $G$ nodes, so the grid spacing along a short axis grew to
 $\Delta=2\,\texttt{extent}\,\sigma_1\sqrt{1+f^2}/(G-1)$ while its kernel stayed $f\sigma_3$. Once
 $\sigma_1/\sigma_3\gtrsim3$ ($G=40$) the narrow kernels fell between nodes and the rectangle-rule mass,
@@ -733,7 +733,7 @@ A volume with $S_\infty < 10^{-6}$ is refused in both engines (`EMPTY_VOLUME_MAS
 Structure KDE's `unresolved` limit) with *"the KDE volume captures less than 1e-6 of the density:
 every kernel falls between the grid nodes for this bandwidth and extent; raise the bandwidth or
 lower the extent"* — a bandwidth far below the node spacing (`bw=1e-6`, `bwScale=1e-6`) or an
-extent so large the cloud spans a node or two (`extent=1e6`). Before 1.0 `/api/pca/kde` returned
+extent so large the cloud spans a node or two (`extent=1e6`). Before 0.6.0 `/api/pca/kde` returned
 those as a 200 all-zero volume (`vmax` 0, `mass` 0, every level 0) with no warning. A non-finite
 mass is left to the non-finite result check (400 / worker error).
 `test_mass_recovers_probability_normalization` asserts $>0.99$ at `extent=4, grid=64` (JS: same at
@@ -743,7 +743,7 @@ mass is left to the non-finite result check (400 / worker error).
 Computed and returned by both engines but **not used by the UI**.
 
 **UI wiring.** The slider *Level* (1–99%, default **50** — the same level as the ellipsoid's default
-probability, because the two surfaces are only comparable at equal $p$; the pre-1.0 default of 25%
+probability, because the two surfaces are only comparable at equal $p$; the pre-0.6.0 default of 25%
 against a 50% ellipsoid put a Gaussian site's surface ~25% *inside* the ellipsoid (radius ratio
 ≈ 0.76 at $n = 1000$), the very cue the
 tooltip calls anharmonic) picks `kde.massLevels[isoPercent].level`,
@@ -875,7 +875,7 @@ volume (`sampleFieldTrilinear`). So:
   direction, beyond the wall grid's $\pm\texttt{half}$, but at the default `extent = 4` the density
   there is negligible.
 
-*History.* Before 1.0 `projectDensityOntoFrame` (in the page) **splatted** every grid node's mass
+*History.* Before 0.6.0 `projectDensityOntoFrame` (in the page) **splatted** every grid node's mass
 $\rho_{ijk}\Delta V$ bilinearly into 2D bins of the node spacing. When the PCA axes are rotated
 against the frame the projected node lattice beats against the bin lattice: a periodic moiré of
 stripes and lobes, up to 21% (audit, cubic volume) or 6–9% (per-axis volume) maximum error at 30–45°
@@ -910,7 +910,7 @@ box only $\texttt{extent}\cdot\sigma_a\sqrt{1+f^2}$, so a small Box with a high 
 tips out ($k(p)>\texttt{extent}\sqrt{1+f^2}$: $p\gtrsim0.79$ at Box 2, $0.93$ at 2.5, $0.99$ at 3). The
 sampler returns `NaN` there and the page paints those vertices neutral grey (`NO_DATA_RGB`), leaves
 them out of the colour stretch, and adds a legend note naming the Box that would cover the shell
-(`shellBoxNeeded`, $\lceil 2\,\texttt{extent}\max_a k\sigma_a/w_a\rceil/2$). Before 1.0 the sampler
+(`shellBoxNeeded`, $\lceil 2\,\texttt{extent}\max_a k\sigma_a/w_a\rceil/2$). Before 0.6.0 the sampler
 clamped to the border node and painted the box-face density — nearer the centre, so 1.4–2.3× too
 dense — as bright false caps along PC1.
 
@@ -963,7 +963,7 @@ fifths of the axial mean), so a feature confined to one axis (a split along $x$)
 read that axis's own $\kappa$ (12b) when it is resolved. Small-sample bias: for a Gaussian
 $\mathbb E[b_2]=d(d+2)(n-1)/(n+1)$, i.e. $-6/n$ in the normalised value ($-0.006$ at $n=1000$).
 
-*Why not the mean of the per-axis kurtoses (the pre-1.0 readout).* When two or three eigenvalues
+*Why not the mean of the per-axis kurtoses (the pre-0.6.0 readout).* When two or three eigenvalues
 are equal up to sampling error — every cubic site (isotropic $\mathbf U$), the in-plane pair of
 every uniaxial one — the eigenvectors are simply the directions of largest and smallest *sample*
 variance, and those correlate with the fourth moments: PC1 leans toward the biggest outliers. On the
@@ -1001,7 +1001,7 @@ share of $b_2$) exists only when the site has spread ($\lambda_1\ge$ `ZERO_SPREA
 $a$ has not collapsed ($\lambda_a\ge10^{-6}\lambda_1$, the `DEGENERATE_RATIO` of the degenerate flag);
 otherwise $m_2^{(a)}$ is round-off, the ratio is $0/0$, and $\kappa_a$ is reported as `null`. A planar
 cloud therefore has no $\kappa_3$ and its non-Gaussianity is the $d=2$ Mardia value; a zero-spread
-site has neither. (Before 1.0 the engines guarded the denominator with different floors —
+site has neither. (Before 0.6.0 the engines guarded the denominator with different floors —
 $\max(m_2,10^{-30})^2$ in Python, $\max(m_2^2,10^{-30})$ in JS — and printed unrelated noise, e.g.
 $-0.74$ against exactly $-3.00$, for the same frozen site.)
 
@@ -1015,7 +1015,7 @@ $-0.74$ against exactly $-3.00$, for the same frozen site.)
   kurtosis $-2d^4/(s^2+d^2)^2$ along the split — always negative, tending to $-2$ as $d/s$ grows,
   whether or not the two wells are resolved. A symmetric split site and a heavy-tailed single well
   therefore give **opposite** signs (`test_symmetric_split_site_is_platykurtic` pins the analytic
-  $-1.21$ along the split for $d=0.15$, $s=0.08$ Å; the site's Mardia value is $\kappa/5 \approx -0.24$). Before 1.0 the UI tooltip said "positive = split sites", which was
+  $-1.21$ along the split for $d=0.15$, $s=0.08$ Å; the site's Mardia value is $\kappa/5 \approx -0.24$). Before 0.6.0 the UI tooltip said "positive = split sites", which was
   the wrong way round.
 
 Kurtosis is computed on the raw cloud, not on the KDE, is blind to skew, and — as a fourth moment —
@@ -1033,7 +1033,7 @@ cloud whose PC2/PC3 are round-off (both engines).
 The per-site table (including `nonGaussianity`) is published upward to the AI-assistant context
 (`web_app/frontend/src/llm/context/runContext.js` → `pcaContext()`), which ranks sites by
 non-Gaussianity and ships a `note` string defining the quantity so the model does not misread it.
-That module is outside this engine; its note still describes the pre-1.0 mean-of-axes readout and
+That module is outside this engine; its note still describes the pre-0.6.0 mean-of-axes readout and
 "split site" sign (tracked as a hand-off).
 
 ---
@@ -1892,7 +1892,7 @@ $$\Delta\mathbf r_m=\sum_{i=1}^{3} d_{i,m}\,\mathbf a_i,\qquad
 \texttt{dispA}=\sqrt{\langle|\Delta\mathbf r|^2\rangle-|\langle\Delta\mathbf r\rangle|^2}\quad[\text{Å}],$$
 
 the square root of the trace of the site's Cartesian displacement covariance with the **full cell
-metric**, so it is the same for any setting of the same cell. Before 1.0 `dispA` combined per-axis
+metric**, so it is the same for any setting of the same cell. Before 0.6.0 `dispA` combined per-axis
 circular standard deviations $\sqrt{-2\ln R_i}/2\pi$ times the edge lengths in quadrature, which
 ignored the cross terms $\mathbf a_i\cdot\mathbf a_j$ and overstated hexagonal and rhombohedral
 cells by 10–23 % (orthogonal runs moved by < 0.2 %).

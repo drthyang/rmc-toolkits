@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // Regression tests for the browser PCA-ellipsoid engine (workers/pcaKde.js),
-// one describe block per defect found by the 1.0 audit. They mirror
+// one describe block per defect found by the 0.6.0 audit. They mirror
 // tests/test_pca_regressions.py so both engines are pinned to the same rule.
 
 import { existsSync, readFileSync } from 'node:fs';

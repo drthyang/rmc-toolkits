@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""Q-grid order (1.0 audit, stog-b group).
+"""Q-grid order (0.6.0 audit, stog-b group).
 
 The trapezoid sine transform assumes a strictly increasing grid; with descending Q
 every panel width is negative, G_PDF(r) comes out negated, Q0/Qmax swap in the

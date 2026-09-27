@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""estimate_rho0's ``extrapolated`` flag follows the data, not config.qmin (1.0 audit, stog-b).
+"""estimate_rho0's ``extrapolated`` flag follows the data, not config.qmin (0.6.0 audit, stog-b).
 
 The flag marks estimates whose Q->0 extrapolation is longer than the ~1 A^-1 head
 it rests on. It was computed as ``config.qmin > 1.0``: a NaN-padded rebinned file

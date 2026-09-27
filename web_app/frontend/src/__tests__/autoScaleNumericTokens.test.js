@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// readStogXy's row grammar (1.0 audit, stog-b review): the same inputs as
+// readStogXy's row grammar (0.6.0 audit, stog-b review): the same inputs as
 // tests/test_stog_b_readers.py::NumericTokenTests, so both engines are pinned
 // to the same rows. JS \d (no u flag) is ASCII-only, and tokens split on the
 // ECMAScript \s set — rmc_toolkits.parsers.read_stog_xy mirrors both.

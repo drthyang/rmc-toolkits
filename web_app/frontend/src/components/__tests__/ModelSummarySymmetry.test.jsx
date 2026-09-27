@@ -3,7 +3,7 @@
 
 // The Detected SG card: a structure the finder does not analyse has no fit
 // (maxResidual NaN) and a reason, and the card must show the reason -- never
-// 'fits to NaN Å'. Its help text must describe the 1.0 naming (standard
+// 'fits to NaN Å'. Its help text must describe the 0.6.0 naming (standard
 // setting from the group's own elements), not the old 'given cell, up to an
 // axis permutation'.
 

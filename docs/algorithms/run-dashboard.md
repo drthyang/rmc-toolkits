@@ -254,7 +254,7 @@ why (`No usable .rmc6f file: new_x.rmc6f (empty (0 bytes))`).
 Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
 usable `.rmc6f` wins; otherwise the **first** usable `.rmc6f` by name is used. Both runtimes break
 ties in code-point order, as Python's `sorted()` compares strings: candidates by path, outputs by
-(priority, lower-cased name, stem). Before 1.0 the browser fell back to the enumeration order of the
+(priority, lower-cased name, stem). Before 0.6.0 the browser fell back to the enumeration order of the
 directory pick and ranked outputs with `localeCompare`, so the two could disagree. The browser
 additionally keys the stem map by `dirname/stem`, so matching is per-subfolder; the Python only
 ever looks at one directory. In Python the rule is one function, `parsers.find_run_configuration()`,
@@ -389,7 +389,7 @@ whitespace-split the rest, transpose, and plot only columns 0 and 1 — one rule
   line is harmless;
 * no row at all → "`<file>` does not contain STOG numeric rows".
 
-Until the 1.0 gate the two differed: Python `float()`-parsed every token, so a latin-1 title, a `D`
+Until the 0.6.0 gate the two differed: Python `float()`-parsed every token, so a latin-1 title, a `D`
 exponent or a torn last row failed the whole file (HTTP 500), and it kept `NaN` rows; the browser
 dropped non-finite rows but let a torn row through. Pinned by `tests/test_parsers.py::ReadStogTests`
 and its twin in `__tests__/browserData.test.js` (the same `STOG_EDGE_BODY` text); on the Fortran
@@ -775,10 +775,10 @@ user sees or reads off a chart are:
 `browserData.js` → `plotDataFromText()`, `plotMetadataFromFile()`;
 `InteractivePlot.jsx` → `orderedSeries`, `domains`, `seriesShapes`, `nearestHover`, `formatNumber`.
 
-> **PNG path (matplotlib only).** Since 1.0 the figures built by `_series_plot()` carry the same
+> **PNG path (matplotlib only).** Since 0.6.0 the figures built by `_series_plot()` carry the same
 > axis-label strings as the interactive charts (in LaTeX form): the x label is the table's
 > (`Q (Å⁻¹)` for `xray_sq`/`neutron_sq`, `r (Å)` for the real-space kinds, the `bragg_is_tof()`
-> ToF/Q label for `bragg`) and the y label is the `series_titles()` one. Before 1.0 the PNG left the
+> ToF/Q label for `bragg`) and the y label is the `series_titles()` one. Before 0.6.0 the PNG left the
 > y label at `_series_plot()`'s default `"data"` and passed the raw first CSV header as the
 > `xray_sq`/`neutron_sq` x label. What still differs is styling — `lw=1.0, alpha=0.65` strokes, and
 > a legend and title baked into the figure (Step 16b and item 1 of "Screen vs. export").
@@ -1097,7 +1097,7 @@ caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`
 * **The matplotlib rendering path is effectively dead UI.** `PlotViewer.jsx` and `FileExplorer.jsx`
   are not mounted; `GET /api/plot` still works as an API. Its STOG reference line and its figure
   styling differ from what the dashboard draws (its titles, axis labels and $\ln\max(\chi^2,
-  10^{-12})$ curve follow the same helpers since 1.0) — but its
+  10^{-12})$ curve follow the same helpers since 0.6.0) — but its
   two-numeric-column precondition still gates the live Flask endpoints, because they build the
   figure to get the metrics.
 
@@ -2117,7 +2117,7 @@ file with a truthy `plotKind`, `stog` included — never in a chart.
   concatenated sibling logs of Step 1c. Title and legend come from `chi_history_labels()`: the last
   `.log` column's own header (`χ² history: X_ray_(R)1` in the demo), never "R-value". It returns the
   metric `final_chi_r = float(chi_r[-1])`, the **raw, un-logged** last value. The dashboard and the
-  static path report the same quantity. (Before 1.0 it plotted an unclamped `np.log(chi_r)`.)
+  static path report the same quantity. (Before 0.6.0 it plotted an unclamped `np.log(chi_r)`.)
 - `_stog_plot()` uses `figsize=(6.75, 4.725)` and a single **opaque** red curve (`alpha=1.0,
   color="r"`). Its dashed black horizontal reference is `ax.hlines(y, data[0][0], data[0][-1],
   ls="--", lw=0.5, color="black")` with $y = 0$ for `.fq` and $y = 1$ otherwise — spanning the
@@ -2131,7 +2131,7 @@ file with a truthy `plotKind`, `stog` included — never in a chart.
   (default 0, matching the JS `pdfIndex`).
 - The `xray_sq` and `neutron_sq` branches label the x-axis `Q (Å⁻¹)` and `bragg` `ToF (µs)` or
   `Q (Å⁻¹)` (`bragg_is_tof()` on the first header), with the `series_titles()` y-label — the
-  interactive chart's strings of Step 1a. Before 1.0 they passed the raw first CSV header as the
+  interactive chart's strings of Step 1a. Before 0.6.0 they passed the raw first CSV header as the
   x-label and left the y-label at `"data"`.
 - `plot_to_png(result, dpi=150)` writes with `bbox_inches="tight"`, so the raster is
   $6.75\times150 = 1012$ px wide *before* the tight crop trims whitespace; the final pixel size is
@@ -2334,7 +2334,7 @@ rounding matter as much as the formula:
   `visibleSeries.flatMap(s => s.x)` (and a second flatMap for y) on **every** zoom step and legend
   toggle, and `niceDomain` ([`plotDomain.js`](../../web_app/frontend/src/plotDomain.js)) scans that
   array in one pass. (Earlier versions spread it into `Math.min(...)`/`Math.max(...)`, which threw
-  `RangeError: Maximum call stack size exceeded` past ~10⁵ points; that was fixed before 1.0.)
+  `RangeError: Maximum call stack size exceeded` past ~10⁵ points; that was fixed before 0.6.0.)
   There is no point budget, no progressive rendering, and no warning. The spread pattern survives
   only in `yAxisMax`/`xAxisMax` and in `makeProjectedPlane`, which operate on tick lists and polygon
   corners and are harmless.
@@ -2483,7 +2483,7 @@ wording; the browser error names the file too) and no summary is shown. Note tha
 `LINE_BREAK = /\r\n|\r|\n/`, so a file with bare-CR line endings (which Python's universal newlines
 always read) no longer throws in the browser.
 
-**Numeric validation (1.0).** Every header number is read with the atom lines' Fortran-aware
+**Numeric validation (0.6.0).** Every header number is read with the atom lines' Fortran-aware
 `parseFortranNumber()` (`0.207312D+02` is 20.7312), and the header must describe a real cell. Each
 check throws `<file>: …` and stops the parse, so no summary, map or table is built from it:
 
@@ -2497,7 +2497,7 @@ check throws `<file>: …` and stops the parse, so no summary, map or table is b
 
 The checks run in that order. The singular threshold is relative, so it does not depend on the
 units or size of the box: real cells have a normalised volume of 0.01–1, while an exactly
-collinear or coplanar lattice leaves round-off near $10^{-16}$. Before 1.0 none of this was
+collinear or coplanar lattice leaves round-off near $10^{-16}$. Before 0.6.0 none of this was
 checked: `Supercell dimensions: 0 0 0` folded every atom onto the origin, a NaN row reached the
 symmetry finder as `NaN` distances (the card degraded to `P1` with 0 operations), a collinear lattice
 gave a PCA anisotropy of $10^{14}$, a $10^{300}$ lattice gave all-zero bond-angle counts, and a `D`
@@ -2553,7 +2553,7 @@ non-finite lines short of the declared count, i.e. a configuration RMCProfile is
 (a line cut mid-write counts as missing, since it is unparsed) — the Dashboard keeps the previous
 complete summary and says so (`structureReport.js` → `isIncompleteStructure()`), in both runtimes.
 A complete file whose atom blew up to NaN/Inf/`****` has every line present, so it is shown at once
-with its parse warning (before 1.0's review fix such a read was held back as "still being written").
+with its parse warning (before 0.6.0's review fix such a read was held back as "still being written").
 
 The grammar is pinned on 17 variants of a real configuration (CRLF, bare CR, tabs, BOM, no label,
 split label, E and D exponents, trailing blank lines, three marker spellings, upper-case elements,
@@ -2710,7 +2710,7 @@ modulus, since `%` is a sign-following remainder).
 **Supercell guard.** This fold uses the **raw** `supercell[i]`, whereas every other use of the
 multiplicity divides by `Math.max(supercell[i], 1)` — the card's cell lengths (`ModelSummary.jsx`),
 `unitVectors` (the `dispA` pass) in `browserData.js`, and `conventionalCell()` in
-`symmetryModel.js`. Before 1.0 a header declaring `0` (or a non-integer) therefore gave a *guarded*,
+`symmetryModel.js`. Before 0.6.0 a header declaring `0` (or a non-integer) therefore gave a *guarded*,
 finite conventional edge on that axis while collapsing every atom's $w_i$ to 0 — a one-site basis
 and a spurious high-symmetry answer, with no error raised. `readRmc6fCellVectors()` now rejects such
 a header (Step 1, numeric validation), so the raw and guarded values always agree; the `Math.max`
@@ -2894,7 +2894,7 @@ conventional cubic, tetragonal, orthorhombic, monoclinic, hexagonal (six-fold
 $\big[\begin{smallmatrix}1&-1&0\\ 1&0&0\\ 0&0&1\end{smallmatrix}\big]$) or rhombohedral cell is already such a
 basis. In an **oblique** description of the same lattice — a tetragonal crystal on a 60° cell
 ($\mathbf a' = \mathbf a+\mathbf b$), a sheared cell — some automorphisms need entries of magnitude 2 or
-more in the given basis. Before 1.0 the scan ran in the given basis, missed them, and named the
+more in the given basis. Before 0.6.0 the scan ran in the given basis, missed them, and named the
 subgroup that was left with its own number (rutile on a 60° cell: `Cmmm` No. 65; a Pnma perovskite
 on a sheared cell: `P-1` No. 2). Scanning the reduced basis and carrying the matrices back finds
 every lattice rotation of the given cell, whatever its shape.
@@ -2931,7 +2931,7 @@ refAtom = the refEl site with the lexicographically smallest (x, y, z), each wra
 The reference atom fixes the *seed* translations, and a seed is refined by least squares (Step 9)
 to the nearest local optimum: at a tight pairing radius every seed of one operation reaches the
 same one, but at the ladder's 2 Å (Step 9) a seed can settle elsewhere. So $a_0$ must not depend on
-the order of the basis. Before 1.0 it was the first site of the rarest element in basis order (ties
+the order of the basis. Before 0.6.0 it was the first site of the rarest element in basis order (ties
 by first appearance), and a shuffled basis could move the ladder's bricks: a noisy $P6_3/mmc$
 (σ = 0.03 Å) had its $P6_3/mmc 	o P6/mmm$ boundary at 0.794 Å in one site order and 0.767 Å in
 another. With the order-free choice the operations, residuals and bricks are the same for any order
@@ -2954,7 +2954,7 @@ basis order (above), so even a seed that settles in another local optimum does s
 $\tau$ Å to each other — $\tau$ being the **pass** tolerance, 1 Å in the card's ladder and headline
 (Step 12) — (minimum-image Cartesian distance) are one operation at this resolution, and
 the **best-fitting** one is kept: they are taken in order of residual (ties by translation) and
-each is dropped if it lies within $\tau$ of one already kept. Before 1.0 the first one found, in
+each is dropped if it lies within $\tau$ of one already kept. Before 0.6.0 the first one found, in
 seed order, was kept and seeds near it were skipped; at the ladder's loose 1 Å a poor
 near-duplicate could then shadow the true operation for good (a noisy $P4_322$: a 4-fold at 0.8 Å
 residual kept, 0.7 Å from the $4_3$ at 0.2 Å, so the ladder read `P222_1` up to 0.96 Å and then a
@@ -3043,7 +3043,7 @@ at $1/(2\cdot0.02) = 25$, where neighbouring grid points are $2\cdot0.02$ apart 
 guess. This covers every centering and any supercell fraction up to $1/25$ (fifths, sevenths, …)
 with the loose tolerance a refined translation needs at a loose $\tau$ with few sites (0.0075 off
 on the noisy R-3m fixture at $\tau = 0.6$ Å). A set that does not snap, or in which two
-translations snap together, gives no letter. Before 1.0 each component was snapped to a fixed
+translations snap together, gives no letter. Before 0.6.0 each component was snapped to a fixed
 $1/24$ grid, which holds no fifths: CsCl in a $5\times5\times5$ cell went unnamed. The **whole
 set**, zero included, must equal one Bravais centering exactly:
 
@@ -3057,7 +3057,7 @@ set**, zero included, must equal one Bravais centering exactly:
 
 A translation set that is not exactly one of these — the finer lattice of a **supercell** of the
 true cell (a perovskite in a $2\times2\times2$ cell has all eight $(i/2, j/2, k/2)$, which contain the F
-vectors but are not an F lattice) — gives `centering = null`. Before 1.0 the letter came from the
+vectors but are not an F lattice) — gives `centering = null`. Before 0.6.0 the letter came from the
 mere presence of the vectors, so such cells were read as F, I or C. The letter is the centering of
 the **given** cell; the symbol is named in whatever cell Step 10(f) finds, with that cell's letter.
 
@@ -3116,7 +3116,7 @@ Every other group is named in a **standard setting**, which the RMC cell need no
    a tetragonal or cubic diagonal and an $n$-glide. Which representative the finder holds is an
    accident of wrapping (noise turns an exact 0 into 0.9995), so the symbol reads **every** element
    of each coset (`cosetElements()`, $\boldsymbol\ell\in\{-1,0,1\}^3$) and the short-symbol rules
-   pick the highest-priority one per position (rotation before screw, $m$ before glides). Before 1.0
+   pick the highest-priority one per position (rotation before screw, $m$ before glides). Before 0.6.0
    the held representative decided: a noisy $\{E, 2_{[100]}\}$ subgroup of $P6_3/mmc$ read `P2_1`
    No. 4 (it is `C2` No. 5 — item 2: its conventional cell is the orthohexagonal C cell).
 2. **Candidate cells** (`hmSymbolInStandardSetting()`). The group is re-expressed (`applySetting()`:
@@ -3190,18 +3190,18 @@ Every other group is named in a **standard setting**, which the RMC cell need no
    $10^{-3}$ Å), and requires every one, carried to the given cell ($PRP^{-1}$), to be an integer
    matrix. If one is not, the result is only a lower bound and is shown as `≥ P4/mmm`
    (`lowerBoundLabel()`), with no number and no Wyckoff letters — whatever the branch: a named
-   symbol, `P1`/`P-1`, or a crystal class (`≥ 4/mmm class`). Before 1.0 only the naming cell's own
+   symbol, `P1`/`P-1`, or a crystal class (`≥ 4/mmm class`). Before 0.6.0 only the naming cell's own
    rotations were checked, so rocksalt in a $1\times1\times2$ cell read `I4/mmm` No. 139.
 5. **Crystal class.** If no cell gives an accepted symbol, the card shows `"<point group> class"`
    (e.g. `4/mmm class`, `classLabel()`) with no number and no letters. Positional assembly on a cell
    that is not conventional can spell another group's symbol (rocksalt on its primitive cell gives
-   `Pmmm`); before 1.0 such spellings, and the symmorphic `centering + point group` fallback, were
+   `Pmmm`); before 0.6.0 such spellings, and the symmorphic `centering + point group` fallback, were
    shown with that group's ITA number.
 
 Checked on all 230 groups (the test fixtures) in all six axis orders, and on four oblique cells
 (a 60° cell, a sheared cell and two strongly oblique unimodular cells: 839 group–cell pairs, exact
 and with 0.005 Å noise): every group is named correctly (the two location-degenerate pairs by
-Step 10g). Before 1.0, 753 of those 839 oblique descriptions got another group's number (rutile on
+Step 10g). Before 0.6.0, 753 of those 839 oblique descriptions got another group's number (rutile on
 a 60° cell: `Cmmm` No. 65), because the Step 7 scan missed the rotations that need entries of
 magnitude 2 there. The centred groups above on their primitive axis-keeping cells get the
 conventional description's number and Wyckoff labels, and no P-named rung of the noisy
@@ -3225,14 +3225,14 @@ candidates cannot separate them; they differ in where the axes sit. In the stand
 2-fold along axis $i$, $\{R|\mathbf t\}$ with $t_i\equiv0$, fixes the line $2p_j \equiv t_j$ ($j\ne i$); the
 2-folds along $a$, $b$, $c$ have a common point iff, for some choice of one pure 2-fold per axis,
 their translations agree mod 1 on the shared components. They meet in I222 and I23 and never in
-I2₁2₁2₁ and I2₁3, whatever the origin. Before 1.0 both members of each pair were reported as the
+I2₁2₁2₁ and I2₁3, whatever the origin. Before 0.6.0 both members of each pair were reported as the
 symmorphic one (with its number).
 
 #### Step 11. Group closure: the largest closed group at each threshold
 
 With noise, every operation of the true group has its own residual, so the operations with
 $\varrho \le r$ are an arbitrary **subset** of the group — and a subset of the right *size* is not a
-group. (Before 1.0 only the size was checked, and the ladder of the bundled demo showed sets such as
+group. (Before 0.6.0 only the size was checked, and the ladder of the bundled demo showed sets such as
 `{E, 2, m, m'}` with a missing product as "P2 (No. 3)".) Nothing is classified unless it is
 **closed under composition** modulo lattice translations.
 
@@ -3275,7 +3275,7 @@ passes this and is closed — by construction when the walk built it (`closed: t
 all-pairs check (`isClosedSet()`, products matched within $3\cdot$`tolFrac` per fractional
 component). A set that fails is labelled `not a group` with no number. The walk's products are
 matched within the residuals, so this is not excluded by construction at loose thresholds. Before
-1.0 it was reached through the Step 8 near-duplicates (a noisy $P4_322$ ladder ended in `not a
+0.6.0 it was reached through the Step 8 near-duplicates (a noisy $P4_322$ ladder ended in `not a
 group`). It can still be reached: a 4-site noisy Pm structure read `not a group` (6–7 operations
 with two pure translations) at 0.90–0.98 Å in a pass at that τ. In the ladder's 1 Å pass —
 the one the card uses for its headline too (Step 12) — that structure reads `Pm` and `≥ Amm2`. The
@@ -3304,14 +3304,14 @@ identity alone, whose residual is exactly 0) — shown in the card's tooltip as 
 operation survives — not even the identity: a lattice with a non-finite entry, or a singular one,
 rejects every candidate in Step 7 — the result is `undetermined` (`UNDETERMINED`: no number, point
 group `—`, 0 operations, `maxResidual` `NaN`), `describeSymmetry` returns no orbits, and the ladder
-is empty. Before 1.0 it was `P1` / No. 1 — a space-group number for a structure never analysed.
+is empty. Before 0.6.0 it was `P1` / No. 1 — a space-group number for a structure never analysed.
 
 With the ladder's pass the headline is **exactly** the group the ladder shows at $\tau$: the same
 operations with the same residuals (the refinement of a seed does not depend on the acceptance
 threshold, and the near-duplicate merge keeps the best fit first, so the operations kept below τ
 are those the ladder keeps below τ), and the same walk up to τ over the same product table. A pass
 at τ alone need not agree: its smaller pairing radius drops seeds the 1 Å pass refines, and its
-smaller merge radius keeps near-duplicates the 1 Å pass merges. Before 1.0 the card's headline ran
+smaller merge radius keeps near-duplicates the 1 Å pass merges. Before 0.6.0 the card's headline ran
 such a pass, and in sweeps of noisy fixture groups (physical density, random cells) about 1 brick
 midpoint in 400 disagreed with its brick: a noisy P-6m2 whose ladder read `P3m1` at 0.15 Å had the
 headline `Cm` there, and a 4-site Pm read `not a group` (Step 11) inside a `Pm` brick
@@ -3398,7 +3398,7 @@ Orbits are not rendered on the Run Dashboard card itself; they flow into the AI-
 sites), where `multiplicity` is the orbit's size in the given cell and `wyckoff` is the
 naming-cell pair `` `${orbit.wyckoffMultiplicity ?? orbit.size}${orbit.wyckoff}` `` — the rule of
 `orbitLabel()`, read from a field of the `symmetry` prop so the `llm/` import boundary holds.
-Before 1.0 the context used the given-cell orbit size, so wherever the naming cell is not the given
+Before 0.6.0 the context used the given-cell orbit size, so wherever the naming cell is not the given
 cell the assistant was handed a label the named group does not have: `16i` for the Nb of the 5 K
 GaNb₄Se₈ run at τ = 0.02 Å (P-4n2 is named in a cell half the F-cubic one; the card's pair is
 `8i`), `4a`/`12b` for the R3m lacunar spinel in its F cell (`3a`/`9b`), `1a`/`1b` for rocksalt on
@@ -3474,7 +3474,7 @@ binned on a fractional grid whose bins are at least $r\,|\mathbf b_i|$ wide ($r$
 radius, $\mathbf b_i$ = reciprocal vectors), so an image only visits its own and the neighbouring
 bins; each seed costs about $N$ times a few neighbours instead of $N\cdot\bar N_e$. Measured on a
 random two-species basis (Node, one pass each): 2000 sites — `describeSymmetry` ≈ 0.1 s and the
-ladder ≈ 0.1 s; 4000 sites ≈ 0.4 s + 0.2 s (before 1.0: 1.8 s + 5.3 s at 2000 sites, quadratic).
+ladder ≈ 0.1 s; 4000 sites ≈ 0.4 s + 0.2 s (before 0.6.0: 1.8 s + 5.3 s at 2000 sites, quadratic).
 The closure walk (Step 11) adds $O(n\cdot\text{generators})$ product look-ups per group growth for
 $n$ operations, plus the quadratic elimination only up to 256 operations; a $2\times2\times2$ supercell
 of rocksalt (1536 operations) with noise takes ≈ 0.8 s per pass.
@@ -3598,7 +3598,7 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
   called with the raw $\tau$, not with the `maxResidual` at which the group was accepted (Step 14).
 - **No cell volume, no number density** is reported by this page (see the note after Step 5).
 - **Flask/server-directory mode has no Detected SG card** — `/api/structure` returns no basis. Its
-  parser is no longer the difference: since 1.0 both runtimes share one atom-line grammar, read
+  parser is no longer the difference: since 0.6.0 both runtimes share one atom-line grammar, read
   coords-only lines, and capitalize element tokens the same way (Step 2).
 - **What the tests pin.** `symmetry.test.js` recovers all 230 fixture groups (built from ITA
   generators) from their atoms, names rocksalt, perovskite, diamond, hcp and an I4/mcm perovskite,

@@ -136,7 +136,7 @@ Both runtimes implement the same rule, and it is not "the only one there":
 * `web_app/frontend/src/browserData.js` → `chooseStructureFile()` is the parallel implementation,
   keyed on `directory + '/' + stem` so the match is per-subfolder, with the same priority table and
   the same tie-breaking: candidates sorted by path and outputs by (priority, lower-cased name,
-  stem), all in code-point order as Python's `sorted()` compares strings (since 1.0; before it the
+  stem), all in code-point order as Python's `sorted()` compares strings (since 0.6.0; before it the
   browser fell back to directory-walk order and ranked outputs with `localeCompare`, so a
   multi-model folder could resolve to different files on the two paths).
 
@@ -166,7 +166,7 @@ Every reader folds $\mathbf{f}_i$ directly — `rmc_toolkits/kde.py` → `load_u
 `web_app/backend/app.py` → `structure()` and the browser parser
 ([`browserData.js`](../../web_app/frontend/src/browserData.js) → `structureFromRmc6f()`) — which
 matters because the oldest `.rmc6f` variants carry no per-atom cell index at all. (Subtracting the
-cell index first, `coords - cell_indices/supercell`, as `structure()` did before 1.0 and the
+cell index first, `coords - cell_indices/supercell`, as `structure()` did before 0.6.0 and the
 `Frac*.txt` writer still does, only removes an integer before the modulo and gives the same
 $\mathbf{x}_i$.)
 
@@ -175,7 +175,7 @@ $\mathbf{x}_i^{\mathrm{cart}} = x_i\mathbf{a} + y_i\mathbf{b} + z_i\mathbf{c}$ (
 `cell_lengths` $=(\lVert\mathbf{a}\rVert, \lVert\mathbf{b}\rVert, \lVert\mathbf{c}\rVert)$ (Å).
 **The Cartesian array is not used by the KDE endpoint** — see the units gotcha in Step 4.
 
-**Atom-line parsing.** Both runtimes share one anchored, validated grammar (since 1.0):
+**Atom-line parsing.** Both runtimes share one anchored, validated grammar (since 0.6.0):
 `rmc_toolkits/parsers.py` → `classify_rmc6f_atom_line()` / `iter_rmc6f_atoms()` /
 `parse_rmc6f_atoms()` and their browser twins in `web_app/frontend/src/rmc6f.js` →
 `classifyAtomLine()` / `parseRmc6fAtoms()`. A line is `id element [label]` followed by **exactly 7**
@@ -188,7 +188,7 @@ bare-CR files parse. A line of valid layout with a non-finite coordinate (`NaN`,
 (`Rmc6fParseReport` / `report`) compares the accepted count with the header's `Number of atoms:`
 and its `warning()` / `parseWarning` text ("… of … atom lines unparsed", "parsed M of N atoms
 declared in the header", "… skipped for non-finite coordinates") reaches the Model information
-card, the PCA pages and the bond-angle payload. Before 1.0 both parsers indexed fields from the
+card, the PCA pages and the bond-angle payload. Before 0.6.0 both parsers indexed fields from the
 end of the line, so an extra trailing field silently shifted every column in the browser, and
 Python had no coordinates-only branch. `iter_rmc6f_atoms()` yields full-layout atoms by default;
 `load_unit_cell_positions()` passes `include_coords_only=True`, since the KDE needs only element
@@ -205,7 +205,7 @@ and position.
   and an empty selection is explained, not drawn: an element the file lacks is a 400
   `Unknown element 'Xx'; available: Ga, Se, Ta`, and a file with no parseable atom is the parser's
   "no atoms could be parsed" 400 (`_require_kde_atoms`, run only when the selection is empty).
-  Before 1.0 both were a 200 all-zero map reading "No atoms in this slab.".
+  Before 0.6.0 both were a 200 all-zero map reading "No atoms in this slab.".
 * **Browser-loaded run** — the worker is posted the `points` **memo**, i.e. `structure.points`
   *filtered by `selectedElement`* (`StructurePage.jsx`, `points` `useMemo`). The element filter is
   therefore applied **client-side, after parsing**, and it is the whole mechanism by which the
@@ -277,7 +277,7 @@ $h\mathbf{a}^*+k\mathbf{b}^*+l\mathbf{c}^*$, which differs from the direction
 $[hkl]=h\mathbf{a}+k\mathbf{b}+l\mathbf{c}$ in any non-orthogonal cell (by 30° for $h=(1,0,0)$ in a
 hexagonal cell, 20° for $(0\,0\,1)$ in a monoclinic cell with $\beta=110°$).
 
-**The UI says so.** Before 1.0 the input was headed *Direction*, its boxes were labelled `a`, `b`,
+**The UI says so.** Before 0.6.0 the input was headed *Direction*, its boxes were labelled `a`, `b`,
 `c`, and the value was printed in square brackets — `[1 1 0]` on the canvas and in the exported file
 names — which is the notation for the real-space direction and invited slicing perpendicular to a
 different vector. It is now the *Plane (h k l)* control (boxes `h`, `k`, `l`, with a tooltip on the
@@ -291,7 +291,7 @@ $\hat{\mathbf{h}} = \mathbf{h}/\lVert\mathbf{h}\rVert_2$, which sets only the *s
 coordinate, not the plane family.
 
 For a custom normal the in-plane axes are built by Gram–Schmidt against $\hat{\mathbf{h}}$. **The
-page owns the frame, and both runtimes draw in it** (since 1.0):
+page owns the frame, and both runtimes draw in it** (since 0.6.0):
 
 * JavaScript `freePlaneBasis()` (`workers/slabSelection.js`; `StructurePage.jsx` calls it as
   `makeFreePlaneBasis`) seeds with $(1,0,0)$ when $|n_1| < 0.85$ and $(0,1,0)$ otherwise, then
@@ -310,7 +310,7 @@ The two seeds generally give *different* frames. For $\mathbf{h}=(1,1,0)$ the pa
 $\hat{\mathbf{u}}=(\tfrac{1}{\sqrt2},-\tfrac{1}{\sqrt2},0)$, $\hat{\mathbf v}=(0,0,-1)$, while
 `_orthogonal_axis()` gives $\hat{\mathbf{u}}=(0,0,1)$ — a 90° rotation; $(1,0,1)$ is the same
 case ($\hat{\mathbf u}=(\tfrac{1}{\sqrt2},0,-\tfrac{1}{\sqrt2})$, $\hat{\mathbf v}=(0,1,0)$ on the
-page). Before 1.0 the page sent only the normal, so in Flask mode a (1 1 0) map — the default custom
+page). Before 0.6.0 the page sent only the normal, so in Flask mode a (1 1 0) map — the default custom
 plane — came back rotated 90° against the browser map and against the page's own Slab In Cell panel,
 and letterboxed in a panel sized for the other orientation. `tests/test_kde_custom_frame.py` and
 `workers/__tests__/customSliceFrame.test.js` pin the frames, and the (1 1 0) / (1 0 1) cases of the
@@ -416,7 +416,7 @@ $\sigma = f\sqrt{\lambda}$ (Step 6):
 
 (Measured on the all-element GaNb₄Se₈ `c` slab at $z_c=0.39$, $\Delta z=0.08$, whose source-atom
 covariance has $\sqrt{\lambda}=0.23/0.33$; a uniform cell-filling slab has $\sqrt\lambda=0.289$.
-Since 1.0 the kernel comes from the source atoms only (Step 6), so $\sigma$ no longer grows with
+Since 0.6.0 the kernel comes from the source atoms only (Step 6), so $\sigma$ no longer grows with
 $m$. Before, the images entered $\mathbf{C}$ and the slider-maximum row read $\sigma=0.069$ at
 $m=0.3$, i.e. $4.3\sigma$ and $8.7\times10^{-5}$ — about $10^3\times$ the $9\times10^{-8}$ this
 table then claimed, which had reused the $m=0.1$ spread.) The last column is the Gaussian factor at
@@ -468,7 +468,7 @@ $x h_1 + y h_2 + z h_3$ left to right, like the worker's `dot()`, so presets giv
 depths. Python additionally clamps $z_c$ into $[0,1]$ and floors $\Delta z$ at $10^{-12}$; the
 JavaScript path relies on the slider bounds.
 
-**Why the tolerance.** Before 1.0 Python tested `center_depth - half <= d <= center_depth + half` in
+**Why the tolerance.** Before 0.6.0 Python tested `center_depth - half <= d <= center_depth + half` in
 absolute depth units and the worker and the Slab-In-Cell highlight tested
 `|normalizedDepth − zCenter| ≤ thickness/2`: algebraically identical, but rounded differently exactly
 at the faces. An ideal or unrelaxed configuration puts every copy of a site on the same coordinate,
@@ -662,7 +662,7 @@ always yields the same picture:
 Because the streams differ — and because the augmented arrays are in a different row order to begin
 with (Step 3) — **the two runtimes fit different 6000-point subsets of the same slab**. They are
 both unbiased, so the two density fields agree in expectation, but they are not bitwise comparable.
-They do share the bandwidth matrix: since 1.0 $\mathbf{C}$ comes from all the slab's source atoms,
+They do share the bandwidth matrix: since 0.6.0 $\mathbf{C}$ comes from all the slab's source atoms,
 before and independently of the subsample (Step 6).
 
 **Statistical consequence.** The KDE is an average of $n$ kernels; subsampling raises the
@@ -755,9 +755,9 @@ GaNb₄Se₈ sample run and synthetic slabs, and `workers/__tests__/kdeParity.te
 worker to reproduce them to $10^{-6}$ of the peak (measured: $\le 2\times10^{-12}$), with identical
 kernels, counts and decline messages.
 
-**$\mathbf{C}$ depends on neither the periodic images nor the subsample** (since 1.0). The images
+**$\mathbf{C}$ depends on neither the periodic images nor the subsample** (since 0.6.0). The images
 and the 6000-point cap are evaluation devices — they decide which rows the fixed kernel is summed
-over — and the kernel is fitted to the atoms. Before 1.0 both runtimes fitted $\mathbf{C}$ to the
+over — and the kernel is fitted to the atoms. Before 0.6.0 both runtimes fitted $\mathbf{C}$ to the
 subsampled slab rows, images included, and that made the kernel depend on things that are not the
 slab's atoms:
 
@@ -812,7 +812,7 @@ in fractional units — roughly **0.07–0.10 Å for a 10.4 Å cell**. Three hon
 1. The smoothing width **changes when you change the element filter, the slab thickness, or the
    normal**, because all of those change $\mathbf{C}$. The same `bw = 0.03` is a different physical
    width on different slices.
-2. The periodic images and the subsample do **not** change $\mathbf{C}$ (see above). Before 1.0 they
+2. The periodic images and the subsample do **not** change $\mathbf{C}$ (see above). Before 0.6.0 they
    did, by far more than the "few percent" this document used to state.
 3. The kernel's **shape** — not only its width — comes from $\mathbf{C}$, i.e. from how the slab's
    sites are laid out; see the next section. (This document used to attribute the anisotropy to
@@ -828,7 +828,7 @@ $\mathbf{H}=f^2\mathbf{C}$ with $\mathbf{C}$ the covariance of **all** the slab'
 many sites, so $\mathbf{C}$ measures how the sites are *laid out* across the slab, not how wide any
 one site is, and every site is convolved with that layout-shaped kernel: the second moments of a
 drawn blob are the site's own in-plane covariance **plus $\mathbf{H}$**. This is SciPy's convention
-for a scalar bandwidth factor and it is kept as the reference estimator for 1.0; it is an artefact of
+for a scalar bandwidth factor and it is kept as the reference estimator for 0.6.0; it is an artefact of
 the method, not of the atoms, and it is largest exactly where the map is most tempting to read —
 element-filtered layers holding one or two sites.
 
@@ -871,7 +871,7 @@ the kernel is more than 3 : 1 in Å
 shapes against the printed kernel, and take displacement shapes from the
 [PCA Ellipsoid](pca-ellipsoid.md) page, which fits each site's cloud directly. A kernel that is a
 physical length (isotropic in the plane, width in Å through the cell metric) would remove the
-artefact; it is a different estimator and not part of 1.0.
+artefact; it is a different estimator and not part of 0.6.0.
 
 **Verification.** `tests/test_kde_kernel_diagnostics.py` and
 `workers/__tests__/kernelDiagnostics.test.js` pin the `subgrid` warning (a two-site needle warns at
@@ -947,7 +947,7 @@ the worst-case summation round-off for 6000 points. The worker's `cholesky2()` a
 then fails exactly where LAPACK's `potrf` raises; Python checks test 6 on `np.cov(atoms)` and then
 lets `scipy.linalg.cholesky` (inside `_FixedCovarianceKDE`) raise `LinAlgError`.
 
-**Before 1.0 the two paths differed here**, and not only on degenerate input: the browser added a
+**Before 0.6.0 the two paths differed here**, and not only on degenerate input: the browser added a
 fixed $10^{-8}$ (fractional²) ridge to the diagonal of $\mathbf{H}$ on every slab, and whenever
 $\det\mathbf{H}\le10^{-12}$ it inflated both diagonals by $\max(c_{00},c_{11},10^{-4})f^2+10^{-6}$ and
 zeroed the cross term. Both constants were absolute while $\mathbf{H}$ scales as $f^2$ times the
@@ -960,7 +960,7 @@ constants are gone.
 
 **Bandwidth input.** Both runtimes use $f$ exactly as given. A value that is not a finite number
 $>0$ (`0`, negative, `NaN`, `±∞`, or a non-number) declines the slab with the `bandwidth` message
-and echoes `bw: null`; it contributes $0$ to the periodic margin. (Before 1.0 the worker silently
+and echoes `bw: null`; it contributes $0$ to the periodic margin. (Before 0.6.0 the worker silently
 substituted `0.03` for any falsy value and floored the rest at $10^{-4}$, while Python drew a
 negative $f$ as $|f|$ and returned an unexplained zero grid for `0`.) Only the grid still has a
 browser-side substitution: `Number(gridSize) || 120`, so `gridSize = 0` becomes 120, not the 16
@@ -1040,7 +1040,7 @@ density[y][x] = sum * normalizer;
 ```
 
 The whitened form keeps the round-off of a needle kernel inside the squares; the quadratic form
-$\mathbf{d}^\top\mathbf{H}^{-1}\mathbf{d}$ used before 1.0 summed terms up to
+$\mathbf{d}^\top\mathbf{H}^{-1}\mathbf{d}$ used before 0.6.0 summed terms up to
 $\mathrm{cond}(\mathbf{H})$ times larger than the result and cancelled them, which matters on the
 float32 GPU branch.
 
@@ -1073,13 +1073,13 @@ At the default $G=120$ that threshold is crossed at $n \ge 139$ fit points, so a
 **Fallback guarantee, stated precisely.** The device/pipeline promise is created once per worker
 and cached; *any* failure — no `navigator.gpu`, `requestAdapter()` returning null, `requestDevice()`
 or pipeline creation rejecting, a runtime error inside `computeDensityGpu`, a read-back map with a
-non-finite node (since 1.0; pinned by `workers/__tests__/gpuNonFiniteFallback.test.js`), or
+non-finite node (since 0.6.0; pinned by `workers/__tests__/gpuNonFiniteFallback.test.js`), or
 sub-threshold work — resolves to `null` and `computeKde()` falls through to `computeDensityCpu()`
 (`density = mapped ?? computeDensityCpu(args)`). A lost device clears the cached promise so a later message can
 re-initialize. The result object reports which one ran via `backend: 'gpu' | 'cpu'`.
 
 The repo's own wording — `AGENTS.md` and `gpuKde.js`: the CPU loop *"evaluates the same kernel in
-float64"* (before 1.0 `AGENTS.md` said *"with identical output"*) — is true **structurally** (same
+float64"* (before 0.6.0 `AGENTS.md` said *"with identical output"*) — is true **structurally** (same
 formula, same grid, same normalizer, same cutoff, reshaped to the same nested JS array) but not
 **bitwise**, and the float32 narrowing is broader than the accumulator alone. Everything crosses the
 boundary as `f32`:
@@ -1195,7 +1195,7 @@ normalised per source atom; 0.24–1.18 on oblique sections, Step 6), and every 
 parity fixture has at least 0.13, the most aliased two-site needle at $G=32$. A needle kernel can
 instead miss every grid node: on the GaNb₄Se₈ `5KAVERAGE` Nb layer ($z_c=0.15$, $\Delta z=0.08$,
 $f=0.03$, $G=120$) $\sigma_{\min}=1.4\times10^{-6}$, the linear peak is $1.2\times10^{-14}$ and the
-mass $1.8\times10^{-18}$, where a real map peaks at $10^2$–$10^3$. Before 1.0 both runtimes stretched
+mass $1.8\times10^{-18}$, where a real map peaks at $10^2$–$10^3$. Before 0.6.0 both runtimes stretched
 the per-slice colour scale over that round-off and drew eight contour levels through it. Now both
 engines append the `unresolved` warning (after `subgrid`, which such a kernel always has too) when the
 mass is below the limit, draw no contours, and `drawKdeSlice()` skips painting a map that carries
@@ -1210,7 +1210,7 @@ and return the all-zero map with that summary, `fitCount` set, `message = null` 
 `subgrid` + `unresolved` (grid mass 0). SciPy whitens the *absolute* coordinates, $x/\sigma$, so a
 node's residual carries a round-off of $\sim\varepsilon|x|/\sigma$ whitened units: harmless at
 $10^{-10}$ (the value at an atom is off by $<10^{-7}$ for $|x|\le100$), of order 1 near
-$\sigma\sim10^{-13}|x|$, where SciPy returns 0 at an atom. Before 1.0 that made
+$\sigma\sim10^{-13}|x|$, where SciPy returns 0 at an atom. Before 0.6.0 that made
 `_FixedCovarianceKDE`'s self-check fail, and the slice declined with the SciPy `engine` message for
 what was a bandwidth $f\lesssim10^{-14}$; below $f\sim10^{-150}$ the normaliser
 $1/(2\pi\det L)$ overflows too, and the worker's map came out NaN at every node ($\infty\cdot0$).
@@ -1220,7 +1220,7 @@ $\sim40\sigma$ from every atom is an exact float64 zero anyway. `/api/kde/slice`
 that still came out non-finite would be a 400 (`_strict_result_response`). Pinned by
 `tests/test_kde_unresolved.py`, `unresolvedMap.test.js` and `tests/test_backend_validation.py`.
 
-Before 1.0 the Python guard was `density.max() <= 0` applied **after** the log transform, so any map
+Before 0.6.0 the Python guard was `density.max() <= 0` applied **after** the log transform, so any map
 whose peak linear density was $\le 1$ per unit fractional area lost every contour on the SciPy path
 while the browser drew all eight. That is not rare: the cell carries unit mass, so the mean density
 over an oblique cross-section of area $A>1$ is about $1/A$, and for a disordered configuration the
@@ -1464,13 +1464,13 @@ the distinct element labels before assigning colours) shown in the legend **belo
 | `warnings` | ✓ | ✓ | `[{code, message}]` about a drawn map, in this order — `subgrid` when the kernel is narrower than half a grid step (Step 6), `unresolved` when the grid holds less than $10^{-6}$ of the density (Step 9); `[]` otherwise |
 | `center`, `thickness` | ✓ | ✓ | the raw slider fractions in **both** — this is what the UI reads |
 | `normal`, `uVector`, `vVector`, `planeVertices`, `planePolygon` | ✓ | ✓ | `uVector`/`vVector` differ for custom normals (Step 2) |
-| `z`, `dz` | ✓ | ✓ | the slider fractions in both (since 1.0; see below) |
+| `z`, `dz` | ✓ | ✓ | the slider fractions in both (since 0.6.0; see below) |
 | `depth`, `depthThickness`, `depthRange` | ✓ | — | absolute depth-projection units |
 | `slabVertices` | ✓ | — | the two clamped slab faces; **not consumed by `StructurePage.jsx`** |
 | `cellLengths`, `unitVectors`, `orientation`, `source`, `element` | ✓ (added by the endpoint) | — | `cellLengths`/`unitVectors` are ignored by the frontend (Step 10) |
 | `browserKde: true`, `backend: 'gpu' \| 'cpu'` | — | ✓ | worker-only |
 
-**`z`/`dz` are the slider fractions in both runtimes.** Before 1.0 Flask returned `z = center_depth
+**`z`/`dz` are the slider fractions in both runtimes.** Before 0.6.0 Flask returned `z = center_depth
 = ` $d_{\min} + z_c\Delta_d$ and `dz = thickness_depth = ` $\Delta z\,\Delta_d$ (so for
 $\mathbf{h}=(1,-1,0)$ and $z_c=0.5$ it returned `z = 0`), while the worker returned the fractions.
 Now `kde_slice()` receives normalized depths and echoes $z_c$ and $\Delta z$ (after Python's clamp
@@ -1500,7 +1500,7 @@ The Python tests in `tests/test_kde.py` are:
 cell-boundary wrap and the depth wrap for the worker (with the different third assertion noted in
 Step 3).
 
-Added for 1.0:
+Added for 0.6.0:
 
 | Test | What it pins |
 | --- | --- |
@@ -1635,7 +1635,7 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
     $10^{-6}$–$10^{-5}$ relative ($2\times10^{-4}$ for a needle kernel) in a float32 emulation of the
     shader — fine for a picture, not a bit-for-bit guarantee, and no test runs a real GPU.
 11. **Contours need a resolved linear density, nothing more.** Log scale changes the levels (equally
-    spaced in $\log_{10}\rho$), never whether contours are drawn; before 1.0 the Flask path dropped
+    spaced in $\log_{10}\rho$), never whether contours are drawn; before 0.6.0 the Flask path dropped
     all of them whenever the peak density was below 1 per unit fractional area. A map whose kernel
     misses every grid node (grid mass $<10^{-6}$, flagged `unresolved`) is neither contoured nor
     painted, in both runtimes (Step 9).
@@ -1655,7 +1655,7 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
     configurations, the one paired with a recognised output file wins; with no match both runtimes
     fall back to the first usable one by name (Step 1).
 17. **Skipped atom lines are reported, not hidden.** The zero-atom static-mode issue (`AGENTS.md`
-    *Current known issues*, 2026-06-18) is resolved in 1.0: both parsers share the validated grammar
+    *Current known issues*, 2026-06-18) is resolved in 0.6.0: both parsers share the validated grammar
     of Step 1, report skipped or unparsed lines against the header's atom count, and a file with no
     parseable atom is an error naming what was found (HTTP 400 from `/api/structure`, `/api/pca/*`
     and `/api/triplets`; a thrown error in the browser) rather than an empty card.
@@ -1779,7 +1779,7 @@ no match, the **alphabetically first** usable `.rmc6f` is used.
 `browserData.js` → `chooseStructureFile()` uses the same priority ladder and the same tie-breaking
 (candidates by path, outputs by (priority, lower-cased name, stem), code-point order) but matches on
 `dirname + '/' + stem`, so an output file only claims an `.rmc6f` sitting in the *same* subfolder.
-Before 1.0 its fallback was the first `.rmc6f` in directory-walk order, so a folder holding several
+Before 0.6.0 its fallback was the first `.rmc6f` in directory-walk order, so a folder holding several
 models could resolve to a different model on the two paths.
 
 #### 1b. Metadata
@@ -1793,7 +1793,7 @@ Both parsers scan for two headers and are otherwise position-independent:
 
 Python: `rmc_toolkits/parsers.py` → `read_cell_vectors()`. JavaScript:
 [rmc6f.js](../../web_app/frontend/src/rmc6f.js) → `readRmc6fCellVectors()`. The two agree
-exactly; both raise/throw if either header is missing, and — since 1.0 — if the supercell is not
+exactly; both raise/throw if either header is missing, and — since 0.6.0 — if the supercell is not
 three positive integers or the lattice is not a finite, non-singular 3×3 matrix with a finite
 volume (numbers read Fortran-aware, so `D` exponents work; checks and messages in
 [run-dashboard.md](run-dashboard.md), Step 1). `Supercell dimensions: 0 0 0` used to fold every
@@ -1831,7 +1831,7 @@ and the atom list cannot disagree. Tests: `tests/test_parsers_rmc6f_grammar.py` 
 `rmc6f_coords_only_fixture.json` (`tests/test_coords_only_fixture.py` ↔
 `coordsOnlyParity.test.js`).
 
-> **Before 1.0** the two parsers indexed fields from the *end* of the line. Python required ≥ 9
+> **Before 0.6.0** the two parsers indexed fields from the *end* of the line. Python required ≥ 9
 > tokens, so a coords-only file gave **zero atoms** on the backend path while the browser parsed it;
 > an extra trailing field silently shifted every column in the browser; the browser left `GA`/`se`
 > uncapitalized, which changed the element filter, legend and colours between the two paths; and
@@ -1850,14 +1850,14 @@ $$x_i = \big(((f_i N_i) \bmod 1) + 1\big) \bmod 1$$
 
 **They are identical**: the extra `+1 %1` in JS only fixes JavaScript's sign-preserving `%` for
 negative coordinates (Python's `%` is already non-negative). To floating point they agree exactly.
-(Before 1.0 the backend first subtracted $n_i/N_i$, which removes an integer after multiplication by
+(Before 0.6.0 the backend first subtracted $n_i/N_i$, which removes an integer after multiplication by
 $N_i$ and so cannot change the value mod 1 — but needed the cell-index columns.)
 
 Both are index-free: `/api/structure` folds a coords-only atom (no cell indices) straight from its
 coordinates, and `load_unit_cell_positions()` in `rmc_toolkits/kde.py` uses the
 index-free form `(coords * supercell) % 1.0` on every atom `iter_rmc6f_atoms(...,
 include_coords_only=True)` yields — so a legacy coords-only file gives the same folded positions in
-both runtimes (before 1.0 it gave **no atoms at all** on the backend path).
+both runtimes (before 0.6.0 it gave **no atoms at all** on the backend path).
 
 #### 1e. Subsampling (the two paths use *different* strategies)
 
@@ -2051,7 +2051,7 @@ $\propto \hat{\mathbf{h}}$. So the two axes genuinely span the crystallographic 
 > `type="number"` input reports `''` (hence `0`) rather than `NaN` for unparseable text, so the
 > all-zero case is the reachable one.
 
-> **One frame in both runtimes (1.0).** `rmc_toolkits/kde.py` → `_plane_basis()` /
+> **One frame in both runtimes (0.6.0).** `rmc_toolkits/kde.py` → `_plane_basis()` /
 > `_orthogonal_axis()` would pick its seed axis as the Cartesian axis with the **smallest** $|h_i|$
 > (`np.eye(3)[argmin(|h|)]`), whereas `freePlaneBasis()` picks $x$ unless $|h_1| \ge 0.85$. For
 > $\hat{\mathbf{h}} \propto [1,1,0]$ the JS basis is $\hat{\mathbf{u}}=[0.7071,-0.7071,0]$,
@@ -2060,7 +2060,7 @@ $\propto \hat{\mathbf{h}}$. So the two axes genuinely span the crystallographic 
 > $(\hat{\mathbf u},\hat{\mathbf v})_\mathrm{Py} = (-\hat{\mathbf v},\,\hat{\mathbf u})_\mathrm{JS}$,
 > a 90° rotation. The page therefore sends `sliceConfig.u/v` to `/api/kde/slice` as `ux`…`vz`
 > (`kdeSliceQuery()`), exactly as it hands them to the browser worker, so on both paths the KDE panel,
-> the Slab In Cell panel and the panel aspect share one in-plane orientation (Step 2). Before 1.0 the
+> the Slab In Cell panel and the panel aspect share one in-plane orientation (Step 2). Before 0.6.0 the
 > backend path used the Python default, and the two panels were rotated 90° against each other.
 > Presets are unaffected (3a).
 
@@ -2612,7 +2612,7 @@ survives: `KDE_Slice_c.png`. For a custom plane `sliceFileName()` appends
 indices are **locale-independent** (rounded to 0.01, `.` as the decimal point):
 `KDE_Slice_(1_1_0).png`, `Slab_In_Cell_(1.5_1_0).png`. The on-canvas label `(1 1 0)` still uses
 `Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })`, so a component of 1.5 reads
-`1,5` where the decimal separator is a comma. (Before 1.0 the custom label was `[1 1 0]` and the
+`1,5` where the decimal separator is a comma. (Before 0.6.0 the custom label was `[1 1 0]` and the
 file `KDE_Slice__1_1_0.png`, locale-dependent.)
 
 ---
@@ -2702,7 +2702,7 @@ file `KDE_Slice__1_1_0.png`, locale-dependent.)
   angles are true Å (the Gram matrix is preserved exactly); a length measured across the figure in a
   general direction is not.
 - **The Python library's default in-plane axes differ from the page's for a custom normal.** The
-  app is unaffected since 1.0 — the page sends its frame and both runtimes draw in it (Step 2, 3b) —
+  app is unaffected since 0.6.0 — the page sends its frame and both runtimes draw in it (Step 2, 3b) —
   so the KDE panel, the Slab panel and the CSS panel aspect agree on both paths. What remains is
   a cyclic rotation of the section-polygon vertex order between Python and JS (the same polygon,
   7.4), and a different frame for API or library calls that pass no `u`/`v`.

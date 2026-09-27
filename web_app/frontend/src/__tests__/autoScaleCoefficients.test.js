@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// <b>^2 and <b^2> from one consistent source (1.0 audit, stog-b; mirrors
+// <b>^2 and <b^2> from one consistent source (0.6.0 audit, stog-b; mirrors
 // tests/test_stog_b_coefficients.py): makeConfig rejects S(0) = 1 - <b^2>/<b>^2
 // > 0, and resolveCoefficients never pairs a formula's <b^2> with a <b>^2 from
 // another source (the page's composition + x-ray <b>^2 = 1 case).

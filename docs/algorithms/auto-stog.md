@@ -240,7 +240,7 @@ JS port `autoScale.js` → `readStogXy()`. Writer counterpart: `write_stog_xy()`
   `\d` = ASCII `[0-9]` in both: Python compiles it with `re.ASCII`, JS has no `u` flag)
   followed by a `D→e` rewrite (Python `parsers._NUMERIC_TOKEN` / `_stog_token`, JS
   `NUMERIC_TOKEN` / `tokenToFloat`). A **Fortran `D` exponent** (`1.234D+00`) parses in both.
-  Before 1.0 Python used bare `float(token)`: it skipped `D`-exponent rows (raising "does not
+  Before 0.6.0 Python used bare `float(token)`: it skipped `D`-exponent rows (raising "does not
   contain STOG numeric rows" when all rows used `D`) and accepted `1_0` or non-ASCII
   (Arabic-Indic, fullwidth) digits the browser skips, so the two engines could read different
   rows from the same file.
@@ -254,13 +254,13 @@ JS port `autoScale.js` → `readStogXy()`. Writer counterpart: `write_stog_xy()`
 - **Decoding matches the browser in all three readers**: UTF-8 with a leading BOM dropped and
   undecodable bytes replaced (`parsers._TEXT_ENCODING = "utf-8-sig"`, `errors="replace"`; the page
   decodes with `File.text()`). Only numeric tokens are consumed, so a replacement character in a
-  title or comment line is harmless. Before 1.0 `read_stog_xy` / `read_stog_inp` decoded strictly:
+  title or comment line is harmless. Before 0.6.0 `read_stog_xy` / `read_stog_inp` decoded strictly:
   one latin-1 `Å` in a title line made the CLI and the API refuse a file the page scaled, and a
   BOM-prefixed `stog.inp` failed on `int('\ufeff1')`.
 - **Line endings are universal in all three readers** (`read_stog_xy`, `read_stog_inp`,
   `read_dat_header` and their JS ports): LF, CRLF and a bare CR (classic Mac) all end a line —
   Python by text-mode universal newlines (`read_stog_inp` then splits on `\n` only, not
-  `str.splitlines`' extra separators), JS by splitting on `/\r\n|\r|\n/`. Before 1.0 the JS
+  `str.splitlines`' extra separators), JS by splitting on `/\r\n|\r|\n/`. Before 0.6.0 the JS
   readers split on `/\r?\n/`, so a CR-only file the CLI accepted was one line in the browser
   ("no numeric rows" / "1 non-empty lines"). Tests: `tests/test_stog_b_readers.py`,
   `src/__tests__/autoScaleLineEndings.test.js`.
@@ -560,7 +560,7 @@ scale.
 
 The self-consistency route is the explicit `--estimate-rho0` flag (`scaling_cli.py` → `main`),
 which is a hard error on non-convergence; whatever density was resolved above only seeds it.
-Before 1.0 the CLI demanded a density even with `--estimate-rho0`, so the documented
+Before 0.6.0 the CLI demanded a density even with `--estimate-rho0`, so the documented
 composition-only example (`rmc-autoscale --data … --formula SrTiO3 --estimate-rho0`) exited with
 "number density unknown" on a headerless file (`tests/test_stog_b_cli_seed.py`). The Flask API has
 **no** self-consistency path at all.
@@ -644,7 +644,7 @@ refuses to fit on a garbage density), the CLI raises a `CliError`, and the Pytho
 "Estimate ρ₀" button (both through `rho0NonConvergenceMessage()`) and the CLI name the reason:
 the `stopped` text — the trial density `autoscale` could not fit, and why — when it is set, and
 otherwise the amplitude discordance ("the density-limit and Q→0 Faber-Ziman amplitudes disagree
-at every density"). The two call for different remedies, so the first 1.0 message, which always
+at every density"). The two call for different remedies, so the first 0.6.0 message, which always
 blamed the discordance, misled on a stopped iteration (`tests/test_stog_a_rho0.py`,
 `autoScaleRho0Stopped.test.js`).
 
@@ -735,7 +735,7 @@ How the triple is resolved (`AutoStogPage.jsx::resolveEnforcement`,
   `--no-enforce` combined with `--enforce-cutoff`/`--peak-window`.
 - An explicit triple is validated before any computation by `validate_enforcement` (CLI, API)
   and its port `validateEnforcement` (the page's worker): the cutoff must be finite, $\ge 0$ and
-  below $r_\mathrm{max}$, and the window finite with `peak_rmin` $\le$ `peak_rmax`. Before 1.0
+  below $r_\mathrm{max}$, and the window finite with `peak_rmin` $\le$ `peak_rmax`. Before 0.6.0
   `--enforce-cutoff nan` was reported as applied while nothing was enforced, a cutoff beyond
   $r_\mathrm{max}$ replaced the whole $G_K(r)$ by $-\langle b\rangle^2$, and a reversed window
   was taken silently. The browser has no
@@ -745,14 +745,14 @@ How the triple is resolved (`AutoStogPage.jsx::resolveEnforcement`,
   anything else, e.g. `false`, `"false"`, `"0"`, `0` → off), honours `enforceCutoff` /
   `peakWindow` in data mode without `enforce: true`, and rejects (400) `enforce: false` together
   with `enforceCutoff`/`peakWindow`, a `peakWindow` without a cutoff source, and a malformed
-  `peakWindow`. Pre-1.0 the data-mode default read `enforce` as False (discarding an explicit
+  `peakWindow`. Pre-0.6.0 the data-mode default read `enforce` as False (discarding an explicit
   `enforceCutoff`) and the auto branch tested `payload.get("enforce") is not False`, so
   `"false"`/`0` switched the automatic enforcement back on.
 - **Pre-filled cutoff:** `selectSource` pre-fills the Cutoff field with `inp.peakCutoff`
   (Step 8), so the page cannot tell a pre-filled value from a typed one; `autoScale.js::
   resolveEnforcementDescriptor()` therefore keeps the `.inp`'s `peak_rmin`/`peak_rmax` whenever
   the cutoff **equals** `inp.peakCutoff` (typing the same number back gives the same, classic,
-  result). Pre-1.0 the pre-filled value counted as user-typed and the page flattened a first-peak
+  result). Pre-0.6.0 the pre-filled value counted as user-typed and the page flattened a first-peak
   window starting inside the cutoff (e.g. `2.7 2.3 3.1`: $[2.3, 2.7]$ Å set to
   $-\langle b\rangle^2$) where the CLI kept it.
 
@@ -910,7 +910,7 @@ pass (`_autoscale_pass` / `autoscalePass`) crops and despikes for the fit, then 
 identically (the mask is deterministic), so the fit, the written arrays (`q`, `sq_scaled`, `fk`,
 …) and the fit diagnostics all describe the same single-pass point set. `n_despiked` /
 `nDespiked` = (points after the crop) − (points after the despike) is therefore the true number
-removed. (Before the 1.0 audit the Python auto path passed the already-despiked arrays on, so it
+removed. (Before the 0.6.0 audit the Python auto path passed the already-despiked arrays on, so it
 despiked twice — 2308 vs 2136 points written on the Mn₃Sn 59438 run, and `n_despiked` counted only
 the second pass: 172 of 565 removed.) The page shows the count on the *Fit quality* card when
 despike is on and writes `nDespiked` / `nQPoints` to the exported provenance JSON; the CLI/API
@@ -958,7 +958,7 @@ applies the same **validity gate** before the engine sees σ: `scaling_cli.usabl
 `dataExtent`, and again in `autoScaleWorker.js`) drop the whole σ column if any σ on a row with
 finite $Q$ and $S$ is non-finite or $\le 0$ ("a broken uncertainty column must not poison the
 fit"); the fit then runs unweighted. The page says so on the file chip ("σ ignored (invalid)",
-with the bad-row count in its tooltip). Before 1.0 the page forwarded the column as-is: one zero
+with the bad-row count in its tooltip). Before 0.6.0 the page forwarded the column as-is: one zero
 σ gave a negative scale and one `NaN` σ NaN arrays on the Mn₃Sn 59438 data, where the CLI gave
 the normal result. Tests: `tests/test_stog_b_sigma.py`, `src/__tests__/autoScaleSigma.test.js`.
 
@@ -987,10 +987,10 @@ $\langle b^2\rangle/\langle b\rangle^2$ is kept on the configured $\langle b\ran
 When they disagree, the configured $\langle b\rangle^2$ belongs to another radiation or
 normalization (1 for normalized x-ray data) and $\langle b^2\rangle$ stays **unset**: the CLI
 prints a warning naming both values in effect and the unused one (the API returns the same text in
-its `warnings` array, since 1.0), the page marks the chip
+its `warnings` array, since 0.6.0), the page marks the chip
 "⟨b²⟩ not set", and the $Q\to0$ criteria (`--amplitude fz`, `--estimate-rho0`, the page's
 automatic estimate) then refuse with "requires <b^2>" until $\langle b^2\rangle$ is given
-explicitly. Before 1.0 the Sears $\langle b^2\rangle$ was silently paired with the x-ray
+explicitly. Before 0.6.0 the Sears $\langle b^2\rangle$ was silently paired with the x-ray
 $\langle b\rangle^2 = 1$: FeCoSn got $S(0) = +0.55$, a false "DISCORDANT" verdict and, with
 `--estimate-rho0`, a "converged" density 60 % low. Independently, `ScalingConfig` / `makeConfig`
 reject $\langle b^2\rangle < \langle b\rangle^2$ — $S(0) > 0$, impossible by Cauchy–Schwarz — with
@@ -1384,7 +1384,7 @@ Caveats:
   $G(2\pi/\Delta Q - r) = -G(r)$: the output beyond $\pi/\Delta Q$ is a **negated mirror image**
   of the structure below it (phase-shifted for other $Q_0$), not new structure. That is 314 Å at $\Delta Q = 0.01$ Å⁻¹ (safe for
   $r_\mathrm{max} = 50$ Å) but only 31.4 Å at $\Delta Q = 0.1$ Å⁻¹ — where a shell at 20 Å
-  reappears, inverted and at full amplitude, at 42.8 Å. (Before 1.0 this page gave the period
+  reappears, inverted and at full amplitude, at 42.8 Å. (Before 0.6.0 this page gave the period
   $2\pi/\Delta Q$ and called $r_\mathrm{max} = 50$ Å safe at $\Delta Q = 0.1$ — 2× too generous.)
   Both engines now report `r_alias_limit` $= \pi/\max(\Delta Q)$ of the cropped (and despiked)
   grid that is transformed (`scaling.alias_limit` / JS `aliasLimit`, in the provenance and the
@@ -1552,7 +1552,7 @@ f_2(r) = \int_0^{Q_0}\! Q \sin(Qr)\,dQ = \frac{\sin v - v\cos v}{r^2},\qquad v \
 The closed forms cancel $O(1)$ terms down to $O(v^4)$ / $O(v^3)$, so for $|v| < 0.5$ both engines
 evaluate the Taylor series instead (`transforms._moment_series`, JS `momentSeries`, 9 terms):
 $f_1 = Q_0^3 \sum_n (-1)^n v^{2n+1}/[(2n+1)!\,(2n+4)]$,
-$f_2 = Q_0^2 \sum_n (-1)^n v^{2n+1}/[(2n+1)!\,(2n+3)]$. Before 1.0 the closed forms were used
+$f_2 = Q_0^2 \sum_n (-1)^n v^{2n+1}/[(2n+1)!\,(2n+3)]$. Before 0.6.0 the closed forms were used
 everywhere and were wrong by 100 % or more for $v \lesssim 10^{-3}$ ($Q_0 = 0.01$ Å⁻¹ on the
 0.01 Å grid, or fine $r$ grids) — tiny in absolute terms, since both moments vanish as $r \to 0$;
 now ≤ 1e-12 from quadrature at every $v$ (`tests/test_stog_b_lowq_series.py`).
@@ -1609,7 +1609,7 @@ f_2(r) = \frac{1}{2a_L}\left[\frac{\sin v_-}{r-a_L} - \frac{\sin v_+}{r+a_L}\rig
 
 Written this way they have a removable singularity at $r = a_L = \pi/Q_\mathrm{max}$ and, worse,
 evaluate $\cos v_- - 1$ by subtraction: for small $v_-$ the rounding error is $\sim 10^{-16}/v_-^2$
-relative, amplified again by the $(r-a_L)$ vs $(r+a_L)$ difference. Before 1.0 the code patched only
+relative, amplified again by the $(r-a_L)$ vs $(r+a_L)$ difference. Before 0.6.0 the code patched only
 $|r - a_L| \le 10^{-9}\max(1, a_L)$ with the analytic limit, so grid points $10^{-9}$–$10^{-6}$ Å
 from $a_L$ — which ordinary $Q_\mathrm{max}$ values put on the default 0.01 Å grid (e.g.
 $|r - a_L| = 2.6\cdot10^{-7}$ Å at $r = 0.11$ for $Q_\mathrm{max} = 28.56$) — got coefficients off by
@@ -1714,7 +1714,7 @@ back-transforms exactly that artifact into $Q$ space and subtracts it.
    = \int_{r_0}^{r_\mathrm{cut}} \big[G_\mathrm{PDF}(r) + 4\pi\rho_0 r\big]\sin(Qr)\,dr$$
 
    evaluated in the right-hand form — no division by $r$, so a grid starting at $r_0 = 0$ is
-   harmless (before 1.0 the code formed $g = G/(4\pi\rho_0 r) + 1$ first: $0/0$ at $r = 0$, and that
+   harmless (before 0.6.0 the code formed $g = G/(4\pi\rho_0 r) + 1$ first: $0/0$ at $r = 0$, and that
    NaN reached every output $Q$ — 100 % NaN `sq_filtered`/`sq_ft`/`g_filtered` for a
    `np.linspace(0, rmax, n)` grid);
 
@@ -1775,7 +1775,7 @@ These agree for any ascending $r$ grid, which is all `r_grid`/`rGrid` ever produ
 > final `scalePipeline()`), so the fed-back $\Delta S = S_\mathrm{ft} - 1$ that seeds the next
 > `solveAffine` comes from the same omitted-low-$Q$ model in both engines.
 >
-> Before the 1.0 audit the JS loop call omitted the key, so the destructuring default
+> Before the 0.6.0 audit the JS loop call omitted the key, so the destructuring default
 > `s0Target = 0` applied and the page's $(a,b)$ was the fixed point of a different map whenever a
 > composition supplied $\langle b^2\rangle$: measured on the repo's Mn₃Sn runs ($S(0) = -12.06$),
 > $a$ differed from the CLI/API by 2.0 % (59438), 0.5 % (300 K) and 0.2 % (500 K), with different
@@ -1818,7 +1818,7 @@ five reference runs in `data/stog_tests`, and `scaling_cli.py::_write_outputs`):
 Every one of these is written by `write_stog_xy(path, x, y, extra=…)`, which emits $x$ first, so
 **column 1 is always $r$ (or $Q$)**; the table numbers physical columns. In every Fortran run the
 `scale.gr` / `scale_ft.gr` value column averages 1.0006–1.019 over $r \ge 20$ Å (it is $g$, not
-$g-1$) and `scale_ft.gr`'s third column equals $r\,(g-1)$ to the last digit. Before 1.0 the
+$g-1$) and `scale_ft.gr`'s third column equals $r\,(g-1)$ to the last digit. Before 0.6.0 the
 writers (CLI/API and page) put $g-1$ in column 2 and $4\pi\rho_0 r(g-1) = G_\mathrm{PDF}$ in
 column 3 under these classic names — a shift of 1 and a factor $4\pi\rho_0$, and the plan
 document mis-stated the Fortran convention; both are corrected
@@ -1928,12 +1928,12 @@ detected onset, or `auto (given r0)` when the given $r_0$ caps the onset or no s
 by the margin, broad ones by the foot. Measured
 (exact synthetic $S(Q)$ from $Q = 0.01$, one Gaussian shell at 2.8 Å): the first-shell coordination
 number over $[2.0, 3.2]$ Å changes by ≤ 0.3 % for $\sigma$ = 0.08–0.15 Å, $Q_\max$ = 26/40 Å⁻¹,
-Lorch on/off — the pre-1.0 cutoff at the onset removed 6–9 % (`tests/test_stog_a_enforcement.py`;
+Lorch on/off — the pre-0.6.0 cutoff at the onset removed 6–9 % (`tests/test_stog_a_enforcement.py`;
 only very sharp shells at low $Q_\max$, $Q_\max\sigma \lesssim 1.6$, lose up to ~2 % — their
 termination side lobes carry that share of the band-limited peak). On the real runs the automatic
 cutoff lands at 2.43 Å on Mn₃Sn 59438 at $Q_\min$ 1.0 / $Q_\max$ 27 (expert `rmccut` 2.48 Å,
 first peak 2.65–3.1 Å; at the expert's own $Q_\max$ 28 the unpinned density fit stops since the
-1.0 Huber weighting, Step 8), at 2.40–2.50 Å on all four Mn₃Sn runs over $Q_\min$ 0.82/1.0 ×
+0.6.0 Huber weighting, Step 8), at 2.40–2.50 Å on all four Mn₃Sn runs over $Q_\min$ 0.82/1.0 ×
 $Q_\max$ 24–30 (composition-only; expert cutoffs 2.40–2.68 Å; the nine configurations that stop
 in Step 8 excluded) and at 2.27–2.28 Å on FeCoSn 199 K over $Q_\min$ 0.5/1.0 × $Q_\max$ 22–26
 (flank of the 2.64 Å shell kept; the expert enforced only to 1.0 Å). Classic stog leaves `_rmc.fq` untouched, and so does this: with the
@@ -2048,7 +2048,7 @@ All `stog.inp` line numbers above are **1-based indices into the file's non-empt
 | Forward transform | `fq_to_gpdf` | `fqToGpdf` | Identical |
 | Backward transform | `gpdf_to_fq` (alias of `sine_transform`) | no alias; `sineTransform` called directly | Identical operation |
 | Fourier filter (the function) | `fourier_filter` | `fourierFilter` | Identical formulas; section selected by mask vs prefix scan (equivalent for ascending $r$) |
-| Filter **call inside the auto loop** | `_pipeline` passes `s0_target=config.effective_s0_target` | `autoscalePass` passes `s0Target: effectiveS0Target(config)` | Identical (before 1.0 JS omitted it and $(a,b)$ diverged by up to 2 % on Mn₃Sn — see Step 7) |
+| Filter **call inside the auto loop** | `_pipeline` passes `s0_target=config.effective_s0_target` | `autoscalePass` passes `s0Target: effectiveS0Target(config)` | Identical (before 0.6.0 JS omitted it and $(a,b)$ diverged by up to 2 % on Mn₃Sn — see Step 7) |
 | Filter call in the final pipeline | `_pipeline` (same) | `scalePipeline` **does** pass `s0Target` | Identical |
 | Crop + despike | `crop_sq` / `_despike_mask` | `cropSq` / `despikeKeepMask` | Identical rule, constants and ordering |
 | Peak-onset detection | `detect_first_peak_onset` | `detectFirstPeakOnset` | Identical rules and constants; `qmax` is a positional argument in Python and an option (default 0) in JS — every caller passes it. Exact parity on the golden detector cases |
@@ -2094,7 +2094,7 @@ gitignored, so these tests skip in CI** and only run on a machine that has the f
 | Comparison | Tolerance asserted |
 | --- | --- |
 | Scaled $S(Q)$ vs `scale.fq` | `atol=1e-9` |
-| Forward transform ($g$) vs `scale.gr` | absolute rms < 0.1 (0.04 measured; $g-1$ would give 1.0), and the reference averages 1 over $r \ge 20$ Å (before 1.0 the check was $\mathrm{rms}/\max\lvert\mathrm{ref}\rvert < 5\times10^{-3}$ on $g-1$, which a constant offset of 1 against $\max\lvert\mathrm{ref}\rvert \approx 400$ could not fail) |
+| Forward transform ($g$) vs `scale.gr` | absolute rms < 0.1 (0.04 measured; $g-1$ would give 1.0), and the reference averages 1 over $r \ge 20$ Å (before 0.6.0 the check was $\mathrm{rms}/\max\lvert\mathrm{ref}\rvert < 5\times10^{-3}$ on $g-1$, which a constant offset of 1 against $\max\lvert\mathrm{ref}\rvert \approx 400$ could not fail) |
 | Filter correction vs `ft.dat` | rms < 2×10⁻³ |
 | Filtered $S(Q)$ vs `scale_ft.sq` | rms < 2×10⁻³ |
 | Enforced $G_K$, $D$ below the cutoff vs `scale_ft_rmc.{gr,dr}` | `atol=1e-9`; and $-\langle b\rangle^2$ / the density line to `atol=1e-12` |
@@ -2442,7 +2442,7 @@ single pass, so the fit and the published arrays share one $Q$ grid and `n_despi
 number that pass removed (JS identical — `autoscalePass()` passes the raw arrays to
 `scalePipeline()`). On the repo's own despike fixture (synthetic + 8 injected spikes,
 `despike_window=7`, `despike_nsigma=6.0`) 2941 points survive the crop and the pass removes
-**107** (the 8 spikes plus model points the tight MAD flags). Before the 1.0 audit Python
+**107** (the 8 spikes plus model points the tight MAD flags). Before the 0.6.0 audit Python
 despiked twice here and reported only the second pass's 75 — see
 [parity](#python--javascript-parity-1) item 6.
 
@@ -2801,7 +2801,7 @@ passes run — a fixed count, with no convergence test and no early exit:
 
 Since $w = \psi(e)/e$ with Huber's $\psi(e) = \max(-cs, \min(e, cs))$, the fixed point of these
 passes solves $\sum_i \psi(e_i)\,\mathbf x_i = 0$ per block: the Huber M-estimator that
-$c = 1.345$ tunes to 95 % Gaussian efficiency. **Before 1.0 both engines multiplied the rows by
+$c = 1.345$ tunes to 95 % Gaussian efficiency. **Before 0.6.0 both engines multiplied the rows by
 $w_i$**, an effective objective $\sum_i w_i^2 e_i^2$ — a redescending estimator
 ($\psi(e) = c^2 s^2/e$ beyond the core), not the documented one. Pinned by
 `tests/test_huber_irls.py` (the engine against an independent reference IRLS on the weighted normal
@@ -2811,10 +2811,10 @@ equations, on a contaminated regression where the old weighting is far off) and 
 Effect of the √w switch alone on the real runs (both engines, identical to round-off — see
 the real-data check under [Python ↔ JavaScript parity](#python--javascript-parity-1); Mn₃Sn with $\rho_0 = 0.063049$ Å⁻³ and
 the Mn₃Sn composition, $Q_\mathrm{max}$ 28; FeCoSn from its `stog.inp`). The "before" column is
-the 1.0 branch just before the switch — first-shell detection and window placement already
-fixed — **not 0.5.0**; the 0.5.0 → 1.0 comparison follows the table:
+the 0.6.0 branch just before the switch — first-shell detection and window placement already
+fixed — **not 0.5.0**; the 0.5.0 → 0.6.0 comparison follows the table:
 
-| Run | criterion | $(a, b)$ before the √w fix (1.0 branch) | $(a, b)$ since 1.0 |
+| Run | criterion | $(a, b)$ before the √w fix (0.6.0 branch) | $(a, b)$ since 0.6.0 |
 | --- | --- | --- | --- |
 | parity fixture (truth $a = 10$) | density / FZ | 9.96954 / 10.0346 | 9.96985 / 10.0137 |
 | FeCoSn 199 K (x-ray, `stog.inp`) | density | (1.18293, −0.19711) | (1.18536, −0.19957) |
@@ -2833,17 +2833,17 @@ before). On the Mn₃Sn runs, whose density limit is degenerate
 8–16 %; on 55537
 and 59438 the inverted Mn–Sn first shell of the trial fits then stands 1.85–1.99× above its ripple
 field, just under the detector's 2× margin (`first_shell_candidates`, calibrated at 2.1–3.9× on the
-pre-1.0 fits), so an unpinned density-mode run stops with "could not locate the first coordination
+pre-0.6.0 fits), so an unpinned density-mode run stops with "could not locate the first coordination
 shell" and asks for $r_0$ / `r_fit_max` or the FZ criterion — a refusal, never a window across the
 shell. Over the 56-configuration sweep (the four Mn₃Sn runs × $Q_\mathrm{min}$ {0.82, 1.0} ×
 $Q_\mathrm{max}$ 24–30, composition given, $r_0$ unset) the unpinned density-mode run refuses in 9
 (3 before the √w fix): 55537 in 7, 300 K at $Q$ 1.0–25 (a non-physical refit scale) and 59438 at 1.0–28; every
 returned fit has $a > 0$ and a window top of 2.40–2.50 Å, below the first shell.
 
-**0.5.0 → 1.0 (all 1.0 changes together).** `rmc-autoscale --data`, Mn₃Sn composition,
+**0.5.0 → 0.6.0 (all 0.6.0 changes together).** `rmc-autoscale --data`, Mn₃Sn composition,
 $\rho_0 = 0.063049$ Å⁻³, $r_0$ unset unless noted; density criterion:
 
-| Run ($Q$ window) | 0.5.0: $a$ (detected onset) | 1.0: $a$ (detected onset) | Main cause |
+| Run ($Q$ window) | 0.5.0: $a$ (detected onset) | 0.6.0: $a$ (detected onset) | Main cause |
 | --- | --- | --- | --- |
 | Mn₃Sn 59438 (1.0–27) | 0.3353 (3.48 Å) | 1.1055 (2.68 Å) | detection: 0.5.0 took the second shell, window across the first |
 | Mn₃Sn 300 K (1.0–27) | 0.3311 (3.43 Å) | 0.7525 (2.70 Å) | detection |
@@ -2963,7 +2963,7 @@ Design choices:
 
 - **First, not strongest.** A weak or *inverted* first shell is routinely smaller than the second:
   Ti–O ($b_\mathrm{Ti} < 0$) in SrTiO₃ is $-2.8$ against $+10$ for the Sr–O/O–O shell; Mn₃Sn's
-  inverted Mn–Sn shell sits below a comparable second shell. The pre-1.0 detector took
+  inverted Mn–Sn shell sits below a comparable second shell. The pre-0.6.0 detector took
   $\arg\max|g|$ and walked left from it, so it returned the *second* shell's flank (SrTiO₃: 2.6 Å
   instead of 1.85 Å; the Mn₃Sn 59438 run at $Q_\min$ 1.0, $Q_\max$ 28: 3.49 Å instead of ~2.74 Å)
   and the low-$r$ window and the auto enforcement then covered the real first shell.
@@ -2972,7 +2972,7 @@ Design choices:
   trial fits of the four Mn₃Sn POWGEN runs ($Q_\min$ 0.82 and 1.0 × $Q_\max$ 24–30) a positive
   sub-shell ripple lobe at ~1.6–1.7 Å stands 1.6–2.9× above its own ripple field at 34–44 % of the
   range maximum, while the inverted Mn–Sn first shell stands 2.1–3.9× above its field at 82–100 %.
-  The first 1.0 rule (3×, or 2× at ≥ 35 %) accepted the lobe (59438, $Q_\min$ 1.0, $Q_\max$ 25:
+  The first 0.6.0 rule (3×, or 2× at ≥ 35 %) accepted the lobe (59438, $Q_\min$ 1.0, $Q_\max$ 25:
   2.92× at 35.3 %) and placed the window below a ripple; 4× / (2× at ≥ 50 %) separates the two
   populations with room on both sides. Clean first shells stand far higher (synthetic SrTiO₃ /
   ReO₃ trial fits 17–320×, FeCoSn 199 K 11–15×).
@@ -2980,14 +2980,14 @@ Design choices:
   be judged against; skipping the first $2\pi/Q_\max$ guarantees one. A real shell inside the zone
   inflates the ripple level of everything after it, so the result is `None`, never a later shell.
   Likewise a flank that reaches the search edge is `None`, not an onset *at* the edge: the first
-  1.0 detector returned `search_min` there, which on the real Mn₃Sn data produced an "onset" of
+  0.6.0 detector returned `search_min` there, which on the real Mn₃Sn data produced an "onset" of
   exactly 1.30 Å and the advice to lower $r_\mathrm{cut}$ to 0.75 Å.
 - **$|g|$, not $g$.** Below the first shell $g \to 0$; a shell of either sign departs from that
   level.
 
 **Placing the window (`autoscale()` → `_place_low_r_window()`).** The C2 rows force $g = 0$ on the
 window, so a window that reaches into the first shell forces a real shell to zero and biases the
-scale (pre-1.0, the blind first-pass window $[r_\mathrm{cut}+0.2, r_\mathrm{cut}+1.2] = [1.2, 2.2]$
+scale (pre-0.6.0, the blind first-pass window $[r_\mathrm{cut}+0.2, r_\mathrm{cut}+1.2] = [1.2, 2.2]$
 Å gave SrTiO₃ $a$ −48 %, ReO₃ $a < 0$, and short bonds were refused refinement and returned as if
 fine). With neither `r0` nor `r_fit_max` pinned, and `amplitude_criterion="density"`:
 
@@ -3033,7 +3033,7 @@ fine). With neither `r0` nor `r_fit_max` pinned, and `amplitude_criterion="densi
    window).
 
 The result carries `provenance["r0_detected"]` — the **confirmed onset the window was built from**,
-so `r_fit_window` hi $=$ `r0_detected` $- 0.25$ always holds (the first 1.0 loop reported the onset
+so `r_fit_window` hi $=$ `r0_detected` $- 0.25$ always holds (the first 0.6.0 loop reported the onset
 re-detected on the final $g(r)$, which could be unrelated to the window: 2.68 Å on a
 $[1.2, 1.33]$ Å window) — and `provenance["window_refined"] = True`. A density-mode auto-scale
 costs **three** complete self-consistent loops when the smallest candidate is confirmed (two trials
@@ -3056,7 +3056,7 @@ Validated (scratch bench and tests; true $a$ = 10 for the models, measured = (S 
   locate") — a short bond leaves a short, ripple-dominated window, so pin r0 or lower
   $r_\mathrm{cut}$ further there.
 - The four Mn₃Sn POWGEN runs, 56 configurations ($Q_\min$ 0.82 and 1.0 × $Q_\max$ 24–30,
-  composition-only, $\rho_0 = 0.063049$ Å⁻³; measured on the 1.0 release with the Huber weighting
+  composition-only, $\rho_0 = 0.063049$ Å⁻³; measured on the 0.6.0 release with the Huber weighting
   of Step 6): every returned fit has $a > 0$, confirmed onset 2.65–2.75 Å and window top
   2.40–2.50 Å (the inverted Mn–Sn shell spans 2.65–3.1 Å), and the density limit is flagged
   **unsatisfied** in all of them — the honest verdict for data whose low-$Q$ hole is $O(S(0))$ deep
@@ -3065,9 +3065,9 @@ Validated (scratch bench and tests; true $a$ = 10 for the models, measured = (S 
   coordination shell" (the inverted shell stands 1.85–1.99× its ripple field there, under the 2×
   margin), and 300 K (55526) at (1.0, 25), where the refit below a 1.92 Å candidate gives
   $a = -0.43$ ("non-physical scale"). Which $(Q_\min, Q_\max)$ stop depends on the data: quote a
-  real-data onset or window only with the $Q$ range it was measured at. With the pre-1.0 row
+  real-data onset or window only with the $Q$ range it was measured at. With the pre-0.6.0 row
   weighting the same grid returned 53 (only PG3_55537 at (0.82, 25), (1.0, 24), (1.0, 25) raised),
-  with onsets 2.67–2.75 Å. The first 1.0 loop returned $a < 0$ in 7 of the 14 59438
+  with onsets 2.67–2.75 Å. The first 0.6.0 loop returned $a < 0$ in 7 of the 14 59438
   configurations and raised in 3 with wrong $r_\mathrm{cut}$ advice, and raised in 9 of the 14
   PG3_55537 ones.
 - FeCoSn 199 K (x-ray, $Q_\min$ 0.5 and 1.0 × $Q_\max$ 22–26): onset 2.52–2.53 Å, window
@@ -3155,11 +3155,11 @@ lands at $a \in (5, 25)$ on three of the four runs (55537, 300 K, 500 K:
 $[Q_0, Q_0+1]$ is Bragg-dominated and extrapolates to $S_\mathrm{meas}(0)$ within noise of the level:
 there $a_\mathrm{fz} = 54$ at $Q_\mathrm{min} = 0.82$, 74 / 76 / 108 at 0.98 / 1.00 / 1.02, **309**
 at 1.05, and negative (refused) at 1.08–1.10 Å⁻¹ — 5–30× the other runs and the expert's $a = 10$
-(Huber head fit, 1.0; before 1.0: 74, 98 / 91 / 141, 512).
+(Huber head fit, 0.6.0; before 0.6.0: 74, 98 / 91 / 141, 512).
 So the FZ amplitude is not "consistent across the Mn₃Sn runs", and on its own it is not a
 defensible scale.
 
-**Conditioning (since 1.0).** `fz_limit_fit()` / JS `fzLimitFit()` return, with $a_\mathrm{fz}$,
+**Conditioning (since 0.6.0).** `fz_limit_fit()` / JS `fzLimitFit()` return, with $a_\mathrm{fz}$,
 the standard error of the Huber head fit's $Q = 0$ intercept, combined in quadrature with the
 level sweep's `level_uncertainty` into the error of the denominator $S_\mathrm{meas}(0) - L$;
 `a_fz_rel_se` is its ratio to $|S_\mathrm{meas}(0) - L|$, and the amplitude is **reliable** only
@@ -3167,7 +3167,7 @@ when `a_fz_rel_se` ≤ `FZ_REL_SE_MAX` = 0.2 (the denominator resolved at ≥ 5�
 The intercept error is **Huber's sandwich** for the M-estimator the head fit solves
 (`_intercept_se()` / JS `interceptSe()`): the final IRLS solve weights each squared residual by its
 Huber weight $u$ (rows scaled by $\sqrt u$, Step 6), so it solves $\sum\psi(r_i)\,\mathbf d_i = 0$
-with $\psi(r) = u\,r$ — Huber's $\psi$, $\psi' = 1$ in the core and $0$ beyond it (before 1.0 the
+with $\psi(r) = u\,r$ — Huber's $\psi$, $\psi' = 1$ in the core and $0$ beyond it (before 0.6.0 the
 rows were scaled by $u$: $\psi = u^2 r$, $\psi' = -u^2$ beyond the core) — and
 
 $$\operatorname{cov} = K^2\,\frac{\sum\psi_i^2/(n-p)}{\overline{\psi'}^{\,2}}\,(D^\top D)^{-1},
@@ -3175,7 +3175,7 @@ $$\operatorname{cov} = K^2\,\frac{\sum\psi_i^2/(n-p)}{\overline{\psi'}^{\,2}}\,(
 
 (Huber 1981, Eq. 7.10; statsmodels RLM `'H1'`), evaluated at $\mathbf x = (1, -\bar Q)$ with
 $D = [1, Q-\bar Q]$; a non-positive $\overline{\psi'}$ leaves the intercept unidentified and the
-error infinite. Before 1.0 the error was the naive weighted-LSQ one,
+error infinite. Before 0.6.0 the error was the naive weighted-LSQ one,
 $\sum u^2 r^2/\mathrm{dof}\cdot\mathbf x^\top(D^\top U^2 D)^{-1}\mathbf x$, which clips the
 residuals it estimates the scatter from: 0.77–0.90 of the intercept's empirical scatter on
 Gaussian, Student-$t_3$ and spiked heads (so the 5σ gate was ≈ 4σ); the sandwich gives
@@ -3228,7 +3228,7 @@ stopping when $|\mathrm{concordance}-1| \le \texttt{rtol} = 10^{-3}$ **and** the
 at that root (`diagnostics_summary(...)["density_limit_satisfied"]`, i.e.
 $|\langle g\rangle_\mathrm{window}| < 0.1$). The default range (`RHO0_PHYSICAL_RANGE`,
 `rho_min`/`rho_max` keyword arguments; JS `rhoMin`/`rhoMax`) spans every condensed phase —
-liquid Cs is 0.0085 Å⁻³, diamond 0.176 Å⁻³ — with margin; before 1.0 it was $[10^{-4}, 1]$ Å⁻³,
+liquid Cs is 0.0085 Å⁻³, diamond 0.176 Å⁻³ — with margin; before 0.6.0 it was $[10^{-4}, 1]$ Å⁻³,
 wide enough to accept impossible roots (below). Because
 $a_\mathrm{density} \propto \rho_0$ the update is Newton-like; observed 2–4 passes from seeds
 spanning a 10× range.
@@ -3276,7 +3276,7 @@ Step 9), `history` (rows `[rho0, a_density, a_fz, concordance]`), `stopped`, `re
 which the **last** pass ran, so on success it is the value that produced the accepted concordance.
 `extrapolated` is `q_first > FZ_FIT_WIDTH` (1.0 Å⁻¹), where `q_first` (also returned) is the first
 $Q$ that survives the crop — the data's real start, so a NaN-padded file or a `stog.inp` $Q_\mathrm{min}$
-below the first finite point no longer hides the flag (before 1.0 it read `config.qmin > 1.0`, and a
+below the first finite point no longer hides the flag (before 0.6.0 it read `config.qmin > 1.0`, and a
 22 %-biased FeCoSn estimate from data starting at 1.6 Å⁻¹ was reported unflagged under
 `qmin = 0.5`) — a flag meaning the $Q\to 0$ extrapolation is
 longer than the data it rests on, so the estimate is *a starting point, not a measurement*.
@@ -3287,8 +3287,8 @@ longer than the data it rests on, so the estimate is *a starting point, not a me
 
 | run | recovered $\rho_0$ | vs hand | test tolerance |
 | --- | --- | --- | --- |
-| 199 K | 0.0564 Å⁻³ (0.0600 before the 1.0 Huber fix, Step 6) | −1.5 % (+4.7 %) | 3 % |
-| 100 K | 0.0601 Å⁻³ (0.0640 before the 1.0 Huber fix) | +4.8 % (+11.7 %) | 6 % |
+| 199 K | 0.0564 Å⁻³ (0.0600 before the 0.6.0 Huber fix, Step 6) | −1.5 % (+4.7 %) | 3 % |
+| 100 K | 0.0601 Å⁻³ (0.0640 before the 0.6.0 Huber fix) | +4.8 % (+11.7 %) | 6 % |
 
 **How far the estimate lands from a hand value is a property of the measured $S(Q)$, not of the
 code** — the recovered density is the root of $a_\mathrm{fz}/a_\mathrm{density}(\rho_0) = 1$, so each
@@ -3465,14 +3465,14 @@ grids. `tests/generate_autoscale_fixture.py` produces golden numbers from the Py
 | sampled `gk`, `sqFiltered` | 9 decimal places |
 | `estimateRho0.rho0`, `.concordance` | 10⁻¹⁰ relative, iteration count equal exactly (plus the physical check `abs(concordance − 1) < 1.5·10⁻³`) |
 
-**Real-data check (1.0 release).** Beyond the synthetic goldens, both engines were run on identical
+**Real-data check (0.6.0 release).** Beyond the synthetic goldens, both engines were run on identical
 inputs on every run in `data/stog_tests` (Mn₃Sn 55537 / 55526 / 54139 / 59438 with the Mn₃Sn
 composition and $\rho_0 = 0.063049$; FeCoSn 199 K from its `stog.inp`, $\langle b^2\rangle =
 1.10426$ for the $Q\to0$ criteria): auto density mode, auto FZ mode, manual mode and
 `estimate_rho0`. $a$, $b$, the detected $r_0$, the fit window, iteration counts and every output
 array (`sq_scaled`, `sq_ft`, `g_filtered`, `gk`, `d_r`, `fk`) agree to $\le 5\cdot10^{-13}$
 relative, refusals included (same message). The 2.6 % gap once seen on 59438 ($Q$ 1.0–29,
-$r_0 = 2.67$: JS $a = 1.2304$ against Python 1.1987) was difference 4 below: the pre-1.0 JS gives
+$r_0 = 2.67$: JS $a = 1.2304$ against Python 1.1987) was difference 4 below: the pre-0.6.0 JS gives
 1.2304 only with a composition and agrees with Python (3.0535) without one.
 
 Genuine implementation differences:
@@ -3488,16 +3488,16 @@ Genuine implementation differences:
    low-$r$ level in `autoScaleWorker.js` via `firstPeakZero()` instead. The Auto StoG page does not
    expose `c2_bins`, `c1_slope_nuisance`, `c2_weight`, `q_tail_frac`, `max_iter` or `tol` in either
    runtime.
-4. **The loop's filter call (fixed in 1.0).** Python's `_pipeline()` passes
+4. **The loop's filter call (fixed in 0.6.0).** Python's `_pipeline()` passes
    `s0_target=config.effective_s0_target` to `fourier_filter`, and so does the JS `autoscalePass()`
-   inner-loop call. Before the 1.0 audit the JS call omitted it (default 0), which was not "small":
+   inner-loop call. Before the 0.6.0 audit the JS call omitted it (default 0), which was not "small":
    $a$ differed from the CLI by 2.0 % on the Mn₃Sn 59438 run (0.5 % at 300 K, 0.2 % at 500 K),
    1.7·10⁻³ on a Mn₃Sn-like synthetic, and the fixture's $\rho_0$ estimate by 2.8·10⁻⁵ — all of it
    algorithmic, none of it float noise. With the target passed, every case agrees to ≤ 2·10⁻¹⁵.
 5. **`np.linspace(...).astype(int)` emulation.** JS reproduces the sweep's edge grid with
    `Math.trunc(k*(n-1)/(nGrid-1))`. This matches numpy's truncation on the tested data; a rare
    floating-point tie could in principle shift one edge index by 1.
-6. **Despike scope — one pass in both engines (fixed in 1.0).** Both auto passes hand the
+6. **Despike scope — one pass in both engines (fixed in 0.6.0).** Both auto passes hand the
    pipeline the **raw** input arrays, so the rolling-median filter runs once, the published
    `sq_filtered`/`gk`/`low_r_rms`/`c1_tail_mean` come from the fitted point set, and
    `n_despiked`/`nDespiked` is the true count (Step 1d: 107 on the repo's fixture). Before, Python
@@ -3712,7 +3712,7 @@ lists, booleans, `NaN`/`±Infinity` are a 400 naming the field), manual mode rej
 and a result that overflows to `NaN`/`Infinity` for finite but extreme `a`/`b` is a 400 rather
 than a 200 with empty series. The
 cached `ScalingResult` is shared by every identical request, so `_scaling_request` annotates a
-per-request copy (`dataclasses.replace(result, provenance=dict(...))`) — pre-1.0 it wrote
+per-request copy (`dataclasses.replace(result, provenance=dict(...))`) — pre-0.6.0 it wrote
 `r0_detected` into the cached object, so a request's diagnostics and written provenance depended
 on which requests the server had handled before.
 The browser engine
@@ -3957,11 +3957,11 @@ and the run mode (`'auto'` / `'manual'`).
    genuine window starts inside the cutoff, else at `peakCutoff` — only if that leaves a
    default fit window at least `MIN_AUTO_WINDOW` $= 0.1$ Å wide
    ($(r_0 - 0.25) - (r_\mathrm{cutoff} + 0.2) \ge 0.1$, the floor the automatic placement
-   uses); otherwise $r_0$ is detected from the data. Until the 1.0 gate a non-empty window
+   uses); otherwise $r_0$ is detected from the data. Until the 0.6.0 gate a non-empty window
    was enough, so a line-22 cutoff just above $r_\mathrm{cutoff} + 0.45$ pinned a sliver:
    `1.46 0 0` pinned [1.2, 1.21] Å on FeCoSn 199 K ($a$ = 1.001 against 1.185), and `1.0 0 0`
    with $r_\mathrm{cutoff}$ 0.5 pinned [0.7, 0.75] Å ($a$ = 0.672), both "converged" with the
-   density limit "satisfied"; they now detect $r_0$ and give 1.185 and 1.174. (Pre-1.0 this was
+   density limit "satisfied"; they now detect $r_0$ and give 1.185 and 1.174. (Pre-0.6.0 this was
    $\max(\texttt{peakCutoff}, \texttt{peakRmin})$, which put the window over a first peak starting
    below the cutoff: `2.3 1.6 2.2` on a 1.7 Å shell gave $a = -4.9$.)
 4. **Q window** ← form → `inp`. Missing either is a hard error
@@ -4518,12 +4518,12 @@ Everything this page runs also exists in Python. The parity contract is pinned b
 - first-shell detection (repo synthetic, no r0): 9 decimals, same `windowRefined` flag; detector cases exact; window placement (SrTiO₃ supercell, short bond) `a`,`b` to 1e-6, same onset and window, same refusal;
 - **$\rho_0$ self-consistency:** estimate and concordance to 1e-10 relative, same iteration count.
   The iteration is deterministic; the ~1e-4 gap once blamed on stopping-rule noise was entirely
-  the JS loop's missing $S(0)$ target, fixed in 1.0.
+  the JS loop's missing $S(0)$ target, fixed in 0.6.0.
 
 Genuine behavioural differences between this page and the `rmc-autoscale` CLI (not
 floating-point noise):
 
-1. **σ-column validation — no longer a difference.** The CLI, the API and (since 1.0) the page
+1. **σ-column validation — no longer a difference.** The CLI, the API and (since 0.6.0) the page
    all *discard* the whole σ column if any σ is non-finite or ≤ 0 on the usable rows
    (`usable_sigma` / `usableSigma`); the page shows "σ ignored (invalid)" on the file chip.
 2. **Estimate + manual.** The CLI refuses `--estimate-rho0` together with
@@ -4533,7 +4533,7 @@ floating-point noise):
 3. **Fixed-b fallback.** With an inp loaded, a typed `a` and a cleared `b`, the page falls
    back to the inp's `b`; the CLI with `--scale` and no `--offset` uses `b = 0`. Every entry
    point refuses a non-finite or zero `a` and a non-finite `b`: the CLI's `--scale`/`--offset`
-   (before 1.0 `--scale nan` wrote nine all-NaN files with exit 0), the API's `a`/`b`,
+   (before 0.6.0 `--scale nan` wrote nine all-NaN files with exit 0), the API's `a`/`b`,
    `read_stog_inp`'s yscale/yoffset, and the page's worker.
 4. **Enforcement window from a stog.inp.** The page keeps the inp's first-peak window while the
    Cutoff field holds the pre-filled `inp.peakCutoff`, exactly like the CLI without
@@ -4544,7 +4544,7 @@ floating-point noise):
    drift term) exist in `ScalingConfig` but have no counterpart in `autoScale.js`. Their
    defaults are 0 / `False`, so default runs agree; a Python run that sets them cannot be
    reproduced in the browser.
-6. **Low-Q S(0) target inside the fit loop — no longer a difference.** Since 1.0 the page's
+6. **Low-Q S(0) target inside the fit loop — no longer a difference.** Since 0.6.0 the page's
    `autoscalePass()` passes `s0Target: effectiveS0Target(config)` to the per-iteration filter
    exactly like Python's `_pipeline()`; with a composition the page's $(a,b)$ matches the CLI to
    round-off (before, 2 % apart on the Mn₃Sn 59438 run).

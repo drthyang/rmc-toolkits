@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Lorch omitted-low-Q basis without catastrophic cancellation (1.0 audit,
+// Lorch omitted-low-Q basis without catastrophic cancellation (0.6.0 audit,
 // stog-b; mirrors tests/test_stog_b_lorch_basis.py): the old
 // (cos v - 1)/(r - a)^2 form lost every digit within ~1e-6 Å of r = π/Qmax
 // outside its 1e-9 patch. The band |r - a| = 1e-9 .. 1e-5 (and r = a, r = 0,

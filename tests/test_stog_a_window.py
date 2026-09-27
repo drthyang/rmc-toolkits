@@ -3,7 +3,7 @@
 
 """Auto StoG low-r window placement: never fit the density limit across the first shell.
 
-Regression tests for the 1.0 audit (stog-a group). Without r0 / r_fit_max the first
+Regression tests for the 0.6.0 audit (stog-a group). Without r0 / r_fit_max the first
 pass used to fit g = 0 on the blind window [r_cutoff + 0.2, r_cutoff + 1.2] =
 [1.2, 2.2] A, which contains the first shell of most oxides (Ti-O 1.95, Re-O 1.875,
 Si-O 1.61 A); the scale came out 40-60 % low or negative, and short bonds were
@@ -113,11 +113,11 @@ class OxideFirstShellWindowTests(unittest.TestCase):
         return result
 
     def test_srtio3_inverted_ti_o_shell(self):
-        # Pre-1.0: window [1.2, 2.34] across Ti-O, a = 5.2 (-48 %).
+        # Pre-0.6.0: window [1.2, 2.34] across Ti-O, a = 5.2 (-48 %).
         self.check("SrTiO3", PEROVSKITE, 3.905, 1.95)
 
     def test_reo3_short_m_o_shell(self):
-        # Pre-1.0: window [1.2, 2.2] across Re-O, a < 0 (the data inverted).
+        # Pre-0.6.0: window [1.2, 2.2] across Re-O, a < 0 (the data inverted).
         self.check("ReO3", REO3, 3.75, 1.875)
 
     def test_fz_mode_reports_the_first_shell(self):
@@ -134,7 +134,7 @@ class ShortBondTests(unittest.TestCase):
     def test_short_bond_below_1_45_A_fails_loudly(self):
         formula, rho0, shells, r_continuum = B2O3_LIKE
         sq, values = shell_sq(formula, rho0, shells, r_continuum)
-        # Pre-1.0: returned a = -0.65 fitted on [1.2, 2.2] with no error.
+        # Pre-0.6.0: returned a = -0.65 fitted on [1.2, 2.2] with no error.
         with self.assertRaisesRegex(ValueError, "r_cutoff"):
             autoscale(Q, sq, ScalingConfig(**values))
 
@@ -148,7 +148,7 @@ class ShortBondTests(unittest.TestCase):
         summary = diagnostics_summary(result, config)
         # A sharp (sigma 0.05 A) Si-O shell leaves strong termination ripples in
         # the narrow [0.9, 1.27] window; the point here is that the window sits
-        # below the shell and the scale is sane (pre-1.0: a = 4.7 of 5 with the
+        # below the shell and the scale is sane (pre-0.6.0: a = 4.7 of 5 with the
         # window silently on the shell's foot, or a < 0 on [1.2, 2.2]).
         self.assertLess(abs(result.a / A_TRUE - 1.0), 0.08, f"a = {result.a}")
         self.assertLess(summary["r_fit_window"][1], 1.35)

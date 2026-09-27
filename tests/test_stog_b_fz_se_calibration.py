@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""The Q->0 intercept's standard error matches its scatter (1.0 review, stog-b).
+"""The Q->0 intercept's standard error matches its scatter (0.6.0 review, stog-b).
 
 fz_limit_fit reported the naive weighted-least-squares error of the Huber head
 fit, sigma^2 = sum(w^2 r^2)/dof over N = D^T W^2 D. With the Huber-clipped

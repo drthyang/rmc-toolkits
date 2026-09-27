@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// estimateRho0 never accepts a physically impossible root (1.0 audit, stog-b;
+// estimateRho0 never accepts a physically impossible root (0.6.0 audit, stog-b;
 // mirrors tests/test_stog_b_rho0.py): the iterate stays in RHO0_PHYSICAL_RANGE
 // and a concordant root must satisfy the density limit, else converged false
 // with a reason the page reports.

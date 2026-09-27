@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""<b>^2 and <b^2> come from one consistent source (1.0 audit, stog-b group).
+"""<b>^2 and <b^2> come from one consistent source (0.6.0 audit, stog-b group).
 
 The CLI (and the API and page) took <b^2> from --formula (Sears neutron values)
 whenever --b-sq-avg was absent, even when <b>^2 came from a stog.inp or

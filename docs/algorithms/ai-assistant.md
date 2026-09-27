@@ -314,7 +314,7 @@ site lists. The ladder itself is always computed up to a maximum tolerance of **
 - `tolerance_A` and `max_residual_A` (2 s.f., Å).
 - `note` — present only for a structure the finder did **not analyse** (over the 2000-site cap or
   the 384-operation budget): the finder's `reason`, so the model reads why instead of a bare
-  "not analysed". Since 1.0 `space_group` carries no `(No. N)` when the card shows a crystal class
+  "not analysed". Since 0.6.0 `space_group` carries no `(No. N)` when the card shows a crystal class
   (`4/mmm class`), a lower bound (`≥ P4/mmm`), `undetermined` or `not analysed`.
 - `ladder` — a list of rungs `{sg, holds_A: [from, to], n_ops}`: the space group the average sites
   satisfy over each Cartesian tolerance interval in Å. **Emitted only when the ladder has more than one
@@ -422,7 +422,7 @@ in two different chat sessions.
 
 **Ordering:** descending $|$`non_gaussianity`$|$ (a missing value counts as 0), ties broken by
 descending `U_iso_A2` (missing values sort as $-\infty$), then truncated to `MAX_SITES = 12` with
-`sites_omitted`. The ranking is by magnitude because a symmetric split site is *negative*: before 1.0
+`sites_omitted`. The ranking is by magnitude because a symmetric split site is *negative*: before 0.6.0
 the signed ranking listed split sites last, where the cap trims first. A fixed `note` string travels
 with the block defining every symbol and stating the sign convention (>0 peaked / heavy-tailed or a
 minority off-centre component, <0 flat-topped or bimodal), because small models otherwise misread it;
@@ -935,7 +935,7 @@ history has ≥2 points.
 - **The badge names its χ² term.** The history is the last `.log` column only (one fit term, e.g.
   `X_ray_(R)1`), so the badge reads `X_ray_(R)1: Improving` and its tooltip adds "χ² of X_ray_(R)1
   only, not the total" (`WatchdogBadge.jsx`, from `rValueFile.plotData.chiColumn`). Classifying on
-  every χ² term or on the total is deferred beyond 1.0.
+  every χ² term or on the total is deferred beyond 0.6.0.
 - **The badge status is always the heuristic.** `classifyConvergence()` runs on every change and sets the
   badge for free. The LLM's parsed `status` is discarded; only `parsed.note` (or, if the format was
   ignored, the first 200 characters of the raw reply) becomes the tooltip, with `source` flipping to

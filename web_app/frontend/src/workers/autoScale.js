@@ -429,7 +429,7 @@ const HUBER_C = 1.345;
 // Huber IRLS weights w = psi(r) / r = min(1, c s / |r|) with a MAD scale
 // (scaling._huber_weights). The IRLS passes scale rows and rhs by sqrt(w), so
 // the weighted solve minimises sum w r^2 and its fixed point is the Huber
-// M-estimator (before 1.0: rows scaled by w, an effective weight w^2).
+// M-estimator (before 0.6.0: rows scaled by w, an effective weight w^2).
 const huberWeights = (residuals) => {
   const med = median(residuals);
   const deviations = residuals.map((value) => Math.abs(value - med));

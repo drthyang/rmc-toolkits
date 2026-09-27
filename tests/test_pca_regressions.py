@@ -3,7 +3,7 @@
 
 """Regression tests for the PCA-ellipsoid engine (rmc_toolkits.pca_kde).
 
-Each class pins one defect found by the 1.0 audit; the class docstring names it.
+Each class pins one defect found by the 0.6.0 audit; the class docstring names it.
 Fixtures are synthetic ``.rmc6f`` files written the way RMCProfile writes them:
 coordinates are supercell fractions wrapped into [0, 1), and the cell indices
 name the box copy the atom belongs to.
@@ -350,7 +350,7 @@ class NonFiniteInputTests(unittest.TestCase):
                     pca_kde_volume(self.cloud, **{"grid": 8, **kwargs})
 
     def test_a_nan_coordinate_is_skipped_and_the_warning_names_the_line(self):
-        # Integrated 1.0 rule (parsers group, both runtimes): a .rmc6f atom line
+        # Integrated 0.6.0 rule (parsers group, both runtimes): a .rmc6f atom line
         # with a non-finite coordinate is skipped and counted, never silently --
         # SiteDisplacements.parse_warning names the first such line (the
         # browser worker's parseWarning carries the same text).
@@ -466,7 +466,7 @@ class KernelBroadeningGuidanceTests(unittest.TestCase):
         sigma1 = result["rms"][0]
         at_50 = self._surface_radius_along_pc1(result, levels[0.5]) / (probability_scale(0.5) * sigma1)
         self.assertAlmostEqual(at_50, broadening, delta=0.03)
-        # The pre-1.0 default pairing: a 25% surface against the 50% ellipsoid.
+        # The pre-0.6.0 default pairing: a 25% surface against the 50% ellipsoid.
         at_25 = self._surface_radius_along_pc1(result, levels[0.25]) / (probability_scale(0.5) * sigma1)
         self.assertLess(at_25, 0.9)
 

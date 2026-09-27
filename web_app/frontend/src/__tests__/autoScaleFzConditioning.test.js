@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Conditioning of the Q->0 Faber-Ziman amplitude (1.0 audit, stog-b; mirrors
+// Conditioning of the Q->0 Faber-Ziman amplitude (0.6.0 audit, stog-b; mirrors
 // tests/test_stog_b_fz_conditioning.py): fzLimitFit reports the standard error
 // of S_meas(0) - level and flags an ill-conditioned aFz; parity with the Python
 // goldens (fixture expected.fzLimit).

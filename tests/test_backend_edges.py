@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""Flask edge cases left after the 1.0 gate.
+"""Flask edge cases left after the 0.6.0 gate.
 
 Each is a clear 4xx with a JSON error naming the problem -- never a 200 with
 an empty result, a half-written file, an HTML page or a 500. One class per

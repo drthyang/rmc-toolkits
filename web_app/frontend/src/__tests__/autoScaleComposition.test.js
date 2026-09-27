@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// The main (density-limit) auto path with a composition (1.0 audit, stog-b):
+// The main (density-limit) auto path with a composition (0.6.0 audit, stog-b):
 // with <b^2> known the omitted-low-Q extrapolation targets
 // S(0) = 1 - <b^2>/<b>^2, and the self-consistent loop's Fourier filter must use
 // that target exactly like scaling._pipeline. The JS loop used S(0) = 0, so the

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""``--estimate-rho0`` without any density source seeds the iteration (1.0 audit, stog-b).
+"""``--estimate-rho0`` without any density source seeds the iteration (0.6.0 audit, stog-b).
 
 The documented composition-only route (``rmc-autoscale --data ... --formula ...
 --estimate-rho0``) exited with "number density unknown": _build_config demanded a
@@ -23,7 +23,7 @@ from rmc_toolkits.scaling_cli import main
 from rmc_toolkits.transforms import fq_to_sq, g_to_gpdf, gpdf_to_fq
 
 # The model's true density is far from the 0.05 seed, so recovering it shows
-# the self-consistency actually moved from the seed (1.0 review).
+# the self-consistency actually moved from the seed (0.6.0 review).
 RHO0, B2 = 0.08, 0.02
 
 

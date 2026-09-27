@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Opt-in despike parity (1.0 audit, stog-b): Python used to despike twice in
+// Opt-in despike parity (0.6.0 audit, stog-b): Python used to despike twice in
 // the auto path (fit on one point set, write and count another); both engines
 // now despike once, so (a, b), the written grid and nDespiked agree.
 

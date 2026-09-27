@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // estimateRho0's `extrapolated` flag follows the first measured Q, not
-// config.qmin (1.0 audit, stog-b; mirrors tests/test_stog_b_extrapolated.py).
+// config.qmin (0.6.0 audit, stog-b; mirrors tests/test_stog_b_extrapolated.py).
 
 import { describe, expect, it } from 'vitest';
 import fixture from './fixtures/autoscale_fixture.json';

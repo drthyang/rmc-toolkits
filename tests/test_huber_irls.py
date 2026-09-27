@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""The Auto StoG robust fits are Huber's M-estimator (1.0 integration).
+"""The Auto StoG robust fits are Huber's M-estimator (0.6.0 integration).
 
 ``_solve_affine`` (the (a, b) fit) and ``fz_limit_fit`` (the Q->0 head fit)
 re-weight by Huber IRLS with ``c = 1.345`` and a MAD scale. A weighted
 least-squares pass minimises ``sum w r^2``, so its rows must be scaled by
-``sqrt(w)``; before 1.0 both engines scaled them by ``w``, an effective weight
+``sqrt(w)``; before 0.6.0 both engines scaled them by ``w``, an effective weight
 ``w^2`` -- a redescending estimator, not the documented Huber one (95 %
 Gaussian efficiency). The reference below is independent of the engine's
 row-scaling ``lstsq``: it solves the weighted normal equations
@@ -45,7 +45,7 @@ def reference_irls(x, y, passes, blocks=None, row_power=1.0):
 
     ``blocks`` lists (start, stop, min_rows) row ranges that get their own MAD
     scale (rows outside every block, or of a block with fewer than min_rows
-    rows, keep weight 1). ``row_power = 2`` reproduces the pre-1.0 engines
+    rows, keep weight 1). ``row_power = 2`` reproduces the pre-0.6.0 engines
     (effective weight w^2). Returns (beta, weights of the last solve).
     """
     blocks = blocks or [(0, y.size, 0)]

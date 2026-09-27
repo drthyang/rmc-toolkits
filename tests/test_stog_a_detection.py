@@ -3,7 +3,7 @@
 
 """First-coordination-shell detection (Auto StoG r0): the FIRST shell, of either sign.
 
-Regression tests for the 1.0 audit (stog-a group): the detector used to return the
+Regression tests for the 0.6.0 audit (stog-a group): the detector used to return the
 flank of the *strongest* |g| feature, so a weak or inverted first shell (Ti-O in
 titanates, Mn-Sn in Mn3Sn) was skipped and the low-r window / enforcement landed on
 the real first shell.
@@ -114,10 +114,10 @@ class Mn3Sn59438DetectionTests(unittest.TestCase):
         self.assertLess(summary["r_fit_window"][1], 2.65)
 
     def test_expert_range_refuses_rather_than_fit_across_the_shell(self):
-        # At the expert's Q range (1.0-28) the Huber fits (1.0) leave the
+        # At the expert's Q range (1.0-28) the Huber fits (0.6.0) leave the
         # inverted Mn-Sn shell at 1.99x its ripple field, just under the
         # detector's 2x margin: the run stops and asks for r0 -- never a window
-        # on the second shell. (Pre-1.0 row weighting: detected at 2.74 A.)
+        # on the second shell. (Pre-0.6.0 row weighting: detected at 2.74 A.)
         with self.assertRaisesRegex(ValueError, "could not locate the first coordination shell"):
             self.autoscale_run(28.0)
 

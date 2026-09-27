@@ -36,7 +36,7 @@ class PackageApiTests(unittest.TestCase):
         for name in rmc_toolkits.__all__:
             self.assertTrue(hasattr(rmc_toolkits, name), name)
 
-    def test_top_level_exports_the_1_0_engine_api(self):
+    def test_top_level_exports_the_0_6_0_engine_api(self):
         # Public functions and constants the CLIs, the API and the docs use,
         # re-exported beside the rest of their modules' API.
         from rmc_toolkits import scaling, transforms, triplets

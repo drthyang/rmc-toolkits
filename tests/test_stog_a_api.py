@@ -3,7 +3,7 @@
 
 """Auto StoG scaling API (/api/scaling/*): stog.inp r0, enforcement flag, cache hygiene.
 
-Regression tests for the 1.0 audit (stog-a group).
+Regression tests for the 0.6.0 audit (stog-a group).
 """
 
 from pathlib import Path

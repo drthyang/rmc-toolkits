@@ -4,7 +4,7 @@
 // The Q->0 head fit is Huber's M-estimator (twin of tests/test_huber_irls.py):
 // IRLS rows scaled by sqrt(w), so each pass minimises sum w r^2. The reference
 // solves the weighted normal equations X^T W X beta = X^T W y with W = diag(w)
-// for the engine's pass count from the unweighted start; before 1.0 the rows
+// for the engine's pass count from the unweighted start; before 0.6.0 the rows
 // were scaled by w (effective weight w^2), which this head tells apart.
 
 import { describe, expect, it } from 'vitest';

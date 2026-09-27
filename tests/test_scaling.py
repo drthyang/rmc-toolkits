@@ -55,7 +55,7 @@ XRAY_RUN = _first_existing_run("100K", "199K")
 # figure from seeds spanning 0.02-0.20:
 #
 #     199 K -> 0.0564 A^-3   (-1.5% from the hand 0.057329; 0.0600, +4.7%, before the
-#                             1.0 Huber IRLS fix -- the 3% bound tells the two apart)
+#                             0.6.0 Huber IRLS fix -- the 3% bound tells the two apart)
 #     100 K -> 0.0601 A^-3   (+4.8%; 0.0640, +11.7%, before the Huber fix -- the 6% bound
 #                             tells the two apart)
 #

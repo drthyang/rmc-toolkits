@@ -96,7 +96,7 @@ so legacy coordinates-only lines count as well — the same atom set the browser
 `parseRmc6fAtoms()`. Lines with a non-finite coordinate are skipped and counted: the payload's
 `parseWarning` names them in both runtimes (`null` when the file is clean; the `rmc-triplets` CLI
 prints it on stderr, and the Model information card reports the same lines), and a file with no parseable atom is a `ValueError` (HTTP 400) *"no atoms could be
-parsed — …"* naming what was found. Before 1.0 Flask read full-layout lines only, so a
+parsed — …"* naming what was found. Before 0.6.0 Flask read full-layout lines only, so a
 coordinates-only file had "no atoms" there but angles in the browser.
 
 Validation is strict and raises `ValueError` rather than coercing: coordinates must be finite
@@ -179,7 +179,7 @@ The order of operations is deliberate: the fractional difference is taken **befo
 shift is added, so the same bond seen from its other end,
 $((\mathbf f_\text{center} - \mathbf f_\text{cand}) - \mathbf m)\,\mathsf L$, is the *exact*
 negative (IEEE rounding is symmetric under negation) and has bitwise the same length. A bond is
-therefore inside or outside a window from both of its ends alike. Before 1.0 the shift was added
+therefore inside or outside a window from both of its ends alike. Before 0.6.0 the shift was added
 first, and on ideal lattices with a window bound exactly on a shell the two ends could disagree
 (one bond counted from one end only — an odd directed count, e.g. 2675 on a 5×5×5 two-atom
 cubic lattice with $r_\mathrm{max} = a$).
@@ -249,7 +249,7 @@ and `_Pairing` forms the per-center pairing, chunk by chunk:
 - **Different end elements** (A ≠ C): every (A-bond, C-bond) combination counts; the A and C
   atoms are necessarily different atoms.
 
-> Before 1.0 the same-element/distinct-window case counted *ordered* (1→2, 2→3) assignments, so
+> Before 0.6.0 the same-element/distinct-window case counted *ordered* (1→2, 2→3) assignments, so
 > a triplet whose two bonds both lay in the overlap of the windows counted twice, and nudging a
 > B–C bound by $10^{-4}$ Å off the A–B one doubled every count (223 651 → 447 317 Se–Nb–Se
 > angles on the 5 K sample). The unordered rule counts each physical triplet once.
@@ -282,7 +282,7 @@ variance into the running totals with Chan's parallel update
 ($\delta = \bar x_\text{chunk} - \bar x$, $M_2 \mathrel{+}= M_{2,\text{chunk}} + \delta^2 n\,n_\text{chunk}/(n+n_\text{chunk})$).
 Pairing memory is therefore ~25 MB whatever the angle count; the raw list is kept only when
 `collect_angles` asks for it. The JS port streams inside its pairing loop (Welford per angle)
-and keeps angles only for `collectAngles`. Before 1.0 both engines materialized every angle
+and keeps angles only for `collectAngles`. Before 0.6.0 both engines materialized every angle
 (~200 B/angle in NumPy index arrays, one JS array capped by V8 at $2^{27}$ elements), so a
 window well inside the app's 15 Å cap needed tens to hundreds of GB in Flask and threw
 `RangeError: Invalid array length` in the worker.
@@ -402,7 +402,7 @@ would freeze the shared PCA worker:
 | `r12Min`/`r12Max` present, `r23Min`/`r23Max` both or neither — `null`, `''` and whitespace count as missing | — | 400 | thrown `Error` |
 
 A missing bound is an error with the same text at both boundaries ("r12Min/r12Max are required
-together; missing r12Min") — never a bound of 0. Before 1.0 the worker ran `Number()` on every
+together; missing r12Min") — never a bound of 0. Before 0.6.0 the worker ran `Number()` on every
 bound, so a cleared minimum reached the engine as `0` and silently widened the window (Nb–Nb–Nb
 3.5–4.6 Å became 0–4.6 Å on the 5 K sample: 235 883 angles, mean 107°, instead of 48 182 at
 62°), while Flask rejected the same request.
@@ -464,7 +464,7 @@ files (compared case-insensitively), none may be the configuration or a director
 must exist or be creatable, and the `--plot` extension must be a format this matplotlib can write
 (no extension: PNG). A violation is one line on stderr and exit 1; `--force` relaxes only the
 existing-file check. The outputs are then written through temporary files renamed into place
-only after all of them succeeded, so a failed write leaves no partial set. Before 1.0 an
+only after all of them succeeded, so a failed write leaves no partial set. Before 0.6.0 an
 unsupported `--plot` format printed a traceback after the CSV was written, and `--dump-angles`
 equal to `--output` silently replaced the histogram. `--version` prints the package version.
 
