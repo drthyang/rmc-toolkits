@@ -39,17 +39,13 @@ const requestHeaders = (baseUrl, apiKey) => ({
 // A failed fetch to localhost surfaces as a bare TypeError both when the server
 // is not running and when the browser blocked the response for CORS, so the
 // hint has to name both causes — the user cannot tell them apart from the page.
-// It quotes this page's exact origin so the OLLAMA_ORIGINS value is copy-ready.
-const unreachableHint = (baseUrl) => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'this page';
-    return (
-        `Could not reach ${trimBase(baseUrl)}. Either the server is not running, or it is not `
-        + `allowing this page (${origin}) via CORS. Start Ollama with this origin allowed — `
-        + `OLLAMA_ORIGINS="${origin}" ollama serve — or enable CORS in LM Studio's server settings. `
-        + 'Safari also blocks HTTPS pages from calling http://localhost; use Chrome, Edge, or Firefox '
-        + '(or run the app locally). See the setup guide for the macOS steps.'
-    );
-};
+// The fixes live in the setup guide ("How to connect a model"), which carries
+// the copy-ready OLLAMA_ORIGINS command with this page's origin, the LM Studio
+// CORS step and the Safari note; the settings drawer opens it on this failure.
+const unreachableHint = (baseUrl) => (
+    `Could not reach ${trimBase(baseUrl)}: the server is not running, or CORS blocks this page. `
+    + 'See “How to connect a model”.'
+);
 
 const describeHttpError = async (response) => {
     let detail = '';
@@ -82,7 +78,8 @@ export const listModels = async (baseUrl, { signal, apiKey } = {}) => {
 };
 
 // Probe the server and translate failures into actionable setup hints.
-// Returns { ok, models, error, hint } and never throws.
+// Returns { ok, models, error, hint } and never throws; a failure also says
+// whether the server was unreachable (network / CORS) rather than answering.
 export const checkConnection = async (baseUrl, { signal, apiKey } = {}) => {
     try {
         const models = await listModels(baseUrl, { signal, apiKey });
@@ -94,7 +91,8 @@ export const checkConnection = async (baseUrl, { signal, apiKey } = {}) => {
             ok: false,
             models: [],
             error: error.message || 'Connection failed',
-            hint: isNetworkError ? unreachableHint(baseUrl) : httpHint(error.status)
+            hint: isNetworkError ? unreachableHint(baseUrl) : httpHint(error.status),
+            unreachable: isNetworkError
         };
     }
 };

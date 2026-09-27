@@ -84,12 +84,6 @@
     color: var(--text-strong);
 }
 
-.llm-settings-note {
-    font-size: 0.78rem;
-    line-height: 1.45;
-    color: var(--muted);
-}
-
 .llm-settings-divider {
     height: 1px;
     margin: 0.1rem -1.1rem;
@@ -850,14 +844,6 @@
     font-size: 1rem;
     font-weight: 650;
     color: var(--text-strong);
-}
-
-.llm-chat-empty-hint {
-    margin: 0;
-    max-width: 30rem;
-    font-size: 0.85rem;
-    line-height: 1.5;
-    color: var(--muted);
 }
 
 .llm-suggestions {

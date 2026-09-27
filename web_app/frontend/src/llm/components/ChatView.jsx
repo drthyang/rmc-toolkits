@@ -286,11 +286,6 @@ const ChatView = ({ context, settings, connected }) => {
                 <div className="llm-chat-empty">
                     <span className="llm-chat-empty-icon" aria-hidden="true"><WaveMark /></span>
                     <p className="llm-chat-empty-title">Ask about this run</p>
-                    <p className="llm-chat-empty-hint">
-                        {connected
-                            ? 'The run’s metrics, symmetry, and convergence history travel with every message, so answers can quote the actual numbers.'
-                            : 'Connect a local model — pick one from the selector above — to start a conversation.'}
-                    </p>
                     {connected && (
                         <div className="llm-suggestions">
                             {SUGGESTIONS.map((text) => (
@@ -302,7 +297,9 @@ const ChatView = ({ context, settings, connected }) => {
                     )}
                     {context && (
                         <details className="llm-context-inspector">
-                            <summary>Context sent to the model</summary>
+                            <summary title="The run's metrics, symmetry and convergence history travel with every message, so answers can quote the actual numbers.">
+                                Context sent to the model
+                            </summary>
                             <pre>{contextToJson(context)}</pre>
                         </details>
                     )}
