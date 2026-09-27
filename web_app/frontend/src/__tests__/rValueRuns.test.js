@@ -63,7 +63,26 @@ describe('chi² logs of one run', () => {
         const restarting = { name, path: `run/${name}`, plotKind: 'r_value', sourceFile: {}, parseError };
         const combined = combineRValueFiles([...FILES.slice(0, 3), restarting], 'run/GTS_250K.rmc6f');
         expect(combined.parseError).toBe('');
+        expect(combined.parseErrors).toEqual([]);
         expect(combined.plotData.series[0].y).toHaveLength(GTS_ROWS);
+    });
+
+    it('lists each failed log as { name, message } beside the joined parseError', () => {
+        const broken = (n) => ({ name: `GTS_250K-0${n}.log`, path: `run/GTS_250K-0${n}.log`, plotKind: 'r_value', sourceFile: {}, parseError: `bad row ${n}` });
+        // Some logs parsed: the failures are listed, the chart still stands.
+        const partial = combineRValueFiles([...FILES.slice(0, 3), broken(3), broken(4)], 'run/GTS_250K.rmc6f');
+        expect(partial.parseError).toBe('GTS_250K-03.log: bad row 3; GTS_250K-04.log: bad row 4');
+        expect(partial.parseErrors).toEqual([
+            { name: 'GTS_250K-03.log', message: 'bad row 3' },
+            { name: 'GTS_250K-04.log', message: 'bad row 4' },
+        ]);
+        // No log parsed: the same shape, and the joined string is unchanged.
+        const none = combineRValueFiles([broken(0), broken(1)], 'run/GTS_250K.rmc6f');
+        expect(none.parseError).toBe('bad row 0; bad row 1');
+        expect(none.parseErrors).toEqual([
+            { name: 'GTS_250K-00.log', message: 'bad row 0' },
+            { name: 'GTS_250K-01.log', message: 'bad row 1' },
+        ]);
     });
 
     it('names a restart whose fit term changed by both columns (read_chi_log parity)', () => {

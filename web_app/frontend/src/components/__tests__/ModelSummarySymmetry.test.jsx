@@ -39,6 +39,8 @@ describe('Detected SG card', () => {
         const html = decode(renderToStaticMarkup(<ModelSummary structure={tooManySites()} />));
         expect(html).not.toMatch(/NaN/);
         expect(html).toMatch(new RegExp(`title="The average structure has ${MAX_SYMMETRY_SITES + 1} reference sites`));
+        // ... and reachable on touch: the same reason closes the card's ? help.
+        expect(html).toMatch(new RegExp(`<p>The average structure has ${MAX_SYMMETRY_SITES + 1} reference sites[^<]*</p></span>`));
     });
 
     it('describes the standard-setting naming in its help text', () => {

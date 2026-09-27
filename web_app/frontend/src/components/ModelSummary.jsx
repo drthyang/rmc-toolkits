@@ -5,7 +5,7 @@ import React, { useContext, useMemo, useState } from 'react';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { moveRatios } from '../moveStats';
 import { SymTolContext } from '../symTolContext';
-import { Stat, StatRail } from '../ui';
+import { Chip, Stat, StatRail } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import './ModelSummary.css';
 
@@ -35,8 +35,8 @@ const brickStyle = (nSpace, maxOps) => {
 
 // What the atom-line parser could not use (both runtimes report the same
 // counts: browserData.structureFromRmc6f / Flask /api/structure `parseReport`),
-// condensed for the card; the full sentence goes in the tooltip. Null when the
-// atom section parsed cleanly.
+// condensed for the card; the full sentence goes in its ? help (and the
+// value's tooltip). Null when the atom section parsed cleanly.
 const parseSummary = (structure) => {
     const report = structure?.parseReport;
     const warning = structure?.parseWarning;
@@ -50,7 +50,10 @@ const parseSummary = (structure) => {
 // `showSymmetry={false}` renders the model card alone — pages that want the
 // structure facts without the Detected SG card (Bond Geometry) opt out, and
 // the symmetry finder is skipped entirely rather than computed and hidden.
-const ModelSummary = ({ structure, showSymmetry = true }) => {
+// `stale` (Dashboard Live Data): a re-read came back shorter than the header
+// declares, so the card still shows the previous complete read — flagged by a
+// chip in the heading.
+const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
     // Tolerance is shared via context (kept across page switches); fall back to
     // local state if no provider is present.
     const sharedSymTol = useContext(SymTolContext);
@@ -119,6 +122,14 @@ const ModelSummary = ({ structure, showSymmetry = true }) => {
                     <>
                         Model information
                         <span className="ui-stat-rail__source">{summary.source}</span>
+                        {stale && (
+                            <Chip
+                                tone="warn"
+                                title="The .rmc6f is shorter than its header declares (still being written?); showing the previous complete read."
+                            >
+                                previous read
+                            </Chip>
+                        )}
                     </>
                 )}
             >
@@ -149,15 +160,24 @@ const ModelSummary = ({ structure, showSymmetry = true }) => {
                     coordinates, or fewer atoms than the header declares (e.g. a
                     Live Data read of a file still being written). */}
                 {summary.parse && (
-                    <Stat role="status" label="Parse warning" ddProps={{ title: summary.parse.warning }}>
+                    <Stat
+                        role="status"
+                        label={(
+                            <>
+                                Parse warning{' '}
+                                <InfoBadge label="Parse warning details">{summary.parse.warning}</InfoBadge>
+                            </>
+                        )}
+                        ddProps={{ title: summary.parse.warning }}
+                    >
                         {summary.parse.skipped > 0
                             ? `${formatNumber(summary.parse.skipped, 0)} lines skipped`
                             : `${formatNumber(Math.abs(summary.parse.missing ?? 0), 0)} atoms ${summary.parse.missing > 0 ? 'missing' : 'extra'}`}
-                        <span className="ui-stat__sub">
-                            {summary.parse.declared != null
-                                ? `header declares ${formatNumber(summary.parse.declared, 0)}`
-                                : 'hover for details'}
-                        </span>
+                        {summary.parse.declared != null && (
+                            <span className="ui-stat__sub">
+                                header declares {formatNumber(summary.parse.declared, 0)}
+                            </span>
+                        )}
                     </Stat>
                 )}
                 {/* Move counters per atom — the raw totals mean little without the
@@ -223,6 +243,7 @@ const ModelSummary = ({ structure, showSymmetry = true }) => {
                                     found the crystal class is shown, without a number; a symbol marked ≥ is a lower
                                     bound. Unlike FINDSYM there is no origin shift or idealized structure.
                                 </p>
+                                {symmetry.skipped && <p>{symmetry.reason}</p>}
                             </InfoBadge>
                         </>
                     )}

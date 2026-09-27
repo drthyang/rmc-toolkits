@@ -20,6 +20,7 @@ import { isIncompleteStructure } from '../structureReport';
 import { SymTolContext } from '../symTolContext';
 import InteractivePlot from './InteractivePlot';
 import { Banner, Card, CardTitle, Chip, EmptyState, IconButton, Page, Pill } from '../ui';
+import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import ModelSummary from './ModelSummary';
 import AppFooter from './AppFooter';
@@ -53,8 +54,13 @@ const comparePlotFiles = (a, b) => {
     return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 };
 
-const INCOMPLETE_STRUCTURE_NOTICE = 'The structure file is shorter than its header declares (it may still be '
-    + 'being written); the model summary keeps the previous complete read until it finishes.';
+const STRUCTURE_LOADING = 'Loading structure…';
+
+// Structure messages that only say "there is none (yet)": with no plots the
+// single empty-state line covers them. Anything else is a real failure.
+const isMissingStructure = (message) => message === STRUCTURE_LOADING
+    || message === 'No model structure detected'
+    || /^No \.rmc6f file found/.test(message);
 
 // The metric is present but null when Rwp is undefined for the data (an observed
 // column with no finite values, or one that is entirely zero). Show a dash there:
@@ -75,15 +81,15 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     const [structure, setStructure] = useState(null);
     const [structureError, setStructureError] = useState(null);
     // Set while a Live Data re-read of the structure came back incomplete and
-    // the previous complete summary is being kept on screen.
-    const [structureNotice, setStructureNotice] = useState(null);
+    // the previous complete summary is being kept on screen (ModelSummary's
+    // "previous read" chip).
+    const [structureStale, setStructureStale] = useState(false);
     const structureRef = useRef(null);
     // Parsed <stem>.dat run-control settings (static mode) for the AI assistant.
     const [runSettings, setRunSettings] = useState(null);
     const settingsSigRef = useRef('');
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [localStatus, setLocalStatus] = useState(null);
     const [showRValue, setShowRValue] = useState(false);
     const [showLoadedFiles, setShowLoadedFiles] = useState(false);
     const [hiddenPlotPaths, setHiddenPlotPaths] = useState(() => new Set());
@@ -107,7 +113,6 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     const loadServerDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
         if (!silent) setLoading(true);
         setError(null);
-        setLocalStatus(null);
         try {
             let loadedFiles = knownFiles;
             if (!loadedFiles) {
@@ -145,15 +150,15 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 // A silent (Live Data) re-read that lands mid-write keeps the
                 // previous complete model instead of flashing a short count.
                 if (silent && structureRef.current && isIncompleteStructure(structureResponse.data)) {
-                    setStructureNotice(INCOMPLETE_STRUCTURE_NOTICE);
+                    setStructureStale(true);
                 } else {
                     setStructure(structureResponse.data);
-                    setStructureNotice(null);
+                    setStructureStale(false);
                 }
                 setStructureError(null);
             } catch (structureErr) {
                 setStructure(null);
-                setStructureNotice(null);
+                setStructureStale(false);
                 setStructureError(structureErr.response?.data?.error || 'No model structure detected');
             }
         } catch (err) {
@@ -170,7 +175,6 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
             let cancelled = false;
             const loadedFiles = localRun.files || [];
             const plotFiles = loadedFiles.filter(isDashboardPlotFile);
-            const diagnostics = localRun.diagnostics;
             // Live Data sends a new localRun (same runId) when files change. Refresh the existing
             // view in place instead of tearing it down, mirroring the Flask silent poll.
             const sameRun = localRun.runId != null && localRun.runId === currentRunIdRef.current;
@@ -186,26 +190,17 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                         .map((file) => [file.path, plotMetadataFromFile(file)])
                 ));
                 setStructure(null);
-                setStructureNotice(null);
-                setStructureError(localRun.structureFile ? 'Loading structure summary...' : localRun.structureError || 'No model structure detected');
+                setStructureStale(false);
+                setStructureError(localRun.structureFile ? STRUCTURE_LOADING : localRun.structureError || 'No model structure detected');
                 setError(null);
                 setLoading(true);
-                setLocalStatus(
-                    diagnostics
-                        ? `Indexed ${diagnostics.supportedFileCount} supported files from ${diagnostics.selectedFileCount} selected files`
-                        : 'Indexed local run files'
-                );
             }
 
             const parsePlots = async () => {
                 if (!plotFiles.length) {
-                    if (!cancelled && !sameRun) {
-                        setLoading(false);
-                        setLocalStatus('No plot files detected');
-                    }
+                    if (!cancelled && !sameRun) setLoading(false);
                     return;
                 }
-                if (!sameRun) setLocalStatus(`Parsing ${plotFiles.length} plot files...`);
                 const parsedEntries = await Promise.all(plotFiles.map(async (file) => {
                     const prev = prevByPath.get(file.path);
                     // Reuse already-parsed data for files that did not change between polls.
@@ -228,10 +223,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                         .filter(isDashboardPlotFile)
                         .map((file) => [file.path, plotMetadataFromFile(file)])
                 ));
-                if (!sameRun) {
-                    setLoading(false);
-                    setLocalStatus(null);
-                }
+                if (!sameRun) setLoading(false);
             };
 
             parsePlots();
@@ -259,17 +251,17 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                     // Live Data poll that caught the .rmc6f mid-write: keep the
                     // previous complete summary rather than a short composition.
                     if (sameRun && structureRef.current && isIncompleteStructure(event.data.result)) {
-                        setStructureNotice(INCOMPLETE_STRUCTURE_NOTICE);
+                        setStructureStale(true);
                         return;
                     }
                     setStructure(event.data.result);
-                    setStructureNotice(null);
+                    setStructureStale(false);
                     setStructureError(null);
                 };
                 structureWorker.onerror = () => {
                     if (cancelled) return;
                     if (!sameRun) setStructure(null);
-                    setStructureError('Browser structure summary parser failed');
+                    setStructureError('Structure parser failed');
                 };
                 structureWorker.postMessage({
                     id: 1,
@@ -296,11 +288,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         setFiles([]);
         setMetadata({});
         setStructure(null);
-        setStructureNotice(null);
+        setStructureStale(false);
         setStructureError(null);
         setError(null);
         setLoading(false);
-        setLocalStatus(null);
         setHiddenPlotPaths(new Set());
         return undefined;
     }, [directory, loadServerDashboard, localRun]);
@@ -461,18 +452,25 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         });
     };
 
-    const renderDashboardError = (key, message) => {
+    // One line; `details` (optional) goes behind an "Error details" ? help.
+    const renderDashboardError = (key, message, details = null) => {
         if (!message || dismissedErrors.has(key)) return null;
         return (
             <Banner tone="danger" flush role="alert" onDismiss={() => dismissError(key)}>
                 {message}
+                {details && (
+                    <>
+                        {' '}
+                        <InfoBadge label="Error details" align="end">{details}</InfoBadge>
+                    </>
+                )}
             </Banner>
         );
     };
 
     const renderPlotBody = (file, variant) => {
         if (file.sourceFile && !file.plotData && !file.parseError) {
-            return <div className="ui-loading ui-loading--sm">Parsing plot file...</div>;
+            return <div className="ui-loading ui-loading--sm">Parsing plot file…</div>;
         }
         if (file.sourceFile && file.parseError) {
             return null;
@@ -511,12 +509,25 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         if (!rValueFile) return null;
         const meta = metadata[rValueFile.path];
         const title = meta?.title || rValueFile.name;
-        const sourceLabel = (rValueFile.sourceNames?.join(', ') || rValueFile.name)
-            + (rValueFile.otherRuns?.length ? ` · other runs not shown: ${rValueFile.otherRuns.join(', ')}` : '');
+        const sourceLabel = rValueFile.sourceNames?.join(', ') || rValueFile.name;
+        const otherRuns = rValueFile.otherRuns || [];
+        // Several failed logs: one counted line, the per-log list behind "?".
+        const failedLogs = rValueFile.parseErrors || [];
+        const errorLine = failedLogs.length > 1
+            ? `${failedLogs.length} chi² logs could not be parsed`
+            : rValueFile.parseError;
+        const errorDetails = failedLogs.length > 1
+            ? failedLogs.map(({ name, message }) => <p key={name}>{name}: {message}</p>)
+            : null;
+        const showErrorDetails = Boolean(errorDetails && errorLine
+            && !dismissedErrors.has(`r-value:${rValueFile.parseError}`));
         return (
             <Card
                 as="article"
-                clip
+                // A clipped card would hide the error-details popover; round
+                // the ends instead while it is on screen.
+                clip={!showErrorDetails}
+                roundEnds={showErrorDetails}
                 lift
                 data-figure-card=""
                 className={`r-value-card${showRValue ? '' : ' is-collapsed'}`}
@@ -526,6 +537,11 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                         <CardTitle>{title}</CardTitle>
                         {sourceLabel !== title && (
                             <span className="ui-card__source" title={sourceLabel}>{sourceLabel}</span>
+                        )}
+                        {otherRuns.length > 0 && (
+                            <Chip title={`Other runs in this folder, not charted: ${otherRuns.join(', ')}`}>
+                                +{otherRuns.length} {otherRuns.length === 1 ? 'run' : 'runs'}
+                            </Chip>
                         )}
                     </div>
                     <div className="ui-card__header-actions">
@@ -540,14 +556,18 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                     </div>
                 </div>
                 {showRValue && renderPlotBody(rValueFile, 'wide')}
-                {renderDashboardError(`r-value:${rValueFile.parseError}`, rValueFile.parseError)}
+                {renderDashboardError(`r-value:${rValueFile.parseError}`, errorLine, errorDetails)}
             </Card>
         );
     };
 
     const renderLoadedFilesPanel = () => {
         if (allPlotFiles.length === 0) {
-            return structureError ? <Card clip note className="model-summary-empty">{structureError}</Card> : null;
+            // "Not found" / loading are covered by the empty-state line; a real
+            // structure failure is a one-line error.
+            if (!structureError || isMissingStructure(structureError)) return null;
+            const banner = renderDashboardError(`structure:${structureError}`, structureError);
+            return banner && <div className="structure-error">{banner}</div>;
         }
 
         return (
@@ -608,24 +628,13 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     };
 
     const hasFigures = gridFiles.length > 0 || (rValueFile && showRValue);
+    const hasRun = Boolean(localRun) || files.length > 0;
 
     return (
         <Page wide ref={pageRef}>
-            <div hidden>
-                <div>
-                    <h2>Run Dashboard</h2>
-                    <p>{localRun ? localRun.name : directory}</p>
-                </div>
-                {loading && <Chip tone="success" strong>Loading</Chip>}
-            </div>
-
             {renderDashboardError(`dashboard:${error}`, error)}
 
-            {localStatus && <Banner tone="neutral">{localStatus}</Banner>}
-
-            {structureNotice && <Banner tone="neutral" role="status">{structureNotice}</Banner>}
-
-            <ModelSummary structure={structure} />
+            <ModelSummary structure={structure} stale={structureStale} />
 
             {renderLoadedFilesPanel()}
 
@@ -635,8 +644,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 {gridFiles.map((file) => renderPlotCard(file))}
             </div>
 
+            {loading && allPlotFiles.length === 0 && <EmptyState>Loading…</EmptyState>}
+
             {!loading && allPlotFiles.length === 0 && (
-                <EmptyState>Open a run folder to populate the dashboard.</EmptyState>
+                <EmptyState>{hasRun ? 'No plot files in this folder.' : 'Open a run folder.'}</EmptyState>
             )}
 
             <AppFooter />
