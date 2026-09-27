@@ -1783,6 +1783,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                         onSelectSite={setSelectedRef}
                         selectedEllipsoid={selectedEllipsoid}
                         elementColors={elementColors}
+                        loadingSites={loadingSites}
                     />
                 </div>
             </div>
