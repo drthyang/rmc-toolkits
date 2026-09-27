@@ -187,6 +187,14 @@ case to `__tests__/markup.test.jsx`.
   different between runs of the *same* build, which flips the sub-pixel phase of a few glyphs
   (≈0.06 % of a phone screenshot, a handful of glyphs). Re-shoot before chasing such a diff; a
   real CSS change reproduces.
+- A second noise class does reproduce, so re-shooting alone does not rule it out: the
+  anti-aliasing of a rounded corner can flip between two values depending on paint history.
+  Seen on the brand mark's top corners in the header (≈6 pixels, max channel delta ≈46, e.g.
+  rgb(211,223,248) vs rgb(165,190,246)) after the Live Data switch was toggled on and off; it
+  persisted through a whole browser context and repeated across runs of each build, while
+  geometry and computed styles were identical, and a later run of `main` rendered the other
+  value. Before treating a few-pixel corner diff as a regression, shoot `main` against itself
+  (A vs A′) in the same scenario — if `main` flips too, it is noise.
 - Walk the states by hand (DevTools :hover / :focus-visible / :active):
   nav tabs (hover, active-tab hover, no focus ring), pills and the save trigger
   (incl. accent), info trigger, tool buttons, overlay and frame segments,
