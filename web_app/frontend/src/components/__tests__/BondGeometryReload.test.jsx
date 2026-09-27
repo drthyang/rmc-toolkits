@@ -7,7 +7,7 @@
 // element list, the Model information card and the partials, keeps the
 // user's triplet and typed windows, and drops the computed angle
 // distribution — a result from the previous configuration must never sit
-// next to the new model — with a hint saying why.
+// next to the new model — with a cue saying why.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
@@ -98,6 +98,8 @@ describe('BondGeometryPage dataEpoch (Flask Live Data)', () => {
         });
     };
     const text = () => container.textContent.replace(/\s+/g, ' ');
+    // The KPI rail is always there; before a result its values read "—".
+    const angleKpi = () => container.querySelector('[aria-label="Triplet result"] .ui-kpi__value').textContent;
 
     it('reloads in place, keeps the triplet and drops the stale result', async () => {
         await render(0);
@@ -108,9 +110,10 @@ describe('BondGeometryPage dataEpoch (Flask Live Data)', () => {
         // The user picks a triplet other than the default and computes it.
         await setSelect('End element A', 'Ga');
         const compute = [...container.querySelectorAll('button')].find((button) => /Compute/.test(button.textContent));
+        expect(angleKpi()).toBe('—');
         await act(async () => { compute.click(); });
         expect(count('/api/triplets')).toBe(1);
-        expect(container.querySelector('section[aria-label="Triplet result"]')).not.toBeNull();
+        expect(angleKpi()).toBe('15.0\u2009per Nb');
 
         // Nothing new on disk: nothing is re-read.
         await render(0);
@@ -124,16 +127,17 @@ describe('BondGeometryPage dataEpoch (Flask Live Data)', () => {
         // Never recomputed unasked...
         expect(count('/api/triplets')).toBe(1);
         // ...the previous result is gone, and the page says why.
-        expect(container.querySelector('section[aria-label="Triplet result"]')).toBeNull();
+        expect(angleKpi()).toBe('—');
         expect(text()).toMatch(/New configuration — Compute again/);
+        expect(text()).toMatch(/new configuration/);
         // The picks survive the reload.
         expect(select('End element A').value).toBe('Ga');
         expect(select('Central element B').value).toBe('Nb');
 
-        // Compute again: the hint goes, the new result lands.
+        // Compute again: the cue goes, the new result lands.
         await act(async () => { compute.click(); });
         expect(count('/api/triplets')).toBe(2);
-        expect(container.querySelector('section[aria-label="Triplet result"]')).not.toBeNull();
-        expect(text()).not.toMatch(/New configuration/);
+        expect(angleKpi()).toBe('15.0\u2009per Nb');
+        expect(text()).not.toMatch(/new configuration/i);
     });
 });
