@@ -3073,7 +3073,9 @@ for a reason that has nothing to do with anharmonicity, and the ± asymmetry rea
 uninterpretable, because the "site centre" it is measuring displacements from does not exist.
 
 The only on-screen signal is the `(count/copiesPerCell)` suffix in the site label — the same cue the
-hook's default-selection heuristic uses — so before reading a map on a reconstructed file, check that
+hook's default-selection heuristic uses, and explained in the Cluster control's "About site
+clustering" `?` in the same words as on the PCA Ellipsoid page — so before reading a map on a
+reconstructed file, check that
 $\text{count}/\text{copiesPerCell} \approx 1$, and re-check the map at two or three cluster distances
 to confirm it is stable. Note this diagnostic **does not exist on the Flask path**, which returns
 neither `reconstructed` nor `copiesPerCell`.

@@ -154,7 +154,11 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
                                         <p>
                                             This file carries no reference-site or cell columns, so sites
                                             are rebuilt by folding every atom into one unit cell and
-                                            grouping atoms of the same element within this distance.
+                                            grouping atoms of the same element within this distance. Each
+                                            site should gather one copy per supercell image; the count
+                                            beside a site (e.g. 27/27) is its members against that
+                                            expected number. Raise the distance to merge over-split sites,
+                                            lower it to separate ones that ran together.
                                         </p>
                                     </InfoBadge>
                                 </>
