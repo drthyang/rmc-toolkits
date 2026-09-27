@@ -3,7 +3,7 @@
 
 """Classic stog.inp first-peak line (line 22) semantics in the Auto StoG front ends.
 
-Regression tests for the 1.0 audit (stog-a group): the r0 fallback took
+Regression tests for the 0.6.0 audit (stog-a group): the r0 fallback took
 max(peak_cutoff, peak_rmin), which for a line whose first-peak window starts below the
 cleanup cutoff (the very case the window exists for) put the C2 window over the first
 peak -- '2.3 1.6 2.2' on a synthetic with its first shell at 1.7 A gave a = -4.9.

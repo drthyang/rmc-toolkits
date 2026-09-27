@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Q-grid order (1.0 audit, stog-b; mirrors tests/test_stog_b_qorder.py). With
+// Q-grid order (0.6.0 audit, stog-b; mirrors tests/test_stog_b_qorder.py). With
 // descending Q the trapezoid panels are negative and autoscale "converged" to a
 // negative scale in both engines. Now cropSq sorts ascending and rejects
 // duplicate / overlapping Q, the transforms throw on non-increasing grids, and

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""fourier_filter on an r grid that starts at r = 0 (1.0 audit, stog-b group).
+"""fourier_filter on an r grid that starts at r = 0 (0.6.0 audit, stog-b group).
 
 The filter divided G_PDF by 4 pi rho0 r to get g and multiplied back for the
 section integrand: at r = 0 that is 0/0 = NaN, and the NaN reached every output Q

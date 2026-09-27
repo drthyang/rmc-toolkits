@@ -408,7 +408,7 @@ payload's `depth`/`depthThickness` are absolute depth-projection units. Ångstr�
 enter only at draw time, when `StructurePage.jsx` maps $\hat{\mathbf u},\hat{\mathbf v}$ through
 `unitCell.unitVectors`; the real slab thickness $\Delta z\,\Delta_d\lVert\mathbf h\rVert_2 d_{hkl}
 = \Delta z\,(|h|+|k|+|l|)\,d_{hkl}$ is printed on the map (`slabThicknessAngstrom()` in
-`workers/slabSelection.js`). `AGENTS.md` said until 1.0 that `z`/`dz` were "cell-edge fractions …
+`workers/slabSelection.js`). `AGENTS.md` said until 0.6.0 that `z`/`dz` were "cell-edge fractions …
 converted to Ångström inside `kde.py`"; that never matched the code ([structure.md](structure.md)
 Step 4). The route validates the pair: $z_c$ must
 be finite and is clamped to $[0, 1]$ by the engine (echoed as `center`); $0 < \Delta z \le 1$.

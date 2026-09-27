@@ -90,7 +90,7 @@ describe('pcaKdeWorker cache is content-addressed', () => {
     });
 });
 
-// Integrated 1.0 rule, the same in both runtimes: an atom line with a
+// Integrated 0.6.0 rule, the same in both runtimes: an atom line with a
 // non-finite coordinate is skipped and counted by the shared grammar
 // (parseRmc6fAtoms / iter_rmc6f_atoms), and the sites and orientation
 // responses carry the report's warning -- the text /api/pca/sites and

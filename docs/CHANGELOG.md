@@ -3,20 +3,22 @@
 Chronological record of notable changes, newest first. For current architecture and conventions see
 [AGENTS.md](../AGENTS.md); for forward plans see [ROADMAP.md](ROADMAP.md).
 
-## v1.0.0 — 2026-09-25
+## 0.6.0 — unreleased
 
-The first stable release. Every engine's math and physics was audited end to end, and the
-audit's roughly 100 defects were fixed in both runtimes. They included wrong numbers, Python ↔
-browser disagreements, inputs that crashed or silently produced garbage, and docs that described
-code that no longer existed. Nine groups fixed them test-first (Auto StoG ×2, structure KDE, PCA
-ellipsoid, displacement directions, bond angles, parsers and dashboard, symmetry finder, Flask
-API). Each group was reviewed independently, then merged and integrated. Several numbers the app
-reports change *because they were wrong*: read **Upgrading from 0.5.0** before comparing 1.0
-output with 0.5.0.
+> This work was first tagged v1.0.0 on 2026-09-26. That tag was withdrawn on 2026-09-27, and the
+> work continues toward 0.6.0, which will also bring the Bond Geometry redesign and device layouts.
+
+Every engine's math and physics was audited end to end, and the audit's roughly 100 defects were
+fixed in both runtimes. They included wrong numbers, Python ↔ browser disagreements, inputs that
+crashed or silently produced garbage, and docs that described code that no longer existed. Nine
+groups fixed them test-first (Auto StoG ×2, structure KDE, PCA ellipsoid, displacement directions,
+bond angles, parsers and dashboard, symmetry finder, Flask API). Each group was reviewed
+independently, then merged and integrated. Several numbers the app reports change *because they
+were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.5.0.
 
 ### Upgrading from 0.5.0
 
-Each 0.5.0 → 1.0 example below comes from running both releases on the same input. The inputs are
+Each 0.5.0 → 0.6.0 example below comes from running both releases on the same input. The inputs are
 the committed demo run (`web_app/frontend/public/demo`, GaTa₄Se₈ 250 K, 52 000 atoms), the
 maintainer's Mn₃Sn and FeCoSn 199 K total-scattering runs (`data/stog_tests`, not in the
 repository), or a synthetic cell where stated. The reasons are in
@@ -24,7 +26,7 @@ repository), or a synthetic cell where stated. The reasons are in
 
 #### Numbers that change
 
-| Quantity | Where | 0.5.0 → 1.0 | Cause |
+| Quantity | Where | 0.5.0 → 0.6.0 | Cause |
 | --- | --- | --- | --- |
 | Rwp | Dashboard chip; `metrics.rwp` of `/api/plot/*`; `make_plot` | Demo F(Q) 4.569 % → 4.565 %, x-ray G(r) 1.189 % → 1.186 %. A fit with calc = 0.7 × expt: 42.9 % → 30.0 %. The change grows with the amplitude mismatch between the curves. | Divided by the experimental curve, not the calculated one ([parsers](#parsers-and-run-dashboard)) |
 | Structure KDE peak height and contour levels | Atomic Density map, both runtimes; `vmax` and `contours` of `/api/kde/slice`; `oriented_kde_slice` | Demo at the default dz 0.08 and bw 0.03 (c, a and Se-only slices): 0 to +23 %, most between +3 and +16 % (c-slice z = 0.55: 115.8 → 134.2). Thick or sparse slabs rise up to +64 % (z = 0.5, dz = 0.2: 49.6 → 80.8; Se at z = 0.3, dz = 0.1, 11 atoms: 220.6 → 362.4). The integrated density is unchanged, and a slab whose atoms all sit on one layer does not move (z = 0.25: 596.4). | The kernel is fitted to the slab's own atoms, without periodic images or the subsample, so it is narrower ([Structure KDE](#structure-kde)) |
@@ -204,7 +206,7 @@ partway:
   minimises Σw²e² (a redescending estimator). Rows are now scaled by √w. On FeCoSn 199 K the
   density and Faber-Ziman amplitudes agree to 0.6 % (5.8 % before), and the ρ₀ self-consistency
   estimate lands 0.5 % from the expert density (5.9 % before). The √w-only table and the
-  0.5.0 → 1.0 table are in [auto-stog.md](algorithms/auto-stog.md) (Step 6).
+  0.5.0 → 0.6.0 table are in [auto-stog.md](algorithms/auto-stog.md) (Step 6).
 - **The page fits what the CLI fits.** The JS loop filtered with S(0) = 0 instead of the
   composition target, so page and CLI (a, b) differed by up to 2.0 % on Mn₃Sn. They now agree to
   round-off, and so does the iterated ρ₀.
@@ -457,7 +459,7 @@ partway:
   `chooseStructureFile`), with code-point tie-breaks. A picked folder with subfolders can differ:
   the browser also searches the subfolders (and falls back to the first usable `.rmc6f` by full
   path), while the server looks only at the folder itself.
-- The package root exports the 1.0 engine API (`first_shell_foot`, `auto_enforcement_cutoff`,
+- The package root exports the 0.6.0 engine API (`first_shell_foot`, `auto_enforcement_cutoff`,
   `fz_limit_fit`, `alias_limit`, `bond_angle_summary_from_file`, …).
 - The static-mode workers refuse what the Flask routes refuse (`workers/requestGuards.js`): the PCA
   worker's orientation `frequency` must be an integer and `smoothing` an integer in [0, 64] (10⁹
@@ -481,15 +483,15 @@ partway:
   `tests/test_parsers_demo_run.py`, `__tests__/demoRun.test.js`, the KDE golden and the plot
   parity golden. The GaNb₄Se₈ and `stog_tests` real-data tests still skip without `data/`, and
   the full Mn₃Sn sweep is opt-in (`RMC_TOOLKITS_FULL_SWEEP=1`).
-- Version 1.0.0 (Production/Stable classifier). The Auto StoG tab stays hidden in the shipped
-  build (`SHOW_AUTO_STOG = false`); the engine, CLI and API are supported.
+- Version 0.6.0 (`0.6.0.dev0` until it ships; Beta classifier). The Auto StoG tab stays hidden
+  in the shipped build (`SHOW_AUTO_STOG = false`); the engine, CLI and API are supported.
 
-### Deferred beyond 1.0
+### Deferred beyond 0.6.0
 
-The maintainer decisions the audit considered and did not take for 1.0 (a physical KDE kernel,
+The maintainer decisions the audit considered and did not take for 0.6.0 (a physical KDE kernel,
 plotting every χ² column, a Python symmetry finder, Auto as the default orientation resolution,
 AXIS_RESOLUTION_SIGMAS = 2, automatic FZ fallback for degenerate density limits, bounded A = C
-pairing work, and more) are listed per engine in [ROADMAP.md](ROADMAP.md#1x-candidates).
+pairing work, and more) are listed per engine in [ROADMAP.md](ROADMAP.md#candidates-after-060).
 
 ## v0.5.0 — 2026-08-14
 

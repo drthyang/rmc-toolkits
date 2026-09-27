@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""Regression tests for the 1.0 audit of the displacement-direction engine.
+"""Regression tests for the 0.6.0 audit of the displacement-direction engine.
 
 Each class pins one root cause found by the audit (the finding ids are in
 the class docstrings). The JS twin of every engine-level assertion lives in

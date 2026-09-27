@@ -90,7 +90,7 @@ class PcaApiTests(unittest.TestCase):
                     self.assertIn("finite", strict_json(response)["error"])
 
     def test_a_nan_coordinate_is_skipped_and_surfaced(self):
-        # pca.parity.6 / parity.23 / parity.27, integrated 1.0 rule: the line
+        # pca.parity.6 / parity.23 / parity.27, integrated 0.6.0 rule: the line
         # is skipped and counted in both runtimes, and the PCA routes carry the
         # parse warning naming it (the browser worker's parseWarning is the
         # same text), so the dropped atom is never silent.

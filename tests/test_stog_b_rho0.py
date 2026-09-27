@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""estimate_rho0 never accepts a physically impossible root (1.0 audit, stog-b).
+"""estimate_rho0 never accepts a physically impossible root (0.6.0 audit, stog-b).
 
 On missing-low-Q data the density-limit amplitude a_density(rho0) can cross the
 rho0-independent Faber-Ziman amplitude a second time at a density no solid has:

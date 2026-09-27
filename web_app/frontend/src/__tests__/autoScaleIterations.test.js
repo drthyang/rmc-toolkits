@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Iteration count of an unconverged auto-scale (1.0 audit, stog-b): Python's
+// Iteration count of an unconverged auto-scale (0.6.0 audit, stog-b): Python's
 // `for iterations in range(1, max_iter + 1)` leaves iterations == max_iter, and
 // the JS loop must report the same (it reported maxIter + 1, one more than its
 // own history) — the count is shown on the page and written to the provenance.

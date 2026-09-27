@@ -179,7 +179,7 @@ and MFA aware) — the app never stores credentials.
 ## Suggested Immediate Backlog
 
 1. Add trimmed fixtures of the GaNb₄Se₈ and `stog_tests` runs so their real-data tests run in CI
-   (since 1.0 the committed demo run backs the parser, KDE-golden and plot-parity tests there).
+   (since 0.6.0 the committed demo run backs the parser, KDE-golden and plot-parity tests there).
 2. Refactor `src/RMC_plot.py` into a CLI wrapper around `rmc_toolkits.plots`.
 3. Refactor `src/RMC_3D.py` to avoid Mayavi import and execution at import time.
 4. Add `/api/project/scan` for directory-level summaries.
@@ -193,10 +193,10 @@ and MFA aware) — the app never stores credentials.
 11. Prototype Phase 8a remote monitoring: a read-only SSH pull of an HPC run directory into a local
     cache, surfaced through the existing run-source abstraction (see `docs/HPC_MONITORING_PLAN.md`).
 
-## 1.x candidates
+## Candidates after 0.6.0
 
-Maintainer decisions the 1.0 audit considered and did not take, grouped by engine (moved here
-from the v1.0.0 entry of [CHANGELOG.md](CHANGELOG.md)). Until one is taken, the behaviour
+Maintainer decisions the 0.6.0 audit considered and did not take, grouped by engine (moved here
+from the 0.6.0 entry of [CHANGELOG.md](CHANGELOG.md)). Until one is taken, the behaviour
 documented in [ALGORITHMS.md](ALGORITHMS.md) stands.
 
 - **Structure KDE:**

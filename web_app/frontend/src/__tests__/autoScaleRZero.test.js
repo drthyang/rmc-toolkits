@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// fourierFilter on an r grid that starts at r = 0 (1.0 audit, stog-b; mirrors
+// fourierFilter on an r grid that starts at r = 0 (0.6.0 audit, stog-b; mirrors
 // tests/test_stog_b_rzero.py): the section integrand 4π ρ0 r g was 0/0 at r = 0
 // and NaN reached every output. Now it is G_PDF + 4π ρ0 r, and g(0) is the
 // continuous extension 1 + G_PDF'(0)/(4π ρ0) (gpdfSlopeAtZero).

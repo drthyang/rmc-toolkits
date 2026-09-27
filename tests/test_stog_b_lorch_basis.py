@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""Lorch omitted-low-Q basis without catastrophic cancellation (1.0 audit, stog-b).
+"""Lorch omitted-low-Q basis without catastrophic cancellation (0.6.0 audit, stog-b).
 
 The Lorch branch evaluated (v sin v + cos v - 1)/(r - a)^2, v = Q0 (r - a), with
 cos v - 1 by subtraction: just outside the 1e-9 patch around the removable

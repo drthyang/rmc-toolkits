@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""Conditioning of the Q->0 Faber-Ziman amplitude (1.0 audit, stog-b group).
+"""Conditioning of the Q->0 Faber-Ziman amplitude (0.6.0 audit, stog-b group).
 
 a_fz = (s0 - 1)/(S_meas(0) - L) had no conditioning guard: when the extrapolated
 head lands near the high-Q level, the denominator is a small difference of noisy
@@ -126,7 +126,7 @@ class FzConditioningTests(unittest.TestCase):
 
 
 class ReliableIsNotSufficientTests(unittest.TestCase):
-    """reliable=True only says the denominator is statistically resolved (1.0 review).
+    """reliable=True only says the denominator is statistically resolved (0.6.0 review).
 
     On two of the three 'good' Mn3Sn runs the reliable-flagged a_fz still
     drifts ~45 % with Qmin (a systematic head bias), so the CLI says what else

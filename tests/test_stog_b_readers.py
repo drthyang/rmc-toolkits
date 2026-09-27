@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""STOG readers accept the same inputs as the browser ports (1.0 audit, stog-b group)."""
+"""STOG readers accept the same inputs as the browser ports (0.6.0 audit, stog-b group)."""
 
 from pathlib import Path
 import tempfile

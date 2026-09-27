@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""Auto StoG scaling API (/api/scaling/*): 1.0 audit regressions, stog-b group."""
+"""Auto StoG scaling API (/api/scaling/*): 0.6.0 audit regressions, stog-b group."""
 
 from pathlib import Path
 import os

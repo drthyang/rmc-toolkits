@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""Despike runs exactly once in the auto path (1.0 audit, stog-b group).
+"""Despike runs exactly once in the auto path (0.6.0 audit, stog-b group).
 
 ``_autoscale_pass`` cropped + despiked the data, fitted (a, b) on it, then handed
 the already-despiked arrays to ``scale_pipeline``, which cropped + despiked them a

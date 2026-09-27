@@ -75,11 +75,11 @@ scale_ft_rmc.dr         # D(r) = 4πρ0 r G(r)  (slope −4πρ0⟨b⟩² = −1
 ```
 
 File conventions (value columns; verified on all five Fortran runs in `data/stog_tests`,
-1.0 audit): `scale.gr` and `scale_ft.gr` value column 1 hold **g(r)** (dimensionless,
+0.6.0 audit): `scale.gr` and `scale_ft.gr` value column 1 hold **g(r)** (dimensionless,
 oscillates about 1 — mean 1.0006–1.019 over r ≥ 20 Å); `scale_ft.gr` value column 2 is exactly
 **r·[g(r) − 1]**. (The 2026-07-17 note here said g(r) − 1 and D(r): the pystog cross-run's
 2.5e−3 relative rms could not tell g from g − 1 against max|ref| ≈ 400, and rmc-autoscale wrote
-those functions until 1.0.) The `rmc` outputs are Keen G_K(r) (barns), F_K(Q), and D(r).
+those functions until 0.6.0.) The `rmc` outputs are Keen G_K(r) (barns), F_K(Q), and D(r).
 
 Verified relations (all exact against the example):
 
@@ -228,7 +228,7 @@ was run end-to-end against the example before any of our code exists
 | Stage | Comparison | Result |
 | --- | --- | --- |
 | Scaling | `a·S + b` vs `scale.fq` | rms 1.4e−13 (exact) |
-| Forward FT | pystog `g(r)−1` vs `scale.gr` | rel. rms 2.5e−3 of full scale — *not* a convention pin: an offset of 1 is 2.5e−3 of max\|ref\| ≈ 400; `scale.gr` holds g(r) (1.0 audit) |
+| Forward FT | pystog `g(r)−1` vs `scale.gr` | rel. rms 2.5e−3 of full scale — *not* a convention pin: an offset of 1 is 2.5e−3 of max\|ref\| ≈ 400; `scale.gr` holds g(r) (0.6.0 audit) |
 | Fourier filter | pystog filter section vs `ft.dat` | rms 6.1e−4 |
 | Filtered S(Q) | pystog vs `scale_ft.sq` | rms 6.1e−4 (rel. 3e−6) |
 | RMC outputs | pystog conversions vs `scale_ft_rmc.*` | 2–7% — explained: classic stog's final low-r enforcement + first-peak cleanup, absent in pystog (§1.5) |
@@ -421,7 +421,7 @@ data whose first measured Q (after cropping, not the configured Qmin) exceeds th
 width (~1 Å⁻¹), where the Q→0 extrapolation owns the estimate — a
 starting point, not a measurement. Validation: synthetic truth ρ0 = 0.05 recovered to
 0.0510 from seeds 0.02/0.05/0.2; FeCoSn 199 K x-ray → 0.0600 vs the hand 0.057329 (4.7%),
-100 K → 0.0640 (11.7%) (after the 1.0 Huber fix: 199 K 0.0564, −1.5%; 100 K 0.0601,
+100 K → 0.0640 (11.7%) (after the 0.6.0 Huber fix: 199 K 0.0564, −1.5%; 100 K 0.0601,
 +4.8%) — the distance from a hand value is a property of the measured
 S(Q), not of the code, so the fixture tolerance is per temperature; both are
 seed-independent to <0.1%

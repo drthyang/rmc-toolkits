@@ -667,7 +667,7 @@ def pca_kde_volume(
     sampled on that per-axis box (``halfWidths``), whose G nodes resolve every
     axis's kernel. ``cubic_box`` only sizes the *display* box returned as
     ``boxHalfWidths`` -- a cube of half-width ``max(halfWidths)`` for a shadow box
-    whose walls are all the same size. (Until 1.0 it also sampled every axis on
+    whose walls are all the same size. (Until 0.6.0 it also sampled every axis on
     that cube, which puts a thin axis's kernels between nodes: a planar cloud
     read 0% captured mass on an even grid and ~2e5 % on an odd one.)
     """

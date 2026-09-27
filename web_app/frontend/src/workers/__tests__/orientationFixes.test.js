@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Regression tests for the 1.0 audit of the displacement-direction engine —
+// Regression tests for the 0.6.0 audit of the displacement-direction engine —
 // the JS twin of tests/test_orientation_fixes.py. Engine-level expectations
 // are shared verbatim with the Python suite so the two engines cannot drift.
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// The r range the discrete sine transform resolves, r < π/ΔQ (1.0 audit,
+// The r range the discrete sine transform resolves, r < π/ΔQ (0.6.0 audit,
 // stog-b; mirrors tests/test_stog_b_alias.py): the engines report
 // r_alias_limit and flag an r_max beyond it.
 
@@ -37,7 +37,7 @@ describe('aliasing limit π/max(ΔQ)', () => {
     });
   });
 
-  // 1.0 review: the coarsest step sets the limit, not the median (mirrors
+  // 0.6.0 review: the coarsest step sets the limit, not the median (mirrors
   // tests/test_stog_b_alias.py::NonUniformGridTests).
   it('a log-binned grid is limited by its coarse high-Q steps', () => {
     const qList = [];

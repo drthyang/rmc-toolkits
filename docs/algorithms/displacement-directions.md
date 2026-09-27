@@ -221,13 +221,13 @@ validation before any work:
 | `no displacement vectors survive the amplitude cutoff` | $N = 0$ after the cut |
 | `displacement weights sum to zero` | $\sum_m M_m \le 0$ |
 
-**Non-finite rows are rejected, never dropped.** Before the 1.0 audit a single `NaN` or `inf` row
+**Non-finite rows are rejected, never dropped.** Before the 0.6.0 audit a single `NaN` or `inf` row
 reached `np.cov` for the PCA frame — which is fitted on every row, even for `frame="cartesian"` —
 and failed with LAPACK's `Eigenvalues did not converge`, while the JS port silently returned
 `NaN` `pcaAxes` (cartesian) or crashed in the cell assignment with a `TypeError` (pca frame, or an
 `inf` component). Both engines now reject the input by name. A corrupt displacement is a data error,
 not something to be quietly counted into `rejectedPoints` next to the physically meaningful
-amplitude cut. (Upstream of this, since 1.0 both `.rmc6f` parsers skip an atom line with a
+amplitude cut. (Upstream of this, since 0.6.0 both `.rmc6f` parsers skip an atom line with a
 non-finite coordinate and count it, so the same corrupt file gives the same site without that atom
 in both runtimes; the `parseWarning` of `/api/pca/orientation` and of the worker's `orientation`
 response names the skipped line, and the page shows it —
@@ -368,7 +368,7 @@ The float `sqrt` only seeds the search; the boundary is settled by the integer c
 `target * (10 nu^2 + 2) <= N`, which is exact in both engines, so the browser and the server pick
 the same tiling for the same data without any rounding-mode subtleties.
 
-**It is a floor, not a rounding.** Before the 1.0 audit the code *rounded* $\sqrt{(N/12 - 2)/10}$
+**It is a floor, not a rounding.** Before the 0.6.0 audit the code *rounded* $\sqrt{(N/12 - 2)/10}$
 to the nearest integer (half-to-even), which contradicted the docstring's "largest frequency whose
 cells still average `target_per_cell` points": at the rounding boundaries the average occupancy
 dropped to $12\,((\nu - \tfrac12)/\nu)^2$ — 7.0 per cell at $N = 294$ ($\nu = 2$), 8.4 at
@@ -415,7 +415,7 @@ $\nu = 10$** (1002 cells), not Auto.
 **Validation.** `recommended_frequency` / `recommendedFrequency` raise on a non-finite point count
 (`n_points must be a finite number`), a non-finite or $< 1$ `target_per_cell`, and a
 `max_frequency` below `MIN_FREQUENCY` (`max_frequency must be a finite number >= 1`) — before the
-1.0 audit `max_frequency=0` returned the invalid frequency 0.
+0.6.0 audit `max_frequency=0` returned the invalid frequency 0.
 
 ---
 
@@ -557,7 +557,7 @@ do not occur for distinct circumcentres) fall back to incidence order in both.
 order, and where it *starts* is decided by the atan2 branch cut at $\pm\pi$. For many cells one
 neighbour centre lies exactly on the $-\mathbf{e}_1$ ray, so its $\mathbf{e}_2$ component is pure
 $\pm 10^{-17}$ round-off whose sign differs between NumPy and V8 (their centres differ in the last
-ulp): one engine sorted it at $+\pi$ (last), the other at $-\pi$ (first). Before the 1.0 audit
+ulp): one engine sorted it at $+\pi$ (last), the other at $-\pi$ (first). Before the 0.6.0 audit
 that rotated 185 of the 1002 exported `neighbors` rows at $\nu = 10$ (76/362 at $\nu = 6$,
 2317/14442 at $\nu = 38$) and started two $\nu = 38$ polygons on a different vertex. No displayed
 number changed, but the payloads disagreed element by element. `_angular_order` / `angularOrder`
@@ -782,7 +782,7 @@ before it).
 **(e) Exact ties go to the lowest cell index, the same cell in both engines.** The fold makes each
 engine inversion-equivariant. Within the resolved hemisphere, though, the walk still left a tied
 direction in whichever tied cell it reached first, and that depends on last-bit round-off in the
-dot products, which differs between NumPy and V8. Before the review of the 1.0 fixes,
+dot products, which differs between NumPy and V8. Before the review of the 0.6.0 fixes,
 $\langle 111\rangle$ went to different cells in the two engines at 18 of the 31 frequencies
 $\nu = 1$–30 and 38 (1, 2, 4, 5, 7, 8, 11, 13, 14, 16, 17, 19, 20, 23, 26, 28, 29, 38), and
 $\langle 110\rangle$ at 9 (3, 4, 10, 11, 12, 18, 19, 25, 26). An 8-well $\langle 111\rangle$ model
@@ -903,7 +903,7 @@ Three things to note:
    the largest of $C$ noise deviates is routinely 3–5. *Poisson skew*: at the default operating
    point $e_m \approx 0.2$–$1$, where $(n - e)/\sqrt{e}$ wildly overstates the tail (at
    $e = 0.2156$ a count of 3 gives $z = 6.0$, Gaussian $p = 10^{-9}$, true Poisson $p = 1.4\times10^{-3}$).
-   Before the 1.0 audit the summary strip printed this $z$ next to the peak: an exactly isotropic
+   Before the 0.6.0 audit the summary strip printed this $z$ next to the peak: an exactly isotropic
    cloud read a median "z = 3.8" (1000 copies) or 5.4 (216 copies) at the UI defaults, and 42 of 52
    real GaNb₄Se₈ sites printed $z \ge 3$ although their peaks were statistically
    indistinguishable from an isotropised copy of the same data.
@@ -971,7 +971,7 @@ $$\lambda \;=\; \binom{N}{2}\sum_m p_m^2 \qquad (\texttt{mapExpectedPairs})$$
 
 and skewness $\approx 1/\sqrt\lambda$. $\chi^2_{C-1}$ has the right mean ($C - 1$) and nearly the
 right variance, but its skewness is $\sqrt{8/(C-1)} = 0.09$ at $\nu = 10$, so its upper tail is far
-too light. The 1.0 audit first shipped the $\chi^2_{C-1}$ reference, and the review of that fix
+too light. The 0.6.0 audit first shipped the $\chi^2_{C-1}$ reference, and the review of that fix
 found pure noise reading $> 3\sigma$ in 1.7 % of maps with 27 copies at $\nu = 10$ (13× nominal)
 and in 2.8 % with 64 copies at $\nu = 24$ (20×). The table below has the full picture.
 
@@ -1015,7 +1015,7 @@ contains even one shared cell, so $X^2$ counts zero, one or two rare events. Its
 that no three-moment curve follows (measured at 1.6× nominal at 3σ), and it holds no whole-map
 information that the peak test lacks. `mapChiSquare` is still reported.
 
-*What it replaces.* Before the 1.0 audit the strip printed `significance`
+*What it replaces.* Before the 0.6.0 audit the strip printed `significance`
 $= \sqrt{\tfrac1C\sum_m z_m^2} = \sqrt{X^2/C}$ with a σ unit. Under the null that RMS is
 $1 \pm 1/\sqrt{2C}$ — $1.00 \pm 0.02$ at $\nu = 10$ — so it is not in units of σ at all: 1.05 is
 already ≈ 2.3σ, 1.10 ≈ 4.4σ, and a cloud with **every atom in one hemisphere** (1000 copies,
@@ -1080,7 +1080,7 @@ tiling, where every degree is 5 or 6.
 The pass count is **truncated toward zero**, not rounded: `int(passes)` / `Math.trunc(smoothing)`.
 A fractional `smoothing = 2.9` runs 2 passes (and is echoed as `2`). A negative, `NaN` or infinite
 value is rejected with `smoothing must be a finite, non-negative number of passes` (Step 1,
-"Errors"); before the 1.0 audit a negative value silently ran no passes and was echoed verbatim.
+"Errors"); before the 0.6.0 audit a negative value silently ran no passes and was echoed verbatim.
 That truncation is the *library* rule. The app's two request boundaries are stricter and agree:
 `/api/pca/orientation` and the static-mode worker (`pcaKdeWorker.js`, via
 `requestGuards.requestNumber`) both require `smoothing` to be an integer in [0, 64] and
@@ -1210,7 +1210,7 @@ no information either way. The null mean is automatically $\le 1$ (each $\operat
 T_p$), valid at any count level, and correct for any *anisotropic* centrosymmetric site (a rod,
 a disc, eight $\langle 111\rangle$ spots), because it never assumes the pair totals are equal.
 
-**What it replaces — and why the old flag never fired.** Before the 1.0 audit the null was
+**What it replaces — and why the old flag never fired.** Before the 0.6.0 audit the null was
 $\sqrt{C/(\pi N)}$: the Gaussian large-$\mu$ limit of $\operatorname{E}|X - Y|$ for two i.i.d.
 $\mathrm{Poisson}(N/C)$ cells — an isotropic, unconditional mean. It was wrong three ways. (i) At
 the UI default the cells hold $\mu \approx 0.2$–$1$, where the Gaussian limit is 8–50 % high and
@@ -1285,7 +1285,7 @@ $$\operatorname{E}\big[3\lambda_1 - 1\big]_{\text{isotropic}} \;\simeq\;
 
 with $N_{\text{eff}} = (\sum_i w_i)^2 / \sum_i w_i^2$ (`orientationEffectivePoints`; $= N$ for
 `count`). Measured means over 4 000 isotropic clouds: 0.232 vs 0.227 ($N = 50$), 0.111 vs 0.109
-(216), 0.0512 vs 0.0508 (1000), 0.0160 vs 0.0161 (10 000). Before the 1.0 audit the UI and this
+(216), 0.0512 vs 0.0508 (1000), 0.0160 vs 0.0161 (10 000). Before the 0.6.0 audit the UI and this
 page said "0 for an isotropic direction distribution" with no reference, so an isotropic 216-copy
 site's 0.11 read as an 11 % preferred axis; on the real GaNb₄Se₈ runs the median site reads 0.08–0.09
 against an isotropic expectation of 0.05.
@@ -1434,7 +1434,7 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `peakCount`, `peakExpected` | int / float | — | raw count and isotropic expectation $e$ of the peak cell | no |
 | `peakLocalPValue`, `peakPValue` | probability | — | exact Poisson tail $P(X \ge n \mid e)$; the same Šidák-corrected over the $C$ cells (§6.3) | no |
 | `peakSignificance` | $\sigma$ (one-sided normal deviate) | — | $\Phi^{-1}(1 - \texttt{peakPValue})$, $\lvert z\rvert \le 37.04$ | yes |
-| `significance` | dimensionless | — | **legacy** RMS of the local $z$ over cells ($1 \pm 1/\sqrt{2C}$ for noise) — not a σ level | no (shown until the 1.0 audit) |
+| `significance` | dimensionless | — | **legacy** RMS of the local $z$ over cells ($1 \pm 1/\sqrt{2C}$ for noise) — not a σ level | no (shown until the 0.6.0 audit) |
 | `mapChiSquare`, `mapDegreesOfFreedom` | float / int | — | Pearson $X^2 = \sum_m z_m^2$ and $C - 1$, its exact null mean (§6.3) | in the InfoBadge |
 | `mapNullSd`, `mapNullSkewness` | float | — | exact isotropic SD (Haldane) and skewness of $X^2$ under the multinomial null (§6.3) | SD in the InfoBadge |
 | `mapExpectedPairs` | float | — | $\lambda = \binom N2 \sum_m p_m^2$, the expected number of atom pairs sharing a cell | in the InfoBadge when withheld |
@@ -1586,7 +1586,7 @@ independently computed in each language — not a shared-golden parity suite.
 
 **What is *not* covered, and where the two could diverge.**
 
-- **Cross-engine goldens (since the 1.0 audit).** The parallel suites above are index-agnostic
+- **Cross-engine goldens (since the 0.6.0 audit).** The parallel suites above are index-agnostic
   — if the two engines ever enumerated the icosahedron, its faces, the geodesic lattice or the
   angular ordering in a different order, `centers[i]` would mean different cells and all of them
   would still pass. [tests/test_orientation_fixes.py](../../tests/test_orientation_fixes.py) and
@@ -1618,7 +1618,7 @@ independently computed in each language — not a shared-golden parity suite.
   (e.g. at $\nu = 3$ cell 2's computed area is a few ulp larger than cell 10's in both engines,
   but by different amounts elsewhere). With equal raw counts (smoothing 0, Auto) or equal smoothed
   rationals, the enhancements tie exactly and a plain `argmax` / strict `>` scan picked the peak by
-  round-off: before the 1.0 audit 5–15 % of real sites at smoothing 0 reported a different
+  round-off: before the 0.6.0 audit 5–15 % of real sites at smoothing 0 reported a different
   `peakDirection` in the two runtimes, up to 180° apart, and with smoothing the raw `peakZScore`
   at the chosen cell could differ too. Both engines now take the **lowest index among cells with
   $\mathcal{E}_m \ge \max\mathcal{E}\,(1 - 10^{-9})$** (`PEAK_TIE_RTOL`) and report the number of
@@ -1644,7 +1644,7 @@ independently computed in each language — not a shared-golden parity suite.
   `vectors must be a numeric array with shape (N, 3)`; JS's `vectors.some(...)` passes trivially
   on an empty array, so the run reaches `no displacement vectors survive the amplitude cutoff`
   instead. Same class of failure, different message.
-- **`element = "all"` has one shape in both engines and both transports.** Before the 1.0 audit
+- **`element = "all"` has one shape in both engines and both transports.** Before the 0.6.0 audit
   the JS engine stamped `result.element = "all"` onto a pooled payload (`else if (element)` — the
   string is truthy) while Python omits the key (`elif element not in (None, "", "all")`), and only
   the Flask route normalised `""`/`"all"` to `None` — the worker forwarded `data.element`
@@ -1715,7 +1715,7 @@ independently computed in each language — not a shared-golden parity suite.
    (exact-moment reference, withheld below 0.1 expected coincident pairs) and the conditional
    asymmetry null (§6.3, §7) all hold their false-alarm rates at $\nu = 10$ — but a
    real lobe spread over many sparsely filled cells is much harder to detect than on Auto. (Before
-   the 1.0 audit the over-binned default also silently disabled the asymmetry flag: its old null
+   the 0.6.0 audit the over-binned default also silently disabled the asymmetry flag: its old null
    $\sqrt{C/\pi N}$ exceeded 1/3, so `A > 3·null` could not fire below 2 871 copies at
    $\nu = 10$.) Before believing a lobe, read the calibrated `peakSignificance` (§6.3) — **not** the hover `z`, which
    is a local, uncorrected value and routinely reads 3–5 on pure noise at the default resolution —
@@ -2393,10 +2393,10 @@ isotropic expectation.
 
 | Readout | Engine field | Definition | Format |
 | --- | --- | --- | --- |
-| `peak N.NN× at [x, y, z] · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakTieCount`, `peakSignificance` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction; and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 1.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
-| `anisotropy N.NN (isotropic ≈ N.NN) · N.Nσ` | `orientationAnisotropy`, `orientationAnisotropyNull`, `orientationAnisotropySignificance` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue: **2 for a perfect single axis, and 0 for isotropy only as $N \to \infty$** — a finite isotropic sample reads $\approx 1.6/\sqrt{N_{\text{eff}}}$, printed in brackets; the σ is Bingham's $\chi^2_5$ test of isotropy on the same tensor (engine §8). Computed from the vectors, not the bins, so it is resolution-independent. Until the 1.0 audit the InfoBadge said "0 for an isotropic direction distribution" and no reference was shown | 2 dp, σ 1 dp |
-| `± asymmetry N.NN (symmetric null N.NN ± N.NN) · N.Nσ` | `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`, `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The null is its exact mean ± SD if every antipodal pair's atoms had split at random between $\pm\mathbf u$ (same pair totals, engine §7), and $z = (\mathcal{A} - \text{null})/\text{SD}$. Until the 1.0 audit the slot printed "(noise floor $\sqrt{C/\pi N}$)", an isotropic Gaussian-limit mean that could exceed 1 | values 2 dp, σ 1 dp |
-| `map significance N.Nσ` | `mapSignificance` (InfoBadge also prints `mapChiSquare`, `mapDegreesOfFreedom`, `mapNullSd`, and `mapExpectedPairs` when withheld) | Pearson's $X^2 = \sum_c z_c^2$, $z_c = (n_c - e_c)/\sqrt{e_c}$, against a gamma curve matched to its exact isotropic mean, SD and skewness, as a one-sided normal deviate (engine §6.3); "not significant" when $\le 0$, **"— (too sparse)"** when the engine withholds it (fewer than 0.1 atom pairs expected to share a cell). Until the 1.0 audit this slot printed the RMS of $z_c$ with a σ unit, whose noise value is $1 \pm 1/\sqrt{2C}$ — "1.4σ" for a cloud with every atom in one hemisphere. The first audit fix referred $X^2$ to $\chi^2_{C-1}$, which read noise above 3σ 13–20× too often on sparse maps (27 copies at $\nu = 10$, 64 at $\nu = 24$), while the InfoBadge promised the tail ran only "slightly heavy" | σ 1 dp |
+| `peak N.NN× at [x, y, z] · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakTieCount`, `peakSignificance` | the cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction; and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 0.6.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
+| `anisotropy N.NN (isotropic ≈ N.NN) · N.Nσ` | `orientationAnisotropy`, `orientationAnisotropyNull`, `orientationAnisotropySignificance` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue: **2 for a perfect single axis, and 0 for isotropy only as $N \to \infty$** — a finite isotropic sample reads $\approx 1.6/\sqrt{N_{\text{eff}}}$, printed in brackets; the σ is Bingham's $\chi^2_5$ test of isotropy on the same tensor (engine §8). Computed from the vectors, not the bins, so it is resolution-independent. Until the 0.6.0 audit the InfoBadge said "0 for an isotropic direction distribution" and no reference was shown | 2 dp, σ 1 dp |
+| `± asymmetry N.NN (symmetric null N.NN ± N.NN) · N.Nσ` | `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`, `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The null is its exact mean ± SD if every antipodal pair's atoms had split at random between $\pm\mathbf u$ (same pair totals, engine §7), and $z = (\mathcal{A} - \text{null})/\text{SD}$. Until the 0.6.0 audit the slot printed "(noise floor $\sqrt{C/\pi N}$)", an isotropic Gaussian-limit mean that could exceed 1 | values 2 dp, σ 1 dp |
+| `map significance N.Nσ` | `mapSignificance` (InfoBadge also prints `mapChiSquare`, `mapDegreesOfFreedom`, `mapNullSd`, and `mapExpectedPairs` when withheld) | Pearson's $X^2 = \sum_c z_c^2$, $z_c = (n_c - e_c)/\sqrt{e_c}$, against a gamma curve matched to its exact isotropic mean, SD and skewness, as a one-sided normal deviate (engine §6.3); "not significant" when $\le 0$, **"— (too sparse)"** when the engine withholds it (fewer than 0.1 atom pairs expected to share a cell). Until the 0.6.0 audit this slot printed the RMS of $z_c$ with a σ unit, whose noise value is $1 \pm 1/\sqrt{2C}$ — "1.4σ" for a cloud with every atom in one hemisphere. The first audit fix referred $X^2$ to $\chi^2_{C-1}$, which read noise above 3σ 13–20× too often on sparse maps (27 copies at $\nu = 10$, 64 at $\nu = 24$), while the InfoBadge promised the tail ran only "slightly heavy" | σ 1 dp |
 
 The red flag is **not** computed in the browser any more:
 
@@ -2405,7 +2405,7 @@ const asymmetrySignificant = Boolean(result?.antipodalAsymmetrySignificant);
 ```
 
 reads the engine's flag ($z > 3$ null SDs, `ASYMMETRY_FLAG_SIGMA`) and adds `.is-flagged` (colour
-`var(--danger)`) to the asymmetry stat. Until the 1.0 audit the page computed
+`var(--danger)`) to the asymmetry stat. Until the 0.6.0 audit the page computed
 `antipodalAsymmetry > 3 * antipodalAsymmetryNull` itself — three times the null *mean*, not its
 spread — which could not fire at the default resolution (engine §7). A genuine +u/−u imbalance is the headline finding of this page — it is exactly
 the physics (skewness about the site mean: odd-order anharmonicity, unequally occupied opposite
@@ -2472,7 +2472,7 @@ shows four lines:
 | --- | --- | --- |
 | `[x, y, z]` | `result.centers[cell]`, 2 dp, via `formatDirection` | the **cell centre**, not the ray direction |
 | `N.NN× isotropic` | `result.enhancement[cell]`, 2 dp | smoothed if smoothing > 0 |
-| `n atoms · local z = ±N.N` | `result.counts[cell]` **printed raw — no `numberFormat`, so no `—` fallback and no rounding**; `result.zScore[cell]` 1 dp — a **local, uncorrected** Gaussian $z$ (one cell of $C$, Gaussian-read at small expected counts), labelled as such since the 1.0 audit; it is not a significance (engine §6.3) | **raw, unsmoothed counts** |
+| `n atoms · local z = ±N.N` | `result.counts[cell]` **printed raw — no `numberFormat`, so no `—` fallback and no rounding**; `result.zScore[cell]` 1 dp — a **local, uncorrected** Gaussian $z$ (one cell of $C$, Gaussian-read at small expected counts), labelled as such since the 0.6.0 audit; it is not a significance (engine §6.3) | **raw, unsmoothed counts** |
 | `⟨\|Δr\|⟩ = N.NNN Å` | `result.cellMeanAmplitude[cell]`, 3 dp; shown only when > 0 | smoothed if smoothing > 0 |
 
 Two honest notes on this readout:
@@ -3023,7 +3023,7 @@ returns **ν = 2** (42 cells). At ν = 10 the expected count per cell is ≈ 1. 
   has little power against a thousand degrees of freedom, and on a very sparse map $X^2$ mostly
   counts atoms sharing cells, i.e. clustering. The readout is **resolution-dependent**
   and is not comparable between two maps at different ν.
-* **The ± asymmetry flag used to be unreachable here.** Before the 1.0 audit the null floor was
+* **The ± asymmetry flag used to be unreachable here.** Before the 0.6.0 audit the null floor was
   $\sqrt{C/(\pi N)}$ and the UI flagged red only when $\text{asymmetry} > 3\,\text{null}$; with
   `antipodalAsymmetry` $\le 1$ that was impossible at ν = 10 for $N = 1000$ (threshold 1.695). The
   engine now reports the exact inversion-symmetric null given the pair totals and flags

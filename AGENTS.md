@@ -176,7 +176,7 @@ web_app/frontend/src/
   `atomElements`, also in the browser orientation histogram via `displacementCloud`), and a
   mixed-occupancy site is labelled by its majority species (ties to the alphabetically first) with
   `elementCounts` + `mixed`; the pages name it by its composition (`siteLabel.js`).
-- **PCA statistics conventions (1.0)**: `nonGaussianity` is Mardia's multivariate excess kurtosis,
+- **PCA statistics conventions (0.6.0)**: `nonGaussianity` is Mardia's multivariate excess kurtosis,
   (b₂ − 15)/5. It is rotation- and affine-invariant, and it equals the marginal κ of any elliptical
   distribution. A symmetric split site is NEGATIVE. Per-axis κ means something only where
   `axisResolved` holds (eigenvalue gap > 3 SE, `AXIS_RESOLUTION_SIGMAS`). A site with λ₁ <
@@ -234,7 +234,7 @@ web_app/frontend/src/
   `RHO0_PHYSICAL_RANGE` = [0.005, 0.25] Å⁻³ and accepts a concordant root only where
   `density_limit_satisfied` holds (else `converged=False` with a `reason` — and `stopped` when a trial
   density could not be fitted — which the CLI and page quote when they refuse it). Both engines run
-  the same deterministic iteration (since 1.0 the JS auto loop filters with the same S(0) target as
+  the same deterministic iteration (since 0.6.0 the JS auto loop filters with the same S(0) target as
   Python), so the iterated rho0 agrees to round-off: `autoScale.test.js` asserts 1e-10 relative with
   `converged`/`iterations` equal (measured ≤ 1e-13 on the parity fixture).
 - **Auto StoG first shell and low-r enforcement.** `detect_first_peak_onset` returns the FIRST
@@ -257,11 +257,11 @@ web_app/frontend/src/
   `RMC_TOOLKITS_FULL_SWEEP=1 python -m unittest tests.test_stog_a_placement` (~2–5 min).
 - **Huber IRLS scales rows by √w** in `_solve_affine` and `fz_limit_fit` (and their JS twins), so the
   fixed point is Huber's M-estimator (c = 1.345); `a_fz_rel_se` is its sandwich standard error.
-  Before 1.0 rows were scaled by w (a redescending estimator). `a_fz_reliable = True` is necessary,
+  Before 0.6.0 rows were scaled by w (a redescending estimator). `a_fz_reliable = True` is necessary,
   not sufficient.
 - **Classic-named Auto StoG outputs follow the Fortran conventions.** `scale.gr` / `<stem>.gr` hold
   the unfiltered g(r) (≈1 at large r), and `scale_ft.gr` / `<stem>_ft.gr` hold g_filtered(r) plus a
-  third column r·[g−1]. Only the `_rmc` files are Keen G_K / D / F_K. Before 1.0 they held g−1 and
+  third column r·[g−1]. Only the `_rmc` files are Keen G_K / D / F_K. Before 0.6.0 they held g−1 and
   4πρ0 r(g−1).
 - **⟨b⟩² and ⟨b²⟩ come from one source.** `scaling_cli.resolve_coefficients` (CLI + API) and JS
   `resolveCoefficients` (page) pair a composition's ⟨b²⟩ only with an agreeing ⟨b⟩² (within 2 %);
@@ -378,7 +378,7 @@ dependency floors pinned exactly (numpy 1.22.4, SciPy 1.8.1, matplotlib 3.6.3, c
 3.11 and 3.13 with the latest releases — plus the frontend lint, vitest and build, on every push/PR
 to `main`. `.github/workflows/pages.yml` deploys the static dashboard. The `rmc_toolkits` package is
 pip-installable (`pip install -e .`, see `pyproject.toml`; floors numpy ≥ 1.22, scipy ≥ 1.8,
-matplotlib ≥ 3.6, contourpy ≥ 1.0.7) and exposes `__version__` (1.0.0).
+matplotlib ≥ 3.6, contourpy ≥ 1.0.7) and exposes `__version__` (0.6.0.dev0).
 
 The repo's sample data lives in `data/` (GaNb₄Se₈ runs, gitignored). Point the run folder at a
 subdirectory containing a `.rmc6f` (e.g. `data/5K_try1`) to exercise the KDE/3D page. The committed
@@ -393,7 +393,7 @@ plot-parity tests, so those run in CI.
 
 - **iPhone Safari static mode** (2026-06-17): unreliable after selecting a local run folder; desktop
   static mode works. Likely in the mobile folder-selection / file-enumeration path (the atom-line
-  parser, once suspected, was replaced by the shared grammar in 1.0 and reports what it skips). Keep
+  parser, once suspected, was replaced by the shared grammar in 0.6.0 and reports what it skips). Keep
   the local Flask workflow as the supported path for mobile until a unified run-source abstraction
   lands.
 - `src/RMC_3D.py` imports Mayavi and runs work at import time. `src/STOG_plot.py` also has
@@ -403,8 +403,8 @@ plot-parity tests, so those run in CI.
   triplets cross-checks — skip in CI; only the committed demo run and synthetic fixtures run there.
 - With Live Data **off**, a Flask analysis page picks up a newly saved configuration only on its
   next request (press Load, or switch Live Data on); notation.md §3c.
-- Maintainer decisions deferred beyond 1.0 are listed in [docs/ROADMAP.md](docs/ROADMAP.md)
-  ("1.x candidates").
+- Maintainer decisions deferred beyond 0.6.0 are listed in [docs/ROADMAP.md](docs/ROADMAP.md)
+  ("Candidates after 0.6.0").
 
 ## Next best steps
 
@@ -412,7 +412,7 @@ plot-parity tests, so those run in CI.
    (the committed demo run already covers the parsers, the KDE golden and plot parity).
 2. Refactor `src/RMC_plot.py` and `src/RMC_3D.py` into thin wrappers with no import-time work.
    Defer `src/STOG_plot.py` unless preprocessing becomes a visible workflow again.
-3. ~~Make browser `.rmc6f` parsing tolerant + diagnostic~~ **DONE in 1.0** — one validated grammar
+3. ~~Make browser `.rmc6f` parsing tolerant + diagnostic~~ **DONE in 0.6.0** — one validated grammar
    in both runtimes with a parse report against the header count.
 4. Symmetry finder: a Python port or an spglib cross-check in CI (the finder is browser-only), and
    moving it into a Web Worker so the 2000-site / 384-operation caps can be raised.

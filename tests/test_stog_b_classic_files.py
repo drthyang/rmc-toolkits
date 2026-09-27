@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""The classic-named outputs hold the classic stog functions (1.0 audit, stog-b group).
+"""The classic-named outputs hold the classic stog functions (0.6.0 audit, stog-b group).
 
 rmc-autoscale writes under the stog.inp-declared names (scale.gr, scale_ft.gr) as
 a drop-in replacement for a classic session, but wrote g(r) - 1 in column 2 and

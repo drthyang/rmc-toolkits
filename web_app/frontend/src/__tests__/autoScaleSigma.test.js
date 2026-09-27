@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// The browser applies the CLI/API σ-column guard (1.0 audit, stog-b): one zero
+// The browser applies the CLI/API σ-column guard (0.6.0 audit, stog-b): one zero
 // σ on a usable row got a 1e12 weight (a negative scale on real Mn3Sn data) and
 // one NaN σ made every output NaN, where rmc-autoscale drops the column and
 // fits unweighted. usableSigma is that guard (scaling_cli.usable_sigma).

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Tsung-Han Yang
 
-"""rho0 self-consistency: report WHY it stopped (1.0 review follow-up, stog-a group).
+"""rho0 self-consistency: report WHY it stopped (0.6.0 review follow-up, stog-a group).
 
 estimate_rho0 returns ``stopped`` when autoscale cannot fit a trial density, but the
 CLI (like the page worker) still blamed the two amplitude criteria for disagreeing

@@ -3,7 +3,7 @@
 
 """Auto StoG low-r window placement: confirm the first shell, never return a <= 0.
 
-Regression tests for the 1.0 review of the stog-a group. On the real Mn3Sn 59438
+Regression tests for the 0.6.0 review of the stog-a group. On the real Mn3Sn 59438
 run (Qmin 0.82 / 1.0, Qmax 24-30) the first window-placement loop
 
 - accepted a sub-shell ripple lobe (~1.65 A, 2.9x its ripple field at 35 % of the
