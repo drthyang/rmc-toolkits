@@ -161,6 +161,7 @@ class KdeSliceDeclinesUnsupportedScipyTests(unittest.TestCase):
 
     def assert_engine_decline(self, result):
         self.assertEqual(result["message"], KDE_MESSAGES["engine"])
+        self.assertEqual(result["messageCode"], "engine")
         self.assertIsNone(result["kernel"])
         self.assertEqual(result["fitCount"], 0)
         self.assertEqual(result["slabCount"], 40)
@@ -219,6 +220,7 @@ class KdeSliceEndpointUnsupportedScipyTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_json())
         payload = response.get_json()
         self.assertEqual(payload["message"], KDE_MESSAGES["engine"])
+        self.assertEqual(payload["messageCode"], "engine")
         self.assertIsNone(payload["kernel"])
         self.assertGreater(payload["slabCount"], 0)
 
@@ -227,6 +229,7 @@ class KdeSliceEndpointUnsupportedScipyTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_json())
         payload = response.get_json()
         self.assertIsNone(payload["message"])
+        self.assertIsNone(payload["messageCode"])
         self.assertIsNotNone(payload["kernel"])
 
 

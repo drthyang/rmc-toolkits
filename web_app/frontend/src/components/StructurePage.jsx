@@ -21,7 +21,7 @@ import {
     slabThicknessAngstrom
 } from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
-import { Banner, Card, CardHeader, CardNote, Chip, Control, ControlsBar, Page, Switch } from '../ui';
+import { Banner, Card, CardHeader, CardMeta, CardNote, Control, ControlsBar, EmptyState, Hint, Page, Switch } from '../ui';
 import SaveMenu from '../ui/SaveMenu';
 import InfoBadge from '../ui/InfoBadge';
 import AppFooter from './AppFooter';
@@ -48,6 +48,24 @@ const CUBE_EDGES = [
     [0, 4], [1, 5], [2, 6], [3, 7]
 ];
 const STRUCTURE_MAX_POINTS = 1000000;
+
+// One short line per reason a slab drew no map (keyed on the payload's
+// messageCode, a kde.py KDE_MESSAGES key); the full payload sentence is the
+// note's title and the reasons are in the KDE Slice ? help. An unknown code
+// shows the payload message as it is.
+const KDE_DECLINE_NOTES = {
+    bandwidth: 'Invalid bandwidth — enter a positive number.',
+    too_few: 'Fewer than 5 atoms in slab — thicken the slab.',
+    few_unique: 'Fewer than 3 distinct positions in slab — no kernel.',
+    collinear: 'Slab atoms collinear in this plane — no kernel.',
+    singular: 'Slab covariance singular — no kernel.',
+    engine: 'Server SciPy incompatible — update rmc_toolkits or SciPy.',
+};
+// The same for a drawn map's warnings (keyed on warning.code).
+const KDE_WARNING_NOTES = {
+    subgrid: 'Kernel < ½ grid step — map aliased; raise bandwidth or grid.',
+    unresolved: 'Kernel falls between grid nodes — raise bandwidth or grid.',
+};
 const SLAB_CANVAS_MAX_POINTS = 1000000;
 
 const SLICE_PRESETS = {
@@ -449,10 +467,11 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
             return;
         }
 
-        // Static mode has no Flask backend; structure data comes from a selected local run.
+        // Static mode has no Flask backend; structure data comes from a selected
+        // local run. Without one the page shows the no-run hint (noRun), not an error.
         if (isStaticMode()) {
             setStructure(null);
-            setError('Open a run folder to view the structure.');
+            setError(null);
             setLoading(false);
             return;
         }
@@ -849,12 +868,19 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                 });
             }
         } else {
-            ctx.fillStyle = themeVars.muted;
-            ctx.font = '500 13px Inter, system-ui';
             // A slab with atoms but no density was declined by the estimator;
-            // the reason (kde.message) is printed under the canvas.
-            const emptyText = kde?.slabCount > 0 ? 'No density drawn for this slab' : 'No atoms in this slab';
-            ctx.fillText(kdeLoading ? 'Computing KDE...' : emptyText, 14, 28);
+            // the reason is noted under the canvas. Before the first result, or
+            // after a KDE error (its banner says why), nothing is printed.
+            const emptyText = kdeLoading
+                ? 'Computing KDE…'
+                : !kde
+                    ? null
+                    : kde.slabCount > 0 ? 'No density drawn for this slab' : 'No atoms in this slab';
+            if (emptyText) {
+                ctx.fillStyle = themeVars.muted;
+                ctx.font = '500 13px Inter, system-ui';
+                ctx.fillText(emptyText, 14, 28);
+            }
         }
 
         ctx.strokeStyle = themeVars.border;
@@ -1272,17 +1298,15 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
         };
     }, [points, unitCell, zCenter, thickness, themeVars, sliceConfig, elementColors]);
 
+    const noRun = isStaticMode() && !localRun;
+
     return (
         <Page>
-            <div hidden>
-                <div>
-                    <h2>KDE And Folded Unit Cell</h2>
-                    <p>{localRun ? localRun.name : directory}</p>
-                </div>
-                {(loading || kdeLoading) && <Chip tone="success" strong>{loading ? 'Loading' : isLocalStructure ? 'Density' : 'KDE'}</Chip>}
-            </div>
+            {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
 
             {error && <Banner tone="danger" gapLg>{error}</Banner>}
+
+            {loading && !structure && <EmptyState>Loading structure…</EmptyState>}
 
             {structure && (
                 <>
@@ -1402,39 +1426,55 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                             The kernel is bandwidth² × the covariance of the slab&apos;s atoms
                                             (SciPy&apos;s convention), so its width and shape follow how the
                                             slab&apos;s sites are laid out, not how atoms move. Its σ is printed
-                                            on the map in Å; read blob shapes against it.
+                                            on the map in Å; read blob shapes against it. Above 3 : 1 the map is
+                                            flagged: elongation of the blobs along the kernel&apos;s long axis is an
+                                            artefact — take displacement shapes from the PCA Ellipsoid page.
                                         </p>
                                         <p>
-                                            It runs in your browser (GPU when available, CPU otherwise).
-                                            The Flask app uses SciPy KDE for reference-grade values.
+                                            No map is drawn when the slab has no usable covariance — fewer than
+                                            5 atoms, fewer than 3 distinct in-plane positions, collinear atoms, or
+                                            a covariance singular to within round-off — because that covariance
+                                            is the kernel.
+                                        </p>
+                                        <p>
+                                            Grid resolution: a kernel narrower than half a grid step is aliased —
+                                            peak values, contours and the integrated density then depend on the
+                                            grid size. When the grid holds less than a millionth of the slab&apos;s
+                                            density, the kernels fall between the nodes; that map is round-off
+                                            and is neither contoured nor drawn. Raise the bandwidth or the grid.
+                                        </p>
+                                        <p>
+                                            {isLocalStructure
+                                                ? 'It runs in your browser (GPU when available, CPU otherwise) — a visualization path; the Flask app uses SciPy KDE for reference-grade values.'
+                                                : 'It is computed on the Flask server with SciPy (reference-grade values).'}
                                         </p>
                                     </InfoBadge>
                                 </span>
-                                <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
+                                <span className="ui-card__actions">
+                                    <CardMeta title={isLocalStructure ? "Visualization path — the Flask app's SciPy KDE gives reference-grade values" : undefined}>
+                                        {isLocalStructure ? 'browser' : 'server'}
+                                    </CardMeta>
+                                    <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
+                                </span>
                             </CardHeader>
                             <canvas ref={canvasRef} className="ui-stage kde-canvas" />
                             {kde?.message && kde.slabCount > 0 && (
-                                <CardNote emph role="status">
-                                    {kde.message}
+                                <CardNote emph role="status" title={kde.message}>
+                                    {KDE_DECLINE_NOTES[kde.messageCode] ?? kde.message}
                                 </CardNote>
                             )}
                             {kde?.warnings?.map((warning) => (
-                                <CardNote key={warning.code} emph role="status">
-                                    {warning.message}
+                                <CardNote key={warning.code} emph role="status" title={warning.message}>
+                                    {KDE_WARNING_NOTES[warning.code] ?? warning.message}
                                 </CardNote>
                             ))}
                             {kernelAngstrom && kernelAngstrom.major > KERNEL_ANISOTROPY_NOTE * kernelAngstrom.minor && (
-                                <CardNote emph role="status">
-                                    {`The kernel is ${Math.round(kernelAngstrom.major / kernelAngstrom.minor)}:1 anisotropic: `
-                                        + 'its shape is bw² times the covariance of the slab\'s atoms, so it follows how '
-                                        + 'the sites are laid out in the slab, not how any atom moves. Elongation of the '
-                                        + 'blobs along the kernel\'s long axis is an artefact; use the PCA Ellipsoid page '
-                                        + 'for displacement shapes.'}
-                                </CardNote>
-                            )}
-                            {isLocalStructure && (
-                                <CardNote>
-                                    Browser-side Gaussian KDE. The Flask app uses SciPy KDE for reference-grade values.
+                                <CardNote
+                                    emph
+                                    role="status"
+                                    title="The kernel is bw² × the covariance of the slab's atoms: it follows how the sites are laid out in the slab, not how any atom moves."
+                                >
+                                    {`Kernel ${Math.round(kernelAngstrom.major / kernelAngstrom.minor)}:1 anisotropic — blob elongation is an artefact.`}
                                 </CardNote>
                             )}
                         </Card>

@@ -8,7 +8,8 @@ reference-grade Python densities (`rmc_toolkits.kde.oriented_kde_slice`) for a
 set of slices on real configurations and on small synthetic point sets. The
 vitest suite (``workers/__tests__/kdeParity.test.js``) runs the browser worker
 (`computeKde`) on the same points and asserts agreement to 1e-6 of the peak,
-identical slab/fit counts, identical kernels and identical decline messages.
+identical slab/fit counts, identical kernels and identical decline messages
+(and their ``messageCode``).
 ``tests/test_kde_parity_fixture.py`` checks that the committed golden is still
 what the Python engine produces. Regenerate whenever the engine changes:
 
@@ -180,6 +181,7 @@ def compute_case(case: dict, positions: np.ndarray) -> dict:
         "slabCount": result["slabCount"],
         "fitCount": result["fitCount"],
         "message": result["message"],
+        "messageCode": result["messageCode"],
         "warnings": [warning["code"] for warning in result["warnings"]],
         "kernel": result["kernel"],
         "vmax": result["vmax"],
