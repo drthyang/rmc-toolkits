@@ -30,24 +30,29 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 | `CardTitle` | `<h3 class="ui-card__title">` | `as` | title inside a flush header |
 | `CardMeta` | `<span class="ui-card__meta">` | `fixed` | a small count / run-meta readout in a header |
 | `CardNote` | `<div class="ui-card__note">` | `emph` | a note row under a card's canvas |
-| `ControlsBar` | `<div class="ui-controls …">` | `variant` (`'default'`/`'dense'`/`'stacked'`), `sub`, `footer` | the controls bar above a page's cards |
+| `ControlsBar` | `<div class="ui-controls …">` | `as` (`'form'` when Enter in a field runs the page's action), `variant` (`'default'`/`'dense'`/`'stacked'`), `sub`, `footer` | the controls bar above a page's cards |
 | `ControlGroup` | `<div class="ui-control-group" role="group">` | `label` (→ `aria-label`) | related controls that wrap as a unit |
 | `Control` | `<label class="ui-control">` micro-label + widget + value | `as` (`'div'` when the row holds two interactive elements), `label`, `value`, `valueWide` | one labeled control row — inside a `ControlsBar` only |
 | `Switch` | `<label class="ui-control ui-switch">` … checkbox + track | `label`, `bare`, `checked`, `onChange`, `inputProps` | a boolean option — inside a `ControlsBar` only |
+| `UnitField` | `<span class="ui-unit-field">` input + unit | `unit`, `invalid`, `inputProps` (to the `<input>`, `ref` included) | a number with its unit inside the border, `[2.00 Å]` (Bond Geometry windows and bin width) |
 | `Segmented` | `<div class="ui-seg ui-seg--{variant}">` | `as` (`'nav'`), `variant` (`'frame'`/`'overlay'`/`'nav'`) | a set of mutually exclusive buttons |
 | `SegmentedButton` | `<button>` (adds no `type`) | `active`, `overlay`, `warm` | one segment |
 | `Pill` | `<button type="button" class="ui-pill">` | `size` (`'md'`), `tint`, `active` | small pill buttons (Show/Hide, Reset zoom) |
 | `ToolButton` | `<button type="button" class="ui-tool-btn">` | `axes`, `active` | card-header tools (Reset view, a b c) |
 | `IconButton` | `<button type="button" class="ui-icon-btn ui-icon-btn--{variant}">` | `variant` (`'close'`/`'remove'`) | round × buttons |
-| `PrimaryButton` | `<button class="ui-btn-primary">` (caller passes `type`) | `outlined` | the one primary action of a bar |
-| `Chip` | `<span class="ui-chip">` | `tone` (`'success'`/`'warn'`/`'danger'`), `strong`, `center`, `truncate` | small read-only pills (Rwp, file info) |
+| `PrimaryButton` | `<button class="ui-btn-primary">` (caller passes `type`) | `outlined`; `run` (row height, play glyph) with `busy` (spinner; caller sets `aria-busy`) and `stale` (a dot after the label) | the one primary action of a bar; `run` for a page's compute action (Bond Geometry) |
+| `Chip` | `<span class="ui-chip">` | `tone` (`'success'`/`'warn'`/`'danger'`), `strong`, `center`, `truncate` | small read-only pills (Rwp, file info, window chips, the Bond Geometry *inputs changed* cue) |
+| `ElementChip` | `<span class="ui-element-chip">` dot + text | `color` (→ `--chip`), `central` (ring) | an element in a triplet or pair, inside a `ui-element-chain` span (Bond Geometry titles) |
+| `BondDash` | `<span class="ui-bond-dash">` + hidden text | `color` (→ `--bond`), `lead`, `text` (default `–`) | the bond between two element chips, or leading a chip's text in its bond-role color |
 | `StatRail` | `<section class="ui-card ui-stat-rail">` title cell + `<dl>` | `heading`, `headingProps` | Model information / Detected SG / Triplet result |
 | `Stat` | `<div class="ui-stat"><dt/><dd/></div>` | `label`, `end`, `band`, `dtProps`, `ddProps` | one column of a stat rail |
 | `StatCard` | readout tile with a status edge | `tone` (`'good'`/`'warn'`/`'bad'`), `label`, `value`, `sub` | result readouts (Auto StoG) |
+| `KpiRail` | `<dl class="ui-kpis">` | (caller adds `role`, `aria-live`, `aria-label`) | headline results inside a card, under its header (Bond Geometry hero) |
+| `Kpi` | `<div class="ui-kpi"><dt/><dd/></div>` | `label`, `value` (none → `—`), `unit`, `sub` | one tile of a KPI rail; keeps its height before the first result |
 | `Banner` | `<div class="ui-banner ui-banner--{tone}">` | `as`, `tone` (`'danger'`/`'neutral'`/`'caution'`/`'danger-light'`), `sm`, `gapLg`, `flush`, `inline`, `onDismiss` | messages above or inside a card |
 | `Hint` | `<p class="ui-hint">` | | what to do next (dashed box) |
 | `EmptyState` | `<div class="ui-empty">` | `fill` | nothing to show yet |
-| `InfoBadge` | `?` trigger + popover (`ui-info`) | `label`, `align` (`'start'`/`'end'`), `children` | a short explanation beside a label |
+| `InfoBadge` | `?` trigger + popover (`ui-info`) | `label`, `align` (`'start'`/`'end'`), `side` (`'below'`/`'above'`: for a badge near the bottom of the page, whose hidden popover would otherwise add page scroll), `children` | a short explanation beside a label |
 | `SaveMenu` | save trigger + format menu (`ui-save`, `ui-menu`) | `onSave`, `options`, `label`, `align`, `disabled`, `busy`, `className` (`'ui-save--accent'`) | figure export |
 
 Every component appends `className` to its kit classes and spreads `...rest` on
@@ -68,37 +73,43 @@ specificity ties, so it waits for a visible-change pass.
 |---|---|---|
 | Page | `ui-page` `--column` `--mobile` `--wide` `--pb-sm` `--focus-all` | page root |
 | Footer | `ui-footer` `--tight` | the app footer (content in `components/AppFooter.jsx`) |
-| Card | `ui-card` `--clip` `--round-ends` `--lift` `--pad-plot` `--pad-bar` `--note` | surfaces |
+| Card | `ui-card` `--clip` `--round-ends` `--lift` `--pad-plot` `--pad-bar` `--note` (a `--round-ends` card whose only child is its header rounds it on all four corners, no hairline: a slim note row) | surfaces |
 | Bar header | `ui-card__header` `--wrap` `--fixed`; `ui-card__label`, `__actions`, `__cluster`, `__meta` (`--fixed`), `__readout` | card title bars |
 | Flush header | `ui-card__header-flush` `--padded`; `ui-card__heading`, `__title`, `__source` (`__source-item`: one name in a list), `__subtitle`, `__header-actions` | chart cards whose plot continues below the title |
 | Inset header | `ui-card__header-inset` (styles its `h3` and `span`) | compact plot cards (Auto StoG) |
 | Card notes | `ui-card__note` (`--emph`), `ui-card__caption`, `ui-card__section` | rows and dividers inside a card |
-| Legend | `ui-legend`, `__item`, `__swatch`, `__note`, `__warning`, `__group`, `__subitem`, `__credit` | a color key under a canvas |
+| Legend | `ui-legend` (`--overlay`: a pill inside the canvas, bottom-left), `__item` (`.is-muted`), `__swatch`, `__note`, `__warning`, `__group`, `__subitem`, `__credit` | a color key under or inside a canvas |
 | Stage | `ui-stage` `--glow` `--glow-soft` `--glow-faint` `--divided` `--orbit` | canvas / WebGL backgrounds (`--orbit` gives the grab cursor) |
-| Overlays | `ui-overlay-badge` (`.is-error`), `ui-overlay-controls` `--left` `--right` | status and controls over a canvas |
+| Overlays | `ui-overlay-badge` (`.is-error`), `ui-overlay-controls` `--left` `--right`, `ui-overlay-center` (a centered prompt), `ui-dim` (shown but not live; pair with `inert`), `ui-shimmer` (loading sweep) | status, controls and prompts over a canvas or plot |
 | Table | `ui-table` `--labels` `--strong-heads` `--abbr`; `td.is-highlight`, `tr.is-dim`, `__center`, `__quiet`, `__note`, `__dot`; `ui-table-block`, `-title`, `-scroll` | dense numeric tables |
 | Tag | `ui-tag` (`.is-clean`, `.is-flagged`), `__count` | a status callout row |
-| Controls | `ui-controls` `--dense` `--stacked` `--sub` `--footer`; `ui-control-group`; `ui-cluster` `--grow` `--end`, `ui-cluster-label`; `ui-control`, `ui-control-label`, `ui-control-value` (`--wide`); `ui-color-dot` | controls bars |
-| Form widgets | `select.ui-select` (`--ring`), `select.ui-select-native`, `input.ui-input`, `input.ui-input-compact`, `ui-pair` + `input.ui-input-strong`, `input.ui-range` (`--lg`), `ui-field` `--formula` `--wide` `--select` | inputs |
+| Controls | `ui-controls` `--dense` `--stacked` `--sub` `--footer`; `ui-control-group`; `ui-cluster` `--grow` `--end`, `ui-cluster-label`; `ui-control`, `ui-control-label`, `ui-control-value` (`--wide`); `ui-color-dot`; `ui-role-bar` (`--role`: a bond-role bar before a label) | controls bars |
+| Form widgets | `select.ui-select` (`--ring`), `select.ui-select-native`, `input.ui-input`, `input.ui-input-compact`, `ui-pair` + `input.ui-input-strong`, `ui-unit-field` (`.is-invalid`), `input.ui-unit-field__input`, `__unit`, `input.ui-range` (`--lg`), `ui-field` `--formula` `--wide` `--select` | inputs |
 | Switches | `ui-switch` (`--bare`, `__track`), `ui-switch-outline` (`--button`), `ui-chip-toggle` (`.is-on`) | boolean options |
 | Dropdown | `ui-dropdown`, `__button`, `__list` (`button.is-selected`) | a custom listbox |
-| Buttons | `ui-btn-primary` (`--outlined`), `ui-btn-brand` (`.is-active`), `ui-pill`, `ui-pill-tint`, `ui-pill-md` (`.is-active`), `ui-tool-btn` (`--axes`, `.is-active`), `ui-icon-btn` `--close` `--remove` | actions |
+| Buttons | `ui-btn-primary` (`--outlined`, `--run` with `.is-busy` / `.is-stale`), `ui-btn-brand` (`.is-active`), `ui-pill`, `ui-pill-tint`, `ui-pill-md` (`.is-active`), `ui-tool-btn` (`--axes`, `.is-active`), `ui-icon-btn` `--close` `--remove`; `ui-kbd` (a key hint beside an action) | actions |
 | Segmented | `ui-seg` `--frame` `--overlay` `--nav`; `ui-seg__label`, `ui-seg__btn` (`--warm`, `.is-active`); frame/nav buttons take `.is-active` | exclusive choices |
-| Chips | `ui-chip` `--strong` `--center` `--truncate` `--success` `--warn` `--danger`; `ui-file-chip` (`.is-hidden`), `__kind`, `__name` | read-only pills |
-| Stats | `ui-stack`; `ui-stat-rail`, `__title`, `__source`, `__stats`, `__line`; `ui-stat` (`--end`, `--band`), `__sub`; `ui-stat-rail__stats.is-banded` / `.is-wrapped` (set by `StatRail`); `ui-stat-card` (`.is-good/-warn/-bad`), `__label`, `__value`, `__sub`; `ui-inline-stats`, `ui-inline-stat` (`.is-flagged`), `__null` | numbers with labels |
-| Feedback | `ui-banner` `--danger` `--neutral` `--caution` `--inline` `--danger-light` `--sm` `--gap-lg` `--flush` `--dismissible`; `ui-status` (`.is-error`); `ui-hint`; `ui-empty` (`--fill`); `ui-placeholder`; `ui-loading` `--sm` `--error` | messages and empty states |
-| Floating | `ui-save` (`--accent`), `__trigger`, `__icon`; `ui-menu` `--right` `--left`, `__item`; `ui-info`, `__trigger`, `__popover` `--start` `--end` | menus and popovers |
+| Chips | `ui-chip` `--strong` `--center` `--truncate` `--success` `--warn` `--danger`; `ui-element-chain`, `ui-element-chip` (`--central`), `__dot`; `ui-bond-dash` (`--lead`); `ui-file-chip` (`.is-hidden`), `__kind`, `__name` | read-only pills |
+| Stats | `ui-stack`; `ui-stat-rail`, `__title`, `__source`, `__stats`, `__line`; `ui-stat` (`--end`, `--band`), `__sub`; `ui-stat-rail__stats.is-banded` / `.is-wrapped` (set by `StatRail`); `ui-kpis`, `ui-kpi`, `__value` (`.is-empty`), `__unit`, `__sub`; `ui-stat-card` (`.is-good/-warn/-bad`), `__label`, `__value`, `__sub`; `ui-inline-stats`, `ui-inline-stat` (`.is-flagged`), `__null` | numbers with labels |
+| Feedback | `ui-banner` `--danger` `--neutral` `--caution` `--inline` `--danger-light` `--sm` `--gap-lg` `--flush` `--dismissible`; `ui-status` (`.is-error`); `ui-hint`; `ui-empty` (`--fill`); `ui-placeholder`; `ui-loading` `--sm` `--error`; `ui-prompt`, `__row`, `__error` (what to do next, or what went wrong, over an empty plot) | messages and empty states |
+| Floating | `ui-save` (`--accent`), `__trigger`, `__icon`; `ui-menu` `--right` `--left`, `__item`; `ui-info`, `__trigger`, `__popover` `--start` `--end` `--above` | menus and popovers |
 | Field bar | `ui-fieldbar` (`--readonly`), `__value`, `__ghost` | the app header's run-folder field |
 | Forms | `ui-fieldset`, `__fields`; `ui-dropzone` (`.is-drag`), `__hint` | grouped parameters, uploads |
-| Utility | `ui-visually-hidden` | hidden but accessible |
+| Utility | `ui-visually-hidden`; `ui-reveal` (fade in on appearing) | hidden but accessible; a control that appears |
 
 ## Tokens
 
 All tokens live in `index.css`: the two theme blocks (surfaces, text, accent,
-status, shadows, focus ring) and one theme-invariant block (brand, ink on
-accent, extra shadows, status and plot-kind colors, chart ink, the select
-chevron, radii `--radius-*`, durations `--dur-*`, control heights `--h-*`, and
-the type scale `--fs-62` … `--fs-115`, named by hundredths of a rem).
+status, shadows, focus rings `--focus-ring` / `--focus-ring-danger`, the
+element-chip tint `--tint-chip` and the plot area `--plot-area-opacity`, which
+are stronger in dark) and one theme-invariant block (brand, ink on accent,
+extra shadows, status and plot-kind colors, chart ink, the select chevron,
+radii `--radius-*`, durations `--dur-*` (`--dur-spin`, `--dur-shimmer` for the
+loops), control heights `--h-*`, and the type scale `--fs-62` … `--fs-115`,
+named by hundredths of a rem).
+
+Motion: every kit animation (`ui-shimmer`, the `--run` spinner, `ui-reveal`)
+is switched off under `prefers-reduced-motion: reduce`.
 
 Device tokens: `--viewport-h` (the visible viewport height, `100dvh` where
 supported — use it for every height budget instead of `100vh`) and the

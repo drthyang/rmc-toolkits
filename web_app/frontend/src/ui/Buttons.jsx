@@ -33,7 +33,26 @@ export const IconButton = ({ variant = 'close', className, ...rest }) => (
     <button type="button" className={cx('ui-icon-btn', `ui-icon-btn--${variant}`, className)} {...rest} />
 );
 
-/** Solid accent button. Adds no `type`: the caller passes it. */
-export const PrimaryButton = ({ outlined, className, ...rest }) => (
-    <button className={cx('ui-btn-primary', outlined && 'ui-btn-primary--outlined', className)} {...rest} />
+/**
+ * Solid accent button. Adds no `type`: the caller passes it.
+ *
+ * @param {boolean} [outlined] - bordered variant.
+ * @param {boolean} [run]   - the page's run action: row height, play glyph.
+ * @param {boolean} [busy]  - run: a spinner in place of the glyph (the caller
+ *                            sets aria-busy).
+ * @param {boolean} [stale] - run: a dot after the label (the shown result no
+ *                            longer matches the inputs).
+ */
+export const PrimaryButton = ({ outlined, run, busy, stale, className, ...rest }) => (
+    <button
+        className={cx(
+            'ui-btn-primary',
+            outlined && 'ui-btn-primary--outlined',
+            run && 'ui-btn-primary--run',
+            run && busy && 'is-busy',
+            run && stale && 'is-stale',
+            className
+        )}
+        {...rest}
+    />
 );

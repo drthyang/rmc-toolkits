@@ -13,8 +13,10 @@ import React, { useId } from 'react';
  * @param {string}  label   - accessible name for the trigger (e.g. "About …").
  * @param {React.ReactNode} children - the description shown in the popover.
  * @param {'start'|'end'} [align='start'] - horizontal edge the popover aligns to.
+ * @param {'below'|'above'} [side='below'] - 'above' for a badge near the
+ *        bottom of the page, so the (hidden) popover never adds page scroll.
  */
-const InfoBadge = ({ label = 'More information', children, align = 'start' }) => {
+const InfoBadge = ({ label = 'More information', children, align = 'start', side = 'below' }) => {
     const id = useId();
     return (
         <span className="ui-info">
@@ -26,7 +28,11 @@ const InfoBadge = ({ label = 'More information', children, align = 'start' }) =>
             >
                 ?
             </button>
-            <span id={id} role="tooltip" className={`ui-info__popover ui-info__popover--${align}`}>
+            <span
+                id={id}
+                role="tooltip"
+                className={`ui-info__popover ui-info__popover--${align}${side === 'above' ? ' ui-info__popover--above' : ''}`}
+            >
                 {children}
             </span>
         </span>
