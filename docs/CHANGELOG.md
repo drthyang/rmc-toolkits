@@ -103,8 +103,9 @@ the CLI and every number are as before). Details in
   (triplet, window, Compute, the central-atom count, the box, where it runs); computing shows a
   shimmer or dims the shown plot, with a centred badge and a spinner on the button; a result whose
   inputs changed shows an *inputs changed* chip and the button reads **Update**; a validation
-  error is the prompt's line and marks and focuses the field it names; a Live Data configuration
-  change shows a *new configuration* chip. Without `PDFpartials.csv` the g(r) card is a slim row.
+  error is the prompt's line and marks and focuses the field it names; a result with no triplet
+  in the windows keeps the empty axis with "No A–B–C triplets in these windows." instead of a flat
+  zero curve; a Live Data configuration change shows a *new configuration* chip. Without `PDFpartials.csv` the g(r) card is a slim row.
 - **Controls as a form.** Enter in any field computes (an *Enter* key hint beside the button from
   1500 px up); Compute sits at the right with a ▶ glyph; numbers carry their unit inside the field
   (`[2.00 Å]`, `[1.0 °]`); the window labels are the bond roles (*A–B*, *B–C*) with their

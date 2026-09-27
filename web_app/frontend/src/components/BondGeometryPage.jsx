@@ -457,10 +457,14 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
     }, [findPartial, apex, end2, partialSeries]);
 
     // --- Plot data (memoized: a new object identity resets plot view state). --
+    // No triplet fell inside the windows: the engine's curves are all zero,
+    // which drawn under the random-bonds line would read as "far below
+    // random". The hero keeps the empty axis and says so instead.
+    const noAngles = Boolean(result) && result.angleCount === 0;
     // The angle distribution as a step curve (one step per bin) with a light
     // area, over the dashed isotropic reference.
     const anglePlot = useMemo(() => {
-        if (!result) return null;
+        if (!result || result.angleCount === 0) return null;
         const sin = angleView === 'sin';
         const width = result.binWidth;
         return {
@@ -484,18 +488,25 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
         };
     }, [result, angleView]);
 
-    // Before the first result the hero shows the same axis, empty but for the
-    // random-bonds reference (at the typed bin width in the density view).
+    // Before the first result — or after one with no angles — the hero shows
+    // the same axis, empty but for the random-bonds reference (in the density
+    // view at the typed bin width, or the result's realized one).
     const ghostPlot = useMemo(() => {
-        if (result) return null;
+        if (result && result.angleCount > 0) return null;
         const sin = angleView === 'sin';
-        const requested = Number(binWidth);
-        const count = Number.isFinite(requested) && requested > 0 ? Math.max(1, Math.round(180 / requested)) : 180;
-        const width = 180 / count;
-        const centers = Array.from({ length: count }, (_, index) => (index + 0.5) * width);
+        let width = result?.binWidth;
+        let centers = result?.binCenters;
+        if (!result) {
+            const requested = Number(binWidth);
+            const count = Number.isFinite(requested) && requested > 0 ? Math.max(1, Math.round(180 / requested)) : 180;
+            width = 180 / count;
+            centers = Array.from({ length: count }, (_, index) => (index + 0.5) * width);
+        }
         return {
-            title: 'Bond-angle distribution (not computed)',
-            xLabel: `angle at ${apex || 'B'}, θ (${DEGREES})`,
+            title: result
+                ? `${result.triplet.join('-')} bond angles (none in the windows)`
+                : 'Bond-angle distribution (not computed)',
+            xLabel: `angle at ${result ? result.triplet[1] : apex || 'B'}, θ (${DEGREES})`,
             yLabel: sin ? 'sin-corrected (random = 1)' : 'density (deg^{-1})',
             ...ANGLE_AXIS,
             series: [randomBondsGuide(sin, centers, width)]
@@ -655,11 +666,18 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
     const windowText = split23
         ? `${typed(r12Min)}–${typed(r12Max)} / ${typed(r23Min)}–${typed(r23Max)} ${ANGSTROM}`
         : `${typed(r12Min)}–${typed(r12Max)} ${ANGSTROM}`;
+    // The windows a result used (resolved payload values), B–C when it differs.
+    const resultWindowText = result
+        ? (result.sharedEnds || windowLabel(result.bond23) === windowLabel(result.bond12)
+            ? windowLabel(result.bond12)
+            : `${windowLabel(result.bond12).replace(` ${ANGSTROM}`, '')} / ${windowLabel(result.bond23)}`)
+        : null;
 
     const noHelper = !partialSeries && !partialsLoading;
     const ghost = !result;
-    const dimmed = ghost || computing;
+    const dimmed = ghost || noAngles || computing;
     const showPrompt = ghost && !computing && elements.length > 0 && hasTriplet && !noRun;
+    const showNoAngles = noAngles && !computing;
 
     const runButtonProps = {
         run: true,
@@ -973,6 +991,17 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                             {runtime}
                                         </Chip>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+                        {showNoAngles && (
+                            <div className="ui-overlay-center">
+                                <div className="ui-prompt">
+                                    <div className="ui-prompt__row">
+                                        {heroChain}
+                                        <Chip title="The bond windows this result used">{resultWindowText}</Chip>
+                                    </div>
+                                    <p>No {result.triplet.join('–')} triplets in these windows.</p>
                                 </div>
                             </div>
                         )}

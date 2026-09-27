@@ -33,7 +33,7 @@ presentation reductions of the payload and one closed-form reference line).
   - [Step 4 — The angle plot and the random-bonds line](#step-4--the-angle-plot-and-the-random-bonds-line)
   - [Step 5 — The partial-g(r) window helper](#step-5--the-partial-gr-window-helper)
   - [Step 6 — The folded-cell bond view](#step-6--the-folded-cell-bond-view)
-  - [Step 7 — Card states: empty, computing, stale, error](#step-7--card-states-empty-computing-stale-error)
+  - [Step 7 — Card states: empty, computing, stale, no angles, error](#step-7--card-states-empty-computing-stale-no-angles-error)
   - [Step 8 — Layout and the colour system](#step-8--layout-and-the-colour-system)
   - [Parameters and defaults](#parameters-and-defaults-1)
   - [Caveats](#caveats-1)
@@ -744,7 +744,7 @@ cloud rather than a fitted ellipsoid — with the analysis' detected bonds drawn
 Note the sticks connect **average site positions** (the folded reference sites), while the cloud
 shows instantaneous atoms: a stick is the average bond, not any single configuration's bond.
 
-### Step 7 — Card states: empty, computing, stale, error
+### Step 7 — Card states: empty, computing, stale, no angles, error
 
 The three cards keep their skeleton — header, KPI rail, plot toolbar, plot — before and after
 Compute, so nothing moves when a result lands:
@@ -759,6 +759,12 @@ Compute, so nothing moves when a result lands:
   plot (inert); both show a centred *Computing A–B–C…* badge, and the button a spinner
   (`aria-busy`). Motion is off under `prefers-reduced-motion`.
 - **Stale**: see Step 2.
+- **No angles** (no A–B–C triplet inside the windows — Ga–Ta–Se under the default 2–3 Å
+  windows, say, whose Ga–Ta shell sits near 4.4 Å): the payload's curves are all zero (engine
+  Step 6), and drawn under the random-bonds line they would read as "far below random".
+  The hero keeps the empty axis instead — dimmed, on the result's bins — with one line over it,
+  "No Ga–Ta–Se triplets in these windows.", beside the triplet and the windows the result used.
+  The KPIs report the zeros (0 angles, 0-fold).
 - **Error**: the prompt's line becomes the message (`role="alert"`) and the named field is
   marked (Step 2). A run that cannot be read at all keeps the page-level banner.
 - **No run**: the page-level prompt "Open a run folder with an `.rmc6f` file." and the empty

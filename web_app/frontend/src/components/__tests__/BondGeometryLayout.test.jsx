@@ -14,7 +14,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BOND_COLORS } from '../../plotPalette';
 
-const state = vi.hoisted(() => ({ requests: [], plots: {}, cell: null, partials: true }));
+const state = vi.hoisted(() => ({ requests: [], plots: {}, cell: null, partials: true, zeroAngles: false }));
 
 const SITES = {
     elements: ['Ga', 'Nb', 'Se'],
@@ -32,6 +32,27 @@ const triplets = (params) => {
     const bond23 = params.r23Min !== undefined ? [params.r23Min, params.r23Max] : bond12;
     const sharedEnds = params.end1 === params.end2 && bond12[0] === bond23[0] && bond12[1] === bond23[1];
     const lengths = { uniqueBonds: 96, count: 96, meanLength: 2.6 };
+    // No triplet inside the windows: the engine's all-zero curves (not NaN),
+    // no mean angle, every central atom 0-fold.
+    if (state.zeroAngles) {
+        return {
+            triplet: [params.end1, params.apex, params.end2],
+            bond12,
+            bond23,
+            sharedEnds,
+            binWidth: 60,
+            binCenters: [30, 90, 150],
+            sinCorrected: [0, 0, 0],
+            density: [0, 0, 0],
+            coordination: [16],
+            apexCount: 16,
+            lengths12: { uniqueBonds: 0, count: 0, meanLength: null },
+            lengths23: sharedEnds ? null : { uniqueBonds: 0, count: 0, meanLength: null },
+            angleCount: 0,
+            meanAngle: null,
+            stdAngle: null,
+        };
+    }
     return {
         triplet: [params.end1, params.apex, params.end2],
         bond12,
@@ -102,6 +123,7 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         state.plots = {};
         state.cell = null;
         state.partials = true;
+        state.zeroAngles = false;
         container = document.createElement('div');
         document.body.appendChild(container);
         root = createRoot(container);
@@ -209,6 +231,31 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         await submit();
         expect(kpis().map((tile) => tile.label)).toEqual(['Angles', 'Coordination', 'Nb–Ga bond', 'Nb–Se bond']);
         expect(kpis()[3].value).toBe('2.700 Å');
+    });
+
+    it('a result with no angles keeps the empty axis and says so, instead of a zero curve', async () => {
+        state.zeroAngles = true;
+        await render();
+        await setSelect('End element A', 'Ga');
+        await submit();
+        // No data series: only the random-bonds reference, on the result's bins.
+        const plot = state.plots.angles;
+        expect(plot).toMatchObject({ xDomain: [0, 180], yMin: 0, xLabel: 'angle at Nb, θ (°)' });
+        expect(plot.series).toHaveLength(1);
+        expect(plot.series[0]).toMatchObject({ label: 'random bonds', role: 'guide' });
+        // One short line over the (dimmed, inert) axis, with the windows used.
+        const prompt = container.querySelector('.geom-hero .ui-prompt');
+        expect(prompt.querySelector('p').textContent).toBe('No Ga–Nb–Se triplets in these windows.');
+        expect(prompt.querySelector('.ui-chip').textContent).toBe('2.00–3.00 Å');
+        expect(prompt.querySelector('button')).toBeNull();
+        expect(container.querySelector('.geom-plot__frame').className).toContain('ui-dim');
+        // The KPIs still report what was found.
+        expect(kpis()[0]).toMatchObject({ value: '0.0\u2009per Nb', sub: '0 angles · 60.0° bins · server' });
+        // A result with angles draws its curve again.
+        state.zeroAngles = false;
+        await submit();
+        expect(state.plots.angles.series[0]).toMatchObject({ curve: 'step', y: [0.5, 2, 0.5] });
+        expect(container.querySelector('.geom-hero .ui-prompt')).toBeNull();
     });
 
     it('marks a shown result whose inputs changed, until they match again', async () => {
