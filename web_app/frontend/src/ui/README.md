@@ -52,6 +52,9 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 
 Every component appends `className` to its kit classes and spreads `...rest` on
 its root, so `role`, `aria-*`, `title`, `style`, `data-*` and `ref` pass through.
+Two exceptions take only the props listed: `InfoBadge` (no `className`, no
+`...rest`) and `SaveMenu` (`className`, but no `...rest` — its root holds the
+ref that closes the menu on an outside click).
 
 `Control` and `Switch` are styled only inside a `ControlsBar`: their rules are
 keyed `.ui-controls .ui-control…` (and `.ui-controls .ui-control.ui-switch…`),

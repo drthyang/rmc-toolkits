@@ -10,7 +10,9 @@ const DEFAULT_OPTIONS = [{ id: 'png', label: 'PNG image', hint: '.png' }];
 // single format it saves directly on click. Shared by the chart toolbars and
 // the KDE panels so every figure offers the same control. Styled by the kit's
 // `ui-save` / `ui-menu` classes (ui.css); pass className="ui-save--accent" for
-// the accent look.
+// the accent look. Unlike the other kit components it spreads no `...rest`:
+// the root carries its own ref (outside-click close), so extra props are not
+// passed through.
 const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', align = 'right', disabled = false, busy = false, className = '' }) => {
     const [open, setOpen] = useState(false);
     const rootRef = useRef(null);
