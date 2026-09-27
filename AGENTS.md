@@ -355,8 +355,11 @@ web_app/frontend/src/
   the last .log column** (named in `plotData.chiColumn`, e.g. `X_ray_(R)1` — one fit term, not the
   total; browserData applies `Math.log`); the context builder labels it so the model reads it
   correctly, and reads `non_gaussianity` as Mardia's kurtosis (sites ranked by its magnitude).
-  It uses the UI kit by **class-name strings only** (`ui-page`, `ui-card`, `ui-empty`, `ui-pill`),
-  never kit JS; a kit token its own CSS reads keeps the old literal as a fallback
+  It uses the UI kit by **class-name strings only**, never kit JS — exactly `ui-page`,
+  `ui-page--column`, `ui-page--pb-sm`, `ui-card`, `ui-card--clip`, `ui-card--lift`,
+  `ui-card__header-flush`, `ui-card__title`, `ui-card__header-actions`, `ui-empty`,
+  `ui-empty--fill` and `ui-pill` (the modifiers carry the page layout: flex column, bottom
+  padding, fill height). A kit token its own CSS reads keeps the old literal as a fallback
   (`var(--warning, #b45309)`), so an extracted copy still renders.
 
 ## Run & test
