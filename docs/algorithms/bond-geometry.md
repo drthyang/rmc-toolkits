@@ -609,8 +609,8 @@ epoch on resolve and can never land a stale payload on the new dataset.
 A **new configuration of the same run** — a Live Data save, picked up through the Flask
 `dataEpoch` prop (App.jsx's `configEpoch`) or a browser-loaded run's changed `.rmc6f` text — bumps
 the same epoch, keeps the triplet and the typed windows, reloads the element list, the Model
-information card and the partials in place, and **drops** the computed distribution with the
-note "The run saved a new configuration…". The distribution is computed on demand, so it is never
+information card and the partials in place, and **drops** the computed distribution; the angle
+card's placeholder then reads "New configuration — Compute again.". The distribution is computed on demand, so it is never
 recomputed unasked, and a result from the previous configuration never sits next to the new model.
 
 ### Step 3 — The result chips

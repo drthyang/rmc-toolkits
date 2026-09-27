@@ -125,7 +125,7 @@ describe('BondGeometryPage dataEpoch (Flask Live Data)', () => {
         expect(count('/api/triplets')).toBe(1);
         // ...the previous result is gone, and the page says why.
         expect(container.querySelector('section[aria-label="Triplet result"]')).toBeNull();
-        expect(text()).toMatch(/saved a new configuration/);
+        expect(text()).toMatch(/New configuration — Compute again/);
         // The picks survive the reload.
         expect(select('End element A').value).toBe('Ga');
         expect(select('Central element B').value).toBe('Nb');
@@ -134,6 +134,6 @@ describe('BondGeometryPage dataEpoch (Flask Live Data)', () => {
         await act(async () => { compute.click(); });
         expect(count('/api/triplets')).toBe(2);
         expect(container.querySelector('section[aria-label="Triplet result"]')).not.toBeNull();
-        expect(text()).not.toMatch(/saved a new configuration/);
+        expect(text()).not.toMatch(/New configuration/);
     });
 });
