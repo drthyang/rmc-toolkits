@@ -23,7 +23,8 @@ Every workspace page now draws its chrome from one shared UI kit, `web_app/front
 polished look had lived in `PcaKdePage.css` as `pca-*` classes that other pages borrowed by name.
 Theme-invariant values that were hard-coded (brand blue, status and plot-kind colours, chart ink,
 radii, durations, control heights, the type scale) are tokens in `index.css`. Page stylesheets
-keep layout only. `InfoBadge` and `SaveMenu` moved into `src/ui`; the footer is
+keep layout only, apart from a few listed exceptions (the app header and brand lockup, the PCA
+statistics dividers; see the kit README). `InfoBadge` and `SaveMenu` moved into `src/ui`; the footer is
 `components/AppFooter.jsx`. The refactor was verified pixel-identical against `main` on every page
 (desktop, laptop and phone; light and dark) — the first viewport and, because each page scrolls
 inside its own root rather than the document, every below-the-fold scroll step — with computed
