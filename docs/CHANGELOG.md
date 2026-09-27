@@ -5,7 +5,7 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## 0.6.0 — unreleased
 
-> This work was first tagged v1.0.0 on 2026-09-26. That tag was withdrawn on 2026-09-27, and the
+> This work was first tagged v1.0.0 on 2026-09-26 and the tag was withdrawn the same day; the
 > work continues toward 0.6.0, which will also bring the Bond Geometry redesign and device layouts.
 
 Every engine's math and physics was audited end to end, and the audit's roughly 100 defects were
