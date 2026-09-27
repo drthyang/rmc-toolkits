@@ -3,7 +3,8 @@
 
    InteractivePlot component CSS: plot layout, the SVG marks, the series legend
    and the hover tooltip (token-only). Its chrome — the Reset-zoom pill, the
-   Save menu and the loading/error placeholders — comes from the UI kit. */
+   Save menu, the save-error banner and the loading/error placeholders — comes
+   from the UI kit. */
 
 .interactive-plot {
     min-height: 0;
@@ -22,6 +23,11 @@
     flex: 0 0 auto;
     align-items: center;
     gap: 0.4rem;
+}
+
+/* A failed save: the kit banner, placed under the toolbar on its gutters. */
+.plot-save-error {
+    margin: 0 0.9rem 0.35rem;
 }
 
 .plot-stage {

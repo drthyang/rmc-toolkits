@@ -7,7 +7,7 @@ import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
 import { nearestFiniteIndex, niceDomain, plotPayloadError } from '../plotDomain';
 import { GUIDE_STROKE, PLOT_PALETTE } from '../plotPalette';
-import { Pill } from '../ui';
+import { Banner, Pill } from '../ui';
 import { uiScale } from '../uiScale';
 import SaveMenu from '../ui/SaveMenu';
 import './InteractivePlot.css';
@@ -125,6 +125,9 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     }, [fit]);
     const [plot, setPlot] = useState(null);
     const [error, setError] = useState(null);
+    // A failed figure save: shown under the toolbar (the chart stays), cleared
+    // by the next save. Separate from `error`, which replaces an unloaded chart.
+    const [saveError, setSaveError] = useState(null);
     const [hidden, setHidden] = useState(() => new Set());
     const [xDomain, setXDomain] = useState(null);
     const [yDomain, setYDomain] = useState(null);
@@ -420,10 +423,11 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
 
     const saveFigure = async (format) => {
         if (!svgRef.current) return;
+        setSaveError(null);
         try {
             await saveSvgFigure(svgRef.current, effectivePlot?.title || file.name, format);
-        } catch (saveError) {
-            setError(saveError.message || 'Could not save the figure');
+        } catch (failure) {
+            setSaveError(failure?.message || 'Could not save the figure');
         }
     };
 
@@ -475,6 +479,11 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                     <SaveMenu onSave={saveFigure} options={CHART_SAVE_OPTIONS} label="Save" align="right" />
                 </div>
             </div>
+            {saveError && (
+                <Banner tone="danger" sm role="alert" className="plot-save-error" onDismiss={() => setSaveError(null)}>
+                    {saveError}
+                </Banner>
+            )}
             <div className="plot-stage" ref={stageRef}>
                 <svg
                     ref={svgRef}

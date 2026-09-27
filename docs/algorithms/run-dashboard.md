@@ -1841,8 +1841,9 @@ so the margins are transparent.
    is distortion-free only because the canvas is exactly `viewBox × scale` in both dimensions.
 5. `canvas.toBlob(…, 'image/png')`; a null blob rejects with `Could not encode the figure`.
 
-Both rejection messages are caught by `InteractivePlot.jsx::saveFigure` and shown in the chart's own
-error state.
+Both rejection messages are caught by `InteractivePlot.jsx::saveFigure` and shown as a one-line
+danger banner under the plot toolbar (a rejection with no message reads "Could not save the figure").
+The chart stays on screen, and the next save clears the banner.
 
 **The chart PNG resolution is fixed by the viewBox and `scale`, not by the browser window and not by
 `window.devicePixelRatio`.** `devicePixelRatio` is never consulted on the chart path; the exported
@@ -1871,7 +1872,10 @@ it, and revokes the URL on the next tick.
 
 `Dashboard.jsx` → `handleSaveAllFigures(format)` queries the page root for every `.plot-card`, takes
 its `.interactive-plot svg` node and the `.plot-card-header h3` text as the name, and hands the list
-to `saveSvgFiguresAsZip`. A `savingAll` flag guards re-entry. Selection and naming rules:
+to `saveSvgFiguresAsZip`. A `savingAll` flag guards re-entry. A rejection (for example
+`Could not rasterize the figure` from one PNG entry) is caught and shown as a one-line danger banner
+under the "Loaded N plot files" header ("Could not save the figures" when it carries no message); the
+next save clears it. Selection and naming rules:
 
 - **A card with no `.interactive-plot svg` is skipped entirely** — a still-parsing card, or one
   showing a parse error, contributes nothing to the archive.
