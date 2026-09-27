@@ -693,9 +693,17 @@ the same plot-file path as the Dashboard; both runtimes) so the windows can be s
 actual first shell:
 
 - **Title**: the pair as element chips, B first — "(Ta)–(Se) partial g(r)" — or the whole
-  triplet when there are two curves. The header's right side shows the **live window chip**
-  (`2.00–3.00 Å`, following the inputs with the guides' debounce), or one chip per window, led by
-  its bond-role dash, when the windows are split.
+  triplet when there are two curves, its bond dashes in the curves' colours. The header's right
+  side shows the **live window chip** (`2.00–3.00 Å`, following the inputs with the guides'
+  debounce) — with the windows split, one chip holding both, each led by its bond-role dash
+  (hidden text *A–B* / *B–C* for a screen reader) — and the plot's **Save** (and *Reset zoom*
+  after a zoom).
+- **No legend row**: the title already names the curves and the chip the guides, so the plot
+  drops its legend and moves its actions into the header (InteractivePlot's opt-in
+  `legend={false}` and `actionsTarget` props; every other plot keeps its toolbar row). The
+  ≈ 45 px row goes to the plot, which is what the helper is read from: the plot area is
+  481 × 123 px at 1440 × 900, 548 × 173 at 1600 × 900 and 681 × 263 at 1920 × 1080 (Demo run;
+  it was 57, 102 and 182 px tall with the legend row and 1.25 : 1 rows).
 - **Curves**: the A–B partial always; a second curve whenever A–B and B–C are *different bond
   types* (pair labels looked up in either order — `Ta-Se` matches `Se-Ta`). This is independent
   of the window split: Ga–Ta–Se has two shells to bracket even with one shared window, and
@@ -707,8 +715,8 @@ actual first shell:
   gets its own pair, labelled `A–B rmin/rmax` and `B–C rmin/rmax` **by role** (pair names would
   collide for same-element triplets) and coloured `BOND_COLORS.ab` / `.bc`, so when the bonds are
   different types each pair matches the curve it brackets (for a same-type triplet the B–C pair
-  has the second colour and no curve of its own). The guides stay **out of the legend**
-  (`legend: false`): the window chips name them, and the legend lists curves only.
+  has the second colour and no curve of its own). The guides carry `legend: false`: the window
+  chip names them.
 - **Nothing is shaded**: the window is marked only by the guides. The in-app help (the A–B
   window and partial g(r) InfoBadges) states exactly these rules — the second curve follows the
   bond types, the switch only the guides — pinned by `BondGeometryPage.test.jsx`.
@@ -773,9 +781,10 @@ Compute, so nothing moves when a result lands:
 ### Step 8 — Layout and the colour system
 
 **Layout** ([BondGeometryPage.css](../../web_app/frontend/src/components/BondGeometryPage.css)):
-above 1100 px the grid is two columns, `minmax(0, 7fr) minmax(0, 5fr)`, with rows
-`minmax(0, 1.25fr) minmax(0, 1fr)` and areas `"hero cell" "hero pdf"`: the hero spans both rows
-(about 904 × 615 px at 1600 × 900), the folded cell and the partial $g(r)$ stack on the right.
+above 1100 px the grid is two columns, `minmax(0, 7fr) minmax(0, 5fr)`, with two equal rows
+`minmax(0, 1fr) minmax(0, 1fr)` and areas `"hero cell" "hero pdf"`: the hero spans both rows
+(about 904 × 615 px at 1600 × 900), the folded cell and the partial $g(r)$ stack on the right in
+equal halves (a 1.25 : 1 split left the $g(r)$ too short near the grid's floor).
 The grid takes the height left under the model card and the controls (`flex: 1 1 0`, floor
 32 rem, cap 60 rem) rather than a fixed `100vh − k` clamp, so it absorbs the model card wrapping
 at 1440 px. The controls bar keeps **one row down to 1440 px with the split window on**: the

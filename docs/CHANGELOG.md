@@ -110,9 +110,11 @@ the CLI and every number are as before). Details in
   1500 px up); Compute sits at the right with a ▶ glyph; numbers carry their unit inside the field
   (`[2.00 Å]`, `[1.0 °]`); the window labels are the bond roles (*A–B*, *B–C*) with their
   bond-role bar; a ⇄ button swaps A and C.
-- **Titles and legend.** "(Ta)–(Se) partial g(r)" with a live window chip (the guides left the
-  legend), "(Ta)–(Se) bonds" for the 3D card, whose element legend moved into the canvas as a pill
-  with a bond swatch per window.
+- **Titles and legend.** "(Ta)–(Se) partial g(r)" with a live window chip and the plot's Save in
+  its header — the title names the curves, so the g(r) plot has no legend row and keeps that
+  height (InteractivePlot's opt-in `legend={false}` and `actionsTarget`); the folded cell and the
+  g(r) share the right column equally. "(Ta)–(Se) bonds" for the 3D card, whose element legend
+  moved into the canvas as a pill with a bond swatch per window.
 - **UI kit.** New pieces, documented in `src/ui/README.md`: `ElementChip`, `BondDash`, `KpiRail`,
   `Kpi`, `UnitField`, `PrimaryButton run` (`busy`, `stale`), `ControlsBar as="form"`,
   `InfoBadge side="above"`, and the classes `ui-legend--overlay`, `ui-overlay-center`, `ui-dim`,

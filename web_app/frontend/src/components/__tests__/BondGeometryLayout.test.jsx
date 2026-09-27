@@ -14,7 +14,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BOND_COLORS } from '../../plotPalette';
 
-const state = vi.hoisted(() => ({ requests: [], plots: {}, cell: null, partials: true, zeroAngles: false }));
+const state = vi.hoisted(() => ({ requests: [], plots: {}, plotProps: {}, cell: null, partials: true, zeroAngles: false }));
 
 const SITES = {
     elements: ['Ga', 'Nb', 'Se'],
@@ -98,8 +98,9 @@ vi.mock('../../browserData', async (importOriginal) => ({
 
 // Capture what the page hands its plots and its 3D panel.
 vi.mock('../InteractivePlot', () => ({
-    default: ({ file, plotData }) => {
+    default: ({ file, plotData, legend, actionsTarget }) => {
         state.plots[file.path.split(':')[1]] = plotData;
+        state.plotProps[file.path.split(':')[1]] = { legend, actionsTarget };
         return null;
     },
 }));
@@ -121,6 +122,7 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
         state.requests = [];
         state.plots = {};
+        state.plotProps = {};
         state.cell = null;
         state.partials = true;
         state.zeroAngles = false;
@@ -303,6 +305,13 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         expect(curves.map((curve) => [curve.label, curve.color])).toEqual([['Ga-Nb', BOND_COLORS.ab], ['Nb-Se', BOND_COLORS.bc]]);
         guides = state.plots.partial.series.filter((series) => series.role === 'guide');
         expect(guides.map((guide) => guide.color)).toEqual([BOND_COLORS.ab, BOND_COLORS.ab, BOND_COLORS.bc, BOND_COLORS.bc]);
+        // One header chip names both windows, each led by its bond-role dash
+        // (whose hidden text names the role for a screen reader).
+        const chips = container.querySelectorAll('.geom-helper h3 .ui-chip');
+        expect(chips).toHaveLength(1);
+        expect(chips[0].textContent).toBe('A–B 2.00–3.00\u2003B–C 2.00–3.00 Å');
+        expect([...chips[0].querySelectorAll('.ui-bond-dash')].map((dash) => dash.style.getPropertyValue('--bond')))
+            .toEqual([BOND_COLORS.ab, BOND_COLORS.bc]);
 
         await submit();
         expect(state.cell.bondSets.map((set) => [set.elements.join('-'), set.color]))
@@ -318,6 +327,11 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         // The central atom is ringed; the window chip follows the inputs.
         expect(container.querySelector('.geom-hero h3 .ui-element-chip--central').textContent).toBe('Nb');
         expect(container.querySelector('.geom-helper h3 .ui-chip').textContent).toBe('2.00–3.00 Å');
+        // The g(r) title names its curves, so the plot drops its legend row and
+        // its Save goes to the card header; the hero keeps its legend.
+        expect(state.plotProps.partial.legend).toBe(false);
+        expect(state.plotProps.partial.actionsTarget).toBe(container.querySelector('.geom-helper h3 .ui-card__cluster'));
+        expect(state.plotProps.angles).toEqual({ legend: undefined, actionsTarget: undefined });
         // Before Compute the 3D legend says what Compute adds.
         expect(state.cell.bondSets).toBeNull();
     });

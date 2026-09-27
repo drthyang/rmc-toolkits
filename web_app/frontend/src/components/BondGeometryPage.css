@@ -8,18 +8,19 @@
 .geom-layout {
     /* The grid takes the page height left under the model card and the
        controls bar (flex from a zero basis), so the page does not scroll at
-       16:9 / 16:10 desktop sizes whether the model card or the controls wrap
-       (1440 px wraps the model card; the B–C window can wrap the bar). The
-       floor keeps the plots readable on short windows — the page scrolls
-       there, as at 1280 × 800 — and the cap keeps them sane on tall ones. The angle distribution
-       is the hero (7 of 12 columns, full height); the folded cell and the
-       partial g(r) stack on the right. */
+       16:9 / 16:10 desktop sizes (1440 px wraps the model card; the bar keeps
+       one row down to 1440 px). The floor keeps the plots readable on short
+       windows — the page scrolls there, as at 1280 × 800 — and the cap keeps
+       them sane on tall ones. The angle distribution is the hero (7 of 12
+       columns, full height); the folded cell and the partial g(r) stack on
+       the right in equal rows, so the g(r) — read for the first-shell peak —
+       keeps a usable height near the floor. */
     flex: 1 1 0;
     min-height: 32rem;
     max-height: 60rem;
     display: grid;
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-    grid-template-rows: minmax(0, 1.25fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
         "hero cell"
         "hero pdf";

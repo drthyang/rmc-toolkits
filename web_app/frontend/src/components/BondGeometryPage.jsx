@@ -554,7 +554,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
         // different types each window is then the colour of the shell it
         // brackets. A lone window keeps the neutral guide stroke — there is
         // nothing to tell apart. Guides stay out of the legend: the window
-        // chips in the card header name them.
+        // chip in the card header names them.
         const windows = split23
             ? [
                 { prefix: 'A–B ', min: guideMin, max: guideMax, color: BOND_COLORS.ab },
@@ -674,6 +674,10 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
         : null;
 
     const noHelper = !partialSeries && !partialsLoading;
+    // The helper plot's Save (and Reset zoom) live in its card header: the
+    // title's chips already name the curves, so the plot drops its legend
+    // row and keeps that height for the g(r) (InteractivePlot actionsTarget).
+    const [helperActions, setHelperActions] = useState(null);
     const ghost = !result;
     const dimmed = ghost || noAngles || computing;
     const showPrompt = ghost && !computing && elements.length > 0 && hasTriplet && !noRun;
@@ -1069,29 +1073,41 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                             : <>No <code>PDFpartials.csv</code> in this run.</>}
                                 </CardMeta>
                             )
-                            : split23
-                                ? (
-                                    <>
-                                        <Chip title="A–B window (the blue guides)">
-                                            <BondDash color={BOND_COLORS.ab} lead text="" />
-                                            A{'–'}B {typed(guideMin)}{'–'}{typed(guideMax)} {ANGSTROM}
-                                        </Chip>
-                                        <Chip title="B–C window (the orange guides)">
-                                            <BondDash color={BOND_COLORS.bc} lead text="" />
-                                            B{'–'}C {typed(guide23Min)}{'–'}{typed(guide23Max)} {ANGSTROM}
-                                        </Chip>
-                                    </>
-                                )
-                                : (
-                                    <Chip title="Bond window (the dashed guides)">
-                                        {typed(guideMin)}{'–'}{typed(guideMax)} {ANGSTROM}
-                                    </Chip>
-                                )}
+                            : (
+                                <>
+                                    {/* Split: one chip for both windows, each led by its
+                                        bond-role dash (the guides' colours), so the
+                                        header keeps one row with the Save beside it. */}
+                                    {split23
+                                        ? (
+                                            <Chip title="A–B window (the blue guides), B–C window (the orange guides)">
+                                                <BondDash color={BOND_COLORS.ab} lead text="A–B " />
+                                                {typed(guideMin)}{'–'}{typed(guideMax)}{'\u2003'}
+                                                <BondDash color={BOND_COLORS.bc} lead text="B–C " />
+                                                {typed(guide23Min)}{'–'}{typed(guide23Max)} {ANGSTROM}
+                                            </Chip>
+                                        )
+                                        : (
+                                            <Chip title="Bond window (the dashed guides)">
+                                                {typed(guideMin)}{'–'}{typed(guideMax)} {ANGSTROM}
+                                            </Chip>
+                                        )}
+                                    <span className="ui-card__cluster" ref={setHelperActions} />
+                                </>
+                            )}
                     />
                     {!noHelper && (
                         <div className="geom-plot">
                             {helperPlot
-                                ? <InteractivePlot file={{ path: `geometry:partial:${datasetKey}`, name: 'partial-gr' }} plotData={helperPlot} variant="fit" />
+                                ? (
+                                    <InteractivePlot
+                                        file={{ path: `geometry:partial:${datasetKey}`, name: 'partial-gr' }}
+                                        plotData={helperPlot}
+                                        variant="fit"
+                                        legend={false}
+                                        actionsTarget={helperActions}
+                                    />
+                                )
                                 : <p className="ui-placeholder">Looking for a partials file…</p>}
                         </div>
                     )}

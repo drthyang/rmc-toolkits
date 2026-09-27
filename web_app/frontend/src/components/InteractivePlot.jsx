@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
@@ -40,6 +41,16 @@ const isExperimental = (label) => /exp/i.test(label);
 //   series.fill         a light area under the curve, down to y = 0.
 //   series.width        stroke width in px.
 //   series.legend       false: left out of the legend (e.g. window guides).
+//
+// Opt-in toolbar props (absent, the toolbar row renders as before):
+//   legend={false}      no series legend — for a card whose title already
+//                       names the curves; the actions stay on the right.
+//   actionsTarget       an element the caller owns (a card header slot): the
+//                       actions (Reset zoom, Save) render there, and with
+//                       legend={false} the plot has no toolbar row at all, so
+//                       a short card gives that height to the plot. While the
+//                       prop is present but null (the slot not mounted yet)
+//                       the actions render nowhere, never inline.
 
 const MARKER_RADIUS = 2.8;
 
@@ -125,7 +136,7 @@ const AxisLabel = ({ label: rawLabel, x, y, textAnchor = 'middle', rotate = fals
     );
 };
 
-const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
+const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget }) => {
     const wide = variant === 'wide';
     // 'fit' takes its viewBox from the rendered box instead of a fixed aspect,
     // so the drawing fills the card rather than letterboxing inside it. Opt-in:
@@ -533,48 +544,56 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     // Keep the tooltip on the emptier side of the crosshair.
     const hoverOnLeftHalf = hover && hover.px < view.width / 2;
 
+    const actions = (
+        <div className="plot-actions">
+            {(xDomain || yDomain || fullExtent) && (
+                <Pill
+                    tint
+                    onClick={() => { setXDomain(null); setYDomain(null); setFullExtent(false); }}
+                >
+                    Reset zoom
+                </Pill>
+            )}
+            <SaveMenu onSave={saveFigure} options={CHART_SAVE_OPTIONS} label="Save" align="right" />
+        </div>
+    );
+    const actionsElsewhere = actionsTarget !== undefined;
+
     return (
         <div className={`interactive-plot${wide ? ' interactive-plot--wide' : ''}${fit ? ' interactive-plot--fit' : ''}`}>
-            <div className="plot-toolbar">
-                <div className="plot-legend">
-                    {orderedSeries.filter((series) => series.legend !== false).map((series) => (
-                        <button
-                            key={series.label}
-                            type="button"
-                            className={hidden.has(series.label) ? 'muted' : ''}
-                            onClick={() => {
-                                setHidden((current) => {
-                                    const next = new Set(current);
-                                    if (next.has(series.label)) next.delete(series.label);
-                                    else next.add(series.label);
-                                    return next;
-                                });
-                            }}
-                        >
-                            <span
-                                className={series.marker ? 'swatch-hollow' : series.guide ? 'swatch-guide' : ''}
-                                style={series.marker
-                                    ? { borderColor: series.color }
-                                    : series.guide
+            {actionsElsewhere && actionsTarget && createPortal(actions, actionsTarget)}
+            {(legend || !actionsElsewhere) && (
+                <div className="plot-toolbar">
+                    <div className="plot-legend">
+                        {legend && orderedSeries.filter((series) => series.legend !== false).map((series) => (
+                            <button
+                                key={series.label}
+                                type="button"
+                                className={hidden.has(series.label) ? 'muted' : ''}
+                                onClick={() => {
+                                    setHidden((current) => {
+                                        const next = new Set(current);
+                                        if (next.has(series.label)) next.delete(series.label);
+                                        else next.add(series.label);
+                                        return next;
+                                    });
+                                }}
+                            >
+                                <span
+                                    className={series.marker ? 'swatch-hollow' : series.guide ? 'swatch-guide' : ''}
+                                    style={series.marker
                                         ? { borderColor: series.color }
-                                        : { background: series.color }}
-                            />
-                            {series.label}
-                        </button>
-                    ))}
+                                        : series.guide
+                                            ? { borderColor: series.color }
+                                            : { background: series.color }}
+                                />
+                                {series.label}
+                            </button>
+                        ))}
+                    </div>
+                    {!actionsElsewhere && actions}
                 </div>
-                <div className="plot-actions">
-                    {(xDomain || yDomain || fullExtent) && (
-                        <Pill
-                            tint
-                            onClick={() => { setXDomain(null); setYDomain(null); setFullExtent(false); }}
-                        >
-                            Reset zoom
-                        </Pill>
-                    )}
-                    <SaveMenu onSave={saveFigure} options={CHART_SAVE_OPTIONS} label="Save" align="right" />
-                </div>
-            </div>
+            )}
             {saveError && (
                 <Banner tone="danger" sm role="alert" className="plot-save-error" onDismiss={() => setSaveError(null)}>
                     {saveError}
