@@ -31,6 +31,19 @@
     left: 0;
 }
 
+/* FoldedCellPanel: the canvas mounts in an inner box (the renderer replaces
+   its children), so the legend pill can sit over it in the stage. The stage
+   is the card's last child: it clips the canvas to the card's rounded
+   corners. */
+.pca-structure--overlaid {
+    overflow: hidden;
+}
+
+.pca-structure__mount {
+    position: absolute;
+    inset: 0;
+}
+
 @media (max-width: 980px) {
     .pca-structure {
         flex: none;

@@ -21,3 +21,10 @@ export const PLOT_PALETTE = [
 
 // Neutral stroke for a guide that is not tied to a particular series.
 export const GUIDE_STROKE = '#98a2b3';
+
+// Bond-role colors on the Bond Geometry page: the A–B bond and, when the two
+// bonds differ, the B–C bond. The same pair marks the 3D bond sticks, the
+// split window guides and window chips, and the chips' bond dashes — and they
+// are the first two plot colors, so a partial g(r) curve (series N is
+// PLOT_PALETTE[N]) wears the color of the bond it brackets.
+export const BOND_COLORS = { ab: PLOT_PALETTE[0], bc: PLOT_PALETTE[1] };
