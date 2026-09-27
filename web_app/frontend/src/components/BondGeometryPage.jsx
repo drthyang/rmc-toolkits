@@ -18,13 +18,17 @@ import API_BASE_URL from '../api';
 import { isStaticMode, readAndParseLocalPlotFile } from '../browserData';
 import { buildElementColors } from '../atomColors';
 import { PLOT_PALETTE } from '../plotPalette';
-import InfoBadge from './InfoBadge';
+import {
+    Banner, Card, CardHeader, CardMeta, Control, ControlGroup, ControlsBar, Hint, Page, PrimaryButton, Segmented,
+    SegmentedButton, Stat, StatRail, Switch,
+} from '../ui';
+import InfoBadge from '../ui/InfoBadge';
 import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import FoldedCellPanel from './FoldedCellPanel';
 import useSiteCloud from '../useSiteCloud';
 import { tripletRequestFromInputs } from '../workers/triplets';
-import './PcaKdePage.css';
+import AppFooter from './AppFooter';
 import './BondGeometryPage.css';
 
 // Same cap as StructurePage/Dashboard: the Model information card needs the
@@ -455,7 +459,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
     }, [result]);
 
     return (
-        <div className="pca-page">
+        <Page as="div" column>
             {/* Model information first, as on the Dashboard; the Detected SG
                 card stays on the Dashboard/Atomic Density pages only. */}
             {structure && (
@@ -463,190 +467,184 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                     <ModelSummary structure={structure} showSymmetry={false} />
                 </div>
             )}
-            <div className="pca-controls">
-                <div className="control-group" role="group" aria-label="Triplet">
-                    <label className="control">
-                        <span className="control-name">
-                            A
-                            <InfoBadge label="About the triplet">
-                                <p>
-                                    The RMCProfile <code>triplets</code> convention: the angle is
-                                    measured at the <strong>central atom B</strong> between its bond
-                                    to an A atom and its bond to a C atom. A and C may name the same
-                                    element (each unordered pair of bonds then counts once).
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <select value={end1} onChange={(event) => setEnd1(event.target.value)} disabled={!elements.length} aria-label="End element A">
+            <ControlsBar>
+                <ControlGroup label="Triplet">
+                    <Control
+                        label={(
+                            <>
+                                A
+                                <InfoBadge label="About the triplet">
+                                    <p>
+                                        The RMCProfile <code>triplets</code> convention: the angle is
+                                        measured at the <strong>central atom B</strong> between its bond
+                                        to an A atom and its bond to a C atom. A and C may name the same
+                                        element (each unordered pair of bonds then counts once).
+                                    </p>
+                                </InfoBadge>
+                            </>
+                        )}
+                    >
+                        <select className="ui-select" value={end1} onChange={(event) => setEnd1(event.target.value)} disabled={!elements.length} aria-label="End element A">
                             {elements.map((element) => <option key={element} value={element}>{element}</option>)}
                         </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">B (central)</span>
-                        <select value={apex} onChange={(event) => setApex(event.target.value)} disabled={!elements.length} aria-label="Central element B" className="geom-central">
+                    </Control>
+                    <Control label="B (central)">
+                        <select className="ui-select ui-select--ring" value={apex} onChange={(event) => setApex(event.target.value)} disabled={!elements.length} aria-label="Central element B">
                             {elements.map((element) => <option key={element} value={element}>{element}</option>)}
                         </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">C</span>
-                        <select value={end2} onChange={(event) => setEnd2(event.target.value)} disabled={!elements.length} aria-label="End element C">
+                    </Control>
+                    <Control label="C">
+                        <select className="ui-select" value={end2} onChange={(event) => setEnd2(event.target.value)} disabled={!elements.length} aria-label="End element C">
                             {elements.map((element) => <option key={element} value={element}>{element}</option>)}
                         </select>
-                    </label>
-                </div>
+                    </Control>
+                </ControlGroup>
 
-                <div className="control-group" role="group" aria-label="Bond windows">
-                    <label className="control">
-                        <span className="control-name">
-                            A{'–'}B window ({ANGSTROM})
-                            <InfoBadge label="About the bond windows">
-                                <p>
-                                    Two atoms are bonded when their distance falls inside the window
-                                    (inclusive). Read the window off the first-shell peak of the
-                                    partial g(r) — the Partial PDF panel marks the current bounds
-                                    with dashed guides once a partials file is in the run folder.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <span className="geom-window">
-                            <input type="number" step="0.05" min="0" max="15" value={r12Min} onChange={(event) => setR12Min(event.target.value)} aria-label="A-B window minimum" />
+                <ControlGroup label="Bond windows">
+                    <Control
+                        label={(
+                            <>
+                                A{'–'}B window ({ANGSTROM})
+                                <InfoBadge label="About the bond windows">
+                                    <p>
+                                        Two atoms are bonded when their distance falls inside the window
+                                        (inclusive). Read the window off the first-shell peak of the
+                                        partial g(r) — the Partial PDF panel marks the current bounds
+                                        with dashed guides once a partials file is in the run folder.
+                                    </p>
+                                </InfoBadge>
+                            </>
+                        )}
+                    >
+                        <span className="ui-pair">
+                            <input className="ui-input-strong" type="number" step="0.05" min="0" max="15" value={r12Min} onChange={(event) => setR12Min(event.target.value)} aria-label="A-B window minimum" />
                             {'–'}
-                            <input type="number" step="0.05" min="0" max="15" value={r12Max} onChange={(event) => setR12Max(event.target.value)} aria-label="A-B window maximum" />
+                            <input className="ui-input-strong" type="number" step="0.05" min="0" max="15" value={r12Max} onChange={(event) => setR12Max(event.target.value)} aria-label="A-B window maximum" />
                         </span>
-                    </label>
-                    <label className="control switch">
-                        <span className="control-name">Distinct B{'–'}C</span>
-                        <input type="checkbox" checked={split23} onChange={(event) => setSplit23(event.target.checked)} aria-label="Use a distinct B-C window" />
-                        <i className="switch-track" aria-hidden="true" />
-                    </label>
+                    </Control>
+                    <Switch
+                        label={<>Distinct B{'–'}C</>}
+                        checked={split23}
+                        onChange={(event) => setSplit23(event.target.checked)}
+                        inputProps={{ 'aria-label': 'Use a distinct B-C window' }}
+                    />
                     {split23 && (
-                        <label className="control">
-                            <span className="control-name">B{'–'}C window ({ANGSTROM})</span>
-                            <span className="geom-window">
-                                <input type="number" step="0.05" min="0" max="15" value={r23Min} onChange={(event) => setR23Min(event.target.value)} aria-label="B-C window minimum" />
+                        <Control label={<>B{'–'}C window ({ANGSTROM})</>}>
+                            <span className="ui-pair">
+                                <input className="ui-input-strong" type="number" step="0.05" min="0" max="15" value={r23Min} onChange={(event) => setR23Min(event.target.value)} aria-label="B-C window minimum" />
                                 {'–'}
-                                <input type="number" step="0.05" min="0" max="15" value={r23Max} onChange={(event) => setR23Max(event.target.value)} aria-label="B-C window maximum" />
+                                <input className="ui-input-strong" type="number" step="0.05" min="0" max="15" value={r23Max} onChange={(event) => setR23Max(event.target.value)} aria-label="B-C window maximum" />
                             </span>
-                        </label>
+                        </Control>
                     )}
-                </div>
+                </ControlGroup>
 
-                <div className="control-group" role="group" aria-label="Histogram">
-                    <label className="control">
-                        <span className="control-name">Bin width</span>
-                        <span className="geom-window">
-                            <input type="number" step="0.5" min="0.1" max="45" value={binWidth} onChange={(event) => setBinWidth(event.target.value)} aria-label="Angle bin width in degrees" />
-                            <span className="control-value">deg</span>
+                <ControlGroup label="Histogram">
+                    <Control label="Bin width">
+                        <span className="ui-pair">
+                            <input className="ui-input-strong" type="number" step="0.5" min="0.1" max="45" value={binWidth} onChange={(event) => setBinWidth(event.target.value)} aria-label="Angle bin width in degrees" />
+                            <span className="ui-control-value">deg</span>
                         </span>
-                    </label>
-                    <button
+                    </Control>
+                    <PrimaryButton
                         type="button"
                         className="geom-compute"
                         onClick={compute}
                         disabled={computing || !ready || !elements.length || !end1 || !apex || !end2}
                     >
                         {computing ? 'Computing…' : 'Compute'}
-                    </button>
-                </div>
-            </div>
+                    </PrimaryButton>
+                </ControlGroup>
+            </ControlsBar>
 
             {noRun && (
-                <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to analyse bond angles.</p>
+                <Hint>Open a run folder (with an <code>.rmc6f</code> file) to analyse bond angles.</Hint>
             )}
-            {(sitesError || resultError) && <p className="pca-error-banner">{sitesError || resultError}</p>}
+            {(sitesError || resultError) && <Banner as="p" tone="danger" sm>{sitesError || resultError}</Banner>}
             {!noRun && !result && !resultError && !sitesError && configChanged && (
-                <p className="pca-hint">
+                <Hint>
                     The run saved a new configuration, so the previous angle distribution was
                     cleared. Compute again to update it; the triplet and windows are kept.
-                </p>
+                </Hint>
             )}
             {!noRun && !result && !resultError && !sitesError && !configChanged && (
-                <p className="pca-hint">
+                <Hint>
                     Pick the A{'–'}B{'–'}C triplet (B central), bound the bond lengths, then
                     Compute. Angles are counted over the periodic configuration exactly, images included.
-                </p>
+                </Hint>
             )}
 
             {result && (
-                <div className="model-cards" role="status">
+                <div className="ui-stack" role="status">
                     {/* Same presentation as the Model information card: labeled
                         columns, not badges. */}
-                    <section className="model-summary geom-result" aria-label="Triplet result">
-                        <h2 className="model-summary-title">
-                            Triplet result
-                            {/* The windows the engine actually used (resolved
-                                payload values), the B–C one whenever it differs;
-                                wraps rather than truncating (geom-result). */}
-                            <span className="model-summary-source" title={resultSource.join(' · ')}>
-                                {resultSource.map((segment) => (
-                                    <span key={segment} className="geom-result-line">{segment}</span>
-                                ))}
-                            </span>
-                        </h2>
-                        <dl className="model-stats">
-                            <div className="model-stat">
-                                <dt>Central atoms</dt>
-                                <dd>
-                                    {result.apexCount.toLocaleString()}
-                                    <span className="model-stat-sub">{result.triplet[1]}</span>
-                                </dd>
-                            </div>
-                            <div className="model-stat">
-                                <dt>{result.sharedEnds ? 'Bonds' : 'Bonds A–B'}</dt>
-                                <dd title={bondsTitle(result.lengths12, result.triplet[0])}>
-                                    {result.lengths12.uniqueBonds.toLocaleString()}
-                                    {result.lengths12.meanLength != null && (
-                                        <span className="model-stat-sub">
-                                            mean {formatNumber(result.lengths12.meanLength, 3)} {ANGSTROM}
-                                        </span>
-                                    )}
-                                </dd>
-                            </div>
-                            {!result.sharedEnds && result.lengths23 && (
-                                <div className="model-stat">
-                                    <dt>Bonds B–C</dt>
-                                    <dd title={bondsTitle(result.lengths23, result.triplet[2])}>
-                                        {result.lengths23.uniqueBonds.toLocaleString()}
-                                        {result.lengths23.meanLength != null && (
-                                            <span className="model-stat-sub">
-                                                mean {formatNumber(result.lengths23.meanLength, 3)} {ANGSTROM}
-                                            </span>
-                                        )}
-                                    </dd>
-                                </div>
+                    <StatRail
+                        aria-label="Triplet result"
+                        heading={(
+                            <>
+                                Triplet result
+                                {/* The windows the engine actually used (resolved
+                                    payload values), the B–C one whenever it differs;
+                                    wraps rather than truncating. */}
+                                <span className="ui-stat-rail__source ui-stat-rail__source--wrap" title={resultSource.join(' · ')}>
+                                    {resultSource.map((segment) => (
+                                        <span key={segment} className="ui-stat-rail__line">{segment}</span>
+                                    ))}
+                                </span>
+                            </>
+                        )}
+                    >
+                        <Stat label="Central atoms">
+                            {result.apexCount.toLocaleString()}
+                            <span className="ui-stat__sub">{result.triplet[1]}</span>
+                        </Stat>
+                        <Stat
+                            label={result.sharedEnds ? 'Bonds' : 'Bonds A–B'}
+                            ddProps={{ title: bondsTitle(result.lengths12, result.triplet[0]) }}
+                        >
+                            {result.lengths12.uniqueBonds.toLocaleString()}
+                            {result.lengths12.meanLength != null && (
+                                <span className="ui-stat__sub">
+                                    mean {formatNumber(result.lengths12.meanLength, 3)} {ANGSTROM}
+                                </span>
                             )}
-                            {coordinationSummary && (
-                                <div className="model-stat">
-                                    <dt>Coordination</dt>
-                                    <dd>
-                                        {formatNumber(coordinationSummary.mean)}
-                                        <span className="model-stat-sub">
-                                            {`per ${result.triplet[1]} · ${coordinationSummary.mode}-fold ${formatNumber(coordinationSummary.modeShare, 1)}%`}
-                                        </span>
-                                    </dd>
-                                </div>
+                        </Stat>
+                        {!result.sharedEnds && result.lengths23 && (
+                            <Stat label="Bonds B–C" ddProps={{ title: bondsTitle(result.lengths23, result.triplet[2]) }}>
+                                {result.lengths23.uniqueBonds.toLocaleString()}
+                                {result.lengths23.meanLength != null && (
+                                    <span className="ui-stat__sub">
+                                        mean {formatNumber(result.lengths23.meanLength, 3)} {ANGSTROM}
+                                    </span>
+                                )}
+                            </Stat>
+                        )}
+                        {coordinationSummary && (
+                            <Stat label="Coordination">
+                                {formatNumber(coordinationSummary.mean)}
+                                <span className="ui-stat__sub">
+                                    {`per ${result.triplet[1]} · ${coordinationSummary.mode}-fold ${formatNumber(coordinationSummary.modeShare, 1)}%`}
+                                </span>
+                            </Stat>
+                        )}
+                        <Stat label="Angles">
+                            {result.angleCount.toLocaleString()}
+                            {result.meanAngle != null && (
+                                <span className="ui-stat__sub">
+                                    {`mean ${formatNumber(result.meanAngle, 1)}${DEGREES} ± ${formatNumber(result.stdAngle, 1)}${DEGREES}`}
+                                </span>
                             )}
-                            <div className="model-stat">
-                                <dt>Angles</dt>
-                                <dd>
-                                    {result.angleCount.toLocaleString()}
-                                    {result.meanAngle != null && (
-                                        <span className="model-stat-sub">
-                                            {`mean ${formatNumber(result.meanAngle, 1)}${DEGREES} ± ${formatNumber(result.stdAngle, 1)}${DEGREES}`}
-                                        </span>
-                                    )}
-                                </dd>
-                            </div>
-                        </dl>
-                    </section>
+                        </Stat>
+                    </StatRail>
                 </div>
             )}
 
             <div className="geom-layout">
-                <div className="pca-panel geom-main-panel">
-                    <h3>
-                        <span className="panel-title-label">
-                            {result ? `${result.triplet.join('–')} bond-angle distribution` : 'Bond-angle distribution'}
+                <Card roundEnds>
+                    <CardHeader
+                        fixed
+                        title={<>{result ? `${result.triplet.join('–')} bond-angle distribution` : 'Bond-angle distribution'}</>}
+                        help={(
                             <InfoBadge label="About the two normalizations">
                                 <p>
                                     <b>Density</b> — the raw distribution: probability per degree,
@@ -667,31 +665,34 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                     (≈ π/360 ≈ 0.00873), so compare shapes, or rescale.
                                 </p>
                             </InfoBadge>
-                        </span>
-                        <span className="panel-title-actions">
-                            {/* The angle count lives in the Triplet result card;
-                                the header only carries the toggle. */}
-                            <div className="pca-frame-toggle" role="group" aria-label="Angle normalization">
-                                <button type="button" className={angleView === 'sin' ? 'is-active' : ''} onClick={() => setAngleView('sin')}>
-                                    sin-corrected
-                                </button>
-                                <button type="button" className={angleView === 'raw' ? 'is-active' : ''} onClick={() => setAngleView('raw')}>
-                                    density
-                                </button>
-                            </div>
-                        </span>
-                    </h3>
+                        )}
+                        actions={(
+                            <>
+                                {/* The angle count lives in the Triplet result card;
+                                    the header only carries the toggle. */}
+                                <Segmented role="group" aria-label="Angle normalization">
+                                    <SegmentedButton type="button" active={angleView === 'sin'} onClick={() => setAngleView('sin')}>
+                                        sin-corrected
+                                    </SegmentedButton>
+                                    <SegmentedButton type="button" active={angleView === 'raw'} onClick={() => setAngleView('raw')}>
+                                        density
+                                    </SegmentedButton>
+                                </Segmented>
+                            </>
+                        )}
+                    />
                     <div className="geom-plot">
                         {anglePlot
                             ? <InteractivePlot file={{ path: `geometry:angles:${datasetKey}`, name: anglePlot.title }} plotData={anglePlot} variant="fit" />
-                            : <p className="geom-empty">No distribution yet.</p>}
+                            : <p className="ui-placeholder">No distribution yet.</p>}
                     </div>
-                </div>
+                </Card>
 
-                <div className="pca-panel">
-                        <h3>
-                            <span className="panel-title-label">
-                                Partial PDF
+                <Card roundEnds>
+                        <CardHeader
+                            fixed
+                            title="Partial PDF"
+                            help={(
                                 <InfoBadge label="About the partial PDF">
                                     <p>
                                         The A{'–'}B partial pair distribution from the run's{' '}
@@ -710,27 +711,27 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                         two bonds are different types.
                                     </p>
                                 </InfoBadge>
-                            </span>
-                            {partialSeries && (
-                                <span className="panel-title-count">
+                            )}
+                            meta={partialSeries && (
+                                <CardMeta>
                                     {partialCurve23
                                         ? `${partialSeries.label} · ${partialCurve23.label}`
                                         : partialSeries.label}
-                                </span>
+                                </CardMeta>
                             )}
-                        </h3>
+                        />
                         <div className="geom-plot">
                             {helperPlot
                                 ? <InteractivePlot file={{ path: `geometry:partial:${datasetKey}`, name: 'partial-gr' }} plotData={helperPlot} variant="fit" />
                                 : (
-                                    <p className="geom-empty">
+                                    <p className="ui-placeholder">
                                         {partialsLoading
                                             ? 'Looking for a partials file…'
                                             : <>No <code>PDFpartials.csv</code> in this run.</>}
                                     </p>
                                 )}
                         </div>
-                </div>
+                </Card>
 
                 {/* The Atomic Density page's folded cell — the atom cloud, not
                     fitted ellipsoids — with the detected bonds over it. */}
@@ -744,12 +745,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                 />
             </div>
 
-            <footer className="app-footer">
-                &copy; 2026 Tsung-Han Yang &middot;{' '}
-                <a href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE" target="_blank" rel="noreferrer">AGPLv3</a>
-                {' '}&middot;{' '}
-                <a href="https://github.com/drthyang/rmc-toolkits#readme" target="_blank" rel="noreferrer">About & documentation</a>
-            </footer>
-        </div>
+            <AppFooter tight />
+        </Page>
     );
 }

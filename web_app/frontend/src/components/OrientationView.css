@@ -1,0 +1,128 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
+
+   OrientationView component CSS (token-only): the sphere stage sizing, the
+   per-cell tooltip, the colorbar strip and the axis-views panel. The cards,
+   headers, legend and stat strip are the UI kit's. */
+
+/* The sphere fills the card between its header and the readouts. */
+.orient-main-panel .orient-canvas {
+    position: relative;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+}
+
+/* Per-cell hover readout following the pointer. */
+.orient-tooltip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    padding: 0.35rem 0.55rem;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--canvas-bg) 90%, transparent);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-xs);
+    font-family: var(--font-mono);
+    font-size: var(--fs-70);
+    line-height: 1.5;
+    color: var(--text-strong);
+    white-space: nowrap;
+}
+
+/* Colorbar strip: 0 -> vmax enhancement, with a tick at 1x (isotropic). */
+.orient-colorbar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.9rem 0.1rem;
+    background: var(--panel-bg);
+    border-top: 1px solid var(--border);
+}
+
+.orient-colorbar {
+    position: relative;
+    flex: 1 1 auto;
+    height: 0.6rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+}
+
+.orient-colorbar-marker {
+    position: absolute;
+    top: -0.15rem;
+    bottom: -0.15rem;
+    width: 2px;
+    background: var(--text-strong);
+    opacity: 0.8;
+}
+
+.orient-colorbar-label {
+    font-size: var(--fs-72);
+    font-family: var(--font-mono);
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+/* Axis-views mini panel: three fixed-angle views stacked vertically, one
+   scissored canvas with a click-to-snap zone over each third. */
+.orient-multiview {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+}
+
+.orient-multiview-canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    /* The renderer canvas is appended after the zone buttons; keep it below
+       them so the labels stay visible and clicks reach the snap zones. */
+    z-index: 0;
+}
+
+.orient-multiview-zone {
+    position: absolute;
+    z-index: 1;
+    left: 0;
+    right: 0;
+    height: 33.334%;
+    padding: 0.35rem 0.5rem;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+}
+
+.orient-multiview-zone:last-child {
+    border-bottom: 0;
+}
+
+/* Hover: a translucent dark scrim that visibly DIMS the pane (the sphere stays
+   readable through it), so a hovered axis view recedes/darkens. Two things had
+   to be right here: (1) the extra `.orient-multiview` raises specificity above
+   the global `button:hover` rule (index.css), which otherwise paints an opaque
+   near-white `var(--panel-raised)`; (2) over the LIGHT panel background a weak
+   dark overlay (~16%) just greys toward white and reads as a light wash, so the
+   scrim must be strong enough (~38%) to actually darken. */
+.orient-multiview .orient-multiview-zone:hover {
+    background: color-mix(in srgb, var(--scrim) 38%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.orient-multiview-zone:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring) inset;
+}
+
+.orient-multiview-label {
+    font-size: var(--fs-100);
+    font-weight: 700;
+    font-family: var(--font-mono);
+    text-shadow: 0 0 4px var(--canvas-bg), 0 0 4px var(--canvas-bg);
+}

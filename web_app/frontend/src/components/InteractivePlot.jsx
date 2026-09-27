@@ -7,7 +7,8 @@ import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
 import { nearestFiniteIndex, niceDomain, plotPayloadError } from '../plotDomain';
 import { GUIDE_STROKE, PLOT_PALETTE } from '../plotPalette';
-import SaveMenu from './SaveMenu';
+import { Pill } from '../ui';
+import SaveMenu from '../ui/SaveMenu';
 import './InteractivePlot.css';
 
 const palette = PLOT_PALETTE;
@@ -417,8 +418,8 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         }
     };
 
-    if (error && !effectivePlot) return <div className="interactive-plot-error">{error}</div>;
-    if (!effectivePlot) return <div className="interactive-plot-loading">Loading plot...</div>;
+    if (error && !effectivePlot) return <div className="ui-loading ui-loading--error">{error}</div>;
+    if (!effectivePlot) return <div className="ui-loading">Loading plot...</div>;
 
     // Keep the tooltip on the emptier side of the crosshair.
     const hoverOnLeftHalf = hover && hover.px < view.width / 2;
@@ -455,13 +456,12 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                 </div>
                 <div className="plot-actions">
                     {(xDomain || yDomain || fullExtent) && (
-                        <button
-                            type="button"
-                            className="plot-reset"
+                        <Pill
+                            tint
                             onClick={() => { setXDomain(null); setYDomain(null); setFullExtent(false); }}
                         >
                             Reset zoom
-                        </button>
+                        </Pill>
                     )}
                     <SaveMenu onSave={saveFigure} options={CHART_SAVE_OPTIONS} label="Save" align="right" />
                 </div>

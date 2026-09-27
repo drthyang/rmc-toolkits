@@ -1,3 +1,13 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
+
+   App shell: page frame, header layout, the brand lockup, and the header's
+   responsive rules (keyed by the hook classes page-tabs, demo-button,
+   path-bar, local-file-bar). The header controls themselves — nav tabs, the
+   Live Data switch, the run-folder field bar, the Demo button, the notice
+   row — are UI-kit classes (src/ui/ui.css). This file loads last, so its
+   media rules keep winning their equal-specificity ties with the kit. */
+
 .app-container {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -75,10 +85,10 @@
   place-items: center;
   width: 2.3rem;
   height: 2.3rem;
-  border-radius: 10px;
-  background: #2563eb;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 6px rgba(29, 78, 216, 0.35);
-  color: #fff;
+  border-radius: var(--radius-lg);
+  background: var(--brand);
+  box-shadow: var(--brand-glow);
+  color: var(--on-accent);
   flex: 0 0 auto;
 }
 
@@ -95,7 +105,7 @@
    rather than flush-left, so the block reads as a single centered lockup. */
 .brand-copy h1 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: var(--fs-105);
   font-weight: 700;
   color: var(--text-strong);
   line-height: 1.15;
@@ -107,83 +117,10 @@
   display: block;
   margin-top: 0.1rem;
   color: var(--subtle);
-  font-size: 0.66rem;
+  font-size: var(--fs-66);
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.09em;
-}
-
-.page-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.2rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-soft);
-}
-
-.page-tabs button {
-  min-height: 2.05rem;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--muted);
-  border-radius: 8px;
-  padding: 0.3rem 0.95rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.page-tabs button:hover:not(:disabled) {
-  color: var(--text-strong);
-  background: transparent;
-  border: 0;
-}
-
-.page-tabs button.active {
-  background: var(--panel-bg);
-  color: var(--text-strong);
-  box-shadow: var(--shadow-xs), 0 1px 3px rgba(16, 24, 40, 0.09);
-}
-
-.demo-button {
-  min-height: 2.05rem;
-  padding: 0.3rem 0.95rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  color: var(--text-strong);
-  font-size: 0.88rem;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease;
-}
-
-.demo-button:hover:not(:disabled) {
-  background: var(--panel-bg);
-  border-color: #2563eb;
-  color: #2563eb;
-}
-
-.demo-button.is-active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 6px rgba(29, 78, 216, 0.35);
-}
-
-.demo-button.is-active:hover:not(:disabled) {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-  color: #fff;
-}
-
-.demo-button:disabled {
-  opacity: 0.6;
-  cursor: default;
 }
 
 .path-controls {
@@ -191,249 +128,6 @@
   align-items: center;
   gap: 0.65rem;
   min-width: 0;
-}
-
-.watch-toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-  min-height: 2.05rem;
-  color: var(--muted);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.watch-toggle input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  min-width: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.watch-toggle span {
-  position: relative;
-  width: 2rem;
-  height: 1.1rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--panel-soft);
-  transition: background 140ms ease, border-color 140ms ease;
-}
-
-.watch-toggle span::after {
-  content: "";
-  position: absolute;
-  top: 0.16rem;
-  left: 0.18rem;
-  width: 0.66rem;
-  height: 0.66rem;
-  border-radius: 50%;
-  background: var(--subtle);
-  transition: transform 140ms ease, background 140ms ease;
-}
-
-.watch-toggle input:checked + span {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--panel-bg));
-}
-
-.watch-toggle input:checked + span::after {
-  transform: translateX(0.86rem);
-  background: var(--accent);
-}
-
-.watch-toggle input:focus-visible + span {
-  box-shadow: var(--focus-ring);
-}
-
-.watch-toggle b {
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-
-.watch-toggle-button {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
-  font-weight: inherit;
-}
-
-.watch-toggle-button:hover:not(:disabled) {
-  border: 0;
-  background: transparent;
-  color: var(--text-strong);
-}
-
-.watch-toggle-button:focus-visible {
-  outline: none;
-}
-
-.watch-toggle-button:focus-visible span {
-  box-shadow: var(--focus-ring);
-}
-
-/* The path bar reads as one joined field: label prefix, input, ghost + primary buttons. */
-.path-bar {
-  display: grid;
-  /* A compact field: the run folder is usually a short path, so the input only
-     needs ~10rem — no more column-wide empty box. */
-  grid-template-columns: auto minmax(0, 10rem) auto auto;
-  align-items: center;
-  gap: 0.45rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-bg);
-  box-shadow: var(--shadow-xs);
-  padding: 0.32rem 0.32rem 0.32rem 0.85rem;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-
-.path-bar:focus-within {
-  border-color: var(--accent);
-  box-shadow: var(--focus-ring);
-}
-
-.path-bar label {
-  color: var(--subtle);
-  font-size: 0.68rem;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  white-space: nowrap;
-}
-
-.path-bar input {
-  min-width: 0;
-  height: 2.05rem;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  padding: 0 0.35rem;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-}
-
-.path-bar input:focus {
-  outline: none;
-  border: 0;
-  box-shadow: none;
-}
-
-.path-bar button {
-  min-height: 2.05rem;
-  padding: 0 0.85rem;
-  font-size: 0.85rem;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  color: #fff;
-}
-
-.path-bar button:hover:not(:disabled) {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
-}
-
-.local-file-bar {
-  grid-template-columns: auto minmax(0, 10rem) auto;
-}
-
-.selected-run-name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  clip-path: inset(50%);
-}
-
-.path-bar .secondary-button {
-  color: var(--text);
-  background: transparent;
-  border-color: transparent;
-}
-
-.path-bar .secondary-button:hover:not(:disabled) {
-  background: var(--panel-soft);
-  border-color: transparent;
-}
-
-.browse-status {
-  flex-basis: 100%;
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  color: var(--muted);
-  padding: 0.55rem 0.75rem;
-  font-size: 0.84rem;
-}
-
-.browse-status a {
-  color: var(--accent);
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.browse-status a:hover {
-  text-decoration: underline;
-}
-
-.browse-status.error {
-  color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
-  background: var(--danger-soft);
-}
-
-.notification-close {
-  display: grid;
-  place-items: center;
-  width: 1.35rem;
-  height: 1.35rem;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  color: currentColor;
-  background: transparent;
-  box-shadow: none;
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1;
-  opacity: 0.72;
-}
-
-.notification-close:hover:not(:disabled),
-.notification-close:focus-visible {
-  color: var(--text-strong);
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  border: 0;
-  opacity: 1;
-}
-
-.app-footer {
-  margin-top: 2rem;
-  color: var(--subtle);
-  font-size: 0.74rem;
-  text-align: center;
 }
 
 /* Below ~1040px the nav and the full data-source cluster no longer fit on one
@@ -496,10 +190,6 @@
 
   .path-bar label {
     display: none;
-  }
-
-  .app-footer {
-    padding-inline: 0.8rem;
   }
 }
 

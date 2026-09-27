@@ -1,46 +1,9 @@
-.dashboard-page {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    padding: 1.1rem 1.25rem 1.5rem;
-    background: var(--app-bg);
-}
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
 
-.dashboard-toolbar {
-    display: none;
-    justify-content: space-between;
-    gap: 1rem;
-    align-items: flex-start;
-    margin-bottom: 0.75rem;
-}
-
-.dashboard-toolbar h2 {
-    margin: 0;
-    font-size: 1.15rem;
-    line-height: 1.25;
-    font-weight: 700;
-    color: var(--text-strong);
-}
-
-.dashboard-toolbar p {
-    margin: 0.25rem 0 0;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 0.82rem;
-}
-
-.status-pill,
-.rwp-chip {
-    border: 1px solid color-mix(in srgb, var(--success) 26%, transparent);
-    color: var(--success);
-    background: color-mix(in srgb, var(--success) 8%, transparent);
-    border-radius: 999px;
-    padding: 0.22rem 0.6rem;
-    font-size: 0.74rem;
-    font-weight: 650;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
+   Dashboard page layout. The look (page shell, cards, flush headers, pills,
+   chips, banners) is the UI kit's; this places the cards, lays out the chart
+   grid and the loaded-files list, and wires each plot kind to its color. */
 
 /* R-value: a slim full-width convergence strip that collapses to its header bar. */
 .r-value-card {
@@ -51,33 +14,9 @@
     margin-bottom: 1rem;
 }
 
-/* Let the Save-all dropdown escape the card when the panel is collapsed.
-   The double class beats the equal-specificity `.plot-card { overflow: hidden }`. */
-.plot-card.loaded-files-card {
-    overflow: visible;
-}
-
-.plot-card-header-actions {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.panel-toggle {
-    min-height: 1.7rem;
-    padding: 0.15rem 0.65rem;
-    font-size: 0.74rem;
-    font-weight: 600;
-    color: var(--muted);
-    background: var(--panel-bg);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    white-space: nowrap;
-}
-
-.panel-toggle:hover:not(:disabled) {
-    color: var(--text-strong);
+/* Structure error shown in place of the loaded-files card. */
+.model-summary-empty {
+    margin-bottom: 1rem;
 }
 
 .plot-grid {
@@ -86,74 +25,12 @@
     gap: 1rem;
 }
 
-.plot-card {
-    border: 1px solid var(--border);
-    background: var(--panel-bg);
-    border-radius: 12px;
-    min-width: 0;
-    overflow: hidden;
-    box-shadow: var(--shadow-xs);
-    transition: box-shadow 160ms ease, border-color 160ms ease;
-}
-
-.plot-card:hover {
-    border-color: var(--border-strong);
-    box-shadow: var(--shadow);
-}
-
-.plot-card-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.85rem;
-    align-items: center;
-    padding: 0.7rem 0.95rem 0;
-}
-
-.r-value-card .plot-card-header,
-.r-value-card.is-collapsed .plot-card-header,
-.loaded-files-card .plot-card-header,
-.loaded-files-card.is-collapsed .plot-card-header {
-    padding-bottom: 0.7rem;
-}
-
-.plot-card h3 {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 650;
-    color: var(--text-strong);
-    line-height: 1.3;
-}
-
-.plot-card-heading {
-    min-width: 0;
-}
-
-/* Source data file for the chart, so users can tell which file each figure plots. */
-.plot-card-source {
-    display: block;
-    overflow: hidden;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    line-height: 1.35;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.loaded-files-card .plot-card-header p {
-    margin: 0.2rem 0 0;
-    color: var(--muted);
-    font-size: 0.78rem;
-    line-height: 1.35;
-}
-
 .loaded-files-list {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 0.45rem 0.75rem;
     margin: 0;
     padding: 0.78rem 0.95rem 0.9rem;
-    border-top: 1px solid var(--border);
     list-style: none;
 }
 
@@ -161,198 +38,55 @@
     min-width: 0;
 }
 
-.loaded-file-badge {
-    --kind-color: var(--muted);
-    --kind-soft: color-mix(in srgb, var(--kind-color) 10%, var(--panel-soft));
-    --kind-border: color-mix(in srgb, var(--kind-color) 28%, var(--border));
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.45rem;
-    min-width: 0;
-    border: 1px solid var(--kind-border);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--kind-color) 5%, var(--panel-soft));
-    padding: 0.18rem 0.24rem 0.18rem 0.28rem;
+/* Plot-kind colors of the loaded-file chips (the chip reads --kind-color). */
+.ui-file-chip.kind-r_value {
+    --kind-color: var(--kind-r-value);
 }
 
-.loaded-file-badge.kind-r_value {
-    --kind-color: #2563eb;
+.ui-file-chip.kind-bragg {
+    --kind-color: var(--kind-bragg);
 }
 
-.loaded-file-badge.kind-bragg {
-    --kind-color: #0f766e;
+.ui-file-chip.kind-xray_sq {
+    --kind-color: var(--kind-xray-sq);
 }
 
-.loaded-file-badge.kind-xray_sq {
-    --kind-color: #dc6803;
+.ui-file-chip.kind-neutron_sq {
+    --kind-color: var(--kind-neutron-sq);
 }
 
-.loaded-file-badge.kind-neutron_sq {
-    --kind-color: #7c3aed;
+.ui-file-chip.kind-exafs_q {
+    --kind-color: var(--kind-exafs-q);
 }
 
-.loaded-file-badge.kind-exafs_q {
-    --kind-color: #d92d20;
+.ui-file-chip.kind-exafs_r {
+    --kind-color: var(--kind-exafs-r);
 }
 
-.loaded-file-badge.kind-exafs_r {
-    --kind-color: #9e165f;
+.ui-file-chip.kind-xpdf {
+    --kind-color: var(--kind-xpdf);
 }
 
-.loaded-file-badge.kind-xpdf {
-    --kind-color: #c026d3;
+.ui-file-chip.kind-npdf {
+    --kind-color: var(--kind-npdf);
 }
 
-.loaded-file-badge.kind-npdf {
-    --kind-color: #0891b2;
+.ui-file-chip.kind-pdf_partials {
+    --kind-color: var(--kind-pdf-partials);
 }
 
-.loaded-file-badge.kind-pdf_partials {
-    --kind-color: #16a34a;
-}
-
-.loaded-file-badge.kind-stog {
-    --kind-color: #64748b;
-}
-
-.loaded-file-badge.is-hidden {
-    --kind-soft: color-mix(in srgb, var(--kind-color) 6%, var(--panel-soft));
-    --kind-border: color-mix(in srgb, var(--kind-color) 16%, var(--border));
-    background: color-mix(in srgb, var(--kind-color) 3%, var(--panel-soft));
-}
-
-.loaded-file-kind {
-    border: 1px solid var(--kind-border);
-    border-radius: 999px;
-    color: var(--kind-color);
-    background: var(--kind-soft);
-    padding: 0.12rem 0.42rem;
-    font-size: 0.62rem;
-    font-weight: 700;
-    line-height: 1.2;
-    text-transform: uppercase;
-    white-space: nowrap;
-}
-
-.loaded-file-name {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: 0.78rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.loaded-file-badge.is-hidden .loaded-file-name {
-    color: var(--muted);
-    text-decoration: line-through;
-}
-
-.loaded-file-badge.is-hidden .loaded-file-kind {
-    color: color-mix(in srgb, var(--kind-color) 58%, var(--subtle));
-    background: color-mix(in srgb, var(--kind-color) 4%, var(--panel-soft));
-}
-
-.loaded-file-hide {
-    display: grid;
-    place-items: center;
-    width: 1.25rem;
-    height: 1.25rem;
-    min-height: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    color: var(--muted);
-    background: transparent;
-    font-size: 1rem;
-    font-weight: 700;
-    line-height: 1;
-}
-
-.loaded-file-hide:hover:not(:disabled),
-.loaded-file-hide:focus-visible {
-    color: var(--danger);
-    background: var(--danger-soft);
-    outline: none;
-}
-
-.loaded-file-badge.is-hidden .loaded-file-hide {
-    color: var(--accent);
-}
-
-.loaded-file-badge.is-hidden .loaded-file-hide:hover,
-.loaded-file-badge.is-hidden .loaded-file-hide:focus-visible {
-    color: #fff;
-    background: var(--accent);
-}
-
-.plot-grid .plot-card .interactive-plot svg {
+.plot-grid .ui-card .interactive-plot svg {
     aspect-ratio: 8 / 5;
     max-height: 430px;
 }
 
-.plot-loading {
-    display: grid;
-    place-items: center;
-    min-height: 14rem;
-    color: var(--muted);
-    font-size: 0.86rem;
-}
-
-.dashboard-error,
-.empty-state,
-.dashboard-local-status {
-    border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
-    color: var(--danger);
-    background: var(--danger-soft);
-    border-radius: 12px;
-    padding: 1rem;
-}
-
-.dashboard-error {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.7rem;
-}
-
-.dashboard-local-status {
-    margin-bottom: 0.85rem;
-    border-color: var(--border);
-    color: var(--muted);
-    background: var(--panel-bg);
-    font-size: 0.84rem;
-}
-
-.empty-state {
-    border-color: var(--border);
-    color: var(--muted);
-    background: var(--panel-bg);
-    text-align: center;
-    padding: 2.4rem 1rem;
-}
-
 @media (max-width: 760px) {
-    .dashboard-page {
-        padding: 0.9rem;
-    }
-
-    .dashboard-toolbar {
-        flex-direction: column;
-    }
-
     .plot-grid {
         grid-template-columns: 1fr;
     }
 }
 
 @media (min-width: 1500px) and (min-aspect-ratio: 16 / 10) {
-    .dashboard-page {
-        padding: 1rem 1.15rem;
-    }
-
     .plot-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.85rem;
@@ -361,7 +95,7 @@
     /* Let the 8:5 chart grow to fill the (wider) 3-column card instead of being
        capped short and letterboxed with empty side margins. The cap only bites on
        very wide (>1440p) cards; up through 1440p the plot fills the card width. */
-    .plot-grid .plot-card .interactive-plot svg {
+    .plot-grid .ui-card .interactive-plot svg {
         max-height: 540px;
     }
 }

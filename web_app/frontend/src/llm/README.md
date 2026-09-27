@@ -118,6 +118,26 @@ This module is designed to be lifted into its own repository:
   `symmetryModel.js`, or any host component — the module is fully self-contained;
   cell math is deliberately duplicated from `ModelSummary.jsx`.
 - The host imports only `src/llm/index.js`.
+- Styling: the module's own CSS lives in `components/*.css`; a kit token it
+  reads keeps its old literal as a fallback (`var(--warning, #b45309)`). For the
+  page shell, the chat surface, the empty state and the (unrendered) dashboard
+  card it uses the host's UI-kit classes **by class name only** — never kit JS
+  (see `src/ui/README.md`). The complete set:
+
+  | Class | Where | Carries |
+  |---|---|---|
+  | `ui-page` `ui-page--column` `ui-page--pb-sm` | `AssistantPage` root | the scrolling page, flex column, smaller bottom padding |
+  | `ui-card` `ui-card--clip` `ui-card--lift` | chat surface; `AssistantPanel` card (`--lift` only) | surface, clipped corners, hover lift |
+  | `ui-card__header-flush` `ui-card__title` `ui-card__header-actions` | `AssistantPanel` header | title bar and its right-hand cluster |
+  | `ui-empty` `ui-empty--fill` | no-run state | empty-state text, filling the page height |
+  | `ui-pill` | `AssistantPanel` Show/Hide | small pill button |
+
+  `ui.css` is global (the host loads it from `main.jsx`), so an extracted copy
+  needs a host stylesheet defining all of these — the modifiers included, since
+  they carry the page layout — just as it previously needed
+  `.plot-card`/`.panel-toggle`. The root also keeps the module's own
+  `assistant-page` class, which has no rule here: it is left as a hook for an
+  extracted copy's host stylesheet.
 
 To extract: copy `src/llm/` and feed the seven props from your own data source.
 

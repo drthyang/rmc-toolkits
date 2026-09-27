@@ -1,9 +1,9 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
    Copyright (C) 2026 Tsung-Han Yang
 
-   Bond Geometry page layout. Controls, panels, hints and the segmented
-   toggle reuse PcaKdePage.css; only the page grid, the result chips and the
-   window inputs are specific to this page. */
+   Bond Geometry page layout. The look (controls bar, cards, headers, stat
+   rails, hints, segmented toggle, window inputs) is the UI kit's; this file
+   places the three panels and sizes the plots. */
 
 .geom-layout {
     /* Same 16:9 discipline as .orient-layout: the clamp is authoritative, so
@@ -39,17 +39,9 @@
     min-height: 0;
 }
 
-/* The slim unit-cell column can't fit the title beside all three header
-   actions — let them wrap under the title instead of colliding with it. */
-.geom-layout .pca-unitcell-panel h3 {
-    flex-wrap: wrap;
-    row-gap: 0.25rem;
-    height: auto;
-    padding-top: 0.45rem;
-    padding-bottom: 0.45rem;
-}
-
-.geom-layout .pca-panel {
+/* (The slim unit-cell column lets its header actions wrap under the title:
+   FoldedCellPanel's CardHeader `wrap`.) */
+.geom-layout .ui-card {
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -58,15 +50,9 @@
 /* The two plot cards must hand their plots identically sized boxes, or the
    same data reads at two different aspect ratios side by side. Their columns
    are already equal, so it comes down to the chrome above each stage: pin the
-   header height (one title is long enough to wrap, the other is not) and
-   reserve two legend rows in both (only the partial PDF's legend wraps, once
-   the split adds a second pair of guides). */
-.geom-layout > .pca-panel:not(.pca-unitcell-panel) > h3 {
-    height: 2.6rem;
-    min-height: 2.6rem;
-    align-items: center;
-}
-
+   header height (CardHeader `fixed`: one title is long enough to wrap, the
+   other is not) and reserve two legend rows in both (only the partial PDF's
+   legend wraps, once the split adds a second pair of guides). */
 .geom-plot .interactive-plot .plot-toolbar {
     min-height: 3.6rem;
     align-items: flex-start;
@@ -110,13 +96,6 @@
     aspect-ratio: auto;
 }
 
-.geom-empty {
-    margin: auto;
-    padding: 1.4rem 0.9rem;
-    color: var(--muted);
-    font-size: 0.85rem;
-}
-
 /* Below 16:9-ish desktop widths the grid stacks and every plot returns to
    its natural 8:5 aspect — the viewport clamp only makes sense side-by-side. */
 @media (max-width: 1100px) {
@@ -142,68 +121,7 @@
     }
 }
 
-/* Paired min–max inputs inside one control. */
-.geom-window {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    color: var(--subtle);
-}
-
-.geom-window input {
-    width: 4.4rem;
-    padding: 0.3rem 0.45rem;
-    border: 1px solid var(--border-strong);
-    border-radius: 8px;
-    background: var(--panel-bg);
-    color: var(--text-strong);
-    font: inherit;
-    font-size: 0.85rem;
-}
-
-.geom-window input:focus-visible {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: var(--focus-ring);
-}
-
-/* The central-atom select carries the accent ring so B reads as special. */
-.geom-central {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft, rgba(37, 99, 235, 0.12));
-}
-
+/* The Compute button sits at the bottom of its control group. */
 .geom-compute {
     align-self: flex-end;
-    padding: 0.45rem 1.2rem;
-    border: 0;
-    border-radius: 8px;
-    background: var(--accent);
-    color: #fff;
-    font-weight: 600;
-    font-size: 0.85rem;
-    cursor: pointer;
-}
-
-.geom-compute:hover:not(:disabled) {
-    background: var(--accent-strong);
-}
-
-.geom-compute:disabled {
-    opacity: 0.5;
-    cursor: default;
-}
-
-/* The Triplet result presentation reuses the Model information card's
-   .model-summary / .model-stats classes. Its source line names the windows
-   the engine used — both of them when they differ — so it wraps instead of
-   truncating: an ellipsis there would hide exactly the B–C window. */
-.geom-result .model-summary-source {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-}
-
-.geom-result-line {
-    display: block;
 }

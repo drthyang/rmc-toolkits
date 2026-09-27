@@ -1,12 +1,10 @@
 /* Styles for the experimental AI Assistant card and the watchdog badge.
    Reuses the app's theme variables (--panel, --panel-raised, --accent, …) and
-   the shared .plot-card / .panel-toggle classes from Dashboard.css. */
+   the host's UI-kit classes by name (ui-card, ui-card__header-flush, ui-pill;
+   src/ui/ui.css). A token this module introduces carries its old literal as a
+   fallback, so the module still renders without the host's token block. */
 
-.plot-card.llm-assistant-card {
-    overflow: visible;
-}
-
-.plot-card.llm-assistant-card.is-collapsed .plot-card-header {
+.ui-card.llm-assistant-card.is-collapsed .ui-card__header-flush {
     border-bottom: none;
     margin-bottom: 0;
     padding-bottom: 0;
@@ -1028,9 +1026,9 @@
 }
 
 .llm-watchdog-badge.is-stalled {
-    color: #b45309;
-    border-color: color-mix(in srgb, #b45309 40%, transparent);
-    background: color-mix(in srgb, #b45309 12%, transparent);
+    color: var(--warning, #b45309);
+    border-color: color-mix(in srgb, var(--warning, #b45309) 40%, transparent);
+    background: color-mix(in srgb, var(--warning, #b45309) 12%, transparent);
 }
 
 .llm-watchdog-badge.is-diverging {

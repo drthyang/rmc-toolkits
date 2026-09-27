@@ -8,6 +8,9 @@
 // download as a zip. Files never leave the browser.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Banner, Card, Chip, ControlsBar, Page, Pill, PrimaryButton, StatCard,
+} from '../ui';
 import InteractivePlot from './InteractivePlot';
 import { downloadBlob, sanitizeFilename } from '../figureExport';
 import { buildZip } from '../zipArchive';
@@ -646,12 +649,12 @@ const AutoStogPage = () => {
   }, [preview]);
 
   return (
-    <div className="autostog-page">
-      <div className="autostog-controls">
-        <div className="autostog-cluster autostog-cluster--source">
-          <span className="autostog-label">DATA</span>
+    <Page as="div" column mobile={false} focusAll>
+      <ControlsBar variant="stacked">
+        <div className="ui-cluster ui-cluster--grow autostog-cluster--source">
+          <span className="ui-cluster-label">DATA</span>
           <div
-            className={`autostog-dropzone${dragActive ? ' is-drag' : ''}`}
+            className={`ui-dropzone${dragActive ? ' is-drag' : ''}`}
             onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
             onDragLeave={() => setDragActive(false)}
             onDrop={onDrop}
@@ -661,16 +664,17 @@ const AutoStogPage = () => {
               type="file"
               multiple
               accept=".sq,.fq,.dat,.inp"
-              className="visually-hidden"
+              className="ui-visually-hidden"
               onChange={(event) => { ingestFiles(event.target.files); event.target.value = ''; }}
             />
-            <button type="button" className="autostog-pill" onClick={() => fileInputRef.current?.click()}>
+            <Pill size="md" onClick={() => fileInputRef.current?.click()}>
               Upload S(Q)…
-            </button>
-            <span className="autostog-dropzone-hint">or drop files (S(Q) ± stog.inp)</span>
+            </Pill>
+            <span className="ui-dropzone__hint">or drop files (S(Q) ± stog.inp)</span>
           </div>
           {sources.length > 1 && (
             <select
+              className="ui-select-native"
               value={selectedName}
               onChange={(event) => selectSource(event.target.value, sources)}
               aria-label="Scaling source file"
@@ -683,54 +687,55 @@ const AutoStogPage = () => {
             </select>
           )}
           {inspect?.extent && (
-            <span
-              className="autostog-chip autostog-chip--file"
+            <Chip
+              center
+              truncate
               title={`${inspect.dataFile}: ${inspect.extent.count} points, Q ${fmt(inspect.extent.qlo, 3)}–${fmt(inspect.extent.qhi, 4)} Å⁻¹${inspect.extent.hasSigma ? (inspect.extent.sigmaBad ? `, σ column IGNORED: ${inspect.extent.sigmaBad} usable rows have a zero, negative or non-finite σ (the fit is unweighted, as in the CLI)` : ', σ column present') : ''}`}
             >
               {inspect.dataFile}: {inspect.extent.count} pts
               · Q {fmt(inspect.extent.qlo, 3)}–{fmt(inspect.extent.qhi, 4)} Å⁻¹
               {inspect.extent.hasSigma ? (inspect.extent.sigmaBad ? ' · σ ignored (invalid)' : ' · σ') : ''}
-            </span>
+            </Chip>
           )}
           {inspect?.kind === 'inp' && (
-            <span className="autostog-chip" title="Hand scaling recorded in the stog input">
+            <Chip center title="Hand scaling recorded in the stog input">
               hand a = {fmt(inspect.inp.a, 4)}, b = {fmt(inspect.inp.b, 4)}
-            </span>
+            </Chip>
           )}
         </div>
 
-        <div className="autostog-cluster">
-          <span className="autostog-label">SAMPLE</span>
+        <div className="ui-cluster">
+          <span className="ui-cluster-label">SAMPLE</span>
           <label
-            className="autostog-field autostog-field--formula"
+            className="ui-field ui-field--formula"
             title="Chemical composition (neutron Sears table drives ⟨b⟩², ⟨b²⟩, and the S(0) target; for x-ray data set ⟨b⟩² (=1 for normalized data) and ⟨b²⟩ in Advanced instead)"
           >
             <span>Composition</span>
-            <input value={form.formula} onChange={setField('formula')} placeholder="e.g. Mn3Sn" spellCheck="false" />
+            <input className="ui-input" value={form.formula} onChange={setField('formula')} placeholder="e.g. Mn3Sn" spellCheck="false" />
           </label>
           <label
-            className="autostog-field"
+            className="ui-field"
             title="Number density in atoms/Å³. Resolved from: your value → stog.inp ρ₀ → NUMBER_DENSITY :: data header → mass density + composition → left empty with a composition, it is estimated self-consistently"
           >
             <span>ρ₀ Å⁻³</span>
-            <input value={form.rho0} onChange={setField('rho0')} inputMode="decimal" placeholder="auto / estimate" />
+            <input className="ui-input" value={form.rho0} onChange={setField('rho0')} inputMode="decimal" placeholder="auto / estimate" />
           </label>
-          <button
-            type="button"
-            className="autostog-pill"
+          <Pill
+            size="md"
             disabled={!canEstimate || estimating || running}
             onClick={runEstimate}
             title="Self-consistent density: iterate until the density-limit amplitude agrees with the composition's ρ₀-independent Q→0 Faber-Ziman amplitude"
           >
             {estimating ? 'Estimating…' : 'Estimate ρ₀'}
-          </button>
-          <label className="autostog-field" title="Alternative to ρ₀: mass density + composition convert via N_A (ADDIE convention)">
+          </Pill>
+          <label className="ui-field" title="Alternative to ρ₀: mass density + composition convert via N_A (ADDIE convention)">
             <span>or ρ g/cm³</span>
-            <input value={form.massDensity} onChange={setField('massDensity')} inputMode="decimal" />
+            <input className="ui-input" value={form.massDensity} onChange={setField('massDensity')} inputMode="decimal" />
           </label>
           {coefficients && (
-            <span
-              className={`autostog-chip${coefficients.shadowed || coefficients.dropped ? ' autostog-chip--warn' : ''}`}
+            <Chip
+              center
+              tone={coefficients.shadowed || coefficients.dropped ? 'warn' : undefined}
               title={coefficients.dropped
                 ? `⟨b⟩² ${fmt(coefficients.dropped.bAvgSq, 4)} of ${coefficients.formula} differs from the ⟨b⟩² in effect, so its ⟨b²⟩ ${fmt(coefficients.dropped.bSqAvg, 4)} is not used (a pair from two sources fabricates the S(0) target) — set ⟨b²⟩ under Advanced → Coefficients (⟨Z²⟩/⟨Z⟩² for normalized x-ray data), or clear ⟨b⟩² to use the composition`
                 : coefficients.shadowed
@@ -738,50 +743,50 @@ const AutoStogPage = () => {
                   : 'Scattering coefficients in effect (barn)'}
             >
               {coefficients.shadowed || coefficients.dropped ? '⚠ ' : ''}{coefficients.text}
-            </span>
+            </Chip>
           )}
           {rho0Info && (
-            <span
-              className={`autostog-chip ${rho0Info.extrapolated ? 'autostog-chip--warn' : 'autostog-chip--good'}`}
+            <Chip
+              center
+              tone={rho0Info.extrapolated ? 'warn' : 'success'}
               title={`Concordance a_fz/a_density = ${fmt(rho0Info.concordance, 5)} after ${rho0Info.iterations} passes${rho0Info.extrapolated ? ' — long Q→0 extrapolation: treat as a starting point' : ''}`}
             >
               ρ₀ ≈ {fmt(rho0Info.rho0, 5)} (self-consistent{rho0Info.extrapolated ? ', extrapolated' : ''})
-            </span>
+            </Chip>
           )}
         </div>
 
-        <div className="autostog-cluster">
-          <span className="autostog-label">Q WINDOW</span>
-          <label className="autostog-field" title="Fit/transform lower bound — data below is replaced by the analytic low-Q correction">
+        <div className="ui-cluster">
+          <span className="ui-cluster-label">Q WINDOW</span>
+          <label className="ui-field" title="Fit/transform lower bound — data below is replaced by the analytic low-Q correction">
             <span>Qmin Å⁻¹</span>
-            <input value={form.qmin} onChange={setField('qmin')} inputMode="decimal" />
+            <input className="ui-input" value={form.qmin} onChange={setField('qmin')} inputMode="decimal" />
           </label>
-          <label className="autostog-field" title="Fit/transform upper bound — cut before the detector edge noise">
+          <label className="ui-field" title="Fit/transform upper bound — cut before the detector edge noise">
             <span>Qmax Å⁻¹</span>
-            <input value={form.qmax} onChange={setField('qmax')} inputMode="decimal" />
+            <input className="ui-input" value={form.qmax} onChange={setField('qmax')} inputMode="decimal" />
           </label>
         </div>
 
-        <div className="autostog-cluster autostog-cluster--actions">
-          <button
+        <div className="ui-cluster ui-cluster--end">
+          <PrimaryButton
             type="button"
-            className="autostog-primary"
+            outlined
             disabled={!inspect || running || estimating || fzMissing}
             onClick={() => runScaling('auto')}
           >
             {running ? 'Fitting…' : 'Auto-scale'}
-          </button>
-          <button
-            type="button"
-            className={`autostog-pill${advancedOpen ? ' is-active' : ''}`}
+          </PrimaryButton>
+          <Pill
+            size="md"
+            active={advancedOpen}
             aria-expanded={advancedOpen}
             onClick={() => setAdvancedOpen((open) => !open)}
           >
             Advanced
-          </button>
-          <button
-            type="button"
-            className="autostog-pill"
+          </Pill>
+          <Pill
+            size="md"
             title="Clear every parameter (a new sample's settings should not inherit the previous one's)"
             onClick={() => {
               setForm(EMPTY_FORM);
@@ -792,147 +797,146 @@ const AutoStogPage = () => {
             }}
           >
             Reset params
-          </button>
+          </Pill>
         </div>
-      </div>
+      </ControlsBar>
 
       {advancedOpen && (
-        <div className="autostog-controls autostog-controls--advanced">
-          <fieldset className="autostog-group">
+        <ControlsBar variant="stacked" sub>
+          <fieldset className="ui-fieldset">
             <legend>Amplitude &amp; offset</legend>
-            <p className="autostog-group-desc">How the correction S′ = a·S + b is determined.</p>
-            <div className="autostog-group-fields">
-              <label className="autostog-field autostog-field--select" title="Level sweep (default): measure the flat high-Q level and tie b to it, leaving one amplitude dof. Joint: original 2-dof (a, b) fit">
+            <p className="ui-fieldset__desc">How the correction S′ = a·S + b is determined.</p>
+            <div className="ui-fieldset__fields">
+              <label className="ui-field ui-field--select" title="Level sweep (default): measure the flat high-Q level and tie b to it, leaving one amplitude dof. Joint: original 2-dof (a, b) fit">
                 <span>High-Q</span>
-                <select value={form.c1Mode} onChange={setField('c1Mode')}>
+                <select className="ui-select-native" value={form.c1Mode} onChange={setField('c1Mode')}>
                   <option value="sweep">Level sweep</option>
                   <option value="joint">Joint 2-dof</option>
                 </select>
               </label>
-              <label className="autostog-field autostog-field--select" title="What pins the amplitude: the low-r density limit (default), or the composition's Q→0 Faber-Ziman limit S(0) = 1 − ⟨b²⟩/⟨b⟩²">
+              <label className="ui-field ui-field--select" title="What pins the amplitude: the low-r density limit (default), or the composition's Q→0 Faber-Ziman limit S(0) = 1 − ⟨b²⟩/⟨b⟩²">
                 <span>Amplitude</span>
-                <select value={form.amplitude} onChange={setField('amplitude')}>
+                <select className="ui-select-native" value={form.amplitude} onChange={setField('amplitude')}>
                   <option value="density">Density limit</option>
                   <option value="fz">Faber-Ziman Q→0</option>
                 </select>
               </label>
-              <label className={`autostog-toggle${form.robust ? ' is-on' : ''}`} title="Huber re-weighting so isolated outliers cannot drag the closed-form fit (recommended)">
+              <label className={`ui-chip-toggle${form.robust ? ' is-on' : ''}`} title="Huber re-weighting so isolated outliers cannot drag the closed-form fit (recommended)">
                 <input type="checkbox" checked={form.robust} onChange={setField('robust')} />
                 Robust
               </label>
-              <label className={`autostog-toggle${form.useSigma ? ' is-on' : ''}`} title="1/σ-weight the high-Q fit with the data file's third column, when present">
+              <label className={`ui-chip-toggle${form.useSigma ? ' is-on' : ''}`} title="1/σ-weight the high-Q fit with the data file's third column, when present">
                 <input type="checkbox" checked={form.useSigma} onChange={setField('useSigma')} />
                 σ column
               </label>
-              <label className={`autostog-toggle${form.despike ? ' is-on' : ''}`} title="Drop narrow rolling-median outliers before fitting. For detector glitches only — it also flags real Bragg maxima on crystalline data">
+              <label className={`ui-chip-toggle${form.despike ? ' is-on' : ''}`} title="Drop narrow rolling-median outliers before fitting. For detector glitches only — it also flags real Bragg maxima on crystalline data">
                 <input type="checkbox" checked={form.despike} onChange={setField('despike')} />
                 Despike
               </label>
               {fzMissing && (
-                <span className="autostog-chip autostog-chip--danger">FZ needs ⟨b²⟩ or a composition</span>
+                <Chip center tone="danger">FZ needs ⟨b²⟩ or a composition</Chip>
               )}
             </div>
           </fieldset>
 
-          <fieldset className="autostog-group">
+          <fieldset className="ui-fieldset">
             <legend>Coefficients</legend>
-            <p className="autostog-group-desc">Override the composition-derived neutron values (required for x-ray data).</p>
-            <div className="autostog-group-fields">
-              <label className="autostog-field" title="⟨b⟩² = (Σ cᵢbᵢ)² in barns — the classic stog 'Faber-Ziman coefficient' (x-ray normalized data: 1)">
+            <p className="ui-fieldset__desc">Override the composition-derived neutron values (required for x-ray data).</p>
+            <div className="ui-fieldset__fields">
+              <label className="ui-field" title="⟨b⟩² = (Σ cᵢbᵢ)² in barns — the classic stog 'Faber-Ziman coefficient' (x-ray normalized data: 1)">
                 <span>⟨b⟩² barn</span>
-                <input value={form.bAvgSq} onChange={setField('bAvgSq')} inputMode="decimal" placeholder="from composition" />
+                <input className="ui-input" value={form.bAvgSq} onChange={setField('bAvgSq')} inputMode="decimal" placeholder="from composition" />
               </label>
-              <label className="autostog-field" title="⟨b²⟩ = Σ cᵢbᵢ² in barns — sets the S(0) limit; enables the FZ amplitude, ρ₀ estimation, and the Q→0 diagnostic (x-ray: ⟨Z²⟩/⟨Z⟩²)">
+              <label className="ui-field" title="⟨b²⟩ = Σ cᵢbᵢ² in barns — sets the S(0) limit; enables the FZ amplitude, ρ₀ estimation, and the Q→0 diagnostic (x-ray: ⟨Z²⟩/⟨Z⟩²)">
                 <span>⟨b²⟩ barn</span>
-                <input value={form.bSqAvg} onChange={setField('bSqAvg')} inputMode="decimal" placeholder="from composition" />
+                <input className="ui-input" value={form.bSqAvg} onChange={setField('bSqAvg')} inputMode="decimal" placeholder="from composition" />
               </label>
             </div>
           </fieldset>
 
-          <fieldset className="autostog-group">
+          <fieldset className="ui-fieldset">
             <legend>Transform</legend>
-            <p className="autostog-group-desc">Fourier grid and filter — the defaults suit most data.</p>
-            <div className="autostog-group-fields">
-              <label className="autostog-field" title="Classic stog Fourier filter: below this radius g(r) is unphysical and the corresponding S(Q) correction is subtracted">
+            <p className="ui-fieldset__desc">Fourier grid and filter — the defaults suit most data.</p>
+            <div className="ui-fieldset__fields">
+              <label className="ui-field" title="Classic stog Fourier filter: below this radius g(r) is unphysical and the corresponding S(Q) correction is subtracted">
                 <span>Filter r-cut Å</span>
-                <input value={form.rCutoff} onChange={setField('rCutoff')} inputMode="decimal" placeholder="1.0" />
+                <input className="ui-input" value={form.rCutoff} onChange={setField('rCutoff')} inputMode="decimal" placeholder="1.0" />
               </label>
-              <label className="autostog-field" title="Real-space grid extent">
+              <label className="ui-field" title="Real-space grid extent">
                 <span>rmax Å</span>
-                <input value={form.rmax} onChange={setField('rmax')} inputMode="decimal" placeholder="50" />
+                <input className="ui-input" value={form.rmax} onChange={setField('rmax')} inputMode="decimal" placeholder="50" />
               </label>
-              <label className="autostog-field" title="Number of r grid points">
+              <label className="ui-field" title="Number of r grid points">
                 <span>r points</span>
-                <input value={form.nr} onChange={setField('nr')} inputMode="numeric" placeholder="5000" />
+                <input className="ui-input" value={form.nr} onChange={setField('nr')} inputMode="numeric" placeholder="5000" />
               </label>
-              <label className={`autostog-toggle${form.lorch ? ' is-on' : ''}`} title="Lorch window: damps termination ripples at the cost of real-space resolution">
+              <label className={`ui-chip-toggle${form.lorch ? ' is-on' : ''}`} title="Lorch window: damps termination ripples at the cost of real-space resolution">
                 <input type="checkbox" checked={form.lorch} onChange={setField('lorch')} />
                 Lorch
               </label>
-              <label className={`autostog-toggle${form.lowQCorrection ? ' is-on' : ''}`} title="Analytic correction for the unmeasured [0, Qmin] range — keeps the fitted scale unbiased (disable only for strict classic-stog parity)">
+              <label className={`ui-chip-toggle${form.lowQCorrection ? ' is-on' : ''}`} title="Analytic correction for the unmeasured [0, Qmin] range — keeps the fitted scale unbiased (disable only for strict classic-stog parity)">
                 <input type="checkbox" checked={form.lowQCorrection} onChange={setField('lowQCorrection')} />
                 Low-Q corr.
               </label>
             </div>
           </fieldset>
 
-          <fieldset className="autostog-group">
+          <fieldset className="ui-fieldset">
             <legend>Low-r region</legend>
-            <p className="autostog-group-desc">Below the first shell g(r) must vanish — where the density limit is read and outputs are cleaned.</p>
-            <div className="autostog-group-fields">
-              <label className="autostog-field" title="Closest interatomic approach. Empty: taken from a MINIMUM_DISTANCES :: header or the stog.inp peak window, else detected from the data (first-shell flank)">
+            <p className="ui-fieldset__desc">Below the first shell g(r) must vanish — where the density limit is read and outputs are cleaned.</p>
+            <div className="ui-fieldset__fields">
+              <label className="ui-field" title="Closest interatomic approach. Empty: taken from a MINIMUM_DISTANCES :: header or the stog.inp peak window, else detected from the data (first-shell flank)">
                 <span>r₀ approach Å</span>
-                <input value={form.r0} onChange={setField('r0')} inputMode="decimal" placeholder="auto" />
+                <input className="ui-input" value={form.r0} onChange={setField('r0')} inputMode="decimal" placeholder="auto" />
               </label>
-              <label className="autostog-field" title="Low-r fit window minimum (default: filter r-cut + 0.2 Å)">
+              <label className="ui-field" title="Low-r fit window minimum (default: filter r-cut + 0.2 Å)">
                 <span>Fit win min</span>
-                <input value={form.rFitMin} onChange={setField('rFitMin')} inputMode="decimal" placeholder="auto" />
+                <input className="ui-input" value={form.rFitMin} onChange={setField('rFitMin')} inputMode="decimal" placeholder="auto" />
               </label>
-              <label className="autostog-field" title="Low-r fit window maximum (default: r₀ − 0.25 Å)">
+              <label className="ui-field" title="Low-r fit window maximum (default: r₀ − 0.25 Å)">
                 <span>Fit win max</span>
-                <input value={form.rFitMax} onChange={setField('rFitMax')} inputMode="decimal" placeholder="auto" />
+                <input className="ui-input" value={form.rFitMax} onChange={setField('rFitMax')} inputMode="decimal" placeholder="auto" />
               </label>
-              <label className={`autostog-toggle${form.enforce ? ' is-on' : ''}`} title="Classic stog final step: replace the RMC outputs below the cutoff by the exact theoretical low-r values (ripple removal)">
+              <label className={`ui-chip-toggle${form.enforce ? ' is-on' : ''}`} title="Classic stog final step: replace the RMC outputs below the cutoff by the exact theoretical low-r values (ripple removal)">
                 <input type="checkbox" checked={form.enforce} onChange={setField('enforce')} />
                 Enforce low-r
               </label>
               {form.enforce && (
-                <label className="autostog-field" title="Enforcement cutoff (empty: automatic — the foot of the detected first shell, below its rising flank)">
+                <label className="ui-field" title="Enforcement cutoff (empty: automatic — the foot of the detected first shell, below its rising flank)">
                   <span>Cutoff Å</span>
-                  <input value={form.enforceCutoff} onChange={setField('enforceCutoff')} inputMode="decimal" placeholder="auto" />
+                  <input className="ui-input" value={form.enforceCutoff} onChange={setField('enforceCutoff')} inputMode="decimal" placeholder="auto" />
                 </label>
               )}
             </div>
           </fieldset>
 
-          <fieldset className="autostog-group">
+          <fieldset className="ui-fieldset">
             <legend>Fixed scaling</legend>
-            <p className="autostog-group-desc">Skip the auto-fit: apply a hand (a, b), e.g. to reproduce a classic stog run.</p>
-            <div className="autostog-group-fields">
-              <label className="autostog-field" title="Fixed a in S′ = a·S + b">
+            <p className="ui-fieldset__desc">Skip the auto-fit: apply a hand (a, b), e.g. to reproduce a classic stog run.</p>
+            <div className="ui-fieldset__fields">
+              <label className="ui-field" title="Fixed a in S′ = a·S + b">
                 <span>a</span>
-                <input value={form.manualA} onChange={setField('manualA')} inputMode="decimal" />
+                <input className="ui-input" value={form.manualA} onChange={setField('manualA')} inputMode="decimal" />
               </label>
-              <label className="autostog-field" title="Fixed b in S′ = a·S + b">
+              <label className="ui-field" title="Fixed b in S′ = a·S + b">
                 <span>b</span>
-                <input value={form.manualB} onChange={setField('manualB')} inputMode="decimal" />
+                <input className="ui-input" value={form.manualB} onChange={setField('manualB')} inputMode="decimal" />
               </label>
-              <button
-                type="button"
-                className="autostog-pill"
+              <Pill
+            size="md"
                 disabled={!inspect || running || estimating}
                 onClick={() => runScaling('manual')}
               >
                 Run fixed (a, b)
-              </button>
+              </Pill>
             </div>
           </fieldset>
-        </div>
+        </ControlsBar>
       )}
 
-      {error && <div className="autostog-banner autostog-banner--danger">{error}</div>}
+      {error && <Banner inline tone="danger-light">{error}</Banner>}
 
-      <details className="autostog-explainer">
+      <Card as="details" pad="bar" className="ui-disclosure autostog-explainer">
         <summary>How Auto StoG works</summary>
         <ol>
           <li><b>Inputs:</b> an uploaded S(Q), the composition, and the [Qmin, Qmax] window
@@ -959,10 +963,10 @@ const AutoStogPage = () => {
             flags: a violated density limit means the absolute scale needs the composition
             (FZ) route or external validation.</li>
         </ol>
-      </details>
+      </Card>
 
       {!preview && !error && (
-        <div className="autostog-empty">
+        <div className="ui-intro">
           <h2>Automatic total-scattering scaling</h2>
           <p>
             Upload a rebinned S(Q) file (optionally with its classic <code>stog.inp</code>),
@@ -979,115 +983,137 @@ const AutoStogPage = () => {
 
       {preview && diagnostics && (
         <div className="autostog-readout">
-          <div className="autostog-stat">
-            <span className="autostog-stat-label">Correction</span>
-            <span className="autostog-stat-value">a = {fmt(preview.result.a, 5)} · b = {fmt(preview.result.b, 5)}</span>
-            <span className="autostog-stat-sub">
-              {reference
-                ? `hand: a = ${fmt(reference.a, 5)}, b = ${fmt(reference.b, 5)}`
-                : preview.mode === 'manual' ? 'fixed by you' : 'auto-fit'}
-            </span>
-          </div>
-          <div className="autostog-stat">
-            <span className="autostog-stat-label">{preview.mode === 'manual' ? 'Mode' : 'Convergence'}</span>
-            <span className="autostog-stat-value">
-              {preview.mode === 'manual'
-                ? 'fixed (a, b)'
-                : `${preview.result.converged ? '✓' : '✗'} ${preview.result.iterations} iterations`}
-            </span>
-            <span className="autostog-stat-sub">
-              {trajectory ? `a: ${trajectory}` : diagnostics.level != null
-                ? `level ${fmt(diagnostics.level, 5)}${Number.isFinite(diagnostics.level_uncertainty) ? ` ± ${fmt(diagnostics.level_uncertainty, 2)}` : ''}`
-                : ''}
-            </span>
-          </div>
+          <StatCard
+            label="Correction"
+            value={<>a = {fmt(preview.result.a, 5)} · b = {fmt(preview.result.b, 5)}</>}
+            sub={(
+              <>
+                {reference
+                  ? `hand: a = ${fmt(reference.a, 5)}, b = ${fmt(reference.b, 5)}`
+                  : preview.mode === 'manual' ? 'fixed by you' : 'auto-fit'}
+              </>
+            )}
+          />
+          <StatCard
+            label={<>{preview.mode === 'manual' ? 'Mode' : 'Convergence'}</>}
+            value={(
+              <>
+                {preview.mode === 'manual'
+                  ? 'fixed (a, b)'
+                  : `${preview.result.converged ? '✓' : '✗'} ${preview.result.iterations} iterations`}
+              </>
+            )}
+            sub={(
+              <>
+                {trajectory ? `a: ${trajectory}` : diagnostics.level != null
+                  ? `level ${fmt(diagnostics.level, 5)}${Number.isFinite(diagnostics.level_uncertainty) ? ` ± ${fmt(diagnostics.level_uncertainty, 2)}` : ''}`
+                  : ''}
+              </>
+            )}
+          />
           {preview.rho0Estimate && (
-            <div className={`autostog-stat ${preview.rho0Estimate.extrapolated ? 'is-warn' : 'is-good'}`}>
-              <span className="autostog-stat-label">ρ₀ self-consistency</span>
-              <span className="autostog-stat-value">{fmt(preview.rho0Estimate.rho0, 5)} Å⁻³ (adopted)</span>
-              <span className="autostog-stat-sub">
-                concordance {fmt(preview.rho0Estimate.concordance, 4)}
-                {preview.rho0Estimate.extrapolated ? ' · long Q→0 extrapolation' : ` · ${preview.rho0Estimate.iterations} passes`}
-              </span>
-            </div>
+            <StatCard
+              tone={preview.rho0Estimate.extrapolated ? 'warn' : 'good'}
+              label="ρ₀ self-consistency"
+              value={<>{fmt(preview.rho0Estimate.rho0, 5)} Å⁻³ (adopted)</>}
+              sub={(
+                <>
+                  concordance {fmt(preview.rho0Estimate.concordance, 4)}
+                  {preview.rho0Estimate.extrapolated ? ' · long Q→0 extrapolation' : ` · ${preview.rho0Estimate.iterations} passes`}
+                </>
+              )}
+            />
           )}
           {diagnostics.level != null && trajectory && (
-            <div className="autostog-stat">
-              <span className="autostog-stat-label">High-Q level</span>
-              <span className="autostog-stat-value">{fmt(diagnostics.level, 5)}</span>
-              <span className="autostog-stat-sub">
-                {Number.isFinite(diagnostics.level_uncertainty) ? `± ${fmt(diagnostics.level_uncertainty, 2)} · ` : ''}
-                Q ∈ [{fmt(diagnostics.level_window?.[0], 4)}, {fmt(diagnostics.level_window?.[1], 4)}]
-              </span>
-            </div>
+            <StatCard
+              label="High-Q level"
+              value={<>{fmt(diagnostics.level, 5)}</>}
+              sub={(
+                <>
+                  {Number.isFinite(diagnostics.level_uncertainty) ? `± ${fmt(diagnostics.level_uncertainty, 2)} · ` : ''}
+                  Q ∈ [{fmt(diagnostics.level_window?.[0], 4)}, {fmt(diagnostics.level_window?.[1], 4)}]
+                </>
+              )}
+            />
           )}
-          <div className="autostog-stat">
-            <span className="autostog-stat-label">Fit quality</span>
-            <span className="autostog-stat-value">low-r rms {fmt(diagnostics.low_r_rms_pre_enforcement, 3)}</span>
-            <span className="autostog-stat-sub">
-              C1 tail mean {fmt(diagnostics.c1_tail_mean, 5)}
-              {preview.config.despike ? ` · despike removed ${preview.result.nDespiked} of ${preview.result.nDespiked + (preview.result.nQ ?? 0)} points` : ''}
-            </span>
-          </div>
-          <div className={`autostog-stat ${diagnostics.density_limit_satisfied ? 'is-good' : 'is-bad'}`}>
-            <span className="autostog-stat-label">Density limit</span>
-            <span className="autostog-stat-value">{diagnostics.density_limit_satisfied ? 'satisfied' : 'NOT satisfiable'}</span>
-            <span className="autostog-stat-sub">
-              {diagnostics.density_limit_satisfied
-                ? 'necessary, not sufficient'
-                : 'absolute scale needs external validation'}
-            </span>
-          </div>
+          <StatCard
+            label="Fit quality"
+            value={<>low-r rms {fmt(diagnostics.low_r_rms_pre_enforcement, 3)}</>}
+            sub={(
+              <>
+                C1 tail mean {fmt(diagnostics.c1_tail_mean, 5)}
+                {preview.config.despike ? ` · despike removed ${preview.result.nDespiked} of ${preview.result.nDespiked + (preview.result.nQ ?? 0)} points` : ''}
+              </>
+            )}
+          />
+          <StatCard
+            tone={diagnostics.density_limit_satisfied ? 'good' : 'bad'}
+            label="Density limit"
+            value={<>{diagnostics.density_limit_satisfied ? 'satisfied' : 'NOT satisfiable'}</>}
+            sub={(
+              <>
+                {diagnostics.density_limit_satisfied
+                  ? 'necessary, not sufficient'
+                  : 'absolute scale needs external validation'}
+              </>
+            )}
+          />
           {diagnostics.r0_detected != null && (
-            <div className={`autostog-stat${diagnostics.first_shell_below_r0 ? ' is-warn' : ''}`}>
-              <span className="autostog-stat-label">First shell r₀</span>
-              <span className="autostog-stat-value">{fmt(diagnostics.r0_detected, 4)} Å (detected)</span>
-              <span className="autostog-stat-sub">
-                {diagnostics.first_shell_below_r0
-                  ? 'below the given r₀ — the fit window may cut into it; check r₀'
-                  : (diagnostics.window_refined ? 'fit window refined to it' : 'window unchanged')}
-                {preview.enforcement ? ` · enforced below ${fmt(preview.enforcement.cutoff ?? preview.enforcement[0], 3)} Å` : ''}
-              </span>
-            </div>
+            <StatCard
+              tone={diagnostics.first_shell_below_r0 ? 'warn' : undefined}
+              label="First shell r₀"
+              value={<>{fmt(diagnostics.r0_detected, 4)} Å (detected)</>}
+              sub={(
+                <>
+                  {diagnostics.first_shell_below_r0
+                    ? 'below the given r₀ — the fit window may cut into it; check r₀'
+                    : (diagnostics.window_refined ? 'fit window refined to it' : 'window unchanged')}
+                  {preview.enforcement ? ` · enforced below ${fmt(preview.enforcement.cutoff ?? preview.enforcement[0], 3)} Å` : ''}
+                </>
+              )}
+            />
           )}
           {diagnostics.a_fz_reliable === true && (
-            <div className="autostog-stat">
-              <span className="autostog-stat-label">Q→0 amplitude</span>
-              <span className="autostog-stat-value">a_fz {fmt(diagnostics.a_fz, 4)} (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</span>
-              <span className="autostog-stat-sub">
-                resolved from its error — necessary, not sufficient: a biased low-Q head passes too; re-run at a few Q_min to check a_fz is stable
-                {diagnostics.amplitude_concordance != null ? ' · see also the concordance' : ''}
-              </span>
-            </div>
+            <StatCard
+              label="Q→0 amplitude"
+              value={<>a_fz {fmt(diagnostics.a_fz, 4)} (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</>}
+              sub={(
+                <>
+                  resolved from its error — necessary, not sufficient: a biased low-Q head passes too; re-run at a few Q_min to check a_fz is stable
+                  {diagnostics.amplitude_concordance != null ? ' · see also the concordance' : ''}
+                </>
+              )}
+            />
           )}
           {diagnostics.a_fz_reliable === false && (
-            <div className="autostog-stat is-warn">
-              <span className="autostog-stat-label">Q→0 amplitude</span>
-              <span className="autostog-stat-value">a_fz ill-conditioned (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</span>
-              <span className="autostog-stat-sub">
-                S_meas(0) − level is not resolved from its error (Bragg-contaminated or long low-Q head) — trust neither a_fz nor the concordance
-              </span>
-            </div>
+            <StatCard
+              tone="warn"
+              label="Q→0 amplitude"
+              value={<>a_fz ill-conditioned (±{fmt(100 * diagnostics.a_fz_rel_se, 2)} %)</>}
+              sub="S_meas(0) − level is not resolved from its error (Bragg-contaminated or long low-Q head) — trust neither a_fz nor the concordance"
+            />
           )}
           {diagnostics.rmax_beyond_alias_limit && (
-            <div className="autostog-stat is-warn">
-              <span className="autostog-stat-label">Aliasing</span>
-              <span className="autostog-stat-value">r &gt; {fmt(diagnostics.r_alias_limit, 3)} Å folded</span>
-              <span className="autostog-stat-sub">
-                r_max exceeds π/ΔQ of the coarsest S(Q) step: G(r) beyond it is a mirror image (uniform grid) or corrupted by coarse steps (log binning, despike gaps) — lower r_max
-              </span>
-            </div>
+            <StatCard
+              tone="warn"
+              label="Aliasing"
+              value={<>r &gt; {fmt(diagnostics.r_alias_limit, 3)} Å folded</>}
+              sub="r_max exceeds π/ΔQ of the coarsest S(Q) step: G(r) beyond it is a mirror image (uniform grid) or corrupted by coarse steps (log binning, despike gaps) — lower r_max"
+            />
           )}
           {diagnostics.amplitude_concordance != null && (
-            <div className={`autostog-stat ${diagnostics.amplitudes_concordant ? 'is-good' : 'is-warn'}`}>
-              <span className="autostog-stat-label">Concordance</span>
-              <span className="autostog-stat-value">a_fz / a = {fmt(diagnostics.amplitude_concordance, 3)}</span>
-              <span className="autostog-stat-sub">
-                {diagnostics.amplitudes_concordant
-                  ? 'independent criteria agree'
-                  : 'disagree — check ρ₀ / low-Q, or use the Faber-Ziman Q→0 amplitude'}
-              </span>
-            </div>
+            <StatCard
+              tone={diagnostics.amplitudes_concordant ? 'good' : 'warn'}
+              label="Concordance"
+              value={<>a_fz / a = {fmt(diagnostics.amplitude_concordance, 3)}</>}
+              sub={(
+                <>
+                  {diagnostics.amplitudes_concordant
+                    ? 'independent criteria agree'
+                    : 'disagree — check ρ₀ / low-Q, or use the Faber-Ziman Q→0 amplitude'}
+                </>
+              )}
+            />
           )}
         </div>
       )}
@@ -1095,14 +1121,14 @@ const AutoStogPage = () => {
       {preview && (
         <div className="autostog-plots">
           {sqPlot && (
-            <section className="autostog-card autostog-card--span">
-              <header><h3>{sqPlot.title}</h3></header>
+            <Card as="section" clip lift pad="plot" className="autostog-card--span">
+              <header className="ui-card__header-inset"><h3>{sqPlot.title}</h3></header>
               <InteractivePlot file={{ path: 'autostog-sq', name: 'autostog-sq' }} variant="wide" plotData={sqPlot} />
-            </section>
+            </Card>
           )}
           {gkPlot && (
-            <section className="autostog-card">
-              <header>
+            <Card as="section" clip lift pad="plot">
+              <header className="ui-card__header-inset">
                 <h3>{gkPlot.title}</h3>
                 <span>
                   fit window {fmt(preview.guides.rFitWindow?.[0], 3)}–{fmt(preview.guides.rFitWindow?.[1], 3)} Å
@@ -1110,21 +1136,21 @@ const AutoStogPage = () => {
                 </span>
               </header>
               <InteractivePlot file={{ path: 'autostog-gk', name: 'autostog-gk' }} plotData={gkPlot} />
-            </section>
+            </Card>
           )}
           {drPlot && (
-            <section className="autostog-card">
-              <header><h3>{drPlot.title}</h3></header>
+            <Card as="section" clip lift pad="plot">
+              <header className="ui-card__header-inset"><h3>{drPlot.title}</h3></header>
               <InteractivePlot file={{ path: 'autostog-dr', name: 'autostog-dr' }} plotData={drPlot} />
-            </section>
+            </Card>
           )}
         </div>
       )}
 
       {preview && (
-        <div className="autostog-export">
-          <span className="autostog-label">EXPORT</span>
-          <label className="autostog-field autostog-field--wide">
+        <ControlsBar variant="stacked" footer>
+          <span className="ui-cluster-label">EXPORT</span>
+          <label className="ui-field ui-field--wide">
             <span>Name stem</span>
             <input
               value={exportStem}
@@ -1133,20 +1159,20 @@ const AutoStogPage = () => {
               spellCheck="false"
             />
           </label>
-          <button type="button" className="autostog-primary" onClick={writeFiles}>
+          <PrimaryButton type="button" outlined onClick={writeFiles}>
             Download .zip (RMCProfile files)
-          </button>
+          </PrimaryButton>
           {exportResult?.zip && (
-            <span className="autostog-chip autostog-chip--good">
+            <Chip center tone="success">
               {exportResult.zip} · {exportResult.count} files
-            </span>
+            </Chip>
           )}
-          <span className="autostog-export-note">
+          <span className="ui-controls__note">
             {OUTPUT_LIST.length} files: {OUTPUT_LIST.map(([, label]) => label).join(' · ')}
           </span>
-        </div>
+        </ControlsBar>
       )}
-    </div>
+    </Page>
   );
 };
 

@@ -63,6 +63,98 @@
   --plot-bg: #ffffff;
 }
 
+/* Theme-invariant tokens: values that are identical in both themes (the brand
+   blue, ink on accent, shadows, status and plot-kind colors, chart ink, radii,
+   motion, control heights and the type scale). The UI kit (src/ui/ui.css) and
+   the component CSS read every color, shadow, radius, duration, control height
+   and font size through these; see src/ui/README.md. */
+:root {
+  /* brand + ink on accent (equal to the light accent values) */
+  --brand: #2563eb;
+  --brand-strong: #1d4ed8;
+  --brand-glow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 6px rgba(29, 78, 216, 0.35);
+  --on-accent: #fff;
+  /* shadows */
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.18);
+  --shadow-tab: 0 1px 3px rgba(16, 24, 40, 0.09);
+  --shadow-thumb: 0 1px 3px rgba(16, 24, 40, 0.25);
+  --shadow-knob: 0 1px 2px rgba(16, 24, 40, 0.3);
+  /* status colors without a theme token */
+  --warning: #b45309;
+  --warn-ink: #8a6100;
+  --warn-line: #d9a13d;
+  --flag: #d98a2b;
+  --ok: #3ba776;
+  --crystal: #b5842a;
+  --scrim: #0b0f16;
+  /* plot kinds (loaded-file chips) */
+  --kind-r-value: #2563eb;
+  --kind-bragg: #0f766e;
+  --kind-xray-sq: #dc6803;
+  --kind-neutron-sq: #7c3aed;
+  --kind-exafs-q: #d92d20;
+  --kind-exafs-r: #9e165f;
+  --kind-xpdf: #c026d3;
+  --kind-npdf: #0891b2;
+  --kind-pdf-partials: #16a34a;
+  /* chart ink (light by design: --plot-bg stays light in the dark theme) */
+  --chart-grid: rgba(16, 24, 40, 0.06);
+  --chart-tick: rgba(16, 24, 40, 0.35);
+  --chart-frame: rgba(16, 24, 40, 0.18);
+  --chart-hover: rgba(16, 24, 40, 0.3);
+  --chart-tick-text: #475467;
+  --chart-axis-text: #1d2939;
+  --chart-fs-tick: 14.5px;
+  --chart-fs-axis: 16px;
+  /* select chevron (stroke #667085 in both themes) */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23667085' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* radii */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+  /* motion */
+  --dur-fast: 120ms;
+  --dur: 140ms;
+  --dur-slow: 160ms;
+  /* control heights */
+  --h-control: 2.05rem;
+  --h-row: 2.3rem;
+  --h-menu-btn: 2rem;
+  --h-pill-md: 1.9rem;
+  --h-menu-item: 1.85rem;
+  --h-pill: 1.7rem;
+  /* type sizes, named by hundredths of a rem */
+  --fs-62: 0.62rem;
+  --fs-64: 0.64rem;
+  --fs-66: 0.66rem;
+  --fs-67: 0.67rem;
+  --fs-68: 0.68rem;
+  --fs-70: 0.7rem;
+  --fs-72: 0.72rem;
+  --fs-73: 0.73rem;
+  --fs-74: 0.74rem;
+  --fs-75: 0.75rem;
+  --fs-76: 0.76rem;
+  --fs-78: 0.78rem;
+  --fs-80: 0.8rem;
+  --fs-82: 0.82rem;
+  --fs-84: 0.84rem;
+  --fs-85: 0.85rem;
+  --fs-86: 0.86rem;
+  --fs-88: 0.88rem;
+  --fs-90: 0.9rem;
+  --fs-92: 0.92rem;
+  --fs-95: 0.95rem;
+  --fs-96: 0.96rem;
+  --fs-100: 1rem;
+  --fs-105: 1.05rem;
+  --fs-115: 1.15rem;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -147,15 +239,6 @@ input[type='range']:focus-visible,
 input[type='checkbox']:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-}
-
-/* Tiny uppercase tag used for stat and control labels across the app. */
-.micro-label {
-  color: var(--subtle);
-  font-size: 0.69rem;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 a {

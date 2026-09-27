@@ -9,8 +9,12 @@ import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
 import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
 import { marchingCubes, sampleFieldTrilinear } from '../workers/marchingCubes';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
-import InfoBadge from './InfoBadge';
-import SaveMenu from './SaveMenu';
+import {
+    Banner, Card, CardHeader, CardMeta, Control, ControlGroup, ControlsBar, Hint, Page, Segmented,
+    SegmentedButton, Switch, ToolButton,
+} from '../ui';
+import InfoBadge from '../ui/InfoBadge';
+import SaveMenu from '../ui/SaveMenu';
 import SiteStructurePanel from './SiteStructurePanel';
 import {
     CELL_AXIS_COLORS,
@@ -24,6 +28,7 @@ import {
 import useSiteCloud from '../useSiteCloud';
 import { crystalOrientationRows, projectVolumeOntoFrame } from '../pcaCrystalFrame';
 import { siteLabel } from '../siteLabel';
+import AppFooter from './AppFooter';
 import './PcaKdePage.css';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
@@ -1036,22 +1041,25 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
     const axisResolved = [0, 1, 2].map((i) => selectedEllipsoid?.axisResolved?.[i] ?? true);
 
     return (
-        <div className="pca-page">
-            <div className="pca-controls">
+        <Page as="div" column>
+            <ControlsBar>
                 {/* Site & KDE sampling */}
-                <div className="control-group" role="group" aria-label="Site and sampling">
-                    <label className="control">
-                        <span className="control-name">
-                            Site
-                            <InfoBadge label="About the site picker">
-                                <p>
-                                    Each reference site (an RMCProfile reference number) is one
-                                    crystallographic position. Its cloud of per-atom displacements about
-                                    the average structure is analysed by PCA to give the thermal ellipsoid.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <select
+                <ControlGroup label="Site and sampling">
+                    <Control
+                        label={(
+                            <>
+                                Site
+                                <InfoBadge label="About the site picker">
+                                    <p>
+                                        Each reference site (an RMCProfile reference number) is one
+                                        crystallographic position. Its cloud of per-atom displacements about
+                                        the average structure is analysed by PCA to give the thermal ellipsoid.
+                                    </p>
+                                </InfoBadge>
+                            </>
+                        )}
+                    >
+                        <select className="ui-select"
                             value={selectedRef ?? ''}
                             onChange={(event) => setSelectedRef(Number(event.target.value))}
                             disabled={!sites}
@@ -1064,70 +1072,72 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                 </option>
                             ))}
                         </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Grid</span>
-                        <select value={grid} onChange={(event) => setGrid(Number(event.target.value))} aria-label="Grid size">
+                    </Control>
+                    <Control label="Grid">
+                        <select className="ui-select" value={grid} onChange={(event) => setGrid(Number(event.target.value))} aria-label="Grid size">
                             {GRID_OPTIONS.map((value) => <option key={value} value={value}>{`${value}³`}</option>)}
                         </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Bandwidth</span>
-                        <select value={bw} onChange={(event) => setBw(event.target.value)} aria-label="Bandwidth rule">
+                    </Control>
+                    <Control label="Bandwidth">
+                        <select className="ui-select" value={bw} onChange={(event) => setBw(event.target.value)} aria-label="Bandwidth rule">
                             {BW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                         </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Box</span>
+                    </Control>
+                    <Control label="Box" value={<>{extent.toFixed(1)}σ</>}>
                         <input
+                            className="ui-range"
                             type="range" min="2" max="5" step="0.5"
                             value={extent} onChange={(event) => setExtent(Number(event.target.value))}
                             aria-label="Box half-width in sigma"
                         />
-                        <span className="control-value">{extent.toFixed(1)}σ</span>
-                    </label>
-                    <label className="control switch">
-                        <span className="control-name">Projections</span>
-                        <input type="checkbox" checked={showProjections} onChange={(event) => setShowProjections(event.target.checked)} aria-label="Show wall projections" />
-                        <i className="switch-track" aria-hidden="true" />
-                    </label>
+                    </Control>
+                    <Switch
+                        label="Projections"
+                        checked={showProjections}
+                        onChange={(event) => setShowProjections(event.target.checked)}
+                        inputProps={{ 'aria-label': 'Show wall projections' }}
+                    />
                     {sites?.reconstructed && (
-                        <label className="control">
-                            <span className="control-name">
-                                Cluster
-                                <InfoBadge label="About site clustering">
-                                    <p>
-                                        This file carries no reference-site or cell columns, so sites are
-                                        rebuilt by folding every atom into one unit cell and grouping atoms
-                                        of the same element within this distance. Each site should gather one
-                                        copy per supercell image; the count beside a site (e.g. 27/27) is its
-                                        members against that expected number. Raise the distance to merge
-                                        over-split sites, lower it to separate ones that ran together.
-                                    </p>
-                                </InfoBadge>
-                            </span>
+                        <Control
+                            label={(
+                                <>
+                                    Cluster
+                                    <InfoBadge label="About site clustering">
+                                        <p>
+                                            This file carries no reference-site or cell columns, so sites are
+                                            rebuilt by folding every atom into one unit cell and grouping atoms
+                                            of the same element within this distance. Each site should gather one
+                                            copy per supercell image; the count beside a site (e.g. 27/27) is its
+                                            members against that expected number. Raise the distance to merge
+                                            over-split sites, lower it to separate ones that ran together.
+                                        </p>
+                                    </InfoBadge>
+                                </>
+                            )}
+                            value={<>{clusterThreshold.toFixed(1)} Å</>}
+                        >
                             <input
+                                className="ui-range"
                                 type="range" min="0.4" max="2.5" step="0.1"
                                 value={clusterThreshold} onChange={(event) => setClusterThreshold(Number(event.target.value))}
                                 aria-label="Site clustering distance in Angstrom"
                             />
-                            <span className="control-value">{clusterThreshold.toFixed(1)} Å</span>
-                        </label>
+                        </Control>
                     )}
-                </div>
+                </ControlGroup>
 
                 {/* Ellipsoid — the wireframe reference and the KDE density painted on it
                     (two aspects of the same surface, so they share one control group). */}
-                <div className="control-group" role="group" aria-label="Ellipsoid and density shell">
-                    <label className="control switch">
-                        <span className="control-name">Wireframe</span>
-                        <input type="checkbox" checked={showEllipsoid} onChange={(event) => setShowEllipsoid(event.target.checked)} aria-label="Show ellipsoid wireframe" />
-                        <i className="switch-track" aria-hidden="true" />
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Color</span>
-                        <i className="ellipsoid-color-swatch" style={{ background: ellipsoidColor }} aria-hidden="true" />
-                        <select
+                <ControlGroup label="Ellipsoid and density shell">
+                    <Switch
+                        label="Wireframe"
+                        checked={showEllipsoid}
+                        onChange={(event) => setShowEllipsoid(event.target.checked)}
+                        inputProps={{ 'aria-label': 'Show ellipsoid wireframe' }}
+                    />
+                    <Control label="Color">
+                        <i className="ui-color-dot" style={{ background: ellipsoidColor }} aria-hidden="true" />
+                        <select className="ui-select"
                             value={ellipsoidColor}
                             onChange={(event) => setEllipsoidColor(event.target.value)}
                             aria-label="Ellipsoid wireframe color"
@@ -1136,257 +1146,266 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                 <option key={option.value} value={option.value}>{option.label}</option>
                             ))}
                         </select>
-                    </label>
+                    </Control>
                     {/* The InfoBadge is a sibling of the toggle label, not inside it, so the
                         "?" never sits inside the switch's clickable area (an interactive
                         element nested in a <label> makes the toggle click ambiguous). */}
-                    <div className="control switch-with-info">
-                        <span className="control-name">
-                            Shell
-                            <InfoBadge label="About the KDE shell" align="end">
-                                <p>
-                                    Paints the KDE density onto the ellipsoid surface. For a Gaussian
-                                    site the ellipsoid is a level set of the density, so only a
-                                    systematic pattern &mdash; hot or cold caps along an axis, a band
-                                    &mdash; marks where the real density departs from the harmonic
-                                    ellipsoid.
-                                </p>
-                                <p>
-                                    The colours are stretched to the shell&rsquo;s own range, and a
-                                    finite cloud (10³ copies) shows sampling-noise patches of tens of
-                                    percent even when it is perfectly Gaussian: read the size of a
-                                    departure from Non-Gaussianity, not from the colours. Grey marks
-                                    shell outside the sampled box (no data).
-                                </p>
-                                <p>
-                                    It shows the same density as the isosurface from the outside, so the
-                                    two switch off each other.
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <label className="control switch switch-pill">
-                            <input
-                                type="checkbox"
-                                checked={showEllipsoidKde}
-                                aria-label="Show KDE density shell"
-                                onChange={(event) => {
-                                    const on = event.target.checked;
-                                    setShowEllipsoidKde(on);
-                                    if (on) setShowSurface(false);
-                                }}
-                            />
-                            <i className="switch-track" aria-hidden="true" />
-                        </label>
-                    </div>
-                    <label className="control">
-                        <span className="control-name">Colormap</span>
-                        <select value={shellColormap} onChange={(event) => setShellColormap(event.target.value)} aria-label="KDE shell colormap">
+                    <Control
+                        as="div"
+                        label={(
+                            <>
+                                Shell
+                                <InfoBadge label="About the KDE shell" align="end">
+                                    <p>
+                                        Paints the KDE density onto the ellipsoid surface. For a Gaussian
+                                        site the ellipsoid is a level set of the density, so only a
+                                        systematic pattern &mdash; hot or cold caps along an axis, a band
+                                        &mdash; marks where the real density departs from the harmonic
+                                        ellipsoid.
+                                    </p>
+                                    <p>
+                                        The colours are stretched to the shell&rsquo;s own range, and a
+                                        finite cloud (10³ copies) shows sampling-noise patches of tens of
+                                        percent even when it is perfectly Gaussian: read the size of a
+                                        departure from Non-Gaussianity, not from the colours. Grey marks
+                                        shell outside the sampled box (no data).
+                                    </p>
+                                    <p>
+                                        It shows the same density as the isosurface from the outside, so the
+                                        two switch off each other.
+                                    </p>
+                                </InfoBadge>
+                            </>
+                        )}
+                    >
+                        <Switch
+                            bare
+                            checked={showEllipsoidKde}
+                            onChange={(event) => {
+                                const on = event.target.checked;
+                                setShowEllipsoidKde(on);
+                                if (on) setShowSurface(false);
+                            }}
+                            inputProps={{ 'aria-label': 'Show KDE density shell' }}
+                        />
+                    </Control>
+                    <Control label="Colormap">
+                        <select className="ui-select" value={shellColormap} onChange={(event) => setShellColormap(event.target.value)} aria-label="KDE shell colormap">
                             {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
                         </select>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">
-                            Level
-                            <InfoBadge label="About the ellipsoid level">
-                                <p>
-                                    The enclosed-probability level drawn as the thermal-ellipsoid
-                                    wireframe. 50% is the crystallographic convention. Compare it with
-                                    the isosurface only at the same level (both default to 50%).
-                                </p>
-                            </InfoBadge>
-                        </span>
+                    </Control>
+                    <Control
+                        label={(
+                            <>
+                                Level
+                                <InfoBadge label="About the ellipsoid level">
+                                    <p>
+                                        The enclosed-probability level drawn as the thermal-ellipsoid
+                                        wireframe. 50% is the crystallographic convention. Compare it with
+                                        the isosurface only at the same level (both default to 50%).
+                                    </p>
+                                </InfoBadge>
+                            </>
+                        )}
+                        value={<>{Math.round(probability * 100)}%</>}
+                    >
                         <input
+                            className="ui-range"
                             type="range" min="0.1" max="0.99" step="0.01"
                             value={probability} onChange={(event) => setProbability(Number(event.target.value))}
                             aria-label="Ellipsoid probability"
                         />
-                        <span className="control-value">{Math.round(probability * 100)}%</span>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">
-                            Contrast
-                            <InfoBadge label="About the shell contrast" align="end">
-                                <p>
-                                    Stretches the shell colormap around its mid-tone: higher values
-                                    push the effective range (vmin/vmax) together so faint departures
-                                    from the ellipsoid stand out, lower values flatten it.
-                                </p>
-                            </InfoBadge>
-                        </span>
+                    </Control>
+                    <Control
+                        label={(
+                            <>
+                                Contrast
+                                <InfoBadge label="About the shell contrast" align="end">
+                                    <p>
+                                        Stretches the shell colormap around its mid-tone: higher values
+                                        push the effective range (vmin/vmax) together so faint departures
+                                        from the ellipsoid stand out, lower values flatten it.
+                                    </p>
+                                </InfoBadge>
+                            </>
+                        )}
+                        value={<>{shellContrast.toFixed(1)}×</>}
+                    >
                         <input
+                            className="ui-range"
                             type="range" min="0.5" max="3" step="0.1"
                             value={shellContrast} onChange={(event) => setShellContrast(Number(event.target.value))}
                             aria-label="KDE shell contrast"
                         />
-                        <span className="control-value">{shellContrast.toFixed(1)}×</span>
-                    </label>
-                </div>
+                    </Control>
+                </ControlGroup>
 
                 {/* Isosurface & wall projections — the volume density views (shared colormap) */}
-                <div className="control-group" role="group" aria-label="Isosurface and wall projections">
-                    <div className="control switch-with-info">
-                        <span className="control-name">
-                            Isosurface
-                            <InfoBadge label="About the isosurface">
-                                <p>
-                                    The KDE density isosurface enclosing this fraction of the cloud's
-                                    mass. Compare it with the harmonic ellipsoid only at the same level
-                                    (both default to 50%).
-                                </p>
-                                <p>
-                                    The KDE smooths the cloud with its kernel, so even a perfectly
-                                    Gaussian site gives a surface √(1+f²) outside the ellipsoid
-                                    {kde && Number.isFinite(kde.factor)
-                                        ? ` (×${Math.sqrt(1 + kde.factor * kde.factor).toFixed(3)} here, f = ${kde.factor.toFixed(3)})`
-                                        : ''}. Only a surface that falls inside the ellipsoid, or
-                                    departs from its shape, signals anharmonic motion (see
-                                    Non-Gaussianity).
-                                </p>
-                            </InfoBadge>
-                        </span>
-                        <label className="control switch switch-pill">
-                            <input
-                                type="checkbox"
-                                checked={showSurface}
-                                aria-label="Show isosurface"
-                                onChange={(event) => {
-                                    const on = event.target.checked;
-                                    setShowSurface(on);
-                                    // The isosurface is a clean standalone view of the density volume:
-                                    // turning it on clears the ellipsoid wireframe and its KDE shell
-                                    // (the shell shows the same density, drawn on the surface instead).
-                                    if (on) { setShowEllipsoidKde(false); setShowEllipsoid(false); }
-                                }}
-                            />
-                            <i className="switch-track" aria-hidden="true" />
-                        </label>
-                    </div>
-                    <label className="control">
-                        <span className="control-name">Level</span>
+                <ControlGroup label="Isosurface and wall projections">
+                    <Control
+                        as="div"
+                        label={(
+                            <>
+                                Isosurface
+                                <InfoBadge label="About the isosurface">
+                                    <p>
+                                        The KDE density isosurface enclosing this fraction of the cloud's
+                                        mass. Compare it with the harmonic ellipsoid only at the same level
+                                        (both default to 50%).
+                                    </p>
+                                    <p>
+                                        The KDE smooths the cloud with its kernel, so even a perfectly
+                                        Gaussian site gives a surface √(1+f²) outside the ellipsoid
+                                        {kde && Number.isFinite(kde.factor)
+                                            ? ` (×${Math.sqrt(1 + kde.factor * kde.factor).toFixed(3)} here, f = ${kde.factor.toFixed(3)})`
+                                            : ''}. Only a surface that falls inside the ellipsoid, or
+                                        departs from its shape, signals anharmonic motion (see
+                                        Non-Gaussianity).
+                                    </p>
+                                </InfoBadge>
+                            </>
+                        )}
+                    >
+                        <Switch
+                            bare
+                            checked={showSurface}
+                            onChange={(event) => {
+                                const on = event.target.checked;
+                                setShowSurface(on);
+                                // The isosurface is a clean standalone view of the density volume:
+                                // turning it on clears the ellipsoid wireframe and its KDE shell
+                                // (the shell shows the same density, drawn on the surface instead).
+                                if (on) { setShowEllipsoidKde(false); setShowEllipsoid(false); }
+                            }}
+                            inputProps={{ 'aria-label': 'Show isosurface' }}
+                        />
+                    </Control>
+                    <Control label="Level" value={<>{isoPercent}%</>}>
                         <input
+                            className="ui-range"
                             type="range" min="1" max="99" step="1"
                             value={isoPercent} onChange={(event) => setIsoPercent(Number(event.target.value))}
                             aria-label="Isosurface enclosed mass"
                         />
-                        <span className="control-value">{isoPercent}%</span>
-                    </label>
-                    <label className="control">
-                        <span className="control-name">Colormap</span>
-                        <select value={colormap} onChange={(event) => setColormap(event.target.value)} aria-label="Isosurface and projections colormap">
+                    </Control>
+                    <Control label="Colormap">
+                        <select className="ui-select" value={colormap} onChange={(event) => setColormap(event.target.value)} aria-label="Isosurface and projections colormap">
                             {COLORMAP_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
                         </select>
-                    </label>
-                </div>
+                    </Control>
+                </ControlGroup>
 
-            </div>
+            </ControlsBar>
 
             {noRun && (
-                <p className="pca-hint">Open a run folder (with an <code>.rmc6f</code> file) to view thermal ellipsoids.</p>
+                <Hint>Open a run folder (with an <code>.rmc6f</code> file) to view thermal ellipsoids.</Hint>
             )}
-            {sitesError && <p className="pca-error-banner">{sitesError}</p>}
+            {sitesError && <Banner as="p" tone="danger" sm>{sitesError}</Banner>}
             {!sitesError && sites?.parseWarning && (
-                <p className="pca-warning-banner" role="status">
+                <Banner as="p" tone="caution" role="status">
                     <strong>Atoms skipped while reading the structure file:</strong> {sites.parseWarning}.
                     The sites below are built from the remaining atoms.
-                </p>
+                </Banner>
             )}
 
             <div className="pca-layout">
-                <div className="pca-panel pca-viewport">
-                    <h3>
-                        <span className="panel-title-label">
-                            {selectedEllipsoid
-                                ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber}`
-                                : 'PCA ellipsoid'}
-                        </span>
-                        <span className="panel-title-actions">
-                            {selectedEllipsoid && (
-                                <span className="panel-title-count">{selectedEllipsoid.count.toLocaleString()} atoms</span>
-                            )}
-                            {/* Reference frame: switches the triad, wall projections, and camera-snap
-                                axes together (PC1/PC2/PC3 ↔ a/b/c). */}
-                            <div className="pca-frame-toggle" role="group" aria-label="Reference frame">
-                                <button
-                                    type="button"
-                                    className={axisFrame === 'pc' ? 'is-active' : ''}
-                                    onClick={() => selectFrame('pc')}
-                                    aria-pressed={axisFrame === 'pc'}
-                                    title="Principal-axis (PC) frame"
+                <Card roundEnds className="pca-viewport">
+                    <CardHeader
+                        title={selectedEllipsoid
+                            ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber}`
+                            : 'PCA ellipsoid'}
+                        actions={(
+                            <>
+                                {selectedEllipsoid && (
+                                    <CardMeta>{selectedEllipsoid.count.toLocaleString()} atoms</CardMeta>
+                                )}
+                                {/* Reference frame: switches the triad, wall projections, and camera-snap
+                                    axes together (PC1/PC2/PC3 ↔ a/b/c). */}
+                                <Segmented role="group" aria-label="Reference frame">
+                                    <SegmentedButton
+                                        type="button"
+                                        active={axisFrame === 'pc'}
+                                        onClick={() => selectFrame('pc')}
+                                        aria-pressed={axisFrame === 'pc'}
+                                        title="Principal-axis (PC) frame"
+                                    >
+                                        PC
+                                    </SegmentedButton>
+                                    <SegmentedButton
+                                        type="button"
+                                        active={axisFrame === 'crystal'}
+                                        onClick={() => selectFrame('crystal')}
+                                        aria-pressed={axisFrame === 'crystal'}
+                                        disabled={!unitCell}
+                                        title={unitCell ? 'Crystallographic a/b/c frame' : 'No unit-cell metadata available'}
+                                    >
+                                        Crystal
+                                    </SegmentedButton>
+                                </Segmented>
+                                <ToolButton
+                                    onClick={resetMainView}
+                                    disabled={!kde}
+                                    title="Reset the camera to the default view"
                                 >
-                                    PC
-                                </button>
-                                <button
-                                    type="button"
-                                    className={axisFrame === 'crystal' ? 'is-active' : ''}
-                                    onClick={() => selectFrame('crystal')}
-                                    aria-pressed={axisFrame === 'crystal'}
-                                    disabled={!unitCell}
-                                    title={unitCell ? 'Crystallographic a/b/c frame' : 'No unit-cell metadata available'}
-                                >
-                                    Crystal
-                                </button>
-                            </div>
-                            <button
-                                type="button"
-                                className="pca-reset-view"
-                                onClick={resetMainView}
-                                disabled={!kde}
-                                title="Reset the camera to the default view"
-                            >
-                                <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                                    <path d="M3 3v5h5" />
-                                </svg>
-                                Reset view
-                            </button>
-                            <SaveMenu
-                                onSave={saveMainView}
-                                options={SAVE_OPTIONS}
-                                label="Save"
-                                align="right"
-                                disabled={!kde}
-                            />
-                        </span>
-                    </h3>
-                    <div className="pca-canvas" ref={mountRef}>
-                        {(loadingKde || loadingSites) && <div className="pca-badge">Computing…</div>}
-                        {kdeError && <div className="pca-badge is-error">{kdeError}</div>}
+                                    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                        <path d="M3 3v5h5" />
+                                    </svg>
+                                    Reset view
+                                </ToolButton>
+                                <SaveMenu
+                                    onSave={saveMainView}
+                                    options={SAVE_OPTIONS}
+                                    label="Save"
+                                    align="right"
+                                    disabled={!kde}
+                                />
+                            </>
+                        )}
+                    />
+                    <div className="ui-stage ui-stage--glow ui-stage--orbit pca-canvas" ref={mountRef}>
+                        {(loadingKde || loadingSites) && <div className="ui-overlay-badge">Computing…</div>}
+                        {kdeError && <div className="ui-overlay-badge is-error">{kdeError}</div>}
                         {kde && (
                             <>
-                                <div className="pca-view-controls pca-view-controls--left">
-                                    <div className="pca-view-group" role="group" aria-label="Projection">
-                                        <button
+                                <div className="ui-overlay-controls ui-overlay-controls--left">
+                                    <Segmented variant="overlay" role="group" aria-label="Projection">
+                                        <SegmentedButton
+                                            overlay
                                             type="button"
-                                            className={`pca-view-btn ${perspective ? 'is-active' : ''}`}
+                                            active={perspective}
                                             onClick={() => applyPerspective(true)}
                                             aria-pressed={perspective}
                                             title="Perspective projection"
                                         >
                                             Perspective
-                                        </button>
-                                        <button
+                                        </SegmentedButton>
+                                        <SegmentedButton
+                                            overlay
                                             type="button"
-                                            className={`pca-view-btn ${perspective ? '' : 'is-active'}`}
+                                            active={!perspective}
                                             onClick={() => applyPerspective(false)}
                                             aria-pressed={!perspective}
                                             title="Orthographic (parallel) projection"
                                         >
                                             Orthographic
-                                        </button>
-                                    </div>
+                                        </SegmentedButton>
+                                    </Segmented>
                                 </div>
-                                <div className="pca-view-controls pca-view-controls--right">
-                                    <div className="pca-view-group" role="group" aria-label="Camera orientation">
-                                        <span className="pca-view-group-label">{axisFrame === 'crystal' ? 'Cell' : 'PC'}</span>
+                                <div className="ui-overlay-controls ui-overlay-controls--right">
+                                    <Segmented variant="overlay" role="group" aria-label="Camera orientation">
+                                        <span className="ui-seg__label">{axisFrame === 'crystal' ? 'Cell' : 'PC'}</span>
                                         {[0, 1, 2].map((axisIndex) => {
                                             const isCrystal = axisFrame === 'crystal';
                                             const active = snappedView?.frame === (isCrystal ? 'cell' : 'pc')
                                                 && snappedView?.index === axisIndex;
                                             return (
-                                                <button
+                                                <SegmentedButton
                                                     key={axisIndex}
+                                                    overlay
                                                     type="button"
-                                                    className={`pca-view-btn ${isCrystal ? 'pca-view-btn--cell' : ''} ${active ? 'is-active' : ''}`}
+                                                    warm={isCrystal}
+                                                    active={active}
                                                     onClick={() => (isCrystal ? lookAlongCell(axisIndex) : lookAlong(axisIndex))}
                                                     aria-pressed={active}
                                                     title={isCrystal
@@ -1394,42 +1413,42 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                         : `Look down PC${axisIndex + 1}`}
                                                 >
                                                     {isCrystal ? CELL_AXIS_LABELS[axisIndex] : axisIndex + 1}
-                                                </button>
+                                                </SegmentedButton>
                                             );
                                         })}
-                                    </div>
+                                    </Segmented>
                                 </div>
                             </>
                         )}
                     </div>
-                    <div className="pca-legend">
+                    <div className="ui-legend">
                         {axisFrame === 'crystal' ? (
-                            <span className="pca-legend-item pca-legend-cellaxes">
+                            <span className="ui-legend__item ui-legend__group">
                                 {CELL_AXIS_LABELS.map((label, i) => (
-                                    <span key={label} className="pca-legend-cellaxis">
-                                        <i className="pca-legend-swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
+                                    <span key={label} className="ui-legend__subitem">
+                                        <i className="ui-legend__swatch" style={{ background: CELL_AXIS_CSS[i] }} /> {label}
                                     </span>
                                 ))}
-                                <span className="pca-legend-note">crystal axes</span>
+                                <span className="ui-legend__note">crystal axes</span>
                             </span>
                         ) : (
                             <>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#d64545' }} /> PC1</span>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3fa34d' }} /> PC2</span>
-                                <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
+                                <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: '#d64545' }} /> PC1</span>
+                                <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: '#3fa34d' }} /> PC2</span>
+                                <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: '#3f7fd6' }} /> PC3</span>
                             </>
                         )}
-                        <span className="pca-legend-item"><i className="pca-legend-swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
+                        <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
                         {shellBoxNeeded && (
-                            <span className="pca-legend-item pca-legend-warning">
-                                <i className="pca-legend-swatch" style={{ background: 'rgb(143, 148, 158)' }} />
+                            <span className="ui-legend__item ui-legend__warning">
+                                <i className="ui-legend__swatch" style={{ background: 'rgb(143, 148, 158)' }} />
                                 {shellBoxNeeded <= 5
                                     ? `shell outside the sampled box (grey) — Box ≥ ${shellBoxNeeded.toFixed(1)}σ covers it`
                                     : 'shell outside the sampled box (grey) — lower the Level to cover it'}
                             </span>
                         )}
                         <a
-                            className="pca-legend-credit"
+                            className="ui-legend__credit"
                             href="https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE"
                             target="_blank"
                             rel="noreferrer"
@@ -1437,13 +1456,13 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                             Analysis after Maksim Eremenko&rsquo;s PCA_KDE
                         </a>
                     </div>
-                </div>
+                </Card>
 
                 <div className="pca-side">
-                    <div className="pca-panel pca-stats-panel">
-                        <h3>
-                            <span className="panel-title-label">
-                                Displacement statistics
+                    <Card roundEnds className="pca-stats-panel">
+                        <CardHeader
+                            title="Displacement statistics"
+                            help={(
                                 <InfoBadge label="About the displacement statistics" align="start">
                                     <p>
                                         Anisotropic displacement parameters from the site's cloud
@@ -1453,20 +1472,20 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                         and where those axes point in the crystallographic frame.
                                     </p>
                                 </InfoBadge>
-                            </span>
-                            {kde && (
-                                <span className="pca-stats-meta">
-                                    Volume {kde.grid}³ · fit {kde.fitCount.toLocaleString()}/{kde.count.toLocaleString()} · captured mass {numberFormat(kde.mass * 100, 1)}%{Number.isFinite(isoMassLevel) ? ` · iso @ ${isoPercent}% mass` : ''}{kde.browserPcaKde ? ' · browser' : ' · server'}
-                                </span>
                             )}
-                        </h3>
+                            meta={kde && (
+                                <CardMeta fixed>
+                                    Volume {kde.grid}³ · fit {kde.fitCount.toLocaleString()}/{kde.count.toLocaleString()} · captured mass {numberFormat(kde.mass * 100, 1)}%{Number.isFinite(isoMassLevel) ? ` · iso @ ${isoPercent}% mass` : ''}{kde.browserPcaKde ? ' · browser' : ' · server'}
+                                </CardMeta>
+                            )}
+                        />
                         <div className="pca-stats-body">
                         {selectedEllipsoid ? (
                             <div className={`pca-stats-grid${crystalOrientation ? ' has-crystal' : ''}`}>
                                 <div className="pca-stats-col pca-stats-col--summary">
                                 {selectedEllipsoid.mixed && selectedEllipsoid.elementCounts && (
-                                    <p className="pca-site-tag is-flagged">
-                                        <span className="pca-site-tag-count">mixed</span>
+                                    <p className="ui-tag is-flagged">
+                                        <span className="ui-tag__count">mixed</span>
                                         <span>
                                             {Object.entries(selectedEllipsoid.elementCounts)
                                                 .map(([name, count]) => `${name} ${count}`)
@@ -1484,8 +1503,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                     </p>
                                 )}
                                 {siteTag && (
-                                    <p className={`pca-site-tag ${siteTag.clean ? 'is-clean' : 'is-flagged'}`}>
-                                        <span className="pca-site-tag-count">{siteTag.count}/{siteTag.per}</span>
+                                    <p className={`ui-tag ${siteTag.clean ? 'is-clean' : 'is-flagged'}`}>
+                                        <span className="ui-tag__count">{siteTag.count}/{siteTag.per}</span>
                                         <span>copies · {siteTag.status}</span>
                                         <InfoBadge label="About the reconstructed site" align="end">
                                             <p>
@@ -1500,8 +1519,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                         </InfoBadge>
                                     </p>
                                 )}
-                                <div className="pca-matrix-block">
-                                    <div className="pca-matrix-title">
+                                <div className="ui-table-block">
+                                    <div className="ui-table-title">
                                         Summary
                                         <InfoBadge label="About the summary metrics">
                                             <p>
@@ -1521,8 +1540,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                             </p>
                                         </InfoBadge>
                                     </div>
-                                    <div className="pca-matrix-scroll">
-                                        <table className="pca-matrix pca-matrix--summary">
+                                    <div className="ui-table-scroll">
+                                        <table className="ui-table ui-table--labels">
                                             <tbody>
                                                 <tr>
                                                     <th scope="row">U<sub>iso</sub> (Å²)</th>
@@ -1554,8 +1573,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                 </div>
                                 </div>
                                 <div className="pca-stats-col">
-                                    <div className="pca-matrix-block">
-                                        <div className="pca-matrix-title">
+                                    <div className="ui-table-block">
+                                        <div className="ui-table-title">
                                             Covariance U (Å²)
                                             <InfoBadge label="About the covariance matrix" align="end">
                                                 <p>
@@ -1566,8 +1585,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                 </p>
                                             </InfoBadge>
                                         </div>
-                                        <div className="pca-matrix-scroll">
-                                            <table className="pca-matrix">
+                                        <div className="ui-table-scroll">
+                                            <table className="ui-table">
                                                 <thead>
                                                     <tr>
                                                         <th aria-hidden="true" />
@@ -1581,7 +1600,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                         <tr key={label}>
                                                             <th scope="row">{label}</th>
                                                             {selectedEllipsoid.covariance[i].map((value, j) => (
-                                                                <td key={j} className={i === j ? 'is-diagonal' : ''}>
+                                                                <td key={j} className={i === j ? 'is-highlight' : ''}>
                                                                     {numberFormat(value, 4)}
                                                                 </td>
                                                             ))}
@@ -1593,8 +1612,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                     </div>
                                 </div>
                                 <div className="pca-stats-col pca-stats-col--axes">
-                                    <div className="pca-matrix-block">
-                                        <div className="pca-matrix-title">
+                                    <div className="ui-table-block">
+                                        <div className="ui-table-title">
                                             Principal axes
                                             <InfoBadge label="About the principal axes" align="end">
                                                 <p>
@@ -1616,8 +1635,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                 </p>
                                             </InfoBadge>
                                         </div>
-                                        <div className="pca-matrix-scroll">
-                                            <table className="pca-matrix pca-matrix--axes">
+                                        <div className="ui-table-scroll">
+                                            <table className="ui-table ui-table--strong-heads ui-table--abbr">
                                                 <thead>
                                                     <tr>
                                                         <th aria-hidden="true" />
@@ -1634,7 +1653,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                 <tbody>
                                                     {!selectedEllipsoid.axes && (
                                                         <tr>
-                                                            <td colSpan={7} className="pca-axes-note">
+                                                            <td colSpan={7} className="ui-table__note">
                                                                 No displacement: every copy of this site sits at
                                                                 the same position (an average or ideal
                                                                 configuration), so its covariance is round-off and
@@ -1646,7 +1665,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                         <tr key={i}>
                                                             <th scope="row">
                                                                 <span
-                                                                    className="pca-pc-dot"
+                                                                    className="ui-table__dot"
                                                                     style={{ background: PC_CSS_COLORS[i] }}
                                                                     aria-hidden="true"
                                                                 />
@@ -1669,8 +1688,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                 </div>
                                 {crystalOrientation && (
                                     <div className="pca-stats-col pca-stats-col--crystal">
-                                        <div className="pca-matrix-block">
-                                            <div className="pca-matrix-title">
+                                        <div className="ui-table-block">
+                                            <div className="ui-table-title">
                                                 Crystal orientation
                                                 <InfoBadge label="About the crystal orientation" align="end">
                                                     <p>
@@ -1697,8 +1716,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                     </p>
                                                 </InfoBadge>
                                             </div>
-                                            <div className="pca-matrix-scroll">
-                                                <table className="pca-matrix pca-matrix--crystal">
+                                            <div className="ui-table-scroll">
+                                                <table className="ui-table ui-table--strong-heads">
                                                     <thead>
                                                         <tr>
                                                             <th aria-hidden="true" />
@@ -1707,19 +1726,19 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                                     ∠<span style={{ color: CELL_AXIS_CSS[i] }}>{label}</span>
                                                                 </th>
                                                             ))}
-                                                            <th scope="col" className="pca-uvw">[u v w]</th>
+                                                            <th scope="col" className="ui-table__center">[u v w]</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         {crystalOrientation.map((row, i) => (
                                                             <tr
                                                                 key={i}
-                                                                className={axisResolved[i] ? '' : 'is-unresolved'}
+                                                                className={axisResolved[i] ? '' : 'is-dim'}
                                                                 title={axisResolved[i] ? undefined : `PC${i + 1} is not resolved from a neighbouring axis: this direction is sampling noise`}
                                                             >
                                                                 <th scope="row">
                                                                     <span
-                                                                        className="pca-pc-dot"
+                                                                        className="ui-table__dot"
                                                                         style={{ background: PC_CSS_COLORS[i] }}
                                                                         aria-hidden="true"
                                                                     />
@@ -1728,12 +1747,12 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                                 {row.anglesDeg.map((deg, j) => (
                                                                     <td
                                                                         key={j}
-                                                                        className={j === row.dominant.index ? 'is-diagonal' : ''}
+                                                                        className={j === row.dominant.index ? 'is-highlight' : ''}
                                                                     >
                                                                         {numberFormat(deg, 1)}°
                                                                     </td>
                                                                 ))}
-                                                                <td className="pca-uvw">
+                                                                <td className="ui-table__center ui-table__quiet">
                                                                     [{row.crystalDirection.map(uvwFormat).join(' ')}]
                                                                 </td>
                                                             </tr>
@@ -1746,10 +1765,10 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                 )}
                             </div>
                         ) : (
-                            <p className="pca-meta">{loadingSites ? 'Loading sites…' : 'No site selected.'}</p>
+                            <p className="ui-card__caption">{loadingSites ? 'Loading sites…' : 'No site selected.'}</p>
                         )}
                         </div>
-                    </div>
+                    </Card>
 
                     <SiteStructurePanel
                         sites={sites}
@@ -1761,24 +1780,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                 </div>
             </div>
 
-            <footer className="app-footer">
-                &copy; 2026 Tsung-Han Yang &middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits/blob/main/LICENSE"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    AGPLv3
-                </a>
-                {' '}&middot;{' '}
-                <a
-                    href="https://github.com/drthyang/rmc-toolkits#readme"
-                    target="_blank"
-                    rel="noreferrer"
-                >
-                    About & documentation
-                </a>
-            </footer>
-        </div>
+            <AppFooter tight />
+        </Page>
     );
 }

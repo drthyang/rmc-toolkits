@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Tsung-Han Yang
+
+   Unit-cell panel layout, shared by SiteStructurePanel (PCA Ellipsoid,
+   Displacement Directions) and FoldedCellPanel (Bond Geometry). The look is
+   the kit's (ui-card, ui-stage); this only sizes the panel and its canvas. */
+
+/* A flex column: fixed header, a growing canvas, the legend strip. */
+.pca-unitcell-panel {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* The canvas fills the space between the header and the legend. The panel
+   takes whatever height its page leaves it, so keep the floor small enough to
+   shrink gracefully (a ResizeObserver on the mount keeps the WebGL canvas in
+   step). The single-column breakpoint restores a fixed square. */
+.pca-structure {
+    position: relative;
+    flex: 1;
+    min-height: 9rem;
+    width: 100%;
+}
+
+@media (max-width: 980px) {
+    .pca-structure {
+        flex: none;
+        aspect-ratio: 1;
+        min-height: 0;
+        max-height: 22rem;
+    }
+}
