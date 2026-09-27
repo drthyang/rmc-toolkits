@@ -78,7 +78,7 @@ specificity ties, so it waits for a visible-change pass.
 | Overlays | `ui-overlay-badge` (`.is-error`), `ui-overlay-controls` `--left` `--right` | status and controls over a canvas |
 | Table | `ui-table` `--labels` `--strong-heads` `--abbr`; `td.is-highlight`, `tr.is-dim`, `__center`, `__quiet`, `__note`, `__dot`; `ui-table-block`, `-title`, `-scroll` | dense numeric tables |
 | Tag | `ui-tag` (`.is-clean`, `.is-flagged`), `__count` | a status callout row |
-| Controls | `ui-controls` `--dense` `--stacked` `--sub` `--footer`, `__note`; `ui-control-group`; `ui-cluster` `--grow` `--end`, `ui-cluster-label`; `ui-control`, `ui-control-label`, `ui-control-value` (`--wide`); `ui-color-dot` | controls bars |
+| Controls | `ui-controls` `--dense` `--stacked` `--sub` `--footer`; `ui-control-group`; `ui-cluster` `--grow` `--end`, `ui-cluster-label`; `ui-control`, `ui-control-label`, `ui-control-value` (`--wide`); `ui-color-dot` | controls bars |
 | Form widgets | `select.ui-select` (`--ring`), `select.ui-select-native`, `input.ui-input`, `input.ui-input-compact`, `ui-pair` + `input.ui-input-strong`, `input.ui-range` (`--lg`), `ui-field` `--formula` `--wide` `--select` | inputs |
 | Switches | `ui-switch` (`--bare`, `__track`), `ui-switch-outline` (`--button`), `ui-chip-toggle` (`.is-on`) | boolean options |
 | Dropdown | `ui-dropdown`, `__button`, `__list` (`button.is-selected`) | a custom listbox |
@@ -86,10 +86,10 @@ specificity ties, so it waits for a visible-change pass.
 | Segmented | `ui-seg` `--frame` `--overlay` `--nav`; `ui-seg__label`, `ui-seg__btn` (`--warm`, `.is-active`); frame/nav buttons take `.is-active` | exclusive choices |
 | Chips | `ui-chip` `--strong` `--center` `--truncate` `--success` `--warn` `--danger`; `ui-file-chip` (`.is-hidden`), `__kind`, `__name` | read-only pills |
 | Stats | `ui-stack`; `ui-stat-rail`, `__title`, `__source` (`--wrap`), `__stats`, `__line`; `ui-stat` (`--end`), `__sub`; `ui-stat-card` (`.is-good/-warn/-bad`), `__label`, `__value`, `__sub`; `ui-inline-stats`, `ui-inline-stat` (`.is-flagged`), `__null` | numbers with labels |
-| Feedback | `ui-banner` `--danger` `--neutral` `--caution` `--inline` `--danger-light` `--sm` `--gap-lg` `--flush` `--dismissible`; `ui-status` (`.is-error`); `ui-hint`; `ui-empty` (`--fill`); `ui-intro`; `ui-placeholder`; `ui-loading` `--sm` `--error` | messages and empty states |
+| Feedback | `ui-banner` `--danger` `--neutral` `--caution` `--inline` `--danger-light` `--sm` `--gap-lg` `--flush` `--dismissible`; `ui-status` (`.is-error`); `ui-hint`; `ui-empty` (`--fill`); `ui-placeholder`; `ui-loading` `--sm` `--error` | messages and empty states |
 | Floating | `ui-save` (`--accent`), `__trigger`, `__icon`; `ui-menu` `--right` `--left`, `__item`; `ui-info`, `__trigger`, `__popover` `--start` `--end` | menus and popovers |
 | Field bar | `ui-fieldbar` (`--readonly`), `__value`, `__ghost` | the app header's run-folder field |
-| Forms | `ui-fieldset`, `__desc`, `__fields`; `ui-dropzone` (`.is-drag`), `__hint`; `ui-disclosure` | grouped parameters, uploads, `<details>` explainers |
+| Forms | `ui-fieldset`, `__fields`; `ui-dropzone` (`.is-drag`), `__hint` | grouped parameters, uploads |
 | Utility | `ui-visually-hidden` | hidden but accessible |
 
 ## Tokens

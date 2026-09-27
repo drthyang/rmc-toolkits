@@ -51,6 +51,7 @@ export const useAssistant = ({
         if (result.ok && result.models.length && !result.models.includes(settings.model)) {
             saveSettings({ model: result.models[0] });
         }
+        return result;
     }, [settings.baseUrl, settings.apiKey, settings.model]);
 
     const runTest = useCallback(() => probe(true), [probe]);

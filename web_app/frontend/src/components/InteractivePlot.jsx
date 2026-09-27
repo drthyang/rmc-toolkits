@@ -419,7 +419,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     };
 
     if (error && !effectivePlot) return <div className="ui-loading ui-loading--error">{error}</div>;
-    if (!effectivePlot) return <div className="ui-loading">Loading plot...</div>;
+    if (!effectivePlot) return <div className="ui-loading">Loading plot…</div>;
 
     // Keep the tooltip on the emptier side of the crosshair.
     const hoverOnLeftHalf = hover && hover.px < view.width / 2;

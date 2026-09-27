@@ -829,19 +829,24 @@ export const combineRValueFiles = (rValueFiles, structurePath = null) => {
         return withOthers(group[0]);
     }
 
+    // parseErrors: the same failures as the parseError string, one
+    // { name, message } per log, so the dashboard can show a one-line count
+    // with the per-log list behind it (parseError itself is unchanged).
     const parsedFiles = group.filter((file) => file.plotData?.series?.[0]?.y?.length);
     if (!parsedFiles.length) {
+        const failed = group.filter((file) => file.parseError);
         return withOthers({
             ...group[0],
-            parseError: group.map((file) => file.parseError).filter(Boolean).join('; ') || 'Could not parse the chi² logs'
+            parseError: failed.map((file) => file.parseError).join('; ') || 'Could not parse the chi² logs',
+            parseErrors: failed.map((file) => ({ name: file.name, message: file.parseError }))
         });
     }
 
     const yValues = parsedFiles.flatMap((file) => file.plotData.series[0].y);
     const lastParsed = parsedFiles[parsedFiles.length - 1];
-    const parseErrors = group
-        .filter((file) => file.parseError && !file.parseError.endsWith(NO_CHI_VALUES))
-        .map((file) => `${file.name}: ${file.parseError}`);
+    const failedLogs = group
+        .filter((file) => file.parseError && !file.parseError.endsWith(NO_CHI_VALUES));
+    const parseErrors = failedLogs.map((file) => `${file.name}: ${file.parseError}`);
     // Label by the logs' own last-column header; say so if restarts disagree.
     const columns = [...new Set(parsedFiles.map((file) => file.plotData.chiColumn ?? null))];
     const { title, label } = chiHistoryLabels(columns.filter(Boolean).join(' / ') || null);
@@ -853,6 +858,7 @@ export const combineRValueFiles = (rValueFiles, structurePath = null) => {
         sourceNames: parsedFiles.map((file) => file.name),
         sourceFile: undefined,
         parseError: parseErrors.join('; '),
+        parseErrors: failedLogs.map((file) => ({ name: file.name, message: file.parseError })),
         plotData: {
             kind: 'r_value',
             title,

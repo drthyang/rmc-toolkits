@@ -456,28 +456,38 @@ export const computeKde = async (payload) => {
     let fitCount = 0;
     let kernelInfo = null;
     let warnings = [];
+    // messageCode names the decline reason with kde.py's KDE_MESSAGES key
+    // (null when drawn), so the page can key its display on the reason.
     let message = KDE_MESSAGES.empty;
+    let messageCode = 'empty';
     let backend = 'cpu';
 
     // Decline reasons, in the order kde_slice() checks them.
     if (slab.length === 0) {
         message = KDE_MESSAGES.empty;
+        messageCode = 'empty';
     } else if (!validBandwidth) {
         message = KDE_MESSAGES.bandwidth;
+        messageCode = 'bandwidth';
     } else if (slab.length < 5) {
         message = KDE_MESSAGES.tooFew;
+        messageCode = 'too_few';
     } else if (!hasDistinctPoints(atoms, 3)) {
         message = KDE_MESSAGES.fewUnique;
+        messageCode = 'few_unique';
     } else if (!hasTwoDimensionalSpread(atoms)) {
         message = KDE_MESSAGES.collinear;
+        messageCode = 'collinear';
     } else {
         const samples = sampleWithoutReplacement(slab, FIT_LIMIT, 0);
         const imageFactor = slab.length / Math.max(sourceCount, 1);
         const kernel = makeKernel(covariance(atoms), factor, imageFactor / samples.length);
         if (!kernel) {
             message = KDE_MESSAGES.singular;
+            messageCode = 'singular';
         } else {
             message = null;
+            messageCode = null;
             fitCount = samples.length;
             kernelInfo = {
                 covariance: kernel.covariance,
@@ -550,6 +560,7 @@ export const computeKde = async (payload) => {
         fitCount,
         kernel: kernelInfo,
         message,
+        messageCode,
         warnings,
         vmin: Number.isFinite(vmin) ? vmin : 0,
         vmax: Number.isFinite(vmax) ? vmax : 0,

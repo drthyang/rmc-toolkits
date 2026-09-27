@@ -59,8 +59,9 @@ stays the default. Nothing is sent until the user acts. API keys are stored in
    `ReadableStream`. Works identically against Ollama's `/v1`, LM Studio, and
    cloud endpoints; a Bearer API key is sent only when one is set.
    `checkConnection()` translates failures into actionable hints — a bare
-   `TypeError` means "server down **or** CORS blocked", and 401/429 name the
-   key/quota problems. `streamChat()` yields structured `{ content } |
+   `TypeError` means "server down **or** CORS blocked" (flagged `unreachable`;
+   the settings drawer then opens its setup guide, which holds the fixes), and
+   401/429 name the key/quota problems. `streamChat()` yields structured `{ content } |
    { reasoning }` chunks, so reasoning models' chain-of-thought is surfaced
    separately from the answer.
 4. **`watchdog/heuristics.js` + `watchdog/useWatchdog.js`** — pure slope

@@ -31,6 +31,7 @@ def _plane(xy):
 class KdeDeclineTests(unittest.TestCase):
     def assertDeclined(self, result, reason):
         self.assertEqual(result["message"], KDE_MESSAGES[reason])
+        self.assertEqual(result["messageCode"], reason)
         self.assertEqual(result["fitCount"], 0)
         self.assertIsNone(result["kernel"])
         self.assertEqual(result["vmin"], 0.0)

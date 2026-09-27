@@ -543,8 +543,8 @@ scale.
    `wantEstimate = true` — the worker then runs `estimateRho0` first and adopts the
    self-consistent result for the fit (it also refuses to fit if that estimate does not
    converge);
-6. else throw: *"number density unknown: set ρ₀ or mass density — or give a composition and
-   Auto StoG estimates ρ₀ self-consistently"*.
+6. else throw: *"number density unknown: set ρ₀, a mass density, or a composition (to estimate
+   ρ₀)"*.
 
 **The CLI/API chain is not the same list — it branches on mode.** `scaling_cli.py::_build_config`
 (and `app.py::_resolve_scaling_config`, which mirrors it) has two disjoint arms:
@@ -3194,7 +3194,7 @@ last two of 54139. Check that
 $a_\mathrm{fz}$ is stable against $Q_\mathrm{min}$ (re-run at a few values) and that it is concordant
 with the density-limit amplitude and with other runs of the same material before trusting it —
 the CLI prints this caveat next to every reliable $a_\mathrm{fz}$ (*Q->0 amplitude* line) and the
-page shows it on a *Q→0 amplitude* card.
+page's *Q→0 amplitude* card carries it in its ? help.
 Tests: `tests/test_stog_b_fz_conditioning.py`, `tests/test_stog_b_fz_se_calibration.py`,
 `src/__tests__/autoScaleFzConditioning.test.js`.
 
@@ -3840,7 +3840,13 @@ untouched for every later run) and an `inspect` descriptor driving the chips.
 
 The always-visible controls are `DATA`, `SAMPLE` (composition, $\rho_0$, Estimate $\rho_0$, mass
 density), `Q WINDOW` (Qmin, Qmax) and the actions (Auto-scale / Advanced / Reset params).
-**Advanced** opens five `<fieldset>` groups. *Most* fields map to exactly one key of the
+**Advanced** opens five `<fieldset>` groups. What each group is for sits in a ? help on its
+legend (Amplitude & offset, Coefficients, Low-r region, Fixed scaling); Transform has none — its
+fields carry tooltips and show their defaults as placeholders. The `DATA` and `SAMPLE` cluster
+labels and the action cluster carry the same kind of help (the input and its privacy, the
+composition and $\rho_0$ routes, and how Auto-scale works — the page's former explainer and intro,
+caveats verbatim); before the first run the page shows only a one-line start hint.
+*Most* fields map to exactly one key of the
 engine config built by `makeConfig()`; the exceptions — `useSigma`, `enforce`/`enforceCutoff`
 and `manualA`/`manualB` — are **page-level** and travel in the worker message instead
 (`useSigma` decides whether the σ buffer is packed at all, `enforce`/`enforceCutoff` go
@@ -3975,8 +3981,8 @@ and the run mode (`'auto'` / `'manual'`).
    - and $\langle b^2\rangle$ is known → `rho0 = 0.05` is used as a **seed only** and
      `wantEstimate = true` is returned, so the worker replaces it with the self-consistent
      estimate before fitting;
-   - otherwise → hard error: `number density unknown: set ρ₀ or mass density — or give a
-     composition and Auto StoG estimates ρ₀ self-consistently`.
+   - otherwise → hard error: `number density unknown: set ρ₀, a mass density, or a composition
+     (to estimate ρ₀)`.
 7. `makeConfig({...})` validates eagerly: $\rho_0>0$ finite, $\langle b\rangle^2>0$ finite,
    $Q_\mathrm{max}>Q_\mathrm{min}$, `nr` a positive integer, `rmax > 0`, `c1Mode` ∈
    {sweep, joint}, `amplitudeCriterion` ∈ {density, fz} with its two preconditions,
@@ -4138,8 +4144,17 @@ non-finite/absent. Cards, in DOM order:
 | **High-Q level** (only when a trajectory exists) | `L` (5 s.f.) ± its spread (2 s.f.), and the window `Q ∈ [q_lo, q_hi]` | `summary.level`, `level_uncertainty`, `level_window` |
 | **Fit quality** | `low-r rms` (3 s.f.); sub-line `C1 tail mean` (5 s.f.) | `summary.low_r_rms_pre_enforcement`, `summary.c1_tail_mean` |
 | **Density limit** | `satisfied` (green) / `NOT satisfiable` (red) | `summary.density_limit_satisfied` |
-| **First shell $r_0$** | detected $r_0$ in Å (4 s.f.); sub-line says whether the fit window was refined and where enforcement was applied | `summary.r0_detected`, `window_refined`, `preview.enforcement.cutoff` |
-| **Concordance** | `a_fz / a` (3 s.f.), green when concordant | `summary.amplitude_concordance`, `amplitudes_concordant` |
+| **First shell $r_0$** | detected $r_0$ in Å (4 s.f.); sub-line says whether the fit window was refined and where enforcement was applied, or `below given r₀ — check r₀` (amber) when `first_shell_below_r0`; the window caveat is in the label's ? help | `summary.r0_detected`, `window_refined`, `first_shell_below_r0`, `preview.enforcement.cutoff` |
+| **Q→0 amplitude** (when $a_\mathrm{fz}$ exists) | `a_fz` (4 s.f.) ± its relative SE; sub-line `resolved`, or `a_fz ill-conditioned` with `unresolved — ignore a_fz` (amber); the necessary-not-sufficient and Bragg-head caveats are in the label's ? help | `summary.a_fz`, `a_fz_rel_se`, `a_fz_reliable` |
+| **Aliasing** (only when flagged) | `r > r_alias Å folded` (amber); sub-line `lower r_max`, the mirror-image explanation in the label's ? help | `summary.r_alias_limit`, `rmax_beyond_alias_limit` |
+| **Concordance** | `a_fz / a` (3 s.f.), green when concordant (`independent criteria agree`), amber when not (`disagree — check ρ₀ / low-Q, or FZ amplitude`); **neutral** with `a_fz unresolved — ignore` when `a_fz_reliable` is false — the ratio is then meaningless, but its value stays | `summary.amplitude_concordance`, `amplitudes_concordant`, `a_fz_reliable` |
+
+**Errors** show as one line above the readout. An engine refusal whose message is a diagnostic
+(the low-r window placement refusals, the pinned-window check, and $\rho_0$ non-convergence)
+carries an additive `summary` — a one-line cause and fix — which the page shows, with the full
+message (identical to `scaling.py`/the CLI wording) behind an **Error details** ? help; the worker
+passes it through as `summary` beside `error`. Other errors are short already and show their
+message as is.
 
 Definitions of the three verdicts (all from `diagnosticsSummary()` in `autoScale.js`, twin of
 `scaling.diagnostics_summary()`):
@@ -4255,8 +4270,8 @@ When enforcement is active the **primary** series is `G_K(r) output (RMC file)` 
 enforcement the single series is `G_K(r) filtered` = `gk`. A guide line at
 $-\langle b\rangle^2$ spans $r\in[0,\min(8, r_\mathrm{max})]$. The initial y-domain is
 clamped to $[-2.1\langle b\rangle^2,\ 3.2\langle b\rangle^2]$ so the theory level stays
-readable; double-click expands to the full data amplitude. The card header prints the low-$r$
-fit window actually used.
+readable; double-click expands to the full data amplitude (the card header's tooltip says so).
+The card header prints the low-$r$ fit window actually used.
 
 **Plot 3 — `D(r) — full range`** (`drPlot`), x = r (Å), y = $D(r)$ in barns·Å⁻². Same
 enforced/pre-enforcement structure, with the guide line

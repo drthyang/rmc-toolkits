@@ -43,6 +43,13 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
     const [showGuide, setShowGuide] = useState(false);
     const testing = connection.status === 'testing';
 
+    // An unreachable server's fixes (CORS origin, Safari) are in the setup
+    // guide, so a failed Test opens it.
+    const handleTest = async () => {
+        const result = await onTest();
+        if (result && !result.ok && result.unreachable) setShowGuide(true);
+    };
+
     const activeProvider = providerForUrl(settings.baseUrl);
     const isCloud = activeProvider ? activeProvider.cloud : !isLocalUrl(settings.baseUrl);
     const providerLabel = activeProvider?.label || 'this remote server';
@@ -52,10 +59,11 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
     return (
         <div className="llm-settings">
             <div className="llm-settings-head">
-                <span className="llm-settings-title">Connection</span>
-                <span className="llm-settings-note">
-                    Local models (Ollama, LM Studio) keep your run data on your device. Cloud providers send it to
-                    their API using your key.
+                <span
+                    className="llm-settings-title"
+                    title="Local models keep run data on your device; cloud providers receive it with your key."
+                >
+                    Connection
                 </span>
             </div>
 
@@ -87,12 +95,13 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
             </div>
 
             {isCloud && (
-                <div className="llm-cloud-warning" role="note">
+                <div
+                    className="llm-cloud-warning"
+                    role="note"
+                    title="Use a local provider to keep everything on your machine."
+                >
                     <WarnIcon />
-                    <span>
-                        Sends your run data to <strong>{providerLabel}</strong> — it leaves your device. Use a local
-                        provider to keep everything on your machine.
-                    </span>
+                    <span>Run data leaves your device — sent to <strong>{providerLabel}</strong>.</span>
                 </div>
             )}
 
@@ -107,7 +116,7 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                         spellCheck="false"
                         onChange={(event) => onSave({ baseUrl: event.target.value })}
                     />
-                    <button type="button" className="llm-primary llm-test-btn" onClick={onTest} disabled={testing}>
+                    <button type="button" className="llm-primary llm-test-btn" onClick={handleTest} disabled={testing}>
                         {testing ? 'Testing…' : 'Test'}
                     </button>
                 </div>
@@ -124,14 +133,14 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                         value={settings.apiKey}
                         spellCheck="false"
                         autoComplete="off"
+                        title="Stored only in this browser"
                         onChange={(event) => onSave({ apiKey: event.target.value })}
                     />
-                    <span className="llm-field-hint">
-                        {activeProvider?.keyUrl && (
-                            <>Get a key at <a href={activeProvider.keyUrl} target="_blank" rel="noreferrer">{hostLabel(activeProvider.keyUrl)}</a>. </>
-                        )}
-                        Stored only in this browser.
-                    </span>
+                    {activeProvider?.keyUrl && (
+                        <span className="llm-field-hint">
+                            <a href={activeProvider.keyUrl} target="_blank" rel="noreferrer">Get a key ↗</a>
+                        </span>
+                    )}
                 </div>
             )}
 
@@ -150,7 +159,13 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
             <div className="llm-settings-divider" />
 
             <div className="llm-field">
-                <label className="llm-field-label" htmlFor="llm-temperature">Temperature</label>
+                <label
+                    className="llm-field-label"
+                    htmlFor="llm-temperature"
+                    title="Lower is more factual; 0.2 is a good default."
+                >
+                    Temperature
+                </label>
                 <div className="llm-inline-row">
                     <input
                         id="llm-temperature"
@@ -160,22 +175,26 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                         max="2"
                         step="0.1"
                         value={settings.temperature}
+                        title="Lower is more factual; 0.2 is a good default."
                         onChange={(event) => onSave({ temperature: Number(event.target.value) })}
                     />
-                    <span className="llm-field-hint">Lower is more factual — 0.2 is a good default.</span>
                 </div>
             </div>
 
             <div className="llm-field">
                 <span className="llm-field-label">Watchdog</span>
-                <label className="llm-check" htmlFor="llm-watchdog">
+                <label
+                    className="llm-check"
+                    htmlFor="llm-watchdog"
+                    title="Shown as a badge on the Dashboard's χ² chart; judged from the last .log term only, not the total χ²."
+                >
                     <input
                         id="llm-watchdog"
                         type="checkbox"
                         checked={settings.watchdogEnabled}
                         onChange={(event) => onSave({ watchdogEnabled: event.target.checked })}
                     />
-                    <span>Flag stalled or diverging modeling runs on the dashboard.</span>
+                    <span>Flag stalled or diverging runs</span>
                 </label>
                 <div className="llm-watch-row">
                     <span className="llm-field-hint">Re-check with the model every</span>
@@ -223,7 +242,8 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                     <p>
                         <strong>Cloud:</strong> pick OpenAI, Gemini, or Anthropic and paste an API key — no server to
                         run, but your run context is sent to that provider. Some providers or networks may block direct
-                        browser calls (CORS); if the test fails, run the app locally.
+                        browser calls (CORS); if the test fails, run the app locally. The key is stored only in this
+                        browser.
                     </p>
                     <p>
                         <strong>Hosted app + Ollama:</strong> Ollama must allow this page's origin

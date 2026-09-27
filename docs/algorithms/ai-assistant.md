@@ -120,8 +120,8 @@ and numbers:
 (`http://localhost:11434/v1`) and LM Studio (`http://localhost:1234/v1`) as `cloud: false`, and OpenAI,
 Gemini, and Anthropic as `cloud: true`. `isLocalUrl()` classifies any base URL whose hostname is in
 `{localhost, 127.0.0.1, [::1], ::1, 0.0.0.0}` as local. When the active provider is cloud, the settings
-drawer renders a "Sends your run data to *provider* — it leaves your device" banner and an API-key
-field ([`ConnectionSettings.jsx`](../../web_app/frontend/src/llm/components/ConnectionSettings.jsx)).
+drawer renders a "Run data leaves your device — sent to *provider*" banner (its tooltip points to a
+local provider) and an API-key field ([`ConnectionSettings.jsx`](../../web_app/frontend/src/llm/components/ConnectionSettings.jsx)).
 Cloud use is opt-in: the user must select the preset and paste a key — but note that once a cloud preset
 is active, the row-1 probe above authenticates with that key on every fresh page mount.
 
@@ -960,8 +960,11 @@ OpenAI-compatible client (no SDK, no SSE library).
 
 - `listModels()` → `GET {base}/models`, returns `payload.data[].id`. `checkConnection()` wraps it and
   translates failures into `{ok: false, error, hint}` — a bare `TypeError` means "server down **or** CORS
-  blocked" (indistinguishable from the page) and quotes `window.location.origin` so the
-  `OLLAMA_ORIGINS` value is copy-ready; 401/403/404/429 get specific messages. **One exception:** an
+  blocked" (indistinguishable from the page), flagged `unreachable: true`; its hint names both causes
+  and points to the drawer's setup guide ("How to connect a model"), which the drawer opens after a
+  failed Test and which carries the copy-ready `OLLAMA_ORIGINS` command with this page's
+  `window.location.origin`, the LM Studio CORS step and the Safari note; 401/403/404/429 get specific
+  messages. **One exception:** an
   `AbortError` (the caller's own abort signal) is **re-thrown**, not translated. The function's own
   comment says it "never throws"; the code disagrees, and the code is what runs.
 - `streamChat()` parses the SSE body manually: split on `\n`, keep only lines starting with `data:`,

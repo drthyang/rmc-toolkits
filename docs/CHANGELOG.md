@@ -30,6 +30,49 @@ statistics dividers; see the kit README). `InfoBadge` and `SaveMenu` moved into 
 inside its own root rather than the document, every below-the-fold scroll step — with computed
 styles, hover and keyboard-focus states included, compared page by page.
 
+### Lean pages
+
+Page bodies no longer carry explanatory sentences. Explanations and caveats moved, intact, into the
+nearest `?` help (the kit's `InfoBadge`) or a title tooltip; state flags became compact cues; only
+what a user needs to act stays on the page — one-line errors, validation messages, the no-run
+prompt and one short empty-state line per card. The same kind of text gets the same treatment on
+every page:
+
+- **No run:** one line everywhere — *"Open a run folder with an `.rmc6f` file."* on Atomic
+  Density, Bond Geometry, PCA Ellipsoid and Displacement Directions (Atomic Density showed a red
+  error), *"Open a run folder."* on the Dashboard and the AI Assistant.
+- **Header:** the startup "Files stay on your device" notice is a *Where your files go* `?` beside
+  the run-folder field; the non-Chromium Live Data notice is one line.
+- **Dashboard:** the status banners are gone (a first-load *Loading…* covers Flask); a Live Data
+  read of a half-written `.rmc6f` shows a *previous read* chip in the Model information heading;
+  other runs in the folder are a *+N runs* chip; several failed χ² logs are one counted line with
+  the per-log list behind *Error details*; the parse warning's sentence is in the card's `?`.
+- **Atomic Density:** the notes under the KDE canvas are one short line per reason, keyed on the
+  new `messageCode` (payload sentence in the tooltip), and the reasons — declined slabs, grid
+  resolution, the 3 : 1 anisotropy caveat — are in the KDE Slice `?`. The header shows `browser` or
+  `server`; the help no longer claims the browser on the server path. The canvas no longer prints
+  *"No atoms in this slab"* before the first result or after an error.
+- **Bond Geometry:** the two hints fold into the angle card's placeholder (*"Pick a triplet, then
+  Compute."* / *"New configuration — Compute again."*) and the triplet / window helps; the
+  Partial PDF placeholder names the missing pair when the partials file lacks it.
+- **Auto StoG** (hidden in the shipped build): the *How Auto StoG works* explainer, the intro
+  and the fieldset descriptions are `?` helps on the cluster labels and legends; the readout cards
+  have short subs with their reasons in label helps (the Concordance card turns neutral when
+  a_fz is unresolved); long engine refusals show a one-line summary with the full
+  message behind *Error details*.
+- **PCA Ellipsoid / Displacement Directions:** *"Atoms skipped: …"* banners and a short grey-shell
+  legend item (full sentences in their tooltips); a zero-spread site reads *No displacement.*, its
+  reason in the principal-axes `?`.
+- **AI Assistant:** drawer and chat hints are tooltips or part of the *How to connect a model*
+  guide, which a failed Test now opens; the unreachable-server hint is one line pointing to it.
+
+Additive data fields back the short forms; no message string changed: `messageCode` on every KDE
+slice payload (both runtimes, `/api/kde/slice` included), `summary` on the browser Auto StoG
+engine's diagnostic errors (and the worker's error reply), `parseErrors` beside `parseError` on the
+static-mode χ² history, and `unreachable` on a failed AI Assistant connection check. The kit's
+`ui-intro`, `ui-disclosure`, `ui-fieldset__desc` and `ui-controls__note` lost their last user and
+were removed.
+
 ### Upgrading from 0.5.0
 
 Each 0.5.0 → 0.6.0 example below comes from running both releases on the same input. The inputs are
@@ -125,7 +168,7 @@ partway:
 | every `/api/*` route | — | Invalid numbers (NaN, ±∞, text, out of range) are refused by `_number()`; a NaN in a data series is `null`; a non-finite computed result is refused. | 400 where 0.5.0 answered 200 (e.g. `bw=nan` returned `"bw": NaN`, invalid JSON) or 500. 409 when the source file keeps changing during the read. An unknown `/api/*` path is a JSON 404 and a wrong method a JSON 405 with `Allow` (0.5.0: HTML pages). |
 | `/api/plot/data`, `/api/plot/metadata` | `chiColumn` (`.log`) | `*_FQn.csv`: title "S(Q) (x-ray)" → "F(Q)", `yLabel` S(Q) → F(Q). `*_PDFpartials.csv`: "PDFpartials", G(r) → "Partial g(r)", g(r). `.log`: "R-value", log(χ), series "R" → "χ² history: X_ray_(R)1", ln(χ²), series "X_ray_(R)1". Classic `scale.gr` / `scale_ft.gr` are labelled g(r). `metrics.rwp` values (above). | An unsupported or unreadable file is a 400 on every plot route (0.5.0 answered some with 500). |
 | `/api/structure` | `parseReport`, `parseWarning` | — | 400 for an invalid header or zero parseable atoms. |
-| `/api/kde/slice` | `kernel`, `message`, `warnings`; query `ux`…`vz` (the page's in-plane frame for a custom plane) | `element` is case-insensitive (0.5.0: `element=se` drew an empty map). `bw` is `null` for a declined bandwidth. For a custom normal, `z`/`dz` echo the slider fractions: (1 1 1) at z = 0.5, dz = 0.05 echoed 0.866 / 0.0866 in 0.5.0 and echoes 0.5 / 0.05 now; `depth`/`depthThickness` keep depth units. `z` is clamped to [0, 1] and echoed clamped. A custom (1 1 0)-type map in Flask mode is drawn in the page's frame, rotated 90° from 0.5.0. | 400 for an unknown element (0.5.0: 200 with an all-zero map), an overflowing bandwidth and a non-orthogonal frame. |
+| `/api/kde/slice` | `kernel`, `message`, `messageCode`, `warnings`; query `ux`…`vz` (the page's in-plane frame for a custom plane) | `element` is case-insensitive (0.5.0: `element=se` drew an empty map). `bw` is `null` for a declined bandwidth. For a custom normal, `z`/`dz` echo the slider fractions: (1 1 1) at z = 0.5, dz = 0.05 echoed 0.866 / 0.0866 in 0.5.0 and echoes 0.5 / 0.05 now; `depth`/`depthThickness` keep depth units. `z` is clamped to [0, 1] and echoed clamped. A custom (1 1 0)-type map in Flask mode is drawn in the page's frame, rotated 90° from 0.5.0. | 400 for an unknown element (0.5.0: 200 with an all-zero map), an overflowing bandwidth and a non-orthogonal frame. |
 | `/api/pca/sites` | per site `axisResolved`, `zeroSpread`, `elementCounts`, `mixed`; top-level `parseWarning` | `nonGaussianity` is Mardia's (above). A zero-spread site has `null` axes, anisotropy, κ and `nonGaussianity`. | 400 for an invalid `.rmc6f`. |
 | `/api/pca/kde` | `axisResolved`, `boxHalfWidths`, `elementCounts`, `mixed` | `cubicBox` only sizes `boxHalfWidths`; `halfWidths` is always the per-axis box. | 400 for a zero-spread site or a volume that captures less than 10⁻⁶ of the density (0.5.0: a 200 all-zero volume). |
 | `/api/pca/orientation` | `peakSignificance`, `peakPValue`, `peakLocalPValue`, `peakCount`, `peakExpected`, `peakTieCount`, `mapSignificance`, `mapPValue`, `mapChiSquare`, `mapDegreesOfFreedom`, `mapNullSd`, `mapNullSkewness`, `mapExpectedPairs`, `antipodalAsymmetryNullSd`, `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant`, `orientationEffectivePoints`, `orientationAnisotropyNull`, `orientationBinghamStatistic`, `orientationBinghamPValue`, `orientationAnisotropySignificance`, `parseWarning` | `mapPValue` and `mapSignificance` are `null` on maps too sparse to test. `recommendedFrequency` and `antipodalAsymmetryNull` values change (above). The legacy `significance` (an RMS z) and `peakZScore` (a local z) stay but are no longer displayed. | 400 for negative, NaN or non-integer `smoothing` and a non-integer `frequency` (0.5.0: `smoothing=-1` was a silent no-op). |

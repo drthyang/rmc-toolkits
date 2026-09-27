@@ -627,7 +627,8 @@ def kde_slice(
 
     Returns a JSON-serializable dict with the density grid, plot extent,
     contour polylines, the slab atom count, the kernel, and (when no density
-    was drawn) a ``message`` saying why. A row is in the slab when
+    was drawn) a ``message`` saying why, with its ``KDE_MESSAGES`` key as
+    ``messageCode``. A row is in the slab when
     ``|z - z_center| <= dz / 2 + SLAB_FACE_TOLERANCE`` (an absolute tolerance
     in the units of ``z``; oriented_kde_slice passes normalised depths).
 
@@ -661,7 +662,7 @@ def kde_slice(
     fit_count = 0
     kernel = None
     warnings: list[dict] = []
-    message = KDE_MESSAGES["empty"]
+    message_code = "empty"
     if positions.shape[0]:
         x, y, z = positions[:, 0], positions[:, 1], positions[:, 2]
         half = 0.5 * max(dz, 1e-12)
@@ -673,15 +674,15 @@ def kde_slice(
 
         # Decline reasons, in the order the browser worker checks them.
         if slab_total == 0:
-            message = KDE_MESSAGES["empty"]
+            message_code = "empty"
         elif not _valid_bandwidth(bw):
-            message = KDE_MESSAGES["bandwidth"]
+            message_code = "bandwidth"
         elif slab_total < 5:
-            message = KDE_MESSAGES["too_few"]
+            message_code = "too_few"
         elif np.unique(atoms, axis=0).shape[0] < 3:
-            message = KDE_MESSAGES["few_unique"]
+            message_code = "few_unique"
         elif np.linalg.matrix_rank(atoms - atoms.mean(axis=0)) < 2:
-            message = KDE_MESSAGES["collinear"]
+            message_code = "collinear"
         else:
             covariance = np.cov(atoms, rowvar=False)
             if slab_total > MAX_KDE_FIT_POINTS:
@@ -696,7 +697,7 @@ def kde_slice(
                     raise np.linalg.LinAlgError("slab covariance is numerically singular")
                 kernel_factor = cholesky(covariance, lower=True) * float(bw)
                 kernel = _kernel_summary(covariance * float(bw) ** 2, kernel_factor)
-                message = None
+                message_code = None
                 if kernel["sigmaMinor"] >= KERNEL_MIN_SIGMA:
                     kde = _FixedCovarianceKDE(slab.T, covariance, float(bw))
                 else:
@@ -707,13 +708,13 @@ def kde_slice(
                 # The source atoms' covariance is not (safely) positive
                 # definite even though they passed the rank test.
                 kernel = None
-                message = KDE_MESSAGES["singular"]
+                message_code = "singular"
             except ScipyKdeUnsupported as exc:
                 # Decline rather than fail the request: the reason is the
                 # installed SciPy, not the slab.
                 _LOG.warning("%s", exc)
                 kernel = None
-                message = KDE_MESSAGES["engine"]
+                message_code = "engine"
             if kde is not None:
                 sample = np.vstack([mesh_x.ravel(), mesh_y.ravel()])
                 density = kde(sample).reshape(mesh_x.shape)
@@ -725,7 +726,7 @@ def kde_slice(
                 fit_count = int(slab.shape[0])
                 grid_mass = float(np.sum(density)) * x_step * y_step
                 warnings = _kernel_warnings(kernel, max(x_step, y_step), grid_mass)
-                message = None
+                message_code = None
 
     # Contour a drawn map whose grid resolves the atoms, judged on the linear
     # values: after log10 a smooth field whose peak is <= 1 per unit fractional
@@ -750,9 +751,13 @@ def kde_slice(
         "slabCount": slab_count,
         "fitCount": fit_count,
         # H = bw^2 * Cov (in-plane units of `positions`) and its principal
-        # sigmas; None when the slab was declined, and then `message` says why.
+        # sigmas; None when the slab was declined, and then `message` says why
+        # and `messageCode` names the reason (a KDE_MESSAGES key; None when
+        # drawn) -- the same codes as the browser worker, for display keyed on
+        # the reason rather than the sentence.
         "kernel": kernel,
-        "message": message,
+        "message": KDE_MESSAGES[message_code] if message_code else None,
+        "messageCode": message_code,
         "warnings": warnings,
         "vmin": float(np.nanmin(density)) if density.size else 0.0,
         "vmax": float(np.nanmax(density)) if density.size else 0.0,

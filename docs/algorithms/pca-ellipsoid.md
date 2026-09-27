@@ -442,7 +442,8 @@ round-off or the $\sim10^{-5}$ Å quantisation of a 7-decimal coordinate in a 10
 reports `zeroSpread: true`, `degenerate: true`, `axes: null`, `anisotropy: null`,
 `excessKurtosis: [null, null, null]` and `nonGaussianity: null` (JSON `null`, never a `NaN` token);
 $\mathbf{U}$, $\lambda_a$, `rms`, $U_\mathrm{iso}$ and $B_\mathrm{iso}$ keep their (round-off) values.
-The panel prints *no displacement* in the anisotropy cell and explains the missing axes, and the KDE
+The panel prints *no displacement* in the anisotropy cell and in the Principal-axes table (the
+reason for the missing axes is in that table's ? help), and the KDE
 request raises *"displacement cloud has zero spread"* (Step 6).
 
 #### Step 4b — What the statistics panel actually prints
@@ -495,8 +496,8 @@ line renders only when a `kde` payload exists.
 **A degenerate site, end to end.** For a site with a single box copy: $\mathbf{U}=\mathbf 0$, so
 $\lambda_a=0$, `rms` $=$ `semiAxes` $=0$, $U_\mathrm{iso}=B_\mathrm{iso}=0$; `zeroSpread` and
 `degenerate` are true; `axes`, `anisotropy`, every $\kappa_a$ and the non-Gaussianity are `null`, so
-the Summary prints *no displacement* and *Non-Gaussianity* `—`, and the Principal-axes table shows a
-one-line explanation instead of axes. The KDE request for that site **throws** — `pca_kde_volume()` /
+the Summary prints *no displacement* and *Non-Gaussianity* `—`, and the Principal-axes table shows
+*No displacement.* instead of axes (the explanation joins its ? help). The KDE request for that site **throws** — `pca_kde_volume()` /
 `pcaKdeVolume()` raise *"a 3D KDE needs at least four points"* for $n<4$ and *"displacement cloud has
 zero spread"* for $\lambda_1<10^{-8}$ Å² (Step 6) — and the page shows that message in the red
 `pca-badge is-error` overlay in an **emptied** viewport (the scene is cleared whenever there is no
@@ -909,8 +910,9 @@ interpolation** on the flat grid (`sampleFieldTrilinear` in `marchingCubes.js`).
 box only $\texttt{extent}\cdot\sigma_a\sqrt{1+f^2}$, so a small Box with a high Level pokes the PC1
 tips out ($k(p)>\texttt{extent}\sqrt{1+f^2}$: $p\gtrsim0.79$ at Box 2, $0.93$ at 2.5, $0.99$ at 3). The
 sampler returns `NaN` there and the page paints those vertices neutral grey (`NO_DATA_RGB`), leaves
-them out of the colour stretch, and adds a legend note naming the Box that would cover the shell
-(`shellBoxNeeded`, $\lceil 2\,\texttt{extent}\max_a k\sigma_a/w_a\rceil/2$). Before 0.6.0 the sampler
+them out of the colour stretch, and adds a short legend item naming the Box that would cover the
+shell (`shellBoxNeeded`, $\lceil 2\,\texttt{extent}\max_a k\sigma_a/w_a\rceil/2$), with the full
+sentence in its tooltip. Before 0.6.0 the sampler
 clamped to the border node and painted the box-face density — nearer the centre, so 1.4–2.3× too
 dense — as bright false caps along PC1.
 

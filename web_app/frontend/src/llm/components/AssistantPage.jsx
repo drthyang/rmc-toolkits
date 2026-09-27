@@ -55,7 +55,7 @@ const AssistantPage = ({ runName, plotFiles, rValueFile, structure, symmetry, ru
                         />
                     </div>
                 ) : (
-                    <div className="ui-empty ui-empty--fill">Open a run folder to use the AI Assistant.</div>
+                    <div className="ui-empty ui-empty--fill">Open a run folder.</div>
                 )}
             </div>
         </section>

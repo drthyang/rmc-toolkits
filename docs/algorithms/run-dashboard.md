@@ -449,8 +449,8 @@ Python) and picks **one group** (`chooseRValueGroup()`): the one whose folder an
 structure file the Model information card describes (`localRun.structureFile.path` in static mode,
 `structure.source` in Flask mode), else the first group in `comparePlotFiles()` order — which is the
 log Flask is handed, so both modes chart the same run. Only that group's already-parsed y arrays are
-concatenated; the other runs' stems are listed beside the panel title ("other runs not shown: …")
-and are never spliced in. Until 2026-09 the browser flat-mapped **every** visible log, so a folder
+concatenated; the other runs are counted by a "+N runs" chip beside the panel title (their stems
+in its tooltip) and are never spliced in. Until 2026-09 the browser flat-mapped **every** visible log, so a folder
 holding two runs (a restart under a new stem, or a parent folder walked recursively) produced one
 "convergence" curve spliced from both — 2550 points with a jump from ln χ² = −9.05 to +0.10 at the
 join and `final_chi_r` from whichever stem sorted last — while Flask showed the single run.
@@ -898,7 +898,10 @@ on the page. Hidden paths are removed from `plotFiles`, which — in static mode
 removes them from the combined R-value curve.
 
 Per-file parse failures are non-fatal: the file gets a `parseError` string, its card renders no
-chart, and a dismissible alert shows the message.
+chart, and a dismissible alert shows the message. On the combined R-value strip, when more than one
+chi² log failed, the alert is one counted line ("N chi² logs could not be parsed") and the per-log
+`name: message` list sits behind its "Error details" ? help (`combineRValueFiles()` returns the
+failures as `parseErrors: [{ name, message }]` beside the unchanged joined `parseError` string).
 
 ---
 
@@ -967,7 +970,7 @@ is being written when the poll lands may be read half-complete. That is handled 
 than hoped to fail loudly: a `.log`'s unterminated last line is dropped and rows are checked against
 the header's column count (Step 4d), and an `.rmc6f` read whose atom lines are still missing
 against its header's `Number of atoms:` keeps the previous complete model summary on screen with a
-notice (Model summary, Part A Step 2). A CSV caught mid-write fails the strict column-count check (4a) and surfaces as a
+*previous read* chip in the Model information heading (Model summary, Part A Step 2). A CSV caught mid-write fails the strict column-count check (4a) and surfaces as a
 per-card alert until the next poll. That holds for the Dashboard cards; the backend's parsed-file
 caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`st_mtime_ns`,
 `st_ctime_ns`, `st_size`, `st_ino`) and never keep a parse of a file that changed during the read
@@ -2545,13 +2548,14 @@ from `structureFromRmc6f` and from Flask `/api/structure` (`Rmc6fParseReport.to_
 runtimes), e.g. `parsed 31196 of 52000 atoms declared in the header; 1 of 31197 atom lines unparsed
 (first: '…')` or `2 atom lines skipped for non-finite coordinates (first: '…')`. It is returned as
 `structure.parseWarning` (`null` when clean) and shown on the Model information card as a
-**Parse warning** cell (full sentence in the tooltip). **Zero parsed atoms is an error**, not an
+**Parse warning** cell (full sentence in its ? help). **Zero parsed atoms is an error**, not an
 empty card: the browser throws `<file>: no atoms could be parsed — <warning>` and Flask answers the
 same message; a file with no Atoms marker fails with `<file> does not contain an Atoms section` in
 both. On a **Live Data** re-read whose atom lines are *missing* — parsed plus coords-only plus
 non-finite lines short of the declared count, i.e. a configuration RMCProfile is still writing
 (a line cut mid-write counts as missing, since it is unparsed) — the Dashboard keeps the previous
-complete summary and says so (`structureReport.js` → `isIncompleteStructure()`), in both runtimes.
+complete summary and flags it with the *previous read* chip (`structureReport.js` →
+`isIncompleteStructure()`), in both runtimes.
 A complete file whose atom blew up to NaN/Inf/`****` has every line present, so it is shown at once
 with its parse warning (before 0.6.0's review fix such a read was held back as "still being written").
 

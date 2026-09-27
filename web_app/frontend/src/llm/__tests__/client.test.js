@@ -150,8 +150,9 @@ describe('listModels / checkConnection', () => {
         }));
         const result = await checkConnection('http://localhost:11434/v1');
         expect(result.ok).toBe(false);
-        expect(result.hint).toContain('OLLAMA_ORIGINS');
+        expect(result.hint).toContain('How to connect a model');
         expect(result.hint).toContain('CORS');
+        expect(result.unreachable).toBe(true);
     });
 
     it('maps HTTP 404 to the /v1 base-URL hint', async () => {

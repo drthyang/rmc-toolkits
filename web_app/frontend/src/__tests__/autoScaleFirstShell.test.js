@@ -45,6 +45,14 @@ describe('low-r window placement parity with scaling.autoscale', () => {
       const run = () => autoscale(qArr, Float64Array.from(sqMeas), makeConfig(config));
       if (error) {
         expect(run).toThrow(/first coordination shell/);
+        // One-line summary for the page: the onset and the concrete fix.
+        let thrown = null;
+        try {
+          run();
+        } catch (caught) {
+          thrown = caught;
+        }
+        expect(thrown.summary).toMatch(/^Shell at \d+\.\d\d Å is too close to the fit window — lower the filter r-cut to <= \d+\.\d\d Å\.$/);
         return;
       }
       const result = run();

@@ -69,7 +69,8 @@ Two code paths produce it:
 
 **The discriminator is *not* static-vs-Flask mode.** `StructurePage.jsx` branches on
 `const isLocalStructure = Boolean(localRun)` and nothing else; `isStaticMode()` is used on this page
-only to emit the *"Open a run folder to view the structure."* message when there is no `localRun`.
+only to show the *"Open a run folder with an `.rmc6f` file."* hint (not an error) when there is no
+`localRun`.
 The **Demo** button in the app header (`App.jsx` → `handleToggleDemo`) is rendered unconditionally,
 outside any `staticMode` branch, and it sets `localRun`. So a Flask-mode session that loads the
 bundled demo run gets the **browser worker**, not `/api/kde/slice`, even though the backend is
@@ -83,8 +84,9 @@ worker.
 > The map prints the kernel's $\sigma$ in Å and flags sub-grid and strongly anisotropic kernels. See
 > [*The kernel's shape follows the slab's site layout*](#the-kernels-shape-follows-the-slabs-site-layout-read-this-before-reading-blob-shapes).
 
-The app says so itself: the in-app `InfoBadge` on the KDE panel and the `local-density-note` under
-the canvas both read *"The Flask app uses SciPy KDE for reference-grade values"*
+The app says so itself: the KDE Slice header shows the runtime (`browser` or `server`), and for a
+browser-loaded run the header readout's tooltip and the panel's ? help read *"the Flask app uses SciPy
+KDE for reference-grade values"*; on the server path the help says the map is computed with SciPy
 ([`StructurePage.jsx`](../../web_app/frontend/src/components/StructurePage.jsx)).
 
 #### Notation and units
@@ -865,9 +867,9 @@ $\mathbf{M}\mathbf{H}\mathbf{M}^\top$ are those of $\mathbf{H}\mathbf{G}$, $\mat
 both engines attach a `subgrid` warning (`KDE_WARNINGS`) when $\sigma_{\min}$ is below half the larger
 grid step (`KERNEL_SUBGRID_RATIO = 0.5`: a Gaussian sampled at spacing $h$ keeps its integral to
 ~1 % while $\sigma\ge h/2$), and an `unresolved` warning when the kernel misses the grid nodes
-altogether (the map is then neither contoured nor painted, Step 9); and the page adds a note when
-the kernel is more than 3 : 1 in Å
-(`KERNEL_ANISOTROPY_NOTE`) saying that elongation along its long axis is an artefact. Read blob
+altogether (the map is then neither contoured nor painted, Step 9); and the page adds a one-line
+flag when the kernel is more than 3 : 1 in Å (`KERNEL_ANISOTROPY_NOTE`), *"Kernel N:1 anisotropic —
+blob elongation is an artefact."*, with the full caveat in the KDE Slice ? help. Read blob
 shapes against the printed kernel, and take displacement shapes from the
 [PCA Ellipsoid](pca-ellipsoid.md) page, which fits each site's cloud directly. A kernel that is a
 physical length (isotropic in the plane, width in Å through the cell metric) would remove the
@@ -1263,13 +1265,17 @@ the reader must know:
 
 The draw gate is `density && grid > 0 && kde.vmax > kde.vmin` and no `unresolved` warning (Step 9).
 When it fails the canvas prints
-`"Computing KDE..."` while a request is in flight, `"No atoms in this slab"` when `slabCount = 0`, and
-`"No density drawn for this slab"` when the slab has atoms but the estimator declined it (Step 6); in
-that case the payload's `message` — the same string from either runtime — is shown under the canvas
-(`kde-message-note`). The overlay still prints `"{slabCount} atoms in slab (fit 0)"`, and
+`"Computing KDE…"` while a request is in flight, `"No atoms in this slab"` when the result has
+`slabCount = 0`, and `"No density drawn for this slab"` when the slab has atoms but the estimator
+declined it (Step 6); before the first result, or after a KDE error (whose banner says why), it prints
+nothing. A declined slab gets one short note under the canvas keyed on the payload's `messageCode`
+(e.g. *"Slab atoms collinear in this plane — no kernel."*), with the payload's `message` — the same
+string from either runtime — as its tooltip; a code the page does not know shows the `message`
+itself. The overlay still prints `"{slabCount} atoms in slab (fit 0)"`, and
 `fitCount = 0` with a non-zero `slabCount` always means "declined", never "empty". An `unresolved`
 map (Step 9) also prints `"No density drawn for this slab"`, with a non-zero fit count and the
-`unresolved` warning under the canvas.
+`unresolved` warning's short note (keyed on `warning.code`, full sentence in its tooltip) under the
+canvas.
 
 **The colormaps are 5-anchor approximations.** [`colormaps.js`](../../web_app/frontend/src/colormaps.js)
 defines five maps — `viridis`, `magma`, `seismic`, `reds`, `greys` (default **viridis**) — each as a
@@ -1461,6 +1467,7 @@ the distinct element labels before assigning colours) shown in the legend **belo
 | `density`, `extent`, `grid`, `bw`, `log`, `slabCount`, `fitCount`, `vmin`, `vmax`, `contours` | ✓ | ✓ | same meaning (`bw` is `null` when the bandwidth was rejected) |
 | `kernel` | ✓ | ✓ | $\mathbf{H}$ as `covariance` (in-plane fractional²) plus its principal `sigmaMinor`/`sigmaMajor`; `null` when declined |
 | `message` | ✓ | ✓ | why no density was drawn (Step 6), the same string in both; `null` when drawn |
+| `messageCode` | ✓ | ✓ | the `KDE_MESSAGES` key of that reason — `empty`, `bandwidth`, `too_few`, `few_unique`, `collinear`, `singular`, or (SciPy path only) `engine`; `null` when drawn. The page keys its short note on it |
 | `warnings` | ✓ | ✓ | `[{code, message}]` about a drawn map, in this order — `subgrid` when the kernel is narrower than half a grid step (Step 6), `unresolved` when the grid holds less than $10^{-6}$ of the density (Step 9); `[]` otherwise |
 | `center`, `thickness` | ✓ | ✓ | the raw slider fractions in **both** — this is what the UI reads |
 | `normal`, `uVector`, `vVector`, `planeVertices`, `planePolygon` | ✓ | ✓ | `uVector`/`vVector` differ for custom normals (Step 2) |
@@ -1647,8 +1654,8 @@ by `kdeParity.test.js` against Python goldens (slabs below the fit cap; see the 
     are clamped/unwrapped and so **understate** the selection for $z_c$ near 0 or 1.
 14. **A declined slab draws nothing, in both runtimes, and says why** — fewer than 5 rows, fewer than
     3 distinct in-plane points, a collinear spread, a covariance singular to round-off, or an invalid
-    bandwidth (Step 6). The canvas reads "No density drawn for this slab" and the reason is printed
-    under it; `fitCount` is 0.
+    bandwidth (Step 6). The canvas reads "No density drawn for this slab" and a one-line reason
+    (keyed on `messageCode`, full sentence in its tooltip) is printed under it; `fitCount` is 0.
 15. **A missing lattice block degrades silently.** If `structure.latticeVectors` or
     `structure.supercell` is absent the frontend draws a 1 Å cubic cell with no warning.
 16. **The page may not be analysing the file you think.** In a folder with several `.rmc6f`
@@ -1699,7 +1706,7 @@ Only the **folder picker** is static-mode-only (`fsAccess = staticMode && suppor
 in `App.jsx`, with a `webkitdirectory` input as the static fallback). The **Demo** button is rendered
 unconditionally and calls `setLocalRun(...)`, so a *Flask deployment showing the bundled demo run
 takes the browser path* — none of the backend-path statements below apply to it. Conversely, a static
-deployment with no run loaded shows only the error `Open a run folder to view the structure.` This
+deployment with no run loaded shows only the hint `Open a run folder with an .rmc6f file.` This
 section therefore says "browser path" / "backend path" and never "static mode" / "Flask mode" when
 describing which code runs.
 
@@ -1895,7 +1902,8 @@ The load effect (deps `[directory, localRun]`) has five branches, in order:
    `maxPoints = STRUCTURE_MAX_POINTS`.
 3. `localRun` present with neither → the error `localRun.structureError` (`'No model structure
    detected'`), else `'No structure data available in this folder'`.
-4. no `localRun` and `isStaticMode()` → the error `'Open a run folder to view the structure.'`
+4. no `localRun` and `isStaticMode()` → no request and no error; the page shows the hint
+   *"Open a run folder with an `.rmc6f` file."*
 5. otherwise → `GET /api/structure?dir=<directory>&maxPoints=<STRUCTURE_MAX_POINTS>`.
 
 Two module Workers (structure and KDE) are created per mount whenever `isLocalStructure`, and
@@ -2556,9 +2564,11 @@ machinery, plus a set of fallbacks worth knowing when a panel looks empty. **Cod
 4. Contour polylines are mapped point-by-point through the same `mapper.map` (1 px, `themeVars.contour`).
    They are drawn inside the same branch as the heatmap, and they are *not* clipped to the cell polygon.
 5. When the gate in (3) fails, the panel instead shows a single placeholder string in `--muted`,
-   `500 13px Inter`, at $(14, 28)$: `Computing KDE...` while a request is in flight,
-   `No density drawn for this slab` when the slab has atoms but the estimator declined it (the
-   payload's `message` is then shown under the canvas), otherwise `No atoms in this slab`.
+   `500 13px Inter`, at $(14, 28)$: `Computing KDE…` while a request is in flight,
+   `No density drawn for this slab` when the slab has atoms but the estimator declined it (a short
+   note keyed on the payload's `messageCode` is then shown under the canvas, the `message` as its
+   tooltip), `No atoms in this slab` when the result's `slabCount` is 0, and nothing before the first
+   result or after a KDE error.
 6. Overlay text (drawn with a dark stroke `rgba(13, 18, 28, 0.62)`, `lineWidth 3`, under a white fill,
    so it stays legible over any colormap) reports `<slabCount> atoms in slab (fit <fitCount>)` at
    $(12,22)$, `<label>=<center>  d=<thickness> (<Å> Å)  bw=<bw>` at $(12,40)$ (the Å value from
@@ -2644,7 +2654,7 @@ file `KDE_Slice__1_1_0.png`, locale-dependent.)
 | In-slab / out-of-slab marker | `drawSlab` | 2×2 / 1×1 | — | CSS px |
 | Out-of-slab colour | `drawSlab` | `rgba(166,176,188,0.22)` | — | — |
 | Band fill / stroke | `drawSlab` | `rgba(79,140,255,0.18)` / `#74a7ff` | — | — |
-| KDE placeholder text | `drawKdeSlice` | `Computing KDE...` / `No density drawn for this slab` / `No atoms in this slab` at (14, 28), `500 13px Inter`, `--muted` | — | CSS px |
+| KDE placeholder text | `drawKdeSlice` | `Computing KDE…` / `No density drawn for this slab` / `No atoms in this slab` (none without a result) at (14, 28), `500 13px Inter`, `--muted` | — | CSS px |
 | 3D point size | `PointsMaterial` | 0.018, `sizeAttenuation: true` | — | normalized cell units ($\ell_{\max}=1$) |
 | 3D position precision | `Float32Array` | single precision | ~10⁻⁷ relative | ≈10⁻⁶ Å for a 10 Å cell |
 | 3D cell edge / slab edge / slab face colour | Three.js materials | `#737c86` / `#8c96a3` (α 0.95) / `#4f8cff` (α 0.12) | — | — |

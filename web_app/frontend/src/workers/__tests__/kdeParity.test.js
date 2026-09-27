@@ -70,6 +70,7 @@ describe('browser KDE vs Python reference (kde_parity_fixture.json)', () => {
                 // Declined by both runtimes, for the same reason.
                 expect(result.vmax).toBe(0);
                 expect(result.message).toBe(expected.message);
+                expect(result.messageCode).toBe(expected.messageCode);
                 expect(result.kernel).toBeNull();
                 return;
             }
@@ -85,6 +86,7 @@ describe('browser KDE vs Python reference (kde_parity_fixture.json)', () => {
             // Because it is the same kernel H = f^2 C, entry by entry, with the
             // same diagnostics.
             expect(result.message).toBeNull();
+            expect(result.messageCode).toBeNull();
             expect(result.warnings.map((warning) => warning.code)).toEqual(expected.warnings);
             const scale = expected.kernel.sigmaMajor ** 2;
             expected.kernel.covariance.flat().forEach((value, index) => {

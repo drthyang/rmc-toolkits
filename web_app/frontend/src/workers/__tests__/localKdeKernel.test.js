@@ -140,6 +140,7 @@ describe('degenerate slabs are declined, not regularized', () => {
         expect(result.vmax).toBe(0);
         expect(result.kernel).toBeNull();
         expect(result.message).toBe(KDE_MESSAGES.collinear);
+        expect(result.messageCode).toBe('collinear');
     });
 
     it('declines fewer than three distinct positions', async () => {
@@ -147,6 +148,7 @@ describe('degenerate slabs are declined, not regularized', () => {
         const result = await slice(plane(pair));
         expect(result.fitCount).toBe(0);
         expect(result.message).toBe(KDE_MESSAGES.fewUnique);
+        expect(result.messageCode).toBe('few_unique');
     });
 
     it('uses the bandwidth as given: no substitution for 0 and no 1e-4 floor', async () => {
@@ -157,6 +159,7 @@ describe('degenerate slabs are declined, not regularized', () => {
             expect(result.fitCount).toBe(0);
             expect(result.bw).toBeNull();
             expect(result.message).toBe(KDE_MESSAGES.bandwidth);
+            expect(result.messageCode).toBe('bandwidth');
         }
         // Below the old 1e-4 floor the factor still scales H as f^2.
         const tiny = await slice(points, { bandwidth: 5e-5 });

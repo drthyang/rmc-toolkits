@@ -493,8 +493,9 @@ parse of a file that changed while it was read (see the backend API notes in
 
 #### 3d. "Reference-grade" vs "visualization-grade"
 
-The phrase is the app's own (§8: the in-app `InfoBadge` and the `local-density-note` both read
-*"The Flask app uses SciPy KDE for reference-grade values"*). In this document:
+The phrase is the app's own (§8: for a browser-loaded run, the Atomic Density KDE Slice's ? help
+and its `browser` header readout's tooltip say *"the Flask app uses SciPy KDE for reference-grade
+values"*). In this document:
 
 - **Reference-grade** — the Python engine under `rmc_toolkits/`, reached through a Flask route
   with a server-side run **directory**. These are the "source of truth" implementations: §2/§3

@@ -14,8 +14,8 @@
     margin-bottom: 1rem;
 }
 
-/* Structure error shown in place of the loaded-files card. */
-.model-summary-empty {
+/* Structure error shown in place of the loaded-files card (no plots). */
+.structure-error {
     margin-bottom: 1rem;
 }
 

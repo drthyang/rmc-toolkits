@@ -480,6 +480,10 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                         to an A atom and its bond to a C atom. A and C may name the same
                                         element (each unordered pair of bonds then counts once).
                                     </p>
+                                    <p>
+                                        Angles are counted over the periodic configuration exactly,
+                                        periodic images included.
+                                    </p>
                                 </InfoBadge>
                             </>
                         )}
@@ -511,6 +515,10 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                         (inclusive). Read the window off the first-shell peak of the
                                         partial g(r) — the Partial PDF panel marks the current bounds
                                         with dashed guides once a partials file is in the run folder.
+                                    </p>
+                                    <p>
+                                        The angle count grows roughly as r_max⁶, so a wide window can
+                                        exceed the per-request limit.
                                     </p>
                                 </InfoBadge>
                             </>
@@ -557,22 +565,8 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                 </ControlGroup>
             </ControlsBar>
 
-            {noRun && (
-                <Hint>Open a run folder (with an <code>.rmc6f</code> file) to analyse bond angles.</Hint>
-            )}
+            {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
             {(sitesError || resultError) && <Banner as="p" tone="danger" sm>{sitesError || resultError}</Banner>}
-            {!noRun && !result && !resultError && !sitesError && configChanged && (
-                <Hint>
-                    The run saved a new configuration, so the previous angle distribution was
-                    cleared. Compute again to update it; the triplet and windows are kept.
-                </Hint>
-            )}
-            {!noRun && !result && !resultError && !sitesError && !configChanged && (
-                <Hint>
-                    Pick the A{'–'}B{'–'}C triplet (B central), bound the bond lengths, then
-                    Compute. Angles are counted over the periodic configuration exactly, images included.
-                </Hint>
-            )}
 
             {result && (
                 <div className="ui-stack" role="status">
@@ -684,7 +678,17 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                     <div className="geom-plot">
                         {anglePlot
                             ? <InteractivePlot file={{ path: `geometry:angles:${datasetKey}`, name: anglePlot.title }} plotData={anglePlot} variant="fit" />
-                            : <p className="ui-placeholder">No distribution yet.</p>}
+                            : (
+                                // The card's one empty line: what to do next, or why the
+                                // previous distribution is gone (a new configuration).
+                                <p className="ui-placeholder">
+                                    {noRun || sitesError || resultError
+                                        ? '—'
+                                        : configChanged
+                                            ? 'New configuration — Compute again.'
+                                            : 'Pick a triplet, then Compute.'}
+                                </p>
+                            )}
                     </div>
                 </Card>
 
@@ -727,7 +731,11 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                     <p className="ui-placeholder">
                                         {partialsLoading
                                             ? 'Looking for a partials file…'
-                                            : <>No <code>PDFpartials.csv</code> in this run.</>}
+                                            : noRun
+                                                ? '—'
+                                                : partials
+                                                    ? <>No {end1}{'–'}{apex} partial in <code>PDFpartials.csv</code>.</>
+                                                    : <>No <code>PDFpartials.csv</code> in this run.</>}
                                     </p>
                                 )}
                         </div>

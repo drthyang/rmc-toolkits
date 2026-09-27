@@ -18,7 +18,7 @@ import {
   firstPeakZero,
   fqToGpdf,
   makeConfig,
-  rho0NonConvergenceMessage,
+  rho0NonConvergenceError,
   scalePipeline,
   usableSigma,
   validateEnforcement,
@@ -91,7 +91,7 @@ export const runAutoScaleJob = (data) => {
     if (!rho0Estimate.converged) {
       // Never fit with a garbage density: surface the physics (or the
       // trial density that could not be fitted) instead.
-      throw new Error(rho0NonConvergenceMessage(rho0Estimate));
+      throw rho0NonConvergenceError(rho0Estimate);
     }
     config = { ...config, rho0: rho0Estimate.rho0 };
   }
@@ -227,7 +227,8 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
       const { message, transfers } = runAutoScaleJob(data);
       self.postMessage(message, transfers);
     } catch (error) {
-      self.postMessage({ id, ok: false, error: error?.message || String(error) });
+      // `summary` (additive, engine errors only): the page's one-line form.
+      self.postMessage({ id, ok: false, error: error?.message || String(error), summary: error?.summary });
     }
   };
 }

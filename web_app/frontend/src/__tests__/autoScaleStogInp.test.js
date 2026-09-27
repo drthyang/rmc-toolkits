@@ -58,6 +58,14 @@ describe('low-r window validation (scaling.ScalingConfig / autoscale parity)', (
     [{ r0: 1.2 }, { rFitMax: 0.95 }, { rFitMin: 1.2, rFitMax: 1.25 }].forEach((pins) => {
       const config = makeConfig({ ...base, rCutoff: 0.7, ...pins });
       expect(() => autoscale(q, sq, config)).toThrow(/narrower than 0.1/);
+      // The page's one-line summary rides beside the unchanged message.
+      let summary = null;
+      try {
+        autoscale(q, sq, config);
+      } catch (error) {
+        summary = error.summary;
+      }
+      expect(summary).toBe('Low-r fit window too narrow — widen it under Advanced → Low-r region.');
     });
   });
 });
