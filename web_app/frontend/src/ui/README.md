@@ -32,8 +32,8 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 | `CardNote` | `<div class="ui-card__note">` | `emph` | a note row under a card's canvas |
 | `ControlsBar` | `<div class="ui-controls …">` | `variant` (`'default'`/`'dense'`/`'stacked'`), `sub`, `footer` | the controls bar above a page's cards |
 | `ControlGroup` | `<div class="ui-control-group" role="group">` | `label` (→ `aria-label`) | related controls that wrap as a unit |
-| `Control` | `<label class="ui-control">` micro-label + widget + value | `as` (`'div'` when the row holds two interactive elements), `label`, `value`, `valueWide` | one labeled control row |
-| `Switch` | `<label class="ui-control ui-switch">` … checkbox + track | `label`, `bare`, `checked`, `onChange`, `inputProps` | a boolean option in a controls bar |
+| `Control` | `<label class="ui-control">` micro-label + widget + value | `as` (`'div'` when the row holds two interactive elements), `label`, `value`, `valueWide` | one labeled control row — inside a `ControlsBar` only |
+| `Switch` | `<label class="ui-control ui-switch">` … checkbox + track | `label`, `bare`, `checked`, `onChange`, `inputProps` | a boolean option — inside a `ControlsBar` only |
 | `Segmented` | `<div class="ui-seg ui-seg--{variant}">` | `as` (`'nav'`), `variant` (`'frame'`/`'overlay'`/`'nav'`) | a set of mutually exclusive buttons |
 | `SegmentedButton` | `<button>` (adds no `type`) | `active`, `overlay`, `warm` | one segment |
 | `Pill` | `<button type="button" class="ui-pill">` | `size` (`'md'`), `tint`, `active` | small pill buttons (Show/Hide, Reset zoom) |
@@ -52,6 +52,12 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 
 Every component appends `className` to its kit classes and spreads `...rest` on
 its root, so `role`, `aria-*`, `title`, `style`, `data-*` and `ref` pass through.
+
+`Control` and `Switch` are styled only inside a `ControlsBar`: their rules are
+keyed `.ui-controls .ui-control…` (and `.ui-controls .ui-control.ui-switch…`),
+so outside one the label loses its micro-label look and a `Switch` shows the
+native checkbox beside its track. Making them standalone would change
+specificity ties, so it waits for a visible-change pass.
 
 ### Class families (used directly where markup varies too much for a component)
 

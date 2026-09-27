@@ -31,6 +31,8 @@ export const ControlGroup = ({ label, className, ...rest }) => (
 
 /**
  * One labeled control row: micro-label, the widget(s), an optional value.
+ * Styled only inside a ControlsBar (`.ui-controls .ui-control…`); anywhere
+ * else it renders unstyled.
  *
  * @param {string} [as='label'] - 'div' when the row holds more than one
  *                                interactive element (e.g. info badge + switch).
@@ -54,6 +56,9 @@ export const Control = ({ as = 'label', label, value, valueWide, className, chil
 /**
  * Solid pill switch for a boolean option. Without `label` (and with `bare`)
  * it renders the pill alone, for rows whose label sits outside the <label>.
+ * Must sit inside a ControlsBar: the rules that hide the native checkbox and
+ * draw the label are keyed `.ui-controls .ui-control.ui-switch…`, so outside
+ * one a native checkbox shows beside the track.
  */
 export const Switch = ({ label, bare, checked, onChange, inputProps, className, ...rest }) => (
     <label className={cx('ui-control', 'ui-switch', bare && 'ui-switch--bare', className)} {...rest}>
