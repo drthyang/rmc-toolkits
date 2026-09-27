@@ -22,6 +22,7 @@ import {
 } from './browserData';
 import { SymTolContext } from './symTolContext';
 import { IconButton, Segmented, SegmentedButton } from './ui';
+import InfoBadge from './ui/InfoBadge';
 import './App.css';
 
 const REPO_URL = 'https://github.com/drthyang/rmc-toolkits';
@@ -82,16 +83,6 @@ function App() {
     setActivePage(page);
   };
 
-  // Startup reminder (static mode): reassure users that picking a folder keeps
-  // files on their device, since the browser's native picker may say "Upload".
-  useEffect(() => {
-    if (!staticMode) return;
-    setBrowseStatus({
-      kind: 'info',
-      text: 'Files stay on your device — they are read locally and never uploaded. Your browser may still label the picker button “Upload”.',
-    });
-  }, [staticMode]);
-
   useEffect(() => {
     if (!browseStatus || browseStatus.kind === 'loading') return undefined;
     const timer = window.setTimeout(() => setBrowseStatus(null), STATUS_TIMEOUT_MS);
@@ -120,7 +111,7 @@ function App() {
           setWatchFiles(false);
           setBrowseStatus({
             kind: 'error',
-            text: error.message || 'Lost access to the run folder. Re-select it to resume Live Data.',
+            text: error.message || 'Lost access to the run folder — re-select it to resume Live Data.',
           });
         }
       } finally {
@@ -195,7 +186,7 @@ function App() {
   };
 
   const handleNativeBrowse = async () => {
-    setBrowseStatus({ kind: 'loading', text: 'Opening folder picker...' });
+    setBrowseStatus({ kind: 'loading', text: 'Opening folder picker…' });
     try {
       const response = await axios.post(`${API_BASE_URL}/api/dialog/folder`, {
         dir: draftDirectory || currentDirectory || '.'
@@ -219,7 +210,7 @@ function App() {
     const selectedFiles = event.target.files;
     if (!selectedFiles?.length) return;
     setLocalLoading(true);
-    setBrowseStatus({ kind: 'loading', text: 'Indexing selected folder...' });
+    setBrowseStatus({ kind: 'loading', text: 'Indexing selected folder…' });
     try {
       const nextRun = await buildLocalRun(selectedFiles);
       runIdRef.current += 1;
@@ -239,7 +230,7 @@ function App() {
 
   const handleSelectFolderFsAccess = async () => {
     setLocalLoading(true);
-    setBrowseStatus({ kind: 'loading', text: 'Opening folder picker...' });
+    setBrowseStatus({ kind: 'loading', text: 'Opening folder picker…' });
     try {
       const handle = await window.showDirectoryPicker();
       dirHandleRef.current = handle;
@@ -276,7 +267,7 @@ function App() {
       return;
     }
     setLocalLoading(true);
-    setBrowseStatus({ kind: 'loading', text: 'Loading demo dataset...' });
+    setBrowseStatus({ kind: 'loading', text: 'Loading demo dataset…' });
     try {
       const nextRun = await loadDemoRun();
       runIdRef.current += 1;
@@ -296,10 +287,10 @@ function App() {
   const handleStaticLiveDataNotice = () => {
     setBrowseStatus({
       kind: 'info',
-      text: 'Live Data works in Chromium browsers — Chrome, Edge, Arc, or Opera. You can still open a folder here to view results, or',
+      text: 'Live Data needs Chrome, Edge, Arc or Opera — or',
       link: {
         href: REPO_URL,
-        label: 'install the local app'
+        label: 'the local app'
       }
     });
   };
@@ -423,10 +414,14 @@ function App() {
                   type="button"
                   onClick={handleSelectFolderFsAccess}
                   disabled={localLoading}
+                  title="Read locally — nothing is uploaded"
                 >
                   {localLoading ? 'Reading' : 'Select Folder'}
                 </button>
               </div>
+              <InfoBadge label="Where your files go" align="end">
+                <p>Files are read locally in your browser and never uploaded. The browser's own folder picker may still label its button “Upload”.</p>
+              </InfoBadge>
             </div>
           ) : staticMode ? (
             <div className="path-controls">
@@ -435,6 +430,7 @@ function App() {
                 className="ui-switch-outline ui-switch-outline--button"
                 onClick={handleStaticLiveDataNotice}
                 aria-pressed="false"
+                title="Live Data needs a Chromium browser or the local app"
               >
                 <span aria-hidden="true" />
                 <b>Live Data</b>
@@ -455,10 +451,14 @@ function App() {
                   type="button"
                   onClick={() => directoryInputRef.current?.click()}
                   disabled={localLoading}
+                  title="Read locally — nothing is uploaded"
                 >
                   {localLoading ? 'Reading' : 'Select Folder'}
                 </button>
               </div>
+              <InfoBadge label="Where your files go" align="end">
+                <p>Files are read locally in your browser and never uploaded. The browser's own folder picker may still label its button “Upload”.</p>
+              </InfoBadge>
             </div>
           ) : (
             <div className="path-controls">
