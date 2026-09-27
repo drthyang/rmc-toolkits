@@ -80,6 +80,11 @@
     stroke-width: 1;
 }
 
+/* Unlabelled minor marks (plotData.xMinorStep): same length, lighter. */
+.plot-tick-mark--minor {
+    opacity: 0.55;
+}
+
 .plot-frame {
     fill: none;
     stroke: var(--chart-frame);
@@ -120,6 +125,18 @@
     stroke-linejoin: round;
     stroke-linecap: round;
     vector-effect: non-scaling-stroke;
+}
+
+/* A histogram outline (series.curve 'step'): square corners. */
+.series-path--step {
+    stroke-linejoin: miter;
+    stroke-linecap: butt;
+}
+
+/* The light area under a series (series.fill), in the series color. */
+.series-area {
+    stroke: none;
+    fill-opacity: var(--plot-area-opacity);
 }
 
 /* Measured data markers: colored outline with a white face, with the

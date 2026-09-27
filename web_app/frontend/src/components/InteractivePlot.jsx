@@ -25,6 +25,21 @@ const isExperimental = (label) => /exp/i.test(label);
 // Theory/reference lines (series with role: 'guide') are drawn dashed and
 // muted, and are excluded from the palette rotation and from hover snapping. A
 // caller may set an explicit `color` to tie one to the series it belongs to.
+//
+// Opt-in axis and series options (each does nothing when absent, so a payload
+// without them renders exactly as before — pinned by interactivePlotAxes.test):
+//   plotData.xDomain    [min, max]: the un-zoomed x range, unpadded; also
+//                       bounds the wheel zoom.
+//   plotData.xTicks     labelled major ticks while un-zoomed (nice ticks after
+//                       a zoom).
+//   plotData.xMinorStep unlabelled minor tick marks at this step, un-zoomed.
+//   plotData.xGrid      vertical grid lines at the major ticks.
+//   plotData.yMin       the un-zoomed y range starts here (e.g. 0).
+//   series.curve        'step': a histogram outline, flat across each x ± half
+//                       a bin (series.binWidth, else the x spacing).
+//   series.fill         a light area under the curve, down to y = 0.
+//   series.width        stroke width in px.
+//   series.legend       false: left out of the legend (e.g. window guides).
 
 const MARKER_RADIUS = 2.8;
 
@@ -76,6 +91,21 @@ const niceTicks = (domain, count = 5) => {
         ticks.push(Math.abs(value) < step * 1e-9 ? 0 : value);
     }
     return { ticks, step };
+};
+
+const finitePair = (pair) => Array.isArray(pair) && pair.length === 2
+    && pair.every(Number.isFinite) && pair[1] > pair[0];
+
+// Half the bin width of a step series: its own binWidth, else the smallest
+// positive spacing of its x values (bin centres of a uniform histogram).
+const stepHalfWidth = (series) => {
+    if (Number.isFinite(series.binWidth) && series.binWidth > 0) return series.binWidth / 2;
+    let spacing = Infinity;
+    for (let index = 1; index < series.x.length; index += 1) {
+        const gap = series.x[index] - series.x[index - 1];
+        if (gap > 0 && gap < spacing) spacing = gap;
+    }
+    return Number.isFinite(spacing) ? spacing / 2 : 0.5;
 };
 
 const AxisLabel = ({ label: rawLabel, x, y, textAnchor = 'middle', rotate = false }) => {
@@ -226,13 +256,15 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     }, [orderedSeries, hidden]);
 
     const domains = useMemo(() => {
-        const allX = visibleSeries.flatMap((series) => series.x);
-        const baseX = niceDomain(allX);
+        const fixedX = finitePair(effectivePlot?.xDomain) ? effectivePlot.xDomain : null;
+        const baseX = fixedX || niceDomain(visibleSeries.flatMap((series) => series.x));
         const currentX = xDomain || baseX;
         const allY = visibleSeries.flatMap((series) =>
             series.y.filter((_, index) => series.x[index] >= currentX[0] && series.x[index] <= currentX[1])
         );
-        const baseY = niceDomain(allY.length ? allY : visibleSeries.flatMap((series) => series.y));
+        let baseY = niceDomain(allY.length ? allY : visibleSeries.flatMap((series) => series.y));
+        const yMin = effectivePlot?.yMin;
+        if (Number.isFinite(yMin)) baseY = [yMin, Math.max(baseY[1], yMin + 1e-9)];
         // A caller-supplied initial y window (e.g. the Auto StoG low-r zoom)
         // acts as the un-zoomed default; user zooms override it, and
         // double-click toggles the full data extent.
@@ -254,10 +286,30 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         domains.y,
         fitted ? clampTicks(fitted.height / 70, 3, 8) : wide ? 4 : 6
     );
-    const xTicks = niceTicks(
-        domains.x,
-        fitted ? clampTicks(fitted.width / 95, 4, 12) : wide ? 11 : 7
-    );
+    // Caller-fixed major ticks hold only while un-zoomed; a zoom hands the
+    // axis back to nice ticks.
+    const fixedTicks = !xDomain && Array.isArray(effectivePlot?.xTicks)
+        ? effectivePlot.xTicks.filter((tick) => Number.isFinite(tick) && tick >= domains.x[0] && tick <= domains.x[1])
+        : null;
+    const xTicks = fixedTicks?.length
+        ? { ticks: fixedTicks, step: fixedTicks.length > 1 ? fixedTicks[1] - fixedTicks[0] : 1 }
+        : niceTicks(
+            domains.x,
+            fitted ? clampTicks(fitted.width / 95, 4, 12) : wide ? 11 : 7
+        );
+    const minorStep = effectivePlot?.xMinorStep;
+    const xMinorTicks = [];
+    if (!xDomain && Number.isFinite(minorStep) && minorStep > 0) {
+        const span = domains.x[1] - domains.x[0];
+        if (span / minorStep <= 400) {
+            const first = Math.ceil(domains.x[0] / minorStep - 1e-9);
+            const last = Math.floor(domains.x[1] / minorStep + 1e-9);
+            for (let k = first; k <= last; k += 1) {
+                const tick = k * minorStep;
+                if (!xTicks.ticks.some((major) => Math.abs(major - tick) < minorStep * 1e-6)) xMinorTicks.push(tick);
+            }
+        }
+    }
     const yAxisMax = Math.max(...yTicks.ticks.map(Math.abs), 0);
     const xAxisMax = Math.max(...xTicks.ticks.map(Math.abs), 0);
 
@@ -304,7 +356,47 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const seriesShapes = useMemo(() => {
         const sx = (x) => view.left + ((x - domains.x[0]) / (domains.x[1] - domains.x[0] || 1)) * plotWidth;
         const sy = (y) => view.top + plotHeight - ((y - domains.y[0]) / (domains.y[1] - domains.y[0] || 1)) * plotHeight;
+        const fmt = (value) => value.toFixed(2);
         return visibleSeries.map((series) => {
+            const extra = {
+                width: Number.isFinite(series.width) ? series.width : undefined,
+                step: series.curve === 'step'
+            };
+            if (series.curve === 'step') {
+                // Flat across each bin, vertical at the shared edges; a gap
+                // (non-finite y) or a missing bin breaks the outline.
+                const half = stepHalfWidth(series);
+                const runs = [];
+                let run = null;
+                series.x.forEach((x, index) => {
+                    const y = series.y[index];
+                    if (!Number.isFinite(x) || !Number.isFinite(y)
+                        || x + half < domains.x[0] || x - half > domains.x[1]) {
+                        run = null;
+                        return;
+                    }
+                    const left = x - half;
+                    if (!run || Math.abs(left - run.right) > half * 1e-6) {
+                        run = { right: x + half, points: [] };
+                        runs.push(run);
+                    }
+                    run.points.push([sx(left), sx(x + half), sy(y)]);
+                    run.right = x + half;
+                });
+                const d = runs.map(({ points }) => points.map(([px0, px1, py], index) => (
+                    `${index ? 'L' : 'M'} ${fmt(px0)} ${fmt(py)} L ${fmt(px1)} ${fmt(py)}`
+                )).join(' ')).join(' ');
+                const base = sy(0);
+                const area = series.fill
+                    ? runs.map(({ points }) => {
+                        const first = points[0];
+                        const last = points[points.length - 1];
+                        const top = points.map(([px0, px1, py]) => `L ${fmt(px0)} ${fmt(py)} L ${fmt(px1)} ${fmt(py)}`).join(' ');
+                        return `M ${fmt(first[0])} ${fmt(base)} ${top} L ${fmt(last[1])} ${fmt(base)} Z`;
+                    }).join(' ')
+                    : null;
+                return { label: series.label, color: series.color, marker: false, guide: Boolean(series.guide), d, area, ...extra };
+            }
             const points = [];
             series.x.forEach((x, index) => {
                 if (x < domains.x[0] || x > domains.x[1]) return;
@@ -320,7 +412,11 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                 return { label: series.label, color: series.color, marker: true, guide: false, d: commands.join(' ') };
             }
             const d = points.map(([px, py], index) => `${index ? 'L' : 'M'} ${px.toFixed(2)} ${py.toFixed(2)}`).join(' ');
-            return { label: series.label, color: series.color, marker: false, guide: Boolean(series.guide), d };
+            const base = sy(0);
+            const area = series.fill && points.length
+                ? `M ${fmt(points[0][0])} ${fmt(base)} ${points.map(([px, py]) => `L ${fmt(px)} ${fmt(py)}`).join(' ')} L ${fmt(points[points.length - 1][0])} ${fmt(base)} Z`
+                : null;
+            return { label: series.label, color: series.color, marker: false, guide: Boolean(series.guide), d, area, ...extra };
         });
     }, [visibleSeries, domains, view.left, view.top, plotWidth, plotHeight]);
 
@@ -441,7 +537,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         <div className={`interactive-plot${wide ? ' interactive-plot--wide' : ''}${fit ? ' interactive-plot--fit' : ''}`}>
             <div className="plot-toolbar">
                 <div className="plot-legend">
-                    {orderedSeries.map((series) => (
+                    {orderedSeries.filter((series) => series.legend !== false).map((series) => (
                         <button
                             key={series.label}
                             type="button"
@@ -511,6 +607,9 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                         </clipPath>
                     </defs>
                     <rect className="plot-bg" x={view.left} y={view.top} width={plotWidth} height={plotHeight} />
+                    {effectivePlot.xGrid && xTicks.ticks.map((tick) => (
+                        <line key={`xg-${tick}`} className="plot-grid-line" x1={xScale(tick)} x2={xScale(tick)} y1={view.top} y2={view.top + plotHeight} />
+                    ))}
                     {yTicks.ticks.map((tick) => (
                         <g key={`y-${tick}`}>
                             <line className="plot-grid-line" x1={view.left} x2={view.width - view.right} y1={yScale(tick)} y2={yScale(tick)} />
@@ -533,15 +632,29 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
                             </text>
                         </g>
                     ))}
+                    {xMinorTicks.map((tick) => (
+                        <line
+                            key={`xm-${tick}`}
+                            className="plot-tick-mark plot-tick-mark--minor"
+                            x1={xScale(tick)}
+                            x2={xScale(tick)}
+                            y1={view.top + plotHeight}
+                            y2={view.top + plotHeight + 5}
+                        />
+                    ))}
                     <g clipPath={`url(#${clipId})`}>
+                        {seriesShapes.filter((series) => series.area).map((series) => (
+                            <path key={`area-${series.label}`} className="series-area" d={series.area} fill={series.color} />
+                        ))}
                         {seriesShapes.map((series) => (
                             <path
                                 key={series.label}
                                 className={series.marker
                                     ? 'series-markers'
-                                    : series.guide ? 'series-path series-path--guide' : 'series-path'}
+                                    : `${series.guide ? 'series-path series-path--guide' : 'series-path'}${series.step ? ' series-path--step' : ''}`}
                                 d={series.d}
                                 stroke={series.color}
+                                style={series.width !== undefined ? { strokeWidth: series.width } : undefined}
                             />
                         ))}
                     </g>
