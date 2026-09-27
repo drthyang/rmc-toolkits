@@ -18,7 +18,7 @@ export const ELEMENT_COLORS = {
     Ge: '#668f8f', As: '#bd80e3', Se: '#00A087', Br: '#a62929', Rb: '#702eb0',
     Sr: '#43d100', Y: '#94ffff', Zr: '#94e0e0', Nb: '#E64B35', Mo: '#54b5b5',
     Ag: '#c0c0c0', Cd: '#ffd98f', In: '#a67573', Sn: '#668080', Sb: '#9e63b5',
-    Te: '#d47a00', I: '#940094', Cs: '#57178f', Ba: '#00c900', W: '#2194d6',
+    Te: '#d47a00', I: '#940094', Cs: '#57178f', Ba: '#00c900', Ta: '#F39B7F', W: '#2194d6',
     Pt: '#d0d0e0', Au: '#ffd123', Hg: '#b8b8d0', Pb: '#575961', Bi: '#9e4fb5'
 };
 

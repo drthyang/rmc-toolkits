@@ -99,6 +99,8 @@ the CLI and every number are as before). Details in
   triplet in every card title; `BOND_COLORS` (`plotPalette.js`: A–B = plot blue, B–C = plot
   orange) colour the 3D bond sticks (previously two unrelated hard-coded colours), the split
   window guides and chips, the partial curves and the bond dashes; references stay neutral grey.
+  **Ta has its own colour** (`#F39B7F`, NPG salmon) instead of the fallback cyan next to Se's
+  teal, on every page (Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions).
 - **States inside the cards.** Before Compute the hero shows the axis dimmed with a prompt card
   (triplet, window, Compute, the central-atom count, the box, where it runs); computing shows a
   shimmer or dims the shown plot, with a centred badge and a spinner on the button; a result whose
