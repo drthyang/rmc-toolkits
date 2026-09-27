@@ -1416,37 +1416,19 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                     KDE Slice
                                     <InfoBadge label="How the KDE slice works">
                                         <p>
-                                            Atoms of the selected element are folded into one unit cell,
-                                            and a thin slab (depth ± thickness/2) about the chosen plane is
-                                            projected onto it. A 2D anisotropic Gaussian kernel density
-                                            estimate over those points gives the density map — bandwidth
-                                            scales the kernel width, so smaller values resolve finer detail.
+                                            A 2D Gaussian KDE of the selected element&apos;s atoms, folded into one
+                                            cell, in the slab depth ± thickness/2 about the plane. Smaller
+                                            bandwidth resolves finer detail.
                                         </p>
                                         <p>
-                                            The kernel is bandwidth² × the covariance of the slab&apos;s atoms
-                                            (SciPy&apos;s convention), so its width and shape follow how the
-                                            slab&apos;s sites are laid out, not how atoms move. Its σ is printed
-                                            on the map in Å; read blob shapes against it. Above 3 : 1 the map is
-                                            flagged: elongation of the blobs along the kernel&apos;s long axis is an
-                                            artefact — take displacement shapes from the PCA Ellipsoid page.
+                                            The kernel is bandwidth² × the slab atoms&apos; covariance (SciPy&apos;s
+                                            rule), so its shape follows the site layout, not the motion; its σ is
+                                            printed on the map. Above 3 : 1 the map is flagged — take
+                                            displacement shapes from PCA Ellipsoid.
                                         </p>
                                         <p>
-                                            No map is drawn when the slab has no usable covariance — fewer than
-                                            5 atoms, fewer than 3 distinct in-plane positions, collinear atoms, or
-                                            a covariance singular to within round-off — because that covariance
-                                            is the kernel.
-                                        </p>
-                                        <p>
-                                            Grid resolution: a kernel narrower than half a grid step is aliased —
-                                            peak values, contours and the integrated density then depend on the
-                                            grid size. When the grid holds less than a millionth of the slab&apos;s
-                                            density, the kernels fall between the nodes; that map is round-off
-                                            and is neither contoured nor drawn. Raise the bandwidth or the grid.
-                                        </p>
-                                        <p>
-                                            {isLocalStructure
-                                                ? 'It runs in your browser (GPU when available, CPU otherwise) — a visualization path; the Flask app uses SciPy KDE for reference-grade values.'
-                                                : 'It is computed on the Flask server with SciPy (reference-grade values).'}
+                                            No map is drawn for too few, collinear or coincident atoms. A kernel
+                                            under half a grid step is aliased; raise the bandwidth or the grid.
                                         </p>
                                     </InfoBadge>
                                 </span>
