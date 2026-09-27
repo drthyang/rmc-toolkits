@@ -620,7 +620,9 @@ The request a shown result was computed from is kept beside it. Whenever the cur
 would send a different request — compared field by field as numbers, so `3.0` and `3.00` are the
 same, and an input that does not parse counts as different — the result is **stale**: an amber
 *inputs changed* chip appears in the hero header and the button reads **Update** with a dot
-(both wait while a compute runs). The plot and the KPIs stay those of the shown result.
+(both wait while a compute runs). The plot and the KPIs stay those of the shown result, and in
+place: a chip in a card header takes the header's control height (the kit's `--h-chip`, like the
+element chips and the Segmented toggle), so the header does not grow when the chip appears.
 
 A **new configuration of the same run** — a Live Data save, picked up through the Flask
 `dataEpoch` prop (App.jsx's `configEpoch`) or a browser-loaded run's changed `.rmc6f` text — bumps

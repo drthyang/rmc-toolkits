@@ -1887,6 +1887,17 @@ input.ui-range::-moz-range-track {
     white-space: normal;
 }
 
+/* A chip in a bar header takes the header's control height (the element
+   chips, a Segmented frame) on one line, so one that appears — a stale-result
+   warning — does not grow the header and move the card body under it. */
+.ui-card__header .ui-chip {
+    display: inline-flex;
+    align-items: center;
+    height: var(--h-chip);
+    line-height: 1;
+    white-space: nowrap;
+}
+
 /* Element chips joined by bond dashes (a triplet, a pair): the caller sets
    --chip (element color) and --bond (bond role color). The element color only
    fills the dot, tints the pill and rings the central atom; the text stays
@@ -1902,7 +1913,7 @@ input.ui-range::-moz-range-track {
     display: inline-flex;
     align-items: center;
     gap: 0.32rem;
-    height: 1.5rem;
+    height: var(--h-chip);
     padding: 0.1rem 0.55rem 0.1rem 0.4rem;
     border: 1px solid color-mix(in srgb, var(--chip, var(--subtle)) 55%, var(--border));
     border-radius: var(--radius-pill);

@@ -41,7 +41,7 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 | `ToolButton` | `<button type="button" class="ui-tool-btn">` | `axes`, `active` | card-header tools (Reset view, a b c) |
 | `IconButton` | `<button type="button" class="ui-icon-btn ui-icon-btn--{variant}">` | `variant` (`'close'`/`'remove'`) | round × buttons |
 | `PrimaryButton` | `<button class="ui-btn-primary">` (caller passes `type`) | `outlined`; `run` (row height, play glyph) with `busy` (spinner; caller sets `aria-busy`) and `stale` (a dot after the label) | the one primary action of a bar; `run` for a page's compute action (Bond Geometry) |
-| `Chip` | `<span class="ui-chip">` | `tone` (`'success'`/`'warn'`/`'danger'`), `strong`, `center`, `truncate` | small read-only pills (Rwp, file info, window chips, the Bond Geometry *inputs changed* cue) |
+| `Chip` | `<span class="ui-chip">` | `tone` (`'success'`/`'warn'`/`'danger'`), `strong`, `center`, `truncate` | small read-only pills (Rwp, file info, window chips, the Bond Geometry *inputs changed* cue); inside a bar header (`ui-card__header`) a chip takes the header's control height (`--h-chip`, like `ElementChip`) on one line, so one appearing never grows the header |
 | `ElementChip` | `<span class="ui-element-chip">` dot + text | `color` (→ `--chip`), `central` (ring) | an element in a triplet or pair, inside a `ui-element-chain` span (Bond Geometry titles) |
 | `BondDash` | `<span class="ui-bond-dash">` + hidden text | `color` (→ `--bond`), `lead`, `text` (default `–`) | the bond between two element chips, or leading a chip's text in its bond-role color |
 | `StatRail` | `<section class="ui-card ui-stat-rail">` title cell + `<dl>` | `heading`, `headingProps` | Model information / Detected SG / Triplet result |
