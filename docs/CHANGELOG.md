@@ -25,8 +25,9 @@ Theme-invariant values that were hard-coded (brand blue, status and plot-kind co
 radii, durations, control heights, the type scale) are tokens in `index.css`. Page stylesheets
 keep layout only. `InfoBadge` and `SaveMenu` moved into `src/ui`; the footer is
 `components/AppFooter.jsx`. The refactor was verified pixel-identical against `main` on every page
-(desktop, laptop and phone; light and dark), with computed styles — hover and keyboard-focus
-states included — compared page by page.
+(desktop, laptop and phone; light and dark) — the first viewport and, because each page scrolls
+inside its own root rather than the document, every below-the-fold scroll step — with computed
+styles, hover and keyboard-focus states included, compared page by page.
 
 ### Upgrading from 0.5.0
 
