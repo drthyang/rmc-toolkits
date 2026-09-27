@@ -6,7 +6,8 @@ Bond angles the RMCProfile `triplets` way: name an A–B–C triplet with **B th
 bound the two bond lengths, and histogram the angle at B over every triplet in the periodic
 configuration — exactly, images included, nothing subsampled. The engine section covers the
 neighbour search and the three normalizations; the page section covers what the Bond Geometry
-tab adds on top of the payload (it computes no geometry of its own).
+tab adds on top of the payload (it computes no geometry of its own — only documented
+presentation reductions of the payload and one closed-form reference line).
 
 ## Contents
 
@@ -28,10 +29,12 @@ tab adds on top of the payload (it computes no geometry of its own).
   - [What the page owns](#what-the-page-owns)
   - [Step 1 — Triplet seeding](#step-1--triplet-seeding)
   - [Step 2 — The compute request and the epoch guard](#step-2--the-compute-request-and-the-epoch-guard)
-  - [Step 3 — The result chips](#step-3--the-result-chips)
-  - [Step 4 — The angle plot and the `fit` variant](#step-4--the-angle-plot-and-the-fit-variant)
+  - [Step 3 — The KPI rail](#step-3--the-kpi-rail)
+  - [Step 4 — The angle plot and the random-bonds line](#step-4--the-angle-plot-and-the-random-bonds-line)
   - [Step 5 — The partial-g(r) window helper](#step-5--the-partial-gr-window-helper)
   - [Step 6 — The folded-cell bond view](#step-6--the-folded-cell-bond-view)
+  - [Step 7 — Card states: empty, computing, stale, error](#step-7--card-states-empty-computing-stale-error)
+  - [Step 8 — Layout and the colour system](#step-8--layout-and-the-colour-system)
   - [Parameters and defaults](#parameters-and-defaults-1)
   - [Caveats](#caveats-1)
 
@@ -577,14 +580,16 @@ numpy.histogram agreement off the edges).
 
 ### What the page owns
 
-[BondGeometryPage.jsx](../../web_app/frontend/src/components/BondGeometryPage.jsx) renders one
-controls bar (triplet selects, windows, `Distinct B–C` switch, bin width, **Compute**), the
-model-information card (same `ModelSummary` as the Dashboard, symmetry card omitted), a
-`Triplet result` chip strip, and three equal-width panels: the angle distribution, the
-partial-$g(r)$ window helper, and the folded-cell bond view
-([FoldedCellPanel.jsx](../../web_app/frontend/src/components/FoldedCellPanel.jsx)). Everything
-numerical comes from the Step 7 payload; the page adds selection, presentation, and the two
-helper views.
+[BondGeometryPage.jsx](../../web_app/frontend/src/components/BondGeometryPage.jsx) renders the
+model-information card (same `ModelSummary` as the Dashboard, symmetry card omitted), one
+controls bar — a `<form>`, so Enter in any field computes (triplet selects, windows,
+`Distinct B–C` switch, bin width, **Compute** at the right) — and three cards: the angle
+distribution as the **hero**, with the headline results in a KPI rail under its header, and
+beside it the folded-cell bond view
+([FoldedCellPanel.jsx](../../web_app/frontend/src/components/FoldedCellPanel.jsx)) above the
+partial-$g(r)$ window helper. Everything numerical comes from the Step 7 payload; the page adds
+selection, presentation (the reductions of Steps 3 and 4, each stated below), and the two helper
+views. Every piece of chrome is the UI kit's (`src/ui`, see its README).
 
 ### Step 1 — Triplet seeding
 
@@ -593,50 +598,89 @@ switch the new key arrives while the previous run's sites are still in state, so
 data itself waits for the real element list — and a Live Data refresh keeps the user's picks
 when they still apply. The seed ranks elements by total atom count from the sites table: ends =
 most abundant (in practice the anion), central = next most abundant — Se–Nb–Se for GaNb₄Se₈. An
-existing valid selection is never overwritten.
+existing valid selection is never overwritten. Each select carries its element's colour dot; B
+keeps the ring; a ⇄ button swaps A and C (shown only when they differ).
 
 ### Step 2 — The compute request and the epoch guard
 
-**Compute** first turns the input boxes into a request with `tripletRequestFromInputs`
+**Compute** (the button, or Enter in any field: the bar is a `<form noValidate>`, so the
+browser's own number validation never blocks or rewrites a request) first turns the input boxes
+into a request with `tripletRequestFromInputs`
 ([workers/triplets.js](../../web_app/frontend/src/workers/triplets.js)): a cleared or non-numeric
-box shows an error naming it ("A–B window minimum is empty — enter a number.") and nothing is
-sent — it is never coerced to `0`. It then issues `requestPca('triplets', {end1, apex, end2,
-r12Min, r12Max, r23Min?, r23Max?, binWidth})` — the B–C window included only when the split
-switch is on (the engine then receives `bond23 = null` and reuses `bond12`). A dataset switch clears any previous result immediately
-and bumps a `runEpoch` ref; a compute that was in flight for the old run compares its captured
-epoch on resolve and can never land a stale payload on the new dataset.
+box is an error naming it ("A–B window minimum is empty — enter a number.") and nothing is sent —
+it is never coerced to `0`. The page maps the message's leading label back to its input, marks it
+`aria-invalid` (danger border) and focuses it; editing that field clears the mark and the
+message. It then issues `requestPca('triplets', {end1, apex, end2, r12Min, r12Max, r23Min?,
+r23Max?, binWidth})` — the B–C window included only when the split switch is on (the engine then
+receives `bond23 = null` and reuses `bond12`). A dataset switch clears any previous result
+immediately and bumps a `runEpoch` ref; a compute that was in flight for the old run compares its
+captured epoch on resolve and can never land a stale payload on the new dataset.
+
+The request a shown result was computed from is kept beside it. Whenever the current inputs
+would send a different request — compared field by field as numbers, so `3.0` and `3.00` are the
+same, and an input that does not parse counts as different — the result is **stale**: an amber
+*inputs changed* chip appears in the hero header and the button reads **Update** with a dot
+(both wait while a compute runs). The plot and the KPIs stay those of the shown result.
 
 A **new configuration of the same run** — a Live Data save, picked up through the Flask
 `dataEpoch` prop (App.jsx's `configEpoch`) or a browser-loaded run's changed `.rmc6f` text — bumps
 the same epoch, keeps the triplet and the typed windows, reloads the element list, the Model
-information card and the partials in place, and **drops** the computed distribution; the angle
-card's placeholder then reads "New configuration — Compute again.". The distribution is computed on demand, so it is never
-recomputed unasked, and a result from the previous configuration never sits next to the new model.
+information card and the partials in place, and **drops** the computed distribution; the hero
+header shows a *new configuration* chip and the empty-state prompt reads "New configuration —
+Compute again.". The distribution is computed on demand, so it is never recomputed unasked, and a
+result from the previous configuration never sits next to the new model.
 
-### Step 3 — The result chips
+### Step 3 — The KPI rail
 
-The card's header names the triplet and the windows **the engine actually used** (the
-resolved `bond12`/`bond23` of the payload) — both, labelled A–B and B–C, on their own lines
-whenever they differ, each bound printed at the precision it was given (2–4 decimals, so a B–C
-bound of 3.4001 does not read as 3.40). The header wraps instead of truncating.
-The chips are straight reads of the payload: central-atom count (`apexCount`), **Bonds** — the physical
-bond count `uniqueBonds`, each bond once, with its mean length (`lengths12`, and `lengths23`
-when not shared; a tooltip gives the B-centred count when the end element is the central one) —
-the coordination summary — mean bonds per B $\sum_n n\,c_n / \sum_n c_n$, which counts a B–B
-bond at both of its ends, as a coordination number should, plus the modal $n$ and its share —
-and the angle count with mean ± std.
+The rail sits under the hero header and is there before Compute, its values reading "—", so
+nothing below it moves when a result lands. Each tile is a straight read of the payload or one
+stated reduction of it:
 
-### Step 4 — The angle plot and the `fit` variant
+| Tile | Value | Sub line | Hover |
+|---|---|---|---|
+| **Angles** | `angleCount / apexCount`, 1 dp, "per B" | `angleCount` · realized `binWidth` · where it ran (`browser` for the worker, `server` for `/api/triplets`) | mean ± std of all angles (`meanAngle`, `stdAngle`) |
+| **Coordination** | $\sum_n n\,c_n / \sum_n c_n$ from `coordination`, 2 dp, "per B" — counts a B–B bond at both of its ends, as a coordination number should | modal $n$ and its share of the central atoms · `apexCount` | — |
+| **B–A bond** | `lengths12.meanLength`, 3 dp, Å | `uniqueBonds` (each physical bond once) · the resolved window `bond12` | the B-centred `count` when the end element is the central one |
+| **B–C bond** | the same from `lengths23` — only when `sharedEnds` is false; two tiles on the same pair (A = C, distinct windows) are told apart as (A–B) / (B–C) | | |
 
-The hero plot shows `sinCorrected` or `density` (toggle; sin-corrected is the default). Both
-this plot and the partial-$g(r)$ helper render through
+Windows print at the precision they were given (2–4 decimals, so a B–C bound of 3.4001 does not
+read as 3.40). The mean angle is kept off the headline on purpose: the mean of a multimodal
+distribution (the Demo's Se–Ta–Se has four angle classes) is not a bond angle. It stays in the
+hover text and in the CLI output.
+
+### Step 4 — The angle plot and the random-bonds line
+
+The hero plot shows `sinCorrected` or `density` (toggle; sin-corrected is the default) through
 [InteractivePlot](../../web_app/frontend/src/components/InteractivePlot.jsx) with
 `variant="fit"`: the SVG `viewBox` is taken from the rendered box (ResizeObserver, rounded to
-whole pixels) instead of the fixed 8:5 aspect, one user unit = one CSS pixel, and tick density
-follows the box (~1 y-tick per 70 px, ~1 x-tick per 95 px, clamped). The two cards are handed
-identically sized boxes — pinned header height, two reserved legend rows
-([BondGeometryPage.css](../../web_app/frontend/src/components/BondGeometryPage.css)) — so the
-two figures always share one aspect ratio.
+whole pixels) instead of the fixed 8:5 aspect, one user unit = one CSS pixel. The angle axis uses
+InteractivePlot's opt-in axis fields, which leave every other plot in the app untouched
+(`interactivePlotAxes.test.jsx` pins Dashboard- and Auto StoG-shaped payloads to the markup the
+component rendered before they existed):
+
+- `xDomain: [0, 180]` — the whole angle range, **unpadded** (the automatic domain padded it to
+  about −8…188°), which also bounds the wheel zoom;
+- `xTicks` every 30° (0, 30, …, 180 — the angles a crystallographer reads: 60, 90, 120, 180),
+  `xMinorStep: 10` unlabelled marks, `xGrid` vertical grid lines at the labelled ticks; after a
+  zoom the nice 1-2-5 ticks take over;
+- `yMin: 0` — the y axis starts at zero (no negative padding).
+
+The data draw as a **step curve** — one flat step per bin across $\theta_c \pm w/2$, the realized
+bin width from the payload — with a light same-colour area to $y=0$ (`curve: 'step'`,
+`fill: true`), because the payload is a histogram, not a sampled function.
+
+The dashed **random bonds** guide is what uniformly random bond directions give, i.e. the
+isotropic reference of Step 6 drawn in the view's own units:
+
+$$y_\text{random} = 1 \quad\text{(sin-corrected)},\qquad
+y_{\text{random},k} = \frac{\cos\theta_k - \cos\theta_{k+1}}{2\,w}\ \ \text{deg}^{-1}\quad\text{(density)},$$
+
+the second being the exact fraction $\tfrac12\int_{\theta_k}^{\theta_{k+1}}\sin\theta\,d\theta$
+of random angles in bin $k$, per degree (it integrates to 1 over 0–180°, like `density`; test:
+`BondGeometryLayout.test.jsx`). It is the only formula the page evaluates itself, and it is the
+same bin integral the engine divides by for `sin_corrected`, so "above the line = more than
+random" reads the same in both views. Axis labels: `angle at B, θ (°)` and
+`sin-corrected (random = 1)` or `density (deg⁻¹)`.
 
 ### Step 5 — The partial-g(r) window helper
 
@@ -644,26 +688,32 @@ The helper plots the run's measured partial pair distribution from `PDFpartials.
 the same plot-file path as the Dashboard; both runtimes) so the windows can be set against the
 actual first shell:
 
+- **Title**: the pair as element chips, B first — "(Ta)–(Se) partial g(r)" — or the whole
+  triplet when there are two curves. The header's right side shows the **live window chip**
+  (`2.00–3.00 Å`, following the inputs with the guides' debounce), or one chip per window, led by
+  its bond-role dash, when the windows are split.
 - **Curves**: the A–B partial always; a second curve whenever A–B and B–C are *different bond
   types* (pair labels looked up in either order — `Ta-Se` matches `Se-Ta`). This is independent
   of the window split: Ga–Ta–Se has two shells to bracket even with one shared window, and
-  Se–Ta–Se has one shell even with two windows.
+  Se–Ta–Se has one shell even with two windows. The curves wear the bond-role colours
+  (`BOND_COLORS.ab`, `.bc` — the first two plot colours).
 - **Guides**: dashed verticals at the current bounds, following the inputs after a 400 ms
-  debounce so the plot's view state does not reset per keystroke. With the split **off**, one
-  neutral-grey pair covers both bonds. With it **on**, each window gets its own pair, labelled
-  `A–B rmin/rmax` and `B–C rmin/rmax` **by role** (pair names would collide for same-element
-  triplets) and colored `PLOT_PALETTE[0]` / `PLOT_PALETTE[1]`: guides consume no palette slot,
-  so shell $N$ is `PLOT_PALETTE[N]` ([plotPalette.js](../../web_app/frontend/src/plotPalette.js))
-  and, when the bonds are different types, each pair matches the curve it brackets (for a
-  same-type triplet the B–C pair has the second color and no curve of its own).
+  debounce so the plot's view state does not reset per keystroke; a blank box draws no guide.
+  With the split **off**, one neutral-grey pair covers both bonds. With it **on**, each window
+  gets its own pair, labelled `A–B rmin/rmax` and `B–C rmin/rmax` **by role** (pair names would
+  collide for same-element triplets) and coloured `BOND_COLORS.ab` / `.bc`, so when the bonds are
+  different types each pair matches the curve it brackets (for a same-type triplet the B–C pair
+  has the second colour and no curve of its own). The guides stay **out of the legend**
+  (`legend: false`): the window chips name them, and the legend lists curves only.
 - **Nothing is shaded**: the window is marked only by the guides. The in-app help (the A–B
-  window and Partial PDF InfoBadges) states exactly these rules — the second curve follows the
+  window and partial g(r) InfoBadges) states exactly these rules — the second curve follows the
   bond types, the switch only the guides — pinned by `BondGeometryPage.test.jsx`.
 - **Crop**: the x-range is cut at $\max(6\,\text{Å},\ 2\times$ the furthest active
   $r_\mathrm{max})$ — beyond the first-shell region nothing informs a bond window.
 
-The panel is display-only: the page never computes a $g(r)$; a run without `PDFpartials.csv`
-gets an empty panel and everything else still works.
+The panel is display-only: the page never computes a $g(r)$. A run without `PDFpartials.csv` (or
+without the pair in it) gets a slim card — the header row with a one-line note — and the folded
+cell takes the freed height; everything else still works.
 
 ### Step 6 — The folded-cell bond view
 
@@ -672,39 +722,94 @@ folded unit cell as the Atomic Density page — every atom of the supercell fold
 as a point cloud, colored by element, so the spread around a site is the *measured* thermal
 cloud rather than a fitted ellipsoid — with the analysis' detected bonds drawn over it:
 
+- **Title**: the bond as element chips — "(Ta)–(Se) bonds", or the whole triplet when B–C is a
+  bond of its own — for the computed triplet (the current picks before Compute).
 - **Cloud**: one `THREE.Points` per element; above 120 000 atoms the cloud is strided down to
   ~120 k points (display only — the engine always sees every atom).
 - **Bonds**: for each computed window, average-site pairs whose distance falls inside it,
   periodic images included ($\mathbf m \in \{-1,0,1\}^3$, same-element in-cell pairs
   deduplicated) — so a stick may reach an image just outside the box, which is the real
-  coordination. Drawn as thin transparent `LineSegments` (opacity 0.45), A–B in the app accent
-  blue (`0x2563eb`), B–C in amber (`0xd97706`) when the windows are distinct, so a full network
-  reads as a framework without hiding the cloud.
+  coordination. Drawn as thin transparent `LineSegments` (opacity 0.45) in the bond-role
+  colours — A–B `BOND_COLORS.ab`, B–C `BOND_COLORS.bc` when it is a bond of its own
+  (`!sharedEnds`) — so a full network reads as a framework without hiding the cloud.
+- **Legend**: a pill inside the canvas, bottom-left: every element's colour, the triplet's
+  elements in bold and the rest muted, then one bond swatch per drawn window
+  (`Ta–Se 2.00–3.00 Å`); before Compute it ends with *Compute to draw bonds*.
 - The a/b/c gizmo, reset view, and 1×/3× PNG export follow the other 3D panels.
 
 Note the sticks connect **average site positions** (the folded reference sites), while the cloud
 shows instantaneous atoms: a stick is the average bond, not any single configuration's bond.
+
+### Step 7 — Card states: empty, computing, stale, error
+
+The three cards keep their skeleton — header, KPI rail, plot toolbar, plot — before and after
+Compute, so nothing moves when a result lands:
+
+- **Empty** (a run is open, nothing computed): the hero shows the angle axis of Step 4 dimmed
+  and inert (the *ghost*: same domain, ticks and the random-bonds line, at the typed bin width in
+  the density view), with a prompt card centred over it: the triplet chips and window chip, one
+  line ("Pick a triplet, then Compute."), a **Compute** button, and chips for the central-atom
+  count, the supercell and where it will run (their hovers say the rest: every B atom in the box,
+  periodic images included, exact).
+- **Computing**: the first compute sweeps a shimmer over the ghost; a recompute dims the shown
+  plot (inert); both show a centred *Computing A–B–C…* badge, and the button a spinner
+  (`aria-busy`). Motion is off under `prefers-reduced-motion`.
+- **Stale**: see Step 2.
+- **Error**: the prompt's line becomes the message (`role="alert"`) and the named field is
+  marked (Step 2). A run that cannot be read at all keeps the page-level banner.
+- **No run**: the page-level prompt "Open a run folder with an `.rmc6f` file." and the empty
+  cards.
+
+### Step 8 — Layout and the colour system
+
+**Layout** ([BondGeometryPage.css](../../web_app/frontend/src/components/BondGeometryPage.css)):
+above 1100 px the grid is two columns, `minmax(0, 7fr) minmax(0, 5fr)`, with rows
+`minmax(0, 1.25fr) minmax(0, 1fr)` and areas `"hero cell" "hero pdf"`: the hero spans both rows
+(about 904 × 615 px at 1600 × 900), the folded cell and the partial $g(r)$ stack on the right.
+The grid takes the height left under the model card and the controls (`flex: 1 1 0`, floor
+32 rem, cap 60 rem) rather than a fixed `100vh − k` clamp: the model card wraps at 1440 px and a
+split window can wrap the bar, and the grid absorbs both, so there is no page scroll at 1600 × 900
+or 1440 × 900 (measured). Below the floor the page scrolls rather than squeezing the plots — at
+1280 × 800 the model card takes three rows, and the page scrolled there before too. The card
+headers wrap their actions under the title on narrow cards. Without a partials file the rows
+become `minmax(0, 1fr) auto`. At ≤ 1100 px everything stacks: hero
+`clamp(24rem, 62vh, 36rem)`, folded cell 24 rem, partial $g(r)$ 18 rem.
+
+**Colour system** — one meaning per colour, on all three cards:
+
+| Colour | Marks | Where |
+|---|---|---|
+| element colours (`buildElementColors`) | atoms | select dots, element chips (dot, tint and the central atom's ring), 3D cloud and legend |
+| `BOND_COLORS.ab` (= `PLOT_PALETTE[0]`) | the A–B bond | chip bond dashes, the A–B window label bar, 3D sticks, split guides and window chip, the first partial curve, the bond KPI dash |
+| `BOND_COLORS.bc` (= `PLOT_PALETTE[1]`) | the B–C bond, when it is its own | the same places, for B–C |
+| `GUIDE_STROKE` (neutral grey) | references | the random-bonds line, a lone (unsplit) window's guides |
+
+Text is never element-coloured (contrast in both themes): element colours only fill dots, tints,
+rings and 3D objects.
 
 ### Parameters and defaults
 
 | Control | Default | Notes |
 |---|---|---|
 | Triplet A, B, C | seeded per sites payload | ends = most abundant element, central = next |
-| A–B window | 2.0 – 3.0 Å | inclusive; string state, validated before sending (a cleared box is an error, not 0) |
+| A–B window | 2.00 – 3.00 Å | inclusive; string state, validated before sending (a cleared box is an error, not 0) |
 | Distinct B–C | off | off ⇒ B–C reuses the A–B window and one guide pair |
-| B–C window | 2.0 – 3.0 Å | only sent when the split is on |
+| B–C window | 2.00 – 3.00 Å | only sent when the split is on |
 | Bin width | 1.0° | realized width comes back in the payload |
 | Angle view | sin-corrected | toggle to per-degree density |
-| Guide debounce | 400 ms | `useDebounced` on all four window inputs |
+| Guide debounce | 400 ms | `useDebounced` on all four window inputs (guides and window chips) |
 | Cloud stride cap | 120 000 points | `MAX_CLOUD_POINTS`, display only |
 
 ### Caveats
 
-- **The page computes no geometry.** Every number on it is the engine payload; the helper and
-  the folded cell are presentation over `PDFpartials.csv` and the sites table respectively.
+- **The page computes no geometry.** Every number on it is the engine payload or a reduction
+  stated in Step 3 (angles per B, mean coordination, modal share); the one formula it evaluates
+  itself is the random-bonds reference of Step 4, the closed-form isotropic bin fraction. The
+  helper and the folded cell are presentation over `PDFpartials.csv` and the sites table
+  respectively.
 - **The bond-length histograms are in the payload but not plotted.** An earlier layout gave them
   a panel; it duplicated the first-shell peak the partial $g(r)$ already shows, clipped to the
-  window. The counts and mean lengths survive in the result chips.
+  window. The counts and mean lengths survive in the bond KPI tiles.
 - **The folded-cell sticks are average-structure bonds.** They match sites within the window at
   their *average* positions; a strongly displaced site whose average distance falls outside the
   window shows no stick even though many instantaneous bonds were counted (and vice versa).

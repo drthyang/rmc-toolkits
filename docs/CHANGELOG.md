@@ -73,6 +73,49 @@ static-mode χ² history, and `unreachable` on a failed AI Assistant connection 
 `ui-intro`, `ui-disclosure`, `ui-fieldset__desc` and `ui-controls__note` lost their last user and
 were removed.
 
+### Bond Geometry Phase 1
+
+The first phase of the Bond Geometry redesign: presentation only, no engine change (the payload,
+the CLI and every number are as before). Details in
+[bond-geometry.md](algorithms/bond-geometry.md#bond-geometry--the-page).
+
+- **Hero layout.** The angle distribution is the hero card (7 of 12 columns, full height); the
+  folded cell and the partial g(r) stack on the right; one column below 1100 px. The grid takes
+  the height left under the model card and the controls, so there is no page scroll at 1600 × 900
+  or 1440 × 900. The *Triplet result* strip became a KPI rail inside the hero — angles per
+  central atom, mean coordination with the modal share, mean bond length per bond type — which
+  reads "—" before Compute, so nothing moves when a result lands. The mean ± std angle moved to
+  the Angles tile's hover (a multimodal mean is not a bond angle).
+- **An angle axis.** 0–180° unpadded, labelled every 30°, minor marks every 10°, vertical grid at
+  the labels, y from 0; the histogram draws as a step curve with a light area, over a dashed
+  *random bonds* line — 1 when sin-corrected, the exact isotropic fraction
+  (cos θlo − cos θhi)/(2w) per degree in density. The axis labels say what they are
+  (`angle at Ta, θ (°)`, `sin-corrected (random = 1)`). These are opt-in `plotData` fields of
+  `InteractivePlot` (`xDomain`, `xTicks`, `xMinorStep`, `xGrid`, `yMin`; per series `curve:
+  'step'`, `fill`, `width`, `legend: false`); every other plot renders unchanged
+  (`interactivePlotAxes.test.jsx` pins them to the markup from before).
+- **One colour system.** Element chips (a dot, a tint, a ring on the central atom) name the
+  triplet in every card title; `BOND_COLORS` (`plotPalette.js`: A–B = plot blue, B–C = plot
+  orange) colour the 3D bond sticks (previously two unrelated hard-coded colours), the split
+  window guides and chips, the partial curves and the bond dashes; references stay neutral grey.
+- **States inside the cards.** Before Compute the hero shows the axis dimmed with a prompt card
+  (triplet, window, Compute, the central-atom count, the box, where it runs); computing shows a
+  shimmer or dims the shown plot, with a centred badge and a spinner on the button; a result whose
+  inputs changed shows an *inputs changed* chip and the button reads **Update**; a validation
+  error is the prompt's line and marks and focuses the field it names; a Live Data configuration
+  change shows a *new configuration* chip. Without `PDFpartials.csv` the g(r) card is a slim row.
+- **Controls as a form.** Enter in any field computes; Compute sits at the right with a ▶ glyph;
+  numbers carry their unit inside the field (`[2.00 Å]`, `[1.0 °]`); the window labels carry
+  their bond-role bar; a ⇄ button swaps A and C.
+- **Titles and legend.** "(Ta)–(Se) partial g(r)" with a live window chip (the guides left the
+  legend), "(Ta)–(Se) bonds" for the 3D card, whose element legend moved into the canvas as a pill
+  with a bond swatch per window.
+- **UI kit.** New pieces, documented in `src/ui/README.md`: `ElementChip`, `BondDash`, `KpiRail`,
+  `Kpi`, `UnitField`, `PrimaryButton run` (`busy`, `stale`), `ControlsBar as="form"`,
+  `InfoBadge side="above"`, and the classes `ui-legend--overlay`, `ui-overlay-center`, `ui-dim`,
+  `ui-shimmer`, `ui-prompt`, `ui-role-bar`, `ui-kbd`, `ui-reveal`; all motion is off under
+  `prefers-reduced-motion`.
+
 ### UI fixes from the lean-pages sweep
 
 - **Failed figure saves say so.** A chart's *Save* failure (e.g. *Could not rasterize the figure*)
