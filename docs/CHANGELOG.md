@@ -73,6 +73,21 @@ static-mode χ² history, and `unreachable` on a failed AI Assistant connection 
 `ui-intro`, `ui-disclosure`, `ui-fieldset__desc` and `ui-controls__note` lost their last user and
 were removed.
 
+### UI fixes from the lean-pages sweep
+
+- **Failed figure saves say so.** A chart's *Save* failure (e.g. *Could not rasterize the figure*)
+  never showed, and the Dashboard's *Save all figures* dropped its failures unhandled. Both are now
+  a one-line danger banner under the chart toolbar / the Loaded-files header, cleared by the next
+  save.
+- **Dashboard, server unreachable:** a failed run-folder listing with no server message reads
+  *Could not list the run folder* instead of leaving only *Open a run folder.*
+- **Displacement Directions:** with no site, the sphere card reads *No site selected.* (as the PCA
+  Ellipsoid table does) instead of a blank canvas; the *About site clustering* `?` now explains the
+  count/copies figure like PCA's.
+- **PCA Ellipsoid:** the Site-ellipsoids panel shows its *Loading…* chip while the sites load.
+- The never-shown *Structure data loads when needed* status is gone from static-mode runs
+  (`structureError` is `null` when a `.rmc6f` is found).
+
 ### Device layouts
 
 The workbench is laid out for the screens it is used on: 1080p ("1K"), 1440p ("2K") and 2160p
