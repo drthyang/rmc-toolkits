@@ -734,7 +734,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                         label={(
                             <>
                                 <i className="ui-role-bar" style={{ '--role': BOND_COLORS.ab }} aria-hidden="true" />
-                                A{'–'}B window
+                                A{'–'}B
                                 <InfoBadge label="About the bond windows">
                                     <p>
                                         Two atoms are bonded when their distance falls inside the window
@@ -784,7 +784,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                             label={(
                                 <>
                                     <i className="ui-role-bar" style={{ '--role': BOND_COLORS.bc }} aria-hidden="true" />
-                                    B{'–'}C window
+                                    B{'–'}C
                                 </>
                             )}
                         >
@@ -829,7 +829,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
 
                 <div className="ui-cluster ui-cluster--end">
                     <kbd className="ui-kbd" title="Enter in any field computes">Enter</kbd>
-                    <PrimaryButton type="submit" {...runButtonProps}>
+                    <PrimaryButton type="submit" title="Or press Enter in any field" {...runButtonProps}>
                         {stale ? 'Update' : 'Compute'}
                     </PrimaryButton>
                 </div>

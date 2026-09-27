@@ -81,8 +81,9 @@ the CLI and every number are as before). Details in
 
 - **Hero layout.** The angle distribution is the hero card (7 of 12 columns, full height); the
   folded cell and the partial g(r) stack on the right; one column below 1100 px. The grid takes
-  the height left under the model card and the controls, so there is no page scroll at 1600 × 900
-  or 1440 × 900. The *Triplet result* strip became a KPI rail inside the hero — angles per
+  the height left under the model card and the controls, and the bar keeps one row down to 1440 px
+  even with the split window on, so there is no page scroll at 1440 × 900, 1600 × 900 or
+  1920 × 1080. The *Triplet result* strip became a KPI rail inside the hero — angles per
   central atom, mean coordination with the modal share, mean bond length per bond type — which
   reads "—" before Compute, so nothing moves when a result lands. The mean ± std angle moved to
   the Angles tile's hover (a multimodal mean is not a bond angle).
@@ -104,9 +105,10 @@ the CLI and every number are as before). Details in
   inputs changed shows an *inputs changed* chip and the button reads **Update**; a validation
   error is the prompt's line and marks and focuses the field it names; a Live Data configuration
   change shows a *new configuration* chip. Without `PDFpartials.csv` the g(r) card is a slim row.
-- **Controls as a form.** Enter in any field computes; Compute sits at the right with a ▶ glyph;
-  numbers carry their unit inside the field (`[2.00 Å]`, `[1.0 °]`); the window labels carry
-  their bond-role bar; a ⇄ button swaps A and C.
+- **Controls as a form.** Enter in any field computes (an *Enter* key hint beside the button from
+  1500 px up); Compute sits at the right with a ▶ glyph; numbers carry their unit inside the field
+  (`[2.00 Å]`, `[1.0 °]`); the window labels are the bond roles (*A–B*, *B–C*) with their
+  bond-role bar; a ⇄ button swaps A and C.
 - **Titles and legend.** "(Ta)–(Se) partial g(r)" with a live window chip (the guides left the
   legend), "(Ta)–(Se) bonds" for the 3D card, whose element legend moved into the canvas as a pill
   with a bond swatch per window.

@@ -1496,6 +1496,14 @@ input.ui-range::-moz-range-track {
     line-height: 1.4;
 }
 
+/* The key hint is a wide-screen nicety: below 1500 px it gives its room back,
+   so a full controls bar keeps one row (the action's title names the key). */
+@media (max-width: 1499.98px) {
+    .ui-kbd {
+        display: none;
+    }
+}
+
 /* Brand toggle (header Demo): theme-invariant brand colors. */
 .ui-btn-brand {
     min-height: var(--h-control);

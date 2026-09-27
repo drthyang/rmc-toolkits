@@ -767,10 +767,15 @@ above 1100 px the grid is two columns, `minmax(0, 7fr) minmax(0, 5fr)`, with row
 `minmax(0, 1.25fr) minmax(0, 1fr)` and areas `"hero cell" "hero pdf"`: the hero spans both rows
 (about 904 × 615 px at 1600 × 900), the folded cell and the partial $g(r)$ stack on the right.
 The grid takes the height left under the model card and the controls (`flex: 1 1 0`, floor
-32 rem, cap 60 rem) rather than a fixed `100vh − k` clamp: the model card wraps at 1440 px and a
-split window can wrap the bar, and the grid absorbs both, so there is no page scroll at 1600 × 900
-or 1440 × 900 (measured). Below the floor the page scrolls rather than squeezing the plots — at
-1280 × 800 the model card takes three rows, and the page scrolled there before too. The card
+32 rem, cap 60 rem) rather than a fixed `100vh − k` clamp, so it absorbs the model card wrapping
+at 1440 px. The controls bar keeps **one row down to 1440 px with the split window on**: the
+window labels are the bare bond roles (*A–B*, *B–C*; the group and the inputs keep "window" in
+their accessible names) and the kit's *Enter* key hint hides below 1500 px (the button's title
+names the key). Measured on the Demo run (page root `scrollHeight − clientHeight`): 0 at
+1440 × 900, 1600 × 900 and 1920 × 1080, with the split off and on, for Se–Ta–Se and Ga–Ta–Se,
+before and after Compute. Narrower, the bar wraps and the grid absorbs the extra row until its
+floor; below the floor the page scrolls rather than squeezing the plots — at 1280 × 800 the model
+card takes three rows, and the page scrolled there before too. The card
 headers wrap their actions under the title on narrow cards. Without a partials file the rows
 become `minmax(0, 1fr) auto`. At ≤ 1100 px everything stacks: hero
 `clamp(24rem, 62vh, 36rem)`, folded cell 24 rem, partial $g(r)$ 18 rem.
@@ -780,7 +785,7 @@ become `minmax(0, 1fr) auto`. At ≤ 1100 px everything stacks: hero
 | Colour | Marks | Where |
 |---|---|---|
 | element colours (`buildElementColors`) | atoms | select dots, element chips (dot, tint and the central atom's ring), 3D cloud and legend |
-| `BOND_COLORS.ab` (= `PLOT_PALETTE[0]`) | the A–B bond | chip bond dashes, the A–B window label bar, 3D sticks, split guides and window chip, the first partial curve, the bond KPI dash |
+| `BOND_COLORS.ab` (= `PLOT_PALETTE[0]`) | the A–B bond | chip bond dashes, the A–B label bar, 3D sticks, split guides and window chip, the first partial curve, the bond KPI dash |
 | `BOND_COLORS.bc` (= `PLOT_PALETTE[1]`) | the B–C bond, when it is its own | the same places, for B–C |
 | `GUIDE_STROKE` (neutral grey) | references | the random-bonds line, a lone (unsplit) window's guides |
 
