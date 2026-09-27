@@ -165,7 +165,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 setStructureError(structureErr.response?.data?.error || 'No model structure detected');
             }
         } catch (err) {
-            setError(err.response?.data?.error || null);
+            setError(err.response?.data?.error || 'Could not list the run folder');
             setStructure(null);
             setStructureError(null);
         } finally {

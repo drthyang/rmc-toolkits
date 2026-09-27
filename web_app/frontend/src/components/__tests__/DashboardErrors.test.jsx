@@ -4,7 +4,9 @@
 
 // Dashboard failures must reach the screen as one line: a failed "Save all
 // figures" (the save menu does not await it, so an uncaught rejection used to
-// vanish) says so under the Loaded-files header until the next save.
+// vanish) says so under the Loaded-files header until the next save, and a
+// run-folder listing that fails without a server message (server down, network
+// error) says so instead of leaving only the "Open a run folder." prompt.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
@@ -104,7 +106,24 @@ describe('Dashboard error lines', () => {
         expect(saveAllBanner()).toBeNull();
     });
 
-    it('falls back to a generic line when the error has no message', async () => {
+    it('says when the run folder cannot be listed and the server gave no reason', async () => {
+        state.listError = new Error('Network Error');
+        await mount();
+        const alert = container.querySelector('[role="alert"]');
+        expect(alert?.textContent).toContain('Could not list the run folder');
+    });
+
+    it('shows the server\'s own reason when it gives one', async () => {
+        state.listError = Object.assign(new Error('403'), {
+            response: { data: { error: 'Path is outside the data root' } },
+        });
+        await mount();
+        const alert = container.querySelector('[role="alert"]');
+        expect(alert?.textContent).toContain('Path is outside the data root');
+        expect(alert?.textContent).not.toContain('Could not list the run folder');
+    });
+
+    it('falls back to a generic line when the save error has no message', async () => {
         await mount();
         state.zipOutcomes = [new Error('')];
         await saveAll();
