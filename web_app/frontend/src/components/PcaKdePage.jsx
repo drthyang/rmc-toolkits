@@ -1297,14 +1297,11 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
 
             </ControlsBar>
 
-            {noRun && (
-                <Hint>Open a run folder (with an <code>.rmc6f</code> file) to view thermal ellipsoids.</Hint>
-            )}
+            {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
             {sitesError && <Banner as="p" tone="danger" sm>{sitesError}</Banner>}
             {!sitesError && sites?.parseWarning && (
-                <Banner as="p" tone="caution" role="status">
-                    <strong>Atoms skipped while reading the structure file:</strong> {sites.parseWarning}.
-                    The sites below are built from the remaining atoms.
+                <Banner as="p" tone="caution" role="status" title="The sites below are built from the remaining atoms.">
+                    <strong>Atoms skipped:</strong> {sites.parseWarning}
                 </Banner>
             )}
 
@@ -1440,11 +1437,16 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                         )}
                         <span className="ui-legend__item"><i className="ui-legend__swatch" style={{ background: ellipsoidColor }} /> {Math.round(probability * 100)}% ellipsoid</span>
                         {shellBoxNeeded && (
-                            <span className="ui-legend__item ui-legend__warning">
+                            <span
+                                className="ui-legend__item ui-legend__warning"
+                                title={shellBoxNeeded <= 5
+                                    ? `Shell outside the sampled box (grey) — Box ≥ ${shellBoxNeeded.toFixed(1)}σ covers it`
+                                    : 'Shell outside the sampled box (grey) — lower the Level to cover it'}
+                            >
                                 <i className="ui-legend__swatch" style={{ background: 'rgb(143, 148, 158)' }} />
                                 {shellBoxNeeded <= 5
-                                    ? `shell outside the sampled box (grey) — Box ≥ ${shellBoxNeeded.toFixed(1)}σ covers it`
-                                    : 'shell outside the sampled box (grey) — lower the Level to cover it'}
+                                    ? `outside sampled box — Box ≥ ${shellBoxNeeded.toFixed(1)}σ`
+                                    : 'outside sampled box — lower Level'}
                             </span>
                         )}
                         <a
@@ -1633,6 +1635,14 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                     κ (and its crystal orientation) is not a property of
                                                     the site.
                                                 </p>
+                                                {!selectedEllipsoid.axes && (
+                                                    <p>
+                                                        No displacement: every copy of this site sits at
+                                                        the same position (an average or ideal
+                                                        configuration), so its covariance is round-off and
+                                                        has no principal axes.
+                                                    </p>
+                                                )}
                                             </InfoBadge>
                                         </div>
                                         <div className="ui-table-scroll">
@@ -1654,10 +1664,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                                     {!selectedEllipsoid.axes && (
                                                         <tr>
                                                             <td colSpan={7} className="ui-table__note">
-                                                                No displacement: every copy of this site sits at
-                                                                the same position (an average or ideal
-                                                                configuration), so its covariance is round-off and
-                                                                has no principal axes.
+                                                                No displacement.
                                                             </td>
                                                         </tr>
                                                     )}
