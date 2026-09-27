@@ -1385,7 +1385,6 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                     <div className="analysis-layout">
                         <Card
                             roundEnds
-                            className="kde-panel"
                             style={{ '--panel-aspect': slicePanelGeometry.planeAspect }}
                         >
                             <CardHeader>
@@ -1455,7 +1454,6 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                         </Card>
                         <Card
                             clip
-                            className="model-panel"
                             style={{ '--panel-aspect': Math.max(slicePanelGeometry.planeAspect, 1) }}
                         >
                             <CardHeader>
