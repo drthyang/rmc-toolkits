@@ -633,7 +633,9 @@ result from the previous configuration never sits next to the new model.
 ### Step 3 — The KPI rail
 
 The rail sits under the hero header and is there before Compute, its values reading "—", so
-nothing below it moves when a result lands. Each tile is a straight read of the payload or one
+nothing below it moves when a result lands. It is a polite live region (`role="status"` on a
+wrapper) around a `<dl>`, so a new result is announced and the tiles still read as term /
+definition pairs. Each tile is a straight read of the payload or one
 stated reduction of it:
 
 | Tile | Value | Sub line | Hover |

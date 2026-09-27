@@ -2295,16 +2295,20 @@ input.ui-range::-moz-range-track {
 
 /* KPI rail: headline results inside a card, under its header (Bond Geometry
    hero). Tiles keep their height before the first result (value "—", an empty
-   sub line), so nothing below them moves when results arrive. */
+   sub line), so nothing below them moves when results arrive. The wrapper
+   holds the caller's live-region role; the <dl> inside lays out the tiles. */
 .ui-kpis {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-    gap: 0.45rem 1.8rem;
-    margin: 0;
     padding: 0.55rem 0.9rem;
     border-bottom: 1px solid var(--border);
     /* Clips the divider of every tile that starts a row (see below). */
     overflow: hidden;
+}
+
+.ui-kpis__list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 0.45rem 1.8rem;
+    margin: 0;
 }
 
 .ui-kpi {

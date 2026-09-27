@@ -177,11 +177,15 @@ describe('Stats', () => {
             .toBe('<div class="ui-stat ui-stat--end" role="status"><dt class="sym-ladder-dt">L</dt><dd title="x">v</dd></div>');
     });
 
-    it('KpiRail is a dl; Kpi shows value, unit and sub, or "—" and a kept sub line', () => {
-        expect(html(<KpiRail role="status" aria-live="polite"><Kpi label="Angles" value="14.8" unit="per Ta" sub="236,431 angles" title="t" /></KpiRail>))
-            .toBe('<dl class="ui-kpis" role="status" aria-live="polite"><div class="ui-kpi" title="t"><dt>Angles</dt><dd>'
+    it('KpiRail wraps its dl; Kpi shows value, unit and sub, or "—" and a kept sub line', () => {
+        // A live region's role goes on the wrapper: on the <dl> itself it would
+        // replace the description-list semantics (ARIA in HTML allows a dl only
+        // group, list, none and presentation).
+        expect(html(<KpiRail role="status" aria-live="polite" aria-label="R"><Kpi label="Angles" value="14.8" unit="per Ta" sub="236,431 angles" title="t" /></KpiRail>))
+            .toBe('<div class="ui-kpis" role="status" aria-live="polite" aria-label="R"><dl class="ui-kpis__list">'
+                + '<div class="ui-kpi" title="t"><dt>Angles</dt><dd>'
                 + '<span class="ui-kpi__value">14.8<span class="ui-kpi__unit">\u2009per Ta</span></span>'
-                + '<span class="ui-kpi__sub">236,431 angles</span></dd></div></dl>');
+                + '<span class="ui-kpi__sub">236,431 angles</span></dd></div></dl></div>');
         expect(html(<Kpi label="Coordination" value={null} unit="per Ta" sub="x" />))
             .toBe('<div class="ui-kpi"><dt>Coordination</dt><dd><span class="ui-kpi__value is-empty">—</span>'
                 + '<span class="ui-kpi__sub">\u00a0</span></dd></div>');

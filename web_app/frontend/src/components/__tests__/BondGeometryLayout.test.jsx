@@ -190,6 +190,10 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
 
     it('keeps the KPI rail in place: "—" before Compute, the results after', async () => {
         await render();
+        // The live region wraps the description list; the <dl> keeps its own role.
+        const rail = container.querySelector('[aria-label="Triplet result"]');
+        expect([rail.tagName, rail.getAttribute('role'), rail.getAttribute('aria-live')]).toEqual(['DIV', 'status', 'polite']);
+        expect(rail.querySelector('dl').hasAttribute('role')).toBe(false);
         expect(kpis().map((tile) => tile.value)).toEqual(['—', '—', '—']);
         expect(kpis().map((tile) => tile.label)).toEqual(['Angles', 'Coordination', 'Nb–Se bond']);
         await submit();

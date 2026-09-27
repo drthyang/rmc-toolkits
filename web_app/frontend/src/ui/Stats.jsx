@@ -99,10 +99,14 @@ export const StatCard = ({ tone, label, value, sub, className, ...rest }) => (
 
 /**
  * KPI rail: headline results as a <dl> of tiles inside a card, under its
- * header. The caller adds role / aria-live / aria-label.
+ * header. The caller's role / aria-live / aria-label (and `...rest`) go on
+ * the wrapper <div>, never on the <dl>: a live-region role there would
+ * replace its description-list semantics.
  */
-export const KpiRail = ({ className, ...rest }) => (
-    <dl className={cx('ui-kpis', className)} {...rest} />
+export const KpiRail = ({ className, children, ...rest }) => (
+    <div className={cx('ui-kpis', className)} {...rest}>
+        <dl className="ui-kpis__list">{children}</dl>
+    </div>
 );
 
 /**
