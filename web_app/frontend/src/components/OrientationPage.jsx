@@ -316,14 +316,11 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
                 </ControlGroup>
             </ControlsBar>
 
-            {noRun && (
-                <Hint>Open a run folder (with an <code>.rmc6f</code> file) to view displacement orientations.</Hint>
-            )}
+            {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
             {sitesError && <Banner as="p" tone="danger" sm>{sitesError}</Banner>}
             {!sitesError && sites?.parseWarning && (
-                <Banner as="p" tone="caution" role="status">
-                    <strong>Atoms skipped while reading the structure file:</strong> {sites.parseWarning}.
-                    The sites below are built from the remaining atoms.
+                <Banner as="p" tone="caution" role="status" title="The sites below are built from the remaining atoms.">
+                    <strong>Atoms skipped:</strong> {sites.parseWarning}
                 </Banner>
             )}
 
