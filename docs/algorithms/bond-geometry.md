@@ -642,15 +642,17 @@ stated reduction of it:
 
 | Tile | Value | Sub line | Hover |
 |---|---|---|---|
-| **Angles** | `angleCount / apexCount`, 1 dp, "per B" | `angleCount` · realized `binWidth` · where it ran (`browser` for the worker, `server` for `/api/triplets`) | mean ± std of all angles (`meanAngle`, `stdAngle`) |
+| **Angles** | `angleCount / apexCount`, 1 dp, "per B" | `angleCount` · mean ± std of all angles (`meanAngle`, `stdAngle`, 1 dp: "236,431 · mean 103.1 ± 29.6°"); "0 angles" when there are none | the same in words, plus the realized `binWidth` and where it ran (`browser` for the worker, `server` for `/api/triplets`) |
 | **Coordination** | $\sum_n n\,c_n / \sum_n c_n$ from `coordination`, 2 dp, "per B" — counts a B–B bond at both of its ends, as a coordination number should | modal $n$ and its share of the central atoms · `apexCount` | — |
 | **B–A bond** | `lengths12.meanLength`, 3 dp, Å | `uniqueBonds` (each physical bond once) · the resolved window `bond12` | the B-centred `count` when the end element is the central one |
 | **B–C bond** | the same from `lengths23` — only when `sharedEnds` is false; two tiles on the same pair (A = C, distinct windows) are told apart as (A–B) / (B–C) | | |
 
 Windows print at the precision they were given (2–4 decimals, so a B–C bound of 3.4001 does not
 read as 3.40). The mean angle is kept off the headline on purpose: the mean of a multimodal
-distribution (the Demo's Se–Ta–Se has four angle classes) is not a bond angle. It stays in the
-hover text and in the CLI output.
+distribution (the Demo's Se–Ta–Se has four angle classes) is not a bond angle. It sits on the
+Angles sub line — visible, so keyboard and touch users have it too (a `title` alone reaches
+neither) — written compactly so a four-tile rail shows it whole at 1280 px (the sub line
+ellipsizes when it does not fit), and in the CLI output.
 
 ### Step 4 — The angle plot and the random-bonds line
 

@@ -85,8 +85,8 @@ the CLI and every number are as before). Details in
   even with the split window on, so there is no page scroll at 1440 × 900, 1600 × 900 or
   1920 × 1080. The *Triplet result* strip became a KPI rail inside the hero — angles per
   central atom, mean coordination with the modal share, mean bond length per bond type — which
-  reads "—" before Compute, so nothing moves when a result lands. The mean ± std angle moved to
-  the Angles tile's hover (a multimodal mean is not a bond angle).
+  reads "—" before Compute, so nothing moves when a result lands. The mean ± std angle moved off
+  the headline to the Angles tile's sub line (a multimodal mean is not a bond angle).
 - **An angle axis.** 0–180° unpadded, labelled every 30°, minor marks every 10°, vertical grid at
   the labels, y from 0; the histogram draws as a step curve with a light area, over a dashed
   *random bonds* line — 1 when sin-corrected, the exact isotropic fraction

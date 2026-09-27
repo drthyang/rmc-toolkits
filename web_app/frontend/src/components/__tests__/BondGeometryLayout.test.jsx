@@ -223,7 +223,11 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         await submit();
         const [angles, coordination, bond] = kpis();
         expect(angles.value).toBe('15.0 per Nb');
-        expect(angles.sub).toBe('240 angles · 60.0° bins · server');
+        // The mean ± std angle is visible on the sub line (not only in a hover);
+        // the hover adds the bins and where it ran.
+        expect(angles.sub).toBe('240 · mean 90.0 ± 5.0°');
+        expect(container.querySelector('[aria-label="Triplet result"] .ui-kpi').title)
+            .toBe('240 angles, mean 90.0° ± 5.0° (std); 60.0° bins; computed in the server.');
         expect(coordination.value).toBe('6.00 per Nb');
         expect(coordination.sub).toBe('6-fold 100.0% · of 16');
         expect(bond.value).toBe('2.600 Å');
@@ -252,7 +256,7 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         expect(prompt.querySelector('button')).toBeNull();
         expect(container.querySelector('.geom-plot__frame').className).toContain('ui-dim');
         // The KPIs still report what was found.
-        expect(kpis()[0]).toMatchObject({ value: '0.0\u2009per Nb', sub: '0 angles · 60.0° bins · server' });
+        expect(kpis()[0]).toMatchObject({ value: '0.0\u2009per Nb', sub: '0 angles' });
         // A result with angles draws its curve again.
         state.zeroAngles = false;
         await submit();

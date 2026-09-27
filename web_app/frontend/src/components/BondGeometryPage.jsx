@@ -918,13 +918,24 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                     {/* The headline results, in place before Compute ("—"), so
                         nothing below moves when they arrive. */}
                     <KpiRail role="status" aria-live="polite" aria-label="Triplet result">
+                        {/* The mean ± std angle is on the sub line (visible to
+                            keyboard and touch users), not the headline: a
+                            multimodal mean is not a bond angle. Compact, so it
+                            fits a four-tile rail at 1280 px: "281,846 · mean
+                            89.9 ± 42.8°"; the hover spells it out. */}
                         <Kpi
                             label="Angles"
                             value={result ? formatNumber(result.apexCount ? result.angleCount / result.apexCount : 0, 1) : null}
                             unit={`per ${tripletB}`}
-                            sub={result && `${result.angleCount.toLocaleString()} angles · ${formatBinWidth(result.binWidth)}${DEGREES} bins · ${runtime}`}
-                            title={result && result.meanAngle != null
-                                ? `Mean ${formatNumber(result.meanAngle, 1)}${DEGREES} ± ${formatNumber(result.stdAngle, 1)}${DEGREES} over all ${result.angleCount.toLocaleString()} angles; computed in the ${runtime}.`
+                            sub={result && (result.meanAngle != null
+                                ? `${result.angleCount.toLocaleString()} · mean ${formatNumber(result.meanAngle, 1)} ± ${formatNumber(result.stdAngle, 1)}${DEGREES}`
+                                : `${result.angleCount.toLocaleString()} angles`)}
+                            title={result
+                                ? `${result.angleCount.toLocaleString()} angles`
+                                    + (result.meanAngle != null
+                                        ? `, mean ${formatNumber(result.meanAngle, 1)}${DEGREES} ± ${formatNumber(result.stdAngle, 1)}${DEGREES} (std)`
+                                        : '')
+                                    + `; ${formatBinWidth(result.binWidth)}${DEGREES} bins; computed in the ${runtime}.`
                                 : undefined}
                         />
                         <Kpi
