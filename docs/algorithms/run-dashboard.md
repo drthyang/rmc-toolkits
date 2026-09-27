@@ -249,7 +249,10 @@ last column names the kind of output file the pattern matches, not the value ext
 2026-09 a stem match was taken unconditionally, so in `data/250K_try1/supercell` the empty
 `new_x.rmc6f` (stem-matched by `Frac_coord_new_x.txt`) hid six valid configurations and the page
 failed with an unhelpful metadata error. When no candidate is usable the error lists each file and
-why (`No usable .rmc6f file: new_x.rmc6f (empty (0 bytes))`).
+why (`No usable .rmc6f file: new_x.rmc6f (empty (0 bytes))`). In the browser this is the run's
+`structureError`; a folder with no `.rmc6f` at all reads `No model structure detected`, and when a
+usable file is found `structureError` is `null` — each page parses the file on demand and shows its
+own loading cue (the Dashboard's is "Loading structure…").
 
 Candidates are sorted by (priority, lowercase filename) and the first whose stem has a matching
 usable `.rmc6f` wins; otherwise the **first** usable `.rmc6f` by name is used. Both runtimes break
