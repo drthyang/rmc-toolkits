@@ -8,6 +8,7 @@ import { saveSvgFigure } from '../figureExport';
 import { nearestFiniteIndex, niceDomain, plotPayloadError } from '../plotDomain';
 import { GUIDE_STROKE, PLOT_PALETTE } from '../plotPalette';
 import { Pill } from '../ui';
+import { uiScale } from '../uiScale';
 import SaveMenu from '../ui/SaveMenu';
 import './InteractivePlot.css';
 
@@ -109,10 +110,12 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
         const observer = new ResizeObserver(([entry]) => {
             const { width, height } = entry.contentRect;
             // Round to whole pixels: sub-pixel churn would rebuild the viewBox
-            // (and every tick label) on any reflow.
+            // (and every tick label) on any reflow. The UI scale (2K / 4K root
+            // type size) is read with the size: a window resize changes both.
             setStageSize((current) => {
-                const next = { width: Math.round(width), height: Math.round(height) };
+                const next = { width: Math.round(width), height: Math.round(height), scale: uiScale() };
                 return current && current.width === next.width && current.height === next.height
+                    && current.scale === next.scale
                     ? current
                     : next;
             });
@@ -237,7 +240,12 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     // Under 'fit' the box is whatever the card gives, so tick density follows
     // it — roughly one y tick per 70px and one x tick per 95px, clamped to the
     // range the fixed variants use. A short card otherwise crams in six y ticks.
-    const fitted = fit && stageSize?.width && stageSize?.height ? stageSize : null;
+    // The fitted box is in user units: one unit is uiScale() CSS pixels, so
+    // margins, tick labels and tick density grow with the rest of the UI on
+    // 2K / 4K monitors (one unit is one pixel at the 15px design size).
+    const fitted = fit && stageSize?.width && stageSize?.height
+        ? { width: stageSize.width / stageSize.scale, height: stageSize.height / stageSize.scale }
+        : null;
     const clampTicks = (value, low, high) => Math.max(low, Math.min(high, Math.round(value)));
     const yTicks = niceTicks(
         domains.y,
@@ -264,13 +272,14 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey }) => {
     const leftPad = widestYTick > 3 ? (widestYTick - 3) * 8.7 + 6 : 0;
 
     // 8:5 (golden-ish) for grid cards, a slim strip for the wide variant, the
-    // measured box for 'fit'. Under 'fit' one user unit is one CSS pixel, so
-    // the margins below stay the same physical size they are elsewhere; before
-    // the first measurement it falls back to the 8:5 box.
-    const view = fit && stageSize?.width && stageSize?.height
+    // measured box for 'fit'. Under 'fit' one user unit is one CSS pixel at
+    // the 15px design size (uiScale() pixels above it), so the margins below
+    // keep the size they have relative to the UI; before the first
+    // measurement it falls back to the 8:5 box.
+    const view = fitted
         ? {
-            width: stageSize.width,
-            height: stageSize.height,
+            width: fitted.width,
+            height: fitted.height,
             left: 60 + leftPad,
             right: 18,
             top: 16,

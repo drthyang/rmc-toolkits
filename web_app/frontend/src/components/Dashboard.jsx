@@ -509,7 +509,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         if (!rValueFile) return null;
         const meta = metadata[rValueFile.path];
         const title = meta?.title || rValueFile.name;
-        const sourceLabel = rValueFile.sourceNames?.join(', ') || rValueFile.name;
+        const sourceNames = rValueFile.sourceNames?.length ? rValueFile.sourceNames : [rValueFile.name];
+        const sourceLabel = sourceNames.join(', ');
         const otherRuns = rValueFile.otherRuns || [];
         // Several failed logs: one counted line, the per-log list behind "?".
         const failedLogs = rValueFile.parseErrors || [];
@@ -536,7 +537,16 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                     <div className="ui-card__heading">
                         <CardTitle>{title}</CardTitle>
                         {sourceLabel !== title && (
-                            <span className="ui-card__source" title={sourceLabel}>{sourceLabel}</span>
+                            // One unit per log name, so a long list wraps between
+                            // names (not at the hyphen inside one).
+                            <span className="ui-card__source" title={sourceLabel}>
+                                {sourceNames.map((name, index) => (
+                                    <React.Fragment key={index}>
+                                        {index > 0 && ', '}
+                                        <span className="ui-card__source-item">{name}</span>
+                                    </React.Fragment>
+                                ))}
+                            </span>
                         )}
                         {otherRuns.length > 0 && (
                             <Chip title={`Other runs in this folder, not charted: ${otherRuns.join(', ')}`}>

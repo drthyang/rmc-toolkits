@@ -7,13 +7,13 @@
    side by side on 16:9 screens). */
 
 .autostog-cluster--source select {
-  min-width: 220px;
-  max-width: 340px;
+  min-width: 14.6667rem;
+  max-width: 22.6667rem;
 }
 
 .autostog-readout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   gap: 0.75rem;
   margin-bottom: 0.85rem;
 }

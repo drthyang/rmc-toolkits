@@ -73,6 +73,72 @@ static-mode χ² history, and `unreachable` on a failed AI Assistant connection 
 `ui-intro`, `ui-disclosure`, `ui-fieldset__desc` and `ui-controls__note` lost their last user and
 were removed.
 
+### Device layouts
+
+The workbench is laid out for the screens it is used on: 1080p ("1K"), 1440p ("2K") and 2160p
+("4K") monitors, current Macs, iPads and iPhones. Every page was checked in headless Chromium at
+the browser content size of each target (window chrome subtracted), before and after.
+
+- **2K / 4K monitors: the UI scales.** The root type size — and with it every rem-sized control,
+  gap, card and height budget — is 15px up to a 1080p-class window and grows linearly past it:
+  17px at 2560 × 1440, 21px at 3840 × 2160 at 100% OS scaling, following the smaller of the
+  width and height terms (an ultrawide or portrait monitor gets the size its short side supports).
+  On a 27" 1440p or a 32" 4K panel, text keeps roughly the physical size it has on a 24" 1080p
+  one instead of shrinking with the pixel pitch; 4K at 150% scaling reads as 1440p. Laptops,
+  tablets, phones and 1080p monitors keep 15px (at 1920 × 960 every page renders as before; the
+  one visible difference is the centred "Computing KDE…" message below). What drew in CSS pixels follows the same
+  scale (`uiScale.js`): the Atomic Density canvas labels, and the Bond Geometry plots, whose
+  viewBox now counts one unit per `uiScale()` pixels. Fixed pixel sizes that would have stayed
+  small became rem (dashboard plot height caps, the loaded-files grid, range sliders, the
+  tolerance ladder, the AI Assistant column). On 4K the Displacement Directions and Bond Geometry
+  rows are no longer stopped short of the footer by their rem caps (now `max(60rem, 44vw)` /
+  `max(56rem, 38vw)`).
+- **MacBooks and 1366-wide laptops: one header row.** The full header needs ~1535px, so at every
+  current MacBook's default scaling (Air 13" 1470, Pro 14" 1512) and on an iPad Pro 13" in
+  landscape it wrapped to two rows. Between 1041 and 1599px it is tightened (tab and cluster
+  spacing, the field bar's micro-label visually hidden) to ~1365px and stays on one 64px row
+  (the Flask build's wider run-folder field fits from ~1410px).
+  The Model information / Triplet result rails no longer drop their stats under the title cell
+  when they wrap at laptop widths: the stats wrap beside it. The PCA Ellipsoid page no longer
+  draws its 3D card over the footer on a 13-14" MacBook: side by side on a screen under 960px
+  tall the canvas floor is 16rem (22rem elsewhere), the layout never shrinks below its content,
+  and the WebGL canvases sit out of flow so their last pixel size cannot hold a card open.
+- **iPad (portrait) and iPhone (landscape): two header rows** — brand with the data-source
+  controls, then the tabs in one row that scrolls sideways and keeps the active tab in view —
+  instead of the old stack of a 2-column tab grid and three full-width rows.
+- **iPhone (portrait): three short rows** (brand + Live Data + Demo, the run-folder field, tabs),
+  and on phones and short windows (≤ 760 wide or ≤ 540 tall) the shell scrolls as a whole: the
+  header scrolls away and pins by its tab row (`--header-pin`, measured in `App.jsx`), switching
+  tabs opens the new page at its top, and the AI Assistant sizes its chat to the screen below the
+  pinned tabs. The header took 267 of the iPhone 17 Pro's 874 px before; it takes 175 at the top
+  of a page and 63 once scrolled. In landscape it took 264 of 402 px, leaving 138 for the page;
+  now 129, then 63. Card headers wrap their actions under the title on phones (the Displacement
+  Directions and Displacement statistics titles no longer run under their controls), `?` help
+  opens as a full-width sheet under its trigger instead of running off the right edge, and
+  nothing lets a page pan sideways (hidden popovers past the right edge had let iPhone pages
+  scroll up to 100px sideways).
+- **No cut-off or overlapping text.** An automated audit — every page, with no run and with the
+  Demo run loaded (Bond Geometry computed, Dashboard lists expanded), at 22 content sizes from a
+  320px phone to 4K — checks for text clipped by its box or ellipsized, text over text, controls
+  over controls, cards over cards or the footer, and anything past the screen edge; it ends at
+  zero findings. What it fixed: file names under card titles (the χ² log list, the `.rmc6f` name
+  in a Model information title cell) and in the loaded-file chips wrap instead of ending in "…"
+  (the log list between names); the tolerance ladder keeps every space-group label whole (a
+  brick too narrow for its label takes room from the others, with its exact share where all fit,
+  and on a phone the bar wraps only if the labels truly cannot share one row); on phones Live Data
+  moves up beside the brand so the run-folder field shows "No folder selected" in full; on a
+  320px phone the brand keeps its mark only, footer links no longer break inside themselves,
+  slider rows shrink the slider, and the PCA camera-axis overlay stacks above the projection
+  toggle; and the Atomic Density "Computing KDE…" message is centred instead of printed over the
+  previous slab readout in the corner.
+- **Touch and iOS details.** `viewport-fit=cover` with safe-area insets on the header and page
+  edges (notch / Dynamic Island in landscape, home indicator); `100dvh` (`--viewport-h`) for the
+  fixed shell and every viewport-height budget, so iOS / iPadOS Safari's toolbars no longer hide
+  the bottom of a page; taller controls and range thumbs on touch screens (`pointer: coarse`);
+  16px text in fields on phones and portrait tablets, so Safari no longer zooms into a field on
+  focus; no tap flash or double-tap-zoom delay on controls; an `apple-touch-icon` for the home
+  screen.
+
 ### Upgrading from 0.5.0
 
 Each 0.5.0 → 0.6.0 example below comes from running both releases on the same input. The inputs are

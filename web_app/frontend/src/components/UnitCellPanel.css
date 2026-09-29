@@ -23,6 +23,14 @@
     width: 100%;
 }
 
+/* The renderer canvas sits out of flow, so its pixel size (set from the last
+   measurement) never props the panel open when the window shrinks. */
+.pca-structure > canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
 @media (max-width: 980px) {
     .pca-structure {
         flex: none;

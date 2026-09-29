@@ -7,7 +7,7 @@
    scrolls internally and the composer stays pinned at the bottom. */
 .assistant-page-inner {
     width: 100%;
-    max-width: 1000px;
+    max-width: 66.6667rem;
     margin: 0 auto;
     flex: 1;
     min-height: 0;
@@ -65,4 +65,16 @@
 .assistant-surface .llm-chat-empty {
     flex: 1;
     justify-content: center;
+}
+
+/* Hosts that scroll their whole shell on phones and short windows (the
+   workbench does: its header scrolls away and pins by a strip
+   --header-pinned-h tall) leave the page its natural height, so the chat
+   would lengthen the page instead of scrolling. Size the page to the screen
+   below that strip; the fallbacks keep an extracted copy on 100vh. */
+@media (max-width: 760px), (max-height: 540px) {
+    .assistant-page {
+        height: calc(var(--viewport-h, 100vh) - var(--header-pinned-h, 0px));
+        min-height: 22rem;
+    }
 }

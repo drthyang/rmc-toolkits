@@ -74,6 +74,7 @@ web_app/frontend/src/
   pcaCrystalFrame.js             pure crystallographic-frame math (3×3 algebra, unit-cell vectors from the supercell lattice, fractional ⟷ PCA transforms, per-PC angles to a/b/c + [u v w], `crystalOrientationRows` (the Crystal orientation table), `projectVolumeOntoFrame` (crystal-frame wall marginals by line integrals through the volume)) — unit-tested, no Three.js
   useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages); `dataEpoch` in its request dependencies reloads in place on a Flask Live Data save
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
+  uiScale.js                     root type size / 15px (2K / 4K scale) for code that draws in CSS px: canvas text, the 'fit' plot viewBox
   llm/                           experimental AI assistant — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini); see its README
     context/                     dashboard state → compact LLM context JSON (symmetry + per-site displacements, pair correlations, char budget)
     provider/client.js           OpenAI-compatible client (models, SSE streaming incl. reasoning, connection hints)
@@ -337,6 +338,23 @@ web_app/frontend/src/
   there: helpers such as `transforms.sine_transform` / `low_q_correction_basis`,
   `scaling.crop_sq` / `validate_enforcement` and the CLI internals import from their modules. Add
   a new user-facing function to `__all__`.
+- **Device layouts: size in rem, tier by the header.** The root type size (`index.css`) is 15px up
+  to a 1080p-class window and grows to 17px at 2560 × 1310 and 21px at 3840 × 2030 of browser
+  content (the smaller of a width and a height term), so every rem scales on 2K / 4K monitors
+  while laptops, tablets and phones stay at 15px. New sizes that should follow it are rem, not px;
+  code that draws in CSS px multiplies by `uiScale()` (`uiScale.js`: StructurePage canvas text,
+  InteractivePlot `fit`). Viewport heights go through `--viewport-h` (100dvh where supported) and
+  edges that can meet a notch or home indicator add `--safe-top/right/bottom/left`
+  (`viewport-fit=cover`). The header tiers live in `App.css` (≥ 1600 full row; 1041–1599 one
+  tightened row, sized for MacBook Air 13" / Pro 14" and iPad Pro 13" landscape; 761–1040 two
+  rows; ≤ 760 three rows). At ≤ 760 wide or ≤ 540 tall the `.main-content` shell scrolls instead
+  of each `.ui-page`, and the sticky header pins by its tab row using `--header-pin` /
+  `--header-pinned-h`, which `App.jsx` measures — keep the tabs the header's last row there.
+  WebGL canvases inside `.pca-canvas` / `.pca-structure` are absolutely positioned so their last
+  pixel size never props a panel open. Touch screens (`pointer: coarse`) get taller `--h-*`
+  controls and range thumbs; phones and portrait tablets get 16px field text (iOS focus zoom).
+  Check a layout change at the device content sizes listed in `src/ui/README.md` ("Verifying a
+  change").
 - **One UI kit; page CSS only places.** Every border, colour, radius, shadow, type size and
   control geometry lives in `src/ui/ui.css` (`ui-` classes over the `index.css` tokens); page and
   component stylesheets keep layout only (grids, flex sizing, order, outer margins, size clamps,

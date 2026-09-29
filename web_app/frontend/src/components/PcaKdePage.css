@@ -12,7 +12,10 @@
    Site ellipsoids sit side by side at 1:1 and equal height, so the two panels
    share the leftover page height (flex: 1) and all outer edges line up. */
 .pca-layout {
-    flex: 1;
+    /* Fills the page height, but never shrinks below its content: on a short
+       screen (a 13-14" MacBook) the 3D card keeps its 22rem floor and the page
+       scrolls, instead of the card overflowing its row onto the footer. */
+    flex: 1 0 auto;
     min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -55,6 +58,23 @@
     flex: 1 1 auto;
     width: 100%;
     min-height: 22rem;
+}
+
+/* The renderer canvas sits out of flow, so its pixel size (set from the last
+   measurement) never props the card open when the window shrinks. */
+.pca-canvas > canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* Side by side on a short screen (a 13-14" MacBook's ~840-870px of browser
+   content): a lower floor lets the row fit under the statistics without the
+   page scrolling. Stacked (≤ 980px) the canvas keeps its 22rem. */
+@media (min-width: 981px) and (max-height: 960px) {
+    .pca-canvas {
+        min-height: 16rem;
+    }
 }
 
 /* ── Statistics columns ───────────────────────────────────────────────────── */

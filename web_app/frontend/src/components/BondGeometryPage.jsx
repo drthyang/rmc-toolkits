@@ -580,7 +580,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                 {/* The windows the engine actually used (resolved
                                     payload values), the B–C one whenever it differs;
                                     wraps rather than truncating. */}
-                                <span className="ui-stat-rail__source ui-stat-rail__source--wrap" title={resultSource.join(' · ')}>
+                                <span className="ui-stat-rail__source" title={resultSource.join(' · ')}>
                                     {resultSource.map((segment) => (
                                         <span key={segment} className="ui-stat-rail__line">{segment}</span>
                                     ))}

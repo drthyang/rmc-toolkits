@@ -18,8 +18,11 @@
     align-items: stretch;
     /* Fill the page height below the top controls bar: the subtracted amount is
        header + controls + footer + padding, so the three panels reach nearly to
-       the footer on a 16:9 screen without introducing page scroll. */
-    height: clamp(20rem, calc(100vh - 17.75rem), 60rem);
+       the footer on a 16:9 screen without introducing page scroll. The cap
+       keeps the sphere panel from growing much taller than it is wide: 60rem,
+       or 44vw on a 4K screen, where the rem cap alone would stop the row
+       ~400px short of the footer. */
+    height: clamp(20rem, calc(var(--viewport-h) - 17.75rem), max(60rem, 44vw));
 }
 
 /* OrientationView renders with display:contents, so its two panels (the mini

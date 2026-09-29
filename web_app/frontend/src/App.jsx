@@ -62,6 +62,8 @@ function App() {
   const lastSignatureRef = useRef('');
   const configSignatureRef = useRef({ directory: null, signature: null });
   const runIdRef = useRef(0);
+  const shellRef = useRef(null);
+  const headerRef = useRef(null);
   const staticMode = isStaticMode();
   const fsAccess = staticMode && supportsFileSystemAccess();
 
@@ -76,11 +78,56 @@ function App() {
     ));
   }, [activePage]);
 
+  // Phones and short windows scroll the whole shell and pin the header by its
+  // tab row (App.css). Measure how far the header may slide up — to just above
+  // the tabs, keeping its bottom padding above them too — and publish it on the
+  // shell as --header-pin (the sticky offset) and --header-pinned-h (the strip
+  // left on screen, which a fill-height page such as the AI Assistant
+  // subtracts). Elsewhere the header is static and the variables are unused.
+  useEffect(() => {
+    const shell = shellRef.current;
+    const header = headerRef.current;
+    if (!shell || !header || typeof ResizeObserver === 'undefined') return undefined;
+    const update = () => {
+      const tabs = header.querySelector('.page-tabs');
+      if (!tabs) return;
+      const headerBox = header.getBoundingClientRect();
+      const tabsTop = tabs.getBoundingClientRect().top - headerBox.top;
+      const padding = parseFloat(window.getComputedStyle(header).paddingBottom) || 0;
+      const pin = Math.max(0, Math.round(tabsTop - padding));
+      shell.style.setProperty('--header-pin', `${-pin}px`);
+      shell.style.setProperty('--header-pinned-h', `${Math.round(headerBox.height) - pin}px`);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
+  // Keep the active tab in view when the tab row scrolls sideways (tablets
+  // and phones).
+  useEffect(() => {
+    const tabs = headerRef.current?.querySelector('.page-tabs');
+    const active = tabs?.querySelector('button.is-active');
+    if (!tabs || !active || tabs.scrollWidth <= tabs.clientWidth) return;
+    const tabsBox = tabs.getBoundingClientRect();
+    const activeBox = active.getBoundingClientRect();
+    const offset = activeBox.left - tabsBox.left - (tabsBox.width - activeBox.width) / 2;
+    tabs.scrollBy?.({ left: offset, behavior: 'smooth' });
+  }, [activePage]);
+
   const handlePageChange = (page) => {
     setVisitedPages((current) => (
       current[page] ? current : { ...current, [page]: true }
     ));
     setActivePage(page);
+    // Scrolling shell (phones, short windows): open the new page at its top,
+    // right under the pinned tabs, not at the previous page's scroll depth.
+    const shell = shellRef.current;
+    if (shell && shell.scrollTop > 0) {
+      const pin = -parseFloat(shell.style.getPropertyValue('--header-pin')) || 0;
+      if (shell.scrollTop > pin) shell.scrollTop = pin;
+    }
   };
 
   useEffect(() => {
@@ -324,8 +371,8 @@ function App() {
 
   return (
     <div className="app-container">
-      <main className="main-content">
-        <header className="app-header">
+      <main className="main-content" ref={shellRef}>
+        <header className="app-header" ref={headerRef}>
           <div className="header-primary">
             <div className="brand-row">
               <div className="brand-mark" aria-hidden="true">
@@ -409,7 +456,7 @@ function App() {
               </label>
               <div className="ui-fieldbar ui-fieldbar--readonly path-bar local-file-bar">
                 <label>Local run</label>
-                <div className="ui-fieldbar__value">{localRun?.name || 'No folder selected'}</div>
+                <div className="ui-fieldbar__value" title={localRun?.name}>{localRun?.name || 'No folder selected'}</div>
                 <button
                   type="button"
                   onClick={handleSelectFolderFsAccess}
@@ -446,7 +493,7 @@ function App() {
                   webkitdirectory=""
                   onChange={handleLocalFiles}
                 />
-                <div className="ui-fieldbar__value">{localRun?.name || 'No folder selected'}</div>
+                <div className="ui-fieldbar__value" title={localRun?.name}>{localRun?.name || 'No folder selected'}</div>
                 <button
                   type="button"
                   onClick={() => directoryInputRef.current?.click()}

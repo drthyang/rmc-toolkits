@@ -153,10 +153,59 @@
   --fs-100: 1rem;
   --fs-105: 1.05rem;
   --fs-115: 1.15rem;
+  /* The visible viewport height. 100vh on iOS / iPadOS Safari is the height
+     with the toolbars retracted, which the fixed app shell never gets (the
+     document itself does not scroll), so its bottom would sit under the
+     toolbar; 100dvh is the height actually on screen. */
+  --viewport-h: 100vh;
+  /* Safe-area insets (notch / Dynamic Island, rounded corners, home
+     indicator) with viewport-fit=cover; 0 on every other screen. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+/* Touch screens (iPhone, iPad): controls tall enough to hit with a finger. */
+@media (pointer: coarse) {
+  :root {
+    --h-control: 2.5rem;
+    --h-row: 2.6rem;
+    --h-menu-btn: 2.4rem;
+    --h-pill-md: 2.2rem;
+    --h-menu-item: 2.4rem;
+    --h-pill: 2rem;
+  }
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --viewport-h: 100dvh;
+  }
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Root type size. Every size in the app is a rem, so this one value scales the
+   whole UI. It is 15px up to a 1080p-class window (1920 × 960 CSS px of
+   content) and grows linearly past that — 17px at 2K / 1440p (2560 × 1310),
+   21px at 4K / 2160p at 100% scaling (3840 × 2030) — so text and controls keep
+   roughly their physical size on dense large monitors instead of shrinking
+   with the pixel pitch. It follows the SMALLER of the width and height terms,
+   so an ultrawide (3440 × 1440) or a portrait monitor gets the size its short
+   side supports. Laptops, tablets and phones never leave 15px. Code that draws
+   in CSS pixels (canvas text, the 'fit' plot) reads the result through
+   uiScale.js. */
+html {
+  font-size: clamp(
+    15px,
+    min(15px + (100vw - 1920px) * 0.003125, 15px + (100vh - 960px) * 0.005714),
+    21px
+  );
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 html,
@@ -165,11 +214,10 @@ body,
   margin: 0;
   padding: 0;
   min-width: 320px;
-  min-height: 100vh;
+  min-height: var(--viewport-h);
   height: 100%;
   background: var(--app-bg);
   color: var(--text);
-  font-size: 15px;
   line-height: 1.45;
 }
 
@@ -187,6 +235,15 @@ button,
 input,
 select {
   font: inherit;
+}
+
+button,
+input,
+select,
+label,
+summary {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 button {
@@ -221,6 +278,19 @@ select {
   color: var(--text);
   border-radius: 8px;
   transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+/* Phones and portrait tablets: iOS Safari zooms into any field under 16px
+   when it takes focus (the kit's classed fields repeat this in ui.css). */
+@media (hover: none) and (pointer: coarse) and (max-width: 1040px),
+  (hover: none) and (pointer: coarse) and (max-height: 540px) {
+  input[type='text'],
+  input[type='number'],
+  input[type='password'],
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
 }
 
 input[type='text']:focus,
