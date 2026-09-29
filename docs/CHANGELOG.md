@@ -131,6 +131,17 @@ the browser content size of each target (window chrome subtracted), before and a
   slider rows shrink the slider, and the PCA camera-axis overlay stacks above the projection
   toggle; and the Atomic Density "Computing KDE…" message is centred instead of printed over the
   previous slab readout in the corner.
+- **Stat cards (Model information, Detected SG, Triplet result) never wrap raggedly.** On a phone
+  their stats are a two-column grid — aligned, left-aligned, no column dividers — with the cell
+  lengths and the tolerance ladder on full rows and the title bar reading like a card header
+  (file name at its right end). Before, they wrapped into rows of two or three at random widths,
+  each row starting indented behind a stray divider, with the move counters right-aligned under
+  left-aligned stats. On wider screens a rail keeps its single row wherever it fits; where it
+  does not (iPhone landscape, iPads, 13" MacBooks), `StatRail` measures that and Model
+  information breaks into bands — the cell, the atom counts, the move counters — packed into as
+  few rows as fit (three on an iPhone in landscape, two on an iPad or a MacBook Air 13"), each row
+  left-aligned with dividers only between neighbours. The plan is `ui/statRows.js`
+  (unit-tested); bands are marked with `<Stat band>`.
 - **Touch and iOS details.** `viewport-fit=cover` with safe-area insets on the header and page
   edges (notch / Dynamic Island in landscape, home indicator); `100dvh` (`--viewport-h`) for the
   fixed shell and every viewport-height budget, so iOS / iPadOS Safari's toolbars no longer hide
