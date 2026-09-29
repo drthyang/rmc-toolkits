@@ -288,7 +288,7 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                                             key={i}
                                             type="button"
                                             className={`sym-brick${active ? ' is-active' : ''}`}
-                                            style={{ width: `${brickWidth(i)}%`, ...brickStyle(b.nSpace, maxOps) }}
+                                            style={{ '--brick-w': brickWidth(i), ...brickStyle(b.nSpace, maxOps) }}
                                             title={`${b.spaceGroup}${b.spaceGroupNumber ? ` (No. ${b.spaceGroupNumber})` : ''} · holds ${b.from.toFixed(2)}–${b.to.toFixed(2)} Å · ${b.nSpace} ops — click to select`}
                                             onClick={() => setSymTol((b.from + b.to) / 2)}
                                         >

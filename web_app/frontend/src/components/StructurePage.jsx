@@ -879,10 +879,16 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                 : !kde
                     ? null
                     : kde.slabCount > 0 ? 'No density drawn for this slab' : 'No atoms in this slab';
+            // Centred, clear of the slab readout the corner still carries
+            // from the previous result while a new one computes.
             if (emptyText) {
+                ctx.save();
                 ctx.fillStyle = themeVars.muted;
                 ctx.font = `500 ${13 * s}px Inter, system-ui`;
-                ctx.fillText(emptyText, 14 * s, 28 * s);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(emptyText, width / 2, height / 2);
+                ctx.restore();
             }
         }
 

@@ -85,7 +85,8 @@ the browser content size of each target (window chrome subtracted), before and a
   width and height terms (an ultrawide or portrait monitor gets the size its short side supports).
   On a 27" 1440p or a 32" 4K panel, text keeps roughly the physical size it has on a 24" 1080p
   one instead of shrinking with the pixel pitch; 4K at 150% scaling reads as 1440p. Laptops,
-  tablets, phones and 1080p monitors keep 15px (every page is pixel-identical at 1920 × 960). What drew in CSS pixels follows the same
+  tablets, phones and 1080p monitors keep 15px (at 1920 × 960 every page renders as before; the
+  one visible difference is the centred "Computing KDE…" message below). What drew in CSS pixels follows the same
   scale (`uiScale.js`): the Atomic Density canvas labels, and the Bond Geometry plots, whose
   viewBox now counts one unit per `uiScale()` pixels. Fixed pixel sizes that would have stayed
   small became rem (dashboard plot height caps, the loaded-files grid, range sliders, the
@@ -105,17 +106,31 @@ the browser content size of each target (window chrome subtracted), before and a
 - **iPad (portrait) and iPhone (landscape): two header rows** — brand with the data-source
   controls, then the tabs in one row that scrolls sideways and keeps the active tab in view —
   instead of the old stack of a 2-column tab grid and three full-width rows.
-- **iPhone (portrait): three short rows** (brand + Demo, data source, tabs), and on phones and
-  short windows (≤ 760 wide or ≤ 540 tall) the shell scrolls as a whole: the header scrolls away
-  and pins by its tab row (`--header-pin`, measured in `App.jsx`), switching tabs opens the new
-  page at its top, and the AI Assistant sizes its chat to the screen below the pinned tabs. The
-  header took 267 of the iPhone 17 Pro's 874 px before; it takes 175 at the top of a page and 63
-  once scrolled. In landscape it took 264 of 402 px, leaving 138 for the page; now 129, then
-  63. Card headers wrap their actions under the title on phones (the Displacement
+- **iPhone (portrait): three short rows** (brand + Live Data + Demo, the run-folder field, tabs),
+  and on phones and short windows (≤ 760 wide or ≤ 540 tall) the shell scrolls as a whole: the
+  header scrolls away and pins by its tab row (`--header-pin`, measured in `App.jsx`), switching
+  tabs opens the new page at its top, and the AI Assistant sizes its chat to the screen below the
+  pinned tabs. The header took 267 of the iPhone 17 Pro's 874 px before; it takes 175 at the top
+  of a page and 63 once scrolled. In landscape it took 264 of 402 px, leaving 138 for the page;
+  now 129, then 63. Card headers wrap their actions under the title on phones (the Displacement
   Directions and Displacement statistics titles no longer run under their controls), `?` help
   opens as a full-width sheet under its trigger instead of running off the right edge, and
   nothing lets a page pan sideways (hidden popovers past the right edge had let iPhone pages
   scroll up to 100px sideways).
+- **No cut-off or overlapping text.** An automated audit — every page, with no run and with the
+  Demo run loaded (Bond Geometry computed, Dashboard lists expanded), at 22 content sizes from a
+  320px phone to 4K — checks for text clipped by its box or ellipsized, text over text, controls
+  over controls, cards over cards or the footer, and anything past the screen edge; it ends at
+  zero findings. What it fixed: file names under card titles (the χ² log list, the `.rmc6f` name
+  in a Model information title cell) and in the loaded-file chips wrap instead of ending in "…"
+  (the log list between names); the tolerance ladder keeps every space-group label whole (a
+  brick too narrow for its label takes room from the others, with its exact share where all fit,
+  and on a phone the bar wraps only if the labels truly cannot share one row); on phones Live Data
+  moves up beside the brand so the run-folder field shows "No folder selected" in full; on a
+  320px phone the brand keeps its mark only, footer links no longer break inside themselves,
+  slider rows shrink the slider, and the PCA camera-axis overlay stacks above the projection
+  toggle; and the Atomic Density "Computing KDE…" message is centred instead of printed over the
+  previous slab readout in the corner.
 - **Touch and iOS details.** `viewport-fit=cover` with safe-area insets on the header and page
   edges (notch / Dynamic Island in landscape, home indicator); `100dvh` (`--viewport-h`) for the
   fixed shell and every viewport-height budget, so iOS / iPadOS Safari's toolbars no longer hide

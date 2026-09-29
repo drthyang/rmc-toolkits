@@ -44,7 +44,12 @@
 }
 
 .sym-brick {
-    min-width: 0;
+    /* Each brick's share of the bar, --brick-w percent (set inline), is its
+       flex-basis, so where every label fits the widths are exactly the
+       shares. The min-content floor keeps a label whole: a brick too narrow
+       for its label grows and the others shrink to give it room. */
+    flex: 0 1 calc(var(--brick-w) * 1%);
+    min-width: min-content;
     padding: 0;
     border: 0;
     border-right: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
@@ -54,6 +59,23 @@
     align-items: center;
     justify-content: center;
     transition: filter var(--dur) ease;
+}
+
+/* Phones: the bar may be too narrow for every label on one row, so it can
+   wrap. Sized by weight from a zero basis, the bricks wrap only when their
+   labels cannot all fit (a line breaks on the labels' own widths), and
+   otherwise share the row by --brick-w. */
+@media (max-width: 760px) {
+    .sym-ladder {
+        flex-wrap: wrap;
+        height: auto;
+        min-height: 1.4667rem;
+    }
+
+    .sym-brick {
+        flex: var(--brick-w) 1 0px;
+        min-height: calc(1.4667rem - 2px);
+    }
 }
 
 .sym-brick:last-child {

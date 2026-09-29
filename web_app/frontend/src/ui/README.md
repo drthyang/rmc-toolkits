@@ -70,7 +70,7 @@ specificity ties, so it waits for a visible-change pass.
 | Footer | `ui-footer` `--tight` | the app footer (content in `components/AppFooter.jsx`) |
 | Card | `ui-card` `--clip` `--round-ends` `--lift` `--pad-plot` `--pad-bar` `--note` | surfaces |
 | Bar header | `ui-card__header` `--wrap` `--fixed`; `ui-card__label`, `__actions`, `__cluster`, `__meta` (`--fixed`), `__readout` | card title bars |
-| Flush header | `ui-card__header-flush` `--padded`; `ui-card__heading`, `__title`, `__source`, `__subtitle`, `__header-actions` | chart cards whose plot continues below the title |
+| Flush header | `ui-card__header-flush` `--padded`; `ui-card__heading`, `__title`, `__source` (`__source-item`: one name in a list), `__subtitle`, `__header-actions` | chart cards whose plot continues below the title |
 | Inset header | `ui-card__header-inset` (styles its `h3` and `span`) | compact plot cards (Auto StoG) |
 | Card notes | `ui-card__note` (`--emph`), `ui-card__caption`, `ui-card__section` | rows and dividers inside a card |
 | Legend | `ui-legend`, `__item`, `__swatch`, `__note`, `__warning`, `__group`, `__subitem`, `__credit` | a color key under a canvas |
@@ -85,7 +85,7 @@ specificity ties, so it waits for a visible-change pass.
 | Buttons | `ui-btn-primary` (`--outlined`), `ui-btn-brand` (`.is-active`), `ui-pill`, `ui-pill-tint`, `ui-pill-md` (`.is-active`), `ui-tool-btn` (`--axes`, `.is-active`), `ui-icon-btn` `--close` `--remove` | actions |
 | Segmented | `ui-seg` `--frame` `--overlay` `--nav`; `ui-seg__label`, `ui-seg__btn` (`--warm`, `.is-active`); frame/nav buttons take `.is-active` | exclusive choices |
 | Chips | `ui-chip` `--strong` `--center` `--truncate` `--success` `--warn` `--danger`; `ui-file-chip` (`.is-hidden`), `__kind`, `__name` | read-only pills |
-| Stats | `ui-stack`; `ui-stat-rail`, `__title`, `__source` (`--wrap`), `__stats`, `__line`; `ui-stat` (`--end`), `__sub`; `ui-stat-card` (`.is-good/-warn/-bad`), `__label`, `__value`, `__sub`; `ui-inline-stats`, `ui-inline-stat` (`.is-flagged`), `__null` | numbers with labels |
+| Stats | `ui-stack`; `ui-stat-rail`, `__title`, `__source`, `__stats`, `__line`; `ui-stat` (`--end`), `__sub`; `ui-stat-card` (`.is-good/-warn/-bad`), `__label`, `__value`, `__sub`; `ui-inline-stats`, `ui-inline-stat` (`.is-flagged`), `__null` | numbers with labels |
 | Feedback | `ui-banner` `--danger` `--neutral` `--caution` `--inline` `--danger-light` `--sm` `--gap-lg` `--flush` `--dismissible`; `ui-status` (`.is-error`); `ui-hint`; `ui-empty` (`--fill`); `ui-placeholder`; `ui-loading` `--sm` `--error` | messages and empty states |
 | Floating | `ui-save` (`--accent`), `__trigger`, `__icon`; `ui-menu` `--right` `--left`, `__item`; `ui-info`, `__trigger`, `__popover` `--start` `--end` | menus and popovers |
 | Field bar | `ui-fieldbar` (`--readonly`), `__value`, `__ghost` | the app header's run-folder field |

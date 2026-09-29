@@ -456,7 +456,7 @@ function App() {
               </label>
               <div className="ui-fieldbar ui-fieldbar--readonly path-bar local-file-bar">
                 <label>Local run</label>
-                <div className="ui-fieldbar__value">{localRun?.name || 'No folder selected'}</div>
+                <div className="ui-fieldbar__value" title={localRun?.name}>{localRun?.name || 'No folder selected'}</div>
                 <button
                   type="button"
                   onClick={handleSelectFolderFsAccess}
@@ -493,7 +493,7 @@ function App() {
                   webkitdirectory=""
                   onChange={handleLocalFiles}
                 />
-                <div className="ui-fieldbar__value">{localRun?.name || 'No folder selected'}</div>
+                <div className="ui-fieldbar__value" title={localRun?.name}>{localRun?.name || 'No folder selected'}</div>
                 <button
                   type="button"
                   onClick={() => directoryInputRef.current?.click()}

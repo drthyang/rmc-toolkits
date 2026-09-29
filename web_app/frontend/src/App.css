@@ -16,7 +16,8 @@
      iPad Pro 13" landscape, 1366-wide laptops).
    - 761–1040: two rows — brand + data source, then the tabs (iPad portrait,
      iPhone landscape).
-   - ≤ 760: three rows — brand + Demo, data source, tabs (iPhone portrait).
+   - ≤ 760: three rows — brand + Live Data + Demo, the run-folder field,
+     tabs (iPhone portrait).
    - ≤ 760 wide or ≤ 540 tall (phones, short windows): the whole shell
      scrolls, so the header scrolls away and pins by its tab row (--header-pin
      is measured in App.jsx); taller screens keep a fixed header with each page
@@ -262,31 +263,39 @@
   }
 }
 
-/* Phones: brand and Demo on the first row, the data source on its own. */
+/* Phones: brand, Live Data, the files note and Demo on the first row; the
+   run-folder field takes the whole second row, so its value ("No folder
+   selected", a run name) is not truncated. */
 @media (max-width: 760px) {
   .app-header {
-    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
     grid-template-areas:
-      "brand  demo"
-      "path   path"
-      "status status"
-      "tabs   tabs";
+      "brand  live   info   demo"
+      "field  field  field  field"
+      "status status status status"
+      "tabs   tabs   tabs   tabs";
   }
 
-  .header-actions {
+  .header-actions,
+  .path-controls {
     display: contents;
   }
 
-  .path-controls {
-    grid-area: path;
+  .path-controls > .ui-switch-outline {
+    grid-area: live;
+  }
+
+  .path-controls > .ui-info {
+    grid-area: info;
+  }
+
+  .path-bar {
+    grid-area: field;
   }
 
   .demo-button {
     grid-area: demo;
-  }
-
-  .path-bar {
-    flex: 1 1 auto;
   }
 
   .local-file-bar,
@@ -300,6 +309,14 @@
 
   .page-tabs button {
     padding-inline: 0.6rem;
+  }
+}
+
+/* The narrowest phones (under 360px): the brand keeps its mark only, so the
+   first row still fits Live Data and Demo beside it. */
+@media (max-width: 359px) {
+  .brand-copy {
+    display: none;
   }
 }
 
