@@ -113,6 +113,12 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
 
     if (!summary) return null;
 
+    // The first move counter present starts the moves band.
+    const moves = summary.moves || {};
+    const movesBand = moves.generatedPerAtom !== undefined
+        ? 'generated'
+        : moves.acceptedPerAtom !== undefined ? 'accepted' : 'ratio';
+
     return (
         <div className="ui-stack">
             <StatRail
@@ -133,7 +139,10 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                     </>
                 )}
             >
-                <Stat label="Cell (Å)">
+                {/* Three bands — the cell, the atom counts, the move counters —
+                    each start a row when the stats do not fit on one line (and
+                    on a phone, where the cell lengths take a full row). */}
+                <Stat label="Cell (Å)" className="model-stat-wide">
                     {summary.cellLengths.map((value) => formatNumber(value)).join(' × ')}
                 </Stat>
                 <Stat label="Angles">
@@ -142,15 +151,15 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                 <Stat label="Supercell">
                     {summary.supercell.map((value) => formatNumber(value, 0)).join(' × ')}
                 </Stat>
-                {summary.elementEntries.map(({ element, count, referenceSites }) => (
-                    <Stat key={element} label={element}>
+                {summary.elementEntries.map(({ element, count, referenceSites }, index) => (
+                    <Stat key={element} label={element} band={index === 0}>
                         {formatNumber(count, 0)}
                         {referenceSites > 0 && (
                             <span className="ui-stat__sub">{formatNumber(referenceSites, 0)} sites</span>
                         )}
                     </Stat>
                 ))}
-                <Stat label="Total atoms">
+                <Stat label="Total atoms" band={!summary.elementEntries.length}>
                     {formatNumber(summary.totalAtoms, 0)}
                     {summary.referenceSites > 0 && (
                         <span className="ui-stat__sub">{formatNumber(summary.referenceSites, 0)} sites</span>
@@ -185,6 +194,7 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                 {summary.moves?.generatedPerAtom !== undefined && (
                     <Stat
                         end
+                        band={movesBand === 'generated'}
                         label="Generated / atom"
                         ddProps={{ title: `${formatNumber(summary.moves.generated, 0)} moves generated over ${formatNumber(summary.totalAtoms, 0)} atoms` }}
                     >
@@ -195,6 +205,7 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                 {summary.moves?.acceptedPerAtom !== undefined && (
                     <Stat
                         end
+                        band={movesBand === 'accepted'}
                         label="Accepted / atom"
                         ddProps={{ title: `${formatNumber(summary.moves.accepted, 0)} moves accepted over ${formatNumber(summary.totalAtoms, 0)} atoms` }}
                     >
@@ -205,6 +216,7 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                 {summary.moves?.acceptedPerGenerated !== undefined && (
                     <Stat
                         end
+                        band={movesBand === 'ratio'}
                         label="Accepted / generated"
                         ddProps={{ title: 'Acceptance ratio: accepted moves as a fraction of those generated' }}
                     >

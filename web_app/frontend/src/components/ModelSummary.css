@@ -1,10 +1,27 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
    Copyright (C) 2026 Tsung-Han Yang
 
-   ModelSummary component CSS: the Detected SG tolerance ladder only (token-only).
+   ModelSummary component CSS: the Detected SG tolerance ladder (token-only)
+   and the grid placement of the stats.
    The cards themselves are the kit's stat rail (ui-stack / ui-stat-rail /
    ui-stat); this file loads after ui.css, so `.sym-ladder-cell dd` still wins
    its tie with `.ui-stat dd`. */
+
+/* Placement when the stats form a grid (the kit's phone grid, or its
+   is-wrapped grid on a wider screen): the cell lengths take a full row on a
+   phone, and the tolerance ladder a full row in either. */
+@media (min-width: 761px) {
+    .is-wrapped .sym-ladder-cell {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 760px) {
+    .model-stat-wide,
+    .sym-ladder-cell {
+        grid-column: 1 / -1;
+    }
+}
 
 /* The tolerance color bar fills the rest of the row. */
 .sym-ladder-cell {

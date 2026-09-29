@@ -351,7 +351,10 @@ web_app/frontend/src/
   of each `.ui-page`, and the sticky header pins by its tab row using `--header-pin` /
   `--header-pinned-h`, which `App.jsx` measures — keep the tabs the header's last row there.
   WebGL canvases inside `.pca-canvas` / `.pca-structure` are absolutely positioned so their last
-  pixel size never props a panel open. Touch screens (`pointer: coarse`) get taller `--h-*`
+  pixel size never props a panel open. Stat rails never wrap raggedly: on a phone they are a
+  two-column grid, and wider up `StatRail` measures whether its stats fit on one line and, if
+  not, breaks at the bands a page marks with `<Stat band>` (`ui/statRows.js`; Model information
+  marks the atom counts and the move counters). Touch screens (`pointer: coarse`) get taller `--h-*`
   controls and range thumbs; phones and portrait tablets get 16px field text (iOS focus zoom).
   Check a layout change at the device content sizes listed in `src/ui/README.md` ("Verifying a
   change").

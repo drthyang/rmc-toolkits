@@ -42,7 +42,7 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 | `PrimaryButton` | `<button class="ui-btn-primary">` (caller passes `type`) | `outlined` | the one primary action of a bar |
 | `Chip` | `<span class="ui-chip">` | `tone` (`'success'`/`'warn'`/`'danger'`), `strong`, `center`, `truncate` | small read-only pills (Rwp, file info) |
 | `StatRail` | `<section class="ui-card ui-stat-rail">` title cell + `<dl>` | `heading`, `headingProps` | Model information / Detected SG / Triplet result |
-| `Stat` | `<div class="ui-stat"><dt/><dd/></div>` | `label`, `end`, `dtProps`, `ddProps` | one column of a stat rail |
+| `Stat` | `<div class="ui-stat"><dt/><dd/></div>` | `label`, `end`, `band`, `dtProps`, `ddProps` | one column of a stat rail |
 | `StatCard` | readout tile with a status edge | `tone` (`'good'`/`'warn'`/`'bad'`), `label`, `value`, `sub` | result readouts (Auto StoG) |
 | `Banner` | `<div class="ui-banner ui-banner--{tone}">` | `as`, `tone` (`'danger'`/`'neutral'`/`'caution'`/`'danger-light'`), `sm`, `gapLg`, `flush`, `inline`, `onDismiss` | messages above or inside a card |
 | `Hint` | `<p class="ui-hint">` | | what to do next (dashed box) |
@@ -85,7 +85,7 @@ specificity ties, so it waits for a visible-change pass.
 | Buttons | `ui-btn-primary` (`--outlined`), `ui-btn-brand` (`.is-active`), `ui-pill`, `ui-pill-tint`, `ui-pill-md` (`.is-active`), `ui-tool-btn` (`--axes`, `.is-active`), `ui-icon-btn` `--close` `--remove` | actions |
 | Segmented | `ui-seg` `--frame` `--overlay` `--nav`; `ui-seg__label`, `ui-seg__btn` (`--warm`, `.is-active`); frame/nav buttons take `.is-active` | exclusive choices |
 | Chips | `ui-chip` `--strong` `--center` `--truncate` `--success` `--warn` `--danger`; `ui-file-chip` (`.is-hidden`), `__kind`, `__name` | read-only pills |
-| Stats | `ui-stack`; `ui-stat-rail`, `__title`, `__source`, `__stats`, `__line`; `ui-stat` (`--end`), `__sub`; `ui-stat-card` (`.is-good/-warn/-bad`), `__label`, `__value`, `__sub`; `ui-inline-stats`, `ui-inline-stat` (`.is-flagged`), `__null` | numbers with labels |
+| Stats | `ui-stack`; `ui-stat-rail`, `__title`, `__source`, `__stats`, `__line`; `ui-stat` (`--end`, `--band`), `__sub`; `ui-stat-rail__stats.is-banded` / `.is-wrapped` (set by `StatRail`); `ui-stat-card` (`.is-good/-warn/-bad`), `__label`, `__value`, `__sub`; `ui-inline-stats`, `ui-inline-stat` (`.is-flagged`), `__null` | numbers with labels |
 | Feedback | `ui-banner` `--danger` `--neutral` `--caution` `--inline` `--danger-light` `--sm` `--gap-lg` `--flush` `--dismissible`; `ui-status` (`.is-error`); `ui-hint`; `ui-empty` (`--fill`); `ui-placeholder`; `ui-loading` `--sm` `--error` | messages and empty states |
 | Floating | `ui-save` (`--accent`), `__trigger`, `__icon`; `ui-menu` `--right` `--left`, `__item`; `ui-info`, `__trigger`, `__popover` `--start` `--end` | menus and popovers |
 | Field bar | `ui-fieldbar` (`--readonly`), `__value`, `__ghost` | the app header's run-folder field |
@@ -118,6 +118,15 @@ font-weight, letter-spacing, line-height, `color-mix()` percentages, relative
 `em` sizes, and the geometry of a single widget (range track and thumbs, switch
 knob offsets; rem where it should scale with the UI). A new value becomes a
 token first.
+
+`StatRail` is the one kit component with behaviour: it measures whether its
+stats fit on one line (`statRows.js` plans the layout). When they do not, the
+list takes `is-banded` if the rail marks bands (`<Stat band>`, at most two:
+the runs between them are packed into rows, broken before a band start only
+where needed, each row left-aligned with no leading divider) or `is-wrapped`
+otherwise (an aligned grid). On a phone the stats are always a two-column
+grid, a band start beginning a new row. So a rail never shows ragged wrapped
+lines with stray dividers.
 
 Media blocks in `ui.css` adapt the kit to handhelds: at ≤ 760px card headers
 wrap their actions under the title and `InfoBadge` popovers open as a
