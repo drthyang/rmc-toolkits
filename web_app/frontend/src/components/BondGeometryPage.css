@@ -21,8 +21,10 @@
     gap: 0.9rem;
     align-items: stretch;
     /* Overhead includes the Model information and Triplet result cards
-       above the controls-bar stack. */
-    height: clamp(24rem, calc(100vh - 28.5rem), 56rem);
+       above the controls-bar stack. The cap keeps the plots from growing
+       much taller than wide: 56rem, or 38vw on a 4K screen, where the rem cap
+       alone would stop the row ~250px short of the footer. */
+    height: clamp(24rem, calc(var(--viewport-h) - 28.5rem), max(56rem, 38vw));
 }
 
 /* The unit-cell panel is placed by a named grid-area on the PCA page; reset

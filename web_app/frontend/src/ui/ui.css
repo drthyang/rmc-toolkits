@@ -28,7 +28,10 @@
     min-height: 0;
     overflow: auto;
     background: var(--app-bg);
-    padding: 1.1rem 1.25rem 1.5rem;
+    /* Side and bottom edges clear a notch, rounded corners and the home
+       indicator (the safe-area insets are 0 elsewhere). */
+    padding: 1.1rem calc(1.25rem + var(--safe-right)) calc(1.5rem + var(--safe-bottom))
+        calc(1.25rem + var(--safe-left));
 }
 
 .ui-page--column {
@@ -37,18 +40,20 @@
 }
 
 .ui-page--pb-sm {
-    padding-bottom: 1.25rem;
+    padding-bottom: calc(1.25rem + var(--safe-bottom));
 }
 
 @media (max-width: 760px) {
     .ui-page--mobile {
-        padding: 0.9rem;
+        padding: 0.9rem calc(0.9rem + var(--safe-right)) calc(0.9rem + var(--safe-bottom))
+            calc(0.9rem + var(--safe-left));
     }
 }
 
 @media (min-width: 1500px) and (min-aspect-ratio: 16 / 10) {
     .ui-page--wide {
-        padding: 1rem 1.15rem;
+        padding: 1rem calc(1.15rem + var(--safe-right)) calc(1rem + var(--safe-bottom))
+            calc(1.15rem + var(--safe-left));
     }
 }
 
@@ -192,6 +197,35 @@
     font-weight: 650;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+}
+
+/* Phones: a title and its actions cannot share one line, so the actions (and
+   any meta readout) wrap under the title instead of running over it. */
+@media (max-width: 760px) {
+    .ui-card__header {
+        flex-wrap: wrap;
+        row-gap: 0.4rem;
+    }
+
+    .ui-card__header--fixed {
+        height: auto;
+    }
+
+    .ui-card__actions {
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        row-gap: 0.4rem;
+    }
+
+    .ui-card__meta {
+        white-space: normal;
+    }
+
+    .ui-card__meta--fixed {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
 }
 
 /* Flush header (Dashboard charts): no hairline, the chart continues below. */
@@ -670,7 +704,7 @@
 }
 
 .ui-cluster--grow {
-    flex: 1 1 260px;
+    flex: 1 1 17.3333rem;
 }
 
 .ui-cluster--end {
@@ -823,7 +857,7 @@ input.ui-input-strong:focus-visible {
 input.ui-range {
     appearance: none;
     -webkit-appearance: none;
-    width: 118px;
+    width: 7.8667rem;
     height: 4px;
     border-radius: var(--radius-pill);
     background: var(--border-strong);
@@ -831,14 +865,14 @@ input.ui-range {
 }
 
 input.ui-range--lg {
-    width: 130px;
+    width: 8.6667rem;
 }
 
 input.ui-range::-webkit-slider-thumb {
     appearance: none;
     -webkit-appearance: none;
-    width: 15px;
-    height: 15px;
+    width: 1rem;
+    height: 1rem;
     border-radius: 50%;
     background: var(--on-accent);
     border: 2px solid var(--accent);
@@ -851,8 +885,8 @@ input.ui-range::-webkit-slider-thumb:active {
 }
 
 input.ui-range::-moz-range-thumb {
-    width: 11px;
-    height: 11px;
+    width: 0.7333rem;
+    height: 0.7333rem;
     border-radius: 50%;
     background: var(--on-accent);
     border: 2px solid var(--accent);
@@ -864,6 +898,33 @@ input.ui-range::-moz-range-track {
     height: 4px;
     border-radius: var(--radius-pill);
     background: var(--border-strong);
+}
+
+/* Touch screens: a thumb a fingertip can take. */
+@media (pointer: coarse) {
+    input.ui-range::-webkit-slider-thumb {
+        width: 1.45rem;
+        height: 1.45rem;
+    }
+
+    input.ui-range::-moz-range-thumb {
+        width: 1.2rem;
+        height: 1.2rem;
+    }
+}
+
+/* Phones and portrait tablets: iOS Safari zooms the page into any field whose
+   text is under 16px when it takes focus, and does not zoom back out. */
+@media (hover: none) and (pointer: coarse) and (max-width: 1040px),
+    (hover: none) and (pointer: coarse) and (max-height: 540px) {
+    select.ui-select,
+    select.ui-select-native,
+    input.ui-input,
+    input.ui-input-compact,
+    input.ui-input-strong,
+    .ui-fieldbar input {
+        font-size: max(16px, 1em);
+    }
 }
 
 /* Label-over-input field. */
@@ -1679,7 +1740,10 @@ input.ui-range::-moz-range-track {
 
 .ui-stat-rail__stats {
     display: flex;
-    flex: 1 1 auto;
+    /* A definite basis: when the stats outgrow the row (laptop widths) they
+       wrap among themselves beside the title cell, rather than the whole
+       stats block dropping under it. */
+    flex: 1 1 24rem;
     flex-wrap: wrap;
     align-items: center;
     row-gap: 0.6rem;
@@ -1768,6 +1832,7 @@ input.ui-range::-moz-range-track {
     }
 
     .ui-stat-rail__stats {
+        flex-basis: auto;
         padding: 0.72rem 0.9rem 0.8rem;
     }
 }
@@ -2170,6 +2235,23 @@ input.ui-range::-moz-range-track {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+}
+
+/* Phones: a 20rem popover beside a `?` near the right edge runs off the
+   screen. Show it as a sheet spanning the screen just under its trigger (a
+   fixed box with no top keeps its static, in-flow position vertically). */
+@media (max-width: 760px) {
+    .ui-info__popover,
+    .ui-info__popover--start,
+    .ui-info__popover--end {
+        position: fixed;
+        top: auto;
+        left: calc(0.75rem + var(--safe-left));
+        right: calc(0.75rem + var(--safe-right));
+        width: auto;
+        max-width: none;
+        margin-top: 1.5rem;
+    }
 }
 
 .ui-info__popover p {

@@ -36,7 +36,7 @@
 .sym-ladder {
     display: flex;
     width: 100%;
-    height: 22px;
+    height: 1.4667rem;
     margin-top: 0.1rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -75,7 +75,7 @@
 }
 
 .sym-brick-label {
-    padding: 0 5px;
+    padding: 0 0.3333rem;
     color: inherit;
     font-size: var(--fs-67);
     font-weight: 650;

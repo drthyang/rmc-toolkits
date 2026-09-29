@@ -25,6 +25,7 @@ import { Banner, Card, CardHeader, CardMeta, CardNote, Control, ControlsBar, Emp
 import SaveMenu from '../ui/SaveMenu';
 import InfoBadge from '../ui/InfoBadge';
 import AppFooter from './AppFooter';
+import { uiScale } from '../uiScale';
 import './StructurePage.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -788,6 +789,8 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
     }, [kde, sliceConfig, unitCell]);
 
     const drawKdeSlice = useCallback((ctx, width, height) => {
+        // Overlay text and its margins grow with the UI on 2K / 4K monitors.
+        const s = uiScale();
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
@@ -804,7 +807,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
             vectorFromFraction(vVector, unitCell.unitVectors),
             planePolygon
         );
-        const mapper = makePlaneMapper(projectedPlane, width, height, 18);
+        const mapper = makePlaneMapper(projectedPlane, width, height, 18 * s);
         const cellOutline = [
             ...planePolygon.map(([uValue, vValue]) => mapper.map(uValue, vValue))
         ];
@@ -878,8 +881,8 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                     : kde.slabCount > 0 ? 'No density drawn for this slab' : 'No atoms in this slab';
             if (emptyText) {
                 ctx.fillStyle = themeVars.muted;
-                ctx.font = '500 13px Inter, system-ui';
-                ctx.fillText(emptyText, 14, 28);
+                ctx.font = `500 ${13 * s}px Inter, system-ui`;
+                ctx.fillText(emptyText, 14 * s, 28 * s);
             }
         }
 
@@ -889,31 +892,31 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
         ctx.stroke();
         // Outlined text stays legible over any colormap.
         const drawOverlayText = (text, x, y) => {
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 3 * s;
             ctx.lineJoin = 'round';
             ctx.strokeStyle = 'rgba(13, 18, 28, 0.62)';
             ctx.strokeText(text, x, y);
             ctx.fillStyle = '#fff';
             ctx.fillText(text, x, y);
         };
-        ctx.font = '500 12px Inter, system-ui';
+        ctx.font = `500 ${12 * s}px Inter, system-ui`;
         if (kde) {
-            drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12, 22);
+            drawOverlayText(`${kde.slabCount} atoms in slab (fit ${kde.fitCount})`, 12 * s, 22 * s);
             // d is a fraction of the depth span along the normal; its real
             // thickness in Angstrom follows from the cell metric.
             const thicknessA = slabThicknessAngstrom(kde.thickness, sliceConfig.normal, sliceConfig.range, unitCell.unitVectors);
             const thicknessText = Number.isFinite(thicknessA) ? ` (${thicknessA.toPrecision(3)} Å)` : '';
-            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}${thicknessText}  bw=${kde.bw}`, 12, 40);
-            let nextLine = 58;
+            drawOverlayText(`${sliceConfig.label}=${kde.center.toFixed(3)}  d=${kde.thickness.toFixed(3)}${thicknessText}  bw=${kde.bw}`, 12 * s, 40 * s);
+            let nextLine = 58 * s;
             if (kernelAngstrom) {
                 drawOverlayText(
                     `kernel σ ${kernelAngstrom.minor.toPrecision(2)} × ${kernelAngstrom.major.toPrecision(2)} Å`,
-                    12,
+                    12 * s,
                     nextLine
                 );
-                nextLine += 18;
+                nextLine += 18 * s;
             }
-            if (kde.log) drawOverlayText('log10 density', 12, nextLine);
+            if (kde.log) drawOverlayText('log10 density', 12 * s, nextLine);
         }
     }, [kde, colormap, showContours, kdeLoading, themeVars, unitCell, sliceConfig, kernelAngstrom]);
 
@@ -937,6 +940,8 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
     // live effect publishes it, export ignores it. Like drawKdeSlice, the caller
     // owns the backing resolution and transform.
     const drawSlab = useCallback((ctx, width, height) => {
+        // Labels and their margins grow with the UI on 2K / 4K monitors.
+        const s = uiScale();
         ctx.clearRect(0, 0, width, height);
         ctx.fillStyle = themeVars.canvasBg;
         ctx.fillRect(0, 0, width, height);
@@ -959,7 +964,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
             [uMax, depthEnd],
             [uMin, depthEnd]
         ]);
-        const mapper = makePlaneMapper(sidePlane, width, height, 18);
+        const mapper = makePlaneMapper(sidePlane, width, height, 18 * s);
         // Band geometry so the drag handler can map cursor -> slice (returned below).
         const geometry = {
             invert: mapper.invert,
@@ -1007,14 +1012,14 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
         }
 
         ctx.fillStyle = themeVars.text;
-        ctx.font = '500 12px Inter, system-ui';
+        ctx.font = `500 ${12 * s}px Inter, system-ui`;
         const xLabel = mapper.map(uMax, sliceConfig.range[0]);
         const normalLabel = mapper.map(uMin, sliceConfig.range[1]);
         const slabLabel = mapper.map(uMin, depthStart);
-        ctx.fillText(sliceConfig.uLabel, Math.min(width - 24, xLabel.x + 4), Math.min(height - 8, xLabel.y + 14));
-        ctx.fillText(sliceConfig.label, Math.max(8, normalLabel.x - 12), Math.max(16, normalLabel.y - 6));
-        ctx.fillText(`${sliceConfig.label}=${zCenter.toFixed(3)}`, 10, Math.max(30, slabLabel.y - 6));
-        ctx.fillText(`d=${thickness.toFixed(3)}`, 10, Math.min(height - 16, slabLabel.y + 18));
+        ctx.fillText(sliceConfig.uLabel, Math.min(width - 24 * s, xLabel.x + 4 * s), Math.min(height - 8 * s, xLabel.y + 14 * s));
+        ctx.fillText(sliceConfig.label, Math.max(8 * s, normalLabel.x - 12 * s), Math.max(16 * s, normalLabel.y - 6 * s));
+        ctx.fillText(`${sliceConfig.label}=${zCenter.toFixed(3)}`, 10 * s, Math.max(30 * s, slabLabel.y - 6 * s));
+        ctx.fillText(`d=${thickness.toFixed(3)}`, 10 * s, Math.min(height - 16 * s, slabLabel.y + 18 * s));
         return geometry;
     }, [points, zCenter, thickness, unitCell, themeVars, sliceConfig, inActiveSlab, elementColors]);
 

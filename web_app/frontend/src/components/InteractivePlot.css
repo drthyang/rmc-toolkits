@@ -101,7 +101,7 @@
 }
 
 .plot-legend .swatch-guide {
-    width: 14px;
+    width: 0.9333rem;
     height: 0;
     border-top: 2px dashed;
     border-radius: 0;

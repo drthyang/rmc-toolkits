@@ -944,6 +944,18 @@
     color: var(--subtle);
 }
 
+/* Phones and portrait tablets: iOS Safari zooms into a field whose text is
+   under 16px when it takes focus, and does not zoom back out. */
+@media (hover: none) and (pointer: coarse) and (max-width: 1040px),
+    (hover: none) and (pointer: coarse) and (max-height: 540px) {
+    .llm-input,
+    .llm-model-select,
+    .llm-model-input,
+    .llm-composer-input {
+        font-size: max(16px, 1em);
+    }
+}
+
 .llm-send {
     flex: 0 0 auto;
     display: grid;

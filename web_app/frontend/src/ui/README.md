@@ -100,11 +100,30 @@ accent, extra shadows, status and plot-kind colors, chart ink, the select
 chevron, radii `--radius-*`, durations `--dur-*`, control heights `--h-*`, and
 the type scale `--fs-62` … `--fs-115`, named by hundredths of a rem).
 
+Device tokens: `--viewport-h` (the visible viewport height, `100dvh` where
+supported — use it for every height budget instead of `100vh`) and the
+safe-area insets `--safe-top` / `--safe-right` / `--safe-bottom` /
+`--safe-left` (0 except on notched / rounded screens with
+`viewport-fit=cover`). On touch screens (`pointer: coarse`) the `--h-*`
+control heights are larger.
+
+The root type size is fluid (15px up to a 1080p-class window, 17px at 1440p,
+21px at 2160p; see `index.css`), so every rem grows on 2K / 4K monitors. Size
+anything that should grow with the UI in rem — a px size stays small on a 4K
+screen.
+
 In `ui.css` every color, shadow, radius, duration, control height and font size
 is a `var()`. Literals are allowed only for spacing (padding / gap / margin),
 font-weight, letter-spacing, line-height, `color-mix()` percentages, relative
-`em` sizes, and the pixel geometry of a single widget (range thumbs, switch
-knob offsets). A new value becomes a token first.
+`em` sizes, and the geometry of a single widget (range track and thumbs, switch
+knob offsets; rem where it should scale with the UI). A new value becomes a
+token first.
+
+Media blocks in `ui.css` adapt the kit to handhelds: at ≤ 760px card headers
+wrap their actions under the title and `InfoBadge` popovers open as a
+full-width sheet under their trigger, and on touch phones / portrait
+tablets (`hover: none` and `pointer: coarse`, ≤ 1040 wide or ≤ 540 tall) the
+kit's fields use 16px text, below which iOS Safari zooms the page on focus.
 
 ## Rules
 
@@ -178,6 +197,14 @@ case to `__tests__/markup.test.jsx`.
 ## Verifying a change
 
 - `npm test` (includes the kit markup tests), `npx eslint src`, `npm run build`.
+- Layout changes: load the Demo run and walk every page at the browser content
+  sizes of the target devices (window chrome subtracted): iPhone 17 Pro
+  402 × 874 and landscape 874 × 402, iPhone 17 Pro Max 440 × 956, iPad Air 11"
+  820 × 1110, iPad Pro 13" 1032 × 1310 and 1376 × 970, MacBook Air 13"
+  1470 × 840, MacBook Pro 14" 1512 × 870, MacBook Pro 16" 1728 × 1000, a
+  1366 × 650 laptop, 1080p 1920 × 960, 1440p 2560 × 1310 and 4K 3840 × 2030
+  (emulate touch for the phones and iPads). Check that the header keeps its
+  tier, no page scrolls sideways, and the fill-height pages end at the footer.
 - Compare computed styles before/after on every page and breakpoint (the tag +
   index path of each element → its computed style, `::before`/`::after`
   included) — a class rename with identical styling must produce an identical

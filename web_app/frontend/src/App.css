@@ -6,12 +6,29 @@
    path-bar, local-file-bar). The header controls themselves — nav tabs, the
    Live Data switch, the run-folder field bar, the Demo button, the notice
    row — are UI-kit classes (src/ui/ui.css). This file loads last, so its
-   media rules keep winning their equal-specificity ties with the kit. */
+   media rules keep winning their equal-specificity ties with the kit.
+
+   Device tiers (widths are CSS px of browser content):
+   - ≥ 1600: one header row at full spacing (1080p / 1440p / 4K monitors,
+     MacBook Pro 16", MacBook Air 15", iMac, Studio / Pro Display). The UI
+     itself grows on 2K / 4K through the root type size (index.css).
+   - 1041–1599: one header row, tightened (MacBook Air 13", MacBook Pro 14",
+     iPad Pro 13" landscape, 1366-wide laptops).
+   - 761–1040: two rows — brand + data source, then the tabs (iPad portrait,
+     iPhone landscape).
+   - ≤ 760: three rows — brand + Demo, data source, tabs (iPhone portrait).
+   - ≤ 760 wide or ≤ 540 tall (phones, short windows): the whole shell
+     scrolls, so the header scrolls away and pins by its tab row (--header-pin
+     is measured in App.jsx); taller screens keep a fixed header with each page
+     scrolling beneath it.
+   Every edge that can meet a rounded corner, notch or home indicator adds its
+   safe-area inset (viewport-fit=cover in index.html; the insets are 0
+   elsewhere). */
 
 .app-container {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  height: 100vh;
+  height: var(--viewport-h);
   overflow: hidden;
   background: var(--app-bg);
 }
@@ -42,7 +59,8 @@
 }
 
 .app-header {
-  padding: 0.7rem 1.25rem;
+  padding: calc(0.7rem + var(--safe-top)) calc(1.25rem + var(--safe-right))
+    0.7rem calc(1.25rem + var(--safe-left));
   border-bottom: 1px solid var(--border);
   background: var(--panel-bg);
   /* Two clusters — navigation (brand + tabs) on the left, data-source controls on
@@ -130,80 +148,190 @@
   min-width: 0;
 }
 
-/* Below ~1040px the nav and the full data-source cluster no longer fit on one
-   line; stack the header into rows so nothing clips or overflows. */
-@media (max-width: 1040px) {
+/* The field bar's micro-label ("Local run" / "Run folder") is hidden on the
+   tighter tiers — the value and the button say what the field is — but stays
+   the input's accessible name. */
+@media (max-width: 1599px) {
+  .path-bar label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .path-bar {
+    grid-template-columns: minmax(0, 10rem) auto auto;
+  }
+
+  .local-file-bar {
+    grid-template-columns: minmax(0, 10rem) auto;
+  }
+}
+
+/* One tightened row: the full header needs ~1535px; this one ~1365px, so it
+   stays on one line on every current MacBook at its default scaling and on an
+   iPad Pro 13" in landscape. */
+@media (min-width: 1041px) and (max-width: 1599px) {
   .app-header {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 0.8rem;
-    gap: 0.55rem;
+    padding-inline: calc(1rem + var(--safe-left)) calc(1rem + var(--safe-right));
+    column-gap: 0.75rem;
   }
 
   .header-primary {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.55rem;
-  }
-
-  .page-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
+    gap: 0.75rem;
   }
 
   .page-tabs button {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding-inline: 0.5rem;
   }
 
-  /* Stacked header: the left cluster is brand → tabs, and the right cluster
-     stacks the Live Data toggle, the run-folder field and Demo below it, each a
-     full-width row. */
   .header-actions {
-    margin-left: 0;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.55rem;
-  }
-
-  .demo-button {
-    width: 100%;
+    column-gap: 0.6rem;
   }
 
   .path-controls {
     gap: 0.5rem;
   }
-
-  .path-bar {
-    /* Stacked header: let the field fill the row again (the compact desktop field
-       only makes sense beside the tabs). */
-    flex: 1 1 auto;
-    grid-template-columns: 1fr auto auto;
-  }
-
-  .local-file-bar {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .path-bar label {
-    display: none;
-  }
 }
 
-@media (max-width: 520px) {
+/* Tablets and phones: a grid. Brand and the data-source cluster share the first
+   row; the tabs take a full-width row of their own last (the row the header
+   pins by when it scrolls away), scrolling sideways when they do not fit. */
+@media (max-width: 1040px) {
   .app-header {
-    gap: 0.75rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "brand  actions"
+      "status status"
+      "tabs   tabs";
+    align-items: center;
+    padding: calc(0.6rem + var(--safe-top)) calc(0.8rem + var(--safe-right))
+      0.55rem calc(0.8rem + var(--safe-left));
+    gap: 0.55rem 0.75rem;
+  }
+
+  .header-primary {
+    display: contents;
+  }
+
+  .brand-row {
+    grid-area: brand;
+  }
+
+  .header-actions {
+    grid-area: actions;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    margin-left: 0;
+    gap: 0.5rem;
+  }
+
+  .app-header > .ui-status {
+    grid-area: status;
+  }
+
+  .path-controls {
+    min-width: 0;
+    gap: 0.5rem;
+  }
+
+  .path-bar {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .page-tabs {
+    grid-area: tabs;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .page-tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .page-tabs button {
-    padding-inline: 0.45rem;
+    flex: 1 0 auto;
+    padding-inline: 0.7rem;
+  }
+}
+
+/* Phones: brand and Demo on the first row, the data source on its own. */
+@media (max-width: 760px) {
+  .app-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand  demo"
+      "path   path"
+      "status status"
+      "tabs   tabs";
   }
 
-  .local-file-bar button {
-    min-width: 6.4rem;
-    padding-inline: 0.65rem;
+  .header-actions {
+    display: contents;
+  }
+
+  .path-controls {
+    grid-area: path;
+  }
+
+  .demo-button {
+    grid-area: demo;
+  }
+
+  .path-bar {
+    flex: 1 1 auto;
+  }
+
+  .local-file-bar,
+  .path-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .path-bar:not(.local-file-bar) {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .page-tabs button {
+    padding-inline: 0.6rem;
+  }
+}
+
+/* Phones and short windows (a phone in landscape): the shell scrolls instead
+   of each page, so the header scrolls out of the way and sticks by its tab
+   row. Pages take their natural height. */
+@media (max-width: 760px), (max-height: 540px) {
+  .main-content {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .app-header {
+    position: sticky;
+    top: var(--header-pin, 0px);
+    z-index: 30;
+  }
+
+  .workspace-pages {
+    flex: 1 0 auto;
+    min-height: auto;
+  }
+
+  .workspace-page {
+    min-height: auto;
+  }
+
+  /* Content taller than the screen flows into the shell's scroll; anything
+     wider (a hidden popover past the edge) is clipped rather than letting the
+     whole page pan sideways. */
+  .workspace-page > .ui-page {
+    overflow: visible;
+    overflow-x: clip;
   }
 }

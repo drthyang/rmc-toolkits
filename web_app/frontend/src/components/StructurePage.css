@@ -18,7 +18,7 @@
     display: block;
     width: 100%;
     aspect-ratio: var(--panel-aspect);
-    max-height: calc(100vh - 17rem);
+    max-height: calc(var(--viewport-h) - 17rem);
 }
 
 .slab-panel canvas {
@@ -26,7 +26,7 @@
     width: 100%;
     aspect-ratio: var(--panel-aspect);
     height: auto;
-    max-height: calc(100vh - 17rem);
+    max-height: calc(var(--viewport-h) - 17rem);
     touch-action: none;
 }
 
@@ -35,7 +35,7 @@
     aspect-ratio: var(--panel-aspect);
     height: auto;
     min-height: 0;
-    max-height: calc(100vh - 17rem);
+    max-height: calc(var(--viewport-h) - 17rem);
 }
 
 @media (max-width: 980px) {
