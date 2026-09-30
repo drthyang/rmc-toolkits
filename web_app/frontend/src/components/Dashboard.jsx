@@ -294,6 +294,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         setStructureStale(false);
         setStructureError(null);
         setError(null);
+        setSaveAllError(null);
         setLoading(false);
         setHiddenPlotPaths(new Set());
         return undefined;
@@ -324,6 +325,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         setShowLoadedFiles(false);
         manuallyToggledPathsRef.current = new Set();
         setDismissedErrors(new Set());
+        // A failed "Save all figures" belongs to the previous run's figures.
+        setSaveAllError(null);
     }, [directory]);
 
     useEffect(() => {

@@ -1873,12 +1873,12 @@ it, and revokes the URL on the next tick.
 
 **Inputs:** the live DOM of the dashboard page. **Outputs:** `figures-png.zip` or `figures-svg.zip`.
 
-`Dashboard.jsx` → `handleSaveAllFigures(format)` queries the page root for every `.plot-card`, takes
-its `.interactive-plot svg` node and the `.plot-card-header h3` text as the name, and hands the list
+`Dashboard.jsx` → `handleSaveAllFigures(format)` queries the page root for every `[data-figure-card]`, takes
+its `.interactive-plot svg` node and its `.ui-card__title` text as the name, and hands the list
 to `saveSvgFiguresAsZip`. A `savingAll` flag guards re-entry. A rejection (for example
 `Could not rasterize the figure` from one PNG entry) is caught and shown as a one-line danger banner
 under the "Loaded N plot files" header ("Could not save the figures" when it carries no message); the
-next save clears it. Selection and naming rules:
+next save clears it, and so does opening another run folder. Selection and naming rules:
 
 - **A card with no `.interactive-plot svg` is skipped entirely** — a still-parsing card, or one
   showing a parse error, contributes nothing to the archive.

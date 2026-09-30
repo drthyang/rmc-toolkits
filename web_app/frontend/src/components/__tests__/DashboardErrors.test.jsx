@@ -106,6 +106,17 @@ describe('Dashboard error lines', () => {
         expect(saveAllBanner()).toBeNull();
     });
 
+    it('drops a failed Save all when another run folder opens', async () => {
+        await mount();
+        state.zipOutcomes = [new Error('Could not rasterize the figure')];
+        await saveAll();
+        expect(saveAllBanner()).not.toBeNull();
+
+        act(() => root.render(<Dashboard directory="runs/b" localRun={null} />));
+        await flush();
+        expect(saveAllBanner()).toBeNull();
+    });
+
     it('says when the run folder cannot be listed and the server gave no reason', async () => {
         state.listError = new Error('Network Error');
         await mount();
