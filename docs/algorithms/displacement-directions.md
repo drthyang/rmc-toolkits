@@ -1954,9 +1954,10 @@ is `null` until the new text loads, so a request can never run against the previ
 **Read failure.** If `localFile.text()` rejects, the hook resets `loadedText` to
 `{ file: null, text: null }` *and* sets `sitesError` to the literal string
 `'Could not read the structure file.'`
-([`useSiteCloud.js:58-60`](../../web_app/frontend/src/useSiteCloud.js)). `OrientationPage` renders that
-as a `.pca-error-banner` **above the panel grid**
-([`OrientationPage.jsx:285`](../../web_app/frontend/src/components/OrientationPage.jsx)). It is the only
+([`useSiteCloud.js`](../../web_app/frontend/src/useSiteCloud.js)). `OrientationPage` lists that
+in the page's **Problems section** (`useIssue('sites', …)`, the kit's `ui-issues` at the top of the
+page), with atoms the parser skipped as a warning row. In the static build with no run open the hook
+asks nothing and is not `ready`, so no request (and no false 404) happens. It is the only
 error string this page owns; every other message is passed through verbatim from an engine or from
 axios.
 

@@ -32,7 +32,7 @@ import {
     vertexRadii
 } from '../orientationSphere';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
-import { Card, CardHeader, CardMeta, Segmented, SegmentedButton, ToolButton } from '../ui';
+import { Card, CardHeader, CardMeta, Segmented, SegmentedButton, ToolButton, useIssue } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import { siteLabel } from '../siteLabel';
@@ -104,6 +104,8 @@ export default function OrientationView({
 }) {
     const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
+    // Also listed in the page's Problems section; the stage keeps its badge.
+    useIssue('orientation', error, { source: 'Direction sphere' });
     const [loading, setLoading] = useState(false);
     // Hovered cell readout: { cell, x, y } in canvas-local coordinates.
     const [hover, setHover] = useState(null);
@@ -442,7 +444,9 @@ export default function OrientationView({
             renderer.setPixelRatio(previousRatio);
             renderer.setSize(size.x, size.y, false);
             renderer.render(scene, camera);
-            if (blob) downloadBlob(blob, `${sanitizeFilename(name)}.png`);
+            // A failed capture must say so (SaveMenu lists it), not do nothing.
+            if (!blob) throw new Error('Could not capture the 3D view');
+            downloadBlob(blob, `${sanitizeFilename(name)}.png`);
         } else {
             renderer.render(scene, camera);
             await saveCanvasAsPng(renderer.domElement, name);
@@ -531,6 +535,7 @@ export default function OrientationView({
                             </ToolButton>
                             <SaveMenu
                                 onSave={saveView}
+                                name="Direction sphere"
                                 options={SAVE_OPTIONS}
                                 label="Save"
                                 align="right"

@@ -19,11 +19,6 @@
     margin: 0 0.95rem 0.9rem;
 }
 
-/* Structure error shown in place of the loaded-files card (no plots). */
-.structure-error {
-    margin-bottom: 1rem;
-}
-
 .plot-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

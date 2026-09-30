@@ -19,7 +19,10 @@ import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { isIncompleteStructure } from '../structureReport';
 import { SymTolContext } from '../symTolContext';
 import InteractivePlot from './InteractivePlot';
-import { Banner, Card, CardTitle, Chip, EmptyState, IconButton, Page, Pill } from '../ui';
+import {
+    Banner, Card, CardTitle, Chip, EmptyState, IconButton, Page, PageIssues, Pill,
+    useIssue, useIssueSet, useReportIssue
+} from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import ModelSummary from './ModelSummary';
@@ -381,6 +384,25 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         [plotFiles]
     );
 
+    // Every problem on this page is listed in its Problems section: the run
+    // folder, a structure that failed to load, and each plot file or χ² log
+    // that failed to parse (their cards keep their own line too).
+    useIssue('run-folder', error, { source: 'Run folder' });
+    useIssue('structure', structureError && !isMissingStructure(structureError) ? structureError : null, { source: 'Structure' });
+    const fileIssues = useMemo(() => {
+        const items = allPlotFiles
+            .filter((file) => file.parseError && file.plotKind !== 'r_value')
+            .map((file) => ({ key: file.path, message: file.parseError, source: file.name }));
+        if (rValueFile?.parseErrors?.length) {
+            rValueFile.parseErrors.forEach(({ name, message }) => items.push({ key: `log:${name}`, message, source: name }));
+        } else if (rValueFile?.parseError) {
+            items.push({ key: `log:${rValueFile.path}`, message: rValueFile.parseError, source: rValueFile.name });
+        }
+        return items;
+    }, [allPlotFiles, rValueFile]);
+    useIssueSet('files', fileIssues);
+    const reportIssue = useReportIssue();
+
     // Detected space group for the AI assistant's run context, at the shared
     // tolerance — keeps symmetryModel out of the llm module's imports. The
     // ladder rides along so the context can express distortion magnitude.
@@ -447,7 +469,10 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 await saveSvgFiguresAsZip(figures, format, `figures-${format}.zip`);
             }
         } catch (failure) {
-            setSaveAllError(failure?.message || 'Could not save the figures');
+            const message = failure?.message || 'Could not save the figures';
+            // In a page, SaveMenu lists it in the Problems section.
+            if (reportIssue) throw new Error(message);
+            setSaveAllError(message);
         } finally {
             setSavingAll(false);
         }
@@ -583,10 +608,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     const renderLoadedFilesPanel = () => {
         if (allPlotFiles.length === 0) {
             // "Not found" / loading are covered by the empty-state line; a real
-            // structure failure is a one-line error.
-            if (!structureError || isMissingStructure(structureError)) return null;
-            const banner = renderDashboardError(`structure:${structureError}`, structureError);
-            return banner && <div className="structure-error">{banner}</div>;
+            // structure failure is listed in the Problems section.
+            return null;
         }
 
         return (
@@ -604,6 +627,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                                 onSave={handleSaveAllFigures}
                                 options={CHART_SAVE_OPTIONS}
                                 label="Save all figures"
+                                name="All figures"
                                 align="right"
                                 busy={savingAll}
                                 className="ui-save--accent"
@@ -656,7 +680,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
 
     return (
         <Page wide ref={pageRef}>
-            {renderDashboardError(`dashboard:${error}`, error)}
+            <PageIssues />
 
             <ModelSummary structure={structure} stale={structureStale} />
 

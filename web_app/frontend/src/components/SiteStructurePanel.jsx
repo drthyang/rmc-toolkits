@@ -462,7 +462,9 @@ export default function SiteStructurePanel({
             renderer.setPixelRatio(previousRatio);
             renderer.setSize(size.x, size.y, false);
             renderer.render(scene, camera);
-            if (blob) downloadBlob(blob, `${sanitizeFilename(name)}.png`);
+            // A failed capture must say so (SaveMenu lists it), not do nothing.
+            if (!blob) throw new Error('Could not capture the 3D view');
+            downloadBlob(blob, `${sanitizeFilename(name)}.png`);
         } else {
             renderer.render(scene, camera);
             await saveCanvasAsPng(renderer.domElement, name);
@@ -518,6 +520,7 @@ export default function SiteStructurePanel({
                         </ToolButton>
                         <SaveMenu
                             onSave={saveStructureView}
+                            name="Site ellipsoids"
                             options={SAVE_OPTIONS}
                             label="Save"
                             align="right"

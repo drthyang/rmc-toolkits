@@ -21,7 +21,9 @@ import {
   WATCH_INTERVAL_MS,
 } from './browserData';
 import { SymTolContext } from './symTolContext';
-import { IconButton, Segmented, SegmentedButton } from './ui';
+import {
+  IconButton, IssueScope, IssueStoreProvider, IssueWatcher, PageIssues, Segmented, SegmentedButton
+} from './ui';
 import InfoBadge from './ui/InfoBadge';
 import './App.css';
 
@@ -370,6 +372,11 @@ function App() {
   };
 
   return (
+    <IssueStoreProvider>
+    {/* Every page lists its problems in one section at its top (ui/Issues.jsx);
+        an uncaught error goes to the page on screen, and opening another run
+        clears the last run's one-off failures. */}
+    <IssueWatcher page={activePage} resetKey={`${currentDirectory}|${localRun?.runId ?? ''}`} />
     <div className="app-container">
       <main className="main-content" ref={shellRef}>
         <header className="app-header" ref={headerRef}>
@@ -562,7 +569,13 @@ function App() {
             >
               {/* Auto StoG is pre-processing: page-local uploads, independent
                   of the run folder the post-processing pages share. */}
-              <AutoStogPage />
+              <IssueScope page="autostog">
+                {/* This page cannot place the section itself, so it sits above it. */}
+                <div className="workspace-stack">
+                  <PageIssues className="workspace-issues" />
+                  <AutoStogPage />
+                </div>
+              </IssueScope>
             </div>
           )}
           {visitedPages.dashboard && (
@@ -570,13 +583,15 @@ function App() {
               className={`workspace-page${activePage === 'dashboard' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'dashboard'}
             >
-              <Dashboard
-                directory={currentDirectory}
-                localRun={localRun}
-                watchFiles={watchFiles}
-                wantAssistantData={visitedPages.assistant}
-                onRunContextChange={setAssistantRun}
-              />
+              <IssueScope page="dashboard">
+                <Dashboard
+                  directory={currentDirectory}
+                  localRun={localRun}
+                  watchFiles={watchFiles}
+                  wantAssistantData={visitedPages.assistant}
+                  onRunContextChange={setAssistantRun}
+                />
+              </IssueScope>
             </div>
           )}
           {visitedPages.structure && (
@@ -584,7 +599,9 @@ function App() {
               className={`workspace-page${activePage === 'structure' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'structure'}
             >
-              <StructurePage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" />
+              <IssueScope page="structure">
+                <StructurePage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" />
+              </IssueScope>
             </div>
           )}
           {visitedPages.ellipsoids && (
@@ -592,7 +609,9 @@ function App() {
               className={`workspace-page${activePage === 'ellipsoids' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'ellipsoids'}
             >
-              <PcaKdePage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" onSitesChange={setPcaSites} />
+              <IssueScope page="ellipsoids">
+                <PcaKdePage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} theme="light" onSitesChange={setPcaSites} />
+              </IssueScope>
             </div>
           )}
           {visitedPages.orientation && (
@@ -602,7 +621,9 @@ function App() {
             >
               {/* Displacement-direction histogram — independent of the PCA page
                   (shares only the site picker via useSiteCloud). */}
-              <OrientationPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
+              <IssueScope page="orientation">
+                <OrientationPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
+              </IssueScope>
             </div>
           )}
           {visitedPages.geometry && (
@@ -612,7 +633,9 @@ function App() {
             >
               {/* Bond-angle (triplet) distribution + bond-length/coordination
                   statistics — the RMCProfile `triplets` workflow. */}
-              <BondGeometryPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
+              <IssueScope page="geometry">
+                <BondGeometryPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
+              </IssueScope>
             </div>
           )}
           {visitedPages.assistant && (
@@ -620,22 +643,29 @@ function App() {
               className={`workspace-page${activePage === 'assistant' ? ' is-active' : ' is-hidden'}`}
               aria-hidden={activePage !== 'assistant'}
             >
-              <AssistantPage
-                runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
-                plotFiles={assistantRun?.plotFiles ?? []}
-                rValueFile={assistantRun?.rValueFile ?? null}
-                structure={assistantRun?.structure ?? null}
-                symmetry={assistantRun?.symmetry ?? null}
-                runSettings={assistantRun?.runSettings ?? null}
-                pcaSites={pcaSites}
-                liveData={watchFiles}
-              />
+              <IssueScope page="assistant">
+                {/* This page cannot place the section itself, so it sits above it. */}
+                <div className="workspace-stack">
+                  <PageIssues className="workspace-issues" />
+                  <AssistantPage
+                    runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
+                    plotFiles={assistantRun?.plotFiles ?? []}
+                    rValueFile={assistantRun?.rValueFile ?? null}
+                    structure={assistantRun?.structure ?? null}
+                    symmetry={assistantRun?.symmetry ?? null}
+                    runSettings={assistantRun?.runSettings ?? null}
+                    pcaSites={pcaSites}
+                    liveData={watchFiles}
+                  />
+                </div>
+              </IssueScope>
             </div>
           )}
         </div>
         </SymTolContext.Provider>
       </main>
     </div>
+    </IssueStoreProvider>
   );
 }
 

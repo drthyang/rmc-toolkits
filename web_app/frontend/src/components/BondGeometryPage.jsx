@@ -26,8 +26,8 @@ import { isStaticMode, readAndParseLocalPlotFile } from '../browserData';
 import { buildElementColors, speciesCounts } from '../atomColors';
 import { BOND_COLORS, PLOT_PALETTE } from '../plotPalette';
 import {
-    Banner, BondDash, Card, CardHeader, CardMeta, Chip, Control, ControlGroup, ControlsBar, ElementChip, Hint, Kpi,
-    KpiRail, Page, PrimaryButton, Segmented, SegmentedButton, Switch, ToolButton, UnitField,
+    BondDash, Card, CardHeader, CardMeta, Chip, Control, ControlGroup, ControlsBar, ElementChip, Hint, Kpi,
+    KpiRail, Page, PageIssues, PrimaryButton, Segmented, SegmentedButton, Switch, ToolButton, UnitField, useIssue,
 } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import InteractivePlot from './InteractivePlot';
@@ -691,8 +691,17 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
         'aria-busy': computing || undefined
     };
 
+    // The page's Problems section: a site table that failed, a Compute that
+    // failed (the prompt card keeps its line and focuses the field it names),
+    // atoms the parser skipped.
+    useIssue('sites', sitesError, { source: 'Sites' });
+    useIssue('triplets', resultError, { source: 'Compute' });
+    useIssue('sites-atoms-skipped', sitesError ? null : sites?.parseWarning, { severity: 'warning', source: 'Atoms skipped' });
+    useIssue('result-atoms-skipped', result?.parseWarning, { severity: 'warning', source: 'Atoms skipped' });
+
     return (
         <Page as="div" column>
+            <PageIssues />
             {/* Model information first, as on the Dashboard; the Detected SG
                 card stays on the Dashboard/Atomic Density pages only. */}
             {structure && (
@@ -858,7 +867,6 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
             </ControlsBar>
 
             {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
-            {sitesError && <Banner as="p" tone="danger" sm>{sitesError}</Banner>}
 
             <div className={noHelper ? 'geom-layout geom-layout--no-helper' : 'geom-layout'}>
                 <Card roundEnds className="geom-hero">
