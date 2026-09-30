@@ -14,3 +14,5 @@ export { StatRail, Stat, StatCard, KpiRail, Kpi } from './Stats';
 export { Banner, Hint, EmptyState } from './Feedback';
 export { default as InfoBadge } from './InfoBadge';
 export { default as SaveMenu } from './SaveMenu';
+export { IssueStoreProvider, IssueScope, IssueList, IssueWatcher, PageIssues } from './Issues';
+export { useIssue, useIssueSet, useReportIssue, useResolveIssue } from './issueStore';

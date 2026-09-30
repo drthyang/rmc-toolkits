@@ -53,7 +53,10 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 | `Hint` | `<p class="ui-hint">` | | what to do next (dashed box) |
 | `EmptyState` | `<div class="ui-empty">` | `fill` | nothing to show yet |
 | `InfoBadge` | `?` trigger + popover (`ui-info`) | `label`, `align` (`'start'`/`'end'`), `side` (`'below'`/`'above'`: for a badge near the bottom of the page, whose hidden popover would otherwise add page scroll), `children` | a short explanation beside a label |
-| `SaveMenu` | save trigger + format menu (`ui-save`, `ui-menu`) | `onSave`, `options`, `label`, `align`, `disabled`, `busy`, `className` (`'ui-save--accent'`) | figure export |
+| `SaveMenu` | save trigger + format menu (`ui-save`, `ui-menu`) | `onSave`, `options`, `label`, `name` (the figure, for the Problems row), `align`, `disabled`, `busy`, `className` (`'ui-save--accent'`) | figure export; a save that throws or rejects is listed in the page's Problems section until the same save succeeds (logged outside a page) |
+| `PageIssues` | `<section class="ui-issues">` rows (`ui-issue`) or nothing | `className` | the page's **Problems section**: its first child, every error and warning on the page |
+| `IssueList` | the same, from a given list | `issues`, `onDismiss`, `className` | presentational core of `PageIssues` |
+| `IssueStoreProvider` / `IssueScope` / `IssueWatcher` | context only | `page` (scope); `page`, `resetKey` (watcher) | App.jsx: the one store, a scope per page, uncaught errors → the page on screen, `resetKey` (the open run) clears one-off failures |
 
 Every component appends `className` to its kit classes and spreads `...rest` on
 its root, so `role`, `aria-*`, `title`, `style`, `data-*` and `ref` pass through.
@@ -91,11 +94,34 @@ specificity ties, so it waits for a visible-change pass.
 | Segmented | `ui-seg` `--frame` `--overlay` `--nav`; `ui-seg__label`, `ui-seg__btn` (`--warm`, `.is-active`); frame/nav buttons take `.is-active` | exclusive choices |
 | Chips | `ui-chip` `--strong` `--center` `--truncate` `--success` `--warn` `--danger`; `ui-element-chain`, `ui-element-chip` (`--central`), `__dot`; `ui-bond-dash` (`--lead`); `ui-file-chip` (`.is-hidden`), `__kind`, `__name` | read-only pills |
 | Stats | `ui-stack`; `ui-stat-rail`, `__title`, `__source`, `__stats`, `__line`; `ui-stat` (`--end`, `--band`), `__sub`; `ui-stat-rail__stats.is-banded` / `.is-wrapped` (set by `StatRail`); `ui-kpis` (`__list`), `ui-kpi`, `__value` (`.is-empty`), `__unit`, `__sub`; `ui-stat-card` (`.is-good/-warn/-bad`), `__label`, `__value`, `__sub`; `ui-inline-stats`, `ui-inline-stat` (`.is-flagged`), `__null` | numbers with labels |
+| Problems | `ui-issues` (`.is-error`), `__list`, `__more`; `ui-issue` `--error` `--warning`, `__mark`, `__source`, `__text`, `__count`, `__close` | the Problems section (`PageIssues`) |
 | Feedback | `ui-banner` `--danger` `--neutral` `--caution` `--inline` `--danger-light` `--sm` `--gap-lg` `--flush` `--dismissible`; `ui-status` (`.is-error`); `ui-hint`; `ui-empty` (`--fill`); `ui-placeholder`; `ui-loading` `--sm` `--error`; `ui-prompt`, `__row`, `__error` (what to do next, or what went wrong, over an empty plot) | messages and empty states |
 | Floating | `ui-save` (`--accent`), `__trigger`, `__icon`; `ui-menu` `--right` `--left`, `__item`; `ui-info`, `__trigger`, `__popover` `--start` `--end` `--above` | menus and popovers |
 | Field bar | `ui-fieldbar` (`--readonly`), `__value`, `__ghost` | the app header's run-folder field |
 | Forms | `ui-fieldset`, `__fields`; `ui-dropzone` (`.is-drag`), `__hint` | grouped parameters, uploads |
 | Utility | `ui-visually-hidden`; `ui-reveal` (fade in on appearing) | hidden but accessible; a control that appears |
+
+### The Problems section (errors are never silent)
+
+Every workspace page lists what is wrong on it in one compact section at its
+top (`<PageIssues />`, first child of the page; App.jsx places it above the AI
+Assistant and Auto StoG pages, which cannot import the kit's hooks). It renders
+nothing when the page has no problem, so the layout only changes when
+something is wrong. Report through the hooks in `issueStore.js`, never through
+a page-level danger or caution banner:
+
+- `useIssue(key, message, { severity, source })` — a condition (a site table
+  that failed, atoms the parser skipped): listed while `message` is set.
+- `useIssueSet(namespace, items)` — a list of conditions (one per plot file).
+- `useReportIssue()` → `report({ message, severity, source })` — a one-off
+  failure (a save): listed until dismissed, the same action succeeds
+  (`useResolveIssue()`), or another run opens. `SaveMenu` does this for every
+  figure save.
+
+Errors come first, then warnings (`severity: 'warning'`). Collapsed, the
+section is at most two lines tall: two problems, or the first and "N more". A card may still show its own state (a failed
+chart, a 3D view's error badge, the Bond Geometry prompt) — the section is the
+full list, the card points at the place.
 
 ## Tokens
 

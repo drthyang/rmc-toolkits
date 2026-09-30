@@ -3,6 +3,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import cx from './cx';
+import { useReportIssue, useResolveIssue } from './issueStore';
 
 const DEFAULT_OPTIONS = [{ id: 'png', label: 'PNG image', hint: '.png' }];
 
@@ -13,7 +14,12 @@ const DEFAULT_OPTIONS = [{ id: 'png', label: 'PNG image', hint: '.png' }];
 // the accent look. Unlike the other kit components it spreads no `...rest`:
 // the root carries its own ref (outside-click close), so extra props are not
 // passed through.
-const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', align = 'right', disabled = false, busy = false, className = '' }) => {
+//
+// A save that throws or rejects is never dropped: it is listed in the page's
+// Problems section ("Save · <name>" and the error) until the same save
+// succeeds, or, outside a page scope, logged. A caller that shows its own
+// failure catches it and resolves instead.
+const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', name = null, align = 'right', disabled = false, busy = false, className = '' }) => {
     const [open, setOpen] = useState(false);
     const rootRef = useRef(null);
 
@@ -33,9 +39,30 @@ const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', align = '
         };
     }, [open]);
 
+    const report = useReportIssue();
+    const resolve = useResolveIssue();
+    const source = name ? `Save · ${name}` : 'Save';
+
+    const fail = (error) => {
+        const message = error?.message || 'Could not save the figure';
+        if (report) report({ source, message });
+        else console.error('Save failed:', error);
+    };
+    const succeed = () => {
+        if (resolve) resolve(source);
+    };
+
     const choose = (id) => {
         setOpen(false);
-        onSave(id);
+        let outcome;
+        try {
+            outcome = onSave(id);
+        } catch (error) {
+            fail(error);
+            return;
+        }
+        if (outcome && typeof outcome.then === 'function') outcome.then(succeed, fail);
+        else succeed();
     };
 
     const handleTrigger = () => {
