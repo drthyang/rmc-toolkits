@@ -348,6 +348,7 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
                     relief={relief}
                     showOutline={showOutline}
                     showAxes={showAxes}
+                    loadingSites={loadingSites}
                 />
                 <SiteStructurePanel
                     sites={sites}

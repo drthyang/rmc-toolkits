@@ -99,7 +99,8 @@ export default function OrientationView({
     contrast,
     relief,
     showOutline,
-    showAxes
+    showAxes,
+    loadingSites = false
 }) {
     const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
@@ -541,6 +542,12 @@ export default function OrientationView({
                 <div className="ui-stage ui-stage--glow ui-stage--orbit orient-canvas" ref={mountRef}>
                     {loading && <div className="ui-overlay-badge">Computing…</div>}
                     {error && <div className="ui-overlay-badge is-error">{error}</div>}
+                    {/* Nothing to draw and nothing pending: say so in the stage, where the
+                        Computing… badge goes, so it shows above the fold (the PCA page's
+                        wording: "Loading sites…", then "No site selected."). */}
+                    {!result && !loading && !error && (
+                        <div className="ui-overlay-badge">{loadingSites ? 'Loading sites…' : 'No site selected.'}</div>
+                    )}
                     {hoverCell != null && result && (
                         <div className="orient-tooltip" style={{ left: hover.x + 14, top: hover.y + 12 }}>
                             <div>{formatDirection(result.centers[hoverCell])}</div>
@@ -554,12 +561,6 @@ export default function OrientationView({
                         </div>
                     )}
                 </div>
-
-                {/* Nothing to draw and nothing pending: the same one-line empty
-                    state as the PCA Ellipsoid table card. */}
-                {!result && !loading && !error && (
-                    <p className="ui-card__caption">No site selected.</p>
-                )}
 
                 {result && (
                     <>

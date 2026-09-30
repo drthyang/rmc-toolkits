@@ -2106,8 +2106,9 @@ is-error">{error}</div>}` sit inside `<div className="pca-canvas orient-canvas" 
 (`.pca-badge`, `PcaKdePage.css:438`). The `<h3>` header holds only the title, the atom count, the
 frame toggle, Reset view and Save. (It is the *picker*, `SiteStructurePanel`, that puts a `Loading…`
 chip in its header.) With no result and neither badge up (no run yet, or no site picked) the panel
-is not left blank: a one-line caption, **No site selected.**, sits under the canvas where the
-readouts go — the same `ui-card__caption` line the PCA Ellipsoid table card shows.
+is not left blank: a third badge in the same top-left place reads **Loading sites…** while the site
+table loads (`loadingSites`, passed down from `OrientationPage`) and **No site selected.** after —
+the PCA Ellipsoid table card's wording. It sits in the stage, not under it, so it shows above the fold.
 
 ---
 
