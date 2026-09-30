@@ -8,9 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-    Banner, Card, CardHeader, CardMeta, CardNote, CardTitle, Chip, Control, ControlGroup, ControlsBar,
-    EmptyState, Hint, IconButton, Page, Pill, PrimaryButton, SaveMenu, Segmented, SegmentedButton, Stat, StatCard,
-    StatRail, Switch, ToolButton,
+    Banner, BondDash, Card, CardHeader, CardMeta, CardNote, CardTitle, Chip, Control, ControlGroup, ControlsBar,
+    ElementChip, EmptyState, Hint, IconButton, Kpi, KpiRail, Page, Pill, PrimaryButton, SaveMenu, Segmented,
+    SegmentedButton, Stat, StatCard, StatRail, Switch, ToolButton, UnitField,
 } from '..';
 
 const html = (node) => renderToStaticMarkup(node);
@@ -67,6 +67,19 @@ describe('Controls', () => {
         expect(html(<ControlsBar variant="stacked" footer />)).toBe('<div class="ui-controls ui-controls--stacked ui-controls--footer"></div>');
     });
 
+    it('ControlsBar as a form', () => {
+        expect(html(<ControlsBar as="form" className="geom-controls" noValidate />))
+            .toBe('<form class="ui-controls geom-controls" noValidate=""></form>');
+    });
+
+    it('UnitField: inputProps on the input, the unit inside the border, invalid state', () => {
+        expect(html(<UnitField unit="Å" inputProps={{ type: 'number', value: '2.00', readOnly: true, 'aria-label': 'Min' }} />))
+            .toBe('<span class="ui-unit-field"><input class="ui-unit-field__input" type="number" readOnly="" aria-label="Min" value="2.00"/>'
+                + '<span class="ui-unit-field__unit">Å</span></span>');
+        expect(html(<UnitField unit="°" invalid className="x" data-f="1" />))
+            .toBe('<span class="ui-unit-field is-invalid x" data-f="1"><input class="ui-unit-field__input"/><span class="ui-unit-field__unit">°</span></span>');
+    });
+
     it('ControlGroup is a labelled group', () => {
         expect(html(<ControlGroup label="Site and sampling" />))
             .toBe('<div class="ui-control-group" role="group" aria-label="Site and sampling"></div>');
@@ -121,12 +134,34 @@ describe('Buttons', () => {
         expect(html(<PrimaryButton type="button" outlined>Go</PrimaryButton>))
             .toBe('<button class="ui-btn-primary ui-btn-primary--outlined" type="button">Go</button>');
     });
+
+    it('PrimaryButton run: states only with run, the label stays the text', () => {
+        expect(html(<PrimaryButton type="submit" run>Compute</PrimaryButton>))
+            .toBe('<button class="ui-btn-primary ui-btn-primary--run" type="submit">Compute</button>');
+        expect(html(<PrimaryButton type="submit" run busy stale aria-busy>Update</PrimaryButton>))
+            .toBe('<button class="ui-btn-primary ui-btn-primary--run is-busy is-stale" type="submit" aria-busy="true">Update</button>');
+        expect(html(<PrimaryButton busy stale>Go</PrimaryButton>)).toBe('<button class="ui-btn-primary">Go</button>');
+    });
 });
 
 describe('Chip', () => {
     it('tones and flags', () => {
         expect(html(<Chip tone="success" strong>Rwp 0.1</Chip>)).toBe('<span class="ui-chip ui-chip--strong ui-chip--success">Rwp 0.1</span>');
         expect(html(<Chip center truncate title="t">f</Chip>)).toBe('<span class="ui-chip ui-chip--center ui-chip--truncate" title="t">f</span>');
+    });
+
+    it('ElementChip: element color on --chip, a dot, the central ring', () => {
+        expect(html(<ElementChip color="#00A087">Se</ElementChip>))
+            .toBe('<span class="ui-element-chip" style="--chip:#00A087"><i class="ui-element-chip__dot" aria-hidden="true"></i>Se</span>');
+        expect(html(<ElementChip color="#F39B7F" central title="central atom">Ta</ElementChip>))
+            .toBe('<span class="ui-element-chip ui-element-chip--central" style="--chip:#F39B7F" title="central atom">'
+                + '<i class="ui-element-chip__dot" aria-hidden="true"></i>Ta</span>');
+    });
+
+    it('BondDash: bond color on --bond and hidden text, so a chain reads as text', () => {
+        expect(html(<BondDash color="#1f6fd6" />))
+            .toBe('<span class="ui-bond-dash" style="--bond:#1f6fd6"><span class="ui-visually-hidden">–</span></span>');
+        expect(html(<BondDash lead text="" />)).toBe('<span class="ui-bond-dash ui-bond-dash--lead"><span class="ui-visually-hidden"></span></span>');
     });
 });
 
@@ -140,6 +175,20 @@ describe('Stats', () => {
     it('Stat passes role, dt and dd attributes through', () => {
         expect(html(<Stat end role="status" dtProps={{ className: 'sym-ladder-dt' }} ddProps={{ title: 'x' }} label="L">v</Stat>))
             .toBe('<div class="ui-stat ui-stat--end" role="status"><dt class="sym-ladder-dt">L</dt><dd title="x">v</dd></div>');
+    });
+
+    it('KpiRail wraps its dl; Kpi shows value, unit and sub, or "—" and a kept sub line', () => {
+        // A live region's role goes on the wrapper: on the <dl> itself it would
+        // replace the description-list semantics (ARIA in HTML allows a dl only
+        // group, list, none and presentation).
+        expect(html(<KpiRail role="status" aria-live="polite" aria-label="R"><Kpi label="Angles" value="14.8" unit="per Ta" sub="236,431 angles" title="t" /></KpiRail>))
+            .toBe('<div class="ui-kpis" role="status" aria-live="polite" aria-label="R"><dl class="ui-kpis__list">'
+                + '<div class="ui-kpi" title="t"><dt>Angles</dt><dd>'
+                + '<span class="ui-kpi__value">14.8<span class="ui-kpi__unit">\u2009per Ta</span></span>'
+                + '<span class="ui-kpi__sub">236,431 angles</span></dd></div></dl></div>');
+        expect(html(<Kpi label="Coordination" value={null} unit="per Ta" sub="x" />))
+            .toBe('<div class="ui-kpi"><dt>Coordination</dt><dd><span class="ui-kpi__value is-empty">—</span>'
+                + '<span class="ui-kpi__sub">\u00a0</span></dd></div>');
     });
 
     it('StatCard renders label, value, sub', () => {

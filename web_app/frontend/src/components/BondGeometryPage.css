@@ -1,39 +1,51 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later
    Copyright (C) 2026 Tsung-Han Yang
 
-   Bond Geometry page layout. The look (controls bar, cards, headers, stat
-   rails, hints, segmented toggle, window inputs) is the UI kit's; this file
-   places the three panels and sizes the plots. */
+   Bond Geometry page layout. The look (controls bar, cards, headers, KPI
+   rail, chips, prompt, overlays, unit fields) is the UI kit's; this file
+   places the three cards and sizes the plots. */
 
 .geom-layout {
-    /* Same 16:9 discipline as .orient-layout: the clamp is authoritative, so
-       the row fills the viewport below header + controls + chips without
-       introducing page scroll, and both columns stretch to the same height —
-       the hero card's bottom edge aligns with the side column's. */
-    flex: none;
-    min-height: 0;
+    /* The grid takes the page height left under the model card and the
+       controls bar (flex from a zero basis), so the page does not scroll at
+       16:9 / 16:10 desktop sizes (1440 px wraps the model card; the bar keeps
+       one row down to 1440 px). The floor keeps the plots readable on short
+       windows — the page scrolls there, as at 1280 × 800 — and the cap keeps
+       them sane on tall ones: 60rem, or 45vw on a 4K screen, where the rem
+       cap alone would stop the grid ~450px short of the footer. The angle distribution is the hero (7 of 12
+       columns, full height); the folded cell and the partial g(r) stack on
+       the right in equal rows, so the g(r) — read for the first-shell peak —
+       keeps a usable height near the floor. */
+    flex: 1 1 0;
+    min-height: 32rem;
+    max-height: max(60rem, 45vw);
     display: grid;
-    /* Three equal columns: angle distribution, partial g(r), folded cell. An
-       earlier column held a histogram of the bond lengths inside the window —
-       dropped as redundant, since it was the same first-shell peak the partial
-       g(r) already plots, only clipped to the window. */
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.9rem;
-    align-items: stretch;
-    /* Overhead includes the Model information and Triplet result cards
-       above the controls-bar stack. The cap keeps the plots from growing
-       much taller than wide: 56rem, or 38vw on a 4K screen, where the rem cap
-       alone would stop the row ~250px short of the footer. */
-    height: clamp(24rem, calc(var(--viewport-h) - 28.5rem), max(56rem, 38vw));
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+        "hero cell"
+        "hero pdf";
+    gap: 0.85rem;
 }
 
-/* The unit-cell panel is placed by a named grid-area on the PCA page; reset
-   it to auto flow here so it takes the third column (same reset + fill rules
-   orient-layout carries). */
+/* No partials file: the g(r) card is a slim header row and the folded cell
+   takes the height. */
+.geom-layout--no-helper {
+    grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.geom-hero {
+    grid-area: hero;
+}
+
 .geom-layout .pca-unitcell-panel {
-    grid-area: auto;
+    grid-area: cell;
     min-width: 0;
     min-height: 0;
+}
+
+.geom-helper {
+    grid-area: pdf;
 }
 
 .geom-layout .pca-structure {
@@ -41,34 +53,39 @@
     min-height: 0;
 }
 
-/* (The slim unit-cell column lets its header actions wrap under the title:
-   FoldedCellPanel's CardHeader `wrap`.) */
 .geom-layout .ui-card {
     display: flex;
     flex-direction: column;
     min-height: 0;
 }
 
-/* The two plot cards must hand their plots identically sized boxes, or the
-   same data reads at two different aspect ratios side by side. Their columns
-   are already equal, so it comes down to the chrome above each stage: pin the
-   header height (CardHeader `fixed`: one title is long enough to wrap, the
-   other is not) and reserve two legend rows in both (only the partial PDF's
-   legend wraps, once the split adds a second pair of guides). */
-.geom-plot .interactive-plot .plot-toolbar {
-    min-height: 3.6rem;
-    align-items: flex-start;
-    flex-wrap: wrap;
-}
-
 /* The plots fill whatever height their card has: the SVG keeps its own
-   coordinate system (pointer math goes through getScreenCTM) and letterboxes
-   the drawing, so clamped cards stay interactive and undistorted. */
+   coordinate system (pointer math goes through getScreenCTM) and the 'fit'
+   variant sizes its viewBox from the stage, so clamped cards stay
+   interactive and undistorted. The hero's plot area also holds the overlays
+   (prompt, badges, shimmer), positioned against it. */
 .geom-plot {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
-    padding: 0.4rem 0.6rem 0.6rem;
+    padding: 0.2rem 0.6rem 0.6rem;
+}
+
+/* The busy badge sits centred over the plot (where the prompt was), clear of
+   the plot's legend row. */
+.geom-plot > .ui-overlay-badge {
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+}
+
+.geom-plot__frame {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
 }
 
 .geom-plot .interactive-plot {
@@ -85,10 +102,6 @@
     display: flex;
 }
 
-/* Both plots run the 'fit' variant, which sizes its viewBox from the stage.
-   The svg takes its height by stretching in the flex stage, not from a
-   percentage: the stage's own height is flex-derived, so a percentage would
-   resolve against an indefinite height and collapse the box to zero. */
 .geom-plot .interactive-plot svg {
     flex: 1 1 auto;
     min-width: 0;
@@ -98,32 +111,35 @@
     aspect-ratio: auto;
 }
 
-/* Below 16:9-ish desktop widths the grid stacks and every plot returns to
-   its natural 8:5 aspect — the viewport clamp only makes sense side-by-side. */
+/* Below 16:9-ish desktop widths everything stacks in one column — hero,
+   folded cell, partial g(r) — each card at its own height. */
 @media (max-width: 1100px) {
-    .geom-layout {
+    .geom-layout,
+    .geom-layout--no-helper {
         grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
+        grid-template-areas:
+            "hero"
+            "cell"
+            "pdf";
+        flex: none;
+        min-height: 0;
+        max-height: none;
+    }
+
+    .geom-hero {
+        height: clamp(24rem, calc(var(--viewport-h) * 0.62), 36rem);
+    }
+
+    .geom-layout .pca-unitcell-panel {
+        height: 24rem;
+    }
+
+    .geom-helper {
+        height: 18rem;
+    }
+
+    .geom-layout--no-helper .geom-helper {
         height: auto;
     }
-
-    /* Stacked mode has no clamped row height, so the unit-cell canvas needs
-       its own; matches the plots' stacked footprint. */
-    .geom-layout .pca-unitcell-panel {
-        min-height: 26rem;
-    }
-
-    .geom-plot .interactive-plot .plot-stage {
-        flex: none;
-        display: block;
-    }
-
-    .geom-plot .interactive-plot svg {
-        flex: none;
-        aspect-ratio: 8 / 5;
-    }
-}
-
-/* The Compute button sits at the bottom of its control group. */
-.geom-compute {
-    align-self: flex-end;
 }

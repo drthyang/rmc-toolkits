@@ -6,7 +6,8 @@
 // supercell folded back into a single cell, so the spread around each site is
 // the thermal cloud itself rather than a fitted ellipsoid. Bonds come from the
 // triplet windows and are drawn as thin transparent lines so a full network
-// reads as a framework instead of hiding the cloud behind it.
+// reads as a framework instead of hiding the cloud behind it. The element key
+// sits inside the canvas, as a pill at the bottom left.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -41,7 +42,14 @@ const FoldedCellPanel = ({
     bondSets = null,
     elementColors = {},
     loading = false,
-    title = 'Folded unit cell'
+    title = 'Folded unit cell',
+    // Elements to name in bold in the legend; the others read muted. Null:
+    // every element is plain.
+    legendEmphasis = null,
+    // Extra legend items after the elements (e.g. the bond swatch, or a
+    // "Compute to draw bonds" cue).
+    legendExtras = null,
+    className
 }) => {
     const [showCellAxes, setShowCellAxes] = useState(true);
     const mountRef = useRef(null);
@@ -302,7 +310,7 @@ const FoldedCellPanel = ({
     }, []);
 
     return (
-        <Card roundEnds className="pca-unitcell-panel">
+        <Card roundEnds className={className ? `pca-unitcell-panel ${className}` : 'pca-unitcell-panel'}>
             <CardHeader
                 wrap
                 title={title}
@@ -345,17 +353,25 @@ const FoldedCellPanel = ({
                     </>
                 )}
             />
-            <div className="ui-stage ui-stage--glow-soft ui-stage--divided ui-stage--orbit pca-structure" ref={mountRef} />
-            {Object.keys(elementColors).length > 0 && (
-                <div className="ui-legend" aria-label="Atom colors by element">
-                    {Object.entries(elementColors).map(([element, color]) => (
-                        <span key={element} className="ui-legend__item">
-                            <span className="ui-legend__swatch" style={{ background: color }} />
-                            {element}
-                        </span>
-                    ))}
-                </div>
-            )}
+            <div className="ui-stage ui-stage--glow-soft ui-stage--orbit pca-structure pca-structure--overlaid">
+                <div className="pca-structure__mount" ref={mountRef} />
+                {(Object.keys(elementColors).length > 0 || legendExtras) && (
+                    <div className="ui-legend ui-legend--overlay" aria-label="Atom colors by element">
+                        {Object.entries(elementColors).map(([element, color]) => (
+                            <span
+                                key={element}
+                                className={legendEmphasis && !legendEmphasis.includes(element)
+                                    ? 'ui-legend__item is-muted'
+                                    : 'ui-legend__item'}
+                            >
+                                <span className="ui-legend__swatch" style={{ background: color }} />
+                                {element}
+                            </span>
+                        ))}
+                        {legendExtras}
+                    </div>
+                )}
+            </div>
         </Card>
     );
 };

@@ -7,22 +7,27 @@ import cx from './cx';
 /**
  * Horizontal controls bar above a page's cards.
  *
+ * @param {string} [as='div'] - 'form' when Enter in a field should run the
+ *                              page's action (onSubmit).
  * @param {'default'|'dense'|'stacked'} [variant='default']
  * @param {boolean} [sub]    - a second bar tucked under the first.
  * @param {boolean} [footer] - a bar that closes the page.
  */
-export const ControlsBar = ({ variant = 'default', sub, footer, className, ...rest }) => (
-    <div
-        className={cx(
-            'ui-controls',
-            variant !== 'default' && `ui-controls--${variant}`,
-            sub && 'ui-controls--sub',
-            footer && 'ui-controls--footer',
-            className
-        )}
-        {...rest}
-    />
-);
+export const ControlsBar = ({ as = 'div', variant = 'default', sub, footer, className, ...rest }) => {
+    const Tag = as;
+    return (
+        <Tag
+            className={cx(
+                'ui-controls',
+                variant !== 'default' && `ui-controls--${variant}`,
+                sub && 'ui-controls--sub',
+                footer && 'ui-controls--footer',
+                className
+            )}
+            {...rest}
+        />
+    );
+};
 
 /** A cluster of related controls that wraps as a unit (role="group"). */
 export const ControlGroup = ({ label, className, ...rest }) => (
@@ -66,4 +71,19 @@ export const Switch = ({ label, bare, checked, onChange, inputProps, className, 
         <input type="checkbox" checked={checked} onChange={onChange} {...inputProps} />
         <i className="ui-switch__track" aria-hidden="true" />
     </label>
+);
+
+/**
+ * Number box with its unit inside the border ([2.00 Å]). `inputProps` go to
+ * the <input> (value, onChange, aria-label, ref, …); the rest to the wrapper.
+ *
+ * @param {React.ReactNode} unit - the unit suffix.
+ * @param {boolean} [invalid]    - a danger border (an error names this field);
+ *                                 the caller also sets aria-invalid.
+ */
+export const UnitField = ({ unit, invalid, inputProps, className, ...rest }) => (
+    <span className={cx('ui-unit-field', invalid && 'is-invalid', className)} {...rest}>
+        <input className="ui-unit-field__input" {...inputProps} />
+        <span className="ui-unit-field__unit">{unit}</span>
+    </span>
 );

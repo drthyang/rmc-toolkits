@@ -23,4 +23,10 @@ describe('InfoBadge', () => {
         expect(render({ align: 'end', children: 'x' })).toContain('ui-info__popover--end');
         expect(render({ children: 'x' })).toContain('ui-info__popover--start');
     });
+
+    it('opens above on request, below by default', () => {
+        expect(render({ side: 'above', align: 'end', children: 'x' }))
+            .toContain('class="ui-info__popover ui-info__popover--end ui-info__popover--above"');
+        expect(render({ children: 'x' })).toContain('class="ui-info__popover ui-info__popover--start"');
+    });
 });

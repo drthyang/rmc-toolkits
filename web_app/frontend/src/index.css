@@ -33,7 +33,10 @@
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.32);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.22);
   --focus-ring: 0 0 0 3px rgba(76, 125, 240, 0.32);
+  --focus-ring-danger: 0 0 0 3px rgba(239, 118, 116, 0.3);
   --plot-bg: #f8fafc;
+  --plot-area-opacity: 0.22;
+  --tint-chip: 20%;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -60,7 +63,10 @@
   --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 12px rgba(16, 24, 40, 0.05);
   --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.16);
+  --focus-ring-danger: 0 0 0 3px rgba(180, 35, 24, 0.16);
   --plot-bg: #ffffff;
+  --plot-area-opacity: 0.14;
+  --tint-chip: 14%;
 }
 
 /* Theme-invariant tokens: values that are identical in both themes (the brand
@@ -120,6 +126,8 @@
   --dur-fast: 120ms;
   --dur: 140ms;
   --dur-slow: 160ms;
+  --dur-spin: 0.8s;
+  --dur-shimmer: 1.4s;
   /* control heights */
   --h-control: 2.05rem;
   --h-row: 2.3rem;
@@ -127,6 +135,7 @@
   --h-pill-md: 1.9rem;
   --h-menu-item: 1.85rem;
   --h-pill: 1.7rem;
+  --h-chip: 1.5rem;
   /* type sizes, named by hundredths of a rem */
   --fs-62: 0.62rem;
   --fs-64: 0.64rem;

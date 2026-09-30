@@ -96,3 +96,40 @@ export const StatCard = ({ tone, label, value, sub, className, ...rest }) => (
         <span className="ui-stat-card__sub">{sub}</span>
     </div>
 );
+
+/**
+ * KPI rail: headline results as a <dl> of tiles inside a card, under its
+ * header. The caller's role / aria-live / aria-label (and `...rest`) go on
+ * the wrapper <div>, never on the <dl>: a live-region role there would
+ * replace its description-list semantics.
+ */
+export const KpiRail = ({ className, children, ...rest }) => (
+    <div className={cx('ui-kpis', className)} {...rest}>
+        <dl className="ui-kpis__list">{children}</dl>
+    </div>
+);
+
+/**
+ * One KPI tile. Without a value it shows "—" and keeps its sub line (a
+ * non-breaking space), so the rail keeps its height before the first result.
+ *
+ * @param {React.ReactNode} label
+ * @param {React.ReactNode} [value] - null / undefined → "—".
+ * @param {React.ReactNode} [unit]  - after the value, past a thin space.
+ * @param {React.ReactNode} [sub]   - one muted line under the value.
+ */
+export const Kpi = ({ label, value, unit, sub, className, ...rest }) => {
+    const empty = value === null || value === undefined;
+    return (
+        <div className={cx('ui-kpi', className)} {...rest}>
+            <dt>{label}</dt>
+            <dd>
+                <span className={cx('ui-kpi__value', empty && 'is-empty')}>
+                    {empty ? '—' : value}
+                    {!empty && unit ? <span className="ui-kpi__unit">{'\u2009'}{unit}</span> : null}
+                </span>
+                <span className="ui-kpi__sub">{empty || sub === undefined || sub === null ? '\u00a0' : sub}</span>
+            </dd>
+        </div>
+    );
+};
