@@ -11,13 +11,14 @@
        16:9 / 16:10 desktop sizes (1440 px wraps the model card; the bar keeps
        one row down to 1440 px). The floor keeps the plots readable on short
        windows — the page scrolls there, as at 1280 × 800 — and the cap keeps
-       them sane on tall ones. The angle distribution is the hero (7 of 12
+       them sane on tall ones: 60rem, or 45vw on a 4K screen, where the rem
+       cap alone would stop the grid ~450px short of the footer. The angle distribution is the hero (7 of 12
        columns, full height); the folded cell and the partial g(r) stack on
        the right in equal rows, so the g(r) — read for the first-shell peak —
        keeps a usable height near the floor. */
     flex: 1 1 0;
     min-height: 32rem;
-    max-height: 60rem;
+    max-height: max(60rem, 45vw);
     display: grid;
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
@@ -127,7 +128,7 @@
     }
 
     .geom-hero {
-        height: clamp(24rem, 62vh, 36rem);
+        height: clamp(24rem, calc(var(--viewport-h) * 0.62), 36rem);
     }
 
     .geom-layout .pca-unitcell-panel {

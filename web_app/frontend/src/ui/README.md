@@ -44,7 +44,7 @@ kept as separate variants on purpose — see [Not unified yet](#not-unified-yet)
 | `Chip` | `<span class="ui-chip">` | `tone` (`'success'`/`'warn'`/`'danger'`), `strong`, `center`, `truncate` | small read-only pills (Rwp, file info, window chips, the Bond Geometry *inputs changed* cue); inside a bar header (`ui-card__header`) a chip takes the header's control height (`--h-chip`, like `ElementChip`) on one line, so one appearing never grows the header |
 | `ElementChip` | `<span class="ui-element-chip">` dot + text | `color` (→ `--chip`), `central` (ring) | an element in a triplet or pair, inside a `ui-element-chain` span (Bond Geometry titles) |
 | `BondDash` | `<span class="ui-bond-dash">` + hidden text | `color` (→ `--bond`), `lead`, `text` (default `–`) | the bond between two element chips, or leading a chip's text in its bond-role color |
-| `StatRail` | `<section class="ui-card ui-stat-rail">` title cell + `<dl>` | `heading`, `headingProps` | Model information / Detected SG / Triplet result |
+| `StatRail` | `<section class="ui-card ui-stat-rail">` title cell + `<dl>` | `heading`, `headingProps` | Model information / Detected SG |
 | `Stat` | `<div class="ui-stat"><dt/><dd/></div>` | `label`, `end`, `band`, `dtProps`, `ddProps` | one column of a stat rail |
 | `StatCard` | readout tile with a status edge | `tone` (`'good'`/`'warn'`/`'bad'`), `label`, `value`, `sub` | result readouts (Auto StoG) |
 | `KpiRail` | `<div class="ui-kpis"><dl class="ui-kpis__list">` | (caller adds `role`, `aria-live`, `aria-label` — they land on the wrapper, so the `<dl>` keeps its list semantics) | headline results inside a card, under its header (Bond Geometry hero) |
