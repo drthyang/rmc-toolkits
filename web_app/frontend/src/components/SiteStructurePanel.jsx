@@ -449,7 +449,8 @@ export default function SiteStructurePanel({
     // Export the figure as PNG — same 1× / 3× options as the main panels.
     const saveStructureView = useCallback(async (format) => {
         const handle = structureSceneRef.current;
-        if (!handle) return;
+        // A save that cannot happen says so (SaveMenu lists it), never passes as done.
+        if (!handle) throw new Error('Nothing to save yet: the view has not been drawn');
         const { renderer, scene, camera } = handle;
         const name = 'PCA_Site_ellipsoids';
         if (format === 'png3x') {
@@ -462,7 +463,9 @@ export default function SiteStructurePanel({
             renderer.setPixelRatio(previousRatio);
             renderer.setSize(size.x, size.y, false);
             renderer.render(scene, camera);
-            if (blob) downloadBlob(blob, `${sanitizeFilename(name)}.png`);
+            // A failed capture must say so (SaveMenu lists it), not do nothing.
+            if (!blob) throw new Error('Could not capture the 3D view');
+            downloadBlob(blob, `${sanitizeFilename(name)}.png`);
         } else {
             renderer.render(scene, camera);
             await saveCanvasAsPng(renderer.domElement, name);
@@ -518,6 +521,7 @@ export default function SiteStructurePanel({
                         </ToolButton>
                         <SaveMenu
                             onSave={saveStructureView}
+                            name="Site ellipsoids"
                             options={SAVE_OPTIONS}
                             label="Save"
                             align="right"

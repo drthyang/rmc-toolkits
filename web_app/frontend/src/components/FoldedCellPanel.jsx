@@ -289,7 +289,8 @@ const FoldedCellPanel = ({
     // pixel ratio, then restores the on-screen one.
     const saveFigure = useCallback(async (format) => {
         const handle = sceneRef.current;
-        if (!handle) return;
+        // A save that cannot happen says so (SaveMenu lists it), never passes as done.
+        if (!handle) throw new Error('Nothing to save yet: the view has not been drawn');
         const { renderer, scene, camera } = handle;
         const name = 'Folded_Unit_Cell';
         if (format === 'png3x') {
@@ -302,7 +303,9 @@ const FoldedCellPanel = ({
             renderer.setPixelRatio(previousRatio);
             renderer.setSize(size.x, size.y, false);
             renderer.render(scene, camera);
-            if (blob) downloadBlob(blob, `${sanitizeFilename(name)}.png`);
+            // A failed capture must say so (SaveMenu lists it), not do nothing.
+            if (!blob) throw new Error('Could not capture the 3D view');
+            downloadBlob(blob, `${sanitizeFilename(name)}.png`);
         } else {
             renderer.render(scene, camera);
             await saveCanvasAsPng(renderer.domElement, name);
@@ -349,7 +352,7 @@ const FoldedCellPanel = ({
                         >
                             Reset view
                         </ToolButton>
-                        <SaveMenu onSave={saveFigure} options={SAVE_OPTIONS} label="Save" align="right" />
+                        <SaveMenu onSave={saveFigure} options={SAVE_OPTIONS} label="Save" name="Bonds view" align="right" />
                     </>
                 )}
             />

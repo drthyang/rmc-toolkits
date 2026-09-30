@@ -2539,6 +2539,110 @@ input.ui-range::-moz-range-track {
     gap: 0.7rem;
 }
 
+/* The Problems section (Issues.jsx): every error and warning on a page, one
+   compact row each, at the top of the page. Absent when there is none. */
+.ui-issues {
+    margin: 0 0 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--border));
+    border-radius: var(--radius-lg);
+    background: var(--panel-soft);
+    font-size: var(--fs-82);
+}
+
+.ui-issues.is-error {
+    border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+    background: var(--danger-soft);
+}
+
+.ui-issues__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ui-issue {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    min-width: 0;
+    padding: 0.2rem 0.4rem 0.2rem 0.8rem;
+}
+
+.ui-issue + .ui-issue {
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.ui-issue__mark {
+    flex: none;
+    align-self: center;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--warning);
+}
+
+.ui-issue--error .ui-issue__mark {
+    background: var(--danger);
+}
+
+.ui-issue__source {
+    flex: none;
+    color: var(--muted);
+    font-size: var(--fs-72);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.ui-issue__text {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.ui-issue--error .ui-issue__text {
+    color: var(--danger);
+}
+
+.ui-issue__count {
+    flex: none;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-75);
+}
+
+.ui-issue__close {
+    flex: none;
+    align-self: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    color: var(--muted);
+    font-size: var(--fs-88);
+}
+
+.ui-issues__more {
+    display: block;
+    width: 100%;
+    min-height: 0;
+    padding: 0.18rem 0.8rem;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    background: transparent;
+    color: var(--muted);
+    font-size: var(--fs-75);
+    font-weight: 600;
+    text-align: left;
+    box-shadow: none;
+}
+
+.ui-issues__more:hover:not(:disabled) {
+    color: var(--text-strong);
+    background: color-mix(in srgb, currentColor 6%, transparent);
+    border-color: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
 /* Full-width status row with a close button (app header notices). */
 .ui-status {
     flex-basis: 100%;

@@ -15,7 +15,7 @@ import React, { useMemo, useState } from 'react';
 import { isStaticMode } from '../browserData';
 import { buildElementColors, speciesCounts } from '../atomColors';
 import { COLORMAP_NAMES } from '../colormaps';
-import { Banner, Control, ControlGroup, ControlsBar, Hint, Page, Switch } from '../ui';
+import { Control, ControlGroup, ControlsBar, Hint, Page, PageIssues, Switch, useIssue } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import OrientationView from './OrientationView';
 import SiteStructurePanel from './SiteStructurePanel';
@@ -80,8 +80,13 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
         [sites]
     );
 
+    // The page's Problems section (the sphere card reports its own failures).
+    useIssue('sites', sitesError, { source: 'Sites' });
+    useIssue('sites-atoms-skipped', sitesError ? null : sites?.parseWarning, { severity: 'warning', source: 'Atoms skipped' });
+
     return (
         <Page as="div" column>
+            <PageIssues />
             <ControlsBar>
                 {/* Site & resolution */}
                 <ControlGroup label="Site and resolution">
@@ -321,12 +326,6 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
             </ControlsBar>
 
             {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
-            {sitesError && <Banner as="p" tone="danger" sm>{sitesError}</Banner>}
-            {!sitesError && sites?.parseWarning && (
-                <Banner as="p" tone="caution" role="status" title="The sites below are built from the remaining atoms.">
-                    <strong>Atoms skipped:</strong> {sites.parseWarning}
-                </Banner>
-            )}
 
             {/* Three equal-height panels: axis views : sphere : site picker = 3 : 6.5 : 6.5. */}
             <div className="orient-layout">

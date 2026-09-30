@@ -10,8 +10,8 @@ import { buildElementColors, DEFAULT_ELEMENT_COLOR, speciesCounts } from '../ato
 import { marchingCubes, sampleFieldTrilinear } from '../workers/marchingCubes';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import {
-    Banner, Card, CardHeader, CardMeta, Control, ControlGroup, ControlsBar, Hint, Page, Segmented,
-    SegmentedButton, Switch, ToolButton,
+    Card, CardHeader, CardMeta, Control, ControlGroup, ControlsBar, Hint, Page, PageIssues, Segmented,
+    SegmentedButton, Switch, ToolButton, useIssue,
 } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
@@ -545,6 +545,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
         requestPca,
         localFile,
         rmc6fText,
+        ready,
         unitCell,
         datasetKey
     } = useSiteCloud({ directory, localRun, probability, clusterThreshold, dataEpoch });
@@ -553,7 +554,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
     useEffect(() => {
         let cancelled = false;
         const loadKde = async () => {
-            if (selectedRef == null) { setKde(null); return; }
+            // Not ready (the static build with no run open): nothing to ask.
+            if (selectedRef == null || !ready) { setKde(null); setKdeError(null); return; }
             if (localFile && !rmc6fText) return;
             setLoadingKde(true);
             setKdeError(null);
@@ -590,7 +592,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
         };
         loadKde();
         return () => { cancelled = true; };
-    }, [requestPca, localFile, rmc6fText, selectedRef, grid, bw, extent, probability, clusterThreshold, datasetKey]);
+    }, [requestPca, ready, localFile, rmc6fText, selectedRef, grid, bw, extent, probability, clusterThreshold, datasetKey]);
 
     const elementColors = useMemo(
         () => buildElementColors(sites?.elements ?? [], speciesCounts(sites?.sites)),
@@ -693,7 +695,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
     // frame at 3× pixel ratio, captures, then restores.
     const saveMainView = useCallback(async (format) => {
         const handle = sceneRef.current;
-        if (!handle) return;
+        // A save that cannot happen says so (SaveMenu lists it), never passes as done.
+        if (!handle) throw new Error('Nothing to save yet: the view has not been drawn');
         const { renderer, scene, camera } = handle;
         const name = selectedEllipsoid
             ? `PCA_Ellipsoid_${selectedEllipsoid.element}_site${selectedEllipsoid.referenceNumber}`
@@ -708,7 +711,9 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
             renderer.setPixelRatio(previousRatio);
             renderer.setSize(size.x, size.y, false);
             renderer.render(scene, camera);
-            if (blob) downloadBlob(blob, `${sanitizeFilename(name)}.png`);
+            // A failed capture must say so (SaveMenu lists it), not do nothing.
+            if (!blob) throw new Error('Could not capture the 3D view');
+            downloadBlob(blob, `${sanitizeFilename(name)}.png`);
         } else {
             renderer.render(scene, camera);
             await saveCanvasAsPng(renderer.domElement, name);
@@ -1040,8 +1045,16 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
     // three standard errors). Older payloads without the flag count as resolved.
     const axisResolved = [0, 1, 2].map((i) => selectedEllipsoid?.axisResolved?.[i] ?? true);
 
+    // The page's Problems section: a site table that failed, atoms the parser
+    // skipped (the sites are built from the rest), a 3D volume that failed (its
+    // card keeps the badge too).
+    useIssue('sites', sitesError, { source: 'Sites' });
+    useIssue('sites-atoms-skipped', sitesError ? null : sites?.parseWarning, { severity: 'warning', source: 'Atoms skipped' });
+    useIssue('kde', kdeError, { source: '3D view' });
+
     return (
         <Page as="div" column>
+            <PageIssues />
             <ControlsBar>
                 {/* Site & KDE sampling */}
                 <ControlGroup label="Site and sampling">
@@ -1298,12 +1311,6 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
             </ControlsBar>
 
             {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
-            {sitesError && <Banner as="p" tone="danger" sm>{sitesError}</Banner>}
-            {!sitesError && sites?.parseWarning && (
-                <Banner as="p" tone="caution" role="status" title="The sites below are built from the remaining atoms.">
-                    <strong>Atoms skipped:</strong> {sites.parseWarning}
-                </Banner>
-            )}
 
             <div className="pca-layout">
                 <Card roundEnds className="pca-viewport">
@@ -1352,6 +1359,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                                 </ToolButton>
                                 <SaveMenu
                                     onSave={saveMainView}
+                                    name="3D view"
                                     options={SAVE_OPTIONS}
                                     label="Save"
                                     align="right"

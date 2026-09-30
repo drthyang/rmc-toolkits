@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import cx from './cx';
+import { useReportIssue, useResolveIssue } from './issueStore';
 
 const DEFAULT_OPTIONS = [{ id: 'png', label: 'PNG image', hint: '.png' }];
 
@@ -13,7 +14,12 @@ const DEFAULT_OPTIONS = [{ id: 'png', label: 'PNG image', hint: '.png' }];
 // the accent look. Unlike the other kit components it spreads no `...rest`:
 // the root carries its own ref (outside-click close), so extra props are not
 // passed through.
-const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', align = 'right', disabled = false, busy = false, className = '' }) => {
+//
+// A save that throws or rejects is never dropped: it is listed in the page's
+// Problems section ("Save · <name>" and the error) until the same save
+// succeeds, or, outside a page scope, logged. A caller that shows its own
+// failure catches it and resolves instead.
+const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', name = null, align = 'right', disabled = false, busy = false, className = '' }) => {
     const [open, setOpen] = useState(false);
     const rootRef = useRef(null);
 
@@ -33,9 +39,33 @@ const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', align = '
         };
     }, [open]);
 
+    const report = useReportIssue();
+    const resolve = useResolveIssue();
+    // This button's failures are its own: keyed by the instance, so a chart
+    // with the same title saving fine does not clear this one's failure.
+    const key = `save:${useId()}`;
+    const source = name ? `Save · ${name}` : 'Save';
+
+    const fail = (error) => {
+        const message = error?.message || 'Could not save the figure';
+        if (report) report({ source, message, key });
+        else console.error('Save failed:', error);
+    };
+    const succeed = () => {
+        if (resolve) resolve(key);
+    };
+
     const choose = (id) => {
         setOpen(false);
-        onSave(id);
+        let outcome;
+        try {
+            outcome = onSave(id);
+        } catch (error) {
+            fail(error);
+            return;
+        }
+        if (outcome && typeof outcome.then === 'function') outcome.then(succeed, fail);
+        else succeed();
     };
 
     const handleTrigger = () => {

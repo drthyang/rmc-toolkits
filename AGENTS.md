@@ -82,7 +82,7 @@ web_app/frontend/src/
     watchdog/                    convergence heuristics (source of truth) + LLM-narrated badge hook
     useAssistant.js              shared hook: settings, connection probe/auto-connect, run context
     components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
-  ui/                            the UI kit — every shared look: ui.css (ui- classes, loaded once from main.jsx right after index.css) + thin components (Page, Card/CardHeader, ControlsBar/Control/Switch, Segmented, Pill/ToolButton/IconButton/PrimaryButton, Chip, StatRail/Stat/StatCard, Banner/Hint/EmptyState, InfoBadge, SaveMenu); see ui/README.md
+  ui/                            the UI kit — every shared look: ui.css (ui- classes, loaded once from main.jsx right after index.css) + thin components (Page, Card/CardHeader, ControlsBar/Control/Switch, Segmented, Pill/ToolButton/IconButton/PrimaryButton, Chip, StatRail/Stat/StatCard, Banner/Hint/EmptyState, InfoBadge, SaveMenu, the Problems section: Issues.jsx + issueStore.js); see ui/README.md
   components/
     AutoStogPage.jsx             Auto StoG tab (hidden in the shipped build: `SHOW_AUTO_STOG = false`) — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets with ? help) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
     Dashboard.jsx                all-plots run dashboard
@@ -216,6 +216,16 @@ web_app/frontend/src/
   so never present it as one. An eigenvector's sign is arbitrary, so a direction and its negative are
   the same axis: `crystalOrientationRows` picks the sense that makes the closest crystal axis acute,
   and the PCA Ellipsoid table shows that representative.
+- **Errors are never silent: the Problems section.** Every workspace page lists every error and
+  warning on it in one compact section at its top (`PageIssues`, kit `ui-issues`; App.jsx wraps the
+  app in `IssueStoreProvider`, each page in `IssueScope`, and places the section above the AI
+  Assistant and Auto StoG pages). Report with `useIssue` (a condition), `useIssueSet` (a list) or
+  `useReportIssue` (a one-off failure, until the same action succeeds, it is dismissed, or another
+  run opens) — never with a page-level danger/caution banner, and never by swallowing a rejection.
+  `SaveMenu` lists every failed figure save; `IssueWatcher` lists any uncaught error or rejected
+  promise on the page on screen. Nothing renders when a page has no problem. Cards may keep their
+  own state cue (a failed chart, a 3D error badge, the Bond prompt); the section is the full list.
+  `ui/__tests__/issues.test.jsx` pins the store, the section and the watcher.
 - **One element-colour map per model.** Every page that draws atoms calls
   `buildElementColors(elements, counts)` with the model's full species list and whole-model atom
   counts (`structure.elementCounts`, or `speciesCounts(sites.sites)` on the site pages), so an element

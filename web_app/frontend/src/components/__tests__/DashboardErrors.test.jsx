@@ -2,11 +2,12 @@
 // Copyright (C) 2026 Tsung-Han Yang
 /* @vitest-environment jsdom */
 
-// Dashboard failures must reach the screen as one line: a failed "Save all
-// figures" (the save menu does not await it, so an uncaught rejection used to
-// vanish) says so under the Loaded-files header until the next save, and a
-// run-folder listing that fails without a server message (server down, network
-// error) says so instead of leaving only the "Open a run folder." prompt.
+// Dashboard failures must reach the screen: in the app they are rows of the
+// page's Problems section (mounted here as App mounts it) — a failed "Save all
+// figures" until the same save succeeds or another run opens, and a run-folder
+// listing that fails without a server message (server down, network error)
+// instead of leaving only the "Open a run folder." prompt. Outside a page scope
+// the Dashboard still shows a failed Save all itself.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
@@ -53,6 +54,17 @@ vi.mock('../ModelSummary', () => ({ default: () => null }));
 vi.mock('../../llm', () => ({ WatchdogBadge: () => null }));
 
 const { default: Dashboard } = await import('../Dashboard');
+const { IssueScope, IssueStoreProvider, IssueWatcher } = await import('../../ui');
+
+// As App.jsx mounts a page: the store, the watcher (keyed on the open run) and the scope.
+const InApp = ({ directory }) => (
+    <IssueStoreProvider>
+        <IssueWatcher page="dashboard" resetKey={directory} />
+        <IssueScope page="dashboard">
+            <Dashboard directory={directory} localRun={null} />
+        </IssueScope>
+    </IssueStoreProvider>
+);
 
 const flush = () => act(async () => {
     for (let i = 0; i < 5; i += 1) await Promise.resolve();
@@ -76,7 +88,11 @@ describe('Dashboard error lines', () => {
         container.remove();
     });
 
-    const mount = async () => {
+    const mount = async (directory = 'runs/a') => {
+        act(() => root.render(<InApp directory={directory} />));
+        await flush();
+    };
+    const mountAlone = async () => {
         act(() => root.render(<Dashboard directory="runs/a" localRun={null} />));
         await flush();
     };
@@ -90,30 +106,42 @@ describe('Dashboard error lines', () => {
     };
 
     const saveAllBanner = () => container.querySelector('.loaded-files-card .ui-banner--danger');
+    const problems = () => [...container.querySelectorAll('.ui-issues .ui-issue')].map((row) => row.textContent);
 
-    it('says when Save all figures fails, until the next save', async () => {
+    it('lists a failed Save all in the Problems section until the same save succeeds', async () => {
         await mount();
         expect(container.querySelector('.loaded-files-card')).not.toBeNull();
 
         state.zipOutcomes = [new Error('Could not rasterize the figure')];
         await saveAll();
-        expect(saveAllBanner()?.textContent).toContain('Could not rasterize the figure');
-        expect(saveAllBanner()?.getAttribute('role')).toBe('alert');
-        // The menu is usable again (not stuck on "Saving…").
+        expect(problems()).toEqual([expect.stringContaining('Could not rasterize the figure')]);
+        expect(problems()[0]).toContain('Save · All figures');
+        expect(container.querySelector('[role="alert"]').textContent).toContain('Could not rasterize the figure');
+        // Not also as a banner in the card, and the menu is usable again.
+        expect(saveAllBanner()).toBeNull();
         expect(container.querySelector('.loaded-files-card .ui-save__trigger').textContent).toContain('Save all figures');
 
         await saveAll();
-        expect(saveAllBanner()).toBeNull();
+        expect(problems()).toEqual([]);
     });
 
     it('drops a failed Save all when another run folder opens', async () => {
         await mount();
         state.zipOutcomes = [new Error('Could not rasterize the figure')];
         await saveAll();
-        expect(saveAllBanner()).not.toBeNull();
+        expect(problems()).toHaveLength(1);
 
-        act(() => root.render(<Dashboard directory="runs/b" localRun={null} />));
-        await flush();
+        await mount('runs/b');
+        expect(problems()).toEqual([]);
+    });
+
+    it('outside a page scope, shows a failed Save all in its card, cleared by the next save', async () => {
+        await mountAlone();
+        state.zipOutcomes = [new Error('Could not rasterize the figure')];
+        await saveAll();
+        expect(saveAllBanner()?.textContent).toContain('Could not rasterize the figure');
+        expect(saveAllBanner()?.getAttribute('role')).toBe('alert');
+        await saveAll();
         expect(saveAllBanner()).toBeNull();
     });
 
@@ -138,6 +166,6 @@ describe('Dashboard error lines', () => {
         await mount();
         state.zipOutcomes = [new Error('')];
         await saveAll();
-        expect(saveAllBanner()?.textContent).toContain('Could not save the figures');
+        expect(problems()[0]).toContain('Could not save the figures');
     });
 });

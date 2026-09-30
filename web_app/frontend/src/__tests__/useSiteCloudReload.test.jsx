@@ -31,6 +31,13 @@ vi.mock('axios', () => ({
     },
 }));
 
+// Flask mode: a backend directory (the test environment would otherwise count
+// as the static build, where no run means no request).
+vi.mock('../browserData', async (importOriginal) => ({
+    ...(await importOriginal()),
+    isStaticMode: () => false,
+}));
+
 const { default: useSiteCloud } = await import('../useSiteCloud');
 
 describe('useSiteCloud dataEpoch (Flask Live Data)', () => {

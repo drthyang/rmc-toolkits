@@ -1844,9 +1844,11 @@ so the margins are transparent.
    is distortion-free only because the canvas is exactly `viewBox × scale` in both dimensions.
 5. `canvas.toBlob(…, 'image/png')`; a null blob rejects with `Could not encode the figure`.
 
-Both rejection messages are caught by `InteractivePlot.jsx::saveFigure` and shown as a one-line
-danger banner under the plot toolbar (a rejection with no message reads "Could not save the figure").
-The chart stays on screen, and the next save clears the banner.
+Both rejection messages reach the page's **Problems section**: inside a page, `InteractivePlot.jsx::saveFigure`
+lets the rejection through to `SaveMenu`, which lists it as *Save · <chart title>* until the same save
+succeeds (a rejection with no message reads "Could not save the figure"). The chart stays on screen.
+Outside a page scope (a chart rendered alone) it falls back to a one-line danger banner under the
+plot toolbar, cleared by the next save.
 
 **The chart PNG resolution is fixed by the viewBox and `scale`, not by the browser window and not by
 `window.devicePixelRatio`.** `devicePixelRatio` is never consulted on the chart path; the exported
@@ -1876,9 +1878,10 @@ it, and revokes the URL on the next tick.
 `Dashboard.jsx` → `handleSaveAllFigures(format)` queries the page root for every `[data-figure-card]`, takes
 its `.interactive-plot svg` node and its `.ui-card__title` text as the name, and hands the list
 to `saveSvgFiguresAsZip`. A `savingAll` flag guards re-entry. A rejection (for example
-`Could not rasterize the figure` from one PNG entry) is caught and shown as a one-line danger banner
-under the "Loaded N plot files" header ("Could not save the figures" when it carries no message); the
-next save clears it, and so does opening another run folder. Selection and naming rules:
+`Could not rasterize the figure` from one PNG entry) is listed in the page's Problems section as
+*Save · All figures* ("Could not save the figures" when it carries no message) until the same save
+succeeds or another run folder opens (outside a page scope: a banner under the "Loaded N plot files"
+header). Selection and naming rules:
 
 - **A card with no `.interactive-plot svg` is skipped entirely** — a still-parsing card, or one
   showing a parse error, contributes nothing to the archive.

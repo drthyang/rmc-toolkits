@@ -1267,7 +1267,7 @@ The draw gate is `density && grid > 0 && kde.vmax > kde.vmin` and no `unresolved
 When it fails the canvas prints
 `"Computing KDE…"` while a request is in flight, `"No atoms in this slab"` when the result has
 `slabCount = 0`, and `"No density drawn for this slab"` when the slab has atoms but the estimator
-declined it (Step 6); before the first result, or after a KDE error (whose banner says why), it prints
+declined it (Step 6); before the first result, or after a KDE error (listed in the page's Problems section), it prints
 nothing. A declined slab gets one short note under the canvas keyed on the payload's `messageCode`
 (e.g. *"Slab atoms collinear in this plane — no kernel."*), with the payload's `message` — the same
 string from either runtime — as its tooltip; a code the page does not know shows the `message`

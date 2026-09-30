@@ -21,7 +21,7 @@ import {
     slabThicknessAngstrom
 } from '../workers/slabSelection';
 import ModelSummary from './ModelSummary';
-import { Banner, Card, CardHeader, CardMeta, CardNote, Control, ControlsBar, EmptyState, Hint, Page, Switch } from '../ui';
+import { Card, CardHeader, CardMeta, CardNote, Control, ControlsBar, EmptyState, Hint, Page, PageIssues, Switch, useIssue } from '../ui';
 import SaveMenu from '../ui/SaveMenu';
 import InfoBadge from '../ui/InfoBadge';
 import AppFooter from './AppFooter';
@@ -601,7 +601,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
         downloadBlob(await canvasToPngBlob(canvas), `${name}.png`);
     };
     const save2dPanel = async (canvas, drawFn, name, minW, minH, format) => {
-        if (!canvas) return;
+        if (!canvas) throw new Error('Nothing to save yet: the panel has not been drawn');
         if (format === 'png3x') {
             const rect = canvas.getBoundingClientRect();
             const width = Math.max(minW, Math.floor(rect.width));
@@ -650,10 +650,12 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
     const saveModel = async (format) => {
         if (format === 'png3x') {
             const blob = await captureModelBlob(3);
-            if (blob) downloadBlob(blob, `${sanitizeFilename('Folded_Unit_Cell')}.png`);
+            if (!blob) throw new Error('Could not capture the 3D view');
+            downloadBlob(blob, `${sanitizeFilename('Folded_Unit_Cell')}.png`);
         } else {
             const canvas = mountRef.current?.querySelector('canvas');
-            if (canvas) await saveCanvasAsPng(canvas, 'Folded_Unit_Cell');
+            if (!canvas) throw new Error('Nothing to save yet: the view has not been drawn');
+            await saveCanvasAsPng(canvas, 'Folded_Unit_Cell');
         }
     };
 
@@ -1311,11 +1313,18 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
 
     const noRun = isStaticMode() && !localRun;
 
+    // Failures go to the page's Problems section (a slab the estimator declined
+    // is not a failure: the map card says so itself).
+    useIssue('structure', error, { source: 'Structure' });
+    // Only with a structure on screen, as the old banner was: a later folder
+    // without one must not list the previous folder's KDE failure.
+    useIssue('kde', structure ? kdeError : null, { source: 'KDE slice' });
+
     return (
         <Page>
-            {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
+            <PageIssues />
 
-            {error && <Banner tone="danger" gapLg>{error}</Banner>}
+            {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
 
             {loading && !structure && <EmptyState>Loading structure…</EmptyState>}
 
@@ -1415,8 +1424,6 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                         <Switch label="Log scale" checked={logScale} onChange={(event) => setLogScale(event.target.checked)} />
                     </ControlsBar>
 
-                    {kdeError && <Banner tone="danger" gapLg>{kdeError}</Banner>}
-
                     <div className="analysis-layout">
                         <Card
                             roundEnds
@@ -1447,7 +1454,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                     <CardMeta title={isLocalStructure ? "Visualization path — the Flask app's SciPy KDE gives reference-grade values" : undefined}>
                                         {isLocalStructure ? 'browser' : 'server'}
                                     </CardMeta>
-                                    <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
+                                    <SaveMenu onSave={saveKdeSlice} options={PANEL_SAVE_OPTIONS} label="Save" name="KDE slice" align="right" />
                                 </span>
                             </CardHeader>
                             <canvas ref={canvasRef} className="ui-stage kde-canvas" />
@@ -1480,7 +1487,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                                 <span>Slab In Cell</span>
                                 <div className="ui-card__cluster">
                                     <strong className="ui-card__readout">{sliceConfig.label} {(Math.max(0, zCenter - thickness / 2)).toFixed(2)} - {(Math.min(1, zCenter + thickness / 2)).toFixed(2)}</strong>
-                                    <SaveMenu onSave={saveSlab} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
+                                    <SaveMenu onSave={saveSlab} options={PANEL_SAVE_OPTIONS} label="Save" name="Slab in cell" align="right" />
                                 </div>
                             </CardHeader>
                             <canvas ref={slabCanvasRef} className="ui-stage" />
@@ -1491,7 +1498,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                         >
                             <CardHeader>
                                 Folded Unit Cell
-                                <SaveMenu onSave={saveModel} options={PANEL_SAVE_OPTIONS} label="Save" align="right" />
+                                <SaveMenu onSave={saveModel} options={PANEL_SAVE_OPTIONS} label="Save" name="Folded unit cell" align="right" />
                             </CardHeader>
                             <div ref={mountRef} className="ui-stage ui-stage--orbit three-mount" />
                             {Object.keys(elementColors).length > 0 && (

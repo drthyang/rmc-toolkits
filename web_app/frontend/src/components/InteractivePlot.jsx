@@ -8,7 +8,7 @@ import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
 import { nearestFiniteIndex, niceDomain, plotPayloadError } from '../plotDomain';
 import { GUIDE_STROKE, PLOT_PALETTE } from '../plotPalette';
-import { Banner, Pill } from '../ui';
+import { Banner, Pill, useIssue, useReportIssue } from '../ui';
 import { uiScale } from '../uiScale';
 import SaveMenu from '../ui/SaveMenu';
 import './InteractivePlot.css';
@@ -166,9 +166,11 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     }, [fit]);
     const [plot, setPlot] = useState(null);
     const [error, setError] = useState(null);
-    // A failed figure save: shown under the toolbar (the chart stays), cleared
-    // by the next save. Separate from `error`, which replaces an unloaded chart.
+    // A failed figure save goes to the page's Problems section; outside a page
+    // scope it shows under the toolbar (the chart stays), cleared by the next
+    // save. Separate from `error`, which replaces an unloaded chart.
     const [saveError, setSaveError] = useState(null);
+    const reportIssue = useReportIssue();
     const [hidden, setHidden] = useState(() => new Set());
     const [xDomain, setXDomain] = useState(null);
     const [yDomain, setYDomain] = useState(null);
@@ -180,6 +182,9 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     const svgRef = useRef(null);
     const loadedPathRef = useRef(file.path);
     const effectivePlot = plotData || plot;
+    // A chart that could not load (or reload: an older chart may stay on
+    // screen) is listed in the page's Problems section, named by its file.
+    useIssue(`plot-load:${clipId}`, error, { source: file?.name || 'Plot' });
 
     useEffect(() => {
         if (plotData) {
@@ -534,6 +539,8 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         try {
             await saveSvgFigure(svgRef.current, effectivePlot?.title || file.name, format);
         } catch (failure) {
+            // In a page, SaveMenu lists it in the Problems section.
+            if (reportIssue) throw failure;
             setSaveError(failure?.message || 'Could not save the figure');
         }
     };
@@ -554,7 +561,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                     Reset zoom
                 </Pill>
             )}
-            <SaveMenu onSave={saveFigure} options={CHART_SAVE_OPTIONS} label="Save" align="right" />
+            <SaveMenu onSave={saveFigure} options={CHART_SAVE_OPTIONS} label="Save" name={effectivePlot?.title || file.name} align="right" />
         </div>
     );
     const actionsElsewhere = actionsTarget !== undefined;

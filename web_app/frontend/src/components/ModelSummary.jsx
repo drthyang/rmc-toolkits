@@ -5,7 +5,7 @@ import React, { useContext, useMemo, useState } from 'react';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { moveRatios } from '../moveStats';
 import { SymTolContext } from '../symTolContext';
-import { Chip, Stat, StatRail } from '../ui';
+import { Chip, Stat, StatRail, useIssue } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import './ModelSummary.css';
 
@@ -56,6 +56,8 @@ const parseSummary = (structure) => {
 const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
     // Tolerance is shared via context (kept across page switches); fall back to
     // local state if no provider is present.
+    // Atoms the parser skipped are listed in the page's Problems section too.
+    useIssue('structure-atoms-skipped', structure?.parseWarning, { severity: 'warning', source: 'Atoms skipped' });
     const sharedSymTol = useContext(SymTolContext);
     const localSymTol = useState(0.2);
     const [symTol, setSymTol] = sharedSymTol ?? localSymTol;

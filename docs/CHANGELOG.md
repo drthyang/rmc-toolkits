@@ -73,6 +73,27 @@ static-mode χ² history, and `unreachable` on a failed AI Assistant connection 
 `ui-intro`, `ui-disclosure`, `ui-fieldset__desc` and `ui-controls__note` lost their last user and
 were removed.
 
+### Problems section on every page
+
+- **Errors are never silent.** Every page lists what is wrong on it in one compact section at its
+  top, errors first, then warnings: a site table or structure that failed to load, a KDE or Compute
+  that failed, atoms the parser skipped, a plot file or χ² log that failed to parse, a figure that
+  could not be saved, and any error nothing else caught. Collapsed it is at most two lines (two
+  problems, or the first and "N more"); a repeated failure counts up (×N). Nothing appears when a page has no problem, so the
+  layouts are unchanged (checked pixel for pixel on every page with the demo run).
+- It replaces the page-level danger and caution banners (PCA Ellipsoid, Displacement Directions,
+  Bond Geometry, Atomic Density, the Dashboard's run-folder and structure errors, the save-failure
+  banners). A card keeps its own cue where it explains an empty view (a failed chart, a 3D error
+  badge, the Bond Geometry prompt).
+- **Newly surfaced:** failed saves of the 3D views and canvases (PCA view, Site ellipsoids, the
+  direction sphere, KDE slice, slab, folded cell, Bond Geometry's bonds view), which used to fail
+  without a word, and a capture that returned no image; Bond Geometry's skipped-atoms warning, which
+  that page never showed.
+- A failed save stays listed until the same save succeeds, it is dismissed, or another run opens.
+- **Fixed:** in the static build with no run open, PCA Ellipsoid, Displacement Directions and Bond
+  Geometry showed "Request failed with status code 404" (they asked the server that the static
+  build does not have). They now ask nothing until a run is open.
+
 ### Atom colours: one map per model, similar colours separated
 
 - **One element-colour map on every page.** Atomic Density, Bond Geometry, PCA Ellipsoid and
