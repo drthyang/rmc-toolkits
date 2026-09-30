@@ -137,7 +137,7 @@ export default function OrientationView({
     useEffect(() => {
         let cancelled = false;
         const load = async () => {
-            if (!ready || selectedRef == null) { setResult(null); return; }
+            if (!ready || selectedRef == null) { setResult(null); setError(null); return; }
             setLoading(true);
             setError(null);
             try {
@@ -429,7 +429,8 @@ export default function OrientationView({
 
     const saveView = useCallback(async (format) => {
         const handle = sceneRef.current;
-        if (!handle) return;
+        // A save that cannot happen says so (SaveMenu lists it), never passes as done.
+        if (!handle) throw new Error('Nothing to save yet: the view has not been drawn');
         const { renderer, scene, camera } = handle;
         const name = selectedEllipsoid
             ? `Orientation_${siteLabel(selectedEllipsoid)}_site${selectedEllipsoid.referenceNumber}`

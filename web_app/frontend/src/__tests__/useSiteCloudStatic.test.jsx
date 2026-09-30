@@ -56,4 +56,16 @@ describe('useSiteCloud in the static build with no run', () => {
         expect(hook.loadingSites).toBe(false);
         expect(hook.ready).toBe(false);
     });
+
+    it('drops the site pick when the run is closed, so no page asks for it', async () => {
+        // A run whose file text is still loading: no worker, no request.
+        const pending = { runId: 1, structureFile: { path: 'Demo/x.rmc6f', sourceFile: { text: () => new Promise(() => {}) } } };
+        await act(async () => { root.render(<Probe directory="data" localRun={pending} />); });
+        await act(async () => { hook.setSelectedRef(3); });
+        expect(hook.selectedRef).toBe(3);
+        await act(async () => { root.render(<Probe directory="data" localRun={null} />); });
+        expect(hook.selectedRef).toBeNull();
+        expect(hook.ready).toBe(false);
+        expect(requests).toEqual([]);
+    });
 });

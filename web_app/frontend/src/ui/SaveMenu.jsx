@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import cx from './cx';
 import { useReportIssue, useResolveIssue } from './issueStore';
 
@@ -41,15 +41,18 @@ const SaveMenu = ({ onSave, options = DEFAULT_OPTIONS, label = 'Save', name = nu
 
     const report = useReportIssue();
     const resolve = useResolveIssue();
+    // This button's failures are its own: keyed by the instance, so a chart
+    // with the same title saving fine does not clear this one's failure.
+    const key = `save:${useId()}`;
     const source = name ? `Save · ${name}` : 'Save';
 
     const fail = (error) => {
         const message = error?.message || 'Could not save the figure';
-        if (report) report({ source, message });
+        if (report) report({ source, message, key });
         else console.error('Save failed:', error);
     };
     const succeed = () => {
-        if (resolve) resolve(source);
+        if (resolve) resolve(key);
     };
 
     const choose = (id) => {

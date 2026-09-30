@@ -127,6 +127,8 @@ export default function useSiteCloud({ directory, localRun, probability = 0.5, c
                 setSites(null);
                 setSitesError(null);
                 setLoadingSites(false);
+                // A run was just closed: its pick no longer names a site.
+                setSelectedRef(null);
                 return;
             }
             setLoadingSites(true);

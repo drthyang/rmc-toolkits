@@ -289,7 +289,8 @@ const FoldedCellPanel = ({
     // pixel ratio, then restores the on-screen one.
     const saveFigure = useCallback(async (format) => {
         const handle = sceneRef.current;
-        if (!handle) return;
+        // A save that cannot happen says so (SaveMenu lists it), never passes as done.
+        if (!handle) throw new Error('Nothing to save yet: the view has not been drawn');
         const { renderer, scene, camera } = handle;
         const name = 'Folded_Unit_Cell';
         if (format === 'png3x') {

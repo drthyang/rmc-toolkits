@@ -182,9 +182,9 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     const svgRef = useRef(null);
     const loadedPathRef = useRef(file.path);
     const effectivePlot = plotData || plot;
-    // A chart that could not load stays in its card and is listed in the page's
-    // Problems section, named by its file.
-    useIssue(`plot-load:${clipId}`, error && !effectivePlot ? error : null, { source: file?.name || 'Plot' });
+    // A chart that could not load (or reload: an older chart may stay on
+    // screen) is listed in the page's Problems section, named by its file.
+    useIssue(`plot-load:${clipId}`, error, { source: file?.name || 'Plot' });
 
     useEffect(() => {
         if (plotData) {

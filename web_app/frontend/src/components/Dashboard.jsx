@@ -465,9 +465,9 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 const title = card.querySelector('.ui-card__title')?.textContent?.trim();
                 figures.push({ svgElement: svg, name: title || `figure-${index}` });
             });
-            if (figures.length) {
-                await saveSvgFiguresAsZip(figures, format, `figures-${format}.zip`);
-            }
+            // Nothing drawn yet is not a successful save.
+            if (!figures.length) throw new Error('No chart has been drawn yet');
+            await saveSvgFiguresAsZip(figures, format, `figures-${format}.zip`);
         } catch (failure) {
             const message = failure?.message || 'Could not save the figures';
             // In a page, SaveMenu lists it in the Problems section.

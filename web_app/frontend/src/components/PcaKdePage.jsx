@@ -545,6 +545,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
         requestPca,
         localFile,
         rmc6fText,
+        ready,
         unitCell,
         datasetKey
     } = useSiteCloud({ directory, localRun, probability, clusterThreshold, dataEpoch });
@@ -553,7 +554,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
     useEffect(() => {
         let cancelled = false;
         const loadKde = async () => {
-            if (selectedRef == null) { setKde(null); return; }
+            // Not ready (the static build with no run open): nothing to ask.
+            if (selectedRef == null || !ready) { setKde(null); setKdeError(null); return; }
             if (localFile && !rmc6fText) return;
             setLoadingKde(true);
             setKdeError(null);
@@ -590,7 +592,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
         };
         loadKde();
         return () => { cancelled = true; };
-    }, [requestPca, localFile, rmc6fText, selectedRef, grid, bw, extent, probability, clusterThreshold, datasetKey]);
+    }, [requestPca, ready, localFile, rmc6fText, selectedRef, grid, bw, extent, probability, clusterThreshold, datasetKey]);
 
     const elementColors = useMemo(
         () => buildElementColors(sites?.elements ?? [], speciesCounts(sites?.sites)),
@@ -693,7 +695,8 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
     // frame at 3× pixel ratio, captures, then restores.
     const saveMainView = useCallback(async (format) => {
         const handle = sceneRef.current;
-        if (!handle) return;
+        // A save that cannot happen says so (SaveMenu lists it), never passes as done.
+        if (!handle) throw new Error('Nothing to save yet: the view has not been drawn');
         const { renderer, scene, camera } = handle;
         const name = selectedEllipsoid
             ? `PCA_Ellipsoid_${selectedEllipsoid.element}_site${selectedEllipsoid.referenceNumber}`

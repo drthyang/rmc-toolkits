@@ -354,14 +354,17 @@
     min-height: auto;
   }
 
-  .workspace-page {
+  .workspace-page,
+  .workspace-stack {
     min-height: auto;
   }
 
   /* Content taller than the screen flows into the shell's scroll; anything
      wider (a hidden popover past the edge) is clipped rather than letting the
-     whole page pan sideways. */
-  .workspace-page > .ui-page {
+     whole page pan sideways. (.workspace-stack: a page under its Problems
+     section, the AI Assistant.) */
+  .workspace-page > .ui-page,
+  .workspace-stack > .ui-page {
     overflow: visible;
     overflow-x: clip;
   }

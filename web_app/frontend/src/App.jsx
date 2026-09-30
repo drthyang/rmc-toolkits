@@ -32,6 +32,10 @@ const STATUS_TIMEOUT_MS = 15000;
 // Auto StoG is still under development; flip to true to expose the tab again.
 const SHOW_AUTO_STOG = false;
 
+// Pages whose one-off failures do not depend on the open run (Auto StoG works
+// on its own uploads): opening another run keeps them listed.
+const RUN_INDEPENDENT_PAGES = ['autostog'];
+
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, orientation: false, geometry: false, assistant: false });
@@ -376,7 +380,7 @@ function App() {
     {/* Every page lists its problems in one section at its top (ui/Issues.jsx);
         an uncaught error goes to the page on screen, and opening another run
         clears the last run's one-off failures. */}
-    <IssueWatcher page={activePage} resetKey={`${currentDirectory}|${localRun?.runId ?? ''}`} />
+    <IssueWatcher page={activePage} resetKey={`${currentDirectory}|${localRun?.runId ?? ''}`} keep={RUN_INDEPENDENT_PAGES} />
     <div className="app-container">
       <main className="main-content" ref={shellRef}>
         <header className="app-header" ref={headerRef}>

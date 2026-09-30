@@ -449,7 +449,8 @@ export default function SiteStructurePanel({
     // Export the figure as PNG — same 1× / 3× options as the main panels.
     const saveStructureView = useCallback(async (format) => {
         const handle = structureSceneRef.current;
-        if (!handle) return;
+        // A save that cannot happen says so (SaveMenu lists it), never passes as done.
+        if (!handle) throw new Error('Nothing to save yet: the view has not been drawn');
         const { renderer, scene, camera } = handle;
         const name = 'PCA_Site_ellipsoids';
         if (format === 'png3x') {

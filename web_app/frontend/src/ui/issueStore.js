@@ -19,8 +19,8 @@
 //                                                  lists it until dismissed,
 //                                                  another run opens, or the
 //                                                  same action succeeds
-//   useResolveIssue()                              resolve(source): that action
-//                                                  succeeded
+//   useResolveIssue()                              resolve(key): the action that
+//                                                  reported under `key` succeeded
 //
 // Hooks read only the stable dispatch, so reporting never re-renders a page.
 
@@ -87,18 +87,23 @@ export const issueReducer = (state, action) => {
             return [...state.filter((issue) => !inNamespace(issue)), ...next];
         }
         case 'report': {
-            // A one-off failure: the same failure again counts up instead of
-            // adding a row, and comes back if it had been dismissed.
-            const index = state.findIndex((issue) => issue.transient && issue.page === action.page && sameContent(issue, action));
-            nextId += 1;
+            // A one-off failure: the same failure again (same reporter `key` when
+            // given, e.g. one save button; else the same content) counts up
+            // instead of adding a row, keeping its id so the row is not remounted
+            // (an error thrown every frame does not churn the list), and comes
+            // back if it had been dismissed.
+            const same = (issue) => issue.transient && issue.page === action.page && sameContent(issue, action)
+                && (action.key == null || issue.key === action.key);
+            const index = state.findIndex(same);
             if (index >= 0) {
-                const bumped = { ...state[index], id: nextId, count: state[index].count + 1, dismissed: false };
+                const bumped = { ...state[index], count: state[index].count + 1, dismissed: false };
                 return state.map((issue, i) => (i === index ? bumped : issue));
             }
+            nextId += 1;
             return [...state, {
                 id: nextId,
                 page: action.page,
-                key: null,
+                key: action.key ?? null,
                 severity: action.severity,
                 source: action.source,
                 message: action.message,
@@ -107,19 +112,32 @@ export const issueReducer = (state, action) => {
                 count: 1
             }];
         }
-        case 'resolve':
+        case 'resolve': {
             // The action succeeded: its earlier one-off failures no longer apply.
-            return state.some((issue) => issue.transient && issue.page === action.page && issue.source === action.source)
-                ? state.filter((issue) => !(issue.transient && issue.page === action.page && issue.source === action.source))
-                : state;
-        case 'dismiss':
-            // A one-off failure goes; a condition is hidden until its message changes.
+            // Matched by the reporter's key (one save button), not by its label,
+            // which two charts can share.
+            const resolved = (issue) => issue.transient && issue.page === action.page && issue.key === action.key;
+            return state.some(resolved) ? state.filter((issue) => !resolved(issue)) : state;
+        }
+        case 'dismiss': {
+            // A shown row can stand for several reports of the same thing (see
+            // pageIssues): dismiss them all. A one-off failure goes; a condition
+            // is hidden until its message changes.
+            const target = state.find((issue) => issue.id === action.id);
+            if (!target) return state;
+            const group = (issue) => issue.page === target.page && issue.severity === target.severity
+                && (issue.source ?? '') === (target.source ?? '') && issue.message === target.message;
             return state
-                .filter((issue) => !(issue.id === action.id && issue.transient))
-                .map((issue) => (issue.id === action.id ? { ...issue, dismissed: true } : issue));
-        case 'clearTransient':
-            // Another run opened: last run's one-off failures no longer apply.
-            return state.some((issue) => issue.transient) ? state.filter((issue) => !issue.transient) : state;
+                .filter((issue) => !(group(issue) && issue.transient))
+                .map((issue) => (group(issue) ? { ...issue, dismissed: true } : issue));
+        }
+        case 'clearTransient': {
+            // Another run opened: last run's one-off failures no longer apply
+            // (except on pages that do not depend on the run, `keep`).
+            const keep = action.keep ?? [];
+            const cleared = (issue) => issue.transient && !keep.includes(issue.page);
+            return state.some(cleared) ? state.filter((issue) => !cleared(issue)) : state;
+        }
         default:
             return state;
     }
@@ -167,18 +185,18 @@ export const useIssueSet = (namespace, items) => {
 export const useReportIssue = () => {
     const dispatch = useContext(IssueDispatchContext);
     const page = useContext(IssuePageContext);
-    const report = useCallback(({ message, severity = 'error', source = null }) => {
+    const report = useCallback(({ message, severity = 'error', source = null, key = null }) => {
         const value = text(message);
-        if (value) dispatch({ type: 'report', page, message: value, severity, source });
+        if (value) dispatch({ type: 'report', page, message: value, severity, source, key });
     }, [dispatch, page]);
     return dispatch && page ? report : null;
 };
 
-/** A function that clears this page's one-off failures from `source` (it succeeded), or null. */
+/** A function that clears this page's one-off failures reported under `key` (that action succeeded), or null. */
 export const useResolveIssue = () => {
     const dispatch = useContext(IssueDispatchContext);
     const page = useContext(IssuePageContext);
-    const resolve = useCallback((source) => dispatch({ type: 'resolve', page, source }), [dispatch, page]);
+    const resolve = useCallback((key) => dispatch({ type: 'resolve', page, key }), [dispatch, page]);
     return dispatch && page ? resolve : null;
 };
 

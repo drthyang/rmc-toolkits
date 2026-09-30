@@ -116,7 +116,7 @@ describe('Dashboard error lines', () => {
         await saveAll();
         expect(problems()).toEqual([expect.stringContaining('Could not rasterize the figure')]);
         expect(problems()[0]).toContain('Save · All figures');
-        expect(container.querySelector('.ui-issues__list').getAttribute('role')).toBe('alert');
+        expect(container.querySelector('[role="alert"]').textContent).toContain('Could not rasterize the figure');
         // Not also as a banner in the card, and the menu is usable again.
         expect(saveAllBanner()).toBeNull();
         expect(container.querySelector('.loaded-files-card .ui-save__trigger').textContent).toContain('Save all figures');

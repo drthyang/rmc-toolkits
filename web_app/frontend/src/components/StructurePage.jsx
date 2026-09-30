@@ -601,7 +601,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
         downloadBlob(await canvasToPngBlob(canvas), `${name}.png`);
     };
     const save2dPanel = async (canvas, drawFn, name, minW, minH, format) => {
-        if (!canvas) return;
+        if (!canvas) throw new Error('Nothing to save yet: the panel has not been drawn');
         if (format === 'png3x') {
             const rect = canvas.getBoundingClientRect();
             const width = Math.max(minW, Math.floor(rect.width));
@@ -654,7 +654,8 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
             downloadBlob(blob, `${sanitizeFilename('Folded_Unit_Cell')}.png`);
         } else {
             const canvas = mountRef.current?.querySelector('canvas');
-            if (canvas) await saveCanvasAsPng(canvas, 'Folded_Unit_Cell');
+            if (!canvas) throw new Error('Nothing to save yet: the view has not been drawn');
+            await saveCanvasAsPng(canvas, 'Folded_Unit_Cell');
         }
     };
 
@@ -1315,7 +1316,9 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
     // Failures go to the page's Problems section (a slab the estimator declined
     // is not a failure: the map card says so itself).
     useIssue('structure', error, { source: 'Structure' });
-    useIssue('kde', kdeError, { source: 'KDE slice' });
+    // Only with a structure on screen, as the old banner was: a later folder
+    // without one must not list the previous folder's KDE failure.
+    useIssue('kde', structure ? kdeError : null, { source: 'KDE slice' });
 
     return (
         <Page>

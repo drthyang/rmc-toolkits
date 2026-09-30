@@ -30,11 +30,29 @@ describe('issueReducer', () => {
         expect(state).toEqual([]);
     });
 
-    it('counts a repeated one-off failure instead of adding rows', () => {
+    it('counts a repeated one-off failure instead of adding rows, keeping its row id', () => {
         let state = report([], 'Could not encode the figure');
+        const { id } = state[0];
         state = report(state, 'Could not encode the figure');
         expect(state).toHaveLength(1);
         expect(state[0].count).toBe(2);
+        expect(state[0].id).toBe(id);
+    });
+
+    it('keeps two reporters apart by key, and resolve clears only its own', () => {
+        let state = report([], 'Could not encode the figure', { key: 'save:a' });
+        state = report(state, 'Could not encode the figure', { key: 'save:b' });
+        expect(state).toHaveLength(2);
+        state = issueReducer(state, { type: 'resolve', page: 'p', key: 'save:b' });
+        expect(state.map((issue) => issue.key)).toEqual(['save:a']);
+    });
+
+    it('dismissing a shown row dismisses every report it stands for', () => {
+        let state = set([], 'structure-atoms-skipped', 'skipped 3 atoms', { severity: 'warning', source: 'Atoms skipped' });
+        state = set(state, 'sites-atoms-skipped', 'skipped 3 atoms', { severity: 'warning', source: 'Atoms skipped' });
+        const [shown] = pageIssues(state, 'p');
+        state = issueReducer(state, { type: 'dismiss', id: shown.id });
+        expect(pageIssues(state, 'p')).toEqual([]);
     });
 
     it('dismiss removes a one-off failure and hides a condition until its message changes', () => {
@@ -49,12 +67,13 @@ describe('issueReducer', () => {
         expect(pageIssues(set(state, 'sites', 'A2'), 'p')).toHaveLength(1);
     });
 
-    it('resolve and clearTransient drop one-off failures only', () => {
-        let state = report(set([], 'sites', 'A'), 'B');
-        expect(issueReducer(state, { type: 'resolve', page: 'p', source: 'Save' })).toHaveLength(1);
-        expect(issueReducer(state, { type: 'resolve', page: 'p', source: 'Other' })).toBe(state);
-        state = issueReducer(state, { type: 'clearTransient' });
-        expect(state.map((issue) => issue.key)).toEqual(['sites']);
+    it('resolve and clearTransient drop one-off failures only; clearTransient spares `keep` pages', () => {
+        let state = report(set([], 'sites', 'A'), 'B', { key: 'save:x' });
+        expect(issueReducer(state, { type: 'resolve', page: 'p', key: 'save:x' })).toHaveLength(1);
+        expect(issueReducer(state, { type: 'resolve', page: 'p', key: 'save:y' })).toBe(state);
+        state = issueReducer(state, { type: 'report', page: 'autostog', message: 'bad upload', severity: 'error', source: null });
+        state = issueReducer(state, { type: 'clearTransient', keep: ['autostog'] });
+        expect(state.map((issue) => issue.key ?? issue.page)).toEqual(['sites', 'autostog']);
     });
 
     it('sync replaces a namespace and keeps unchanged entries (and their dismissal)', () => {
@@ -112,9 +131,28 @@ describe('the section in a page', () => {
         return null;
     };
 
-    it('renders nothing without a problem, so the page layout is unchanged', () => {
+    it('renders nothing visible without a problem, so the page layout is unchanged', () => {
         act(() => root.render(inPage(<Condition message={null} />)));
         expect(container.querySelector('.ui-issues')).toBeNull();
+        // Only the two hidden live regions, empty, which take no space.
+        const live = [...container.querySelectorAll('.ui-visually-hidden')];
+        expect(live.map((node) => node.getAttribute('role'))).toEqual(['alert', 'status']);
+        expect(live.every((node) => node.textContent === '')).toBe(true);
+    });
+
+    it('one save button succeeding does not clear another same-named button\'s failure', async () => {
+        const Pair = () => (
+            <>
+                <div className="first"><SaveMenu onSave={() => Promise.reject(new Error('Could not encode the figure'))} name="G(r)" /></div>
+                <div className="second"><SaveMenu onSave={() => Promise.resolve()} name="G(r)" /></div>
+            </>
+        );
+        act(() => root.render(inPage(<Pair />)));
+        await act(async () => container.querySelector('.first .ui-save__trigger').click());
+        await flush();
+        await act(async () => container.querySelector('.second .ui-save__trigger').click());
+        await flush();
+        expect(rows()).toEqual([expect.stringContaining('Could not encode the figure')]);
     });
 
     it('lists a condition with its source while it holds, and drops it when the component unmounts', () => {
@@ -122,6 +160,9 @@ describe('the section in a page', () => {
         expect(rows()).toEqual([expect.stringContaining('Request failed')]);
         expect(container.querySelector('.ui-issue__source').textContent).toBe('Sites');
         expect(container.querySelector('.ui-issues').getAttribute('aria-label')).toBe('Problems on this page: 1 error');
+        // The rows stay a list; the newest error is announced by a live region that is always there.
+        expect(container.querySelector('.ui-issues__list').getAttribute('role')).toBeNull();
+        expect(container.querySelector('[role="alert"]').textContent).toBe('Sites: Request failed');
         act(() => root.render(inPage(null)));
         expect(container.querySelector('.ui-issues')).toBeNull();
     });
@@ -201,9 +242,10 @@ describe('the section in a page', () => {
         expect(container.querySelector('.ui-issues').getAttribute('aria-label')).toBe('Problems on this page: 2 errors, 2 warnings');
     });
 
-    it('a page with warnings only is a status, not an alert', () => {
-        act(() => root.render(<IssueList issues={[{ id: 1, severity: 'warning', message: 'skipped', transient: false, count: 1 }]} />));
+    it('a page with warnings only is announced politely, not as an alert', () => {
+        act(() => root.render(<IssueList issues={[{ id: 1, severity: 'warning', source: 'Atoms skipped', message: 'skipped', transient: false, count: 1 }]} />));
         expect(container.querySelector('.ui-issues').classList.contains('is-error')).toBe(false);
-        expect(container.querySelector('.ui-issues__list').getAttribute('role')).toBe('status');
+        expect(container.querySelector('[role="alert"]').textContent).toBe('');
+        expect(container.querySelector('[role="status"]').textContent).toBe('Atoms skipped: skipped');
     });
 });
