@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { DEFAULT_ELEMENT_COLOR } from '../atomColors';
+import { DEFAULT_ELEMENT_COLOR, elementColorNote } from '../atomColors';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import { Card, CardHeader, CardMeta, ToolButton } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
@@ -540,7 +540,7 @@ export default function SiteStructurePanel({
                         </span>
                     )}
                     {sites.elements.map((element) => (
-                        <span key={element} className="ui-legend__item">
+                        <span key={element} className="ui-legend__item" title={elementColorNote(elementColors, element)}>
                             <i
                                 className="ui-legend__swatch"
                                 style={{ background: elementColors[element] || DEFAULT_ELEMENT_COLOR }}

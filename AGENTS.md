@@ -64,7 +64,7 @@ web_app/frontend/src/
   symmetryModel.js               structure → finder glue, 2000-site cap and 384-operation budget, orbitLabel()
   siteLabel.js                   mixed-occupancy site label (composition) shared by the PCA Ellipsoid and Displacement Directions pages
   colormaps.js                   colormap LUTs for the KDE canvas
-  atomColors.js                  per-element atom colours (CPK/Jmol table + distinct fallbacks) shared by every structure view
+  atomColors.js                  the one element-colour map per model (CPK/Jmol table + fallbacks, placed by abundance, similar colours separated in OKLab incl. simulated colour-blind vision; speciesCounts, elementColorNote) — every page that draws atoms
   plotPalette.js                 InteractivePlot series colours (its own module for Fast Refresh)
   figureExport.js                PNG/SVG figure export and downloadBlob/sanitizeFilename (the one host module src/llm may import)
   zipArchive.js                  dependency-free store-only ZIP writer ("Save all figures", Auto StoG export)
@@ -216,6 +216,12 @@ web_app/frontend/src/
   so never present it as one. An eigenvector's sign is arbitrary, so a direction and its negative are
   the same axis: `crystalOrientationRows` picks the sense that makes the closest crystal axis acute,
   and the PCA Ellipsoid table shows that representative.
+- **One element-colour map per model.** Every page that draws atoms calls
+  `buildElementColors(elements, counts)` with the model's full species list and whole-model atom
+  counts (`structure.elementCounts`, or `speciesCounts(sites.sites)` on the site pages), so an element
+  has one colour everywhere. Never colour atoms from `ELEMENT_COLORS` directly or from a partial
+  element list (a slab, a filter): the separation step depends on the whole set.
+  `atomColors.test.js` pins the thresholds, the abundance rule and cross-page agreement on the demo.
 - **`StructurePage.jsx` canvases render conditionally** (`{structure && (...)}`). Effects that attach
   listeners to those canvases must depend on `structure` (or the canvas ref), not `[]` — otherwise
   they run at mount before the canvas exists and never attach. (This was the slab-drag bug, fixed

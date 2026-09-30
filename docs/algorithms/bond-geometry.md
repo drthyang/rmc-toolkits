@@ -811,9 +811,9 @@ become `minmax(0, 1fr) auto`. At ≤ 1100 px everything stacks: hero
 | `GUIDE_STROKE` (neutral grey) | references | the random-bonds line, a lone (unsplit) window's guides |
 
 Text is never element-coloured (contrast in both themes): element colours only fill dots, tints,
-rings and 3D objects. Ta has its own colour (`#F39B7F`) in
-[atomColors.js](../../web_app/frontend/src/atomColors.js); before 0.6.0 it fell back to the
-palette's cyan, next to Se's teal.
+rings and 3D objects. The map is the model's one element-colour map, shared with every other page
+and separated automatically when two elements look alike (structure.md, Step 8). Ta has its own
+colour (`#F39B7F`) there; before 0.6.0 it fell back to the palette's cyan, next to Se's teal.
 
 ### Parameters and defaults
 

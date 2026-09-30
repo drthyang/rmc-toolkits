@@ -13,7 +13,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { isStaticMode } from '../browserData';
-import { buildElementColors } from '../atomColors';
+import { buildElementColors, speciesCounts } from '../atomColors';
 import { COLORMAP_NAMES } from '../colormaps';
 import { Banner, Control, ControlGroup, ControlsBar, Hint, Page, Switch } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
@@ -76,7 +76,7 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
     const noRun = staticMode && !localFile;
 
     const elementColors = useMemo(
-        () => buildElementColors(sites?.elements ?? []),
+        () => buildElementColors(sites?.elements ?? [], speciesCounts(sites?.sites)),
         [sites]
     );
 

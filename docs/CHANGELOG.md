@@ -73,6 +73,20 @@ static-mode χ² history, and `unreachable` on a failed AI Assistant connection 
 `ui-intro`, `ui-disclosure`, `ui-fieldset__desc` and `ui-controls__note` lost their last user and
 were removed.
 
+### Atom colours: one map per model, similar colours separated
+
+- **One element-colour map on every page.** Atomic Density, Bond Geometry, PCA Ellipsoid and
+  Displacement Directions all build it from the model's full species list and atom counts, so an
+  element is drawn in the same colour everywhere (checked on the demo run).
+- **Similar colours are separated automatically.** Two table colours can look alike (Ti/V, Fe/Co,
+  Fe/O, Mn/Sn, Cr/Mn). When two elements in a model are closer than 0.15 in OKLab, or than 0.06 for a
+  simulated deuteranope or protanope, the less abundant one moves to the nearest colour that is far
+  enough from all the others. The majority species keeps its familiar colour (Fe₂O₃ keeps O red and
+  moves Fe). A model whose colours are already distinct is unchanged: GaTa₄Se₈, GaNb₄Se₈ and BaTiO₃
+  keep every table colour. Hovering a moved element in a legend says what it was too close to.
+- **Ta has its own colour** (`#F39B7F`, NPG salmon) instead of the fallback cyan next to Se's teal.
+- Details: [structure.md, Step 8](algorithms/structure.md#step-8--element-colours-shared-by-the-slab-canvas-the-3d-view-and-the-legend).
+
 ### Bond Geometry Phase 1
 
 The first phase of the Bond Geometry redesign: presentation only, no engine change (the payload,
@@ -99,8 +113,6 @@ the CLI and every number are as before). Details in
   triplet in every card title; `BOND_COLORS` (`plotPalette.js`: A–B = plot blue, B–C = plot
   orange) colour the 3D bond sticks (previously two unrelated hard-coded colours), the split
   window guides and chips, the partial curves and the bond dashes; references stay neutral grey.
-  **Ta has its own colour** (`#F39B7F`, NPG salmon) instead of the fallback cyan next to Se's
-  teal, on every page (Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions).
 - **States inside the cards.** Before Compute the hero shows the axis dimmed with a prompt card
   (triplet, window, Compute, the central-atom count, the box, where it runs); computing shows a
   shimmer or dims the shown plot, with a centred badge and a spinner on the button; a result whose

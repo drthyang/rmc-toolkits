@@ -23,7 +23,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { isStaticMode, readAndParseLocalPlotFile } from '../browserData';
-import { buildElementColors } from '../atomColors';
+import { buildElementColors, speciesCounts } from '../atomColors';
 import { BOND_COLORS, PLOT_PALETTE } from '../plotPalette';
 import {
     Banner, BondDash, Card, CardHeader, CardMeta, Chip, Control, ControlGroup, ControlsBar, ElementChip, Hint, Kpi,
@@ -154,7 +154,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
     } = useSiteCloud({ directory, localRun, dataEpoch });
 
     const elements = useMemo(() => sites?.elements ?? [], [sites]);
-    const elementColors = useMemo(() => buildElementColors(sites?.elements ?? []), [sites]);
+    const elementColors = useMemo(() => buildElementColors(sites?.elements ?? [], speciesCounts(sites?.sites)), [sites]);
 
     // Triplet selection: A–B–C with B central. Initialized per dataset once
     // the element list arrives; RMCProfile-style, ends default to the last

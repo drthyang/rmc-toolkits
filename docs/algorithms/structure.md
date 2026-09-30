@@ -1430,8 +1430,7 @@ which recomputes the band itself.
 | Cell / slab edges | `#737c86` and `#8c96a3` (opacity 0.95) `LineSegments` |
 | Camera persistence | position/target/zoom saved to `cameraStateRef` on unmount and restored, so slider changes do not reset the view |
 
-Both panels use the same per-element palette (`atomColors.js` → `buildElementColors`, which sorts
-the distinct element labels before assigning colours) shown in the legend **below** the 3-D view
+Both panels use the same per-element palette (`atomColors.js` → `buildElementColors`; Step 8) shown in the legend **below** the 3-D view
 (the `atom-legend` block is rendered after the Three.js mount element and is styled with
 `border-top`).
 
@@ -2500,27 +2499,51 @@ animation frame, and disposes controls, renderer, all geometries and materials (
 
 ### Step 8 — Element colours (shared by the slab canvas, the 3D view and the legend)
 
-**Code:** [atomColors.js](../../web_app/frontend/src/atomColors.js) → `buildElementColors(elements)`,
-called from a memo keyed on `[structure]` alone:
+**Code:** [atomColors.js](../../web_app/frontend/src/atomColors.js) → `buildElementColors(elements, counts)`
+(→ `resolveElementColors`), called from a memo keyed on `[structure]` alone:
 
 ```js
 elementColors = buildElementColors(structure.elements?.length ? structure.elements
-                                                             : structure.points.map(p => p.element));
+                                                             : structure.points.map(p => p.element),
+                                   structure.elementCounts);
 ```
 
-1. Unique element symbols are **sorted** first, so the assignment is deterministic and independent of
-   atom order in the file.
-2. Each element takes its colour from `ELEMENT_COLORS`, a CPK/Jmol-style table of **55 entries
-   running H → Bi**. Everything above Bi is absent — that includes **all** actinides as well as Po,
-   At and Rn — as are Kr, Sc, Tc, Ru, Rh, Pd, Xe, the lanthanides, Hf, Ta, Re, Os, Ir and Tl.
-3. If the element is absent from the table **or its table colour is already taken**, the next unused
-   entry of `FALLBACK_PALETTE` (16 qualitative colours) is used.
-4. If the fallback palette is exhausted, an evenly spaced HSL hue
-   `hsl((n·47) mod 360, 70%, 60%)` is generated, where `n` is the number of elements already assigned.
+The PCA Ellipsoid, Displacement Directions and Bond Geometry pages call the same function with the
+site table's species list and `speciesCounts(sites.sites)` (the sum of every site's `elementCounts`).
+Both inputs are the model's full species list and whole-model atom counts, so **every page draws an
+element in the same colour** (`atomColors.test.js` checks this on the committed demo run).
+
+1. **Placement order.** Elements are placed by their share of the atoms, largest first. The share is
+   rounded to a whole percent, so two payloads that differ by a few skipped atoms give the same order.
+   Equal shares go to elements with a table colour first, then by name. Atom order in the file never
+   matters.
+2. **Base colour.** Each element starts from `ELEMENT_COLORS`, a CPK/Jmol-style table of **56 entries
+   running H → Bi** (Ta `#F39B7F` included). Elements outside the table (everything above Bi, Kr, Sc,
+   Tc, Ru, Rh, Pd, Xe, the lanthanides, Hf, Re, Os, Ir, Tl) and a table colour that is already taken
+   draw the next unused entry of `FALLBACK_PALETTE` (16 qualitative colours), then
+   `DEFAULT_ELEMENT_COLOR`.
+3. **Separation.** A base colour is kept when it is far enough from every colour already placed:
+   OKLab distance ≥ `MIN_COLOR_DISTANCE` = 0.15 for normal vision, and ≥ `MIN_CVD_COLOR_DISTANCE` =
+   0.06 under simulated deuteranopia and protanopia (Machado et al. 2009, severity 1, in linear RGB).
+   Otherwise the element moves to the nearest colour, in OKLab, from a fixed grid of in-gamut OKLCH
+   colours (L 0.50–0.82, C 0.07–0.19, hue every 7.5°) that clears all of them. If none clears all of
+   them, it takes the grid colour that clears them best. So the majority species keeps its familiar
+   colour and a minority species moves, only as far as it needs to.
+4. The map's keys are returned in name order (the legends list elements alphabetically). A
+   non-enumerable `notes` property records each move; the legends show it as a hover on the element
+   (`elementColorNote`).
 5. Any lookup miss at draw time falls back to `DEFAULT_ELEMENT_COLOR = '#8A8F98'`.
 
-The invariant is: **no two elements in one structure ever share a colour**, and the same map is used
-by the Slab In Cell markers, the 3D point clouds, and the legend rendered under the 3D panel.
+Calibration: pairs that were hard to tell apart on screen sat below 0.15 (Ta's old fallback cyan
+beside Se's teal, 0.133), while clearly distinct pairs sit well above (Ga/Se 0.23, Nb/Se 0.30). The
+colour-blind threshold is lower on purpose, so ordinary red/green pairs, which stay readable by
+lightness, are not recoloured (Nb/Se is 0.116 for a deuteranope), while pairs that collapse are
+(Cr/Mn, 0.05). Examples: GaTa₄Se₈, GaNb₄Se₈ and BaTiO₃ keep every table colour; Mn₃Sn moves Sn
+(`#668080` → `#428787`); Fe₂O₃ keeps O's red and moves Fe; Ti/V separates V from Ti's grey.
+
+The invariant is: **no two elements in one model share a colour or look alike**, and the same map is
+used by the Slab In Cell markers, the 3D point clouds, the legends and, on the other pages, the
+element chips, dots and 3D markers.
 
 Two consequences of the memo depending on `structure` only:
 
