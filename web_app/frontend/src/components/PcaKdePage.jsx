@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut, sampleColormap } from '../colormaps';
-import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
+import { buildElementColors, DEFAULT_ELEMENT_COLOR, speciesCounts } from '../atomColors';
 import { marchingCubes, sampleFieldTrilinear } from '../workers/marchingCubes';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import {
@@ -593,7 +593,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
     }, [requestPca, localFile, rmc6fText, selectedRef, grid, bw, extent, probability, clusterThreshold, datasetKey]);
 
     const elementColors = useMemo(
-        () => buildElementColors(sites?.elements ?? []),
+        () => buildElementColors(sites?.elements ?? [], speciesCounts(sites?.sites)),
         [sites]
     );
 

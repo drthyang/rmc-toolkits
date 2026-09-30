@@ -12,7 +12,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { DEFAULT_ELEMENT_COLOR } from '../atomColors';
+import { DEFAULT_ELEMENT_COLOR, elementColorNote } from '../atomColors';
 import { downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import { Card, CardHeader, CardMeta, ToolButton } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
@@ -363,6 +363,7 @@ const FoldedCellPanel = ({
                                 className={legendEmphasis && !legendEmphasis.includes(element)
                                     ? 'ui-legend__item is-muted'
                                     : 'ui-legend__item'}
+                                title={elementColorNote(elementColors, element)}
                             >
                                 <span className="ui-legend__swatch" style={{ background: color }} />
                                 {element}

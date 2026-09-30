@@ -8,7 +8,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import API_BASE_URL from '../api';
 import { isStaticMode } from '../browserData';
 import { COLORMAP_NAMES, getLut } from '../colormaps';
-import { buildElementColors, DEFAULT_ELEMENT_COLOR } from '../atomColors';
+import { buildElementColors, DEFAULT_ELEMENT_COLOR, elementColorNote } from '../atomColors';
 import { canvasToPngBlob, downloadBlob, sanitizeFilename, saveCanvasAsPng } from '../figureExport';
 import {
     KERNEL_ANISOTROPY_NOTE,
@@ -536,7 +536,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
         const elements = structure?.elements?.length
             ? structure.elements
             : (structure?.points || []).map((point) => point.element);
-        return buildElementColors(elements);
+        return buildElementColors(elements, structure?.elementCounts);
     }, [structure]);
 
     const unitCell = useMemo(() => {
@@ -1497,7 +1497,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                             {Object.keys(elementColors).length > 0 && (
                                 <div className="ui-legend" aria-label="Atom colors by element">
                                     {Object.entries(elementColors).map(([element, color]) => (
-                                        <span key={element} className="ui-legend__item">
+                                        <span key={element} className="ui-legend__item" title={elementColorNote(elementColors, element)}>
                                             <span className="ui-legend__swatch" style={{ background: color }} />
                                             {element}
                                         </span>
