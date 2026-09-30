@@ -2105,7 +2105,10 @@ is-error">{error}</div>}` sit inside `<div className="pca-canvas orient-canvas" 
 (`OrientationView.jsx:535-537`), absolutely positioned at the viewport's top-left corner
 (`.pca-badge`, `PcaKdePage.css:438`). The `<h3>` header holds only the title, the atom count, the
 frame toggle, Reset view and Save. (It is the *picker*, `SiteStructurePanel`, that puts a `Loading…`
-chip in its header.)
+chip in its header.) With no result and neither badge up (no run yet, or no site picked) the panel
+is not left blank: a third badge in the same top-left place reads **Loading sites…** while the site
+table loads (`loadingSites`, passed down from `OrientationPage`) and **No site selected.** after —
+the PCA Ellipsoid table card's wording. It sits in the stage, not under it, so it shows above the fold.
 
 ---
 
@@ -3071,7 +3074,9 @@ for a reason that has nothing to do with anharmonicity, and the ± asymmetry rea
 uninterpretable, because the "site centre" it is measuring displacements from does not exist.
 
 The only on-screen signal is the `(count/copiesPerCell)` suffix in the site label — the same cue the
-hook's default-selection heuristic uses — so before reading a map on a reconstructed file, check that
+hook's default-selection heuristic uses, and explained in the Cluster control's "About site
+clustering" `?` in the same words as on the PCA Ellipsoid page — so before reading a map on a
+reconstructed file, check that
 $\text{count}/\text{copiesPerCell} \approx 1$, and re-check the map at two or three cluster distances
 to confirm it is stable. Note this diagnostic **does not exist on the Flask path**, which returns
 neither `reconstructed` nor `copiesPerCell`.

@@ -349,6 +349,21 @@ describe('structure file choice (buildLocalRun)', () => {
         expect(fallback.structureFile.name).toBe('Beta.rmc6f');
     });
 
+    it('reports no structure error when a usable .rmc6f is found', async () => {
+        // The file is parsed on demand by each page, and every page reads
+        // structureError only when there is no structureFile — a status line
+        // here (it once read "Structure data loads when needed") never showed.
+        const run = await buildLocalRun([withPath('a-00.log', 'h\nh\n1 2 3\n'), withPath('a.rmc6f', RMC6F_STUB)]);
+        expect(run.structureFile.name).toBe('a.rmc6f');
+        expect(run.structureError).toBeNull();
+    });
+
+    it('says so when the folder has no .rmc6f at all', async () => {
+        const run = await buildLocalRun([withPath('a-00.log', 'h\nh\n1 2 3\n')]);
+        expect(run.structureFile).toBeNull();
+        expect(run.structureError).toBe('No model structure detected');
+    });
+
     it('says why when no candidate is usable', async () => {
         const run = await buildLocalRun([withPath('a-00.log', 'h\nh\n1 2 3\n'), withPath('a.rmc6f', '')]);
         expect(run.structureFile).toBeNull();

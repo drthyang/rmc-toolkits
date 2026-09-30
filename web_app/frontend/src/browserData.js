@@ -915,8 +915,10 @@ const makeRunFromEntries = async (entries) => {
                 modified: settingsEntry.file.lastModified
             }
             : null,
+        // Why there is no structureFile; null when there is one (each page
+        // parses it on demand and shows its own loading cue).
         structureError: rmc6f
-            ? 'Structure data loads when needed'
+            ? null
             : skippedStructures.length
                 ? `No usable .rmc6f file: ${skippedStructures.join(', ')}`
                 : 'No model structure detected',

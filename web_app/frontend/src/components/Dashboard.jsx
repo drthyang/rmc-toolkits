@@ -95,6 +95,9 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     const [hiddenPlotPaths, setHiddenPlotPaths] = useState(() => new Set());
     const [dismissedErrors, setDismissedErrors] = useState(() => new Set());
     const [savingAll, setSavingAll] = useState(false);
+    // A failed "Save all figures": one line under the Loaded-files header,
+    // cleared by the next save (the save menu does not await the handler).
+    const [saveAllError, setSaveAllError] = useState(null);
     const pageRef = useRef(null);
     const signatureRef = useRef('');
     const pollInFlightRef = useRef(false);
@@ -162,7 +165,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 setStructureError(structureErr.response?.data?.error || 'No model structure detected');
             }
         } catch (err) {
-            setError(err.response?.data?.error || null);
+            setError(err.response?.data?.error || 'Could not list the run folder');
             setStructure(null);
             setStructureError(null);
         } finally {
@@ -291,6 +294,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         setStructureStale(false);
         setStructureError(null);
         setError(null);
+        setSaveAllError(null);
         setLoading(false);
         setHiddenPlotPaths(new Set());
         return undefined;
@@ -321,6 +325,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         setShowLoadedFiles(false);
         manuallyToggledPathsRef.current = new Set();
         setDismissedErrors(new Set());
+        // A failed "Save all figures" belongs to the previous run's figures.
+        setSaveAllError(null);
     }, [directory]);
 
     useEffect(() => {
@@ -426,6 +432,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         const root = pageRef.current;
         if (!root || savingAll) return;
         setSavingAll(true);
+        setSaveAllError(null);
         try {
             const figures = [];
             let index = 0;
@@ -439,6 +446,8 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
             if (figures.length) {
                 await saveSvgFiguresAsZip(figures, format, `figures-${format}.zip`);
             }
+        } catch (failure) {
+            setSaveAllError(failure?.message || 'Could not save the figures');
         } finally {
             setSavingAll(false);
         }
@@ -608,6 +617,11 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                         </Pill>
                     </div>
                 </div>
+                {saveAllError && (
+                    <Banner tone="danger" sm role="alert" className="save-all-error" onDismiss={() => setSaveAllError(null)}>
+                        {saveAllError}
+                    </Banner>
+                )}
                 {showLoadedFiles && (
                     <ul className="ui-card__section loaded-files-list">
                         {allPlotFiles.map((file) => {
