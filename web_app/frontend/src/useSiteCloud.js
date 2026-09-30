@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from './api';
+import { isStaticMode } from './browserData';
 import { unitCellVectors } from './pcaCrystalFrame';
 
 // One worker for the whole app, never torn down: its parse cache is keyed by
@@ -118,8 +119,16 @@ export default function useSiteCloud({ directory, localRun, probability = 0.5, c
         let cancelled = false;
         const loadSites = async () => {
             // Wait for a local file's text before requesting; a backend
-            // directory needs no text and proceeds immediately.
+            // directory needs no text and proceeds immediately. The static
+            // build has no backend: with no run open there is nothing to ask
+            // (asking /api/pca/sites there showed a false 404 error).
             if (localFile && !rmc6fText) { setSites(null); return; }
+            if (!localFile && isStaticMode()) {
+                setSites(null);
+                setSitesError(null);
+                setLoadingSites(false);
+                return;
+            }
             setLoadingSites(true);
             setSitesError(null);
             try {
@@ -169,8 +178,9 @@ export default function useSiteCloud({ directory, localRun, probability = 0.5, c
         requestPca,
         localFile,
         rmc6fText,
-        // True once requests can be issued (no local file, or its text loaded).
-        ready: !localFile || Boolean(rmc6fText),
+        // True once requests can be issued: a local file's text has loaded, or
+        // (Flask) a backend directory. Never in the static build without a run.
+        ready: localFile ? Boolean(rmc6fText) : !isStaticMode(),
         unitCell,
         datasetKey
     };
