@@ -184,32 +184,28 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         expect(state.requests.at(-1).params).toMatchObject({ end1: 'Se', apex: 'Nb', end2: 'Se', r12Min: 2, r12Max: 3, binWidth: 1 });
     });
 
-    it('draws the angles on a fixed 0–180° axis against the exact random-bonds line', async () => {
+    it('draws the angles on a fixed 0–180° axis, with no reference line', async () => {
         await render();
-        // Before Compute the same axis is there, with only the reference.
+        // Before Compute the same axis is there, empty.
         const ghost = state.plots.angles;
         expect(ghost).toMatchObject({ xDomain: [0, 180], xTicks: [0, 30, 60, 90, 120, 150, 180], xMinorStep: 10, xGrid: true, yMin: 0 });
-        expect(ghost.series).toHaveLength(1);
-        expect(ghost.series[0]).toMatchObject({ label: 'random bonds', role: 'guide', x: [0, 180], y: [1, 1] });
+        expect(ghost.series).toEqual([]);
 
         await submit();
         const plot = state.plots.angles;
         expect(plot).toMatchObject({ xDomain: [0, 180], xGrid: true, yMin: 0, xLabel: 'angle at Nb, θ (°)', yLabel: 'sin-corrected (random = 1)' });
+        expect(plot.series).toHaveLength(1);
         expect(plot.series[0]).toMatchObject({ y: [0.5, 2, 0.5], curve: 'step', binWidth: 60, fill: true, width: 1.75 });
-        expect(plot.series[1]).toMatchObject({ label: 'random bonds', role: 'guide', y: [1, 1] });
 
-        // Density view: the isotropic fraction of each bin per degree,
-        // (cos θlo − cos θhi)/(2·w), which integrates to 1.
+        // Density view: the same single curve in its own units.
         await act(async () => {
             [...container.querySelectorAll('button')].find((button) => button.textContent.trim() === 'density').click();
         });
         const density = state.plots.angles;
         expect(density.yLabel).toBe('density (deg^{-1})');
-        const reference = density.series[1];
-        expect(reference).toMatchObject({ role: 'guide', curve: 'step', binWidth: 60 });
-        expect(reference.y[0]).toBeCloseTo((1 - 0.5) / 120, 12);
-        expect(reference.y[1]).toBeCloseTo((0.5 + 0.5) / 120, 12);
-        expect(reference.y.reduce((acc, value) => acc + value * 60, 0)).toBeCloseTo(1, 12);
+        expect(density.series).toHaveLength(1);
+        expect(density.series[0]).toMatchObject({ label: 'density', curve: 'step', binWidth: 60 });
+        expect(density.series.some((series) => series.role === 'guide')).toBe(false);
     });
 
     it('keeps the KPI rail in place: "—" before Compute, the results after', async () => {
@@ -244,11 +240,10 @@ describe('BondGeometryPage presentation (Phase 1)', () => {
         await render();
         await setSelect('End element A', 'Ga');
         await submit();
-        // No data series: only the random-bonds reference, on the result's bins.
+        // No series at all: the bare axis.
         const plot = state.plots.angles;
         expect(plot).toMatchObject({ xDomain: [0, 180], yMin: 0, xLabel: 'angle at Nb, θ (°)' });
-        expect(plot.series).toHaveLength(1);
-        expect(plot.series[0]).toMatchObject({ label: 'random bonds', role: 'guide' });
+        expect(plot.series).toEqual([]);
         // One short line over the (dimmed, inert) axis, with the windows used.
         const prompt = container.querySelector('.geom-hero .ui-prompt');
         expect(prompt.querySelector('p').textContent).toBe('No Ga–Nb–Se triplets in these windows.');

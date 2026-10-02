@@ -94,20 +94,6 @@ const formatBound = (value) => {
 };
 const windowLabel = (window) => `${formatBound(window[0])}–${formatBound(window[1])} ${ANGSTROM}`;
 
-// The isotropic reference in the density view: randomly oriented bonds put
-// the fraction (cos θlo − cos θhi)/2 of their angles in each bin — the same
-// exact bin integral the engine divides by for sin-corrected — so per degree
-// it is (cos θlo − cos θhi)/(2·w). In the sin-corrected view it is exactly 1.
-const isotropicDensity = (centers, width) => centers.map((center) => {
-    const lo = ((center - width / 2) * Math.PI) / 180;
-    const hi = ((center + width / 2) * Math.PI) / 180;
-    return (Math.cos(lo) - Math.cos(hi)) / (2 * width);
-});
-
-const randomBondsGuide = (sin, centers, width) => (sin
-    ? { label: 'random bonds', x: [0, 180], y: [1, 1], role: 'guide' }
-    : { label: 'random bonds', x: centers, y: isotropicDensity(centers, width), role: 'guide', curve: 'step', binWidth: width });
-
 // Element chips joined by bond dashes: "(Se)–(Ta)–(Se)" with the central
 // atom ringed. Reads as plain text ("Se–Ta–Se") to a screen reader.
 const TripletLabel = ({ elements, central, bonds, colors }) => (
@@ -458,11 +444,13 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
 
     // --- Plot data (memoized: a new object identity resets plot view state). --
     // No triplet fell inside the windows: the engine's curves are all zero,
-    // which drawn under the random-bonds line would read as "far below
-    // random". The hero keeps the empty axis and says so instead.
+    // which would read as a measured absence of every angle. The hero keeps
+    // the empty axis and says so instead.
     const noAngles = Boolean(result) && result.angleCount === 0;
     // The angle distribution as a step curve (one step per bin) with a light
-    // area, over the dashed isotropic reference.
+    // area. No random-bonds reference is drawn: in the sin-corrected view the
+    // axis label says random = 1, and against a crystal's peaks (6–22× that on
+    // the demo) a line at 1 only read as a stray gridline.
     const anglePlot = useMemo(() => {
         if (!result || result.angleCount === 0) return null;
         const sin = angleView === 'sin';
@@ -482,26 +470,16 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                     fill: true,
                     width: 1.75,
                     color: PLOT_PALETTE[0]
-                },
-                randomBondsGuide(sin, result.binCenters, width)
+                }
             ]
         };
     }, [result, angleView]);
 
     // Before the first result — or after one with no angles — the hero shows
-    // the same axis, empty but for the random-bonds reference (in the density
-    // view at the typed bin width, or the result's realized one).
+    // the same axis, empty.
     const ghostPlot = useMemo(() => {
         if (result && result.angleCount > 0) return null;
         const sin = angleView === 'sin';
-        let width = result?.binWidth;
-        let centers = result?.binCenters;
-        if (!result) {
-            const requested = Number(binWidth);
-            const count = Number.isFinite(requested) && requested > 0 ? Math.max(1, Math.round(180 / requested)) : 180;
-            width = 180 / count;
-            centers = Array.from({ length: count }, (_, index) => (index + 0.5) * width);
-        }
         return {
             title: result
                 ? `${result.triplet.join('-')} bond angles (none in the windows)`
@@ -509,9 +487,9 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
             xLabel: `angle at ${result ? result.triplet[1] : apex || 'B'}, θ (${DEGREES})`,
             yLabel: sin ? 'sin-corrected (random = 1)' : 'density (deg^{-1})',
             ...ANGLE_AXIS,
-            series: [randomBondsGuide(sin, centers, width)]
+            series: []
         };
-    }, [result, angleView, binWidth, apex]);
+    }, [result, angleView, apex]);
 
     // Guides follow the inputs after a typing pause, so the plot (whose view
     // state resets on every plotData identity change) stays stable per key.
@@ -886,11 +864,6 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
                                     <b>Sin-corrected</b> — divides that geometric factor out. Random
                                     bonds now read as a flat 1, anything above it is real structure,
                                     and a peak near 180{DEGREES} is no longer flattened.
-                                </p>
-                                <p>
-                                    The dashed <b>random bonds</b> line is that reference in either
-                                    view: 1 when sin-corrected, the exact isotropic fraction of each
-                                    bin per degree in density.
                                 </p>
                                 <p>
                                     Same shape as the <code>norm/sin(theta)</code> column of

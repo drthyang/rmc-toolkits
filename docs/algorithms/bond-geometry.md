@@ -30,7 +30,7 @@ presentation reductions of the payload and one closed-form reference line).
   - [Step 1 — Triplet seeding](#step-1--triplet-seeding)
   - [Step 2 — The compute request and the epoch guard](#step-2--the-compute-request-and-the-epoch-guard)
   - [Step 3 — The KPI rail](#step-3--the-kpi-rail)
-  - [Step 4 — The angle plot and the random-bonds line](#step-4--the-angle-plot-and-the-random-bonds-line)
+  - [Step 4 — The angle plot](#step-4--the-angle-plot)
   - [Step 5 — The partial-g(r) window helper](#step-5--the-partial-gr-window-helper)
   - [Step 6 — The folded-cell bond view](#step-6--the-folded-cell-bond-view)
   - [Step 7 — Card states: empty, computing, stale, no angles, error](#step-7--card-states-empty-computing-stale-no-angles-error)
@@ -654,7 +654,7 @@ Angles sub line — visible, so keyboard and touch users have it too (a `title` 
 neither) — written compactly so a four-tile rail shows it whole at 1280 px (the sub line
 ellipsizes when it does not fit), and in the CLI output.
 
-### Step 4 — The angle plot and the random-bonds line
+### Step 4 — The angle plot
 
 The hero plot shows `sinCorrected` or `density` (toggle; sin-corrected is the default) through
 [InteractivePlot](../../web_app/frontend/src/components/InteractivePlot.jsx) with
@@ -675,18 +675,17 @@ The data draw as a **step curve** — one flat step per bin across $\theta_c \pm
 bin width from the payload — with a light same-colour area to $y=0$ (`curve: 'step'`,
 `fill: true`), because the payload is a histogram, not a sampled function.
 
-The dashed **random bonds** guide is what uniformly random bond directions give, i.e. the
-isotropic reference of Step 6 drawn in the view's own units:
-
-$$y_\text{random} = 1 \quad\text{(sin-corrected)},\qquad
-y_{\text{random},k} = \frac{\cos\theta_k - \cos\theta_{k+1}}{2\,w}\ \ \text{deg}^{-1}\quad\text{(density)},$$
-
-the second being the exact fraction $\tfrac12\int_{\theta_k}^{\theta_{k+1}}\sin\theta\,d\theta$
-of random angles in bin $k$, per degree (it integrates to 1 over 0–180°, like `density`; test:
-`BondGeometryLayout.test.jsx`). It is the only formula the page evaluates itself, and it is the
-same bin integral the engine divides by for `sin_corrected`, so "above the line = more than
-random" reads the same in both views. Axis labels: `angle at B, θ (°)` and
-`sin-corrected (random = 1)` or `density (deg⁻¹)`.
+**No reference line is drawn.** Uniformly random bond directions give exactly 1 in the
+sin-corrected view: that is how `sin_corrected` is normalized (engine Step 6), and the axis label
+says so. In the density view they give the bin fraction
+$\tfrac12\int_{\theta_k}^{\theta_{k+1}}\sin\theta\,d\theta$ per degree. Until 2026-10 the page drew
+this "random bonds" reference dashed in both views. It was dropped because the axis label already
+carries the scale, and against a crystal's angle peaks it read as a stray gridline: on the demo
+run the sin-corrected peaks are 6.5× (Se–Ta–Se), 8× (Ta–Se–Ta) and 22× (Ta–Ta–Ta) the random
+level. Nobody reads an RMC model of a crystal against randomly oriented bonds, and RMCProfile's
+`triplets` output does not draw one either. Axis labels: `angle at B, θ (°)` and
+`sin-corrected (random = 1)` or `density (deg⁻¹)`; the card's `?` help explains both
+normalizations.
 
 ### Step 5 — The partial-g(r) window helper
 
@@ -760,8 +759,8 @@ The three cards keep their skeleton — header, KPI rail, plot toolbar, plot —
 Compute, so nothing moves when a result lands:
 
 - **Empty** (a run is open, nothing computed): the hero shows the angle axis of Step 4 dimmed
-  and inert (the *ghost*: same domain, ticks and the random-bonds line, at the typed bin width in
-  the density view), with a prompt card centred over it: the triplet chips and window chip, one
+  and inert (the *ghost*: the same domain and ticks, with no series), with a prompt card centred
+  over it: the triplet chips and window chip, one
   line ("Pick a triplet, then Compute."), a **Compute** button, and chips for the central-atom
   count, the supercell and where it will run (their hovers say the rest: every B atom in the box,
   periodic images included, exact).
@@ -771,8 +770,8 @@ Compute, so nothing moves when a result lands:
 - **Stale**: see Step 2.
 - **No angles** (no A–B–C triplet inside the windows — Ga–Ta–Se under the default 2–3 Å
   windows, say, whose Ga–Ta shell sits near 4.4 Å): the payload's curves are all zero (engine
-  Step 6), and drawn under the random-bonds line they would read as "far below random".
-  The hero keeps the empty axis instead — dimmed, on the result's bins — with one line over it,
+  Step 6), and drawn they would read as a measured absence of every angle.
+  The hero keeps the empty axis instead — dimmed — with one line over it,
   "No Ga–Ta–Se triplets in these windows.", beside the triplet and the windows the result used.
   The KPIs report the zeros (0 angles, 0-fold).
 - **Error**: the prompt's line becomes the message (`role="alert"`) and the named field is
@@ -808,7 +807,7 @@ become `minmax(0, 1fr) auto`. At ≤ 1100 px everything stacks: hero
 | element colours (`buildElementColors`) | atoms | select dots, element chips (dot, tint and the central atom's ring), 3D cloud and legend |
 | `BOND_COLORS.ab` (= `PLOT_PALETTE[0]`) | the A–B bond | chip bond dashes, the A–B label bar, 3D sticks, split guides and window chip, the first partial curve, the bond KPI dash |
 | `BOND_COLORS.bc` (= `PLOT_PALETTE[1]`) | the B–C bond, when it is its own | the same places, for B–C |
-| `GUIDE_STROKE` (neutral grey) | references | the random-bonds line, a lone (unsplit) window's guides |
+| `GUIDE_STROKE` (neutral grey) | references | a lone (unsplit) window's guides |
 
 Text is never element-coloured (contrast in both themes): element colours only fill dots, tints,
 rings and 3D objects. The map is the model's one element-colour map, shared with every other page
@@ -831,10 +830,8 @@ colour (`#F39B7F`) there; before 0.6.0 it fell back to the palette's cyan, next 
 ### Caveats
 
 - **The page computes no geometry.** Every number on it is the engine payload or a reduction
-  stated in Step 3 (angles per B, mean coordination, modal share); the one formula it evaluates
-  itself is the random-bonds reference of Step 4, the closed-form isotropic bin fraction. The
-  helper and the folded cell are presentation over `PDFpartials.csv` and the sites table
-  respectively.
+  stated in Step 3 (angles per B, mean coordination, modal share). The helper and the folded cell
+  are presentation over `PDFpartials.csv` and the sites table respectively.
 - **The bond-length histograms are in the payload but not plotted.** An earlier layout gave them
   a panel; it duplicated the first-shell peak the partial $g(r)$ already shows, clipped to the
   window. The counts and mean lengths survive in the bond KPI tiles.

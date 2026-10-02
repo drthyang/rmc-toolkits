@@ -166,9 +166,10 @@ the CLI and every number are as before). Details in
   reads "—" before Compute, so nothing moves when a result lands. The mean ± std angle moved off
   the headline to the Angles tile's sub line (a multimodal mean is not a bond angle).
 - **An angle axis.** 0–180° unpadded, labelled every 30°, minor marks every 10°, vertical grid at
-  the labels, y from 0; the histogram draws as a step curve with a light area, over a dashed
-  *random bonds* line — 1 when sin-corrected, the exact isotropic fraction
-  (cos θlo − cos θhi)/(2w) per degree in density. The axis labels say what they are
+  the labels, y from 0; the histogram draws as a step curve with a light area. No reference line:
+  a dashed *random bonds* line (1 when sin-corrected) was tried and dropped, as the axis label
+  already says random = 1 and against a crystal's peaks (6–22× on the demo) it read as a stray
+  gridline. The axis labels say what they are
   (`angle at Ta, θ (°)`, `sin-corrected (random = 1)`). These are opt-in `plotData` fields of
   `InteractivePlot` (`xDomain`, `xTicks`, `xMinorStep`, `xGrid`, `yMin`; per series `curve:
   'step'`, `fill`, `width`, `legend: false`); every other plot renders unchanged
