@@ -3468,12 +3468,14 @@ its primitive cell (`4a`/`4b`). Pinned by `llm/__tests__/runContextWyckoff.test.
   bricks are contiguous, and the only setter is the midpoint click (which always yields
   $\tau < \texttt{tolMax}$), so exactly one brick highlights for any $\tau\in[0,1)$. A $\tau$ of
   exactly 1.0 Å would highlight nothing, but no code path produces it.
-- **Double-clicking** a brick downloads that group's **symmetry-averaged CIF** (Part C); its two
-  clicks select the brick first, so the card shows the group being exported. The label row says so
-  in the muted style of its tolerance hint, "double-click for CIF · atom pos. tol. →". The hint is
-  hidden at ≤ 760 px, where the row has no room, and stays in each brick's tooltip and the card's
-  `?` help. An export that throws is listed in the page's Problems section (`useReportIssue`,
-  source `CIF · <group>`) until an export succeeds.
+- A **`⤓ CIF · <group>` button** under the card's title downloads the **symmetry-averaged CIF**
+  (Part C) of the selected brick, the one holding $\tau$ and named in the headline. Its label
+  follows the selection, and its tooltip and accessible name read "Download CIF for <group>". It
+  uses the kit's save-pill look (`ui-save__trigger`) and is placed like Model information's file
+  name: on its own line under the title, which leaves the card's height unchanged. At ≤ 760 px it
+  sits at the right end of the title bar; its negative block margins keep the bar no taller with
+  the touch-height pill. A long symbol is cut with an ellipsis. An export that throws is listed in
+  the page's Problems section (`useReportIssue`, source `CIF · <group>`) until an export succeeds.
 
 The tolerance itself is held in `SymTolContext`
 ([`symTolContext.js`](../../web_app/frontend/src/symTolContext.js)), a `[value, setValue]` pair
@@ -3482,7 +3484,7 @@ when switching between the Dashboard and the KDE/3D page. `ModelSummary.jsx` fal
 local `useState(0.2)` if no provider is present.
 
 **Code**: `ModelSummary.jsx` → `brickStyle()`, `brickWidth()`, `downloadCif()`, the JSX for
-`.sym-ladder` and `.sym-ladder-hints`.
+`.sym-ladder` and `.sym-cif-action`.
 
 #### Where and how often this runs
 
@@ -3537,7 +3539,7 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
 
 ### Part C — The symmetry-averaged CIF of a ladder brick
 
-Double-clicking a brick downloads its group's structure as a CIF (`symmetryCif.js` → `brickCif()`):
+The card's CIF button downloads the selected brick's structure as a CIF (`symmetryCif.js` → `brickCif()`):
 [`averageStructure.js`](../../web_app/frontend/src/averageStructure.js) computes it and
 [`cifWriter.js`](../../web_app/frontend/src/cifWriter.js) writes it. It is the RMC model folded into
 one cell and **averaged, not idealized**. Each site's arithmetic mean over its box copies (Step 5) is
@@ -3672,7 +3674,8 @@ reported shift of every site mean. It runs rocksalt, wurtzite and P2₁2₁2₁ 
 rutile's measured 4f x, R3m on its hexagonal cell, a supercell, a primitive cell, a lower bound,
 mixed occupancy, P1 identity, the pooled distortion and every rung of the demo ladder.
 `cifWriter.test.js` checks the spelling, the CIF 1.1 syntax and a read-back of the demo F-43m file.
-`ModelSummaryCif.test.jsx` checks click-selects / double-click-downloads and the Problems row.
+`ModelSummaryCif.test.jsx` checks that the button follows the selection, the download and the
+Problems row.
 
 ### Parameters and defaults — model summary and symmetry
 

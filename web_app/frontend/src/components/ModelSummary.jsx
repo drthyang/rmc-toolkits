@@ -82,10 +82,11 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
     const widestBrick = ladder.reduce((best, b, i) => ((b.to - b.from) > (ladder[best].to - ladder[best].from) ? i : best), 0);
     const brickWidth = (i) => (ladder.length <= 1 ? 100 : i === widestBrick ? 34 : 66 / (ladder.length - 1));
 
-    // A click on a brick selects its tolerance (the card then shows that group); a
-    // double-click downloads the group's symmetry-averaged CIF (symmetryCif.js). A failed
-    // export is listed in the page's Problems section until an export succeeds, as
+    // The selected group (the brick holding symTol, i.e. the headline) can be downloaded as
+    // its symmetry-averaged CIF (symmetryCif.js) from the button under the card's title. A
+    // failed export is listed in the page's Problems section until an export succeeds, as
     // SaveMenu does for figures.
+    const selectedBrick = ladder.find((b) => symTol >= b.from && symTol < b.to) ?? null;
     const reportIssue = useReportIssue();
     const resolveIssue = useResolveIssue();
     const downloadCif = (brick) => {
@@ -277,7 +278,7 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                                     bound. Unlike FINDSYM there is no shift to the ITA origin.
                                 </p>
                                 <p>
-                                    Double-click a brick to download that group&apos;s structure as a CIF. It is
+                                    The CIF button under the title downloads the selected group&apos;s structure. It is
                                     averaged, not idealized: each site&apos;s mean over its copies in the box is averaged
                                     over its orbit, so special positions are exact and free coordinates keep their
                                     measured values. U<sub>ij</sub> is the spread of every atom of the orbit about that
@@ -288,6 +289,22 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                                 </p>
                                 {symmetry.skipped && <p>{symmetry.reason}</p>}
                             </InfoBadge>
+                            {/* Under the title (beside it on a phone), as Model information
+                                shows its file: the card does not grow. Kit save-pill look. */}
+                            {selectedBrick && (
+                                <span className="ui-save sym-cif-action">
+                                    <button
+                                        type="button"
+                                        className="ui-save__trigger"
+                                        title={`Download the symmetry-averaged structure in ${selectedBrick.spaceGroup}${selectedBrick.spaceGroupNumber ? ` (No. ${selectedBrick.spaceGroupNumber})` : ''} as a CIF`}
+                                        aria-label={`Download CIF for ${selectedBrick.spaceGroup}`}
+                                        onClick={() => downloadCif(selectedBrick)}
+                                    >
+                                        <span className="ui-save__icon" aria-hidden="true">⤓</span>
+                                        <span className="sym-cif-label">CIF · {selectedBrick.spaceGroup}</span>
+                                    </button>
+                                </span>
+                            )}
                         </>
                     )}
                 >
@@ -319,14 +336,11 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                             label={(
                                 <>
                                     <span>Space group vs. tolerance</span>
-                                    <span className="sym-ladder-hints">
-                                        <span className="sym-tol-arrow sym-cif-hint" title="Double-click a brick to download that group's symmetry-averaged structure as a CIF">double-click for CIF</span>
-                                        <span className="sym-tol-arrow" title="Bricks run from tight (left) to loose (right) atomic-position tolerance">atom pos. tol. →</span>
-                                    </span>
+                                    <span className="sym-tol-arrow" title="Bricks run from tight (left) to loose (right) atomic-position tolerance">atom pos. tol. →</span>
                                 </>
                             )}
                         >
-                            <div className="sym-ladder" role="group" aria-label="Space group vs. tolerance — click to select, double-click to download its CIF">
+                            <div className="sym-ladder" role="group" aria-label="Space group vs. tolerance — click to select">
                                 {ladder.map((b, i) => {
                                     const active = symTol >= b.from && symTol < b.to;
                                     return (
@@ -335,9 +349,8 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                                             type="button"
                                             className={`sym-brick${active ? ' is-active' : ''}`}
                                             style={{ '--brick-w': brickWidth(i), ...brickStyle(b.nSpace, maxOps) }}
-                                            title={`${b.spaceGroup}${b.spaceGroupNumber ? ` (No. ${b.spaceGroupNumber})` : ''} · holds ${b.from.toFixed(2)}–${b.to.toFixed(2)} Å · ${b.nSpace} ops — click to select, double-click to download its CIF`}
+                                            title={`${b.spaceGroup}${b.spaceGroupNumber ? ` (No. ${b.spaceGroupNumber})` : ''} · holds ${b.from.toFixed(2)}–${b.to.toFixed(2)} Å · ${b.nSpace} ops — click to select`}
                                             onClick={() => setSymTol((b.from + b.to) / 2)}
-                                            onDoubleClick={() => downloadCif(b)}
                                         >
                                             <span className="sym-brick-label">{b.spaceGroup}</span>
                                         </button>

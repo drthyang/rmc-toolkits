@@ -64,7 +64,7 @@ web_app/frontend/src/
   symmetryModel.js               structure → finder glue, 2000-site cap and 384-operation budget, orbitLabel(); analyseSymmetry() exposes the operations, orbits and naming cell
   averageStructure.js            symmetry-averaged structure of a picked group (no Python counterpart): exactGroup (2-cocycle average → exact operations), chooseOrigin (smallest shift putting the operations on the 1/48 grid), averageOrbit (orbit-averaged mean + pooled covariance, stabilizer-projected), symmetryAveragedStructure (standard cell, point-group-averaged metric, U_ij, occupancies)
   cifWriter.js                   CIF 1.1 text of that structure (ASCII; H–M spelling, symop triplets, atom_site + aniso loops, provenance header)
-  symmetryCif.js                 ladder brick → CIF: brickTolerance (the brick's lower edge) + filename; what a brick double-click in ModelSummary calls
+  symmetryCif.js                 ladder brick → CIF: brickTolerance (the brick's lower edge) + filename; what ModelSummary's CIF button calls
   siteLabel.js                   mixed-occupancy site label (composition) shared by the PCA Ellipsoid and Displacement Directions pages
   colormaps.js                   colormap LUTs for the KDE canvas
   atomColors.js                  the one element-colour map per model (CPK/Jmol table + fallbacks, placed by abundance, similar colours separated in OKLab incl. simulated colour-blind vision; speciesCounts, elementColorNote) — every page that draws atoms
@@ -89,7 +89,7 @@ web_app/frontend/src/
   components/
     AutoStogPage.jsx             Auto StoG tab (hidden in the shipped build: `SHOW_AUTO_STOG = false`) — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets with ? help) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
     Dashboard.jsx                all-plots run dashboard
-    ModelSummary.jsx             Model information + Detected SG cards (parse warning, move counters, tolerance ladder; a brick click selects, a double-click downloads its symmetry-averaged CIF)
+    ModelSummary.jsx             Model information + Detected SG cards (parse warning, move counters, tolerance ladder; a brick click selects, the `⤓ CIF · <group>` button under the title downloads the selected group's symmetry-averaged CIF)
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom; opt-in angle-axis/step options, and legend={false} + actionsTarget to move Save into a card header)
     AppFooter.jsx                the footer shared by the workspace pages (kit ui-footer class)
     FoldedCellPanel.jsx          Bond Geometry's folded unit cell with the detected bonds drawn over the atom cloud

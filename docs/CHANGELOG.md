@@ -18,10 +18,11 @@ were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.
 
 ### Detected SG: download the symmetry-averaged structure as a CIF
 
-A click on a brick of the Detected SG tolerance ladder still selects it; a **double-click** now
-downloads that group's structure as a CIF (the label row says "double-click for CIF"). It is the RMC
-model folded into one unit cell, averaged in the group that brick stands for, and written in the
-standard cell the symbol is named in
+A **`⤓ CIF · <group>` button** under the Detected SG title downloads the selected group's structure
+as a CIF. Pick a group by clicking its brick on the tolerance ladder, as before, and the button
+follows. The button is placed like Model information's file name, so the card keeps its height. The
+CIF is the RMC model folded into one unit cell, averaged in the group that brick stands for, and
+written in the standard cell the symbol is named in
 (`averageStructure.js`, `cifWriter.js`, `symmetryCif.js`; the method is in
 [run-dashboard.md Part C](algorithms/run-dashboard.md#part-c--the-symmetry-averaged-cif-of-a-ladder-brick)).
 

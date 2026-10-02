@@ -3,10 +3,10 @@
 /* @vitest-environment jsdom */
 /* global process */
 
-// The Detected SG ladder's CIF download: a click on a brick only selects it (the card shows
-// that group); a double-click downloads the group's symmetry-averaged CIF. The label row
-// says so ("double-click for CIF"); a failed export is listed in the page's Problems
-// section until an export succeeds.
+// The Detected SG card's CIF download: a click on a brick selects it (the card shows that
+// group), and the "CIF · <group>" button under the card's title downloads the selected
+// group's symmetry-averaged CIF. A failed export is listed in the page's Problems section
+// until an export succeeds.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -47,23 +47,25 @@ describe('Detected SG CIF download', () => {
 
     const bricks = () => [...container.querySelectorAll('.sym-brick')];
     const headline = () => container.querySelector('[aria-label="Detected space group"] dd').textContent;
-    const fire = (el, type) => act(() => el.dispatchEvent(new MouseEvent(type, { bubbles: true })));
-    // A double-click: two clicks, then the dblclick event.
-    const doubleClick = (el) => { fire(el, 'click'); fire(el, 'click'); fire(el, 'dblclick'); };
+    const click = (el) => act(() => el.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    const cifButton = () => container.querySelector('.sym-cif-action button');
 
-    it('selects on a click and downloads only on a double-click', async () => {
+    it('names the selected group on the button and downloads it on a click', async () => {
         act(() => root.render(<ModelSummary structure={demo} />));
-        expect(container.querySelector('.sym-cif-hint').textContent).toBe('double-click for CIF');
+        // The default tolerance (0.2 Å) selects the cubic group.
+        expect(cifButton().textContent).toBe('⤓CIF · F-43m');
+        expect(cifButton().getAttribute('aria-label')).toBe('Download CIF for F-43m');
 
+        // Selecting a brick only selects it, and the button follows.
         const tetragonal = bricks().find((b) => b.textContent === 'P-42_1m');
-        fire(tetragonal, 'click');
-        expect(tetragonal.classList.contains('is-active')).toBe(true);
+        click(tetragonal);
+        click(tetragonal);
         expect(headline()).toMatch(/^P-42_1m/);
+        expect(cifButton().getAttribute('aria-label')).toBe('Download CIF for P-42_1m');
         expect(downloads).toHaveLength(0);
 
-        const cubic = bricks().at(-1);
-        doubleClick(cubic);
-        expect(cubic.classList.contains('is-active')).toBe(true);
+        click(bricks().at(-1));
+        click(cifButton());
         expect(downloads).toHaveLength(1);
         expect(downloads[0].filename).toBe('GTS_250K_F-43m.cif');
         expect(downloads[0].blob.type).toBe('chemical/x-cif');
@@ -82,20 +84,19 @@ describe('Detected SG CIF download', () => {
             </IssueStoreProvider>,
         ));
         const problems = () => container.querySelector('.ui-issues')?.textContent ?? '';
-        const cubic = bricks().at(-1);
 
         // Empty the basis behind the card's back so the export throws.
         const saved = demo.basis;
         demo.basis = [];
         try {
-            fire(cubic, 'dblclick');
+            click(cifButton());
         } finally {
             demo.basis = saved;
         }
         expect(downloads).toHaveLength(0);
         expect(problems()).toMatch(/CIF · F-43m.*no average-structure basis/);
 
-        fire(cubic, 'dblclick');
+        click(cifButton());
         expect(downloads).toHaveLength(1);
         expect(problems()).not.toMatch(/CIF/);
     });
