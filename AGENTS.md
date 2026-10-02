@@ -61,7 +61,10 @@ web_app/frontend/src/
   symmetry.js                    browser-only space-group finder: strain-tested lattice rotations, least-squares-refined operations, closure walk, tolerance ladder, orbits
   spaceGroupSymbol.js / spaceGroupTable.js   H-M symbol, standard-setting search, centring from the full translation lattice, 230-group table
   wyckoff.js / wyckoffTable.js   Wyckoff letters (1731 ITA positions) read in the naming cell
-  symmetryModel.js               structure → finder glue, 2000-site cap and 384-operation budget, orbitLabel()
+  symmetryModel.js               structure → finder glue, 2000-site cap and 384-operation budget, orbitLabel(); analyseSymmetry() exposes the operations, orbits and naming cell
+  averageStructure.js            symmetry-averaged structure of a picked group (no Python counterpart): exactGroup (2-cocycle average → exact operations), chooseOrigin (smallest shift putting the operations on the 1/48 grid), averageOrbit (orbit-averaged mean + pooled covariance, stabilizer-projected), symmetryAveragedStructure (standard cell, point-group-averaged metric, U_ij, occupancies)
+  cifWriter.js                   CIF 1.1 text of that structure (ASCII; H–M spelling, symop triplets, atom_site + aniso loops, provenance header)
+  symmetryCif.js                 ladder brick → CIF: brickTolerance (the brick's lower edge) + filename; what a brick double-click in ModelSummary calls
   siteLabel.js                   mixed-occupancy site label (composition) shared by the PCA Ellipsoid and Displacement Directions pages
   colormaps.js                   colormap LUTs for the KDE canvas
   atomColors.js                  the one element-colour map per model (CPK/Jmol table + fallbacks, placed by abundance, similar colours separated in OKLab incl. simulated colour-blind vision; speciesCounts, elementColorNote) — every page that draws atoms
@@ -86,7 +89,7 @@ web_app/frontend/src/
   components/
     AutoStogPage.jsx             Auto StoG tab (hidden in the shipped build: `SHOW_AUTO_STOG = false`) — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets with ? help) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
     Dashboard.jsx                all-plots run dashboard
-    ModelSummary.jsx             Model information + Detected SG cards (parse warning, move counters, tolerance ladder)
+    ModelSummary.jsx             Model information + Detected SG cards (parse warning, move counters, tolerance ladder; a brick click selects, a double-click downloads its symmetry-averaged CIF)
     InteractivePlot.jsx          browser-native SVG plot renderer (hover, legend, drag-zoom; opt-in angle-axis/step options, and legend={false} + actionsTarget to move Save into a card header)
     AppFooter.jsx                the footer shared by the workspace pages (kit ui-footer class)
     FoldedCellPanel.jsx          Bond Geometry's folded unit cell with the detected bonds drawn over the atom cloud
@@ -339,6 +342,18 @@ web_app/frontend/src/
   configurations and keeps the picks that still apply; Bond Geometry drops its computed
   distribution (never recomputed unasked). The pages are not remounted (docs/algorithms/notation.md
   §3c).
+- **A brick's CIF is averaged, not idealized** (`averageStructure.js`, docs: run-dashboard.md Part C).
+  It is computed at the brick's lower edge (`brickTolerance` = `from` + 1e-6 Å, never the midpoint
+  the click selects, which would merge merely-close sites), from the per-site `mean` / `covFrac` /
+  `count` / `elementCounts` that `structureFromRmc6f` adds to each basis site. The operations are
+  made exact by the 2-cocycle average, then the origin is shifted by the smallest δ that puts them on
+  the 1/48 grid. δ is not a move to ITA's origin, so the written operations are authoritative.
+  Positions and U are averaged over each orbit and projected onto the site symmetry, so they are
+  exact where the group fixes them and measured elsewhere. U is the pooled second moment about the
+  symmetrized position (÷ N, unlike the PCA page's n − 1), so it includes any distortion the group
+  averages away. The symmetry elements sit where the finder's least-squares translations put them.
+  `averageStructure.test.js` pins exactness and faithfulness for every case; keep it passing when
+  touching the finder's operations, orbits or `setting`.
 - **The Detected SG card never shows a wrong number.** Every reported operation set is a closed
   group, and a symbol or ITA number is accepted only when it belongs to the detected class and
   centring in a standard setting. Otherwise the card shows the crystal class, a "≥" lower bound,
@@ -476,7 +491,10 @@ plot-parity tests, so those run in CI.
 3. ~~Make browser `.rmc6f` parsing tolerant + diagnostic~~ **DONE in 0.6.0** — one validated grammar
    in both runtimes with a parse report against the header count.
 4. Symmetry finder: a Python port or an spglib cross-check in CI (the finder is browser-only), and
-   moving it into a Web Worker so the 2000-site / 384-operation caps can be raised.
+   moving it into a Web Worker so the 2000-site / 384-operation caps can be raised. For the CIF
+   export: a table of ITA standard operations (e.g. generated from spglib) so the origin can be
+   moved to ITA's own, making the H–M symbol alone sufficient for every reader; and the basis (with
+   its moments) in Flask `/api/structure`, so the card and the CIF exist in server-folder mode.
 5. Structure KDE: the physical-kernel option (isotropic in the real plane, width in Å) that removes
    the slab-layout kernel artefact; oblique-slice normalisation; an `[uvw]` input mode.
 6. χ² history: plot every χ² column and the total, and have the watchdog classify on the total (today

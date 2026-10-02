@@ -37,6 +37,26 @@
     gap: 0.75rem;
 }
 
+/* The right-hand hints: "double-click for CIF · atom pos. tol. →". */
+.sym-ladder-hints {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+}
+
+.sym-cif-hint::after {
+    content: '·';
+    margin-left: 0.4rem;
+}
+
+/* A phone has no room for both on the label row: the CIF hint stays in the
+   bricks' tooltip and the ? help. */
+@media (max-width: 760px) {
+    .sym-cif-hint {
+        display: none;
+    }
+}
+
 .sym-tol-arrow {
     flex: 0 0 auto;
     text-transform: none;
@@ -49,6 +69,7 @@
 .sym-ladder-cell dd {
     white-space: normal;
 }
+
 
 .sym-ladder {
     display: flex;

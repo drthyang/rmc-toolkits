@@ -44,6 +44,7 @@ How a run folder becomes plots and numbers: file detection and parsing, the fit-
   - [What this section covers — model summary and symmetry](#what-this-section-covers--model-summary-and-symmetry)
   - [Part A — Model information](#part-a--model-information)
   - [Part B — The Detected SG symmetry finder](#part-b--the-detected-sg-symmetry-finder)
+  - [Part C — The symmetry-averaged CIF of a ladder brick](#part-c--the-symmetry-averaged-cif-of-a-ladder-brick)
   - [Parameters and defaults — model summary and symmetry](#parameters-and-defaults--model-summary-and-symmetry)
   - [Caveats / what this is not](#caveats--what-this-is-not-2)
 
@@ -2763,9 +2764,18 @@ This rms displacement is **not shown on the card**; it is consumed by the AI-ass
 a **single-snapshot** spread: static disorder and thermal motion together. The unit test pins the
 two-copy $\pm0.02$-fraction case on a 10 Å edge at exactly $0.2$ Å.
 
+The same second pass gives each site's first two moments in cell fractions, which only the CIF
+export (Part C) reads: `mean` $=\bar w + \langle \mathbf d\rangle$, the **arithmetic** mean of the
+copies unwrapped about the circular-mean centre (the circular mean leans towards the mode of a
+skewed or split site), and `covFrac` $=\langle \mathbf d\mathbf d^{\mathsf T}\rangle - \langle\mathbf d\rangle\langle\mathbf d\rangle^{\mathsf T}$,
+the population covariance (÷ $n$, so a one-copy site has a zero covariance, not `NaN`). `count` is
+the number of copies of every species and `elementCounts` the count per species — unlike `el`, these
+see every copy's own element token.
+
 Sites are keyed by reference number and emitted **sorted by reference number**, as
-`{ el, referenceNumber, frac, dispA }`. Per the early return above, an oldest-format file yields an
-empty basis, hence the Model information card and no Detected SG card.
+`{ el, referenceNumber, frac, dispA, count, elementCounts, mean, covFrac }`. Per the early return
+above, an oldest-format file yields an empty basis, hence the Model information card and no
+Detected SG card.
 
 **A site's species is fixed by the first atom that carries its reference number.** The accumulator is
 created as `if (!acc) { acc = { element, n: 0, sc, ss }; }` and `acc.element` is never revisited, so
@@ -3458,6 +3468,12 @@ its primitive cell (`4a`/`4b`). Pinned by `llm/__tests__/runContextWyckoff.test.
   bricks are contiguous, and the only setter is the midpoint click (which always yields
   $\tau < \texttt{tolMax}$), so exactly one brick highlights for any $\tau\in[0,1)$. A $\tau$ of
   exactly 1.0 Å would highlight nothing, but no code path produces it.
+- **Double-clicking** a brick downloads that group's **symmetry-averaged CIF** (Part C); its two
+  clicks select the brick first, so the card shows the group being exported. The label row says so
+  in the muted style of its tolerance hint, "double-click for CIF · atom pos. tol. →". The hint is
+  hidden at ≤ 760 px, where the row has no room, and stays in each brick's tooltip and the card's
+  `?` help. An export that throws is listed in the page's Problems section (`useReportIssue`,
+  source `CIF · <group>`) until an export succeeds.
 
 The tolerance itself is held in `SymTolContext`
 ([`symTolContext.js`](../../web_app/frontend/src/symTolContext.js)), a `[value, setValue]` pair
@@ -3465,7 +3481,8 @@ provided by [`App.jsx`](../../web_app/frontend/src/App.jsx) (`useState(0.2)`), s
 when switching between the Dashboard and the KDE/3D page. `ModelSummary.jsx` falls back to its own
 local `useState(0.2)` if no provider is present.
 
-**Code**: `ModelSummary.jsx` → `brickStyle()`, `brickWidth()`, the JSX for `.sym-ladder`.
+**Code**: `ModelSummary.jsx` → `brickStyle()`, `brickWidth()`, `downloadCif()`, the JSX for
+`.sym-ladder` and `.sym-ladder-hints`.
 
 #### Where and how often this runs
 
@@ -3516,6 +3533,147 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
 `pointGroup: '≥ <t> translations per cell'` and a reason naming the supercell, and
 `toleranceLadder` returns no bricks.
 
+---
+
+### Part C — The symmetry-averaged CIF of a ladder brick
+
+Double-clicking a brick downloads its group's structure as a CIF (`symmetryCif.js` → `brickCif()`):
+[`averageStructure.js`](../../web_app/frontend/src/averageStructure.js) computes it and
+[`cifWriter.js`](../../web_app/frontend/src/cifWriter.js) writes it. It is the RMC model folded into
+one cell and **averaged, not idealized**. Each site's arithmetic mean over its box copies (Step 5) is
+averaged over the orbit of the picked group. What the group fixes (special positions, the
+site-symmetry form of $U$) comes out exact; a free coordinate keeps its measured value. The export
+runs on the main thread on demand (≈ 35 ms on the demo run beyond the finder's own pass) and has no
+Python counterpart.
+
+**Tolerance.** The brick's lower edge, $\tau_\mathrm{CIF} = \texttt{from} + 10^{-6}$ Å
+(`brickTolerance()`), not the midpoint the click selects. It is the tightest tolerance at which the
+group holds, so the orbits and site symmetries (`siteOrbits`, Step 14) contain exactly what the
+group needs. A looser value would also merge sites that are merely close, such as the two halves of
+a split site. The $10^{-6}$ is there because Step 14's tests are strict ($<\tau$).
+`analyseSymmetry(structure, τ_CIF)` (`symmetryModel.js`) returns the group's operations $\{R_g|\mathbf t_g\}$
+in the `.rmc6f` cell $A$, the orbits, the Wyckoff letters and the `setting` it was named in (Steps 10–14).
+
+#### Step C1. Exact operations (`exactGroup`)
+
+The detected translations are least-squares estimates (Step 9), so a product of two operations
+matches a third only within the residual. With the detected lifts $\mathbf t_g$ (as returned,
+in $[0,1)$) and $gh$ the operation nearest $\{R_gR_h\,|\,R_g\mathbf t_h+\mathbf t_g\}$ (same rotation,
+nearest translation through $A$), the products define an integer 2-cocycle and its average:
+
+$$n(g,h) = \operatorname{round}\!\big(\mathbf t_g + R_g\mathbf t_h - \mathbf t_{gh}\big),\qquad
+\mathbf s_g = \frac1{|G|}\sum_h n(g,h).$$
+
+$\mathbf s$ satisfies $\mathbf s_g + R_g\mathbf s_h - \mathbf s_{gh} = n(g,h)$ **exactly**: it is an exact
+group modulo the lattice, with denominators that divide $|G|$. The detected translations differ from it by
+a coboundary plus noise, $\mathbf t_g - \mathbf s_g \approx (R_g - I)\,\mathbf o$, and summing over the
+group gives $\mathbf o = -\frac1{|G|}\sum_g(\mathbf t_g - \mathbf s_g)$ (the fixed-subspace part of the
+origin drops out: $\frac1{|G|}\sum_g R_g$ projects onto it). The exact group nearest the detected one,
+on the data's own origin, is
+
+$$\hat{\mathbf t}_g = \mathbf s_g + (R_g - I)\,\mathbf o .$$
+
+`defect` $=\max|\mathbf t_g + R_g\mathbf t_h - \mathbf t_{gh} - n(g,h)|$ measures the detected set's
+closure error; a product whose rotation is missing, or a defect $\ge \tfrac14$, refuses the export
+("do not close into an exact group").
+
+**Where the elements end up.** Step 9 fits each translation by least squares over **all** sites, each
+reference site counting once. A distortion carried by a few sites therefore pulls the symmetry
+elements part of the way towards it. On the distorted lacunar spinel picked as F-43m, the four Ga of
+52 sites shift by $\mathbf s$ along [111]; the elements move $\tfrac{4}{52}\mathbf s$ and Ga stays
+$\tfrac{48}{52}\mathbf s$ off its 4a site. This is the least-squares symmetrization (FINDSYM's too),
+not an artefact; the test `pools a distortion the group averages away into U` pins it.
+
+#### Step C2. Origin (`chooseOrigin`)
+
+$\hat{\mathbf t}$ is exact but in general irrational. The coordinates are shifted by $\boldsymbol\delta$
+($\mathbf x' = \mathbf x + \boldsymbol\delta$, which changes every translation to
+$\hat{\mathbf t}_g + (I - R_g)\boldsymbol\delta$). The shift chosen is the smallest one (Cartesian,
+through $A$) under which every translation, read in the output cell ($Q^{-1}\cdot$), has a
+crystallographic denominator (1, 2, 3, 4, 6, 8, 12, 16, 24, 48: `niceDenominator`, $10^{-6}$).
+The candidates are:
+
+- $\boldsymbol\delta = 0$;
+- the data's own origin with every detected translation snapped to the 1/48 grid,
+  $\boldsymbol\delta = \overline{\operatorname{snap}(\mathbf t)} + \mathbf o$. For a box built on a
+  standard origin this is the answer, with $|\boldsymbol\delta|$ of the order of the noise (0.0005 Å
+  on the demo run);
+- the origin moved onto each symmetry element ($\boldsymbol\delta = -\mathbf f$, with $\mathbf f$ the
+  ridge least-squares point of $(I - R)\mathbf f = \hat{\mathbf t} - \mathbf w$, $\mathbf w$ the
+  intrinsic screw/glide part $\frac1n\sum_{k<n}R^k\hat{\mathbf t}$), and onto the intersection of the
+  elements of every pair of distinct rotations. This is where International Tables places its origins,
+  and it covers a box cut on any origin, including groups with no special position (P2₁2₁2₁ on its
+  screw axes; tested).
+
+When no candidate passes, $\boldsymbol\delta = 0$ and the operations print with decimals (`nice: false`,
+noted in the header). There is **no search for ITA's own origin** among the equivalent ones: that
+needs the tabulated operations, which the app does not carry. The H–M symbol is written, but the
+operation list is authoritative.
+
+#### Step C3. Orbit average (`averageOrbit`)
+
+For each orbit (Step 14) with members $s$ (mean $\mathbf y_s + \boldsymbol\delta$, fractional covariance
+$V_s$, $n_s$ copies), the representative is member 0. Every exact operation $g$ (pure translations
+included) carries it to the member $s(g)$ nearest $g\,\mathbf y_r$, and that member is carried back:
+$\mathbf b_g = R_g^{-1}(\mathbf q_{s(g)} - \hat{\mathbf t}_g)$, with $\mathbf q$ the lattice image nearest
+$g\,\mathbf y_r$. Then
+
+$$\bar{\mathbf x} = \frac{\sum_g n_{s(g)}\,\mathbf b_g}{\sum_g n_{s(g)}},\qquad
+\bar V = \frac{\sum_g n_{s(g)}\big(R_g^{-1}V_{s(g)}R_g^{-\mathsf T} + (\mathbf b_g-\bar{\mathbf x})(\mathbf b_g-\bar{\mathbf x})^{\mathsf T}\big)}{\sum_g n_{s(g)}} .$$
+
+The terms are permuted by the representative's stabilizer, so $\bar{\mathbf x}$ is exactly on its special
+position and $\bar V$ has exactly its site-symmetry form. An explicit projection (the mean of
+$h\bar{\mathbf x}$ and $h\bar Vh^{\mathsf T}$ over the operations $h$ that keep $\bar{\mathbf x}$ within
+$\tau_\mathrm{CIF}$) guards the round-off. $\bar V$ is the **pooled second moment** of every atom of the
+orbit about the symmetrized position: the within-site spread plus the scatter of the member means.
+A distortion the picked group averages away therefore appears in $U$, not in the positions. Its
+population normalization (÷ $N$) differs from the PCA page's $n-1$ by $1/n$ (≤ 1 % above 100 copies).
+`maxShift` / `rmsShift` report how far the member means lie from their symmetrized positions (Å,
+through $A$); a member no operation reaches (`unmatched`, not expected for a closed group) does not
+enter the average.
+
+#### Step C4. Output cell, metric, $U_{ij}$, occupancy
+
+The standard cell is the `setting` the symbol was named in (Step 10f), with columns $Q$ in $A$'s
+fractions. Without one (a crystal class, a `≥` lower bound) the output cell is the `.rmc6f` cell
+($Q = I$), and the CIF carries no symbol and no number. Positions map as $Q^{-1}\bar{\mathbf x}$ and
+covariances as $Q^{-1}\bar VQ^{-\mathsf T}$. The operations go through `applySetting` (with the
+exact pure translations), are ordered identity-first, and are listed coset by coset with the smallest
+translation of each coset. The cell rows $A' = Q^{\mathsf T}A$ give $G_0 = A'A'^{\mathsf T}$, which is
+**averaged over the point group**, $G = \frac1{|P|}\sum_R R^{\mathsf T}G_0R$, so a cell that holds the
+group only within the tolerance is written with the group's own metric. Each orbit is written once,
+at the image (of all its images under the output operations) that fits its tabulated Wyckoff form
+when it has a letter, else the lexicographically smallest. The multiplicity is the number of distinct
+images, and a finder letter whose multiplicity no longer matches is dropped.
+
+$$U_{ij} = \frac{V_{ij}}{a^*_i a^*_j},\quad a^*_i=\sqrt{(G^{-1})_{ii}};\qquad
+U_\mathrm{eq} = \tfrac13\operatorname{tr}(VG).$$
+
+Occupancy per element is $\sum_{s}\texttt{elementCounts}_s[e] / (\text{members}\times\prod_i N_i)$: a
+mixed site is several rows at one position, and a site with missing copies is below 1. $Z$ is the gcd
+of the cell's atom counts when they are integers, else the gcd of the multiplicities.
+
+#### Step C5. The file (`writeCif`)
+
+CIF 1.1, ASCII only (Å, ×, ≥ are spelled out). A header comment records the source, the group,
+its ladder range, $\tau_\mathrm{CIF}$, the operation count and worst residual, the cell
+transformation, $\boldsymbol\delta$, the largest and rms symmetrization shift, and the definitions of
+$U$ and the occupancy. Then come `_cell_*`, `_space_group_crystal_system`,
+`_space_group_name_H-M_alt` and `_symmetry_space_group_name_H-M` (CIF spelling: `P 21/c`,
+`F d -3 m`, `R 3 m :H`), `_space_group_IT_number` / `_symmetry_Int_Tables_number`, the
+`_space_group_symop_operation_xyz` loop, the `_atom_site_*` loop (label, type, multiplicity,
+Wyckoff letter or `?`, x y z to 6 decimals, occupancy, $U_\mathrm{eq}$, `Uani`, or `Uiso` when
+$U_\mathrm{eq}\le10^{-8}$ Å²) and the `_atom_site_aniso_*` loop. The file is named
+`<rmc6f stem>_<symbol>.cif`.
+
+**Tests.** `averageStructure.test.js` checks every export for an exactly closed group, translations
+on the 1/48 grid, position and $U$ invariance under each site's stabilizer, and an atom within the
+reported shift of every site mean. It runs rocksalt, wurtzite and P2₁2₁2₁ on arbitrary origins,
+rutile's measured 4f x, R3m on its hexagonal cell, a supercell, a primitive cell, a lower bound,
+mixed occupancy, P1 identity, the pooled distortion and every rung of the demo ladder.
+`cifWriter.test.js` checks the spelling, the CIF 1.1 syntax and a read-back of the demo F-43m file.
+`ModelSummaryCif.test.jsx` checks click-selects / double-click-downloads and the Problems row.
+
 ### Parameters and defaults — model summary and symmetry
 
 | Name | Where | Default | Units | Meaning |
@@ -3546,6 +3704,11 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
 | `MAX_SYMMETRY_SITES` | `symmetryModel.js` | `2000` | sites | larger bases are not analysed (`skipped: true`), and the ladder is empty |
 | `MAX_SYMMETRY_OPS` | `symmetryModel.js` | `384` | operations | lattice rotations × pure translations (`operationEstimate`, at $\max(\tau,1.0)$ Å) above which a structure is not analysed (`skipped: true`) and the ladder is empty |
 | `ELIMINATION_MAX_OPS` | `symmetry.js` | `256` | operations | the quadratic elimination of Step 11 runs only up to this many candidate operations |
+| $\tau_\mathrm{CIF}$ | `symmetryCif.js` `brickTolerance()` | brick `from` $+10^{-6}$ | Å | tolerance of a brick's CIF: orbits, site symmetries and the stabilizer projection (Part C) |
+| closure defect limit | `averageStructure.js` `exactGroup()` | `0.25` | cell fractions | a detected set whose products miss by this much is not exported |
+| translation grid | `averageStructure.js` `niceDenominator()` | divisors of 48, within `1e-6` | cell fractions | the denominators the CIF's operations are put on by the origin shift (Step C2) |
+| ridge | `averageStructure.js` `leastSquaresPoint()` | `1e-10` | — | keeps the point-on-an-element solve well posed along a rotation axis or mirror plane |
+| CIF digits | `cifWriter.js` | x y z 6, cell 5, angles 4, $U$ 5, occupancy 4 | — | fixed-point output; `Uiso` (no aniso row) when $U_\mathrm{eq}\le10^{-8}$ Å² |
 
 ### Caveats / what this is not
 
@@ -3598,6 +3761,12 @@ supercell of a primitive cubic cell — `describeSymmetry` returns the same `ski
   equivalent one), and otherwise left without a letter (Step 14).
 - **No origin shift.** The standard cell is found by a change of basis only; the origin stays where
   the `.rmc6f` puts it. Space-group names do not depend on the origin, Wyckoff letters do (Step 14).
+  The CIF export (Part C) shifts the origin only as far as it takes to put every translation on the
+  1/48 grid, which is not a search for ITA's origin: a reader that rebuilds the cell from the H–M symbol
+  alone, ignoring the listed operations, can misplace the atoms when the box's origin is not ITA's.
+- **The CIF is a least-squares symmetrization.** Its symmetry elements sit where the finder's
+  least-squares translations put them (each reference site weighted once), and a distortion the
+  picked group averages away goes into $U_{ij}$, not into the positions (Part C, Steps C1 and C3).
 - **Header input is unvalidated.** Neither the `Lattice` numbers nor the `Supercell` multiplicities
   are checked. A non-finite or singular lattice gives `NaN` strains, every candidate operation is
   rejected (Step 7), and the card shows `undetermined` with 0 operations, no ladder and `NaN` cell

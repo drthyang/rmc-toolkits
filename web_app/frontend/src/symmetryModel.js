@@ -102,15 +102,17 @@ function lettersInSetting(sg, found, basis, A, tol) {
 }
 
 /**
- * Space group of a parsed structure at a cartesian tolerance `tol` (Å):
- *   { spaceGroup, spaceGroupNumber, pointGroup, centering, nSpace, nPoint,
- *     maxResidual, orbits:[{ element, size, site, rep, wyckoff, wyckoffMultiplicity, members }] }
- * Returns null when the structure has no basis (not yet loaded / no reference sites).
- * `size` is the orbit's multiplicity in the GIVEN cell; `wyckoff` is the letter in the
- * standard cell the group is named in and `wyckoffMultiplicity` the multiplicity there
- * (they can differ from `size`: label a position with the pair, as orbitLabel does).
+ * The finder's full result at a cartesian tolerance `tol` (Å), for callers that need more
+ * than the card's summary (the symmetry-averaged CIF export, averageStructure.js):
+ *   { A, sg, found, positions }
+ * A = the conventional cell (rows, Å); sg = spaceGroupAtTolerance's closed group with its
+ * operations {R, t, residual} in A's fractional basis and the standard `setting` it was
+ * named in (null when there is none); found = siteOrbits (index lists into
+ * structure.basis); positions = one { letter, multiplicity } per orbit in that setting.
+ * Returns null without a basis, and the card's 'not analysed' description (skipped: true)
+ * when the structure is too large or over the operation budget.
  */
-export function describeSymmetry(structure, tol = 0.2) {
+export function analyseSymmetry(structure, tol = 0.2) {
   if (!structure?.basis?.length || !structure?.latticeVectors) return null;
   if (tooLarge(structure)) {
     const n = structure.basis.length;
@@ -135,6 +137,22 @@ export function describeSymmetry(structure, tol = 0.2) {
   // No operation at all (a broken lattice): no orbits either — not one orbit per site.
   const found = sg.ops.length ? siteOrbits(A, structure.basis, sg.ops, tol) : [];
   const positions = lettersInSetting(sg, found, structure.basis, A, tol);
+  return { A, sg, found, positions };
+}
+
+/**
+ * Space group of a parsed structure at a cartesian tolerance `tol` (Å):
+ *   { spaceGroup, spaceGroupNumber, pointGroup, centering, nSpace, nPoint,
+ *     maxResidual, orbits:[{ element, size, site, rep, wyckoff, wyckoffMultiplicity, members }] }
+ * Returns null when the structure has no basis (not yet loaded / no reference sites).
+ * `size` is the orbit's multiplicity in the GIVEN cell; `wyckoff` is the letter in the
+ * standard cell the group is named in and `wyckoffMultiplicity` the multiplicity there
+ * (they can differ from `size`: label a position with the pair, as orbitLabel does).
+ */
+export function describeSymmetry(structure, tol = 0.2) {
+  const analysis = analyseSymmetry(structure, tol);
+  if (!analysis || analysis.skipped) return analysis;
+  const { sg, found, positions } = analysis;
   const orbits = found.map((o, i) => ({
     element: o.element,
     size: o.size,

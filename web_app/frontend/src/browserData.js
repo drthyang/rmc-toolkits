@@ -654,8 +654,9 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
         atomIndices[element].add(referenceNumber);
         // Accumulate this atom's within-cell fraction into its reference-number site.
         let acc = rnAcc.get(referenceNumber);
-        if (!acc) { acc = { element, n: 0, sc: [0, 0, 0], ss: [0, 0, 0] }; rnAcc.set(referenceNumber, acc); }
+        if (!acc) { acc = { element, n: 0, sc: [0, 0, 0], ss: [0, 0, 0], elements: {} }; rnAcc.set(referenceNumber, acc); }
         acc.n += 1;
+        acc.elements[element] = (acc.elements[element] || 0) + 1;
         for (let i = 0; i < 3; i++) {
             const wf = ((coords[i] * supercell[i]) % 1 + 1) % 1;   // within-unit-cell fraction
             acc.sc[i] += Math.cos(TWO_PI * wf); acc.ss[i] += Math.sin(TWO_PI * wf);
@@ -663,7 +664,9 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
     });
 
     // One representative site per reference number (its circular-mean fraction) —
-    // the (element, fractional) basis the symmetry finder consumes.
+    // the (element, fractional) basis the symmetry finder consumes. `elementCounts`
+    // and `count` (every atom of the site, whatever its element) feed the CIF export's
+    // occupancies; `mean` and `covFrac` are filled in by the second pass below.
     const basis = [...rnAcc.entries()]
         .sort(([a], [b]) => a - b)
         .map(([referenceNumber, acc]) => ({
@@ -673,7 +676,9 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
                 const a = Math.atan2(acc.ss[i], acc.sc[i]) / TWO_PI;
                 return a - Math.floor(a);
             }),
-            dispA: 0
+            dispA: 0,
+            count: acc.n,
+            elementCounts: acc.elements
         }));
 
     // The site's rms displacement about that mean (dispA) — the local-distortion
@@ -684,30 +689,53 @@ export const structureFromRmc6f = (file, maxPoints = 100) => {
     //   dr = Σ_i d_i a_i,   dispA = √(⟨|dr|²⟩ − |⟨dr⟩|²)  = √(trace of the Cartesian covariance)
     // (= √(3·U_iso) of the PCA page). Per-axis spreads times edge lengths treated
     // the axes as orthogonal and overstated hexagonal / rhombohedral cells by 10–23%.
+    //
+    // The same pass gives the site's first two moments in unit-cell fractions, which
+    // the symmetry-averaged CIF export (averageStructure.js) starts from:
+    //   mean    = centre + ⟨d⟩          the arithmetic mean of the copies, unwrapped
+    //                                    about the circular-mean centre (a skewed or
+    //                                    split site's circular mean leans to its mode)
+    //   covFrac = ⟨d dᵀ⟩ − ⟨d⟩⟨d⟩ᵀ      population covariance, fractions² (÷ n, so a
+    //                                    one-copy site has a zero covariance, not NaN)
     const unitVectors = latticeVectors.map((row, i) => row.map((value) => value / Math.max(supercell[i], 1)));
     const siteIndex = new Map(basis.map((site, index) => [site.referenceNumber, index]));
-    const spread = basis.map(() => ({ n: 0, sum: [0, 0, 0], sumSq: 0 }));
+    const spread = basis.map(() => ({ n: 0, sum: [0, 0, 0], sumSq: 0, sumD: [0, 0, 0], sumDD: [0, 0, 0, 0, 0, 0] }));
     atoms.forEach(({ referenceNumber, coords }) => {
         if (referenceNumber === null) return;
         const index = siteIndex.get(referenceNumber);
         const mean = basis[index].frac;
         const dr = [0, 0, 0];
+        const df = [0, 0, 0];
         for (let i = 0; i < 3; i++) {
             const wf = ((coords[i] * supercell[i]) % 1 + 1) % 1;
             let d = wf - mean[i];
             d -= Math.round(d);
+            df[i] = d;
             for (let k = 0; k < 3; k++) dr[k] += d * unitVectors[i][k];
         }
         const acc = spread[index];
         acc.n += 1;
         for (let k = 0; k < 3; k++) acc.sum[k] += dr[k];
         acc.sumSq += dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+        for (let k = 0; k < 3; k++) acc.sumD[k] += df[k];
+        // Upper triangle: 00 11 22 01 02 12.
+        acc.sumDD[0] += df[0] * df[0]; acc.sumDD[1] += df[1] * df[1]; acc.sumDD[2] += df[2] * df[2];
+        acc.sumDD[3] += df[0] * df[1]; acc.sumDD[4] += df[0] * df[2]; acc.sumDD[5] += df[1] * df[2];
     });
     basis.forEach((site, index) => {
-        const { n, sum, sumSq } = spread[index];
+        const { n, sum, sumSq, sumD, sumDD } = spread[index];
         if (!n) return;
         const meanSq = (sum[0] ** 2 + sum[1] ** 2 + sum[2] ** 2) / (n * n);
         site.dispA = Math.sqrt(Math.max(sumSq / n - meanSq, 0));
+        const m = sumD.map((value) => value / n);
+        site.mean = site.frac.map((value, i) => value + m[i]);
+        const c = (k, i, j) => sumDD[k] / n - m[i] * m[j];
+        const c01 = c(3, 0, 1), c02 = c(4, 0, 2), c12 = c(5, 1, 2);
+        site.covFrac = [
+            [Math.max(c(0, 0, 0), 0), c01, c02],
+            [c01, Math.max(c(1, 1, 1), 0), c12],
+            [c02, c12, Math.max(c(2, 2, 2), 0)]
+        ];
     });
 
     const stride = Math.max(1, Math.ceil(atoms.length / maxPoints));

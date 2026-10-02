@@ -16,6 +16,39 @@ bond angles, parsers and dashboard, symmetry finder, Flask API). Each group was 
 independently, then merged and integrated. Several numbers the app reports change *because they
 were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.5.0.
 
+### Detected SG: download the symmetry-averaged structure as a CIF
+
+A click on a brick of the Detected SG tolerance ladder still selects it; a **double-click** now
+downloads that group's structure as a CIF (the label row says "double-click for CIF"). It is the RMC
+model folded into one unit cell, averaged in the group that brick stands for, and written in the
+standard cell the symbol is named in
+(`averageStructure.js`, `cifWriter.js`, `symmetryCif.js`; the method is in
+[run-dashboard.md Part C](algorithms/run-dashboard.md#part-c--the-symmetry-averaged-cif-of-a-ladder-brick)).
+
+- **Averaged, not idealized.** Each reference site's arithmetic mean over its box copies is
+  averaged over its orbit through the group's operations, so special positions are exact and free
+  coordinates keep their measured values (GaTa₄Se₈ demo in F-43m: Ta and Se on 16e at x = 0.6463,
+  0.3854, 0.8856; Ga on 4c).
+- **Exact operations.** The finder's least-squares translations are made into an exact group by
+  averaging the product 2-cocycle. The origin then moves by the smallest shift that puts every
+  operation on the 1/48 grid (0.0005 Å on the demo; a box cut on an arbitrary origin gets an origin
+  on its symmetry elements). The shift, the cell transformation and the largest symmetrization shift
+  are recorded in the file's header, and the operations are listed explicitly.
+- **U_ij from the atom distributions**: the pooled second moment of every atom of the orbit about
+  its symmetrized position, in the site-symmetry form. A distortion the picked group averages away
+  shows up here (pick F-43m on an R3m-distorted model and the Ga U grows by the Ga offset).
+  Mixed sites get per-element occupancies.
+- The cell metric is averaged over the point group. A group with no standard cell (a crystal class,
+  a `≥` lower bound) is written in the `.rmc6f` cell with no symbol. Orbits are taken at the
+  brick's tightest tolerance, not at the midpoint the click selects.
+- `structureFromRmc6f` basis sites now also carry `count`, `elementCounts`, `mean` (arithmetic,
+  unwrapped about the circular mean) and `covFrac`; the finder still reads `frac`.
+- A failed export is listed in the page's Problems section (`CIF · <group>`) until an export
+  succeeds.
+- Not yet: a move to ITA's own origin (it needs a table of standard operations), so a reader that
+  rebuilds the cell from the H–M symbol alone, ignoring the operations, can misplace atoms when the
+  box's origin is not ITA's. Flask server-folder mode still has no Detected SG card.
+
 ### UI kit (no visual change)
 
 Every workspace page now draws its chrome from one shared UI kit, `web_app/frontend/src/ui`
