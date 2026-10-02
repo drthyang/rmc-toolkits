@@ -23,9 +23,11 @@
 //      grid, so the operations print as x+1/2, -y+1/4, … The candidates are the data's own
 //      origin with its translations snapped (δ of the order of the noise for a box built on
 //      a standard origin) and points on the symmetry elements and their intersections
-//      (where International Tables puts origins), for a box on any other origin. δ is
-//      reported in the CIF; there is no search for ITA's own origin among the equivalent
-//      ones (that needs the tabulated operations, which the app does not carry).
+//      (where International Tables puts origins), for a box on any other origin. For a group
+//      named in a standard cell the structure then moves on to ITA's OWN origin
+//      (itaOrigin.js, against itaOperations.js): the equivalent one nearest the .rmc6f
+//      origin, none along a polar axis. The CIF then lists ITA's operations and every orbit's
+//      Wyckoff letter is read exactly from the table. The total shift is reported in the CIF.
 //   3. Orbit averaging (averageOrbit). Every operation g carries the orbit representative to
 //      the nearest orbit member; that member's mean position and covariance are carried back
 //      by g⁻¹ and averaged, weighted by the member's atom count. The terms are permuted by the
@@ -46,6 +48,8 @@ import { analyseSymmetry } from './symmetryModel.js';
 import { applySetting, POINT_GROUP_SYSTEM } from './spaceGroupSymbol.js';
 import { inv3 } from './symmetry.js';
 import { wyckoffPositions, fitsForm } from './wyckoff.js';
+import { ORIGIN_CHOICE_2, itaGenerators, itaOperations } from './itaOperations.js';
+import { itaOriginShift } from './itaOrigin.js';
 
 const I3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 const ZERO3 = () => [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
@@ -371,6 +375,15 @@ function pickRepresentative(images, spaceGroupNumber, letter) {
 
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 
+// On ITA's origin a Wyckoff position is read straight from the table: the one row of the
+// orbit's multiplicity whose coordinate form some image fits exactly (two positions never
+// share a point, so at most one fits).
+function exactWyckoffLetter(number, images) {
+  const rows = wyckoffPositions(number)
+    .filter((row) => row.multiplicity === images.length && images.some((im) => fitsForm(row.form, im.x, 1e-6)));
+  return rows.length === 1 ? rows[0].letter : null;
+}
+
 /**
  * The symmetry-averaged structure of `structure` (browserData.structureFromRmc6f) in the
  * space group the finder reports at `tol` (Å) — what the Detected SG card shows when that
@@ -416,7 +429,15 @@ export function symmetryAveragedStructure(structure, tol) {
   }
   const setting = applySetting(ops.map(({ R, t }) => ({ R, t: t.map(wrapTidy) })), pure, Q);
   if (!setting) throw new Error(`The operations of ${sg.spaceGroup} cannot be carried into its standard cell.`);
-  const { ops: outOps, rotations } = orderedOperations(setting.ops, setting.translations);
+  // ITA's own origin (itaOrigin.js): of the equivalent ones, the one nearest the .rmc6f
+  // origin. The CIF then lists ITA's operations themselves. When the group has no standard
+  // cell, or its operations cannot be matched to ITA's, the 1/48-grid origin stays.
+  const number = standard ? sg.spaceGroupNumber : null;
+  const ita = number ? itaOriginShift(setting.ops, number, Aout, mulV(Qinv, delta)) : null;
+  const shiftOut = ita ? ita.shift : [0, 0, 0];
+  const { ops: outOps, rotations } = ita
+    ? orderedOperations(itaOperations(number), itaGenerators(number).centring)
+    : orderedOperations(setting.ops, setting.translations);
 
   // Metric averaged over the point group: a cell that holds the group within the tolerance
   // but not exactly (a strained lattice) is written with the group's own metric.
@@ -451,12 +472,14 @@ export function symmetryAveragedStructure(structure, tol) {
     shiftWeight += weight;
     unmatched += members.length - avg.matched;
 
-    const xOut = mulV(Qinv, avg.x);
+    const xOut = add(mulV(Qinv, avg.x), shiftOut);
     const VOut = mul(mul(Qinv, avg.V), transpose(Qinv));
     const images = orbitImages(outOps, xOut);
     // A letter goes with its multiplicity: dropped if the averaged orbit no longer has it.
-    const letter = positions[i].letter && positions[i].multiplicity === images.length ? positions[i].letter : null;
-    const rep = pickRepresentative(images, standard ? sg.spaceGroupNumber : null, letter);
+    const letter = ita
+      ? exactWyckoffLetter(number, images)
+      : (positions[i].letter && positions[i].multiplicity === images.length ? positions[i].letter : null);
+    const rep = pickRepresentative(images, number, letter);
     const V = mul(mul(rep.R, VOut), transpose(rep.R));
     const U = V.map((row, r) => row.map((v, c) => v / (aStar[r] * aStar[c])));
     const Ueq = (V[0][0] * G[0][0] + V[1][1] * G[1][1] + V[2][2] * G[2][2]
@@ -517,9 +540,11 @@ export function symmetryAveragedStructure(structure, tol) {
       nSpace: sg.nSpace,
       Q,
       ratio: setting.ratio,
-      originShift: delta,
-      originShiftA: origin.shiftA,
-      niceOrigin: origin.nice,
+      originShift: add(delta, mulV(Q, shiftOut)),
+      originShiftA: ita ? ita.totalA : origin.shiftA,
+      niceOrigin: origin.nice || !!ita,
+      itaOrigin: !!ita,
+      originChoice: ita && ORIGIN_CHOICE_2.has(number) ? 2 : null,
       maxShiftA: maxShift,
       rmsShiftA: Math.sqrt(shiftSq / Math.max(shiftWeight, 1e-300)),
       unmatched,

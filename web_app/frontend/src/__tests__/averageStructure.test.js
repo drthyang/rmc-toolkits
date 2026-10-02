@@ -7,7 +7,9 @@
 //     site's position and U are invariant under its site symmetry to round-off;
 //   • faithful — expanding the written sites through the operations puts an atom within the
 //     reported largest shift of every site mean of the model (no site lost or invented);
-//   • measured — free coordinates keep the averaged value, U is the pooled second moment.
+//   • measured — free coordinates keep the averaged value, U is the pooled second moment;
+//   • standard — on ITA's own origin (the one nearest the box), with ITA's operations and a
+//     Wyckoff letter for every site, for each of the 230 groups.
 
 import { describe, expect, it } from 'vitest';
 
@@ -16,6 +18,8 @@ import { describeSymmetry, toleranceLadder } from '../symmetryModel.js';
 import { cellRows, exactGroup, niceDenominator, symmetryAveragedStructure, wrapTidy } from '../averageStructure.js';
 import { inv3 } from '../symmetry.js';
 import { wyckoffPositions, fitsForm } from '../wyckoff.js';
+import { itaOperations } from '../itaOperations.js';
+import { SPACE_GROUP_FIXTURES, structureFor } from './fixtures/spaceGroups.js';
 import {
     STRUCTURES, lacunarSpinel, redescribe, closureDefects, demoStructure, orbits,
 } from './fixtures/symmetryStructures.js';
@@ -93,11 +97,14 @@ const fractionalCovariance = (site, G) => {
     return site.U.map((row, i) => row.map((v, j) => v * aStar[i] * aStar[j]));
 };
 
-/** The exactness and faithfulness checks every export must pass. */
-function expectSoundModel(model, structure) {
+/**
+ * The exactness and faithfulness checks every export must pass. `closure: false` skips the
+ * cubic-cost closure check, for operations already compared with ITA's (closed) set.
+ */
+function expectSoundModel(model, structure, { closure = true } = {}) {
     const ops = model.operations;
     // Exact group, translations on the 1/48 grid.
-    expect(closureDefects(ops, 1e-9)).toEqual([]);
+    if (closure) expect(closureDefects(ops, 1e-9)).toEqual([]);
     for (const { t } of ops) for (const v of t) expect(niceDenominator(v), `translation ${v}`).not.toBeNull();
     // Site symmetry: position and U invariant under every operation fixing the site.
     const G = metricOf(model.cell);
@@ -349,6 +356,52 @@ describe('symmetry-averaged structure', () => {
     });
 });
 
+const sameOperations = (a, b) => a.length === b.length && a.every((o) => b.some((q) => q.R.flat().join() === o.R.flat().join()
+    && o.t.every((v, i) => Math.abs(cyc(v - q.t[i])) < 1e-9)));
+
+describe('ITA origin', () => {
+    it('writes every one of the 230 groups on ITA\'s origin, with its operations and Wyckoff letters', { timeout: 120000 }, () => {
+        // Each fixture group as a noisy model on a random origin (cells doubled so the ladder's
+        // 1 Å pass stays within the operation budget for the dense cubic orbits).
+        let seed = 5;
+        const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+        for (const f of SPACE_GROUP_FIXTURES) {
+            const { A, basis } = structureFor(f);
+            const A2 = A.map((row) => row.map((v) => 2 * v));
+            const offset = [rand(), rand(), rand()];
+            const fixture = { A: A2, basis: basis.map((b) => ({ ...b, frac: b.frac.map((v, i) => wrapTidy(v + offset[i])) })) };
+            const structure = asStructure(fixture, { sigma: 0.003, seed: f.number });
+            const model = symmetryAveragedStructure(structure, 0.03);
+            expect(model.spaceGroup.number, f.symbol).toBe(f.number);
+            expect(model.provenance.itaOrigin, f.symbol).toBe(true);
+            expect(sameOperations(model.operations, itaOperations(f.number)), f.symbol).toBe(true);
+            expect(model.sites.map((site) => site.wyckoff).every(Boolean), f.symbol).toBe(true);
+            expectSoundModel(model, structure, { closure: false });
+        }
+    });
+
+    it('uses origin choice 2: diamond built on origin choice 1 lands on 8a (1/8, 1/8, 1/8)', () => {
+        const structure = asStructure(STRUCTURES.diamond(), { sigma: 0.004 });
+        const model = symmetryAveragedStructure(structure, 0.03);
+        expect(model.spaceGroup.symbol).toBe('Fd-3m');
+        expect(model.provenance).toMatchObject({ itaOrigin: true, originChoice: 2 });
+        const [carbon] = model.sites;
+        expect(model.sites).toHaveLength(1);
+        expect(carbon.wyckoff).toBe('a');
+        carbon.x.forEach((v) => expect(Math.abs(cyc(v * 8))).toBeLessThan(1e-9));
+        expect(Math.abs(cyc(carbon.x[0] * 4))).toBeGreaterThan(0.1);   // an odd eighth: not origin choice 1's 0 or 1/4
+        // The nearest choice-2 origin is an eighth of the body diagonal away: |(1/8,1/8,1/8)|·a.
+        expect(model.provenance.originShiftA).toBeCloseTo(Math.sqrt(3) * 3.567 / 8, 2);
+        expectSoundModel(model, structure);
+    });
+
+    it('keeps the 1/48-grid origin for a group with no standard cell', () => {
+        const structure = asStructure(redescribe(STRUCTURES.rocksalt(), [[2, 0, 0], [0, 1, 0], [0, 0, 1]]), { sigma: 0.005 });
+        const model = symmetryAveragedStructure(structure, 0.03);
+        expect(model.provenance).toMatchObject({ itaOrigin: false, originChoice: null });
+    });
+});
+
 describe('the demo run (GaTa4Se8, 250 K)', () => {
     const structure = demoStructure();
     const ladder = toleranceLadder(structure, 1.0);
@@ -375,8 +428,18 @@ describe('the demo run (GaTa4Se8, 250 K)', () => {
             expect(site.U[1][1]).toBeCloseTo(site.U[0][0], 12);
             expect(site.U[0][2]).toBeCloseTo(site.U[0][1], 12);
         }
-        // Box built on the standard origin: the shift is noise.
+        // Box built on an ITA origin (Ga on 4c): of the equivalent ones that is the nearest,
+        // and the shift is noise.
+        expect(model.provenance.itaOrigin).toBe(true);
         expect(model.provenance.originShiftA).toBeLessThan(0.005);
+    });
+
+    it('gives every site of every rung a Wyckoff letter on ITA\'s origin', () => {
+        for (const brick of ladder) {
+            const model = symmetryAveragedStructure(structure, brick.from + 1e-6);
+            expect(model.provenance.itaOrigin, brick.spaceGroup).toBe(true);
+            expect(model.sites.filter((site) => !site.wyckoff).map((site) => site.element), brick.spaceGroup).toEqual([]);
+        }
     });
 });
 

@@ -46,9 +46,18 @@ written in the standard cell the symbol is named in
   unwrapped about the circular mean) and `covFrac`; the finder still reads `frac`.
 - A failed export is listed in the page's Problems section (`CIF · <group>`) until an export
   succeeds.
-- Not yet: a move to ITA's own origin (it needs a table of standard operations), so a reader that
-  rebuilds the cell from the H–M symbol alone, ignoring the operations, can misplace atoms when the
-  box's origin is not ITA's. Flask server-folder mode still has no Detected SG card.
+- **On ITA's origin.** For a named group the structure is moved onto International Tables' own
+  origin, the equivalent one nearest the `.rmc6f` origin (never along a polar axis). The shift is
+  solved exactly from the integer congruences (`itaOrigin.js`). The CIF then lists ITA's operations
+  and spells origin choice 2 (`F d -3 m :2`), so the H–M symbol alone describes the file, and every
+  site gets its Wyckoff letter. The demo's Cmm2 and P-4̄2₁m exports had several `?`; now none do.
+  The demo's F-4̄3m box already sits on an ITA origin and does not move (Ga on 4c); diamond built on
+  origin choice 1 lands on choice 2's 8a. The operations come from a new table, `itaOperations.js`
+  (230 generator sets, the settings of the Wyckoff table). The table equals spglib's operation sets
+  exactly (`tests/generate_ita_operations_fixture.py`, spglib dev-only), and the symmetry tests'
+  fixture now reads it, so there is one copy. A group with no standard cell keeps the 1/48-grid origin
+  and says its listed operations are authoritative.
+- Flask server-folder mode still has no Detected SG card.
 
 ### UI kit (no visual change)
 

@@ -64,6 +64,8 @@ web_app/frontend/src/
   symmetryModel.js               structure → finder glue, 2000-site cap and 384-operation budget, orbitLabel(); analyseSymmetry() exposes the operations, orbits and naming cell
   averageStructure.js            symmetry-averaged structure of a picked group (no Python counterpart): exactGroup (2-cocycle average → exact operations), chooseOrigin (smallest shift putting the operations on the 1/48 grid), averageOrbit (orbit-averaged mean + pooled covariance, stabilizer-projected), symmetryAveragedStructure (standard cell, point-group-averaged metric, U_ij, occupancies)
   cifWriter.js                   CIF 1.1 text of that structure (ASCII; H–M spelling, symop triplets, atom_site + aniso loops, provenance header)
+  itaOperations.js               the 230 groups' operations in their ITA standard settings (Wyckoff table's: origin choice 2, hexagonal R, monoclinic b / cell choice 1) as compact generators + itaOperations() closure; pinned to spglib (itaOperations.test.js ← tests/generate_ita_operations_fixture.py); the symmetry tests' fixture reads it too
+  itaOrigin.js                   itaOriginShift: the shift onto ITA's origin by exact congruence solving (unimodular diagonalForm), the equivalent origin nearest the .rmc6f one, none along a polar axis
   symmetryCif.js                 ladder brick → CIF: brickTolerance (the brick's lower edge) + filename; what ModelSummary's CIF button calls
   siteLabel.js                   mixed-occupancy site label (composition) shared by the PCA Ellipsoid and Displacement Directions pages
   colormaps.js                   colormap LUTs for the KDE canvas
@@ -346,8 +348,13 @@ web_app/frontend/src/
   It is computed at the brick's lower edge (`brickTolerance` = `from` + 1e-6 Å, never the midpoint
   the click selects, which would merge merely-close sites), from the per-site `mean` / `covFrac` /
   `count` / `elementCounts` that `structureFromRmc6f` adds to each basis site. The operations are
-  made exact by the 2-cocycle average, then the origin is shifted by the smallest δ that puts them on
-  the 1/48 grid. δ is not a move to ITA's origin, so the written operations are authoritative.
+  made exact by the 2-cocycle average, the origin is put on the 1/48 grid, and then, for a named
+  group, moved onto ITA's own origin (`itaOrigin.js`), the equivalent one nearest the `.rmc6f` origin
+  (never along a polar axis). The CIF then lists ITA's operations, spells origin choice 2 (`:2`) and
+  reads every Wyckoff letter exactly from the table; only a group with no standard cell keeps the grid
+  origin with its own (authoritative) operations. `itaOperations.js` must stay equal to spglib's sets
+  (`itaOperations.test.js`); regenerate the fixture with
+  `PYTHONPATH=. python tests/generate_ita_operations_fixture.py` (spglib, dev only).
   Positions and U are averaged over each orbit and projected onto the site symmetry, so they are
   exact where the group fixes them and measured elsewhere. U is the pooled second moment about the
   symmetrized position (÷ N, unlike the PCA page's n − 1), so it includes any distortion the group
@@ -491,10 +498,10 @@ plot-parity tests, so those run in CI.
 3. ~~Make browser `.rmc6f` parsing tolerant + diagnostic~~ **DONE in 0.6.0** — one validated grammar
    in both runtimes with a parse report against the header count.
 4. Symmetry finder: a Python port or an spglib cross-check in CI (the finder is browser-only), and
-   moving it into a Web Worker so the 2000-site / 384-operation caps can be raised. For the CIF
-   export: a table of ITA standard operations (e.g. generated from spglib) so the origin can be
-   moved to ITA's own, making the H–M symbol alone sufficient for every reader; and the basis (with
-   its moments) in Flask `/api/structure`, so the card and the CIF exist in server-folder mode.
+   moving it into a Web Worker so the 2000-site / 384-operation caps can be raised. The card could
+   use the CIF's ITA origin for its own Wyckoff letters (the table and solver exist now:
+   `itaOperations.js`, `itaOrigin.js`). For the CIF export: the basis (with its moments) in Flask
+   `/api/structure`, so the card and the CIF exist in server-folder mode.
 5. Structure KDE: the physical-kernel option (isotropic in the real plane, width in Å) that removes
    the slab-layout kernel artefact; oblique-slice normalisation; an `[uvw]` input mode.
 6. χ² history: plot every χ² column and the total, and have the watchdog classify on the total (today

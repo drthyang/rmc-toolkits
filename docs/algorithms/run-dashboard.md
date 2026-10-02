@@ -3608,9 +3608,42 @@ The candidates are:
   screw axes; tested).
 
 When no candidate passes, $\boldsymbol\delta = 0$ and the operations print with decimals (`nice: false`,
-noted in the header). There is **no search for ITA's own origin** among the equivalent ones: that
-needs the tabulated operations, which the app does not carry. The H–M symbol is written, but the
-operation list is authoritative.
+noted in the header). This grid origin is only a stepping stone: for a named group, Step C2b moves
+the structure on to ITA's own origin.
+
+#### Step C2b. ITA's origin (`itaOrigin.js` → `itaOriginShift`)
+
+For a group named in a standard cell, the exact operations (in that cell, on the grid origin) are
+matched to **ITA's own operations** for the same setting (`itaOperations.js`). The settings are the
+Wyckoff table's: unique axis b and cell choice 1 for monoclinic groups, **origin choice 2** for the 24
+groups ITA gives two origins, and hexagonal axes for R. The table's 230 generator sets close to
+exactly spglib's operation sets (`itaOperations.test.js` against
+`tests/generate_ita_operations_fixture.py`). A shift $\mathbf p$ ($\mathbf x' = \mathbf x + \mathbf p$)
+maps the group onto ITA's when every ITA generator $\{R_g|\boldsymbol\tau_g\}$ is one of the shifted
+operations:
+
+$$(I - R_g)\,\mathbf p \equiv \boldsymbol\tau_g - \mathbf t_g + \mathbf c_g \pmod{\mathbb Z^3},$$
+
+with $\mathbf t_g$ our translation for $R_g$ and $\mathbf c_g$ any centring vector. Both groups must
+have the same rotations and the same centring, or nothing is matched. The stacked integer matrix
+$M = [I - R_g]$ is brought to diagonal form $UMV = D$ by unimodular row and column operations
+(`diagonalForm`). With $\mathbf q = V^{-1}\mathbf p$ the congruences decouple, $D_{ii}q_i \equiv (U\mathbf r)_i$,
+and are solved by $q_i = ((U\mathbf r)_i + m)/D_{ii}$, $m = 0 \ldots D_{ii}-1$. Where $D_{ii} = 0$
+(a polar direction) $q_i$ is free; a zero row of $D$ that meets a non-integer $(U\mathbf r)_i$ means
+no solution. This lists every solution exactly, the ITA origins equivalent under the group's
+normalizer included, for every choice of centring vectors. Each candidate is then checked against
+the full group.
+
+Of the valid shifts, the one used moves the structure **least counted from the `.rmc6f` origin**:
+the total shift $Q^{-1}\boldsymbol\delta + \mathbf p$ is reduced modulo the lattice and centring and
+loses its component along any direction all rotations fix (G-orthogonal projection), so nothing moves
+along a polar axis. A box built on an ITA origin therefore stays where it is (demo F-4̄3m: Ga on 4c,
+0.0005 Å). Diamond built on origin choice 1 moves by $\tfrac18\langle111\rangle$ onto choice 2.
+Matching costs ≤ 3 ms per group. On a match the CIF lists ITA's operations themselves, and every orbit's
+Wyckoff letter is read straight from the table: the one row of its multiplicity whose coordinate
+form one of its images fits to $10^{-6}$. Two positions never share a point, so at most one fits.
+With no standard cell, or no match, the grid origin of Step C2 stays and the header says the listed
+operations are authoritative.
 
 #### Step C3. Orbit average (`averageOrbit`)
 
@@ -3646,7 +3679,8 @@ translation of each coset. The cell rows $A' = Q^{\mathsf T}A$ give $G_0 = A'A'^
 group only within the tolerance is written with the group's own metric. Each orbit is written once,
 at the image (of all its images under the output operations) that fits its tabulated Wyckoff form
 when it has a letter, else the lexicographically smallest. The multiplicity is the number of distinct
-images, and a finder letter whose multiplicity no longer matches is dropped.
+images. On ITA's origin the letter is the exact table match of Step C2b; otherwise the finder's
+letter is kept only when its multiplicity still matches.
 
 $$U_{ij} = \frac{V_{ij}}{a^*_i a^*_j},\quad a^*_i=\sqrt{(G^{-1})_{ii}};\qquad
 U_\mathrm{eq} = \tfrac13\operatorname{tr}(VG).$$
@@ -3662,7 +3696,8 @@ its ladder range, $\tau_\mathrm{CIF}$, the operation count and worst residual, t
 transformation, $\boldsymbol\delta$, the largest and rms symmetrization shift, and the definitions of
 $U$ and the occupancy. Then come `_cell_*`, `_space_group_crystal_system`,
 `_space_group_name_H-M_alt` and `_symmetry_space_group_name_H-M` (CIF spelling: `P 21/c`,
-`F d -3 m`, `R 3 m :H`), `_space_group_IT_number` / `_symmetry_Int_Tables_number`, the
+`F d -3 m :2` for origin choice 2, `R 3 m :H`), `_space_group_IT_number` /
+`_symmetry_Int_Tables_number`, the
 `_space_group_symop_operation_xyz` loop, the `_atom_site_*` loop (label, type, multiplicity,
 Wyckoff letter or `?`, x y z to 6 decimals, occupancy, $U_\mathrm{eq}$, `Uani`, or `Uiso` when
 $U_\mathrm{eq}\le10^{-8}$ Å²) and the `_atom_site_aniso_*` loop. The file is named
@@ -3672,8 +3707,13 @@ $U_\mathrm{eq}\le10^{-8}$ Å²) and the `_atom_site_aniso_*` loop. The file is n
 on the 1/48 grid, position and $U$ invariance under each site's stabilizer, and an atom within the
 reported shift of every site mean. It runs rocksalt, wurtzite and P2₁2₁2₁ on arbitrary origins,
 rutile's measured 4f x, R3m on its hexagonal cell, a supercell, a primitive cell, a lower bound,
-mixed occupancy, P1 identity, the pooled distortion and every rung of the demo ladder.
-`cifWriter.test.js` checks the spelling, the CIF 1.1 syntax and a read-back of the demo F-43m file.
+mixed occupancy, P1 identity, the pooled distortion and every rung of the demo ladder (each on ITA's
+origin, every site lettered). It also runs all 230 groups as noisy models on random origins: each is
+written on ITA's origin with exactly ITA's operations and a letter for every site. A further case
+checks that diamond built on origin choice 1 lands on choice 2's 8a. `itaOrigin.test.js` checks
+the diagonal form, the solver on all 230 groups, the nearest origin and polar axes; `itaOperations.test.js`
+checks the table against spglib. `cifWriter.test.js` checks the spelling (`:2`, `:H`), the CIF 1.1
+syntax and a read-back of the demo F-43m file.
 `ModelSummaryCif.test.jsx` checks that the button follows the selection, the download and the
 Problems row.
 
@@ -3712,6 +3752,8 @@ Problems row.
 | translation grid | `averageStructure.js` `niceDenominator()` | divisors of 48, within `1e-6` | cell fractions | the denominators the CIF's operations are put on by the origin shift (Step C2) |
 | ridge | `averageStructure.js` `leastSquaresPoint()` | `1e-10` | — | keeps the point-on-an-element solve well posed along a rotation axis or mirror plane |
 | CIF digits | `cifWriter.js` | x y z 6, cell 5, angles 4, $U$ 5, occupancy 4 | — | fixed-point output; `Uiso` (no aniso row) when $U_\mathrm{eq}\le10^{-8}$ Å² |
+| ITA settings | `itaOperations.js` | origin choice 2 (24 groups), hexagonal R, monoclinic b / cell choice 1 | — | the settings Step C2b matches to; the Wyckoff table's |
+| match tolerance | `itaOrigin.js` | `1e-6` | cell fractions | a shifted translation equals ITA's; also the Wyckoff form fit on ITA's origin |
 
 ### Caveats / what this is not
 
@@ -3764,9 +3806,9 @@ Problems row.
   equivalent one), and otherwise left without a letter (Step 14).
 - **No origin shift.** The standard cell is found by a change of basis only; the origin stays where
   the `.rmc6f` puts it. Space-group names do not depend on the origin, Wyckoff letters do (Step 14).
-  The CIF export (Part C) shifts the origin only as far as it takes to put every translation on the
-  1/48 grid, which is not a search for ITA's origin: a reader that rebuilds the cell from the H–M symbol
-  alone, ignoring the listed operations, can misplace the atoms when the box's origin is not ITA's.
+  The CIF export (Part C) does shift it: onto ITA's own origin (Step C2b), the equivalent one nearest
+  the `.rmc6f` origin. Only a group with no standard cell keeps a grid origin, and its file says that
+  its listed operations are authoritative.
 - **The CIF is a least-squares symmetrization.** Its symmetry elements sit where the finder's
   least-squares translations put them (each reference site weighted once), and a distortion the
   picked group averages away goes into $U_{ij}$, not into the positions (Part C, Steps C1 and C3).

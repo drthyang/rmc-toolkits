@@ -5,9 +5,10 @@
 //
 // CIF 1.1 text for the symmetry-averaged structure (averageStructure.js). Formatting only:
 // every number was computed upstream. The file is ASCII throughout, as CIF 1.1 requires,
-// so comments spell Å, ×, ≥ and δ out. The symmetry operations are written explicitly and
-// are authoritative: the origin is the .rmc6f model's (shifted by at most half a 1/48 grid
-// step, recorded below), which need not be the origin International Tables uses.
+// so comments spell Å, ×, ≥ and δ out. The symmetry operations are always written out. On
+// ITA's origin (the usual case) they are ITA's own and the H–M symbol, with ':2' for origin
+// choice 2 and ':H' for hexagonal R axes, describes the file by itself; otherwise the origin
+// is the .rmc6f model's moved onto the 1/48 grid, and the listed operations are authoritative.
 
 const DIGITS = { xyz: 6, cell: 5, angle: 4, U: 5, occupancy: 4 };
 
@@ -127,8 +128,13 @@ export function writeCif(model, { dataName = 'rmc_average', date = null, tolRang
     ? `Cell: the standard cell the group is named in: ${basisText(p.Q)} (a, b, c: the .rmc6f unit cell).`
     : 'Cell: the .rmc6f unit cell (no standard setting was found for this group, so no symbol or number is given).');
   comment(`Origin: x(CIF) = inv(Q) (x(.rmc6f) + d), d = (${p.originShift.map((v) => fixed(v, 5)).join(', ')})`);
-  comment(`  in .rmc6f cell fractions (${fixed(p.originShiftA, 4)} A)${p.niceOrigin ? ', the smallest shift that puts every'
-    : '; no nearby origin puts the'} translation${p.niceOrigin ? ' on the 1/48 grid.' : 's on the 1/48 grid, so they are decimals.'}`);
+  if (p.itaOrigin) {
+    comment(`  in .rmc6f cell fractions (${fixed(p.originShiftA, 4)} A): the ITA standard origin`
+      + `${p.originChoice ? ` (origin choice ${p.originChoice})` : ''}, of the equivalent ones the nearest the .rmc6f origin.`);
+  } else {
+    comment(`  in .rmc6f cell fractions (${fixed(p.originShiftA, 4)} A)${p.niceOrigin ? ', the smallest shift that puts every'
+      : '; no nearby origin puts the'} translation${p.niceOrigin ? ' on the 1/48 grid.' : 's on the 1/48 grid, so they are decimals.'}`);
+  }
   comment('Positions: each site\'s arithmetic mean over its copies in the box, averaged over its orbit');
   comment('  through the exact operations (special positions are exact; free coordinates are measured).');
   comment(`  Largest move of a site mean onto its symmetrized position: ${fixed(p.maxShiftA, 4)} A (rms ${fixed(p.rmsShiftA, 4)} A).`);
@@ -136,7 +142,9 @@ export function writeCif(model, { dataName = 'rmc_average', date = null, tolRang
   comment('ADPs: U_ij = mean-square displacement of every atom of the orbit about its symmetrized');
   comment('  position (static + thermal, in A^2); it includes any distortion the picked group averages away.');
   comment('Occupancy: atoms of each element / (sites in the orbit x unit cells in the box).');
-  comment('The symmetry operations below are authoritative; the origin need not be the ITA standard one.');
+  comment(p.itaOrigin
+    ? 'The symmetry operations below are those of the ITA standard setting.'
+    : 'The symmetry operations below are authoritative; the origin is not the ITA standard one.');
   lines.push('');
 
   lines.push(`data_${block}`);
@@ -155,7 +163,8 @@ export function writeCif(model, { dataName = 'rmc_average', date = null, tolRang
   lines.push('');
   if (spaceGroup.system) lines.push(`_space_group_crystal_system             ${spaceGroup.system}`);
   if (spaceGroup.symbol) {
-    const name = cifSpaceGroupName(spaceGroup.symbol) + (spaceGroup.centring === 'R' ? ' :H' : '');
+    const setting = spaceGroup.centring === 'R' ? ' :H' : p.originChoice ? ` :${p.originChoice}` : '';
+    const name = cifSpaceGroupName(spaceGroup.symbol) + setting;
     lines.push(`_space_group_name_H-M_alt              '${name}'`);
     lines.push(`_symmetry_space_group_name_H-M         '${name}'`);
   }

@@ -275,7 +275,7 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                                     tries the other axis orders and cells built from the symmetry elements (a centred
                                     or primitive cell, or the true cell of a supercell). Where no standard setting is
                                     found the crystal class is shown, without a number; a symbol marked ≥ is a lower
-                                    bound. Unlike FINDSYM there is no shift to the ITA origin.
+                                    bound. Unlike FINDSYM the card does not shift the origin (the CIF below does).
                                 </p>
                                 <p>
                                     The CIF button under the title downloads the selected group&apos;s structure. It is
@@ -283,9 +283,10 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
                                     over its orbit, so special positions are exact and free coordinates keep their
                                     measured values. U<sub>ij</sub> is the spread of every atom of the orbit about that
                                     position, so a distortion the group averages away shows up there. Orbits are taken at
-                                    the brick&apos;s tightest tolerance; the cell is the standard one the symbol is named in
-                                    (the <code>.rmc6f</code> cell when there is none), and the symmetry operations are
-                                    listed explicitly.
+                                    the brick&apos;s tightest tolerance. The cell is the standard one the symbol is named in,
+                                    on International Tables&apos; origin (of the equivalent ones, the one nearest the
+                                    <code>.rmc6f</code> origin), so every site gets its Wyckoff letter; a group with no
+                                    standard cell is written in the <code>.rmc6f</code> cell with its operations listed.
                                 </p>
                                 {symmetry.skipped && <p>{symmetry.reason}</p>}
                             </InfoBadge>

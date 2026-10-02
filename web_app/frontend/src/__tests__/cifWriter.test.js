@@ -64,6 +64,21 @@ describe('CIF spelling', () => {
     });
 });
 
+describe('writeCif origin choice', () => {
+    it('spells origin choice 2 and hexagonal R axes in the symbol', () => {
+        const base = symmetryAveragedStructure(demoStructure(), 0.032);
+        const withSetting = (symbol, number, centring, originChoice) => writeCif({
+            ...base,
+            spaceGroup: { ...base.spaceGroup, symbol, number, centring },
+            provenance: { ...base.provenance, itaOrigin: true, originChoice },
+        });
+        expect(withSetting('Fd-3m', 227, 'F', 2)).toMatch(/_space_group_name_H-M_alt\s+'F d -3 m :2'/);
+        expect(withSetting('Fd-3m', 227, 'F', 2)).toMatch(/the ITA standard origin \(origin choice 2\)/);
+        expect(withSetting('R-3m', 166, 'R', null)).toMatch(/_space_group_name_H-M_alt\s+'R -3 m :H'/);
+        expect(withSetting('F-43m', 216, 'F', null)).toMatch(/_space_group_name_H-M_alt\s+'F -4 3 m'\n/);
+    });
+});
+
 describe('writeCif', () => {
     const structure = demoStructure();
     const ladder = toleranceLadder(structure, 1.0);
@@ -123,7 +138,8 @@ describe('writeCif', () => {
         expect(text).toMatch(/# Source: .*\(52000 atoms, 52 reference sites, supercell 10x10x10\)\./);
         expect(text).toMatch(/holds from 0\.031 to 1\.000 A on the tolerance ladder; orbits taken at 0\.031 A\./);
         expect(text).toMatch(/# Origin: x\(CIF\) = inv\(Q\) \(x\(\.rmc6f\) \+ d\)/);
-        expect(text).toMatch(/The symmetry operations below are authoritative/);
+        expect(text).toMatch(/the ITA standard origin, of the equivalent ones the nearest the \.rmc6f origin/);
+        expect(text).toMatch(/The symmetry operations below are those of the ITA standard setting/);
     });
 
     it('writes a standard cell other than the .rmc6f one with its transformation', () => {
@@ -135,10 +151,15 @@ describe('writeCif', () => {
 
     it('omits the symbol and number when the group has no standard setting', () => {
         const { model } = exported[0];
-        const unnamed = { ...model, spaceGroup: { ...model.spaceGroup, label: 'mm2 class', symbol: null, number: null, standard: false } };
+        const unnamed = {
+            ...model,
+            spaceGroup: { ...model.spaceGroup, label: 'mm2 class', symbol: null, number: null, standard: false },
+            provenance: { ...model.provenance, itaOrigin: false, originChoice: null },
+        };
         const text = writeCif(unnamed);
         expect(text).not.toMatch(/_space_group_name_H-M_alt|_space_group_IT_number/);
         expect(text).toMatch(/no standard setting was found for this group/);
+        expect(text).toMatch(/The symmetry operations below are authoritative; the origin is not the ITA standard one/);
         expect(readCif(text).loops.find((l) => l.tags.includes('_space_group_symop_operation_xyz')).rows.length).toBeGreaterThan(0);
     });
 });
