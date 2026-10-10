@@ -1129,7 +1129,9 @@ The Copilot never calls this itself; only the user's click does.
 the line:
 
 - the **last** such line wins;
-- decoration is tolerated (bold or italics, a list bullet, an en dash or a colon);
+- decoration is tolerated (bold or italics, inline-code backticks, a list bullet or heading
+  marker, an en dash or a colon). The prompt shows the line in backticks, and some models copy
+  them;
 - `not_achieved` is accepted for "not achieved";
 - the three statuses are matched strictly; any other word is not a verdict.
 

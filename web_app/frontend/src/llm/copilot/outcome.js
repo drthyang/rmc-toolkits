@@ -4,13 +4,14 @@
 // The Copilot ends a reply with one verdict line,
 //   Outcome: achieved|partial|not achieved — <one sentence>
 // which the page shows as a chip. Models decorate it (bold, italics, a list
-// bullet, an en dash or a colon instead of the em dash), so the parse is
+// bullet or heading marker, an en dash or a colon instead of the em dash),
+// and some copy the backticks the prompt shows the line in, so the parse is
 // lenient about decoration and strict about the three statuses. The LAST such
 // line wins; a reply without one simply has no chip.
 
 export const OUTCOME_STATUSES = ['achieved', 'partial', 'not achieved'];
 
-const OUTCOME_LINE = /^[ \t>*_-]*\**_*\s*outcome\s*\**_*\s*:\s*\**_*\s*(achieved|partial|not[ _-]achieved)\b\s*\**_*\s*(?:[—–:-]+\s*)?(.*?)\s*\**_*\s*$/gim;
+const OUTCOME_LINE = /^[ \t>#*_`-]*outcome\s*[*_`]*\s*:\s*[*_`]*\s*(achieved|partial|not[ _-]achieved)\b\s*[*_`]*\s*(?:[—–:-]+\s*)?(.*?)\s*[*_`]*\s*$/gim;
 
 /**
  * Split the verdict line out of a reply. Returns
@@ -31,5 +32,5 @@ export const parseOutcome = (text) => {
     const body = `${text.slice(0, match.index)}${text.slice(match.index + match.length)}`
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { status, note: match.note.replace(/[*_]+$/, '').trim(), body };
+    return { status, note: match.note.replace(/[*_`]+$/, '').trim(), body };
 };

@@ -26,6 +26,20 @@ describe('parseOutcome', () => {
         expect(parseOutcome('x\n**Outcome: achieved**')).toMatchObject({ status: 'achieved', note: '' });
     });
 
+    it('accepts the line in backticks, as the prompt shows it, and as a heading', () => {
+        expect(parseOutcome('Answer.\n\n`Outcome: achieved — the slope is −0.0005 per row.`')).toEqual({
+            status: 'achieved',
+            note: 'the slope is −0.0005 per row.',
+            body: 'Answer.'
+        });
+        expect(parseOutcome('x\n`Outcome: partial` — no Ga site table.')).toMatchObject({
+            status: 'partial', note: 'no Ga site table.'
+        });
+        expect(parseOutcome('x\n### Outcome: not achieved — no partials file.')).toMatchObject({
+            status: 'not achieved', note: 'no partials file.'
+        });
+    });
+
     it('takes the last verdict line', () => {
         const parsed = parseOutcome('Outcome: partial — draft\nmore\nOutcome: achieved — final');
         expect(parsed.status).toBe('achieved');
