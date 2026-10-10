@@ -102,6 +102,18 @@ whether that answers the question. The plan and its review are in
   - the chatbox end to end against a mocked server (nothing fetched before it opens, Show in
     hands over the page parameters, Esc keeps the conversation, a run change restarts it);
   - `tripletInputsFromRequest` round trips.
+- **Tested with real local models** (2026-10-10, gemma4:26b on Ollama, qwen3.8-27b on LM Studio,
+  six questions on the Demo; results in
+  [`src/llm/README.md`](../web_app/frontend/src/llm/README.md#tested-with-real-models)). Tool
+  calling worked with no malformed call. The runs found four bugs, fixed:
+  - a verdict line in backticks (as the prompt shows it) or under a heading marker now gives its
+    chip, instead of staying in the answer text;
+  - `find_gr_peaks` adds `first_two_peaks_window_A` and a note when the second peak overlaps the
+    first-peak window (on the demo, Ta–Se at 2.52 and 2.74 Å: the old window cut the TaSe₆ shell);
+  - `compute_bond_angles` warns when fewer than 60 % of the central atoms share the most common
+    bond count (`MODAL_COORDINATION_SHARE`): the window may cut through a shell;
+  - an error event sent mid-stream (LM Studio out of GPU memory) is shown, instead of ending the
+    turn empty and crashing the chat (`turn.items is not iterable`); an empty reply shows its note.
 
 ### Detected SG: download the symmetry-averaged structure as a CIF
 

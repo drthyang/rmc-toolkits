@@ -218,6 +218,50 @@ HTTPS pages may call `http://localhost` in Chrome, Edge and Firefox (the trustwo
 exemption); Safari may block it. Running the app locally (`npm run dev`, or the Flask/Docker mode)
 always works with local providers.
 
+## Tested with real models
+
+The Copilot first ran against real local models on 2026-10-10: the static dev build
+(`VITE_STATIC_MODE=true npm run dev`) with the **Demo** run (GaTa₄Se₈, 250 K), default settings
+(temperature 0.2, analyses on), on an Apple M5 Pro with 64 GB. A Playwright script asked six
+questions, each in a new conversation, and read the step cards, the answer, the Outcome chip and the
+raw stream. Other jobs shared the machine and the models, so the times are upper bounds.
+
+✓ the answer and its verdict hold; ~ the numbers hold but the answer adds a wrong claim;
+✗ wrong. Times are per question, from send to the end of the answer.
+
+| Question | qwen/qwen3.8-27b (LM Studio) | gemma4:26b (Ollama) |
+|---|---|---|
+| Has the run converged? | `assess_convergence` · achieved ✓ ("improving", slope −0.00052 per row) · 91 s | `assess_convergence` · achieved ✓ · 22 s |
+| First Ta–Se g(r) peak; constraint-limited? | `find_gr_peaks` · achieved ✓ (2.52 Å, constraint 2.2 Å) · 140 s | no tool: the context holds it · achieved ✓ · 8 s |
+| Most anharmonic site, largest U_iso | `list_sites` · achieved ✓ (ref 23, Ta: kurtosis 5.62, 0.0175 Å²) · 55 s | `list_sites` · achieved ✓ · 8 s |
+| Do the Ga atoms have a preferred direction? | `analyze_displacement_directions` · achieved ✓ (no: −0.89σ, map 0.56σ) · 63 s | same call · achieved ✓ · 11 s |
+| Se–Ta–Se angles against an ideal octahedron | `find_gr_peaks`, then `compute_bond_angles` at 2.33–2.71 Å; saw coordination 3.86 and widened to 2.33–2.98 Å itself (coordination 5.91). No answer within 15 min: one reasoning step took 10.5 min | before the fixes below: one call at 2.3–2.7 Å, coordination 3.75 read as "incomplete octahedra", achieved ✗ · 48 s. After: `find_gr_peaks`, then its two-peak window 2.33–2.96 Å (coordination 5.89), achieved ~ (says there are no near-180° angles; 20 % lie at 150–170°) · 95 s |
+| Space group at 0.2 Å and 0.02 Å; what breaks? | `detect_symmetry` at 0.02 Å (0.2 Å from the context) · achieved ~ (F-43m and P-42₁m are right; calls P-42₁m chiral and says centrosymmetry is lost, but F-43m has none) · 321 s | no tool: the context's tolerance ladder · achieved ✓ · 45 s |
+
+- **Tool calling works.** All 16 calls had valid JSON arguments that passed the schemas: no
+  malformed call, no unknown tool, no repeated call, no budget overrun. Both models used the
+  context when it already held the answer, as the prompt asks.
+- **The verdict is a self-assessment.** Neither model ever wrote anything but *achieved*, even
+  over a cut coordination shell. gemma4 often ends with a bare `Outcome: achieved`, without the
+  reason. The step cards' checks are the part to trust.
+- **Speed.** gemma4:26b (a mixture of experts) answered in 8–95 s. qwen3.8-27b, a dense reasoning
+  model at LM Studio's default reasoning effort, took 1–5 min, and over 15 min on the bond-angle
+  question.
+- **qwen3:32b (Ollama)** was not run: other jobs held the memory it needs.
+
+The runs found four bugs, now fixed:
+
+1. The verdict stayed in the answer text without a chip when the model copied the prompt's
+   backticks around the line (`parseOutcome` now accepts inline code and a heading marker).
+2. `find_gr_peaks`'s first-peak window (2.33–2.71 Å) cut the TaSe₆ shell, whose second Ta–Se peak
+   is at 2.74 Å, and no check said so. It now adds `first_two_peaks_window_A` and a note when the
+   second peak overlaps the window.
+3. `compute_bond_angles` said "ok" for such a window. It now warns when fewer than 60 % of the
+   central atoms share the most common bond count.
+4. A server error sent mid-stream (LM Studio ran out of GPU memory) was skipped, the turn ended
+   empty, and the chat crashed rendering it (`turn.items is not iterable`). The error now shows,
+   and an empty reply shows its note.
+
 ## Import boundary and extraction recipe
 
 This module is designed to be lifted into its own repository:
