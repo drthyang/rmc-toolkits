@@ -91,6 +91,30 @@ describe('buildRunTools', () => {
         expect(gase.checks[0].text).toMatch(/constraint-limited/);
     });
 
+    it('offers a window over both peaks when the second overlaps the first-peak window', async () => {
+        // Like the demo's Ta–Se: a sharp shell at 2.52 Å and a broad one at
+        // 2.74 Å, more than one first-peak FWHM apart but overlapping its window.
+        const x = grid(400, 0.01);
+        const y = x.map((r) => gaussian(r, 2.52, 0.05, 8) + gaussian(r, 2.74, 0.19, 4));
+        const { find_gr_peaks: tool } = toolMap({
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ta-Se', x, y }] } }]
+        });
+        const { data, checks } = await tool.run({ pair: 'Ta-Se' });
+        const [first, second] = data.peaks_A;
+        expect(second.r - first.r).toBeGreaterThan(first.fwhm);
+        const [low, high] = data.first_peak_window_A;
+        expect(second.r - second.fwhm / 2).toBeLessThan(high);
+        expect(data.first_two_peaks_window_A[0]).toBe(low);
+        expect(data.first_two_peaks_window_A[1]).toBeCloseTo(second.r + second.fwhm / 2, 2);
+        expect(checks).toHaveLength(1);
+        expect(checks[0].level).toBe('note');
+        expect(checks[0].text).toMatch(/overlaps the first-peak window/);
+
+        // Well-separated peaks (the Ta–Se fixture above, 2.6 and 4.4 Å) get no window over both.
+        const separated = await toolMap({ plotFiles: [partialsFile()] }).find_gr_peaks.run({ pair: 'Ta-Se' });
+        expect(separated.data.first_two_peaks_window_A).toBeUndefined();
+    });
+
     it('fails clearly when no peak is found below r_max', async () => {
         const { find_gr_peaks: tool } = toolMap({ plotFiles: [partialsFile()] });
         const { checks } = await tool.run({ pair: 'Ta-Se', r_max: 1.5 });

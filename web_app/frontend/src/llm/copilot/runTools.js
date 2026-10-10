@@ -127,8 +127,8 @@ const grPeaksTool = (plotFiles, context) => {
         name: 'find_gr_peaks',
         description: 'Find the peaks of one partial g(r) (from the run\'s partial-PDF file) below r_max: '
             + 'position and approximate FWHM, a bond-length window around the first peak (use it for '
-            + 'compute_bond_angles), and the hard minimum-distance constraint of that pair when the run '
-            + 'settings give one.',
+            + 'compute_bond_angles; a window over the first two peaks too when the second overlaps it), '
+            + 'and the hard minimum-distance constraint of that pair when the run settings give one.',
         parameters: {
             type: 'object',
             properties: {
@@ -165,8 +165,21 @@ const grPeaksTool = (plotFiles, context) => {
                     });
                 }
             }
-            if (peaks.length > 1 && peaks[1].r - first.r < first.fwhm) {
-                checks.push({ level: 'note', text: 'The first two peaks overlap; the window may include both.' });
+            // A second peak whose half-maximum reaches into the first-peak
+            // window: the window cuts through it. Often both are one
+            // coordination shell (a distorted polyhedron, e.g. the demo's
+            // Ta–Se at 2.52 and 2.74 Å, where the first-peak window holds
+            // only ~3.9 of the 6 Se), so offer a window over both.
+            const second = peaks[1];
+            if (second && second.r - second.fwhm / 2 < first.r + first.fwhm) {
+                const reach = roundSig(second.r + second.fwhm / 2, 3);
+                data.first_two_peaks_window_A = [data.first_peak_window_A[0], reach];
+                checks.push({
+                    level: 'note',
+                    text: `The second peak (${roundSig(second.r, 4)} Å) overlaps the first-peak window, which cuts through it. `
+                        + `If both are one coordination shell (a distorted polyhedron), use first_two_peaks_window_A `
+                        + `(${data.first_peak_window_A[0]}–${reach} Å) and compare the coordination with the expected one.`
+                });
             }
             if (!checks.length) checks.push({ level: 'ok', text: `First peak at ${roundSig(first.r, 4)} Å.` });
             return { data, checks };
