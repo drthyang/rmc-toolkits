@@ -6,8 +6,9 @@ import { PROVIDER_PRESETS, isLocalUrl, providerForUrl } from '../provider/preset
 
 // Connection + model settings drawer: provider presets (local + cloud), base
 // URL, an API-key field and data-leaves-your-device warning for cloud
-// providers, connection test with actionable hints, temperature, and the
-// watchdog toggle. The model itself is picked from the toolbar.
+// providers, connection test with actionable hints, temperature, whether the
+// Copilot may run analyses, and the watchdog toggle. The model itself is
+// picked from the toolbar.
 
 const CheckIcon = () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -101,7 +102,10 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                     title="Use a local provider to keep everything on your machine."
                 >
                     <WarnIcon />
-                    <span>Run data leaves your device — sent to <strong>{providerLabel}</strong>.</span>
+                    <span>
+                        Run data leaves your device — sent to <strong>{providerLabel}</strong>
+                        {settings.copilotTools !== false ? ', with the results of the analyses the Copilot runs' : ''}.
+                    </span>
                 </div>
             )}
 
@@ -182,6 +186,23 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
             </div>
 
             <div className="llm-field">
+                <span className="llm-field-label">Analyses</span>
+                <label
+                    className="llm-check"
+                    htmlFor="llm-copilot-tools"
+                    title="The Copilot computes site statistics, displacement directions, bond angles, symmetry and convergence checks itself. They only compute: nothing on the pages or on disk changes."
+                >
+                    <input
+                        id="llm-copilot-tools"
+                        type="checkbox"
+                        checked={settings.copilotTools !== false}
+                        onChange={(event) => onSave({ copilotTools: event.target.checked })}
+                    />
+                    <span>Let the Copilot run analyses</span>
+                </label>
+            </div>
+
+            <div className="llm-field">
                 <span className="llm-field-label">Watchdog</span>
                 <label
                     className="llm-check"
@@ -224,7 +245,7 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
             {showGuide && (
                 <div className="llm-setup-guide">
                     <p>
-                        <strong>Local (private):</strong> the assistant talks straight from your browser to an
+                        <strong>Local (private):</strong> the Copilot talks straight from your browser to an
                         OpenAI-compatible server on <strong>your own machine</strong> — run-derived summaries never
                         leave your device.
                     </p>
@@ -238,10 +259,18 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                             <li key={preset.id}><strong>{preset.label}:</strong> {preset.corsHint}</li>
                         ))}
                         <li>Pick the matching provider above and press <em>Test</em>.</li>
+                        <li>
+                            Pick a model that can call tools (e.g. <code>qwen3</code>, <code>llama3.1</code>), or the
+                            Copilot answers from the run summary only. Give it room: analyses add several thousand
+                            tokens per question, so start Ollama with a larger context, e.g.{' '}
+                            <code>OLLAMA_CONTEXT_LENGTH=16384 ollama serve</code> (LM Studio: raise the model's context
+                            length when loading it).
+                        </li>
                     </ol>
                     <p>
                         <strong>Cloud:</strong> pick OpenAI, Gemini, or Anthropic and paste an API key — no server to
-                        run, but your run context is sent to that provider. Some providers or networks may block direct
+                        run, but your run context, and the results of the analyses the Copilot runs, are sent to that
+                        provider. Some providers or networks may block direct
                         browser calls (CORS); if the test fails, run the app locally. The key is stored only in this
                         browser.
                     </p>

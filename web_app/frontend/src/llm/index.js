@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-// Public surface of the experimental LLM assistant module. The host app should
-// import only from here; everything else in src/llm/ is internal. See
-// src/llm/README.md for the architecture and the extraction recipe.
-export { default as AssistantPanel } from './components/AssistantPanel';
-export { default as AssistantPage } from './components/AssistantPage';
+// Public surface of the experimental LLM module (the AI Copilot and the
+// convergence watchdog badge). The host app should import only from here;
+// everything else in src/llm/ is internal. See src/llm/README.md for the
+// architecture, the tool contract and the extraction recipe.
+export { default as CopilotChat } from './components/CopilotChat';
 export { default as WatchdogBadge } from './components/WatchdogBadge';

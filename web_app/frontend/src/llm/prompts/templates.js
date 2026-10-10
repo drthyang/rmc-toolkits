@@ -2,28 +2,9 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { SYSTEM_PROMPT } from './system';
-import { contextToJson } from '../context/runContext';
 
-// Message builders for each assistant feature. Each returns the `messages`
-// array for a chat-completions call; the run context always travels inside a
-// fenced JSON block so the model can tell data from instructions.
-
-const contextBlock = (context) => `Context for this RMC modeling run:\n\`\`\`json\n${contextToJson(context)}\n\`\`\``;
-
-// Keep only the newest turns so long conversations stay inside small local
-// models' context windows; the run context is re-sent every call anyway.
-export const CHAT_HISTORY_TURNS = 8;
-
-export const buildChatMessages = (context, history, userText) => [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: contextBlock(context) },
-    {
-        role: 'assistant',
-        content: 'Understood. I will answer questions about this RMC modeling run using only the context above.'
-    },
-    ...(history || []).slice(-CHAT_HISTORY_TURNS).map(({ role, content }) => ({ role, content })),
-    { role: 'user', content: userText }
-];
+// Message builders for the convergence watchdog. (The Copilot's messages are
+// built in prompts/copilot.js.)
 
 export const WATCHDOG_STATUSES = ['improving', 'converged', 'stalled', 'diverging'];
 

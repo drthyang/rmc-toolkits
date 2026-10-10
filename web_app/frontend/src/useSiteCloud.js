@@ -29,6 +29,58 @@ const getWorker = () => {
     return sharedWorker;
 };
 
+// One analysis request on either data source: a worker when the `.rmc6f`
+// text of a browser-loaded run is given, otherwise the Flask /api/pca/* or
+// /api/triplets endpoint against the run directory. `kind` is 'sites' | 'kde'
+// | 'orientation' | 'triplets'; `params` are the flat request fields both
+// transports take, and can never override `kind`, `text` or `dir`. The pages
+// reach it through useSiteCloud's requestPca (the shared worker, no signal);
+// the AI Copilot's tools (copilotTools.js) pass their own `worker`, which they
+// terminate on abort, and a `signal` that also cancels the HTTP request.
+export function requestAnalysis(kind, params, { rmc6fText, directory, worker = null, signal = null }) {
+    if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+    if (rmc6fText) {
+        return new Promise((resolve, reject) => {
+            const target = worker || getWorker();
+            nextRequestId += 1;
+            const id = nextRequestId;
+            const cleanup = () => {
+                target.removeEventListener('message', handler);
+                signal?.removeEventListener('abort', onAbort);
+            };
+            function handler(event) {
+                if (event.data.id !== id) return;
+                cleanup();
+                if (event.data.error) reject(new Error(event.data.error));
+                else resolve(event.data.result);
+            }
+            function onAbort() {
+                cleanup();
+                reject(new DOMException('Aborted', 'AbortError'));
+            }
+            target.addEventListener('message', handler);
+            signal?.addEventListener('abort', onAbort, { once: true });
+            target.postMessage({ ...params, id, kind, text: rmc6fText });
+        });
+    }
+    const endpoint = {
+        sites: '/api/pca/sites',
+        orientation: '/api/pca/orientation',
+        triplets: '/api/triplets'
+    }[kind] ?? '/api/pca/kde';
+    return axios
+        .get(`${API_BASE_URL}${endpoint}`, { params: { ...params, dir: directory || '.' }, ...(signal ? { signal } : {}) })
+        .then((response) => response.data)
+        .catch((error) => {
+            // Surface the server's own message ("displacement cloud has zero
+            // spread", a non-finite coordinate, ...) rather than axios's generic
+            // "Request failed with status code 400".
+            if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+            const message = error?.response?.data?.error;
+            throw message ? new Error(message) : error;
+        });
+}
+
 // `dataEpoch` is App.jsx's Flask-mode configuration epoch: it changes when
 // the run's .rmc6f changes on disk. A typed backend directory keeps the same
 // `directory` across such a save, so the epoch is what tells this hook (and
@@ -77,42 +129,14 @@ export default function useSiteCloud({ directory, localRun, probability = 0.5, c
     // epoch, so every effect keyed on it — the site table below, the PCA
     // page's KDE volume, the orientation histogram — re-reads in place when
     // a new .rmc6f is saved, while the pages keep their picks and settings.
-    const requestPca = useCallback((kind, params) => {
-        if (rmc6fText) {
-            return new Promise((resolve, reject) => {
-                const worker = getWorker();
-                nextRequestId += 1;
-                const id = nextRequestId;
-                const handler = (event) => {
-                    if (event.data.id !== id) return;
-                    worker.removeEventListener('message', handler);
-                    if (event.data.error) reject(new Error(event.data.error));
-                    else resolve(event.data.result);
-                };
-                worker.addEventListener('message', handler);
-                worker.postMessage({ id, kind, text: rmc6fText, ...params });
-            });
-        }
-        const endpoint = {
-            sites: '/api/pca/sites',
-            orientation: '/api/pca/orientation',
-            triplets: '/api/triplets'
-        }[kind] ?? '/api/pca/kde';
-        return axios
-            .get(`${API_BASE_URL}${endpoint}`, { params: { dir: directory || '.', ...params } })
-            .then((response) => response.data)
-            .catch((error) => {
-                // Surface the server's own message ("displacement cloud has zero
-                // spread", a non-finite coordinate, ...) rather than axios's generic
-                // "Request failed with status code 400".
-                const message = error?.response?.data?.error;
-                throw message ? new Error(message) : error;
-            });
-    // dataEpoch is deliberately a dependency the body never reads: it gives
-    // the callback (and so every effect keyed on it) a new identity when the
-    // backend's .rmc6f changes under an unchanged directory.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rmc6fText, directory, dataEpoch]);
+    const requestPca = useCallback(
+        (kind, params) => requestAnalysis(kind, params, { rmc6fText, directory }),
+        // dataEpoch is deliberately a dependency the body never reads: it gives
+        // the callback (and so every effect keyed on it) a new identity when the
+        // backend's .rmc6f changes under an unchanged directory.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [rmc6fText, directory, dataEpoch]
+    );
 
     // --- Load the per-site ellipsoid table. -----------------------------------
     useEffect(() => {

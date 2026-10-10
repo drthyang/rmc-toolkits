@@ -482,6 +482,31 @@ export const tripletRequestFromInputs = ({
 };
 
 /**
+ * The inverse of `tripletRequestFromInputs`: a flat `triplets` request (what
+ * an AI Copilot compute_bond_angles step loads into the page) → the page's
+ * input boxes, as strings. The B–C window is split only when the request has
+ * one; otherwise its boxes follow the A–B window. A missing bin width is the
+ * page default (1.0°).
+ */
+export const tripletInputsFromRequest = ({
+  end1, apex, end2, r12Min, r12Max, r23Min = null, r23Max = null, binWidth = null
+}) => {
+  const text = (value) => (value == null ? '' : String(value));
+  const split23 = r23Min != null && r23Max != null;
+  return {
+    end1: text(end1),
+    apex: text(apex),
+    end2: text(end2),
+    r12Min: text(r12Min),
+    r12Max: text(r12Max),
+    split23,
+    r23Min: split23 ? text(r23Min) : text(r12Min),
+    r23Max: split23 ? text(r23Max) : text(r12Max),
+    binWidth: binWidth == null ? '1.0' : text(binWidth)
+  };
+};
+
+/**
  * The Bond Geometry payload: angle histogram (counts / per-degree density /
  * exact sin-corrected), bond-length histograms per window, and the
  * coordination distribution — mirrors rmc_toolkits.triplets.bond_angle_summary.

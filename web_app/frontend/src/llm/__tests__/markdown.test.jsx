@@ -3,38 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeRaw from 'rehype-raw';
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
-import rehypeKatex from 'rehype-katex';
+import MarkdownMessage from '../components/MarkdownMessage';
 
-// Same plugin pipeline ChatView uses: GFM + math on the remark side; on the
-// rehype side raw HTML is parsed, then sanitized (images dropped so model output
-// can't load external resources), then KaTeX renders $...$ into trusted markup.
-// Order matters: raw → sanitize → katex (see ChatView.jsx for the rationale).
-const sanitizeSchema = {
-    ...defaultSchema,
-    tagNames: (defaultSchema.tagNames || []).filter((tag) => tag !== 'img'),
-    attributes: {
-        ...defaultSchema.attributes,
-        span: [...(defaultSchema.attributes?.span || []), ['className', 'math', 'math-inline', 'math-display']],
-        div: [...(defaultSchema.attributes?.div || []), ['className', 'math', 'math-inline', 'math-display']]
-    }
-};
-const remarkPlugins = [remarkGfm, remarkMath];
-const rehypePlugins = [
-    rehypeRaw,
-    [rehypeSanitize, sanitizeSchema],
-    rehypeKatex
-];
+// The Copilot's reply renderer itself: GFM + math on the remark side; on the
+// rehype side raw HTML is parsed, then sanitized (images dropped so model
+// output can't load external resources), then KaTeX renders $...$ into trusted
+// markup. Order matters: raw → sanitize → katex (see MarkdownMessage.jsx).
+const render = (md) => renderToStaticMarkup(<MarkdownMessage>{md}</MarkdownMessage>);
 
-const render = (md) => renderToStaticMarkup(
-    <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>{md}</Markdown>
-);
-
-describe('assistant markdown rendering', () => {
+describe('Copilot markdown rendering', () => {
     it('renders a GFM pipe table as a real <table>', () => {
         const html = render('| Dataset | Rwp |\n| --- | --- |\n| x-ray S(Q) | 0.046 |\n| xPDF | 0.012 |');
         expect(html).toContain('<table>');

@@ -1,8 +1,16 @@
-# AI Assistant — algorithm reference
+# AI Copilot — algorithm reference
 
 > Part of the [Algorithms and Math Reference](../ALGORITHMS.md). Every step is anchored to the source; if this document and the code disagree, **the code wins**.
 
-What the assistant computes from the loaded run before any model is called — and exactly what data leaves the device.
+The page covers three things:
+
+- what the Copilot computes from the loaded run before any model is called;
+- which analyses it may run while it answers, and the deterministic checks on each result;
+- exactly what data leaves the device.
+
+The **AI Copilot** replaced the chat-only **AI Assistant** on 2026-10-09. The run context (Steps
+1–12), the watchdog (Steps 14–15) and the transport (Step 16) are the Assistant's, unchanged. Step 13
+describes the Copilot's messages and Step 17 its tool loop. Section anchors keep their old names.
 
 ## Contents
 
@@ -25,6 +33,7 @@ What the assistant computes from the loaded run before any model is called — a
   - [Step 14 — Convergence heuristics (the statistics)](#step-14--convergence-heuristics-the-statistics)
   - [Step 15 — Watchdog scheduling and badge semantics](#step-15--watchdog-scheduling-and-badge-semantics)
   - [Step 16 — Transport](#step-16--transport)
+  - [Step 17 — The Copilot tool loop (analyses, checks, budgets, verdict)](#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict)
   - [Runtime-mode differences (static vs Flask) — read this before quoting the assistant](#runtime-mode-differences-static-vs-flask--read-this-before-quoting-the-assistant)
   - [Parameters and defaults](#parameters-and-defaults)
   - [Caveats / what this is not](#caveats--what-this-is-not)
@@ -35,20 +44,26 @@ What the assistant computes from the loaded run before any model is called — a
 
 ### What this page shows
 
-The **AI Assistant** page is a chat window over the run that is currently loaded in the Workbench, plus
-an optional **convergence watchdog** chip that appears on the Dashboard's R-value card. Neither feature
-sends your run files anywhere. What the app does is *compute a compact summary* of the run — a JSON
-object targeted at ~4,500 characters (a best-effort budget, not a hard cap — see Step 12) — and hand
-that summary, plus your question, to whatever
-OpenAI-compatible chat endpoint you configured. By default that endpoint is a server on your own
-machine (`http://localhost:11434/v1`, i.e. Ollama).
+The **AI Copilot** is a chatbox, opened from a launcher in the bottom-right corner of every page,
+that holds a conversation about the run currently loaded in the Workbench.
+There is also an optional **convergence watchdog** chip on the Dashboard's R-value card. Neither
+feature sends your run files anywhere.
+
+The app first *computes a compact summary* of the run: a JSON object targeted at ~4,500 characters
+(a best-effort budget, not a hard cap; see Step 12). It hands that summary and your question to the
+OpenAI-compatible chat endpoint you configured. When the model asks for an analysis, the Copilot runs
+it in the browser (or through the Flask engines in server mode) and sends back a compact result with
+deterministic checks (Step 17). By default the endpoint is a server on your own machine
+(`http://localhost:11434/v1`, i.e. Ollama).
 
 Everything documented below is browser-side JavaScript in
 [`web_app/frontend/src/llm/`](../../web_app/frontend/src/llm/). The module is deliberately self-contained:
 it receives run data **only as React props** and imports nothing from the rest of the app (see the
 import-boundary rule in [AGENTS.md](../../AGENTS.md) and [`src/llm/README.md`](../../web_app/frontend/src/llm/README.md)).
-There is no Python counterpart — none of this exists in `rmc_toolkits/`, and the Flask backend is never
-involved in an assistant request.
+There is no Python counterpart: none of this exists in `rmc_toolkits/`. The Flask backend is never
+involved in a model request. It is involved only when a Copilot analysis of a typed server folder
+runs the same `/api/pca/*` and `/api/triplets` routes the pages use. The host builds those tools in
+[`copilotTools.js`](../../web_app/frontend/src/copilotTools.js) and passes them in as a prop.
 
 Two things in this section are computed statistics that a scientist should be able to audit:
 
@@ -68,13 +83,15 @@ in [`llm/provider/client.js`](../../web_app/frontend/src/llm/provider/client.js)
 
 | # | When | Request | Run-derived payload |
 |---|------|---------|---------------------|
-| 1 | AI Assistant page mounted (automatic, once per base URL), or **Test** pressed | `GET {baseUrl}/models` → `listModels()` | **None.** Only the API key, if one is set. |
-| 2 | You press send in the chat | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~4,500 chars, best-effort — Step 12) + the system prompt + the last 8 chat messages + your question. |
+| 1 | AI Copilot chatbox first opened (automatic, once per base URL), or **Test** pressed | `GET {baseUrl}/models` → `listModels()` | **None.** Only the API key, if one is set. |
+| 2 | You send a question | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~4,500 chars, best-effort; Step 12), the system prompt, the last 8 memory messages (questions and final answers only) and your question. With analyses on, the tool definitions (names, descriptions, argument schemas). |
+| 2a | The model asked for analyses (repeats ≤ 6 times per question, plus one last request) | the same `POST`, same body grown by the exchange | Row 2's body, plus the model's own tool calls echoed back and one `tool` message per call: the analysis summary and its checks. Each is ≤ 3,000 chars and ≤ 12,000 per question; older results are compacted to their checks. Step 17 lists what each analysis sends. |
 | 3 | Watchdog enabled *and* a model configured | `POST {baseUrl}/chat/completions` (`stream: false`) → `completeChat()` | Five numbers only: `{n_steps, first, last, min, recent_window_delta}` plus two status words. |
 
-**Row 1 fires without you asking.** `AssistantPage.jsx` calls `useAssistant({… enabled: true})`, and
+**Row 1 fires without you asking.** The chatbox panel (`CopilotChat.jsx`) mounts on first open and
+calls `useAssistant({… enabled: true})`, and
 `useAssistant.js` runs `probe(false)` from an effect guarded only by `autoTestedRef` (one probe per
-distinct `baseUrl`). Merely opening the AI Assistant tab therefore issues a `GET /models` to whatever
+distinct `baseUrl`). Merely opening the chatbox therefore issues a `GET /models` to whatever
 endpoint is configured — **including a cloud endpoint, with your API key attached**, before you have
 typed anything. Switching the selected model does not re-probe; changing the base URL does. On success,
 if the currently configured model is not in the returned list, the app silently writes `models[0]` into
@@ -93,7 +110,9 @@ from the context object built by `buildRunContext()`:
 - the absolute path of the structure file (`structure.source` is not read) or of any plot file;
 - the raw `.log`, `.csv`, `.dat`, or STOG file contents;
 - the full $\chi$ history (only ≤48 rounded points survive), the full $g(r)$ curves (only ≤2 peaks per
-  pair), and the full displacement clouds (only per-site scalars).
+  pair), and the full displacement clouds (only per-site scalars);
+- in an analysis result (Step 17): never the engine payload itself. The KDE volume, the sphere-cell
+  arrays and the raw angle list stay in the browser; only the summary the tool builds is sent.
 
 **What *is* transmitted that identifies your work.** Be aware of these — they are file-derived strings
 and numbers:
@@ -113,15 +132,23 @@ and numbers:
   at 3 s.f. These are average/circular-mean basis positions, not instantaneous atom positions, but they
   are atomic coordinates and they do leave the device (see Step 5);
 - element symbols, counts, cell metrics, space group, Wyckoff labels and site symmetries, and the
-  numbers listed in Steps 2–11.
+  numbers listed in Steps 2–11;
+- **with analyses on, more of the same kind** (Step 17), and only for the analyses the model runs:
+  - per-site displacement statistics for *every* site, not ≤ 12;
+  - displacement-direction peaks as Cartesian unit vectors and `[u v w]`;
+  - bond-angle modes and coarse histograms;
+  - `detect_symmetry` orbits with representative fractional coordinates at 4 decimals, for *every*
+    orbit at any tolerance the model picks.
 
 **Local vs cloud.** `PROVIDER_PRESETS` in
 [`llm/provider/presets.js`](../../web_app/frontend/src/llm/provider/presets.js) marks Ollama
 (`http://localhost:11434/v1`) and LM Studio (`http://localhost:1234/v1`) as `cloud: false`, and OpenAI,
 Gemini, and Anthropic as `cloud: true`. `isLocalUrl()` classifies any base URL whose hostname is in
 `{localhost, 127.0.0.1, [::1], ::1, 0.0.0.0}` as local. When the active provider is cloud, the settings
-drawer renders a "Run data leaves your device — sent to *provider*" banner (its tooltip points to a
-local provider) and an API-key field ([`ConnectionSettings.jsx`](../../web_app/frontend/src/llm/components/ConnectionSettings.jsx)).
+drawer renders a "Run data leaves your device — sent to *provider*, with the results of the analyses
+the Copilot runs" banner (its tooltip points to a local provider), an API-key field and the *Let the
+Copilot run analyses* switch (`copilotTools`, default on; off sends no tool definitions and runs no
+analysis) ([`ConnectionSettings.jsx`](../../web_app/frontend/src/llm/components/ConnectionSettings.jsx)).
 Cloud use is opt-in: the user must select the preset and paste a key — but note that once a cloud preset
 is active, the row-1 probe above authenticates with that key on every fresh page mount.
 
@@ -133,12 +160,19 @@ is active, the row-1 probe above authenticates with that key on every fresh page
 (`anthropic-version: 2023-06-01`, `anthropic-dangerous-direct-browser-access: true`, in
 `requestHeaders()`); no other provider-specific handling exists.
 
-**You can inspect the exact payload — but only before your first message.**
-[`ChatView.jsx`](../../web_app/frontend/src/llm/components/ChatView.jsx) renders a `<details>` panel
-labeled *"Context sent to the model"* containing `contextToJson(context)` — the identical string that
-`contextBlock()` embeds in the request. That panel lives inside the **empty-state** branch
-(`hasConversation = turns.length > 0 || streaming`), so it disappears as soon as you send the first
-message and does not return until the page is reloaded (which also clears the conversation). It also
+**You can inspect the exact payload.** There are two places to look.
+
+- **The context, before your first message.**
+  [`CopilotView.jsx`](../../web_app/frontend/src/llm/components/CopilotView.jsx) renders a
+  `<details>` panel labeled *"Context sent to the model"*. It holds `contextToJson(context)`, the
+  identical string that `contextBlock()` embeds in the request.
+  - The panel lives in the **empty-state** branch (`hasConversation = turns.length > 0 || busy`).
+    It disappears with the first question and returns only after *New conversation* or a reload.
+  - A second panel there lists every analysis the Copilot may run, with the description the model
+    reads.
+- **Every analysis result, at any time.** Expanding a step card
+  ([`ToolStep.jsx`](../../web_app/frontend/src/llm/components/ToolStep.jsx)) shows the arguments and
+  the exact result object sent to the model (before the per-question compaction of Step 17). It also
 re-serializes the context *as of now*: with Live Data on, the JSON shown in the panel is not necessarily
 the JSON that accompanied an earlier answer.
 
@@ -169,8 +203,8 @@ one. Consequence: **hiding a plot on the Dashboard does not remove it from `data
 `recent_slope_per_step`, and from the watchdog.**
 
 **Gating.** `useAssistant({…, enabled})` builds the context in a `useMemo` only when `enabled` is true
-([`llm/useAssistant.js`](../../web_app/frontend/src/llm/useAssistant.js)). `AssistantPage` is mounted only
-after the user first visits the AI Assistant tab (`visitedPages.assistant` in
+([`llm/useAssistant.js`](../../web_app/frontend/src/llm/useAssistant.js)). The chatbox panel is mounted
+only when the user first opens it (`copilotOpened` in
 [`App.jsx`](../../web_app/frontend/src/App.jsx)), and `Dashboard.jsx` computes the symmetry finder, the
 tolerance ladder, and the `.dat` parse *only* when `wantAssistantData` is set — so a Dashboard/KDE-only
 session performs none of this work.
@@ -760,29 +794,36 @@ characters triggers every trim step in order, but no test asserts the budget is 
 
 ### Step 13 — Message assembly (what the request body actually contains)
 
-**Chat** (`buildChatMessages()` in
-[`llm/prompts/templates.js`](../../web_app/frontend/src/llm/prompts/templates.js)), in order:
+**Copilot** (`buildCopilotMessages()` in
+[`llm/prompts/copilot.js`](../../web_app/frontend/src/llm/prompts/copilot.js)), in order:
 
-1. `system` — the fixed `SYSTEM_PROMPT` from
-   [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js). No run data, but it does
-   carry hard numeric interpretation rules (below).
+1. `system`: `COPILOT_PROMPT`, the fixed `SYSTEM_PROMPT` from
+   [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js) plus the tool rules
+   and the Outcome rule (Step 17). Without tools it is `COPILOT_PROMPT_NO_TOOLS` (the Outcome rule
+   only). There is no run data in it, but it carries hard numeric interpretation rules (below).
 2. `user` — `"Context for this RMC modeling run:"` followed by ```` ```json … ``` ```` containing
    `contextToJson(context)`. The fence exists so the model can distinguish data from instructions.
 3. `assistant` — a fixed one-line acknowledgement.
-4. the last `CHAT_HISTORY_TURNS = 8` prior messages (a flat `slice(-8)` over `{role, content}` — 8
-   *messages*, roughly 4 exchanges).
-5. `user` — the question you typed.
+4. the last `CHAT_HISTORY_TURNS = 8` memory messages (`slice(-8)`: 8 *messages*, i.e. 4 exchanges).
+5. `user`: the question you typed.
 
-**What "history" contains.** The `turns` array lives in `ChatView`'s local `useState` — never persisted,
-cleared on unmount or reload. The user message is appended **before** the request is sent; the assistant
-message is appended **only if `reply.text` is non-empty**. A stopped stream, or a reasoning-only reply
-that produced no answer text, is therefore dropped, leaving the user's question in the re-sent history
-with no answer beside it. `buildChatMessages()` maps each turn to `{role, content}` only, so
-`reasoning` / `reasoningMs` (chain-of-thought) are **never re-sent**.
+Then, within the question, the tool exchange (Step 17): one `assistant` message with `tool_calls` per
+round, and one `tool` message per call.
 
-The full context is **re-sent on every message**, which is why old turns can be dropped cheaply.
-Request body: `{model, messages, temperature, stream: true}` with `temperature` from settings
-(default **0.2**).
+**What "memory" contains.** The turns live in `useCopilot`'s state: never persisted, and cleared on
+reload, on *New conversation*, and when another run opens (`runKey`).
+`conversationMemory()` ([`llm/useCopilot.js`](../../web_app/frontend/src/llm/useCopilot.js)) sends
+each earlier question with its **final answer text** only.
+
+- Tool calls, tool results and chain-of-thought (`reasoning` / `reasoningMs`) are **never re-sent**.
+  The model re-runs an analysis it needs again.
+- A question whose turn produced no answer (an empty or failed reply) is dropped together with it, so
+  memory never holds two user messages in a row.
+- A stopped turn keeps its partial text, marked "(Interrupted before the answer was finished.)".
+
+The full context is **re-sent with every request**, which is why old turns can be dropped cheaply.
+The request body is `{model, messages, temperature, stream: true}`, plus `tools` and `tool_choice`
+when analyses are on. `temperature` comes from settings (default **0.2**).
 
 #### Numeric rules the system prompt asserts (no code backs them)
 
@@ -805,7 +846,7 @@ previous label if any, and a demand for
 exactly one line of the form `` `STATUS: improving|converged|stalled|diverging — <one short sentence
 citing a number>` ``. **This payload is not fenced** — unlike the chat context, the stats JSON is
 interpolated into the middle of an English sentence, so the data/instruction separation the chat path
-argues for is not applied on the second request path. (The payload is five numbers, so the risk is
+argues for is not applied on the watchdog request path. (The payload is five numbers, so the risk is
 small, but the asymmetry is real.) The message also discloses both the current heuristic label and the
 previous one to the model. Sent non-streaming at `temperature: 0`. The reply is parsed by
 
@@ -969,13 +1010,131 @@ OpenAI-compatible client (no SDK, no SSE library).
   comment says it "never throws"; the code disagrees, and the code is what runs.
 - `streamChat()` parses the SSE body manually: split on `\n`, keep only lines starting with `data:`,
   buffer the incomplete tail across reads (chunks can split mid-line), stop at `data: [DONE]`, ignore
-  unparseable lines. It yields `{content}` or `{reasoning}` deltas — reasoning models report
-  chain-of-thought in `delta.reasoning` (Ollama) or `delta.reasoning_content` (DeepSeek and others),
-  surfaced separately in the collapsible "Thinking" panel. The reader is always cancelled in a `finally`.
+  unparseable lines. It yields deltas of several kinds; the reader is always cancelled in a `finally`.
+  - `{content}`.
+  - `{reasoning}`: reasoning models report chain-of-thought in `delta.reasoning` (Ollama) or
+    `delta.reasoning_content` (DeepSeek and others). It is surfaced separately in the collapsible
+    "Thinking" panel.
+  - `{toolCall: {index, id, name, arguments, extraContent}}`: fragments of `delta.tool_calls`,
+    assembled by `copilot/toolCalls.js`. `extraContent` is a call's `extra_content`; Gemini puts its
+    `thought_signature` there and requires it back.
+  - `{finishReason}`.
+
+  `tools` / `tool_choice` join the body only when given. An HTTP failure carries its `status` (the
+  Copilot's tools-unsupported test reads it).
 - `completeChat()` is the non-streaming variant used by the watchdog.
 - Rendering of replies is Markdown via `react-markdown` with `rehypeRaw → rehypeSanitize → rehypeKatex`;
   `<img>` is stripped from the sanitize schema so model output cannot trigger an external load
-  ([`ChatView.jsx`](../../web_app/frontend/src/llm/components/ChatView.jsx)).
+  ([`MarkdownMessage.jsx`](../../web_app/frontend/src/llm/components/MarkdownMessage.jsx)). Analysis
+  results on the step cards are shown as `JSON.stringify` text in a `<pre>`, never as HTML.
+
+---
+
+### Step 17 — The Copilot tool loop (analyses, checks, budgets, verdict)
+
+**The loop** ([`llm/copilot/agentLoop.js`](../../web_app/frontend/src/llm/copilot/agentLoop.js),
+`runCopilotTurn()`):
+
+1. The model is called with the tools (`tool_choice: 'auto'`).
+2. If it returns tool calls, each call is checked and run in order:
+   - its arguments are parsed (`''` → `{}`, a Markdown-fenced object accepted);
+   - they are validated against the tool's schema subset (`type`, `enum`, `minimum` / `maximum`,
+     `required`; numeric strings coerced; unknown keys dropped with a note);
+   - the tool runs and its result is fitted to the budget.
+3. The answers go back as `tool` messages, and the model is called again.
+4. The turn ends when the model answers without tool calls.
+
+What the loop guarantees:
+
+- **Message rules.**
+  - The assistant message that lists the calls carries `content: null` when its text is only
+    whitespace (Anthropic rejects empty text blocks).
+  - Its arguments are re-serialized as valid JSON (`'{}'` when unparseable); its `extra_content` is
+    echoed; there is no `index`.
+  - Every listed call gets exactly one `tool` message, including calls that were skipped, unknown or
+    invalid.
+- **Errors become information.** An unknown tool, invalid arguments or a thrown engine error
+  becomes a `tool` message `{error}` that the model reads, so it can correct itself. The step shows
+  as failed.
+- **Duplicate calls.** A call identical to an earlier one in the same question (same validated
+  arguments, key-sorted) returns the cached result with the note "identical call … change the
+  arguments or answer".
+- **Budgets** (`DEFAULT_LIMITS`):
+
+  | Limit | Value |
+  |---|---|
+  | rounds of tool calls | 6 |
+  | calls per round | 4 (extra calls are answered "skipped") |
+  | one call | 120 s |
+  | no new round after | 10 min |
+  | one result | 3,000 chars |
+  | all results of one question | 12,000 chars |
+
+  - A result over 3,000 chars has its largest array halved repeatedly, each cut recorded as
+    `<key>_omitted`; a hard cut flagged `truncated: true` is the last resort.
+  - Over 12,000 chars per question, the oldest results are replaced by
+    `{compacted: …, checks}`. The newest round is never compacted, and checks are never trimmed.
+- **When the budget is used**, a user-role note says so and the last request is sent with
+  `tool_choice: 'none'`. Tool calls in that reply are ignored. If it brings no text (Ollama ignores
+  `tool_choice`), a fixed "analysis budget used" answer closes the turn with
+  `Outcome: not achieved`.
+- **Models without tool support.** A 4xx whose message says the model or server "does not support"
+  (or "is not supported" for) tools, tool calling, tool use or function calling retries the
+  question once without tools, under `COPILOT_PROMPT_NO_TOOLS`. The model is then remembered for the
+  session. Any other HTTP error is shown, including a schema 400 that merely mentions a function.
+- **Stop / timeout.** Each tool run gets its own `AbortSignal`, aborted on Stop or timeout. The
+  Copilot's worker (one of its own, not the pages' shared worker) is then terminated, and a Flask
+  request is cancelled. `describeSymmetry` runs synchronously and cannot be interrupted (≈ 0.1 s on
+  the demo).
+- **One run per conversation.** The tools and the context are captured when the question is asked.
+  Opening another run (`runKey` = directory + run id) stops the turn and starts a new
+  conversation. In Flask mode a Live Data save mid-question is *not* a new run: a later analysis in
+  that question reads the newer `.rmc6f`.
+
+**The analyses.** Each tool returns `{data, checks}`: a summary built for the model, and verdicts
+computed from the full engine result. A check is `ok`, `note`, `warn` or `fail`; `fail` means "does
+not answer as asked". A tool is offered only when its inputs exist.
+
+| Tool | Offered when | Engine | `data` (what is sent) | Checks (thresholds) |
+|---|---|---|---|---|
+| `read_run_data(section)` | the context has the section | `buildRunContext` | one context section as built (the builder's caps apply: ≤ 12 sites, 48 history points), before `contextToJson`'s trims | — |
+| `assess_convergence()` | an R-value series exists | `classifyConvergence` (Step 14), `seriesStats` | column, status, n, first/last/min, total drop, least-squares slope per row over the last 10 / 25 / 50 % (≥ 3 points each) | note: judged on one `.log` column, not the total; ok: converged; note: improving; warn: stalled/diverging; warn: non-finite rows; warn: < 5 rows; fail: < 2 finite rows |
+| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; the pair's `MINIMUM_DISTANCES` value, matched order-free | warn: first peak's low side $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å ("may be constraint-limited"); note: first two peaks closer than one FWHM; fail: no peak |
+| `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; sorted by \|kurtosis\| then U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; fail: no site (holding that element) |
+| `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ; note: tied peak cells; note: significant ± asymmetry; warn: parse warning |
+| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10°; mean bond length and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
+| `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group, n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
+
+**Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
+parameters from the validated arguments (null after an error), and the step's button hands them to
+the host: `onOpenPage(page, params)` → App `pageRequest` → the page's `request` prop, applied once
+per click.
+
+- `compute_bond_angles` → Bond Geometry `{end1, apex, end2, r12Min, r12Max, r23Min, r23Max,
+  binWidth}`. The page fills its boxes (`tripletInputsFromRequest`) and computes when the boxes
+  hold exactly that request, through the same engine, so its numbers equal the step's.
+- `analyze_displacement_directions` with a `site_ref` → Displacement Directions
+  `{referenceNumber, frequency}`, with frequency `'auto'` when the Copilot let the engine choose.
+  The page's smoothing, weight and frame are left as the user set them: the drawn enhancement can
+  differ (the Copilot's is unsmoothed), while the significance tests use raw counts. Element
+  pooling has no page view, so that step only opens the page.
+- Other steps open their page without parameters. On a phone-size screen, where the chatbox is a
+  full sheet, it closes after Show in.
+
+The Copilot never calls this itself; only the user's click does.
+
+**The verdict.** The prompt asks every answer to end with
+`Outcome: achieved|partial|not achieved — <one sentence>`.
+[`copilot/outcome.js`](../../web_app/frontend/src/llm/copilot/outcome.js) `parseOutcome()` reads
+the line:
+
+- the **last** such line wins;
+- decoration is tolerated (bold or italics, a list bullet, an en dash or a colon);
+- `not_achieved` is accepted for "not achieved";
+- the three statuses are matched strictly; any other word is not a verdict.
+
+The line is removed from the answer text and shown as the chip. A reply without it has no chip. The
+verdict is the model's own self-assessment. The checks are the deterministic part: read both.
 
 ---
 
@@ -1032,7 +1191,18 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | coincidence cutoff | $10^{-3}$ | Å | `pairCorrelations.js` | Distances below this are ignored |
 | image shell | $\pm1$ | cells | `pairCorrelations.js` | Periodic images searched for nearest neighbours |
 | `maxPairs` | 10 | pairs | `pairCorrelations.js` | Cap on `pair_correlations` entries |
-| `CHAT_HISTORY_TURNS` | 8 | messages | `templates.js` | Prior chat messages re-sent (in-memory only) |
+| `CHAT_HISTORY_TURNS` | 8 | messages | `prompts/copilot.js` | Memory messages re-sent (questions + final answers, in-memory only) |
+| `maxRounds` | 6 | rounds | `copilot/agentLoop.js` | Model requests with tool calls per question |
+| `maxCallsPerRound` | 4 | calls | `copilot/agentLoop.js` | Extra calls are answered "skipped" |
+| `toolTimeoutMs` | 120 000 | ms | `copilot/agentLoop.js` | One analysis; its signal is aborted |
+| `maxTurnMs` | 600 000 | ms | `copilot/agentLoop.js` | No new round of tools after this |
+| `resultCharBudget` | 3 000 | characters | `copilot/agentLoop.js` | One `tool` message |
+| `turnCharBudget` | 12 000 | characters | `copilot/agentLoop.js` | All `tool` messages of one question; older ones compacted to their checks |
+| `copilotTools` | `true` | — | `settings.js`, `ConnectionSettings.jsx` | *Let the Copilot run analyses* |
+| `MIN_ORIENTATION_POINTS` | 100 | vectors | `copilotTools.js` | Below: "the map is noisy" |
+| `SIGNIFICANCE_SIGMA` | 3 | σ (calibrated, one-sided) | `copilotTools.js`, `prompts/copilot.js` | Peak / map significance threshold for the checks |
+| `UNBONDED_APEX_FRACTION` | 0.5 | fraction | `copilotTools.js` | Central atoms with no A–B bond in the window above this: warn |
+| constraint margin | 0.05 | Å | `copilot/runTools.js` | First-peak low side within this of the closest-approach constraint: warn |
 | `temperature` (chat) | 0.2 (editable 0–2, step 0.1) | — | `settings.js`, `ConnectionSettings.jsx` | Sampling temperature |
 | `temperature` (watchdog) | 0 | — | `useWatchdog.js` | Fixed |
 | `baseUrl` | `http://localhost:11434/v1` | — | `settings.js` | Default endpoint (Ollama) |
@@ -1057,14 +1227,18 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   representative fractional coordinate of every reported Wyckoff orbit (`symmetry.sites[].frac`, up to 12
   triples at 3 s.f.) does. Those are average-structure positions, not instantaneous ones — but they are
   coordinates.
-- **Cloud providers receive the context.** Selecting OpenAI, Gemini, or Anthropic sends the summarized run
-  context (including run/dataset names, composition, and the `frac` triples above) to that provider under
-  your API key, and merely opening the page issues an authenticated `GET /models` before you type
+- **Cloud providers receive the context, and the analysis results.** Selecting OpenAI, Gemini, or
+  Anthropic sends the summarized run context (including run/dataset names, composition, and the
+  `frac` triples above) to that provider under your API key. With analyses on, the results of every
+  analysis the model runs go too: Step 17, which includes every orbit's coordinates from
+  `detect_symmetry`. Turn the analyses off to send the context only. Merely opening the page issues an authenticated `GET /models` before you type
   anything. This is opt-in and warned about in the UI, but it is a real disclosure. Local providers keep
   everything on the machine.
-- **The context inspector is only available before your first message.** It lives in the chat's empty
-  state, so once a conversation starts you cannot re-read what was sent without reloading (which clears
-  the conversation). It also re-serializes the *current* context, which under Live Data may differ from
+- **The context inspector is only available before your first question.** It lives in the empty
+  state, so once a conversation starts you cannot re-read the context without *New conversation*
+  (which clears the conversation). Analysis results stay inspectable on their step cards.
+- **The Outcome chip is the model's self-assessment.** A small model may write "achieved" over a
+  failed check. The step cards' checks are computed, not generated: read them. It also re-serializes the *current* context, which under Live Data may differ from
   what accompanied an earlier answer.
 - **The peak finder is a cue extractor, not a PDF refinement.** No baseline model, no profile function,
   no interpolation, no uncertainty. The reported `r` is the grid abscissa of the *smoothed* local

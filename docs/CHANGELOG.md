@@ -16,6 +16,93 @@ bond angles, parsers and dashboard, symmetry finder, Flask API). Each group was 
 independently, then merged and integrated. Several numbers the app reports change *because they
 were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.5.0.
 
+### AI Copilot replaces the AI Assistant
+
+The **AI Copilot** replaces the chat-only AI Assistant. It is a **chatbox over every page**, not a
+tab: an *AI Copilot* launcher in the bottom-right corner opens a floating panel. The panel can be
+made larger and closes with ✕ or Esc, keeping the conversation. On a phone it is a full-height
+sheet. The Assistant could only answer from one fixed summary of the run. The Copilot also **runs the
+Workbench analyses itself** through OpenAI-compatible tool calling, reads what came back, and says
+whether that answers the question. The plan and its review are in
+[COPILOT_PLAN.md](COPILOT_PLAN.md); the method is in
+[ai-assistant.md Step 17](algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict).
+
+- **Seven analyses.**
+  - Over the run data: `read_run_data`, `assess_convergence`, `find_gr_peaks`.
+  - Through the same engines the pages use, in the browser or through Flask: `list_sites`,
+    `analyze_displacement_directions` (calibrated significances, the peak direction as `[u v w]`),
+    `compute_bond_angles` and `detect_symmetry` (any tolerance, without changing the Detected SG
+    card).
+
+  A tool is offered only when the run has its inputs. The tools only compute: none switches a
+  page, changes the shared tolerance or writes a file.
+- **Show in \<page\>.** A step's button switches the page *behind* the chat and loads the same
+  analysis there:
+  - Bond Geometry fills the triplet and windows and computes; on the demo it matches the
+    Copilot's 41,336 Ta–Ta–Ta angles and coordination 2.73.
+  - Displacement Directions selects the site and the resolution ('auto' when the Copilot let the
+    engine choose). The page keeps its own smoothing, so the drawn map can differ from the
+    Copilot's unsmoothed one; the significance tests use raw counts either way.
+  - Other steps just open their page.
+
+  The button is the user's action, through an App-level page-request channel
+  (`pageRequest` → the pages' `request` prop, applied once per click; `tripletInputsFromRequest`
+  in `workers/triplets.js`). On a phone the sheet closes so the page is visible.
+- **Checked results.** Every result carries deterministic checks computed from the full engine
+  output, e.g. "no angles in these windows — widen them", "no significant peak direction
+  (1.2σ < 3σ)", or "the first g(r) peak sits on the closest-approach constraint". A failed check
+  goes back to the model, which changes its arguments and retries.
+- **A verdict.** Every answer ends with `Outcome: achieved | partial | not achieved — <why>`, shown
+  as a chip. It is the model's self-assessment; the checks on the step cards are the computed part.
+- **Step cards.** Each card shows the status, the duration and the most severe check. Expanded, it
+  shows every check, the arguments and the exact data the model read. A polite live region
+  announces step and verdict changes.
+- **Bounded.**
+  - Per question: ≤ 6 rounds of tool calls, ≤ 4 calls per round, 120 s per call, no new round
+    after 10 min.
+  - Each result is fitted to 3,000 characters and a question's results to 12,000, so a small local
+    context window keeps the run context. Older results are compacted to their checks first.
+  - An identical repeated call returns the cached result.
+  - When the budget is used, a last request with `tool_choice: 'none'` asks for the answer.
+- **Robust across providers.**
+  - Streamed tool calls are assembled by index, id or order.
+  - Gemini's `thought_signature` (`extra_content`) is echoed back, and whitespace-only assistant
+    content is sent as `null` (Anthropic).
+  - A model that "does not support tools" (Ollama) falls back to plain answers for the session.
+  - An empty last round (Ollama ignores `tool_choice`) closes with a fixed answer.
+- **Stop cancels the work.** A browser-loaded run is analysed in a worker of the Copilot's own,
+  terminated on Stop or timeout, so the pages' shared worker never queues behind it. Server-folder
+  requests are cancelled.
+- **One run per conversation.** Opening another run restarts the conversation. Earlier questions
+  travel as question + final answer only, and an unanswered question is dropped.
+- **Settings.** The drawer adds *Let the Copilot run analyses* (default on). The cloud warning now
+  says that analysis results are sent too. The setup guide asks for a tool-capable model and a
+  larger Ollama context (`OLLAMA_CONTEXT_LENGTH=16384`).
+- **Code.**
+  - New in `src/llm/`: `copilot/` (agent loop, tool-call assembly and validation, tool contract,
+    run-data tools, Outcome parser, turn reducer), `prompts/copilot.js`, `useCopilot.js`,
+    `CopilotChat` / `CopilotView` / `ToolStep` / `MarkdownMessage`.
+  - The host builds the engine tools in `src/copilotTools.js` and passes them as a prop, so the
+    module still imports nothing from the app.
+  - `useSiteCloud.js` exports its routing as `requestAnalysis()`, with an optional worker and abort
+    signal. Request params can no longer override `kind`, `text` or `dir`.
+  - `provider/client.js` sends `tools` / `tool_choice` only when given, yields tool-call fragments,
+    and attaches the HTTP status to errors.
+  - Removed: `ChatView`, `AssistantPage`, the unrendered `AssistantPanel` / `AssistantWorkspace`
+    card, `useStreamedReply`, and `buildChatMessages`.
+  - The Copilot tab and its page are gone. The Dashboard's Copilot-only work (symmetry ladder,
+    `.dat` parse) starts when the chatbox first opens.
+- **Tests.** New and extended vitest cases cover:
+  - the agent loop against a scripted model;
+  - SSE tool-call parsing, including the Gemini shape;
+  - argument validation and the Outcome parser;
+  - the run-data tools;
+  - the host tools on the committed demo run with the real engines (F-43m at 0.2 Å; the Ta₄
+    cluster's Ta–Ta–Ta mode near 60°; an empty window fails its check);
+  - the chatbox end to end against a mocked server (nothing fetched before it opens, Show in
+    hands over the page parameters, Esc keeps the conversation, a run change restarts it);
+  - `tripletInputsFromRequest` round trips.
+
 ### Detected SG: download the symmetry-averaged structure as a CIF
 
 A **`⤓ CIF · <group>` button** under the Detected SG title downloads the selected group's structure

@@ -58,16 +58,21 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
   FINDSYM it does no origin shift and outputs no idealized structure. The panel needs the run
   parsed in the browser (the hosted/static dashboard, or a locally picked folder); a run read
   through the local Flask server has no site basis, so the panel does not appear there.
-- **AI Assistant (beta)** — chat about the loaded run with a local LLM (Ollama, LM Studio) or an
-  opt-in cloud model (OpenAI, Gemini). Only compact run context is sent, never raw
-  files.[^cloud-llm-privacy] Setup:
+- **AI Copilot (beta)** — a chatbox on every page (bottom-right). Ask about the loaded run, and a
+  local LLM (Ollama, LM Studio) or an opt-in cloud model (OpenAI, Gemini, Anthropic) runs the
+  Workbench analyses itself. It can list
+  the site displacements, test displacement directions, compute bond angles, re-run the symmetry
+  finder and check convergence. It reads each result with deterministic checks, retries when one
+  fails, and ends with an **Outcome** verdict. A step's *Show in* button loads the same analysis
+  on its page, next to the chat. The analyses only compute; only you change the view. Only compact summaries are sent, never raw files.[^cloud-llm-privacy] Setup:
   [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md).
 - **Python package (`rmc_toolkits/`)** — the same parsing, plotting, KDE, PCA-ellipsoid, and
   displacement-direction analyses as a reusable library, plus `.rmc6f` conversion helpers.
 
-[^cloud-llm-privacy]: If you opt into a cloud LLM, the compact summarized run context used for
-    assistant responses is sent directly to the cloud LLM server you selected. Raw run files are not
-    uploaded to rmc-toolkits.
+[^cloud-llm-privacy]: If you opt into a cloud LLM, the compact summarized run context, and the
+    summaries of the analyses the Copilot runs, are sent directly to the cloud LLM server you
+    selected. A settings switch turns the analyses off. Raw run files are not uploaded to
+    rmc-toolkits.
 
 ## Screenshots
 
@@ -79,14 +84,20 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
 | --- | --- |
 | ![PCA ellipsoid](assets/rmc-toolkits-pca-demo.png) | ![Displacement directions](assets/rmc-toolkits-displacement-demo.png) |
 
-### AI Assistant
+### AI Copilot
 
-Ask about the loaded run in plain language. The run's metrics, symmetry, and convergence history
-travel with every message, so answers quote the actual numbers — and reasoning models stream their
-chain of thought in a collapsible *Thinking* panel. Below, a local model (Ollama) summarizes the
-bundled demo run as a table, with LaTeX math such as Rwp and χ² rendered inline.
+Ask about the loaded run in plain language. The run's metrics, symmetry and convergence history
+travel with every question. When those are not enough, the Copilot runs the analysis itself and
+shows each one as a step card: what it ran, how long it took, and the verdict of its checks.
+Expand a card to see the exact numbers the model read. Press *Show in* to load the same analysis
+on its page (Bond Geometry computes the same triplet; Displacement Directions opens the same site)
+while the chat stays open over it.
+The answer ends with an **Outcome** chip (achieved, partial or not achieved) and quotes the
+numbers. Reasoning models stream their chain of thought in a collapsible *Thinking* panel. Below,
+recorded with the earlier chat-only version, a local model (Ollama) summarizes the bundled demo
+run as a table, with LaTeX math such as Rwp and χ² rendered inline.
 
-![AI Assistant summarizing a run as tables](assets/rmc-toolkits-assistant.gif)
+![A local model summarizing a run as tables (recorded with the earlier chat-only version)](assets/rmc-toolkits-assistant.gif)
 
 ## The Math Under the Hood
 

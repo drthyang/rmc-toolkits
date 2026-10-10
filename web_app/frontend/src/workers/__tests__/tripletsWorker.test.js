@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { handlePcaMessage } from '../pcaKdeWorker.js';
-import { APP_MAX_ANGLES, tripletRequestFromInputs } from '../triplets.js';
+import { APP_MAX_ANGLES, tripletInputsFromRequest, tripletRequestFromInputs } from '../triplets.js';
 
 // Simple-cubic .rmc6f of one element: n^3 atoms at spacing `spacing` Å.
 const cubicRmc6f = (element, n, spacing) => {
@@ -133,5 +133,26 @@ describe('page inputs → triplets request', () => {
 
     it('ignores the B–C fields while the split is off', () => {
         expect(tripletRequestFromInputs({ ...inputs, r23Min: '', r23Max: 'x' }).r23Min).toBeUndefined();
+    });
+});
+
+describe('triplets request → page inputs (an AI Copilot step shown on the page)', () => {
+    it('round-trips through tripletRequestFromInputs, with and without a B–C window', () => {
+        const shared = { end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: 2.4, r12Max: 2.9, binWidth: 0.5 };
+        const inputs = tripletInputsFromRequest(shared);
+        expect(inputs).toEqual({
+            end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: '2.4', r12Max: '2.9',
+            split23: false, r23Min: '2.4', r23Max: '2.9', binWidth: '0.5'
+        });
+        expect(tripletRequestFromInputs(inputs)).toEqual(shared);
+
+        const split = { ...shared, end2: 'Ga', r23Min: 3.1, r23Max: 3.6 };
+        expect(tripletRequestFromInputs(tripletInputsFromRequest(split))).toEqual(split);
+    });
+
+    it('uses the page default bin width and ignores a half-given B–C window', () => {
+        const inputs = tripletInputsFromRequest({ end1: 'Ta', apex: 'Ta', end2: 'Ta', r12Min: 2.7, r12Max: 3.3, r23Min: 2, r23Max: null });
+        expect(inputs.binWidth).toBe('1.0');
+        expect(inputs.split23).toBe(false);
     });
 });

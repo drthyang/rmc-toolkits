@@ -77,25 +77,39 @@ says where it listens. To share it on a network, see the Gunicorn and Docker ins
 [docs/REFERENCE.md](docs/REFERENCE.md#hosting-the-dashboard). Never turn on
 `RMC_TOOLKITS_DEBUG` on a server others can reach: its interactive debugger runs arbitrary code.
 
-## 4. AI Assistant (Optional)
+## 4. AI Copilot (Optional)
 
-The `AI Assistant` tab lets you chat about the loaded run using an LLM. It runs against a model on
-your own machine (private) — [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai) — or a
-cloud provider (OpenAI, Gemini) with your own API key.
+The `AI Copilot` button in the bottom-right corner of every page opens a chatbox that answers
+questions about the loaded run using an LLM. It runs against a model
+on your own machine (private), [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai), or
+against a cloud provider (OpenAI, Gemini, Anthropic) with your own API key.
+
+What the Copilot can do:
+
+- With a model that can call tools (e.g. `qwen3`, `llama3.1`), it runs the analyses itself: the
+  site table, displacement directions, bond angles, symmetry at a tolerance, g(r) peaks and
+  convergence.
+- It checks each result and retries when a check fails, for example by widening an empty bond
+  window.
+- It ends with an **Outcome** verdict.
+- A step's *Show in* button loads the same analysis on its page, behind the chat.
+- The analyses only compute: your pages and files are never changed. Turn them off in the settings
+  drawer (*Let the Copilot run analyses*).
+- Other models answer from the run summary only.
 
 Because the hosted dashboard is served over HTTPS, a **local** model server must allow this page's
 origin (`https://drthyang.github.io`) via CORS. For Ollama:
 
 ```bash
-# start Ollama allowing the hosted app:
-OLLAMA_ORIGINS="https://drthyang.github.io" ollama serve
+# start Ollama allowing the hosted app, with room for the Copilot's analyses:
+OLLAMA_ORIGINS="https://drthyang.github.io" OLLAMA_CONTEXT_LENGTH=16384 ollama serve
 
 # or, for the macOS menu-bar app, set it once and reopen Ollama (resets on logout):
 launchctl setenv OLLAMA_ORIGINS "https://drthyang.github.io"
 ```
 
-For LM Studio, enable CORS in the server settings. Then open `AI Assistant` → pick the provider →
-`Test` → choose a model.
+For LM Studio, enable CORS in the server settings and load the model with a large context. Then
+open `AI Copilot` (bottom-right) → gear → pick the provider → `Test` → choose a model.
 
 **Safari note:** Safari blocks HTTPS pages from calling `http://localhost`. Use Chrome, Edge, or
 Firefox, or run the app locally over http so the page and the model share the `localhost` origin:

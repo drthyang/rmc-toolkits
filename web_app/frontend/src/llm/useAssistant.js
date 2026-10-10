@@ -6,9 +6,9 @@ import { buildRunContext } from './context/runContext';
 import { checkConnection } from './provider/client';
 import { saveSettings, useLlmSettings } from './settings';
 
-// Shared assistant state for both the page (AssistantPage) and the dashboard
-// card (AssistantWorkspace): settings, the connection probe (+ auto-connect),
-// the settings-drawer toggle, the active tab, and the compact run context.
+// Connection state for the Copilot chatbox (CopilotChat): settings, the
+// connection probe (+ auto-connect), the settings-drawer toggle, and the
+// compact run context.
 // `enabled` gates the (local-only) context build and the auto-connect so an
 // inactive/collapsed host does no work; nothing leaves the machine but a GET to
 // the user's own localhost model server.

@@ -308,9 +308,9 @@ files (`runControlCandidates()` — the stem-matched entry first, then any other
 `browserData.js` and is exercised only by `browserData.test.js`. **No conversion is applied to the
 numbers** in any case — the same column is plotted either way.
 
-The run-control `.dat`'s one live effect on this page is on the **AI-assistant run context**:
+The run-control `.dat`'s one live effect on this page is on the **AI Copilot's run context**:
 `localRun.settingsFile` is re-read and passed to `parseRunSettings()` in a separate effect that is
-gated on `wantAssistantData`, i.e. it stays idle until the user opens the AI Assistant page.
+gated on `wantAssistantData`, i.e. it stays idle until the user opens the AI Copilot chatbox.
 
 ---
 
