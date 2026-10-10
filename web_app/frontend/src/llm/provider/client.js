@@ -158,6 +158,16 @@ export async function* streamChat({ baseUrl, model, messages, temperature = 0.2,
                 } catch {
                     continue;
                 }
+                // A failure after the 200 arrives as an event of its own,
+                // `{ error: … }` (LM Studio on a backend crash such as a GPU
+                // out-of-memory, Ollama, OpenAI): surface it, or the turn
+                // would end as an empty reply with no reason given.
+                if (parsed?.error) {
+                    const detail = typeof parsed.error === 'string'
+                        ? parsed.error
+                        : (parsed.error.message || JSON.stringify(parsed.error));
+                    throw new Error(`The server stopped the reply: ${detail}`);
+                }
                 const choice = parsed.choices?.[0];
                 const delta = choice?.delta;
                 if (delta) {

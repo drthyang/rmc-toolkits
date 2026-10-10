@@ -96,7 +96,10 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
             }
         } finally {
             abortRef.current = null;
-            const hasContent = turn.items.some((item) => item.kind === 'tool' || item.text || item.reasoning);
+            // An empty reply is kept too, so its "The model returned an empty
+            // reply" note shows under the question instead of nothing.
+            const hasContent = turn.items.some((item) => item.kind === 'tool' || item.text || item.reasoning)
+                || turn.stoppedBy === 'empty';
             if (hasContent && generation === generationRef.current) setTurns((current) => [...current, turn]);
             setLive(null);
         }

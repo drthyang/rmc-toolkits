@@ -199,6 +199,30 @@ describe('CopilotChat', () => {
         expect(container.textContent).toContain('What should I check?');
     });
 
+    it('survives an empty reply and an error sent mid-stream', async () => {
+        // Seen with LM Studio: a GPU out-of-memory ends the stream with an
+        // error event and no content. That used to end the turn as an empty
+        // reply, which was dropped, and the chat then crashed rendering.
+        const queue = [
+            sse([delta({}, 'stop')]),
+            sse([{ error: { message: 'Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)' } }])
+        ];
+        vi.stubGlobal('fetch', vi.fn(async (url) => (String(url).endsWith('/models')
+            ? { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) }
+            : queue.shift())));
+        act(() => root.render(chat()));
+        await openChat();
+
+        await ask('first?');
+        expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
+        expect(container.querySelector('.llm-turn-footer').textContent).toBe('The model returned an empty reply.');
+
+        await ask('second?');
+        expect(container.querySelector('[role="alert"]').textContent)
+            .toBe('The server stopped the reply: Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)');
+        expect(container.querySelector('.llm-composer-input').disabled).toBe(false);
+    });
+
     it('says when analyses are off, and asks for a run when none is open', async () => {
         saveSettings({ copilotTools: false });
         act(() => root.render(chat()));

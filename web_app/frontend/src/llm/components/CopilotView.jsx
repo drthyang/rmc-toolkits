@@ -150,7 +150,9 @@ const AssistantTurn = ({ turn, pages, onOpenPage }) => {
 // One short line for screen readers when a step starts or ends, or a turn
 // ends with its verdict — never the streamed tokens themselves.
 const announcementFor = (turn) => {
-    if (!turn) return '';
+    // The newest turn can be the question itself (a turn that failed before
+    // any output is not kept): nothing to announce.
+    if (!turn || !Array.isArray(turn.items)) return '';
     if (!turn.streaming && turn.outcome) return `Outcome: ${OUTCOME_TEXT[turn.outcome.status]}. ${turn.outcome.note || ''}`.trim();
     const step = [...turn.items].reverse().find((item) => item.kind === 'tool');
     if (!step) return turn.streaming ? '' : 'Answer ready.';

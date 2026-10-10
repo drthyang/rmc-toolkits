@@ -76,6 +76,25 @@ describe('streamChat', () => {
         expect(parts).toEqual([{ content: 'ok' }]);
     });
 
+    it('throws on an error event sent mid-stream, after the 200', async () => {
+        // LM Studio reports a backend crash (here a GPU out-of-memory) this way.
+        const oom = 'Encountered fatal exception in the backend generation thread: Insufficient Memory';
+        vi.stubGlobal('fetch', vi.fn(async () => streamResponse([
+            sseLine('Par'),
+            `data: ${JSON.stringify({ error: { message: oom } })}\n\n`,
+            sseLine('never seen')
+        ])));
+        const parts = [];
+        await expect((async () => {
+            for await (const part of streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [] })) parts.push(part);
+        })()).rejects.toThrow(`The server stopped the reply: ${oom}`);
+        expect(parts).toEqual([{ content: 'Par' }]);
+
+        vi.stubGlobal('fetch', vi.fn(async () => streamResponse([`data: ${JSON.stringify({ error: 'model unloaded' })}\n\n`])));
+        await expect(collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [] })))
+            .rejects.toThrow('The server stopped the reply: model unloaded');
+    });
+
     it('throws with the server error message on HTTP failure', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => ({
             ok: false,
