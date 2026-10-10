@@ -30,6 +30,10 @@ export const MIN_ORIENTATION_POINTS = 100;
 export const SIGNIFICANCE_SIGMA = 3;
 // Central atoms with no A–B bond above this fraction: the window misses them.
 export const UNBONDED_APEX_FRACTION = 0.5;
+// Fewer central atoms than this share with the most common A–B bond count:
+// the coordination is spread, as when the window edge cuts through a shell
+// (demo Se–Ta–Se at 2.3–2.7 Å: 47 %; whole shells there: 83–96 %).
+export const MODAL_COORDINATION_SHARE = 0.6;
 
 const parseWarningCheck = (payload) => (
     payload?.parseWarning ? [{ level: 'warn', text: `Structure file: ${payload.parseWarning}` }] : []
@@ -270,6 +274,20 @@ export const summarizeBondAngles = (payload) => {
                 level: 'warn',
                 text: `${Math.round(unbonded * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`
             });
+        } else if (apexTotal) {
+            const modalCount = Math.max(...coordination);
+            const modal = coordination.indexOf(modalCount);
+            const share = modalCount / apexTotal;
+            const present = coordination.map((count, bonds) => (count > 0 ? bonds : null)).filter((bonds) => bonds != null);
+            if (share < MODAL_COORDINATION_SHARE) {
+                checks.push({
+                    level: 'warn',
+                    text: `Only ${Math.round(share * 100)} % of the ${b} atoms have the most common count (${modal} ${a}–${b} bonds); `
+                        + `the counts spread from ${present[0]} to ${present.at(-1)}. `
+                        + 'The window may cut through a coordination shell: compare it with the g(r) peaks (find_gr_peaks) '
+                        + 'and widen it to the shell\'s outer edge before reading the angles or the coordination.'
+                });
+            }
         }
         if (!checks.some((check) => check.level === 'warn')) {
             checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });

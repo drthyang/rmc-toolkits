@@ -103,6 +103,21 @@ describe('Copilot tools on the demo run', () => {
         expect(checks.at(-1).level).toBe('ok');
     });
 
+    it('compute_bond_angles: a window that cuts through the TaSe6 shell warns; the whole shell does not', async () => {
+        // gemma4:26b on Ollama picked 2.3–2.7 Å, read coordination 3.75 as
+        // "incomplete octahedra", and called the answer achieved. The shell
+        // has two Ta–Se peaks (2.52 and 2.74 Å): the window cuts the second.
+        const cut = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7 });
+        expect(cut.data.coordination.mean).toBeLessThan(4);
+        expect(cut.checks).toHaveLength(1);
+        expect(cut.checks[0].level).toBe('warn');
+        expect(cut.checks[0].text).toMatch(/^Only 47 % of the Ta atoms have the most common count \(3 Se–Ta bonds\); the counts spread from 1 to 6\. The window may cut through a coordination shell/);
+
+        const whole = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.33, r12_max: 2.97 });
+        expect(whole.data.coordination.counts.indexOf(Math.max(...whole.data.coordination.counts))).toBe(6);
+        expect(whole.checks.map((check) => check.level)).toEqual(['ok']);
+    });
+
     it('compute_bond_angles: an empty window fails with advice, and bad windows are refused', async () => {
         const { data, checks } = await tools.compute_bond_angles.run({
             end1: 'Ta', apex: 'Ta', end2: 'Ta', r12_min: 0.1, r12_max: 0.5
