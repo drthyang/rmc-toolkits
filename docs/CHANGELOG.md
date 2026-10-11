@@ -3,7 +3,11 @@
 Chronological record of notable changes, newest first. For current architecture and conventions see
 [AGENTS.md](../AGENTS.md); for forward plans see [ROADMAP.md](ROADMAP.md).
 
-## 0.6.0 — unreleased
+## Unreleased
+
+_Nothing yet._
+
+## 0.6.0 — 2026-10-10
 
 > This work was first tagged v1.0.0 on 2026-09-26 and the tag was withdrawn the same day; the
 > work continues toward 0.6.0, which will also bring the Bond Geometry redesign and device layouts.
