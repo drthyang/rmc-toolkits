@@ -57,6 +57,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     page: event.page,
                     interactive: Boolean(event.interactive),
                     app: Boolean(event.app),
+                    reading: Boolean(event.reading),
                     status: 'running',
                     data: null,
                     checks: [],
@@ -124,10 +125,11 @@ export const closeTurn = (turn, stoppedBy) => {
 
 /**
  * "3 analyses · 1 warning · 1 failed" for a turn's footer, or '' without
- * steps. A clarifying question (an interactive step) is not an analysis.
+ * steps. A clarifying question (an interactive step) and reading a skill are
+ * not analyses.
  */
 export const stepSummary = (items) => {
-    const steps = items.filter((item) => item.kind === 'tool' && !item.interactive);
+    const steps = items.filter((item) => item.kind === 'tool' && !item.interactive && !item.reading);
     if (!steps.length) return '';
     const count = (status) => steps.filter((item) => item.status === status).length;
     const parts = [`${steps.length} ${steps.length === 1 ? 'analysis' : 'analyses'}`];

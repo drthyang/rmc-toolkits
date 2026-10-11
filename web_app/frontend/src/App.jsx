@@ -10,6 +10,7 @@ import OrientationPage from './components/OrientationPage';
 import BondGeometryPage from './components/BondGeometryPage';
 import AutoStogPage from './components/AutoStogPage';
 import { CopilotChat } from './llm';
+import { copilotSkills } from './copilotSkills';
 import useCopilotTools from './copilotTools';
 import { buildCopilotCards } from './copilotCards';
 import { buildViewTools } from './copilotViewTools';
@@ -745,6 +746,7 @@ function App() {
         cards={copilotCards}
         onMarks={setCopilotMarks}
         onLayoutChange={handleCopilotLayout}
+        skills={copilotSkills}
       />
     </div>
     </IssueStoreProvider>

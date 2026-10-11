@@ -4,6 +4,8 @@ WORKDIR /app/web_app/frontend
 COPY web_app/frontend/package*.json ./
 RUN npm ci
 COPY web_app/frontend ./
+# The AI Copilot's skills (the repository's .claude/skills) are bundled at build time.
+COPY .claude/skills /app/.claude/skills
 RUN npm run build
 
 

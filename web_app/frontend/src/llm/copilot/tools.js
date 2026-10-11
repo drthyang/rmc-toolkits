@@ -21,6 +21,9 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 //                                            // answered from the call cache (optional)
 //     interactive: true,                     // waits for the user (ask_user): never
 //                                            // cached, no time limit (optional)
+//     resultBudget: 9000,                    // its own result budget, characters (optional)
+//     keep: true,                            // its result is never compacted later in
+//                                            // the question (read_skill) (optional)
 //     run: async (args, { signal, focus, askUser }) => ({ data, checks, facts })
 //   }
 //

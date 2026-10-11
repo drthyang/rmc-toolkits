@@ -408,6 +408,47 @@ describe('CopilotChat', () => {
         });
     });
 
+    describe('skills', () => {
+        const skillText = [
+            '---', 'name: rmc-fit-assessment', 'description: Judge a run before trusting it.', '---', '',
+            '# RMC fit assessment', '', '**Status: Draft: awaiting the user\'s interview.**', '',
+            '## Steps', '', '1. Call assess_convergence (to confirm with the user).'
+        ].join('\n');
+        const skills = { files: { '.claude/skills/rmc-fit-assessment/SKILL.md': skillText }, references: [], load: vi.fn() };
+        // A still-falling ln(χ²) history: the watchdog says improving.
+        const rValueFile = { name: 'run.log', plotData: { chiColumn: 'X_ray_(R)1', series: [{ y: Array.from({ length: 60 }, (_, i) => 5 - i * 0.05) }] } };
+
+        it('lists the skills in the prompt, reads one as a step that is not an analysis, and checks the answer', async () => {
+            stubReplies([
+                sse([delta({ tool_calls: [{ index: 0, id: 'call_s', type: 'function', function: { name: 'read_skill', arguments: '{"name":"rmc-fit-assessment"}' } }] }, 'tool_calls')]),
+                sse([delta({ content: 'The run has converged — a plateau.\n\nOutcome: achieved — flat history.' }, 'stop')])
+            ]);
+            act(() => root.render(chat({ skills, rValueFile })));
+            await openChat();
+            expect(container.querySelector('.llm-composer-status').textContent).toMatch(/following 1 skill\.$/);
+            await ask('Has it converged?');
+
+            const system = chatBodies[0].messages[0].content;
+            expect(system).toContain('- rmc-fit-assessment: Judge a run before trusting it.');
+            expect(system).not.toContain('Call assess_convergence (to confirm');
+            expect(chatBodies[0].tools.map((tool) => tool.function.name)).toContain('read_skill');
+            expect(JSON.parse(chatBodies[1].messages.at(-1).content).data.text).toContain('Call assess_convergence');
+
+            expect(container.querySelector('.llm-step-label').textContent).toBe('Reading the rmc-fit-assessment skill');
+            expect(container.querySelector('.llm-turn-footer')).toBeNull();
+            // The answer contradicts the watchdog: a check under it says so.
+            const audit = container.querySelector('.llm-audit');
+            expect(audit.getAttribute('aria-label')).toBe('Checks on this answer');
+            expect(audit.textContent).toMatch(/^CheckThe answer says the run has converged, but the χ² history is still improving/);
+        });
+
+        it('says so when a skill file cannot be read', async () => {
+            act(() => root.render(chat({ skills: { files: { '.claude/skills/x/SKILL.md': 'no frontmatter' }, references: [] } })));
+            await openChat();
+            expect(container.querySelector('[role="alert"]').textContent).toMatch(/The Copilot's skills could not be read: .*has no frontmatter/);
+        });
+    });
+
     describe('the context guard on Ollama', () => {
         const ndjson = (objects) => {
             const encoder = new TextEncoder();

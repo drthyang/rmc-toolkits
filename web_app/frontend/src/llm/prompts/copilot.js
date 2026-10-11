@@ -96,23 +96,39 @@ export const contextBlock = (context) => (
 // tool exchanges, which are re-run when needed.
 export const CHAT_HISTORY_TURNS = 8;
 
+// With skills (copilot/skills.js): their names and one-line descriptions
+// only; the agent reads a skill's text with read_skill when it needs it.
+export const skillsBlock = (index) => [
+    'Skills — your methods for these questions. Before an analysis a skill covers, read it with read_skill and',
+    'follow its steps and its checklist. Where a draft skill says "to confirm with the user", say in the answer',
+    'which choice you made, or ask with ask_user when the choice changes the analysis.',
+    `Your skills:\n${index}\n`
+].join(' ');
+
 /**
  * The system prompt for the tools the turn offers: the tool rules, the ask
- * rules when ask_user is among them, then pointing (view tools) or the
- * compute-only sentence, then the Outcome rule.
+ * rules when ask_user is among them, the skills' index when read_skill is,
+ * then pointing (view tools) or the compute-only sentence, then the Outcome
+ * rule.
  */
-export const copilotSystemPrompt = ({ toolsEnabled = true, viewTools = false, askUser = false } = {}) => {
+export const copilotSystemPrompt = ({ toolsEnabled = true, viewTools = false, askUser = false, skills = '' } = {}) => {
     if (!toolsEnabled) return COPILOT_PROMPT_NO_TOOLS;
-    if (!askUser) return viewTools ? COPILOT_PROMPT_VIEW : COPILOT_PROMPT;
-    return `${SYSTEM_PROMPT} ${TOOL_RULES} ${ASK_RULES} ${viewTools ? VIEW_RULES : COMPUTE_ONLY} ${OUTCOME_RULE}`;
+    return [
+        SYSTEM_PROMPT,
+        TOOL_RULES,
+        askUser ? ASK_RULES : null,
+        skills ? skillsBlock(skills) : null,
+        viewTools ? VIEW_RULES : COMPUTE_ONLY,
+        OUTCOME_RULE
+    ].filter(Boolean).join(' ');
 };
 
 export const buildCopilotMessages = ({
-    context, history = [], userText, toolsEnabled = true, viewTools = false, askUser = false
+    context, history = [], userText, toolsEnabled = true, viewTools = false, askUser = false, skills = ''
 }) => [
     {
         role: 'system',
-        content: copilotSystemPrompt({ toolsEnabled, viewTools, askUser })
+        content: copilotSystemPrompt({ toolsEnabled, viewTools, askUser, skills })
     },
     { role: 'user', content: contextBlock(context) },
     {

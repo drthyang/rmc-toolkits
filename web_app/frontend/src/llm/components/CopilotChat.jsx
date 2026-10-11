@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { buildAskUserTool } from '../copilot/askUser';
 import { buildClarifier } from '../copilot/clarify';
+import { buildReadSkillTool, parseSkillFiles } from '../copilot/skills';
 import { buildRunTools } from '../copilot/runTools';
 import { buildFocusTools } from '../copilot/viewTools';
 import { createFocusController } from '../focus/focus';
@@ -151,7 +152,7 @@ const ResizeHandle = ({ mode, width, sheet, dockRef, onResize, onCommit, onReset
 
 const CopilotPanel = ({
     id, hidden, mode, onCollapse, run, hostTools, pages, onOpenPage, runKey, cards, focus, onTurnEnd, onBusyChange,
-    onQuestion
+    onQuestion, skills
 }) => {
     const assistant = useAssistant({ ...run, enabled: true });
     const hasRun = Boolean((run.plotFiles && run.plotFiles.length) || run.structure);
@@ -165,12 +166,24 @@ const CopilotPanel = ({
         [plotFiles, structure, symmetry, noiseFloor]
     );
 
+    // The host's skills ({ files, references, load }, copilotSkills.js): parsed
+    // once; a malformed skill is reported, never silently dropped.
+    const parsedSkills = useMemo(() => {
+        if (!skills?.files) return { list: [], error: null };
+        try {
+            return { list: parseSkillFiles(skills.files, { available: skills.references || null }), error: null };
+        } catch (failure) {
+            return { list: [], error: failure?.message || String(failure) };
+        }
+    }, [skills]);
+
     const tools = useMemo(() => [
         ...buildRunTools({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData }, { cards }),
         ...buildFocusTools({ cards, pages }),
         ...(hostTools || []),
-        buildAskUserTool()
-    ], [runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData, hostTools, cards, pages]);
+        buildAskUserTool(),
+        buildReadSkillTool(parsedSkills.list, { load: skills?.load })
+    ].filter(Boolean), [runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData, hostTools, cards, pages, parsedSkills, skills]);
 
     return (
         <section
@@ -238,6 +251,8 @@ const CopilotPanel = ({
                             onBusyChange={onBusyChange}
                             onQuestion={onQuestion}
                             clarifier={clarifier}
+                            skills={parsedSkills.list}
+                            skillsError={parsedSkills.error}
                         />
                     ) : (
                         <p className="llm-chat-norun">Open a run folder, or load the Demo, to start.</p>
@@ -251,7 +266,8 @@ const CopilotPanel = ({
 const CopilotChat = ({
     runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData,
     tools = [], pages = {}, onOpenPage, runKey = null, onOpenChange, defaultOpen = false,
-    cards = null, onMarks = null, onLayoutChange = null, className = '', storageKey = DOCK_STORAGE_KEY
+    cards = null, onMarks = null, onLayoutChange = null, className = '', storageKey = DOCK_STORAGE_KEY,
+    skills = null
 }) => {
     const mode = useDockMode();
     const [saved] = useState(() => readDockState(storage(), storageKey));
@@ -458,6 +474,7 @@ const CopilotChat = ({
                     onTurnEnd={onTurnEnd}
                     onBusyChange={setBusy}
                     onQuestion={onQuestion}
+                    skills={skills}
                 />
             )}
         </aside>
