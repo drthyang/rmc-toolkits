@@ -21,7 +21,7 @@ import './CopilotChat.css';
 // The AI Copilot docked beside the workbench pages instead of over them. The
 // host renders it once, as the last child of its app grid, and places it by
 // its `data-mode`: "docked" (a column to the right of the pages, resizable
-// from its left edge) or "sheet" (a row under them, on tablets, phones and
+// from its left edge) or "sheet" (a row under them, on portrait tablets, phones and
 // short windows, resizable from its top edge). Collapsed, it is a slim rail
 // (or bar) with an unread mark; the panel mounts on first open — no network
 // request before that — and stays mounted while collapsed, so a running

@@ -3,24 +3,27 @@
 
 // Where the Copilot sits, and how big. Pure helpers for CopilotChat.
 //
-// - Docked (a window at least DOCK_MIN_WINDOW wide and taller than a phone in
-//   landscape): a side panel beside the pages, resizable from its left edge.
-//   The pages keep at least PAGE_MIN px, so they never fall below the
-//   tablet layout; the host gives the panel its own grid column, so it never
-//   covers a card.
-// - Sheet (tablets, phones, short windows): a bottom panel in its own grid
-//   row, resizable from its top edge, as a fraction of the window height.
+// - Docked (a window wide enough for the narrowest panel beside pages of
+//   PAGE_MIN px — laptops, monitors, tablets in landscape — and taller than a
+//   phone in landscape): a side panel beside the pages, resizable from its
+//   left edge. The pages keep at least PAGE_MIN px, so they never fall below
+//   the tablet layout; the host gives the panel its own grid column, so it
+//   never covers a card. A landscape tablet is short: there a sheet would
+//   leave a card and the conversation too little height each.
+// - Sheet (tablets in portrait, phones, short windows): a bottom panel in
+//   its own grid row, resizable from its top edge, as a fraction of the
+//   window height.
 // - Collapsed: a slim rail (docked) or bar (sheet) with an unread mark.
 //
 // The open state, the docked width and the sheet height persist in
 // localStorage under DOCK_STORAGE_KEY.
 
 export const DOCK_STORAGE_KEY = 'rmc-llm-dock-v1';
-export const DOCK_MIN_WINDOW = 1200;
-export const DOCK_QUERY = `(min-width: ${DOCK_MIN_WINDOW}px) and (min-height: 541px)`;
 export const DOCK_MIN = 320;
 export const DOCK_MAX = 760;
 export const PAGE_MIN = 760;
+export const DOCK_MIN_WINDOW = PAGE_MIN + DOCK_MIN;
+export const DOCK_QUERY = `(min-width: ${DOCK_MIN_WINDOW}px) and (min-height: 541px)`;
 export const DOCK_STEP = 24;
 export const SHEET_MIN = 0.28;
 export const SHEET_MAX = 0.72;

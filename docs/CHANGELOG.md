@@ -21,14 +21,15 @@ were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.
 The Copilot no longer floats over the pages, and it now shows what it explains on the page itself,
 with the design language of the maintainer's other agents (MATERIA, NEBULA3D), re-implemented here.
 
-- **Docked, not floating.** On a window ≥ 1200 × 541 px the Copilot is a side panel in its own
+- **Docked, not floating.** On a window ≥ 1080 × 541 px (laptops, monitors, tablets in landscape)
+  the Copilot is a side panel in its own
   grid column (`App.css`: `.app-container` gains a column and a row; `.app-copilot`), so it never
   covers a card. The pages shrink and reflow beside it: the header's and the pages' width tiers
   (1599/1040 header rows, the 980/1100/1200 page stacks, the 1500 three-column dashboard, the
   footer, `.ui-kbd`) are now **container queries** on `.main-content` (`container: workbench`),
   so a 1440 window with the Copilot open lays out like a 1040 one. The phone tiers (≤ 760, ≤ 540
   tall) stay media queries. Drag the left edge to resize (keyboard: ←/→, Home/End; double-click or
-  Enter resets); the pages keep ≥ 760 px. On tablets, phones and short windows it is a bottom sheet
+  Enter resets); the pages keep ≥ 760 px. On tablets in portrait, phones and short windows it is a bottom sheet
   in its own grid row (resizable from its top edge; `--copilot-sheet-h` is taken off
   `--viewport-h` inside the pages); when the agent brings a card on screen the sheet comes down,
   as far as 28 % of the window, until the card fits whole above it. Collapsed, it is a slim rail (a bottom bar on a sheet) with a
@@ -68,8 +69,8 @@ with the design language of the maintainer's other agents (MATERIA, NEBULA3D), r
   or a comma list is accepted. `CopilotChat` gains `cards`, `onMarks`, `onLayoutChange`,
   `className`, `storageKey`.
 - **Checked** in Chrome with Playwright at 1440 × 900, 1920 × 1080, iPad Pro 13" landscape
-  (1366 × 1024), iPad landscape (1180 × 820) and portrait (820 × 1180), and a phone (390 × 844):
-  docked or sheet, open and collapsed, every page with the Copilot open, a highlighted card in view
+  (1366 × 1024) and iPad landscape (1180 × 820), docked, and iPad portrait (820 × 1180) and a phone
+  (390 × 844), as a sheet: open and collapsed, every page with the Copilot open, a highlighted card in view
   and not under the Copilot, a chip, a click that clears, a [111] view, and the remembered state.
 
 ### AI Copilot replaces the AI Assistant

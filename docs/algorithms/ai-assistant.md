@@ -46,7 +46,7 @@ describes the Copilot's messages and Step 17 its tool loop. Section anchors keep
 
 ### What this page shows
 
-The **AI Copilot** is a panel docked beside every page (a bottom sheet on tablets and phones,
+The **AI Copilot** is a panel docked beside every page (a bottom sheet on portrait tablets and phones,
 collapsed to a slim rail) that holds a conversation about the run currently loaded in the
 Workbench, and points at the page while it explains (Step 17, *View tools*).
 There is also an optional **convergence watchdog** chip on the Dashboard's R-value card. Neither

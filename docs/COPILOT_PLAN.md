@@ -368,7 +368,7 @@ The maintainer asked for the highlight feature of their other two agents (MATERI
 for a Copilot that no longer blocks the panels. That decided §11's open question: the model may
 now change **what is on screen** — never data, an analysis input or a file.
 
-- **Docked, not floating.** The panel is a column of the app grid beside the pages (≥ 1200 × 541),
+- **Docked, not floating.** The panel is a column of the app grid beside the pages (≥ 1080 × 541),
   else a bottom sheet in its own row; the pages' width tiers became container queries, so they
   reflow in the room left. It resizes from its edge, collapses to a rail with an unread dot, and
   remembers its width and open state.

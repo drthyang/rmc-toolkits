@@ -21,8 +21,8 @@ const memoryStorage = () => {
 };
 
 describe('dock layout', () => {
-    it('docks from 1200 × 541 up', () => {
-        expect(DOCK_QUERY).toBe('(min-width: 1200px) and (min-height: 541px)');
+    it('docks from 1080 × 541 up: the narrowest panel beside pages of 760px', () => {
+        expect(DOCK_QUERY).toBe('(min-width: 1080px) and (min-height: 541px)');
     });
 
     it('defaults to 28 % of the window within 23–30rem', () => {

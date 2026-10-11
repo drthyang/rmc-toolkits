@@ -8,11 +8,12 @@ and judges whether that answers the question.
 
 It is **docked beside the pages**, not over them, and it **points at the page** while it explains:
 
-- **The dock.** On a window at least 1200 px wide (and taller than 540 px) the Copilot is a side
+- **The dock.** On a window at least 1080 px wide (and taller than 540 px: laptops, monitors,
+  tablets in landscape) the Copilot is a side
   panel in its own grid column: the pages shrink and reflow beside it (their width tiers are
   container queries), so it never covers a card. Drag its left edge (or focus the edge and use
   ←/→, Home/End; double-click or Enter resets) to resize it; the pages always keep at least
-  760 px. On tablets, phones and short windows it is a **bottom sheet** in its own grid row,
+  760 px. On tablets in portrait, phones and short windows it is a **bottom sheet** in its own grid row,
   resized from its top edge; when the agent brings a card on screen, the sheet comes down (to 28 %
   of the window at most) until the card fits whole above it. Collapsed (the chevron, or Esc inside it) it is a slim **rail** at the
   right edge, or a bar at the bottom, with a red dot when an answer arrived while it was
@@ -283,7 +284,7 @@ terminates. A server folder goes to Flask with the request cancelled on abort.
   to run, but your run context and analysis results are sent to that provider. Some providers or
   networks block direct browser calls (CORS).
 
-In the app: click the **AI Copilot** rail at the right edge (a bar at the bottom on tablets and phones), open the settings (gear),
+In the app: click the **AI Copilot** rail at the right edge (a bar at the bottom on portrait tablets and phones), open the settings (gear),
 pick a provider, press **Test**, then choose a model. Settings
 persist in `localStorage` (`rmc-llm-settings-v1`; the analyses switch is `copilotTools`).
 

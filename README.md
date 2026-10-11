@@ -70,7 +70,7 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
   FINDSYM it does no origin shift and outputs no idealized structure. The panel needs the run
   parsed in the browser (the hosted/static dashboard, or a locally picked folder); a run read
   through the local Flask server has no site basis, so the panel does not appear there.
-- **AI Copilot (beta)** — a panel docked beside every page (a bottom sheet on tablets and phones),
+- **AI Copilot (beta)** — a panel docked beside every page (a bottom sheet on portrait tablets and phones),
   resizable, collapsing to a slim rail. Ask about the loaded run, and a
   local LLM (Ollama, LM Studio) or an opt-in cloud model (OpenAI, Gemini, Anthropic) runs the
   Workbench analyses itself. It can list
@@ -114,9 +114,10 @@ on its page (Bond Geometry computes the same triplet; Displacement Directions op
 while the Copilot stays open beside it.
 
 **It points at what it explains.** The Copilot is docked beside the pages, never over them: on a
-laptop or monitor it is a side panel the pages reflow around (drag its edge to resize; the pages
-keep at least 760 px), on tablets and phones a bottom sheet, and collapsed a slim rail with a dot
-when a new answer arrived. It remembers its width and whether it was open. While it explains, the
+laptop, a monitor or a tablet in landscape it is a side panel the pages reflow around (drag its
+edge to resize; the pages keep at least 760 px), on portrait tablets and phones a bottom sheet,
+and collapsed a slim rail with a dot when a new answer arrived. It remembers its width and whether
+it was open. While it explains, the
 card it is talking about breathes a blue edge, and its page opens and scrolls to it; on a plot it
 marks the positions it names (the first g(r) peaks, say) and zooms to them. Its answers cite cards
 as chips: click one to bring the card back. In 3D it looks down the direction it describes —
@@ -127,7 +128,7 @@ numbers. Reasoning models stream their chain of thought in a collapsible *Thinki
 
 **Turn it on.** Run a local server with a tool-capable model (Ollama, or LM Studio with CORS
 enabled), or have a cloud API key ready. Click the **AI Copilot** rail at the right edge (a bar at
-the bottom on tablets and phones), open the
+the bottom on portrait tablets and phones), open the
 settings (gear), pick the provider, press **Test** and choose the model. *Let the Copilot run
 analyses* is on by default; off, it answers from the run summary only. Setup details:
 [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md#provider-setup).

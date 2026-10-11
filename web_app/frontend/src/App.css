@@ -28,7 +28,7 @@
 
    The AI Copilot (src/llm, rendered as .app-copilot) takes its own grid
    track: a column right of the pages when docked, a row under them as a
-   sheet (data-mode, chosen by the module: ≥ 1200 × 541 docks). The pages
+   sheet (data-mode, chosen by the module: ≥ 1080 × 541 docks). The pages
    shrink beside it, never under it. So the tiers above that depend on the
    width the pages have — the header's and the pages' — are container
    queries on .main-content (`workbench`), not media queries: a 1440 window

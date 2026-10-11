@@ -79,7 +79,7 @@ says where it listens. To share it on a network, see the Gunicorn and Docker ins
 
 ## 4. AI Copilot (Optional)
 
-The `AI Copilot` rail at the right edge of every page (a bar at the bottom on tablets and phones)
+The `AI Copilot` rail at the right edge of every page (a bar at the bottom on portrait tablets and phones)
 opens a panel docked beside the page that answers questions about the loaded run using an LLM. It runs against a model
 on your own machine (private), [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai), or
 against a cloud provider (OpenAI, Gemini, Anthropic) with your own API key.
