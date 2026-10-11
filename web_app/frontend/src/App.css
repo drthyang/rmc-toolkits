@@ -24,21 +24,56 @@
      scrolling beneath it.
    Every edge that can meet a rounded corner, notch or home indicator adds its
    safe-area inset (viewport-fit=cover in index.html; the insets are 0
-   elsewhere). */
+   elsewhere).
+
+   The AI Copilot (src/llm, rendered as .app-copilot) takes its own grid
+   track: a column right of the pages when docked, a row under them as a
+   sheet (data-mode, chosen by the module: ≥ 1200 × 541 docks). The pages
+   shrink beside it, never under it. So the tiers above that depend on the
+   width the pages have — the header's and the pages' — are container
+   queries on .main-content (`workbench`), not media queries: a 1440 window
+   with the Copilot open lays out at ~1040 like a tablet. The phone tiers
+   (≤ 760, ≤ 540 tall) stay media queries: the Copilot never docks there, and
+   docked it leaves the pages at least 760px. A sheet's height is
+   --copilot-sheet-h (App.jsx), taken off --viewport-h inside the pages. */
 
 .app-container {
+  --app-viewport-h: var(--viewport-h);
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   height: var(--viewport-h);
   overflow: hidden;
   background: var(--app-bg);
 }
 
 .main-content {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  container: workbench / inline-size;
+  --viewport-h: calc(var(--app-viewport-h) - var(--copilot-sheet-h, 0px));
+}
+
+.app-copilot {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  min-height: 0;
+}
+
+.app-copilot[data-mode="sheet"] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+/* A card the Copilot scrolls into view clears the pinned header strip
+   (phones and short windows) and keeps a little air. */
+[data-copilot-card] {
+  scroll-margin-top: calc(var(--header-pinned-h, 0px) + 0.75rem);
+  scroll-margin-bottom: 0.75rem;
 }
 
 .workspace-pages {
@@ -166,7 +201,7 @@
 /* The field bar's micro-label ("Local run" / "Run folder") is hidden on the
    tighter tiers — the value and the button say what the field is — but stays
    the input's accessible name. */
-@media (max-width: 1599px) {
+@container workbench (max-width: 1599px) {
   .path-bar label {
     position: absolute;
     width: 1px;
@@ -189,7 +224,7 @@
 /* One tightened row: the full header needs ~1535px; this one ~1365px, so it
    stays on one line on every current MacBook at its default scaling and on an
    iPad Pro 13" in landscape. */
-@media (min-width: 1041px) and (max-width: 1599px) {
+@container workbench (min-width: 1041px) and (max-width: 1599px) {
   .app-header {
     padding-inline: calc(1rem + var(--safe-left)) calc(1rem + var(--safe-right));
     column-gap: 0.75rem;
@@ -215,7 +250,7 @@
 /* Tablets and phones: a grid. Brand and the data-source cluster share the first
    row; the tabs take a full-width row of their own last (the row the header
    pins by when it scrolls away), scrolling sideways when they do not fit. */
-@media (max-width: 1040px) {
+@container workbench (max-width: 1040px) {
   .app-header {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);

@@ -86,16 +86,20 @@
     }
 }
 
-@media (min-width: 1500px) and (min-aspect-ratio: 16 / 10) {
-    .plot-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.85rem;
-    }
+/* Three columns where the pages have ≥ 1500px (beside the docked AI Copilot
+   too: a container query on the workbench shell) on a 16:10-or-wider screen. */
+@media (min-aspect-ratio: 16 / 10) {
+    @container workbench (min-width: 1500px) {
+        .plot-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.85rem;
+        }
 
-    /* Let the 8:5 chart grow to fill the (wider) 3-column card instead of being
-       capped short and letterboxed with empty side margins. The cap only bites on
-       very wide (>1440p) cards; up through 1440p the plot fills the card width. */
-    .plot-grid .ui-card .interactive-plot svg {
-        max-height: 36rem;
+        /* Let the 8:5 chart grow to fill the (wider) 3-column card instead of being
+           capped short and letterboxed with empty side margins. The cap only bites on
+           very wide (>1440p) cards; up through 1440p the plot fills the card width. */
+        .plot-grid .ui-card .interactive-plot svg {
+            max-height: 36rem;
+        }
     }
 }

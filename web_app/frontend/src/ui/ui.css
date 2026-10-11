@@ -50,10 +50,15 @@
     }
 }
 
-@media (min-width: 1500px) and (min-aspect-ratio: 16 / 10) {
-    .ui-page--wide {
-        padding: 1rem calc(1.15rem + var(--safe-right)) calc(1rem + var(--safe-bottom))
-            calc(1.15rem + var(--safe-left));
+/* Width tiers of the page content are container queries on the workbench
+   shell (App.css: .main-content), so they follow the room the pages have
+   beside the docked AI Copilot; the phone tiers (≤ 760) stay media queries. */
+@media (min-aspect-ratio: 16 / 10) {
+    @container workbench (min-width: 1500px) {
+        .ui-page--wide {
+            padding: 1rem calc(1.15rem + var(--safe-right)) calc(1rem + var(--safe-bottom))
+                calc(1.15rem + var(--safe-left));
+        }
     }
 }
 
@@ -76,7 +81,7 @@
     white-space: nowrap;
 }
 
-@media (max-width: 1040px) {
+@container workbench (max-width: 1040px) {
     .ui-footer {
         padding-inline: 0.8rem;
     }
@@ -1498,7 +1503,7 @@ input.ui-range::-moz-range-track {
 
 /* The key hint is a wide-screen nicety: below 1500 px it gives its room back,
    so a full controls bar keeps one row (the action's title names the key). */
-@media (max-width: 1499.98px) {
+@container workbench (max-width: 1499.98px) {
     .ui-kbd {
         display: none;
     }
