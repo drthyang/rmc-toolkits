@@ -46,8 +46,9 @@ describes the Copilot's messages and Step 17 its tool loop. Section anchors keep
 
 ### What this page shows
 
-The **AI Copilot** is a chatbox, opened from a launcher in the bottom-right corner of every page,
-that holds a conversation about the run currently loaded in the Workbench.
+The **AI Copilot** is a panel docked beside every page (a bottom sheet on tablets and phones,
+collapsed to a slim rail) that holds a conversation about the run currently loaded in the
+Workbench, and points at the page while it explains (Step 17, *View tools*).
 There is also an optional **convergence watchdog** chip on the Dashboard's R-value card. Neither
 feature sends your run files anywhere.
 
@@ -85,15 +86,16 @@ in [`llm/provider/client.js`](../../web_app/frontend/src/llm/provider/client.js)
 
 | # | When | Request | Run-derived payload |
 |---|------|---------|---------------------|
-| 1 | AI Copilot chatbox first opened (automatic, once per base URL), or **Test** pressed | `GET {baseUrl}/models` → `listModels()` | **None.** Only the API key, if one is set. |
+| 1 | AI Copilot dock first opened (automatic, once per base URL; at load when it was left open), or **Test** pressed | `GET {baseUrl}/models` → `listModels()` | **None.** Only the API key, if one is set. |
 | 2 | You send a question | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~4,500 chars, best-effort; Step 12), the system prompt, the last 8 memory messages (questions and final answers only) and your question. With analyses on, the tool definitions (names, descriptions, argument schemas). |
 | 2a | The model asked for analyses (repeats ≤ 6 times per question, plus one last request) | the same `POST`, same body grown by the exchange | Row 2's body, plus the model's own tool calls echoed back and one `tool` message per call: the analysis summary and its checks. Each is ≤ 3,000 chars and ≤ 12,000 per question; older results are compacted to their checks. Step 17 lists what each analysis sends. |
 | 3 | Watchdog enabled *and* a model configured | `POST {baseUrl}/chat/completions` (`stream: false`) → `completeChat()` | Five numbers only: `{n_steps, first, last, min, recent_window_delta}` plus two status words. |
 
-**Row 1 fires without you asking.** The chatbox panel (`CopilotChat.jsx`) mounts on first open and
+**Row 1 fires without you asking.** The dock's panel (`CopilotChat.jsx`) mounts on first open (or at
+load, when the dock was left open: its open state persists) and
 calls `useAssistant({… enabled: true})`, and
 `useAssistant.js` runs `probe(false)` from an effect guarded only by `autoTestedRef` (one probe per
-distinct `baseUrl`). Merely opening the chatbox therefore issues a `GET /models` to whatever
+distinct `baseUrl`). Merely opening the Copilot therefore issues a `GET /models` to whatever
 endpoint is configured — **including a cloud endpoint, with your API key attached**, before you have
 typed anything. Switching the selected model does not re-probe; changing the base URL does. On success,
 if the currently configured model is not in the returned list, the app silently writes `models[0]` into
@@ -1189,10 +1191,30 @@ per click.
   The page's smoothing, weight and frame are left as the user set them: the drawn enhancement can
   differ (the Copilot's is unsmoothed), while the significance tests use raw counts. Element
   pooling has no page view, so that step only opens the page.
-- Other steps open their page without parameters. On a phone-size screen, where the chatbox is a
-  full sheet, it closes after Show in.
+- Other steps open their page without parameters.
 
 The Copilot never calls this itself; only the user's click does.
+
+**View tools** (2026-10-10). Three tools change what is on screen and nothing else (`view: true`;
+never answered from the duplicate-call cache):
+
+- `highlight_cards(cards, marks?)` (module, `copilot/viewTools.js`) gives the host cards it names
+  (`data-copilot-card`, catalog `src/copilotCards.js`) a breathing edge through the dock's focus
+  controller (`focus/focus.js`): it opens the main card's page, waits ≤ 3 s for it to mount, and
+  scrolls it into view; `marks` are x positions drawn on a plot card, which zooms to them
+  (`markWindow`: the marks' span plus ¾ of it, ≥ 6 % of the range per side). It ends at the next
+  highlight, a new question, a click outside the Copilot, or a collapse.
+- `orient_3d_view(card, along?, center_site?, highlight_sites?, select_site?, reset?)` (host,
+  `src/copilotViewTools.js`): `along` is read by `parseDirection` (`viewer3d.js`) and becomes the
+  Cartesian line of sight $\hat d = (u\mathbf a + v\mathbf b + w\mathbf c)/\lVert\cdot\rVert$
+  (a, b, c: the cell rows; PC1–3: the site's principal axes). The camera goes to
+  target + $\hat d$·distance (the direction points at the viewer), screen-up the first of c, b, a
+  more than 18° from $\hat d$ with its component along $\hat d$ removed. On the sphere's PCA
+  frame $\hat d$ is projected onto the PC axes. A selected site is awaited (≤ 15 s) before the
+  view turns, because a new site re-frames its view.
+- `current_view()` reports the page, its cards, the highlight, and each 3D view's line of sight as
+  the simplest integer $[uvw]$ (|index| ≤ 4) within 2° (`nearestLowIndex`), else its components
+  scaled to a largest of 1 (marked ≈).
 
 **The verdict.** The prompt asks every answer to end with
 `Outcome: achieved|partial|not achieved — <one sentence>`.

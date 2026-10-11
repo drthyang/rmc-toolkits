@@ -16,6 +16,62 @@ bond angles, parsers and dashboard, symmetry finder, Flask API). Each group was 
 independently, then merged and integrated. Several numbers the app reports change *because they
 were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.5.0.
 
+### AI Copilot: docked beside the pages, pointing at what it explains
+
+The Copilot no longer floats over the pages, and it now shows what it explains on the page itself,
+with the design language of the maintainer's other agents (MATERIA, NEBULA3D), re-implemented here.
+
+- **Docked, not floating.** On a window ≥ 1200 × 541 px the Copilot is a side panel in its own
+  grid column (`App.css`: `.app-container` gains a column and a row; `.app-copilot`), so it never
+  covers a card. The pages shrink and reflow beside it: the header's and the pages' width tiers
+  (1599/1040 header rows, the 980/1100/1200 page stacks, the 1500 three-column dashboard, the
+  footer, `.ui-kbd`) are now **container queries** on `.main-content` (`container: workbench`),
+  so a 1440 window with the Copilot open lays out like a 1040 one. The phone tiers (≤ 760, ≤ 540
+  tall) stay media queries. Drag the left edge to resize (keyboard: ←/→, Home/End; double-click or
+  Enter resets); the pages keep ≥ 760 px. On tablets, phones and short windows it is a bottom sheet
+  in its own grid row (resizable from its top edge; `--copilot-sheet-h` is taken off
+  `--viewport-h` inside the pages); when the agent brings a card on screen the sheet comes down,
+  as far as 28 % of the window, until the card fits whole above it. Collapsed, it is a slim rail (a bottom bar on a sheet) with a
+  red dot when an answer lands while collapsed. Width, sheet height and open state persist
+  (`rmc-llm-dock-v1`). The floating launcher, the *Larger* toggle and the dialog role are gone;
+  the dock is an `aside` landmark.
+- **Pointing at cards** (`highlight_cards`, a new view tool built from the host's card catalog,
+  `src/copilotCards.js`). Each Workbench card carries `data-copilot-card` (the model card, Detected
+  SG, the χ² history, one per plot file, and every card of the analysis pages). The agent's cards
+  breathe a blue edge (2.4 s; a steady edge under `prefers-reduced-motion`); the main one's page
+  opens and it scrolls into view. On a plot it can mark x positions — the g(r) peaks it names —
+  drawn as dashed blue guides with ▽ and a label, and the plot zooms to them (`InteractivePlot`
+  `marks`). The card of a running analysis (`assess_convergence`, `find_gr_peaks`,
+  `compare_fit`, …) breathes softly. A highlight ends at the next one, a new question, a click on
+  the page, or when the Copilot collapses.
+- **Card chips.** Answers cite cards as `[label](card:<id>)` or `[[id]]`; each renders as a chip
+  that brings the card back (from another page too). Unknown ids render as plain text; the
+  `card:` scheme is let through react-markdown and the sanitizer for chips only.
+- **3D views** (`orient_3d_view`, `current_view`; `src/copilotViewTools.js`). The six 3D views
+  (Atomic Density's folded cell, Bond Geometry's bonded cell, the PCA density and site ellipsoids,
+  the displacement sphere and its site picker) join a registry while mounted
+  (`src/viewer3d.js`, `src/useCopilotViewer.js`). The agent can look down `[u v w]` (any
+  spelling: `[111]`, `[1-10]`, `[1 -1 0]`, `[0.71 0.71 1]`) or a, b, c, PC1–PC3, with c up (b up
+  looking down c), in oblique cells too; centre a site, ring sites in breathing blue, select a site
+  as a click would (waiting for its map or volume to load), or reset. A turn is a 650 ms slerp
+  that lands exactly on the pose (`src/cameraPose.js`). On the sphere's PCA frame a crystal
+  direction is projected onto the site's principal axes. `current_view` reports the page, its
+  cards, the highlight and each 3D view's direction (as the simplest `[u v w]` within 2°) and site.
+- **The rule changed:** analyses still only compute; the **view tools** (`view: true` in the tool
+  contract, never answered from the duplicate-call cache) change only what is on screen — never
+  data, an analysis input, the shared tolerance or a file. The prompt (`COPILOT_PROMPT_VIEW`) asks
+  the agent to point before it explains, cite cards as chips, and turn the 3D view to the direction
+  it describes.
+- **Tool contract.** `run(args, { signal, focus })` (the dock's card-focus controller),
+  `cards(args)` (cards to breathe while running), `view`; argument schemas gain arrays and objects
+  (`items`, `minItems`, `maxItems`, nested `properties` / `required`), and a list sent as JSON text
+  or a comma list is accepted. `CopilotChat` gains `cards`, `onMarks`, `onLayoutChange`,
+  `className`, `storageKey`.
+- **Checked** in Chrome with Playwright at 1440 × 900, 1920 × 1080, iPad Pro 13" landscape
+  (1366 × 1024), iPad landscape (1180 × 820) and portrait (820 × 1180), and a phone (390 × 844):
+  docked or sheet, open and collapsed, every page with the Copilot open, a highlighted card in view
+  and not under the Copilot, a chip, a click that clears, a [111] view, and the remembered state.
+
 ### AI Copilot replaces the AI Assistant
 
 The **AI Copilot** replaces the chat-only AI Assistant. It is a **chatbox over every page**, not a
