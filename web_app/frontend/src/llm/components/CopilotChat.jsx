@@ -10,9 +10,9 @@ import AssistantConnectionBar from './AssistantConnectionBar';
 import ConnectionSettings from './ConnectionSettings';
 import CopilotView from './CopilotView';
 import {
-    DOCK_QUERY, DOCK_STORAGE_KEY, SHEET_FOCUS_MAX, SHEET_MAX, SHEET_MIN,
+    DOCK_QUERY, DOCK_STORAGE_KEY, SHEET_MAX, SHEET_MIN,
     clampDockWidth, clampSheet, defaultDockWidth, dragDockWidth, dragSheet, keyResize, maxDockWidth,
-    readDockState, writeDockState, DOCK_MIN
+    readDockState, sheetForCard, writeDockState, DOCK_MIN
 } from './dockLayout';
 import { ChevronIcon, CloseIcon, WaveMark } from './icons';
 import './Copilot.css';
@@ -50,6 +50,13 @@ const storage = () => {
     } catch {
         return null;
     }
+};
+// The card's nearest vertically scrolling ancestor (the page, or the shell).
+const scrollAncestor = (element) => {
+    for (let node = element.parentElement; node; node = node.parentElement) {
+        if (/(auto|scroll|overlay)/.test(window.getComputedStyle(node).overflowY)) return node;
+    }
+    return null;
 };
 const nextFrame = () => new Promise((resolve) => {
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -265,11 +272,23 @@ const CopilotChat = ({
         getCards: () => cardsRef.current || [],
         openPage: (page) => openPageRef.current?.(page, null),
         onMarks: (marks) => onMarksRef.current?.(marks),
-        beforeScroll: async () => {
-            // A tall sheet would leave the card no room: lower it while the
-            // agent points at a card (not remembered — the user's height is).
-            if (modeRef.current !== 'sheet' || sheetRef.current <= SHEET_FOCUS_MAX) return;
-            setSheet(SHEET_FOCUS_MAX);
+        beforeScroll: async (card) => {
+            // On a sheet, lower it until the card fits whole above it (not
+            // remembered — the user's height is). The space above the card's
+            // scroll area is its own top, or the pinned header on a phone
+            // (the card's scroll-margin-top).
+            if (modeRef.current !== 'sheet' || !card) return;
+            const scroller = scrollAncestor(card);
+            const top = scroller ? Math.max(0, scroller.getBoundingClientRect().top) : 0;
+            const margin = parseFloat(window.getComputedStyle(card).scrollMarginTop) || 0;
+            const next = sheetForCard({
+                viewportHeight: viewportHeight(),
+                topOffset: top + margin,
+                cardHeight: card.getBoundingClientRect().height,
+                current: sheetRef.current
+            });
+            if (next >= sheetRef.current) return;
+            setSheet(next);
             await nextFrame();
         }
     }));

@@ -86,3 +86,18 @@ describe('dock layout', () => {
         expect(dragSheet(10, 1024)).toBe(SHEET_MAX);
     });
 });
+
+describe('a sheet that makes room for a focused card', () => {
+    it('lowers the sheet until the card fits above it, within its limits, never raising it', async () => {
+        const { sheetForCard } = await import('../components/dockLayout');
+        // iPad landscape: 820 tall, the pages' header 125 px, a 420 px card.
+        expect(sheetForCard({ viewportHeight: 820, topOffset: 125, cardHeight: 420, current: 0.46 })).toBe(0.316);
+        // A small card: the sheet stays.
+        expect(sheetForCard({ viewportHeight: 820, topOffset: 125, cardHeight: 200, current: 0.46 })).toBe(0.46);
+        // A tall sheet comes down to half the window at least.
+        expect(sheetForCard({ viewportHeight: 820, topOffset: 125, cardHeight: 100, current: 0.7 })).toBe(0.5);
+        // A card taller than the room: the lowest sheet, the card's top shows.
+        expect(sheetForCard({ viewportHeight: 820, topOffset: 125, cardHeight: 900, current: 0.46 })).toBe(SHEET_MIN);
+        expect(sheetForCard({ viewportHeight: 0, cardHeight: 10, current: 0.6 })).toBe(0.5);
+    });
+});

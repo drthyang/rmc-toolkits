@@ -90,8 +90,8 @@ export function createFocusController({
     openPage = null,
     onMarks = null,
     onShow = null,
-    // Runs before a shown card is scrolled to (the dock lowers a tall sheet
-    // so the card has room above it); may return a promise.
+    // Runs before a shown card is scrolled to, with the card (the dock lowers
+    // its sheet so the card has room above it); may return a promise.
     beforeScroll = null,
     waitMs = FOCUS_WAIT_MS,
     // Whether a click target belongs to the Copilot itself (its own clicks —
@@ -220,7 +220,7 @@ export function createFocusController({
         if (token !== generation) return { shown: [], missing: cards, page: entry?.page ?? null, switched, scrolled: false, superseded: true };
         apply();
         if (element && doScroll && beforeScroll) {
-            await beforeScroll();
+            await beforeScroll(element);
             if (token !== generation) return { shown: [], missing: cards, page: entry?.page ?? null, switched, scrolled: false, superseded: true };
         }
         const scrolled = Boolean(element && doScroll && scroll(element));

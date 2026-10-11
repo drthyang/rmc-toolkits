@@ -29,6 +29,8 @@ export const SHEET_STEP = 0.05;
 // While a card is in focus on a sheet layout, the page keeps at least this
 // share of the window above the sheet.
 export const SHEET_FOCUS_MAX = 0.5;
+// Air kept under a focused card, above the sheet (px).
+const FOCUS_GAP = 16;
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value);
 
@@ -105,6 +107,21 @@ export const keyResize = (mode, key, value, viewportWidth) => {
     if (key === 'Home') return SHEET_MIN;
     if (key === 'End') return SHEET_MAX;
     return null;
+};
+
+/**
+ * The sheet height that lets a focused card show whole above the sheet: the
+ * card's height plus the space above its scroll area (`topOffset`: the
+ * pages' header, or the pinned strip on a phone) must fit in the window above
+ * the sheet. Never raises the sheet, never below SHEET_MIN (a card taller
+ * than that shows its top), and at most SHEET_FOCUS_MAX while a card is in
+ * focus.
+ */
+export const sheetForCard = ({ viewportHeight, topOffset = 0, cardHeight, current }) => {
+    const now = clampSheet(current);
+    if (!finite(viewportHeight) || viewportHeight <= 0 || !finite(cardHeight)) return Math.min(now, SHEET_FOCUS_MAX);
+    const room = (viewportHeight - Math.max(0, topOffset) - cardHeight - FOCUS_GAP) / viewportHeight;
+    return clampSheet(Math.min(now, SHEET_FOCUS_MAX, room));
 };
 
 /** The docked width a drag reaches: the panel grows as the pointer moves left. */
