@@ -135,6 +135,10 @@ const checkProperty = (key, raw, spec) => {
         if (typeof value !== 'boolean') {
             return { error: `${key} must be true or false, got ${JSON.stringify(raw)}` };
         }
+    } else if (type === 'array') {
+        return checkArray(key, value, spec);
+    } else if (type === 'object') {
+        return checkObject(key, value, spec);
     }
     if (Array.isArray(spec?.enum) && !spec.enum.includes(value)) {
         return { error: `${key} must be one of ${spec.enum.map((item) => JSON.stringify(item)).join(', ')}, got ${JSON.stringify(value)}` };
@@ -142,9 +146,70 @@ const checkProperty = (key, raw, spec) => {
     return { value };
 };
 
+// A JSON text where an array or object belongs: small models often send the
+// list as a string ("[\"a\", \"b\"]"), or a bare comma list ("3, 7").
+const fromText = (value, kind) => {
+    if (typeof value !== 'string') return value;
+    const text = value.trim();
+    try {
+        const parsed = JSON.parse(text);
+        if (kind === 'array' ? Array.isArray(parsed) : (parsed && typeof parsed === 'object' && !Array.isArray(parsed))) {
+            return parsed;
+        }
+    } catch {
+        // Not JSON: a bare list below, else the type error.
+    }
+    if (kind === 'array' && text && !/^[[{]/.test(text)) return text.split(/\s*,\s*/).filter(Boolean);
+    return value;
+};
+
+// An array property: each item against `items` (one schema for every item),
+// within minItems / maxItems. One bare item where a list belongs is read as
+// a list of one.
+function checkArray(key, raw, spec) {
+    let value = fromText(raw, 'array');
+    if (!Array.isArray(value) && value !== undefined && typeof value !== 'object') value = [value];
+    if (!Array.isArray(value)) return { error: `${key} must be a list, got ${describeType(raw)}` };
+    if (Number.isFinite(spec.minItems) && value.length < spec.minItems) {
+        return { error: `${key} must hold at least ${spec.minItems} item(s), got ${value.length}` };
+    }
+    if (Number.isFinite(spec.maxItems) && value.length > spec.maxItems) {
+        return { error: `${key} may hold at most ${spec.maxItems} item(s), got ${value.length}` };
+    }
+    if (!spec.items) return { value };
+    const items = [];
+    for (const [index, item] of value.entries()) {
+        const checked = checkProperty(`${key}[${index}]`, item, spec.items);
+        if (checked.error) return checked;
+        items.push(checked.value);
+    }
+    return { value: items };
+}
+
+// An object property: its `properties` and `required`, like the arguments
+// themselves (unknown keys are dropped).
+function checkObject(key, raw, spec) {
+    const value = fromText(raw, 'object');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return { error: `${key} must be an object, got ${describeType(raw)}` };
+    }
+    if (!spec.properties) return { value };
+    const out = {};
+    for (const [name, item] of Object.entries(value)) {
+        if (!Object.prototype.hasOwnProperty.call(spec.properties, name) || item == null) continue;
+        const checked = checkProperty(`${key}.${name}`, item, spec.properties[name]);
+        if (checked.error) return checked;
+        out[name] = checked.value;
+    }
+    const missing = (spec.required || []).find((name) => !(name in out));
+    if (missing) return { error: `${key}.${missing} is required` };
+    return { value: out };
+}
+
 /**
  * Check parsed arguments against the JSON-Schema subset the tools use
- * (`properties` with type / enum / minimum / maximum, and `required`).
+ * (`properties` with type / enum / minimum / maximum, arrays with `items` /
+ * minItems / maxItems, objects with their own `properties`, and `required`).
  * Unknown keys are dropped with a note; `null` for an optional key means
  * "not given". Returns `{ ok, value, errors, notes }`.
  */

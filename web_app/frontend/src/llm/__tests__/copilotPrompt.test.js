@@ -6,6 +6,7 @@ import {
     CHAT_HISTORY_TURNS,
     COPILOT_PROMPT,
     COPILOT_PROMPT_NO_TOOLS,
+    COPILOT_PROMPT_VIEW,
     buildCopilotMessages,
     toolBudgetNote
 } from '../prompts/copilot';
@@ -47,6 +48,21 @@ describe('the Copilot prompt', () => {
         expect(COPILOT_PROMPT).toContain('Outcome: achieved|partial|not achieved');
         expect(COPILOT_PROMPT_NO_TOOLS).toContain('Outcome: achieved|partial|not achieved');
         expect(COPILOT_PROMPT_NO_TOOLS).not.toContain('tools provided');
+    });
+
+    it('with the view tools, asks to point at cards and cite them as card: links', () => {
+        const messages = buildCopilotMessages({ context, userText: 'q', viewTools: true });
+        expect(messages[0].content).toBe(COPILOT_PROMPT_VIEW);
+        expect(COPILOT_PROMPT_VIEW.startsWith(SYSTEM_PROMPT)).toBe(true);
+        expect(COPILOT_PROMPT_VIEW).toContain('highlight_cards');
+        expect(COPILOT_PROMPT_VIEW).toContain('[short label](card:<id>)');
+        expect(COPILOT_PROMPT_VIEW).toContain('orient_3d_view');
+        expect(COPILOT_PROMPT_VIEW).toContain('current_view');
+        expect(COPILOT_PROMPT_VIEW).not.toContain('they never change what the user sees');
+        expect(COPILOT_PROMPT).toContain('Tools only compute: they never change what the user sees.');
+        // Tools off: no view rules either.
+        expect(buildCopilotMessages({ context, userText: 'q', toolsEnabled: false, viewTools: true })[0].content)
+            .toBe(COPILOT_PROMPT_NO_TOOLS);
     });
 
     it('explains the budget note', () => {

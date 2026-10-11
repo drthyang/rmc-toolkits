@@ -10,6 +10,9 @@ import { classifyConvergence } from '../watchdog/heuristics';
 // they need nothing from the host. The engine tools (sites, displacement
 // directions, bond angles, symmetry at a tolerance) come from the host as the
 // `tools` prop. Each tool is offered only when its data exists for this run.
+// Given the host's card catalog, each tool also names the cards it reads
+// (`cards(args)`), which breathe while it runs: a card's `kind` (a plot kind,
+// 'r_value', 'symmetry', 'model') and `file` tie it to the data.
 
 const roundSig = (value, digits = 3) => (
     Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(digits)) : (Number.isFinite(value) ? value : null)
@@ -49,7 +52,16 @@ const pairKey = (label) => {
     return match ? [match[1], match[2]].sort().join('-') : null;
 };
 
-const readRunDataTool = (context) => {
+// The card kinds a read_run_data section is about.
+const SECTION_CARD_KINDS = {
+    structure: ['model'],
+    configuration_optimization: ['model'],
+    symmetry: ['symmetry'],
+    pair_correlations: ['pdf_partials'],
+    convergence: ['r_value']
+};
+
+const readRunDataTool = (context, cardIds) => {
     const sections = Object.keys(SECTION_NOTES).filter((key) => context[key] != null);
     if (!sections.length) return null;
     return {
@@ -63,11 +75,12 @@ const readRunDataTool = (context) => {
             required: ['section']
         },
         label: ({ section }) => `Read ${String(section || '').replace(/_/g, ' ')}`,
+        cards: ({ section }) => cardIds((card) => (SECTION_CARD_KINDS[section] || []).includes(card.kind)),
         run: async ({ section }) => ({ data: { section, [section]: context[section] }, checks: [] })
     };
 };
 
-const convergenceTool = (rValueFile) => {
+const convergenceTool = (rValueFile, cardIds) => {
     const history = rValueFile?.plotData?.series?.[0]?.y;
     if (!Array.isArray(history) || !history.length) return null;
     const column = rValueFile?.plotData?.chiColumn || null;
@@ -79,6 +92,7 @@ const convergenceTool = (rValueFile) => {
         parameters: { type: 'object', properties: {} },
         label: () => 'Convergence check',
         page: 'dashboard',
+        cards: () => cardIds((card) => card.kind === 'r_value'),
         run: async () => {
             const stats = seriesStats(history);
             const status = classifyConvergence(history);
@@ -121,7 +135,7 @@ export const CONSTRAINT_PILEUP_FRACTION = 0.02;
 // shell is not separated from the next, and its CN depends on the cut.
 export const SHELL_OVERLAP_FRACTION = 0.02;
 
-const grPeaksTool = (plotFiles, context, structure) => {
+const grPeaksTool = (plotFiles, context, structure, cardIds) => {
     const partials = (plotFiles || []).find(
         (file) => file.plotKind === 'pdf_partials' && file.plotData?.series?.length
     );
@@ -149,6 +163,7 @@ const grPeaksTool = (plotFiles, context, structure) => {
         },
         label: ({ pair }) => `g(r) peaks ${pair || ''}`.trim(),
         page: 'dashboard',
+        cards: () => cardIds((card) => Boolean(partials.name) && card.file === partials.name),
         run: async ({ pair, r_max: rMax = 6, max_peaks: maxPeaks = 3 }) => {
             const entry = series.find((item) => item.label.trim() === pair);
             const peaks = extractPeaks(entry.x, entry.y, { rMax, maxPeaks });
@@ -272,7 +287,7 @@ export const MISFIT_CONCENTRATION = 0.4;
 // its signal, whatever its share of the squared residual.
 export const RELATIVE_MISFIT_FACTOR = 3;
 
-const fitTool = (plotFiles) => {
+const fitTool = (plotFiles, cardIds) => {
     const files = (plotFiles || []).filter((file) => FIT_KINDS[file.plotKind] && file.plotData?.series?.length >= 2);
     if (!files.length) return null;
     const keyed = new Map();
@@ -302,6 +317,7 @@ const fitTool = (plotFiles) => {
         },
         label: ({ dataset }) => `Fit residual ${dataset || ''}`.trim(),
         page: 'dashboard',
+        cards: ({ dataset }) => cardIds((card) => card.file && card.file === keyed.get(dataset)?.name),
         run: async ({ dataset, n_ranges: nRanges = 6 }) => {
             const file = keyed.get(dataset);
             const [calc, exp] = fitSeriesRoles(file.plotData.series);
@@ -393,12 +409,14 @@ const fitTool = (plotFiles) => {
 };
 
 /** The tools over this run's props, in a stable order; absent data → no tool. */
-export const buildRunTools = (run) => {
+export const buildRunTools = (run, { cards = [] } = {}) => {
     const context = buildRunContext(run || {});
+    const catalog = Array.isArray(cards) ? cards : [];
+    const cardIds = (test) => catalog.filter(test).map((card) => card.id);
     return [
-        readRunDataTool(context),
-        convergenceTool(run?.rValueFile),
-        grPeaksTool(run?.plotFiles, context, run?.structure),
-        fitTool(run?.plotFiles)
+        readRunDataTool(context, cardIds),
+        convergenceTool(run?.rValueFile, cardIds),
+        grPeaksTool(run?.plotFiles, context, run?.structure, cardIds),
+        fitTool(run?.plotFiles, cardIds)
     ].filter(Boolean);
 };

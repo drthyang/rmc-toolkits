@@ -225,3 +225,33 @@ describe('buildRunTools', () => {
         expect(checks).toEqual([{ level: 'fail', text: 'No peak above 15 % of the maximum below 1.5 Å.' }]);
     });
 });
+
+describe('the cards each run tool reads', () => {
+    it('names the host cards a call is about, from their kind and file', () => {
+        const cards = [
+            { id: 'model-info', kind: 'model' },
+            { id: 'detected-sg', kind: 'symmetry' },
+            { id: 'chi2-history', kind: 'r_value', file: 'run-01.log' },
+            { id: 'plot:run_PDFpartials.csv', kind: 'pdf_partials', file: 'run_PDFpartials.csv' },
+            { id: 'plot:run_SQ1.csv', kind: 'neutron_sq', file: 'run_SQ1.csv' }
+        ];
+        const x = grid(400, 0.05).map((q) => q + 0.5);
+        const fit = {
+            name: 'run_SQ1.csv',
+            plotKind: 'neutron_sq',
+            plotData: { series: [{ label: 'S(Q)_RMC', x, y: x.map(Math.sin) }, { label: 'S(Q)_Expt', x, y: x.map(Math.sin) }] }
+        };
+        const rValueFile = { name: 'run-01.log', plotData: { series: [{ y: [3, 2.5, 2.2, 2.1, 2.05, 2.0] }] } };
+        const tools = Object.fromEntries(buildRunTools(
+            { plotFiles: [{ ...partialsFile(), name: 'run_PDFpartials.csv' }, fit], rValueFile },
+            { cards }
+        ).map((tool) => [tool.name, tool]));
+        expect(tools.assess_convergence.cards({})).toEqual(['chi2-history']);
+        expect(tools.find_gr_peaks.cards({ pair: 'Ta-Se' })).toEqual(['plot:run_PDFpartials.csv']);
+        expect(tools.compare_fit.cards({ dataset: 'neutron_sq' })).toEqual(['plot:run_SQ1.csv']);
+        expect(tools.read_run_data.cards({ section: 'convergence' })).toEqual(['chi2-history']);
+        expect(tools.read_run_data.cards({ section: 'datasets' })).toEqual([]);
+        // Without a catalog, no cards; a file without a name matches none.
+        expect(toolMap({ plotFiles: [partialsFile()] }).find_gr_peaks.cards({})).toEqual([]);
+    });
+});

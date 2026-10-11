@@ -14,6 +14,11 @@ import { streamChat } from './provider/client';
 // when it was asked — a Live Data refresh mid-turn changes neither. Opening a
 // different run (`runKey`) stops any turn and starts a new conversation, so
 // answers about one run never travel as memory into another.
+//
+// `focus` (the dock's card-focus controller, focus/focus.js) is handed to the
+// tools' run() for the view tools; a new question clears the last answer's
+// highlight, and the cards of a running analysis breathe until it ends.
+// `onTurnEnd(turn)` reports each finished answer (the dock's unread mark).
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -34,12 +39,14 @@ export const conversationMemory = (turns) => {
     return memory;
 };
 
-export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runKey = null }) => {
+export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runKey = null, focus = null, onTurnEnd = null }) => {
     const [turns, setTurns] = useState([]);
     const [live, setLive] = useState(null);
     const [error, setError] = useState(null);
     const [unsupportedModels, setUnsupportedModels] = useState(() => new Set());
     const abortRef = useRef(null);
+    const onTurnEndRef = useRef(onTurnEnd);
+    useEffect(() => { onTurnEndRef.current = onTurnEnd; }, [onTurnEnd]);
     // Bumped by clear(): a turn still finishing after it must not reappear.
     const generationRef = useRef(0);
 
@@ -59,7 +66,10 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
 
         // Earlier turns travel as their question and final answer only.
         const history = conversationMemory(turns);
-        const messages = buildCopilotMessages({ context, history, userText: text, toolsEnabled: toolsOn });
+        const viewTools = toolsOn && tools.some((tool) => tool?.view);
+        const messages = buildCopilotMessages({ context, history, userText: text, toolsEnabled: toolsOn, viewTools });
+        // The agent moves on: the last answer's highlight ends.
+        focus?.clear('question');
         const model = settings.model;
         const callModel = (request) => streamChat({
             baseUrl: settings.baseUrl,
@@ -79,9 +89,12 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
                 tools,
                 signal: controller.signal,
                 toolsEnabled: toolsOn,
-                noToolsSystemPrompt: COPILOT_PROMPT_NO_TOOLS
+                noToolsSystemPrompt: COPILOT_PROMPT_NO_TOOLS,
+                toolContext: focus ? { focus } : null
             })) {
                 turn = applyTurnEvent(turn, event, now());
+                if (event.type === 'tool_start' && event.cards?.length) focus?.running(event.id, event.cards);
+                if (event.type === 'tool_end') focus?.done(event.id);
                 if (event.type === 'tools_unsupported') {
                     setUnsupportedModels((current) => new Set(current).add(model));
                 }
@@ -96,21 +109,26 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
             }
         } finally {
             abortRef.current = null;
+            focus?.doneAll();
             // An empty reply is kept too, so its "The model returned an empty
             // reply" note shows under the question instead of nothing.
             const hasContent = turn.items.some((item) => item.kind === 'tool' || item.text || item.reasoning)
                 || turn.stoppedBy === 'empty';
-            if (hasContent && generation === generationRef.current) setTurns((current) => [...current, turn]);
+            if (hasContent && generation === generationRef.current) {
+                setTurns((current) => [...current, turn]);
+                onTurnEndRef.current?.(turn);
+            }
             setLive(null);
         }
-    }, [turns, context, tools, toolsOn, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
+    }, [turns, context, tools, toolsOn, focus, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
 
     const clear = useCallback(() => {
         generationRef.current += 1;
         abortRef.current?.abort();
         setTurns([]);
         setError(null);
-    }, []);
+        focus?.clear('new-conversation');
+    }, [focus]);
 
     // Another run opened: stop and forget, as a new conversation.
     const lastRunKeyRef = useRef(runKey);

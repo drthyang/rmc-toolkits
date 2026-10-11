@@ -36,11 +36,33 @@ const TOOL_RULES = [
     'spread: for a cluster or polyhedron distortion (Jahn–Teller, dimers,',
     'trimers) run analyze_clusters or compute_bond_angles, and for where the',
     'fit fails run compare_fit. A z-score with a tiny change is not a finding:',
-    'quote both.',
-    'Tools only compute: they never change what the user sees.'
+    'quote both.'
 ].join(' ');
 
-export const COPILOT_PROMPT = `${SYSTEM_PROMPT} ${TOOL_RULES} ${OUTCOME_RULE}`;
+const COMPUTE_ONLY = 'Tools only compute: they never change what the user sees.';
+
+// With the view tools (highlight_cards from the host's cards, and the host's
+// own orient_3d_view / current_view): explain by pointing at the page.
+export const VIEW_RULES = [
+    'You can also point at the Workbench the user is looking at. Its results sit',
+    'on cards (the ids are listed in highlight_cards). When you explain an',
+    'observation, show it: call highlight_cards with the card first (on a plot,',
+    'with marks at the x positions you name, e.g. the g(r) peaks), then describe',
+    'what the card shows. In the answer, cite a card as a link',
+    '[short label](card:<id>), e.g. [the χ² history](card:chi2-history); the user',
+    'clicks it to see the card. For directions in 3D, call orient_3d_view to look',
+    'down the crystal direction you describe (e.g. along [111] on the',
+    'displacement sphere) or to centre and highlight the sites you name, before',
+    'you describe them. When the user says "this", "here" or "what I see", call',
+    'current_view. The analysis tools only compute; the view tools change only',
+    'what is on screen (never data or a file). One or two view calls per answer',
+    'is enough: point at what matters.'
+].join(' ');
+
+export const COPILOT_PROMPT = `${SYSTEM_PROMPT} ${TOOL_RULES} ${COMPUTE_ONLY} ${OUTCOME_RULE}`;
+// With the view tools: the same rules, pointing at the page instead of the
+// compute-only sentence.
+export const COPILOT_PROMPT_VIEW = `${SYSTEM_PROMPT} ${TOOL_RULES} ${VIEW_RULES} ${OUTCOME_RULE}`;
 // For a model that cannot call tools, or with the tools switched off.
 export const COPILOT_PROMPT_NO_TOOLS = `${SYSTEM_PROMPT} ${OUTCOME_RULE}`;
 
@@ -54,8 +76,11 @@ export const contextBlock = (context) => (
 // tool exchanges, which are re-run when needed.
 export const CHAT_HISTORY_TURNS = 8;
 
-export const buildCopilotMessages = ({ context, history = [], userText, toolsEnabled = true }) => [
-    { role: 'system', content: toolsEnabled ? COPILOT_PROMPT : COPILOT_PROMPT_NO_TOOLS },
+export const buildCopilotMessages = ({ context, history = [], userText, toolsEnabled = true, viewTools = false }) => [
+    {
+        role: 'system',
+        content: toolsEnabled ? (viewTools ? COPILOT_PROMPT_VIEW : COPILOT_PROMPT) : COPILOT_PROMPT_NO_TOOLS
+    },
     { role: 'user', content: contextBlock(context) },
     {
         role: 'assistant',

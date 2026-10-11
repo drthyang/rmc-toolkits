@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React from 'react';
-import Markdown from 'react-markdown';
+import React, { useMemo } from 'react';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
+import { CARD_SCHEME, cardIdFromHref, linkCardReferences } from '../focus/cardRefs';
 
 // Model replies render as Markdown (GitHub-flavored: tables, lists, code) via
 // react-markdown, which builds a React tree — there is no innerHTML.
@@ -32,8 +33,18 @@ import 'katex/dist/katex.min.css';
 // markup; KaTeX's default trust:false means LaTeX can't smuggle HTML in either.
 // So the schema only has to whitelist the math* placeholder classes so the spans
 // survive sanitize and reach KaTeX. Order: raw → sanitize → katex.
+//
+// Card references: the Copilot cites a host card as `[label](card:<id>)` (or
+// `[[id]]`, rewritten first by linkCardReferences). The `card:` scheme passes
+// react-markdown's URL filter and the sanitizer's protocol list, and the link
+// renders as a chip button that focuses the card — only for a card the host
+// listed; any other card: target renders as its plain label.
 const SANITIZE_SCHEMA = {
     ...defaultSchema,
+    protocols: {
+        ...defaultSchema.protocols,
+        href: [...(defaultSchema.protocols?.href || []), CARD_SCHEME.slice(0, -1)]
+    },
     tagNames: (defaultSchema.tagNames || []).filter((tag) => tag !== 'img'),
     attributes: {
         ...defaultSchema.attributes,
@@ -48,17 +59,57 @@ const REHYPE_PLUGINS = [
     rehypeKatex
 ];
 
+const urlTransform = (url) => (
+    typeof url === 'string' && url.trim().toLowerCase().startsWith(CARD_SCHEME) ? url : defaultUrlTransform(url)
+);
+
+const TABLE = ({ node, ...props }) => <div className="llm-md-table"><table {...props} /></div>;
+
 // Open links in a new tab and wrap tables so wide ones scroll instead of
 // breaking the bubble. `node` is dropped so it is not spread onto the DOM.
-const MARKDOWN_COMPONENTS = {
-    a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
-    table: ({ node, ...props }) => <div className="llm-md-table"><table {...props} /></div>
-};
+// A card: link is a chip that focuses the card (onCardClick), and previews it
+// while hovered (onCardHover).
+const buildComponents = (cards, onCardClick, onCardHover) => ({
+    a: ({ node, href, children, ...props }) => {
+        if (typeof href === 'string' && href.toLowerCase().startsWith(CARD_SCHEME)) {
+            const id = cardIdFromHref(href, cards);
+            if (!id || !onCardClick) return <span className="llm-card-ref">{children}</span>;
+            const card = cards.find((entry) => entry.id === id);
+            return (
+                <button
+                    type="button"
+                    className="llm-card-chip"
+                    data-card={id}
+                    onClick={() => onCardClick(id)}
+                    onMouseEnter={() => onCardHover?.(id)}
+                    onMouseLeave={() => onCardHover?.(null)}
+                    onFocus={() => onCardHover?.(id)}
+                    onBlur={() => onCardHover?.(null)}
+                    title={`Show ${card?.title || id}`}
+                >
+                    <span className="llm-card-chip-dot" aria-hidden="true" />
+                    {children}
+                </button>
+            );
+        }
+        return <a {...props} href={href} target="_blank" rel="noreferrer">{children}</a>;
+    },
+    table: TABLE
+});
 
-const MarkdownMessage = ({ children }) => (
-    <Markdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>
-        {children}
-    </Markdown>
-);
+const MarkdownMessage = ({ children, cards = null, onCardClick = null, onCardHover = null }) => {
+    const components = useMemo(() => buildComponents(cards || [], onCardClick, onCardHover), [cards, onCardClick, onCardHover]);
+    const text = useMemo(() => linkCardReferences(children, cards || []), [children, cards]);
+    return (
+        <Markdown
+            remarkPlugins={REMARK_PLUGINS}
+            rehypePlugins={REHYPE_PLUGINS}
+            components={components}
+            urlTransform={urlTransform}
+        >
+            {text}
+        </Markdown>
+    );
+};
 
 export default MarkdownMessage;

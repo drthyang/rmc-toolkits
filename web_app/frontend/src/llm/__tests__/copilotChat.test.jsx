@@ -2,17 +2,21 @@
 // Copyright (C) 2026 Tsung-Han Yang
 /* @vitest-environment jsdom */
 
-// The Copilot chatbox end to end against a mocked OpenAI-compatible server:
-// nothing is fetched until the launcher opens it; the model asks for a tool,
-// the chatbox runs it and shows a step card, the result reaches the next
+// The Copilot dock end to end against a mocked OpenAI-compatible server:
+// nothing is fetched until the rail opens it; the model asks for a tool,
+// the dock runs it and shows a step card, the result reaches the next
 // request, and the answer ends in an Outcome chip. "Show in <page>" hands the
-// host the step's page and parameters. Closing keeps the conversation. No
-// live model is involved.
+// host the step's page and parameters. Collapsing keeps the conversation, an
+// answer that lands while collapsed marks the rail unread, and the open state
+// and width are remembered. The agent points at host cards (highlight_cards):
+// the card breathes, its page opens, a click elsewhere clears it, and the
+// answer's card chip brings it back. No live model is involved.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import CopilotChat from '../components/CopilotChat';
+import { DOCK_STORAGE_KEY } from '../components/dockLayout';
 import { saveSettings } from '../settings';
 
 const sse = (chunks) => {
@@ -56,6 +60,7 @@ describe('CopilotChat', () => {
 
     beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        localStorage.removeItem(DOCK_STORAGE_KEY);
         saveSettings({ baseUrl: 'http://localhost:11434/v1', model: '', apiKey: '', copilotTools: true });
         chatBodies = [];
         const queue = replies();
@@ -117,24 +122,35 @@ describe('CopilotChat', () => {
         await settle();
     };
 
-    it('is a launcher until opened, and contacts no server before that', async () => {
+    it('is a rail until opened, and contacts no server before that', async () => {
         const onOpenChange = vi.fn();
         act(() => root.render(chat({ onOpenChange })));
         await settle();
-        const launcher = container.querySelector('.llm-chat-launcher');
-        expect(launcher.textContent).toBe('AI Copilot');
-        expect(launcher.getAttribute('aria-expanded')).toBe('false');
+        const dock = container.querySelector('.llm-dock');
+        expect(dock.tagName).toBe('ASIDE');
+        expect(dock.getAttribute('aria-label')).toBe('AI Copilot');
+        // jsdom has no matchMedia: docked beside the pages.
+        expect(dock.dataset.mode).toBe('docked');
+        expect(dock.dataset.open).toBe('false');
+        const rail = container.querySelector('.llm-dock-rail');
+        expect(rail.textContent).toBe('AI Copilot');
+        expect(rail.getAttribute('aria-expanded')).toBe('false');
         expect(container.querySelector('.llm-chat-panel')).toBeNull();
         expect(fetchMock).not.toHaveBeenCalled();
 
         await openChat();
         expect(onOpenChange).toHaveBeenLastCalledWith(true);
+        expect(dock.dataset.open).toBe('true');
         const panel = container.querySelector('.llm-chat-panel');
-        expect(panel.getAttribute('role')).toBe('dialog');
-        expect(container.querySelector('.llm-chat-launcher')).toBeNull();
+        expect(container.querySelector('.llm-dock-rail')).toBeNull();
         expect(panel.textContent).toContain('Connected');
-        // The composer takes focus when the chatbox opens.
+        // A resize handle on its left edge.
+        const handle = container.querySelector('.llm-dock-resize');
+        expect(handle.getAttribute('role')).toBe('separator');
+        expect(handle.getAttribute('aria-orientation')).toBe('vertical');
+        // The composer takes focus when the dock opens; the open state is kept.
         expect(document.activeElement).toBe(container.querySelector('.llm-composer-input'));
+        expect(JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY)).open).toBe(true);
     });
 
     it('runs a tool, shows the step, ends with the Outcome chip, and shows the analysis on its page', async () => {
@@ -163,11 +179,11 @@ describe('CopilotChat', () => {
         expect(show.textContent).toBe('Show in Bond Geometry');
         act(() => show.click());
         expect(onOpenPage).toHaveBeenCalledWith('geometry', { end1: 'Ta', apex: 'Ta', end2: 'Ta', r12Min: 2.7, r12Max: 3.3 });
-        // The chatbox stays open over the page.
+        // The dock stays open beside the page.
         expect(container.querySelector('.llm-chat-panel').className).not.toContain('is-closed');
     });
 
-    it('closes on Escape, keeps the conversation, and reopens where it was', async () => {
+    it('collapses on Escape, keeps the conversation, and reopens where it was', async () => {
         const onOpenChange = vi.fn();
         act(() => root.render(chat({ onOpenChange })));
         await openChat();
@@ -179,8 +195,9 @@ describe('CopilotChat', () => {
         expect(onOpenChange).toHaveBeenLastCalledWith(false);
         // Hidden, not unmounted: the conversation survives.
         expect(container.querySelector('.llm-chat-panel').className).toContain('is-closed');
-        const launcher = container.querySelector('.llm-chat-launcher');
-        expect(document.activeElement).toBe(launcher);
+        const rail = container.querySelector('.llm-dock-rail');
+        expect(document.activeElement).toBe(rail);
+        expect(JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY)).open).toBe(false);
 
         await openChat();
         expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
@@ -232,5 +249,162 @@ describe('CopilotChat', () => {
         act(() => root.render(chat({ plotFiles: [], structure: null })));
         await settle();
         expect(container.querySelector('.llm-chat-norun').textContent).toMatch(/Open a run folder/);
+    });
+    const stubReplies = (queue) => vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
+        if (String(url).endsWith('/models')) {
+            return { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) };
+        }
+        chatBodies.push(JSON.parse(options.body));
+        return queue.shift();
+    }));
+
+    it('remembers the open state and the width, and resizes from the keyboard', async () => {
+        const width = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+        Object.defineProperty(window, 'innerWidth', { value: 1600, configurable: true });
+        try {
+            localStorage.setItem(DOCK_STORAGE_KEY, JSON.stringify({ open: true, width: 500 }));
+            const onOpenChange = vi.fn();
+            act(() => root.render(chat({ onOpenChange })));
+            await settle();
+            const dock = container.querySelector('.llm-dock');
+            expect(dock.dataset.open).toBe('true');
+            expect(onOpenChange).toHaveBeenCalledWith(true);
+            expect(dock.style.getPropertyValue('--llm-dock-w')).toBe('500px');
+
+            const handle = container.querySelector('.llm-dock-resize');
+            expect(handle.getAttribute('aria-valuenow')).toBe('500');
+            act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+            expect(dock.style.getPropertyValue('--llm-dock-w')).toBe('524px');
+            expect(JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY)).width).toBe(524);
+            // End: the widest dock, 760px here (a 1600px window keeps the pages
+            // 840px); on a 1200px window the pages' 760px would cap it at 440.
+            act(() => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })));
+            expect(dock.style.getPropertyValue('--llm-dock-w')).toBe('760px');
+            Object.defineProperty(window, 'innerWidth', { value: 1200, configurable: true });
+            act(() => window.dispatchEvent(new Event('resize')));
+            expect(dock.style.getPropertyValue('--llm-dock-w')).toBe('440px');
+
+            // A drag moves the edge live and is remembered on release.
+            const pointer = (type, clientX) => {
+                const event = new MouseEvent(type, { bubbles: true, clientX, button: 0 });
+                Object.defineProperty(event, 'pointerId', { value: 1 });
+                return event;
+            };
+            act(() => handle.dispatchEvent(pointer('pointerdown', 800)));
+            act(() => handle.dispatchEvent(pointer('pointermove', 850)));
+            expect(dock.style.getPropertyValue('--llm-dock-w')).toBe('390px');
+            act(() => handle.dispatchEvent(pointer('pointerup', 850)));
+            expect(JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY)).width).toBe(390);
+            expect(handle.getAttribute('aria-valuenow')).toBe('390');
+        } finally {
+            if (width) Object.defineProperty(window, 'innerWidth', width);
+        }
+    });
+
+    it('marks the rail unread when an answer lands while collapsed', async () => {
+        act(() => root.render(chat()));
+        await openChat();
+        act(() => setTextarea(container.querySelector('.llm-composer-input'), 'angles?'));
+        act(() => container.querySelector('.llm-composer').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+        // Collapse while the answer is still running.
+        act(() => container.querySelector('.llm-chat-panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+        await settle();
+        const rail = container.querySelector('.llm-dock-rail');
+        expect(rail.className).toContain('has-unread');
+        expect(rail.getAttribute('aria-label')).toBe('AI Copilot — new answer');
+        await openChat();
+        expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
+        act(() => container.querySelector('.llm-chat-panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+        expect(container.querySelector('.llm-dock-rail').className).not.toContain('has-unread');
+    });
+
+    describe('pointing at the host cards', () => {
+        let host;
+        const cards = [
+            { id: 'chi2-history', page: 'dashboard', title: 'χ² history', kind: 'r_value', marks: true, about: 'ln χ² against time' },
+            { id: 'bond-angles', page: 'geometry', title: 'Bond-angle distribution', about: 'the angle histogram' }
+        ];
+
+        beforeEach(() => {
+            host = document.createElement('div');
+            host.innerHTML = '<div id="dash"><article data-copilot-card="chi2-history">chart</article></div>'
+                + '<div id="geom" aria-hidden="true"><article data-copilot-card="bond-angles">angles</article></div>';
+            document.body.appendChild(host);
+        });
+        afterEach(() => host.remove());
+
+        const wait = (ms) => act(() => new Promise((resolve) => setTimeout(resolve, ms)));
+
+        it('highlights a card with marks, cites it as a chip, and clears on a click elsewhere', async () => {
+            stubReplies([
+                sse([
+                    delta({ content: 'Here is the history.' }),
+                    delta({ tool_calls: [{ index: 0, id: 'call_h', type: 'function', function: { name: 'highlight_cards', arguments: '{"cards":["chi2-history"],"marks":[{"x":120,"label":"plateau"}]}' } }] }, 'tool_calls')
+                ]),
+                sse([delta({ content: 'The [χ² history](card:chi2-history) still falls; see [[bond-angles]].\n\nOutcome: achieved — read the card.' }, 'stop')])
+            ]);
+            const onMarks = vi.fn();
+            const onOpenPage = vi.fn((page) => { if (page === 'geometry') host.querySelector('#geom').removeAttribute('aria-hidden'); });
+            act(() => root.render(chat({ cards, onMarks, onOpenPage })));
+            await openChat();
+            await ask('Has it converged?');
+
+            // The view tools are offered, and the prompt says how to point.
+            expect(chatBodies[0].tools.map((tool) => tool.function.name)).toContain('highlight_cards');
+            expect(chatBodies[0].messages[0].content).toContain('[short label](card:<id>)');
+            const card = host.querySelector('[data-copilot-card="chi2-history"]');
+            expect(card.getAttribute('data-copilot-focus')).toBe('primary');
+            expect(onMarks).toHaveBeenLastCalledWith({ 'chi2-history': [{ x: 120, label: 'plateau' }] });
+            expect(container.querySelector('.llm-step-label').textContent).toBe('Pointing at χ² history');
+            const step = container.querySelector('.llm-step');
+            expect(step.className).toContain('is-ok');
+
+            const chips = [...container.querySelectorAll('.llm-card-chip')];
+            expect(chips.map((chip) => chip.textContent)).toEqual(['χ² history', 'Bond-angle distribution']);
+
+            // A click on the page (not in the Copilot) ends the highlight.
+            act(() => host.querySelector('#dash').dispatchEvent(new Event('click', { bubbles: true })));
+            expect(card.hasAttribute('data-copilot-focus')).toBe(false);
+            expect(onMarks).toHaveBeenLastCalledWith({});
+
+            // The chip brings it back; a chip for a card on another page opens it.
+            act(() => chips[0].click());
+            await wait(20);
+            expect(card.getAttribute('data-copilot-focus')).toBe('primary');
+            act(() => chips[1].click());
+            await wait(150);
+            expect(onOpenPage).toHaveBeenCalledWith('geometry', null);
+            expect(host.querySelector('[data-copilot-card="bond-angles"]').getAttribute('data-copilot-focus')).toBe('primary');
+            expect(card.hasAttribute('data-copilot-focus')).toBe(false);
+            // Collapsing the Copilot ends the highlight too.
+            act(() => container.querySelector('.llm-chat-panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+            expect(host.querySelector('[data-copilot-focus]')).toBeNull();
+        });
+
+        it('lets the card of a running analysis breathe until the step ends', async () => {
+            let release;
+            const gate = new Promise((resolve) => { release = resolve; });
+            const convergence = {
+                name: 'slow_convergence',
+                description: 'Convergence.',
+                parameters: { type: 'object', properties: {} },
+                cards: () => ['chi2-history'],
+                run: vi.fn(async () => { await gate; return { data: { status: 'improving' }, checks: [] }; })
+            };
+            stubReplies([
+                sse([delta({ tool_calls: [{ index: 0, id: 'call_c', type: 'function', function: { name: 'slow_convergence', arguments: '{}' } }] }, 'tool_calls')]),
+                sse([delta({ content: 'Improving.\n\nOutcome: achieved — x' }, 'stop')])
+            ]);
+            act(() => root.render(chat({ cards, tools: [convergence] })));
+            await openChat();
+            act(() => setTextarea(container.querySelector('.llm-composer-input'), 'converged?'));
+            act(() => container.querySelector('.llm-composer').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+            await settle();
+            const card = host.querySelector('[data-copilot-card="chi2-history"]');
+            expect(card.getAttribute('data-copilot-focus')).toBe('running');
+            release();
+            await settle();
+            expect(card.hasAttribute('data-copilot-focus')).toBe(false);
+        });
     });
 });

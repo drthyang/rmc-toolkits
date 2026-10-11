@@ -60,3 +60,30 @@ describe('Copilot markdown rendering', () => {
         expect(html).toContain('style="');
     });
 });
+
+describe('card references', () => {
+    const cards = [{ id: 'chi2-history', title: 'χ² history' }, { id: 'plot:a_PDFpartials.csv', title: 'g(r) partials' }];
+    const withCards = (md) => renderToStaticMarkup(
+        <MarkdownMessage cards={cards} onCardClick={() => {}}>{md}</MarkdownMessage>
+    );
+
+    it('renders a cited card as a chip button, never as a link', () => {
+        const html = withCards('The [χ² history](card:chi2-history) and [[plot:a_PDFpartials.csv]].');
+        expect(html).toContain('<button type="button" class="llm-card-chip" data-card="chi2-history" title="Show χ² history">');
+        expect(html).toContain('data-card="plot:a_PDFpartials.csv"');
+        expect(html).toContain('g(r) partials</button>');
+        expect(html).not.toContain('href="card:');
+    });
+
+    it('shows an unknown card as its label, and leaves ordinary links alone', () => {
+        const html = withCards('[gone](card:nothing) and [docs](https://example.org)');
+        expect(html).toContain('<span class="llm-card-ref">gone</span>');
+        expect(html).toContain('<a href="https://example.org" target="_blank" rel="noreferrer">docs</a>');
+    });
+
+    it('without cards, a card: link is plain text and javascript: stays blocked', () => {
+        const html = render('[the history](card:chi2-history) <a href="javascript:alert(1)">x</a>');
+        expect(html).toContain('<span class="llm-card-ref">the history</span>');
+        expect(html).not.toContain('javascript:');
+    });
+});

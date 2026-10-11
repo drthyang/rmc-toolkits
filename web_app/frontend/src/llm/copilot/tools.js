@@ -14,13 +14,21 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 //     page: 'geometry',                      // page key for "Open page" (optional)
 //     pageParams: (args) => ({ … }),         // what that page should load to show
 //                                            // the same analysis (optional)
-//     run: async (args, { signal }) => ({ data, checks })
+//     cards: (args) => ['card-id'],          // the host cards this call is about:
+//                                            // they breathe while it runs (optional)
+//     view: true,                            // changes only what is on screen (a
+//                                            // card's focus, a 3D camera): never
+//                                            // answered from the call cache (optional)
+//     run: async (args, { signal, focus }) => ({ data, checks })
 //   }
 //
 // `data` is the compact JSON the model reads (never a raw engine payload);
 // `checks` are deterministic verdicts on the full result, each
 // `{ level: 'ok' | 'note' | 'warn' | 'fail', text }`. A thrown error becomes a
 // failed step whose message the model reads, so it can correct its arguments.
+// `focus` (when the chat has a page to point at) is the card-focus controller
+// (focus/focus.js): view tools call focus.show(ids) and focus.onClear(undo);
+// analysis tools leave it alone.
 
 export const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 export const CHECK_LEVELS = ['ok', 'note', 'warn', 'fail'];
@@ -119,7 +127,7 @@ const abortError = () => new DOMException('Aborted', 'AbortError');
  * or the call times out, so an engine that can be cancelled (the Copilot's
  * worker, an HTTP request) stops working instead of running on unseen.
  */
-export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs }) => {
+export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs, context = null }) => {
     const started = performance.now();
     const finish = (fields) => ({ ms: performance.now() - started, data: null, checks: [], error: null, ...fields });
     const parsed = parseToolArguments(rawArguments);
@@ -144,7 +152,7 @@ export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs })
     });
     try {
         const result = await Promise.race([
-            Promise.resolve().then(() => tool.run(validated.value, { signal: call.signal })),
+            Promise.resolve().then(() => tool.run(validated.value, { ...(context || {}), signal: call.signal })),
             limits
         ]);
         return finish({
@@ -161,6 +169,17 @@ export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs })
         // The limit promise never settles once the tool has answered (its
         // timer is cleared); if it lost the race by rejecting, swallow that.
         limits.catch(() => {});
+    }
+};
+
+/** The host cards a call is about (tool.cards(args)), [] when none or on error. */
+export const toolCards = (tool, args) => {
+    if (!tool || typeof tool.cards !== 'function' || !args || typeof args !== 'object') return [];
+    try {
+        const ids = tool.cards(args);
+        return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string' && id) : [];
+    } catch {
+        return [];
     }
 };
 

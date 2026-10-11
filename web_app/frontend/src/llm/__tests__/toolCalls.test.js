@@ -144,3 +144,39 @@ describe('canonicalJson', () => {
             .toBe(canonicalJson({ a: { c: [1, { e: 2, f: 1 }], d: 2 }, b: 1 }));
     });
 });
+
+describe('validateToolArguments: lists and objects', () => {
+    const schema = {
+        type: 'object',
+        properties: {
+            refs: { type: 'array', items: { type: 'integer', minimum: 1 }, maxItems: 3 },
+            ids: { type: 'array', items: { type: 'string' } },
+            marks: {
+                type: 'array',
+                items: { type: 'object', properties: { x: { type: 'number' }, label: { type: 'string' } }, required: ['x'] }
+            },
+            box: { type: 'object', properties: { w: { type: 'number' } } }
+        }
+    };
+
+    it('checks every item, and coerces what small models send', () => {
+        expect(validateToolArguments(schema, { refs: [1, '2'] }).value.refs).toEqual([1, 2]);
+        // A JSON text, a bare comma list, one bare item.
+        expect(validateToolArguments(schema, { refs: '[3, 4]' }).value.refs).toEqual([3, 4]);
+        expect(validateToolArguments(schema, { refs: '5, 6' }).value.refs).toEqual([5, 6]);
+        expect(validateToolArguments(schema, { refs: 7 }).value.refs).toEqual([7]);
+        expect(validateToolArguments(schema, { ids: 'chi2-history' }).value.ids).toEqual(['chi2-history']);
+        expect(validateToolArguments(schema, { marks: '[{"x": 2.5, "label": "Ta–Se", "extra": 1}]' }).value.marks)
+            .toEqual([{ x: 2.5, label: 'Ta–Se' }]);
+        expect(validateToolArguments(schema, { box: '{"w": "3"}' }).value.box).toEqual({ w: 3 });
+    });
+
+    it('names the item that is wrong', () => {
+        expect(validateToolArguments(schema, { refs: [1, 0] }).errors).toEqual(['refs[1] must be ≥ 1, got 0']);
+        expect(validateToolArguments(schema, { refs: [1, 2, 3, 4] }).errors).toEqual(['refs may hold at most 3 item(s), got 4']);
+        expect(validateToolArguments(schema, { marks: [{ x: 'far' }] }).errors[0]).toMatch(/^marks\[0\]\.x must be a finite number/);
+        expect(validateToolArguments(schema, { marks: [{ label: 'a' }] }).errors).toEqual(['marks[0].x is required']);
+        expect(validateToolArguments(schema, { box: [1] }).errors).toEqual(['box must be an object, got array']);
+        expect(validateToolArguments(schema, { refs: { a: 1 } }).errors).toEqual(['refs must be a list, got object']);
+    });
+});
