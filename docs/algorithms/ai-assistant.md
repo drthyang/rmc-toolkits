@@ -1139,6 +1139,7 @@ What the loop guarantees:
   | no new round after | 10 min |
   | one result | 3,000 chars |
   | all results of one question | 12,000 chars |
+  | questions to the user (`ask_user`) | 2 per question, 1 per round; no time limit, and the wait does not count toward the 10 min |
 
   - A result over 3,000 chars has its largest array halved repeatedly, each cut recorded as
     `<key>_omitted`; a hard cut flagged `truncated: true` is the last resort.
@@ -1215,6 +1216,46 @@ never answered from the duplicate-call cache):
 - `current_view()` reports the page, its cards, the highlight, and each 3D view's line of sight as
   the simplest integer $[uvw]$ (|index| ≤ 4) within 2° (`nearestLowIndex`), else its components
   scaled to a largest of 1 (marked ≈).
+
+**Asking the user** (`ask_user`, 2026-10-11; module, `copilot/askUser.js`). An *interactive*
+tool (`interactive: true`): it is never answered from the duplicate-call cache, has no time limit,
+and its wait is subtracted from the turn's clock. `normalizeAskRequest()` turns the arguments into
+`{question, options: 2–4 × {label, description?}, allowOther, defaultIndex}` (plain strings read as
+labels, `"label — description"` split at a spaced dash, labels deduplicated case-insensitively, the
+default matched by label or by number 1–4) and throws on an empty question or fewer than two
+distinct options. The tool calls `askUser(request, { signal })` from the tools' context
+(`useCopilot`), which shows the question card and resolves with
+`{answer, source: 'option' | 'other' | 'skipped', index}`; `answerResult()` turns that into the
+tool's data and one check ("use exactly this choice", the typed answer verbatim, or "use your
+default and say you assumed it"). A second call in the same round, or a third in the question, is
+answered with an error and never shown. The turn's abort signal rejects the wait (Stop, a run
+change, an unmount). `ASK_RULES` join the prompt when the tool is offered (`copilotSystemPrompt`).
+
+**The context window** (2026-10-11; `provider/contextGuard.js`, `provider/ollama.js`). Every
+Copilot request goes through `streamCopilotChat()`. A server is probed only when it is local or on
+port 11434: `GET /api/version` answering a version is Ollama; `GET /api/v0/models` listing load
+states is LM Studio; anything else is sent unchanged (`client.js`).
+
+- **The estimate** (`estimatePromptTokens`): the characters of every message's content and tool
+  calls plus the tool schemas' JSON, divided by `CHARS_PER_TOKEN` = 2.5, plus
+  `MESSAGE_OVERHEAD_TOKENS` = 8 per message. Deliberately high: the Demo's first request is 28,382
+  characters → 11,386 estimated, 8,437 measured (gemma4:26b).
+- **Ollama** (`planContext`): needed $= 	ext{estimate} + 8192$ (`REPLY_RESERVE_TOKENS`). Refused
+  when needed exceeds the model's maximum (`/api/show` `*.context_length`). Otherwise `num_ctx`
+  = the loaded context (`/api/ps`) when it holds the request, else this conversation's earlier
+  value when it still does, else $\max(16384, 8192\lceil 	ext{needed}/8192ceil)$, capped at the
+  maximum; `num_predict` = `num_ctx` − estimate. The request goes to the native `/api/chat`
+  (NDJSON; messages converted: string content, object arguments, `tool_name` on tool results; no
+  `tool_choice`). After the reply, `prompt_eval_count` below 0.4 × the estimate
+  (`READ_SHARE_LIMIT`) stops the turn: the server cut the prompt anyway.
+- **LM Studio**: when the model is loaded with `loaded_context_length` < estimate + 4096
+  (`LMSTUDIO_REPLY_MIN_TOKENS`), the turn is refused with the context length to load it with.
+- **Why** (measured on Ollama 0.40.2): a prompt longer than `num_ctx` returns 200, after Ollama has
+  dropped whole messages and cut the rest to half the window keeping its first 5 tokens
+  (`truncating input prompt limit=2051 prompt=5694 keep=5` at 4,096); the model then answers
+  without the rules or the run.
+- A reply that stops at the length limit (`done_reason` / `finish_reason` `length`) sets `cut` on
+  the turn, and its footer says so.
 
 **The verdict.** The prompt asks every answer to end with
 `Outcome: achieved|partial|not achieved — <one sentence>`.
@@ -1431,6 +1472,13 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `maxTurnMs` | 600 000 | ms | `copilot/agentLoop.js` | No new round of tools after this |
 | `resultCharBudget` | 3 000 | characters | `copilot/agentLoop.js` | One `tool` message |
 | `turnCharBudget` | 12 000 | characters | `copilot/agentLoop.js` | All `tool` messages of one question; older ones compacted to their checks |
+| `maxQuestions` (`MAX_QUESTIONS`) | 2 | questions | `copilot/askUser.js`, `copilot/agentLoop.js` | `ask_user` calls per question (one per round) |
+| `MIN_OPTIONS`, `MAX_OPTIONS` | 2, 4 | options | `copilot/askUser.js` | Choices a question offers |
+| `CHARS_PER_TOKEN`, `MESSAGE_OVERHEAD_TOKENS` | 2.5, 8 | chars / token, tokens | `provider/contextGuard.js` | The prompt estimate (errs high) |
+| `REPLY_RESERVE_TOKENS` | 8 192 | tokens | `provider/contextGuard.js` | Room for the reply in an Ollama `num_ctx` |
+| `CONTEXT_STEP`, `MIN_CONTEXT` | 8 192, 16 384 | tokens | `provider/contextGuard.js` | An asked-for `num_ctx` is a multiple of the step, at least the minimum |
+| `LMSTUDIO_REPLY_MIN_TOKENS` | 4 096 | tokens | `provider/contextGuard.js` | Room an LM Studio context must leave beyond the prompt |
+| `READ_SHARE_LIMIT` | 0.4 | of the estimate | `provider/contextGuard.js` | Ollama `prompt_eval_count` below this: the prompt was cut; the turn stops |
 | `copilotTools` | `true` | — | `settings.js`, `ConnectionSettings.jsx` | *Let the Copilot run analyses* |
 | `MIN_ORIENTATION_POINTS` | 100 | vectors | `copilotTools.js` | Below: "the map is noisy" |
 | `SIGNIFICANCE_SIGMA` | 3 | σ (calibrated, one-sided) | `copilotTools.js`, `prompts/copilot.js` | Peak / map significance threshold for the checks |
