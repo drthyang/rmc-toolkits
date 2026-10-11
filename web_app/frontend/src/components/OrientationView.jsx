@@ -44,6 +44,7 @@ import {
     TRIAD_COLORS,
     TRIAD_UP
 } from './sceneAxes';
+import useCopilotViewer from '../useCopilotViewer';
 import './OrientationView.css';
 
 const SAVE_OPTIONS = [
@@ -100,7 +101,11 @@ export default function OrientationView({
     relief,
     showOutline,
     showAxes,
-    loadingSites = false
+    loadingSites = false,
+    // Selecting a site from the AI Copilot (orient_3d_view's select_site):
+    // the page's own setter and the refs it may take.
+    onSelectSite = null,
+    siteRefs = null
 }) {
     const [result, setResult] = useState(null);
     const [error, setError] = useState(null);
@@ -119,6 +124,11 @@ export default function OrientationView({
     const miniRef = useRef(null);
     const resultRef = useRef(null);
     resultRef.current = result;
+    // The site whose map is on screen (the Copilot waits for a newly selected
+    // site's map before it describes the view).
+    const loadedRefRef = useRef(null);
+    const loadingRef = useRef(false);
+    loadingRef.current = loading;
 
     // The three axes the mini views (and their labels) follow: the site's own
     // frame when the map is drawn in PCA coordinates (identity = PC1/2/3),
@@ -156,6 +166,7 @@ export default function OrientationView({
                     // for the new one (fewer cells) — clear it with the result.
                     setHover(null);
                     setResult(data);
+                    loadedRefRef.current = selectedRef;
                 }
             } catch (requestError) {
                 if (cancelled) return;
@@ -427,6 +438,38 @@ export default function OrientationView({
         controls.update();
     }, []);
 
+    // --- The AI Copilot's handle on the sphere (viewer3d.js). Directions
+    // arrive in the crystal's Cartesian frame; in the PCA frame the sphere's
+    // x/y/z are the site's PC1/PC2/PC3, so they are projected onto those.
+    const pcaAxes = selectedEllipsoid?.axes || result?.pcaAxes || null;
+    const inPca = frame === 'pca' && Boolean(pcaAxes);
+    useCopilotViewer('direction-sphere', {
+        orbit: {
+            getHandle: () => sceneRef.current,
+            getCell: () => unitCell,
+            toScene: (v) => (inPca ? pcaAxes.map((axis) => axis[0] * v[0] + axis[1] * v[1] + axis[2] * v[2]) : v),
+            fromScene: (v) => (inPca
+                ? [0, 1, 2].map((k) => pcaAxes.reduce((sum, axis, i) => sum + v[i] * axis[k], 0))
+                : v),
+            onReset: () => resetView()
+        },
+        ready: () => Boolean(resultRef.current && sceneRef.current) && !loadingRef.current,
+        settled: (ref) => loadedRefRef.current === ref && !loadingRef.current,
+        cell: () => unitCell,
+        pcaAxes: () => pcaAxes,
+        describe: (orbit) => ({
+            ...(orbit.describe() || {}),
+            frame: inPca ? 'PCA (x, y, z = PC1, PC2, PC3 of the site)' : 'crystal',
+            site: selectedRef
+        }),
+        selectSite: (ref) => {
+            if (!onSelectSite || (siteRefs && !siteRefs.includes(ref))) return false;
+            onSelectSite(ref);
+            return true;
+        },
+        sites: () => (siteRefs || []).map((ref) => ({ ref }))
+    });
+
     const saveView = useCallback(async (format) => {
         const handle = sceneRef.current;
         // A save that cannot happen says so (SaveMenu lists it), never passes as done.
@@ -471,7 +514,7 @@ export default function OrientationView({
     // page's 3 : 6.5 : 6.5 layout, next to the site picker panel.
     return (
         <>
-            <Card roundEnds className="orient-mini-panel">
+            <Card roundEnds className="orient-mini-panel" data-copilot-card="direction-views">
                 <CardHeader title="Axis views" />
                 <div className="ui-stage ui-stage--glow-faint orient-multiview" ref={miniMountRef}>
                     {[0, 1, 2].map((axisIndex) => (
@@ -491,7 +534,7 @@ export default function OrientationView({
                 </div>
             </Card>
 
-            <Card roundEnds className="orient-main-panel">
+            <Card roundEnds className="orient-main-panel" data-copilot-card="direction-sphere">
                 <CardHeader
                     title={selectedEllipsoid
                         ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber} — displacement directions`

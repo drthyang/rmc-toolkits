@@ -881,7 +881,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
             {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
 
             <div className={noHelper ? 'geom-layout geom-layout--no-helper' : 'geom-layout'}>
-                <Card roundEnds className="geom-hero">
+                <Card roundEnds className="geom-hero" data-copilot-card="bond-angles">
                     <CardHeader
                         wrap
                         title={<>{heroChain}{heroChain && ' '}<span>{heroChain ? 'bond angles' : 'Bond-angle distribution'}</span></>}
@@ -1041,6 +1041,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                 {/* The Atomic Density page's folded cell — the atom cloud, not
                     fitted ellipsoids — with the detected bonds over it. */}
                 <FoldedCellPanel
+                    cardId="bond-cell"
                     className="geom-cell"
                     title={cellChain
                         ? <><TripletLabel {...cellChain} colors={elementColors} /> <span>bonds</span></>
@@ -1063,7 +1064,7 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, r
                         )}
                 />
 
-                <Card roundEnds className="geom-helper">
+                <Card roundEnds className="geom-helper" data-copilot-card="bond-windows">
                     <CardHeader
                         wrap
                         title={pairChain

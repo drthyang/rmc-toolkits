@@ -55,3 +55,21 @@ export const nearestFiniteIndex = (xs, ys, target) => {
     }
     return best;
 };
+
+/**
+ * The x window that shows the AI Copilot's marks on a plot (InteractivePlot
+ * `marks`) in context: their span plus ¾ of it on each side, at least 6 % of
+ * the full range per side, inside the full range. Null when no mark is in
+ * range or the window would be most of the plot.
+ */
+export const markWindow = (marks, base) => {
+    if (!Array.isArray(marks) || !Array.isArray(base) || !(base[1] > base[0])) return null;
+    const xs = marks.map((mark) => mark?.x).filter((x) => Number.isFinite(x) && x >= base[0] && x <= base[1]);
+    if (!xs.length) return null;
+    const lo = Math.min(...xs);
+    const hi = Math.max(...xs);
+    const range = base[1] - base[0];
+    const pad = Math.max((hi - lo) * 0.75, range * 0.06);
+    const window = [Math.max(base[0], lo - pad), Math.min(base[1], hi + pad)];
+    return window[1] - window[0] < range * 0.8 ? window : null;
+};

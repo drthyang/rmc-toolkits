@@ -26,6 +26,7 @@ import SaveMenu from '../ui/SaveMenu';
 import InfoBadge from '../ui/InfoBadge';
 import AppFooter from './AppFooter';
 import { uiScale } from '../uiScale';
+import useCopilotViewer from '../useCopilotViewer';
 import './StructurePage.css';
 
 const vectorLength = (vector) => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -339,6 +340,15 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
     // three.js render context (renderer/scene/camera + size), used to re-render
     // the model at a higher resolution for export.
     const modelExportRef = useRef(null);
+    // The AI Copilot's handle on the folded-cell 3D view (viewer3d.js).
+    useCopilotViewer('density-cell', {
+        orbit: {
+            getHandle: () => modelExportRef.current,
+            getCell: () => modelExportRef.current?.cell ?? null,
+            onReset: () => modelExportRef.current?.reset?.()
+        },
+        ready: () => Boolean(modelExportRef.current?.controls)
+    });
     // Geometry of the last "Slab In Cell" render, used to drag the slice band.
     const slabGeometryRef = useRef(null);
     const slabDragRef = useRef(null);
@@ -1256,7 +1266,20 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
 
         // Expose the render context so the figure can be re-rendered at a higher
         // pixel ratio for export.
-        modelExportRef.current = { renderer, scene, camera, width, height };
+        modelExportRef.current = {
+            renderer, scene, camera, width, height, controls,
+            // For the AI Copilot's view tools: the cell directions (the scaled
+            // unit-cell rows) and the default framing Reset restores.
+            cell: unitCell.basis,
+            reset: () => {
+                controls.target.copy(sphere.center);
+                camera.up.set(0, 1, 0);
+                camera.position.copy(sphere.center).add(new THREE.Vector3(radius * 1.7, radius * 1.45, radius * 1.55));
+                camera.lookAt(controls.target);
+                camera.updateProjectionMatrix();
+                controls.update();
+            }
+        };
 
         let frameId;
         const animate = () => {
@@ -1427,6 +1450,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                     <div className="analysis-layout">
                         <Card
                             roundEnds
+                            data-copilot-card="kde-slice"
                             style={{ '--panel-aspect': slicePanelGeometry.planeAspect }}
                         >
                             <CardHeader>
@@ -1480,6 +1504,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                         </Card>
                         <Card
                             clip
+                            data-copilot-card="slab-in-cell"
                             className="slab-panel"
                             style={{ '--panel-aspect': slicePanelGeometry.sideAspect }}
                         >
@@ -1494,6 +1519,7 @@ const StructurePage = ({ directory, localRun, theme, dataEpoch = 0 }) => {
                         </Card>
                         <Card
                             clip
+                            data-copilot-card="density-cell"
                             style={{ '--panel-aspect': Math.max(slicePanelGeometry.planeAspect, 1) }}
                         >
                             <CardHeader>
