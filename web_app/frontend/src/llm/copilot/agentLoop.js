@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { toolBudgetNote } from '../prompts/copilot';
+import { MAX_QUESTIONS } from './askUser';
 import { parseOutcome } from './outcome';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
@@ -21,7 +22,7 @@ import {
 // Events:
 //   { type: 'round', round }                       a model request starts
 //   { type: 'text', delta } / { type: 'reasoning', delta }
-//   { type: 'tool_start', id, name, label, args, page, cards }
+//   { type: 'tool_start', id, name, label, args, page, cards, interactive }
 //   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
 //   { type: 'tools_unsupported', error }           retried without tools
 //   { type: 'done', text, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty' }
@@ -33,6 +34,9 @@ import {
 // `resultCharBudget` characters, and the turn's tool messages together to
 // `turnCharBudget` — older results are compacted to their checks first — so a
 // small local model's context window keeps the run context and the rules.
+// An interactive tool (ask_user) waits for the user: it has no time limit, the
+// wait does not count toward `maxTurnMs`, and a turn asks at most
+// `maxQuestions` questions, one per step.
 
 export const DEFAULT_LIMITS = {
     maxRounds: 6,
@@ -40,7 +44,8 @@ export const DEFAULT_LIMITS = {
     toolTimeoutMs: 120000,
     maxTurnMs: 600000,
     resultCharBudget: 3000,
-    turnCharBudget: 12000
+    turnCharBudget: 12000,
+    maxQuestions: MAX_QUESTIONS
 };
 
 // A 4xx saying the model or server cannot take a `tools` field (Ollama:
@@ -108,9 +113,12 @@ export async function* runCopilotTurn({
     toolContext = null
 }) {
     const {
-        maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget
+        maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions
     } = { ...DEFAULT_LIMITS, ...limits };
     const startedAt = Date.now();
+    // Time spent waiting for the user's answers, which the turn limit skips.
+    let waitedMs = 0;
+    let questions = 0;
     const available = toolsEnabled ? usableTools(tools) : [];
     const byName = new Map(available.map((tool) => [tool.name, tool]));
     const requestTools = available.length ? toRequestTools(available) : null;
@@ -137,7 +145,7 @@ export async function* runCopilotTurn({
     };
 
     for (;;) {
-        const outOfTime = rounds > 0 && Date.now() - startedAt > maxTurnMs;
+        const outOfTime = rounds > 0 && Date.now() - startedAt - waitedMs > maxTurnMs;
         const finalRound = useTools && (rounds >= maxRounds || outOfTime);
         if (finalRound) messages.push(toolBudgetNote(rounds));
         yield { type: 'round', round: rounds };
@@ -221,6 +229,7 @@ export async function* runCopilotTurn({
             })
         });
         const roundStart = messages.length;
+        let askedThisRound = false;
 
         for (const [position, call] of calls.entries()) {
             callCounter += 1;
@@ -235,7 +244,8 @@ export async function* runCopilotTurn({
                 label: tool ? toolLabel(tool, shownArgs) : call.name,
                 args: shownArgs,
                 page: tool?.page || null,
-                cards: tool && parsed.ok ? toolCards(tool, parsed.value) : []
+                cards: tool && parsed.ok ? toolCards(tool, parsed.value) : [],
+                interactive: Boolean(tool?.interactive)
             };
 
             let result;
@@ -247,6 +257,21 @@ export async function* runCopilotTurn({
             } else if (!tool) {
                 result = { args: shownArgs, data: null, checks: [], ms: 0,
                     error: `unknown tool "${call.name}"; available: ${[...byName.keys()].join(', ') || 'none'}` };
+            } else if (tool.interactive && askedThisRound) {
+                result = { args: shownArgs, data: null, checks: [], ms: 0,
+                    error: 'one question at a time: ask the next one after this answer, if it is still needed' };
+            } else if (tool.interactive && questions >= maxQuestions) {
+                result = { args: shownArgs, data: null, checks: [], ms: 0,
+                    error: `already asked ${questions} question${questions === 1 ? '' : 's'} for this request: `
+                        + 'proceed with your default and say in the answer what you assumed' };
+            } else if (tool.interactive) {
+                // A question is a real exchange every time: never cached, and
+                // no time limit while the user thinks. Only a question the
+                // user saw counts toward the limit (not malformed arguments).
+                askedThisRound = true;
+                result = await executeToolCall(tool, call.arguments, { signal, timeoutMs: null, context: toolContext });
+                waitedMs += result.ms;
+                if (!result.error) questions += 1;
             } else {
                 // Keyed on the validated arguments, so "2" and 2 are one call.
                 const validated = parsed.ok ? validateToolArguments(tool.parameters, parsed.value) : null;

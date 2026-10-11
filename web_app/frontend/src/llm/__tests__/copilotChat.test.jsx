@@ -47,6 +47,11 @@ const settle = () => act(async () => {
     for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
+// Settle until `ready()` holds (a multi-step answer takes several hops).
+const settleUntil = async (ready, rounds = 20) => {
+    for (let i = 0; i < rounds && !ready(); i += 1) await settle();
+};
+
 const setTextarea = (textarea, value) => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(textarea, value);
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -160,7 +165,7 @@ describe('CopilotChat', () => {
         await ask('What are the Ta–Ta–Ta angles?');
 
         expect(chatBodies).toHaveLength(2);
-        expect(chatBodies[0].tools.map((tool) => tool.function.name)).toEqual(['read_run_data', 'compute_bond_angles']);
+        expect(chatBodies[0].tools.map((tool) => tool.function.name)).toEqual(['read_run_data', 'compute_bond_angles', 'ask_user']);
         const toolMessage = chatBodies[1].messages.at(-1);
         expect(toolMessage).toMatchObject({ role: 'tool', tool_call_id: 'call_a' });
         expect(JSON.parse(toolMessage.content).data).toEqual({ modes: [{ angle_deg: 59.5 }] });
@@ -250,12 +255,16 @@ describe('CopilotChat', () => {
         await settle();
         expect(container.querySelector('.llm-chat-norun').textContent).toMatch(/Open a run folder/);
     });
+    // A queued reply may be a function of the request body: a model that
+    // reads what it was sent.
     const stubReplies = (queue) => vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
         if (String(url).endsWith('/models')) {
             return { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) };
         }
-        chatBodies.push(JSON.parse(options.body));
-        return queue.shift();
+        const body = JSON.parse(options.body);
+        chatBodies.push(body);
+        const next = queue.shift();
+        return typeof next === 'function' ? next(body) : next;
     }));
 
     it('remembers the open state and the width, and resizes from the keyboard', async () => {
@@ -316,6 +325,149 @@ describe('CopilotChat', () => {
         expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
         act(() => container.querySelector('.llm-chat-panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
         expect(container.querySelector('.llm-dock-rail').className).not.toContain('has-unread');
+    });
+
+    describe('asking the user (ask_user)', () => {
+        const askCall = (args) => sse([
+            delta({ content: 'The Ta–Se shell is split.' }),
+            delta({ tool_calls: [{ index: 0, id: 'call_q', type: 'function', function: { name: 'ask_user', arguments: JSON.stringify(args) } }] }, 'tool_calls')
+        ]);
+        const shellQuestion = {
+            question: 'Which Ta–Se window should the Se–Ta–Se angles use?',
+            options: [
+                { label: 'Whole first shell', description: '2.33–2.96 Å, both Ta–Se peaks' },
+                { label: 'First peak only', description: '2.33–2.71 Å, the short bonds' }
+            ],
+            default: 'Whole first shell'
+        };
+        const WINDOWS = { 'Whole first shell': [2.33, 2.96], 'First peak only': [2.33, 2.71] };
+        // The model computes in the window the answer names.
+        const computeFromAnswer = (body) => {
+            const { data } = JSON.parse(body.messages.at(-1).content);
+            const typed = /(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)/.exec(data.answer || '');
+            const [min, max] = WINDOWS[data.answer] || [Number(typed[1]), Number(typed[2])];
+            return sse([delta({ tool_calls: [{ index: 0, id: 'call_b', type: 'function', function: {
+                name: 'compute_bond_angles',
+                arguments: JSON.stringify({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: min, r12_max: max })
+            } }] }, 'tool_calls')]);
+        };
+        const answered = () => sse([delta({ content: 'The Se–Ta–Se angles …\n\nOutcome: achieved — in the chosen window.' }, 'stop')]);
+        const freshAngles = () => ({ ...bondAngles, run: vi.fn(async () => ({ data: { modes: [{ angle_deg: 90 }] }, checks: [{ level: 'ok', text: 'angles' }] })) });
+
+        const card = () => container.querySelector('.llm-ask');
+        const options = () => [...container.querySelectorAll('.llm-ask-option')];
+
+        it('shows the question as a card, waits, and sends the chosen option back to the model', async () => {
+            stubReplies([askCall(shellQuestion), computeFromAnswer, answered()]);
+            const angles = freshAngles();
+            act(() => root.render(chat({ tools: [angles] })));
+            await openChat();
+            await ask('What are the Se–Ta–Se angles?');
+
+            // The prompt carries the rules, and the tool is offered.
+            expect(chatBodies[0].messages[0].content).toContain('Ask instead of guessing a parameter that changes the science');
+            expect(chatBodies[0].tools.map((tool) => tool.function.name)).toContain('ask_user');
+            // The turn waits on the card: one request so far.
+            expect(chatBodies).toHaveLength(1);
+            expect(card().className).toContain('is-waiting');
+            expect(card().getAttribute('role')).toBe('group');
+            expect(card().querySelector('.llm-ask-question').textContent).toBe(shellQuestion.question);
+            expect(options().map((button) => button.textContent)).toEqual([
+                '1Whole first shelldefault2.33–2.96 Å, both Ta–Se peaks',
+                '2First peak only2.33–2.71 Å, the short bonds'
+            ]);
+            expect(container.querySelector('.llm-ask-other-input').placeholder).toBe('Other…');
+            // The empty composer gives focus to the default option; arrows move it.
+            expect(document.activeElement).toBe(options()[0]);
+            act(() => options()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+            expect(document.activeElement).toBe(options()[1]);
+            expect(container.querySelector('.llm-sr-only[aria-live]').textContent).toBe(`The Copilot asks: ${shellQuestion.question}`);
+            expect(container.querySelector('.llm-send').getAttribute('aria-label')).toBe('Stop');
+
+            // Picking "First peak only" with its number key answers it.
+            act(() => options()[1].dispatchEvent(new KeyboardEvent('keydown', { key: '2', bubbles: true })));
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+            const result = JSON.parse(chatBodies[1].messages.at(-1).content);
+            expect(result.data).toEqual({ question: shellQuestion.question, answer: 'First peak only', means: '2.33–2.71 Å, the short bonds' });
+            expect(angles.run).toHaveBeenCalledTimes(1);
+            expect(angles.run.mock.calls[0][0]).toMatchObject({ r12_min: 2.33, r12_max: 2.71 });
+
+            // The card keeps the question and the reply; the answer follows.
+            expect(card().className).toContain('is-answered');
+            expect(card().querySelector('.llm-ask-reply').textContent).toBe('YouFirst peak only');
+            expect(container.querySelector('.llm-outcome').className).toContain('is-achieved');
+            // The question is not counted as an analysis.
+            expect(container.querySelector('.llm-turn-footer').textContent).toBe('1 analysis');
+        });
+
+        it('takes an answer typed in Other', async () => {
+            stubReplies([askCall(shellQuestion), computeFromAnswer, answered()]);
+            const angles = freshAngles();
+            act(() => root.render(chat({ tools: [angles] })));
+            await openChat();
+            await ask('Se–Ta–Se angles?');
+            const input = container.querySelector('.llm-ask-other-input');
+            expect(container.querySelector('.llm-ask-send').disabled).toBe(true);
+            act(() => {
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '2.3 to 3.1 Å');
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            act(() => container.querySelector('.llm-ask-other').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+            expect(JSON.parse(chatBodies[1].messages.at(-1).content).data).toEqual({ question: shellQuestion.question, answer: '2.3 to 3.1 Å', typed: true });
+            expect(angles.run.mock.calls[0][0]).toMatchObject({ r12_min: 2.3, r12_max: 3.1 });
+        });
+
+        it('cancels cleanly: Stop while waiting ends the turn, and the next question works', async () => {
+            stubReplies([askCall(shellQuestion), sse([delta({ content: 'Fine.\n\nOutcome: achieved — x' }, 'stop')])]);
+            act(() => root.render(chat({ tools: [freshAngles()] })));
+            await openChat();
+            await ask('Se–Ta–Se angles?');
+            expect(card().className).toContain('is-waiting');
+            act(() => container.querySelector('.llm-send').click());
+            await settle();
+            expect(chatBodies).toHaveLength(1);
+            expect(card().className).toContain('is-stopped');
+            expect(card().textContent).toContain('Not answered');
+            expect(container.querySelector('.llm-ask-option')).toBeNull();
+            expect(container.querySelector('.llm-turn-footer').textContent).toBe('Stopped.');
+            expect(container.querySelector('[role="alert"]')).toBeNull();
+            await ask('Anything else?');
+            expect(chatBodies).toHaveLength(2);
+            expect(container.querySelector('.llm-outcome').className).toContain('is-achieved');
+        });
+
+        it('drops a waiting question when another run opens', async () => {
+            stubReplies([askCall(shellQuestion)]);
+            act(() => root.render(chat({ tools: [freshAngles()] })));
+            await openChat();
+            await ask('Se–Ta–Se angles?');
+            expect(card()).not.toBeNull();
+            act(() => root.render(chat({ tools: [freshAngles()], runKey: 'run-2' })));
+            await settle();
+            expect(card()).toBeNull();
+            expect(container.querySelectorAll('.llm-message')).toHaveLength(0);
+            expect(container.querySelector('[role="alert"]')).toBeNull();
+            expect(chatBodies).toHaveLength(1);
+        });
+
+        it('marks the rail when a question arrives while the Copilot is collapsed', async () => {
+            stubReplies([askCall(shellQuestion), computeFromAnswer, answered()]);
+            act(() => root.render(chat({ tools: [freshAngles()] })));
+            await openChat();
+            act(() => setTextarea(container.querySelector('.llm-composer-input'), 'Se–Ta–Se angles?'));
+            act(() => container.querySelector('.llm-composer').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+            act(() => container.querySelector('.llm-chat-panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+            await settle();
+            const rail = container.querySelector('.llm-dock-rail');
+            expect(rail.className).toContain('has-unread');
+            expect(rail.getAttribute('aria-label')).toBe('AI Copilot — a question for you');
+            await openChat();
+            act(() => options()[0].click());
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+            expect(JSON.parse(chatBodies[1].messages.at(-1).content).data.answer).toBe('Whole first shell');
+            expect(container.querySelector('.llm-outcome')).not.toBeNull();
+        });
     });
 
     describe('pointing at the host cards', () => {

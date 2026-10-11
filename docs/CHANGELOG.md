@@ -5,7 +5,43 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
-_Nothing yet._
+### AI Copilot: it asks instead of guessing (`ask_user`)
+
+The spot check's worst answer came from a guess: asked for "Se–Ta–Se angles against an ideal
+octahedron", a model picked the first-peak window and cut the TaSe₆ shell in two. When a question
+leaves open a choice that changes the science, the Copilot now asks.
+
+- **`ask_user`** (`llm/copilot/askUser.js`): one short question, 2–4 options with a one-line meaning
+  each, *Other…*, and the agent's default. The request is normalized (plain strings read as
+  options, `"label — description"` split, repeats dropped, the default matched by label or number)
+  and a malformed one is refused with a message the model can act on.
+- **The card** (`llm/components/QuestionCard.jsx`), in the docked panel and the bottom sheet:
+  option buttons (1–4, ↑/↓), *Other…*, *Skip*; it takes focus unless the user is typing, the log
+  keeps its question in view, and a collapsed dock marks the rail. Answered, it keeps the question
+  and the reply; the turn footer does not count it as an analysis.
+- **The loop waits** (`interactive: true` in the tool contract, `askUser` in the tools' context):
+  never cached, no time limit, the wait off the turn's 10-min clock, at most two questions per
+  request and one per step. The answer returns as the tool result ("use exactly this choice";
+  a skip says "use your default and say you assumed it"). Stop, a run change or an unmount
+  cancels it cleanly.
+- **Prompt rules** (`ASK_RULES`): ask only when the answer changes which analysis runs or its
+  parameters (shell or r-window, site or pair, tolerance, run) and neither the context nor an
+  analysis can settle it; settle what the data can first; never on a clear question; offer a
+  default; use the chosen option and say which.
+- **Argument validation:** a bare string where an object with one required string field belongs
+  is read as that field (`options: ["a", "b"]`).
+- **Tests:** replays on the Demo's split Ta–Se shell (an ambiguous question asks and the chosen
+  window — option, default, typed, skipped — reaches `compute_bond_angles`; a clear question does
+  not ask; cancel; limits; the turn clock), and the card end to end against a mocked server.
+
+### UI kit: no sideways scroll from closed info popovers
+
+At iPad-portrait widths (820–834 px) the Displacement Directions page scrolled sideways: a `?`
+badge in the wrapped controls bar sat within 20 rem of the right edge, and its closed popover,
+hidden with `visibility` only, still counted toward the page's overflow. A closed `InfoBadge`
+popover now takes no space (`display: none`, still fading in where display transitions are
+supported), and an open one takes the other edge when its own would run off the window
+(`ui/popoverEdge.js`). Checked on every page at the kit's device sizes.
 
 ## 0.7.0 — 2026-10-11
 

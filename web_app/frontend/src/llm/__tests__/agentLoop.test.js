@@ -3,16 +3,20 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LIMITS, assistantContent, isToolsUnsupportedError, runCopilotTurn } from '../copilot/agentLoop';
+import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
 import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
+import { ASK_RULES, buildCopilotMessages } from '../prompts/copilot';
 
 // A scripted model: each request consumes the next reply. A reply is either
 // { text } or { calls: [{ name, args }] } (optionally with text), or an
-// Error to throw. Every request's arguments are recorded.
+// Error to throw, or a function of the request returning one of those (a
+// model that reads what it was sent). Every request's arguments are recorded.
 const scriptedModel = (replies) => {
     const requests = [];
     const callModel = (request) => {
         requests.push({ ...request, messages: request.messages.map((message) => ({ ...message })) });
-        const reply = replies.shift();
+        const next = replies.shift();
+        const reply = typeof next === 'function' ? next(request) : next;
         return (async function* stream() {
             if (!reply) throw new Error('script exhausted');
             if (reply instanceof Error) throw reply;
@@ -367,7 +371,8 @@ describe('runCopilotTurn', () => {
 
     it('uses sensible default limits', () => {
         expect(DEFAULT_LIMITS).toEqual({
-            maxRounds: 6, maxCallsPerRound: 4, toolTimeoutMs: 120000, maxTurnMs: 600000, resultCharBudget: 3000, turnCharBudget: 12000
+            maxRounds: 6, maxCallsPerRound: 4, toolTimeoutMs: 120000, maxTurnMs: 600000, resultCharBudget: 3000, turnCharBudget: 12000,
+            maxQuestions: 2
         });
     });
 });
@@ -434,3 +439,201 @@ describe('view tools', () => {
     });
 });
 
+
+// Replays of the clarifying-question flow (ask_user). The numbers are the
+// Demo run's (GaTa4Se8, 250 K): the first Ta–Se peak window 2.33–2.71 Å holds
+// 3.86 Se per Ta, the whole first shell 2.33–2.96 Å (peaks at 2.52 and 2.74 Å)
+// 5.89 — the octahedron the spot check's first window cut in two.
+describe('ask_user: the agent asks instead of guessing a parameter', () => {
+    const SHELL = [2.33, 2.96];
+    const FIRST_PEAK = [2.33, 2.71];
+    const grPeaks = () => ({
+        name: 'find_gr_peaks',
+        description: 'Partial g(r) peaks and the first shell.',
+        parameters: { type: 'object', properties: { pair: { type: 'string' } }, required: ['pair'] },
+        run: vi.fn(async ({ pair }) => ({
+            data: {
+                pair,
+                peaks_A: [{ r: 2.52, fwhm: 0.19 }, { r: 2.74, fwhm: 0.2 }],
+                first_peak_window_A: FIRST_PEAK,
+                first_shell: { window_A: SHELL, peaks_in_shell_A: [2.52, 2.74], cn: { Se_per_Ta: 5.89 } }
+            },
+            checks: [{ level: 'note', text: 'The first shell holds 2 peaks: a split shell.' }]
+        }))
+    });
+    const bondAngles = () => ({
+        name: 'compute_bond_angles',
+        description: 'Bond angles A–B–C.',
+        parameters: {
+            type: 'object',
+            properties: {
+                end1: { type: 'string' }, apex: { type: 'string' }, end2: { type: 'string' },
+                r12_min: { type: 'number' }, r12_max: { type: 'number' }
+            },
+            required: ['end1', 'apex', 'end2', 'r12_min', 'r12_max']
+        },
+        run: vi.fn(async (args) => ({ data: { window: [args.r12_min, args.r12_max] }, checks: [{ level: 'ok', text: 'angles' }] }))
+    });
+    // The last tool result the model was sent, parsed.
+    const lastResult = (request) => JSON.parse(request.messages.filter((message) => message.role === 'tool').at(-1).content);
+
+    // The model of an ambiguous question: it finds the shells, offers them as
+    // options, and computes with whatever window the answer names.
+    const ambiguousScript = () => [
+        { text: 'First, the Ta–Se shells.', calls: [{ name: 'find_gr_peaks', args: { pair: 'Ta-Se' } }] },
+        (request) => {
+            const { data } = lastResult(request);
+            return {
+                text: 'The shell is split; which window should the angles use?',
+                calls: [{
+                    name: ASK_USER,
+                    args: {
+                        question: 'Which Ta–Se window should the Se–Ta–Se angles use?',
+                        options: [
+                            { label: 'Whole first shell', description: `${data.first_shell.window_A.join('–')} Å, both Ta–Se peaks (CN 5.89)` },
+                            { label: 'First peak only', description: `${data.first_peak_window_A.join('–')} Å, the short bonds (CN ~3.9)` }
+                        ],
+                        default: 'Whole first shell'
+                    }
+                }]
+            };
+        },
+        (request) => {
+            const { data } = lastResult(request);
+            const windows = { 'Whole first shell': SHELL, 'First peak only': FIRST_PEAK };
+            // A typed answer: the model reads the window off it.
+            const typed = /(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)/.exec(data.answer || '');
+            const window = windows[data.answer] || (typed ? [Number(typed[1]), Number(typed[2])] : SHELL);
+            return { calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: window[0], r12_max: window[1] } }] };
+        },
+        { text: 'The Se–Ta–Se angles …\nOutcome: achieved — computed in the chosen window.' }
+    ];
+
+    const run = async (replies, askUser, extra = {}) => {
+        const tools = [grPeaks(), bondAngles(), buildAskUserTool()];
+        const { callModel, requests } = scriptedModel(replies);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools, toolContext: askUser ? { askUser } : null, ...extra
+        }));
+        return { events, requests, tools };
+    };
+
+    it.each([
+        ['the default option', { answer: 'Whole first shell', source: 'option', index: 0 }, SHELL],
+        ['the other option', { answer: 'First peak only', source: 'option', index: 1 }, FIRST_PEAK],
+        ['an answer typed in Other', { answer: 'use 2.3 to 3.1 Å', source: 'other', index: null }, [2.3, 3.1]],
+        ['Skip (the default stands)', { answer: null, source: 'skipped', index: null }, SHELL]
+    ])('an ambiguous question asks which shell, and %s decides the window', async (_, reply, window) => {
+        const askUser = vi.fn(async () => reply);
+        const { events, requests, tools } = await run(ambiguousScript(), askUser);
+
+        // The question the card shows: two options with their meaning, the default marked.
+        expect(askUser).toHaveBeenCalledTimes(1);
+        const [request, { signal }] = askUser.mock.calls[0];
+        expect(request).toEqual({
+            question: 'Which Ta–Se window should the Se–Ta–Se angles use?',
+            options: [
+                { label: 'Whole first shell', description: '2.33–2.96 Å, both Ta–Se peaks (CN 5.89)' },
+                { label: 'First peak only', description: '2.33–2.71 Å, the short bonds (CN ~3.9)' }
+            ],
+            allowOther: true,
+            defaultIndex: 0
+        });
+        expect(signal).toBeInstanceOf(AbortSignal);
+        const start = events.find((event) => event.type === 'tool_start' && event.name === ASK_USER);
+        expect(start).toMatchObject({ interactive: true, label: 'Question for you' });
+
+        // The answer reaches the model as the tool result …
+        const sent = JSON.parse(requests[2].messages.at(-1).content);
+        expect(sent.checks[0].text).toMatch(reply.source === 'skipped' ? /skipped .* default, "Whole first shell"/ : /Use exactly this choice|Follow it exactly/);
+        // … and the analysis runs in the window the user chose.
+        const angles = tools[1].run;
+        expect(angles).toHaveBeenCalledTimes(1);
+        expect(angles.mock.calls[0][0]).toMatchObject({ r12_min: window[0], r12_max: window[1] });
+        expect(events.at(-1)).toMatchObject({ type: 'done', stoppedBy: 'answer' });
+    });
+
+    it('a clear question runs the analysis without asking', async () => {
+        const askUser = vi.fn();
+        const { events, tools } = await run([
+            { calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.33, r12_max: 2.96 } }] },
+            { text: 'The angles …\nOutcome: achieved — computed.' }
+        ], askUser);
+        expect(askUser).not.toHaveBeenCalled();
+        expect(events.some((event) => event.interactive)).toBe(false);
+        expect(tools[1].run).toHaveBeenCalledTimes(1);
+        expect(events.at(-1).stoppedBy).toBe('answer');
+    });
+
+    it('tells the model when and when not to ask, in the system prompt', () => {
+        const [system] = buildCopilotMessages({ context: {}, userText: 'q', askUser: true });
+        expect(system.content).toContain(ASK_RULES);
+        expect(ASK_RULES).toMatch(/which coordination shell or r-window, which site or element\s+pair, which symmetry tolerance, which run or dataset/);
+        expect(ASK_RULES).toMatch(/Never ask when the question is clear, when the\s+context or an analysis answers it/);
+        expect(ASK_RULES).toMatch(/One question at a time, at most two per request/);
+        expect(ASK_RULES).toMatch(/default/);
+        expect(buildCopilotMessages({ context: {}, userText: 'q' })[0].content).not.toContain('ask_user');
+    });
+
+    it('stops cleanly when the turn is cancelled while the question waits', async () => {
+        const controller = new AbortController();
+        let seenSignal = null;
+        const askUser = vi.fn((request, { signal }) => new Promise((_, reject) => {
+            seenSignal = signal;
+            signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        }));
+        const tools = [grPeaks(), bondAngles(), buildAskUserTool()];
+        const { callModel, requests } = scriptedModel(ambiguousScript());
+        const seen = [];
+        const turn = (async () => {
+            for await (const event of runCopilotTurn({ callModel, messages: baseMessages, tools, signal: controller.signal, toolContext: { askUser } })) {
+                seen.push(event);
+                if (event.type === 'tool_start' && event.interactive) setTimeout(() => controller.abort(), 5);
+            }
+        })();
+        await expect(turn).rejects.toMatchObject({ name: 'AbortError' });
+        expect(seenSignal.aborted).toBe(true);
+        // No answer was sent, no analysis ran after the question, no further request.
+        expect(seen.filter((event) => event.type === 'tool_end').map((event) => event.name)).toEqual(['find_gr_peaks']);
+        expect(tools[1].run).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(2);
+    });
+
+    it('waits without a time limit, and the wait does not count toward the turn limit', async () => {
+        const askUser = vi.fn(() => new Promise((resolve) => setTimeout(() => resolve({ answer: 'First peak only', source: 'option', index: 1 }), 60)));
+        const { requests, tools } = await run(ambiguousScript(), askUser, { limits: { toolTimeoutMs: 10, maxTurnMs: 40 } });
+        // After a 60 ms answer under a 40 ms turn limit, the model still gets its tools.
+        expect(requests[2].toolChoice).toBe('auto');
+        expect(tools[1].run.mock.calls[0][0]).toMatchObject({ r12_min: 2.33, r12_max: 2.71 });
+    });
+
+    it('asks one question per step and at most two per request, and never from the cache', async () => {
+        const askUser = vi.fn(async () => ({ answer: 'A', source: 'option', index: 0 }));
+        const ask = { name: ASK_USER, args: { question: 'Which?', options: ['A', 'B'] } };
+        const { events, requests } = await run([
+            { calls: [ask, { ...ask, args: { ...ask.args, question: 'And?' } }] },
+            { calls: [ask] },
+            { calls: [ask] },
+            { text: 'Done.\nOutcome: partial — assumed the default.' }
+        ], askUser);
+        // Asked in steps 1 and 2 (the same question twice: a real exchange
+        // each time); the second call of step 1 and the third question refused.
+        expect(askUser).toHaveBeenCalledTimes(2);
+        const ends = events.filter((event) => event.type === 'tool_end');
+        expect(ends.map((event) => event.cached)).toEqual([false, false, false, false]);
+        expect(ends[1].error).toMatch(/one question at a time/);
+        expect(ends[3].error).toMatch(/already asked 2 questions .* proceed with your default/);
+        expect(JSON.parse(requests[3].messages.at(-1).content).error).toMatch(/already asked 2 questions/);
+    });
+
+    it('reads plain strings as options, and says so when nobody can be asked', async () => {
+        const { events } = await run([
+            { calls: [{ name: ASK_USER, args: { question: 'Which run?', options: ['250 K', '5 K'] } }] },
+            { text: 'Assumed 250 K.\nOutcome: partial — assumed the run.' }
+        ], null);
+        const end = events.find((event) => event.type === 'tool_end');
+        expect(end.status).toBe('failed');
+        expect(end.error).toMatch(/cannot be asked here: proceed with your default/);
+        expect(end.args.options).toEqual([{ label: '250 K' }, { label: '5 K' }]);
+    });
+});

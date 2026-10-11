@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { runCopilotTurn } from './copilot/agentLoop';
 import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState';
+import { ASK_USER } from './copilot/askUser';
 import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS } from './prompts/copilot';
 import { streamChat } from './provider/client';
 
@@ -19,8 +20,15 @@ import { streamChat } from './provider/client';
 // tools' run() for the view tools; a new question clears the last answer's
 // highlight, and the cards of a running analysis breathe until it ends.
 // `onTurnEnd(turn)` reports each finished answer (the dock's unread mark).
+//
+// ask_user (copilot/askUser.js) reaches the user through `askUser`, also in
+// the tools' context: it holds the question the card shows (`question`) until
+// `answerQuestion(reply)` settles it, and rejects it with an AbortError when
+// the turn is stopped, the conversation restarts or the panel unmounts.
+// `onQuestion(request)` reports a new question (the dock's unread mark).
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const abortError = () => new DOMException('Aborted', 'AbortError');
 
 /**
  * Earlier turns as model memory: each question with its final answer. A
@@ -39,14 +47,21 @@ export const conversationMemory = (turns) => {
     return memory;
 };
 
-export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runKey = null, focus = null, onTurnEnd = null }) => {
+export const useCopilot = ({
+    settings, context, tools, toolsEnabled = true, runKey = null, focus = null, onTurnEnd = null, onQuestion = null
+}) => {
     const [turns, setTurns] = useState([]);
     const [live, setLive] = useState(null);
     const [error, setError] = useState(null);
     const [unsupportedModels, setUnsupportedModels] = useState(() => new Set());
+    // The question waiting for the user: { request, reply(answer) }.
+    const [question, setQuestion] = useState(null);
+    const questionRef = useRef(null);
     const abortRef = useRef(null);
     const onTurnEndRef = useRef(onTurnEnd);
     useEffect(() => { onTurnEndRef.current = onTurnEnd; }, [onTurnEnd]);
+    const onQuestionRef = useRef(onQuestion);
+    useEffect(() => { onQuestionRef.current = onQuestion; }, [onQuestion]);
     // Bumped by clear(): a turn still finishing after it must not reappear.
     const generationRef = useRef(0);
 
@@ -54,10 +69,41 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
 
     const stop = useCallback(() => abortRef.current?.abort(), []);
 
+    // ask_user's way to the user: show the question, wait for the reply.
+    const askUser = useCallback((request, { signal } = {}) => new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(abortError());
+            return;
+        }
+        const pending = { request };
+        const settle = () => {
+            signal?.removeEventListener('abort', onAbort);
+            if (questionRef.current === pending) {
+                questionRef.current = null;
+                setQuestion(null);
+            }
+        };
+        const onAbort = () => {
+            settle();
+            reject(abortError());
+        };
+        pending.reply = (reply) => {
+            settle();
+            resolve(reply);
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+        questionRef.current = pending;
+        setQuestion(pending);
+        onQuestionRef.current?.(request);
+    }), []);
+
+    /** The user's reply to the waiting question: { answer, source, index }. */
+    const answerQuestion = useCallback((reply) => questionRef.current?.reply(reply), []);
+
     const toolsOn = toolsEnabled && tools.length > 0 && !unsupportedModels.has(settings.model);
 
-    const ask = useCallback(async (question) => {
-        const text = question.trim();
+    const ask = useCallback(async (questionText) => {
+        const text = questionText.trim();
         if (!text || abortRef.current) return;
         const controller = new AbortController();
         abortRef.current = controller;
@@ -67,7 +113,10 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
         // Earlier turns travel as their question and final answer only.
         const history = conversationMemory(turns);
         const viewTools = toolsOn && tools.some((tool) => tool?.view);
-        const messages = buildCopilotMessages({ context, history, userText: text, toolsEnabled: toolsOn, viewTools });
+        const asks = toolsOn && tools.some((tool) => tool?.interactive && tool.name === ASK_USER);
+        const messages = buildCopilotMessages({
+            context, history, userText: text, toolsEnabled: toolsOn, viewTools, askUser: asks
+        });
         // The agent moves on: the last answer's highlight ends.
         focus?.clear('question');
         const model = settings.model;
@@ -90,7 +139,7 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
                 signal: controller.signal,
                 toolsEnabled: toolsOn,
                 noToolsSystemPrompt: COPILOT_PROMPT_NO_TOOLS,
-                toolContext: focus ? { focus } : null
+                toolContext: { ...(focus ? { focus } : {}), askUser }
             })) {
                 turn = applyTurnEvent(turn, event, now());
                 if (event.type === 'tool_start' && event.cards?.length) focus?.running(event.id, event.cards);
@@ -120,7 +169,7 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
             }
             setLive(null);
         }
-    }, [turns, context, tools, toolsOn, focus, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
+    }, [turns, context, tools, toolsOn, focus, askUser, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
 
     const clear = useCallback(() => {
         generationRef.current += 1;
@@ -146,6 +195,8 @@ export const useCopilot = ({ settings, context, tools, toolsEnabled = true, runK
         ask,
         stop,
         clear,
+        question: question?.request || null,
+        answerQuestion,
         toolsActive: toolsOn,
         toolsUnsupported: toolsEnabled && tools.length > 0 && unsupportedModels.has(settings.model)
     };

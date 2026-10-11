@@ -35,6 +35,10 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
 - A step's **Show in \<page\>** button switches the workbench page and loads the same analysis
   there. Bond Geometry gets the triplet and windows and computes; Displacement Directions gets the
   site and resolution. The page shows its own result beside the conversation.
+- **It asks instead of guessing** (`ask_user`). When a question leaves open a choice that changes
+  the science — which coordination shell or r-window, which site or pair, which tolerance, which
+  run — the agent asks one short question with 2–4 options and its default, then uses exactly the
+  option the user picks. See *Asking the user* below.
 
 How one question runs:
 
@@ -112,7 +116,7 @@ inputs on its page, stays the *user's* action.
      term, and "quote the numbers, don't guess".
    - `COPILOT_PROMPT` adds how to work with tools: say why before each call, read the `checks`,
      change the arguments on a `fail`, never repeat an identical call. It also asks for the verdict
-     line.
+     line. `copilotSystemPrompt()` adds `ASK_RULES` when `ask_user` is offered.
    - `buildCopilotMessages()` puts the context, inside a fenced JSON block, ahead of the
      conversation. Earlier turns travel as question + final answer only (the newest 8).
    - `prompts/templates.js` holds the watchdog's rigid `STATUS: …` prompt and its parser.
@@ -162,7 +166,8 @@ inputs on its page, stays the *user's* action.
      from the next shell — and whether the pair's minimum-distance constraint cuts the distribution;
    - `compare_fit(dataset)`: where the model misses the data, as Rw and the share of the misfit
      per range of r or Q, and the largest residual features.
-8. **`copilot/outcome.js`**: `parseOutcome()` splits the verdict line from the answer. It is
+8. **`copilot/askUser.js`**: the `ask_user` tool (*Asking the user* below).
+   **`copilot/outcome.js`**: `parseOutcome()` splits the verdict line from the answer. It is
    lenient about Markdown and dashes, strict about the three statuses, and takes the last line.
    **`copilot/turnState.js`** folds loop events into a turn: ordered text segments (with
    reasoning) and tool steps.
@@ -200,6 +205,41 @@ inputs on its page, stays the *user's* action.
       card for the model, and run() resolves the ids, keeps marks for plot cards (`marks: true`),
       and reports what was shown and what was not on screen.
 
+## Asking the user (`ask_user`)
+
+The spot check's worst answer was a guess: asked for "Se–Ta–Se angles against an ideal
+octahedron", a model picked the first-peak window (2.33–2.71 Å) and cut the TaSe₆ shell in two,
+then read the cut as "incomplete octahedra". Which window to use is the user's call when the data
+offer two, so the agent asks:
+
+- **The tool** (`copilot/askUser.js`, offered with every run's tools):
+  `ask_user({ question, options: [{ label, description? }] (2–4), allow_other = true, default? })`.
+  `normalizeAskRequest()` trims the question, reads plain strings as options (and splits
+  `"label — description"`), drops repeated labels, and matches `default` to a label or its number;
+  it refuses an empty question or fewer than two distinct options with a message the model can act
+  on.
+- **The card** (`components/QuestionCard.jsx`) shows in the conversation, in the docked panel and
+  in the bottom sheet: the question, the options as buttons with their one-line meaning (the
+  default marked), an *Other…* field and *Skip*. Keyboard: Tab, ↑/↓, 1–4 to pick, Enter in the
+  field. It takes focus when it appears unless the user is typing in a field, and the log never
+  scrolls its question out of view. A collapsed dock marks the rail ("a question for you").
+  Answered, it keeps the question and the reply.
+- **The loop** waits. `useCopilot` passes `askUser(request, { signal })` in the tools' context; the
+  card settles it, and the answer returns as the tool's result (`answerResult()`: the chosen label
+  and its meaning with "use exactly this choice", a typed answer verbatim, or a skip as "use your
+  default and say you assumed it"). Stop, a new run or an unmount rejects it with an AbortError:
+  the turn closes as *Stopped*, the card reads *Not answered*, and the next question works.
+- **The contract.** `interactive: true` marks a tool that waits for the user: never answered from
+  the duplicate-call cache, no time limit, its wait not counted toward the turn's 10 min, at most
+  `maxQuestions` (2) questions per request and one per step (`agentLoop.js`). It is not a view
+  tool and changes no data; the turn footer does not count it as an analysis.
+- **The rules** (`ASK_RULES` in `prompts/copilot.js`, added when the tool is offered): ask only
+  when the answer changes which analysis runs or its parameters and neither the context nor an
+  analysis can settle it; settle what the data can first (e.g. `find_gr_peaks`, then offer its
+  shells as the options); never on a clear question or for permission to run an analysis; one
+  question at a time, at most two per request; offer a default; then use the chosen option and
+  say which.
+
 ## The tool contract (the `tools` prop)
 
 The host passes engine tools as plain objects; the module validates and runs them:
@@ -214,7 +254,8 @@ The host passes engine tools as plain objects; the module validates and runs the
   pageParams: (args) => ({ … }),         // what that page loads to show the same analysis (optional)
   cards: (args) => ['bond-angles'],      // host cards this call reads: they breathe while it runs (optional)
   view: true,                            // a view tool: changes only the screen; never cached (optional)
-  run: async (args, { signal, focus }) => ({ data, checks }),
+  interactive: true,                     // waits for the user (ask_user): never cached, no time limit (optional)
+  run: async (args, { signal, focus, askUser }) => ({ data, checks }),
 }
 ```
 
@@ -225,6 +266,8 @@ The host passes engine tools as plain objects; the module validates and runs the
 - `signal` aborts on Stop or timeout. Stop the work if you can.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
+- `askUser(request, { signal })` shows a question card and resolves with the user's reply
+  (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools.
 - Parameters may be arrays (`items`, `minItems`, `maxItems`) and objects (their own `properties` /
   `required`); a list sent as JSON text or a bare comma list is accepted.
 
@@ -420,6 +463,10 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   whole calls with `extra_content`; tool-call assembly and argument validation.
 - **The agent loop, against a scripted model:**
   - the call → result → answer cycle; argument errors fed back and corrected;
+  - `ask_user` replays on the Demo's Ta–Se shell: an ambiguous Se–Ta–Se question finds the shells,
+    asks which window, and the analysis runs in the one chosen (an option, the default, a typed
+    window, or Skip); a clear question runs without asking; Stop while the question waits; no time
+    limit and the wait off the turn clock; one question per step, two per request, never cached;
   - unknown tools, thrown errors, duplicate calls, the per-step limit;
   - the final `tool_choice: 'none'` round and an empty last round;
   - the tools-unsupported fallback, and a schema 400 that must surface;
@@ -431,7 +478,9 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   run change restarts it, an answer that lands while collapsed marks the rail, the open state and
   width are remembered and resize from the keyboard, and the agent's highlight_cards makes a host
   card breathe (with marks), its chip brings the card back from another page, and a click on the
-  page clears it.
+  page clears it. The `ask_user` card: it waits on one request, takes focus, moves with the arrow
+  keys, sends the option picked by its number key back to the model, which computes in that window;
+  *Other…*; Stop while waiting; a run change drops the question; a collapsed dock marks the rail.
 - **Pointing:** the focus controller (`focus.test.js`: levels, page switch and wait, clearing,
   undo callbacks, re-rendered cards), card references (`cardRefs.test.js`), `highlight_cards`
   (`viewTools.test.js`), the dock's size rules (`dockLayout.test.js`), and list/object arguments

@@ -41,6 +41,22 @@ const TOOL_RULES = [
 
 const COMPUTE_ONLY = 'Tools only compute: they never change what the user sees.';
 
+// With ask_user (copilot/askUser.js): ask instead of guessing a parameter that
+// changes the science, and only then.
+export const ASK_RULES = [
+    'Ask instead of guessing a parameter that changes the science. When the',
+    'question leaves open a choice that changes which analysis you run or its',
+    'parameters — which coordination shell or r-window, which site or element',
+    'pair, which symmetry tolerance, which run or dataset — and neither the',
+    'context nor an analysis can settle it, call ask_user with 2–4 short',
+    'options, each saying what it means (the window in Å, the site), and your',
+    'default. Settle what the data can first: e.g. run find_gr_peaks, then offer',
+    'its shells as the options. Never ask when the question is clear, when the',
+    'context or an analysis answers it, or for permission to run an analysis.',
+    'One question at a time, at most two per request. Then use exactly the',
+    'option the user chose and say in the answer which one you used.'
+].join(' ');
+
 // With the view tools (highlight_cards from the host's cards, and the host's
 // own orient_3d_view / current_view): explain by pointing at the page.
 export const VIEW_RULES = [
@@ -76,10 +92,23 @@ export const contextBlock = (context) => (
 // tool exchanges, which are re-run when needed.
 export const CHAT_HISTORY_TURNS = 8;
 
-export const buildCopilotMessages = ({ context, history = [], userText, toolsEnabled = true, viewTools = false }) => [
+/**
+ * The system prompt for the tools the turn offers: the tool rules, the ask
+ * rules when ask_user is among them, then pointing (view tools) or the
+ * compute-only sentence, then the Outcome rule.
+ */
+export const copilotSystemPrompt = ({ toolsEnabled = true, viewTools = false, askUser = false } = {}) => {
+    if (!toolsEnabled) return COPILOT_PROMPT_NO_TOOLS;
+    if (!askUser) return viewTools ? COPILOT_PROMPT_VIEW : COPILOT_PROMPT;
+    return `${SYSTEM_PROMPT} ${TOOL_RULES} ${ASK_RULES} ${viewTools ? VIEW_RULES : COMPUTE_ONLY} ${OUTCOME_RULE}`;
+};
+
+export const buildCopilotMessages = ({
+    context, history = [], userText, toolsEnabled = true, viewTools = false, askUser = false
+}) => [
     {
         role: 'system',
-        content: toolsEnabled ? (viewTools ? COPILOT_PROMPT_VIEW : COPILOT_PROMPT) : COPILOT_PROMPT_NO_TOOLS
+        content: copilotSystemPrompt({ toolsEnabled, viewTools, askUser })
     },
     { role: 'user', content: contextBlock(context) },
     {
