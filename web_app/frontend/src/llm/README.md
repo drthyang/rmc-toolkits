@@ -6,14 +6,35 @@ API key. It replaced the chat-only AI Assistant on 2026-10-09. The Assistant ans
 summary of the run. The Copilot also **runs the Workbench analyses itself**, reads what came back,
 and judges whether that answers the question.
 
-It is a **chatbox over every page**, not a page of its own:
+It is **docked beside the pages**, not over them, and it **points at the page** while it explains:
 
-- A labelled launcher sits in the bottom-right corner. It opens a floating panel; *Larger* widens
-  it, and ✕ or Esc closes it.
-- A step's **Show in \<page\>** button switches the workbench page *behind* the chat and loads the
-  same analysis there. Bond Geometry gets the triplet and windows and computes; Displacement
-  Directions gets the site and resolution. The page shows its own result next to the conversation.
-- On a phone the panel is a full-height sheet. It closes after Show in, so the page is visible.
+- **The dock.** On a window at least 1080 px wide (and taller than 540 px: laptops, monitors,
+  tablets in landscape) the Copilot is a side
+  panel in its own grid column: the pages shrink and reflow beside it (their width tiers are
+  container queries), so it never covers a card. Drag its left edge (or focus the edge and use
+  ←/→, Home/End; double-click or Enter resets) to resize it; the pages always keep at least
+  760 px. On tablets in portrait, phones and short windows it is a **bottom sheet** in its own grid row,
+  resized from its top edge; when the agent brings a card on screen, the sheet comes down (to 28 %
+  of the window at most) until the card fits whole above it. Collapsed (the chevron, or Esc inside it) it is a slim **rail** at the
+  right edge, or a bar at the bottom, with a red dot when an answer arrived while it was
+  collapsed. The open state, the width and the sheet height are remembered
+  (`localStorage` `rmc-llm-dock-v1`).
+- **Pointing at cards.** The agent's `highlight_cards` tool gives one or more cards a breathing
+  blue edge (2.4 s, the same language as MATERIA and NEBULA3D; a steady edge under
+  `prefers-reduced-motion`), opens the card's page when needed and scrolls it into view; on a
+  plot it can also mark x positions (the g(r) peaks it names), and the plot zooms to them. The
+  card of an analysis that is running breathes softly. A highlight ends when the agent points at
+  something else, a new question starts, the Copilot collapses, or the user clicks anywhere on
+  the page.
+- **Card chips.** The answer cites cards as `[label](card:<id>)` (or `[[id]]`); each renders as a
+  chip that brings the card back on screen.
+- **3D views.** The host's `orient_3d_view` turns a 3D view to look down a crystal direction
+  `[u v w]` (or a, b, c, PC1–PC3), centres or rings sites in blue, selects a site as a click would,
+  or resets it; `current_view` says what is on screen. So the agent can say "looking down [111],
+  the displacements…" and show it.
+- A step's **Show in \<page\>** button switches the workbench page and loads the same analysis
+  there. Bond Geometry gets the triplet and windows and computes; Displacement Directions gets the
+  site and resolution. The page shows its own result beside the conversation.
 
 How one question runs:
 
@@ -59,9 +80,12 @@ configuration file. Cloud use is opt-in, and the settings drawer warns that data
 The *Let the Copilot run analyses* switch turns the tools off. Nothing is sent until the user asks a
 question. API keys are stored in `localStorage` only.
 
-**The tools only compute.** None switches a page, moves a slider, changes the Detected-SG
-tolerance, or writes or downloads a file. A step card's **Show in \<page\>** (or **Open
-\<page\>**) button is the *user's* action.
+**The analyses only compute; the view tools only change what is on screen.** No tool moves a
+slider, changes an analysis input or the Detected-SG tolerance, or writes or downloads a file.
+The view tools (`highlight_cards`, `orient_3d_view`, `current_view`) open a page, scroll, give a
+card its edge, mark a plot, turn a 3D camera, ring sites, and select a site as the user's click
+would — and nothing else. A step card's **Show in \<page\>** button, which loads an analysis's
+inputs on its page, stays the *user's* action.
 
 ## How each seam works (reading order)
 
@@ -151,13 +175,30 @@ tolerance, or writes or downloads a file. A step card's **Show in \<page\>** (or
     - `useCopilot()` holds the conversation: Stop, which models cannot call tools, and a new
       conversation when `runKey` changes. It also builds the memory (`conversationMemory`): a
       question without an answer is dropped.
-    - `CopilotChat` is the chatbox: the launcher, then the panel. The panel mounts on first open,
-      so nothing is fetched before that, and stays mounted while closed, so a running answer
-      continues. It composes the connection bar, the settings drawer (`ConnectionSettings`, with
-      the analyses switch) and `CopilotView`. Focus goes to the composer on open (once connected)
-      and back to the launcher on close.
-    - `CopilotView` renders the transcript (`ToolStep` cards, `MarkdownMessage`, the Outcome chip),
-      the composer, and a polite live region that announces step and verdict changes.
+    - `CopilotChat` is the dock (`components/dockLayout.js` holds its pure size rules): the rail,
+      then the panel, and the resize handle. The panel mounts on first open, so nothing is fetched
+      before that, and stays mounted while collapsed, so a running answer continues. It composes
+      the connection bar, the settings drawer (`ConnectionSettings`, with the analyses switch) and
+      `CopilotView`. Focus goes to the composer on open (once connected) and back to the rail on
+      collapse. It owns the card-focus controller.
+    - `CopilotView` renders the transcript (`ToolStep` cards, `MarkdownMessage` with its card chips,
+      the Outcome chip), the composer, and a polite live region that announces step and verdict
+      changes.
+11. **`focus/focus.js` + `focus/cardRefs.js` + `copilot/viewTools.js`** — pointing at the page.
+    - `createFocusController()` sets `data-copilot-focus` (primary | secondary | running |
+      preview) on the host's `[data-copilot-card]` elements; `Copilot.css` draws the breathing edge.
+      `show(ids, { marks })` opens the main card's page through `onOpenPage(key, null)` when it is
+      not on screen (a card under `[aria-hidden="true"]` is off screen), waits up to 3 s for it to
+      mount, lowers a tall sheet, and scrolls it into view (not at all when it is already in view;
+      smooth unless reduced motion). A MutationObserver re-applies the attribute to a card the host
+      re-renders. `clear()` runs the tools' `onClear` undo callbacks (a 3D site ring).
+    - `cardRefs.js` reads a model's spelling of a card (`card:` scheme, brackets, case, the title, a
+      bare plot file name) and rewrites `[[id]]` as a `card:` link; `MarkdownMessage` lets the
+      `card:` scheme through react-markdown's URL filter and the sanitizer and renders known cards as
+      chip buttons (unknown ones as their label).
+    - `viewTools.js` builds `highlight_cards` from the host's `cards`: the description lists every
+      card for the model, and run() resolves the ids, keeps marks for plot cards (`marks: true`),
+      and reports what was shown and what was not on screen.
 
 ## The tool contract (the `tools` prop)
 
@@ -171,7 +212,9 @@ The host passes engine tools as plain objects; the module validates and runs the
   label: (args) => 'Bond angles Se–Ta–Se',   // step-card title (optional)
   page: 'geometry',                      // host page key for the step's button (optional)
   pageParams: (args) => ({ … }),         // what that page loads to show the same analysis (optional)
-  run: async (args, { signal }) => ({ data, checks }),
+  cards: (args) => ['bond-angles'],      // host cards this call reads: they breathe while it runs (optional)
+  view: true,                            // a view tool: changes only the screen; never cached (optional)
+  run: async (args, { signal, focus }) => ({ data, checks }),
 }
 ```
 
@@ -180,13 +223,24 @@ The host passes engine tools as plain objects; the module validates and runs the
 - `checks` is a list of `{ level: 'ok' | 'note' | 'warn' | 'fail', text }`, computed from the
   full result. `fail` means "this does not answer as asked".
 - `signal` aborts on Stop or timeout. Stop the work if you can.
+- `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
+  `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
+- Parameters may be arrays (`items`, `minItems`, `maxItems`) and objects (their own `properties` /
+  `required`); a list sent as JSON text or a bare comma list is accepted.
 
 `pages` (`{ key: label }`) and `onOpenPage(key, params)` let a step offer **Show in \<page\>**.
 
 - `params` is the tool's `pageParams(args)`, computed from the validated arguments. Without
   `pageParams`, the button reads **Open \<page\>** and `params` is null.
 - `runKey` names the open run; when it changes, the conversation restarts.
-- `onOpenChange(open)` reports the chatbox opening and closing.
+- `onOpenChange(open)` reports the dock opening and collapsing.
+- `cards` lists what the agent may point at: `{ id, page, title, about, kind?, file?, marks?, view3d?, sites? }`.
+  Each card element carries `data-copilot-card="<id>"`. `kind` / `file` tie a card to the data the
+  run tools read (a plot kind, `r_value`, `symmetry`, `model`), so `assess_convergence`,
+  `find_gr_peaks`, `compare_fit` and `read_run_data` breathe the right card while they run.
+- `onMarks({ [cardId]: [{ x, label }] })` hands the host the marks to draw inside a plot card.
+- `onLayoutChange({ mode, open, width, sheet })` reports where the dock sits; `className` and
+  `storageKey` are the host's.
 
 In this repository the host tools live in `src/copilotTools.js`:
 
@@ -198,6 +252,15 @@ In this repository the host tools live in `src/copilotTools.js`:
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion |
 | `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show |
 | `detect_symmetry` | the symmetry finder at any tolerance, without changing the card (browser-loaded runs only) |
+| `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
+| `current_view` (view) | the page on screen, its cards, the highlight, and each 3D view's direction and site |
+
+The 3D views join a registry while mounted (`src/viewer3d.js`, `src/useCopilotViewer.js`,
+`src/cameraPose.js`), under their card ids: `density-cell` (Atomic Density), `bond-cell` (Bond
+Geometry), `pca-density` and `pca-sites` (PCA Ellipsoid), `direction-sphere` and `direction-sites`
+(Displacement Directions). A turn is a 650 ms slerp of the camera (at once under reduced motion)
+that lands exactly on the requested pose; in the sphere's PCA frame a crystal direction is
+projected onto the site's principal axes. The host's card catalog is `src/copilotCards.js`.
 
 A browser-loaded run is analysed in a worker of the Copilot's own, which Stop or a timeout
 terminates. A server folder goes to Flask with the request cancelled on abort.
@@ -221,7 +284,7 @@ terminates. A server folder goes to Flask with the request cancelled on abort.
   to run, but your run context and analysis results are sent to that provider. Some providers or
   networks block direct browser calls (CORS).
 
-In the app: click the **AI Copilot** button in the bottom-right corner, open the settings (gear),
+In the app: click the **AI Copilot** rail at the right edge (a bar at the bottom on portrait tablets and phones), open the settings (gear),
 pick a provider, press **Test**, then choose a model. Settings
 persist in `localStorage` (`rmc-llm-settings-v1`; the analyses switch is `copilotTools`).
 
@@ -300,27 +363,52 @@ cluster distortion beyond independent atoms, nor the cell doubling diffraction f
 carry box-scale displacement waves; the Ta–Ta and Ga–Se distributions show the closest-approach
 and shell-gap effects above. The checks on the step cards remain the part to trust.
 
+### The view tools with a real model (2026-10-11)
+
+The docked Copilot's view tools were checked with **gemma4:26b** (Ollama, OpenAI-compatible
+endpoint) on the static build with the Demo run, in Chrome at 1440 × 900 (docked), each question
+in a new conversation. Other jobs shared the model server, so the times are upper bounds.
+
+| Question | Tools called | Result |
+|---|---|---|
+| First Ta–Se g(r) peak; highlight the card and mark it | `highlight_cards` (the partials card, a mark at 2.52 Å) | ✓ the card breathes, fully in view beside the panel; the plot zooms to the marked peak; the answer cites the card as a chip · 223 s |
+| Largest U_iso; cite the PCA Ellipsoid card | `list_sites` | ✓ ref 23, 0.0175 Å²; from the Dashboard, its `pca-stats` chip opened PCA Ellipsoid and brought the statistics card into view · 342 s |
+| The direction sphere of Ta site 1 down [111] | `list_sites`, `analyze_displacement_directions`, `orient_3d_view` (select site 1, along `[1 1 1]`) | ✓ the page opened, the sphere turned to [1 1 1] with [-1 -1 2] up (a, b, c at 120°) · 847 s |
+| Centre site 1 in the site view and ring it | `orient_3d_view` (`direction-sites`, centre and ring site 1) | ✓ site 1 at the canvas centre with the blue halo; the model wrote only the Outcome · 434 s |
+| What am I looking at? | `current_view` | ✓ the page, the sphere down [1 1 1] (site 1) and the site view down [3 2 3], as on screen · 553 s |
+
+No page error and no failed step. Two display bugs were found and fixed: the Outcome note showed
+LaTeX raw (`$U_{iso}$`; it now renders as Markdown inline), and chips written as the bare
+reference (`<card:direction-sphere>`) read "card:direction-sphere" (they now show the card's
+title; a re-run of the last question confirmed it). The model's numbers for the sphere differ
+from the drawn map because the tool lets the engine choose the resolution while the page keeps
+its own (ν = 10, smoothed), as noted under *Show in*.
+
 ## Import boundary and extraction recipe
 
 This module is designed to be lifted into its own repository:
 
 - Run data and engine tools enter **only as props** to `CopilotChat` (`runName`, `plotFiles`,
   `rValueFile`, `structure`, `symmetry`, `runSettings`, `pcaSites`, `liveData`, `tools`, `pages`,
-  `onOpenPage`, `runKey`, `onOpenChange`) and `WatchdogBadge` (`rValueFile`). The host renders
-  `CopilotChat` once, over its pages. Nothing in `src/llm/` imports
+  `onOpenPage`, `runKey`, `onOpenChange`, `cards`, `onMarks`, `onLayoutChange`, `className`,
+  `storageKey`) and `WatchdogBadge` (`rValueFile`). The host renders `CopilotChat` once, as the
+  last child of its app grid, and places it by its `data-mode`: a column right of the pages
+  (`docked`) or a row under them (`sheet`). The page cards it may point at carry
+  `data-copilot-card`. Nothing in `src/llm/` imports
   `browserData.js`, `symmetryModel.js`, `useSiteCloud.js`, or any host component. Cell math is
   deliberately duplicated from `ModelSummary.jsx`.
 - The host imports only `src/llm/index.js`.
 - Styling: the module's own CSS lives in `components/Copilot.css` (the conversation, settings,
-  watchdog badge) and `components/CopilotChat.css` (the launcher and the floating panel, z-index
-  40). A kit token it reads keeps its old literal as a fallback (`var(--warning, #b45309)`). It
-  uses exactly one host UI-kit class, **by class name only** and never kit JS (see
-  `src/ui/README.md`): `ui-pill`, on a step's Show in / Open button. An extracted copy needs a
-  host stylesheet that defines it. On phones the panel's sheet height subtracts
-  `--header-pinned-h`, the host's pinned-header strip (0 without it).
+  watchdog badge, the breathing `[data-copilot-focus]` edge and the card chips) and
+  `components/CopilotChat.css` (the dock, rail, sheet and resize handle). A kit token it reads
+  keeps its old literal as a fallback (`var(--warning, #b45309)`). It uses exactly one host UI-kit
+  class, **by class name only** and never kit JS (see `src/ui/README.md`): `ui-pill`, on a step's
+  Show in / Open button. An extracted copy needs a host stylesheet that defines it. The sheet's
+  height is a share of `--viewport-h` (100vh without it).
 
-To extract: copy `src/llm/`, render `CopilotChat` once with props from your own data source, and
-pass your own tools.
+To extract: copy `src/llm/`, give your app grid a column and a row for the dock, render
+`CopilotChat` once with props from your own data source, tag your cards with
+`data-copilot-card`, and pass your own tools (and view tools, if you have 3D views).
 
 ## Tests
 
@@ -337,9 +425,20 @@ pass your own tools.
   - the tools-unsupported fallback, and a schema 400 that must surface;
   - abort and timeout, which also abort the tool's signal;
   - per-result and per-turn budgets.
-- **Rendering:** Outcome parsing, the Markdown pipeline, and `copilotChat.test.jsx`, which drives
-  the chatbox end to end against a mocked server: nothing is fetched before it opens, Show in
-  hands over the page parameters, Esc keeps the conversation, and a run change restarts it.
+- **Rendering:** Outcome parsing, the Markdown pipeline with its card chips, and
+  `copilotChat.test.jsx`, which drives the dock end to end against a mocked server: nothing is
+  fetched before it opens, Show in hands over the page parameters, Esc keeps the conversation, a
+  run change restarts it, an answer that lands while collapsed marks the rail, the open state and
+  width are remembered and resize from the keyboard, and the agent's highlight_cards makes a host
+  card breathe (with marks), its chip brings the card back from another page, and a click on the
+  page clears it.
+- **Pointing:** the focus controller (`focus.test.js`: levels, page switch and wait, clearing,
+  undo callbacks, re-rendered cards), card references (`cardRefs.test.js`), `highlight_cards`
+  (`viewTools.test.js`), the dock's size rules (`dockLayout.test.js`), and list/object arguments
+  (`toolCalls.test.js`).
 
 The host tools are tested on the committed demo run with the real engines in
-`src/__tests__/copilotTools.test.js`. Run everything with `npm test` (vitest).
+`src/__tests__/copilotTools.test.js`; the 3D view tools and their math in `viewer3d.test.js`,
+`cameraPose.test.js`, `useCopilotViewer.test.jsx`, `copilotViewTools.test.js` and
+`copilotCards.test.js` (which also checks that every card in the catalog is tagged in its page),
+and the plot marks in `interactivePlotMarks.test.jsx`. Run everything with `npm test` (vitest).

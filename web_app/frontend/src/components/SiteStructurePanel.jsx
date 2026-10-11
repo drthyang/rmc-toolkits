@@ -20,14 +20,36 @@ import {
     CELL_AXIS_LABELS,
     SELECTED_ATOM_COLOR,
     buildAxisTriad,
+    buildCopilotHalo,
     buildCrystalAxes
 } from './sceneAxes';
+import useCopilotViewer from '../useCopilotViewer';
 import './UnitCellPanel.css';
 
 const SAVE_OPTIONS = [
     { id: 'png', label: 'Standard PNG', hint: '1×' },
     { id: 'png3x', label: 'High quality PNG', hint: '3×' }
 ];
+
+const clearGroup = (group) => {
+    while (group.children.length) {
+        const child = group.children.pop();
+        child.geometry?.dispose();
+        child.material?.dispose();
+        group.remove(child);
+    }
+};
+
+// Redraw the Copilot's blue halos around the sites it named (handle.copilotRefs)
+// at their current marker positions; called after each rebuild and on a change.
+const drawCopilotHalos = (handle) => {
+    if (!handle?.copilotGroup) return;
+    clearGroup(handle.copilotGroup);
+    (handle.copilotRefs || []).forEach((ref) => {
+        const entry = handle.sitePositions.get(ref);
+        if (entry) buildCopilotHalo(entry.pos, entry.extent).forEach((mesh) => handle.copilotGroup.add(mesh));
+    });
+};
 
 export default function SiteStructurePanel({
     sites,
@@ -44,7 +66,10 @@ export default function SiteStructurePanel({
     // Card heading. The ellipsoids are the subject on the PCA and Orientation
     // pages; where bondSets are supplied the sticks are, so that page names it
     // for them instead.
-    title = 'Site ellipsoids'
+    title = 'Site ellipsoids',
+    // The AI Copilot's id for this card (data-copilot-card) and 3D view
+    // (viewer3d.js registry): the page that hosts the panel names it.
+    cardId = null
 }) {
     // Crystallographic a/b/c gizmo at the cell origin — on by default, since
     // this is a structural view where axes belong.
@@ -88,7 +113,9 @@ export default function SiteStructurePanel({
         const cellGroup = new THREE.Group();
         const cellAxesGroup = new THREE.Group();
         const highlightGroup = new THREE.Group();
-        scene.add(cellGroup, cellAxesGroup, bondsGroup, sitesGroup, highlightGroup);
+        // The sites the AI Copilot names (blue halos), apart from the selection.
+        const copilotGroup = new THREE.Group();
+        scene.add(cellGroup, cellAxesGroup, bondsGroup, sitesGroup, highlightGroup, copilotGroup);
 
         // Click (not drag) on a site marker selects that site. A small pointer
         // travel budget separates a click from an orbit drag.
@@ -143,6 +170,7 @@ export default function SiteStructurePanel({
 
         structureSceneRef.current = {
             scene, camera, renderer, controls, sitesGroup, bondsGroup, cellGroup, cellAxesGroup, highlightGroup,
+            copilotGroup, copilotRefs: [], sitePositions: new Map(), unit: null,
             framed: false, center: null, defaultRadius: 1
         };
 
@@ -153,6 +181,7 @@ export default function SiteStructurePanel({
             renderer.domElement.removeEventListener('pointerup', onPointerUp);
             renderer.domElement.removeEventListener('pointermove', onPointerMove);
             controls.dispose();
+            clearGroup(copilotGroup);
             renderer.dispose();
             // dispose() frees GPU resources but not the WebGL context itself;
             // without this, scene rebuilds and remounts pile up contexts until the browser drops
@@ -227,6 +256,8 @@ export default function SiteStructurePanel({
         }
 
         const baseRadius = 0.05 * edgeLength;
+        handle.unit = unit;
+        handle.sitePositions = new Map();
         const positions = sites.sites.map((site) => ({
             ref: site.referenceNumber,
             el: site.element,
@@ -355,6 +386,7 @@ export default function SiteStructurePanel({
             const semi = hasEllipsoid
                 ? site.rms.map((r) => Math.max(r * ellipsoidScale, baseRadius * 0.15))
                 : [baseRadius, baseRadius, baseRadius];
+            handle.sitePositions.set(site.ref, { pos: site.pos.clone(), extent: Math.max(...semi, baseRadius) });
             if (hasEllipsoid) {
                 // Unit sphere scaled by the semi-axes and oriented by the site's
                 // principal axes, centered on the site.
@@ -411,7 +443,9 @@ export default function SiteStructurePanel({
             handle.framed = true;
         }
         controls.update();
+        drawCopilotHalos(handle);
     }, [sites, selectedRef, selectedEllipsoid, elementColors, showCellAxes, bondSets]);
+
 
     // Re-fit the canvas to its mount whenever sibling panels sharing the column
     // change height: content lands in stages, each collapsing the shared row a
@@ -446,6 +480,41 @@ export default function SiteStructurePanel({
         controls.update();
     }, []);
 
+    // --- The AI Copilot's handle on this view (viewer3d.js): look along a
+    // crystal direction, centre a site, ring sites in blue, select one.
+    useCopilotViewer(cardId, {
+        orbit: {
+            getHandle: () => structureSceneRef.current,
+            getCell: () => structureSceneRef.current?.unit ?? null,
+            onReset: () => resetStructureView()
+        },
+        ready: () => Boolean(sites && structureSceneRef.current?.center),
+        sites: () => (sites?.sites || []).map((site) => ({ ref: site.referenceNumber, element: site.element })),
+        centerOn: (ref, orbit) => {
+            const entry = structureSceneRef.current?.sitePositions.get(ref);
+            return entry ? orbit.centerAt(entry.pos.toArray()) : false;
+        },
+        highlightSites: (refs) => {
+            const handle = structureSceneRef.current;
+            if (!handle) return { found: [], missing: refs };
+            const found = refs.filter((ref) => handle.sitePositions.has(ref));
+            handle.copilotRefs = found;
+            drawCopilotHalos(handle);
+            return { found, missing: refs.filter((ref) => !found.includes(ref)) };
+        },
+        clearHighlight: () => {
+            const handle = structureSceneRef.current;
+            if (!handle) return;
+            handle.copilotRefs = [];
+            drawCopilotHalos(handle);
+        },
+        selectSite: (ref) => {
+            if (!sites?.sites.some((site) => site.referenceNumber === ref) || !onSelectSite) return false;
+            onSelectSite(ref);
+            return true;
+        }
+    });
+
     // Export the figure as PNG — same 1× / 3× options as the main panels.
     const saveStructureView = useCallback(async (format) => {
         const handle = structureSceneRef.current;
@@ -473,7 +542,7 @@ export default function SiteStructurePanel({
     }, []);
 
     return (
-        <Card roundEnds className="pca-unitcell-panel">
+        <Card roundEnds className="pca-unitcell-panel" data-copilot-card={cardId || undefined}>
             <CardHeader
                 title={title}
                 help={(

@@ -22,11 +22,14 @@ say “Upload”, but nothing is sent anywhere.)[^cloud-llm-privacy]
 ⚡ **Live monitoring** auto-refreshes charts as new files are written, in Chromium browsers (Chrome,
 Edge, Arc, Opera).
 
-🤖 **AI Copilot (beta)** — a chatbox over every page that answers questions about the open run by
+🤖 **AI Copilot (beta)** — a panel docked beside the pages that answers questions about the open run by
 running the Workbench analyses itself: 10 tools (convergence, g(r) shells and coordination, where the
 fit misses the data, site displacements, displacement directions, bond angles, cluster distortion
 against independent atoms, a superstructure test, symmetry at any tolerance, the run summary). Each result
-carries deterministic checks, and each answer ends with an **Outcome** verdict. It works with any
+carries deterministic checks, and each answer ends with an **Outcome** verdict. It explains by
+pointing: the cards it talks about breathe a blue edge, it marks the peaks it names on a plot, its
+answers cite cards as clickable chips, and it turns the 3D views to look down the direction it
+describes. It works with any
 OpenAI-compatible model: local (Ollama, LM Studio; nothing leaves your machine) or cloud (OpenAI,
 Gemini, Anthropic, with your key). Tested on the Demo with gemma4:26b and qwen3.8-27b
 ([results](#ai-copilot)).
@@ -67,7 +70,8 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
   FINDSYM it does no origin shift and outputs no idealized structure. The panel needs the run
   parsed in the browser (the hosted/static dashboard, or a locally picked folder); a run read
   through the local Flask server has no site basis, so the panel does not appear there.
-- **AI Copilot (beta)** — a chatbox on every page (bottom-right). Ask about the loaded run, and a
+- **AI Copilot (beta)** — a panel docked beside every page (a bottom sheet on portrait tablets and phones),
+  resizable, collapsing to a slim rail. Ask about the loaded run, and a
   local LLM (Ollama, LM Studio) or an opt-in cloud model (OpenAI, Gemini, Anthropic) runs the
   Workbench analyses itself. It can list
   the site displacements, test displacement directions, compute bond angles, measure the distortion
@@ -75,8 +79,12 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
   doubles the cell, integrate coordination numbers, locate the misfit in r or Q, re-run the symmetry finder and check convergence. The run
   summary it reads says which partials each dataset barely sees and where the symmetry ladder is
   sampling noise. It reads each result with deterministic checks, retries when one
-  fails, and ends with an **Outcome** verdict. A step's *Show in* button loads the same analysis
-  on its page, next to the chat. The analyses only compute; only you change the view. Only compact summaries are sent, never raw files.[^cloud-llm-privacy] Setup:
+  fails, and ends with an **Outcome** verdict. While it explains, it points at the page: the cards
+  it talks about breathe a blue edge (their page opens and they scroll into view), the g(r) peaks
+  it names are marked, its answers cite cards as chips you can click, and it turns a 3D view to
+  look down a direction such as [111], or rings and selects the sites it names. A step's *Show in*
+  button loads the same analysis on its page, beside the chat. The analyses only compute; the
+  view tools change only what is on screen. Only compact summaries are sent, never raw files.[^cloud-llm-privacy] Setup:
   [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md).
 - **Python package (`rmc_toolkits/`)** — the same parsing, plotting, KDE, PCA-ellipsoid, and
   displacement-direction analyses as a reusable library, plus `.rmc6f` conversion helpers.
@@ -103,12 +111,24 @@ travel with every question. When those are not enough, the Copilot runs the anal
 shows each one as a step card: what it ran, how long it took, and the verdict of its checks.
 Expand a card to see the exact numbers the model read. Press *Show in* to load the same analysis
 on its page (Bond Geometry computes the same triplet; Displacement Directions opens the same site)
-while the chat stays open over it.
+while the Copilot stays open beside it.
+
+**It points at what it explains.** The Copilot is docked beside the pages, never over them: on a
+laptop, a monitor or a tablet in landscape it is a side panel the pages reflow around (drag its
+edge to resize; the pages keep at least 760 px), on portrait tablets and phones a bottom sheet,
+and collapsed a slim rail with a dot when a new answer arrived. It remembers its width and whether
+it was open. While it explains, the
+card it is talking about breathes a blue edge, and its page opens and scrolls to it; on a plot it
+marks the positions it names (the first g(r) peaks, say) and zooms to them. Its answers cite cards
+as chips: click one to bring the card back. In 3D it looks down the direction it describes —
+"looking down [111] on the displacement sphere…" — and can centre, ring in blue, or select the
+sites it names. A click anywhere on the page, or the next question, ends the highlight.
 The answer ends with an **Outcome** chip (achieved, partial or not achieved) and quotes the
 numbers. Reasoning models stream their chain of thought in a collapsible *Thinking* panel.
 
 **Turn it on.** Run a local server with a tool-capable model (Ollama, or LM Studio with CORS
-enabled), or have a cloud API key ready. Click **AI Copilot** in the bottom-right corner, open the
+enabled), or have a cloud API key ready. Click the **AI Copilot** rail at the right edge (a bar at
+the bottom on portrait tablets and phones), open the
 settings (gear), pick the provider, press **Test** and choose the model. *Let the Copilot run
 analyses* is on by default; off, it answers from the run summary only. Setup details:
 [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md#provider-setup).

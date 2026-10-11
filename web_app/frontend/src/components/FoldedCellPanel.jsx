@@ -18,6 +18,7 @@ import { Card, CardHeader, CardMeta, ToolButton } from '../ui';
 import InfoBadge from '../ui/InfoBadge';
 import SaveMenu from '../ui/SaveMenu';
 import { buildCrystalAxes } from './sceneAxes';
+import useCopilotViewer from '../useCopilotViewer';
 import './UnitCellPanel.css';
 
 const SAVE_OPTIONS = [
@@ -49,7 +50,9 @@ const FoldedCellPanel = ({
     // Extra legend items after the elements (e.g. the bond swatch, or a
     // "Compute to draw bonds" cue).
     legendExtras = null,
-    className
+    className,
+    // The AI Copilot's id for this card and 3D view (viewer3d.js).
+    cardId = null
 }) => {
     const [showCellAxes, setShowCellAxes] = useState(true);
     const mountRef = useRef(null);
@@ -140,6 +143,7 @@ const FoldedCellPanel = ({
         [cloudGroup, bondsGroup, cellGroup, cellAxesGroup].forEach(dispose);
 
         const unit = unitVectorsOf(structure) || unitVectorsOf(sites);
+        handle.unit = unit || null;
         if (!unit) return;
         const toCartesian = (frac) => [0, 1, 2].map(
             (axis) => frac[0] * unit[0][axis] + frac[1] * unit[1][axis] + frac[2] * unit[2][axis]
@@ -285,6 +289,17 @@ const FoldedCellPanel = ({
         handle.controls.reset();
     }, []);
 
+    // The AI Copilot's handle on this view (viewer3d.js): look along a crystal
+    // direction, reset.
+    useCopilotViewer(cardId, {
+        orbit: {
+            getHandle: () => sceneRef.current,
+            getCell: () => sceneRef.current?.unit ?? null,
+            onReset: () => resetView()
+        },
+        ready: () => Boolean(sceneRef.current?.unit)
+    });
+
     // Same 1× / 3× options as the other 3D panels: 3× re-renders at a higher
     // pixel ratio, then restores the on-screen one.
     const saveFigure = useCallback(async (format) => {
@@ -313,7 +328,11 @@ const FoldedCellPanel = ({
     }, []);
 
     return (
-        <Card roundEnds className={className ? `pca-unitcell-panel ${className}` : 'pca-unitcell-panel'}>
+        <Card
+            roundEnds
+            className={className ? `pca-unitcell-panel ${className}` : 'pca-unitcell-panel'}
+            data-copilot-card={cardId || undefined}
+        >
             <CardHeader
                 wrap
                 title={title}

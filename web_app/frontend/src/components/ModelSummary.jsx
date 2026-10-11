@@ -145,6 +145,7 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
         <div className="ui-stack">
             <StatRail
                 aria-label="Model information"
+                data-copilot-card="model-info"
                 headingProps={{ title: summary.sourcePath || summary.source }}
                 heading={(
                     <>
@@ -253,6 +254,7 @@ const ModelSummary = ({ structure, showSymmetry = true, stale = false }) => {
             {symmetry && (
                 <StatRail
                     aria-label="Detected space group"
+                    data-copilot-card="detected-sg"
                     heading={(
                         <>
                             Detected SG

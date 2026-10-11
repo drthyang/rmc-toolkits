@@ -7,7 +7,7 @@ import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
 } from './toolCalls';
 import {
-    executeToolCall, fitToBudget, stepStatus, toolLabel, toRequestTools, usableTools
+    executeToolCall, fitToBudget, stepStatus, toolCards, toolLabel, toRequestTools, usableTools
 } from './tools';
 
 // One Copilot turn: plan → act → observe → assess. The model is called with
@@ -21,7 +21,7 @@ import {
 // Events:
 //   { type: 'round', round }                       a model request starts
 //   { type: 'text', delta } / { type: 'reasoning', delta }
-//   { type: 'tool_start', id, name, label, args, page }
+//   { type: 'tool_start', id, name, label, args, page, cards }
 //   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
 //   { type: 'tools_unsupported', error }           retried without tools
 //   { type: 'done', text, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty' }
@@ -102,7 +102,10 @@ export async function* runCopilotTurn({
     limits = {},
     signal,
     toolsEnabled = true,
-    noToolsSystemPrompt = null
+    noToolsSystemPrompt = null,
+    // Passed to every tool's run() beside its signal (the card-focus
+    // controller for view tools).
+    toolContext = null
 }) {
     const {
         maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget
@@ -231,7 +234,8 @@ export async function* runCopilotTurn({
                 name: call.name,
                 label: tool ? toolLabel(tool, shownArgs) : call.name,
                 args: shownArgs,
-                page: tool?.page || null
+                page: tool?.page || null,
+                cards: tool && parsed.ok ? toolCards(tool, parsed.value) : []
             };
 
             let result;
@@ -246,13 +250,15 @@ export async function* runCopilotTurn({
             } else {
                 // Keyed on the validated arguments, so "2" and 2 are one call.
                 const validated = parsed.ok ? validateToolArguments(tool.parameters, parsed.value) : null;
-                const key = validated?.ok ? `${call.name}:${canonicalJson(validated.value)}` : null;
+                // A view tool (tool.view) changes the screen, so a repeat is a
+                // real request (point at the card again), never a cached result.
+                const key = validated?.ok && !tool.view ? `${call.name}:${canonicalJson(validated.value)}` : null;
                 if (key && cache.has(key)) {
                     result = { ...cache.get(key), ms: 0 };
                     cached = true;
                     note = 'identical call earlier in this question — the same result is repeated; change the arguments or answer';
                 } else {
-                    result = await executeToolCall(tool, call.arguments, { signal, timeoutMs: toolTimeoutMs });
+                    result = await executeToolCall(tool, call.arguments, { signal, timeoutMs: toolTimeoutMs, context: toolContext });
                     if (key && !result.error) cache.set(key, result);
                 }
             }

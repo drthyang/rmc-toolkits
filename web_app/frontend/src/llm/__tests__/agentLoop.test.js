@@ -395,3 +395,42 @@ describe('tool helpers', () => {
         expect(fitToBudget(null, 10)).toBeNull();
     });
 });
+
+describe('view tools', () => {
+    it('are never answered from the cache, get the tool context, and name their cards', async () => {
+        const focus = { show: vi.fn() };
+        const view = {
+            name: 'point',
+            view: true,
+            description: 'Point at a card.',
+            parameters: { type: 'object', properties: { card: { type: 'string' } }, required: ['card'] },
+            cards: ({ card }) => [card],
+            run: vi.fn(async ({ card }, context) => {
+                context.focus.show([card]);
+                return { data: { card }, checks: [{ level: 'ok', text: 'shown' }] };
+            })
+        };
+        const { callModel } = scriptedModel([
+            { calls: [{ name: 'point', args: { card: 'a' } }] },
+            { calls: [{ name: 'point', args: { card: 'a' } }] },
+            { text: 'Done.\nOutcome: achieved — pointed.' }
+        ]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [view], toolContext: { focus } }));
+        expect(view.run).toHaveBeenCalledTimes(2);
+        expect(view.run).toHaveBeenLastCalledWith({ card: 'a' }, { focus, signal: expect.any(AbortSignal) });
+        expect(focus.show).toHaveBeenCalledTimes(2);
+        expect(events.filter((event) => event.type === 'tool_end').map((event) => event.cached)).toEqual([false, false]);
+        expect(events.find((event) => event.type === 'tool_start').cards).toEqual(['a']);
+    });
+
+    it('lists no cards for a tool without them, or whose cards() throws', async () => {
+        const broken = echoTool({ name: 'broken', cards: () => { throw new Error('x'); } });
+        const { callModel } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 } }, { name: 'broken', args: { value: 2 } }] },
+            { text: 'ok\nOutcome: achieved — x' }
+        ]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool(), broken] }));
+        expect(events.filter((event) => event.type === 'tool_start').map((event) => event.cards)).toEqual([[], []]);
+    });
+});
+

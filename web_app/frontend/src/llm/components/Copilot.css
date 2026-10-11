@@ -1334,3 +1334,107 @@
     border-radius: 4px;
     padding: 0 0.25rem;
 }
+
+/* --- the cards the Copilot points at ------------------------------------- */
+/* The focus controller (focus/focus.js) sets data-copilot-focus on the host's
+   [data-copilot-card] elements. A breathing blue edge, the same language as
+   the user's other agents (MATERIA, NEBULA3D): an outline drawn over the
+   card's own border (offset -1px, so no ancestor's overflow clips it, and no
+   layout shift) and a soft glow, 2.4 s per breath. primary: the card the
+   agent is explaining; secondary: the others it named; running: the card of
+   an analysis in progress (softer); preview: a chip under the pointer. Still
+   under prefers-reduced-motion: a steady edge instead. */
+
+[data-copilot-focus] {
+    outline: 2px solid transparent;
+    outline-offset: -1px;
+}
+
+[data-copilot-focus="primary"] {
+    animation: llm-card-breathe 2.4s ease-in-out infinite;
+}
+
+[data-copilot-focus="secondary"],
+[data-copilot-focus="running"] {
+    animation: llm-card-breathe-soft 2.4s ease-in-out infinite;
+}
+
+[data-copilot-focus="preview"] {
+    outline-color: color-mix(in srgb, var(--accent, #2563eb) 70%, transparent);
+}
+
+@keyframes llm-card-breathe {
+    0%, 100% {
+        outline-color: color-mix(in srgb, var(--accent, #2563eb) 30%, transparent);
+        box-shadow: 0 0 6px 0 color-mix(in srgb, var(--accent, #2563eb) 14%, transparent);
+    }
+    50% {
+        outline-color: color-mix(in srgb, var(--accent, #2563eb) 95%, transparent);
+        box-shadow: 0 0 20px 3px color-mix(in srgb, var(--accent, #2563eb) 32%, transparent);
+    }
+}
+
+@keyframes llm-card-breathe-soft {
+    0%, 100% {
+        outline-color: color-mix(in srgb, var(--accent, #2563eb) 18%, transparent);
+        box-shadow: none;
+    }
+    50% {
+        outline-color: color-mix(in srgb, var(--accent, #2563eb) 60%, transparent);
+        box-shadow: 0 0 12px 1px color-mix(in srgb, var(--accent, #2563eb) 16%, transparent);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-copilot-focus="primary"],
+    [data-copilot-focus="secondary"],
+    [data-copilot-focus="running"] {
+        animation: none;
+        outline-color: color-mix(in srgb, var(--accent, #2563eb) 85%, transparent);
+    }
+
+    [data-copilot-focus="secondary"],
+    [data-copilot-focus="running"] {
+        outline-color: color-mix(in srgb, var(--accent, #2563eb) 50%, transparent);
+    }
+}
+
+@media print {
+    [data-copilot-focus] {
+        outline: none;
+        animation: none;
+    }
+}
+
+/* A card cited in an answer: a chip that brings the card on screen. */
+.llm-card-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    margin: 0 0.08em;
+    padding: 0 0.5em;
+    min-height: 0;
+    font-size: 0.92em;
+    font-weight: 600;
+    line-height: 1.55;
+    color: var(--accent, #2563eb);
+    background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent, #2563eb) 32%, transparent);
+    border-radius: 999px;
+    vertical-align: baseline;
+    white-space: nowrap;
+}
+
+.llm-card-chip:hover:not(:disabled) {
+    color: var(--accent, #2563eb);
+    background: color-mix(in srgb, var(--accent, #2563eb) 15%, transparent);
+    border-color: color-mix(in srgb, var(--accent, #2563eb) 60%, transparent);
+}
+
+.llm-card-chip-dot {
+    width: 0.42em;
+    height: 0.42em;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.75;
+}

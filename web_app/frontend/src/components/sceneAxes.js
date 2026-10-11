@@ -62,3 +62,35 @@ export const buildCrystalAxes = (origin, unitCell, length, radius) => {
     }
     return rods;
 };
+
+// The AI Copilot's highlight in 3D: the same agent blue as the breathing card
+// edge (Copilot.css), distinct from the orange of the selected atom.
+export const COPILOT_HIGHLIGHT_COLOR = 0x2563eb;
+
+const prefersReducedMotion = () => typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Two soft blue shells around a site the Copilot names, `extent` = the
+// site marker's largest semi-axis. They breathe with the card edge (2.4 s),
+// held still under prefers-reduced-motion. Geometry and materials are the
+// caller's to dispose with the group.
+export const buildCopilotHalo = (position, extent) => {
+    const still = prefersReducedMotion();
+    return [[2.2, 0.16], [1.55, 0.26]].map(([scale, opacity]) => {
+        const material = new THREE.MeshBasicMaterial({
+            color: COPILOT_HIGHLIGHT_COLOR, transparent: true, opacity, depthWrite: false
+        });
+        const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 18), material);
+        shell.position.copy(position);
+        shell.scale.setScalar(extent * scale);
+        shell.renderOrder = 2;
+        if (!still) {
+            shell.onBeforeRender = () => {
+                const phase = (performance.now() % 2400) / 2400;
+                material.opacity = opacity * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(phase * 2 * Math.PI)));
+            };
+        }
+        return shell;
+    });
+};

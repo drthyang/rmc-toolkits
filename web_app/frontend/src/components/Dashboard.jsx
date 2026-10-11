@@ -78,7 +78,11 @@ const renderRwpChip = (meta) => {
     );
 };
 
-const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData = false, onRunContextChange }) => {
+// `cardMarks` ({ [cardId]: [{ x, label }] }): the x positions the AI Copilot
+// marks on a plot card while it points at it (highlight_cards).
+const NO_MARKS = {};
+
+const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData = false, onRunContextChange, cardMarks = NO_MARKS }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
@@ -502,7 +506,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         );
     };
 
-    const renderPlotBody = (file, variant) => {
+    const renderPlotBody = (file, variant, marks = null) => {
         if (file.sourceFile && !file.plotData && !file.parseError) {
             return <div className="ui-loading ui-loading--sm">Parsing plot file…</div>;
         }
@@ -515,6 +519,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 plotData={file.plotData}
                 refreshKey={`${file.modified ?? ''}:${file.size ?? ''}`}
                 variant={variant}
+                marks={marks}
             />
         );
     };
@@ -523,7 +528,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         const meta = metadata[file.path];
         const title = meta?.title || file.name;
         return (
-            <Card as="article" clip lift data-figure-card="" key={file.path}>
+            <Card as="article" clip lift data-figure-card="" data-copilot-card={`plot:${file.name}`} key={file.path}>
                 <div className="ui-card__header-flush">
                     <div className="ui-card__heading">
                         <CardTitle>{title}</CardTitle>
@@ -533,7 +538,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                     </div>
                     {renderRwpChip(meta)}
                 </div>
-                {renderPlotBody(file)}
+                {renderPlotBody(file, undefined, cardMarks[`plot:${file.name}`] || null)}
                 {renderDashboardError(`plot:${file.path}:${file.parseError}`, file.parseError)}
             </Card>
         );
@@ -565,6 +570,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 roundEnds={showErrorDetails}
                 lift
                 data-figure-card=""
+                data-copilot-card="chi2-history"
                 className={`r-value-card${showRValue ? '' : ' is-collapsed'}`}
             >
                 <div className="ui-card__header-flush ui-card__header-flush--padded">
@@ -599,7 +605,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                         </Pill>
                     </div>
                 </div>
-                {showRValue && renderPlotBody(rValueFile, 'wide')}
+                {showRValue && renderPlotBody(rValueFile, 'wide', cardMarks['chi2-history'] || null)}
                 {renderDashboardError(`r-value:${rValueFile.parseError}`, errorLine, errorDetails)}
             </Card>
         );

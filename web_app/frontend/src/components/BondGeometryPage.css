@@ -113,7 +113,7 @@
 
 /* Below 16:9-ish desktop widths everything stacks in one column — hero,
    folded cell, partial g(r) — each card at its own height. */
-@media (max-width: 1100px) {
+@container workbench (max-width: 1100px) {
     .geom-layout,
     .geom-layout--no-helper {
         grid-template-columns: minmax(0, 1fr);

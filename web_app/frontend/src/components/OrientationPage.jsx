@@ -90,6 +90,8 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
     const staticMode = isStaticMode();
     const noRun = staticMode && !localFile;
 
+    const siteRefs = useMemo(() => (sites?.sites || []).map((site) => site.referenceNumber), [sites]);
+
     const elementColors = useMemo(
         () => buildElementColors(sites?.elements ?? [], speciesCounts(sites?.sites)),
         [sites]
@@ -363,8 +365,11 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0, re
                     showOutline={showOutline}
                     showAxes={showAxes}
                     loadingSites={loadingSites}
+                    onSelectSite={setSelectedRef}
+                    siteRefs={siteRefs}
                 />
                 <SiteStructurePanel
+                    cardId="direction-sites"
                     sites={sites}
                     selectedRef={selectedRef}
                     onSelectSite={setSelectedRef}

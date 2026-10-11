@@ -79,8 +79,8 @@ says where it listens. To share it on a network, see the Gunicorn and Docker ins
 
 ## 4. AI Copilot (Optional)
 
-The `AI Copilot` button in the bottom-right corner of every page opens a chatbox that answers
-questions about the loaded run using an LLM. It runs against a model
+The `AI Copilot` rail at the right edge of every page (a bar at the bottom on portrait tablets and phones)
+opens a panel docked beside the page that answers questions about the loaded run using an LLM. It runs against a model
 on your own machine (private), [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai), or
 against a cloud provider (OpenAI, Gemini, Anthropic) with your own API key.
 
@@ -92,9 +92,14 @@ What the Copilot can do:
 - It checks each result and retries when a check fails, for example by widening an empty bond
   window.
 - It ends with an **Outcome** verdict.
-- A step's *Show in* button loads the same analysis on its page, behind the chat.
-- The analyses only compute: your pages and files are never changed. Turn them off in the settings
-  drawer (*Let the Copilot run analyses*).
+- A step's *Show in* button loads the same analysis on its page, beside the chat.
+- It points at what it explains: the cards it talks about breathe a blue edge, it marks the peaks
+  it names, its answers cite cards as chips you can click, and it turns a 3D view to look down
+  the direction it describes. A click on the page ends the highlight.
+- The analyses only compute and the view tools only change what is on screen: your data and files
+  are never changed. Turn the analyses off in the settings drawer (*Let the Copilot run
+  analyses*).
+- Drag its edge to resize it; it remembers its width and whether it was open.
 - Other models answer from the run summary only.
 
 Because the hosted dashboard is served over HTTPS, a **local** model server must allow this page's
@@ -109,7 +114,7 @@ launchctl setenv OLLAMA_ORIGINS "https://drthyang.github.io"
 ```
 
 For LM Studio, enable CORS in the server settings and load the model with a large context. Then
-open `AI Copilot` (bottom-right) → gear → pick the provider → `Test` → choose a model.
+open `AI Copilot` (the rail at the right edge) → gear → pick the provider → `Test` → choose a model.
 
 **Safari note:** Safari blocks HTTPS pages from calling `http://localhost`. Use Chrome, Edge, or
 Firefox, or run the app locally over http so the page and the model share the `localhost` origin:

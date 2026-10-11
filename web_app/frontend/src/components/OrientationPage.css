@@ -45,7 +45,7 @@
 
 /* Below the three-up width, stack: sphere first (tall), then site picker, then
    the axis views as a short row-height panel. */
-@media (max-width: 1200px) {
+@container workbench (max-width: 1200px) {
     .orient-layout {
         grid-template-columns: 1fr;
         height: auto;

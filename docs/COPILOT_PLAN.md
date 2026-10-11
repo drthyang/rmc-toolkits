@@ -361,3 +361,19 @@ the analysis. What changed:
   by itself. With the chatbox, the reason given in §1 (the transcript would be hidden) no longer
   applies. Whether the model may drive pages on its own is a product decision left to the
   maintainer.
+
+## 12. Change: docked beside the pages, pointing at the page (2026-10-10)
+
+The maintainer asked for the highlight feature of their other two agents (MATERIA, NEBULA3D) and
+for a Copilot that no longer blocks the panels. That decided §11's open question: the model may
+now change **what is on screen** — never data, an analysis input or a file.
+
+- **Docked, not floating.** The panel is a column of the app grid beside the pages (≥ 1080 × 541),
+  else a bottom sheet in its own row; the pages' width tiers became container queries, so they
+  reflow in the room left. It resizes from its edge, collapses to a rail with an unread dot, and
+  remembers its width and open state.
+- **View tools.** `highlight_cards` (the cards breathe a blue edge, a plot gets marks),
+  `orient_3d_view` (look down [uvw], centre, ring or select sites, reset) and `current_view`.
+  Answers cite cards as `card:` chips. Show in stays the user's action, because it loads a page's
+  analysis inputs.
+- The details are in the changelog and the module README.

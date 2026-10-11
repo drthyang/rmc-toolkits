@@ -265,3 +265,27 @@
     color: var(--text-strong);
 }
 
+
+/* The AI Copilot's marks (highlight_cards): the agent blue of its breathing
+   card edge (src/llm Copilot.css), a dashed guide, a ▽ at the top and a
+   label with a halo so it reads over the curves. */
+.plot-copilot-mark line {
+    stroke: var(--accent);
+    stroke-width: 1.6;
+    stroke-dasharray: 5 4;
+    opacity: 0.85;
+}
+
+.plot-copilot-mark path {
+    fill: var(--accent);
+}
+
+.plot-copilot-mark text {
+    fill: var(--accent);
+    font-size: 13px;
+    font-weight: 650;
+    paint-order: stroke;
+    stroke: var(--plot-bg);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}

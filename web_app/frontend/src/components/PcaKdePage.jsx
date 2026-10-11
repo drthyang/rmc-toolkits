@@ -29,6 +29,7 @@ import useSiteCloud from '../useSiteCloud';
 import { crystalOrientationRows, projectVolumeOntoFrame } from '../pcaCrystalFrame';
 import { siteLabel } from '../siteLabel';
 import AppFooter from './AppFooter';
+import useCopilotViewer from '../useCopilotViewer';
 import './PcaKdePage.css';
 
 // The main viewport exports as PNG at native or 3× resolution, matching the
@@ -683,6 +684,34 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
         }
     }, [kde, crystalDisplay]);
 
+    // --- The AI Copilot's handle on the density viewport (viewer3d.js). The
+    // scene is in the crystal's Cartesian frame (the PC/crystal switch changes
+    // the walls and triad, not the coordinates); a turn keeps the framed
+    // distance and pivots on the cloud mean.
+    useCopilotViewer('pca-density', {
+        orbit: {
+            getHandle: () => sceneRef.current,
+            getCell: () => unitCell,
+            onReset: () => resetMainView()
+        },
+        ready: () => Boolean(kde && sceneRef.current) && !loadingKde,
+        settled: (ref) => Boolean(kde) && !loadingKde
+            && (kde.referenceNumber ?? selectedRef) === ref && framedRefRef.current === ref,
+        pcaAxes: () => selectedEllipsoid?.axes || kde?.axes || null,
+        describe: (orbit) => ({ ...(orbit.describe() || {}), site: selectedRef }),
+        lookAlong: (direction, up, orbit) => {
+            const done = orbit.lookAlong(direction, up);
+            if (done) setSnappedView(null);
+            return done;
+        },
+        sites: () => (sites?.sites || []).map((site) => ({ ref: site.referenceNumber, element: site.element })),
+        selectSite: (ref) => {
+            if (!sites?.sites.some((site) => site.referenceNumber === ref)) return false;
+            setSelectedRef(ref);
+            return true;
+        }
+    });
+
     // Toggle the main viewport between perspective and orthographic projection,
     // preserving the current orientation (the scene handle swaps the camera).
     const applyPerspective = useCallback((value) => {
@@ -1313,7 +1342,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
             {noRun && <Hint>Open a run folder with an <code>.rmc6f</code> file.</Hint>}
 
             <div className="pca-layout">
-                <Card roundEnds className="pca-viewport">
+                <Card roundEnds className="pca-viewport" data-copilot-card="pca-density">
                     <CardHeader
                         title={selectedEllipsoid
                             ? `${siteLabel(selectedEllipsoid)} site #${selectedEllipsoid.referenceNumber}`
@@ -1469,7 +1498,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                 </Card>
 
                 <div className="pca-side">
-                    <Card roundEnds className="pca-stats-panel">
+                    <Card roundEnds className="pca-stats-panel" data-copilot-card="pca-stats">
                         <CardHeader
                             title="Displacement statistics"
                             help={(
@@ -1786,6 +1815,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
                     </Card>
 
                     <SiteStructurePanel
+                        cardId="pca-sites"
                         sites={sites}
                         selectedRef={selectedRef}
                         onSelectSite={setSelectedRef}

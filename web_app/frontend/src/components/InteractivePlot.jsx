@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
-import { nearestFiniteIndex, niceDomain, plotPayloadError } from '../plotDomain';
+import { markWindow, nearestFiniteIndex, niceDomain, plotPayloadError } from '../plotDomain';
 import { GUIDE_STROKE, PLOT_PALETTE } from '../plotPalette';
 import { Banner, Pill, useIssue, useReportIssue } from '../ui';
 import { uiScale } from '../uiScale';
@@ -45,6 +45,11 @@ const isExperimental = (label) => /exp/i.test(label);
 // Opt-in toolbar props (absent, the toolbar row renders as before):
 //   legend={false}      no series legend — for a card whose title already
 //                       names the curves; the actions stay on the right.
+//   marks               [{ x, label }]: positions the AI Copilot points at
+//                       (highlight_cards), drawn as dashed blue guides with a
+//                       ▽ and a label over the plot area; outside the x range
+//                       they are not drawn. New marks zoom x to them (markWindow;
+//                       Reset zoom undoes it), and the zoom goes when they do.
 //   actionsTarget       an element the caller owns (a card header slot): the
 //                       actions (Reset zoom, Save) render there, and with
 //                       legend={false} the plot has no toolbar row at all, so
@@ -53,6 +58,7 @@ const isExperimental = (label) => /exp/i.test(label);
 //                       the actions render nowhere, never inline.
 
 const MARKER_RADIUS = 2.8;
+
 
 const formatNumber = (value) => {
     const abs = Math.abs(value);
@@ -136,7 +142,7 @@ const AxisLabel = ({ label: rawLabel, x, y, textAnchor = 'middle', rotate = fals
     );
 };
 
-const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget }) => {
+const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, actionsTarget, marks = null }) => {
     const wide = variant === 'wide';
     // 'fit' takes its viewBox from the rendered box instead of a fixed aspect,
     // so the drawing fills the card rather than letterboxing inside it. Opt-in:
@@ -287,6 +293,23 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         const initialY = fullExtent ? null : effectivePlot?.initialYDomain;
         return { x: currentX, y: yDomain || initialY || baseY, baseX, baseY };
     }, [visibleSeries, xDomain, yDomain, effectivePlot, fullExtent]);
+
+    // New Copilot marks zoom x to them (y follows the visible range); when they
+    // are cleared, that zoom goes too, unless the user has zoomed since.
+    // Adjusted during render, React's pattern for state that follows a prop.
+    const marksKey = Array.isArray(marks) && marks.length ? marks.map((mark) => mark?.x).join(',') : '';
+    const [marksSeen, setMarksSeen] = useState({ key: '', zoom: null });
+    if (marksKey !== marksSeen.key && (!marksKey || visibleSeries.length)) {
+        const zoom = marksKey ? markWindow(marks, domains.baseX) : null;
+        if (zoom) {
+            setXDomain(zoom);
+            setYDomain(null);
+        } else if (!marksKey && marksSeen.zoom && xDomain === marksSeen.zoom) {
+            setXDomain(null);
+            setYDomain(null);
+        }
+        setMarksSeen({ key: marksKey, zoom });
+    }
 
     // Under 'fit' the box is whatever the card gives, so tick density follows
     // it — roughly one y tick per 70px and one x tick per 95px, clamped to the
@@ -684,6 +707,34 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                             />
                         ))}
                     </g>
+                    {Array.isArray(marks) && marks.length > 0 && (
+                        <g className="plot-copilot-marks" clipPath={`url(#${clipId})`} aria-label="Marked by the AI Copilot">
+                            {marks
+                                .filter((mark) => Number.isFinite(mark?.x) && mark.x >= domains.x[0] && mark.x <= domains.x[1])
+                                .map((mark, index) => {
+                                    const px = xScale(mark.x);
+                                    // Labels alternate between two rows so close marks stay legible,
+                                    // and sit left of a mark in the right half of the plot.
+                                    const row = index % 2;
+                                    const right = px > view.left + plotWidth * 0.6;
+                                    return (
+                                        <g key={`${mark.x}-${index}`} className="plot-copilot-mark">
+                                            <line x1={px} x2={px} y1={view.top + 12} y2={view.top + plotHeight} />
+                                            <path d={`M${px - 5},${view.top + 2} L${px + 5},${view.top + 2} L${px},${view.top + 10} Z`} />
+                                            {mark.label && (
+                                                <text
+                                                    x={right ? px - 7 : px + 7}
+                                                    y={view.top + 22 + row * 17}
+                                                    textAnchor={right ? 'end' : 'start'}
+                                                >
+                                                    {mark.label}
+                                                </text>
+                                            )}
+                                        </g>
+                                    );
+                                })}
+                        </g>
+                    )}
                     <rect className="plot-frame" x={view.left} y={view.top} width={plotWidth} height={plotHeight} />
                     <AxisLabel label={effectivePlot.xLabel} x={view.left + plotWidth / 2} y={view.height - 10} />
                     <AxisLabel label={effectivePlot.yLabel} x={18} y={view.top + plotHeight / 2} rotate />

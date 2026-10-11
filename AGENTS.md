@@ -55,7 +55,7 @@ web_app/backend/app.py    Flask API; `server_settings()` (bind 127.0.0.1, debug 
 
 web_app/frontend/src/
   main.jsx                       React entry point (mounts App)
-  App.jsx                        shell, run-folder selection, page nav (Auto StoG hidden: `SHOW_AUTO_STOG = false`; Dashboard, Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions), Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop); the AI Copilot chatbox (`CopilotChat`, rendered once over every page) with its tools (`useCopilotTools`), `runKey` (the open run's identity) and the page-request channel (`pageRequest` → the Bond Geometry / Displacement Directions pages' `request` prop, for a step's "Show in <page>")
+  App.jsx                        shell, run-folder selection, page nav (Auto StoG hidden: `SHOW_AUTO_STOG = false`; Dashboard, Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions), Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop); the AI Copilot dock (`CopilotChat`, rendered once as the app grid's last child, `.app-copilot`: a column right of the pages or a sheet row under them) with its tools (`useCopilotTools` + `buildViewTools`), its card catalog (`buildCopilotCards`), the plot marks it hands back (`copilotMarks` → Dashboard `cardMarks`), `runKey` (the open run's identity) and the page-request channel (`pageRequest` → the Bond Geometry / Displacement Directions pages' `request` prop, for a step's "Show in <page>")
   symTolContext.js               shared Detected-SG tolerance ([symTol, setSymTol]) so the ladder pick survives page switches
   browserData.js                 static-mode local file parsing + run assembly (chooseStructureFile mirrors parsers.find_run_configuration, code-point tie-breaks)
   rmc6f.js                       shared .rmc6f atom-line grammar + parse report (classifyAtomLine, parseRmc6fAtoms, readRmc6fCellVectors) — mirror of parsers.py; keep in sync
@@ -81,17 +81,23 @@ web_app/frontend/src/
   pcaCrystalFrame.js             pure crystallographic-frame math (3×3 algebra, unit-cell vectors from the supercell lattice, fractional ⟷ PCA transforms, per-PC angles to a/b/c + [u v w], `crystalOrientationRows` (the Crystal orientation table), `projectVolumeOntoFrame` (crystal-frame wall marginals by line integrals through the volume)) — unit-tested, no Three.js
   useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages); `dataEpoch` in its request dependencies reloads in place on a Flask Live Data save. The routing itself is the exported `requestAnalysis(kind, params, { rmc6fText, directory, worker, signal })` (params never override kind/text/dir), which the Copilot's tools call with their own worker and an abort signal
   copilotTools.js                the AI Copilot's engine tools (host side of the llm tool contract): list_sites, analyze_displacement_directions, compute_bond_angles, analyze_clusters, analyze_modulations (through requestAnalysis, in a Copilot-only worker that Stop/timeout terminates, or Flask), detect_symmetry (describeSymmetry, browser-loaded runs); a cluster statistic is a finding only when its z AND its effect size clear the thresholds (CLUSTER_Z, CLUSTER_EFFECT, …); pure summarizers + deterministic checks, tested on the demo run (copilotTools.test.js). The tools only compute — they never change a page, the shared tolerance or a file
+  copilotCards.js                the cards the AI Copilot can point at (llm `cards` prop): one per Dashboard plot (`plot:<file>`), the χ² history, Detected SG, and every analysis page's cards, with page, kind/file, marks, view3d; every id is a `data-copilot-card` in its page (copilotCards.test.js checks)
+  copilotViewTools.js            the Copilot's host view tools: orient_3d_view (look down [uvw] / a,b,c / PC1-3, centre, ring, select a site, reset) and current_view; view tools change only what is on screen
+  viewer3d.js                    crystal-direction math for the view tools (parseDirection, [uvw] ⟷ Cartesian, nearestLowIndex, viewUp: c up, b up down c) and the 3D-view registry (registerViewer / waitForViewer)
+  useCopilotViewer.js            a Three.js panel joins that registry under its card id (orbitViewer: describe, lookAlong, centerAt, reset over its OrbitControls)
+  cameraPose.js                  readPose / applyPose / turnTo: the 650 ms slerp of a camera turn (immediate under reduced motion), exact final pose, damping flushed
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
   uiScale.js                     root type size / 15px (2K / 4K scale) for code that draws in CSS px: canvas text, the 'fit' plot viewBox
   llm/                           experimental AI Copilot (replaced the chat-only AI Assistant 2026-10-09) — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini/Anthropic) that runs the analyses itself; see its README
     context/                     dashboard state → compact LLM context JSON (symmetry + per-site displacements, pair correlations, char budget)
     provider/client.js           OpenAI-compatible client (models, SSE streaming incl. reasoning and tool-call fragments with extra_content, HTTP status on errors, connection hints)
-    copilot/                     the agent loop (agentLoop.js: rounds/calls/time/char budgets, tools-unsupported fallback, empty-final fallback), tool-call assembly + argument validation (toolCalls.js), the tool contract + executeToolCall (tools.js), tools over the run props (runTools.js), the Outcome verdict parser (outcome.js), the turn reducer (turnState.js)
+    copilot/                     the agent loop (agentLoop.js: rounds/calls/time/char budgets, tools-unsupported fallback, empty-final fallback; view tools never cached), tool-call assembly + argument validation incl. arrays/objects (toolCalls.js), the tool contract + executeToolCall (tools.js: run(args, { signal, focus }), cards(args), view), tools over the run props (runTools.js), highlight_cards (viewTools.js), the Outcome verdict parser (outcome.js), the turn reducer (turnState.js)
     prompts/                     shared system prompt, the Copilot prompt + message builder (copilot.js), watchdog message builders (templates.js)
     watchdog/                    convergence heuristics (source of truth) + LLM-narrated badge hook
     useAssistant.js              shared hook: settings, connection probe/auto-connect, run context
     useCopilot.js                the conversation: turns, Stop, tools-unsupported models, memory (conversationMemory), reset on runKey
-    components/                  CopilotChat (the chatbox: bottom-right launcher → floating panel, mounted on first open and kept while closed; Esc closes; phone-size full sheet that closes after Show in) + connection bar, settings drawer (analyses switch), CopilotView (Thinking panel, ToolStep cards with Show in <page>, Outcome chip, live region), MarkdownMessage, WatchdogBadge
+    focus/                       the card-focus controller (focus.js: data-copilot-focus primary/secondary/running/preview on the host's [data-copilot-card], page switch + wait + scroll, cleared by a click outside the dock, a new question or a collapse) and card references in answers (cardRefs.js: `[label](card:<id>)`, `[[id]]`)
+    components/                  CopilotChat (the dock: docked side panel ≥ 1080 × 541 (laptops, monitors, landscape tablets), else a bottom sheet; resizable, collapses to a rail with an unread dot, state in `rmc-llm-dock-v1`; dockLayout.js its pure size rules; owns the focus controller; Esc collapses) + connection bar, settings drawer (analyses switch), CopilotView (Thinking panel, ToolStep cards with Show in <page>, card chips, Outcome chip, live region), MarkdownMessage, WatchdogBadge
   ui/                            the UI kit — every shared look: ui.css (ui- classes, loaded once from main.jsx right after index.css) + thin components (Page, Card/CardHeader, ControlsBar/Control/Switch, Segmented, Pill/ToolButton/IconButton/PrimaryButton, Chip, StatRail/Stat/StatCard, Banner/Hint/EmptyState, InfoBadge, SaveMenu, the Problems section: Issues.jsx + issueStore.js); see ui/README.md
   components/
     AutoStogPage.jsx             Auto StoG tab (hidden in the shipped build: `SHOW_AUTO_STOG = false`) — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets with ? help) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
@@ -392,7 +398,14 @@ web_app/frontend/src/
   edges that can meet a notch or home indicator add `--safe-top/right/bottom/left`
   (`viewport-fit=cover`). The header tiers live in `App.css` (≥ 1600 full row; 1041–1599 one
   tightened row, sized for MacBook Air 13" / Pro 14" and iPad Pro 13" landscape; 761–1040 two
-  rows; ≤ 760 three rows). At ≤ 760 wide or ≤ 540 tall the `.main-content` shell scrolls instead
+  rows; ≤ 760 three rows). The tiers above 760 (the header's 1599/1040, the pages' 980/1100/1200,
+  the 1500 three-column dashboard, the footer, `.ui-kbd`) are **container queries** on
+  `.main-content` (`container: workbench`), because the docked AI Copilot takes width from the
+  pages: write new content-width rules as `@container workbench (…)`, nest an aspect-ratio or
+  height condition as `@media (…) { @container workbench (…) {…} }`, and keep phone tiers (≤ 760,
+  ≤ 540 tall) as media queries (the Copilot never docks there and docked leaves the pages ≥ 760
+  px). A sheet's height is taken off `--viewport-h` inside `.main-content` (`--copilot-sheet-h`).
+  At ≤ 760 wide or ≤ 540 tall the `.main-content` shell scrolls instead
   of each `.ui-page`, and the sticky header pins by its tab row using `--header-pin` /
   `--header-pinned-h`, which `App.jsx` measures — keep the tabs the header's last row there.
   WebGL canvases inside `.pca-canvas` / `.pca-structure` are absolutely positioned so their last
@@ -426,20 +439,28 @@ web_app/frontend/src/
   `liveData`) and must not import from the rest of the app except `figureExport.js`
   (`downloadBlob`/`sanitizeFilename`). The engines reach it the same way: the host builds the
   tool objects (`copilotTools.js`, the contract in `llm/copilot/tools.js` and the llm README) and
-  passes them as the `tools` prop of `CopilotChat` (the chatbox the host renders once, over its
+  passes them as the `tools` prop of `CopilotChat` (the dock the host renders once, beside its
   pages), with `pages`/`onOpenPage(key, params)` for a step's Show in / Open button (`params` =
-  the tool's optional `pageParams(args)`), `runKey` (a new run restarts the conversation) and
-  `onOpenChange`. Tools compute and return `{ data, checks }`; none may navigate, change shared
-  state or write a file — the user presses Show in. Cell math
+  the tool's optional `pageParams(args)`; a view tool's page switch passes null), `runKey` (a new
+  run restarts the conversation), `onOpenChange`, `cards`, `onMarks` and `onLayoutChange`.
+  Analysis tools compute and return `{ data, checks }`; none may navigate, change shared state or
+  write a file — the user presses Show in. View tools (below) change only what is on screen. Cell math
   is duplicated from `ModelSummary.jsx` on purpose. This keeps the module extractable — don't
   "clean up" the duplication by adding host imports. The R-value series it receives is **ln(χ²) of
   the last .log column** (named in `plotData.chiColumn`, e.g. `X_ray_(R)1` — one fit term, not the
   total; browserData applies `Math.log`); the context builder labels it so the model reads it
   correctly, and reads `non_gaussianity` as Mardia's kurtosis (sites ranked by its magnitude).
   It uses the UI kit by **class-name strings only**, never kit JS — exactly one class, `ui-pill`
-  (a step's Show in / Open button); the chatbox's launcher and panel are the module's own look
-  (`CopilotChat.css`, z-index 40 over the pages and the phone-size sticky header). A kit token its own CSS reads keeps the old literal as a fallback
-  (`var(--warning, #b45309)`), so an extracted copy still renders.
+  (a step's Show in / Open button); the dock, rail and sheet are the module's own look
+  (`CopilotChat.css`), placed by the host in its own grid track (App.css `.app-copilot`, by
+  `data-mode`), never over a page. A kit token its own CSS reads keeps the old literal as a fallback
+  (`var(--warning, #b45309)`), so an extracted copy still renders. **View tools** (since
+  2026-10-10, the maintainer's decision): `highlight_cards` (module, from the `cards` prop),
+  `orient_3d_view` and `current_view` (host, `copilotViewTools.js`) may open a page, scroll, give a
+  card its breathing edge (`data-copilot-focus`, Copilot.css), mark a plot, turn a 3D camera, ring
+  sites, and select a site as a click would — never change data, an analysis input, the shared
+  tolerance or a file. A page card the Copilot may point at carries `data-copilot-card="<id>"`
+  with the id from `copilotCards.js`; a new 3D view registers through `useCopilotViewer(id, …)`.
 
 ## Run & test
 
@@ -538,9 +559,10 @@ plot-parity tests, so those run in CI.
 
 12. AI Copilot phase 2 ([docs/COPILOT_PLAN.md](docs/COPILOT_PLAN.md) §9, §11): Show in for the
     PCA Ellipsoid and Atomic Density pages (only Bond Geometry and Displacement Directions take a
-    `request` today); whether the Copilot may operate the pages itself rather than through the
-    step's button (a decision for the maintainer); more tools (KDE slice statistics, CIF export
-    behind a user confirmation); persisted conversations. Live checks against each provider (Ollama, LM Studio, OpenAI, Gemini, Anthropic)
+    `request` today); the Copilot now changes what is on screen through its view tools (card
+    focus, plot marks, 3D cameras, site selection — 2026-10-10), but not a page's analysis inputs;
+    more tools (KDE slice statistics, CIF export behind a user confirmation); marks on the Bond
+    Geometry angle plot; persisted conversations. Live checks against each provider (Ollama, LM Studio, OpenAI, Gemini, Anthropic)
     still need a real model and keys: the dialect handling is unit-tested on recorded shapes only.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { contextToJson } from '../context/runContext';
 import { stepSummary } from '../copilot/turnState';
 import { useCopilot } from '../useCopilot';
@@ -12,7 +12,8 @@ import { ArrowUpIcon, ChevronIcon, StopIcon, UserGlyph, WaveMark } from './icons
 // The Copilot conversation: questions, and for each one the assistant's turn —
 // what it said, the analyses it ran (ToolStep cards), its answer, and the
 // Outcome chip with its own verdict. User messages stay plain text; replies
-// render Markdown through the sanitizing pipeline (MarkdownMessage).
+// render Markdown through the sanitizing pipeline (MarkdownMessage), with the
+// cards they cite as chips that bring the card on screen (`focus.show`).
 
 const SUGGESTIONS = [
     'Which site is most anharmonic, and does it have a preferred displacement direction?',
@@ -75,7 +76,7 @@ const ReasoningPanel = ({ reasoning, active, reasoningMs }) => {
     );
 };
 
-const TextSegment = ({ item, last }) => {
+const TextSegment = ({ item, last, cardLinks }) => {
     const thinkingOnly = item.streaming && !item.text;
     if (!item.text && !item.reasoning && !(item.streaming && last)) return null;
     return (
@@ -86,7 +87,7 @@ const TextSegment = ({ item, last }) => {
             {thinkingOnly && !item.reasoning && <ThinkingDots />}
             {item.text ? (
                 <div className={`llm-bubble is-markdown${item.streaming ? ' is-streaming' : ''}`}>
-                    <MarkdownMessage>{item.text}</MarkdownMessage>
+                    <MarkdownMessage {...cardLinks}>{item.text}</MarkdownMessage>
                     {item.streaming && <span className="llm-caret" aria-hidden="true" />}
                 </div>
             ) : null}
@@ -103,7 +104,7 @@ const groupItems = (items) => items.reduce((groups, item) => {
     return groups;
 }, []);
 
-const AssistantTurn = ({ turn, pages, onOpenPage }) => {
+const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks }) => {
     const groups = groupItems(turn.items);
     const summary = stepSummary(turn.items);
     const stopNote = STOP_NOTES[turn.stoppedBy];
@@ -124,13 +125,16 @@ const AssistantTurn = ({ turn, pages, onOpenPage }) => {
                         ))}
                     </ol>
                 ) : (
-                    <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} />
+                    <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} />
                 )))}
                 {turn.outcome && (
                     <div className={`llm-outcome is-${turn.outcome.status.replace(' ', '-')}`} role="status">
                         <span className="llm-outcome-label">Outcome</span>
                         <strong>{OUTCOME_TEXT[turn.outcome.status]}</strong>
-                        {turn.outcome.note && <span className="llm-outcome-note">{turn.outcome.note}</span>}
+                        {turn.outcome.note && (
+                            // Models write math and card links in the note too.
+                            <span className="llm-outcome-note"><MarkdownMessage inline {...cardLinks}>{turn.outcome.note}</MarkdownMessage></span>
+                        )}
                     </div>
                 )}
                 {!turn.streaming && (summary || stopNote || turn.toolsUnsupported) && (
@@ -169,8 +173,17 @@ const UserMessage = ({ content }) => (
     </div>
 );
 
-const CopilotView = ({ context, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey }) => {
-    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey });
+const CopilotView = ({
+    context, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey,
+    cards = null, focus = null, onTurnEnd = null, onBusyChange = null
+}) => {
+    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd });
+    useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
+    const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
+    const previewCard = useCallback((id) => { focus?.preview(id); }, [focus]);
+    const cardLinks = useMemo(() => (cards?.length && focus
+        ? { cards, onCardClick: showCard, onCardHover: previewCard }
+        : null), [cards, focus, showCard, previewCard]);
     const [draft, setDraft] = useState('');
     const logRef = useRef(null);
     const textareaRef = useRef(null);
@@ -192,7 +205,7 @@ const CopilotView = ({ context, settings, connected, tools, toolsEnabled, pages,
     useEffect(() => {
         const ta = textareaRef.current;
         if (!connected || !ta) return;
-        const panel = ta.closest('[role="dialog"]');
+        const panel = ta.closest('.llm-chat-panel');
         if (panel && document.activeElement === panel) ta.focus();
     }, [connected]);
 
@@ -224,7 +237,9 @@ const CopilotView = ({ context, settings, connected, tools, toolsEnabled, pages,
         if (copilot.toolsUnsupported) return 'This model cannot run analyses — answers come from the run summary.';
         if (!toolsEnabled) return 'Analyses are off — answers come from the run summary.';
         if (!tools.length) return 'No analyses are available for this run.';
-        return `Can run ${tools.length} ${tools.length === 1 ? 'analysis' : 'analyses'} on this run.`;
+        const analyses = tools.filter((tool) => !tool.view).length;
+        const pointing = tools.some((tool) => tool.view) ? ' and point at its cards' : '';
+        return `Can run ${analyses} ${analyses === 1 ? 'analysis' : 'analyses'} on this run${pointing}.`;
     })();
 
     return (
@@ -233,8 +248,8 @@ const CopilotView = ({ context, settings, connected, tools, toolsEnabled, pages,
                 <div className="llm-chat-log" ref={logRef}>
                     {copilot.turns.map((turn, index) => (turn.role === 'user'
                         ? <UserMessage key={index} content={turn.content} />
-                        : <AssistantTurn key={index} turn={turn} pages={pages} onOpenPage={onOpenPage} />))}
-                    {copilot.live && <AssistantTurn turn={copilot.live} pages={pages} onOpenPage={onOpenPage} />}
+                        : <AssistantTurn key={index} turn={turn} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />))}
+                    {copilot.live && <AssistantTurn turn={copilot.live} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />}
                 </div>
             ) : (
                 <div className="llm-chat-empty">
@@ -255,8 +270,8 @@ const CopilotView = ({ context, settings, connected, tools, toolsEnabled, pages,
                     )}
                     {tools.length > 0 && (
                         <details className="llm-context-inspector">
-                            <summary title="The analyses the Copilot may run on this run. They only compute: none changes a page or a file.">
-                                Analyses the Copilot can run
+                            <summary title="The analyses the Copilot may run on this run, and its view tools. Analyses only compute; view tools only point at cards and turn 3D views — none changes data or a file.">
+                                What the Copilot can run
                             </summary>
                             <ul className="llm-tool-list">
                                 {tools.map((tool) => (

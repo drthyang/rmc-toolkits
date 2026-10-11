@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import Dashboard from './components/Dashboard';
 import StructurePage from './components/StructurePage';
@@ -11,6 +11,8 @@ import BondGeometryPage from './components/BondGeometryPage';
 import AutoStogPage from './components/AutoStogPage';
 import { CopilotChat } from './llm';
 import useCopilotTools from './copilotTools';
+import { buildCopilotCards } from './copilotCards';
+import { buildViewTools } from './copilotViewTools';
 import API_BASE_URL from './api';
 import {
   buildLocalRun,
@@ -62,6 +64,12 @@ function App() {
   // Per-site PCA ellipsoid table published by the PCA Ellipsoid page (once opened),
   // also fed to the AI Copilot so it can reason about the thermal displacements.
   const [pcaSites, setPcaSites] = useState(null);
+  // Marks the AI Copilot puts inside a plot card while it points at it
+  // ({ [cardId]: [{ x, label }] }, from highlight_cards), drawn by the Dashboard.
+  const [copilotMarks, setCopilotMarks] = useState({});
+  // Where the Copilot sits (docked beside the pages, or a sheet under them):
+  // a sheet takes height from the pages, published as --copilot-sheet-h.
+  const [copilotLayout, setCopilotLayout] = useState(null);
   const [currentDirectory, setCurrentDirectory] = useState('data');
   const [draftDirectory, setDraftDirectory] = useState('data');
   const [browseStatus, setBrowseStatus] = useState(null);
@@ -95,11 +103,35 @@ function App() {
   const runKey = `${currentDirectory}|${localRun?.runId ?? ''}`;
   // The analyses the AI Copilot may run on the open run (copilotTools.js):
   // they compute through the same engines as the pages and change nothing.
-  const copilotTools = useCopilotTools({
+  const analysisTools = useCopilotTools({
     directory: currentDirectory,
     localRun,
     structure: assistantRun?.structure ?? null,
   });
+  // The cards it may point at, and the view tools that turn the 3D views
+  // (copilotCards.js, copilotViewTools.js). current_view reads the page on
+  // screen through a ref, so the tools are not rebuilt on every page switch.
+  const activePageRef = useRef(activePage);
+  activePageRef.current = activePage;
+  const copilotCards = useMemo(() => buildCopilotCards({
+    plotFiles: assistantRun?.plotFiles ?? [],
+    rValueFile: assistantRun?.rValueFile ?? null,
+    symmetry: assistantRun?.symmetry ?? null,
+  }), [assistantRun?.plotFiles, assistantRun?.rValueFile, assistantRun?.symmetry]);
+  const copilotTools = useMemo(() => [
+    ...analysisTools,
+    ...buildViewTools({ cards: copilotCards, pages: COPILOT_PAGES, activePage: () => activePageRef.current }),
+  ], [analysisTools, copilotCards]);
+  // Only where the dock sits matters here (not its width), so dragging the
+  // dock's edge does not re-render the pages.
+  const handleCopilotLayout = useCallback((layout) => setCopilotLayout((current) => (
+    current && current.mode === layout.mode && current.open === layout.open && current.sheet === layout.sheet
+      ? current
+      : layout
+  )), []);
+  const copilotSheetHeight = copilotLayout?.mode === 'sheet'
+    ? (copilotLayout.open ? `calc(${copilotLayout.sheet} * var(--viewport-h))` : '2.75rem')
+    : '0px';
 
   useEffect(() => {
     document.documentElement.dataset.theme = 'light';
@@ -267,10 +299,13 @@ function App() {
   };
 
   // A Copilot step's "Show in <page>": switch there and hand the page what to
-  // load. The chatbox stays open over it. (The Copilot never calls this on its
-  // own — only the step's button does.)
+  // load; the Copilot stays docked beside it. Its view tools (a card it
+  // points at, a 3D view it turns) switch the page through here too, with no
+  // params: they change what is on screen, never what a page computes.
   const handleCopilotOpenPage = (page, params) => {
-    handlePageChange(page);
+    // Already there (a card the Copilot points at on this page): stay put,
+    // keeping the scroll position.
+    if (page !== activePageRef.current) handlePageChange(page);
     if (params) {
       pageRequestIdRef.current += 1;
       setPageRequest({ page, params, id: pageRequestIdRef.current });
@@ -420,7 +455,7 @@ function App() {
         an uncaught error goes to the page on screen, and opening another run
         clears the last run's one-off failures. */}
     <IssueWatcher page={activePage} resetKey={runKey} keep={RUN_INDEPENDENT_PAGES} />
-    <div className="app-container">
+    <div className="app-container" style={{ '--copilot-sheet-h': copilotSheetHeight }}>
       <main className="main-content" ref={shellRef}>
         <header className="app-header" ref={headerRef}>
           <div className="header-primary">
@@ -625,6 +660,7 @@ function App() {
                   directory={currentDirectory}
                   localRun={localRun}
                   watchFiles={watchFiles}
+                  cardMarks={copilotMarks}
                   wantAssistantData={copilotOpened}
                   onRunContextChange={setAssistantRun}
                 />
@@ -687,24 +723,29 @@ function App() {
           )}
         </div>
         </SymTolContext.Provider>
-        {/* The AI Copilot chatbox floats over every page; it mounts on first
-            open and keeps its conversation while closed. */}
-        <CopilotChat
-          runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
-          plotFiles={assistantRun?.plotFiles ?? []}
-          rValueFile={assistantRun?.rValueFile ?? null}
-          structure={assistantRun?.structure ?? null}
-          symmetry={assistantRun?.symmetry ?? null}
-          runSettings={assistantRun?.runSettings ?? null}
-          pcaSites={pcaSites}
-          liveData={watchFiles}
-          tools={copilotTools}
-          pages={COPILOT_PAGES}
-          onOpenPage={handleCopilotOpenPage}
-          runKey={runKey}
-          onOpenChange={(open) => { if (open) setCopilotOpened(true); }}
-        />
       </main>
+      {/* The AI Copilot docks beside the pages (a sheet under them on tablets
+          and phones), in its own grid track, so it never covers a card; it
+          mounts on first open and keeps its conversation while collapsed. */}
+      <CopilotChat
+        className="app-copilot"
+        runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
+        plotFiles={assistantRun?.plotFiles ?? []}
+        rValueFile={assistantRun?.rValueFile ?? null}
+        structure={assistantRun?.structure ?? null}
+        symmetry={assistantRun?.symmetry ?? null}
+        runSettings={assistantRun?.runSettings ?? null}
+        pcaSites={pcaSites}
+        liveData={watchFiles}
+        tools={copilotTools}
+        pages={COPILOT_PAGES}
+        onOpenPage={handleCopilotOpenPage}
+        runKey={runKey}
+        onOpenChange={(open) => { if (open) setCopilotOpened(true); }}
+        cards={copilotCards}
+        onMarks={setCopilotMarks}
+        onLayoutChange={handleCopilotLayout}
+      />
     </div>
     </IssueStoreProvider>
   );
