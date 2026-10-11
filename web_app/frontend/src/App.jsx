@@ -9,7 +9,8 @@ import PcaKdePage from './components/PcaKdePage';
 import OrientationPage from './components/OrientationPage';
 import BondGeometryPage from './components/BondGeometryPage';
 import AutoStogPage from './components/AutoStogPage';
-import { AssistantPage } from './llm';
+import { CopilotChat } from './llm';
+import useCopilotTools from './copilotTools';
 import API_BASE_URL from './api';
 import {
   buildLocalRun,
@@ -36,13 +37,30 @@ const SHOW_AUTO_STOG = false;
 // on its own uploads): opening another run keeps them listed.
 const RUN_INDEPENDENT_PAGES = ['autostog'];
 
+// The pages an AI Copilot step can open ("Show in Bond Geometry"), by page key.
+const COPILOT_PAGES = {
+  dashboard: 'Dashboard',
+  structure: 'Atomic Density',
+  geometry: 'Bond Geometry',
+  ellipsoids: 'PCA Ellipsoid',
+  orientation: 'Displacement Directions',
+};
+
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
-  const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, orientation: false, geometry: false, assistant: false });
-  // Parsed run context published by the Dashboard, consumed by the AI Assistant page.
+  const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, orientation: false, geometry: false });
+  // Parsed run context published by the Dashboard, consumed by the AI Copilot chatbox.
   const [assistantRun, setAssistantRun] = useState(null);
+  // Whether the AI Copilot chatbox has been opened yet: until then the
+  // Dashboard skips the work that only feeds it (symmetry ladder, .dat parse).
+  const [copilotOpened, setCopilotOpened] = useState(false);
+  // "Show in <page>" from a Copilot step: the page to load and what to load
+  // there (Bond Geometry's triplet + windows, Displacement Directions' site).
+  // `id` changes on every request, so the page applies each one once.
+  const [pageRequest, setPageRequest] = useState(null);
+  const pageRequestIdRef = useRef(0);
   // Per-site PCA ellipsoid table published by the PCA Ellipsoid page (once opened),
-  // also fed to the AI Assistant so it can reason about the thermal displacements.
+  // also fed to the AI Copilot so it can reason about the thermal displacements.
   const [pcaSites, setPcaSites] = useState(null);
   const [currentDirectory, setCurrentDirectory] = useState('data');
   const [draftDirectory, setDraftDirectory] = useState('data');
@@ -72,6 +90,16 @@ function App() {
   const headerRef = useRef(null);
   const staticMode = isStaticMode();
   const fsAccess = staticMode && supportsFileSystemAccess();
+  // The open run's identity: another run clears its one-off problems and
+  // starts the AI Copilot on a new conversation.
+  const runKey = `${currentDirectory}|${localRun?.runId ?? ''}`;
+  // The analyses the AI Copilot may run on the open run (copilotTools.js):
+  // they compute through the same engines as the pages and change nothing.
+  const copilotTools = useCopilotTools({
+    directory: currentDirectory,
+    localRun,
+    structure: assistantRun?.structure ?? null,
+  });
 
   useEffect(() => {
     document.documentElement.dataset.theme = 'light';
@@ -88,8 +116,8 @@ function App() {
   // tab row (App.css). Measure how far the header may slide up — to just above
   // the tabs, keeping its bottom padding above them too — and publish it on the
   // shell as --header-pin (the sticky offset) and --header-pinned-h (the strip
-  // left on screen, which a fill-height page such as the AI Assistant
-  // subtracts). Elsewhere the header is static and the variables are unused.
+  // left on screen, which the AI Copilot's phone-size chat sheet subtracts).
+  // Elsewhere the header is static and the variables are unused.
   useEffect(() => {
     const shell = shellRef.current;
     const header = headerRef.current;
@@ -238,6 +266,17 @@ function App() {
     setLoadRequest((count) => count + 1);
   };
 
+  // A Copilot step's "Show in <page>": switch there and hand the page what to
+  // load. The chatbox stays open over it. (The Copilot never calls this on its
+  // own — only the step's button does.)
+  const handleCopilotOpenPage = (page, params) => {
+    handlePageChange(page);
+    if (params) {
+      pageRequestIdRef.current += 1;
+      setPageRequest({ page, params, id: pageRequestIdRef.current });
+    }
+  };
+
   const handleNativeBrowse = async () => {
     setBrowseStatus({ kind: 'loading', text: 'Opening folder picker…' });
     try {
@@ -380,7 +419,7 @@ function App() {
     {/* Every page lists its problems in one section at its top (ui/Issues.jsx);
         an uncaught error goes to the page on screen, and opening another run
         clears the last run's one-off failures. */}
-    <IssueWatcher page={activePage} resetKey={`${currentDirectory}|${localRun?.runId ?? ''}`} keep={RUN_INDEPENDENT_PAGES} />
+    <IssueWatcher page={activePage} resetKey={runKey} keep={RUN_INDEPENDENT_PAGES} />
     <div className="app-container">
       <main className="main-content" ref={shellRef}>
         <header className="app-header" ref={headerRef}>
@@ -444,12 +483,6 @@ function App() {
                 onClick={() => handlePageChange('orientation')}
               >
                 Displacement Directions
-              </SegmentedButton>
-              <SegmentedButton
-                active={activePage === 'assistant'}
-                onClick={() => handlePageChange('assistant')}
-              >
-                AI Assistant
               </SegmentedButton>
             </Segmented>
           </div>
@@ -592,7 +625,7 @@ function App() {
                   directory={currentDirectory}
                   localRun={localRun}
                   watchFiles={watchFiles}
-                  wantAssistantData={visitedPages.assistant}
+                  wantAssistantData={copilotOpened}
                   onRunContextChange={setAssistantRun}
                 />
               </IssueScope>
@@ -626,7 +659,12 @@ function App() {
               {/* Displacement-direction histogram — independent of the PCA page
                   (shares only the site picker via useSiteCloud). */}
               <IssueScope page="orientation">
-                <OrientationPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
+                <OrientationPage
+                  dataEpoch={configEpoch}
+                  directory={currentDirectory}
+                  localRun={localRun}
+                  request={pageRequest?.page === 'orientation' ? pageRequest : null}
+                />
               </IssueScope>
             </div>
           )}
@@ -638,35 +676,34 @@ function App() {
               {/* Bond-angle (triplet) distribution + bond-length/coordination
                   statistics — the RMCProfile `triplets` workflow. */}
               <IssueScope page="geometry">
-                <BondGeometryPage dataEpoch={configEpoch} directory={currentDirectory} localRun={localRun} />
-              </IssueScope>
-            </div>
-          )}
-          {visitedPages.assistant && (
-            <div
-              className={`workspace-page${activePage === 'assistant' ? ' is-active' : ' is-hidden'}`}
-              aria-hidden={activePage !== 'assistant'}
-            >
-              <IssueScope page="assistant">
-                {/* This page cannot place the section itself, so it sits above it. */}
-                <div className="workspace-stack">
-                  <PageIssues className="workspace-issues" />
-                  <AssistantPage
-                    runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
-                    plotFiles={assistantRun?.plotFiles ?? []}
-                    rValueFile={assistantRun?.rValueFile ?? null}
-                    structure={assistantRun?.structure ?? null}
-                    symmetry={assistantRun?.symmetry ?? null}
-                    runSettings={assistantRun?.runSettings ?? null}
-                    pcaSites={pcaSites}
-                    liveData={watchFiles}
-                  />
-                </div>
+                <BondGeometryPage
+                  dataEpoch={configEpoch}
+                  directory={currentDirectory}
+                  localRun={localRun}
+                  request={pageRequest?.page === 'geometry' ? pageRequest : null}
+                />
               </IssueScope>
             </div>
           )}
         </div>
         </SymTolContext.Provider>
+        {/* The AI Copilot chatbox floats over every page; it mounts on first
+            open and keeps its conversation while closed. */}
+        <CopilotChat
+          runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
+          plotFiles={assistantRun?.plotFiles ?? []}
+          rValueFile={assistantRun?.rValueFile ?? null}
+          structure={assistantRun?.structure ?? null}
+          symmetry={assistantRun?.symmetry ?? null}
+          runSettings={assistantRun?.runSettings ?? null}
+          pcaSites={pcaSites}
+          liveData={watchFiles}
+          tools={copilotTools}
+          pages={COPILOT_PAGES}
+          onOpenPage={handleCopilotOpenPage}
+          runKey={runKey}
+          onOpenChange={(open) => { if (open) setCopilotOpened(true); }}
+        />
       </main>
     </div>
     </IssueStoreProvider>

@@ -1,20 +1,9 @@
-/* Styles for the experimental AI Assistant card and the watchdog badge.
-   Reuses the app's theme variables (--panel, --panel-raised, --accent, …) and
-   the host's UI-kit classes by name (ui-card, ui-card__header-flush, ui-pill;
-   src/ui/ui.css). A token this module introduces carries its old literal as a
-   fallback, so the module still renders without the host's token block. */
-
-.ui-card.llm-assistant-card.is-collapsed .ui-card__header-flush {
-    border-bottom: none;
-    margin-bottom: 0;
-    padding-bottom: 0;
-}
-
-.llm-assistant-heading {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
+/* Styles for the AI Copilot conversation and the watchdog badge. Reuses the app's
+   theme variables (--panel, --panel-raised, --accent, …) and, for the page
+   shell and surface, the host's UI-kit classes by name (ui-page, ui-card,
+   ui-empty, ui-pill; src/ui/ui.css). A token this module introduces carries
+   its old literal as a fallback, so the module still renders without the
+   host's token block. */
 
 /* Amber — the complement of the app's cobalt accent — so the beta reminder
    stands out instead of blending into the blue theme; same warning palette as
@@ -29,20 +18,6 @@
     border: 1px solid color-mix(in srgb, #b45309 32%, transparent);
     border-radius: 999px;
     padding: 0.12rem 0.5rem;
-}
-
-.llm-connection-dot {
-    width: 0.55rem;
-    height: 0.55rem;
-    border-radius: 50%;
-    background: var(--success);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent);
-}
-
-.llm-assistant-body {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
 }
 
 /* Primary call-to-action, matching the app's accent buttons (Load, etc.). */
@@ -994,6 +969,323 @@
 .llm-send.is-stop:hover:not(:disabled) {
     background: var(--text);
     border-color: var(--text);
+}
+
+/* --- Copilot turns: analysis steps, Outcome chip, composer foot ---------- */
+
+/* A Copilot turn holds step cards next to its text, so it may run wider than
+   a chat bubble. */
+.llm-message-body.llm-turn {
+    max-width: 92%;
+    gap: 0.45rem;
+}
+
+.llm-chat-empty-sub {
+    max-width: 30rem;
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--muted);
+}
+
+.llm-tool-list {
+    margin: 0;
+    padding: 0.6rem 0.7rem 0.6rem 1.6rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.llm-tool-list li + li {
+    margin-top: 0.35rem;
+}
+
+.llm-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.llm-step {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.45rem 0.6rem;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border-strong);
+    border-radius: 9px;
+}
+
+.llm-step.is-ok { border-left-color: var(--success); }
+.llm-step.is-warn { border-left-color: var(--warning, #b45309); }
+.llm-step.is-failed { border-left-color: var(--danger); }
+.llm-step.is-running { border-left-color: var(--accent); }
+
+.llm-step-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 0;
+    padding: 0;
+    text-align: left;
+    color: var(--text);
+    background: none;
+    border: 0;
+    box-shadow: none;
+}
+
+.llm-step-head:hover:not(:disabled) {
+    background: none;
+    color: var(--text-strong);
+}
+
+.llm-step-head:disabled {
+    opacity: 1;
+    cursor: default;
+}
+
+.llm-step-dot {
+    flex: 0 0 auto;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--border-strong);
+}
+
+.llm-step.is-ok .llm-step-dot { background: var(--success); }
+.llm-step.is-warn .llm-step-dot { background: var(--warning, #b45309); }
+.llm-step.is-failed .llm-step-dot { background: var(--danger); }
+
+.llm-step.is-running .llm-step-dot {
+    background: var(--accent);
+    animation: llm-step-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes llm-step-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .llm-step.is-running .llm-step-dot { animation: none; }
+}
+
+.llm-step-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.84rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.llm-step-meta {
+    flex: 0 0 auto;
+    font-size: 0.74rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.llm-step-chevron {
+    display: grid;
+    place-items: center;
+    width: 1rem;
+    height: 1rem;
+    color: var(--subtle);
+    transition: transform 140ms ease;
+}
+
+.llm-step-chevron svg {
+    width: 0.9rem;
+    height: 0.9rem;
+}
+
+.llm-step-head[aria-expanded='true'] .llm-step-chevron {
+    transform: rotate(180deg);
+}
+
+.llm-step-headline {
+    margin: 0 0 0 1.05rem;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.llm-step-headline.is-fail { color: var(--danger); }
+.llm-step-headline.is-warn { color: var(--warning, #b45309); }
+
+.llm-step-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-left: 1.05rem;
+}
+
+.llm-step-checks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.79rem;
+    line-height: 1.45;
+    color: var(--text);
+}
+
+.llm-step-check-level {
+    display: inline-block;
+    min-width: 2.6rem;
+    margin-right: 0.4rem;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--subtle);
+}
+
+.llm-step-check.is-ok .llm-step-check-level { color: var(--success); }
+.llm-step-check.is-warn .llm-step-check-level { color: var(--warning, #b45309); }
+.llm-step-check.is-fail .llm-step-check-level { color: var(--danger); }
+
+.llm-step-section-title {
+    display: block;
+    margin-bottom: 0.2rem;
+    font-size: 0.7rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--subtle);
+}
+
+.llm-step-section pre {
+    max-height: 14rem;
+    overflow: auto;
+    margin: 0;
+    padding: 0.5rem 0.6rem;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.72rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text);
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+}
+
+.llm-step-open {
+    align-self: flex-start;
+    margin-left: 1.05rem;
+}
+
+/* The verdict the model gives its own answer. */
+.llm-outcome {
+    align-self: flex-start;
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.5rem;
+    max-width: 100%;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-soft);
+}
+
+.llm-outcome-label {
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--subtle);
+}
+
+.llm-outcome strong {
+    font-weight: 700;
+}
+
+.llm-outcome-note {
+    color: var(--text);
+}
+
+.llm-outcome.is-achieved {
+    border-color: color-mix(in srgb, var(--success) 35%, transparent);
+    background: color-mix(in srgb, var(--success) 8%, transparent);
+}
+
+.llm-outcome.is-achieved strong { color: var(--success); }
+
+.llm-outcome.is-partial {
+    border-color: color-mix(in srgb, var(--warning, #b45309) 38%, transparent);
+    background: color-mix(in srgb, var(--warning, #b45309) 8%, transparent);
+}
+
+.llm-outcome.is-partial strong { color: var(--warning, #b45309); }
+
+.llm-outcome.is-not-achieved {
+    border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+    background: var(--danger-soft);
+}
+
+.llm-outcome.is-not-achieved strong { color: var(--danger); }
+
+.llm-turn-footer {
+    margin: 0;
+    padding: 0 0.15rem;
+    font-size: 0.74rem;
+    color: var(--subtle);
+}
+
+.llm-composer-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    flex-wrap: wrap;
+    margin-top: -0.55rem;
+    padding: 0 0.4rem;
+    font-size: 0.74rem;
+    color: var(--subtle);
+}
+
+.llm-link-btn {
+    min-height: 0;
+    padding: 0;
+    font-size: 0.76rem;
+    font-weight: 550;
+    color: var(--accent);
+    background: none;
+    border: 0;
+    box-shadow: none;
+}
+
+.llm-link-btn:hover:not(:disabled) {
+    color: var(--accent-strong);
+    background: none;
+    text-decoration: underline;
+}
+
+/* Announcements for screen readers only. */
+.llm-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* --- watchdog badge (dashboard toolbar) --------------------------------- */

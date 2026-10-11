@@ -124,7 +124,7 @@ const norm = (v) => Math.hypot(v[0], v[1], v[2]);
 
 // Perpendicular width of the box along each lattice direction:
 // w_i = V / |a_j × a_k| (mirrors _perpendicular_widths).
-const perpendicularWidths = (lattice) => {
+export const perpendicularWidths = (lattice) => {
   const [a, b, c] = lattice;
   const crosses = [cross(b, c), cross(c, a), cross(a, b)];
   const volume = Math.abs(
@@ -231,7 +231,7 @@ const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => 
 // Per-center bond counts by window-membership pattern, storing no bond: the
 // counting pass of a budgeted request (mirrors _neighbor_bonds(count_only)).
 // patterns[center * 2^W + member] = number of that center's bonds.
-const countPatterns = (wrapped, centerRows, candidateRows, lattice, windows) => {
+export const countPatterns = (wrapped, centerRows, candidateRows, lattice, windows) => {
   const nPatterns = 1 << windows.length;
   const patterns = new Float64Array(centerRows.length * nPatterns);
   visitNeighbors(wrapped, centerRows, candidateRows, lattice, windows,
@@ -479,6 +479,31 @@ export const tripletRequestFromInputs = ({
     params.r23Max = number(r23Max, 'B–C window maximum');
   }
   return params;
+};
+
+/**
+ * The inverse of `tripletRequestFromInputs`: a flat `triplets` request (what
+ * an AI Copilot compute_bond_angles step loads into the page) → the page's
+ * input boxes, as strings. The B–C window is split only when the request has
+ * one; otherwise its boxes follow the A–B window. A missing bin width is the
+ * page default (1.0°).
+ */
+export const tripletInputsFromRequest = ({
+  end1, apex, end2, r12Min, r12Max, r23Min = null, r23Max = null, binWidth = null
+}) => {
+  const text = (value) => (value == null ? '' : String(value));
+  const split23 = r23Min != null && r23Max != null;
+  return {
+    end1: text(end1),
+    apex: text(apex),
+    end2: text(end2),
+    r12Min: text(r12Min),
+    r12Max: text(r12Max),
+    split23,
+    r23Min: split23 ? text(r23Min) : text(r12Min),
+    r23Max: split23 ? text(r23Max) : text(r12Max),
+    binWidth: binWidth == null ? '1.0' : text(binWidth)
+  };
 };
 
 /**

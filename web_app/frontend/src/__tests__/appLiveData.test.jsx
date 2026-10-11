@@ -58,7 +58,7 @@ vi.mock('../components/PcaKdePage', () => countingPage('ellipsoids'));
 vi.mock('../components/OrientationPage', () => countingPage('orientation'));
 vi.mock('../components/Dashboard', () => ({ default: () => null }));
 vi.mock('../components/AutoStogPage', () => ({ default: () => null }));
-vi.mock('../llm', () => ({ AssistantPage: () => null }));
+vi.mock('../llm', () => ({ CopilotChat: () => null }));
 
 const { default: App } = await import('../App');
 const { WATCH_INTERVAL_MS } = await import('../browserData');

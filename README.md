@@ -22,6 +22,15 @@ say “Upload”, but nothing is sent anywhere.)[^cloud-llm-privacy]
 ⚡ **Live monitoring** auto-refreshes charts as new files are written, in Chromium browsers (Chrome,
 Edge, Arc, Opera).
 
+🤖 **AI Copilot (beta)** — a chatbox over every page that answers questions about the open run by
+running the Workbench analyses itself: 10 tools (convergence, g(r) shells and coordination, where the
+fit misses the data, site displacements, displacement directions, bond angles, cluster distortion
+against independent atoms, a superstructure test, symmetry at any tolerance, the run summary). Each result
+carries deterministic checks, and each answer ends with an **Outcome** verdict. It works with any
+OpenAI-compatible model: local (Ollama, LM Studio; nothing leaves your machine) or cloud (OpenAI,
+Gemini, Anthropic, with your key). Tested on the Demo with gemma4:26b and qwen3.8-27b
+([results](#ai-copilot)).
+
 📖 **New here?** Start with [QuickStart.md](QuickStart.md). Everything else — local/self-hosted
 setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE.md).
 
@@ -58,16 +67,24 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
   FINDSYM it does no origin shift and outputs no idealized structure. The panel needs the run
   parsed in the browser (the hosted/static dashboard, or a locally picked folder); a run read
   through the local Flask server has no site basis, so the panel does not appear there.
-- **AI Assistant (beta)** — chat about the loaded run with a local LLM (Ollama, LM Studio) or an
-  opt-in cloud model (OpenAI, Gemini). Only compact run context is sent, never raw
-  files.[^cloud-llm-privacy] Setup:
+- **AI Copilot (beta)** — a chatbox on every page (bottom-right). Ask about the loaded run, and a
+  local LLM (Ollama, LM Studio) or an opt-in cloud model (OpenAI, Gemini, Anthropic) runs the
+  Workbench analyses itself. It can list
+  the site displacements, test displacement directions, compute bond angles, measure the distortion
+  of clusters (M₄ tetrahedra, dimers, trimers) against independent atoms, test for order that
+  doubles the cell, integrate coordination numbers, locate the misfit in r or Q, re-run the symmetry finder and check convergence. The run
+  summary it reads says which partials each dataset barely sees and where the symmetry ladder is
+  sampling noise. It reads each result with deterministic checks, retries when one
+  fails, and ends with an **Outcome** verdict. A step's *Show in* button loads the same analysis
+  on its page, next to the chat. The analyses only compute; only you change the view. Only compact summaries are sent, never raw files.[^cloud-llm-privacy] Setup:
   [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md).
 - **Python package (`rmc_toolkits/`)** — the same parsing, plotting, KDE, PCA-ellipsoid, and
   displacement-direction analyses as a reusable library, plus `.rmc6f` conversion helpers.
 
-[^cloud-llm-privacy]: If you opt into a cloud LLM, the compact summarized run context used for
-    assistant responses is sent directly to the cloud LLM server you selected. Raw run files are not
-    uploaded to rmc-toolkits.
+[^cloud-llm-privacy]: If you opt into a cloud LLM, the compact summarized run context, and the
+    summaries of the analyses the Copilot runs, are sent directly to the cloud LLM server you
+    selected. A settings switch turns the analyses off. Raw run files are not uploaded to
+    rmc-toolkits.
 
 ## Screenshots
 
@@ -79,14 +96,40 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
 | --- | --- |
 | ![PCA ellipsoid](assets/rmc-toolkits-pca-demo.png) | ![Displacement directions](assets/rmc-toolkits-displacement-demo.png) |
 
-### AI Assistant
+### AI Copilot
 
-Ask about the loaded run in plain language. The run's metrics, symmetry, and convergence history
-travel with every message, so answers quote the actual numbers — and reasoning models stream their
-chain of thought in a collapsible *Thinking* panel. Below, a local model (Ollama) summarizes the
-bundled demo run as a table, with LaTeX math such as Rwp and χ² rendered inline.
+Ask about the loaded run in plain language. The run's metrics, symmetry and convergence history
+travel with every question. When those are not enough, the Copilot runs the analysis itself and
+shows each one as a step card: what it ran, how long it took, and the verdict of its checks.
+Expand a card to see the exact numbers the model read. Press *Show in* to load the same analysis
+on its page (Bond Geometry computes the same triplet; Displacement Directions opens the same site)
+while the chat stays open over it.
+The answer ends with an **Outcome** chip (achieved, partial or not achieved) and quotes the
+numbers. Reasoning models stream their chain of thought in a collapsible *Thinking* panel.
 
-![AI Assistant summarizing a run as tables](assets/rmc-toolkits-assistant.gif)
+**Turn it on.** Run a local server with a tool-capable model (Ollama, or LM Studio with CORS
+enabled), or have a cloud API key ready. Click **AI Copilot** in the bottom-right corner, open the
+settings (gear), pick the provider, press **Test** and choose the model. *Let the Copilot run
+analyses* is on by default; off, it answers from the run summary only. Setup details:
+[`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md#provider-setup).
+
+**Tested with real models** (2026-10-10, the Demo run, six questions, a new conversation each):
+
+| Model | Tools called | Right answers | Time per question |
+| --- | --- | --- | --- |
+| gemma4:26b (Ollama) | 1–2 per question; none when the run summary already held the answer | 5 of 6 fully. Bond angles: before the fixes below it read a too-narrow window as "incomplete octahedra"; after them it used the whole shell but missed the trans angles near 160° | 8–95 s |
+| qwen3.8-27b (LM Studio) | 1–3 per question; widened a too-narrow bond window by itself | 4 of 6 fully; the symmetry answer had the groups right but two wrong claims; the bond-angle answer did not finish within 15 min | 1–5 min, over 15 min once |
+
+No tool call was malformed. The verdict is the model's self-assessment: both models always wrote
+*achieved*, so read the step cards' checks. The runs found four bugs, now fixed (a verdict line in
+backticks, two bond-window checks, and a crash on a mid-stream server error);
+[details](web_app/frontend/src/llm/README.md#tested-with-real-models). qwen3:32b was not run.
+
+Below,
+recorded with the earlier chat-only version, a local model (Ollama) summarizes the bundled demo
+run as a table, with LaTeX math such as Rwp and χ² rendered inline.
+
+![A local model summarizing a run as tables (recorded with the earlier chat-only version)](assets/rmc-toolkits-assistant.gif)
 
 ## The Math Under the Hood
 

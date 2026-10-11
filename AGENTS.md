@@ -48,12 +48,14 @@ rmc_toolkits/
   scaling_cli.py rmc-autoscale CLI: stog.inp/--data → engine → classic stog output family + provenance JSON (all scaling file I/O); resolve_coefficients (⟨b⟩²/⟨b²⟩ from one source), usable_sigma, refuse_failed_fit, stog_inp_closest_approach = the stog.inp line-22 r0 rule — all shared with the API
   triplets.py    bond-angle (triplet) distribution engine, RMCProfile triplets-style: A-B-C with B central, per-bond length windows, linked-cell periodic search with explicit image shifts (triclinic-safe), exact per-bin sin(θ) correction; bond_angle_summary is the JSON payload contract shared by /api/triplets and workers/triplets.js, bond_angle_summary_from_file the uncached file entry point (source of truth); angles streamed (PAIR_CHUNK) with an exact-count work budget (APP_MAX_ANGLES) checked by a count-only search at both app boundaries; EDGE_SNAP_DEG / WINDOW_TOL make ideal geometries deterministic
   triplets_cli.py rmc-triplets CLI: .rmc6f or run folder (same .rmc6f as the app) → angle histogram CSV (+ optional PNG plot / raw-angle dump)
+  clusters.py    cluster-distortion engine (the AI Copilot's analyze_clusters; no page): finite clusters of one element bonded within a window in the AVERAGE structure (templates: sites + cell offsets; an extended network is reported), every cluster measured in the configuration and compared with a shuffle null (each atom keeps its own site's displacements, from a random other cluster; counter-based lowbias32 permutations identical in both engines): edge ladder/width, shape rms, breathing sd, tetrahedral E/T2 modes and T2 trigonality, gyration-axis families <100>/<110>/<111>, the average cluster's own bonds and their sampling errors, outliers (source of truth; payload of /api/clusters and workers/clusters.js)
+  modulations.py displacement-modulation (superstructure) engine (the AI Copilot's analyze_modulations; no page): per site, the Fourier transform of the displacements over the supercell's cell grid, power normalised to 1 for independent displacements, averaged per element; the zone-boundary points and the strongest modes (±q once) against the empirical background of all q ≠ 0 (ratio to the median, percentile) — order that enlarges the cell, which the folded average cannot show (source of truth; payload of /api/modulations and workers/modulations.js)
 
-web_app/backend/app.py    Flask API; `server_settings()` (bind 127.0.0.1, debug off unless RMC_TOOLKITS_HOST / RMC_TOOLKITS_DEBUG opt in); data-root guard; `_number()` numeric-parameter validation (bad input → 400); StrictJSONProvider (NaN → null in data series) + `_strict_result_response()` / `_require_finite_scaling()` (a non-finite computed result → 400); file-signature LRU caches (`_FileCache` keyed on `_file_signature()` = (st_mtime_ns, st_ctime_ns, st_size, st_ino); a torn read is never cached → 409) for KDE, PCA, triplets and scaling; /api/scaling/preview|run share the CLI writer
+web_app/backend/app.py    Flask API; `server_settings()` (bind 127.0.0.1, debug off unless RMC_TOOLKITS_HOST / RMC_TOOLKITS_DEBUG opt in); data-root guard; `_number()` numeric-parameter validation (bad input → 400); StrictJSONProvider (NaN → null in data series) + `_strict_result_response()` / `_require_finite_scaling()` (a non-finite computed result → 400); file-signature LRU caches (`_FileCache` keyed on `_file_signature()` = (st_mtime_ns, st_ctime_ns, st_size, st_ino); a torn read is never cached → 409) for KDE, PCA, triplets, clusters and scaling; /api/scaling/preview|run share the CLI writer
 
 web_app/frontend/src/
   main.jsx                       React entry point (mounts App)
-  App.jsx                        shell, run-folder selection, page nav (Auto StoG hidden: `SHOW_AUTO_STOG = false`; Dashboard, Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions, AI Assistant), Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop)
+  App.jsx                        shell, run-folder selection, page nav (Auto StoG hidden: `SHOW_AUTO_STOG = false`; Dashboard, Atomic Density, Bond Geometry, PCA Ellipsoid, Displacement Directions), Live Data (`configEpoch` → the analysis pages' `dataEpoch` prop); the AI Copilot chatbox (`CopilotChat`, rendered once over every page) with its tools (`useCopilotTools`), `runKey` (the open run's identity) and the page-request channel (`pageRequest` → the Bond Geometry / Displacement Directions pages' `request` prop, for a step's "Show in <page>")
   symTolContext.js               shared Detected-SG tolerance ([symTol, setSymTol]) so the ladder pick survives page switches
   browserData.js                 static-mode local file parsing + run assembly (chooseStructureFile mirrors parsers.find_run_configuration, code-point tie-breaks)
   rmc6f.js                       shared .rmc6f atom-line grammar + parse report (classifyAtomLine, parseRmc6fAtoms, readRmc6fCellVectors) — mirror of parsers.py; keep in sync
@@ -77,16 +79,19 @@ web_app/frontend/src/
   structureReport.js             whether a structure read looks mid-write (Live Data keeps the previous summary)
   orientationSphere.js           pure helpers for the orientation sphere (cell mesh/outline typed arrays, relief radii, colorbar gradient) — unit-tested, no Three.js
   pcaCrystalFrame.js             pure crystallographic-frame math (3×3 algebra, unit-cell vectors from the supercell lattice, fractional ⟷ PCA transforms, per-PC angles to a/b/c + [u v w], `crystalOrientationRows` (the Crystal orientation table), `projectVolumeOntoFrame` (crystal-frame wall marginals by line integrals through the volume)) — unit-tested, no Three.js
-  useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages); `dataEpoch` in its request dependencies reloads in place on a Flask Live Data save
+  useSiteCloud.js                shared hook: .rmc6f text loading, worker/API request routing, per-site ellipsoid table, selected site (one app-lifetime worker → shared parse cache across the PCA Ellipsoid and Orientation pages); `dataEpoch` in its request dependencies reloads in place on a Flask Live Data save. The routing itself is the exported `requestAnalysis(kind, params, { rmc6fText, directory, worker, signal })` (params never override kind/text/dir), which the Copilot's tools call with their own worker and an abort signal
+  copilotTools.js                the AI Copilot's engine tools (host side of the llm tool contract): list_sites, analyze_displacement_directions, compute_bond_angles, analyze_clusters, analyze_modulations (through requestAnalysis, in a Copilot-only worker that Stop/timeout terminates, or Flask), detect_symmetry (describeSymmetry, browser-loaded runs); a cluster statistic is a finding only when its z AND its effect size clear the thresholds (CLUSTER_Z, CLUSTER_EFFECT, …); pure summarizers + deterministic checks, tested on the demo run (copilotTools.test.js). The tools only compute — they never change a page, the shared tolerance or a file
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
   uiScale.js                     root type size / 15px (2K / 4K scale) for code that draws in CSS px: canvas text, the 'fit' plot viewBox
-  llm/                           experimental AI assistant — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini); see its README
+  llm/                           experimental AI Copilot (replaced the chat-only AI Assistant 2026-10-09) — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini/Anthropic) that runs the analyses itself; see its README
     context/                     dashboard state → compact LLM context JSON (symmetry + per-site displacements, pair correlations, char budget)
-    provider/client.js           OpenAI-compatible client (models, SSE streaming incl. reasoning, connection hints)
-    prompts/                     shared system prompt + chat/watchdog message builders
+    provider/client.js           OpenAI-compatible client (models, SSE streaming incl. reasoning and tool-call fragments with extra_content, HTTP status on errors, connection hints)
+    copilot/                     the agent loop (agentLoop.js: rounds/calls/time/char budgets, tools-unsupported fallback, empty-final fallback), tool-call assembly + argument validation (toolCalls.js), the tool contract + executeToolCall (tools.js), tools over the run props (runTools.js), the Outcome verdict parser (outcome.js), the turn reducer (turnState.js)
+    prompts/                     shared system prompt, the Copilot prompt + message builder (copilot.js), watchdog message builders (templates.js)
     watchdog/                    convergence heuristics (source of truth) + LLM-narrated badge hook
     useAssistant.js              shared hook: settings, connection probe/auto-connect, run context
-    components/                  AssistantPage (chat-only) + connection bar, settings drawer, ChatView (Thinking panel), WatchdogBadge
+    useCopilot.js                the conversation: turns, Stop, tools-unsupported models, memory (conversationMemory), reset on runKey
+    components/                  CopilotChat (the chatbox: bottom-right launcher → floating panel, mounted on first open and kept while closed; Esc closes; phone-size full sheet that closes after Show in) + connection bar, settings drawer (analyses switch), CopilotView (Thinking panel, ToolStep cards with Show in <page>, Outcome chip, live region), MarkdownMessage, WatchdogBadge
   ui/                            the UI kit — every shared look: ui.css (ui- classes, loaded once from main.jsx right after index.css) + thin components (Page, Card/CardHeader, ControlsBar/Control/Switch, Segmented, Pill/ToolButton/IconButton/PrimaryButton, Chip, StatRail/Stat/StatCard, Banner/Hint/EmptyState, InfoBadge, SaveMenu, the Problems section: Issues.jsx + issueStore.js); see ui/README.md
   components/
     AutoStogPage.jsx             Auto StoG tab (hidden in the shipped build: `SHOW_AUTO_STOG = false`) — pre-processing, fully client-side in BOTH runtimes and independent of the run folder: page-local S(Q) upload (± stog.inp) → grouped params (fieldsets with ? help) → worker auto-scale (+ rho0 self-consistency estimate when rho0 is empty) → readout + S(Q)/GK/D(r) plots → zip export. Does NOT call /api/scaling/* (those remain for API/CLI use)
@@ -97,8 +102,8 @@ web_app/frontend/src/
     FoldedCellPanel.jsx          Bond Geometry's folded unit cell with the detected bonds drawn over the atom cloud
     StructurePage.jsx            KDE slice, Slab In Cell, Three.js 3D view  ← most complex component
     PcaKdePage.jsx               PCA Ellipsoid tab: site picker, ADP table, Three.js isosurface + ellipsoid + wall projections; unit-cell picker via SiteStructurePanel
-    OrientationPage.jsx          Displacement Directions tab (the nav label; the code says "orientation"; own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9
-    BondGeometryPage.jsx        Bond Geometry tab (beside Atomic Density): Model information card (ModelSummary with showSymmetry={false}), the controls bar as a form (Enter computes), then a hero + right-stack grid — the angle distribution (fixed 0–180° axis, step curve, no reference line — the axis says random = 1; KPI rail under its header) beside the folded-cell bond view and the partial-g(r) window helper; one colour system (element chips; BOND_COLORS in plotPalette.js for the A–B / B–C roles); empty/computing/stale/no-angles/error states inside the cards; compute-on-demand via useSiteCloud requestPca('triplets') → worker or /api/triplets
+    OrientationPage.jsx          Displacement Directions tab (the nav label; the code says "orientation"; own workspace page — not a PCA product): owns the options (top controls bar, PCA-page style) + the 3:6.5:6.5 equal-height grid (Axis views : sphere : SiteStructurePanel), height viewport-clamped for 16:9; an App `request` prop (a Copilot step's Show in) selects the step's site and resolution
+    BondGeometryPage.jsx        Bond Geometry tab (beside Atomic Density): Model information card (ModelSummary with showSymmetry={false}), the controls bar as a form (Enter computes), then a hero + right-stack grid — the angle distribution (fixed 0–180° axis, step curve, no reference line — the axis says random = 1; KPI rail under its header) beside the folded-cell bond view and the partial-g(r) window helper; one colour system (element chips; BOND_COLORS in plotPalette.js for the A–B / B–C roles); empty/computing/stale/no-angles/error states inside the cards; compute-on-demand via useSiteCloud requestPca('triplets') → worker or /api/triplets; an App `request` prop (a Copilot step's Show in) fills the triplet and windows (`tripletInputsFromRequest`) and computes once the boxes hold exactly that request
     OrientationView.jsx          renders display:contents → its two panels drop into the page grid: the Axis-views mini panel (three fixed-angle a/b/c | PC1/2/3 views, click to snap) and the sphere panel (flat-shaded Goldberg cells, amplitude relief, only the selected frame's axis rods, header Crystal|PCA toggle + Reset + Save, per-cell hover, colorbar + asymmetry/significance strip)
     SiteStructurePanel.jsx       clickable unit-cell site picker (thermal-ellipsoid markers, bonds, a/b/c gizmo) shared by the PCA Ellipsoid and Orientation pages; sized by UnitCellPanel.css (shared with FoldedCellPanel)
     sceneAxes.js                 shared axis palettes (PC tricolor, a/b/c) + triad/rod builders for every Three.js panel
@@ -114,7 +119,9 @@ web_app/frontend/src/
     requestGuards.js             Flask-boundary rules for every worker: requestNumber() (= app._number), assertFiniteResult() (= _strict_result_response), requestObject() (null message → error)
     orientation.js               static-mode displacement-orientation engine (JS port of orientation.py: Goldberg hex+pentagon sphere tiling, solid-angle histogram); parity-tested against Python goldens in orientationFixes.test.js (incl. JS regularizedGamma/normalQuantile pinned to scipy)
     triplets.js                  static-mode bond-angle engine (port of triplets.py; parity-tested against Python goldens in triplets_fixture.json — regenerate with tests/generate_triplets_fixture.py)
-    pcaKdeWorker.js              static-mode PCA-KDE worker (parses clouds once, answers 'sites'/'kde'/'orientation'/'triplets' requests off-thread)
+    clusters.js                  static-mode cluster-distortion engine (port of clusters.py; parity-tested against Python goldens in clusters_fixture.json — regenerate with tests/generate_clusters_fixture.py)
+    modulations.js               static-mode displacement-modulation engine (port of modulations.py, a separable DFT for fftn; parity-tested in modulations_fixture.json — regenerate with tests/generate_modulations_fixture.py)
+    pcaKdeWorker.js              static-mode PCA-KDE worker (parses clouds once — each site keeps its atoms' cell indices — and answers 'sites'/'kde'/'orientation'/'triplets'/'clusters'/'modulations' requests off-thread)
     marchingCubes.js             isosurface extraction over a scalar field (Lorensen-Cline tables) for the Three.js KDE surface; `sampleFieldTrilinear` (NaN outside the grid — never clamp)
 ```
 
@@ -224,7 +231,7 @@ web_app/frontend/src/
 - **Errors are never silent: the Problems section.** Every workspace page lists every error and
   warning on it in one compact section at its top (`PageIssues`, kit `ui-issues`; App.jsx wraps the
   app in `IssueStoreProvider`, each page in `IssueScope`, and places the section above the AI
-  Assistant and Auto StoG pages). Report with `useIssue` (a condition), `useIssueSet` (a list) or
+  Copilot and Auto StoG pages). Report with `useIssue` (a condition), `useIssueSet` (a list) or
   `useReportIssue` (a one-off failure, until the same action succeeds, it is dismissed, or another
   run opens) — never with a page-level danger/caution banner, and never by swallowing a rejection.
   `SaveMenu` lists every failed figure save; `IssueWatcher` lists any uncaught error or rejected
@@ -414,19 +421,24 @@ web_app/frontend/src/
   outside it, a state rule compounds with its component's own class (`.workspace-page.is-hidden`
   in `App.css`, `.sym-brick.is-active` in the ModelSummary ladder; the llm module scopes its
   states to its own `llm-*` classes) — never a bare `.is-*` rule. Adding a variant or component: `src/ui/README.md`.
-- **`src/llm/` import boundary**: the AI assistant module receives run data **only as props**
-  (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`, `liveData`) and must not import
-  from the rest of the app except `figureExport.js` (`downloadBlob`/`sanitizeFilename`). Cell math
+- **`src/llm/` import boundary**: the AI Copilot module receives run data **only as props**
+  (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`, `runSettings`, `pcaSites`,
+  `liveData`) and must not import from the rest of the app except `figureExport.js`
+  (`downloadBlob`/`sanitizeFilename`). The engines reach it the same way: the host builds the
+  tool objects (`copilotTools.js`, the contract in `llm/copilot/tools.js` and the llm README) and
+  passes them as the `tools` prop of `CopilotChat` (the chatbox the host renders once, over its
+  pages), with `pages`/`onOpenPage(key, params)` for a step's Show in / Open button (`params` =
+  the tool's optional `pageParams(args)`), `runKey` (a new run restarts the conversation) and
+  `onOpenChange`. Tools compute and return `{ data, checks }`; none may navigate, change shared
+  state or write a file — the user presses Show in. Cell math
   is duplicated from `ModelSummary.jsx` on purpose. This keeps the module extractable — don't
   "clean up" the duplication by adding host imports. The R-value series it receives is **ln(χ²) of
   the last .log column** (named in `plotData.chiColumn`, e.g. `X_ray_(R)1` — one fit term, not the
   total; browserData applies `Math.log`); the context builder labels it so the model reads it
   correctly, and reads `non_gaussianity` as Mardia's kurtosis (sites ranked by its magnitude).
-  It uses the UI kit by **class-name strings only**, never kit JS — exactly `ui-page`,
-  `ui-page--column`, `ui-page--pb-sm`, `ui-card`, `ui-card--clip`, `ui-card--lift`,
-  `ui-card__header-flush`, `ui-card__title`, `ui-card__header-actions`, `ui-empty`,
-  `ui-empty--fill` and `ui-pill` (the modifiers carry the page layout: flex column, bottom
-  padding, fill height). A kit token its own CSS reads keeps the old literal as a fallback
+  It uses the UI kit by **class-name strings only**, never kit JS — exactly one class, `ui-pill`
+  (a step's Show in / Open button); the chatbox's launcher and panel are the module's own look
+  (`CopilotChat.css`, z-index 40 over the pages and the phone-size sticky header). A kit token its own CSS reads keeps the old literal as a fallback
   (`var(--warning, #b45309)`), so an extracted copy still renders.
 
 ## Run & test
@@ -523,5 +535,12 @@ plot-parity tests, so those run in CI.
     `workers/orientation.js` + `/api/pca/orientation`, UI in `OrientationPage.jsx` /
     `OrientationView.jsx`) landed 2026-07-24. Reference: Maksim Eremenko's PCA_KDE utilities at
     <https://github.com/MaximEremenko/Utilities/tree/main/RMCProfileUtilities/PCA_KDE>.
+
+12. AI Copilot phase 2 ([docs/COPILOT_PLAN.md](docs/COPILOT_PLAN.md) §9, §11): Show in for the
+    PCA Ellipsoid and Atomic Density pages (only Bond Geometry and Displacement Directions take a
+    `request` today); whether the Copilot may operate the pages itself rather than through the
+    step's button (a decision for the maintainer); more tools (KDE slice statistics, CIF export
+    behind a user confirmation); persisted conversations. Live checks against each provider (Ollama, LM Studio, OpenAI, Gemini, Anthropic)
+    still need a real model and keys: the dialect handling is unit-tested on recorded shapes only.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.

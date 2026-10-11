@@ -36,7 +36,7 @@ Section references use the numbers below.
 | §8 | Structure page — KDE density slices |
 | §9 | Structure page — Slab In Cell projection and the 3D unit-cell view |
 | §10 | PCA Ellipsoid page — displacement clouds, ADP tensors, and the separable 3D KDE |
-| §11 | AI Assistant — run context construction, pair correlations, convergence heuristics |
+| §11 | AI Copilot — run context construction, pair correlations, convergence heuristics, the tool loop |
 | §12 | Principal axes in the crystallographic frame |
 | §13 | Displacement Directions — the orientation-distribution engine |
 | §14 | Displacement Directions — the sphere view, axis views, and site picker |
@@ -456,9 +456,10 @@ most-repeated trap in the document, and two sections prove it from the code:
 
 Only a **typed backend directory** goes through the HTTP routes. The PCA statistics panel prints
 `· browser` or `· server` so you can always tell which produced the numbers on screen (the JS
-result carries `browserPcaKde: true`). §4 Step 0 gives the same split for Auto StoG; §11 notes
-that the AI Assistant has **no** Python counterpart at all — the Flask backend is never involved in
-an assistant request.
+result carries `browserPcaKde: true`). §4 Step 0 gives the same split for Auto StoG. §11 notes
+that the AI Copilot has **no** Python counterpart at all: the Flask backend is never involved in a
+model request. Only the Copilot's analyses of a server folder call the same Flask routes the pages
+use.
 
 **One configuration per view (Live Data).** A page's numbers must all come from the *same*
 `.rmc6f`. A browser-loaded run is a snapshot: the worker parses the text it was handed, and

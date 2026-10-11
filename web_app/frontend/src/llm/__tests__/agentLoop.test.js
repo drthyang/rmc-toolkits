@@ -1,0 +1,397 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Tsung-Han Yang
+
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_LIMITS, assistantContent, isToolsUnsupportedError, runCopilotTurn } from '../copilot/agentLoop';
+import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
+
+// A scripted model: each request consumes the next reply. A reply is either
+// { text } or { calls: [{ name, args }] } (optionally with text), or an
+// Error to throw. Every request's arguments are recorded.
+const scriptedModel = (replies) => {
+    const requests = [];
+    const callModel = (request) => {
+        requests.push({ ...request, messages: request.messages.map((message) => ({ ...message })) });
+        const reply = replies.shift();
+        return (async function* stream() {
+            if (!reply) throw new Error('script exhausted');
+            if (reply instanceof Error) throw reply;
+            if (reply.text) {
+                for (const piece of reply.text.match(/.{1,7}/gs)) yield { content: piece };
+            }
+            for (const [index, call] of (reply.calls || []).entries()) {
+                const args = typeof call.args === 'string' ? call.args : JSON.stringify(call.args ?? {});
+                yield {
+                    toolCall: {
+                        index,
+                        id: call.id ?? `c${requests.length}_${index}`,
+                        name: call.name,
+                        arguments: args.slice(0, 5),
+                        extraContent: call.extraContent ?? null
+                    }
+                };
+                yield { toolCall: { index, id: null, name: null, arguments: args.slice(5) } };
+            }
+            yield { finishReason: reply.calls ? 'tool_calls' : 'stop' };
+        }());
+    };
+    return { callModel, requests };
+};
+
+const collect = async (generator) => {
+    const events = [];
+    for await (const event of generator) events.push(event);
+    return events;
+};
+
+const echoTool = (overrides = {}) => ({
+    name: 'echo',
+    description: 'Echo the value.',
+    parameters: { type: 'object', properties: { value: { type: 'number', maximum: 10 } }, required: ['value'] },
+    label: ({ value }) => `Echo ${value}`,
+    page: 'dashboard',
+    run: vi.fn(async ({ value }) => ({ data: { value, list: [1, 2, 3] }, checks: [{ level: 'ok', text: 'fine' }] })),
+    ...overrides
+});
+
+const baseMessages = [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'question' }];
+
+describe('runCopilotTurn', () => {
+    it('runs a tool, feeds the result back, and parses the Outcome line', async () => {
+        const tool = echoTool();
+        const { callModel, requests } = scriptedModel([
+            { text: 'Checking.', calls: [{ name: 'echo', args: { value: 4 } }] },
+            { text: 'The value is 4.\nOutcome: achieved — echoed 4.' }
+        ]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool] }));
+
+        expect(tool.run).toHaveBeenCalledWith({ value: 4 }, { signal: expect.any(AbortSignal) });
+        const start = events.find((event) => event.type === 'tool_start');
+        expect(start).toMatchObject({ name: 'echo', label: 'Echo 4', args: { value: 4 }, page: 'dashboard' });
+        const end = events.find((event) => event.type === 'tool_end');
+        expect(end).toMatchObject({ status: 'ok', data: { value: 4, list: [1, 2, 3] }, error: null, cached: false });
+
+        // The first request offers the tools; the second carries the exchange.
+        expect(requests[0].tools[0]).toMatchObject({ type: 'function', function: { name: 'echo' } });
+        expect(requests[0].toolChoice).toBe('auto');
+        const second = requests[1].messages;
+        expect(second.at(-2)).toEqual({
+            role: 'assistant',
+            content: 'Checking.',
+            tool_calls: [{ id: 'c1_0', type: 'function', function: { name: 'echo', arguments: '{"value":4}' } }]
+        });
+        expect(second.at(-1).role).toBe('tool');
+        expect(second.at(-1).tool_call_id).toBe('c1_0');
+        expect(JSON.parse(second.at(-1).content)).toEqual({
+            checks: [{ level: 'ok', text: 'fine' }],
+            data: { value: 4, list: [1, 2, 3] }
+        });
+
+        const done = events.at(-1);
+        expect(done).toMatchObject({ type: 'done', rounds: 1, stoppedBy: 'answer' });
+        expect(done.outcome).toEqual({ status: 'achieved', note: 'echoed 4.', body: 'The value is 4.' });
+    });
+
+    it('returns argument errors to the model, which can correct them', async () => {
+        const tool = echoTool();
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 99 } }] },
+            { calls: [{ name: 'echo', args: { value: 9 } }] },
+            { text: 'Done.' }
+        ]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool] }));
+        const ends = events.filter((event) => event.type === 'tool_end');
+        expect(ends.map((event) => event.status)).toEqual(['failed', 'ok']);
+        expect(ends[0].error).toBe('value must be ≤ 10, got 99');
+        expect(JSON.parse(requests[1].messages.at(-1).content)).toEqual({ error: 'value must be ≤ 10, got 99' });
+        expect(tool.run).toHaveBeenCalledTimes(1);
+        // The assistant message is null-content, never '' (Anthropic rejects empty text).
+        expect(requests[1].messages.at(-2).content).toBeNull();
+    });
+
+    it('answers unknown tools, invalid JSON and thrown errors as tool errors', async () => {
+        const failing = echoTool({ name: 'boom', run: async () => { throw new Error('engine said no'); } });
+        const { callModel, requests } = scriptedModel([
+            { calls: [
+                { name: 'nope', args: {} },
+                { name: 'echo', args: '{value:1}' },
+                { name: 'boom', args: { value: 1 } }
+            ] },
+            { text: 'ok' }
+        ]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool(), failing] }));
+        const errors = events.filter((event) => event.type === 'tool_end').map((event) => event.error);
+        expect(errors[0]).toBe('unknown tool "nope"; available: echo, boom');
+        expect(errors[1]).toMatch(/not valid JSON/);
+        expect(errors[2]).toBe('engine said no');
+        // Every listed call is answered, and unparseable arguments are echoed as '{}'.
+        const assistant = requests[1].messages.find((message) => message.tool_calls);
+        expect(assistant.tool_calls.map((call) => call.function.arguments)).toEqual(['{}', '{}', '{"value":1}']);
+        const answered = requests[1].messages.filter((message) => message.role === 'tool').map((message) => message.tool_call_id);
+        expect(answered).toEqual(assistant.tool_calls.map((call) => call.id));
+    });
+
+    it('reuses the result of an identical call and tells the model', async () => {
+        const tool = echoTool();
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 2 } }] },
+            { calls: [{ name: 'echo', args: { value: '2' } }] },
+            { text: 'ok' }
+        ]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool] }));
+        expect(tool.run).toHaveBeenCalledTimes(1);
+        expect(events.filter((event) => event.type === 'tool_end').map((event) => event.cached)).toEqual([false, true]);
+        expect(JSON.parse(requests[2].messages.at(-1).content).note).toMatch(/identical call/);
+    });
+
+    it('answers calls beyond the per-step limit as skipped', async () => {
+        const tool = echoTool();
+        const { callModel, requests } = scriptedModel([
+            { calls: [1, 2, 3].map((value) => ({ name: 'echo', args: { value } })) },
+            { text: 'ok' }
+        ]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [tool], limits: { maxCallsPerRound: 2 }
+        }));
+        expect(tool.run).toHaveBeenCalledTimes(2);
+        expect(events.filter((event) => event.type === 'tool_end').at(-1).error).toMatch(/^skipped/);
+        expect(requests[1].messages.filter((message) => message.role === 'tool')).toHaveLength(3);
+    });
+
+    it('asks for the answer with tool_choice none once the round budget is used', async () => {
+        const tool = echoTool();
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 } }] },
+            { calls: [{ name: 'echo', args: { value: 2 } }] },
+            // The last request ignores tool calls even if the server sends some.
+            { text: 'Best effort.\nOutcome: partial — budget used.', calls: [{ name: 'echo', args: { value: 3 } }] }
+        ]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [tool], limits: { maxRounds: 2 }
+        }));
+        expect(requests).toHaveLength(3);
+        expect(requests[2].toolChoice).toBe('none');
+        expect(requests[2].messages.at(-1).content).toMatch(/used the analysis budget/);
+        expect(tool.run).toHaveBeenCalledTimes(2);
+        expect(events.at(-1)).toMatchObject({ type: 'done', stoppedBy: 'max_rounds', rounds: 2 });
+        expect(events.at(-1).outcome.status).toBe('partial');
+    });
+
+    it('retries once without tools when the model cannot call them', async () => {
+        const unsupported = Object.assign(new Error('HTTP 400: registry.ollama.ai/library/gemma3 does not support tools'), { status: 400 });
+        const { callModel, requests } = scriptedModel([unsupported, { text: 'Plain answer.' }]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [echoTool()], noToolsSystemPrompt: 'PLAIN'
+        }));
+        expect(events.some((event) => event.type === 'tools_unsupported')).toBe(true);
+        expect(requests[1].tools).toBeUndefined();
+        expect(requests[1].toolChoice).toBeUndefined();
+        expect(requests[1].messages[0].content).toBe('PLAIN');
+        expect(events.at(-1)).toMatchObject({ type: 'done', text: 'Plain answer.' });
+    });
+
+    it('does not mistake other HTTP failures for missing tool support', async () => {
+        const quota = Object.assign(new Error('HTTP 429: quota'), { status: 429 });
+        const { callModel } = scriptedModel([quota]);
+        await expect(collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] })))
+            .rejects.toThrow('HTTP 429: quota');
+        const err = (message, status = 400) => Object.assign(new Error(message), { status });
+        expect(isToolsUnsupportedError(err('HTTP 500: model does not support tools', 500))).toBe(false);
+        expect(isToolsUnsupportedError(err('HTTP 400: tools are not supported by this model'))).toBe(true);
+        expect(isToolsUnsupportedError(err('HTTP 400: function calling is not supported'))).toBe(true);
+        // A schema problem is a real error, never "this model has no tools".
+        expect(isToolsUnsupportedError(err("HTTP 400: Invalid schema for function 'list_sites'"))).toBe(false);
+        expect(isToolsUnsupportedError(err('HTTP 400: tools.0.function.parameters is invalid'))).toBe(false);
+    });
+
+    it('surfaces a tool-schema 400 instead of falling back', async () => {
+        const schema = Object.assign(new Error("HTTP 400: Invalid schema for function 'echo'"), { status: 400 });
+        const { callModel, requests } = scriptedModel([schema]);
+        await expect(collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] })))
+            .rejects.toThrow('Invalid schema');
+        expect(requests).toHaveLength(1);
+    });
+
+    it('sends no tools when they are switched off', async () => {
+        const { callModel, requests } = scriptedModel([{ text: 'hi' }]);
+        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()], toolsEnabled: false }));
+        expect(requests[0].tools).toBeUndefined();
+    });
+
+    it('stops waiting for a tool when the turn is aborted', async () => {
+        const controller = new AbortController();
+        const slow = echoTool({ run: () => new Promise(() => {}) });
+        const { callModel } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }]);
+        const generator = runCopilotTurn({ callModel, messages: baseMessages, tools: [slow], signal: controller.signal });
+        const seen = [];
+        const run = (async () => {
+            for await (const event of generator) {
+                seen.push(event.type);
+                if (event.type === 'tool_start') controller.abort();
+            }
+        })();
+        await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+        expect(seen).toContain('tool_start');
+        expect(seen).not.toContain('tool_end');
+    });
+
+    it('times out a tool that never resolves', async () => {
+        const slow = echoTool({ run: () => new Promise(() => {}) });
+        const { callModel } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [slow], limits: { toolTimeoutMs: 20 }
+        }));
+        expect(events.find((event) => event.type === 'tool_end').error).toMatch(/did not finish within/);
+    });
+
+    it('fits large results to the budget without dropping the checks', async () => {
+        const big = echoTool({
+            run: async () => ({
+                data: { rows: Array.from({ length: 500 }, (_, index) => ({ index, value: index * 1.5 })) },
+                checks: [{ level: 'warn', text: 'big' }]
+            })
+        });
+        const { callModel, requests } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
+        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 1200 } }));
+        const content = requests[1].messages.at(-1).content;
+        expect(content.length).toBeLessThanOrEqual(1300);
+        const parsed = JSON.parse(content);
+        expect(parsed.checks).toEqual([{ level: 'warn', text: 'big' }]);
+        expect(parsed.data.rows_omitted).toBeGreaterThan(400);
+        expect(parsed.data.rows.length + parsed.data.rows_omitted).toBe(500);
+    });
+
+    it('echoes a call\'s extra_content (Gemini thought_signature) and sends no index', async () => {
+        const signature = { google: { thought_signature: 'c2ln' } };
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 }, extraContent: signature }] },
+            { text: 'ok' }
+        ]);
+        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        const [call] = requests[1].messages.at(-2).tool_calls;
+        expect(call.extra_content).toEqual(signature);
+        expect('index' in call).toBe(false);
+    });
+
+    it('sends whitespace-only text before a tool call as null content', async () => {
+        const { callModel, requests } = scriptedModel([
+            { text: '\n\n ', calls: [{ name: 'echo', args: { value: 1 } }] },
+            { text: 'ok' }
+        ]);
+        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        expect(requests[1].messages.at(-2).content).toBeNull();
+        expect(assistantContent(' x ')).toBe(' x ');
+        expect(assistantContent('')).toBeNull();
+    });
+
+    it('says so when the last round comes back with tool calls only (Ollama ignores tool_choice)', async () => {
+        const { callModel } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 } }] },
+            { calls: [{ name: 'echo', args: { value: 2 } }] }
+        ]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [echoTool()], limits: { maxRounds: 1 }
+        }));
+        const done = events.at(-1);
+        expect(done.stoppedBy).toBe('max_rounds');
+        expect(done.text).toMatch(/analysis budget/);
+        expect(done.outcome.status).toBe('not achieved');
+        expect(events.filter((event) => event.type === 'text').map((event) => event.delta).join('')).toBe(done.text);
+    });
+
+    it('marks an empty reply', async () => {
+        const { callModel } = scriptedModel([{ text: '  ' }]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        expect(events.at(-1)).toMatchObject({ type: 'done', text: '', outcome: null, stoppedBy: 'empty' });
+    });
+
+    it('compacts earlier results to their checks when the turn outgrows its budget', async () => {
+        const big = echoTool({
+            run: async ({ value }) => ({
+                data: { value, rows: Array.from({ length: 200 }, (_, index) => index) },
+                checks: [{ level: 'ok', text: `round ${value}` }]
+            })
+        });
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 } }] },
+            { calls: [{ name: 'echo', args: { value: 2 } }] },
+            { calls: [{ name: 'echo', args: { value: 3 } }] },
+            { text: 'ok' }
+        ]);
+        await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 900, turnCharBudget: 1500 }
+        }));
+        const toolContents = requests[3].messages.filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
+        expect(toolContents[0]).toEqual({
+            compacted: 'this earlier result was shortened to fit the context; its checks are kept',
+            checks: [{ level: 'ok', text: 'round 1' }]
+        });
+        // The newest result is never compacted.
+        expect(toolContents[2].data.value).toBe(3);
+        const total = requests[3].messages.filter((message) => message.role === 'tool').reduce((sum, message) => sum + message.content.length, 0);
+        expect(total).toBeLessThanOrEqual(1500);
+    });
+
+    it('aborts the tool\'s own signal when it times out', async () => {
+        let seen = null;
+        const slow = echoTool({ run: (args, { signal }) => { seen = signal; return new Promise(() => {}); } });
+        const { callModel } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
+        await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [slow], limits: { toolTimeoutMs: 10 } }));
+        expect(seen.aborted).toBe(true);
+    });
+
+    it('starts no new round of tools after the turn time limit', async () => {
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 } }] },
+            { text: 'Late.\nOutcome: partial — out of time.' }
+        ]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [echoTool()], limits: { maxTurnMs: -1 }
+        }));
+        expect(requests[0].toolChoice).toBe('auto');
+        expect(requests[1].toolChoice).toBe('none');
+        expect(events.at(-1).stoppedBy).toBe('max_rounds');
+    });
+
+    it('gives each step what its page should load, from the validated arguments', async () => {
+        const tool = echoTool({ pageParams: ({ value }) => ({ shown: value }) });
+        const failing = echoTool({ name: 'boom', pageParams: () => ({ never: true }), run: async () => { throw new Error('no'); } });
+        const throwing = echoTool({ name: 'odd', pageParams: () => { throw new Error('bad mapping'); } });
+        const { callModel } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: '3' } }, { name: 'boom', args: { value: 1 } }, { name: 'odd', args: { value: 1 } }] },
+            { text: 'ok' }
+        ]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool, failing, throwing] }));
+        expect(events.filter((event) => event.type === 'tool_end').map((event) => event.pageParams)).toEqual([{ shown: 3 }, null, null]);
+    });
+
+    it('uses sensible default limits', () => {
+        expect(DEFAULT_LIMITS).toEqual({
+            maxRounds: 6, maxCallsPerRound: 4, toolTimeoutMs: 120000, maxTurnMs: 600000, resultCharBudget: 3000, turnCharBudget: 12000
+        });
+    });
+});
+
+describe('tool helpers', () => {
+    it('keeps only well-formed, uniquely named tools', () => {
+        const ok = echoTool();
+        expect(usableTools([ok, { ...ok }, { ...ok, name: 'Bad Name' }, { name: 'x', description: 'd' }, null])).toEqual([ok]);
+    });
+
+    it('derives a step status from the error and checks', () => {
+        expect(stepStatus({ error: 'x', checks: [] })).toBe('failed');
+        expect(stepStatus({ error: null, checks: [{ level: 'fail', text: 'a' }] })).toBe('failed');
+        expect(stepStatus({ error: null, checks: [{ level: 'warn', text: 'a' }, { level: 'ok', text: 'b' }] })).toBe('warn');
+        expect(stepStatus({ error: null, checks: [{ level: 'note', text: 'a' }] })).toBe('ok');
+    });
+
+    it('trims nested arrays and hard-cuts as a last resort, never silently', () => {
+        const value = { a: { b: Array.from({ length: 100 }, (_, i) => i) }, c: 'x' };
+        const fitted = fitToBudget(value, 120);
+        expect(JSON.stringify(fitted).length).toBeLessThanOrEqual(120);
+        expect(fitted.a.b_omitted + fitted.a.b.length).toBe(100);
+        const cut = JSON.parse(budgetJson({ s: 'y'.repeat(500) }, 100));
+        expect(cut.truncated).toBe(true);
+        expect(fitToBudget(null, 10)).toBeNull();
+    });
+});

@@ -1,8 +1,16 @@
-# AI Assistant — algorithm reference
+# AI Copilot — algorithm reference
 
 > Part of the [Algorithms and Math Reference](../ALGORITHMS.md). Every step is anchored to the source; if this document and the code disagree, **the code wins**.
 
-What the assistant computes from the loaded run before any model is called — and exactly what data leaves the device.
+The page covers three things:
+
+- what the Copilot computes from the loaded run before any model is called;
+- which analyses it may run while it answers, and the deterministic checks on each result;
+- exactly what data leaves the device.
+
+The **AI Copilot** replaced the chat-only **AI Assistant** on 2026-10-09. The run context (Steps
+1–12), the watchdog (Steps 14–15) and the transport (Step 16) are the Assistant's, unchanged. Step 13
+describes the Copilot's messages and Step 17 its tool loop. Section anchors keep their old names.
 
 ## Contents
 
@@ -25,6 +33,9 @@ What the assistant computes from the loaded run before any model is called — a
   - [Step 14 — Convergence heuristics (the statistics)](#step-14--convergence-heuristics-the-statistics)
   - [Step 15 — Watchdog scheduling and badge semantics](#step-15--watchdog-scheduling-and-badge-semantics)
   - [Step 16 — Transport](#step-16--transport)
+  - [Step 17 — The Copilot tool loop (analyses, checks, budgets, verdict)](#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict)
+  - [Step 18 — Cluster distortion against a shuffle null (`analyze_clusters`)](#step-18--cluster-distortion-against-a-shuffle-null-analyze_clusters)
+  - [Step 19 — Displacement modulations: order that enlarges the cell (`analyze_modulations`)](#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations)
   - [Runtime-mode differences (static vs Flask) — read this before quoting the assistant](#runtime-mode-differences-static-vs-flask--read-this-before-quoting-the-assistant)
   - [Parameters and defaults](#parameters-and-defaults)
   - [Caveats / what this is not](#caveats--what-this-is-not)
@@ -35,20 +46,26 @@ What the assistant computes from the loaded run before any model is called — a
 
 ### What this page shows
 
-The **AI Assistant** page is a chat window over the run that is currently loaded in the Workbench, plus
-an optional **convergence watchdog** chip that appears on the Dashboard's R-value card. Neither feature
-sends your run files anywhere. What the app does is *compute a compact summary* of the run — a JSON
-object targeted at ~4,500 characters (a best-effort budget, not a hard cap — see Step 12) — and hand
-that summary, plus your question, to whatever
-OpenAI-compatible chat endpoint you configured. By default that endpoint is a server on your own
-machine (`http://localhost:11434/v1`, i.e. Ollama).
+The **AI Copilot** is a chatbox, opened from a launcher in the bottom-right corner of every page,
+that holds a conversation about the run currently loaded in the Workbench.
+There is also an optional **convergence watchdog** chip on the Dashboard's R-value card. Neither
+feature sends your run files anywhere.
+
+The app first *computes a compact summary* of the run: a JSON object targeted at ~4,500 characters
+(a best-effort budget, not a hard cap; see Step 12). It hands that summary and your question to the
+OpenAI-compatible chat endpoint you configured. When the model asks for an analysis, the Copilot runs
+it in the browser (or through the Flask engines in server mode) and sends back a compact result with
+deterministic checks (Step 17). By default the endpoint is a server on your own machine
+(`http://localhost:11434/v1`, i.e. Ollama).
 
 Everything documented below is browser-side JavaScript in
 [`web_app/frontend/src/llm/`](../../web_app/frontend/src/llm/). The module is deliberately self-contained:
 it receives run data **only as React props** and imports nothing from the rest of the app (see the
 import-boundary rule in [AGENTS.md](../../AGENTS.md) and [`src/llm/README.md`](../../web_app/frontend/src/llm/README.md)).
-There is no Python counterpart — none of this exists in `rmc_toolkits/`, and the Flask backend is never
-involved in an assistant request.
+There is no Python counterpart: none of this exists in `rmc_toolkits/`. The Flask backend is never
+involved in a model request. It is involved only when a Copilot analysis of a typed server folder
+runs the same `/api/pca/*` and `/api/triplets` routes the pages use. The host builds those tools in
+[`copilotTools.js`](../../web_app/frontend/src/copilotTools.js) and passes them in as a prop.
 
 Two things in this section are computed statistics that a scientist should be able to audit:
 
@@ -68,13 +85,15 @@ in [`llm/provider/client.js`](../../web_app/frontend/src/llm/provider/client.js)
 
 | # | When | Request | Run-derived payload |
 |---|------|---------|---------------------|
-| 1 | AI Assistant page mounted (automatic, once per base URL), or **Test** pressed | `GET {baseUrl}/models` → `listModels()` | **None.** Only the API key, if one is set. |
-| 2 | You press send in the chat | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~4,500 chars, best-effort — Step 12) + the system prompt + the last 8 chat messages + your question. |
+| 1 | AI Copilot chatbox first opened (automatic, once per base URL), or **Test** pressed | `GET {baseUrl}/models` → `listModels()` | **None.** Only the API key, if one is set. |
+| 2 | You send a question | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~4,500 chars, best-effort; Step 12), the system prompt, the last 8 memory messages (questions and final answers only) and your question. With analyses on, the tool definitions (names, descriptions, argument schemas). |
+| 2a | The model asked for analyses (repeats ≤ 6 times per question, plus one last request) | the same `POST`, same body grown by the exchange | Row 2's body, plus the model's own tool calls echoed back and one `tool` message per call: the analysis summary and its checks. Each is ≤ 3,000 chars and ≤ 12,000 per question; older results are compacted to their checks. Step 17 lists what each analysis sends. |
 | 3 | Watchdog enabled *and* a model configured | `POST {baseUrl}/chat/completions` (`stream: false`) → `completeChat()` | Five numbers only: `{n_steps, first, last, min, recent_window_delta}` plus two status words. |
 
-**Row 1 fires without you asking.** `AssistantPage.jsx` calls `useAssistant({… enabled: true})`, and
+**Row 1 fires without you asking.** The chatbox panel (`CopilotChat.jsx`) mounts on first open and
+calls `useAssistant({… enabled: true})`, and
 `useAssistant.js` runs `probe(false)` from an effect guarded only by `autoTestedRef` (one probe per
-distinct `baseUrl`). Merely opening the AI Assistant tab therefore issues a `GET /models` to whatever
+distinct `baseUrl`). Merely opening the chatbox therefore issues a `GET /models` to whatever
 endpoint is configured — **including a cloud endpoint, with your API key attached**, before you have
 typed anything. Switching the selected model does not re-probe; changing the base URL does. On success,
 if the currently configured model is not in the returned list, the app silently writes `models[0]` into
@@ -93,7 +112,9 @@ from the context object built by `buildRunContext()`:
 - the absolute path of the structure file (`structure.source` is not read) or of any plot file;
 - the raw `.log`, `.csv`, `.dat`, or STOG file contents;
 - the full $\chi$ history (only ≤48 rounded points survive), the full $g(r)$ curves (only ≤2 peaks per
-  pair), and the full displacement clouds (only per-site scalars).
+  pair), and the full displacement clouds (only per-site scalars);
+- in an analysis result (Step 17): never the engine payload itself. The KDE volume, the sphere-cell
+  arrays and the raw angle list stay in the browser; only the summary the tool builds is sent.
 
 **What *is* transmitted that identifies your work.** Be aware of these — they are file-derived strings
 and numbers:
@@ -113,15 +134,23 @@ and numbers:
   at 3 s.f. These are average/circular-mean basis positions, not instantaneous atom positions, but they
   are atomic coordinates and they do leave the device (see Step 5);
 - element symbols, counts, cell metrics, space group, Wyckoff labels and site symmetries, and the
-  numbers listed in Steps 2–11.
+  numbers listed in Steps 2–11;
+- **with analyses on, more of the same kind** (Step 17), and only for the analyses the model runs:
+  - per-site displacement statistics for *every* site, not ≤ 12;
+  - displacement-direction peaks as Cartesian unit vectors and `[u v w]`;
+  - bond-angle modes and coarse histograms;
+  - `detect_symmetry` orbits with representative fractional coordinates at 4 decimals, for *every*
+    orbit at any tolerance the model picks.
 
 **Local vs cloud.** `PROVIDER_PRESETS` in
 [`llm/provider/presets.js`](../../web_app/frontend/src/llm/provider/presets.js) marks Ollama
 (`http://localhost:11434/v1`) and LM Studio (`http://localhost:1234/v1`) as `cloud: false`, and OpenAI,
 Gemini, and Anthropic as `cloud: true`. `isLocalUrl()` classifies any base URL whose hostname is in
 `{localhost, 127.0.0.1, [::1], ::1, 0.0.0.0}` as local. When the active provider is cloud, the settings
-drawer renders a "Run data leaves your device — sent to *provider*" banner (its tooltip points to a
-local provider) and an API-key field ([`ConnectionSettings.jsx`](../../web_app/frontend/src/llm/components/ConnectionSettings.jsx)).
+drawer renders a "Run data leaves your device — sent to *provider*, with the results of the analyses
+the Copilot runs" banner (its tooltip points to a local provider), an API-key field and the *Let the
+Copilot run analyses* switch (`copilotTools`, default on; off sends no tool definitions and runs no
+analysis) ([`ConnectionSettings.jsx`](../../web_app/frontend/src/llm/components/ConnectionSettings.jsx)).
 Cloud use is opt-in: the user must select the preset and paste a key — but note that once a cloud preset
 is active, the row-1 probe above authenticates with that key on every fresh page mount.
 
@@ -133,12 +162,19 @@ is active, the row-1 probe above authenticates with that key on every fresh page
 (`anthropic-version: 2023-06-01`, `anthropic-dangerous-direct-browser-access: true`, in
 `requestHeaders()`); no other provider-specific handling exists.
 
-**You can inspect the exact payload — but only before your first message.**
-[`ChatView.jsx`](../../web_app/frontend/src/llm/components/ChatView.jsx) renders a `<details>` panel
-labeled *"Context sent to the model"* containing `contextToJson(context)` — the identical string that
-`contextBlock()` embeds in the request. That panel lives inside the **empty-state** branch
-(`hasConversation = turns.length > 0 || streaming`), so it disappears as soon as you send the first
-message and does not return until the page is reloaded (which also clears the conversation). It also
+**You can inspect the exact payload.** There are two places to look.
+
+- **The context, before your first message.**
+  [`CopilotView.jsx`](../../web_app/frontend/src/llm/components/CopilotView.jsx) renders a
+  `<details>` panel labeled *"Context sent to the model"*. It holds `contextToJson(context)`, the
+  identical string that `contextBlock()` embeds in the request.
+  - The panel lives in the **empty-state** branch (`hasConversation = turns.length > 0 || busy`).
+    It disappears with the first question and returns only after *New conversation* or a reload.
+  - A second panel there lists every analysis the Copilot may run, with the description the model
+    reads.
+- **Every analysis result, at any time.** Expanding a step card
+  ([`ToolStep.jsx`](../../web_app/frontend/src/llm/components/ToolStep.jsx)) shows the arguments and
+  the exact result object sent to the model (before the per-question compaction of Step 17). It also
 re-serializes the context *as of now*: with Live Data on, the JSON shown in the panel is not necessarily
 the JSON that accompanied an earlier answer.
 
@@ -169,8 +205,8 @@ one. Consequence: **hiding a plot on the Dashboard does not remove it from `data
 `recent_slope_per_step`, and from the watchdog.**
 
 **Gating.** `useAssistant({…, enabled})` builds the context in a `useMemo` only when `enabled` is true
-([`llm/useAssistant.js`](../../web_app/frontend/src/llm/useAssistant.js)). `AssistantPage` is mounted only
-after the user first visits the AI Assistant tab (`visitedPages.assistant` in
+([`llm/useAssistant.js`](../../web_app/frontend/src/llm/useAssistant.js)). The chatbox panel is mounted
+only when the user first opens it (`copilotOpened` in
 [`App.jsx`](../../web_app/frontend/src/App.jsx)), and `Dashboard.jsx` computes the symmetry finder, the
 tolerance ladder, and the `.dat` parse *only* when `wantAssistantData` is set — so a Dashboard/KDE-only
 session performs none of this work.
@@ -283,7 +319,11 @@ stem matches the `.rmc6f` — `KEY :: value` lines with `>`-prefixed sub-lines. 
 - `fitted_data`: one entry per `*_DATA` block, `{type, file, fit}` where `type` is the block name with
   the trailing `_DATA` stripped and lower-cased (`XRAY_RECIPROCAL_SPACE_DATA` → `xray_reciprocal_space`)
   and `file` is the `> FILENAME ::` string **verbatim** (see the data-flow note above).
-  `parseRunSettings()` itself caps the dataset list at 8 blocks.
+  `parseRunSettings()` itself caps the dataset list at 8 blocks. A block with both
+  `> RECIPROCAL_SPACE_FIT` and `> REAL_SPACE_FIT` sub-lines also gets
+  `fitted_in: "reciprocal and real space (one measurement: the G(r) is its Fourier transform)"`, and
+  `independent_datasets` counts the blocks: an X-ray F(Q) fitted in both spaces is **one** measurement,
+  which the model had been reading as two datasets (0.6.0 review).
 
 **Code:** `runContext.js` → `runSettingsContext()`, `pairLabels()`.
 
@@ -320,6 +360,16 @@ site lists. The ladder itself is always computed up to a maximum tolerance of **
   satisfy over each Cartesian tolerance interval in Å. **Emitted only when the ladder has more than one
   rung** (`symmetry.ladder.length > 1`); a structure whose ladder collapses to a single rung gets no
   `ladder` key at all, and nothing records that it was suppressed rather than not computed.
+- `noise_floor_A` (2 s.f.) and `noise_floor_note` — present when the basis carries counts and
+  displacements: the tolerance below which the ladder's verdicts are sampling noise
+  (`symmetryNoiseFloor()`). Each average site is the mean of $N_s$ copies with 3-D rms displacement
+  $u_s$, so its position carries a 3-D standard error $u_s/\sqrt{N_s}$; two symmetry-related means
+  differ by $\sqrt2$ times that from noise alone, and the finder takes the worst case over every site
+  and operation, so
+  $$\text{noise\_floor\_A} = 3\sqrt2\,\max_s \frac{u_s}{\sqrt{N_s}}.$$
+  On the demo (1000 copies, $u \approx 0.23$ Å) it is 0.031 Å — exactly where F-43m first holds, so
+  the P1 → Cm → Cmm2 → P-42₁m rungs below it are not evidence of a distortion. The folded average also
+  cannot show order that enlarges the cell (the system prompt says so).
 - `sites` — one entry per Wyckoff orbit:
   `{element, multiplicity, wyckoff?, site_sym?, frac?, mean_disp_A?, max_disp_A?}`, where
   - `multiplicity` = `orbit.size`, the number of basis sites in the orbit;
@@ -559,7 +609,33 @@ sort order (Step 11) is used.
    the distance is keyed on the sorted pair, the model can legitimately receive
    `{pair: "Se-Ga", avg_structure_d_A: …}` where the distance was stored under `"Ga-Se"`. The two orders
    describe the same unordered pair; only the string differs.
-5. The entry is kept only if at least one of `avg_structure_d_A` / `gr_peaks_A` is present.
+5. `first_shell` = `{mean_d_A, to_A, cn_<B>_per_<A>?}` from `firstShell()` (below), when a shell
+   boundary is found: the shell's mean distance from $r^2 g(r)$, its outer edge, and — with the cell —
+   the coordination number of B around A.
+6. The entry is kept only if at least one of `avg_structure_d_A` / `gr_peaks_A` is present.
+
+**The first coordination shell (`firstShell()`).** On the 5-point moving average $\tilde g$ of the
+partial (normalised to 1 at large $r$, as RMCProfile writes it), with the first peak of Step 8 at
+height $h$:
+
+- the **onset** is the last point before the peak where $\tilde g$ rises above $0.01\,h$;
+- the **boundary** is the first point after the peak that is either a local minimum below
+  `SHELL_TROUGH_FRACTION` $= 0.2\,h$ — a shallower dip lies *inside* a split shell, as the demo's
+  two Ta–Se distances (2.52 and 2.74 Å) of one TaSe₆ octahedron — or where $\tilde g < 0.001\,h$
+  (a tail decaying into an empty gap: 3.7σ out on a Gaussian shell);
+- the shell's distance statistics come from the radial distribution $r^2 g(r)$ (raw $g$, negatives
+  clamped) between onset and boundary, by the trapezoid rule:
+  $$\bar d = \frac{\int r^3 g\,dr}{\int r^2 g\,dr},\qquad
+  \sigma_d^2 = \frac{\int (r-\bar d)^2 r^2 g\,dr}{\int r^2 g\,dr};$$
+  the $g(r)$ peak itself sits *below* $\bar d$ for a broad or skewed shell, because $g$ divides by
+  $r^2$ (demo Ta–Ta: peak 2.93 Å, mean 3.00 Å, average-structure distance 3.02 Å — the model had read
+  the peak as a 0.09 Å contraction);
+- with the partner's number density $\rho_B = N_B/V$ (`elementDensity()`: the element count over
+  the supercell volume), the coordination number
+  $\mathrm{CN}_{B|A} = 4\pi\rho_B\int_0^{r_b} r^2 g_{AB}(r)\,dr$, and the same integral to
+  $r_b \mp 0.2$ Å (`cnRange`): how much the count depends on the cut. The reverse count is
+  $\mathrm{CN}_{A|B} = \mathrm{CN}_{B|A}\,\rho_A/\rho_B$. Demo checks: Ga 3.99 Se, Ta 6.00 Se,
+  Se 12.0 Se, and Ta 2.76 Ta (the intracluster 3 with the Ta–Ta gap at 3.3–4.0 Å not empty).
 
 **Cap:** at most `maxPairs = 10` accepted entries (the loop breaks once 10 have been pushed); the function
 returns `null` if none. Nothing records how many pairs were dropped at this stage.
@@ -614,8 +690,25 @@ $\sum_i (y^{\mathrm{expt}}_i)^2 = 0$, both implementations return the unavailabl
 is finite, so such a dataset reaches the model as `{kind, title?}` with **no `rwp` key** — an `rwp: 0`
 entry cannot be produced by an undefined metric.
 
-**Code:** `runContext.js` → `datasetContext()`; `browserData.js` → `plotDataFromText()`, `rwpColumns()`,
-`fitRwp()`, `rwp()`.
+A file named `<stem>_FT_XFQ<n>.csv` (`xpdf`) is RMCProfile's Fourier transform of the X-ray F(Q)
+it fits, and carries `same_measurement_as: "XFQ<n> (its Fourier transform)"`.
+
+**Partial weights (`context.partial_weights`).** For each radiation the run fits — X-ray when a
+`.dat` block name contains `XRAY` or an `xpdf` / `xray_sq` file exists, neutron for `NEUTRON` or
+`npdf` / `neutron_sq` / `bragg` — the Faber–Ziman weight of every partial in the total,
+
+$$w_{ab} = (2-\delta_{ab})\,\frac{c_a c_b f_a f_b}{\left(\sum_i c_i f_i\right)^2},\qquad
+\sum_{a\le b} w_{ab} = 1,$$
+
+with $c$ the atom fractions from the element counts, $f = Z$ for X-rays (the $Q\to0$ limit) and
+$f = b_\mathrm{coh}$ for neutrons (`COHERENT_B_FM`, the same NIST table as
+`rmc_toolkits/scattering.py`; real part for B, Cd, Dy, Eu, Gd, In, Sm), sorted by $|w|$, 2 s.f.
+(`scatteringWeights.js` → `partialWeights()`). GaTa₄Se₈ under X-rays: Ta–Se 0.45, Ta–Ta 0.24,
+Se–Se 0.21, Ga–Ta 0.051, Ga–Se 0.048, Ga–Ga 0.0027 — anything the run says about Ga rests on ~5 % of
+the signal. An element without a tabulated amplitude drops that radiation's block.
+
+**Code:** `runContext.js` → `datasetContext()`, `partialWeightsContext()`; `browserData.js` →
+`plotDataFromText()`, `rwpColumns()`, `fitRwp()`, `rwp()`.
 
 ---
 
@@ -670,6 +763,12 @@ finite values, in one pass (no argument spread). When any value is non-finite th
 not missing data. On output, `n_steps` is the **exact integer point count and is never rounded**;
 `first`, `last`, `min`, `max` are 3 s.f.; `recent_slope_per_step` is 2 s.f.
 
+The block also carries `watchdog_status` — `classifyConvergence()` of the same series (Step 14),
+the dashboard's verdict — and, with ≥ 10 finite rows, `change_over_last_10pct` = the last finite
+value minus the one a tenth of the rows earlier (2 s.f.; −0.1 ≈ a 10 % χ² drop). Without them the
+model read the demo's still-falling 48-point trace (−0.11 over the last tenth) as a plateau and called
+the run converged.
+
 **Downsampling (`downsampleSeries`).** Uniform-stride resampling to at most `HISTORY_POINTS = 48` points
 that always retains the endpoints:
 
@@ -711,9 +810,12 @@ is why the context names it rather than calling it the run's goodness of fit.
 
 ### Step 12 — The character budget (`contextToJson`)
 
-**Input:** the assembled context object and a budget, default `CONTEXT_CHAR_BUDGET = 4500` **characters**
-(not tokens). Serialization is `JSON.stringify(context, null, 1)` — pretty-printed with a 1-space indent,
-so newlines and indentation count against the budget.
+**Input:** the assembled context object and a budget, default `CONTEXT_CHAR_BUDGET = 6000` **characters**
+(not tokens; ~1.8k tokens). Serialization is `compactJson()`: `JSON.stringify(context, null, 1)` with
+every array of plain values, and then every object of plain values (and such arrays), collapsed onto
+one line — about half the length of one value per line, and still valid JSON (a bracket or brace
+followed by a line break never sits inside a JSON string). Both demo-like runs (GaTa₄Se₈ 250 K,
+GaNb₄Se₈ 5 K) fit with no trim at ~5,000 characters.
 
 **Trim ladder.** Each step is applied only if the current serialization still exceeds the budget:
 
@@ -750,7 +852,7 @@ JSON is returned immediately.
 **This is best-effort, not a guarantee.** Several sections are *never* trimmed — `structure`,
 `configuration_optimization`, `run_settings` (including a long `min_distances_A` map for a many-element
 system), the `convergence` summary statistics, and the pair list itself (only extra peaks are dropped,
-never whole pairs). A pathological run can therefore exceed 4,500 characters after all eight steps. The
+never whole pairs). A pathological run can therefore exceed 6,000 characters after all eight steps. The
 tests assert the budget holds for a 30-dataset, 50,000-step fixture and that a forced budget of 10
 characters triggers every trim step in order, but no test asserts the budget is met unconditionally.
 
@@ -760,29 +862,36 @@ characters triggers every trim step in order, but no test asserts the budget is 
 
 ### Step 13 — Message assembly (what the request body actually contains)
 
-**Chat** (`buildChatMessages()` in
-[`llm/prompts/templates.js`](../../web_app/frontend/src/llm/prompts/templates.js)), in order:
+**Copilot** (`buildCopilotMessages()` in
+[`llm/prompts/copilot.js`](../../web_app/frontend/src/llm/prompts/copilot.js)), in order:
 
-1. `system` — the fixed `SYSTEM_PROMPT` from
-   [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js). No run data, but it does
-   carry hard numeric interpretation rules (below).
+1. `system`: `COPILOT_PROMPT`, the fixed `SYSTEM_PROMPT` from
+   [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js) plus the tool rules
+   and the Outcome rule (Step 17). Without tools it is `COPILOT_PROMPT_NO_TOOLS` (the Outcome rule
+   only). There is no run data in it, but it carries hard numeric interpretation rules (below).
 2. `user` — `"Context for this RMC modeling run:"` followed by ```` ```json … ``` ```` containing
    `contextToJson(context)`. The fence exists so the model can distinguish data from instructions.
 3. `assistant` — a fixed one-line acknowledgement.
-4. the last `CHAT_HISTORY_TURNS = 8` prior messages (a flat `slice(-8)` over `{role, content}` — 8
-   *messages*, roughly 4 exchanges).
-5. `user` — the question you typed.
+4. the last `CHAT_HISTORY_TURNS = 8` memory messages (`slice(-8)`: 8 *messages*, i.e. 4 exchanges).
+5. `user`: the question you typed.
 
-**What "history" contains.** The `turns` array lives in `ChatView`'s local `useState` — never persisted,
-cleared on unmount or reload. The user message is appended **before** the request is sent; the assistant
-message is appended **only if `reply.text` is non-empty**. A stopped stream, or a reasoning-only reply
-that produced no answer text, is therefore dropped, leaving the user's question in the re-sent history
-with no answer beside it. `buildChatMessages()` maps each turn to `{role, content}` only, so
-`reasoning` / `reasoningMs` (chain-of-thought) are **never re-sent**.
+Then, within the question, the tool exchange (Step 17): one `assistant` message with `tool_calls` per
+round, and one `tool` message per call.
 
-The full context is **re-sent on every message**, which is why old turns can be dropped cheaply.
-Request body: `{model, messages, temperature, stream: true}` with `temperature` from settings
-(default **0.2**).
+**What "memory" contains.** The turns live in `useCopilot`'s state: never persisted, and cleared on
+reload, on *New conversation*, and when another run opens (`runKey`).
+`conversationMemory()` ([`llm/useCopilot.js`](../../web_app/frontend/src/llm/useCopilot.js)) sends
+each earlier question with its **final answer text** only.
+
+- Tool calls, tool results and chain-of-thought (`reasoning` / `reasoningMs`) are **never re-sent**.
+  The model re-runs an analysis it needs again.
+- A question whose turn produced no answer (an empty or failed reply) is dropped together with it, so
+  memory never holds two user messages in a row.
+- A stopped turn keeps its partial text, marked "(Interrupted before the answer was finished.)".
+
+The full context is **re-sent with every request**, which is why old turns can be dropped cheaply.
+The request body is `{model, messages, temperature, stream: true}`, plus `tools` and `tool_choice`
+when analyses are on. `temperature` comes from settings (default **0.2**).
 
 #### Numeric rules the system prompt asserts (no code backs them)
 
@@ -805,7 +914,7 @@ previous label if any, and a demand for
 exactly one line of the form `` `STATUS: improving|converged|stalled|diverging — <one short sentence
 citing a number>` ``. **This payload is not fenced** — unlike the chat context, the stats JSON is
 interpolated into the middle of an English sentence, so the data/instruction separation the chat path
-argues for is not applied on the second request path. (The payload is five numbers, so the risk is
+argues for is not applied on the watchdog request path. (The payload is five numbers, so the risk is
 small, but the asymmetry is real.) The message also discloses both the current heuristic label and the
 previous one to the model. Sent non-streaming at `temperature: 0`. The reply is parsed by
 
@@ -969,13 +1078,271 @@ OpenAI-compatible client (no SDK, no SSE library).
   comment says it "never throws"; the code disagrees, and the code is what runs.
 - `streamChat()` parses the SSE body manually: split on `\n`, keep only lines starting with `data:`,
   buffer the incomplete tail across reads (chunks can split mid-line), stop at `data: [DONE]`, ignore
-  unparseable lines. It yields `{content}` or `{reasoning}` deltas — reasoning models report
-  chain-of-thought in `delta.reasoning` (Ollama) or `delta.reasoning_content` (DeepSeek and others),
-  surfaced separately in the collapsible "Thinking" panel. The reader is always cancelled in a `finally`.
+  unparseable lines. It yields deltas of several kinds; the reader is always cancelled in a `finally`.
+  - `{content}`.
+  - `{reasoning}`: reasoning models report chain-of-thought in `delta.reasoning` (Ollama) or
+    `delta.reasoning_content` (DeepSeek and others). It is surfaced separately in the collapsible
+    "Thinking" panel.
+  - `{toolCall: {index, id, name, arguments, extraContent}}`: fragments of `delta.tool_calls`,
+    assembled by `copilot/toolCalls.js`. `extraContent` is a call's `extra_content`; Gemini puts its
+    `thought_signature` there and requires it back.
+  - `{finishReason}`.
+
+  `tools` / `tool_choice` join the body only when given. An HTTP failure carries its `status` (the
+  Copilot's tools-unsupported test reads it).
 - `completeChat()` is the non-streaming variant used by the watchdog.
 - Rendering of replies is Markdown via `react-markdown` with `rehypeRaw → rehypeSanitize → rehypeKatex`;
   `<img>` is stripped from the sanitize schema so model output cannot trigger an external load
-  ([`ChatView.jsx`](../../web_app/frontend/src/llm/components/ChatView.jsx)).
+  ([`MarkdownMessage.jsx`](../../web_app/frontend/src/llm/components/MarkdownMessage.jsx)). Analysis
+  results on the step cards are shown as `JSON.stringify` text in a `<pre>`, never as HTML.
+
+---
+
+### Step 17 — The Copilot tool loop (analyses, checks, budgets, verdict)
+
+**The loop** ([`llm/copilot/agentLoop.js`](../../web_app/frontend/src/llm/copilot/agentLoop.js),
+`runCopilotTurn()`):
+
+1. The model is called with the tools (`tool_choice: 'auto'`).
+2. If it returns tool calls, each call is checked and run in order:
+   - its arguments are parsed (`''` → `{}`, a Markdown-fenced object accepted);
+   - they are validated against the tool's schema subset (`type`, `enum`, `minimum` / `maximum`,
+     `required`; numeric strings coerced; unknown keys dropped with a note);
+   - the tool runs and its result is fitted to the budget.
+3. The answers go back as `tool` messages, and the model is called again.
+4. The turn ends when the model answers without tool calls.
+
+What the loop guarantees:
+
+- **Message rules.**
+  - The assistant message that lists the calls carries `content: null` when its text is only
+    whitespace (Anthropic rejects empty text blocks).
+  - Its arguments are re-serialized as valid JSON (`'{}'` when unparseable); its `extra_content` is
+    echoed; there is no `index`.
+  - Every listed call gets exactly one `tool` message, including calls that were skipped, unknown or
+    invalid.
+- **Errors become information.** An unknown tool, invalid arguments or a thrown engine error
+  becomes a `tool` message `{error}` that the model reads, so it can correct itself. The step shows
+  as failed.
+- **Duplicate calls.** A call identical to an earlier one in the same question (same validated
+  arguments, key-sorted) returns the cached result with the note "identical call … change the
+  arguments or answer".
+- **Budgets** (`DEFAULT_LIMITS`):
+
+  | Limit | Value |
+  |---|---|
+  | rounds of tool calls | 6 |
+  | calls per round | 4 (extra calls are answered "skipped") |
+  | one call | 120 s |
+  | no new round after | 10 min |
+  | one result | 3,000 chars |
+  | all results of one question | 12,000 chars |
+
+  - A result over 3,000 chars has its largest array halved repeatedly, each cut recorded as
+    `<key>_omitted`; a hard cut flagged `truncated: true` is the last resort.
+  - Over 12,000 chars per question, the oldest results are replaced by
+    `{compacted: …, checks}`. The newest round is never compacted, and checks are never trimmed.
+- **When the budget is used**, a user-role note says so and the last request is sent with
+  `tool_choice: 'none'`. Tool calls in that reply are ignored. If it brings no text (Ollama ignores
+  `tool_choice`), a fixed "analysis budget used" answer closes the turn with
+  `Outcome: not achieved`.
+- **Models without tool support.** A 4xx whose message says the model or server "does not support"
+  (or "is not supported" for) tools, tool calling, tool use or function calling retries the
+  question once without tools, under `COPILOT_PROMPT_NO_TOOLS`. The model is then remembered for the
+  session. Any other HTTP error is shown, including a schema 400 that merely mentions a function.
+- **Stop / timeout.** Each tool run gets its own `AbortSignal`, aborted on Stop or timeout. The
+  Copilot's worker (one of its own, not the pages' shared worker) is then terminated, and a Flask
+  request is cancelled. `describeSymmetry` runs synchronously and cannot be interrupted (≈ 0.1 s on
+  the demo).
+- **One run per conversation.** The tools and the context are captured when the question is asked.
+  Opening another run (`runKey` = directory + run id) stops the turn and starts a new
+  conversation. In Flask mode a Live Data save mid-question is *not* a new run: a later analysis in
+  that question reads the newer `.rmc6f`.
+
+**The analyses.** Each tool returns `{data, checks}`: a summary built for the model, and verdicts
+computed from the full engine result. A check is `ok`, `note`, `warn` or `fail`; `fail` means "does
+not answer as asked". A tool is offered only when its inputs exist.
+
+| Tool | Offered when | Engine | `data` (what is sent) | Checks (thresholds) |
+|---|---|---|---|---|
+| `read_run_data(section)` | the context has the section | `buildRunContext` | one context section as built (the builder's caps apply: ≤ 12 sites, 48 history points), before `contextToJson`'s trims | — |
+| `assess_convergence()` | an R-value series exists | `classifyConvergence` (Step 14), `seriesStats` | column, status, n, first/last/min, total drop, least-squares slope per row over the last 10 / 25 / 50 % (≥ 3 points each) | note: judged on one `.log` column, not the total; ok: converged; note: improving; warn: stalled/diverging; warn: non-finite rows; warn: < 5 rows; fail: < 2 finite rows |
+| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8), `firstShell` (Step 9) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; `first_shell`: its window (onset − one grid step to the boundary), the peaks inside it, mean distance and sd from $r^2g$, the CN in both directions and the CN with the cut 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next ($\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window); note: no boundary below max(r_max, r₁ + 3 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`CONSTRAINT_PILEUP_FRACTION`; demo Ga–Se 9 % at 2.2 Å), or the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å; ok: peak, shell edge, mean, CNs; fail: no peak |
+| `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; sorted by \|kurtosis\| then U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; fail: no site (holding that element) |
+| `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ; note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
+| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window may cut through a coordination shell); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
+| `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group, n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
+| `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
+| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1: the edge ladder, ladder width, shape rms, breathing sd, mean edge; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>; bonds outside the window, contacts between clusters per atom | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: ladder width departs from the null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units) or does not; note: breathing departs (same rule); note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile]` rows, the three strongest modes the same way; the supercell, wavevector count and untestable points | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and top 1 % or strongest); ok: no cell doubling (the highest point named); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
+
+**Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
+parameters from the validated arguments (null after an error), and the step's button hands them to
+the host: `onOpenPage(page, params)` → App `pageRequest` → the page's `request` prop, applied once
+per click.
+
+- `compute_bond_angles` → Bond Geometry `{end1, apex, end2, r12Min, r12Max, r23Min, r23Max,
+  binWidth}`. The page fills its boxes (`tripletInputsFromRequest`) and computes when the boxes
+  hold exactly that request, through the same engine, so its numbers equal the step's.
+- `analyze_displacement_directions` with a `site_ref` → Displacement Directions
+  `{referenceNumber, frequency}`, with frequency `'auto'` when the Copilot let the engine choose.
+  The page's smoothing, weight and frame are left as the user set them: the drawn enhancement can
+  differ (the Copilot's is unsmoothed), while the significance tests use raw counts. Element
+  pooling has no page view, so that step only opens the page.
+- Other steps open their page without parameters. On a phone-size screen, where the chatbox is a
+  full sheet, it closes after Show in.
+
+The Copilot never calls this itself; only the user's click does.
+
+**The verdict.** The prompt asks every answer to end with
+`Outcome: achieved|partial|not achieved — <one sentence>`.
+[`copilot/outcome.js`](../../web_app/frontend/src/llm/copilot/outcome.js) `parseOutcome()` reads
+the line:
+
+- the **last** such line wins;
+- decoration is tolerated (bold or italics, inline-code backticks, a list bullet or heading
+  marker, an en dash or a colon). The prompt shows the line in backticks, and some models copy
+  them;
+- `not_achieved` is accepted for "not achieved";
+- the three statuses are matched strictly; any other word is not a verdict.
+
+The line is removed from the answer text and shown as the chip. A reply without it has no chip. The
+verdict is the model's own self-assessment. The checks are the deterministic part: read both.
+
+---
+
+### Step 18 — Cluster distortion against a shuffle null (`analyze_clusters`)
+
+**Why.** A g(r) peak cannot tell a cluster distortion from thermal spread, and a displacement-direction
+map pooled over a cluster's vertices cancels it (each vertex has its own local frame). The question a
+lacunar-spinel referee asks — *are the M₄ tetrahedra distorted, how, and is that more than the atoms'
+own motion?* — needs the clusters themselves. Reference: `cluster_distortion()` in
+[`rmc_toolkits/clusters.py`](../../rmc_toolkits/clusters.py); browser port
+[`workers/clusters.js`](../../web_app/frontend/src/workers/clusters.js), parity-tested against
+`clusters_fixture.json` (`tests/generate_clusters_fixture.py`; integers exact, floats to $10^{-9}$; the
+demo's 4000 clusters agree to $6\times10^{-11}$ relative).
+
+**Input.** The per-site displacement clouds of the PCA engine (`load_site_displacements` /
+`siteDisplacementsFromRmc6f`), which now keep each atom's cell indices; an element; a window
+$[r_\min, r_\max]$ (Å, ≤ 8 at the boundaries). A coordinates-only file (no site/cell columns) is refused.
+
+**Templates (average structure).** Sites whose label is the element are bonded when the distance
+between site means, over unit-cell image shifts $|n_i| \le \lceil r_\max/w_i\rceil + 1$ ($w_i$ the
+perpendicular widths), lies in the window (± `WINDOW_TOL`). A breadth-first walk from each unvisited site
+assigns integer cell offsets; a site bonded to its own image, or reached twice at different offsets,
+makes the network **extended** (chains or a net — no clusters). Each finite component is a template:
+member sites in site order, their offsets, and its bonds as sorted member pairs. The dominant kind
+(members, bonds) by cluster count is analysed; other kinds are listed.
+
+**Clusters (configuration).** One cluster per template per cell $c$: member $m$ is the atom of site
+$s_m$ in cell $c + o_m$ (mod the supercell); a cluster with a missing atom is skipped and counted.
+Member positions are $\mathbf b_m + \mathbf u$, with $\mathbf b_m = (\mathbf f_{s_m} + \mathbf o_m)\,A$ the
+template geometry and $\mathbf u$ the atom's displacement from its site mean — so a bond's length is
+measured however far it stretches.
+
+**Statistics** (pooled over the dominant kind's templates; $L_{ce}$ = length of bond $e$ in cluster $c$):
+
+| Key | Definition |
+|---|---|
+| `meanEdge` | $\langle L\rangle$ over all bonds |
+| `ladder` | mean over clusters of each cluster's $k$-th shortest bond |
+| `ladderWidth` | $\langle \max_e L_{ce} - \min_e L_{ce}\rangle_c$ |
+| `shapeRms` | $\sqrt{\langle (L_{ce} - \bar L_c)^2\rangle}$ — shape distortion |
+| `breathingSd` | population sd of $\bar L_c$ — size fluctuation |
+| `eRms`, `t2Rms` (4 members, 6 bonds) | with opposite pairs $(e,e')$ = (01,23), (02,13), (03,12): sums $p_k$ and differences $d_k$; $\sqrt{\langle\sum_k (p_k-\bar p)^2\rangle/2}$ (E, tetragonal-type) and $\sqrt{\langle\sum_k d_k^2\rangle/3}$ (T2) |
+| `t2Trigonality` | $\langle \sum d_k^4 / (\sum d_k^2)^2\rangle$ over clusters with $\sum d_k^2 > 0$: $1/3$ when the three opposite pairs differ alike (three bonds at one vertex long or short — trigonal, C₃ᵥ), 1 when one pair alone does (one bond against its opposite); a uniformly random direction averages 3/5 |
+| `longAxis`, `shortAxis` | fraction of clusters whose gyration-tensor axis of largest / smallest eigenvalue (`eigh`; the port's Jacobi `eigenDecomposition`) is within 15° (`AXIS_CONE_DEG`) of a lattice direction of the family <100> (a, b, c), <110> (a ± b, …) or <111> (a ± b ± c, 4); for a dimer the bond itself is the long axis |
+
+**The shuffle null.** For shuffle $k = 0 … 23$ (`DEFAULT_SHUFFLES`), each member $m$ of template $t$
+takes its displacement from the cluster $\pi_{k,t,m}(c)$ instead of $c$, with $\pi$ the stable argsort
+of the keys $\mathrm{mix32}(h_{k,t,m} \oplus c)$, $h$ chained lowbias32 hashes of the seed (`0x5EED`),
+$k+1$, $t+1$, $m+1$ — the same integers in both engines. This keeps every site's displacement
+distribution (spread, anisotropy, non-Gaussianity, bimodality) and destroys only the correlation between
+the atoms of one cluster. RMC moves atoms one at a time, so without data a configuration *is* this null;
+a departure is a correlation the data put in. Each statistic is reported as observed, null mean, null sd
+($n-1$) and $z = (\text{obs} - \text{mean})/\text{sd}$ (`null` when sd = 0), elementwise for the
+ladder and the axis families. With thousands of clusters a 1 % effect reaches $z > 3$, so the Copilot's
+checks also require an effect size (Step 17).
+
+**The average cluster.** The template's own bonds $|\mathbf b_j - \mathbf b_i|$ (a *static*
+distortion shows here, not in the shuffle test, which keeps the site means) with each bond's sampling
+error $\sqrt{\sum_{s\in\{i,j\}} \langle (\mathbf u\cdot\hat e)^2\rangle_s / N_s}$ from the two sites'
+displacement spreads along it; `ideal` gives the sorted bonds averaged over templates, the largest
+spread, the median sampling error and the largest spread / error. Six independent normal bonds span
+~2.5σ on average and exceed 5σ in under 1 % of cases.
+
+**Outliers.** `brokenEdgeFraction` — bonds of the analysed clusters whose length in the configuration
+lies outside the window; `extraContacts` — pairs of the element within the window (the triplets
+engine's linked-cell count over every atom of the element, positions rebuilt as
+$(\mathbf f_s + \text{cell})/N + \mathbf u A^{-1}$) minus the template bonds inside it: atoms crossing
+the gap between clusters; per atom, $2\times$ that over the element's atom count.
+
+**Synthetic checks** (`tests/test_clusters.py`, 6×6×6 cells of an Nb₄ tetrahedron, a Ga₂ dimer and a
+Se): independent noise — every \|z\| < 3; one random vertex per cluster pushed 0.3 Å out along its
+3-fold axis — average cluster regular, trigonality z ≈ −8, long axes along <111> z ≈ 9, breathing
+lower than the null's binomial count of pushed vertices; the same vertex pushed everywhere — average
+cluster spread ≈ 45 SE, local statistics at the null.
+
+**The demo (GaTa₄Se₈, 250 K, Ta 2.65–3.33 Å, 4000 clusters).** Ladder width 0.295 Å against 0.386 Å
+in the null (−23 %, z = −64): the RMC clusters are *more rigid* than independent atoms; breathing +27 %;
+short axes along <111> in 19 % of clusters against 14 % (z = 11), long axes along <110> 23 % against
+20 % (z = 4) — the axis of the monoclinic distortion small-box PDF fits report for this compound
+([Yang et al., Phys. Rev. Research 4, 033123 (2022)](https://doi.org/10.1103/PhysRevResearch.4.033123));
+average cluster 3.031–3.054 Å, 5.5 SE.
+
+**Cost.** Templates: (sites of the element)² × image shifts. Clusters and each shuffle: linear in the
+atoms of the element. The demo: 1.5 s in Python (load included), 0.7 s in the port after a 0.2 s parse.
+
+---
+
+### Step 19 — Displacement modulations: order that enlarges the cell (`analyze_modulations`)
+
+**Why.** The average structure (and so `detect_symmetry` and the noise floor of Step 5) folds every
+cell into one: it cannot show order whose period is longer than one cell — the cell doubling of
+GaNb₄Se₈ below 29 K (P2₁2₁2₁, $c' = 2c$; Yang et al., Phys. Rev. B 109, 144101 (2024)) or of
+GaTa₄Se₈ below 50 K, tilts, charge-density waves. The configuration can. Reference:
+`displacement_modulations()` in [`rmc_toolkits/modulations.py`](../../rmc_toolkits/modulations.py);
+port [`workers/modulations.js`](../../web_app/frontend/src/workers/modulations.js) (a separable DFT
+for numpy's `fftn`), parity-tested against `modulations_fixture.json`
+(`tests/generate_modulations_fixture.py`; the 5 K run agrees to $10^{-15}$).
+
+**Method.** For each reference site $s$ of an element, its displacements $\mathbf u_s(\mathbf c)$ from the
+site mean are placed on the $N_1\times N_2\times N_3$ cell grid (a missing copy is a zero, and
+counted) and transformed,
+
+$$\mathbf U_s(\mathbf q) = \sum_{\mathbf c} \mathbf u_s(\mathbf c)\,e^{-2\pi i\,\mathbf q\cdot\mathbf c},\qquad
+\mathbf q = (h/N_1, k/N_2, l/N_3),\qquad
+P_s(\mathbf q) = \frac{|\mathbf U_s(\mathbf q)|^2}{n_s\,\mathrm{tr}\,C_s},$$
+
+so independent displacements give $\langle P_s\rangle = 1$ at every $\mathbf q \ne 0$ ($C_s$ the
+site's population covariance). The element's power is the mean over its sites (zero-spread sites
+skipped). Every $\mathbf q \ne 0$ of the grid is the comparison set — the configuration's own
+diffuse background, which keeps RMC's long-wavelength correlations a white-noise null ignores (on
+both real runs a χ² test against independent cells gave χ²/dof ≈ 0.4–0.9, i.e. *less* zone-boundary
+power than white noise, because neighbouring cells move together). Reported per element:
+
+- the **zone-boundary points** with components in $\{0, \tfrac12\}$ (seven; only those whose halved
+  axes have an even $N_i$, the rest listed as `untestable`);
+- the five **strongest modes**, $\pm\mathbf q$ counted once as the member with the smaller grid
+  index (their powers agree to rounding; folded components in $(-\tfrac12, \tfrac12]$);
+
+each with its ratio to the median power over $\mathbf q\ne0$ and its percentile (the share of
+$\mathbf q \ne 0$ with power below $P(1 - 10^{-9})$, so Friedel partners count alike in both engines).
+
+**Checks** (`summarizeModulations`): ok — ordered displacements at a zone-boundary point when its
+ratio ≥ 3 (`MODULATION_RATIO`) **and** it is in the top 1 % or is the element's strongest mode (a box
+with < 100 wavevectors cannot reach the 99th percentile); otherwise ok — no cell doubling, naming the
+highest point; note — an element's strongest mode within 0.25 of the zone centre on every axis at
+≥ 5× the median is a long-wavelength (box-scale) wave, not a superstructure; note — untestable points.
+A planted doubling (Nb ± 0.1 Å along z in alternate cells, 6³ cells) gives 204× at (0,0,½), the
+strongest of 215 wavevectors. Both real runs: no zone-boundary point above the 85th percentile; the
+strongest modes are box-scale waves — GaNb₄Se₈ 5 K: q = (0.1, −0.2, −0.2) for all three elements
+(5–14×); GaTa₄Se₈ 250 K: (0.1, 0.2, −0.1) and (0.2, 0, 0) (13–33×). The 5 K configuration therefore
+carries neither the orthorhombic cell doubling nor a cluster distortion beyond independent atoms
+(Step 18), where diffraction finds both: the RMC started from, and stayed near, the cubic model.
+
+**Cost.** One 3-D transform per site and component: 0.02 s (numpy) and 0.04 s (port) for 52 sites
+on a 10³ grid.
 
 ---
 
@@ -996,6 +1363,9 @@ in each mode:
 | `datasets` | `kind` + `title` + `rwp` (never `stog`) | `kind` only (never `stog`) |
 | `convergence` + watchdog badge | yes | **no** — no parsed R-value series, so the badge stays hidden |
 | `pca_displacements` | after opening the PCA Ellipsoid page | after opening the PCA Ellipsoid page (`/api/pca/sites`) |
+| `partial_weights` | yes (element counts + the `.dat` blocks or plot kinds) | from the plot kinds only (no `.dat`) |
+| `analyze_clusters`, `analyze_modulations` | yes (worker; needs site/cell columns) | yes (`/api/clusters`, `/api/modulations`) |
+| `compare_fit`, `find_gr_peaks` | yes | **no** — no parsed series |
 
 Two cross-cutting notes: STOG datasets (`.gr`, `.sq`, `.fq`) are filtered out by `isDashboardPlotFile`
 before the assistant sees anything, in **both** modes; and the Dashboard visibility toggle affects
@@ -1011,7 +1381,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 
 | Name | Value | Units | Where | Meaning |
 |------|-------|-------|-------|---------|
-| `CONTEXT_CHAR_BUDGET` | 4500 | characters | `runContext.js` | Target size of the serialized context |
+| `CONTEXT_CHAR_BUDGET` | 6000 | characters | `runContext.js` | Target size of the serialized context (`compactJson`) |
 | `HISTORY_POINTS` | 48 | points | `runContext.js` | Convergence history cap; also `downsampleSeries`'s default argument |
 | history trim ladder | 24, then 12 | points | `contextToJson()` | Successive re-downsamples of the *already downsampled* 48-point array |
 | `MAX_SITES` | 12 | sites | `runContext.js` | Cap on symmetry sites and PCA sites at build time |
@@ -1032,7 +1402,31 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | coincidence cutoff | $10^{-3}$ | Å | `pairCorrelations.js` | Distances below this are ignored |
 | image shell | $\pm1$ | cells | `pairCorrelations.js` | Periodic images searched for nearest neighbours |
 | `maxPairs` | 10 | pairs | `pairCorrelations.js` | Cap on `pair_correlations` entries |
-| `CHAT_HISTORY_TURNS` | 8 | messages | `templates.js` | Prior chat messages re-sent (in-memory only) |
+| `CHAT_HISTORY_TURNS` | 8 | messages | `prompts/copilot.js` | Memory messages re-sent (questions + final answers, in-memory only) |
+| `maxRounds` | 6 | rounds | `copilot/agentLoop.js` | Model requests with tool calls per question |
+| `maxCallsPerRound` | 4 | calls | `copilot/agentLoop.js` | Extra calls are answered "skipped" |
+| `toolTimeoutMs` | 120 000 | ms | `copilot/agentLoop.js` | One analysis; its signal is aborted |
+| `maxTurnMs` | 600 000 | ms | `copilot/agentLoop.js` | No new round of tools after this |
+| `resultCharBudget` | 3 000 | characters | `copilot/agentLoop.js` | One `tool` message |
+| `turnCharBudget` | 12 000 | characters | `copilot/agentLoop.js` | All `tool` messages of one question; older ones compacted to their checks |
+| `copilotTools` | `true` | — | `settings.js`, `ConnectionSettings.jsx` | *Let the Copilot run analyses* |
+| `MIN_ORIENTATION_POINTS` | 100 | vectors | `copilotTools.js` | Below: "the map is noisy" |
+| `SIGNIFICANCE_SIGMA` | 3 | σ (calibrated, one-sided) | `copilotTools.js`, `prompts/copilot.js` | Peak / map significance threshold for the checks |
+| `UNBONDED_APEX_FRACTION` | 0.5 | fraction | `copilotTools.js` | Central atoms with no A–B bond in the window above this: warn |
+| `MODAL_COORDINATION_SHARE` | 0.6 | fraction | `copilotTools.js` | Central atoms with the most common A–B bond count below this share: warn (a spread coordination, as when the window cuts through a shell; demo Se–Ta–Se at 2.3–2.7 Å: 0.47, whole shells 0.83–0.96) |
+| `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `pairCorrelations.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
+| `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `pairCorrelations.js` | Shell onset; a tail below this closes the shell |
+| `CONSTRAINT_PILEUP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $g$ just above a closest-approach constraint above this: the constraint cuts the distribution |
+| `SHELL_OVERLAP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $\tilde g$ at the shell boundary above this: shells not separated |
+| `MISFIT_CONCENTRATION`, `RELATIVE_MISFIT_FACTOR` | 0.4, 3 | share; × the dataset's R | `runTools.js` | `compare_fit`'s concentration and weak-signal notes |
+| `DEFAULT_SHUFFLES`, `SHUFFLE_SEED`, `AXIS_CONE_DEG` | 24, `0x5EED`, 15° | — | `clusters.py`, `clusters.js` | The cluster null and the axis families |
+| `MAX_CLUSTER_WINDOW` | 8 | Å | `app.py`, `pcaKdeWorker.js` | Largest `rMax` of a cluster request |
+| `CLUSTER_Z`, `CLUSTER_EFFECT`, `TRIGONALITY_EFFECT`, `AXIS_ENHANCEMENT` | 3, 5 %, 0.02, 1.1 | — | `copilotTools.js` | A cluster statistic is a finding only when both its z and its size clear these |
+| `STATIC_SPREAD_SE` | 5 | sampling errors | `copilotTools.js` | The average cluster counts as distorted above this spread |
+| `CLUSTER_OUTLIER_FRACTION` | 0.05 | fraction / per atom | `copilotTools.js` | Bonds outside the window, contacts between clusters |
+| `MODULATION_RATIO`, `MODULATION_PERCENTILE` | 3, 99 | × median, percentile | `copilotTools.js` | A zone-boundary point is order above both (or as the strongest mode) |
+| `LONG_WAVE_RATIO`, `LONG_WAVE_Q` | 5, 0.25 | × median, r.l.u. | `copilotTools.js` | A strongest mode this strong and this close to the zone centre is a box-scale wave |
+| constraint margin | 0.05 | Å | `copilot/runTools.js` | First-peak low side within this of the closest-approach constraint: warn |
 | `temperature` (chat) | 0.2 (editable 0–2, step 0.1) | — | `settings.js`, `ConnectionSettings.jsx` | Sampling temperature |
 | `temperature` (watchdog) | 0 | — | `useWatchdog.js` | Fixed |
 | `baseUrl` | `http://localhost:11434/v1` | — | `settings.js` | Default endpoint (Ollama) |
@@ -1057,14 +1451,18 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   representative fractional coordinate of every reported Wyckoff orbit (`symmetry.sites[].frac`, up to 12
   triples at 3 s.f.) does. Those are average-structure positions, not instantaneous ones — but they are
   coordinates.
-- **Cloud providers receive the context.** Selecting OpenAI, Gemini, or Anthropic sends the summarized run
-  context (including run/dataset names, composition, and the `frac` triples above) to that provider under
-  your API key, and merely opening the page issues an authenticated `GET /models` before you type
+- **Cloud providers receive the context, and the analysis results.** Selecting OpenAI, Gemini, or
+  Anthropic sends the summarized run context (including run/dataset names, composition, and the
+  `frac` triples above) to that provider under your API key. With analyses on, the results of every
+  analysis the model runs go too: Step 17, which includes every orbit's coordinates from
+  `detect_symmetry`. Turn the analyses off to send the context only. Merely opening the page issues an authenticated `GET /models` before you type
   anything. This is opt-in and warned about in the UI, but it is a real disclosure. Local providers keep
   everything on the machine.
-- **The context inspector is only available before your first message.** It lives in the chat's empty
-  state, so once a conversation starts you cannot re-read what was sent without reloading (which clears
-  the conversation). It also re-serializes the *current* context, which under Live Data may differ from
+- **The context inspector is only available before your first question.** It lives in the empty
+  state, so once a conversation starts you cannot re-read the context without *New conversation*
+  (which clears the conversation). Analysis results stay inspectable on their step cards.
+- **The Outcome chip is the model's self-assessment.** A small model may write "achieved" over a
+  failed check. The step cards' checks are computed, not generated: read them. It also re-serializes the *current* context, which under Live Data may differ from
   what accompanied an earlier answer.
 - **The peak finder is a cue extractor, not a PDF refinement.** No baseline model, no profile function,
   no interpolation, no uncertainty. The reported `r` is the grid abscissa of the *smoothed* local

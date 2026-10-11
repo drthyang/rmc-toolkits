@@ -720,7 +720,7 @@ export default function PcaKdePage({ directory, localRun, onSitesChange, dataEpo
         }
     }, [selectedEllipsoid]);
 
-    // Publish the per-site ellipsoid table upward (App → AI Assistant), so the
+    // Publish the per-site ellipsoid table upward (App → AI Copilot), so the
     // assistant can reason about the thermal displacements once this page has
     // computed them. Follows the current dataset, and clears on error/reset.
     useEffect(() => {

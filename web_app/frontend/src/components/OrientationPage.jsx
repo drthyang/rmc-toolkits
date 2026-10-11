@@ -11,7 +11,7 @@
 // views : sphere : site picker = 3 : 6.5 : 6.5), and each panel's actions
 // (frame toggle, Reset, Save) live in its own header.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { isStaticMode } from '../browserData';
 import { buildElementColors, speciesCounts } from '../atomColors';
 import { COLORMAP_NAMES } from '../colormaps';
@@ -40,7 +40,7 @@ const WEIGHT_OPTIONS = [
     { value: 'amplitude2', label: '|Δr|²' }
 ];
 
-export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) {
+export default function OrientationPage({ directory, localRun, dataEpoch = 0, request = null }) {
     // Fold-and-cluster distance (Å), used only when the loaded file has no
     // reference-site/cell columns and its sites must be reconstructed.
     const [clusterThreshold, setClusterThreshold] = useState(DEFAULT_CLUSTER_THRESHOLD);
@@ -71,6 +71,21 @@ export default function OrientationPage({ directory, localRun, dataEpoch = 0 }) 
         ready,
         unitCell
     } = useSiteCloud({ directory, localRun, clusterThreshold, dataEpoch });
+
+    // "Show in Displacement Directions" from an AI Copilot step (App.jsx
+    // `request`, a new `id` per click): select its site and, when it is one
+    // of the offered resolutions, its sphere resolution ('auto' when the
+    // Copilot let the engine choose). Smoothing, weight and frame stay as the
+    // user set them, so the drawn map can differ from the Copilot's (which is
+    // unsmoothed); the significance tests use the raw counts either way.
+    useEffect(() => {
+        const params = request?.params;
+        if (!params) return;
+        if (params.referenceNumber != null) setSelectedRef(params.referenceNumber);
+        if (FREQUENCY_OPTIONS.includes(params.frequency)) setFrequency(params.frequency);
+    // Applied once per request (its id), never re-applied over the user's picks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [request?.id]);
 
     const staticMode = isStaticMode();
     const noRun = staticMode && !localFile;

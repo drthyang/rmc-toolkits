@@ -614,7 +614,7 @@ const siteComposition = (atomElements) => {
 // displacements (Å) and the site's within-unit-cell fractional position. Offsets
 // must already be unwrapped (no boundary split) so the plain mean is the true mean.
 // `atomElements` is each row's own species (a reference number can carry several).
-const buildSite = (referenceNumber, atomElements, offsets, latticeVectors, supercell, copiesPerCell = null) => {
+const buildSite = (referenceNumber, atomElements, offsets, latticeVectors, supercell, copiesPerCell = null, cells = null) => {
     const n = offsets.length;
     const mean = [0, 0, 0];
     offsets.forEach((offset) => { mean[0] += offset[0]; mean[1] += offset[1]; mean[2] += offset[2]; });
@@ -635,7 +635,11 @@ const buildSite = (referenceNumber, atomElements, offsets, latticeVectors, super
     const { element, elementCounts, mixed } = siteComposition(atomElements);
     return {
         referenceNumber, element, elementCounts, mixed, atomElements,
-        count: n, displacements, siteFractional, copiesPerCell
+        count: n, displacements, siteFractional, copiesPerCell,
+        // Each row's box copy (cell indices), parallel to `displacements`:
+        // the cluster engine finds a cluster's atoms by site and cell. Null on
+        // the reconstruction path, which has no cell columns.
+        cells
     };
 };
 
@@ -662,20 +666,21 @@ const circularMean = (values) => {
 // about zero tears a site at x = 1/2 in a one-cell-thick box (or near x = 1 in a
 // two-cell one) into halves a box edge apart. Mirrors `load_site_displacements`.
 const sitesByReferenceNumber = (atoms, latticeVectors, supercell) => {
-    const clouds = new Map();   // referenceNumber -> { elements: [...], offsets: [[dfx,dfy,dfz], ...] }
+    const clouds = new Map();   // referenceNumber -> { elements: [...], offsets: [[dfx,dfy,dfz], ...], cells }
     atoms.forEach(({ element, referenceNumber, coords, cellIndices }) => {
         const offset = coords.map((value, i) => value - cellIndices[i] / supercell[i]);
         let cloud = clouds.get(referenceNumber);
-        if (!cloud) { cloud = { elements: [], offsets: [] }; clouds.set(referenceNumber, cloud); }
+        if (!cloud) { cloud = { elements: [], offsets: [], cells: [] }; clouds.set(referenceNumber, cloud); }
         cloud.elements.push(element);
         cloud.offsets.push(offset);
+        cloud.cells.push(cellIndices);
     });
     const referenceNumbers = [...clouds.keys()].sort((a, b) => a - b);
     const sites = referenceNumbers.map((referenceNumber) => {
-        const { elements, offsets } = clouds.get(referenceNumber);
+        const { elements, offsets, cells } = clouds.get(referenceNumber);
         const centre = [0, 1, 2].map((i) => circularMean(offsets.map((offset) => offset[i])));
         const unwrapped = offsets.map((offset) => offset.map((value, i) => value - roundHalfEven(value - centre[i])));
-        return buildSite(referenceNumber, elements, unwrapped, latticeVectors, supercell);
+        return buildSite(referenceNumber, elements, unwrapped, latticeVectors, supercell, null, cells);
     });
     return { referenceNumbers, sites };
 };

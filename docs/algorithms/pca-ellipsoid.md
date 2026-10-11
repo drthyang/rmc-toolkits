@@ -1929,7 +1929,7 @@ each Wyckoff orbit's member indices into `basis`) → `symmetryContext` in
 orbit into `mean_disp_A` and takes the maximum into `max_disp_A`, both rounded to **2 significant
 figures**, sorts the orbits by `mean_disp_A` descending, and — like `pcaContext` — emits at most
 `MAX_SITES = 12` orbits with a `sites_omitted` count for the rest. That whole chain is gated on
-the user having opened the AI Assistant page
+the user having opened the AI Copilot chatbox
 ([`Dashboard.jsx`](../../web_app/frontend/src/components/Dashboard.jsx), `wantAssistantData`).
 
 ---

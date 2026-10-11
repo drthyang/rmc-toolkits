@@ -16,6 +16,9 @@ export const DEFAULT_SETTINGS = {
     // local servers, which need no key. Persisted in this browser only.
     apiKey: '',
     temperature: 0.2,
+    // Let the AI Copilot run the Workbench analyses (tools). Off = it answers
+    // from the run summary only, like the former chat assistant.
+    copilotTools: true,
     watchdogEnabled: false,
     watchdogIntervalMin: 5
 };

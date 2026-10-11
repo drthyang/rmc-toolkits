@@ -121,7 +121,7 @@ class ApiContractTests(unittest.TestCase):
         routes = sorted(
             {rule.rule for rule in backend_app.app.url_map.iter_rules() if rule.rule.startswith("/api/")}
         )
-        self.assertEqual(len(routes), 15)
+        self.assertEqual(len(routes), 17)
         reference = (ROOT / "docs" / "REFERENCE.md").read_text(encoding="utf-8")
         table = set(re.findall(r"^\| `(?:GET|POST) (/api/[^`?]+)`", reference, flags=re.MULTILINE))
         self.assertEqual(sorted(table), routes)

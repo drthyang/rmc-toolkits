@@ -34,7 +34,7 @@ import InteractivePlot from './InteractivePlot';
 import ModelSummary from './ModelSummary';
 import FoldedCellPanel from './FoldedCellPanel';
 import useSiteCloud from '../useSiteCloud';
-import { tripletRequestFromInputs } from '../workers/triplets';
+import { tripletInputsFromRequest, tripletRequestFromInputs } from '../workers/triplets';
 import AppFooter from './AppFooter';
 import './BondGeometryPage.css';
 
@@ -127,7 +127,7 @@ const useDebounced = (value, delay = 400) => {
     return debounced;
 };
 
-export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 }) {
+export default function BondGeometryPage({ directory, localRun, dataEpoch = 0, request = null }) {
     const {
         sites,
         sitesError,
@@ -310,6 +310,40 @@ export default function BondGeometryPage({ directory, localRun, dataEpoch = 0 })
         event.preventDefault();
         if (canCompute) compute();
     };
+
+    // "Show in Bond Geometry" from an AI Copilot step (App.jsx `request`, a
+    // new `id` per click): load its triplet and windows into the boxes, then
+    // compute once the boxes hold exactly that request and the page can
+    // compute — on a first visit the element list is still loading. The
+    // result is the page's own, from the same engine the Copilot used.
+    const pendingRequest = useRef(null);
+    useEffect(() => {
+        if (!request?.params) return;
+        const inputs = tripletInputsFromRequest(request.params);
+        setEnd1(inputs.end1);
+        setApex(inputs.apex);
+        setEnd2(inputs.end2);
+        setR12Min(inputs.r12Min);
+        setR12Max(inputs.r12Max);
+        setSplit23(inputs.split23);
+        setR23Min(inputs.r23Min);
+        setR23Max(inputs.r23Max);
+        setBinWidth(inputs.binWidth);
+        setInvalidField(null);
+        setResultError(null);
+        try {
+            pendingRequest.current = tripletRequestFromInputs(inputs);
+        } catch {
+            pendingRequest.current = null;
+        }
+    // Applied once per request (its id), never re-applied over the user's edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [request?.id]);
+    useEffect(() => {
+        if (!pendingRequest.current || !canCompute || !sameRequest(pendingRequest.current, currentRequest)) return;
+        pendingRequest.current = null;
+        compute();
+    }, [canCompute, currentRequest, compute]);
 
     // Editing the field an error named clears the mark and the message.
     const edit = (key, setter) => (event) => {

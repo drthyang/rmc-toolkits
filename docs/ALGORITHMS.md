@@ -44,7 +44,7 @@ written.
 | **Bond Geometry** | Bond angles at a central atom over the periodic configuration: linked-cell neighbour search with explicit image shifts, the three angle curves (counts, per-degree density, exact sin-corrected), bond-length histograms, coordination statistics, and the page's partial-g(r) helper and folded-cell bond view | [Bond Geometry](algorithms/bond-geometry.md) |
 | **PCA Ellipsoid** | Per-site displacement clouds: covariance, eigen-decomposition, ADP readouts, $\chi^2$ probability ellipsoid, separable 3-D Gaussian KDE + marching-cubes isosurface, wall projections, Mardia non-Gaussianity and per-axis kurtosis, and the PCA↔crystal frame algebra | [PCA Ellipsoid](algorithms/pca-ellipsoid.md) |
 | **Displacement Directions** | Directions only, amplitude discarded: Goldberg (hex + 12 pentagon) sphere tiling, exact solid-angle histogram, enhancement, calibrated peak/map/asymmetry/anisotropy significance tests, antipodal asymmetry, orientation tensor, and the sphere/axis-view rendering | [Displacement Directions](algorithms/displacement-directions.md) |
-| **AI Assistant** | The run context built *before* any model call: cell/composition, symmetry orbits, per-site PCA summary, average-structure neighbour distances, $g(r)$ peak extraction, residuals, convergence heuristics, character budget — and exactly what leaves the device | [AI Assistant](algorithms/ai-assistant.md) |
+| **AI Copilot** | The run context built *before* any model call: cell/composition, symmetry orbits, per-site PCA summary, average-structure neighbour distances, $g(r)$ peak extraction, residuals, convergence heuristics, character budget. The tool loop: which analyses the Copilot may run, their summaries, deterministic checks and budgets, the Outcome verdict. And exactly what leaves the device | [AI Copilot](algorithms/ai-assistant.md) |
 
 ---
 
@@ -77,8 +77,8 @@ flowchart TD
   DIR["Displacement Directions"]
   ORI["Goldberg tiling, solid-angle histogram, enhancement, calibrated significance tests, antipodal asymmetry, orientation tensor"]
 
-  AI["AI Assistant"]
-  CTX["Summary-statistics context JSON, convergence heuristics, watchdog badge"]
+  AI["AI Copilot"]
+  CTX["Summary-statistics context JSON, tool loop with checked analyses, convergence heuristics, watchdog badge"]
 
   SQ --> PSQ
   PSQ --> FZ
@@ -198,8 +198,9 @@ Consolidated from every page's *Caveats* section. Each line links to the section
 - A principal axis is a **line, not an arrow**, and near-degenerate eigenvalues make individual axes meaningless (the `degenerate` flag catches only the extreme case; `axisResolved` flags axes inside a near-degenerate pair) — [pca-ellipsoid.md](algorithms/pca-ellipsoid.md#caveats--what-this-is-not-1).
 - Goldberg cells are **not equal-area** ($-36\%$ to $+18\%$ at $\nu=10$); this is compensated in `density`/`enhancement` but raw `counts` print the icosahedron onto the map, and smoothing adds a small icosahedral artefact — [displacement-directions.md](algorithms/displacement-directions.md#caveats).
 - `zScore` ignores the amplitude weight, mixes smoothed with raw quantities and is a local, uncorrected value (read `peakSignificance`). The red ± asymmetry flag is $z > 3$ SD of the exact inversion-symmetric (conditional-binomial) null and does fire at the default resolution. It sees only skewness about each site's own mean, so a coherent off-centring shared by every copy is invisible. On sparse maps the map test mostly counts atoms sharing a cell, and it is withheld below 0.1 expected coincident pairs — [displacement-directions.md](algorithms/displacement-directions.md#caveats-1).
-- The assistant's $g(r)$ peak finder is a **cue extractor**, not a refinement (grid-snapped, zero-baseline FWHM, first two peaks below 6 Å), and its neighbour distances are average-structure distances that degenerate to a lattice repeat for a single-site element — [ai-assistant.md](algorithms/ai-assistant.md#caveats--what-this-is-not).
-- Selecting a cloud provider discloses the summarized context — including up to 12 Wyckoff-orbit `frac` triples — under the user's own API key; local providers keep everything on the machine — [ai-assistant.md](algorithms/ai-assistant.md#data-flow--precisely-what-leaves-the-device).
+- The Copilot's $g(r)$ peak finder is a **cue extractor**, not a refinement (grid-snapped, zero-baseline FWHM, first two peaks below 6 Å), and its neighbour distances are average-structure distances that degenerate to a lattice repeat for a single-site element — [ai-assistant.md](algorithms/ai-assistant.md#caveats--what-this-is-not).
+- Selecting a cloud provider discloses, under the user's own API key, the summarized context (including up to 12 Wyckoff-orbit `frac` triples) and, with analyses on, the summary of every analysis the Copilot runs, including all orbits' coordinates from `detect_symmetry`. Local providers keep everything on the machine — [ai-assistant.md](algorithms/ai-assistant.md#data-flow--precisely-what-leaves-the-device).
+- The Copilot's **Outcome** chip is the model's self-assessment. The step cards' checks are the computed verdicts — [ai-assistant.md](algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict).
 
 **Bond Geometry**
 

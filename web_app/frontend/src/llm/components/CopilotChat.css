@@ -1,0 +1,256 @@
+/* The AI Copilot chatbox: a launcher pill in the bottom-right corner and the
+   floating panel it opens, over whichever workbench page is on screen. The
+   module's own look (token-based; a token this module adds keeps a literal
+   fallback, so an extracted copy still renders). The conversation inside
+   uses the shared .llm-* rules in Copilot.css; this file sizes it to the
+   panel. */
+
+.llm-chat-launcher {
+    position: fixed;
+    right: calc(1.25rem + var(--safe-right, 0px));
+    bottom: calc(1.25rem + var(--safe-bottom, 0px));
+    z-index: 40;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.6rem;
+    padding: 0 1.05rem 0 0.85rem;
+    font-size: 0.9rem;
+    font-weight: 650;
+    color: #fff;
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    box-shadow: var(--shadow-md, 0 6px 20px rgba(16, 24, 40, 0.18));
+}
+
+.llm-chat-launcher:hover:not(:disabled) {
+    color: #fff;
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+}
+
+.llm-chat-launcher svg {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+.llm-chat-panel {
+    position: fixed;
+    right: calc(1.25rem + var(--safe-right, 0px));
+    bottom: calc(1.25rem + var(--safe-bottom, 0px));
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    width: min(28rem, calc(100vw - 2.5rem - var(--safe-left, 0px) - var(--safe-right, 0px)));
+    height: min(44rem, calc(var(--viewport-h, 100vh) - 2.5rem - var(--safe-top, 0px) - var(--safe-bottom, 0px)));
+    background: var(--panel-bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+    box-shadow: var(--shadow-md, 0 6px 20px rgba(16, 24, 40, 0.18));
+    overflow: hidden;
+}
+
+.llm-chat-panel:focus {
+    outline: none;
+}
+
+/* Larger: room for wide tables and expanded step cards. */
+.llm-chat-panel.is-expanded {
+    width: min(48rem, calc(100vw - 2.5rem - var(--safe-left, 0px) - var(--safe-right, 0px)));
+    height: calc(var(--viewport-h, 100vh) - 2.5rem - var(--safe-top, 0px) - var(--safe-bottom, 0px));
+}
+
+/* Closed but kept mounted: the conversation and a running answer survive. */
+.llm-chat-panel.is-closed {
+    display: none;
+}
+
+.llm-chat-panel-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.55rem 0.6rem 0.55rem 0.85rem;
+    background: var(--panel-soft);
+    border-bottom: 1px solid var(--border);
+}
+
+.llm-chat-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.llm-chat-panel-title h2 {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--text-strong);
+    white-space: nowrap;
+}
+
+.llm-chat-panel-mark {
+    display: grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.llm-chat-panel-mark svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.llm-chat-panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.llm-chat-panel-conn {
+    flex: 0 0 auto;
+    padding: 0.5rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.llm-chat-panel-conn .llm-connbar {
+    flex-wrap: nowrap;
+}
+
+.llm-chat-panel-conn .llm-model-select,
+.llm-chat-panel-conn .llm-model-input {
+    min-width: 0;
+    max-width: 13rem;
+}
+
+.llm-chat-panel-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem 0.8rem 0.8rem;
+}
+
+/* The settings drawer covers the conversation while open; the conversation
+   stays mounted underneath. */
+.llm-chat-panel-settings {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.llm-chat-panel-conversation {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.llm-chat-panel-conversation.is-covered {
+    display: none;
+}
+
+.llm-chat-panel-body .llm-chat {
+    flex: 1;
+    min-height: 0;
+    gap: 0.8rem;
+}
+
+.llm-chat-panel-body .llm-chat-log {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+}
+
+.llm-chat-panel-body .llm-chat-empty {
+    flex: 1;
+    min-height: 0;
+    justify-content: flex-start;
+    overflow-y: auto;
+    padding: 1rem 0.25rem 0.5rem;
+}
+
+/* A narrow panel: no avatars, messages use the width. */
+.llm-chat-panel .llm-message-avatar {
+    display: none;
+}
+
+.llm-chat-panel .llm-message-body {
+    max-width: 92%;
+}
+
+.llm-chat-panel .llm-message-body.llm-turn {
+    max-width: 100%;
+}
+
+.llm-chat-panel .llm-suggestion {
+    text-align: left;
+}
+
+.llm-chat-norun {
+    margin: auto;
+    padding: 1rem;
+    font-size: 0.88rem;
+    text-align: center;
+    color: var(--muted);
+}
+
+/* Phones and short windows: a sheet over the page below the header's pinned
+   strip (--header-pinned-h, measured by the host; 0 in an extracted copy),
+   and a smaller launcher. */
+@media (max-width: 760px), (max-height: 540px) {
+    .llm-chat-panel,
+    .llm-chat-panel.is-expanded {
+        left: var(--safe-left, 0px);
+        right: var(--safe-right, 0px);
+        bottom: 0;
+        width: auto;
+        height: calc(var(--viewport-h, 100vh) - var(--header-pinned-h, 0px));
+        border-bottom: 0;
+        border-radius: 16px 16px 0 0;
+    }
+
+    .llm-chat-panel-body {
+        padding-bottom: calc(0.8rem + var(--safe-bottom, 0px));
+    }
+
+    .llm-chat-panel-actions .llm-icon-btn[aria-pressed] {
+        display: none;
+    }
+
+    /* An icon-only round launcher (its label stays in the accessibility
+       tree), so it covers as little of the page as possible. */
+    .llm-chat-launcher {
+        right: calc(0.9rem + var(--safe-right, 0px));
+        bottom: calc(0.9rem + var(--safe-bottom, 0px));
+        width: 2.9rem;
+        height: 2.9rem;
+        min-height: 0;
+        padding: 0;
+        justify-content: center;
+    }
+
+    .llm-chat-launcher span {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+}
+
+@media print {
+    .llm-chat-launcher,
+    .llm-chat-panel {
+        display: none;
+    }
+}

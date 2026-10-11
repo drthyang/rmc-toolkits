@@ -9,11 +9,15 @@
 // no network — which is what makes it the most testable part of the module.
 
 import { pairCorrelationsContext } from './pairCorrelations';
+import { partialWeights } from './scatteringWeights';
+// A cycle (heuristics imports seriesStats from here), safe because neither
+// module calls the other while it is being evaluated.
+import { classifyConvergence } from '../watchdog/heuristics';
 
-// Rough character budget for the serialized context: ~4.5k chars leaves even a
+// Rough character budget for the serialized context: ~6k chars (~1.8k tokens) leaves even a
 // small local model plenty of room for the system prompt, the question, and
 // its answer, while fitting the symmetry/site and pair-correlation evidence.
-export const CONTEXT_CHAR_BUDGET = 4500;
+export const CONTEXT_CHAR_BUDGET = 6000;
 
 const HISTORY_POINTS = 48;
 const MAX_SITES = 12;
@@ -111,6 +115,25 @@ const structureContext = (structure) => {
     return cell;
 };
 
+/**
+ * The tolerance (Å) below which the symmetry finder's verdicts are sampling
+ * noise. Each average site is the mean of `count` box copies with 3-D rms
+ * displacement dispA, so its position carries a 3-D standard error
+ * dispA/√count; two symmetry-related means differ by √2 times that from noise
+ * alone, and the finder takes the worst case over every site and operation —
+ * so three times the largest such difference. On the demo (GaTa4Se8, 1000
+ * copies, ~0.23 Å) this is 0.031 Å, the tolerance where F-43m first holds.
+ * Null without a basis carrying counts and displacements.
+ */
+export const symmetryNoiseFloor = (basis) => {
+    if (!Array.isArray(basis)) return null;
+    let worst = 0;
+    basis.forEach((site) => {
+        if (Number.isFinite(site?.dispA) && site.count > 0) worst = Math.max(worst, site.dispA / Math.sqrt(site.count));
+    });
+    return worst > 0 ? 3 * Math.SQRT2 * worst : null;
+};
+
 // The detected-symmetry block: space group, the tolerance ladder (distortion
 // magnitude + symmetry character), and the Wyckoff orbits with per-orbit rms
 // displacement aggregated from structure.basis[].dispA — sorted largest first
@@ -136,6 +159,12 @@ const symmetryContext = (structure, symmetry) => {
             holds_A: [roundSig(brick.from, 2), roundSig(brick.to, 2)],
             n_ops: brick.nSpace
         }));
+    }
+    const floor = symmetryNoiseFloor(structure?.basis);
+    if (floor) {
+        block.noise_floor_A = roundSig(floor, 2);
+        block.noise_floor_note = 'the site means carry sampling noise (rms displacement / √copies); a group change '
+            + 'at a tolerance below noise_floor_A is within that noise, not evidence of a distortion';
     }
     if (Array.isArray(symmetry.orbits) && symmetry.orbits.length) {
         const basis = structure?.basis;
@@ -275,8 +304,14 @@ const runSettingsContext = (settings) => {
             const entry = { type: dataset.block.replace(/_DATA$/, '').toLowerCase() };
             if (dataset.file) entry.file = dataset.file;
             if (dataset.fit_type) entry.fit = dataset.fit_type;
+            // One measurement fitted in both spaces is still one dataset:
+            // its real-space G(r) is RMCProfile's transform of the same F(Q).
+            if (dataset.real_space_fit && dataset.reciprocal_space_fit) {
+                entry.fitted_in = 'reciprocal and real space (one measurement: the G(r) is its Fourier transform)';
+            }
             return entry;
         });
+        block.independent_datasets = settings.datasets.length;
     }
     return Object.keys(block).length ? block : null;
 };
@@ -290,9 +325,33 @@ const datasetContext = (plotFiles) => (
             if (title && title !== file.plotKind) entry.title = title;
             const rwpValue = file.plotData?.metrics?.rwp;
             if (Number.isFinite(rwpValue)) entry.rwp = roundSig(rwpValue);
+            // <stem>_FT_XFQ1.csv is RMCProfile's Fourier transform of the
+            // X-ray F(Q) it fits: the same measurement, not a second dataset.
+            const name = file.name || file.path || '';
+            const transformOf = /_FT_(XFQ\d+)\.csv$/i.exec(name);
+            if (transformOf) entry.same_measurement_as = `${transformOf[1]} (its Fourier transform)`;
             return entry;
         })
 );
+
+// The Faber–Ziman weight of every partial in each radiation the run fits:
+// what fraction of the measured signal a pair's correlations carry.
+const partialWeightsContext = (structure, runSettings, plotFiles) => {
+    const kinds = new Set((plotFiles || []).map((file) => file.plotKind));
+    const blocks = (runSettings?.datasets || []).map((dataset) => dataset.block || '');
+    const radiations = [];
+    if (blocks.some((name) => /XRAY/.test(name)) || ['xpdf', 'xray_sq'].some((kind) => kinds.has(kind))) radiations.push('xray');
+    if (blocks.some((name) => /NEUTRON/.test(name)) || ['npdf', 'neutron_sq', 'bragg'].some((kind) => kinds.has(kind))) radiations.push('neutron');
+    const block = {};
+    radiations.forEach((radiation) => {
+        const weights = partialWeights(structure?.elementCounts, radiation);
+        if (weights) block[radiation] = Object.fromEntries(weights.map(({ pair, weight }) => [pair, roundSig(weight, 2)]));
+    });
+    if (!Object.keys(block).length) return null;
+    block.note = 'fraction of the measured signal each partial carries (Faber–Ziman; x-ray f≈Z at Q→0, '
+        + 'neutron b_coh); a small weight means that pair is weakly constrained by the data';
+    return block;
+};
 
 const convergenceContext = (rValueFile, historyPoints) => {
     const history = rValueFile?.plotData?.series?.[0]?.y;
@@ -314,9 +373,18 @@ const convergenceContext = (rValueFile, historyPoints) => {
         last: roundSig(stats.last),
         min: roundSig(stats.min),
         max: roundSig(stats.max),
+        // The dashboard watchdog's verdict on the same series (the source of
+        // truth for "converged"), and what the recent window changed: a
+        // model eyeballing 48 points reads a slow decline as a plateau.
+        watchdog_status: classifyConvergence(history),
         recent_slope_per_step: roundSig(stats.recentSlopePerStep, 2),
         history: downsampleSeries(history, historyPoints)
     };
+    const finite = history.filter(Number.isFinite);
+    if (finite.length >= 10) {
+        const tenth = Math.max(1, Math.round(finite.length * 0.1));
+        convergence.change_over_last_10pct = roundSig(finite[finite.length - 1] - finite[finite.length - 1 - tenth], 2);
+    }
     // Non-finite rows serialize as null; say how many and what they mean, or
     // the model reads a blown-up run's null tail as missing data.
     if (stats.nonFiniteSteps) {
@@ -357,10 +425,12 @@ export const buildRunContext = ({
     if (symmetryInfo) context.symmetry = symmetryInfo;
     const pcaInfo = pcaContext(pcaSites);
     if (pcaInfo) context.pca_displacements = pcaInfo;
-    const pairs = pairCorrelationsContext(structure, plotFiles);
+    const pairs = pairCorrelationsContext(structure, plotFiles, { constraints: settingsInfo?.min_distances_A });
     if (pairs) context.pair_correlations = pairs;
     const datasets = datasetContext(plotFiles);
     if (datasets.length) context.datasets = datasets;
+    const weights = partialWeightsContext(structure, runSettings, plotFiles);
+    if (weights) context.partial_weights = weights;
     const convergence = convergenceContext(rValueFile, HISTORY_POINTS);
     if (convergence) context.convergence = convergence;
     return context;
@@ -371,12 +441,21 @@ export const buildRunContext = ({
 // then convergence-history points, then the least-anharmonic PCA sites (and, if
 // still over, their explanatory note), then low-displacement symmetry sites,
 // then the dataset list (each truncation recorded with an *_omitted count).
+// JSON indented by one space, with each array of plain values, and then each
+// object of plain values (and such arrays), on one line: the same text a model
+// reads, at about half the length of one value per line. A bracket or brace
+// followed by a line break never sits inside a JSON string (strings escape
+// their line breaks), so only real arrays and objects are collapsed.
+export const compactJson = (value) => JSON.stringify(value, null, 1)
+    .replace(/\[\n\s*([^[\]{}]*?)\n\s*\]/g, (_, items) => `[${items.split(/,\n\s*/).join(', ')}]`)
+    .replace(/\{\n\s*([^{}]*?)\n\s*\}/g, (_, items) => `{${items.split(/,\n\s*/).join(', ')}}`);
+
 export const contextToJson = (context, budget = CONTEXT_CHAR_BUDGET) => {
     let current = context;
-    let json = JSON.stringify(current, null, 1);
+    let json = compactJson(current);
     const shrink = (patch) => {
         current = patch(current);
-        json = JSON.stringify(current, null, 1);
+        json = compactJson(current);
     };
 
     if (json.length > budget && current.pair_correlations?.some((pair) => pair.gr_peaks_A?.length > 1)) {

@@ -16,6 +16,149 @@ bond angles, parsers and dashboard, symmetry finder, Flask API). Each group was 
 independently, then merged and integrated. Several numbers the app reports change *because they
 were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.5.0.
 
+### AI Copilot replaces the AI Assistant
+
+The **AI Copilot** replaces the chat-only AI Assistant. It is a **chatbox over every page**, not a
+tab: an *AI Copilot* launcher in the bottom-right corner opens a floating panel. The panel can be
+made larger and closes with ✕ or Esc, keeping the conversation. On a phone it is a full-height
+sheet. The Assistant could only answer from one fixed summary of the run. The Copilot also **runs the
+Workbench analyses itself** through OpenAI-compatible tool calling, reads what came back, and says
+whether that answers the question. The plan and its review are in
+[COPILOT_PLAN.md](COPILOT_PLAN.md); the method is in
+[ai-assistant.md Step 17](algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict).
+
+- **Ten analyses.**
+  - Over the run data: `read_run_data`, `assess_convergence`, `find_gr_peaks` (peaks and the first
+    coordination shell), `compare_fit` (where the model misses the data).
+  - Through the same engines the pages use, in the browser or through Flask: `list_sites`,
+    `analyze_displacement_directions` (calibrated significances, the peak direction as `[u v w]`),
+    `compute_bond_angles`, `analyze_clusters` (cluster distortion against independent atoms, a new
+    engine), `analyze_modulations` (order that enlarges the cell, a new engine) and `detect_symmetry`
+    (any tolerance, without changing the Detected SG card).
+
+  A tool is offered only when the run has its inputs. The tools only compute: none switches a
+  page, changes the shared tolerance or writes a file.
+- **Show in \<page\>.** A step's button switches the page *behind* the chat and loads the same
+  analysis there:
+  - Bond Geometry fills the triplet and windows and computes; on the demo it matches the
+    Copilot's 41,336 Ta–Ta–Ta angles and coordination 2.73.
+  - Displacement Directions selects the site and the resolution ('auto' when the Copilot let the
+    engine choose). The page keeps its own smoothing, so the drawn map can differ from the
+    Copilot's unsmoothed one; the significance tests use raw counts either way.
+  - Other steps just open their page.
+
+  The button is the user's action, through an App-level page-request channel
+  (`pageRequest` → the pages' `request` prop, applied once per click; `tripletInputsFromRequest`
+  in `workers/triplets.js`). On a phone the sheet closes so the page is visible.
+- **Checked results.** Every result carries deterministic checks computed from the full engine
+  output, e.g. "no angles in these windows — widen them", "no significant peak direction
+  (1.2σ < 3σ)", or "the first g(r) peak sits on the closest-approach constraint". A failed check
+  goes back to the model, which changes its arguments and retries.
+- **A verdict.** Every answer ends with `Outcome: achieved | partial | not achieved — <why>`, shown
+  as a chip. It is the model's self-assessment; the checks on the step cards are the computed part.
+- **Step cards.** Each card shows the status, the duration and the most severe check. Expanded, it
+  shows every check, the arguments and the exact data the model read. A polite live region
+  announces step and verdict changes.
+- **Bounded.**
+  - Per question: ≤ 6 rounds of tool calls, ≤ 4 calls per round, 120 s per call, no new round
+    after 10 min.
+  - Each result is fitted to 3,000 characters and a question's results to 12,000, so a small local
+    context window keeps the run context. Older results are compacted to their checks first.
+  - An identical repeated call returns the cached result.
+  - When the budget is used, a last request with `tool_choice: 'none'` asks for the answer.
+- **Robust across providers.**
+  - Streamed tool calls are assembled by index, id or order.
+  - Gemini's `thought_signature` (`extra_content`) is echoed back, and whitespace-only assistant
+    content is sent as `null` (Anthropic).
+  - A model that "does not support tools" (Ollama) falls back to plain answers for the session.
+  - An empty last round (Ollama ignores `tool_choice`) closes with a fixed answer.
+- **Stop cancels the work.** A browser-loaded run is analysed in a worker of the Copilot's own,
+  terminated on Stop or timeout, so the pages' shared worker never queues behind it. Server-folder
+  requests are cancelled.
+- **One run per conversation.** Opening another run restarts the conversation. Earlier questions
+  travel as question + final answer only, and an unanswered question is dropped.
+- **Settings.** The drawer adds *Let the Copilot run analyses* (default on). The cloud warning now
+  says that analysis results are sent too. The setup guide asks for a tool-capable model and a
+  larger Ollama context (`OLLAMA_CONTEXT_LENGTH=16384`).
+- **Code.**
+  - New in `src/llm/`: `copilot/` (agent loop, tool-call assembly and validation, tool contract,
+    run-data tools, Outcome parser, turn reducer), `prompts/copilot.js`, `useCopilot.js`,
+    `CopilotChat` / `CopilotView` / `ToolStep` / `MarkdownMessage`.
+  - The host builds the engine tools in `src/copilotTools.js` and passes them as a prop, so the
+    module still imports nothing from the app.
+  - `useSiteCloud.js` exports its routing as `requestAnalysis()`, with an optional worker and abort
+    signal. Request params can no longer override `kind`, `text` or `dir`.
+  - `provider/client.js` sends `tools` / `tool_choice` only when given, yields tool-call fragments,
+    and attaches the HTTP status to errors.
+  - Removed: `ChatView`, `AssistantPage`, the unrendered `AssistantPanel` / `AssistantWorkspace`
+    card, `useStreamedReply`, and `buildChatMessages`.
+  - The Copilot tab and its page are gone. The Dashboard's Copilot-only work (symmetry ladder,
+    `.dat` parse) starts when the chatbox first opens.
+- **Tests.** New and extended vitest cases cover:
+  - the agent loop against a scripted model;
+  - SSE tool-call parsing, including the Gemini shape;
+  - argument validation and the Outcome parser;
+  - the run-data tools;
+  - the host tools on the committed demo run with the real engines (F-43m at 0.2 Å; the Ta₄
+    cluster's Ta–Ta–Ta mode near 60°; an empty window fails its check);
+  - the chatbox end to end against a mocked server (nothing fetched before it opens, Show in
+    hands over the page parameters, Esc keeps the conversation, a run change restarts it);
+  - `tripletInputsFromRequest` round trips.
+- **Tested with real local models** (2026-10-10, gemma4:26b on Ollama, qwen3.8-27b on LM Studio,
+  six questions on the Demo; results in
+  [`src/llm/README.md`](../web_app/frontend/src/llm/README.md#tested-with-real-models)). Tool
+  calling worked with no malformed call. The runs found four bugs, fixed:
+  - a verdict line in backticks (as the prompt shows it) or under a heading marker now gives its
+    chip, instead of staying in the answer text;
+  - `find_gr_peaks` notes when the second peak overlaps the first-peak window (on the demo, Ta–Se
+    at 2.52 and 2.74 Å: the old window cut the TaSe₆ shell) — since replaced by the first-shell
+    window below;
+  - `compute_bond_angles` warns when fewer than 60 % of the central atoms share the most common
+    bond count (`MODAL_COORDINATION_SHARE`): the window may cut through a shell;
+  - an error event sent mid-stream (LM Studio out of GPU memory) is shown, instead of ending the
+    turn empty and crashing the chat (`turn.items is not iterable`); an empty reply shows its note.
+- **A scientific review with a real model** (2026-10-10, gemma4:26b, the Demo and the 5 K GaNb₄Se₈
+  run). The answers were fluent and the tool calls valid, but several conclusions were wrong for
+  reasons the tools and the context could fix:
+  - *"Converged — a plateau."* The 48-point history hid a still-falling tail. The context now
+    carries the watchdog's own verdict (`watchdog_status`: improving) and the change over the last
+    tenth of the run (−0.11 in ln χ²).
+  - *"Two datasets."* The F(Q) and its Fourier transform are one measurement. The context says so
+    (`fitted_in`, `independent_datasets`, `same_measurement_as`) and adds the **Faber–Ziman weight of
+    every partial** per radiation: under X-rays Ga carries ~5 % of the GaTa₄Se₈ signal.
+  - *"No first peak is constraint-limited."* The Ga–Se distribution is cut at the 2.2 Å constraint
+    (g there is 9 % of the peak), which the half-maximum test missed. `find_gr_peaks` now checks g at
+    the constraint and analyses the **first coordination shell**: its window to the first deep
+    minimum (split shells kept whole), mean distance and spread from r²g(r), coordination numbers
+    both ways with their sensitivity to the cut, and whether the shell is separated from the next
+    (demo Ta–Ta: CN 2.76 of 3, distances filling the 3.3–4.0 Å gap). The context's pair
+    correlations carry the shell's mean and CN too.
+  - *"The Ta–Ta peak is shifted to 2.93 Å: the cluster is distorted."* A g(r) peak sits below the
+    mean of a broad shell (3.00 Å), and its width cannot tell a distortion from thermal spread. The
+    new **`analyze_clusters`** tool ([ai-assistant.md Step 18](algorithms/ai-assistant.md#step-18--cluster-distortion-against-a-shuffle-null-analyze_clusters);
+    `rmc_toolkits/clusters.py`, `workers/clusters.js`, `/api/clusters`, a parity fixture) measures
+    every cluster against a shuffle null of independent atoms: the demo's Ta₄ clusters are 23 %
+    *less* distorted than independent atoms (rigid units), favour compression along <111> and,
+    weakly, elongation along <110>. The checks require an effect size as well as a z-score.
+  - *"No preferred direction, so no cluster distortion."* The model pooled all 16 Ta sites, whose
+    local axes differ. A pooled map now says so and points to single sites or `analyze_clusters`.
+  - *"Ga–Se 2.428 ± 0.02 Å."* The ± was invented. `compute_bond_angles` now returns the bond-length
+    sd, and the prompt forbids an uncertainty no tool gave.
+  - *"Where does the fit fail?" — no tool.* The new **`compare_fit`** tool gives Rw and the share of
+    the misfit per range of r or Q and the largest residual features (demo G(r): 62 % of the misfit
+    at 2.3–5.3 Å).
+  - The symmetry ladder's lower rungs were read as distortions. The context now gives the ladder's
+    **noise floor** (3√2 · max rms displacement / √copies; 0.031 Å on the demo, where F-43m first
+    holds) and says the folded average cannot show a superstructure.
+  - *"Could a superstructure be hidden?" — no tool could say.* The new **`analyze_modulations`**
+    ([ai-assistant.md Step 19](algorithms/ai-assistant.md#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations);
+    `rmc_toolkits/modulations.py`, `workers/modulations.js`, `/api/modulations`) Fourier-transforms
+    every site's displacements over the cell grid and tests the zone-boundary points against the
+    configuration's own diffuse background. Neither real run holds a cell doubling, though GaNb₄Se₈
+    is orthorhombic with a doubled cell at 5 K; both carry box-scale displacement waves.
+  - The context is serialized compactly (arrays and small objects on one line) under a 6,000-
+    character budget, so both real runs fit untrimmed.
+
 ### Detected SG: download the symmetry-averaged structure as a CIF
 
 A **`⤓ CIF · <group>` button** under the Detected SG title downloads the selected group's structure

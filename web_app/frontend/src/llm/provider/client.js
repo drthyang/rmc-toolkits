@@ -97,14 +97,27 @@ export const checkConnection = async (baseUrl, { signal, apiKey } = {}) => {
     }
 };
 
-const postChat = async ({ baseUrl, model, messages, temperature, stream, signal, apiKey }) => {
+// `tools` / `toolChoice` join the body only when given, so plain chat and
+// watchdog requests are byte-identical to servers that predate tool calling.
+// An HTTP failure carries its status, which lets the Copilot tell "this model
+// cannot call tools" (a 400) from a dead server.
+const postChat = async ({ baseUrl, model, messages, temperature, stream, signal, apiKey, tools, toolChoice }) => {
+    const body = { model, messages, temperature, stream };
+    if (Array.isArray(tools) && tools.length) {
+        body.tools = tools;
+        if (toolChoice) body.tool_choice = toolChoice;
+    }
     const response = await fetch(`${trimBase(baseUrl)}/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...requestHeaders(baseUrl, apiKey) },
-        body: JSON.stringify({ model, messages, temperature, stream }),
+        body: JSON.stringify(body),
         signal
     });
-    if (!response.ok) throw new Error(await describeHttpError(response));
+    if (!response.ok) {
+        const error = new Error(await describeHttpError(response));
+        error.status = response.status;
+        throw error;
+    }
     return response;
 };
 
@@ -115,8 +128,14 @@ const postChat = async ({ baseUrl, model, messages, temperature, stream, signal,
 // Ollama) stream their chain-of-thought in a separate `reasoning` field before
 // the answer arrives in `content` — surfaced so the UI can show a thinking
 // indicator instead of an empty bubble.
-export async function* streamChat({ baseUrl, model, messages, temperature = 0.2, signal, apiKey }) {
-    const response = await postChat({ baseUrl, model, messages, temperature, stream: true, signal, apiKey });
+//
+// With `tools`, a model that wants one streams `delta.tool_calls` fragments:
+// each is yielded as `{ toolCall: { index, id, name, arguments } }` (any part
+// may be missing; copilot/toolCalls.js assembles them; `extraContent` carries
+// a call's provider-specific `extra_content`, which Gemini requires back), and the choice's
+// `finish_reason`, when a chunk carries one, as `{ finishReason }`.
+export async function* streamChat({ baseUrl, model, messages, temperature = 0.2, signal, apiKey, tools, toolChoice }) {
+    const response = await postChat({ baseUrl, model, messages, temperature, stream: true, signal, apiKey, tools, toolChoice });
     if (!response.body) throw new Error('The server returned no response body to stream');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -139,13 +158,49 @@ export async function* streamChat({ baseUrl, model, messages, temperature = 0.2,
                 } catch {
                     continue;
                 }
-                const delta = parsed.choices?.[0]?.delta;
-                if (!delta) continue;
-                if (delta.content) yield { content: delta.content };
-                // OpenAI-compatible servers name this `reasoning` (Ollama) or
-                // `reasoning_content` (DeepSeek and others).
-                const reasoning = delta.reasoning ?? delta.reasoning_content;
-                if (reasoning) yield { reasoning };
+                // A failure after the 200 arrives as an event of its own,
+                // `{ error: … }` (LM Studio on a backend crash such as a GPU
+                // out-of-memory, Ollama, OpenAI): surface it, or the turn
+                // would end as an empty reply with no reason given.
+                if (parsed?.error) {
+                    const detail = typeof parsed.error === 'string'
+                        ? parsed.error
+                        : (parsed.error.message || JSON.stringify(parsed.error));
+                    throw new Error(`The server stopped the reply: ${detail}`);
+                }
+                const choice = parsed.choices?.[0];
+                const delta = choice?.delta;
+                if (delta) {
+                    if (delta.content) yield { content: delta.content };
+                    // OpenAI-compatible servers name this `reasoning` (Ollama) or
+                    // `reasoning_content` (DeepSeek and others).
+                    const reasoning = delta.reasoning ?? delta.reasoning_content;
+                    if (reasoning) yield { reasoning };
+                    if (Array.isArray(delta.tool_calls)) {
+                        for (const call of delta.tool_calls) {
+                            if (!call || typeof call !== 'object') continue;
+                            yield {
+                                toolCall: {
+                                    index: Number.isInteger(call.index) ? call.index : null,
+                                    id: typeof call.id === 'string' && call.id ? call.id : null,
+                                    name: typeof call.function?.name === 'string' ? call.function.name : null,
+                                    arguments: typeof call.function?.arguments === 'string'
+                                        ? call.function.arguments
+                                        // A few servers send already-parsed arguments.
+                                        : (call.function?.arguments && typeof call.function.arguments === 'object'
+                                            ? JSON.stringify(call.function.arguments)
+                                            : null),
+                                    // Provider data that must travel back with the call
+                                    // (Gemini's thought_signature lives here).
+                                    extraContent: call.extra_content && typeof call.extra_content === 'object'
+                                        ? call.extra_content
+                                        : null
+                                }
+                            };
+                        }
+                    }
+                }
+                if (choice?.finish_reason) yield { finishReason: choice.finish_reason };
             }
         }
     } finally {

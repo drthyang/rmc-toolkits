@@ -59,8 +59,8 @@
   display: none;
 }
 
-/* A page that cannot place its own Problems section (the AI Assistant, Auto
-   StoG) gets it above, on the page's gutters. */
+/* A page that cannot place its own Problems section (Auto StoG) gets it
+   above, on the page's gutters. */
 .workspace-stack {
   flex: 1;
   min-width: 0;
@@ -362,7 +362,7 @@
   /* Content taller than the screen flows into the shell's scroll; anything
      wider (a hidden popover past the edge) is clipped rather than letting the
      whole page pan sideways. (.workspace-stack: a page under its Problems
-     section, the AI Assistant.) */
+     section, Auto StoG.) */
   .workspace-page > .ui-page,
   .workspace-stack > .ui-page {
     overflow: visible;

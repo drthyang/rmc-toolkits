@@ -76,6 +76,25 @@ describe('streamChat', () => {
         expect(parts).toEqual([{ content: 'ok' }]);
     });
 
+    it('throws on an error event sent mid-stream, after the 200', async () => {
+        // LM Studio reports a backend crash (here a GPU out-of-memory) this way.
+        const oom = 'Encountered fatal exception in the backend generation thread: Insufficient Memory';
+        vi.stubGlobal('fetch', vi.fn(async () => streamResponse([
+            sseLine('Par'),
+            `data: ${JSON.stringify({ error: { message: oom } })}\n\n`,
+            sseLine('never seen')
+        ])));
+        const parts = [];
+        await expect((async () => {
+            for await (const part of streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [] })) parts.push(part);
+        })()).rejects.toThrow(`The server stopped the reply: ${oom}`);
+        expect(parts).toEqual([{ content: 'Par' }]);
+
+        vi.stubGlobal('fetch', vi.fn(async () => streamResponse([`data: ${JSON.stringify({ error: 'model unloaded' })}\n\n`])));
+        await expect(collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [] })))
+            .rejects.toThrow('The server stopped the reply: model unloaded');
+    });
+
     it('throws with the server error message on HTTP failure', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => ({
             ok: false,
@@ -113,6 +132,71 @@ describe('streamChat', () => {
         expect(options.headers.Authorization).toBe('Bearer sk-ant-test');
         expect(options.headers['anthropic-version']).toBe('2023-06-01');
         expect(options.headers['anthropic-dangerous-direct-browser-access']).toBe('true');
+    });
+
+    it('sends tools and tool_choice only when tools are given', async () => {
+        const fetchMock = vi.fn(async () => streamResponse(['data: [DONE]\n']));
+        vi.stubGlobal('fetch', fetchMock);
+        const tools = [{ type: 'function', function: { name: 'list_sites', description: 'd', parameters: { type: 'object', properties: {} } } }];
+        await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [], tools, toolChoice: 'auto' }));
+        await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [], tools: [], toolChoice: 'auto' }));
+        const withTools = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(withTools.tools).toEqual(tools);
+        expect(withTools.tool_choice).toBe('auto');
+        const without = JSON.parse(fetchMock.mock.calls[1][1].body);
+        expect('tools' in without).toBe(false);
+        expect('tool_choice' in without).toBe(false);
+    });
+
+    it('yields streamed tool-call fragments and the finish reason', async () => {
+        const toolLine = (calls, finish = null) => `data: ${JSON.stringify({
+            choices: [{ delta: { tool_calls: calls }, finish_reason: finish }]
+        })}\n`;
+        const first = toolLine([{ index: 0, id: 'call_1', type: 'function', function: { name: 'compute_bond_angles', arguments: '{"end1":' } }]);
+        vi.stubGlobal('fetch', vi.fn(async () => streamResponse([
+            first.slice(0, 30),
+            first.slice(30),
+            toolLine([{ index: 0, function: { arguments: '"Se"}' } }]),
+            // Some servers send parsed arguments; they are re-serialized.
+            toolLine([{ index: 1, id: 'call_2', function: { name: 'list_sites', arguments: { a: 1 } } }]),
+            `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] })}\n`,
+            'data: [DONE]\n'
+        ])));
+        const parts = await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [], tools: [{}] }));
+        expect(parts).toEqual([
+            { toolCall: { index: 0, id: 'call_1', name: 'compute_bond_angles', arguments: '{"end1":', extraContent: null } },
+            { toolCall: { index: 0, id: null, name: null, arguments: '"Se"}', extraContent: null } },
+            { toolCall: { index: 1, id: 'call_2', name: 'list_sites', arguments: '{"a":1}', extraContent: null } },
+            { finishReason: 'tool_calls' }
+        ]);
+    });
+
+    it('passes a Gemini-style whole call (no index) with its extra_content through', async () => {
+        const call = {
+            id: 'function-call-1',
+            type: 'function',
+            function: { name: 'list_sites', arguments: '{}' },
+            extra_content: { google: { thought_signature: 'c2ln' } }
+        };
+        vi.stubGlobal('fetch', vi.fn(async () => streamResponse([
+            `data: ${JSON.stringify({ choices: [{ delta: { role: 'assistant', tool_calls: [call] }, finish_reason: 'stop' }] })}\n`,
+            'data: [DONE]\n'
+        ])));
+        const parts = await collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [], tools: [{}] }));
+        expect(parts).toEqual([
+            { toolCall: { index: null, id: 'function-call-1', name: 'list_sites', arguments: '{}', extraContent: { google: { thought_signature: 'c2ln' } } } },
+            { finishReason: 'stop' }
+        ]);
+    });
+
+    it('attaches the HTTP status to a failed request', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: false,
+            status: 400,
+            json: async () => ({ error: 'llama-tiny does not support tools' })
+        })));
+        await expect(collect(streamChat({ baseUrl: 'http://x/v1', model: 'm', messages: [], tools: [{}] })))
+            .rejects.toMatchObject({ status: 400, message: 'HTTP 400: llama-tiny does not support tools' });
     });
 });
 
