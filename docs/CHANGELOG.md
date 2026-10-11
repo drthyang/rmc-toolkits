@@ -5,6 +5,26 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### AI Copilot: answers checked against what the analyses found
+
+- **Checks on the answer** (`llm/copilot/answerAudit.js`): tools return `facts` (not sent to the
+  model) and the run context adds the watchdog's status and the ladder's groups; an answer that
+  says "converged" while the history is still improving, calls a group chiral or centrosymmetric
+  against its point group, says an inversion centre is lost from groups without one, or claims a
+  preferred direction no analysis found at ≥ 3σ gets a **Check** line under it.
+- **The Outcome chip is lowered:** with any finding, an answer the model called *achieved* or
+  *partial* (or gave no verdict) shows **Not verified**, with what the model claimed; *not
+  achieved* stays. A computed contradiction outranks the model's self-assessment. gemma4's
+  correct answers of 2026-10-11 raise no check.
+- **Point-group facts** (`llm/context/pointGroups.js`): `detect_symmetry` and the context's
+  tolerance ladder state each group's inversion centre, Sohncke class and polarity (the spot check
+  called P-42₁m chiral).
+- **Angles read correctly:** `compute_bond_angles` adds the sin θ-corrected 10° histogram and, for
+  a whole shell of about six or four neighbours, the split against an ideal octahedron or
+  tetrahedron (the Demo's TaSe₆: 80 % cis at 89°, 20 % trans at 158.8°, which gemma4 had read from
+  the raw modes as "highly distorted, 75–105°"). Its description no longer says to pick windows
+  around the first g(r) peak.
+
 ### AI Copilot: it asks instead of guessing (`ask_user`)
 
 The spot check's worst answer came from a guess: asked for "Se–Ta–Se angles against an ideal

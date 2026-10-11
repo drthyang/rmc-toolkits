@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { toolBudgetNote } from '../prompts/copilot';
+import { auditAnswer, lowerOutcome } from './answerAudit';
 import { MAX_QUESTIONS } from './askUser';
 import { parseOutcome } from './outcome';
 import {
@@ -25,8 +26,10 @@ import {
 //   { type: 'tool_start', id, name, label, args, page, cards, interactive }
 //   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
 //   { type: 'tools_unsupported', error }           retried without tools
-//   { type: 'done', text, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty', cut }
+//   { type: 'done', text, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty', cut, audit }
 //                                                  cut: the last reply stopped at the length limit
+//                                                  audit: findings on the answer (answerAudit.js);
+//                                                  any finding lowers the outcome to 'not verified'
 // Errors (HTTP, network) and aborts are thrown to the caller.
 //
 // Budgets: at most `maxRounds` model requests with tool calls and
@@ -38,6 +41,7 @@ import {
 // An interactive tool (ask_user) waits for the user: it has no time limit, the
 // wait does not count toward `maxTurnMs`, and a turn asks at most
 // `maxQuestions` questions, one per step.
+
 
 export const DEFAULT_LIMITS = {
     maxRounds: 6,
@@ -111,7 +115,10 @@ export async function* runCopilotTurn({
     noToolsSystemPrompt = null,
     // Passed to every tool's run() beside its signal (the card-focus
     // controller for view tools).
-    toolContext = null
+    toolContext = null,
+    // The run context's facts the answer must not contradict
+    // (answerAudit.js contextAuditFacts).
+    auditContext = null
 }) {
     const {
         maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions
@@ -120,6 +127,9 @@ export async function* runCopilotTurn({
     // Time spent waiting for the user's answers, which the turn limit skips.
     let waitedMs = 0;
     let questions = 0;
+    // The tools' facts this question, for the answer check.
+    const facts = [];
+    const audit = (answer) => auditAnswer(answer, { facts, context: auditContext });
     const available = toolsEnabled ? usableTools(tools) : [];
     const byName = new Map(available.map((tool) => [tool.name, tool]));
     const requestTools = available.length ? toRequestTools(available) : null;
@@ -199,15 +209,18 @@ export async function* runCopilotTurn({
                         outcome: { status: 'not achieved', note: 'no answer was written within the analysis budget', body: EMPTY_FINAL },
                         rounds,
                         stoppedBy: 'max_rounds',
-                        cut
+                        cut,
+                        audit: []
                     };
                 } else {
-                    yield { type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut };
+                    yield { type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut, audit: [] };
                 }
                 return;
             }
-            const outcome = parseOutcome(text);
-            yield { type: 'done', text, outcome, rounds, stoppedBy: finalRound ? 'max_rounds' : 'answer', cut };
+            // A computed contradiction outranks the model's own verdict.
+            const findings = audit(text);
+            const outcome = lowerOutcome(parseOutcome(text), findings, text);
+            yield { type: 'done', text, outcome, rounds, stoppedBy: finalRound ? 'max_rounds' : 'answer', cut, audit: findings };
             return;
         }
 
@@ -293,6 +306,7 @@ export async function* runCopilotTurn({
                 }
             }
 
+            if (result.facts && !result.error) facts.push(result.facts);
             toolMessages.push(messages.length);
             messages.push({
                 role: 'tool',

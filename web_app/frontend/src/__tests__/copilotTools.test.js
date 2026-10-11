@@ -135,7 +135,7 @@ describe('Copilot tools on the demo run', () => {
         await expect(tools.analyze_clusters.run({ element: 'Ta', r_min: 3.3, r_max: 2.6 })).rejects.toThrow('r_min must be below r_max');
     });
 
-    it('compute_bond_angles: a window that cuts through the TaSe6 shell warns; the whole shell does not', async () => {
+    it('compute_bond_angles: a window that cuts the TaSe6 shell warns; the whole shell is read against an octahedron', async () => {
         // gemma4:26b on Ollama picked 2.3–2.7 Å, read coordination 3.75 as
         // "incomplete octahedra", and called the answer achieved. The shell
         // has two Ta–Se peaks (2.52 and 2.74 Å): the window cuts the second.
@@ -144,10 +144,25 @@ describe('Copilot tools on the demo run', () => {
         expect(cut.checks).toHaveLength(1);
         expect(cut.checks[0].level).toBe('warn');
         expect(cut.checks[0].text).toMatch(/^Only 47 % of the Ta atoms have the most common count \(3 Se–Ta bonds\); the counts spread from 1 to 6\. The window may cut through a coordination shell/);
+        // Not about six neighbours: no octahedron reading of a cut shell.
+        expect(cut.data).not.toHaveProperty('polyhedron');
 
         const whole = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.33, r12_max: 2.97 });
         expect(whole.data.coordination.counts.indexOf(Math.max(...whole.data.coordination.counts))).toBe(6);
-        expect(whole.checks.map((check) => check.level)).toEqual(['ok']);
+        expect(whole.checks.map((check) => check.level)).toEqual(['ok', 'note']);
+        // Read against an ideal octahedron: about a fifth of the angles are trans.
+        const { cis_below_135_deg: cis, trans_above_135_deg: trans } = whole.data.polyhedron;
+        expect(whole.data.polyhedron.ideal).toMatch(/octahedron/);
+        expect(trans.share).toBeGreaterThan(0.15);
+        expect(trans.share).toBeLessThan(0.25);
+        expect(trans.mean_deg).toBeGreaterThan(150);
+        expect(cis.mean_deg).toBeGreaterThan(85);
+        expect(cis.mean_deg).toBeLessThan(100);
+        expect(whole.checks[1].text).toMatch(/^Raw counts deplete angles near 180° \(as sin θ\)/);
+        // Corrected for geometry the trans region stands out: the raw counts hide it.
+        const corrected = whole.data.histogram_10deg_sin_corrected;
+        expect(corrected).toHaveLength(18);
+        expect(Math.max(...corrected.slice(15))).toBeGreaterThan(Math.max(...whole.data.histogram_10deg.slice(15)) * 3);
     });
 
     it('compute_bond_angles: an empty window fails with advice, and bad windows are refused', async () => {
@@ -192,7 +207,23 @@ describe('Copilot tools on the demo run', () => {
         const { data, checks } = await tools.detect_symmetry.run({ tolerance_A: 0.2 });
         expect(data).toMatchObject({ tolerance_A: 0.2, space_group: 'F-43m', number: 216 });
         expect(data.orbits.map((orbit) => orbit.wyckoff)).toContain('4c');
-        expect(checks).toEqual([{ level: 'ok', text: 'F-43m (No. 216) holds at 0.2 Å.' }]);
+        expect(checks).toEqual([
+            { level: 'ok', text: 'F-43m (No. 216) holds at 0.2 Å.' },
+            {
+                level: 'note',
+                text: 'Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar. '
+                    + 'Take inversion, chirality and polarity from this, not from memory.'
+            }
+        ]);
+        expect(data.point_group_facts).toBe('-43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar');
+    });
+
+    it('detect_symmetry: below the noise floor, P-42₁m — achiral and without inversion, like F-43m', async () => {
+        const result = await tools.detect_symmetry.run({ tolerance_A: 0.02 });
+        expect(result.data).toMatchObject({ space_group: 'P-42_1m', point_group: '-42m' });
+        expect(result.facts).toEqual({
+            groups: [{ symbol: 'P-42_1m', point_group: '-42m', centrosymmetric: false, sohncke: false, polar: false, crystal_system: 'tetragonal' }]
+        });
     });
 });
 

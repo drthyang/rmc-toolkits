@@ -123,7 +123,8 @@ const convergenceTool = (rValueFile, cardIds) => {
             else checks.push({ level: 'warn', text: `Heuristic status: ${status}.` });
             if (stats.nonFiniteSteps) checks.push({ level: 'warn', text: `${stats.nonFiniteSteps} log rows are non-finite (NaN/Inf).` });
             if (stats.nSteps < 5) checks.push({ level: 'warn', text: `Only ${stats.nSteps} log rows.` });
-            return { data, checks };
+            // For the answer check: never "converged" against this status.
+            return { data, checks, facts: { convergence: status } };
         }
     };
 };

@@ -21,12 +21,15 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 //                                            // answered from the call cache (optional)
 //     interactive: true,                     // waits for the user (ask_user): never
 //                                            // cached, no time limit (optional)
-//     run: async (args, { signal, focus, askUser }) => ({ data, checks })
+//     run: async (args, { signal, focus, askUser }) => ({ data, checks, facts })
 //   }
 //
 // `data` is the compact JSON the model reads (never a raw engine payload);
 // `checks` are deterministic verdicts on the full result, each
-// `{ level: 'ok' | 'note' | 'warn' | 'fail', text }`. A thrown error becomes a
+// `{ level: 'ok' | 'note' | 'warn' | 'fail', text }`. `facts` (optional, not
+// sent to the model) are machine-readable findings the final answer must not
+// contradict (answerAudit.js): `{ convergence }`, `{ groups: [...] }`,
+// `{ direction: { subject, significant, peak_sigma, map_sigma } }`. A thrown error becomes a
 // failed step whose message the model reads, so it can correct its arguments.
 // `focus` (when the chat has a page to point at) is the card-focus controller
 // (focus/focus.js): view tools call focus.show(ids) and focus.onClear(undo);
@@ -166,7 +169,8 @@ export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs, c
         return finish({
             args: validated.value,
             data: result?.data ?? null,
-            checks: [...notes, ...normalizeChecks(result?.checks)]
+            checks: [...notes, ...normalizeChecks(result?.checks)],
+            ...(result?.facts && typeof result.facts === 'object' ? { facts: result.facts } : {})
         });
     } catch (error) {
         if (signal?.aborted) throw abortError();

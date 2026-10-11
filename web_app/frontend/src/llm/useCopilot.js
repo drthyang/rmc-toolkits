@@ -4,7 +4,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { runCopilotTurn } from './copilot/agentLoop';
 import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState';
+import { contextAuditFacts } from './copilot/answerAudit';
 import { ASK_USER } from './copilot/askUser';
+import { pointGroupFacts } from './context/pointGroups';
 import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS } from './prompts/copilot';
 import { streamCopilotChat } from './provider/contextGuard';
 
@@ -147,7 +149,8 @@ export const useCopilot = ({
                 signal: controller.signal,
                 toolsEnabled: toolsOn,
                 noToolsSystemPrompt: COPILOT_PROMPT_NO_TOOLS,
-                toolContext: { ...(focus ? { focus } : {}), askUser }
+                toolContext: { ...(focus ? { focus } : {}), askUser },
+                auditContext: contextAuditFacts(context, pointGroupFacts)
             })) {
                 turn = applyTurnEvent(turn, event, now());
                 if (event.type === 'tool_start' && event.cards?.length) focus?.running(event.id, event.cards);

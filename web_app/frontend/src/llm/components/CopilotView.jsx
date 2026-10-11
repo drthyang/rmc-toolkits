@@ -23,7 +23,7 @@ const SUGGESTIONS = [
     'Has the modeling run converged, and is the configuration well sampled?'
 ];
 
-const OUTCOME_TEXT = { achieved: 'Achieved', partial: 'Partial', 'not achieved': 'Not achieved' };
+const OUTCOME_TEXT = { achieved: 'Achieved', partial: 'Partial', 'not verified': 'Not verified', 'not achieved': 'Not achieved' };
 
 const STOP_NOTES = {
     stopped: 'Stopped.',
@@ -136,6 +136,18 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
                 ) : (
                     <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} />
                 )))}
+                {turn.audit?.length > 0 && (
+                    // Checks on the answer itself (answerAudit.js): where it
+                    // contradicts what the tools or the run context established.
+                    <ul className="llm-audit" aria-label="Checks on this answer">
+                        {turn.audit.map((finding) => (
+                            <li key={finding.rule} className="llm-audit-item">
+                                <span className="llm-audit-label">Check</span>
+                                {finding.text}
+                            </li>
+                        ))}
+                    </ul>
+                )}
                 {turn.outcome && (
                     <div className={`llm-outcome is-${turn.outcome.status.replace(' ', '-')}`} role="status">
                         <span className="llm-outcome-label">Outcome</span>
@@ -167,7 +179,10 @@ const announcementFor = (turn) => {
     // The newest turn can be the question itself (a turn that failed before
     // any output is not kept): nothing to announce.
     if (!turn || !Array.isArray(turn.items)) return '';
-    if (!turn.streaming && turn.outcome) return `Outcome: ${OUTCOME_TEXT[turn.outcome.status]}. ${turn.outcome.note || ''}`.trim();
+    if (!turn.streaming && turn.outcome) {
+        const checks = (turn.audit || []).map((finding) => ` Check: ${finding.text}`).join('');
+        return `Outcome: ${OUTCOME_TEXT[turn.outcome.status]}. ${turn.outcome.note || ''}${checks}`.trim();
+    }
     const step = [...turn.items].reverse().find((item) => item.kind === 'tool');
     if (!step) return turn.streaming ? '' : 'Answer ready.';
     if (step.interactive) {

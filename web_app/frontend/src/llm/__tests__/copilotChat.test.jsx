@@ -334,6 +334,45 @@ describe('CopilotChat', () => {
         expect(container.querySelector('.llm-dock-rail').className).not.toContain('has-unread');
     });
 
+    describe('the answer check', () => {
+        // A still-falling ln(χ²) history: the watchdog says improving.
+        const rValueFile = { name: 'run.log', plotData: { chiColumn: 'X_ray_(R)1', series: [{ y: Array.from({ length: 60 }, (_, i) => 5 - i * 0.05) }] } };
+        const convergenceCall = () => sse([delta({ tool_calls: [{ index: 0, id: 'call_c', type: 'function', function: { name: 'assess_convergence', arguments: '{}' } }] }, 'tool_calls')]);
+
+        it('lowers a contradicted answer to "Not verified" and says why', async () => {
+            stubReplies([
+                convergenceCall(),
+                sse([delta({ content: 'The run has converged — a plateau.\n\nOutcome: achieved — flat history.' }, 'stop')])
+            ]);
+            act(() => root.render(chat({ rValueFile })));
+            await openChat();
+            await ask('Has it converged?');
+            const audit = container.querySelector('.llm-audit');
+            expect(audit.getAttribute('aria-label')).toBe('Checks on this answer');
+            expect(audit.textContent).toMatch(/^CheckThe answer says the run has converged, but the χ² history is still improving/);
+            // The model's own "achieved" does not stand.
+            const chip = container.querySelector('.llm-outcome');
+            expect(chip.className).toContain('is-not-verified');
+            expect(chip.querySelector('strong').textContent).toBe('Not verified');
+            expect(chip.textContent).toContain('a check below contradicts the answer (the model said "achieved": flat history.)');
+            expect(container.querySelector('.llm-sr-only[aria-live]').textContent).toMatch(/^Outcome: Not verified\. .* Check: The answer says the run has converged/);
+        });
+
+        it('keeps "Achieved" on an answer the checks agree with', async () => {
+            stubReplies([
+                convergenceCall(),
+                sse([delta({ content: 'Not converged: ln χ² is still improving.\n\nOutcome: achieved — the watchdog says improving.' }, 'stop')])
+            ]);
+            act(() => root.render(chat({ rValueFile })));
+            await openChat();
+            await ask('Has it converged?');
+            expect(container.querySelector('.llm-audit')).toBeNull();
+            const chip = container.querySelector('.llm-outcome');
+            expect(chip.className).toContain('is-achieved');
+            expect(chip.querySelector('strong').textContent).toBe('Achieved');
+        });
+    });
+
     describe('the context guard on Ollama', () => {
         const ndjson = (objects) => {
             const encoder = new TextEncoder();

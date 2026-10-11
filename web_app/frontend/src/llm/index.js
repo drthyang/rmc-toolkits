@@ -7,3 +7,6 @@
 // architecture, the tool contract and the extraction recipe.
 export { default as CopilotChat } from './components/CopilotChat';
 export { default as WatchdogBadge } from './components/WatchdogBadge';
+// What a point group implies (inversion, chirality, polarity), for host tools
+// that report a space group (copilotTools.js detect_symmetry).
+export { describePointGroup, pointGroupFacts } from './context/pointGroups';
