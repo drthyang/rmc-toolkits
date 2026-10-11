@@ -75,6 +75,17 @@ describe('card references', () => {
         expect(html).not.toContain('href="card:');
     });
 
+    it('labels a chip written as the bare reference with the card\'s title', () => {
+        // gemma4:26b wrote "<card:direction-sphere>"-style references in the
+        // real-model check; the chip read "card:direction-sphere".
+        const html = withCards('See <card:chi2-history>, [card:chi2-history](card:chi2-history) and [chi2-history](card:chi2-history).');
+        expect(html.match(/class="llm-card-chip"/g)).toHaveLength(3);
+        expect(html).not.toContain('>card:chi2-history<');
+        expect(html.match(/χ² history<\/button>/g)).toHaveLength(3);
+        // A real label is kept.
+        expect(withCards('[the last run](card:chi2-history)')).toContain('the last run</button>');
+    });
+
     it('shows an unknown card as its label, and leaves ordinary links alone', () => {
         const html = withCards('[gone](card:nothing) and [docs](https://example.org)');
         expect(html).toContain('<span class="llm-card-ref">gone</span>');

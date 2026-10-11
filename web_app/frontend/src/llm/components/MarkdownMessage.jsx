@@ -59,6 +59,14 @@ const REHYPE_PLUGINS = [
     rehypeKatex
 ];
 
+// The plain text of a rendered label (strings and nested elements).
+const plainText = (node) => {
+    if (node == null || typeof node === 'boolean') return '';
+    if (typeof node === 'string' || typeof node === 'number') return String(node);
+    if (Array.isArray(node)) return node.map(plainText).join('');
+    return plainText(node.props?.children);
+};
+
 const urlTransform = (url) => (
     typeof url === 'string' && url.trim().toLowerCase().startsWith(CARD_SCHEME) ? url : defaultUrlTransform(url)
 );
@@ -75,6 +83,10 @@ const buildComponents = (cards, onCardClick, onCardHover) => ({
             const id = cardIdFromHref(href, cards);
             if (!id || !onCardClick) return <span className="llm-card-ref">{children}</span>;
             const card = cards.find((entry) => entry.id === id);
+            // A label that is only the reference itself (`<card:id>`, an
+            // autolink, or `[card:id](card:id)`) reads as the card's title.
+            const label = plainText(children).trim();
+            const bare = !label || label.toLowerCase().startsWith(CARD_SCHEME) || label === id;
             return (
                 <button
                     type="button"
@@ -88,7 +100,7 @@ const buildComponents = (cards, onCardClick, onCardHover) => ({
                     title={`Show ${card?.title || id}`}
                 >
                     <span className="llm-card-chip-dot" aria-hidden="true" />
-                    {children}
+                    {bare ? (card?.title || id) : children}
                 </button>
             );
         }
