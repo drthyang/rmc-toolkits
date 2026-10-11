@@ -334,6 +334,80 @@ describe('CopilotChat', () => {
         expect(container.querySelector('.llm-dock-rail').className).not.toContain('has-unread');
     });
 
+    describe('the Workbench asks first', () => {
+        // A TaSe6-like split Ta–Se shell (peaks at 2.52 and 2.74 Å) in a
+        // 10 Å cubic cell, as the partials file and the structure carry it.
+        const grid = Array.from({ length: 500 }, (_, i) => i * 0.02);
+        const shell = (r) => 25 * Math.exp(-((r - 2.52) ** 2) / 0.0072) + 12 * Math.exp(-((r - 2.74) ** 2) / 0.0288) + (r > 4.5 ? 1 : 0);
+        const partials = { name: 'run_PDFpartials.csv', plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ta-Se', x: grid, y: grid.map(shell) }] } };
+        const structure = { elementCounts: { Ta: 16, Se: 32 }, latticeVectors: [[10, 0, 0], [0, 10, 0], [0, 0, 10]], supercell: [1, 1, 1] };
+
+        it('shows its question before the model is asked, and the model gets the choice', async () => {
+            stubReplies([sse([delta({ content: 'Computed.\n\nOutcome: achieved — x' }, 'stop')])]);
+            act(() => root.render(chat({ plotFiles: [partials], structure })));
+            await openChat();
+            await ask('What are the Se–Ta–Se bond angles?');
+
+            // Waiting on the card: no request has gone to the model yet.
+            expect(chatBodies).toHaveLength(0);
+            const card = container.querySelector('.llm-ask.is-waiting');
+            expect(card.querySelector('.llm-ask-question').textContent).toBe('Which Ta–Se window should the analysis use?');
+            expect(card.querySelector('.llm-step-meta').textContent).toBe('The Workbench asks before the analysis');
+            const options = [...card.querySelectorAll('.llm-ask-option')];
+            expect(options.map((button) => button.querySelector('.llm-ask-option-label').firstChild.textContent))
+                .toEqual(['Whole first shell', 'First peak only']);
+
+            act(() => options[1].click());
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+            expect(chatBodies).toHaveLength(1);
+            expect(chatBodies[0].messages.at(-1).content).toMatch(
+                /^What are the Se–Ta–Se bond angles\?\n\n\(The Workbench asked: "Which Ta–Se window should the analysis use\?" — the user chose "First peak only" for the Ta–Se bonds: the window /
+            );
+            expect(container.querySelector('.llm-ask').className).toContain('is-answered');
+            // What the user sees as their question is what they typed.
+            expect(container.querySelector('.llm-message.is-user .llm-bubble').textContent).toBe('What are the Se–Ta–Se bond angles?');
+        });
+    });
+
+    describe('the answer check', () => {
+        // A still-falling ln(χ²) history: the watchdog says improving.
+        const rValueFile = { name: 'run.log', plotData: { chiColumn: 'X_ray_(R)1', series: [{ y: Array.from({ length: 60 }, (_, i) => 5 - i * 0.05) }] } };
+        const convergenceCall = () => sse([delta({ tool_calls: [{ index: 0, id: 'call_c', type: 'function', function: { name: 'assess_convergence', arguments: '{}' } }] }, 'tool_calls')]);
+
+        it('lowers a contradicted answer to "Not verified" and says why', async () => {
+            stubReplies([
+                convergenceCall(),
+                sse([delta({ content: 'The run has converged — a plateau.\n\nOutcome: achieved — flat history.' }, 'stop')])
+            ]);
+            act(() => root.render(chat({ rValueFile })));
+            await openChat();
+            await ask('Has it converged?');
+            const audit = container.querySelector('.llm-audit');
+            expect(audit.getAttribute('aria-label')).toBe('Checks on this answer');
+            expect(audit.textContent).toMatch(/^CheckThe answer says the run has converged, but the χ² history is still improving/);
+            // The model's own "achieved" does not stand.
+            const chip = container.querySelector('.llm-outcome');
+            expect(chip.className).toContain('is-not-verified');
+            expect(chip.querySelector('strong').textContent).toBe('Not verified');
+            expect(chip.textContent).toContain('a check below contradicts the answer (the model said "achieved": flat history.)');
+            expect(container.querySelector('.llm-sr-only[aria-live]').textContent).toMatch(/^Outcome: Not verified\. .* Check: The answer says the run has converged/);
+        });
+
+        it('keeps "Achieved" on an answer the checks agree with', async () => {
+            stubReplies([
+                convergenceCall(),
+                sse([delta({ content: 'Not converged: ln χ² is still improving.\n\nOutcome: achieved — the watchdog says improving.' }, 'stop')])
+            ]);
+            act(() => root.render(chat({ rValueFile })));
+            await openChat();
+            await ask('Has it converged?');
+            expect(container.querySelector('.llm-audit')).toBeNull();
+            const chip = container.querySelector('.llm-outcome');
+            expect(chip.className).toContain('is-achieved');
+            expect(chip.querySelector('strong').textContent).toBe('Achieved');
+        });
+    });
+
     describe('the context guard on Ollama', () => {
         const ndjson = (objects) => {
             const encoder = new TextEncoder();

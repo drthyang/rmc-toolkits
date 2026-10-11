@@ -97,7 +97,9 @@ const QuestionCard = ({ step, request = null, onAnswer }) => {
             <div className="llm-ask-kicker">
                 <span className="llm-step-dot" aria-hidden="true" />
                 <span>Question for you</span>
-                <span className="llm-step-meta">The Copilot waits for your answer</span>
+                <span className="llm-step-meta">
+                    {step.app ? 'The Workbench asks before the analysis' : 'The Copilot waits for your answer'}
+                </span>
             </div>
             <p className="llm-ask-question" id={questionId}>{question}</p>
             <div className="llm-ask-options" role="group" aria-label="Choices">

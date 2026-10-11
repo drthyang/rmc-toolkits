@@ -5,6 +5,50 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### AI Copilot: the Workbench asks before the model guesses
+
+With a real model (gemma4:26b, 2026-10-11) the Copilot never called `ask_user`: on a request that
+left a choice open it picked one. Where the run data show that the choice changes the result, the
+Workbench now shows the question card itself, before the model is asked or before the analysis
+runs, with the options it computed and a default (`llm/copilot/clarify.js`).
+
+- **Before the first request:** a bond-angle or coordination request naming only an element
+  (which bonded neighbours: one option per partner shell, nearest first); a named pair or triplet
+  whose first shell is split or runs into the next, when the window changes the coordination
+  number by ≥ max(0.5, 15 %) (the whole shell, the first peak, or a cut 0.2 Å either side); the
+  displacement directions of an element with several non-cubic sites (one site, or all pooled:
+  pooling can cancel a per-site preference); the space group with no tolerance named, when more
+  than one group holds clearly above the noise floor. The answer joins the user's question for
+  the model.
+- **Before an analysis runs:** a window that cuts a first shell (`compute_bond_angles`,
+  `analyze_clusters`, through the new `shellWindows(args)` in the tool contract) is put to the
+  user — the whole shell (default) or the window as asked — and the analysis runs in the one
+  chosen.
+- **Conservative:** a question that settles the choice (an ideal polyhedron one option's CN
+  matches, a window or tolerance in Å, a site number) asks nothing; the six spot-check questions
+  ask nothing. The questions are `ask_user` steps (`app: true`), count toward the two per request,
+  and the model's own `ask_user` still works.
+
+### AI Copilot: answers checked against what the analyses found
+
+- **Checks on the answer** (`llm/copilot/answerAudit.js`): tools return `facts` (not sent to the
+  model) and the run context adds the watchdog's status and the ladder's groups; an answer that
+  says "converged" while the history is still improving, calls a group chiral or centrosymmetric
+  against its point group, says an inversion centre is lost from groups without one, or claims a
+  preferred direction no analysis found at ≥ 3σ gets a **Check** line under it.
+- **The Outcome chip is lowered:** with any finding, an answer the model called *achieved* or
+  *partial* (or gave no verdict) shows **Not verified**, with what the model claimed; *not
+  achieved* stays. A computed contradiction outranks the model's self-assessment. gemma4's
+  correct answers of 2026-10-11 raise no check.
+- **Point-group facts** (`llm/context/pointGroups.js`): `detect_symmetry` and the context's
+  tolerance ladder state each group's inversion centre, Sohncke class and polarity (the spot check
+  called P-42₁m chiral).
+- **Angles read correctly:** `compute_bond_angles` adds the sin θ-corrected 10° histogram and, for
+  a whole shell of about six or four neighbours, the split against an ideal octahedron or
+  tetrahedron (the Demo's TaSe₆: 80 % cis at 89°, 20 % trans at 158.8°, which gemma4 had read from
+  the raw modes as "highly distorted, 75–105°"). Its description no longer says to pick windows
+  around the first g(r) peak.
+
 ### AI Copilot: it asks instead of guessing (`ask_user`)
 
 The spot check's worst answer came from a guess: asked for "Se–Ta–Se angles against an ideal

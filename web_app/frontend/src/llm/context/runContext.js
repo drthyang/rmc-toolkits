@@ -13,6 +13,7 @@ import { partialWeights } from './scatteringWeights';
 // A cycle (heuristics imports seriesStats from here), safe because neither
 // module calls the other while it is being evaluated.
 import { classifyConvergence } from '../watchdog/heuristics';
+import { describePointGroup } from './pointGroups';
 
 // Rough character budget for the serialized context: ~6k chars (~1.8k tokens) leaves even a
 // small local model plenty of room for the system prompt, the question, and
@@ -156,10 +157,16 @@ const symmetryContext = (structure, symmetry) => {
     if (Array.isArray(symmetry.ladder) && symmetry.ladder.length > 1) {
         block.ladder = symmetry.ladder.map((brick) => ({
             sg: brick.spaceGroup,
+            ...(brick.pointGroup ? { pg: brick.pointGroup } : {}),
             holds_A: [roundSig(brick.from, 2), roundSig(brick.to, 2)],
             n_ops: brick.nSpace
         }));
     }
+    // What each point group implies (inversion, chirality, polarity), so an
+    // answer never has to recall it (context/pointGroups.js).
+    const groups = [symmetry.pointGroup, ...(symmetry.ladder || []).map((brick) => brick.pointGroup)];
+    const facts = [...new Set(groups.filter(Boolean))].map(describePointGroup).filter(Boolean);
+    if (facts.length) block.point_group_facts = facts;
     const floor = symmetryNoiseFloor(structure?.basis);
     if (floor) {
         block.noise_floor_A = roundSig(floor, 2);

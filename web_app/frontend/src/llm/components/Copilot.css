@@ -1423,6 +1423,15 @@
 
 .llm-outcome.is-not-achieved strong { color: var(--danger); }
 
+/* Lowered by a check (answerAudit.js): a computed fact contradicts the
+   answer, whatever the model said of it. */
+.llm-outcome.is-not-verified {
+    border-color: color-mix(in srgb, var(--warning, #b45309) 55%, transparent);
+    background: color-mix(in srgb, var(--warning, #b45309) 12%, transparent);
+}
+
+.llm-outcome.is-not-verified strong { color: var(--warning, #b45309); }
+
 .llm-turn-footer {
     margin: 0;
     padding: 0 0.15rem;
@@ -1626,4 +1635,34 @@
     border-radius: 50%;
     background: currentColor;
     opacity: 0.75;
+}
+
+/* Checks on the answer itself (answerAudit.js): where it contradicts what the
+   tools or the run context established. */
+.llm-audit {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.llm-audit-item {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--text);
+    background: color-mix(in srgb, var(--warning, #b45309) 9%, var(--panel-bg));
+    border: 1px solid color-mix(in srgb, var(--warning, #b45309) 35%, transparent);
+    border-radius: 9px;
+}
+
+.llm-audit-label {
+    margin-right: 0.45rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--warning, #b45309);
 }

@@ -56,6 +56,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     args: event.args,
                     page: event.page,
                     interactive: Boolean(event.interactive),
+                    app: Boolean(event.app),
                     status: 'running',
                     data: null,
                     checks: [],
@@ -94,6 +95,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                 outcome: event.outcome,
                 stoppedBy: event.stoppedBy,
                 cut: Boolean(event.cut),
+                audit: Array.isArray(event.audit) ? event.audit : [],
                 streaming: false
             };
         }

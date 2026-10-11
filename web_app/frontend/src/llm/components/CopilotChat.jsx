@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { buildAskUserTool } from '../copilot/askUser';
+import { buildClarifier } from '../copilot/clarify';
 import { buildRunTools } from '../copilot/runTools';
 import { buildFocusTools } from '../copilot/viewTools';
 import { createFocusController } from '../focus/focus';
@@ -156,6 +157,14 @@ const CopilotPanel = ({
     const hasRun = Boolean((run.plotFiles && run.plotFiles.length) || run.structure);
     const { runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData } = run;
 
+    // The Workbench's own questions (clarify.js), from the run's partial g(r),
+    // structure and symmetry, and the context's sampling noise floor.
+    const noiseFloor = assistant.context?.symmetry?.noise_floor_A ?? null;
+    const clarifier = useMemo(
+        () => buildClarifier({ plotFiles, structure, symmetry }, { noiseFloor }),
+        [plotFiles, structure, symmetry, noiseFloor]
+    );
+
     const tools = useMemo(() => [
         ...buildRunTools({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData }, { cards }),
         ...buildFocusTools({ cards, pages }),
@@ -228,6 +237,7 @@ const CopilotPanel = ({
                             onTurnEnd={onTurnEnd}
                             onBusyChange={onBusyChange}
                             onQuestion={onQuestion}
+                            clarifier={clarifier}
                         />
                     ) : (
                         <p className="llm-chat-norun">Open a run folder, or load the Demo, to start.</p>

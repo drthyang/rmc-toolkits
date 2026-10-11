@@ -18,6 +18,7 @@ import { requestAnalysis } from './useSiteCloud';
 import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
+import { describePointGroup, pointGroupFacts } from './llm';
 
 const round = (value, digits = 3) => (
     Number.isFinite(value) ? (value === 0 ? 0 : Number(value.toPrecision(digits))) : null
@@ -197,7 +198,17 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
                 + 'against a per-site or cluster distortion. Test single sites (site_ref), or analyze_clusters for a cluster\'s shape.'
         });
     }
-    return { data, checks };
+    // For the answer check: no "preferred direction" unless one of the
+    // question's analyses found it at ≥ 3σ.
+    const facts = {
+        direction: {
+            subject: payload.referenceNumber != null ? `site ${payload.referenceNumber}` : (payload.element || 'all atoms'),
+            significant: payload.peakSignificance >= SIGNIFICANCE_SIGMA || payload.mapSignificance >= SIGNIFICANCE_SIGMA,
+            peak_sigma: round(payload.peakSignificance),
+            map_sigma: payload.mapSignificance == null ? null : round(payload.mapSignificance)
+        }
+    };
+    return { data, checks, facts };
 };
 
 // --- compute_bond_angles ---------------------------------------------------------
@@ -242,6 +253,48 @@ const coarseHistogram = (centers, counts, total) => {
     return bins.map((count) => (total ? round(count / total, 2) : 0));
 };
 
+// The same 18 bins divided by the share randomly oriented bonds would put
+// there ((cos θ₁ − cos θ₂)/2): 1 everywhere for random directions. Raw counts
+// deplete angles near 0° and 180° as sin θ, so an octahedron's trans angles
+// hardly show in them; here they do.
+export const sinCorrectedHistogram = (centers, counts, total) => {
+    if (!total) return new Array(18).fill(0);
+    const bins = new Array(18).fill(0);
+    centers.forEach((center, index) => {
+        bins[Math.min(17, Math.floor(center / 10))] += counts[index];
+    });
+    const rad = Math.PI / 180;
+    return bins.map((count, j) => round((count / total) / ((Math.cos(10 * j * rad) - Math.cos(10 * (j + 1) * rad)) / 2), 2));
+};
+
+// For a central atom with about six or four neighbours, the share of angles
+// on each side of the split an ideal polyhedron has, against that ideal: an
+// octahedron has 12 cis angles (90°) and 3 trans (180°) per centre, a
+// tetrahedron six at 109.5°.
+const POLYHEDRON_SPLIT_DEG = 135;
+const polyhedronReference = (centers, counts, total, meanCoordination) => {
+    if (!total || !Number.isFinite(meanCoordination)) return null;
+    const band = (keep) => {
+        let n = 0;
+        let sum = 0;
+        centers.forEach((center, index) => {
+            if (keep(center)) { n += counts[index]; sum += counts[index] * center; }
+        });
+        return { share: round(n / total, 2), mean_deg: n ? roundFixed(sum / n, 1) : null };
+    };
+    if (Math.abs(meanCoordination - 6) <= 0.5) {
+        return {
+            ideal: 'octahedron: 80 % cis at 90°, 20 % trans at 180°',
+            cis_below_135_deg: band((center) => center < POLYHEDRON_SPLIT_DEG),
+            trans_above_135_deg: band((center) => center >= POLYHEDRON_SPLIT_DEG)
+        };
+    }
+    if (Math.abs(meanCoordination - 4) <= 0.5) {
+        return { ideal: 'tetrahedron: every angle at 109.5°', within_15_deg_of_109_5: band((center) => Math.abs(center - 109.47) <= 15) };
+    }
+    return null;
+};
+
 // The bonds' mean and spread; the spread from the engine's 40-bin length
 // histogram over the window (bins ~0.01 Å for a 0.4 Å window), so the model
 // quotes a measured width instead of inventing one.
@@ -256,6 +309,15 @@ const lengthSummary = (lengths) => {
     return summary;
 };
 
+/**
+ * The bond-angle result the model reads, with deterministic checks: a window
+ * that misses most central atoms, or in which fewer than 60 % of them share
+ * the most common bond count, cuts the coordination shell (the 2026-10-10 spot
+ * check read such a cut as "incomplete octahedra"). For about six or four
+ * neighbours the angles are also read against an ideal octahedron or
+ * tetrahedron, and the sin θ-corrected histogram shows the trans angles raw
+ * counts hide.
+ */
 export const summarizeBondAngles = (payload) => {
     const total = payload.angleCount || 0;
     const coordination = Array.isArray(payload.coordination) ? payload.coordination : [];
@@ -274,6 +336,7 @@ export const summarizeBondAngles = (payload) => {
         sd_deg: roundFixed(payload.stdAngle, 1),
         modes: angleModes(payload.binCenters || [], payload.counts || [], total),
         histogram_10deg: coarseHistogram(payload.binCenters || [], payload.counts || [], total),
+        histogram_10deg_sin_corrected: sinCorrectedHistogram(payload.binCenters || [], payload.counts || [], total),
         bond_ab: lengthSummary(payload.lengths12),
         bond_bc: payload.sharedEnds ? 'same as A–B' : lengthSummary(payload.lengths23),
         coordination: {
@@ -289,31 +352,45 @@ export const summarizeBondAngles = (payload) => {
             text: 'No angles: no central atom has two neighbours in the window(s). Widen the window '
                 + '(find_gr_peaks gives a first-peak window) or check the elements.'
         });
-    } else {
-        const unbonded = apexTotal ? (coordination[0] || 0) / apexTotal : 0;
-        if (unbonded > UNBONDED_APEX_FRACTION) {
+        return { data, checks };
+    }
+    const unbonded = apexTotal ? (coordination[0] || 0) / apexTotal : 0;
+    if (unbonded > UNBONDED_APEX_FRACTION) {
+        checks.push({
+            level: 'warn',
+            text: `${Math.round(unbonded * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`
+        });
+    } else if (apexTotal) {
+        const modalCount = Math.max(...coordination);
+        const modal = coordination.indexOf(modalCount);
+        const share = modalCount / apexTotal;
+        const present = coordination.map((count, bonds) => (count > 0 ? bonds : null)).filter((bonds) => bonds != null);
+        if (share < MODAL_COORDINATION_SHARE) {
             checks.push({
                 level: 'warn',
-                text: `${Math.round(unbonded * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`
+                text: `Only ${Math.round(share * 100)} % of the ${b} atoms have the most common count (${modal} ${a}–${b} bonds); `
+                    + `the counts spread from ${present[0]} to ${present.at(-1)}. `
+                    + 'The window may cut through a coordination shell: compare it with the g(r) peaks (find_gr_peaks) '
+                    + 'and widen it to the shell\'s outer edge before reading the angles or the coordination.'
             });
-        } else if (apexTotal) {
-            const modalCount = Math.max(...coordination);
-            const modal = coordination.indexOf(modalCount);
-            const share = modalCount / apexTotal;
-            const present = coordination.map((count, bonds) => (count > 0 ? bonds : null)).filter((bonds) => bonds != null);
-            if (share < MODAL_COORDINATION_SHARE) {
-                checks.push({
-                    level: 'warn',
-                    text: `Only ${Math.round(share * 100)} % of the ${b} atoms have the most common count (${modal} ${a}–${b} bonds); `
-                        + `the counts spread from ${present[0]} to ${present.at(-1)}. `
-                        + 'The window may cut through a coordination shell: compare it with the g(r) peaks (find_gr_peaks) '
-                        + 'and widen it to the shell\'s outer edge before reading the angles or the coordination.'
-                });
-            }
         }
-        if (!checks.some((check) => check.level === 'warn')) {
-            checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
-        }
+    }
+    const cut = checks.some((check) => check.level === 'warn');
+    if (!cut) {
+        checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
+    }
+    // Only a whole shell is read against an ideal polyhedron: a cut TaSe6
+    // shell holds ~3.9 Se per Ta, which is not a tetrahedron.
+    const reference = cut ? null : polyhedronReference(payload.binCenters || [], payload.counts || [], total, meanCoordination);
+    if (reference) data.polyhedron = reference;
+    if (reference?.trans_above_135_deg) {
+        checks.push({
+            level: 'note',
+            text: `Raw counts deplete angles near 180° (as sin θ): ${Math.round(reference.trans_above_135_deg.share * 100)} % of these angles `
+                + `lie above 135° (mean ${reference.trans_above_135_deg.mean_deg}°) and ${Math.round(reference.cis_below_135_deg.share * 100)} % `
+                + `below (mean ${reference.cis_below_135_deg.mean_deg}°), against an ideal octahedron's 20 % trans at 180° and 80 % cis `
+                + 'at 90°. Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.'
+        });
     }
     return { data, checks };
 };
@@ -599,11 +676,13 @@ export const summarizeSymmetry = (described, tolerance) => {
             checks: [{ level: 'fail', text: 'The structure has no average sites to analyse.' }]
         };
     }
+    const facts = pointGroupFacts(described.pointGroup);
     const data = {
         tolerance_A: tolerance,
         space_group: described.spaceGroup,
         number: described.spaceGroupNumber ?? null,
         point_group: described.pointGroup,
+        ...(facts ? { point_group_facts: describePointGroup(described.pointGroup) } : {}),
         n_ops: described.nSpace,
         max_residual_A: round(described.maxResidual, 2),
         orbits: (described.orbits || []).map((orbit) => ({
@@ -623,7 +702,19 @@ export const summarizeSymmetry = (described, tolerance) => {
     } else {
         checks.push({ level: 'ok', text: `${described.spaceGroup}${described.spaceGroupNumber ? ` (No. ${described.spaceGroupNumber})` : ''} holds at ${tolerance} Å.` });
     }
-    return { data, checks };
+    if (facts) {
+        checks.push({
+            level: 'note',
+            text: `Point group ${describePointGroup(described.pointGroup)}. Take inversion, chirality and polarity from this, not from memory.`
+        });
+    }
+    // For the answer check (llm/copilot/answerAudit.js): the group and what its
+    // point group implies.
+    const result = { data, checks };
+    if (facts && !String(described.spaceGroup).startsWith('≥') && described.spaceGroup !== 'undetermined') {
+        result.facts = { groups: [{ symbol: described.spaceGroup, ...facts }] };
+    }
+    return result;
 };
 
 // --- the tool list ---------------------------------------------------------------
@@ -706,7 +797,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             description: 'Bond-angle distribution A–B–C with B the central atom (RMCProfile triplets): every pair of '
                 + 'B neighbours, A within [r12_min, r12_max] Å of B and C within [r23_min, r23_max] Å (default: the '
                 + 'A–B window). Returns the angle modes, mean ± sd, a 10° histogram, bond lengths and the B '
-                + 'coordination. Pick windows around the first g(r) peak (find_gr_peaks).',
+                + 'coordination, and for about six or four neighbours the split against an ideal octahedron or '
+                + 'tetrahedron. Use the whole first coordination shell (find_gr_peaks\' first_shell.window_A); a window '
+                + 'that cuts the shell is put to the user first.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -721,6 +814,22 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 },
                 required: ['end1', 'apex', 'end2', 'r12_min', 'r12_max']
             },
+            // The bond windows, for the Workbench's check that a window does
+            // not cut a coordination shell before this runs (llm clarify.js).
+            shellWindows: (args) => [
+                {
+                    centre: args.apex,
+                    partner: args.end1,
+                    window: [args.r12_min, args.r12_max],
+                    apply: ([lo, hi]) => ({ ...args, r12_min: lo, r12_max: hi })
+                },
+                ...(args.r23_min != null && args.r23_max != null ? [{
+                    centre: args.apex,
+                    partner: args.end2,
+                    window: [args.r23_min, args.r23_max],
+                    apply: ([lo, hi]) => ({ ...args, r23_min: lo, r23_max: hi })
+                }] : [])
+            ],
             label: ({ end1, apex, end2, r12_min: lo, r12_max: hi }) => (
                 `Bond angles ${end1}–${apex}–${end2}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`
             ),
@@ -777,6 +886,12 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 },
                 required: ['element', 'r_min', 'r_max']
             },
+            shellWindows: (args) => [{
+                centre: args.element,
+                partner: args.element,
+                window: [args.r_min, args.r_max],
+                apply: ([lo, hi]) => ({ ...args, r_min: lo, r_max: hi })
+            }],
             label: ({ element, r_min: lo, r_max: hi }) => (
                 `Clusters ${element || ''}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`.trim()
             ),

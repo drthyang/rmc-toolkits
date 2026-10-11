@@ -38,7 +38,11 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
 - **It asks instead of guessing** (`ask_user`). When a question leaves open a choice that changes
   the science — which coordination shell or r-window, which site or pair, which tolerance, which
   run — the agent asks one short question with 2–4 options and its default, then uses exactly the
-  option the user picks. See *Asking the user* below.
+  option the user picks. Where the run data show that such a choice changes the result, the
+  Workbench asks itself, before the model guesses. See *Asking the user* below.
+- **Its answers are checked.** Where an answer contradicts what the analyses or the run context
+  established, a **Check** line says so under it and the Outcome chip drops to **Not verified**,
+  whatever the model said of its own answer. See *Checks on the answer* below.
 
 How one question runs:
 
@@ -261,6 +265,83 @@ and elsewhere it stated its assumption. The card and the loop are exercised with
 88.5, 104.5°; mean 103 ± 29.6°) as "significantly distorted" octahedra, missing the trans angles
 the sin θ factor depletes near 180°.
 
+### The Workbench asks itself (2026-10-11)
+
+gemma4 never asked; so where the computed signals show a real ambiguity that changes the result,
+the Workbench shows the question card itself, with the options it computed and a default
+(`copilot/clarify.js`, `buildClarifier`). The card is an `ask_user` step marked `app: true`
+("The Workbench asks before the analysis"); it counts toward the two questions per request, and
+the model's own `ask_user` still works beside it.
+
+- **Before the first request** (`beforeTurn`), on the user's question (`readQuestion`: the
+  intent, and the run's elements, pairs and triplets it names):
+  - *a bond-angle or coordination request naming only an element:* which neighbours — one
+    option per bonded partner (a first shell starting within 1.4× of the nearest one), nearest
+    first and the default, each with its window and CN; "Every neighbour type" for coordination.
+    The Demo's "bond angles around Ta": Se–Ta–Se (2.21–3.23 Å, CN 6), Ta–Ta–Ta (2.65–3.33 Å, CN
+    2.8); not Ga at 3.8 Å;
+  - *a named pair or triplet whose first shell is split into peaks, or runs into the next:*
+    which window — the whole first shell (default), the first peak only, or a cut 0.2 Å either
+    side of the minimum — only when the coordination number changes by ≥ max(0.5, 15 %) between
+    them. The Demo's "Se–Ta–Se bond angles": whole shell 2.21–3.23 Å (CN 6) or first peak
+    2.33–2.71 Å (CN 3.9). The Ta–Ta shell runs into the next (6 % of the peak at the minimum) but
+    a cut 0.2 Å either side changes its CN by < 0.5: not asked;
+  - *displacement directions of an element with several sites whose site symmetry is not
+    cubic:* one site of each orbit (default; its sites are equivalent by symmetry) or all pooled
+    — pooling mixes the sites' local frames and can cancel a per-site preference, the review's
+    pooled-Ta error. Ga (site symmetry -43m) is not asked about;
+  - *the space group with no tolerance named:* which tolerance, when more than one group holds
+    clearly above the sampling noise floor (to ≥ 1.25× it). On the Demo only F-43m does: not asked.
+
+  The answer joins the user's question for the model: `(The Workbench asked: "…" — the user
+  chose Se–Ta–Se: Se around Ta in the whole first Ta–Se shell, 2.21–3.23 Å (CN 6). Use exactly
+  this.)`. The conversation still shows the question as typed.
+- **Before an analysis runs** (`beforeCall`, for tools that declare `shellWindows(args)`:
+  `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
+  of it by the same margin is put to the user — the whole first shell (default) or the window as
+  asked — and the analysis runs in the one chosen, its tool message saying so. The spot check's
+  2.3–2.7 Å Se–Ta–Se window: "it holds 3.8 Se per Ta of the shell's 6".
+- **Not asked:** a question that settles the choice itself — an ideal polyhedron it names that
+  exactly one option's CN matches ("…compare them with an ideal octahedron": only the whole Ta–Se
+  shell holds 6), an element pair or triplet with a clear shell, a site number, a window or a
+  tolerance in Å, a window the user chose earlier in the question. The six spot-check questions
+  ask nothing.
+
+## Checks on the answer
+
+The reviews found answers that contradicted what the tools had just computed. The tools now
+return `facts` beside their data (not sent to the model): `assess_convergence` its status,
+`detect_symmetry` its group with the point group's facts, `analyze_displacement_directions`
+whether a direction is significant (peak or map ≥ 3σ); the run context adds the watchdog's status
+and the tolerance ladder's groups (`contextAuditFacts`). When the model answers,
+`auditAnswer()` (`copilot/answerAudit.js`) reads the answer, sentence by sentence and clause by
+clause, for a clear positive claim they contradict:
+
+| Check | Fires on |
+|---|---|
+| convergence | "converged", "reached convergence", "a plateau" while the history is still improving or diverging |
+| chirality | a group called chiral whose point group is not a Sohncke group (it has mirrors, glides or rotoinversions) |
+| centrosymmetry | a group called centrosymmetric whose point group has no inversion centre |
+| inversion lost | an inversion centre "lost" or "broken" when none of the groups named has one |
+| direction | a "preferred direction" when no directions analysis of the question found one at ≥ 3σ |
+
+A negated claim ("has not converged", "achiral", "no preferred direction"), a question, or a
+sentence that already says the right thing raises nothing; symbols are matched however written
+(`P-42₁m`, `P−4 2_1 m`, `$P\bar{4}2_1m$`). Each finding shows as a **Check** line under the
+answer, and the Outcome chip is **lowered** (`lowerOutcome`): an answer the model called
+*achieved* or *partial* (or gave no verdict) becomes **Not verified**, with "the model said
+'achieved'" in its note — the model's own verdict never overrides a computed contradiction;
+*not achieved* stays. gemma4:26b's correct answers of 2026-10-11 raise no check.
+
+**Facts the model reads.** `detect_symmetry` and the context's ladder state each point group's
+facts (`context/pointGroups.js`: crystal system, inversion centre, Sohncke class, polarity), so the
+model need not recall them (the spot check called P-42₁m chiral). `compute_bond_angles` returns the
+10° histogram sin θ-corrected as well (1 for random directions: raw counts deplete 180°), and for a
+whole shell of about six or four neighbours the split against an ideal octahedron (80 % cis at
+90°, 20 % trans at 180°) or tetrahedron: the Demo's TaSe₆ shell is 80 % cis at a mean 89° and 20 %
+trans at 158.8°, which gemma4 had read from the raw modes as "highly distorted, 75–105°". A cut
+window gets no polyhedron reading (its CN 3.9 is not a tetrahedron).
+
 ## The context window: never cut silently
 
 A local server runs a model with a fixed context window, and a prompt longer than the window is not
@@ -325,7 +406,9 @@ The host passes engine tools as plain objects; the module validates and runs the
   cards: (args) => ['bond-angles'],      // host cards this call reads: they breathe while it runs (optional)
   view: true,                            // a view tool: changes only the screen; never cached (optional)
   interactive: true,                     // waits for the user (ask_user): never cached, no time limit (optional)
-  run: async (args, { signal, focus, askUser }) => ({ data, checks }),
+  shellWindows: (args) => [{ centre, partner, window: [lo, hi], apply: ([lo, hi], { confirmed }) => args }],
+                                         // its bond windows, checked against the shells before it runs (optional)
+  run: async (args, { signal, focus, askUser }) => ({ data, checks, facts }),
 }
 ```
 
@@ -338,6 +421,12 @@ The host passes engine tools as plain objects; the module validates and runs the
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
 - `askUser(request, { signal })` shows a question card and resolves with the user's reply
   (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools.
+- `facts` (optional, not sent to the model) are findings the final answer must not contradict
+  (*Checks on the answer*): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
+  sohncke, polar }] }`, `{ direction: { subject, significant, peak_sigma, map_sigma } }`.
+- `shellWindows(args)` names the bond windows a call will use, so the Workbench can ask before a
+  window that cuts a coordination shell runs; `apply(window, { confirmed })` returns the
+  arguments for the window the user chose (`confirmed`: they kept their own).
 - Parameters may be arrays (`items`, `minItems`, `maxItems`) and objects (their own `properties` /
   `required`); a list sent as JSON text or a bare comma list is accepted.
 
@@ -361,10 +450,10 @@ In this repository the host tools live in `src/copilotTools.js`:
 |---|---|
 | `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites` |
 | `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
-| `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes) |
+| `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion |
 | `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show |
-| `detect_symmetry` | the symmetry finder at any tolerance, without changing the card (browser-loaded runs only) |
+| `detect_symmetry` | the symmetry finder at any tolerance, without changing the card (browser-loaded runs only), with the point group's facts (inversion, Sohncke, polar) |
 | `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
 | `current_view` (view) | the page on screen, its cards, the highlight, and each 3D view's direction and site |
 
@@ -550,6 +639,15 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   - the tools-unsupported fallback, and a schema 400 that must surface;
   - abort and timeout, which also abort the tool's signal;
   - per-result and per-turn budgets.
+- **Checks and the Workbench's questions:** the answer checks with their negated and qualified
+  phrasings and `lowerOutcome` (`answerAudit.test.js`); the clarifier on synthetic shells — split,
+  merged, clean, word-like element symbols, the tolerance ladder, typed windows
+  (`clarify.test.js`); and on the Demo with the real engines and context
+  (`src/__tests__/copilotChecksReplays.test.js`): a contradicted answer is lowered, gemma4's
+  correct answers keep *achieved*, each Workbench question (an element alone, a split shell, a
+  cut window kept or replaced, one site or pooled), the clear questions that never ask, the
+  model's own `ask_user` beside them within two per request, and cancel. In the dock
+  (`copilotChat.test.jsx`): the Workbench's card before any model request, the lowered chip.
 - **Rendering:** Outcome parsing, the Markdown pipeline with its card chips, and
   `copilotChat.test.jsx`, which drives the dock end to end against a mocked server: nothing is
   fetched before it opens, Show in hands over the page parameters, Esc keeps the conversation, a
