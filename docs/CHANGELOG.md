@@ -7,18 +7,7 @@ Chronological record of notable changes, newest first. For current architecture 
 
 _Nothing yet._
 
-## 0.6.0 — 2026-10-10
-
-> This work was first tagged v1.0.0 on 2026-09-26 and the tag was withdrawn the same day; the
-> work continues toward 0.6.0, which will also bring the Bond Geometry redesign and device layouts.
-
-Every engine's math and physics was audited end to end, and the audit's roughly 100 defects were
-fixed in both runtimes. They included wrong numbers, Python ↔ browser disagreements, inputs that
-crashed or silently produced garbage, and docs that described code that no longer existed. Nine
-groups fixed them test-first (Auto StoG ×2, structure KDE, PCA ellipsoid, displacement directions,
-bond angles, parsers and dashboard, symmetry finder, Flask API). Each group was reviewed
-independently, then merged and integrated. Several numbers the app reports change *because they
-were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.5.0.
+## 0.7.0 — 2026-10-11
 
 ### AI Copilot: docked beside the pages, pointing at what it explains
 
@@ -82,6 +71,20 @@ with the design language of the maintainer's other agents (MATERIA, NEBULA3D), r
   passed with no page error. Two display bugs it found are fixed: the Outcome note now renders
   its math, and a chip written as the bare reference shows the card's title
   (`src/llm/README.md`, *The view tools with a real model*).
+
+
+## 0.6.0 — 2026-10-10
+
+> This work was first tagged v1.0.0 on 2026-09-26 and the tag was withdrawn the same day; the
+> work continues toward 0.6.0, which will also bring the Bond Geometry redesign and device layouts.
+
+Every engine's math and physics was audited end to end, and the audit's roughly 100 defects were
+fixed in both runtimes. They included wrong numbers, Python ↔ browser disagreements, inputs that
+crashed or silently produced garbage, and docs that described code that no longer existed. Nine
+groups fixed them test-first (Auto StoG ×2, structure KDE, PCA ellipsoid, displacement directions,
+bond angles, parsers and dashboard, symmetry finder, Flask API). Each group was reviewed
+independently, then merged and integrated. Several numbers the app reports change *because they
+were wrong*: read **Upgrading from 0.5.0** before comparing 0.6.0 output with 0.5.0.
 
 ### AI Copilot replaces the AI Assistant
 
