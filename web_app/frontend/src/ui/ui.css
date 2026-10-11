@@ -2913,10 +2913,15 @@ input.ui-range::-moz-range-track {
     letter-spacing: 0;
     text-transform: none;
     white-space: normal;
+    /* Closed, it takes no space: a hidden box still counts toward the page's
+       scrollable overflow, and a 20rem popover beside a `?` near the right
+       edge made a tablet-width page scroll sideways. */
+    display: none;
     opacity: 0;
     visibility: hidden;
     transform: translateY(-2px);
-    transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease, visibility var(--dur-fast);
+    transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease, visibility var(--dur-fast),
+        display var(--dur-fast) allow-discrete;
 }
 
 .ui-info__popover--start {
@@ -2936,9 +2941,25 @@ input.ui-range::-moz-range-track {
 
 .ui-info:hover .ui-info__popover,
 .ui-info:focus-within .ui-info__popover {
+    display: block;
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+}
+
+/* Where display transitions are supported, it still fades in from its
+   closed state. */
+@starting-style {
+    .ui-info:hover .ui-info__popover,
+    .ui-info:focus-within .ui-info__popover {
+        opacity: 0;
+        transform: translateY(-2px);
+    }
+
+    .ui-info:hover .ui-info__popover--above,
+    .ui-info:focus-within .ui-info__popover--above {
+        transform: translateY(2px);
+    }
 }
 
 /* Phones: a 20rem popover beside a `?` near the right edge runs off the
