@@ -363,6 +363,27 @@ cluster distortion beyond independent atoms, nor the cell doubling diffraction f
 carry box-scale displacement waves; the Ta–Ta and Ga–Se distributions show the closest-approach
 and shell-gap effects above. The checks on the step cards remain the part to trust.
 
+### The view tools with a real model (2026-10-11)
+
+The docked Copilot's view tools were checked with **gemma4:26b** (Ollama, OpenAI-compatible
+endpoint) on the static build with the Demo run, in Chrome at 1440 × 900 (docked), each question
+in a new conversation. Other jobs shared the model server, so the times are upper bounds.
+
+| Question | Tools called | Result |
+|---|---|---|
+| First Ta–Se g(r) peak; highlight the card and mark it | `highlight_cards` (the partials card, a mark at 2.52 Å) | ✓ the card breathes, fully in view beside the panel; the plot zooms to the marked peak; the answer cites the card as a chip · 223 s |
+| Largest U_iso; cite the PCA Ellipsoid card | `list_sites` | ✓ ref 23, 0.0175 Å²; from the Dashboard, its `pca-stats` chip opened PCA Ellipsoid and brought the statistics card into view · 342 s |
+| The direction sphere of Ta site 1 down [111] | `list_sites`, `analyze_displacement_directions`, `orient_3d_view` (select site 1, along `[1 1 1]`) | ✓ the page opened, the sphere turned to [1 1 1] with [-1 -1 2] up (a, b, c at 120°) · 847 s |
+| Centre site 1 in the site view and ring it | `orient_3d_view` (`direction-sites`, centre and ring site 1) | ✓ site 1 at the canvas centre with the blue halo; the model wrote only the Outcome · 434 s |
+| What am I looking at? | `current_view` | ✓ the page, the sphere down [1 1 1] (site 1) and the site view down [3 2 3], as on screen · 553 s |
+
+No page error and no failed step. Two display bugs were found and fixed: the Outcome note showed
+LaTeX raw (`$U_{iso}$`; it now renders as Markdown inline), and chips written as the bare
+reference (`<card:direction-sphere>`) read "card:direction-sphere" (they now show the card's
+title; a re-run of the last question confirmed it). The model's numbers for the sphere differ
+from the drawn map because the tool lets the engine choose the resolution while the page keeps
+its own (ν = 10, smoothed), as noted under *Show in*.
+
 ## Import boundary and extraction recipe
 
 This module is designed to be lifted into its own repository:

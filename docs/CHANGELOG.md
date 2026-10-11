@@ -72,6 +72,12 @@ with the design language of the maintainer's other agents (MATERIA, NEBULA3D), r
   (1366 × 1024) and iPad landscape (1180 × 820), docked, and iPad portrait (820 × 1180) and a phone
   (390 × 844), as a sheet: open and collapsed, every page with the Copilot open, a highlighted card in view
   and not under the Copilot, a chip, a click that clears, a [111] view, and the remembered state.
+- **Checked with a real model** (gemma4:26b, Ollama, the Demo, 2026-10-11): five questions —
+  a highlighted g(r) card with a mark at the Ta–Se peak, a chip that opened PCA Ellipsoid, the
+  direction sphere turned down [111], site 1 centred and ringed, and `current_view` — all
+  passed with no page error. Two display bugs it found are fixed: the Outcome note now renders
+  its math, and a chip written as the bare reference shows the card's title
+  (`src/llm/README.md`, *The view tools with a real model*).
 
 ### AI Copilot replaces the AI Assistant
 
