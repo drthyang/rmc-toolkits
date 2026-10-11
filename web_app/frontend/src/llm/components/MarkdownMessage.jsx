@@ -97,8 +97,15 @@ const buildComponents = (cards, onCardClick, onCardHover) => ({
     table: TABLE
 });
 
-const MarkdownMessage = ({ children, cards = null, onCardClick = null, onCardHover = null }) => {
-    const components = useMemo(() => buildComponents(cards || [], onCardClick, onCardHover), [cards, onCardClick, onCardHover]);
+// `inline`: one line of running text (the Outcome note) — paragraphs render
+// as spans, so the math and emphasis models put there render in place.
+const INLINE_PARAGRAPH = ({ node, ...props }) => <span {...props} />;
+
+const MarkdownMessage = ({ children, cards = null, onCardClick = null, onCardHover = null, inline = false }) => {
+    const components = useMemo(() => ({
+        ...buildComponents(cards || [], onCardClick, onCardHover),
+        ...(inline ? { p: INLINE_PARAGRAPH } : {})
+    }), [cards, onCardClick, onCardHover, inline]);
     const text = useMemo(() => linkCardReferences(children, cards || []), [children, cards]);
     return (
         <Markdown

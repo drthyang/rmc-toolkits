@@ -87,3 +87,14 @@ describe('card references', () => {
         expect(html).not.toContain('javascript:');
     });
 });
+
+describe('inline notes', () => {
+    it('renders math and emphasis in place, without a paragraph', () => {
+        const html = renderToStaticMarkup(<MarkdownMessage inline>{'The site with the largest $U_{iso}$ is **23**.'}</MarkdownMessage>);
+        expect(html.startsWith('<span>')).toBe(true);
+        expect(html).not.toContain('<p>');
+        expect(html).toContain('class="katex"');
+        expect(html).not.toContain('$U_{iso}$');
+        expect(html).toContain('<strong>23</strong>');
+    });
+});

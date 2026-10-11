@@ -131,7 +131,10 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks }) => {
                     <div className={`llm-outcome is-${turn.outcome.status.replace(' ', '-')}`} role="status">
                         <span className="llm-outcome-label">Outcome</span>
                         <strong>{OUTCOME_TEXT[turn.outcome.status]}</strong>
-                        {turn.outcome.note && <span className="llm-outcome-note">{turn.outcome.note}</span>}
+                        {turn.outcome.note && (
+                            // Models write math and card links in the note too.
+                            <span className="llm-outcome-note"><MarkdownMessage inline {...cardLinks}>{turn.outcome.note}</MarkdownMessage></span>
+                        )}
                     </div>
                 )}
                 {!turn.streaming && (summary || stopNote || turn.toolsUnsupported) && (
