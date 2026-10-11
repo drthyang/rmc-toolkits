@@ -5,11 +5,14 @@ import { describe, expect, it } from 'vitest';
 import {
     CONTEXT_CHAR_BUDGET,
     buildRunContext,
+    compactJson,
     contextToJson,
     downsampleSeries,
     recentSlope,
-    seriesStats
+    seriesStats,
+    symmetryNoiseFloor
 } from '../context/runContext';
+import { atomicNumber, partialWeights } from '../context/scatteringWeights';
 
 // A fixture mimicking the props Dashboard.jsx passes: parsed plot files, a
 // combined R-value file, a folded structure, and a detected symmetry.
@@ -394,5 +397,111 @@ describe('pair correlations integration', () => {
         expect(context.pair_correlations[0].gr_peaks_A[0].r).toBeCloseTo(3, 1);
         // Fixture basis: Nb at (.6,.6,.6) and (.4,.4,.4) → 0.2·√3 · 10.02 Å ≈ 3.47 Å.
         expect(context.pair_correlations[0].avg_structure_d_A).toBeCloseTo(3.47, 1);
+        // The first shell: its mean from r²g (above the g peak) and the CN with the cell's Nb density.
+        const shell = context.pair_correlations[0].first_shell;
+        expect(shell.mean_d_A).toBeGreaterThan(3);
+        expect(shell.mean_d_A).toBeLessThan(3.05);
+        expect(shell.to_A).toBeGreaterThan(3.2);
+        expect(shell.cn_Nb_per_Nb).toBeGreaterThan(0);
+    });
+});
+
+describe('scientific provenance in the context', () => {
+    it('gives the watchdog verdict and the recent change of the convergence series', () => {
+        const context = buildRunContext(fixtureProps());
+        // 2.3 − 0.003·i: still falling.
+        expect(context.convergence.watchdog_status).toBe('improving');
+        expect(context.convergence.change_over_last_10pct).toBeCloseTo(-0.15, 2);
+    });
+
+    it('marks one measurement fitted in both spaces, and an FT file as the same measurement', () => {
+        const props = fixtureProps();
+        props.runSettings.datasets = [{
+            block: 'XRAY_RECIPROCAL_SPACE_DATA', file: 'scale_ft_rmc.fq', fit_type: 'F(Q)',
+            real_space_fit: true, reciprocal_space_fit: true
+        }];
+        props.plotFiles.push({ name: 'GTS_250K_FT_XFQ1.csv', plotKind: 'xpdf', plotData: { title: 'xPDF', metrics: { rwp: 0.0119 } } });
+        const context = buildRunContext(props);
+        expect(context.run_settings.independent_datasets).toBe(1);
+        expect(context.run_settings.fitted_data[0].fitted_in).toMatch(/one measurement/);
+        expect(context.datasets.at(-1)).toEqual({ kind: 'xpdf', title: 'xPDF', rwp: 0.0119, same_measurement_as: 'XFQ1 (its Fourier transform)' });
+    });
+
+    it('gives the Faber–Ziman partial weights of each fitted radiation', () => {
+        const context = buildRunContext(fixtureProps());
+        // Neutron S(Q) and npdf files, an X-ray F(Q) in the .dat: both radiations.
+        const { xray, neutron } = context.partial_weights;
+        expect(Object.values(xray).reduce((sum, w) => sum + w, 0)).toBeCloseTo(1, 1);
+        expect(Object.keys(xray)[0]).toBe('Nb-Se');
+        expect(xray['Ga-Ga']).toBeLessThan(0.01);
+        expect(Object.values(neutron).reduce((sum, w) => sum + w, 0)).toBeCloseTo(1, 1);
+        expect(context.partial_weights.note).toMatch(/weakly constrained/);
+    });
+
+    it('states the symmetry noise floor from the site means\' sampling error', () => {
+        // 3·√2·max(dispA/√count): the demo's 0.23 Å over 1000 copies → 0.031 Å.
+        expect(symmetryNoiseFloor([{ dispA: 0.23, count: 1000 }, { dispA: 0.1, count: 1000 }])).toBeCloseTo(0.0309, 4);
+        expect(symmetryNoiseFloor([{ dispA: 0.2 }])).toBeNull();
+        expect(symmetryNoiseFloor(null)).toBeNull();
+        const props = fixtureProps();
+        props.structure.basis = props.structure.basis.map((site) => ({ ...site, count: 216 }));
+        const context = buildRunContext(props);
+        expect(context.symmetry.noise_floor_A).toBeCloseTo(3 * Math.SQRT2 * 0.25 / Math.sqrt(216), 2);
+        expect(context.symmetry.noise_floor_note).toMatch(/not evidence/);
+    });
+});
+
+describe('pair flags in the context', () => {
+    it('flags a distribution cut at its constraint and a first shell running into the next', () => {
+        const props = fixtureProps();
+        const x = historyOf(500, (index) => index * 0.01);
+        const gaussian = (r, c, w, h) => h * Math.exp(-((r - c) ** 2) / (2 * w * w));
+        props.plotFiles.push({
+            plotKind: 'pdf_partials',
+            plotData: {
+                series: [
+                    // Ga–Se cut at its 2.4 Å constraint (fixture order Ga-Ga, Ga-Nb, Ga-Se …: 2.4).
+                    { label: 'Ga-Se', x, y: x.map((r) => (r < 2.4 ? 0 : gaussian(r, 2.5, 0.08, 8))) },
+                    // Nb–Nb with distances filling the gap to the next shell.
+                    { label: 'Nb-Nb', x, y: x.map((r) => gaussian(r, 3, 0.1, 5) + gaussian(r, 4.3, 0.1, 4) + (r > 3.2 && r < 4.1 ? 0.35 : 0)) }
+                ]
+            }
+        });
+        const pairs = Object.fromEntries(buildRunContext(props).pair_correlations.map((entry) => [entry.pair, entry]));
+        expect(pairs['Ga-Se'].cut_at_min_distance.at_A).toBe(2.4);
+        expect(pairs['Ga-Se'].cut_at_min_distance.g_fraction).toBeGreaterThan(0.2);
+        expect(pairs['Ga-Se'].first_shell.gap_g_fraction).toBeUndefined();
+        expect(pairs['Nb-Nb'].first_shell.gap_g_fraction).toBeGreaterThan(0.02);
+        expect(pairs['Nb-Nb'].cut_at_min_distance).toBeUndefined();
+    });
+});
+
+describe('compactJson', () => {
+    it('puts arrays and objects of plain values on one line and stays valid JSON', () => {
+        const value = { a: [1, 2, 3], b: { c: 1, d: 'x [y]' }, e: [{ f: [1, 2] }, { g: 2 }], h: 'line', k: { m: 'a {b}' } };
+        const text = compactJson(value);
+        expect(JSON.parse(text)).toEqual(value);
+        expect(text).toContain('"a": [1, 2, 3]');
+        expect(text).toContain('"b": {"c": 1, "d": "x [y]"}');
+        expect(text).toContain('{"f": [1, 2]}');
+        // A brace inside a string keeps its object on several lines, still valid.
+        expect(text).toContain('"k": {\n');
+        expect(text.length).toBeLessThan(JSON.stringify(value, null, 1).length);
+    });
+});
+
+describe('partialWeights', () => {
+    it('weights GaTa4Se8 for x-rays by Z and leaves Ga nearly unseen', () => {
+        expect(atomicNumber('Ta')).toBe(73);
+        const weights = Object.fromEntries(partialWeights({ Ga: 4000, Ta: 16000, Se: 32000 }, 'xray').map(({ pair, weight }) => [pair, weight]));
+        expect(weights['Ta-Se']).toBeCloseTo(0.449, 3);
+        expect(weights['Ta-Ta']).toBeCloseTo(0.241, 3);
+        expect(weights['Ga-Se']).toBeCloseTo(0.048, 3);
+        expect(Object.values(weights).reduce((sum, w) => sum + w, 0)).toBeCloseTo(1, 12);
+    });
+
+    it('returns null for an element without a tabulated amplitude', () => {
+        expect(partialWeights({ Xx: 1, Se: 1 }, 'neutron')).toBeNull();
+        expect(partialWeights({}, 'xray')).toBeNull();
     });
 });

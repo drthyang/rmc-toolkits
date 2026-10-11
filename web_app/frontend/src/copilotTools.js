@@ -118,7 +118,7 @@ const anglesToCell = (direction, unitCell) => unitCell.map((edge) => {
     return roundFixed(Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI, 1);
 });
 
-export const summarizeOrientation = (payload, unitCell) => {
+export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}) => {
     const direction = payload.peakDirection;
     const peak = {
         enhancement: round(payload.peakEnhancement),
@@ -184,6 +184,17 @@ export const summarizeOrientation = (payload, unitCell) => {
             text: `+u/−u imbalance at z = ${round(payload.antipodalAsymmetryZ)}: a skewness the ellipsoid cannot show.`
         });
     }
+    // An element pooled over several sites can mix their local frames: each
+    // vertex of a Ta4 tetrahedron sits on its own 3m axis, so a preference
+    // every site shares in its own frame (along its own <111>) averages out.
+    if (payload.referenceNumber == null && pooledSites > 1) {
+        checks.push({
+            level: 'note',
+            text: `Pooled over ${pooledSites} sites. Where their local axes differ (the four vertices of a tetrahedral cluster), `
+                + 'a direction each site prefers in its own frame cancels here, so an isotropic pooled map is not evidence '
+                + 'against a per-site or cluster distortion. Test single sites (site_ref), or analyze_clusters for a cluster\'s shape.'
+        });
+    }
     return { data, checks };
 };
 
@@ -229,10 +240,19 @@ const coarseHistogram = (centers, counts, total) => {
     return bins.map((count) => (total ? round(count / total, 2) : 0));
 };
 
-const lengthSummary = (lengths) => (lengths ? {
-    mean_A: round(lengths.meanLength, 4),
-    unique_bonds: lengths.uniqueBonds
-} : null);
+// The bonds' mean and spread; the spread from the engine's 40-bin length
+// histogram over the window (bins ~0.01 Å for a 0.4 Å window), so the model
+// quotes a measured width instead of inventing one.
+const lengthSummary = (lengths) => {
+    if (!lengths) return null;
+    const summary = { mean_A: round(lengths.meanLength, 4), unique_bonds: lengths.uniqueBonds };
+    const { binCenters, counts, count, meanLength } = lengths;
+    if (count > 1 && Array.isArray(binCenters) && binCenters.length === counts?.length && Number.isFinite(meanLength)) {
+        const variance = counts.reduce((sum, n, i) => sum + n * (binCenters[i] - meanLength) ** 2, 0) / count;
+        summary.sd_A = round(Math.sqrt(variance), 2);
+    }
+    return summary;
+};
 
 export const summarizeBondAngles = (payload) => {
     const total = payload.angleCount || 0;
@@ -292,6 +312,278 @@ export const summarizeBondAngles = (payload) => {
         if (!checks.some((check) => check.level === 'warn')) {
             checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
         }
+    }
+    return { data, checks };
+};
+
+// --- analyze_clusters ------------------------------------------------------------
+
+// A shape statistic departs from independent atoms only when both its z and
+// its size clear these: with thousands of clusters a 1 % effect reaches
+// z > 3 and still means nothing physically.
+export const CLUSTER_Z = 3;
+// Relative change (observed / null − 1) of a width or an rms.
+export const CLUSTER_EFFECT = 0.05;
+// Change of the tetrahedral T2 trigonality (its range is 1/3 to 1).
+export const TRIGONALITY_EFFECT = 0.02;
+// Observed / null fraction of clusters with an axis near one lattice family.
+export const AXIS_ENHANCEMENT = 1.1;
+// The average cluster counts as statically distorted when its edges spread
+// over more than this many sampling errors (six independent normal edges span
+// ~2.5 on average and exceed 5 in under 1 % of cases).
+export const STATIC_SPREAD_SE = 5;
+// Template bonds outside the window, or contacts linking clusters, per atom.
+export const CLUSTER_OUTLIER_FRACTION = 0.05;
+
+const significant = (z, change, effect) => (
+    Number.isFinite(z) && Math.abs(z) >= CLUSTER_Z && Number.isFinite(change) && Math.abs(change) >= effect
+);
+
+export const summarizeClusters = (payload) => {
+    const [lo, hi] = payload.window || [];
+    const element = payload.element;
+    const data = {
+        element,
+        window_A: [lo, hi],
+        sites: payload.sites?.length ?? 0
+    };
+    if (payload.isolatedSites) data.sites_without_bond = payload.isolatedSites;
+    const checks = [...parseWarningCheck(payload)];
+    if (payload.extended) {
+        checks.push({
+            level: 'fail',
+            text: `The ${lo}–${hi} Å window links the ${element} atoms into an extended network (chains or a 3-D net), `
+                + `not finite clusters: narrow it to the intra-cluster bond (find_gr_peaks: first_shell.window_A of ${element}-${element}).`
+        });
+        return { data, checks };
+    }
+    if (!payload.templates?.length || !payload.kind) {
+        checks.push({
+            level: 'fail',
+            text: `No two ${element} sites of the average structure lie ${lo}–${hi} Å apart: no clusters. `
+                + `Widen the window (find_gr_peaks gives the ${element}-${element} first shell).`
+        });
+        return { data, checks };
+    }
+    const { observed: obs, nullMean: mean, z } = payload;
+    const row = (value, nullValue, zValue, digits = 3) => {
+        const entry = { obs: round(value, digits), null: round(nullValue, digits), z: round(zValue, 2) };
+        if (Number.isFinite(value) && Number.isFinite(nullValue) && nullValue !== 0) entry.change = round(value / nullValue - 1, 2);
+        return entry;
+    };
+    const kind = payload.kind;
+    data.clusters = {
+        members: kind.members,
+        edges: kind.edges,
+        count: kind.clusters,
+        templates: kind.templates
+    };
+    if (payload.kinds.length > 1) data.clusters.other_sizes = payload.kinds.slice(1).map((k) => ({ members: k.members, count: k.clusters }));
+    data.average_structure = {
+        edges_A: payload.ideal.ladder.map((value) => round(value, 4)),
+        spread_A: round(payload.ideal.spread, 2),
+        edge_se_A: round(payload.ideal.edgeSe, 2),
+        spread_over_se: round(payload.ideal.spreadOverSe, 2)
+    };
+    data.local = {
+        note: 'obs = the configuration; null = each atom keeps its own site\'s displacements, taken from a random other '
+            + 'cluster (independent atoms); z = (obs − null) / null sd over the shuffles; change = obs/null − 1; '
+            + 'ladder_A[k] = the mean over clusters of each cluster\'s k-th shortest edge (not the range of single bonds)',
+        ladder_A: {
+            obs: obs.ladder.map((value) => round(value, 4)),
+            null: mean.ladder.map((value) => round(value, 4)),
+            z: z.ladder.map((value) => round(value, 2))
+        },
+        ladder_width_A: row(obs.ladderWidth, mean.ladderWidth, z.ladderWidth),
+        shape_rms_A: row(obs.shapeRms, mean.shapeRms, z.shapeRms),
+        breathing_sd_A: row(obs.breathingSd, mean.breathingSd, z.breathingSd),
+        mean_edge_A: row(obs.meanEdge, mean.meanEdge, z.meanEdge, 4)
+    };
+    if (Number.isFinite(obs.eRms)) {
+        data.local.tetrahedral_modes = {
+            note: 'E: opposite-edge-pair sums (tetragonal-type); T2: opposite-pair differences; t2_trigonality = '
+                + 'mean Σd⁴/(Σd²)², 1/3 when three edges at one vertex differ alike (trigonal, C3v), 1 when one edge differs from its opposite',
+            e_rms_A: row(obs.eRms, mean.eRms, z.eRms),
+            t2_rms_A: row(obs.t2Rms, mean.t2Rms, z.t2Rms),
+            t2_trigonality: row(obs.t2Trigonality, mean.t2Trigonality, z.t2Trigonality)
+        };
+    }
+    const families = (name) => (obs[name] ? Object.fromEntries(Object.keys(obs[name]).map((family) => [
+        `<${family}>`, row(obs[name][family], mean[name][family], z[name][family], 3)
+    ])) : undefined);
+    if (obs.longAxis) data.local.long_axis_within_15deg = families('longAxis');
+    if (obs.shortAxis) data.local.short_axis_within_15deg = families('shortAxis');
+    data.outliers = {
+        bonds_outside_window: round(payload.outliers.brokenEdgeFraction, 2),
+        contacts_between_clusters_per_atom: round(payload.outliers.extraContactsPerAtom, 2)
+    };
+
+    const otherShare = payload.kinds.slice(1).reduce((sum, k) => sum + k.clusters, 0)
+        / payload.kinds.reduce((sum, k) => sum + k.clusters, 0);
+    if (otherShare > 0.1) {
+        checks.push({
+            level: 'warn',
+            text: `The window gives clusters of different sizes (${payload.kinds.map((k) => `${k.clusters}×${k.members}`).join(', ')}): `
+                + 'it may cut through or merge clusters. The statistics are for the most common size only.'
+        });
+    }
+    const ideal = data.average_structure;
+    checks.push(payload.ideal.spreadOverSe >= STATIC_SPREAD_SE
+        ? {
+            level: 'note',
+            text: `The average cluster is itself distorted: its edges span ${ideal.edges_A[0]}–${ideal.edges_A.at(-1)} Å, `
+                + `${ideal.spread_over_se}× their sampling error (${ideal.edge_se_A} Å) — a static distortion of the average structure.`
+        }
+        : {
+            level: 'note',
+            text: `The average cluster is regular within its sampling error: edges ${ideal.edges_A[0]}–${ideal.edges_A.at(-1)} Å `
+                + `(± ${ideal.edge_se_A} Å each).`
+        });
+    const width = data.local.ladder_width_A;
+    if (significant(z.ladderWidth, width.change, CLUSTER_EFFECT)) {
+        checks.push(width.change > 0
+            ? {
+                level: 'ok',
+                text: `The clusters are distorted beyond independent atoms: the spread of their edges (longest − shortest, `
+                    + `${width.obs} Å) is ${Math.round(width.change * 100)} % above the shuffle null (${width.null} Å, z = ${width.z}) — `
+                    + 'a correlated distortion the data put in.'
+            }
+            : {
+                level: 'ok',
+                text: `The clusters are ${Math.round(-width.change * 100)} % LESS distorted than independent atoms would make them `
+                    + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together, `
+                    + 'and there is no correlated shape distortion on top.'
+            });
+    } else {
+        checks.push({
+            level: 'ok',
+            text: `No cluster distortion beyond independent atoms: the edge spread (${width.obs} Å) matches the shuffle null `
+                + `(${width.null} Å; change ${Math.round((width.change ?? 0) * 100)} %, z = ${width.z}).`
+        });
+    }
+    const breathing = data.local.breathing_sd_A;
+    if (significant(z.breathingSd, breathing.change, CLUSTER_EFFECT)) {
+        checks.push({
+            level: 'note',
+            text: `The cluster size (mean edge) fluctuates ${Math.round(Math.abs(breathing.change) * 100)} % `
+                + `${breathing.change > 0 ? 'more' : 'less'} than for independent atoms (breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}).`
+        });
+    }
+    const trig = data.local.tetrahedral_modes?.t2_trigonality;
+    if (trig && significant(z.t2Trigonality, trig.obs - trig.null, TRIGONALITY_EFFECT)) {
+        checks.push({
+            level: 'note',
+            text: trig.obs < trig.null
+                ? `The edge pattern leans trigonal: three edges at one vertex differ from the other three (C3v-like; trigonality ${trig.obs} vs ${trig.null}, z = ${trig.z}).`
+                : `The edge pattern leans to one edge against its opposite (trigonality ${trig.obs} vs ${trig.null}, z = ${trig.z}).`
+        });
+    }
+    [['long_axis_within_15deg', 'elongated'], ['short_axis_within_15deg', 'compressed']].forEach(([key, verb]) => {
+        Object.entries(data.local[key] || {}).forEach(([family, entry]) => {
+            if (entry.z >= CLUSTER_Z && entry.null > 0 && entry.obs / entry.null >= AXIS_ENHANCEMENT) {
+                checks.push({
+                    level: 'note',
+                    text: `More clusters are ${verb} along ${family} than by chance: ${Math.round(entry.obs * 100)} % `
+                        + `vs ${Math.round(entry.null * 100)} % in the null (z = ${entry.z}).`
+                });
+            }
+        });
+    });
+    if (data.outliers.bonds_outside_window > CLUSTER_OUTLIER_FRACTION) {
+        checks.push({
+            level: 'warn',
+            text: `${Math.round(data.outliers.bonds_outside_window * 100)} % of the cluster bonds lie outside ${lo}–${hi} Å in the configuration: `
+                + 'the bond lengths spread wider than the window, or have heavy tails (atoms straying from their cluster).'
+        });
+    }
+    if (data.outliers.contacts_between_clusters_per_atom > CLUSTER_OUTLIER_FRACTION) {
+        checks.push({
+            level: 'warn',
+            text: `${data.outliers.contacts_between_clusters_per_atom} ${element}–${element} contacts per atom inside the window `
+                + 'are not cluster bonds: atoms crossing the gap between clusters.'
+        });
+    }
+    return { data, checks };
+};
+
+// --- analyze_modulations ---------------------------------------------------------
+
+// A zone-boundary point is ordered displacement when its power is at least
+// this many times the median over all wavevectors AND it is in the top 1 %
+// of them (or the element's strongest mode, in a box with < 100 wavevectors).
+export const MODULATION_RATIO = 3;
+export const MODULATION_PERCENTILE = 99;
+// A mode this strong, within this fraction of the zone centre, is a
+// long-wavelength (box-scale) displacement wave.
+export const LONG_WAVE_RATIO = 5;
+export const LONG_WAVE_Q = 0.25;
+
+const qLabel = (q) => `(${q.map((value) => {
+    const rounded = Math.round(value * 1000) / 1000;
+    return rounded === 0.5 ? '½' : String(rounded + 0);
+}).join(', ')})`;
+
+export const summarizeModulations = (payload) => {
+    const checks = [...parseWarningCheck(payload)];
+    const data = {
+        note: 'rows are [q, ratio, percentile]: an element\'s displacement power at wavevector q (fractions of the cell\'s '
+            + 'reciprocal axes) over its median across all q of the supercell grid (the diffuse background), and the share of '
+            + 'wavevectors with less power. A ½ component is order that doubles the cell along that axis.',
+        supercell: payload.supercell,
+        wavevectors: payload.wavevectors,
+        elements: (payload.elements || []).filter((entry) => entry.sites).map((entry) => ({
+            element: entry.element,
+            sites: entry.sites,
+            // [q, ratio to the median, percentile] — compact rows: 7 points × elements.
+            zone_boundary: entry.zoneBoundary.map((point) => [qLabel(point.q), round(point.ratio, 2), roundFixed(point.percentile, 1)]),
+            strongest: entry.strongest.slice(0, 3).map((mode) => [qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1)])
+        }))
+    };
+    if (payload.untestable?.length) data.untestable_zone_boundary = payload.untestable.map((flags) => qLabel(flags.map((flag) => flag / 2)));
+    if (!data.elements.length) {
+        checks.push({ level: 'fail', text: 'No site has displacements to analyse (zero spread everywhere).' });
+        return { data, checks };
+    }
+    const ordered = [];
+    (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
+        const strongestKey = qLabel(entry.strongest[0]?.q || []);
+        entry.zoneBoundary.forEach((point) => {
+            const top = point.percentile >= MODULATION_PERCENTILE || qLabel(point.q) === strongestKey;
+            if (point.ratio >= MODULATION_RATIO && top) ordered.push({ element: entry.element, point });
+        });
+    });
+    if (ordered.length) {
+        ordered.forEach(({ element, point }) => {
+            const axes = ['a', 'b', 'c'].filter((_, axis) => point.q[axis]).join(', ');
+            checks.push({
+                level: 'ok',
+                text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
+                    + `above ${round(point.percentile, 3)} % of all wavevectors — a superstructure doubling the cell along ${axes}.`
+            });
+        });
+    } else {
+        const best = (payload.elements || []).filter((entry) => entry.sites)
+            .flatMap((entry) => entry.zoneBoundary.map((point) => ({ element: entry.element, point })))
+            .sort((a, b) => b.point.percentile - a.point.percentile)[0];
+        checks.push({
+            level: 'ok',
+            text: 'No order that doubles the cell: no zone-boundary point stands out of the diffuse background'
+                + (best ? ` (the highest, ${best.element} at ${qLabel(best.point.q)}, is ${round(best.point.ratio, 2)}× the median, `
+                    + `percentile ${round(best.point.percentile, 3)}).` : '.')
+        });
+    }
+    (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
+        const mode = entry.strongest[0];
+        if (mode && mode.ratio >= LONG_WAVE_RATIO && mode.q.every((value) => Math.abs(value) <= LONG_WAVE_Q)) {
+            checks.push({
+                level: 'note',
+                text: `${entry.element}'s strongest mode is a long-wavelength wave, q = ${qLabel(mode.q)} at ${round(mode.ratio, 2)}× the median: `
+                    + 'box-scale displacement correlations (common in RMC), not a crystallographic superstructure.'
+            });
+        }
+    });
+    if (payload.untestable?.length) {
+        checks.push({ level: 'note', text: `An odd supercell axis cannot hold ${data.untestable_zone_boundary.join(', ')}: not tested.` });
     }
     return { data, checks };
 };
@@ -397,7 +689,11 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 else params.element = element;
                 if (frequency != null) params.frequency = frequency;
                 const payload = await request('orientation', params, { signal });
-                return summarizeOrientation(payload, unitCellFrom(payload));
+                const basis = structure?.basis || [];
+                const pooledSites = referenceNumber != null
+                    ? 0
+                    : (element === 'all' ? basis.length : basis.filter((site) => site.el === element).length);
+                return summarizeOrientation(payload, unitCellFrom(payload), { pooledSites });
             }
         });
 
@@ -455,6 +751,53 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 }
                 return summarizeBondAngles(await request('triplets', params, { signal }));
             }
+        });
+
+        tools.push({
+            name: 'analyze_clusters',
+            description: 'Shape of the finite clusters one element forms — the M4 tetrahedra of a lacunar spinel, '
+                + 'dimers, trimers — with bonds in [r_min, r_max] Å in the average structure (take the window from '
+                + 'find_gr_peaks: first_shell.window_A of that element pair). Every cluster in the configuration is '
+                + 'compared with a shuffle null in which each atom keeps its own site\'s displacements but takes them from '
+                + 'a random other cluster: is there a distortion beyond independent atoms, which edge pattern '
+                + '(tetrahedra: E/T2 modes, trigonal vs one edge), along which lattice axis (<100>/<110>/<111>), and is '
+                + 'the average cluster itself distorted. Use it for cluster or polyhedron distortion, Jahn–Teller, '
+                + 'dimerization or trimerization questions; single-site displacement directions cannot show these.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    element: elementProperty(elements, 'Element whose atoms form the clusters.'),
+                    r_min: { type: 'number', minimum: 0, maximum: 8, description: 'Bond window minimum (Å).' },
+                    r_max: { type: 'number', minimum: 0.5, maximum: 8, description: 'Bond window maximum (Å).' }
+                },
+                required: ['element', 'r_min', 'r_max']
+            },
+            label: ({ element, r_min: lo, r_max: hi }) => (
+                `Clusters ${element || ''}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`.trim()
+            ),
+            run: async ({ element, r_min: rMin, r_max: rMax }, { signal } = {}) => {
+                if (rMin >= rMax) throw new Error('r_min must be below r_max');
+                return summarizeClusters(await request('clusters', { element, rMin, rMax }, { signal }));
+            }
+        });
+
+        tools.push({
+            name: 'analyze_modulations',
+            description: 'Look for order that enlarges the unit cell — a superstructure the folded average structure and '
+                + 'detect_symmetry cannot show (cell doubling as in low-temperature phases, octahedral tilts, '
+                + 'charge-density waves). Fourier-transforms every site\'s displacements over the supercell\'s cell grid and '
+                + 'compares the zone-boundary points (½,0,0)…(½,½,½) and the strongest modes with the configuration\'s own '
+                + 'diffuse background (ratio to the median power, percentile). Optionally one element.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    element: elementProperty(elements, 'Only this element (default: each element).')
+                }
+            },
+            label: ({ element }) => `Superstructure test${element ? ` · ${element}` : ''}`,
+            run: async ({ element }, { signal } = {}) => summarizeModulations(
+                await request('modulations', element ? { element } : {}, { signal })
+            )
         });
     }
 

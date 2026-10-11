@@ -23,8 +23,9 @@ say “Upload”, but nothing is sent anywhere.)[^cloud-llm-privacy]
 Edge, Arc, Opera).
 
 🤖 **AI Copilot (beta)** — a chatbox over every page that answers questions about the open run by
-running the Workbench analyses itself: 7 tools (convergence, g(r) peaks, site displacements,
-displacement directions, bond angles, symmetry at any tolerance, the run summary). Each result
+running the Workbench analyses itself: 10 tools (convergence, g(r) shells and coordination, where the
+fit misses the data, site displacements, displacement directions, bond angles, cluster distortion
+against independent atoms, a superstructure test, symmetry at any tolerance, the run summary). Each result
 carries deterministic checks, and each answer ends with an **Outcome** verdict. It works with any
 OpenAI-compatible model: local (Ollama, LM Studio; nothing leaves your machine) or cloud (OpenAI,
 Gemini, Anthropic, with your key). Tested on the Demo with gemma4:26b and qwen3.8-27b
@@ -69,8 +70,11 @@ setup, backend API, file formats — lives in [docs/REFERENCE.md](docs/REFERENCE
 - **AI Copilot (beta)** — a chatbox on every page (bottom-right). Ask about the loaded run, and a
   local LLM (Ollama, LM Studio) or an opt-in cloud model (OpenAI, Gemini, Anthropic) runs the
   Workbench analyses itself. It can list
-  the site displacements, test displacement directions, compute bond angles, re-run the symmetry
-  finder and check convergence. It reads each result with deterministic checks, retries when one
+  the site displacements, test displacement directions, compute bond angles, measure the distortion
+  of clusters (M₄ tetrahedra, dimers, trimers) against independent atoms, test for order that
+  doubles the cell, integrate coordination numbers, locate the misfit in r or Q, re-run the symmetry finder and check convergence. The run
+  summary it reads says which partials each dataset barely sees and where the symmetry ladder is
+  sampling noise. It reads each result with deterministic checks, retries when one
   fails, and ends with an **Outcome** verdict. A step's *Show in* button loads the same analysis
   on its page, next to the chat. The analyses only compute; only you change the view. Only compact summaries are sent, never raw files.[^cloud-llm-privacy] Setup:
   [`web_app/frontend/src/llm/README.md`](web_app/frontend/src/llm/README.md).

@@ -69,14 +69,20 @@ tolerance, or writes or downloads a file. A step card's **Show in \<page\>** (or
    `buildRunContext()` distills the dashboard's parsed state into a compact JSON object:
    - cell and angles;
    - the symmetry block: space group, ladder, and Wyckoff orbits ranked by rms displacement;
-   - pair correlations;
+   - the symmetry noise floor: below it, the ladder's group changes are sampling noise of the site
+     means (rms displacement / √copies);
+   - pair correlations, with each first shell's mean distance (from r²g, not the g peak) and
+     coordination number;
    - move counters;
-   - run settings from the `.dat` file;
-   - per-dataset Rwp;
-   - the ln(χ²) history, downsampled to ≤ 48 points with statistics computed on the full series.
+   - run settings from the `.dat` file, saying when one measurement is fitted in both spaces;
+   - per-dataset Rwp, a Fourier-transform file marked as the same measurement;
+   - the Faber–Ziman weight of every partial in each fitted radiation (`scatteringWeights.js`);
+   - the ln(χ²) history, downsampled to ≤ 48 points with statistics computed on the full series, the
+     watchdog's verdict and the change over the last tenth of the run.
 
-   `contextToJson()` enforces a ~4,500-character budget and records each trim with an `*_omitted`
-   count. The context travels with every question, so simple questions need no tool.
+   `contextToJson()` serializes it compactly (arrays and small objects on one line), enforces a
+   ~6,000-character budget and records each trim with an `*_omitted` count. The context travels with
+   every question, so simple questions need no tool.
 2. **`prompts/system.js` + `prompts/copilot.js`**
    - `SYSTEM_PROMPT` holds the domain rules: what Rwp means, that the history is ln(χ²) of one fit
      term, and "quote the numbers, don't guess".
@@ -127,8 +133,11 @@ tolerance, or writes or downloads a file. A step card's **Show in \<page\>** (or
 7. **`copilot/runTools.js`** holds the tools over data the module already receives:
    - `read_run_data(section)`: one context section as built, before the budget trim;
    - `assess_convergence`: the watchdog heuristics plus tail slopes;
-   - `find_gr_peaks(pair)`: partial-g(r) peaks, a first-peak bond window, and the pair's
-     minimum-distance constraint with a "constraint-limited" check.
+   - `find_gr_peaks(pair)`: partial-g(r) peaks and the first coordination shell — its window,
+     mean distance, coordination numbers and their sensitivity to the cut, whether it is separated
+     from the next shell — and whether the pair's minimum-distance constraint cuts the distribution;
+   - `compare_fit(dataset)`: where the model misses the data, as Rw and the share of the misfit
+     per range of r or Q, and the largest residual features.
 8. **`copilot/outcome.js`**: `parseOutcome()` splits the verdict line from the answer. It is
    lenient about Markdown and dashes, strict about the three statuses, and takes the last line.
    **`copilot/turnState.js`** folds loop events into a turn: ordered text segments (with
@@ -186,6 +195,8 @@ In this repository the host tools live in `src/copilotTools.js`:
 | `list_sites` | the per-site PCA table, through the worker or `/api/pca/sites` |
 | `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes) |
+| `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion |
+| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show |
 | `detect_symmetry` | the symmetry finder at any tolerance, without changing the card (browser-loaded runs only) |
 
 A browser-loaded run is analysed in a worker of the Copilot's own, which Stop or a timeout
@@ -261,6 +272,33 @@ The runs found four bugs, now fixed:
 4. A server error sent mid-stream (LM Studio ran out of GPU memory) was skipped, the turn ended
    empty, and the chat crashed rendering it (`turn.items is not iterable`). The error now shows,
    and an empty reply shows its note.
+
+### A scientific review (2026-10-10, later the same day)
+
+The same Demo and the 5 K GaNb₄Se₈ run (`data/5K_try1`, loaded as a folder) were then put through
+referee-style questions with gemma4:26b, and the answers were judged against the published
+structures of both compounds (GaTa₄Se₈: Phys. Rev. Research 4, 033123 (2022); GaNb₄Se₈: Phys. Rev.
+B 109, 144101 (2024)). The first round was fluent and wrong in specific, fixable ways; the fixes
+(new context fields, a first-shell analysis, three new analyses — `compare_fit`, `analyze_clusters`,
+`analyze_modulations` — and prompt rules) are in the changelog. The third round, after the fixes:
+
+| Question | Before | After (tools called · answer) |
+|---|---|---|
+| Referee review: datasets, Rwp, convergence, sampling, constraints | "two datasets", "converged — a plateau", "no peak constraint-limited" | none (the context holds it) · one measurement fitted in both spaces; still improving (−0.11 over the last tenth); 3.5 moves/atom; Ga–Se tail shaped by the 2.2 Å constraint (g at 8.7 % of the peak); Ga weakly constrained (~5 % of the signal) ✓ |
+| Is the Ta₄ cluster distorted? | "peak shifted to 2.93 Å: distorted" (no tool) | `find_gr_peaks` → `analyze_clusters` with its shell window · 23 % *less* distorted than independent atoms (z = −64), breathing +27 %, weak <110> elongation and <111> compression ✓ (it read the mean edge ladder as the range of bonds — the tool now says what the ladder is) |
+| Preferred Ta displacement direction; trigonal or tetragonal? | pooled map isotropic → "no distortion" | `list_sites`, pooled directions (with the new note), `analyze_clusters` · <111> compression preferred (19 % vs 14 %, z = 11), no <001> signal ✓ |
+| Is GaSe₄ regular? | window 2.21–2.63 Å (CN 3.87), "± 0.02 Å" invented | `find_gr_peaks` → `compute_bond_angles` at the shell window 2.18–2.79 Å · CN 3.99, 2.434 Å (sd 0.095 measured), 109.4° (sd 4.1°), constraint caveat ✓ |
+| Where does the model miss G(r)? | "the context lacks it" (partial) | `compare_fit` · 62 % of the misfit at 2.34–5.28 Å (Rw 0.024 there), largest residuals at 2.53, 3.66, 3.82, 4.9 Å ✓ |
+| What can the data say about Ga? | — | none · weak weights, light sampling, constraint-shaped Ga–Se tail; trust only the average site ✓ |
+| Is the average structure still cubic? | lower rungs read as symmetry breaking | none · F-43m; the P-42₁m … P1 rungs lie below the 0.031 Å noise floor ✓ |
+| 5 K: does the configuration show the reported P2₁2₁2₁ Nb₄ distortion? | — | `find_gr_peaks` → `analyze_clusters` · no: clusters 7 % less distorted than independent atoms, average cluster regular (3.025–3.035 Å), inconsistent with the report ✓ |
+| 5 K: converged, and where in r and Q is the misfit? | — | `assess_convergence`, `compare_fit` (G(r) only) · improving; G(r) misfit at 10.8–15 Å ~ (did not check F(Q), yet called it achieved) |
+| 5 K: cubic? A hidden superstructure? | no tool could say | `read_run_data`, `analyze_modulations` · F-43m; no zone-boundary order; the strongest modes are box-scale waves ✓ |
+
+What a referee should take from the runs themselves: neither RMC configuration carries a
+cluster distortion beyond independent atoms, nor the cell doubling diffraction finds at 5 K; both
+carry box-scale displacement waves; the Ta–Ta and Ga–Se distributions show the closest-approach
+and shell-gap effects above. The checks on the step cards remain the part to trust.
 
 ## Import boundary and extraction recipe
 

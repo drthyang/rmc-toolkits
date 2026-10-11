@@ -32,7 +32,7 @@ const getWorker = () => {
 // One analysis request on either data source: a worker when the `.rmc6f`
 // text of a browser-loaded run is given, otherwise the Flask /api/pca/* or
 // /api/triplets endpoint against the run directory. `kind` is 'sites' | 'kde'
-// | 'orientation' | 'triplets'; `params` are the flat request fields both
+// | 'orientation' | 'triplets' | 'clusters' | 'modulations'; `params` are the flat request fields both
 // transports take, and can never override `kind`, `text` or `dir`. The pages
 // reach it through useSiteCloud's requestPca (the shared worker, no signal);
 // the AI Copilot's tools (copilotTools.js) pass their own `worker`, which they
@@ -66,7 +66,9 @@ export function requestAnalysis(kind, params, { rmc6fText, directory, worker = n
     const endpoint = {
         sites: '/api/pca/sites',
         orientation: '/api/pca/orientation',
-        triplets: '/api/triplets'
+        triplets: '/api/triplets',
+        clusters: '/api/clusters',
+        modulations: '/api/modulations'
     }[kind] ?? '/api/pca/kde';
     return axios
         .get(`${API_BASE_URL}${endpoint}`, { params: { ...params, dir: directory || '.' }, ...(signal ? { signal } : {}) })

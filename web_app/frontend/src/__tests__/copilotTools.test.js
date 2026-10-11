@@ -14,6 +14,8 @@ import {
     buildCopilotTools,
     cartesianToUvw,
     summarizeBondAngles,
+    summarizeClusters,
+    summarizeModulations,
     summarizeOrientation,
     summarizeSites,
     summarizeSymmetry
@@ -29,7 +31,10 @@ const tools = Object.fromEntries(
 
 describe('Copilot tools on the demo run', () => {
     it('offers the engine tools with the run\'s elements', () => {
-        expect(Object.keys(tools)).toEqual(['list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'detect_symmetry']);
+        expect(Object.keys(tools)).toEqual([
+            'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'analyze_clusters',
+            'analyze_modulations', 'detect_symmetry'
+        ]);
         expect(tools.compute_bond_angles.parameters.properties.apex.enum).toEqual(['Ga', 'Se', 'Ta']);
         expect(tools.analyze_displacement_directions.parameters.properties.element.enum).toEqual(['Ga', 'Se', 'Ta', 'all']);
     });
@@ -86,6 +91,15 @@ describe('Copilot tools on the demo run', () => {
         await expect(tools.analyze_displacement_directions.run({})).rejects.toThrow('give site_ref');
     });
 
+    it('analyze_displacement_directions: a pooled map says its sites\' frames may cancel; one site does not', async () => {
+        const pooled = await tools.analyze_displacement_directions.run({ element: 'Ta', frequency: 4 });
+        const note = pooled.checks.find((check) => /^Pooled over/.test(check.text));
+        expect(note.text).toMatch(/^Pooled over 16 sites\./);
+        expect(note.text).toMatch(/analyze_clusters/);
+        const single = await tools.analyze_displacement_directions.run({ site_ref: 1, frequency: 4 });
+        expect(single.checks.some((check) => /^Pooled over/.test(check.text))).toBe(false);
+    });
+
     it('compute_bond_angles: the Ta4 cluster gives 60° Ta–Ta–Ta angles', async () => {
         const { data, checks } = await tools.compute_bond_angles.run({
             end1: 'Ta', apex: 'Ta', end2: 'Ta', r12_min: 2.7, r12_max: 3.3
@@ -101,6 +115,24 @@ describe('Copilot tools on the demo run', () => {
         expect(data.modes[0].angle_deg).toBeLessThan(65);
         expect(data.histogram_10deg.reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 1);
         expect(checks.at(-1).level).toBe('ok');
+        // The bond spread is measured, from the engine's length histogram.
+        expect(data.bond_ab.sd_A).toBeGreaterThan(0.05);
+        expect(data.bond_ab.sd_A).toBeLessThan(0.2);
+    });
+
+    it('analyze_clusters: the demo\'s Ta4 tetrahedra against independent atoms', async () => {
+        const { data, checks } = await tools.analyze_clusters.run({ element: 'Ta', r_min: 2.65, r_max: 3.33 });
+        expect(data.clusters).toMatchObject({ members: 4, edges: 6, count: 4000, templates: 4 });
+        expect(data.local.ladder_A.obs).toHaveLength(6);
+        expect(data.local.tetrahedral_modes.t2_trigonality.obs).toBeGreaterThan(1 / 3);
+        // The RMC clusters are more rigid than independent atoms make them.
+        expect(data.local.ladder_width_A.change).toBeLessThan(-0.1);
+        expect(checks.find((check) => /LESS distorted/.test(check.text)).level).toBe('ok');
+        expect(checks.some((check) => /compressed along <111>/.test(check.text))).toBe(true);
+        // Fits the per-result budget the agent loop gives a tool.
+        expect(JSON.stringify(data).length).toBeLessThan(3000);
+        expect(tools.analyze_clusters.label({ element: 'Ta', r_min: 2.65, r_max: 3.33 })).toBe('Clusters Ta · 2.65–3.33 Å');
+        await expect(tools.analyze_clusters.run({ element: 'Ta', r_min: 3.3, r_max: 2.6 })).rejects.toThrow('r_min must be below r_max');
     });
 
     it('compute_bond_angles: a window that cuts through the TaSe6 shell warns; the whole shell does not', async () => {
@@ -130,6 +162,19 @@ describe('Copilot tools on the demo run', () => {
             .rejects.toThrow('r12_min must be below r12_max');
         await expect(tools.compute_bond_angles.run({ end1: 'Ta', apex: 'Ta', end2: 'Ta', r12_min: 2, r12_max: 3, r23_min: 2 }))
             .rejects.toThrow('together');
+    });
+
+    it('analyze_modulations: no cell doubling in the demo, and its box-scale waves noted', async () => {
+        const { data, checks } = await tools.analyze_modulations.run({});
+        expect(data.supercell).toEqual([10, 10, 10]);
+        expect(data.elements.map((entry) => entry.element)).toEqual(['Ga', 'Se', 'Ta']);
+        expect(data.elements[0].zone_boundary).toHaveLength(7);
+        expect(checks[0].level).toBe('ok');
+        expect(checks[0].text).toMatch(/^No order that doubles the cell/);
+        expect(checks.some((check) => /long-wavelength wave/.test(check.text))).toBe(true);
+        expect(JSON.stringify(data).length).toBeLessThan(3000);
+        const one = await tools.analyze_modulations.run({ element: 'Ta' });
+        expect(one.data.elements.map((entry) => entry.element)).toEqual(['Ta']);
     });
 
     it('tells the Bond Geometry and Displacement Directions pages what to load', () => {
@@ -178,6 +223,38 @@ describe('Copilot summarizers', () => {
             lengths12: { meanLength: 2.6, uniqueBonds: 4 }, sharedEnds: true
         });
         expect(checks).toEqual([{ level: 'warn', text: '80 % of the Ta atoms have no Se–Ta bond in the window: it misses most of the shell.' }]);
+    });
+
+    it('cluster checks: an extended network and an empty window fail with advice', () => {
+        const extended = summarizeClusters({ element: 'Se', window: [7.5, 8], sites: [7], extended: true, templates: [], kinds: [] });
+        expect(extended.checks).toHaveLength(1);
+        expect(extended.checks[0].level).toBe('fail');
+        expect(extended.checks[0].text).toMatch(/extended network/);
+        const empty = summarizeClusters({ element: 'Nb', window: [0.5, 1], sites: [1, 2], isolatedSites: 2, extended: false, templates: [], kinds: [] });
+        expect(empty.data.sites_without_bond).toBe(2);
+        expect(empty.checks[0].text).toMatch(/^No two Nb sites/);
+    });
+
+    it('modulation checks: a zone-boundary point standing out of the background is order', () => {
+        const point = (q, ratio, percentile) => ({ q, ratio, percentile });
+        const { checks } = summarizeModulations({
+            supercell: [6, 6, 6],
+            wavevectors: 215,
+            untestable: [],
+            elements: [{
+                element: 'Nb',
+                sites: 4,
+                zoneBoundary: [point([0, 0, 0.5], 204, 99.53), point([0.5, 0, 0], 0.9, 40)],
+                strongest: [point([0, 0, 0.5], 204, 99.53), point([0.1, 0, 0], 2, 90)]
+            }]
+        });
+        expect(checks).toHaveLength(1);
+        expect(checks[0]).toEqual({
+            level: 'ok',
+            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, above 99.5 % of all wavevectors — a superstructure doubling the cell along c.'
+        });
+        const odd = summarizeModulations({ supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], elements: [{ element: 'Nb', sites: 0 }] });
+        expect(odd.checks[0].level).toBe('fail');
     });
 
     it('symmetry checks: not analysed, undetermined, lower bound', () => {

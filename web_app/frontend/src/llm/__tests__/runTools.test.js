@@ -68,7 +68,7 @@ describe('buildRunTools', () => {
         ]);
     });
 
-    it('finds g(r) peaks, a first-peak window and a constraint-limited first peak', async () => {
+    it('finds g(r) peaks, the first shell and a constraint-limited first peak', async () => {
         const run = {
             plotFiles: [partialsFile()],
             runSettings: { atoms: ['Ga', 'Se', 'Ta'], minimumDistancesA: [3.0, 2.38, 2.8, 3.0, 2.3, 3.0] }
@@ -81,9 +81,19 @@ describe('buildRunTools', () => {
         expect(tase.data.peaks_A.map((peak) => peak.r)).toEqual([2.6, 4.4]);
         expect(tase.data.first_peak_window_A[0]).toBeLessThan(2.6);
         expect(tase.data.first_peak_window_A[1]).toBeGreaterThan(2.6);
+        // The shell runs from the onset to the deep minimum before 4.4 Å.
+        const [low, high] = tase.data.first_shell.window_A;
+        expect(low).toBeLessThan(2.45);
+        expect(high).toBeGreaterThan(2.8);
+        expect(high).toBeLessThan(4.1);
+        expect(tase.data.first_shell.peaks_in_shell_A).toEqual([2.6]);
+        // No cell in this run: no coordination number, never a guessed one.
+        expect(tase.data.first_shell.cn).toBeUndefined();
         // Se-Ta's constraint (2.3 Å, labelled Se-Ta by the .dat pair order) is matched to Ta-Se.
         expect(tase.data.min_distance_constraint_A).toBe(2.3);
-        expect(tase.checks).toEqual([{ level: 'ok', text: 'First peak at 2.6 Å.' }]);
+        expect(tase.checks).toHaveLength(1);
+        expect(tase.checks[0]).toMatchObject({ level: 'ok' });
+        expect(tase.checks[0].text).toMatch(/^First peak at 2\.6 Å; first shell to [\d.]+ Å, mean 2\.6\d* Å\.$/);
 
         const gase = await tool.run({ pair: 'Ga-Se' });
         expect(gase.data.min_distance_constraint_A).toBe(2.38);
@@ -91,9 +101,52 @@ describe('buildRunTools', () => {
         expect(gase.checks[0].text).toMatch(/constraint-limited/);
     });
 
-    it('offers a window over both peaks when the second overlaps the first-peak window', async () => {
-        // Like the demo's Ta–Se: a sharp shell at 2.52 Å and a broad one at
-        // 2.74 Å, more than one first-peak FWHM apart but overlapping its window.
+    it('integrates the coordination number, and reads the mean distance from r²g(r)', async () => {
+        // A shell of exactly 6 B around each A at 2.6 Å (σ 0.12 Å): g = CN·N(r)/(4πρ r²),
+        // so r²g integrates to 6 and has its mean at 2.6 Å, while g itself peaks below it.
+        const L = 20;
+        const counts = { Ta: 400, Se: 800 };
+        const rhoSe = counts.Se / L ** 3;
+        const x = grid(600, 0.01);
+        const normal = (r) => Math.exp(-((r - 2.6) ** 2) / (2 * 0.12 ** 2)) / (0.12 * Math.sqrt(2 * Math.PI));
+        const y = x.map((r) => (r > 0 ? 6 * normal(r) / (4 * Math.PI * rhoSe * r * r) : 0));
+        const { find_gr_peaks: tool } = toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts: counts },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ta-Se', x, y }] } }]
+        });
+        const { data, checks } = await tool.run({ pair: 'Ta-Se' });
+        expect(data.peaks_A[0].r).toBeLessThan(2.6);
+        expect(data.first_shell.mean_d_A).toBeCloseTo(2.6, 2);
+        expect(data.first_shell.sd_d_A).toBeCloseTo(0.12, 2);
+        expect(data.first_shell.cn.Se_per_Ta).toBeCloseTo(6, 1);
+        // Each Se has 6 · ρ(Ta)/ρ(Se) = 3 Ta.
+        expect(data.first_shell.cn.Ta_per_Se).toBeCloseTo(3, 1);
+        expect(data.first_shell.trough_g_fraction).toBeLessThan(0.02);
+        expect(checks.map((check) => check.level)).toEqual(['ok']);
+        expect(checks[0].text).toMatch(/CN 6 Se per Ta, 3 Ta per Se/);
+    });
+
+    it('warns when the first shell is not separated from the next, with the cut sensitivity', async () => {
+        // The demo's Ta–Ta: intracluster 3.0 Å, intercluster 4.3 Å, distances filling the gap.
+        const L = 20;
+        const x = grid(700, 0.01);
+        const y = x.map((r) => gaussian(r, 3.0, 0.1, 5) + gaussian(r, 4.3, 0.1, 4) + (r > 3.2 && r < 4.1 ? 0.35 : 0));
+        const { find_gr_peaks: tool } = toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts: { Ta: 1000 } },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ta-Ta', x, y }] } }]
+        });
+        const { data, checks } = await tool.run({ pair: 'Ta-Ta' });
+        expect(data.first_shell.trough_g_fraction).toBeGreaterThan(0.02);
+        const [earlier, later] = data.first_shell.cn_if_cut_0p2A_earlier_later;
+        expect(earlier).toBeLessThan(data.first_shell.cn.Ta_per_Ta);
+        expect(later).toBeGreaterThan(data.first_shell.cn.Ta_per_Ta);
+        expect(checks[0].level).toBe('warn');
+        expect(checks[0].text).toMatch(/not separated from the next/);
+        expect(checks[0].text).toMatch(/depends on the cut/);
+    });
+
+    it('holds a split shell whole and says so', async () => {
+        // Like the demo's Ta–Se: a sharp shell at 2.52 Å and a broad one at 2.74 Å, one TaSe6 octahedron.
         const x = grid(400, 0.01);
         const y = x.map((r) => gaussian(r, 2.52, 0.05, 8) + gaussian(r, 2.74, 0.19, 4));
         const { find_gr_peaks: tool } = toolMap({
@@ -101,18 +154,69 @@ describe('buildRunTools', () => {
         });
         const { data, checks } = await tool.run({ pair: 'Ta-Se' });
         const [first, second] = data.peaks_A;
-        expect(second.r - first.r).toBeGreaterThan(first.fwhm);
-        const [low, high] = data.first_peak_window_A;
-        expect(second.r - second.fwhm / 2).toBeLessThan(high);
-        expect(data.first_two_peaks_window_A[0]).toBe(low);
-        expect(data.first_two_peaks_window_A[1]).toBeCloseTo(second.r + second.fwhm / 2, 2);
-        expect(checks).toHaveLength(1);
-        expect(checks[0].level).toBe('note');
-        expect(checks[0].text).toMatch(/overlaps the first-peak window/);
+        expect(data.first_shell.peaks_in_shell_A).toEqual([first.r, second.r]);
+        // The shell window reaches past the second peak; the first-peak window does not.
+        expect(data.first_shell.window_A[1]).toBeGreaterThan(second.r + second.fwhm / 2);
+        expect(data.first_peak_window_A[1]).toBeLessThan(second.r + second.fwhm / 2);
+        expect(checks.map((check) => check.level)).toEqual(['note', 'ok']);
+        expect(checks[0].text).toMatch(/first shell holds 2 peaks/);
+    });
 
-        // Well-separated peaks (the Ta–Se fixture above, 2.6 and 4.4 Å) get no window over both.
-        const separated = await toolMap({ plotFiles: [partialsFile()] }).find_gr_peaks.run({ pair: 'Ta-Se' });
-        expect(separated.data.first_two_peaks_window_A).toBeUndefined();
+    it('flags a distribution cut at the closest-approach constraint even when its half-maximum clears it', async () => {
+        // Ga–Se at 2.42 Å (FWHM ~0.2 Å) with a 2.2 Å constraint: g just above 2.2 Å is ~9 % of the peak.
+        const x = grid(500, 0.01);
+        const y = x.map((r) => (r < 2.2 ? 0 : gaussian(r, 2.42, 0.1, 8)));
+        const { find_gr_peaks: tool } = toolMap({
+            runSettings: { atoms: ['Ga', 'Se'], minimumDistancesA: [3.0, 2.2, 3.0] },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Ga-Se', x, y }] } }]
+        });
+        const { data, checks } = await tool.run({ pair: 'Ga-Se' });
+        expect(data.peaks_A[0].r - data.peaks_A[0].fwhm / 2).toBeGreaterThan(2.25);
+        expect(data.g_at_constraint_fraction).toBeGreaterThan(0.05);
+        expect(checks.find((check) => check.level === 'warn').text).toMatch(/2\.2 Å closest-approach constraint cuts this distribution/);
+    });
+
+    it('compare_fit: locates the misfit by range and names the largest residual features', async () => {
+        // A G(r) the model reproduces except a bump at 3.5 Å (model above the data).
+        const x = grid(1000, 0.02).map((r) => r + 1);
+        const exp = x.map((r) => Math.sin(3 * r) * Math.exp(-r / 15));
+        const calc = exp.map((value, i) => value + gaussian(x[i], 3.5, 0.05, 0.3));
+        const { compare_fit: tool } = toolMap({
+            plotFiles: [{
+                name: 'run_FT_XFQ1.csv',
+                plotKind: 'xpdf',
+                plotData: { series: [{ label: 'X_ray-calc', x, y: calc }, { label: 'X_ray_exp_renorm', x, y: exp }] }
+            }]
+        });
+        expect(tool.parameters.properties.dataset.enum).toEqual(['xpdf']);
+        const { data, checks } = await tool.run({ dataset: 'xpdf' });
+        expect(data.axis).toBe('r');
+        expect(data.by_range).toHaveLength(6);
+        expect(data.by_range[0].share_of_misfit).toBeGreaterThan(0.95);
+        expect(data.largest_residuals[0].r).toBeCloseTo(3.5, 1);
+        expect(data.largest_residuals[0].model_minus_data).toBeGreaterThan(0);
+        expect(checks).toHaveLength(1);
+        expect(checks[0].level).toBe('ok');
+        expect(checks[0].text).toMatch(/^Rw [\d.]+ over r = 1–20\.98 Å; the misfit is concentrated in r = 1–4\.33 Å/);
+    });
+
+    it('compare_fit: reads the roles from the labels, keys repeated kinds, and flags a poor weak-signal range', async () => {
+        // Columns given (data, model): the labels decide. The high-Q third is weak and badly fitted.
+        const x = grid(900, 0.03).map((q) => q + 0.5);
+        const exp = x.map((q) => (q < 18 ? 2 * Math.sin(q) : 0.01 * Math.sin(q)));
+        const calc = exp.map((value, i) => (x[i] < 18 ? value * 1.01 : value * 0.3));
+        const file = (name) => ({
+            name,
+            plotKind: 'neutron_sq',
+            plotData: { series: [{ label: 'S(Q)_Expt', x, y: exp }, { label: 'S(Q)_RMC', x, y: calc }] }
+        });
+        const { compare_fit: tool } = toolMap({ plotFiles: [file('a_SQ1.csv'), file('a_SQ2.csv')] });
+        expect(tool.parameters.properties.dataset.enum).toEqual(['neutron_sq', 'neutron_sq_2']);
+        const { data, checks } = await tool.run({ dataset: 'neutron_sq_2', n_ranges: 3 });
+        expect(data.model_series).toBe('S(Q)_RMC');
+        expect(data.data_series).toBe('S(Q)_Expt');
+        expect(data.by_range.at(-1).rw).toBeGreaterThan(0.5);
+        expect(checks.some((check) => /poorest at Q = /.test(check.text))).toBe(true);
     });
 
     it('fails clearly when no peak is found below r_max', async () => {

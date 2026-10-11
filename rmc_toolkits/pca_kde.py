@@ -149,6 +149,7 @@ class SiteDisplacements:
     atom_elements: np.ndarray | None = None  # (N,) each row's own species
     element_counts: tuple[dict[str, int], ...] | None = None  # (S,) composition per site
     parse_warning: str | None = None  # Rmc6fParseReport.warning() of the atom section
+    cell_indices: np.ndarray | None = None  # (N, 3) int: each row's box copy (cell)
 
     @property
     def species(self) -> list[str]:
@@ -275,6 +276,7 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
         atom_elements=atom_elements,
         element_counts=element_counts,
         parse_warning=report.warning(),
+        cell_indices=cells_array.astype(int),
     )
 
 

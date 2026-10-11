@@ -32,6 +32,11 @@ const TOOL_RULES = [
     '(4) answer, quoting the numbers from the tool results.',
     'peakSignificance, mapSignificance and anisotropy significances are',
     'calibrated one-sided sigma; ≥ 3 is significant.',
+    'A g(r) peak position or width cannot tell a distortion from thermal',
+    'spread: for a cluster or polyhedron distortion (Jahn–Teller, dimers,',
+    'trimers) run analyze_clusters or compute_bond_angles, and for where the',
+    'fit fails run compare_fit. A z-score with a tiny change is not a finding:',
+    'quote both.',
     'Tools only compute: they never change what the user sees.'
 ].join(' ');
 

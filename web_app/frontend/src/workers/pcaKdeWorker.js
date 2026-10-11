@@ -9,9 +9,13 @@
 //   { kind: 'orientation', referenceNumber | element, ...options } -> hex-binned
 //     solid-angle histogram of the displacement directions
 //   { kind: 'triplets', triplet, bond12, ...options } -> bond-angle summary
-// mirroring the Flask /api/pca/sites, /api/pca/kde, /api/pca/orientation and
-// /api/triplets endpoints so both runtime modes present the identical shape
-// to the UI.
+//   { kind: 'clusters', element, rMin, rMax } -> cluster distortion vs its
+//     shuffle null (the AI Copilot's analyze_clusters)
+//   { kind: 'modulations', element? } -> displacement power per wavevector
+//     (the AI Copilot's analyze_modulations)
+// mirroring the Flask /api/pca/sites, /api/pca/kde, /api/pca/orientation,
+// /api/triplets, /api/clusters and /api/modulations endpoints so both runtime modes present the
+// identical shape to the UI.
 
 import {
     DEFAULT_CLUSTER_THRESHOLD,
@@ -22,6 +26,8 @@ import {
 } from './pcaKde.js';
 import { siteOrientationHistogram } from './orientation.js';
 import { APP_MAX_ANGLES, bondAngleSummary, isBlankValue } from './triplets.js';
+import { clusterDistortion } from './clusters.js';
+import { displacementModulations } from './modulations.js';
 import { assertFiniteResult, requestNumber, requestObject } from './requestGuards.js';
 
 // Parsing the whole configuration into clouds is the expensive part, so cache it
@@ -89,7 +95,10 @@ const summarizeSites = (parsed, probability) => {
     };
 };
 
-const KINDS = ['sites', 'kde', 'orientation', 'triplets'];
+const KINDS = ['sites', 'kde', 'orientation', 'triplets', 'clusters', 'modulations'];
+// As app.MAX_CLUSTER_WINDOW: a cluster's bonds are first-shell distances, and
+// a wider window only links everything into one network.
+export const MAX_CLUSTER_WINDOW = 8;
 
 export const handlePcaMessage = async (data, getText) => {
     const { kind = 'kde', probability = 0.5, clusterThreshold = DEFAULT_CLUSTER_THRESHOLD } = requestObject(data);
@@ -155,6 +164,21 @@ export const handlePcaMessage = async (data, getText) => {
         // Atom lines the shared .rmc6f grammar skipped, or null -- the same
         // text as /api/triplets' parseWarning (bond_angle_summary_from_file).
         return { ...summary, parseWarning: parsed.parseWarning ?? null };
+    }
+
+    if (kind === 'modulations') {
+        // ''/'all'/absent = every element, as the /api/modulations query.
+        const element = isBlankValue(data.element) || data.element === 'all' ? null : String(data.element);
+        return assertFiniteResult(displacementModulations(parsed, element));
+    }
+
+    if (kind === 'clusters') {
+        // Flat scalars (element, rMin, rMax), as the /api/clusters query.
+        const missing = ['element', 'rMin', 'rMax'].filter((key) => isBlankValue(data[key]));
+        if (missing.length) throw new Error(`${missing.join(', ')} required`);
+        const rMax = requestNumber(data.rMax, 'rMax', { gt: 0, le: MAX_CLUSTER_WINDOW });
+        const rMin = requestNumber(data.rMin, 'rMin', { ge: 0 });
+        return assertFiniteResult(clusterDistortion(parsed, String(data.element), [rMin, rMax]));
     }
 
     if (kind === 'orientation') {

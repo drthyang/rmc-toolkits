@@ -171,6 +171,10 @@ export const parseRunSettings = (text) => {
                 if (subKey === 'FIT_TYPE' || (subKey === 'DATA_TYPE' && !block.entry.fit_type)) {
                     block.entry.fit_type = subValue.trim();
                 }
+                // A reciprocal-space dataset can also be fitted in real space
+                // (RMCProfile Fourier-transforms it): one measurement, two fits.
+                if (subKey === 'REAL_SPACE_FIT') block.entry.real_space_fit = true;
+                if (subKey === 'RECIPROCAL_SPACE_FIT') block.entry.reciprocal_space_fit = true;
             }
             continue;
         }

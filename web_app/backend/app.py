@@ -34,6 +34,8 @@ from rmc_toolkits.pca_kde import (
     site_pca_kde,
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
+from rmc_toolkits.clusters import cluster_distortion
+from rmc_toolkits.modulations import displacement_modulations
 from rmc_toolkits.parsers import (
     Rmc6fParseReport,
     find_run_configuration,
@@ -468,6 +470,7 @@ class _FileCache:
 _POSITIONS_CACHE = _FileCache(16)  # /api/kde/slice: per (file, element)
 _SITES_CACHE = _FileCache(8)  # /api/pca/sites, /api/pca/kde, /api/pca/orientation
 _TRIPLETS_CACHE = _FileCache(16)  # /api/triplets: per (file, every parameter)
+_CLUSTERS_CACHE = _FileCache(16)  # /api/clusters: per (file, element, window)
 _SCALING_CACHE = _FileCache(8)  # /api/scaling/*: per (data file, config, mode, a, b, sigma)
 
 
@@ -1084,6 +1087,81 @@ def triplets_endpoint():
         )
         result["source"] = str(rmc6f_path)
         return jsonify(result)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# A cluster's bonds are first-shell distances; a wider window only links every
+# atom of the element into one network (the browser worker's MAX_CLUSTER_WINDOW).
+MAX_CLUSTER_WINDOW = 8.0
+
+
+@app.route("/api/clusters", methods=["GET"])
+def clusters_endpoint():
+    """Cluster distortion of one element's finite clusters against a shuffle null.
+
+    Params: element, rMin and rMax (the bond window in angstrom that links the
+    element's atoms into clusters in the average structure; rMax <= 8).
+    Payload shape is defined by rmc_toolkits.clusters.cluster_distortion and
+    mirrored by the browser worker's 'clusters' request.
+    """
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+        element = (request.args.get("element") or "").strip().capitalize()
+        r_min = _query_number("rMin", None, ge=0.0)
+        r_max = _query_number("rMax", None, gt=0.0, le=MAX_CLUSTER_WINDOW)
+        missing = [name for name, value in (("element", element), ("rMin", r_min), ("rMax", r_max)) if value in (None, "")]
+        if missing:
+            raise ValueError(f"{', '.join(missing)} required")
+        sites = _cached_site_displacements(rmc6f_path)
+        result = dict(
+            _CLUSTERS_CACHE.get(
+                rmc6f_path,
+                (element, r_min, r_max),
+                lambda: cluster_distortion(sites, element, (r_min, r_max)),
+            )
+        )
+        result["source"] = str(rmc6f_path)
+        return _strict_result_response(result)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except SourceChangedError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/modulations", methods=["GET"])
+def modulations_endpoint():
+    """Displacement power at every wavevector of the supercell's cell grid.
+
+    Params: element (optional; every element when absent). Payload shape is
+    defined by rmc_toolkits.modulations.displacement_modulations and mirrored
+    by the browser worker's 'modulations' request.
+    """
+    try:
+        target = _resolve_inside_root(request.args.get("dir", "."))
+        rmc6f_path = _find_rmc6f(target)
+        element = (request.args.get("element") or "").strip() or None
+        if element is not None and element.lower() == "all":
+            element = None
+        sites = _cached_site_displacements(rmc6f_path)
+        result = displacement_modulations(sites, element)
+        result["source"] = str(rmc6f_path)
+        return _strict_result_response(result)
     except PermissionError as exc:
         return jsonify({"error": str(exc)}), 403
     except FileNotFoundError as exc:

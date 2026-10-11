@@ -124,7 +124,7 @@ const norm = (v) => Math.hypot(v[0], v[1], v[2]);
 
 // Perpendicular width of the box along each lattice direction:
 // w_i = V / |a_j × a_k| (mirrors _perpendicular_widths).
-const perpendicularWidths = (lattice) => {
+export const perpendicularWidths = (lattice) => {
   const [a, b, c] = lattice;
   const crosses = [cross(b, c), cross(c, a), cross(a, b)];
   const volume = Math.abs(
@@ -231,7 +231,7 @@ const neighborBonds = (wrapped, centerRows, candidateRows, lattice, windows) => 
 // Per-center bond counts by window-membership pattern, storing no bond: the
 // counting pass of a budgeted request (mirrors _neighbor_bonds(count_only)).
 // patterns[center * 2^W + member] = number of that center's bonds.
-const countPatterns = (wrapped, centerRows, candidateRows, lattice, windows) => {
+export const countPatterns = (wrapped, centerRows, candidateRows, lattice, windows) => {
   const nPatterns = 1 << windows.length;
   const patterns = new Float64Array(centerRows.length * nPatterns);
   visitNeighbors(wrapped, centerRows, candidateRows, lattice, windows,
