@@ -93,6 +93,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                 text: event.text,
                 outcome: event.outcome,
                 stoppedBy: event.stoppedBy,
+                cut: Boolean(event.cut),
                 streaming: false
             };
         }

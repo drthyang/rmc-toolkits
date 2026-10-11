@@ -303,6 +303,15 @@ describe('runCopilotTurn', () => {
         expect(events.filter((event) => event.type === 'text').map((event) => event.delta).join('')).toBe(done.text);
     });
 
+    it('marks a reply that stopped at the length limit as cut', async () => {
+        const callModel = () => (async function* stream() {
+            yield { content: 'The angles are' };
+            yield { finishReason: 'length' };
+        }());
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
+        expect(events.at(-1)).toMatchObject({ type: 'done', text: 'The angles are', stoppedBy: 'answer', cut: true });
+    });
+
     it('marks an empty reply', async () => {
         const { callModel } = scriptedModel([{ text: '  ' }]);
         const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));

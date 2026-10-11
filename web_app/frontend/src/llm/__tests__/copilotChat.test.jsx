@@ -17,6 +17,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import CopilotChat from '../components/CopilotChat';
 import { DOCK_STORAGE_KEY } from '../components/dockLayout';
+import { forgetServers } from '../provider/contextGuard';
 import { saveSettings } from '../settings';
 
 const sse = (chunks) => {
@@ -31,6 +32,12 @@ const sse = (chunks) => {
     return { ok: true, status: 200, body };
 };
 const delta = (fields, finish = null) => ({ choices: [{ delta: fields, finish_reason: finish }] });
+
+// The mocked server is OpenAI-compatible only: the Copilot's probes of an
+// Ollama or LM Studio API (provider/contextGuard.js) get a 404.
+const notFound = { ok: false, status: 404, json: async () => ({ error: 'not found' }) };
+const isServerProbe = (url) => /\/api\//.test(String(url));
+const modelList = { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) };
 
 const replies = () => [
     sse([
@@ -65,14 +72,14 @@ describe('CopilotChat', () => {
 
     beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        forgetServers();
         localStorage.removeItem(DOCK_STORAGE_KEY);
         saveSettings({ baseUrl: 'http://localhost:11434/v1', model: '', apiKey: '', copilotTools: true });
         chatBodies = [];
         const queue = replies();
         fetchMock = vi.fn(async (url, options = {}) => {
-            if (String(url).endsWith('/models')) {
-                return { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) };
-            }
+            if (isServerProbe(url)) return notFound;
+            if (String(url).endsWith('/v1/models')) return modelList;
             chatBodies.push(JSON.parse(options.body));
             return queue.shift();
         });
@@ -206,7 +213,7 @@ describe('CopilotChat', () => {
 
         await openChat();
         expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
-        expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/models'))).toHaveLength(1);
+        expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/v1/models'))).toHaveLength(1);
     });
 
     it('starts a new conversation when another run opens', async () => {
@@ -229,9 +236,10 @@ describe('CopilotChat', () => {
             sse([delta({}, 'stop')]),
             sse([{ error: { message: 'Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)' } }])
         ];
-        vi.stubGlobal('fetch', vi.fn(async (url) => (String(url).endsWith('/models')
-            ? { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) }
-            : queue.shift())));
+        vi.stubGlobal('fetch', vi.fn(async (url) => {
+            if (isServerProbe(url)) return notFound;
+            return String(url).endsWith('/v1/models') ? modelList : queue.shift();
+        }));
         act(() => root.render(chat()));
         await openChat();
 
@@ -258,9 +266,8 @@ describe('CopilotChat', () => {
     // A queued reply may be a function of the request body: a model that
     // reads what it was sent.
     const stubReplies = (queue) => vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
-        if (String(url).endsWith('/models')) {
-            return { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) };
-        }
+        if (isServerProbe(url)) return notFound;
+        if (String(url).endsWith('/v1/models')) return modelList;
         const body = JSON.parse(options.body);
         chatBodies.push(body);
         const next = queue.shift();
@@ -325,6 +332,93 @@ describe('CopilotChat', () => {
         expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
         act(() => container.querySelector('.llm-chat-panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
         expect(container.querySelector('.llm-dock-rail').className).not.toContain('has-unread');
+    });
+
+    describe('the context guard on Ollama', () => {
+        const ndjson = (objects) => {
+            const encoder = new TextEncoder();
+            return { ok: true, status: 200, body: new ReadableStream({
+                start(controller) {
+                    controller.enqueue(encoder.encode(objects.map((object) => `${JSON.stringify(object)}\n`).join('')));
+                    controller.close();
+                }
+            }) };
+        };
+        // Ollama with gemma4:26b loaded at a 4,096-token default context.
+        const ollama = ({ max = 262144, replies = [] } = {}) => {
+            const chats = [];
+            const fetchMock = vi.fn(async (url, options = {}) => {
+                const path = new URL(String(url)).pathname;
+                if (path === '/v1/models') return { ok: true, status: 200, json: async () => ({ data: [{ id: 'gemma4:26b' }] }) };
+                if (path === '/api/version') return { ok: true, status: 200, json: async () => ({ version: '0.40.2' }) };
+                if (path === '/api/ps') return { ok: true, status: 200, json: async () => ({ models: [{ name: 'gemma4:26b', model: 'gemma4:26b', context_length: 4096 }] }) };
+                if (path === '/api/show') return { ok: true, status: 200, json: async () => ({ model_info: { 'gemma4.context_length': max } }) };
+                if (path === '/api/chat') {
+                    chats.push(JSON.parse(options.body));
+                    return replies.shift();
+                }
+                return notFound;
+            });
+            vi.stubGlobal('fetch', fetchMock);
+            return { chats, fetchMock };
+        };
+
+        it('runs the turn through the native API with a context that holds the whole prompt', async () => {
+            const angles = { ...bondAngles, run: vi.fn(async () => ({ data: { modes: [{ angle_deg: 60 }] }, checks: [{ level: 'ok', text: 'angles' }] })) };
+            const { chats, fetchMock } = ollama({ replies: [
+                ndjson([
+                    { message: { role: 'assistant', content: 'Computing.', tool_calls: [{ function: { name: 'compute_bond_angles', arguments: { end1: 'Ta', apex: 'Ta', end2: 'Ta', r12_min: 2.7, r12_max: 3.3 } } }] }, done: false },
+                    { message: { content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 3000, eval_count: 30 }
+                ]),
+                ndjson([
+                    { message: { content: 'They peak at 60°.\n\nOutcome: achieved — x' }, done: false },
+                    { message: { content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 3300, eval_count: 20 }
+                ])
+            ] });
+            saveSettings({ model: 'gemma4:26b' });
+            act(() => root.render(chat({ tools: [angles] })));
+            await openChat();
+            await ask('What are the Ta–Ta–Ta angles?');
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+
+            expect(chats).toHaveLength(2);
+            // Not the 4,096 the model is loaded with: room for the prompt and the reply.
+            for (const body of chats) {
+                expect(body.options.num_ctx).toBeGreaterThanOrEqual(16384);
+                expect(body.options.num_predict).toBeGreaterThan(8000);
+            }
+            expect(chats[1].options.num_ctx).toBe(chats[0].options.num_ctx);
+            expect(chats[1].messages.at(-1)).toMatchObject({ role: 'tool', tool_name: 'compute_bond_angles' });
+            expect(angles.run).toHaveBeenCalledTimes(1);
+            expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/v1/chat/completions'))).toBe(false);
+            expect(container.querySelector('.llm-outcome').className).toContain('is-achieved');
+        });
+
+        it('refuses the turn, with a reason, when the model cannot hold the prompt', async () => {
+            const { chats } = ollama({ max: 8192 });
+            saveSettings({ model: 'gemma4:26b' });
+            act(() => root.render(chat()));
+            await openChat();
+            await ask('Has the run converged?');
+            expect(chats).toHaveLength(0);
+            expect(container.querySelector('[role="alert"]').textContent)
+                .toMatch(/needs about [\d,]+ tokens of context .* but gemma4:26b holds at most 8,192\. .*Nothing was sent/);
+            expect(container.querySelector('.llm-composer-input').disabled).toBe(false);
+        });
+
+        it('says when an answer stopped at the length limit', async () => {
+            ollama({ replies: [ndjson([
+                { message: { content: 'The angles are' }, done: false },
+                { message: { content: '' }, done: true, done_reason: 'length', prompt_eval_count: 3000, eval_count: 13000 }
+            ])] });
+            saveSettings({ model: 'gemma4:26b' });
+            act(() => root.render(chat()));
+            await openChat();
+            await ask('Angles?');
+            const footer = container.querySelector('.llm-turn-footer');
+            expect(footer.className).toContain('is-cut');
+            expect(footer.textContent).toContain('the reply reached the model\'s length limit and is cut short');
+        });
     });
 
     describe('asking the user (ask_user)', () => {

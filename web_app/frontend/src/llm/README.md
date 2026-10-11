@@ -129,6 +129,9 @@ inputs on its page, stays the *user's* action.
    - Each fragment's provider data (`extra_content`, where Gemini puts its `thought_signature`)
      is kept, because it must be echoed back.
    - An HTTP failure carries its `status`.
+   - **`provider/contextGuard.js` + `provider/ollama.js`**: every Copilot request goes through
+     `streamCopilotChat()`, which never sends a request the model would cut (*The context window*
+     below). Ollama's requests use its native `/api/chat` (NDJSON) with a fitting `num_ctx`.
    - `checkConnection()` turns failures into actionable hints: a bare `TypeError` means "server
      down **or** CORS blocked", and 401 / 429 name the key and quota problems.
 4. **`copilot/toolCalls.js`** turns streamed fragments into calls.
@@ -240,6 +243,41 @@ offer two, so the agent asks:
   question at a time, at most two per request; offer a default; then use the chosen option and
   say which.
 
+## The context window: never cut silently
+
+A local server runs a model with a fixed context window, and a prompt longer than the window is not
+refused: it is shortened to fit, without an error, and the model answers without part of what it
+was given. The Copilot's prompt is long. On the Demo the first request is ~28,400 characters (the
+rules 8,500, the run context 5,000, fourteen tool schemas 14,800), which gemma4's tokenizer reads
+as ~8,600 tokens (the Ollama log recorded 8,025–8,421 for the same request before `ask_user`);
+each analysis adds up to 3,000 characters more.
+
+- **Ollama's OpenAI-compatible endpoint cannot carry a context length.** It runs the model at the
+  server's default: `OLLAMA_CONTEXT_LENGTH`, else one Ollama picks from the GPU memory it finds.
+  On the Apple M5 Pro this was written on, 0.40.2 picks 262,144 (51.8 GiB of GPU memory) and the
+  models' own maxima then apply (gemma4:26b 262,144, qwen3:32b 40,960), so nothing was cut there: 0
+  of the 751 requests since 2026-10-09 report `truncated = 1` in the server log. But the same Mac's
+  log of 2026-09-27 shows Ollama starting without the GPU (`total_vram="0 B"`) and picking 4,096,
+  half the Copilot's first request; older releases defaulted to 2,048–4,096 everywhere.
+- **So the Copilot sizes the context itself.** For an Ollama server (`GET /api/version` answers a
+  version) it sends its requests to the native `/api/chat`, with `options.num_ctx` = the context
+  the model is loaded with when that holds the request and 8,192 tokens of reply
+  (`REPLY_RESERVE_TOKENS`), else the next multiple of 8,192 that does (at least 16,384, kept for
+  the rest of the conversation, at most the model's maximum from `/api/show`), and
+  `options.num_predict` = that context minus the prompt, so a long reply stops at the limit
+  instead of pushing the prompt's start out of the window. The size comes from a deliberately
+  high estimate (`estimatePromptTokens`: 2.5 characters per token plus 8 per message; ~32 % above
+  gemma4's real count on the Demo).
+- **It refuses rather than cuts.** When the request cannot fit even the model's maximum, the turn
+  stops before anything is sent, with the sizes and what to do (a new conversation, analyses off,
+  a model with a longer context). LM Studio fixes the context when a model is loaded: when the
+  loaded model's window (`GET /api/v0/models`) cannot hold the prompt and 4,096 tokens of reply,
+  the turn stops with the context length to load it with. Cloud providers and other servers are
+  sent the request unchanged (only `localhost` or port 11434 is ever probed).
+- **A cut reply says so.** A reply that stops at the length limit (`done_reason` /
+  `finish_reason` `length`) ends with a warning in the turn's footer instead of passing as a
+  whole answer.
+
 ## The tool contract (the `tools` prop)
 
 The host passes engine tools as plain objects; the module validates and runs them:
@@ -311,16 +349,16 @@ terminates. A server folder goes to Flask with the request cancelled on abort.
 ## Provider setup
 
 - **Ollama** (local): <https://ollama.com>. Pull a model that can call tools
-  (`ollama pull qwen3`, `llama3.1`, …). Start the server with this site allowed as an origin, and
-  with room for the analyses:
+  (`ollama pull qwen3`, `llama3.1`, …). Start the server with this site allowed as an origin:
 
   ```bash
-  OLLAMA_ORIGINS="https://drthyang.github.io" OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+  OLLAMA_ORIGINS="https://drthyang.github.io" ollama serve
   ```
 
-  Ollama's OpenAI endpoint cannot set the context length per request. Its default window is small
-  enough that a multi-step turn may lose its oldest messages.
-- **LM Studio** (local): <https://lmstudio.ai>. Load a tool-capable model with a large context, enable
+  The Copilot sets the context length of its own requests through Ollama's native API (*The
+  context window* above), so `OLLAMA_CONTEXT_LENGTH` is not needed for it.
+- **LM Studio** (local): <https://lmstudio.ai>. Load a tool-capable model with a large context (the
+  Copilot refuses a turn the loaded context cannot hold, and says how large to load it), enable
   **CORS** in the Developer/server settings, and start the local server
   (default `http://localhost:1234/v1`).
 - **OpenAI / Gemini / Anthropic** (cloud): pick the provider and paste an API key. There is no server
@@ -461,6 +499,13 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   reply parsing; the prompt builders and conversation memory.
 - **Streaming:** SSE parsing, including tool-call fragments split mid-arguments and Gemini-style
   whole calls with `extra_content`; tool-call assembly and argument validation.
+- **The context window** (`contextGuard.test.js`): the estimate errs high; the plan keeps a loaded
+  context that fits, asks for a fitting one over a 4,096 default, keeps it across the
+  conversation, caps it at the model's maximum and refuses beyond it; server detection never
+  probes a cloud URL; the native NDJSON stream (thinking, content, whole tool calls, usage,
+  `length`, errors, a tools-unsupported 400) and the message conversion; LM Studio's refusal.
+  `copilotChat.test.jsx` runs a turn on a mocked Ollama loaded at 4,096 (native requests with
+  `num_ctx` ≥ 16,384 and no `/v1` call), a refused turn, and a cut reply.
 - **The agent loop, against a scripted model:**
   - the call → result → answer cycle; argument errors fed back and corrected;
   - `ask_user` replays on the Demo's Ta–Se shell: an ambiguous Se–Ta–Se question finds the shells,

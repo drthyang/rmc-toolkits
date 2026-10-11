@@ -261,10 +261,9 @@ const ConnectionSettings = ({ settings, connection, onSave, onTest }) => {
                         <li>Pick the matching provider above and press <em>Test</em>.</li>
                         <li>
                             Pick a model that can call tools (e.g. <code>qwen3</code>, <code>llama3.1</code>), or the
-                            Copilot answers from the run summary only. Give it room: analyses add several thousand
-                            tokens per question, so start Ollama with a larger context, e.g.{' '}
-                            <code>OLLAMA_CONTEXT_LENGTH=16384 ollama serve</code> (LM Studio: raise the model's context
-                            length when loading it).
+                            Copilot answers from the run summary only. The Copilot sets Ollama's context length for
+                            its own requests; in LM Studio, load the model with a context of 16,384 tokens or more
+                            (the Copilot says so when a question would not fit).
                         </li>
                     </ol>
                     <p>

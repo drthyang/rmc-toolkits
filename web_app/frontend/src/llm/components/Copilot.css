@@ -1430,6 +1430,11 @@
     color: var(--subtle);
 }
 
+/* An answer that stopped at the length limit: not the whole answer. */
+.llm-turn-footer.is-cut {
+    color: var(--warning, #b45309);
+}
+
 .llm-composer-foot {
     display: flex;
     align-items: center;

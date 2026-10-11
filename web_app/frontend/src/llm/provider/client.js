@@ -47,7 +47,7 @@ const unreachableHint = (baseUrl) => (
     + 'See “How to connect a model”.'
 );
 
-const describeHttpError = async (response) => {
+export const describeHttpError = async (response) => {
     let detail = '';
     try {
         const payload = await response.json();

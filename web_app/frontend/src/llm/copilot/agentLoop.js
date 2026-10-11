@@ -25,7 +25,8 @@ import {
 //   { type: 'tool_start', id, name, label, args, page, cards, interactive }
 //   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
 //   { type: 'tools_unsupported', error }           retried without tools
-//   { type: 'done', text, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty' }
+//   { type: 'done', text, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty', cut }
+//                                                  cut: the last reply stopped at the length limit
 // Errors (HTTP, network) and aborts are thrown to the caller.
 //
 // Budgets: at most `maxRounds` model requests with tool calls and
@@ -151,6 +152,7 @@ export async function* runCopilotTurn({
         yield { type: 'round', round: rounds };
 
         let text = '';
+        let finishReason = null;
         const fragments = [];
         try {
             const stream = callModel({
@@ -166,6 +168,7 @@ export async function* runCopilotTurn({
                 }
                 if (chunk.reasoning) yield { type: 'reasoning', delta: chunk.reasoning };
                 if (chunk.toolCall) accumulateToolCall(fragments, chunk.toolCall);
+                if (chunk.finishReason) finishReason = chunk.finishReason;
             }
         } catch (error) {
             // Only the turn's first request falls back: later ones already
@@ -183,6 +186,7 @@ export async function* runCopilotTurn({
         }
 
         const calls = useTools && !finalRound ? finalizeToolCalls(fragments, `${rounds}_`) : [];
+        const cut = finishReason === 'length';
         if (!calls.length) {
             if (!text.trim()) {
                 // Ollama ignores tool_choice 'none': a last round can come back
@@ -194,15 +198,16 @@ export async function* runCopilotTurn({
                         text: EMPTY_FINAL,
                         outcome: { status: 'not achieved', note: 'no answer was written within the analysis budget', body: EMPTY_FINAL },
                         rounds,
-                        stoppedBy: 'max_rounds'
+                        stoppedBy: 'max_rounds',
+                        cut
                     };
                 } else {
-                    yield { type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty' };
+                    yield { type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut };
                 }
                 return;
             }
             const outcome = parseOutcome(text);
-            yield { type: 'done', text, outcome, rounds, stoppedBy: finalRound ? 'max_rounds' : 'answer' };
+            yield { type: 'done', text, outcome, rounds, stoppedBy: finalRound ? 'max_rounds' : 'answer', cut };
             return;
         }
 

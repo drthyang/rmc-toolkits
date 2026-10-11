@@ -34,6 +34,28 @@ leaves open a choice that changes the science, the Copilot now asks.
   window — option, default, typed, skipped — reaches `compute_bond_angles`; a clear question does
   not ask; cancel; limits; the turn clock), and the card end to end against a mocked server.
 
+### AI Copilot: a prompt is never cut to fit the model's context
+
+A local server runs a model with a fixed context window and shortens a longer prompt without an
+error, so the model answers without part of its rules or the run context. The Copilot's first
+request on the Demo is ~28,400 characters (~8,600 gemma4 tokens), and Ollama's OpenAI-compatible
+endpoint cannot carry a context length: it uses the server default, which Ollama 0.40 picks from the
+GPU memory it finds — 262,144 on the maintainer's Mac (nothing was cut: 0 of 751 logged requests),
+but 4,096 on a start where it saw no GPU (the same Mac, 2026-09-27).
+
+- **`provider/contextGuard.js`** (`streamCopilotChat`, used for every Copilot request): for an
+  Ollama server it sends the request through the native `/api/chat` (`provider/ollama.js`, its own
+  NDJSON parser) with `num_ctx` = the loaded context when it holds the prompt and 8,192 tokens of
+  reply, else the next multiple of 8,192 (≥ 16,384, kept for the conversation, ≤ the model's
+  maximum), and `num_predict` inside it, so a long reply cannot push the prompt's start out of the
+  window. The prompt size is a deliberately high estimate (2.5 characters per token; ~32 % above
+  gemma4's count on the Demo).
+- **Refuses rather than cuts:** when even the model's maximum cannot hold the request, or LM
+  Studio's loaded context cannot, the turn stops before anything is sent and says what to change.
+  Cloud providers and other servers are unchanged; only `localhost` or port 11434 is probed.
+- **A reply cut at the length limit** says so in the turn's footer.
+- The setup guide, README and QuickStart no longer ask for `OLLAMA_CONTEXT_LENGTH`.
+
 ### UI kit: no sideways scroll from closed info popovers
 
 At iPad-portrait widths (820–834 px) the Displacement Directions page scrolled sideways: a `?`

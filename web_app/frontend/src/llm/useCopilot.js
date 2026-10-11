@@ -6,7 +6,7 @@ import { runCopilotTurn } from './copilot/agentLoop';
 import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState';
 import { ASK_USER } from './copilot/askUser';
 import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS } from './prompts/copilot';
-import { streamChat } from './provider/client';
+import { streamCopilotChat } from './provider/contextGuard';
 
 // Conversation state for the Copilot page: the finished turns, the turn in
 // progress, Stop, and which models proved unable to call tools (so later
@@ -26,6 +26,10 @@ import { streamChat } from './provider/client';
 // `answerQuestion(reply)` settles it, and rejects it with an AbortError when
 // the turn is stopped, the conversation restarts or the panel unmounts.
 // `onQuestion(request)` reports a new question (the dock's unread mark).
+//
+// Every model request goes through provider/contextGuard.js, which never
+// sends a request the model would cut to fit its context window (it sizes
+// Ollama's context, or refuses the turn with a message that says why).
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const abortError = () => new DOMException('Aborted', 'AbortError');
@@ -64,6 +68,9 @@ export const useCopilot = ({
     useEffect(() => { onQuestionRef.current = onQuestion; }, [onQuestion]);
     // Bumped by clear(): a turn still finishing after it must not reappear.
     const generationRef = useRef(0);
+    // The context asked for per model, kept across this conversation's turns
+    // so a model is not reloaded for every question (contextGuard.js).
+    const contextSessionRef = useRef({});
 
     useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -120,11 +127,12 @@ export const useCopilot = ({
         // The agent moves on: the last answer's highlight ends.
         focus?.clear('question');
         const model = settings.model;
-        const callModel = (request) => streamChat({
+        const callModel = (request) => streamCopilotChat({
             baseUrl: settings.baseUrl,
             model,
             temperature: settings.temperature,
             apiKey: settings.apiKey,
+            session: contextSessionRef.current,
             ...request
         });
 
