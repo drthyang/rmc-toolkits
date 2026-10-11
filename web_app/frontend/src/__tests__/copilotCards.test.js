@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { PAGE_CARDS, buildCopilotCards } from '../copilotCards';
+import { buildCopilotTools } from '../copilotTools';
 
 const src = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(join(src, path), 'utf8');
@@ -72,5 +73,13 @@ describe('buildCopilotCards', () => {
             expect(read(path)).toContain('useCopilotViewer(cardId,');
             expect(read(path)).toContain('data-copilot-card={cardId || undefined}');
         });
+    });
+
+    it('names only catalog cards as the ones the analyses read', () => {
+        const ids = new Set(buildCopilotCards({ symmetry: {} }).map((card) => card.id));
+        const tools = buildCopilotTools({ request: async () => ({}), structure: { basis: [{ el: 'Ga' }] }, elements: ['Ga'] });
+        const named = tools.flatMap((tool) => (tool.cards ? tool.cards({}) : []));
+        expect(named).toEqual(['pca-stats', 'direction-sphere', 'bond-angles', 'detected-sg']);
+        named.forEach((id) => expect(ids.has(id), id).toBe(true));
     });
 });

@@ -8,6 +8,8 @@
 // useSiteCloud's requestAnalysis), and the symmetry finder — and returns a
 // compact summary for the model plus deterministic checks on the full result.
 // The tools only compute: none changes a page, the shared tolerance, or a file.
+// Each names the card it reads (`cards`), which breathes while it runs when
+// that card is on screen (the llm module's card focus).
 // The summarizers are pure and exported for tests.
 
 import { useEffect, useMemo, useRef } from 'react';
@@ -658,6 +660,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             },
             label: ({ element }) => `Site displacement table${element ? ` · ${element}` : ''}`,
             page: 'ellipsoids',
+            cards: () => ['pca-stats'],
             run: async ({ element }, { signal } = {}) => summarizeSites(await request('sites', {}, { signal }), { element })
         });
 
@@ -677,6 +680,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             },
             label: ({ site_ref: ref, element }) => `Displacement directions ${ref != null ? `site ${ref}` : (element || '')}`.trim(),
             page: 'orientation',
+            cards: () => ['direction-sphere'],
             // The page shows one site at a time (no element pooling); no
             // frequency means the engine chose it, the page's 'auto'.
             pageParams: ({ site_ref: ref, frequency }) => (ref != null
@@ -721,6 +725,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 `Bond angles ${end1}–${apex}–${end2}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`
             ),
             page: 'geometry',
+            cards: () => ['bond-angles'],
             pageParams: (args) => ({
                 end1: args.end1,
                 apex: args.apex,
@@ -817,6 +822,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             },
             label: ({ tolerance_A: tol }) => `Symmetry at ${tol} Å`,
             page: 'dashboard',
+            cards: () => ['detected-sg'],
             run: async ({ tolerance_A: tol }) => summarizeSymmetry(describeSymmetry(structure, tol), tol)
         });
     }
