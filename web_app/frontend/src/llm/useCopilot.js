@@ -54,7 +54,8 @@ export const conversationMemory = (turns) => {
 };
 
 export const useCopilot = ({
-    settings, context, tools, toolsEnabled = true, runKey = null, focus = null, onTurnEnd = null, onQuestion = null
+    settings, context, tools, toolsEnabled = true, runKey = null, focus = null, onTurnEnd = null, onQuestion = null,
+    clarifier = null
 }) => {
     const [turns, setTurns] = useState([]);
     const [live, setLive] = useState(null);
@@ -150,7 +151,8 @@ export const useCopilot = ({
                 toolsEnabled: toolsOn,
                 noToolsSystemPrompt: COPILOT_PROMPT_NO_TOOLS,
                 toolContext: { ...(focus ? { focus } : {}), askUser },
-                auditContext: contextAuditFacts(context, pointGroupFacts)
+                auditContext: contextAuditFacts(context, pointGroupFacts),
+                clarifier
             })) {
                 turn = applyTurnEvent(turn, event, now());
                 if (event.type === 'tool_start' && event.cards?.length) focus?.running(event.id, event.cards);
@@ -180,7 +182,7 @@ export const useCopilot = ({
             }
             setLive(null);
         }
-    }, [turns, context, tools, toolsOn, focus, askUser, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
+    }, [turns, context, tools, toolsOn, focus, askUser, clarifier, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
 
     const clear = useCallback(() => {
         generationRef.current += 1;

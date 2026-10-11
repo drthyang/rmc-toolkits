@@ -5,6 +5,30 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### AI Copilot: the Workbench asks before the model guesses
+
+With a real model (gemma4:26b, 2026-10-11) the Copilot never called `ask_user`: on a request that
+left a choice open it picked one. Where the run data show that the choice changes the result, the
+Workbench now shows the question card itself, before the model is asked or before the analysis
+runs, with the options it computed and a default (`llm/copilot/clarify.js`).
+
+- **Before the first request:** a bond-angle or coordination request naming only an element
+  (which bonded neighbours: one option per partner shell, nearest first); a named pair or triplet
+  whose first shell is split or runs into the next, when the window changes the coordination
+  number by ≥ max(0.5, 15 %) (the whole shell, the first peak, or a cut 0.2 Å either side); the
+  displacement directions of an element with several non-cubic sites (one site, or all pooled:
+  pooling can cancel a per-site preference); the space group with no tolerance named, when more
+  than one group holds clearly above the noise floor. The answer joins the user's question for
+  the model.
+- **Before an analysis runs:** a window that cuts a first shell (`compute_bond_angles`,
+  `analyze_clusters`, through the new `shellWindows(args)` in the tool contract) is put to the
+  user — the whole shell (default) or the window as asked — and the analysis runs in the one
+  chosen.
+- **Conservative:** a question that settles the choice (an ideal polyhedron one option's CN
+  matches, a window or tolerance in Å, a site number) asks nothing; the six spot-check questions
+  ask nothing. The questions are `ask_user` steps (`app: true`), count toward the two per request,
+  and the model's own `ask_user` still works.
+
 ### AI Copilot: answers checked against what the analyses found
 
 - **Checks on the answer** (`llm/copilot/answerAudit.js`): tools return `facts` (not sent to the

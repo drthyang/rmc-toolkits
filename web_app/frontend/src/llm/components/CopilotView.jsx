@@ -204,9 +204,9 @@ const UserMessage = ({ content }) => (
 
 const CopilotView = ({
     context, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey,
-    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null
+    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, clarifier = null
 }) => {
-    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion });
+    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion, clarifier });
     useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
     const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
     const previewCard = useCallback((id) => { focus?.preview(id); }, [focus]);

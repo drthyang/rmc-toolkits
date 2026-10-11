@@ -38,7 +38,8 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
 - **It asks instead of guessing** (`ask_user`). When a question leaves open a choice that changes
   the science — which coordination shell or r-window, which site or pair, which tolerance, which
   run — the agent asks one short question with 2–4 options and its default, then uses exactly the
-  option the user picks. See *Asking the user* below.
+  option the user picks. Where the run data show that such a choice changes the result, the
+  Workbench asks itself, before the model guesses. See *Asking the user* below.
 - **Its answers are checked.** Where an answer contradicts what the analyses or the run context
   established, a **Check** line says so under it and the Outcome chip drops to **Not verified**,
   whatever the model said of its own answer. See *Checks on the answer* below.
@@ -264,6 +265,48 @@ and elsewhere it stated its assumption. The card and the loop are exercised with
 88.5, 104.5°; mean 103 ± 29.6°) as "significantly distorted" octahedra, missing the trans angles
 the sin θ factor depletes near 180°.
 
+### The Workbench asks itself (2026-10-11)
+
+gemma4 never asked; so where the computed signals show a real ambiguity that changes the result,
+the Workbench shows the question card itself, with the options it computed and a default
+(`copilot/clarify.js`, `buildClarifier`). The card is an `ask_user` step marked `app: true`
+("The Workbench asks before the analysis"); it counts toward the two questions per request, and
+the model's own `ask_user` still works beside it.
+
+- **Before the first request** (`beforeTurn`), on the user's question (`readQuestion`: the
+  intent, and the run's elements, pairs and triplets it names):
+  - *a bond-angle or coordination request naming only an element:* which neighbours — one
+    option per bonded partner (a first shell starting within 1.4× of the nearest one), nearest
+    first and the default, each with its window and CN; "Every neighbour type" for coordination.
+    The Demo's "bond angles around Ta": Se–Ta–Se (2.21–3.23 Å, CN 6), Ta–Ta–Ta (2.65–3.33 Å, CN
+    2.8); not Ga at 3.8 Å;
+  - *a named pair or triplet whose first shell is split into peaks, or runs into the next:*
+    which window — the whole first shell (default), the first peak only, or a cut 0.2 Å either
+    side of the minimum — only when the coordination number changes by ≥ max(0.5, 15 %) between
+    them. The Demo's "Se–Ta–Se bond angles": whole shell 2.21–3.23 Å (CN 6) or first peak
+    2.33–2.71 Å (CN 3.9). The Ta–Ta shell runs into the next (6 % of the peak at the minimum) but
+    a cut 0.2 Å either side changes its CN by < 0.5: not asked;
+  - *displacement directions of an element with several sites whose site symmetry is not
+    cubic:* one site of each orbit (default; its sites are equivalent by symmetry) or all pooled
+    — pooling mixes the sites' local frames and can cancel a per-site preference, the review's
+    pooled-Ta error. Ga (site symmetry -43m) is not asked about;
+  - *the space group with no tolerance named:* which tolerance, when more than one group holds
+    clearly above the sampling noise floor (to ≥ 1.25× it). On the Demo only F-43m does: not asked.
+
+  The answer joins the user's question for the model: `(The Workbench asked: "…" — the user
+  chose Se–Ta–Se: Se around Ta in the whole first Ta–Se shell, 2.21–3.23 Å (CN 6). Use exactly
+  this.)`. The conversation still shows the question as typed.
+- **Before an analysis runs** (`beforeCall`, for tools that declare `shellWindows(args)`:
+  `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
+  of it by the same margin is put to the user — the whole first shell (default) or the window as
+  asked — and the analysis runs in the one chosen, its tool message saying so. The spot check's
+  2.3–2.7 Å Se–Ta–Se window: "it holds 3.8 Se per Ta of the shell's 6".
+- **Not asked:** a question that settles the choice itself — an ideal polyhedron it names that
+  exactly one option's CN matches ("…compare them with an ideal octahedron": only the whole Ta–Se
+  shell holds 6), an element pair or triplet with a clear shell, a site number, a window or a
+  tolerance in Å, a window the user chose earlier in the question. The six spot-check questions
+  ask nothing.
+
 ## Checks on the answer
 
 The reviews found answers that contradicted what the tools had just computed. The tools now
@@ -363,6 +406,8 @@ The host passes engine tools as plain objects; the module validates and runs the
   cards: (args) => ['bond-angles'],      // host cards this call reads: they breathe while it runs (optional)
   view: true,                            // a view tool: changes only the screen; never cached (optional)
   interactive: true,                     // waits for the user (ask_user): never cached, no time limit (optional)
+  shellWindows: (args) => [{ centre, partner, window: [lo, hi], apply: ([lo, hi], { confirmed }) => args }],
+                                         // its bond windows, checked against the shells before it runs (optional)
   run: async (args, { signal, focus, askUser }) => ({ data, checks, facts }),
 }
 ```
@@ -379,6 +424,9 @@ The host passes engine tools as plain objects; the module validates and runs the
 - `facts` (optional, not sent to the model) are findings the final answer must not contradict
   (*Checks on the answer*): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
   sohncke, polar }] }`, `{ direction: { subject, significant, peak_sigma, map_sigma } }`.
+- `shellWindows(args)` names the bond windows a call will use, so the Workbench can ask before a
+  window that cuts a coordination shell runs; `apply(window, { confirmed })` returns the
+  arguments for the window the user chose (`confirmed`: they kept their own).
 - Parameters may be arrays (`items`, `minItems`, `maxItems`) and objects (their own `properties` /
   `required`); a list sent as JSON text or a bare comma list is accepted.
 
@@ -591,10 +639,15 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   - the tools-unsupported fallback, and a schema 400 that must surface;
   - abort and timeout, which also abort the tool's signal;
   - per-result and per-turn budgets.
-- **Checks:** the answer checks with their negated and qualified phrasings and `lowerOutcome`
-  (`answerAudit.test.js`); on the Demo with the real engines and context
+- **Checks and the Workbench's questions:** the answer checks with their negated and qualified
+  phrasings and `lowerOutcome` (`answerAudit.test.js`); the clarifier on synthetic shells — split,
+  merged, clean, word-like element symbols, the tolerance ladder, typed windows
+  (`clarify.test.js`); and on the Demo with the real engines and context
   (`src/__tests__/copilotChecksReplays.test.js`): a contradicted answer is lowered, gemma4's
-  correct answers keep *achieved*. In the dock (`copilotChat.test.jsx`): the lowered chip.
+  correct answers keep *achieved*, each Workbench question (an element alone, a split shell, a
+  cut window kept or replaced, one site or pooled), the clear questions that never ask, the
+  model's own `ask_user` beside them within two per request, and cancel. In the dock
+  (`copilotChat.test.jsx`): the Workbench's card before any model request, the lowered chip.
 - **Rendering:** Outcome parsing, the Markdown pipeline with its card chips, and
   `copilotChat.test.jsx`, which drives the dock end to end against a mocked server: nothing is
   fetched before it opens, Show in hands over the page parameters, Esc keeps the conversation, a

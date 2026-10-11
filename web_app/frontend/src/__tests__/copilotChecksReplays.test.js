@@ -6,6 +6,9 @@
 //   - the checks on the answer, and the Outcome they lower: a contradicted
 //     answer becomes "not verified", a clean one keeps "achieved", and
 //     gemma4:26b's correct answers of 2026-10-11 raise no check;
+//   - the questions the Workbench asks itself (llm/copilot/clarify.js), each
+//     case, the clear questions that never ask, the model's own ask_user next
+//     to them, and cancel.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
@@ -14,6 +17,7 @@ import { buildCopilotTools } from '../copilotTools';
 import { runCopilotTurn } from '../llm/copilot/agentLoop';
 import { contextAuditFacts } from '../llm/copilot/answerAudit';
 import { buildAskUserTool } from '../llm/copilot/askUser';
+import { buildClarifier } from '../llm/copilot/clarify';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { pointGroupFacts } from '../llm/context/pointGroups';
 import { buildRunContext } from '../llm/context/runContext';
@@ -43,7 +47,9 @@ const tools = [
     ...buildCopilotTools({ request, structure, elements: Object.keys(structure.elementCounts).sort() }),
     buildAskUserTool()
 ];
+const clarifier = buildClarifier({ plotFiles, structure, symmetry }, { noiseFloor: context.symmetry?.noise_floor_A ?? null });
 const auditContext = contextAuditFacts(context, pointGroupFacts);
+const toolNamed = (name) => tools.find((tool) => tool.name === name);
 
 // A scripted model: each request takes the next reply ({ text, calls }), or
 // a function of the request (a model that reads what it was sent).
@@ -66,7 +72,7 @@ const scriptedModel = (replies) => {
 };
 
 // One question: the events, the requests the model got, the cards asked.
-const replay = async (question, replies, { answer = null, signal } = {}) => {
+const replay = async (question, replies, { answer = null, withClarifier = true, signal } = {}) => {
     const asked = [];
     const askUser = vi.fn(async (req) => {
         asked.push(req);
@@ -81,13 +87,18 @@ const replay = async (question, replies, { answer = null, signal } = {}) => {
         tools,
         signal,
         toolContext: { askUser },
-        auditContext
+        auditContext,
+        clarifier: withClarifier ? clarifier : null
     })) events.push(event);
     const ends = events.filter((event) => event.type === 'tool_end');
     const lastToolMessage = () => JSON.parse(requests.at(-1).filter((message) => message.role === 'tool').at(-1).content);
     return { events, requests, asked, done: events.at(-1), ends, lastToolMessage };
 };
 
+const angles = (r12_min, r12_max, end = 'Se', apex = 'Ta') => ({
+    calls: [{ name: 'compute_bond_angles', args: { end1: end, apex, end2: end, r12_min, r12_max } }]
+});
+const answer = (text) => ({ text: `${text}\n\nOutcome: achieved — computed.` });
 
 describe('the Outcome after the checks', () => {
     it('lowers a contradicted answer to "not verified" and keeps what the model claimed', async () => {
@@ -139,5 +150,157 @@ describe('the Outcome after the checks', () => {
         }
         // The Ga directions ran and their facts reached the check.
         expect(ga.ends.at(-1)).toMatchObject({ name: 'analyze_displacement_directions', status: 'ok' });
+    });
+});
+
+describe('the questions the Workbench asks itself', () => {
+    it('(a) an element only: which bond angles around Ta, then the model gets the choice', async () => {
+        const run = await replay('Compute the bond angles around Ta.', [
+            (body) => {
+                const question = body.messages.at(-1).content;
+                expect(question).toMatch(/^Compute the bond angles around Ta\.\n\n\(The Workbench asked: "Which bond angles around Ta\?" — the user chose Se–Ta–Se: Se around Ta in the whole first Ta–Se shell, 2\.21–3\.23 Å \(CN 6\)\. Use exactly this\.\)$/);
+                return angles(2.21, 3.23);
+            },
+            answer('Octahedral.')
+        ]);
+        expect(run.asked).toHaveLength(1);
+        expect(run.asked[0].options.map((option) => option.label)).toEqual(['Se–Ta–Se', 'Ta–Ta–Ta']);
+        expect(run.asked[0].defaultIndex).toBe(0);
+        // Asked before the first model request, as an ask_user step from the app.
+        expect(run.events[0]).toMatchObject({ type: 'tool_start', name: 'ask_user', interactive: true, app: true });
+        expect(run.events[1]).toMatchObject({ type: 'tool_end', name: 'ask_user', status: 'ok', data: { answer: 'Se–Ta–Se' } });
+        // The whole shell holds the octahedron; no second question.
+        expect(run.asked).toHaveLength(1);
+        expect(run.lastToolMessage().data.polyhedron.trans_above_135_deg.share).toBe(0.2);
+
+        const other = await replay('What is the coordination number of Ta?', [
+            (body) => {
+                expect(body.messages.at(-1).content).toMatch(/the user chose Ta around Ta: Ta around Ta in the whole first Ta–Ta shell, 2\.65–3\.33 Å \(CN 2\.8\)/);
+                return answer('2.8 Ta per Ta.');
+            }
+        ], { answer: () => ({ answer: 'Ta around Ta', source: 'option', index: 1 }) });
+        expect(other.asked[0].options.map((option) => option.label)).toEqual(['Se around Ta', 'Ta around Ta', 'Every neighbour type']);
+    });
+
+    it('(a) a split shell: which Ta–Se window, and the chosen one is not asked about again', async () => {
+        const run = await replay('What are the Se–Ta–Se bond angles?', [
+            (body) => {
+                expect(body.messages.at(-1).content).toMatch(/the user chose "First peak only" for the Ta–Se bonds: the window 2\.33–2\.71 Å \(CN 3\.9 Se per Ta\)/);
+                return angles(2.33, 2.71);
+            },
+            answer('The short bonds only.')
+        ], { answer: () => ({ answer: 'First peak only', source: 'option', index: 1 }) });
+        expect(run.asked).toHaveLength(1);
+        expect(run.asked[0]).toMatchObject({ question: 'Which Ta–Se window should the analysis use?', defaultIndex: 0 });
+        expect(run.asked[0].options.map((option) => option.label)).toEqual(['Whole first shell', 'First peak only']);
+        expect(run.asked[0].options[0].description).toBe('2.21–3.23 Å, both peaks (2.52 and 2.74 Å): CN 6 Se per Ta');
+        // The model's 2.33–2.71 Å is the user's choice: it runs as asked.
+        expect(run.lastToolMessage().data.window_ab_A).toEqual([2.33, 2.71]);
+    });
+
+    it('(b) a window that cuts the shell: the user picks the whole shell, and the analysis runs in it', async () => {
+        // The spot check's question: the octahedron settles the window, so
+        // nothing is asked up front; the model's 2.3–2.7 Å is caught at the call.
+        const run = await replay('Compute the Se–Ta–Se bond angles and compare them with an ideal octahedron.', [
+            angles(2.3, 2.7),
+            answer('Octahedral.')
+        ]);
+        expect(run.asked).toHaveLength(1);
+        expect(run.asked[0].question).toBe('The window 2.3–2.7 Å cuts the first Ta–Se shell: it holds 3.8 Se per Ta of the shell\'s 6. Which window?');
+        expect(run.asked[0].options.map((option) => option.label)).toEqual(['Whole first shell', 'Keep 2.3–2.7 Å']);
+        const step = run.ends.find((end) => end.name === 'compute_bond_angles');
+        expect(step.args).toMatchObject({ r12_min: 2.21, r12_max: 3.23 });
+        expect(step.checks.map((check) => check.level)).toEqual(['ok', 'note']);
+        const message = run.lastToolMessage();
+        expect(message.note).toMatch(/^the Workbench asked the user about the window: the user chose it: run in 2\.21–3\.23 Å \(Whole first shell\)\.$/);
+        expect(message.data.polyhedron.ideal).toMatch(/octahedron/);
+    });
+
+    it('(b) the user may keep the window as asked', async () => {
+        const run = await replay('Compute the Se–Ta–Se bond angles and compare them with an ideal octahedron.', [
+            angles(2.3, 2.7),
+            answer('A partial shell.')
+        ], { answer: () => ({ answer: 'Keep 2.3–2.7 Å', source: 'option', index: 1 }) });
+        const step = run.ends.find((end) => end.name === 'compute_bond_angles');
+        expect(step.args).toMatchObject({ r12_min: 2.3, r12_max: 2.7 });
+        expect(step.status).toBe('warn');
+    });
+
+    it('(c) one site or all, for a multi-site element whose sites are not cubic', async () => {
+        const run = await replay('Do the Ta atoms have a preferred displacement direction?', [
+            (body) => {
+                expect(body.messages.at(-1).content).toMatch(/the user chose one Ta site: analyse site_ref 1 /);
+                return { calls: [{ name: 'analyze_displacement_directions', args: { site_ref: 1 } }] };
+            },
+            answer('No significant direction at site 1.')
+        ]);
+        expect(run.asked[0]).toMatchObject({ question: 'Displacement directions of Ta: one site, or all 16 pooled?' });
+        expect(run.asked[0].options.map((option) => option.label)).toEqual(['One Ta site', 'All 16 Ta sites pooled']);
+    });
+
+    it('never asks a clear question', async () => {
+        const clear = [
+            'Has the run converged?',
+            'Where is the first Ta–Se g(r) peak, and is it constraint-limited?',
+            'Which site is most anharmonic, and which has the largest U_iso?',
+            'Do the Ga atoms have a preferred displacement direction?',
+            'Compute the Se–Ta–Se bond angles and compare them with an ideal octahedron.',
+            'What is the space group at 0.2 Å and at 0.02 Å tolerance, and what symmetry breaks between them?',
+            'What is the space group?',
+            'Compute the Ta–Ta–Ta bond angles.',
+            'Compute the Se–Ta–Se angles in 2.3–2.7 Å.'
+        ];
+        for (const question of clear) {
+            const { asked } = await replay(question, [answer('Answered.')]);
+            expect({ question, asked: asked.length }).toEqual({ question, asked: 0 });
+        }
+        // A window the question names is the user's: it runs without a question.
+        const named = await replay('Compute the Se–Ta–Se angles in 2.3–2.7 Å.', [angles(2.3, 2.7), answer('A partial shell.')]);
+        expect(named.asked).toEqual([]);
+        expect(named.ends[0].args).toMatchObject({ r12_min: 2.3, r12_max: 2.7 });
+    });
+
+    it('leaves the model\'s own ask_user working, within two questions per request', async () => {
+        const ask = { name: 'ask_user', args: { question: 'Which run?', options: ['250 K', '5 K'] } };
+        const run = await replay('What are the Se–Ta–Se bond angles?', [
+            { calls: [ask] },
+            angles(2.3, 2.7),
+            answer('Done.')
+        ]);
+        // The Workbench's question, then the model's: two, the limit, so the
+        // cut window runs as the model asked (with the tool's warning).
+        expect(run.asked.map((req) => req.question)).toEqual(['Which Ta–Se window should the analysis use?', 'Which run?']);
+        const step = run.ends.find((end) => end.name === 'compute_bond_angles');
+        expect(step.status).toBe('warn');
+        // Without the clarifier, the model's ask_user works alone.
+        const alone = await replay('Compute the bond angles around Ta.', [{ calls: [ask] }, answer('Done.')], { withClarifier: false });
+        expect(alone.asked.map((req) => req.question)).toEqual(['Which run?']);
+    });
+
+    it('stops cleanly when the turn is cancelled while the Workbench\'s question waits', async () => {
+        const controller = new AbortController();
+        const { callModel, requests } = scriptedModel([answer('never')]);
+        const askUser = vi.fn((req, { signal }) => new Promise((_, reject) => {
+            signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+            setTimeout(() => controller.abort(), 5);
+        }));
+        const run = (async () => {
+            for await (const event of runCopilotTurn({
+                callModel, messages: [{ role: 'user', content: 'Compute the bond angles around Ta.' }], tools,
+                signal: controller.signal, toolContext: { askUser }, clarifier
+            })) void event;
+        })();
+        await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+        expect(askUser).toHaveBeenCalledTimes(1);
+        expect(requests).toEqual([]);
+    });
+
+    it('declares the windows of the bond-angle and cluster tools', () => {
+        const windows = toolNamed('compute_bond_angles').shellWindows({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7 });
+        expect(windows).toHaveLength(1);
+        expect(windows[0]).toMatchObject({ centre: 'Ta', partner: 'Se', window: [2.3, 2.7] });
+        expect(windows[0].apply([2.21, 3.23])).toMatchObject({ r12_min: 2.21, r12_max: 3.23 });
+        expect(toolNamed('analyze_clusters').shellWindows({ element: 'Ta', r_min: 2.65, r_max: 3.33 })[0])
+            .toMatchObject({ centre: 'Ta', partner: 'Ta', window: [2.65, 3.33] });
     });
 });

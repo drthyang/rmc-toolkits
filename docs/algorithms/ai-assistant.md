@@ -1248,6 +1248,39 @@ The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show u
 `lowerOutcome` then replaces a verdict of *achieved* or *partial* (or none) by **not verified**
 (`claimed` keeps the model's, the note says what it claimed); *not achieved* stays.
 
+**The Workbench's own questions** (2026-10-11; `copilot/clarify.js`). `buildShellCatalog` reads the
+partials file: per ordered pair (centre, partner) the first shell as `firstShell` finds it (Step 9),
+its window rounded to 0.01 Å, the peaks in it, the CN $4\pi\rho_\text{partner}\int r^2 g\,dr$ over
+the window (linear interpolation between grid points), the first-peak window $[r_1 - w, r_1 + w]$
+(w the FWHM) and its CN, and the CN with the window's top 0.2 Å earlier and later. A window
+*changes the answer* when its CN differs from the whole shell's by ≥ max(0.5, 0.15 × CN)
+(`CN_CHANGE_ABS`, `CN_CHANGE_REL`). `readQuestion` reads the user's question for its intent
+(bond angles; coordination, polyhedra, neighbours; directions; space group), the run's elements
+(element symbols that are English words — In, As, S… — only after "around", "of", "for" or
+before "atoms", "sites"), pairs and triplets, a polyhedron (octahedron 6, tetrahedron 4, trigonal
+prism 6, square planar 4, cuboctahedron 12), a length or tolerance in Å, and a site number.
+
+- `beforeTurn(question)`, in order: an angle or coordination request with one element and no pair
+  or triplet → which bonded partner (shells starting within 1.4× the nearest one's start,
+  `BONDED_REACH`; at most 4 options; "Every neighbour type" for coordination); not asked when only
+  one partner or when the named polyhedron's CN matches exactly one partner. A named pair or
+  triplet (A–B–C: the B–A and B–C shells) → which window, when `ambiguousWindows` finds a split
+  shell whose first peak changes the CN, or a shell whose trough is above 2 % of the peak and
+  whose 0.2 Å cuts change it; not asked when the named polyhedron's CN matches exactly one option.
+  A directions question with one element and no site number → one site per orbit or all pooled,
+  when the element has ≥ 2 sites and an orbit whose site symmetry is not cubic (23, m-3, 432,
+  -43m, m-3m). A space-group question with no length in Å → which group, when ≥ 2 ladder rungs
+  reach ≥ 1.25× the noise floor (`NOISE_MARGIN`).
+- `beforeCall(tool, args)`, for a tool with `shellWindows(args)`: a window overlapping its first
+  shell whose CN is below the whole shell's by the margin is asked about (whole shell, or keep),
+  unless both its bounds appear in the question (or in an answer to an earlier Workbench question).
+- `resolveClarification`: the chosen option's note (appended to the user's question as
+  `(The Workbench asked: "…" — …)`) or the chosen window's arguments; a skip takes the default; a
+  typed answer is passed on verbatim, or for a window read as two numbers.
+
+The loop asks only when tools are on, an `askUser` exists, and fewer than `maxQuestions` questions
+were asked; each is an `ask_user` step with `app: true`.
+
 **Asking the user** (`ask_user`, 2026-10-11; module, `copilot/askUser.js`). An *interactive*
 tool (`interactive: true`): it is never answered from the duplicate-call cache, has no time limit,
 and its wait is subtracted from the turn's clock. `normalizeAskRequest()` turns the arguments into
@@ -1504,7 +1537,10 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `maxTurnMs` | 600 000 | ms | `copilot/agentLoop.js` | No new round of tools after this |
 | `resultCharBudget` | 3 000 | characters | `copilot/agentLoop.js` | One `tool` message |
 | `turnCharBudget` | 12 000 | characters | `copilot/agentLoop.js` | All `tool` messages of one question; older ones compacted to their checks |
-| `maxQuestions` (`MAX_QUESTIONS`) | 2 | questions | `copilot/askUser.js`, `copilot/agentLoop.js` | `ask_user` calls per question (one per round) |
+| `maxQuestions` (`MAX_QUESTIONS`) | 2 | questions | `copilot/askUser.js`, `copilot/agentLoop.js` | `ask_user` calls per question (one per round), the Workbench's included |
+| `CN_CHANGE_ABS`, `CN_CHANGE_REL` | 0.5, 0.15 | atoms, of the shell's CN | `copilot/clarify.js` | A window changes the answer when its CN differs from the whole shell's by at least the larger |
+| `BONDED_REACH` | 1.4 | × the nearest shell's start | `copilot/clarify.js` | Partners offered for "around <element>" |
+| `NOISE_MARGIN` | 1.25 | × the noise floor | `copilot/clarify.js` | A ladder group must hold to this to make the tolerance a question |
 | `POLYHEDRON_SPLIT_DEG` | 135 | ° | `copilotTools.js` | Splits cis from trans for a whole shell of 6 ± 0.5 neighbours (demo TaSe₆: 80 % at a mean 89°, 20 % at 158.8°) |
 | `MIN_OPTIONS`, `MAX_OPTIONS` | 2, 4 | options | `copilot/askUser.js` | Choices a question offers |
 | `CHARS_PER_TOKEN`, `MESSAGE_OVERHEAD_TOKENS` | 2.5, 8 | chars / token, tokens | `provider/contextGuard.js` | The prompt estimate (errs high) |

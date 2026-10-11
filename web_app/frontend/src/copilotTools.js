@@ -798,7 +798,8 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 + 'B neighbours, A within [r12_min, r12_max] Å of B and C within [r23_min, r23_max] Å (default: the '
                 + 'A–B window). Returns the angle modes, mean ± sd, a 10° histogram, bond lengths and the B '
                 + 'coordination, and for about six or four neighbours the split against an ideal octahedron or '
-                + 'tetrahedron. Use the whole first coordination shell (find_gr_peaks\' first_shell.window_A).',
+                + 'tetrahedron. Use the whole first coordination shell (find_gr_peaks\' first_shell.window_A); a window '
+                + 'that cuts the shell is put to the user first.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -813,6 +814,22 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 },
                 required: ['end1', 'apex', 'end2', 'r12_min', 'r12_max']
             },
+            // The bond windows, for the Workbench's check that a window does
+            // not cut a coordination shell before this runs (llm clarify.js).
+            shellWindows: (args) => [
+                {
+                    centre: args.apex,
+                    partner: args.end1,
+                    window: [args.r12_min, args.r12_max],
+                    apply: ([lo, hi]) => ({ ...args, r12_min: lo, r12_max: hi })
+                },
+                ...(args.r23_min != null && args.r23_max != null ? [{
+                    centre: args.apex,
+                    partner: args.end2,
+                    window: [args.r23_min, args.r23_max],
+                    apply: ([lo, hi]) => ({ ...args, r23_min: lo, r23_max: hi })
+                }] : [])
+            ],
             label: ({ end1, apex, end2, r12_min: lo, r12_max: hi }) => (
                 `Bond angles ${end1}–${apex}–${end2}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`
             ),
@@ -869,6 +886,12 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 },
                 required: ['element', 'r_min', 'r_max']
             },
+            shellWindows: (args) => [{
+                centre: args.element,
+                partner: args.element,
+                window: [args.r_min, args.r_max],
+                apply: ([lo, hi]) => ({ ...args, r_min: lo, r_max: hi })
+            }],
             label: ({ element, r_min: lo, r_max: hi }) => (
                 `Clusters ${element || ''}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`.trim()
             ),

@@ -3,7 +3,8 @@
 
 import { toolBudgetNote } from '../prompts/copilot';
 import { auditAnswer, lowerOutcome } from './answerAudit';
-import { MAX_QUESTIONS } from './askUser';
+import { ASK_USER, MAX_QUESTIONS, answerResult } from './askUser';
+import { resolveClarification } from './clarify';
 import { parseOutcome } from './outcome';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
@@ -41,7 +42,13 @@ import {
 // An interactive tool (ask_user) waits for the user: it has no time limit, the
 // wait does not count toward `maxTurnMs`, and a turn asks at most
 // `maxQuestions` questions, one per step.
-
+//
+// `clarifier` (clarify.js) lets the Workbench ask itself where the run data
+// show that a choice changes the result: before the first request
+// (`beforeTurn`: the answer joins the user's question for the model) and
+// before an analysis runs in a window that cuts a shell (`beforeCall`: it runs
+// in the window the user picks). These questions are ask_user steps
+// (`app: true`) and count toward `maxQuestions`.
 
 export const DEFAULT_LIMITS = {
     maxRounds: 6,
@@ -118,7 +125,9 @@ export async function* runCopilotTurn({
     toolContext = null,
     // The run context's facts the answer must not contradict
     // (answerAudit.js contextAuditFacts).
-    auditContext = null
+    auditContext = null,
+    // The Workbench's own questions (clarify.js buildClarifier).
+    clarifier = null
 }) {
     const {
         maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions
@@ -140,6 +149,43 @@ export async function* runCopilotTurn({
     let callCounter = 0;
     // Indices (into `messages`) of this turn's tool messages, oldest first.
     const toolMessages = [];
+
+    // The user's question: the last user message as the turn starts.
+    const questionIndex = messages.map((message) => message.role).lastIndexOf('user');
+    // With the user's answers to the Workbench's questions appended: a window
+    // the user chose there is the user's, as if written in the question.
+    let questionText = questionIndex >= 0 && typeof messages[questionIndex].content === 'string' ? messages[questionIndex].content : '';
+    const canAsk = () => Boolean(clarifier && useTools && typeof toolContext?.askUser === 'function' && questions < maxQuestions);
+    let appQuestions = 0;
+    // One question the Workbench asks itself, shown as an ask_user step.
+    async function* askFromApp(item) {
+        appQuestions += 1;
+        const id = `app_ask_${appQuestions}`;
+        const args = {
+            question: item.request.question,
+            options: item.request.options,
+            default: item.request.options[item.request.defaultIndex]?.label
+        };
+        yield { type: 'tool_start', id, name: ASK_USER, label: 'Question for you', args, page: null, cards: [], interactive: true, app: true };
+        const started = Date.now();
+        const reply = await toolContext.askUser(item.request, { signal });
+        const ms = Date.now() - started;
+        waitedMs += ms;
+        questions += 1;
+        const { data, checks } = answerResult(item.request, reply);
+        yield { type: 'tool_end', id, name: ASK_USER, status: 'ok', args, data, checks, error: null, ms, cached: false, pageParams: null };
+        return reply;
+    }
+
+    if (canAsk() && questionText) {
+        const item = clarifier.beforeTurn(questionText);
+        if (item) {
+            const reply = yield* askFromApp(item);
+            const { note } = resolveClarification(item, reply);
+            questionText = `${questionText}\n\n(The Workbench asked: "${item.request.question}" — ${note})`;
+            messages[questionIndex] = { ...messages[questionIndex], content: questionText };
+        }
+    }
 
     const keepWithinTurnBudget = (currentRoundStart) => {
         let total = toolMessages.reduce((sum, index) => sum + messages[index].content.length, 0);
@@ -253,7 +299,23 @@ export async function* runCopilotTurn({
             callCounter += 1;
             const stepId = `${call.id}#${callCounter}`;
             const tool = byName.get(call.name);
-            const parsed = parseToolArguments(call.arguments);
+            let parsed = parseToolArguments(call.arguments);
+            let runArguments = call.arguments;
+            let appNote = null;
+            // Before an analysis runs in a window that cuts a shell, the
+            // Workbench asks which window (clarify.js beforeCall).
+            if (tool && !tool.interactive && parsed.ok && position < maxCallsPerRound && !askedThisRound && canAsk()) {
+                const validated = validateToolArguments(tool.parameters, parsed.value);
+                const item = validated.ok ? clarifier.beforeCall(tool, validated.value, { questionText }) : null;
+                if (item) {
+                    askedThisRound = true;
+                    const reply = yield* askFromApp(item);
+                    const resolved = resolveClarification(item, reply, { args: validated.value, tool });
+                    runArguments = JSON.stringify(resolved.args);
+                    parsed = { ok: true, value: resolved.args };
+                    appNote = `the Workbench asked the user about the window: ${resolved.note}`;
+                }
+            }
             const shownArgs = parsed.ok ? parsed.value : call.arguments;
             yield {
                 type: 'tool_start',
@@ -301,10 +363,11 @@ export async function* runCopilotTurn({
                     cached = true;
                     note = 'identical call earlier in this question — the same result is repeated; change the arguments or answer';
                 } else {
-                    result = await executeToolCall(tool, call.arguments, { signal, timeoutMs: toolTimeoutMs, context: toolContext });
+                    result = await executeToolCall(tool, runArguments, { signal, timeoutMs: toolTimeoutMs, context: toolContext });
                     if (key && !result.error) cache.set(key, result);
                 }
             }
+            if (appNote) note = note ? `${appNote}; ${note}` : appNote;
 
             if (result.facts && !result.error) facts.push(result.facts);
             toolMessages.push(messages.length);
