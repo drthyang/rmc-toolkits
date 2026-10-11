@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { buildAskUserTool } from '../copilot/askUser';
 import { buildRunTools } from '../copilot/runTools';
 import { buildFocusTools } from '../copilot/viewTools';
 import { createFocusController } from '../focus/focus';
@@ -148,7 +149,8 @@ const ResizeHandle = ({ mode, width, sheet, dockRef, onResize, onCommit, onReset
 };
 
 const CopilotPanel = ({
-    id, hidden, mode, onCollapse, run, hostTools, pages, onOpenPage, runKey, cards, focus, onTurnEnd, onBusyChange
+    id, hidden, mode, onCollapse, run, hostTools, pages, onOpenPage, runKey, cards, focus, onTurnEnd, onBusyChange,
+    onQuestion
 }) => {
     const assistant = useAssistant({ ...run, enabled: true });
     const hasRun = Boolean((run.plotFiles && run.plotFiles.length) || run.structure);
@@ -157,7 +159,8 @@ const CopilotPanel = ({
     const tools = useMemo(() => [
         ...buildRunTools({ runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData }, { cards }),
         ...buildFocusTools({ cards, pages }),
-        ...(hostTools || [])
+        ...(hostTools || []),
+        buildAskUserTool()
     ], [runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData, hostTools, cards, pages]);
 
     return (
@@ -224,6 +227,7 @@ const CopilotPanel = ({
                             focus={focus}
                             onTurnEnd={onTurnEnd}
                             onBusyChange={onBusyChange}
+                            onQuestion={onQuestion}
                         />
                     ) : (
                         <p className="llm-chat-norun">Open a run folder, or load the Demo, to start.</p>
@@ -246,7 +250,8 @@ const CopilotChat = ({
     const [mounted, setMounted] = useState(initialOpen);
     const [width, setWidth] = useState(() => clampDockWidth(saved.width ?? defaultDockWidth(viewportWidth(), rootFontSize()), viewportWidth()));
     const [sheet, setSheet] = useState(() => clampSheet(saved.sheet));
-    const [unread, setUnread] = useState(false);
+    // What arrived while collapsed: null, 'answer' or 'question'.
+    const [unread, setUnread] = useState(null);
     const [busy, setBusy] = useState(false);
     const panelId = useId();
     const railRef = useRef(null);
@@ -318,7 +323,7 @@ const CopilotChat = ({
     const setOpenState = useCallback((next) => {
         if (next) {
             setMounted(true);
-            setUnread(false);
+            setUnread(null);
         } else {
             // Collapsed, the agent is not on screen: its highlight ends.
             focus.clear('collapse');
@@ -372,11 +377,17 @@ const CopilotChat = ({
     }, [storageKey]);
 
     const onTurnEnd = useCallback(() => {
-        if (!openRef.current) setUnread(true);
+        if (!openRef.current) setUnread((current) => current || 'answer');
+    }, []);
+    // A question waits for the user: say so on the rail, over an answer.
+    const onQuestion = useCallback(() => {
+        if (!openRef.current) setUnread('question');
     }, []);
 
     const run = { runName, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites, liveData };
-    const railLabel = unread ? 'AI Copilot — new answer' : (busy ? 'AI Copilot — working' : 'AI Copilot');
+    const railLabel = unread === 'question'
+        ? 'AI Copilot — a question for you'
+        : (unread ? 'AI Copilot — new answer' : (busy ? 'AI Copilot — working' : 'AI Copilot'));
 
     return (
         <aside
@@ -436,6 +447,7 @@ const CopilotChat = ({
                     focus={focus}
                     onTurnEnd={onTurnEnd}
                     onBusyChange={setBusy}
+                    onQuestion={onQuestion}
                 />
             )}
         </aside>

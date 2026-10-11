@@ -17,6 +17,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import CopilotChat from '../components/CopilotChat';
 import { DOCK_STORAGE_KEY } from '../components/dockLayout';
+import { forgetServers } from '../provider/contextGuard';
 import { saveSettings } from '../settings';
 
 const sse = (chunks) => {
@@ -31,6 +32,12 @@ const sse = (chunks) => {
     return { ok: true, status: 200, body };
 };
 const delta = (fields, finish = null) => ({ choices: [{ delta: fields, finish_reason: finish }] });
+
+// The mocked server is OpenAI-compatible only: the Copilot's probes of an
+// Ollama or LM Studio API (provider/contextGuard.js) get a 404.
+const notFound = { ok: false, status: 404, json: async () => ({ error: 'not found' }) };
+const isServerProbe = (url) => /\/api\//.test(String(url));
+const modelList = { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) };
 
 const replies = () => [
     sse([
@@ -47,6 +54,11 @@ const settle = () => act(async () => {
     for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 });
 
+// Settle until `ready()` holds (a multi-step answer takes several hops).
+const settleUntil = async (ready, rounds = 20) => {
+    for (let i = 0; i < rounds && !ready(); i += 1) await settle();
+};
+
 const setTextarea = (textarea, value) => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(textarea, value);
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -60,14 +72,14 @@ describe('CopilotChat', () => {
 
     beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+        forgetServers();
         localStorage.removeItem(DOCK_STORAGE_KEY);
         saveSettings({ baseUrl: 'http://localhost:11434/v1', model: '', apiKey: '', copilotTools: true });
         chatBodies = [];
         const queue = replies();
         fetchMock = vi.fn(async (url, options = {}) => {
-            if (String(url).endsWith('/models')) {
-                return { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) };
-            }
+            if (isServerProbe(url)) return notFound;
+            if (String(url).endsWith('/v1/models')) return modelList;
             chatBodies.push(JSON.parse(options.body));
             return queue.shift();
         });
@@ -160,7 +172,7 @@ describe('CopilotChat', () => {
         await ask('What are the Ta–Ta–Ta angles?');
 
         expect(chatBodies).toHaveLength(2);
-        expect(chatBodies[0].tools.map((tool) => tool.function.name)).toEqual(['read_run_data', 'compute_bond_angles']);
+        expect(chatBodies[0].tools.map((tool) => tool.function.name)).toEqual(['read_run_data', 'compute_bond_angles', 'ask_user']);
         const toolMessage = chatBodies[1].messages.at(-1);
         expect(toolMessage).toMatchObject({ role: 'tool', tool_call_id: 'call_a' });
         expect(JSON.parse(toolMessage.content).data).toEqual({ modes: [{ angle_deg: 59.5 }] });
@@ -201,7 +213,7 @@ describe('CopilotChat', () => {
 
         await openChat();
         expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
-        expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/models'))).toHaveLength(1);
+        expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/v1/models'))).toHaveLength(1);
     });
 
     it('starts a new conversation when another run opens', async () => {
@@ -224,9 +236,10 @@ describe('CopilotChat', () => {
             sse([delta({}, 'stop')]),
             sse([{ error: { message: 'Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)' } }])
         ];
-        vi.stubGlobal('fetch', vi.fn(async (url) => (String(url).endsWith('/models')
-            ? { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) }
-            : queue.shift())));
+        vi.stubGlobal('fetch', vi.fn(async (url) => {
+            if (isServerProbe(url)) return notFound;
+            return String(url).endsWith('/v1/models') ? modelList : queue.shift();
+        }));
         act(() => root.render(chat()));
         await openChat();
 
@@ -250,12 +263,15 @@ describe('CopilotChat', () => {
         await settle();
         expect(container.querySelector('.llm-chat-norun').textContent).toMatch(/Open a run folder/);
     });
+    // A queued reply may be a function of the request body: a model that
+    // reads what it was sent.
     const stubReplies = (queue) => vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
-        if (String(url).endsWith('/models')) {
-            return { ok: true, status: 200, json: async () => ({ data: [{ id: 'tool-model' }] }) };
-        }
-        chatBodies.push(JSON.parse(options.body));
-        return queue.shift();
+        if (isServerProbe(url)) return notFound;
+        if (String(url).endsWith('/v1/models')) return modelList;
+        const body = JSON.parse(options.body);
+        chatBodies.push(body);
+        const next = queue.shift();
+        return typeof next === 'function' ? next(body) : next;
     }));
 
     it('remembers the open state and the width, and resizes from the keyboard', async () => {
@@ -316,6 +332,236 @@ describe('CopilotChat', () => {
         expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
         act(() => container.querySelector('.llm-chat-panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
         expect(container.querySelector('.llm-dock-rail').className).not.toContain('has-unread');
+    });
+
+    describe('the context guard on Ollama', () => {
+        const ndjson = (objects) => {
+            const encoder = new TextEncoder();
+            return { ok: true, status: 200, body: new ReadableStream({
+                start(controller) {
+                    controller.enqueue(encoder.encode(objects.map((object) => `${JSON.stringify(object)}\n`).join('')));
+                    controller.close();
+                }
+            }) };
+        };
+        // Ollama with gemma4:26b loaded at a 4,096-token default context.
+        const ollama = ({ max = 262144, replies = [] } = {}) => {
+            const chats = [];
+            const fetchMock = vi.fn(async (url, options = {}) => {
+                const path = new URL(String(url)).pathname;
+                if (path === '/v1/models') return { ok: true, status: 200, json: async () => ({ data: [{ id: 'gemma4:26b' }] }) };
+                if (path === '/api/version') return { ok: true, status: 200, json: async () => ({ version: '0.40.2' }) };
+                if (path === '/api/ps') return { ok: true, status: 200, json: async () => ({ models: [{ name: 'gemma4:26b', model: 'gemma4:26b', context_length: 4096 }] }) };
+                if (path === '/api/show') return { ok: true, status: 200, json: async () => ({ model_info: { 'gemma4.context_length': max } }) };
+                if (path === '/api/chat') {
+                    chats.push(JSON.parse(options.body));
+                    return replies.shift();
+                }
+                return notFound;
+            });
+            vi.stubGlobal('fetch', fetchMock);
+            return { chats, fetchMock };
+        };
+
+        it('runs the turn through the native API with a context that holds the whole prompt', async () => {
+            const angles = { ...bondAngles, run: vi.fn(async () => ({ data: { modes: [{ angle_deg: 60 }] }, checks: [{ level: 'ok', text: 'angles' }] })) };
+            const { chats, fetchMock } = ollama({ replies: [
+                ndjson([
+                    { message: { role: 'assistant', content: 'Computing.', tool_calls: [{ function: { name: 'compute_bond_angles', arguments: { end1: 'Ta', apex: 'Ta', end2: 'Ta', r12_min: 2.7, r12_max: 3.3 } } }] }, done: false },
+                    { message: { content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 3000, eval_count: 30 }
+                ]),
+                ndjson([
+                    { message: { content: 'They peak at 60°.\n\nOutcome: achieved — x' }, done: false },
+                    { message: { content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 3300, eval_count: 20 }
+                ])
+            ] });
+            saveSettings({ model: 'gemma4:26b' });
+            act(() => root.render(chat({ tools: [angles] })));
+            await openChat();
+            await ask('What are the Ta–Ta–Ta angles?');
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+
+            expect(chats).toHaveLength(2);
+            // Not the 4,096 the model is loaded with: room for the prompt and the reply.
+            for (const body of chats) {
+                expect(body.options.num_ctx).toBeGreaterThanOrEqual(16384);
+                expect(body.options.num_predict).toBeGreaterThan(8000);
+            }
+            expect(chats[1].options.num_ctx).toBe(chats[0].options.num_ctx);
+            expect(chats[1].messages.at(-1)).toMatchObject({ role: 'tool', tool_name: 'compute_bond_angles' });
+            expect(angles.run).toHaveBeenCalledTimes(1);
+            expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/v1/chat/completions'))).toBe(false);
+            expect(container.querySelector('.llm-outcome').className).toContain('is-achieved');
+        });
+
+        it('refuses the turn, with a reason, when the model cannot hold the prompt', async () => {
+            const { chats } = ollama({ max: 8192 });
+            saveSettings({ model: 'gemma4:26b' });
+            act(() => root.render(chat()));
+            await openChat();
+            await ask('Has the run converged?');
+            expect(chats).toHaveLength(0);
+            expect(container.querySelector('[role="alert"]').textContent)
+                .toMatch(/needs about [\d,]+ tokens of context .* but gemma4:26b holds at most 8,192\. .*Nothing was sent/);
+            expect(container.querySelector('.llm-composer-input').disabled).toBe(false);
+        });
+
+        it('says when an answer stopped at the length limit', async () => {
+            ollama({ replies: [ndjson([
+                { message: { content: 'The angles are' }, done: false },
+                { message: { content: '' }, done: true, done_reason: 'length', prompt_eval_count: 3000, eval_count: 13000 }
+            ])] });
+            saveSettings({ model: 'gemma4:26b' });
+            act(() => root.render(chat()));
+            await openChat();
+            await ask('Angles?');
+            const footer = container.querySelector('.llm-turn-footer');
+            expect(footer.className).toContain('is-cut');
+            expect(footer.textContent).toContain('the reply reached the model\'s length limit and is cut short');
+        });
+    });
+
+    describe('asking the user (ask_user)', () => {
+        const askCall = (args) => sse([
+            delta({ content: 'The Ta–Se shell is split.' }),
+            delta({ tool_calls: [{ index: 0, id: 'call_q', type: 'function', function: { name: 'ask_user', arguments: JSON.stringify(args) } }] }, 'tool_calls')
+        ]);
+        const shellQuestion = {
+            question: 'Which Ta–Se window should the Se–Ta–Se angles use?',
+            options: [
+                { label: 'Whole first shell', description: '2.33–2.96 Å, both Ta–Se peaks' },
+                { label: 'First peak only', description: '2.33–2.71 Å, the short bonds' }
+            ],
+            default: 'Whole first shell'
+        };
+        const WINDOWS = { 'Whole first shell': [2.33, 2.96], 'First peak only': [2.33, 2.71] };
+        // The model computes in the window the answer names.
+        const computeFromAnswer = (body) => {
+            const { data } = JSON.parse(body.messages.at(-1).content);
+            const typed = /(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)/.exec(data.answer || '');
+            const [min, max] = WINDOWS[data.answer] || [Number(typed[1]), Number(typed[2])];
+            return sse([delta({ tool_calls: [{ index: 0, id: 'call_b', type: 'function', function: {
+                name: 'compute_bond_angles',
+                arguments: JSON.stringify({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: min, r12_max: max })
+            } }] }, 'tool_calls')]);
+        };
+        const answered = () => sse([delta({ content: 'The Se–Ta–Se angles …\n\nOutcome: achieved — in the chosen window.' }, 'stop')]);
+        const freshAngles = () => ({ ...bondAngles, run: vi.fn(async () => ({ data: { modes: [{ angle_deg: 90 }] }, checks: [{ level: 'ok', text: 'angles' }] })) });
+
+        const card = () => container.querySelector('.llm-ask');
+        const options = () => [...container.querySelectorAll('.llm-ask-option')];
+
+        it('shows the question as a card, waits, and sends the chosen option back to the model', async () => {
+            stubReplies([askCall(shellQuestion), computeFromAnswer, answered()]);
+            const angles = freshAngles();
+            act(() => root.render(chat({ tools: [angles] })));
+            await openChat();
+            await ask('What are the Se–Ta–Se angles?');
+
+            // The prompt carries the rules, and the tool is offered.
+            expect(chatBodies[0].messages[0].content).toContain('Ask instead of guessing a parameter that changes the science');
+            expect(chatBodies[0].tools.map((tool) => tool.function.name)).toContain('ask_user');
+            // The turn waits on the card: one request so far.
+            expect(chatBodies).toHaveLength(1);
+            expect(card().className).toContain('is-waiting');
+            expect(card().getAttribute('role')).toBe('group');
+            expect(card().querySelector('.llm-ask-question').textContent).toBe(shellQuestion.question);
+            expect(options().map((button) => button.textContent)).toEqual([
+                '1Whole first shelldefault2.33–2.96 Å, both Ta–Se peaks',
+                '2First peak only2.33–2.71 Å, the short bonds'
+            ]);
+            expect(container.querySelector('.llm-ask-other-input').placeholder).toBe('Other…');
+            // The empty composer gives focus to the default option; arrows move it.
+            expect(document.activeElement).toBe(options()[0]);
+            act(() => options()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+            expect(document.activeElement).toBe(options()[1]);
+            expect(container.querySelector('.llm-sr-only[aria-live]').textContent).toBe(`The Copilot asks: ${shellQuestion.question}`);
+            expect(container.querySelector('.llm-send').getAttribute('aria-label')).toBe('Stop');
+
+            // Picking "First peak only" with its number key answers it.
+            act(() => options()[1].dispatchEvent(new KeyboardEvent('keydown', { key: '2', bubbles: true })));
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+            const result = JSON.parse(chatBodies[1].messages.at(-1).content);
+            expect(result.data).toEqual({ question: shellQuestion.question, answer: 'First peak only', means: '2.33–2.71 Å, the short bonds' });
+            expect(angles.run).toHaveBeenCalledTimes(1);
+            expect(angles.run.mock.calls[0][0]).toMatchObject({ r12_min: 2.33, r12_max: 2.71 });
+
+            // The card keeps the question and the reply; the answer follows.
+            expect(card().className).toContain('is-answered');
+            expect(card().querySelector('.llm-ask-reply').textContent).toBe('YouFirst peak only');
+            expect(container.querySelector('.llm-outcome').className).toContain('is-achieved');
+            // The question is not counted as an analysis.
+            expect(container.querySelector('.llm-turn-footer').textContent).toBe('1 analysis');
+        });
+
+        it('takes an answer typed in Other', async () => {
+            stubReplies([askCall(shellQuestion), computeFromAnswer, answered()]);
+            const angles = freshAngles();
+            act(() => root.render(chat({ tools: [angles] })));
+            await openChat();
+            await ask('Se–Ta–Se angles?');
+            const input = container.querySelector('.llm-ask-other-input');
+            expect(container.querySelector('.llm-ask-send').disabled).toBe(true);
+            act(() => {
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '2.3 to 3.1 Å');
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            act(() => container.querySelector('.llm-ask-other').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+            expect(JSON.parse(chatBodies[1].messages.at(-1).content).data).toEqual({ question: shellQuestion.question, answer: '2.3 to 3.1 Å', typed: true });
+            expect(angles.run.mock.calls[0][0]).toMatchObject({ r12_min: 2.3, r12_max: 3.1 });
+        });
+
+        it('cancels cleanly: Stop while waiting ends the turn, and the next question works', async () => {
+            stubReplies([askCall(shellQuestion), sse([delta({ content: 'Fine.\n\nOutcome: achieved — x' }, 'stop')])]);
+            act(() => root.render(chat({ tools: [freshAngles()] })));
+            await openChat();
+            await ask('Se–Ta–Se angles?');
+            expect(card().className).toContain('is-waiting');
+            act(() => container.querySelector('.llm-send').click());
+            await settle();
+            expect(chatBodies).toHaveLength(1);
+            expect(card().className).toContain('is-stopped');
+            expect(card().textContent).toContain('Not answered');
+            expect(container.querySelector('.llm-ask-option')).toBeNull();
+            expect(container.querySelector('.llm-turn-footer').textContent).toBe('Stopped.');
+            expect(container.querySelector('[role="alert"]')).toBeNull();
+            await ask('Anything else?');
+            expect(chatBodies).toHaveLength(2);
+            expect(container.querySelector('.llm-outcome').className).toContain('is-achieved');
+        });
+
+        it('drops a waiting question when another run opens', async () => {
+            stubReplies([askCall(shellQuestion)]);
+            act(() => root.render(chat({ tools: [freshAngles()] })));
+            await openChat();
+            await ask('Se–Ta–Se angles?');
+            expect(card()).not.toBeNull();
+            act(() => root.render(chat({ tools: [freshAngles()], runKey: 'run-2' })));
+            await settle();
+            expect(card()).toBeNull();
+            expect(container.querySelectorAll('.llm-message')).toHaveLength(0);
+            expect(container.querySelector('[role="alert"]')).toBeNull();
+            expect(chatBodies).toHaveLength(1);
+        });
+
+        it('marks the rail when a question arrives while the Copilot is collapsed', async () => {
+            stubReplies([askCall(shellQuestion), computeFromAnswer, answered()]);
+            act(() => root.render(chat({ tools: [freshAngles()] })));
+            await openChat();
+            act(() => setTextarea(container.querySelector('.llm-composer-input'), 'Se–Ta–Se angles?'));
+            act(() => container.querySelector('.llm-composer').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+            act(() => container.querySelector('.llm-chat-panel').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+            await settle();
+            const rail = container.querySelector('.llm-dock-rail');
+            expect(rail.className).toContain('has-unread');
+            expect(rail.getAttribute('aria-label')).toBe('AI Copilot — a question for you');
+            await openChat();
+            act(() => options()[0].click());
+            await settleUntil(() => container.querySelector('.llm-outcome'));
+            expect(JSON.parse(chatBodies[1].messages.at(-1).content).data.answer).toBe('Whole first shell');
+            expect(container.querySelector('.llm-outcome')).not.toBeNull();
+        });
     });
 
     describe('pointing at the host cards', () => {

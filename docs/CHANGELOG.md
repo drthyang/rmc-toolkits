@@ -5,7 +5,74 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
-_Nothing yet._
+### AI Copilot: it asks instead of guessing (`ask_user`)
+
+The spot check's worst answer came from a guess: asked for "Se–Ta–Se angles against an ideal
+octahedron", a model picked the first-peak window and cut the TaSe₆ shell in two. When a question
+leaves open a choice that changes the science, the Copilot now asks.
+
+- **`ask_user`** (`llm/copilot/askUser.js`): one short question, 2–4 options with a one-line meaning
+  each, *Other…*, and the agent's default. The request is normalized (plain strings read as
+  options, `"label — description"` split, repeats dropped, the default matched by label or number)
+  and a malformed one is refused with a message the model can act on.
+- **The card** (`llm/components/QuestionCard.jsx`), in the docked panel and the bottom sheet:
+  option buttons (1–4, ↑/↓), *Other…*, *Skip*; it takes focus unless the user is typing, the log
+  keeps its question in view, and a collapsed dock marks the rail. Answered, it keeps the question
+  and the reply; the turn footer does not count it as an analysis.
+- **The loop waits** (`interactive: true` in the tool contract, `askUser` in the tools' context):
+  never cached, no time limit, the wait off the turn's 10-min clock, at most two questions per
+  request and one per step. The answer returns as the tool result ("use exactly this choice";
+  a skip says "use your default and say you assumed it"). Stop, a run change or an unmount
+  cancels it cleanly.
+- **Prompt rules** (`ASK_RULES`): ask only when the answer changes which analysis runs or its
+  parameters (shell or r-window, site or pair, tolerance, run) and neither the context nor an
+  analysis can settle it; settle what the data can first; never on a clear question; offer a
+  default; use the chosen option and say which.
+- **Argument validation:** a bare string where an object with one required string field belongs
+  is read as that field (`options: ["a", "b"]`).
+- **With a real model** (gemma4:26b, 16 questions on the Demo, 2026-10-11): it never called
+  `ask_user`, including on "What are the Se–Ta–Se bond angles?" — the run context now holds the
+  whole first shell (2.2–3.23 Å, CN 6), which it used — and on open requests ("the bond angles
+  around Ta") it chose the main polyhedron and said so. Clear questions took 6–37 s, none asked.
+- **Tests:** replays on the Demo's split Ta–Se shell (an ambiguous question asks and the chosen
+  window — option, default, typed, skipped — reaches `compute_bond_angles`; a clear question does
+  not ask; cancel; limits; the turn clock), and the card end to end against a mocked server.
+
+### AI Copilot: a prompt is never cut to fit the model's context
+
+A local server runs a model with a fixed context window and shortens a longer prompt without an
+error, so the model answers without part of its rules or the run context. The Copilot's first
+request on the Demo is ~28,400 characters (~8,600 gemma4 tokens), and Ollama's OpenAI-compatible
+endpoint cannot carry a context length: it uses the server default, which Ollama 0.40 picks from the
+GPU memory it finds — 262,144 on the maintainer's Mac (nothing was cut: no `truncating input
+prompt` line in its logs since 2026-08-26), but 4,096 on a start where it saw no GPU (the same Mac,
+2026-09-27). Checked with gemma4:26b on the Demo's first request (8,437 tokens): at a 4,096 window
+Ollama answers 200, drops the run context, cuts the rest to 2,051 tokens, and the model calls the
+wrong tool; at 10,240 or more it reads everything.
+
+- **`provider/contextGuard.js`** (`streamCopilotChat`, used for every Copilot request): for an
+  Ollama server it sends the request through the native `/api/chat` (`provider/ollama.js`, its own
+  NDJSON parser) with `num_ctx` = the loaded context when it holds the prompt and 8,192 tokens of
+  reply, else the next multiple of 8,192 (≥ 16,384, kept for the conversation, ≤ the model's
+  maximum), and `num_predict` inside it, so a long reply cannot push the prompt's start out of the
+  window. The prompt size is a deliberately high estimate (2.5 characters per token; ~32 % above
+  gemma4's count on the Demo).
+- **Refuses rather than cuts:** when even the model's maximum cannot hold the request, or LM
+  Studio's loaded context cannot, the turn stops before anything is sent and says what to change.
+  Cloud providers and other servers are unchanged; only `localhost` or port 11434 is probed.
+- **A backstop:** Ollama's `prompt_eval_count` is what the model read; under 0.4 of the estimate
+  (an uncut request reads 0.74 of it) the turn stops with an error.
+- **A reply cut at the length limit** says so in the turn's footer.
+- The setup guide, README and QuickStart no longer ask for `OLLAMA_CONTEXT_LENGTH`.
+
+### UI kit: no sideways scroll from closed info popovers
+
+At iPad-portrait widths (820–834 px) the Displacement Directions page scrolled sideways: a `?`
+badge in the wrapped controls bar sat within 20 rem of the right edge, and its closed popover,
+hidden with `visibility` only, still counted toward the page's overflow. A closed `InfoBadge`
+popover now takes no space (`display: none`, still fading in where display transitions are
+supported), and an open one takes the other edge when its own would run off the window
+(`ui/popoverEdge.js`). Checked on every page at the kit's device sizes.
 
 ## 0.7.0 — 2026-10-11
 

@@ -106,14 +106,15 @@ Because the hosted dashboard is served over HTTPS, a **local** model server must
 origin (`https://drthyang.github.io`) via CORS. For Ollama:
 
 ```bash
-# start Ollama allowing the hosted app, with room for the Copilot's analyses:
-OLLAMA_ORIGINS="https://drthyang.github.io" OLLAMA_CONTEXT_LENGTH=16384 ollama serve
+# start Ollama allowing the hosted app (the Copilot sets the context length it needs):
+OLLAMA_ORIGINS="https://drthyang.github.io" ollama serve
 
 # or, for the macOS menu-bar app, set it once and reopen Ollama (resets on logout):
 launchctl setenv OLLAMA_ORIGINS "https://drthyang.github.io"
 ```
 
-For LM Studio, enable CORS in the server settings and load the model with a large context. Then
+For LM Studio, enable CORS in the server settings and load the model with a large context (16,384
+tokens or more; the Copilot refuses a question the loaded context cannot hold and says so). Then
 open `AI Copilot` (the rail at the right edge) → gear → pick the provider → `Test` → choose a model.
 
 **Safari note:** Safari blocks HTTPS pages from calling `http://localhost`. Use Chrome, Edge, or

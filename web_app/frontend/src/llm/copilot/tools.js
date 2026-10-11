@@ -19,7 +19,9 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 //     view: true,                            // changes only what is on screen (a
 //                                            // card's focus, a 3D camera): never
 //                                            // answered from the call cache (optional)
-//     run: async (args, { signal, focus }) => ({ data, checks })
+//     interactive: true,                     // waits for the user (ask_user): never
+//                                            // cached, no time limit (optional)
+//     run: async (args, { signal, focus, askUser }) => ({ data, checks })
 //   }
 //
 // `data` is the compact JSON the model reads (never a raw engine payload);
@@ -28,7 +30,9 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 // failed step whose message the model reads, so it can correct its arguments.
 // `focus` (when the chat has a page to point at) is the card-focus controller
 // (focus/focus.js): view tools call focus.show(ids) and focus.onClear(undo);
-// analysis tools leave it alone.
+// analysis tools leave it alone. `askUser(request, { signal })` (when the
+// conversation can show a question card) is how an interactive tool asks the
+// user and waits for the reply (askUser.js).
 
 export const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 export const CHECK_LEVELS = ['ok', 'note', 'warn', 'fail'];
@@ -126,6 +130,8 @@ const abortError = () => new DOMException('Aborted', 'AbortError');
  * The tool's `run` receives its own `signal`, aborted when the turn is stopped
  * or the call times out, so an engine that can be cancelled (the Copilot's
  * worker, an HTTP request) stops working instead of running on unseen.
+ * Without a finite positive `timeoutMs` (an interactive tool waiting for the
+ * user) only the turn's own signal stops it.
  */
 export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs, context = null }) => {
     const started = performance.now();
@@ -144,10 +150,12 @@ export const executeToolCall = async (tool, rawArguments, { signal, timeoutMs, c
     const onTurnAbort = () => call.abort();
     signal?.addEventListener('abort', onTurnAbort, { once: true });
     const limits = new Promise((_, reject) => {
-        timer = setTimeout(() => {
-            reject(timeoutError(timeoutMs));
-            call.abort();
-        }, timeoutMs);
+        if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+            timer = setTimeout(() => {
+                reject(timeoutError(timeoutMs));
+                call.abort();
+            }, timeoutMs);
+        }
         call.signal.addEventListener('abort', () => reject(signal?.aborted ? abortError() : timeoutError(timeoutMs)), { once: true });
     });
     try {

@@ -55,6 +55,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     label: event.label,
                     args: event.args,
                     page: event.page,
+                    interactive: Boolean(event.interactive),
                     status: 'running',
                     data: null,
                     checks: [],
@@ -92,6 +93,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                 text: event.text,
                 outcome: event.outcome,
                 stoppedBy: event.stoppedBy,
+                cut: Boolean(event.cut),
                 streaming: false
             };
         }
@@ -118,9 +120,12 @@ export const closeTurn = (turn, stoppedBy) => {
     };
 };
 
-/** "3 analyses · 1 warning · 1 failed" for a turn's footer, or '' without steps. */
+/**
+ * "3 analyses · 1 warning · 1 failed" for a turn's footer, or '' without
+ * steps. A clarifying question (an interactive step) is not an analysis.
+ */
 export const stepSummary = (items) => {
-    const steps = items.filter((item) => item.kind === 'tool');
+    const steps = items.filter((item) => item.kind === 'tool' && !item.interactive);
     if (!steps.length) return '';
     const count = (status) => steps.filter((item) => item.status === status).length;
     const parts = [`${steps.length} ${steps.length === 1 ? 'analysis' : 'analyses'}`];

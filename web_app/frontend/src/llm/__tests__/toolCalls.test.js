@@ -180,3 +180,26 @@ describe('validateToolArguments: lists and objects', () => {
         expect(validateToolArguments(schema, { refs: { a: 1 } }).errors).toEqual(['refs must be a list, got object']);
     });
 });
+
+describe('a bare string where an object belongs', () => {
+    const schema = {
+        type: 'object',
+        properties: {
+            options: {
+                type: 'array',
+                items: { type: 'object', properties: { label: { type: 'string' }, note: { type: 'string' } }, required: ['label'] }
+            },
+            mark: { type: 'object', properties: { x: { type: 'number' } }, required: ['x'] }
+        }
+    };
+
+    it('is read as the one required string property', () => {
+        const checked = validateToolArguments(schema, { options: ['a', { label: 'b', note: 'n' }, 3] });
+        expect(checked.ok).toBe(true);
+        expect(checked.value.options).toEqual([{ label: 'a' }, { label: 'b', note: 'n' }, { label: '3' }]);
+    });
+
+    it('is still an error where the required property is not a string', () => {
+        expect(validateToolArguments(schema, { mark: '2.5' }).errors[0]).toMatch(/mark must be an object/);
+    });
+});

@@ -186,10 +186,22 @@ function checkArray(key, raw, spec) {
     return { value: items };
 }
 
+// The one required string property of an object schema, if that is all it
+// requires: a bare string where such an object belongs is read as it
+// (options: ["a", "b"] for [{ label: "a" }, { label: "b" }]).
+const soleRequiredString = (spec) => {
+    const required = Array.isArray(spec?.required) ? spec.required : [];
+    return required.length === 1 && spec.properties?.[required[0]]?.type === 'string' ? required[0] : null;
+};
+
 // An object property: its `properties` and `required`, like the arguments
 // themselves (unknown keys are dropped).
 function checkObject(key, raw, spec) {
-    const value = fromText(raw, 'object');
+    let value = fromText(raw, 'object');
+    const sole = soleRequiredString(spec);
+    if (sole && (typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)))) {
+        value = { [sole]: String(value) };
+    }
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return { error: `${key} must be an object, got ${describeType(raw)}` };
     }

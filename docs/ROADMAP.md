@@ -95,6 +95,72 @@ data stays local:
   convergence watchdog (heuristics-first, LLM-narrated). **Done (experimental).**
 - Possible next steps: feed KDE/symmetry findings into the context, run comparison Q&A, and a
   guided "why is my fit bad?" diagnostic flow.
+- Since 2026-10-09 this is the **AI Copilot** (it runs the analyses itself; see the llm README and
+  [COPILOT_PLAN.md](COPILOT_PLAN.md)).
+
+### AI Copilot speed (planned; deferred 2026-10-11)
+
+The maintainer found local models "a bit slow" and asked whether the laptop or the agent's workflow
+was at fault. On 2026-10-11 they put speed **after** correctness: the tools, the workflow's
+scientific accuracy and its robustness come first (the `ask_user` question card and the context
+guard shipped then). The diagnosis below comes from Ollama 0.40.2's own server log on the
+maintainer's Apple M5 Pro (64 GB, 51.8 GiB usable by the GPU), 2026-10-09 to 10-11, while another
+job (Athanor) shared the server with qwen3:32b and gemma4:26b.
+
+**Where the time went:**
+
+- **Waiting for another job, not computing.** In the view-tool checks (2026-10-11, 00:31–01:14),
+  each Copilot request on gemma4:26b took 8–22 s of server time: 8,000–10,200 prompt tokens
+  processed in 7–13 s, and 20–450 tokens generated in 0.3–9 s. Yet each request took 2.5–6.7 min
+  end to end, because it queued behind the other job's requests (one slot) and model swaps:
+  gemma4:26b (17 GB, plus 5.4 GB of KV cache at the 262,144-token default context) and qwen3:32b
+  (31 GB at 40,960) do not fit together in 51.8 GiB, so the log shows 137 model loads in 39 h.
+  The README's 223–847 s per question for that check were mostly this.
+- **Reloads between questions.** With the default 5-minute keep-alive, questions more than five
+  minutes apart reload the model (17 gemma4 loads on 2026-10-10 between 10:00 and 19:35, 2–9 s
+  each) and lose the prompt cache.
+- **The prompt cache misses on every new question (gemma4).** gemma4 uses sliding-window attention
+  (1,024-token window). llama-server can reuse such a cache only from a saved checkpoint at or
+  below the prefix the new prompt shares, and its checkpoints sit near the ends of earlier
+  prompts. So each new question re-processes the whole 7,000–9,000-token prompt ("forcing full
+  prompt re-processing due to lack of cache data", 2026-10-10 13:08, 6 s at 1,400 tokens/s).
+  Within a question, each step extends the last prompt and is reused (8,428 of 8,645 tokens).
+- **Dense models are an order of magnitude slower.** Prefill: gemma4:26b (mixture of experts)
+  850–1,400 tokens/s against qwen3:32b's 130–180 tokens/s (~60 s for one 8,400-token prompt).
+  Generation: 50–63 against ~10 tokens/s. qwen/qwen3.8-27b (LM Studio, a dense reasoning model at
+  its default reasoning effort) took 1–5 min per question in the 2026-10-10 spot check, and one
+  reasoning step 10.5 min. The Copilot sends no reasoning control.
+- **The laptop is not the bottleneck** for gemma4:26b: before the other job started (the
+  2026-10-10 spot check, no other model loaded) a question took 8–95 s.
+
+**Plan** (each item measured before and after on an idle server: the six spot-check questions of
+the llm README, gemma4:26b, `main` against the branch):
+
+1. **Measure first:** a timing line on each step card and answer (load, prompt processing,
+   thinking, writing, tool time; details on expand), from Ollama's native durations
+   (`load_duration`, `prompt_eval_*`, `eval_*`), OpenAI-style `usage` with
+   `stream_options.include_usage`, and client timestamps otherwise.
+2. **Keep the model loaded** while the Copilot is open (`keep_alive`), and optionally warm it when
+   the Copilot opens: load it and process the static part of the prompt once, which also leaves a
+   sliding-window checkpoint at the end of that prefix so every new question reuses it.
+3. **Prompt caching:** keep the static prefix (rules, tool schemas, then the run context)
+   byte-identical across questions; the tool schemas are the largest part (~14,800 characters).
+   Sending only a page's or question's tool group would change that prefix, so do it only if the
+   cache keeps working.
+4. **Reasoning control, "Fast / Thorough":** little thinking while choosing tools and normal
+   thinking for the answer, through Ollama's `think`, OpenAI-style `reasoning_effort` and LM
+   Studio's equivalent, detected per server, with a silent fallback when a server rejects the
+   field. Check that toggling it per step does not change the prompt's start (some templates put
+   the thinking switch in the system turn), or the cache breaks.
+5. **Fewer round trips:** let the model request independent analyses in one step and run them
+   concurrently; keep answering from the context when it holds the answer.
+6. **Recommend gemma4:26b** for local use in the settings, noting that dense reasoning models are
+   much slower; and say in the setup guide that a second model on the same server queues the
+   Copilot's requests.
+7. **Context size and memory:** the context guard (shipped) asks for a context that fits the
+   prompt. A smaller context than the 262,144 default would also shrink gemma4's KV cache from
+   5.4 GB to under 1 GB, but a context that differs from another client's reloads the model on
+   every alternation; decide with the measurements.
 
 ## Phase 6: Lab-Ready App
 

@@ -6,12 +6,14 @@ import { contextToJson } from '../context/runContext';
 import { stepSummary } from '../copilot/turnState';
 import { useCopilot } from '../useCopilot';
 import MarkdownMessage from './MarkdownMessage';
+import QuestionCard from './QuestionCard';
 import ToolStep from './ToolStep';
 import { ArrowUpIcon, ChevronIcon, StopIcon, UserGlyph, WaveMark } from './icons';
 
 // The Copilot conversation: questions, and for each one the assistant's turn —
-// what it said, the analyses it ran (ToolStep cards), its answer, and the
-// Outcome chip with its own verdict. User messages stay plain text; replies
+// what it said, the analyses it ran (ToolStep cards), the clarifying question
+// it asked, if any (QuestionCard: the turn waits for the reply), its answer,
+// and the Outcome chip with its own verdict. User messages stay plain text; replies
 // render Markdown through the sanitizing pipeline (MarkdownMessage), with the
 // cards they cite as chips that bring the card on screen (`focus.show`).
 
@@ -104,7 +106,7 @@ const groupItems = (items) => items.reduce((groups, item) => {
     return groups;
 }, []);
 
-const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks }) => {
+const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, onAnswer = null }) => {
     const groups = groupItems(turn.items);
     const summary = stepSummary(turn.items);
     const stopNote = STOP_NOTES[turn.stoppedBy];
@@ -115,14 +117,21 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks }) => {
                 <span className="llm-message-name">Copilot</span>
                 {groups.map((group, index) => (group.kind === 'steps' ? (
                     <ol key={index} className="llm-steps" aria-label="Analyses run">
-                        {group.steps.map((step) => (
+                        {group.steps.map((step) => (step.interactive ? (
+                            <QuestionCard
+                                key={step.id}
+                                step={step}
+                                request={step.status === 'running' ? question : null}
+                                onAnswer={onAnswer}
+                            />
+                        ) : (
                             <ToolStep
                                 key={step.id}
                                 step={step}
                                 pageLabel={step.page ? pages?.[step.page] : null}
                                 onOpenPage={onOpenPage}
                             />
-                        ))}
+                        )))}
                     </ol>
                 ) : (
                     <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} />
@@ -137,11 +146,12 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks }) => {
                         )}
                     </div>
                 )}
-                {!turn.streaming && (summary || stopNote || turn.toolsUnsupported) && (
-                    <p className="llm-turn-footer">
+                {!turn.streaming && (summary || stopNote || turn.toolsUnsupported || turn.cut) && (
+                    <p className={`llm-turn-footer${turn.cut ? ' is-cut' : ''}`}>
                         {[
                             summary,
                             turn.toolsUnsupported ? 'this model cannot run analyses — answered from the run summary' : '',
+                            turn.cut ? 'the reply reached the model\'s length limit and is cut short' : '',
                             turn.stoppedBy !== 'answer' ? stopNote : ''
                         ].filter(Boolean).join(' · ')}
                     </p>
@@ -160,6 +170,10 @@ const announcementFor = (turn) => {
     if (!turn.streaming && turn.outcome) return `Outcome: ${OUTCOME_TEXT[turn.outcome.status]}. ${turn.outcome.note || ''}`.trim();
     const step = [...turn.items].reverse().find((item) => item.kind === 'tool');
     if (!step) return turn.streaming ? '' : 'Answer ready.';
+    if (step.interactive) {
+        const asked = step.args?.question || '';
+        return step.status === 'running' ? `The Copilot asks: ${asked}` : `Answered: ${step.data?.answer ?? 'skipped'}`;
+    }
     return step.status === 'running' ? `Running: ${step.label}` : `${step.label}: ${step.status}`;
 };
 
@@ -175,9 +189,9 @@ const UserMessage = ({ content }) => (
 
 const CopilotView = ({
     context, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey,
-    cards = null, focus = null, onTurnEnd = null, onBusyChange = null
+    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null
 }) => {
-    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd });
+    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion });
     useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
     const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
     const previewCard = useCallback((id) => { focus?.preview(id); }, [focus]);
@@ -193,11 +207,20 @@ const CopilotView = ({
         [copilot.live, copilot.turns]
     );
 
-    // Keep the newest message in view as turns, steps and tokens arrive.
+    // Keep the newest message in view as turns, steps and tokens arrive — but
+    // never scroll a waiting question's top out of view (a short sheet on a
+    // phone would show its options without the question).
     useEffect(() => {
         const el = logRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-    }, [copilot.turns, copilot.live]);
+        if (!el) return;
+        const waiting = el.querySelector('.llm-ask.is-waiting');
+        if (!waiting) {
+            el.scrollTop = el.scrollHeight;
+            return;
+        }
+        const top = waiting.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+        el.scrollTop = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, top - 8));
+    }, [copilot.turns, copilot.live, copilot.question]);
 
     // The chatbox focuses its panel when it opens before the model is
     // connected (the composer is disabled until then); once it connects,
@@ -236,8 +259,8 @@ const CopilotView = ({
     const toolStatus = (() => {
         if (copilot.toolsUnsupported) return 'This model cannot run analyses — answers come from the run summary.';
         if (!toolsEnabled) return 'Analyses are off — answers come from the run summary.';
-        if (!tools.length) return 'No analyses are available for this run.';
-        const analyses = tools.filter((tool) => !tool.view).length;
+        const analyses = tools.filter((tool) => !tool.view && !tool.interactive).length;
+        if (!analyses) return 'No analyses are available for this run.';
         const pointing = tools.some((tool) => tool.view) ? ' and point at its cards' : '';
         return `Can run ${analyses} ${analyses === 1 ? 'analysis' : 'analyses'} on this run${pointing}.`;
     })();
@@ -249,7 +272,16 @@ const CopilotView = ({
                     {copilot.turns.map((turn, index) => (turn.role === 'user'
                         ? <UserMessage key={index} content={turn.content} />
                         : <AssistantTurn key={index} turn={turn} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />))}
-                    {copilot.live && <AssistantTurn turn={copilot.live} pages={pages} onOpenPage={onOpenPage} cardLinks={cardLinks} />}
+                    {copilot.live && (
+                        <AssistantTurn
+                            turn={copilot.live}
+                            pages={pages}
+                            onOpenPage={onOpenPage}
+                            cardLinks={cardLinks}
+                            question={copilot.question}
+                            onAnswer={copilot.answerQuestion}
+                        />
+                    )}
                 </div>
             ) : (
                 <div className="llm-chat-empty">
