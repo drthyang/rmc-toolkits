@@ -39,6 +39,12 @@ export const LMSTUDIO_REPLY_MIN_TOKENS = 4096;
 // growing conversation rarely changes it (each change reloads the model).
 export const CONTEXT_STEP = 8192;
 export const MIN_CONTEXT = 16384;
+// Ollama reports how many prompt tokens the model read (prompt_eval_count:
+// the whole prompt, cached or not; after a cut, what was left). A count below
+// this share of the estimate means the prompt was cut. Measured: an uncut
+// request reads 0.74 of the estimate (gemma4:26b on the Demo, 8,437 of
+// 11,386); one cut to a 4,096-token window read 0.18 (2,051).
+export const READ_SHARE_LIMIT = 0.4;
 
 const OLLAMA_PORT = '11434';
 
@@ -218,9 +224,22 @@ export async function* streamCopilotChat({
             );
         }
         if (session) session[key] = plan.numCtx;
-        yield* streamOllamaChat({
+        for await (const chunk of streamOllamaChat({
             baseUrl, model, messages, tools, temperature, numCtx: plan.numCtx, numPredict: plan.numPredict, signal
-        });
+        })) {
+            // A backstop: the request was sized to fit, so a cut means the
+            // server did not honour the context asked for.
+            const read = chunk.usage?.promptTokens;
+            if (Number.isFinite(read) && read < READ_SHARE_LIMIT * estimate) {
+                throw new ContextLimitError(
+                    `Ollama read only ${formatTokens(read)} of about ${formatTokens(estimate)} prompt tokens: it cut the prompt, `
+                    + 'so this reply did not see all of its instructions and the run context. Do not rely on it; '
+                    + `check the server's context settings (num_ctx ${formatTokens(plan.numCtx)} was asked for).`,
+                    { needed: estimate, available: read }
+                );
+            }
+            yield chunk;
+        }
         return;
     }
     if (server.kind === 'lmstudio') {

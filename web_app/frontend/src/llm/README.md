@@ -243,6 +243,24 @@ offer two, so the agent asks:
   question at a time, at most two per request; offer a default; then use the chosen option and
   say which.
 
+### With a real model (2026-10-11)
+
+gemma4:26b (Ollama, through the context guard at `num_ctx` 24,576) on the Demo, docked at
+1440 × 900, each question in a new conversation, a question card answered with its default:
+
+| Question | Asked? | What it did |
+|---|---|---|
+| Has the run converged? · first Ta–Se peak, constraint-limited? · most anharmonic site and largest U_iso · Ga preferred direction? · space group at 0.2 and 0.02 Å | no | answered from the context or one analysis, correctly (improving; 2.52 Å; ref 23; no direction at −0.89σ; the P-42₁m rung below the noise floor) · 6–37 s |
+| Se–Ta–Se angles against an ideal octahedron · "What are the Se–Ta–Se bond angles?" | no | used the whole first shell, 2.2–3.23 Å (CN 6), from the context or `find_gr_peaks` · 18–28 s |
+| "Compute the bond angles around Ta" · coordination number of Ta · Ta–Ta–Ta angles · Ta–Se bond lengths | no | chose the main polyhedron (Se–Ta–Se) and said so, or covered every option (Se, Ta and Ga neighbours; both Ta–Se peaks and the shell mean) · 9–28 s |
+
+It never called `ask_user` in 16 questions, even after the rules named "the bond angles around
+Ta" as a case to ask about: where the context settles the choice (the whole shell) that is right,
+and elsewhere it stated its assumption. The card and the loop are exercised with a scripted model
+(*Tests*). One answer was wrong in the same way twice: it read the raw angle counts (modes 74.5,
+88.5, 104.5°; mean 103 ± 29.6°) as "significantly distorted" octahedra, missing the trans angles
+the sin θ factor depletes near 180°.
+
 ## The context window: never cut silently
 
 A local server runs a model with a fixed context window, and a prompt longer than the window is not
@@ -255,10 +273,20 @@ each analysis adds up to 3,000 characters more.
 - **Ollama's OpenAI-compatible endpoint cannot carry a context length.** It runs the model at the
   server's default: `OLLAMA_CONTEXT_LENGTH`, else one Ollama picks from the GPU memory it finds.
   On the Apple M5 Pro this was written on, 0.40.2 picks 262,144 (51.8 GiB of GPU memory) and the
-  models' own maxima then apply (gemma4:26b 262,144, qwen3:32b 40,960), so nothing was cut there: 0
-  of the 751 requests since 2026-10-09 report `truncated = 1` in the server log. But the same Mac's
-  log of 2026-09-27 shows Ollama starting without the GPU (`total_vram="0 B"`) and picking 4,096,
-  half the Copilot's first request; older releases defaulted to 2,048–4,096 everywhere.
+  models' own maxima then apply (gemma4:26b 262,144, qwen3:32b 40,960), so nothing was cut there:
+  Ollama logs `truncating input prompt` when it cuts, and the server logs since 2026-08-26 hold no
+  such line from the Copilot. But the same Mac's log of 2026-09-27 shows Ollama starting without
+  the GPU (`total_vram="0 B"`) and picking 4,096, half the Copilot's first request; older releases
+  defaulted to 2,048–4,096 everywhere.
+- **What a cut does (verified 2026-10-11, gemma4:26b, the Demo's first request: 28,382
+  characters, 14 tools).** The OpenAI endpoint reports 8,437 prompt tokens at the 262,144 default.
+  At `num_ctx` 4,096 the same request still returns 200 with no error, but Ollama first drops whole
+  messages (the run context among them) and then cuts what is left to half the window, keeping
+  its first 5 tokens (`truncating input prompt limit=2051 prompt=5694 keep=5`): the model reads
+  2,051 tokens and, without its rules and the run, calls `current_view` instead of `find_gr_peaks`.
+  At 10,240, 16,384 and 24,576 (the guard's choice) it reads all 8,437 and calls `find_gr_peaks`.
+  A request whose `num_ctx` equals the context the model is loaded with reuses the runner and its
+  prompt cache (no reload; 1 token evaluated).
 - **So the Copilot sizes the context itself.** For an Ollama server (`GET /api/version` answers a
   version) it sends its requests to the native `/api/chat`, with `options.num_ctx` = the context
   the model is loaded with when that holds the request and 8,192 tokens of reply
@@ -274,6 +302,10 @@ each analysis adds up to 3,000 characters more.
   loaded model's window (`GET /api/v0/models`) cannot hold the prompt and 4,096 tokens of reply,
   the turn stops with the context length to load it with. Cloud providers and other servers are
   sent the request unchanged (only `localhost` or port 11434 is ever probed).
+- **A backstop.** Ollama's `prompt_eval_count` is what the model read: the whole prompt, cached
+  or not, and after a cut what was left. Below 0.4 of the estimate (`READ_SHARE_LIMIT`; an uncut
+  request reads 0.74 of it, the cut one above 0.18) the turn stops with an error that says the
+  reply did not see all of its instructions.
 - **A cut reply says so.** A reply that stops at the length limit (`done_reason` /
   `finish_reason` `length`) ends with a warning in the turn's footer instead of passing as a
   whole answer.
@@ -503,7 +535,8 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   context that fits, asks for a fitting one over a 4,096 default, keeps it across the
   conversation, caps it at the model's maximum and refuses beyond it; server detection never
   probes a cloud URL; the native NDJSON stream (thinking, content, whole tool calls, usage,
-  `length`, errors, a tools-unsupported 400) and the message conversion; LM Studio's refusal.
+  `length`, errors, a tools-unsupported 400) and the message conversion; LM Studio's refusal; a
+  reply whose server read only part of the prompt stops the turn.
   `copilotChat.test.jsx` runs a turn on a mocked Ollama loaded at 4,096 (native requests with
   `num_ctx` ≥ 16,384 and no `/v1` call), a refused turn, and a cut reply.
 - **The agent loop, against a scripted model:**

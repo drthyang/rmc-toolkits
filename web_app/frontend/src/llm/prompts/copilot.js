@@ -50,11 +50,15 @@ export const ASK_RULES = [
     'pair, which symmetry tolerance, which run or dataset — and neither the',
     'context nor an analysis can settle it, call ask_user with 2–4 short',
     'options, each saying what it means (the window in Å, the site), and your',
-    'default. Settle what the data can first: e.g. run find_gr_peaks, then offer',
-    'its shells as the options. Never ask when the question is clear, when the',
-    'context or an analysis answers it, or for permission to run an analysis.',
-    'One question at a time, at most two per request. Then use exactly the',
-    'option the user chose and say in the answer which one you used.'
+    'default. A request that names an element but not which neighbours,',
+    'triplet or site (e.g. "the bond angles around Ta") is such a choice: ask,',
+    'offering the likely ones. Settle what the data can first: e.g. run',
+    'find_gr_peaks, then offer its shells as the options. Never ask when the',
+    'question is clear, when the context or an analysis answers it, or for',
+    'permission to run an analysis. One question at a time, at most two per',
+    'request. Then use exactly the option the user chose and say in the answer',
+    'which one you used; when you choose without asking, say which choice you',
+    'made.'
 ].join(' ');
 
 // With the view tools (highlight_cards from the host's cards, and the host's

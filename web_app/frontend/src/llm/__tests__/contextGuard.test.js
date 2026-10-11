@@ -176,6 +176,23 @@ describe('the Copilot on Ollama', () => {
         expect(calls.filter((call) => call.path === '/api/chat').at(-1).body.options.num_ctx).toBe(first + CONTEXT_STEP);
     });
 
+    it('stops the turn when the server reports it read only part of the prompt', async () => {
+        // Seen with a 4,096-token window: Ollama cut the 8,437-token first request to 2,051.
+        ollamaServer({
+            loaded: 262144,
+            reply: ndjson([
+                { message: { role: 'assistant', content: 'Looking at the view.' }, done: false },
+                { message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 2051, eval_count: 30 }
+            ])
+        });
+        const parts = [];
+        const run = (async () => {
+            for await (const part of streamCopilotChat({ baseUrl: 'http://localhost:11434/v1', model: 'gemma4:26b', ...bigRequest() })) parts.push(part);
+        })();
+        await expect(run).rejects.toThrow(/Ollama read only 2,051 of about [\d,]+ prompt tokens: it cut the prompt/);
+        expect(parts).toEqual([{ content: 'Looking at the view.' }]);
+    });
+
     it('refuses, and sends nothing, when the model cannot hold the request', async () => {
         const { calls } = ollamaServer({ max: 8192 });
         const run = collect(streamCopilotChat({ baseUrl: 'http://localhost:11434/v1', model: 'gemma4:26b', ...bigRequest() }));

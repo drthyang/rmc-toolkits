@@ -30,6 +30,10 @@ leaves open a choice that changes the science, the Copilot now asks.
   default; use the chosen option and say which.
 - **Argument validation:** a bare string where an object with one required string field belongs
   is read as that field (`options: ["a", "b"]`).
+- **With a real model** (gemma4:26b, 16 questions on the Demo, 2026-10-11): it never called
+  `ask_user`, including on "What are the Se–Ta–Se bond angles?" — the run context now holds the
+  whole first shell (2.2–3.23 Å, CN 6), which it used — and on open requests ("the bond angles
+  around Ta") it chose the main polyhedron and said so. Clear questions took 6–37 s, none asked.
 - **Tests:** replays on the Demo's split Ta–Se shell (an ambiguous question asks and the chosen
   window — option, default, typed, skipped — reaches `compute_bond_angles`; a clear question does
   not ask; cancel; limits; the turn clock), and the card end to end against a mocked server.
@@ -40,8 +44,11 @@ A local server runs a model with a fixed context window and shortens a longer pr
 error, so the model answers without part of its rules or the run context. The Copilot's first
 request on the Demo is ~28,400 characters (~8,600 gemma4 tokens), and Ollama's OpenAI-compatible
 endpoint cannot carry a context length: it uses the server default, which Ollama 0.40 picks from the
-GPU memory it finds — 262,144 on the maintainer's Mac (nothing was cut: 0 of 751 logged requests),
-but 4,096 on a start where it saw no GPU (the same Mac, 2026-09-27).
+GPU memory it finds — 262,144 on the maintainer's Mac (nothing was cut: no `truncating input
+prompt` line in its logs since 2026-08-26), but 4,096 on a start where it saw no GPU (the same Mac,
+2026-09-27). Checked with gemma4:26b on the Demo's first request (8,437 tokens): at a 4,096 window
+Ollama answers 200, drops the run context, cuts the rest to 2,051 tokens, and the model calls the
+wrong tool; at 10,240 or more it reads everything.
 
 - **`provider/contextGuard.js`** (`streamCopilotChat`, used for every Copilot request): for an
   Ollama server it sends the request through the native `/api/chat` (`provider/ollama.js`, its own
@@ -53,6 +60,8 @@ but 4,096 on a start where it saw no GPU (the same Mac, 2026-09-27).
 - **Refuses rather than cuts:** when even the model's maximum cannot hold the request, or LM
   Studio's loaded context cannot, the turn stops before anything is sent and says what to change.
   Cloud providers and other servers are unchanged; only `localhost` or port 11434 is probed.
+- **A backstop:** Ollama's `prompt_eval_count` is what the model read; under 0.4 of the estimate
+  (an uncut request reads 0.74 of it) the turn stops with an error.
 - **A reply cut at the length limit** says so in the turn's footer.
 - The setup guide, README and QuickStart no longer ask for `OLLAMA_CONTEXT_LENGTH`.
 
