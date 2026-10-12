@@ -160,3 +160,41 @@ def chains_config_text(*, supercell=(4, 4, 4), sigma=0.03, seed=3) -> str:
         "Atoms:",
     ]
     return "\n".join(header + lines) + "\n"
+
+
+LONG_WAVE_CELL_A = 5.0
+LONG_WAVE_SITES = [("Ti", [0.5, 0.5, 0.5]), ("O", [0.0, 0.5, 0.5])]
+
+
+def long_wave_config_text(*, supercell=(6, 6, 6), zone_amp=0.06, long_amp=0.15, sigma=0.08, seed=5) -> str:
+    """Ti displaced by +-``zone_amp`` A along z in alternate c layers (order at
+    q = (0, 0, 1/2)) and by ``long_amp`` cos(2 pi x / N1) along y (a long wave
+    at q = (1/N1, 0, 0), stronger), with independent noise of ``sigma`` on
+    every atom (the 2026-10-12 review's repro)."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    lines = []
+    atom = 0
+    for ix in range(supercell[0]):
+        for iy in range(supercell[1]):
+            for iz in range(supercell[2]):
+                for ref, (element, frac) in enumerate(LONG_WAVE_SITES, start=1):
+                    shift = rng.normal(0.0, sigma, 3)
+                    if element == "Ti":
+                        shift[2] += zone_amp * (1 if iz % 2 == 0 else -1)
+                        shift[1] += long_amp * np.cos(2 * np.pi * ix / supercell[0])
+                    coord = np.mod((np.array(frac) + [ix, iy, iz] + shift / LONG_WAVE_CELL_A) / supercell, 1.0)
+                    atom += 1
+                    lines.append(
+                        f"{atom:6d} {element:>2} [1] {coord[0]:.12f} {coord[1]:.12f} {coord[2]:.12f}"
+                        f" {ref:4d} {ix} {iy} {iz}"
+                    )
+    header = [
+        "(Version 6f format configuration file)",
+        f"Number of atoms: {atom}",
+        f"Supercell dimensions: {supercell[0]} {supercell[1]} {supercell[2]}",
+        "Lattice vectors (Ang):",
+        *(" ".join(f"{value:.6f}" for value in row) for row in np.diag(LONG_WAVE_CELL_A * supercell.astype(float))),
+        "Atoms:",
+    ]
+    return "\n".join(header + lines) + "\n"

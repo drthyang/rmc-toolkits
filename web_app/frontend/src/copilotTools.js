@@ -619,7 +619,8 @@ export const summarizeClusters = (payload) => {
 
 // A zone-boundary point is ordered displacement when its power is at least
 // this many times the median over all wavevectors AND it is in the top 1 %
-// of them (or the element's strongest mode, in a box with < 100 wavevectors).
+// of the compared modes (one per ±q pair, long waves left out: the engine's
+// percentile), or the strongest of them (rank 1: a box with < 100 pairs).
 export const MODULATION_RATIO = 3;
 export const MODULATION_PERCENTILE = 99;
 // A mode this strong, within this fraction of the zone centre, is a
@@ -637,7 +638,8 @@ export const summarizeModulations = (payload) => {
     const data = {
         note: 'rows are [q, ratio, percentile]: an element\'s displacement power at wavevector q (fractions of the cell\'s '
             + 'reciprocal axes) over its median across all q of the supercell grid (the diffuse background), and the share of '
-            + 'wavevectors with less power. A ½ component is order that doubles the cell along that axis.',
+            + 'the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power. '
+            + 'A ½ component is order that doubles the cell along that axis.',
         supercell: payload.supercell,
         wavevectors: payload.wavevectors,
         elements: (payload.elements || []).filter((entry) => entry.sites).map((entry) => ({
@@ -655,9 +657,8 @@ export const summarizeModulations = (payload) => {
     }
     const ordered = [];
     (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
-        const strongestKey = qLabel(entry.strongest[0]?.q || []);
         entry.zoneBoundary.forEach((point) => {
-            const top = point.percentile >= MODULATION_PERCENTILE || qLabel(point.q) === strongestKey;
+            const top = point.percentile >= MODULATION_PERCENTILE || point.rank === 1;
             if (point.ratio >= MODULATION_RATIO && top) ordered.push({ element: entry.element, point });
         });
     });
@@ -667,7 +668,9 @@ export const summarizeModulations = (payload) => {
             checks.push({
                 level: 'ok',
                 text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
-                    + `above ${round(point.percentile, 3)} % of all wavevectors — a superstructure doubling the cell along ${axes}.`
+                    + `${point.rank === 1 ? 'the strongest mode' : `above ${round(point.percentile, 3)} % of the modes`} `
+                    + 'apart from long waves — a superstructure doubling the cell along '
+                    + `${axes}.`
             });
         });
     } else {

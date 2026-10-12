@@ -10,6 +10,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { structureFromRmc6f } from '../browserData';
 import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { displacementModulations } from '../workers/modulations';
+import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
+import modulationsFixture from './fixtures/modulations_fixture.json';
 import {
     buildCopilotTools,
     cartesianToUvw,
@@ -335,10 +338,22 @@ describe('Copilot summarizers', () => {
         expect(checks).toHaveLength(1);
         expect(checks[0]).toEqual({
             level: 'ok',
-            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, above 99.5 % of all wavevectors — a superstructure doubling the cell along c.'
+            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, above 99.5 % of the modes apart from long waves '
+                + '— a superstructure doubling the cell along c.'
         });
         const odd = summarizeModulations({ supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], elements: [{ element: 'Nb', sites: 0 }] });
         expect(odd.checks[0].level).toBe('fail');
+    });
+
+    it('modulation checks: order under a stronger long wave is still found (review 2026-10-12 #6)', () => {
+        // Ti order at (0, 0, ½), 55× the median, under a long wave at (⅙, 0, 0)
+        // and its −q partner: percentile 98.6 of all q, so it was missed.
+        const { text } = modulationsFixture.cases.find((entry) => entry.name.startsWith('long-wave'));
+        const payload = displacementModulations(siteDisplacementsFromRmc6f(text), 'Ti');
+        const { checks } = summarizeModulations(payload);
+        expect(checks[0].level).toBe('ok');
+        expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\): \d+(\.\d+)?× the median power, the strongest mode apart from long waves/);
+        expect(checks.some((check) => /long-wavelength wave/.test(check.text))).toBe(true);
     });
 
     it('symmetry checks: not analysed, undetermined, lower bound', () => {

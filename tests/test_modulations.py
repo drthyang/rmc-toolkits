@@ -15,7 +15,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import cluster_config_text  # noqa: E402
+from cluster_configs import cluster_config_text, long_wave_config_text  # noqa: E402
 from rmc_toolkits.modulations import displacement_modulations, zone_boundary_points  # noqa: E402
 from rmc_toolkits.pca_kde import load_site_displacements  # noqa: E402
 
@@ -49,10 +49,26 @@ class ModulationTests(unittest.TestCase):
         doubling = next(point for point in nb["zoneBoundary"] if point["q"] == [0.0, 0.0, 0.5])
         self.assertGreater(doubling["ratio"], 50)
         self.assertEqual(nb["strongest"][0]["q"], [0.0, 0.0, 0.5])
-        self.assertAlmostEqual(doubling["percentile"], 100 * 214 / 215, places=6)
+        # Compared: one mode per +q/-q pair, long waves out: 98 of the 215.
+        self.assertEqual(nb["comparedModes"], 98)
+        self.assertAlmostEqual(doubling["percentile"], 100 * 97 / 98, places=6)
+        self.assertEqual(doubling["rank"], 1)
         # The other elements carry no order.
         for name in ("Ga", "Se"):
             self.assertTrue(all(point["ratio"] < 3.5 for point in _element(result, name)["zoneBoundary"]), name)
+
+    def test_a_stronger_long_wave_does_not_hide_the_order(self):
+        # Review 2026-10-12 #6: 55x the median at (0, 0, 1/2), but a long wave
+        # and its -q partner above it put it at percentile 98.6 of all q.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "long_wave.rmc6f"
+            path.write_text(long_wave_config_text(), encoding="utf-8")
+            ti = _element(displacement_modulations(load_site_displacements(path), "Ti"), "Ti")
+        self.assertEqual(ti["strongest"][0]["q"], [1 / 6, 0.0, 0.0])
+        order = next(point for point in ti["zoneBoundary"] if point["q"] == [0.0, 0.0, 0.5])
+        self.assertGreater(order["ratio"], 50)
+        self.assertEqual(order["rank"], 1)
+        self.assertEqual(ti["comparedModes"], 98)
 
     def test_independent_displacements_have_no_order(self):
         result = displacement_modulations(_load("independent"))

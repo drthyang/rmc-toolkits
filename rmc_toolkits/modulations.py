@@ -29,8 +29,13 @@ ignores):
   the supercell is even along each halved axis;
 * the strongest modes overall (+q and -q counted once).
 
-Each with its ratio to the median power and its percentile (the share of
-q != 0 with lower power). The browser port is ``workers/modulations.js``
+Each with its ratio to the median power over all q != 0, and its percentile
+and rank among the *compared* modes: one per +q/-q pair (they carry the same
+power), leaving out the long-wavelength modes (every |q_i| <= ``LONG_WAVE_Q``),
+the box-scale correlations RMC leaves. Counting both members of a pair, and
+the long waves, pushed a strong zone-boundary order below the 99th
+percentile (the 2026-10-12 review: 55x the median at percentile 98.6, under
+a long wave and its partner). The browser port is ``workers/modulations.js``
 (a separable DFT, the same numbers to floating-point noise).
 """
 
@@ -47,6 +52,10 @@ TOP_MODES = 5
 #: Relative tolerance on "lower power" for the percentile: Friedel pairs
 #: P(q) = P(-q) differ only by rounding, and must count alike in both engines.
 PERCENTILE_RTOL = 1e-9
+#: A mode with every component within this of the zone centre (fractions of
+#: the cell's reciprocal axes) is a long-wavelength wave, left out of the
+#: comparison.
+LONG_WAVE_Q = 0.25
 
 
 def zone_boundary_points(supercell: np.ndarray) -> list[tuple[int, int, int]]:
@@ -89,6 +98,14 @@ def displacement_modulations(sites: SiteDisplacements, element: str | None = Non
         elements = sorted(set(labels))
     cells = np.mod(np.asarray(sites.cell_indices, dtype=int), supercell)
     boundary = zone_boundary_points(supercell)
+    # The compared modes: one per +q/-q pair (the smaller grid index), q != 0,
+    # no long wave.
+    grid_index = np.stack(np.unravel_index(np.arange(n_q), tuple(supercell)), axis=1)
+    partner = np.mod(-grid_index, supercell)
+    partner_linear = np.ravel_multi_index(tuple(partner.T), tuple(supercell))
+    q_frac = np.array([[_folded(index[axis], supercell[axis]) for axis in range(3)] for index in grid_index])
+    long_wave = np.all(np.abs(q_frac) <= LONG_WAVE_Q + 1e-12, axis=1)
+    compared = (np.arange(n_q) <= partner_linear) & (np.arange(n_q) != 0) & ~long_wave
     result = {
         "supercell": supercell.tolist(),
         "wavevectors": n_q - 1,
@@ -121,13 +138,17 @@ def displacement_modulations(sites: SiteDisplacements, element: str | None = Non
         flat = power.ravel()
         others = np.delete(flat, 0)
         median = float(np.median(others))
+        reference = flat[compared]
 
         def describe(index: tuple[int, int, int]) -> dict:
             value = float(power[index])
             return {
                 "q": [float(_folded(index[axis], supercell[axis])) for axis in range(3)],
                 "ratio": value / median if median > 0 else None,
-                "percentile": float((others < value * (1.0 - PERCENTILE_RTOL)).mean() * 100.0),
+                "percentile": (
+                    float((reference < value * (1.0 - PERCENTILE_RTOL)).mean() * 100.0) if reference.size else None
+                ),
+                "rank": int((reference > value * (1.0 + PERCENTILE_RTOL)).sum()) + 1 if reference.size else None,
             }
 
         zone = []
@@ -158,6 +179,7 @@ def displacement_modulations(sites: SiteDisplacements, element: str | None = Non
             "sites": used,
             "missingCopies": int(missing),
             "medianPower": median,
+            "comparedModes": int(reference.size),
             "zoneBoundary": zone,
             "strongest": strongest,
         })
