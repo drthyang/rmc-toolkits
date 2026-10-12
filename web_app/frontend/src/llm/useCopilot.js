@@ -6,6 +6,7 @@ import { runCopilotTurn } from './copilot/agentLoop';
 import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState';
 import { contextAuditFacts } from './copilot/answerAudit';
 import { ASK_USER } from './copilot/askUser';
+import { READ_SKILL, skillIndex } from './copilot/skills';
 import { pointGroupFacts } from './context/pointGroups';
 import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS } from './prompts/copilot';
 import { streamCopilotChat } from './provider/contextGuard';
@@ -55,7 +56,7 @@ export const conversationMemory = (turns) => {
 
 export const useCopilot = ({
     settings, context, tools, toolsEnabled = true, runKey = null, focus = null, onTurnEnd = null, onQuestion = null,
-    clarifier = null
+    clarifier = null, skills = null
 }) => {
     const [turns, setTurns] = useState([]);
     const [live, setLive] = useState(null);
@@ -124,8 +125,10 @@ export const useCopilot = ({
         const history = conversationMemory(turns);
         const viewTools = toolsOn && tools.some((tool) => tool?.view);
         const asks = toolsOn && tools.some((tool) => tool?.interactive && tool.name === ASK_USER);
+        const reads = toolsOn && skills?.length && tools.some((tool) => tool?.name === READ_SKILL);
         const messages = buildCopilotMessages({
-            context, history, userText: text, toolsEnabled: toolsOn, viewTools, askUser: asks
+            context, history, userText: text, toolsEnabled: toolsOn, viewTools, askUser: asks,
+            skills: reads ? skillIndex(skills) : ''
         });
         // The agent moves on: the last answer's highlight ends.
         focus?.clear('question');
@@ -182,7 +185,7 @@ export const useCopilot = ({
             }
             setLive(null);
         }
-    }, [turns, context, tools, toolsOn, focus, askUser, clarifier, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
+    }, [turns, context, tools, toolsOn, focus, askUser, clarifier, skills, settings.baseUrl, settings.model, settings.temperature, settings.apiKey]);
 
     const clear = useCallback(() => {
         generationRef.current += 1;

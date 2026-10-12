@@ -1,0 +1,88 @@
+---
+name: displacement-anisotropy
+description: >-
+  Judge a site's displacements honestly: thermal ellipsoids from the PCA of its displacement
+  cloud (U_iso, principal amplitudes, anisotropy), Mardia kurtosis, preferred displacement
+  directions and their calibrated significance (σ), +u/−u asymmetry, and when an anisotropy or a
+  direction is real rather than sampling noise. Use for "most anharmonic / most disordered
+  site?", "preferred direction?", "is this site anisotropic?", "trigonal or tetragonal
+  distortion?". NOT for bond windows (coordination-shells) or space groups (local-symmetry).
+---
+
+# Displacement anisotropy and directions
+
+**Status: Draft: awaiting the user's interview.** Written from the 2026-10-10 spot check, the
+review that followed, the PCA Ellipsoid and Displacement Directions algorithm notes, and the
+tools' checks. A step marked "(to confirm with the user)" is not yet the user's own practice: say
+in the answer which choice you made.
+
+Each atom's displacement is its offset from its own reference site's mean position, so a site's
+cloud is centred by construction: a coherent off-centring shared by every copy moves the mean
+and is invisible here.
+
+## Steps
+
+1. **Rank the sites:** `list_sites` (optionally for one element). Per site: U_iso (Å²), the
+   principal RMS amplitudes, anisotropy = rms1/rms3, and Mardia's multivariate excess kurtosis
+   (0 for a Gaussian; > 0 heavy-tailed or peaked; < 0 flat or split, e.g. two wells). Sites come
+   sorted by |kurtosis|; the `largest_*_refs` name the extremes.
+2. **One site at a time:** `analyze_displacement_directions` with `site_ref`. Pooling an element
+   over sites mixes their local frames (each vertex of an M₄ tetrahedron sits on its own 3m
+   axis), so a preference every site shares in its own frame cancels in the pooled map: an
+   isotropic pooled map is not evidence against a per-site or cluster distortion.
+3. **Read the significances, all calibrated one-sided σ** (≥ 3 is significant):
+   `peak.significance_sigma` (the peak cell, corrected over all cells), the whole map's departure
+   from isotropy, `orientation_tensor.anisotropy_significance_sigma` (Bingham), and the
+   +u/−u asymmetry z (a skewness the ellipsoid cannot show). A local z-score is never a
+   significance.
+4. **Directions:** `peak.direction_uvw` and the tensor's principal axis are direct-lattice
+   `[u v w]` directions (not plane normals); the map is not antipodally folded, so +u and −u
+   differ. Name the nearest low-index family (<100>, <110>, <111>) only when the angle to it is
+   small.
+5. **Size, not only significance.** With thousands of atoms a tiny effect reaches 3σ: quote the
+   enhancement (× isotropic) or the anisotropy with its σ. For a cluster-level question
+   (trigonal versus tetragonal distortion of an M₄ cluster), use `analyze_clusters`: its <100>,
+   <110>, <111> gyration-axis families against the shuffle null, with effect size and z.
+
+## Judgment calls
+
+- The sphere resolution (the tool chooses from the point count; the page defaults to ν = 10)
+  and whether a result must hold at two resolutions (to confirm with the user).
+- Whether a 3–5σ direction with a small enhancement (under 1.2× isotropic) is reported as a
+  finding or as a hint (to confirm with the user).
+- When to report per-axis kurtosis (only on axes the PCA resolves) (to confirm with the user).
+
+## Acceptance checklist
+
+- [ ] Sites are named by `ref` and element, with U_iso, anisotropy and kurtosis from the tool.
+- [ ] Directions are analysed per site, or pooling is stated with its caveat.
+- [ ] "Preferred direction" only with a significance ≥ 3σ, quoted with the enhancement.
+- [ ] `[u v w]` given as a direction, the low-index family named only when close.
+- [ ] Cluster-level claims rest on `analyze_clusters` (effect size and z).
+- [ ] No invented uncertainty: every number from a tool.
+
+## Known failure modes
+
+- **The pooled map read as "no distortion"** (review: 16 Ta sites pooled → isotropic). The
+  tool now notes the cancellation; per site and with `analyze_clusters` the Ta₄ clusters prefer
+  <111> compression (19 % vs 14 %, z = 11), with no <001> signal.
+- **A direction called preferred without significance.** *Firm rule in the app:* an answer that
+  claims a preferred displacement direction when every directions analysis of the question found
+  none at ≥ 3σ gets a warning under it.
+- **Effect size ignored:** thousands of clusters make a 1 % effect "significant"; the cluster
+  tool requires both its z and its effect size to clear their thresholds.
+- **Numbers differ from the page:** the tool lets the engine choose the resolution while the
+  page keeps its own (ν = 10, smoothed); say which you quote.
+
+## Report
+
+The sites in question with U_iso, anisotropy and kurtosis; per site, the strongest direction with
+its enhancement and σ (or "none at ≥ 3σ"); the asymmetry where significant; for clusters, the
+analyze_clusters result with effect size and z; and what the average ellipsoid cannot show.
+
+## References
+
+- [significance-reading](significance-reading.md) — what each σ in the direction and cluster results tests, with the Demo's values.
+
+Further reading for Claude Code (not loaded in the app): `docs/algorithms/pca-ellipsoid.md`,
+`docs/algorithms/displacement-directions.md`.

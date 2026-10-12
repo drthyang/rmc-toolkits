@@ -5,6 +5,27 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### AI Copilot: skills (drafts), and a refusal for windows that cut a shell
+
+- **Four skills, drafted** (`.claude/skills/<name>/SKILL.md`, shared with Claude Code, in MATERIA's
+  format): `rmc-fit-assessment`, `coordination-shells`, `local-symmetry`,
+  `displacement-anisotropy`. Each opens with "Draft: awaiting the user's interview" and holds the
+  order of steps, judgment calls marked "(to confirm with the user)", an acceptance checklist, the
+  known failure modes with the spot check or review that found them, and small reference files.
+  `docs/SKILL_INTERVIEWS.md` holds 7–9 questions per skill for turning each into the user's method.
+- **`read_skill(name, reference?)`** (`llm/copilot/skills.js`): the system prompt lists only the
+  skills' names and descriptions (2,150 characters); a skill (4,700–5,500 characters) is read on
+  demand with its own result budget and is never compacted later in the question (`resultBudget`
+  and `keep` in the tool contract). The host bundles the files (`src/copilotSkills.js`, the
+  `skills` prop; Vite `server.fs.allow`, Docker copies them); a malformed skill is reported.
+- **`compute_bond_angles` refuses a window that cuts the coordination shell** (fewer than 60 % of
+  the central atoms sharing the most common count, or most with none): the angles are withheld and
+  the counts that show the cut returned, unless `window_confirmed` — set when the user keeps their
+  window in the Workbench's question. The 60 % threshold is an interview item.
+- **Replays** (`src/__tests__/copilotSkillReplays.test.js`): one per skill on the Demo with the
+  real engines and a scripted model; the right behaviour passes, the old wrong one is refused or
+  flagged.
+
 ### AI Copilot: the Workbench asks before the model guesses
 
 With a real model (gemma4:26b, 2026-10-11) the Copilot never called `ask_user`: on a request that

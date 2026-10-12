@@ -313,12 +313,15 @@ const lengthSummary = (lengths) => {
  * The bond-angle result the model reads, with deterministic checks: a window
  * that misses most central atoms, or in which fewer than 60 % of them share
  * the most common bond count, cuts the coordination shell (the 2026-10-10 spot
- * check read such a cut as "incomplete octahedra"). For about six or four
- * neighbours the angles are also read against an ideal octahedron or
- * tetrahedron, and the sin θ-corrected histogram shows the trans angles raw
- * counts hide.
+ * check read such a cut as "incomplete octahedra"). Such a window is refused —
+ * its angles are not the polyhedron's — unless the user chose it
+ * (`windowConfirmed`, the coordination-shells skill's firm rule; its 60 %
+ * threshold is an interview item): the counts that show the cut are returned
+ * instead. For a whole shell of about six or four neighbours the angles are
+ * also read against an ideal octahedron or tetrahedron, and the sin
+ * θ-corrected histogram shows the trans angles raw counts hide.
  */
-export const summarizeBondAngles = (payload) => {
+export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) => {
     const total = payload.angleCount || 0;
     const coordination = Array.isArray(payload.coordination) ? payload.coordination : [];
     const apexTotal = coordination.reduce((sum, count) => sum + count, 0);
@@ -354,28 +357,33 @@ export const summarizeBondAngles = (payload) => {
         });
         return { data, checks };
     }
+    let cutText = null;
     const unbonded = apexTotal ? (coordination[0] || 0) / apexTotal : 0;
     if (unbonded > UNBONDED_APEX_FRACTION) {
-        checks.push({
-            level: 'warn',
-            text: `${Math.round(unbonded * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`
-        });
+        cutText = `${Math.round(unbonded * 100)} % of the ${b} atoms have no ${a}–${b} bond in the window: it misses most of the shell.`;
     } else if (apexTotal) {
         const modalCount = Math.max(...coordination);
         const modal = coordination.indexOf(modalCount);
         const share = modalCount / apexTotal;
         const present = coordination.map((count, bonds) => (count > 0 ? bonds : null)).filter((bonds) => bonds != null);
         if (share < MODAL_COORDINATION_SHARE) {
-            checks.push({
-                level: 'warn',
-                text: `Only ${Math.round(share * 100)} % of the ${b} atoms have the most common count (${modal} ${a}–${b} bonds); `
-                    + `the counts spread from ${present[0]} to ${present.at(-1)}. `
-                    + 'The window may cut through a coordination shell: compare it with the g(r) peaks (find_gr_peaks) '
-                    + 'and widen it to the shell\'s outer edge before reading the angles or the coordination.'
-            });
+            cutText = `Only ${Math.round(share * 100)} % of the ${b} atoms have the most common count (${modal} ${a}–${b} bonds); `
+                + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
         }
     }
-    const cut = checks.some((check) => check.level === 'warn');
+    if (cutText && !windowConfirmed) {
+        // Refused: keep what shows the cut, never the angles.
+        ['mean_deg', 'sd_deg', 'modes', 'histogram_10deg', 'histogram_10deg_sin_corrected'].forEach((key) => { delete data[key]; });
+        data.refused = 'the window cuts the coordination shell, so its angles are not the polyhedron\'s and are not returned';
+        checks.push({
+            level: 'fail',
+            text: `Refused: ${cutText} Use the whole shell (find_gr_peaks' first_shell.window_A). If the user wants this window, `
+                + 'ask them (ask_user) and call again with window_confirmed: true.'
+        });
+        return { data, checks };
+    }
+    if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its angles are of a partial shell.` });
+    const cut = Boolean(cutText);
     if (!cut) {
         checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
     }
@@ -798,8 +806,8 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                 + 'B neighbours, A within [r12_min, r12_max] Å of B and C within [r23_min, r23_max] Å (default: the '
                 + 'A–B window). Returns the angle modes, mean ± sd, a 10° histogram, bond lengths and the B '
                 + 'coordination, and for about six or four neighbours the split against an ideal octahedron or '
-                + 'tetrahedron. Use the whole first coordination shell (find_gr_peaks\' first_shell.window_A); a window '
-                + 'that cuts the shell is put to the user first.',
+                + 'tetrahedron. Use the whole first coordination shell (find_gr_peaks\' first_shell.window_A): a window '
+                + 'that cuts the shell is put to the user first, and refused unless the user chose it (window_confirmed).',
             parameters: {
                 type: 'object',
                 properties: {
@@ -810,7 +818,12 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     r12_max: { type: 'number', minimum: 0, maximum: 15, description: 'A–B window maximum (Å).' },
                     r23_min: { type: 'number', minimum: 0, maximum: 15, description: 'B–C window minimum (Å); give both or neither.' },
                     r23_max: { type: 'number', minimum: 0, maximum: 15, description: 'B–C window maximum (Å).' },
-                    bin_width: { type: 'number', minimum: 0.05, maximum: 30, description: 'Histogram bin (degrees). Default 1.' }
+                    bin_width: { type: 'number', minimum: 0.05, maximum: 30, description: 'Histogram bin (degrees). Default 1.' },
+                    window_confirmed: {
+                        type: 'boolean',
+                        description: 'true only when the user chose or typed this window (in the question, or through ask_user). '
+                            + 'A window that cuts the coordination shell is refused unless it is set.'
+                    }
                 },
                 required: ['end1', 'apex', 'end2', 'r12_min', 'r12_max']
             },
@@ -821,13 +834,13 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     centre: args.apex,
                     partner: args.end1,
                     window: [args.r12_min, args.r12_max],
-                    apply: ([lo, hi]) => ({ ...args, r12_min: lo, r12_max: hi })
+                    apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r12_min: lo, r12_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
                 },
                 ...(args.r23_min != null && args.r23_max != null ? [{
                     centre: args.apex,
                     partner: args.end2,
                     window: [args.r23_min, args.r23_max],
-                    apply: ([lo, hi]) => ({ ...args, r23_min: lo, r23_max: hi })
+                    apply: ([lo, hi], { confirmed = false } = {}) => ({ ...args, r23_min: lo, r23_max: hi, ...(confirmed ? { window_confirmed: true } : {}) })
                 }] : [])
             ],
             label: ({ end1, apex, end2, r12_min: lo, r12_max: hi }) => (
@@ -863,7 +876,7 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
                     params.r23Min = args.r23_min;
                     params.r23Max = args.r23_max;
                 }
-                return summarizeBondAngles(await request('triplets', params, { signal }));
+                return summarizeBondAngles(await request('triplets', params, { signal }), { windowConfirmed: args.window_confirmed === true });
             }
         });
 

@@ -204,9 +204,10 @@ const UserMessage = ({ content }) => (
 
 const CopilotView = ({
     context, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey,
-    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, clarifier = null
+    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, clarifier = null,
+    skills = null, skillsError = null
 }) => {
-    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion, clarifier });
+    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion, clarifier, skills });
     useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
     const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
     const previewCard = useCallback((id) => { focus?.preview(id); }, [focus]);
@@ -274,10 +275,11 @@ const CopilotView = ({
     const toolStatus = (() => {
         if (copilot.toolsUnsupported) return 'This model cannot run analyses — answers come from the run summary.';
         if (!toolsEnabled) return 'Analyses are off — answers come from the run summary.';
-        const analyses = tools.filter((tool) => !tool.view && !tool.interactive).length;
+        const analyses = tools.filter((tool) => !tool.view && !tool.interactive && !tool.keep).length;
         if (!analyses) return 'No analyses are available for this run.';
         const pointing = tools.some((tool) => tool.view) ? ' and point at its cards' : '';
-        return `Can run ${analyses} ${analyses === 1 ? 'analysis' : 'analyses'} on this run${pointing}.`;
+        const methods = skills?.length ? `, following ${skills.length} skill${skills.length === 1 ? '' : 's'}` : '';
+        return `Can run ${analyses} ${analyses === 1 ? 'analysis' : 'analyses'} on this run${pointing}${methods}.`;
     })();
 
     return (
@@ -340,6 +342,7 @@ const CopilotView = ({
 
             <div className="llm-sr-only" aria-live="polite">{announcement}</div>
             {copilot.error && <div className="llm-connection-status is-error" role="alert">{copilot.error}</div>}
+            {skillsError && <div className="llm-connection-status is-error" role="alert">The Copilot's skills could not be read: {skillsError}</div>}
 
             <form
                 className="llm-composer"

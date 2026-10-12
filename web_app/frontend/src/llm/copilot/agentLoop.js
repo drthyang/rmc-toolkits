@@ -39,6 +39,9 @@ import {
 // `resultCharBudget` characters, and the turn's tool messages together to
 // `turnCharBudget` — older results are compacted to their checks first — so a
 // small local model's context window keeps the run context and the rules.
+// A tool may carry its own `resultBudget` (a skill is longer than an analysis
+// result) and `keep: true` (its message is never compacted and does not count
+// toward the turn budget: the agent follows a skill for the whole question).
 // An interactive tool (ask_user) waits for the user: it has no time limit, the
 // wait does not count toward `maxTurnMs`, and a turn asks at most
 // `maxQuestions` questions, one per step.
@@ -325,7 +328,8 @@ export async function* runCopilotTurn({
                 args: shownArgs,
                 page: tool?.page || null,
                 cards: tool && parsed.ok ? toolCards(tool, parsed.value) : [],
-                interactive: Boolean(tool?.interactive)
+                interactive: Boolean(tool?.interactive),
+                reading: Boolean(tool?.keep)
             };
 
             let result;
@@ -370,11 +374,12 @@ export async function* runCopilotTurn({
             if (appNote) note = note ? `${appNote}; ${note}` : appNote;
 
             if (result.facts && !result.error) facts.push(result.facts);
-            toolMessages.push(messages.length);
+            if (!tool?.keep) toolMessages.push(messages.length);
+            const budget = Number.isFinite(tool?.resultBudget) && tool.resultBudget > 0 ? tool.resultBudget : resultCharBudget;
             messages.push({
                 role: 'tool',
                 tool_call_id: call.id,
-                content: toolMessageContent({ ...result, note }, resultCharBudget)
+                content: toolMessageContent({ ...result, note }, budget)
             });
             keepWithinTurnBudget(roundStart);
             yield {

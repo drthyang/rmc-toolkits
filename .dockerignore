@@ -3,6 +3,8 @@
 .git
 .github
 .claude
+# …except the AI Copilot's skills, which the frontend bundles.
+!.claude/skills
 .venv
 venv
 __pycache__

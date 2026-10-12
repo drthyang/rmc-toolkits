@@ -40,6 +40,8 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
   run — the agent asks one short question with 2–4 options and its default, then uses exactly the
   option the user picks. Where the run data show that such a choice changes the result, the
   Workbench asks itself, before the model guesses. See *Asking the user* below.
+- **It follows skills** (`read_skill`): written methods for the questions it gets, shared with
+  Claude Code (`.claude/skills/`), drafts awaiting the user's interview. See *Skills* below.
 - **Its answers are checked.** Where an answer contradicts what the analyses or the run context
   established, a **Check** line says so under it and the Outcome chip drops to **Not verified**,
   whatever the model said of its own answer. See *Checks on the answer* below.
@@ -342,6 +344,38 @@ whole shell of about six or four neighbours the split against an ideal octahedro
 trans at 158.8°, which gemma4 had read from the raw modes as "highly distorted, 75–105°". A cut
 window gets no polyhedron reading (its CN 3.9 is not a tetrahedron).
 
+## Skills
+
+**Skills** are Claude Code skills at the repository root, `.claude/skills/<name>/SKILL.md` (front
+matter `name` and `description`), so the in-app agent and Claude Code read the same text. Four are
+drafted, each opening with **"Draft: awaiting the user's interview"**, with its order of steps,
+judgment calls marked "(to confirm with the user)", an acceptance checklist and known failure modes
+from the spot check and the review:
+
+| Skill | For | Its firm rules in code |
+|---|---|---|
+| `rmc-fit-assessment` | convergence, where the fit misses (`compare_fit`), constraint-limited peaks, sampling, overfitting, the report | the convergence check on the answer (*Checks on the answer*) |
+| `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell (fewer than 60 % of the central atoms share the most common count, or most have none; the 60 % is an interview item) and returns the counts that show the cut, not the angles, unless `window_confirmed` — which the Workbench's window question sets when the user keeps their window; the polyhedron reading |
+| `local-symmetry` | the tolerance ladder, what breaks between rungs, the noise floor, point-group facts | the point-group facts and the chirality / centrosymmetry / inversion checks |
+| `displacement-anisotropy` | ellipsoids, kurtosis, preferred directions and their σ, effect sizes | the preferred-direction check; the Workbench's one-site-or-pooled question |
+
+- **Progressive disclosure** (`copilot/skills.js`). The system prompt lists only each skill's name
+  and description (`skillIndex`, 2,150 characters for the four); the agent reads a skill
+  (4,700–5,500 characters each) with `read_skill(name)` and a reference file beside it with
+  `read_skill(name, reference)`. `read_skill` has its own result budget (`resultBudget` 9,000) and
+  is never compacted later in the question (`keep: true` in the tool contract), so the agent can
+  follow the skill throughout; its step is not counted as an analysis.
+- **The host bundles them** (`src/copilotSkills.js`): the SKILL.md files with the app, the reference
+  files as lazy chunks loaded when read; it passes `{ files, references, load }` as the `skills`
+  prop, and the module parses them (`parseSkillFiles`: a misnamed skill or an unbundled reference
+  is an error, shown in the panel). Vite reads them from the repository root
+  (`server.fs.allow`); the Docker build copies them in.
+- **Replays** (`src/__tests__/copilotSkillReplays.test.js`): per skill, a scripted model on the
+  Demo run with the real engines; the skill's right behaviour passes, and the old wrong one
+  (a cut window, "converged — a plateau", "P-42₁m is chiral and centrosymmetry is lost", a
+  preferred Ga direction) is refused or flagged.
+- **Interviews** turn the drafts into the user's method: `docs/SKILL_INTERVIEWS.md`.
+
 ## The context window: never cut silently
 
 A local server runs a model with a fixed context window, and a prompt longer than the window is not
@@ -639,6 +673,11 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   - the tools-unsupported fallback, and a schema 400 that must surface;
   - abort and timeout, which also abort the tool's signal;
   - per-result and per-turn budgets.
+- **Skills:** skill files (front matter, references, a misnamed skill), `read_skill` (its budget,
+  references on demand, never compacted) (`skills.test.js`); the repository's own skills parse,
+  are drafts with every section, and reach the agent whole (`src/__tests__/copilotSkills.test.js`);
+  one replay per skill on the Demo (`copilotSkillReplays.test.js`); the cut-shell refusal and its
+  confirmed escape (`copilotTools.test.js`).
 - **Checks and the Workbench's questions:** the answer checks with their negated and qualified
   phrasings and `lowerOutcome` (`answerAudit.test.js`); the clarifier on synthetic shells — split,
   merged, clean, word-like element symbols, the tolerance ladder, typed windows

@@ -222,8 +222,10 @@ describe('the questions the Workbench asks itself', () => {
             answer('A partial shell.')
         ], { answer: () => ({ answer: 'Keep 2.3–2.7 Å', source: 'option', index: 1 }) });
         const step = run.ends.find((end) => end.name === 'compute_bond_angles');
-        expect(step.args).toMatchObject({ r12_min: 2.3, r12_max: 2.7 });
+        // Kept: the user chose it, so the tool runs it (window_confirmed).
+        expect(step.args).toMatchObject({ r12_min: 2.3, r12_max: 2.7, window_confirmed: true });
         expect(step.status).toBe('warn');
+        expect(step.checks[0].text).toMatch(/Kept: the user chose this window/);
     });
 
     it('(c) one site or all, for a multi-site element whose sites are not cubic', async () => {
@@ -255,7 +257,10 @@ describe('the questions the Workbench asks itself', () => {
             expect({ question, asked: asked.length }).toEqual({ question, asked: 0 });
         }
         // A window the question names is the user's: it runs without a question.
-        const named = await replay('Compute the Se–Ta–Se angles in 2.3–2.7 Å.', [angles(2.3, 2.7), answer('A partial shell.')]);
+        const named = await replay('Compute the Se–Ta–Se angles in 2.3–2.7 Å.', [
+            { calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7, window_confirmed: true } }] },
+            answer('A partial shell.')
+        ]);
         expect(named.asked).toEqual([]);
         expect(named.ends[0].args).toMatchObject({ r12_min: 2.3, r12_max: 2.7 });
     });
@@ -268,10 +273,11 @@ describe('the questions the Workbench asks itself', () => {
             answer('Done.')
         ]);
         // The Workbench's question, then the model's: two, the limit, so the
-        // cut window runs as the model asked (with the tool's warning).
+        // cut window is not asked about again: the tool refuses it.
         expect(run.asked.map((req) => req.question)).toEqual(['Which Ta–Se window should the analysis use?', 'Which run?']);
         const step = run.ends.find((end) => end.name === 'compute_bond_angles');
-        expect(step.status).toBe('warn');
+        expect(step.status).toBe('failed');
+        expect(step.checks[0].text).toMatch(/^Refused: /);
         // Without the clarifier, the model's ask_user works alone.
         const alone = await replay('Compute the bond angles around Ta.', [{ calls: [ask] }, answer('Done.')], { withClarifier: false });
         expect(alone.asked.map((req) => req.question)).toEqual(['Which run?']);

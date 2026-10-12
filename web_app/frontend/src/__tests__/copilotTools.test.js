@@ -135,17 +135,25 @@ describe('Copilot tools on the demo run', () => {
         await expect(tools.analyze_clusters.run({ element: 'Ta', r_min: 3.3, r_max: 2.6 })).rejects.toThrow('r_min must be below r_max');
     });
 
-    it('compute_bond_angles: a window that cuts the TaSe6 shell warns; the whole shell is read against an octahedron', async () => {
+    it('compute_bond_angles: a window that cuts the TaSe6 shell is refused; the whole shell is read against an octahedron', async () => {
         // gemma4:26b on Ollama picked 2.3–2.7 Å, read coordination 3.75 as
         // "incomplete octahedra", and called the answer achieved. The shell
         // has two Ta–Se peaks (2.52 and 2.74 Å): the window cuts the second.
         const cut = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7 });
         expect(cut.data.coordination.mean).toBeLessThan(4);
         expect(cut.checks).toHaveLength(1);
-        expect(cut.checks[0].level).toBe('warn');
-        expect(cut.checks[0].text).toMatch(/^Only 47 % of the Ta atoms have the most common count \(3 Se–Ta bonds\); the counts spread from 1 to 6\. The window may cut through a coordination shell/);
-        // Not about six neighbours: no octahedron reading of a cut shell.
-        expect(cut.data).not.toHaveProperty('polyhedron');
+        expect(cut.checks[0].level).toBe('fail');
+        expect(cut.checks[0].text).toMatch(/^Refused: Only 47 % of the Ta atoms have the most common count \(3 Se–Ta bonds\); the counts spread from 1 to 6\. The window cuts through a coordination shell\. Use the whole shell/);
+        // The cut is shown; its angles are not given to quote.
+        expect(cut.data.refused).toMatch(/cuts the coordination shell/);
+        for (const key of ['modes', 'mean_deg', 'sd_deg', 'histogram_10deg', 'histogram_10deg_sin_corrected', 'polyhedron']) {
+            expect(cut.data).not.toHaveProperty(key);
+        }
+        // The user may still want that window: confirmed, it is kept with a warning.
+        const chosen = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7, window_confirmed: true });
+        expect(chosen.checks[0].level).toBe('warn');
+        expect(chosen.checks[0].text).toMatch(/Kept: the user chose this window/);
+        expect(chosen.data.modes.length).toBeGreaterThan(0);
 
         const whole = await tools.compute_bond_angles.run({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.33, r12_max: 2.97 });
         expect(whole.data.coordination.counts.indexOf(Math.max(...whole.data.coordination.counts))).toBe(6);
@@ -247,13 +255,18 @@ describe('Copilot summarizers', () => {
         expect(checks[2].text).toBe('No significant peak direction (1.2σ < 3σ).');
     });
 
-    it('bond-angle checks: a window that misses most central atoms warns', () => {
+    it('bond-angle checks: a window that misses most central atoms is refused', () => {
         const { checks } = summarizeBondAngles({
             triplet: ['Se', 'Ta', 'Se'], angleCount: 2, apexCount: 10, coordination: [8, 0, 2],
             binCenters: [89.5, 90.5], counts: [1, 1], meanAngle: 90, stdAngle: 0.5,
             lengths12: { meanLength: 2.6, uniqueBonds: 4 }, sharedEnds: true
         });
-        expect(checks).toEqual([{ level: 'warn', text: '80 % of the Ta atoms have no Se–Ta bond in the window: it misses most of the shell.' }]);
+        expect(checks).toEqual([{
+            level: 'fail',
+            text: 'Refused: 80 % of the Ta atoms have no Se–Ta bond in the window: it misses most of the shell. '
+                + 'Use the whole shell (find_gr_peaks\' first_shell.window_A). If the user wants this window, ask them (ask_user) '
+                + 'and call again with window_confirmed: true.'
+        }]);
     });
 
     it('cluster checks: an extended network and an empty window fail with advice', () => {
