@@ -1792,7 +1792,7 @@ render-time reset, the fetch `useEffect`; `Dashboard.jsx` → `renderPlotBody` (
 All figure export lives in
 [`figureExport.js`](../../web_app/frontend/src/figureExport.js). Charts offer two formats
 (`CHART_SAVE_OPTIONS = png | svg`) through the shared
-[`SaveMenu.jsx`](../../web_app/frontend/src/components/SaveMenu.jsx) badge (which saves immediately when
+[`SaveMenu.jsx`](../../web_app/frontend/src/ui/SaveMenu.jsx) badge (which saves immediately when
 only one format is offered, otherwise opens a small menu that closes on outside-pointerdown or
 Escape).
 
