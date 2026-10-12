@@ -632,10 +632,15 @@ const buildSite = (referenceNumber, atomElements, offsets, latticeVectors, super
         const frac = (value * supercell[i]) % 1;
         return (frac + 1) % 1;
     });
+    // The same, not wrapped: an atom of the site in cell n sits at
+    // (n + siteCellFractional) / supercell on average. A site at fraction 0 whose
+    // mean is a hair negative has siteFractional 0.9999 but siteCellFractional
+    // −0.0001; pairing atoms by cell (clusters.js) must use the latter.
+    const siteCellFractional = mean.map((value, i) => value * supercell[i]);
     const { element, elementCounts, mixed } = siteComposition(atomElements);
     return {
         referenceNumber, element, elementCounts, mixed, atomElements,
-        count: n, displacements, siteFractional, copiesPerCell,
+        count: n, displacements, siteFractional, siteCellFractional, copiesPerCell,
         // Each row's box copy (cell indices), parallel to `displacements`:
         // the cluster engine finds a cluster's atoms by site and cell. Null on
         // the reconstruction path, which has no cell columns.

@@ -22,21 +22,29 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import cluster_config_text  # noqa: E402
+from cluster_configs import cluster_config_text, long_wave_config_text  # noqa: E402
 from rmc_toolkits.modulations import displacement_modulations  # noqa: E402
 from rmc_toolkits.pca_kde import load_site_displacements  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "web_app" / "frontend" / "src" / "__tests__" / "fixtures" / "modulations_fixture.json"
 
-CASES = [("doubled", (4, 4, 4), [None, "Nb"]), ("independent", (3, 4, 4), [None])]
+CASES = [
+    ("doubled", (4, 4, 4), [None, "Nb"]),
+    ("independent", (3, 4, 4), [None]),
+    # Order under a stronger long wave (review 2026-10-12 #6).
+    ("long-wave", (6, 6, 6), ["Ti"]),
+]
 
 
 def main() -> None:
     cases = []
     with tempfile.TemporaryDirectory() as directory:
         for mode, supercell, elements in CASES:
-            text = cluster_config_text(mode, supercell=supercell)
+            text = (
+                long_wave_config_text(supercell=supercell) if mode == "long-wave"
+                else cluster_config_text(mode, supercell=supercell)
+            )
             path = Path(directory) / f"{mode}.rmc6f"
             path.write_text(text, encoding="utf-8")
             sites = load_site_displacements(path)

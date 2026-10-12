@@ -10,10 +10,16 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { structureFromRmc6f } from '../browserData';
 import { handlePcaMessage } from '../workers/pcaKdeWorker';
+import { displacementModulations } from '../workers/modulations';
+import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
+import modulationsFixture from './fixtures/modulations_fixture.json';
+import clustersFixture from './fixtures/clusters_fixture.json';
+import { clusterDistortion } from '../workers/clusters';
 import {
     buildCopilotTools,
     cartesianToUvw,
     summarizeBondAngles,
+    tenDegreeBins,
     summarizeClusters,
     summarizeModulations,
     summarizeOrientation,
@@ -269,6 +275,45 @@ describe('Copilot summarizers', () => {
         }]);
     });
 
+    it('bond-angle reference: only an A–B–A triplet in one window is read against a polyhedron (review 2026-10-12 #5)', () => {
+        // Six Se per Ta, every angle near 90°: a whole octahedral shell's
+        // numbers, but for a mixed or a split triplet the angles are a subset.
+        const base = {
+            angleCount: 15, apexCount: 1, coordination: [0, 0, 0, 0, 0, 0, 1],
+            binCenters: [89.5, 90.5], counts: [8, 7], meanAngle: 90, stdAngle: 0.5,
+            lengths12: { meanLength: 2.6, uniqueBonds: 6 }
+        };
+        const mixed = summarizeBondAngles({ ...base, triplet: ['Se', 'Ta', 'Te'], sharedEnds: false, bond23: [2.4, 2.9] });
+        expect(mixed.data).not.toHaveProperty('polyhedron');
+        expect(mixed.checks.map((check) => check.level)).toEqual(['ok']);
+        const split = summarizeBondAngles({ ...base, triplet: ['Se', 'Ta', 'Se'], sharedEnds: false, bond12: [2.3, 2.6], bond23: [2.6, 2.9] });
+        expect(split.data).not.toHaveProperty('polyhedron');
+        // One shell: read against the octahedron; no trans angles is "none", never "null°".
+        const shell = summarizeBondAngles({ ...base, triplet: ['Se', 'Ta', 'Se'], sharedEnds: true });
+        expect(shell.data.polyhedron.trans_above_135_deg).toEqual({ share: 0, mean_deg: null });
+        expect(shell.checks[1].text).toMatch(/0 % of these angles lie above 135° \(mean none\)/);
+        expect(shell.checks[1].text).not.toMatch(/null/);
+    });
+
+    it('bond-angle histograms: wide engine bins are shared by overlap, not combed (review 2026-10-12 #5)', () => {
+        // A flat distribution in 15° bins: each 10° bin gets two thirds of one.
+        const centers = Array.from({ length: 12 }, (_, i) => 7.5 + 15 * i);
+        const flat = tenDegreeBins(centers, centers.map(() => 150));
+        flat.forEach((value) => expect(value).toBeCloseTo(100, 9));
+        // 30° bins too, and 1° bins as before (whole bins).
+        const wide = tenDegreeBins([15, 45, 75, 105, 135, 165], [300, 300, 300, 300, 300, 300]);
+        wide.forEach((value) => expect(value).toBeCloseTo(100, 9));
+        const fine = Array.from({ length: 180 }, (_, i) => i + 0.5);
+        expect(tenDegreeBins(fine, fine.map((_, i) => i))).toEqual(
+            Array.from({ length: 18 }, (_, j) => Array.from({ length: 10 }, (_, k) => 10 * j + k).reduce((sum, value) => sum + value, 0))
+        );
+        const summary = summarizeBondAngles({
+            triplet: ['Se', 'Ta', 'Se'], sharedEnds: true, angleCount: 1800, apexCount: 100, coordination: [0, 0, 0, 0, 0, 0, 100],
+            binCenters: centers, counts: centers.map(() => 150), meanAngle: 90, stdAngle: 50, lengths12: { meanLength: 2.6, uniqueBonds: 600 }
+        });
+        expect(summary.data.histogram_10deg.every((value) => value > 0.05)).toBe(true);
+    });
+
     it('cluster checks: an extended network and an empty window fail with advice', () => {
         const extended = summarizeClusters({ element: 'Se', window: [7.5, 8], sites: [7], extended: true, templates: [], kinds: [] });
         expect(extended.checks).toHaveLength(1);
@@ -295,10 +340,31 @@ describe('Copilot summarizers', () => {
         expect(checks).toHaveLength(1);
         expect(checks[0]).toEqual({
             level: 'ok',
-            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, above 99.5 % of all wavevectors — a superstructure doubling the cell along c.'
+            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, above 99.5 % of the modes apart from long waves '
+                + '— a superstructure doubling the cell along c.'
         });
         const odd = summarizeModulations({ supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], elements: [{ element: 'Nb', sites: 0 }] });
         expect(odd.checks[0].level).toBe('fail');
+    });
+
+    it('modulation checks: order under a stronger long wave is still found (review 2026-10-12 #6)', () => {
+        // Ti order at (0, 0, ½), 55× the median, under a long wave at (⅙, 0, 0)
+        // and its −q partner: percentile 98.6 of all q, so it was missed.
+        const { text } = modulationsFixture.cases.find((entry) => entry.name.startsWith('long-wave'));
+        const payload = displacementModulations(siteDisplacementsFromRmc6f(text), 'Ti');
+        const { checks } = summarizeModulations(payload);
+        expect(checks[0].level).toBe('ok');
+        expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\): \d+(\.\d+)?× the median power, the strongest mode apart from long waves/);
+        expect(checks.some((check) => /long-wavelength wave/.test(check.text))).toBe(true);
+    });
+
+    it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {
+        const { text } = clustersFixture.cases.find((entry) => entry.name === 'tie');
+        const payload = clusterDistortion(siteDisplacementsFromRmc6f(text), 'Mo', [1.8, 2.2]);
+        expect(payload.kinds[0]).toMatchObject({ members: 2, clusters: 64 });
+        const { data } = summarizeClusters(payload);
+        expect(data.clusters).toMatchObject({ members: 2, count: 64 });
+        expect(data.clusters.other_sizes).toEqual([{ members: 3, count: 64 }]);
     });
 
     it('symmetry checks: not analysed, undetermined, lower bound', () => {

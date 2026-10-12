@@ -16,11 +16,28 @@
 //
 // Deliberately narrow: a rule fires only on a clear positive claim, not on a
 // negated one ("has not converged", "achiral", "no preferred direction"), not
-// in a question, and not when the same sentence already says the right thing.
+// on a hypothetical, conditional or a question ("to check whether it has
+// converged", "until χ² plateaus", "I tested whether site 23 has a preferred
+// direction", "a converged run"), and not when the same sentence already
+// says the right thing.
+// A negation or such a word counts only in the stretch of the clause just
+// before the claim, after its last comma or "and"/"so": "With no remaining
+// drift in χ², the run has converged" is a claim.
 // A false alarm under a correct answer would teach the user to ignore these.
 // Each finding is `{ rule, text }`; pure, no React.
 
-const NEGATION = /\b(not|no|never|neither|nor|none|without|lacks?|lacking|absence|absent|cannot|non|yet)\b|n't\b/i;
+const NEGATION = /\b(not|no|never|neither|nor|none|without|lacks?|lacking|absence|absent|cannot|non|yet|stopped|ceased)\b|n't\b/i;
+// What makes a mention hypothetical, conditional or a question about it.
+const NOT_ASSERTED = new RegExp('\\b(whether|if|unless|until|once|when(?:ever)?|before|would|could|might|'
+    + 'to (?:check|test|see|confirm|verify|determine|assess|judge|tell|decide)|'
+    + 'test(?:s|ed|ing)? (?:for|whether|if)|check(?:s|ed|ing)? (?:for|whether|if|that)|'
+    + 'look(?:s|ed|ing)? for|make sure|ensure|verify that|confirm that)\\b', 'i');
+// An attributive use of a state names a kind, it claims nothing: "a
+// converged run" (but "has a preferred direction" is a claim).
+const ATTRIBUTIVE = /\b(a|an|any|every|each)\s+$/i;
+// The stretch of a clause a claim's negation or condition must sit in: after
+// its last comma, "and", "so", "therefore", "thus" or "hence".
+const leadOf = (text) => text.split(/,\s*|\s+(?:and|so|therefore|thus|hence)\s+/i).pop();
 
 // Sentences, then clauses: a contrast ("…, but …") starts a new claim.
 const sentencesOf = (text) => String(text || '')
@@ -33,14 +50,15 @@ const clausesOf = (sentence) => sentence
     .map((clause) => clause.trim())
     .filter(Boolean);
 
-// The positive matches of `pattern` in a clause: not in a question, not after
-// a negation in the 60 characters before it.
-const positiveMatches = (clause, pattern) => {
+// The asserted matches of `pattern` in a clause: not in a question, and not
+// after a negation or a hypothetical word in the stretch just before it (nor
+// after an article, for a `state` such as "converged").
+const positiveMatches = (clause, pattern, { state = false } = {}) => {
     if (/\?\s*$/.test(clause)) return [];
     const out = [];
     for (const match of clause.matchAll(pattern)) {
-        const before = clause.slice(Math.max(0, match.index - 60), match.index + (match[1] || '').length);
-        if (!NEGATION.test(before)) out.push(match);
+        const lead = leadOf(clause.slice(0, match.index + (match[1] || '').length));
+        if (!NEGATION.test(lead) && !NOT_ASSERTED.test(lead) && !(state && ATTRIBUTIVE.test(lead))) out.push(match);
     }
     return out;
 };
@@ -96,17 +114,33 @@ const groupsIn = (text, groups) => {
 
 const groupNote = (group) => `${group.symbol} (${group.point_group})`;
 
+// Something written like a space-group symbol (a lattice letter, then axes
+// with at least one digit: P2₁2₁2, I4/mmm, R-3c), known or not.
+const SYMBOL_LIKE = /(?<![a-z0-9])[pifcabr](?=[a-z/-]*\d)(?:-?\d(?:_?\d)?|\/?[mnabcde]){1,5}(?![a-z0-9])/;
+const namesSymbol = (text) => SYMBOL_LIKE.test(symbolText(text).replace(/[\s{}$\\]/g, (char) => (/\s/.test(char) ? ' ' : '')));
+
+// The groups a claim is about, before a symmetry lowering: the context's
+// average group and the top of its ladder (`parent`), or, for groups given
+// without that flag, the context's first.
+const parentGroups = (context) => {
+    const groups = context?.groups || [];
+    const flagged = groups.filter((group) => group.parent);
+    return flagged.length ? flagged : groups.slice(0, 1);
+};
+
 // --- the rules ----------------------------------------------------------------------
 
 const CONVERGED = /(^|[^\w-])(converged|reached convergence|at convergence|plateau(?:ed|s)?)\b/gi;
-const STILL_MOVING = /\b(improving|diverg\w*|still (?:falling|decreasing|dropping|declining|descending|going down|moving))\b/i;
+const STILL_MOVING = /(^|\W)(improving|diverg\w*|still (?:falling|decreasing|dropping|declining|descending|going down|moving))\b/gi;
 
 const convergenceRule = (text, facts, context) => {
     const reported = [...facts].reverse().find((fact) => fact.convergence)?.convergence ?? context?.convergence ?? null;
     if (reported !== 'improving' && reported !== 'diverging') return [];
     for (const sentence of sentencesOf(text)) {
-        if (STILL_MOVING.test(sentence)) continue;
-        if (clausesOf(sentence).some((clause) => positiveMatches(clause, CONVERGED).length)) {
+        // A sentence that itself says the run still moves already says the
+        // right thing; "stopped improving" or "no longer diverging" does not.
+        if (clausesOf(sentence).some((clause) => positiveMatches(clause, STILL_MOVING).length)) continue;
+        if (clausesOf(sentence).some((clause) => positiveMatches(clause, CONVERGED, { state: true }).length)) {
             return [{
                 rule: 'convergence',
                 text: `The answer says the run has converged, but the χ² history is still ${reported} `
@@ -135,9 +169,14 @@ const symmetryRules = (text, facts, context) => {
         found.push({ rule, text: message });
     };
     const answerGroups = groupsIn(text, groups);
+    const parents = parentGroups(context);
     for (const sentence of sentencesOf(text)) {
         for (const clause of clausesOf(sentence)) {
-            const named = groupsIn(clause, groups).length ? groupsIn(clause, groups) : groupsIn(sentence, groups);
+            // A clause that names no group is about the sentence's ("…; it is
+            // chiral"), but not one that names a group the checks do not know
+            // ("its subgroup P2₁2₁2 is chiral" is not about the parent).
+            const inClause = groupsIn(clause, groups);
+            const named = inClause.length ? inClause : (namesSymbol(clause) ? [] : groupsIn(sentence, groups));
             if (named.length && named.every((group) => !group.sohncke) && positiveMatches(clause, CHIRAL).length) {
                 push('chirality', `The answer calls ${named.map(groupNote).join(', ')} chiral, but a group with mirrors, glides or `
                     + 'rotoinversions is achiral: only a Sohncke group (proper rotations only) allows a chiral structure.');
@@ -146,8 +185,10 @@ const symmetryRules = (text, facts, context) => {
                 push('centrosymmetry', `The answer calls ${named.map(groupNote).join(', ')} centrosymmetric, but `
                     + `${named.length > 1 ? 'none of these point groups has' : 'its point group has no'} inversion centre.`);
             }
+            // Losing inversion is wrong only when no group it could be lost
+            // from has it: neither a group the answer names nor the parent.
             const lost = LOST_INVERSION.some((pattern) => positiveMatches(clause, pattern).length);
-            const among = answerGroups.length ? answerGroups : [...groups.values()].slice(0, 1);
+            const among = [...new Map([...answerGroups, ...parents].map((group) => [normalizeSymbol(group.symbol), group])).values()];
             if (lost && among.length && among.every((group) => !group.centrosymmetric)) {
                 push('inversion-lost', `The answer says an inversion centre is lost, but none of ${among.map(groupNote).join(', ')} `
                     + 'has one: there is no inversion to lose.');
@@ -208,18 +249,26 @@ export const lowerOutcome = (outcome, findings, text = '') => {
     };
 };
 
-/** The run context's facts for the audit: the watchdog's status and the ladder's groups. */
+/**
+ * The run context's facts for the audit: the watchdog's status and the
+ * ladder's groups. The average group and the ladder's top (its rung with the
+ * most operations) are the `parent` groups a lowering starts from.
+ */
 export const contextAuditFacts = (context, pointGroupFacts) => {
     if (!context) return null;
     const groups = [];
     const symmetry = context.symmetry;
     if (symmetry?.space_group && symmetry.point_group) {
         const facts = pointGroupFacts(symmetry.point_group);
-        if (facts) groups.push({ symbol: String(symmetry.space_group).replace(/\s*\(No\.\s*\d+\)\s*$/, ''), ...facts });
+        if (facts) groups.push({ symbol: String(symmetry.space_group).replace(/\s*\(No\.\s*\d+\)\s*$/, ''), ...facts, parent: true });
     }
-    for (const rung of symmetry?.ladder || []) {
+    const ladder = symmetry?.ladder || [];
+    const most = Math.max(...ladder.map((rung) => (Number.isFinite(rung.n_ops) ? rung.n_ops : -Infinity)));
+    ladder.forEach((rung, index) => {
         const facts = rung.pg ? pointGroupFacts(rung.pg) : null;
-        if (facts && rung.sg) groups.push({ symbol: rung.sg, ...facts });
-    }
+        // Without operation counts, the ladder's two ends.
+        const top = Number.isFinite(most) ? rung.n_ops === most : index === 0 || index === ladder.length - 1;
+        if (facts && rung.sg) groups.push({ symbol: rung.sg, ...facts, ...(top ? { parent: true } : {}) });
+    });
     return { convergence: context.convergence?.watchdog_status ?? null, groups };
 };

@@ -45,6 +45,20 @@ describe('parseDirection', () => {
         expect(parseDirection('z')).toEqual({ cartesian: [0, 0, 1] });
     });
 
+    it('reads (hkl) as a plane, viewed along its normal, never as the direction [hkl] (review 2026-10-12 #18)', () => {
+        expect(parseDirection('(100)')).toEqual({ hkl: [1, 0, 0] });
+        expect(parseDirection('{1 1 1}')).toEqual({ hkl: [1, 1, 1] });
+        expect(parseDirection('(1̄10)')).toEqual({ hkl: [-1, 1, 0] });
+        expect(parseDirection('(100')).toBeNull();
+        // In a hexagonal cell the (100) normal is a*, 30° off [100] = a.
+        const normal = directionVector({ hkl: [1, 0, 0] }, HEXAGONAL);
+        close(normal, [Math.sqrt(3) / 2, 0.5, 0]);
+        expect(angleDeg(normal, HEXAGONAL[0])).toBeCloseTo(30, 6);
+        expect(angleDeg(normal, HEXAGONAL[1])).toBeCloseTo(90, 6);
+        // In a cubic cell plane normal and direction agree.
+        close(directionVector({ hkl: [1, 1, 0] }, CUBIC), directionVector({ uvw: [1, 1, 0] }, CUBIC));
+    });
+
     it('refuses what it cannot read', () => {
         expect(parseDirection('[000]')).toBeNull();
         expect(parseDirection('[11]')).toBeNull();

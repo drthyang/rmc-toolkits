@@ -36,6 +36,7 @@ const waitUntil = async (test, { timeoutMs, signal, pollMs = 100 }) => {
 
 const parsedLabel = (parsed) => {
     if (parsed.uvw) return directionLabel(parsed.uvw);
+    if (parsed.hkl) return `normal to (${parsed.hkl.join(' ')})`;
     if (parsed.axis != null) return `${AXIS_NAMES[parsed.axis]} axis`;
     if (parsed.pc != null) return `PC${parsed.pc + 1}`;
     return `Cartesian ${directionLabel(parsed.cartesian)}`;
@@ -66,7 +67,8 @@ export const buildViewTools = ({ cards = [], pages = {}, activePage = () => null
                 card: { type: 'string', enum: views.map((card) => card.id), description: 'Which 3D view.' },
                 along: {
                     type: 'string',
-                    description: 'Direction to look down: "[111]", "[1 -1 0]", "[0.71 0.71 1]", or "a", "b", "c", "PC1"…'
+                    description: 'Direction to look down: "[111]", "[1 -1 0]", "[0.71 0.71 1]", or "a", "b", "c", "PC1"…; '
+                        + 'a plane in parentheses, "(111)", looks along its normal'
                 },
                 center_site: { type: 'integer', minimum: 1, description: 'Site ref to centre (views with sites).' },
                 highlight_sites: {
@@ -97,7 +99,8 @@ export const buildViewTools = ({ cards = [], pages = {}, activePage = () => null
             if (!card?.view3d) throw new Error(`"${args.card}" is not a 3D view; views: ${views.map((view) => view.id).join(', ')}`);
             const parsed = args.along != null ? parseDirection(args.along) : null;
             if (args.along != null && !parsed) {
-                throw new Error(`could not read along=${JSON.stringify(args.along)}: give a direction like "[111]", "[1 -1 0]" or an axis "a", "b", "c"`);
+                throw new Error(`could not read along=${JSON.stringify(args.along)}: give a direction like "[111]", "[1 -1 0]", `
+                    + 'an axis "a", "b", "c", or a plane "(111)" to look along its normal');
             }
             const actions = ['along', 'center_site', 'highlight_sites', 'select_site', 'reset'].filter((key) => args[key] != null);
             if (!actions.length) throw new Error('nothing to do: give along, center_site, highlight_sites, select_site or reset');

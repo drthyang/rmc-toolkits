@@ -49,6 +49,42 @@ describe('Python parity (clusters_fixture.json)', () => {
     }
 });
 
+describe('a site at fraction 0 (review 2026-10-12 #1)', () => {
+    it('pairs each atom with its partner of the same cell when the site mean is a hair below 0', () => {
+        // The rigid V2 dimers' first site averages −0.0001 Å: wrapped to
+        // 0.9999 it pulled the partner from the next cell, which hid the
+        // dimers' correlation and broke edges.
+        const parsed = siteDisplacementsFromRmc6f(fixture.cases.find((entry) => entry.name === 'origin-dimer').text);
+        expect(parsed.sites[0].siteFractional[0]).toBeGreaterThan(0.99);
+        expect(parsed.sites[0].siteCellFractional[0]).toBeCloseTo(-2e-5, 9);
+        const result = clusterDistortion(parsed, 'V', [2.0, 2.5]);
+        expect(result.templates[0].offsets).toEqual([[0, 0, 0], [0, 0, 0]]);
+        expect(result.outliers.brokenEdgeFraction).toBe(0);
+        expect(result.z.breathingSd).toBeLessThan(-10);
+    });
+});
+
+describe('templates with their own edges (review 2026-10-12 #2)', () => {
+    it('measures each chain with its own template\'s edges', () => {
+        // Chain B (bonded 0-1, 0-2) measured with chain A's edges (0-1, 1-2)
+        // counted its 4 Å end-to-end span as an edge: ladderWidth 1.03 Å.
+        const parsed = siteDisplacementsFromRmc6f(fixture.cases.find((entry) => entry.name === 'chains').text);
+        const result = clusterDistortion(parsed, 'Mo', [1.8, 2.2]);
+        expect(result.templates.map((template) => template.edges)).toEqual([[[0, 1], [1, 2]], [[0, 1], [0, 2]]]);
+        expect(result.observed.ladderWidth).toBeLessThan(0.2);
+        expect(result.outliers.brokenEdgeFraction).toBe(0);
+    });
+});
+
+describe('missing atoms (review 2026-10-12 #16)', () => {
+    it('counts the bonds of a cluster that lost an atom as its own, not as contacts between clusters', () => {
+        const parsed = siteDisplacementsFromRmc6f(fixture.cases.find((entry) => entry.name === 'vacancies').text);
+        const result = clusterDistortion(parsed, 'Nb', [2.5, 3.5]);
+        expect(result.templates[0].incomplete).toBeGreaterThan(0);
+        expect(result.outliers.extraContacts).toBe(0);
+    });
+});
+
 describe('the worker\'s clusters request', () => {
     const text = fixture.cases[0].text;
     const ask = (params) => handlePcaMessage({ kind: 'clusters', ...params }, async () => text);

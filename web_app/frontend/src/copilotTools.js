@@ -244,14 +244,33 @@ const angleModes = (centers, counts, total, maxModes = 3) => {
         .sort((a, b) => a.angle_deg - b.angle_deg);
 };
 
-// The angle distribution as fractions in 18 bins of 10°.
-const coarseHistogram = (centers, counts, total) => {
+// The engine's counts re-binned into 18 bins of 10°, each bin's count shared
+// by overlap: a 15° or 30° bin straddles two 10° bins, and putting it whole
+// into the one its centre falls in left every third 10° bin empty (a comb).
+export const tenDegreeBins = (centers, counts) => {
     const bins = new Array(18).fill(0);
+    const width = centers.length > 1 ? centers[1] - centers[0] : 0;
     centers.forEach((center, index) => {
-        bins[Math.min(17, Math.floor(center / 10))] += counts[index];
+        const count = counts[index] || 0;
+        if (!count) return;
+        const lo = Math.max(0, center - width / 2);
+        const hi = Math.min(180, center + width / 2);
+        if (!(width > 0) || !(hi > lo)) {
+            bins[Math.min(17, Math.max(0, Math.floor(center / 10)))] += count;
+            return;
+        }
+        for (let j = Math.max(0, Math.floor(lo / 10)); j <= Math.min(17, Math.floor(hi / 10)); j += 1) {
+            const overlap = Math.min(hi, 10 * (j + 1)) - Math.max(lo, 10 * j);
+            if (overlap > 0) bins[j] += count * overlap / (hi - lo);
+        }
     });
-    return bins.map((count) => (total ? round(count / total, 2) : 0));
+    return bins;
 };
+
+// The angle distribution as fractions in 18 bins of 10°.
+const coarseHistogram = (centers, counts, total) => (
+    tenDegreeBins(centers, counts).map((count) => (total ? round(count / total, 2) : 0))
+);
 
 // The same 18 bins divided by the share randomly oriented bonds would put
 // there ((cos θ₁ − cos θ₂)/2): 1 everywhere for random directions. Raw counts
@@ -259,16 +278,14 @@ const coarseHistogram = (centers, counts, total) => {
 // hardly show in them; here they do.
 export const sinCorrectedHistogram = (centers, counts, total) => {
     if (!total) return new Array(18).fill(0);
-    const bins = new Array(18).fill(0);
-    centers.forEach((center, index) => {
-        bins[Math.min(17, Math.floor(center / 10))] += counts[index];
-    });
+    const bins = tenDegreeBins(centers, counts);
     const rad = Math.PI / 180;
     return bins.map((count, j) => round((count / total) / ((Math.cos(10 * j * rad) - Math.cos(10 * (j + 1) * rad)) / 2), 2));
 };
 
-// For a central atom with about six or four neighbours, the share of angles
-// on each side of the split an ideal polyhedron has, against that ideal: an
+// For a central atom with about six or four neighbours (an A–B–A triplet in
+// one window), the share of angles on each side of the split an ideal
+// polyhedron has, against that ideal: an
 // octahedron has 12 cis angles (90°) and 3 trans (180°) per centre, a
 // tetrahedron six at 109.5°.
 const POLYHEDRON_SPLIT_DEG = 135;
@@ -388,15 +405,20 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
         checks.push({ level: 'ok', text: `${total} angles around ${apexTotal} ${b} atoms (mean coordination ${round(meanCoordination)}).` });
     }
     // Only a whole shell is read against an ideal polyhedron: a cut TaSe6
-    // shell holds ~3.9 Se per Ta, which is not a tetrahedron.
-    const reference = cut ? null : polyhedronReference(payload.binCenters || [], payload.counts || [], total, meanCoordination);
+    // shell holds ~3.9 Se per Ta, which is not a tetrahedron. And only one
+    // shell: an A–B–A triplet with one window. A mixed (Se–Ta–Te) or split
+    // (two windows) triplet's angles are a subset of the polyhedron's.
+    const oneShell = a === c && payload.sharedEnds === true;
+    const reference = cut || !oneShell ? null : polyhedronReference(payload.binCenters || [], payload.counts || [], total, meanCoordination);
     if (reference) data.polyhedron = reference;
     if (reference?.trans_above_135_deg) {
+        // A band with no angles has no mean: say "none", never "null°".
+        const meanOf = (band) => (band.mean_deg == null ? 'none' : `${band.mean_deg}°`);
         checks.push({
             level: 'note',
             text: `Raw counts deplete angles near 180° (as sin θ): ${Math.round(reference.trans_above_135_deg.share * 100)} % of these angles `
-                + `lie above 135° (mean ${reference.trans_above_135_deg.mean_deg}°) and ${Math.round(reference.cis_below_135_deg.share * 100)} % `
-                + `below (mean ${reference.cis_below_135_deg.mean_deg}°), against an ideal octahedron's 20 % trans at 180° and 80 % cis `
+                + `lie above 135° (mean ${meanOf(reference.trans_above_135_deg)}) and ${Math.round(reference.cis_below_135_deg.share * 100)} % `
+                + `below (mean ${meanOf(reference.cis_below_135_deg)}), against an ideal octahedron's 20 % trans at 180° and 80 % cis `
                 + 'at 90°. Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.'
         });
     }
@@ -465,7 +487,9 @@ export const summarizeClusters = (payload) => {
         count: kind.clusters,
         templates: kind.templates
     };
-    if (payload.kinds.length > 1) data.clusters.other_sizes = payload.kinds.slice(1).map((k) => ({ members: k.members, count: k.clusters }));
+    // The other kinds, never the one analysed (a tie once listed it here).
+    const others = payload.kinds.filter((k) => k.members !== kind.members || k.edges !== kind.edges);
+    if (others.length) data.clusters.other_sizes = others.map((k) => ({ members: k.members, count: k.clusters }));
     data.average_structure = {
         edges_A: payload.ideal.ladder.map((value) => round(value, 4)),
         spread_A: round(payload.ideal.spread, 2),
@@ -597,7 +621,8 @@ export const summarizeClusters = (payload) => {
 
 // A zone-boundary point is ordered displacement when its power is at least
 // this many times the median over all wavevectors AND it is in the top 1 %
-// of them (or the element's strongest mode, in a box with < 100 wavevectors).
+// of the compared modes (one per ±q pair, long waves left out: the engine's
+// percentile), or the strongest of them (rank 1: a box with < 100 pairs).
 export const MODULATION_RATIO = 3;
 export const MODULATION_PERCENTILE = 99;
 // A mode this strong, within this fraction of the zone centre, is a
@@ -615,7 +640,8 @@ export const summarizeModulations = (payload) => {
     const data = {
         note: 'rows are [q, ratio, percentile]: an element\'s displacement power at wavevector q (fractions of the cell\'s '
             + 'reciprocal axes) over its median across all q of the supercell grid (the diffuse background), and the share of '
-            + 'wavevectors with less power. A ½ component is order that doubles the cell along that axis.',
+            + 'the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power. '
+            + 'A ½ component is order that doubles the cell along that axis.',
         supercell: payload.supercell,
         wavevectors: payload.wavevectors,
         elements: (payload.elements || []).filter((entry) => entry.sites).map((entry) => ({
@@ -633,9 +659,8 @@ export const summarizeModulations = (payload) => {
     }
     const ordered = [];
     (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
-        const strongestKey = qLabel(entry.strongest[0]?.q || []);
         entry.zoneBoundary.forEach((point) => {
-            const top = point.percentile >= MODULATION_PERCENTILE || qLabel(point.q) === strongestKey;
+            const top = point.percentile >= MODULATION_PERCENTILE || point.rank === 1;
             if (point.ratio >= MODULATION_RATIO && top) ordered.push({ element: entry.element, point });
         });
     });
@@ -645,7 +670,9 @@ export const summarizeModulations = (payload) => {
             checks.push({
                 level: 'ok',
                 text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
-                    + `above ${round(point.percentile, 3)} % of all wavevectors — a superstructure doubling the cell along ${axes}.`
+                    + `${point.rank === 1 ? 'the strongest mode' : `above ${round(point.percentile, 3)} % of the modes`} `
+                    + 'apart from long waves — a superstructure doubling the cell along '
+                    + `${axes}.`
             });
         });
     } else {

@@ -20,6 +20,12 @@ import { WINDOW_TOL, countPatterns, perpendicularWidths } from './triplets.js';
 
 export const DEFAULT_SHUFFLES = 24;
 export const SHUFFLE_SEED = 0x5eed;
+
+// The site's average position consistent with its atoms' cell indices
+// (pcaKde.js `siteCellFractional`, unwrapped): a cluster pairs the atoms of
+// given cells, so a site at fraction 0 must not wrap to 0.9999 and pull its
+// partners from the next cell. clusters.py `_cell_positions`.
+const cellPosition = (site) => site.siteCellFractional ?? site.siteFractional;
 export const AXIS_CONE_DEG = 15;
 // Opposite edge pairs of a tetrahedron, as indices into its sorted edge list
 // (0,1) (0,2) (0,3) (1,2) (1,3) (2,3).
@@ -90,7 +96,7 @@ const buildTemplates = (sites, members, unit, [lo, hi]) => {
     for (const s of members) {
         for (const t of members) {
             for (const shift of shifts) {
-                const d = length(toCartesian(add(sub(sites[t].siteFractional, sites[s].siteFractional), shift), unit));
+                const d = length(toCartesian(add(sub(cellPosition(sites[t]), cellPosition(sites[s])), shift), unit));
                 if (!(d >= lower && d <= upper)) continue;
                 if (s === t) {
                     if (shift.some((value) => value !== 0)) extended = true;
@@ -149,15 +155,18 @@ const cellLinear = (cell, supercell) => {
 };
 
 // Shape statistics of clusters given as member positions [cluster][member] (mirrors _statistics).
+// `edges[c]` holds cluster c's member index pairs: templates of one kind need
+// not share their edges (two chains of three, one bonded 0-1-2 and one 1-0-2).
+// Mirrors _statistics / _edge_vectors.
 const clusterStatistics = (positions, edges, families) => {
     const nClusters = positions.length;
     const members = positions[0].length;
-    const lengths = positions.map((cluster) => edges.map(([i, j]) => length(sub(cluster[j], cluster[i]))));
+    const lengths = positions.map((cluster, c) => edges[c].map(([i, j]) => length(sub(cluster[j], cluster[i]))));
     const ladders = lengths.map((row) => [...row].sort((a, b) => a - b));
     const rowMeans = lengths.map(mean);
     let total = 0;
     lengths.forEach((row) => row.forEach((value) => { total += value; }));
-    const nEdges = edges.length;
+    const nEdges = lengths[0].length;
     const ladder = Array.from({ length: nEdges }, (_, k) => ladders.reduce((sum, row) => sum + row[k], 0) / nClusters);
     let shape = 0;
     lengths.forEach((row, c) => row.forEach((value) => { shape += (value - rowMeans[c]) ** 2; }));
@@ -318,7 +327,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         const complete = [];
         for (let c = 0; c < nCells; c += 1) if (rowsAll.every((rows) => rows[c] >= 0)) complete.push(c);
         const rows = rowsAll.map((all) => complete.map((c) => all[c]));
-        const base = template.sites.map((s, m) => toCartesian(add(sites[s].siteFractional, template.offsets[m]), unit));
+        const base = template.sites.map((s, m) => toCartesian(add(cellPosition(sites[s]), template.offsets[m]), unit));
         const idealEdges = template.edges.map(([i, j]) => length(sub(base[j], base[i])));
         const edgeSe = template.edges.map(([i, j]) => {
             const span = sub(base[j], base[i]);
@@ -339,7 +348,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
             clusters: complete.length,
             incomplete: nCells - complete.length
         });
-        return { tIndex, template, rows, base };
+        return { tIndex, template, rows, rowsAll, base };
     });
 
     const kinds = new Map();
@@ -352,7 +361,8 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
             const [nMembers, nEdges] = key.split(',').map(Number);
             return { members: nMembers, edges: nEdges, clusters };
         })
-        .sort((a, b) => b.clusters - a.clusters);
+        // Most clusters first, ties to the smaller kind: the dominant kind leads.
+        .sort((a, b) => (b.clusters - a.clusters) || (a.members - b.members));
     let dominant = null;
     for (const [key, clusters] of kinds) {
         const nMembers = Number(key.split(',')[0]);
@@ -377,7 +387,8 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         });
         return out;
     };
-    const edges = chosen[0].template.edges;
+    // Each cluster is measured with its own template's edges.
+    const edges = chosen.flatMap(({ template, rows }) => rows[0].map(() => template.edges));
     const observedPositions = positionsFor(null);
     const observed = clusterStatistics(observedPositions, edges, families);
     const nulls = Array.from({ length: shuffles }, (_, k) => clusterStatistics(positionsFor(k), edges, families));
@@ -401,7 +412,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
     const upper = hi + WINDOW_TOL;
     const insideWindow = (value) => value >= lower && value <= upper;
     let inside = 0;
-    observedPositions.forEach((cluster) => edges.forEach(([i, j]) => { if (insideWindow(length(sub(cluster[j], cluster[i])))) inside += 1; }));
+    observedPositions.forEach((cluster, c) => edges[c].forEach(([i, j]) => { if (insideWindow(length(sub(cluster[j], cluster[i])))) inside += 1; }));
     const inverse = invert3(lattice);
     const fractional = [];
     members.forEach((s) => {
@@ -409,7 +420,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         site.displacements.forEach((u, k) => {
             const shift = toCartesian(u, inverse);
             fractional.push([0, 1, 2].map((axis) => {
-                const value = (site.siteFractional[axis] + site.cells[k][axis]) / supercell[axis] + shift[axis];
+                const value = (cellPosition(site)[axis] + site.cells[k][axis]) / supercell[axis] + shift[axis];
                 return ((value % 1) + 1) % 1;
             }));
         });
@@ -417,15 +428,24 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
     const rowsLocal = fractional.map((_, index) => index);
     const directed = countPatterns(fractional, rowsLocal, rowsLocal, lattice, [[lo, hi]]).reduce((sum, value) => sum + value, 0);
     let templateBondsInside = 0;
-    perTemplate.forEach(({ template, rows, base }) => {
-        for (let c = 0; c < rows[0].length; c += 1) {
-            const cluster = template.sites.map((s, m) => add(base[m], sites[s].displacements[rows[m][c]]));
-            template.edges.forEach(([i, j]) => { if (insideWindow(length(sub(cluster[j], cluster[i])))) templateBondsInside += 1; });
-        }
+    // Every template bond whose two atoms are there, in incomplete clusters
+    // too: they are not contacts between clusters (clusters.py).
+    perTemplate.forEach(({ template, rowsAll, base }) => {
+        template.edges.forEach(([i, j]) => {
+            const si = template.sites[i];
+            const sj = template.sites[j];
+            for (let c = 0; c < nCells; c += 1) {
+                const ri = rowsAll[i][c];
+                const rj = rowsAll[j][c];
+                if (ri < 0 || rj < 0) continue;
+                const span = sub(add(base[j], sites[sj].displacements[rj]), add(base[i], sites[si].displacements[ri]));
+                if (insideWindow(length(span))) templateBondsInside += 1;
+            }
+        });
     });
     const extra = Math.floor(directed / 2) - templateBondsInside;
     result.outliers = {
-        brokenEdgeFraction: 1 - inside / (observedPositions.length * edges.length),
+        brokenEdgeFraction: 1 - inside / (observedPositions.length * kindEdges),
         extraContacts: extra,
         extraContactsPerAtom: fractional.length ? 2 * extra / fractional.length : 0
     };

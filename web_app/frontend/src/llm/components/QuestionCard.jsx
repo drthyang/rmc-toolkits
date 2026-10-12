@@ -9,7 +9,10 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 // turn waits until one of them answers. Keyboard: Tab through the options,
 // ↑/↓ (or ←/→) move between them, 1–4 pick one, Enter in the field sends it.
 // When the card appears it takes focus, unless the user is typing elsewhere.
-// Once answered (or stopped) it keeps the question and the reply, compact.
+// Once answered (or stopped) it keeps the question and the reply, compact,
+// and keeps the focus the answer took from its option (the composer stays
+// disabled while the turn goes on), so keyboard users are not dropped to the
+// page's start.
 
 // Focus may move to the card from nowhere in particular or from inside the
 // conversation (the empty composer, where it rests after a question is sent),
@@ -45,6 +48,20 @@ const QuestionCard = ({ step, request = null, onAnswer }) => {
         if (target && mayTakeFocus(cardRef.current)) target.focus({ preventScroll: true });
     }, [waiting, request]);
 
+    // Answered: the focused option is gone, so the answered card takes the
+    // focus (not the page's start), if it was in the card.
+    const wasWaiting = useRef(false);
+    useEffect(() => {
+        if (waiting) {
+            wasWaiting.current = true;
+            return;
+        }
+        if (!wasWaiting.current) return;
+        wasWaiting.current = false;
+        const active = typeof document !== 'undefined' ? document.activeElement : null;
+        if (!active || active === document.body || cardRef.current?.contains(active)) cardRef.current?.focus({ preventScroll: true });
+    }, [waiting]);
+
     const choose = (index) => onAnswer?.({ answer: request.options[index].label, source: 'option', index });
     const sendOther = () => {
         const text = other.trim();
@@ -70,7 +87,7 @@ const QuestionCard = ({ step, request = null, onAnswer }) => {
         const stopped = step.status === 'stopped' || (step.status === 'running' && !request);
         const failed = step.status === 'failed';
         return (
-            <li className={`llm-step llm-ask is-${stopped ? 'stopped' : failed ? 'failed' : 'answered'}`} ref={cardRef}>
+            <li className={`llm-step llm-ask is-${stopped ? 'stopped' : failed ? 'failed' : 'answered'}`} ref={cardRef} tabIndex={-1}>
                 <div className="llm-ask-kicker">
                     <span className="llm-step-dot" aria-hidden="true" />
                     <span>Question for you</span>

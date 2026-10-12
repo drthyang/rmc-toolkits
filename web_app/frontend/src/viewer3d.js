@@ -49,6 +49,8 @@ const CARTESIAN = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
 /**
  * A model's spelling of a view direction → one of
  *   { uvw: [u, v, w] }   "[111]", "[1 -1 0]", "1,1,0", "[1-10]", "[1̄10]", "<111>", "[0.71 0.71 1]"
+ *   { hkl: [h, k, l] }   "(100)", "{111}": a plane, viewed along its normal
+ *                        (h·a* + k·b* + l·c*), not the direction [h k l]
  *   { axis: 0|1|2 }      "a", "b", "c" (also "a axis", "along c")
  *   { pc: 0|1|2 }        "PC1", "PC2", "PC3"
  *   { cartesian: [..] }  "x", "y", "z"
@@ -63,7 +65,10 @@ export const parseDirection = (raw) => {
     if (text in CARTESIAN) return { cartesian: CARTESIAN[text] };
     const pc = /^pc\s*([123])$/.exec(text);
     if (pc) return { pc: Number(pc[1]) - 1 };
-    text = text.replace(/^[[<(]\s*|\s*[\]>)]$/g, '').replace(/[−–]/g, '-');
+    // Parentheses or braces name a plane (Miller indices), not a direction.
+    const plane = /^[({]/.test(text);
+    if (plane && !/[)}]$/.test(text)) return null;
+    text = text.replace(/^[[<({]\s*|\s*[\]>)}]$/g, '').replace(/[−–]/g, '-');
     if (!text) return null;
     // Overlined digits (1̄ = 1 + U+0304/U+0305) are negative.
     text = text.replace(/(\d)[̄̅]/g, '-$1');
@@ -76,7 +81,7 @@ export const parseDirection = (raw) => {
         parts = tokens.map(Number);
     }
     if (parts.length !== 3 || !parts.every(Number.isFinite) || parts.every((value) => value === 0)) return null;
-    return { uvw: parts };
+    return plane ? { hkl: parts } : { uvw: parts };
 };
 
 /** "[1 1 1]", "[1 -1 0]", "[0.71 0.71 1]" — a direction as the model reads it. */
@@ -153,6 +158,11 @@ export const viewUp = (direction, cell = null) => {
 export const directionVector = (parsed, cell, pcaAxes = null) => {
     if (!parsed) return null;
     if (parsed.uvw) return cell ? normalize(uvwToCartesian(parsed.uvw, cell)) : null;
+    // A plane's normal, h·a* + k·b* + l·c* = M⁻¹·(h, k, l) for a cell M with rows a, b, c.
+    if (parsed.hkl) {
+        const inverse = cell ? invert3(cell) : null;
+        return inverse ? normalize(matVec3(inverse, parsed.hkl)) : null;
+    }
     if (parsed.axis != null) return cell ? normalize(cell[parsed.axis]) : null;
     if (parsed.pc != null) return pcaAxes ? normalize(pcaAxes[parsed.pc]) : null;
     if (parsed.cartesian) return normalize(parsed.cartesian);

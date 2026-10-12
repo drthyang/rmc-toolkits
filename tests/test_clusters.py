@@ -14,7 +14,13 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import cluster_config_text  # noqa: E402
+from cluster_configs import (  # noqa: E402
+    chains_config_text,
+    cluster_config_text,
+    origin_dimer_config_text,
+    tie_config_text,
+    with_vacancies,
+)
 from rmc_toolkits.clusters import (  # noqa: E402
     cluster_distortion,
     cluster_distortion_from_file,
@@ -116,6 +122,61 @@ class ClusterDistortionTests(unittest.TestCase):
         self.assertNotIn("shortAxis", result["observed"])
         # The bond lies along x: every dimer's axis is near <100>.
         self.assertEqual(result["observed"]["longAxis"]["100"], 1.0)
+
+    def test_a_site_at_fraction_zero_pairs_atoms_of_one_cell(self):
+        # Review 2026-10-12 #1: a site mean a hair below 0 wrapped to 0.9999 and
+        # the template paired each atom with its partner of the next cell: the
+        # rigid dimers' correlation vanished (z -32 -> -0.6) and edges broke.
+        results = {}
+        with tempfile.TemporaryDirectory() as directory:
+            for bias in (1e-4, -1e-4):
+                path = Path(directory) / f"origin{bias}.rmc6f"
+                path.write_text(origin_dimer_config_text(bias), encoding="utf-8")
+                sites = load_site_displacements(path)
+                self.assertAlmostEqual(sites.site_cell_fractional[0][0], bias / 5.0, places=9)
+                results[bias] = cluster_distortion(sites, "V", (2.0, 2.5))
+        for bias, result in results.items():
+            self.assertEqual(result["templates"][0]["offsets"], [[0, 0, 0], [0, 0, 0]], bias)
+            self.assertEqual(result["outliers"]["brokenEdgeFraction"], 0.0, bias)
+            self.assertLess(result["z"]["breathingSd"], -10.0, bias)
+        self.assertAlmostEqual(results[-1e-4]["z"]["breathingSd"], results[1e-4]["z"]["breathingSd"], delta=0.01)
+
+    def test_templates_of_one_kind_are_measured_with_their_own_edges(self):
+        # Review 2026-10-12 #2: chain B (bonded 0-1, 0-2) was measured with
+        # chain A's edges (0-1, 1-2), so one of its "edges" was its 4 A end to
+        # end: ladderWidth 1.03 A for chains whose bonds differ by 0.01 A.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "chains.rmc6f"
+            path.write_text(chains_config_text(), encoding="utf-8")
+            result = cluster_distortion(load_site_displacements(path), "Mo", (1.8, 2.2))
+        self.assertEqual([t["edges"] for t in result["templates"]], [[[0, 1], [1, 2]], [[0, 1], [0, 2]]])
+        self.assertEqual(result["kind"], {"members": 3, "edges": 2, "clusters": 128, "templates": 2})
+        self.assertLess(result["observed"]["ladderWidth"], 0.2)
+        self.assertAlmostEqual(result["observed"]["meanEdge"], 2.0, delta=0.01)
+        self.assertEqual(result["outliers"]["brokenEdgeFraction"], 0.0)
+
+    def test_missing_atoms_are_not_contacts_between_clusters(self):
+        # Review 2026-10-12 #16: the bonds of a cluster that lost an atom were
+        # counted as contacts between clusters (102 of them, 0.25 per atom).
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "vacancies.rmc6f"
+            path.write_text(with_vacancies(cluster_config_text("independent", supercell=(6, 6, 6)), "Nb", 0.05), encoding="utf-8")
+            result = cluster_distortion(load_site_displacements(path), "Nb", (2.5, 3.5))
+        self.assertGreater(result["templates"][0]["incomplete"], 0)
+        self.assertEqual(result["outliers"]["extraContacts"], 0)
+
+    def test_a_tie_lists_the_analysed_kind_first(self):
+        # Review 2026-10-12 #17: 64 triangles and 64 dimers; the dimers are
+        # analysed (the smaller kind wins a tie), so they must lead the list.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tie.rmc6f"
+            path.write_text(tie_config_text(), encoding="utf-8")
+            result = cluster_distortion(load_site_displacements(path), "Mo", (1.8, 2.2))
+        self.assertEqual(result["kind"]["members"], 2)
+        self.assertEqual(result["kinds"], [
+            {"members": 2, "edges": 1, "clusters": 64},
+            {"members": 3, "edges": 3, "clusters": 64},
+        ])
 
     def test_an_extended_network_and_an_empty_window(self):
         extended = cluster_distortion(_Configs.sites("independent"), "Se", (7.5, 8.0))

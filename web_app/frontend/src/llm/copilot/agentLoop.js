@@ -105,6 +105,8 @@ const EMPTY_FINAL = 'The analysis budget for this question was used before the m
 
 // The tool message the model reads: the result (fitted to the budget) and
 // the checks, or the error. Checks are never trimmed: they are the verdict.
+// Returns the message text and the fitted data, which the step shows as the
+// result sent to the model.
 const toolMessageContent = ({ data, checks, error, note }, budget) => {
     const message = {};
     if (error) message.error = error;
@@ -112,7 +114,7 @@ const toolMessageContent = ({ data, checks, error, note }, budget) => {
     if (checks?.length) message.checks = checks;
     const head = JSON.stringify(message).length;
     if (!error) message.data = fitToBudget(data, Math.max(400, budget - head));
-    return JSON.stringify(message);
+    return { content: JSON.stringify(message), data: error ? null : message.data };
 };
 
 export async function* runCopilotTurn({
@@ -160,6 +162,8 @@ export async function* runCopilotTurn({
     let questionText = questionIndex >= 0 && typeof messages[questionIndex].content === 'string' ? messages[questionIndex].content : '';
     const canAsk = () => Boolean(clarifier && useTools && typeof toolContext?.askUser === 'function' && questions < maxQuestions);
     let appQuestions = 0;
+    // The window choices made in this turn (clarify.js), by (centre, partner, window).
+    const clarifySession = { windows: new Map() };
     // One question the Workbench asks itself, shown as an ask_user step.
     async function* askFromApp(item) {
         appQuestions += 1;
@@ -306,14 +310,22 @@ export async function* runCopilotTurn({
             let runArguments = call.arguments;
             let appNote = null;
             // Before an analysis runs in a window that cuts a shell, the
-            // Workbench asks which window (clarify.js beforeCall).
-            if (tool && !tool.interactive && parsed.ok && position < maxCallsPerRound && !askedThisRound && canAsk()) {
+            // Workbench asks which window (clarify.js beforeCall) — once per
+            // window in a turn: a choice already made, or one the question
+            // makes, is applied without asking; an identical call already
+            // answered from the cache asks nothing.
+            if (clarifier && tool && !tool.interactive && parsed.ok && position < maxCallsPerRound) {
                 const validated = validateToolArguments(tool.parameters, parsed.value);
-                const item = validated.ok ? clarifier.beforeCall(tool, validated.value, { questionText }) : null;
-                if (item) {
+                const repeat = validated.ok && !tool.view && cache.has(`${call.name}:${canonicalJson(validated.value)}`);
+                const item = validated.ok && !repeat ? clarifier.beforeCall(tool, validated.value, { questionText, session: clarifySession }) : null;
+                if (item?.settled) {
+                    runArguments = JSON.stringify(item.args);
+                    parsed = { ok: true, value: item.args };
+                    appNote = `the Workbench applied the user's choice: ${item.note}`;
+                } else if (item && !askedThisRound && canAsk()) {
                     askedThisRound = true;
                     const reply = yield* askFromApp(item);
-                    const resolved = resolveClarification(item, reply, { args: validated.value, tool });
+                    const resolved = resolveClarification(item, reply, { args: validated.value, tool, session: clarifySession });
                     runArguments = JSON.stringify(resolved.args);
                     parsed = { ok: true, value: resolved.args };
                     appNote = `the Workbench asked the user about the window: ${resolved.note}`;
@@ -376,11 +388,8 @@ export async function* runCopilotTurn({
             if (result.facts && !result.error) facts.push(result.facts);
             if (!tool?.keep) toolMessages.push(messages.length);
             const budget = Number.isFinite(tool?.resultBudget) && tool.resultBudget > 0 ? tool.resultBudget : resultCharBudget;
-            messages.push({
-                role: 'tool',
-                tool_call_id: call.id,
-                content: toolMessageContent({ ...result, note }, budget)
-            });
+            const sent = toolMessageContent({ ...result, note }, budget);
+            messages.push({ role: 'tool', tool_call_id: call.id, content: sent.content });
             keepWithinTurnBudget(roundStart);
             yield {
                 type: 'tool_end',
@@ -388,7 +397,8 @@ export async function* runCopilotTurn({
                 name: call.name,
                 status: stepStatus(result),
                 args: result.args,
-                data: result.data,
+                // What the model read: the result fitted to its budget.
+                data: sent.data,
                 checks: result.checks,
                 error: result.error,
                 ms: result.ms,

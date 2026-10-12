@@ -70,7 +70,7 @@ export const toOllamaMessages = (messages) => {
  * on /v1 too).
  */
 export async function* streamOllamaChat({
-    baseUrl, model, messages, tools, temperature = 0.2, numCtx, numPredict, signal
+    baseUrl, model, messages, tools, temperature = 0.2, apiKey = '', numCtx, numPredict, signal
 }) {
     const body = {
         model,
@@ -83,9 +83,12 @@ export async function* streamOllamaChat({
         }
     };
     if (Array.isArray(tools) && tools.length) body.tools = tools;
+    // An Ollama behind a proxy that wants a key gets it, as on /v1.
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     const response = await fetch(`${serverOrigin(baseUrl)}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
         signal
     });

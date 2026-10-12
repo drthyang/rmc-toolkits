@@ -265,6 +265,65 @@ describe('the questions the Workbench asks itself', () => {
         expect(named.ends[0].args).toMatchObject({ r12_min: 2.3, r12_max: 2.7 });
     });
 
+    it('asks about a cut window once per question, then applies the choice (review 2026-10-12 #4)', async () => {
+        // The model repeats its 2.3–2.7 Å call every round: the user chose the
+        // whole shell the first time, and is not asked again.
+        const run = await replay('Compute the Se–Ta–Se bond angles and compare them with an ideal octahedron.', [
+            angles(2.3, 2.7),
+            angles(2.3, 2.7),
+            { calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7, bin_width: 2 } }] },
+            answer('Octahedral.')
+        ]);
+        expect(run.asked).toHaveLength(1);
+        const steps = run.ends.filter((end) => end.name === 'compute_bond_angles');
+        expect(steps).toHaveLength(3);
+        steps.forEach((step) => expect(step.args).toMatchObject({ r12_min: 2.21, r12_max: 3.23 }));
+        // The repeat of the resolved call is answered from the cache; the third
+        // (other arguments) gets the remembered window and says so.
+        expect(steps[1].cached).toBe(true);
+        expect(run.lastToolMessage().note).toMatch(/^the Workbench applied the user's choice: the user already chose 2\.21–3\.23 Å /);
+        // A window kept as asked stays kept, confirmed, on the next call too.
+        const kept = await replay('Compute the Se–Ta–Se bond angles and compare them with an ideal octahedron.', [
+            angles(2.3, 2.7),
+            { calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.3, r12_max: 2.7, bin_width: 2 } }] },
+            answer('A partial shell.')
+        ], { answer: () => ({ answer: 'Keep 2.3–2.7 Å', source: 'option', index: 1 }) });
+        expect(kept.asked).toHaveLength(1);
+        const keptSteps = kept.ends.filter((end) => end.name === 'compute_bond_angles');
+        expect(keptSteps).toHaveLength(2);
+        keptSteps.forEach((step) => expect(step.args).toMatchObject({ r12_min: 2.3, r12_max: 2.7, window_confirmed: true }));
+    });
+
+    it('asks nothing when the question names the shell (review 2026-10-12 #8)', async () => {
+        const first = await replay('What are the Se–Ta–Se bond angles for only the first Ta–Se peak?', [
+            angles(2.33, 2.71),
+            answer('The short bonds only.')
+        ]);
+        expect(first.asked).toEqual([]);
+        // The partial window is the user's: it runs (confirmed), not refused.
+        expect(first.ends[0].args).toMatchObject({ r12_min: 2.33, r12_max: 2.71, window_confirmed: true });
+        expect(first.ends[0].status).toBe('warn');
+        for (const question of ['What are the Se–Ta–Se bond angles in the whole first shell?', 'Se–Ta–Se angles over both Ta–Se peaks?',
+            'Give the Se–Ta–Se bond angles of the entire first shell.']) {
+            const whole = await replay(question, [angles(2.3, 2.7), answer('Octahedral.')]);
+            expect({ question, asked: whole.asked.length }).toEqual({ question, asked: 0 });
+            expect(whole.ends[0].args).toMatchObject({ r12_min: 2.21, r12_max: 3.23 });
+        }
+    });
+
+    it('runs a typed window on the window the question was about (review 2026-10-12 #10)', async () => {
+        // The r12 window is the whole Ta–Se shell, the r23 one cuts it: the
+        // question is about r23, so a typed window goes there, not to r12.
+        const cutSecond = {
+            calls: [{ name: 'compute_bond_angles', args: { end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 3.23, r23_min: 2.3, r23_max: 2.7 } }]
+        };
+        const run = await replay('Compute the Se–Ta–Se bond angles and compare them with an ideal octahedron.', [cutSecond, answer('Done.')],
+            { answer: () => ({ answer: '2.25 – 3.2 Å', source: 'other', index: null }) });
+        expect(run.asked).toHaveLength(1);
+        expect(run.ends.find((end) => end.name === 'compute_bond_angles').args)
+            .toMatchObject({ r12_min: 2.21, r12_max: 3.23, r23_min: 2.25, r23_max: 3.2, window_confirmed: true });
+    });
+
     it('leaves the model\'s own ask_user working, within two questions per request', async () => {
         const ask = { name: 'ask_user', args: { question: 'Which run?', options: ['250 K', '5 K'] } };
         const run = await replay('What are the Se–Ta–Se bond angles?', [
@@ -272,12 +331,13 @@ describe('the questions the Workbench asks itself', () => {
             angles(2.3, 2.7),
             answer('Done.')
         ]);
-        // The Workbench's question, then the model's: two, the limit, so the
-        // cut window is not asked about again: the tool refuses it.
+        // The Workbench's question, then the model's: two, the limit. The
+        // cut window is not asked about again: the user already chose the
+        // whole shell, so it runs there (review 2026-10-12 #4, #8).
         expect(run.asked.map((req) => req.question)).toEqual(['Which Ta–Se window should the analysis use?', 'Which run?']);
         const step = run.ends.find((end) => end.name === 'compute_bond_angles');
-        expect(step.status).toBe('failed');
-        expect(step.checks[0].text).toMatch(/^Refused: /);
+        expect(step.status).toBe('ok');
+        expect(step.args.r12_max).toBeGreaterThan(2.9);
         // Without the clarifier, the model's ask_user works alone.
         const alone = await replay('Compute the bond angles around Ta.', [{ calls: [ask] }, answer('Done.')], { withClarifier: false });
         expect(alone.asked.map((req) => req.question)).toEqual(['Which run?']);

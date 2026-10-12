@@ -11,11 +11,16 @@
 // |U_s(q)|² / (n_s tr C_s) is 1 on average for independent displacements;
 // an element's sites are averaged; the zone-boundary points and the
 // strongest modes are reported against the empirical distribution over all
-// q ≠ 0 (ratio to its median, percentile). numpy's fftn is replaced by a
-// separable DFT — the same numbers to floating-point noise.
+// q ≠ 0 (ratio to its median), and ranked among the compared modes: one per
+// ±q pair, no long-wavelength wave (every |q_i| ≤ LONG_WAVE_Q) — percentile
+// and rank. numpy's fftn is replaced by a separable DFT — the same numbers to
+// floating-point noise.
 
 export const TOP_MODES = 5;
 export const PERCENTILE_RTOL = 1e-9;
+// A mode with every component within this of the zone centre is a
+// long-wavelength wave, left out of the comparison (modulations.py).
+export const LONG_WAVE_Q = 0.25;
 
 /** The half-integer points (0/1 flags per axis) an even supercell can hold. */
 export const zoneBoundaryPoints = (supercell) => {
@@ -114,6 +119,15 @@ export const displacementModulations = (parsed, element = null, { top = TOP_MODE
         const w = [i, j, k].map((v, axis) => ((v % supercell[axis]) + supercell[axis]) % supercell[axis]);
         return (w[0] * supercell[1] + w[1]) * supercell[2] + w[2];
     };
+    const unravel = (q) => [Math.floor(q / (supercell[1] * supercell[2])), Math.floor(q / supercell[2]) % supercell[1], q % supercell[2]];
+    // The compared modes: one per ±q pair (the smaller grid index), q ≠ 0, no long wave.
+    const compared = [];
+    for (let q = 1; q < nQ; q += 1) {
+        const index = unravel(q);
+        const partner = linear(index.map((v) => -v));
+        const longWave = index.every((v, axis) => Math.abs(folded(v, supercell[axis])) <= LONG_WAVE_Q + 1e-12);
+        if (q <= partner && !longWave) compared.push(q);
+    }
     for (const name of elements) {
         const power = new Float64Array(nQ);
         let missing = 0;
@@ -144,16 +158,21 @@ export const displacementModulations = (parsed, element = null, { top = TOP_MODE
         const sorted = [...others].sort((a, b) => a - b);
         const mid = sorted.length >> 1;
         const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-        const unravel = (q) => [Math.floor(q / (supercell[1] * supercell[2])), Math.floor(q / supercell[2]) % supercell[1], q % supercell[2]];
+        const reference = compared.map((q) => power[q]);
         const describe = (q) => {
             const value = power[q];
             const index = unravel(q);
             let lower = 0;
-            others.forEach((other) => { if (other < value * (1 - PERCENTILE_RTOL)) lower += 1; });
+            let higher = 0;
+            reference.forEach((other) => {
+                if (other < value * (1 - PERCENTILE_RTOL)) lower += 1;
+                if (other > value * (1 + PERCENTILE_RTOL)) higher += 1;
+            });
             return {
                 q: index.map((v, axis) => folded(v, supercell[axis])),
                 ratio: median > 0 ? value / median : null,
-                percentile: (lower / others.length) * 100
+                percentile: reference.length ? (lower / reference.length) * 100 : null,
+                rank: reference.length ? higher + 1 : null
             };
         };
         const zoneBoundary = boundary.map((flags) => {
@@ -176,7 +195,9 @@ export const displacementModulations = (parsed, element = null, { top = TOP_MODE
             strongest.push(describe(key));
             if (strongest.length === top) break;
         }
-        result.elements.push({ element: name, sites: used, missingCopies: missing, medianPower: median, zoneBoundary, strongest });
+        result.elements.push({
+            element: name, sites: used, missingCopies: missing, medianPower: median, comparedModes: reference.length, zoneBoundary, strongest
+        });
     }
     return result;
 };
