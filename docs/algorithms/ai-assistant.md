@@ -1195,11 +1195,11 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8), `firstShell` (Step 9) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; `first_shell`: its window (onset − one grid step to the boundary), the peaks inside it, mean distance and sd from $r^2g$, the CN in both directions and the CN with the cut 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next ($\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window); note: no boundary below max(r_max, r₁ + 3 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`CONSTRAINT_PILEUP_FRACTION`; demo Ga–Se 9 % at 2.2 Å), or the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å; ok: peak, shell edge, mean, CNs; fail: no peak |
 | `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; sorted by \|kurtosis\| then U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; fail: no site (holding that element) |
 | `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ; note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
-| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10°, raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for a window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
+| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
 | `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1: the edge ladder, ladder width, shape rms, breathing sd, mean edge; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>; bonds outside the window, contacts between clusters per atom | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: ladder width departs from the null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units) or does not; note: breathing departs (same rule); note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
-| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile]` rows, the three strongest modes the same way; the supercell, wavevector count and untestable points | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and top 1 % or strongest); ok: no cell doubling (the highest point named); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile]` rows, the three strongest modes the same way; the supercell, wavevector count and untestable points | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and the top 1 % of the compared modes, or rank 1 among them); ok: no cell doubling (the highest point named); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
 parameters from the validated arguments (null after an error), and the step's button hands them to
@@ -1230,7 +1230,10 @@ never answered from the duplicate-call cache):
 - `orient_3d_view(card, along?, center_site?, highlight_sites?, select_site?, reset?)` (host,
   `src/copilotViewTools.js`): `along` is read by `parseDirection` (`viewer3d.js`) and becomes the
   Cartesian line of sight $\hat d = (u\mathbf a + v\mathbf b + w\mathbf c)/\lVert\cdot\rVert$
-  (a, b, c: the cell rows; PC1–3: the site's principal axes). The camera goes to
+  (a, b, c: the cell rows; PC1–3: the site's principal axes). A plane in parentheses or braces,
+  "(hkl)" or "{hkl}", is viewed along its normal $h\mathbf a^* + k\mathbf b^* + l\mathbf c^* = M^{-1}(h,k,l)$
+  ($M$ the cell, rows a, b, c), never read as the direction [hkl] (they differ outside cubic cells:
+  30° in a hexagonal one for (100)). The camera goes to
   target + $\hat d$·distance (the direction points at the viewer), screen-up the first of c, b, a
   more than 18° from $\hat d$ with its component along $\hat d$ removed. On the sphere's PCA
   frame $\hat d$ is projected onto the PC axes. A selected site is awaited (≤ 15 s) before the
@@ -1256,17 +1259,26 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 watchdog's status and every ladder group (`contextAuditFacts`). When the model answers,
 `auditAnswer(text)` splits it into sentences and clauses (a new clause at `;`, `:` and before
 "but", "while", "whereas", "unlike", "although", "though", "however") and looks for positive
-claims: one in a question, or with a negation (not, no, never, neither, nor, none, without,
-lack, absence, cannot, non, yet, n't) in the 60 characters before it, does not count.
+claims. One does not count in a question; after a negation (not, no, never, neither, nor, none,
+without, lack, absence, cannot, non, yet, stopped, ceased, n't); or after a word that makes it
+hypothetical, conditional or a question about it (whether, if, unless, until, once, when, before,
+would, could, might, to check / test / see / confirm / verify / determine, test for, check that,
+look for, make sure) — each only in the stretch of the clause just before the claim, after its
+last comma or "and", "so", "therefore", "thus", "hence" ("With no remaining drift in χ², the run
+has converged" is a claim; "To check whether the run has converged" is not). "Converged" after
+"a", "an", "any", "every" or "each" names a kind ("a converged run would…"), not a claim.
 
 - *convergence:* "converged", "reached convergence", "at convergence" or "plateau" while the
-  latest status is improving or diverging, unless the sentence also says improving, diverging or
-  "still falling";
+  latest status is improving or diverging, unless the sentence itself says the run still moves
+  (improving, diverging or "still falling" asserted, not "stopped improving");
 - *chirality / centrosymmetry:* "chiral" (not "achiral", "non-chiral") or "centrosymmetric" (not
   "non-centrosymmetric") in a clause whose named groups (matched as whole symbols, however written)
-  all lack the property;
+  all lack the property; a clause that names no known group takes its sentence's, unless it names
+  a symbol the checks do not know ("its subgroup P2₁2₁2 is chiral" is not about the parent);
 - *inversion lost:* "lose / break / remove … inversion (centrosymmetry, centre of symmetry)" or
-  "… inversion is lost" when none of the groups the answer names (else the context's group) has one;
+  "… inversion is lost" when no group it could be lost from has one: neither the groups the answer
+  names nor the parent groups (`parent` in `contextAuditFacts`: the context's average group and the
+  ladder's rung with the most operations, or its two ends without operation counts);
 - *direction:* "preferred (preferential) direction (orientation, axis)" when the question's
   directions analyses found none at ≥ 3σ.
 
@@ -1292,17 +1304,25 @@ prism 6, square planar 4, cuboctahedron 12), a length or tolerance in Å, and a 
   one partner or when the named polyhedron's CN matches exactly one partner. A named pair or
   triplet (A–B–C: the B–A and B–C shells) → which window, when `ambiguousWindows` finds a split
   shell whose first peak changes the CN, or a shell whose trough is above 2 % of the peak and
-  whose 0.2 Å cuts change it; not asked when the named polyhedron's CN matches exactly one option.
+  whose 0.2 Å cuts change it; not asked when the named polyhedron's CN matches exactly one option,
+  or when the question names the shell (`shellChoice`: "first … peak" → the first peak; "whole /
+  entire / full / complete (first) shell" or "both peaks" → the whole shell).
   A directions question with one element and no site number → one site per orbit or all pooled,
   when the element has ≥ 2 sites and an orbit whose site symmetry is not cubic (23, m-3, 432,
   -43m, m-3m). A space-group question with no length in Å → which group, when ≥ 2 ladder rungs
   reach ≥ 1.25× the noise floor (`NOISE_MARGIN`).
-- `beforeCall(tool, args)`, for a tool with `shellWindows(args)`: a window overlapping its first
-  shell whose CN is below the whole shell's by the margin is asked about (whole shell, or keep),
-  unless both its bounds appear in the question (or in an answer to an earlier Workbench question).
+- `beforeCall(tool, args, { questionText, session })`, for a tool with `shellWindows(args)`: a
+  window overlapping its first shell whose CN is below the whole shell's by the margin is asked
+  about (whole shell, or keep), unless both its bounds appear in the question (or in an answer to an
+  earlier Workbench question). Settled without asking (`{ settled: true, args, note }`): a window
+  the user already chose for in this turn (`session.windows`, keyed by centre, partner and window
+  to 0.01 Å) runs in the choice; with the question's `shellChoice`, the first peak keeps the window
+  (confirmed) and the whole shell replaces it. The loop asks nothing for a call identical to one
+  in its cache.
 - `resolveClarification`: the chosen option's note (appended to the user's question as
-  `(The Workbench asked: "…" — …)`) or the chosen window's arguments; a skip takes the default; a
-  typed answer is passed on verbatim, or for a window read as two numbers.
+  `(The Workbench asked: "…" — …)`) or the chosen window's arguments, remembered in the session; a
+  skip takes the default; a typed answer is passed on verbatim, or for a window read as two
+  numbers and applied to the window the question was about (`windowIndex`).
 
 The loop asks only when tools are on, an `askUser` exists, and fewer than `maxQuestions` questions
 were asked; each is an `ask_user` step with `app: true`.
@@ -1326,10 +1346,12 @@ Copilot request goes through `streamCopilotChat()`. A server is probed only when
 port 11434: `GET /api/version` answering a version is Ollama; `GET /api/v0/models` listing load
 states is LM Studio; anything else is sent unchanged (`client.js`).
 
-- **The estimate** (`estimatePromptTokens`): the characters of every message's content and tool
-  calls plus the tool schemas' JSON, divided by `CHARS_PER_TOKEN` = 2.5, plus
+- **The estimate** (`estimatePromptTokens`): the characters of every message's content, tool
+  names and the tool schemas' JSON divided by `CHARS_PER_TOKEN` = 2.5, those of tool results and
+  call arguments (JSON dense with numbers) by `JSON_CHARS_PER_TOKEN` = 1.4, plus
   `MESSAGE_OVERHEAD_TOKENS` = 8 per message. Deliberately high: the Demo's first request is 28,382
-  characters → 11,386 estimated, 8,437 measured (gemma4:26b).
+  characters → 11,386 estimated, 8,437 measured (gemma4:26b); tool JSON reads at 1.64 characters
+  per token (the 2026-10-12 review), above the 1.4 assumed.
 - **Ollama** (`planContext`): needed $= \text{estimate} + 8192$ (`REPLY_RESERVE_TOKENS`). Refused
   when needed exceeds the model's maximum (`/api/show` `*.context_length`). Otherwise `num_ctx`
   = the loaded context (`/api/ps`) when it holds the request, else this conversation's earlier
@@ -1339,7 +1361,10 @@ states is LM Studio; anything else is sent unchanged (`client.js`).
   `tool_choice`). After the reply, `prompt_eval_count` below 0.4 × the estimate
   (`READ_SHARE_LIMIT`) stops the turn: the server cut the prompt anyway.
 - **LM Studio**: when the model is loaded with `loaded_context_length` < estimate + 4096
-  (`LMSTUDIO_REPLY_MIN_TOKENS`), the turn is refused with the context length to load it with.
+  (`LMSTUDIO_REPLY_MIN_TOKENS`), the turn is refused with the context length to load it with. A
+  model not loaded yet (JIT) is checked at the reply's first fragment, once the request has loaded
+  it: a window too small aborts the request and stops the turn before anything is shown. The
+  native Ollama request carries `Authorization: Bearer` when an API key is set.
 - **Why** (measured on Ollama 0.40.2): a prompt longer than `num_ctx` returns 200, after Ollama has
   dropped whole messages and cut the rest to half the window keeping its first 5 tokens
   (`truncating input prompt limit=2051 prompt=5694 keep=5` at 4,096); the model then answers
@@ -1384,11 +1409,18 @@ between site means, over unit-cell image shifts $|n_i| \le \lceil r_\max/w_i\rce
 perpendicular widths), lies in the window (± `WINDOW_TOL`). A breadth-first walk from each unvisited site
 assigns integer cell offsets; a site bonded to its own image, or reached twice at different offsets,
 makes the network **extended** (chains or a net — no clusters). Each finite component is a template:
-member sites in site order, their offsets, and its bonds as sorted member pairs. The dominant kind
-(members, bonds) by cluster count is analysed; other kinds are listed.
+member sites in site order, their offsets, and its bonds as sorted member pairs. The site positions
+are the means *not* wrapped into [0, 1) (`site_cell_fractional`, `siteCellFractional`): an atom of
+the site in cell $n$ sits at $(n + \mathbf f_s)/N$, so a site at fraction 0 whose mean is a hair
+negative stays at −0.0001 and its cluster takes its atoms from one cell (wrapped to 0.9999, the
+template paired each atom with its partner of the next cell: the 2026-10-12 review's rigid dimer
+went from z = −32.5 to −0.6). The dominant kind (members, bonds) by cluster count is analysed, ties
+to the smaller kind; the other kinds are listed after it.
 
 **Clusters (configuration).** One cluster per template per cell $c$: member $m$ is the atom of site
 $s_m$ in cell $c + o_m$ (mod the supercell); a cluster with a missing atom is skipped and counted.
+Each cluster is measured with its own template's bonds: templates of one kind need not list them
+alike (two Mo₃ chains bonded 0–1–2 and 1–0–2).
 Member positions are $\mathbf b_m + \mathbf u$, with $\mathbf b_m = (\mathbf f_{s_m} + \mathbf o_m)\,A$ the
 template geometry and $\mathbf u$ the atom's displacement from its site mean — so a bond's length is
 measured however far it stretches.
@@ -1427,8 +1459,9 @@ spread, the median sampling error and the largest spread / error. Six independen
 **Outliers.** `brokenEdgeFraction` — bonds of the analysed clusters whose length in the configuration
 lies outside the window; `extraContacts` — pairs of the element within the window (the triplets
 engine's linked-cell count over every atom of the element, positions rebuilt as
-$(\mathbf f_s + \text{cell})/N + \mathbf u A^{-1}$) minus the template bonds inside it: atoms crossing
-the gap between clusters; per atom, $2\times$ that over the element's atom count.
+$(\mathbf f_s + \text{cell})/N + \mathbf u A^{-1}$) minus the template bonds inside it, those of
+clusters missing an atom included: atoms crossing the gap between clusters; per atom, $2\times$ that
+over the element's atom count.
 
 **Synthetic checks** (`tests/test_clusters.py`, 6×6×6 cells of an Nb₄ tetrahedron, a Ga₂ dimer and a
 Se): independent noise — every \|z\| < 3; one random vertex per cluster pushed 0.3 Å out along its
@@ -1479,16 +1512,23 @@ power than white noise, because neighbouring cells move together). Reported per 
 - the five **strongest modes**, $\pm\mathbf q$ counted once as the member with the smaller grid
   index (their powers agree to rounding; folded components in $(-\tfrac12, \tfrac12]$);
 
-each with its ratio to the median power over $\mathbf q\ne0$ and its percentile (the share of
-$\mathbf q \ne 0$ with power below $P(1 - 10^{-9})$, so Friedel partners count alike in both engines).
+each with its ratio to the median power over $\mathbf q\ne0$, and its percentile and rank among the
+**compared modes**: one per $\pm\mathbf q$ pair (the smaller grid index), $\mathbf q \ne 0$, leaving
+out the long waves (every $|q_i| \le 0.25$, `LONG_WAVE_Q`) — the share of them with power below
+$P(1 - 10^{-9})$, and 1 + the number above $P(1 + 10^{-9})$ (`comparedModes` gives their count).
+Counting both members of a pair, and the box-scale waves RMC leaves, pushed real order down: the
+2026-10-12 review's Ti order at (0, 0, ½), 55× the median, sat at the 98.6th percentile of all
+$\mathbf q$ under a stronger long wave and its partner; among the compared modes it is rank 1.
 
 **Checks** (`summarizeModulations`): ok — ordered displacements at a zone-boundary point when its
-ratio ≥ 3 (`MODULATION_RATIO`) **and** it is in the top 1 % or is the element's strongest mode (a box
-with < 100 wavevectors cannot reach the 99th percentile); otherwise ok — no cell doubling, naming the
+ratio ≥ 3 (`MODULATION_RATIO`) **and** it is in the top 1 % of the compared modes or ranks first
+among them (a box with < 100 of them cannot reach the 99th percentile); otherwise ok — no cell doubling, naming the
 highest point; note — an element's strongest mode within 0.25 of the zone centre on every axis at
 ≥ 5× the median is a long-wavelength (box-scale) wave, not a superstructure; note — untestable points.
 A planted doubling (Nb ± 0.1 Å along z in alternate cells, 6³ cells) gives 204× at (0,0,½), the
-strongest of 215 wavevectors. Both real runs: no zone-boundary point above the 85th percentile; the
+strongest of 215 wavevectors. Both real runs: no zone-boundary point near the top (below the 85th
+percentile over all $\mathbf q$ when first measured; the Demo's highest is now the 78th percentile of
+its 441 compared modes, Se at (½, ½, ½), 1.3× the median); the
 strongest modes are box-scale waves — GaNb₄Se₈ 5 K: q = (0.1, −0.2, −0.2) for all three elements
 (5–14×); GaTa₄Se₈ 250 K: (0.1, 0.2, −0.1) and (0.2, 0, 0) (13–33×). The 5 K configuration therefore
 carries neither the orthorhombic cell doubling nor a cluster distortion beyond independent atoms
@@ -1569,7 +1609,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `SKILL_RESULT_BUDGET` | 9 000 | characters | `copilot/skills.js` | `read_skill`'s own result budget (kept, never compacted) |
 | `POLYHEDRON_SPLIT_DEG` | 135 | ° | `copilotTools.js` | Splits cis from trans for a whole shell of 6 ± 0.5 neighbours (demo TaSe₆: 80 % at a mean 89°, 20 % at 158.8°) |
 | `MIN_OPTIONS`, `MAX_OPTIONS` | 2, 4 | options | `copilot/askUser.js` | Choices a question offers |
-| `CHARS_PER_TOKEN`, `MESSAGE_OVERHEAD_TOKENS` | 2.5, 8 | chars / token, tokens | `provider/contextGuard.js` | The prompt estimate (errs high) |
+| `CHARS_PER_TOKEN`, `JSON_CHARS_PER_TOKEN`, `MESSAGE_OVERHEAD_TOKENS` | 2.5, 1.4, 8 | chars / token, tokens | `provider/contextGuard.js` | The prompt estimate (errs high; tool results and arguments at the JSON ratio) |
 | `REPLY_RESERVE_TOKENS` | 8 192 | tokens | `provider/contextGuard.js` | Room for the reply in an Ollama `num_ctx` |
 | `CONTEXT_STEP`, `MIN_CONTEXT` | 8 192, 16 384 | tokens | `provider/contextGuard.js` | An asked-for `num_ctx` is a multiple of the step, at least the minimum |
 | `LMSTUDIO_REPLY_MIN_TOKENS` | 4 096 | tokens | `provider/contextGuard.js` | Room an LM Studio context must leave beyond the prompt |
@@ -1589,7 +1629,8 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `CLUSTER_Z`, `CLUSTER_EFFECT`, `TRIGONALITY_EFFECT`, `AXIS_ENHANCEMENT` | 3, 5 %, 0.02, 1.1 | — | `copilotTools.js` | A cluster statistic is a finding only when both its z and its size clear these |
 | `STATIC_SPREAD_SE` | 5 | sampling errors | `copilotTools.js` | The average cluster counts as distorted above this spread |
 | `CLUSTER_OUTLIER_FRACTION` | 0.05 | fraction / per atom | `copilotTools.js` | Bonds outside the window, contacts between clusters |
-| `MODULATION_RATIO`, `MODULATION_PERCENTILE` | 3, 99 | × median, percentile | `copilotTools.js` | A zone-boundary point is order above both (or as the strongest mode) |
+| `MODULATION_RATIO`, `MODULATION_PERCENTILE` | 3, 99 | × median, percentile | `copilotTools.js` | A zone-boundary point is order above both (or at rank 1 among the compared modes) |
+| `LONG_WAVE_Q` | 0.25 | of the reciprocal axes | `modulations.py`, `workers/modulations.js` | A mode with every component within this is a long wave, left out of the compared modes |
 | `LONG_WAVE_RATIO`, `LONG_WAVE_Q` | 5, 0.25 | × median, r.l.u. | `copilotTools.js` | A strongest mode this strong and this close to the zone centre is a box-scale wave |
 | constraint margin | 0.05 | Å | `copilot/runTools.js` | First-peak low side within this of the closest-approach constraint: warn |
 | `temperature` (chat) | 0.2 (editable 0–2, step 0.1) | — | `settings.js`, `ConnectionSettings.jsx` | Sampling temperature |

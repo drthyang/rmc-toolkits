@@ -5,6 +5,40 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Fixes from the 2026-10-12 review
+
+An independent review of main (c26f8d4) found these; each fix has a regression test built from the
+reviewer's repro.
+
+- **Clusters.** A site at fraction 0 whose mean sat a hair below the cell edge wrapped to 0.9999,
+  and its clusters paired atoms of neighbouring cells (a rigid V₂ dimer: z −32.5 → −0.6, broken
+  edges 2.3 %): templates, bases and outlier positions now use the unwrapped site mean (both
+  engines). Templates of one kind are measured with their own bonds (two Mo₃ chains listed 0–1–2
+  and 1–0–2 gave a ladder width of 1.03 Å). The bonds of a cluster missing an atom are no longer
+  counted as contacts between clusters, and on a tie the analysed kind leads the list of kinds and
+  never appears among the other sizes.
+- **Modulations.** The percentile is taken over the compared modes, one per ±q pair without the
+  long waves, with a rank: a cell doubling at 55× the median under a stronger box-scale wave was
+  reported as no order.
+- **Bond angles.** Only an A–B–A triplet in one window is read against an ideal polyhedron; a band
+  with no angles says "none", not "null°"; 15° and 30° engine bins are shared out by overlap (no
+  comb in the 10° histograms).
+- **Answer checks.** A hypothetical, conditional or question mention ("to check whether it has
+  converged", "until χ² plateaus") is not a claim, and a negation counts only just before the
+  claim ("With no remaining drift in χ², the run has converged" now fires). A lost inversion is
+  judged against the parent group too, and a subgroup the checks do not know is never pinned on
+  the parent.
+- **The Workbench's questions.** A window is asked about once per question and the choice applied
+  to later calls; a question that names the shell ("only the first Ta–Se peak", "the whole first
+  shell", "both peaks") asks nothing; "2.2 – 2.7 Å" stays one option; a typed window goes to the
+  window asked about.
+- **Context guard.** Tool results count at 1.4 characters per token (gemma4 reads them at 1.64,
+  not the 2.5 assumed), a model LM Studio loads for the request is checked before its reply is
+  shown, and Ollama's native path sends the API key.
+- **Copilot view.** A step's result is what the model read (fitted to its budget); answering a
+  question card keeps the focus on the card, then the composer; "(100)" in a 3D view is the plane's
+  normal, not the direction [100].
+
 ### Docs: a one-screen README
 
 The README is now the name and live link, what the Workbench does, a quick start, the AI Copilot in
