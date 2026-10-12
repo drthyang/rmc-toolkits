@@ -5,6 +5,16 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Docs: a one-screen README
+
+The README is now the name and live link, what the Workbench does, a quick start, the AI Copilot in
+brief, its status, a linked documentation index and the license. Nothing was dropped: the
+screenshots moved to [QuickStart.md](../QuickStart.md#what-it-looks-like), the signature equations
+to [ALGORITHMS.md](ALGORITHMS.md#signature-equations), the license notes and citation request to
+[REFERENCE.md](REFERENCE.md#license-and-citation), and the Copilot details and its real-model
+results were already in the [Copilot guide](../web_app/frontend/src/llm/README.md). A stale link
+to `SaveMenu.jsx` (now in `src/ui/`) is fixed in run-dashboard.md.
+
 ### AI Copilot: skills (drafts), and a refusal for windows that cut a shell
 
 - **Four skills, drafted** (`.claude/skills/<name>/SKILL.md`, shared with Claude Code, in MATERIA's

@@ -139,6 +139,21 @@ Then open:
 
 [http://127.0.0.1:5050/](http://127.0.0.1:5050/)
 
+## What It Looks Like
+
+| Run dashboard | Atomic density (KDE / slab / 3D) |
+| --- | --- |
+| ![Run dashboard](assets/rmc-toolkits-dashboard-demo.png) | ![Atomic density](assets/rmc-toolkits-kde-demo.png) |
+
+| PCA ellipsoid (thermal ellipsoids) | Displacement directions |
+| --- | --- |
+| ![PCA ellipsoid](assets/rmc-toolkits-pca-demo.png) | ![Displacement directions](assets/rmc-toolkits-displacement-demo.png) |
+
+A local model summarizing the bundled demo run as tables, with LaTeX math such as Rwp and χ²
+rendered inline (recorded with the earlier chat-only version of the AI Copilot):
+
+![A local model summarizing a run as tables](assets/rmc-toolkits-assistant.gif)
+
 ## Supported Files
 
 - `*.rmc6f` for model information, KDE, and 3D structure views.

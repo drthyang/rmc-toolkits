@@ -29,6 +29,61 @@ Companions: [AGENTS.md](../AGENTS.md) (architecture map, conventions, current st
 
 ---
 
+## Signature equations
+
+One equation per analysis page, as the code computes it; each links to its full derivation.
+
+**Fit residual** — the chip on each dashboard chart:
+
+$$R=\sqrt{\frac{\sum_i\bigl(y^{\mathrm{calc}}_i-y^{\mathrm{expt}}_i\bigr)^2}{\sum_i\bigl(y^{\mathrm{expt}}_i\bigr)^2}}$$
+
+normalized by the experiment. RMCProfile writes these CSVs as `(x, calculated, experimental)`; a
+header that names the roles overrides that order. Labelled "Rwp" but **unweighted**, so it is not
+the crystallographic $R_\mathrm{wp}$; recompute from the columns before quoting it in a paper.
+Points where either column is non-finite are skipped, and if none remain — or the denominator is
+zero — the chip reads **—**.
+→ [derivation](algorithms/run-dashboard.md#step-5--compute-the-numbers)
+
+**Atomic density** — a 2-D Gaussian KDE over the supercell folded into one unit cell, with
+bandwidth $\mathbf H$ scaled from the covariance $\mathbf C$ of the slab's atoms (SciPy's
+convention; the same kernel in the browser and in Python):
+
+$$\rho(\mathbf p)=\frac{\kappa}{n}\sum_{i=1}^{n}\frac{\exp\!\left[-\tfrac12(\mathbf p-\mathbf p_i)^{\!\top}\mathbf H^{-1}(\mathbf p-\mathbf p_i)\right]}{2\pi\sqrt{\det\mathbf H}},\qquad \mathbf H=f^2\mathbf C$$
+
+$\kappa$ corrects for the neighbour images tiled around the cell to restore periodicity.
+→ [derivation](algorithms/structure.md#step-6--the-gaussian-kernel-bandwidth-matrix-and-normalization)
+
+**Thermal ellipsoids** — the anisotropic displacement tensor is the displacement covariance, and the
+drawn surface is its $\chi^2$ probability ellipsoid:
+
+$$U_{ab}=\frac{1}{n-1}\sum_n u_{na}u_{nb},\qquad\text{semi-axes } k(p)\,\sigma_a,\quad k(p)=\sqrt{F^{-1}_{\chi^2_3}(p)}$$
+
+The crystallographic 50 % convention is $k=1.5382$. $U$ is Cartesian — there is no conversion to
+$U_\mathrm{cif}$ or $\beta_{ij}$ anywhere.
+→ [derivation](algorithms/pca-ellipsoid.md#step-3--covariance-and-eigen-decomposition)
+
+**Displacement directions** — amplitude discarded, directions binned in solid angle on a Goldberg
+sphere of $10\nu^2+2$ cells, each count divided by that cell's *exact* solid angle $\Omega_m$:
+
+$$\mathbf u_i=\frac{\Delta\mathbf r_i}{\lVert\Delta\mathbf r_i\rVert},\qquad \rho_m=\frac{M_m}{\bigl(\sum_{m'}M_{m'}\bigr)\Omega_m},\qquad \mathcal E_m=4\pi\rho_m$$
+
+The plotted enhancement $\mathcal E$ is dimensionless: 1 is isotropic, and 1.8 means "this direction
+is 1.8× more likely than chance".
+→ [derivation](algorithms/displacement-directions.md#step-6--the-histogram)
+
+**Bond angles** — the angle at the central atom B of every A–B–C triplet whose two bonds fall
+inside their windows, divided by the *exact* isotropic fraction of each bin:
+
+$$\theta=\arccos\frac{\mathbf r_{BA}\cdot\mathbf r_{BC}}{\lVert\mathbf r_{BA}\rVert\lVert\mathbf r_{BC}\rVert},\qquad S_k=\frac{N_k/N}{\bigl(\cos\theta_k-\cos\theta_{k+1}\bigr)/2}$$
+
+Because $(\cos\theta_k-\cos\theta_{k+1})/2=\sin\theta_c\,\sin(\Delta/2)$, this is the bin-centre
+$1/\sin\theta_c$ correction scaled so that $S=1$ is randomly oriented bonds; a peak above 1 is real
+structure. RMCProfile's `triplets` `norm/sin(theta)` column has the same shape on another scale
+($=S\cdot\sin(\Delta/2)/\Delta_{\deg}\approx S\cdot\pi/360$). Neighbours are found by a linked-cell
+search carrying explicit periodic-image shifts — exact for triclinic cells and for boxes smaller
+than the cutoff.
+→ [derivation](algorithms/bond-geometry.md#step-6--the-histogram-and-its-three-normalizations)
+
 ## The pages
 
 Ordered as the app's nav orders them (`web_app/frontend/src/App.jsx`). The **Auto StoG** tab is

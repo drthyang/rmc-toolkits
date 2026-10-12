@@ -346,3 +346,12 @@ MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
 # Frontend unit tests (vitest: engine ports and their Python goldens, components, AI assistant)
 cd web_app/frontend && npm test
 ```
+
+## License and Citation
+
+Released under the [GNU Affero General Public License v3.0](../LICENSE) © 2026 Tsung-Han Yang.
+
+The AGPL is a strong copyleft license: you may use, study, modify, and redistribute this
+software, but derivative works must also be released under the AGPLv3. Notably, if you run a
+modified version as a **network service**, you must offer its complete source code to the users
+of that service (AGPL §13). If you use rmc-toolkits in published research, please cite it.
