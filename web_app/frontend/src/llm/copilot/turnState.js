@@ -43,6 +43,9 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     reasoningMs: !item.text && item.reasoning && item.reasoningMs == null ? now - item.startedAt : item.reasoningMs
                 }))
             };
+        case 'retract':
+            // A call written as text: the text was the call, not an answer.
+            return { ...turn, items: updateLastText(turn.items, () => ({ text: '' })) };
         case 'reasoning':
             return { ...turn, items: updateLastText(turn.items, (item) => ({ reasoning: item.reasoning + event.delta })) };
         case 'tool_start':
@@ -96,6 +99,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                 outcome: event.outcome,
                 stoppedBy: event.stoppedBy,
                 cut: Boolean(event.cut),
+                reason: event.reason || null,
                 audit: Array.isArray(event.audit) ? event.audit : [],
                 streaming: false
             };

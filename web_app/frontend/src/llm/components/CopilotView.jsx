@@ -29,7 +29,14 @@ const STOP_NOTES = {
     stopped: 'Stopped.',
     error: 'Stopped by an error.',
     max_rounds: 'Answered after using the analysis budget for one question.',
+    no_progress: 'Answered when repeated analyses stopped adding anything new.',
     empty: 'The model returned an empty reply.'
+};
+
+// The stop note, with the reason when the loop gave one (an empty reply).
+const stopNoteFor = (turn) => {
+    const note = STOP_NOTES[turn.stoppedBy];
+    return note && turn.reason ? `${note.replace(/\.$/, '')}: ${turn.reason}.` : note;
 };
 
 const formatThinkTime = (ms) => {
@@ -109,7 +116,9 @@ const groupItems = (items) => items.reduce((groups, item) => {
 const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, onAnswer = null }) => {
     const groups = groupItems(turn.items);
     const summary = stepSummary(turn.items);
-    const stopNote = STOP_NOTES[turn.stoppedBy];
+    const stopNote = stopNoteFor(turn);
+    // An empty reply's reason already says the length limit was reached.
+    const cutNote = turn.cut && !(turn.stoppedBy === 'empty' && turn.reason);
     return (
         <div className="llm-message is-assistant">
             <span className="llm-message-avatar" aria-hidden="true"><WaveMark /></span>
@@ -163,7 +172,7 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
                         {[
                             summary,
                             turn.toolsUnsupported ? 'this model cannot run analyses — answered from the run summary' : '',
-                            turn.cut ? 'the reply reached the model\'s length limit and is cut short' : '',
+                            cutNote ? 'the reply reached the model\'s length limit and is cut short' : '',
                             turn.stoppedBy !== 'answer' ? stopNote : ''
                         ].filter(Boolean).join(' · ')}
                     </p>
