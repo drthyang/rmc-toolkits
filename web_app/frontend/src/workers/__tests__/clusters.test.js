@@ -49,6 +49,21 @@ describe('Python parity (clusters_fixture.json)', () => {
     }
 });
 
+describe('a site at fraction 0 (review 2026-10-12 #1)', () => {
+    it('pairs each atom with its partner of the same cell when the site mean is a hair below 0', () => {
+        // The rigid V2 dimers' first site averages −0.0001 Å: wrapped to
+        // 0.9999 it pulled the partner from the next cell, which hid the
+        // dimers' correlation and broke edges.
+        const parsed = siteDisplacementsFromRmc6f(fixture.cases.find((entry) => entry.name === 'origin-dimer').text);
+        expect(parsed.sites[0].siteFractional[0]).toBeGreaterThan(0.99);
+        expect(parsed.sites[0].siteCellFractional[0]).toBeCloseTo(-2e-5, 9);
+        const result = clusterDistortion(parsed, 'V', [2.0, 2.5]);
+        expect(result.templates[0].offsets).toEqual([[0, 0, 0], [0, 0, 0]]);
+        expect(result.outliers.brokenEdgeFraction).toBe(0);
+        expect(result.z.breathingSd).toBeLessThan(-10);
+    });
+});
+
 describe('the worker\'s clusters request', () => {
     const text = fixture.cases[0].text;
     const ask = (params) => handlePcaMessage({ kind: 'clusters', ...params }, async () => text);

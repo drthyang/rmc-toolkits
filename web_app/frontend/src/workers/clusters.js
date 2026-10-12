@@ -20,6 +20,12 @@ import { WINDOW_TOL, countPatterns, perpendicularWidths } from './triplets.js';
 
 export const DEFAULT_SHUFFLES = 24;
 export const SHUFFLE_SEED = 0x5eed;
+
+// The site's average position consistent with its atoms' cell indices
+// (pcaKde.js `siteCellFractional`, unwrapped): a cluster pairs the atoms of
+// given cells, so a site at fraction 0 must not wrap to 0.9999 and pull its
+// partners from the next cell. clusters.py `_cell_positions`.
+const cellPosition = (site) => site.siteCellFractional ?? site.siteFractional;
 export const AXIS_CONE_DEG = 15;
 // Opposite edge pairs of a tetrahedron, as indices into its sorted edge list
 // (0,1) (0,2) (0,3) (1,2) (1,3) (2,3).
@@ -90,7 +96,7 @@ const buildTemplates = (sites, members, unit, [lo, hi]) => {
     for (const s of members) {
         for (const t of members) {
             for (const shift of shifts) {
-                const d = length(toCartesian(add(sub(sites[t].siteFractional, sites[s].siteFractional), shift), unit));
+                const d = length(toCartesian(add(sub(cellPosition(sites[t]), cellPosition(sites[s])), shift), unit));
                 if (!(d >= lower && d <= upper)) continue;
                 if (s === t) {
                     if (shift.some((value) => value !== 0)) extended = true;
@@ -318,7 +324,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         const complete = [];
         for (let c = 0; c < nCells; c += 1) if (rowsAll.every((rows) => rows[c] >= 0)) complete.push(c);
         const rows = rowsAll.map((all) => complete.map((c) => all[c]));
-        const base = template.sites.map((s, m) => toCartesian(add(sites[s].siteFractional, template.offsets[m]), unit));
+        const base = template.sites.map((s, m) => toCartesian(add(cellPosition(sites[s]), template.offsets[m]), unit));
         const idealEdges = template.edges.map(([i, j]) => length(sub(base[j], base[i])));
         const edgeSe = template.edges.map(([i, j]) => {
             const span = sub(base[j], base[i]);
@@ -409,7 +415,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         site.displacements.forEach((u, k) => {
             const shift = toCartesian(u, inverse);
             fractional.push([0, 1, 2].map((axis) => {
-                const value = (site.siteFractional[axis] + site.cells[k][axis]) / supercell[axis] + shift[axis];
+                const value = (cellPosition(site)[axis] + site.cells[k][axis]) / supercell[axis] + shift[axis];
                 return ((value % 1) + 1) % 1;
             }));
         });

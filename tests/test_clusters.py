@@ -14,7 +14,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import cluster_config_text  # noqa: E402
+from cluster_configs import cluster_config_text, origin_dimer_config_text  # noqa: E402
 from rmc_toolkits.clusters import (  # noqa: E402
     cluster_distortion,
     cluster_distortion_from_file,
@@ -116,6 +116,24 @@ class ClusterDistortionTests(unittest.TestCase):
         self.assertNotIn("shortAxis", result["observed"])
         # The bond lies along x: every dimer's axis is near <100>.
         self.assertEqual(result["observed"]["longAxis"]["100"], 1.0)
+
+    def test_a_site_at_fraction_zero_pairs_atoms_of_one_cell(self):
+        # Review 2026-10-12 #1: a site mean a hair below 0 wrapped to 0.9999 and
+        # the template paired each atom with its partner of the next cell: the
+        # rigid dimers' correlation vanished (z -32 -> -0.6) and edges broke.
+        results = {}
+        with tempfile.TemporaryDirectory() as directory:
+            for bias in (1e-4, -1e-4):
+                path = Path(directory) / f"origin{bias}.rmc6f"
+                path.write_text(origin_dimer_config_text(bias), encoding="utf-8")
+                sites = load_site_displacements(path)
+                self.assertAlmostEqual(sites.site_cell_fractional[0][0], bias / 5.0, places=9)
+                results[bias] = cluster_distortion(sites, "V", (2.0, 2.5))
+        for bias, result in results.items():
+            self.assertEqual(result["templates"][0]["offsets"], [[0, 0, 0], [0, 0, 0]], bias)
+            self.assertEqual(result["outliers"]["brokenEdgeFraction"], 0.0, bias)
+            self.assertLess(result["z"]["breathingSd"], -10.0, bias)
+        self.assertAlmostEqual(results[-1e-4]["z"]["breathingSd"], results[1e-4]["z"]["breathingSd"], delta=0.01)
 
     def test_an_extended_network_and_an_empty_window(self):
         extended = cluster_distortion(_Configs.sites("independent"), "Se", (7.5, 8.0))

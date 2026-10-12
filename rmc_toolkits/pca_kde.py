@@ -150,6 +150,12 @@ class SiteDisplacements:
     element_counts: tuple[dict[str, int], ...] | None = None  # (S,) composition per site
     parse_warning: str | None = None  # Rmc6fParseReport.warning() of the atom section
     cell_indices: np.ndarray | None = None  # (N, 3) int: each row's box copy (cell)
+    # (S, 3) the average site position NOT wrapped into [0, 1): an atom of the
+    # site in cell n sits at (n + site_cell_fractional) / supercell on average.
+    # A site at fraction 0 whose mean is a hair negative has site_fractional
+    # 0.9999 but site_cell_fractional -0.0001; pairing atoms by cell must use
+    # the latter.
+    site_cell_fractional: np.ndarray | None = None
 
     @property
     def species(self) -> list[str]:
@@ -277,6 +283,7 @@ def load_site_displacements(rmc6f_path: str | Path) -> SiteDisplacements:
         element_counts=element_counts,
         parse_warning=report.warning(),
         cell_indices=cells_array.astype(int),
+        site_cell_fractional=site_mean * supercell,
     )
 
 

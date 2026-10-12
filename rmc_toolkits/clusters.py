@@ -126,6 +126,17 @@ class _Template:
     edges: list[tuple[int, int]]  # member index pairs, sorted
 
 
+def _cell_positions(sites: SiteDisplacements) -> np.ndarray:
+    """Average site positions consistent with the atoms' cell indices
+    (``site_cell_fractional``, unwrapped): a cluster pairs the atoms of given
+    cells, so a site at fraction 0 must not wrap to 0.9999 and pull its
+    partners from the next cell. Falls back to ``site_fractional``."""
+    position = sites.site_cell_fractional
+    if position is None:
+        position = sites.site_fractional
+    return np.asarray(position, dtype=float)
+
+
 def _templates(
     sites: SiteDisplacements, members: list[int], window: tuple[float, float]
 ) -> tuple[list[_Template], bool, int]:
@@ -136,7 +147,7 @@ def _templates(
     different cell offsets), and how many sites have no bond in the window.
     """
     unit = np.asarray(sites.unit_vectors, dtype=float)
-    frac = np.asarray(sites.site_fractional, dtype=float)
+    frac = _cell_positions(sites)
     lo, hi = window
     reach = np.ceil(hi / _perpendicular_widths(unit)).astype(int) + 1
     shifts = np.array(
@@ -295,7 +306,7 @@ def cluster_distortion(
 
     unit = np.asarray(sites.unit_vectors, dtype=float)
     supercell = np.asarray(sites.supercell, dtype=int)
-    frac = np.asarray(sites.site_fractional, dtype=float)
+    frac = _cell_positions(sites)
     families = lattice_families(unit)
     n_cells = int(np.prod(supercell))
     row_of = -np.ones((len(sites.reference_numbers), n_cells), dtype=int)

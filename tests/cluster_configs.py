@@ -81,3 +81,44 @@ def cluster_config_text(mode: str = "independent", *, supercell=(4, 4, 4), sigma
         "Atoms:",
     ]
     return "\n".join(header + lines) + "\n"
+
+
+ORIGIN_CELL_A = 5.0
+ORIGIN_SITES = [("V", np.array([0.0, 0.5, 0.5])), ("V", np.array([0.45, 0.5, 0.5]))]
+
+
+def origin_dimer_config_text(bias: float, *, supercell=(4, 4, 4), sigma=0.08, seed=1) -> str:
+    """A rigid V2 dimer whose first site sits at x = 0: both atoms of a dimer
+    share one random shift (sd ``sigma``) plus 0.01 A of their own, and the
+    first site's mean is set to ``bias`` A along x, so a negative bias puts it
+    a hair below the cell edge. Coordinates are wrapped into [0, 1)."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    cells = [(ix, iy, iz) for ix in range(supercell[0]) for iy in range(supercell[1]) for iz in range(supercell[2])]
+    shifts = {}
+    for cell in cells:
+        common = rng.normal(0.0, sigma, 3)
+        for ref in (1, 2):
+            shifts[(cell, ref)] = common + rng.normal(0.0, 0.01, 3)
+    first = np.array([shifts[(cell, 1)] for cell in cells]).mean(axis=0)
+    for cell in cells:
+        shifts[(cell, 1)] = shifts[(cell, 1)] - first + np.array([bias, 0.0, 0.0])
+    lines = []
+    atom = 0
+    for cell in cells:
+        for ref, (element, frac) in enumerate(ORIGIN_SITES, start=1):
+            coord = np.mod((frac + np.array(cell) + shifts[(cell, ref)] / ORIGIN_CELL_A) / supercell, 1.0)
+            atom += 1
+            lines.append(
+                f"{atom:6d} {element:>2} [1] {coord[0]:.12f} {coord[1]:.12f} {coord[2]:.12f}"
+                f" {ref:4d} {cell[0]} {cell[1]} {cell[2]}"
+            )
+    header = [
+        "(Version 6f format configuration file)",
+        f"Number of atoms: {atom}",
+        f"Supercell dimensions: {supercell[0]} {supercell[1]} {supercell[2]}",
+        "Lattice vectors (Ang):",
+        *(" ".join(f"{value:.6f}" for value in row) for row in np.diag(ORIGIN_CELL_A * supercell.astype(float))),
+        "Atoms:",
+    ]
+    return "\n".join(header + lines) + "\n"
