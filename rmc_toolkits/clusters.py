@@ -206,11 +206,22 @@ def _cell_linear(cells: np.ndarray, supercell: np.ndarray) -> np.ndarray:
     return (cells[:, 0] * supercell[1] + cells[:, 1]) * supercell[2] + cells[:, 2]
 
 
-def _statistics(positions: np.ndarray, edges: list[tuple[int, int]], families: dict[str, np.ndarray]) -> dict:
-    """Shape statistics of clusters given as (C, M, 3) member positions."""
-    i_idx = np.array([i for i, _ in edges])
-    j_idx = np.array([j for _, j in edges])
-    vectors = positions[:, j_idx, :] - positions[:, i_idx, :]
+def _edge_vectors(positions: np.ndarray, edges) -> np.ndarray:
+    """(C, E, 3) edge vectors of (C, M, 3) clusters. ``edges`` holds member
+    index pairs: one list for every cluster (E, 2), or one per cluster
+    (C, E, 2) -- templates of one kind need not share their edges (two chains
+    of three, one bonded 0-1-2 and one 1-0-2)."""
+    pairs = np.asarray(edges, dtype=int)
+    if pairs.ndim == 2:
+        pairs = np.broadcast_to(pairs, (positions.shape[0],) + pairs.shape)
+    cluster = np.arange(positions.shape[0])[:, None]
+    return positions[cluster, pairs[..., 1], :] - positions[cluster, pairs[..., 0], :]
+
+
+def _statistics(positions: np.ndarray, edges, families: dict[str, np.ndarray]) -> dict:
+    """Shape statistics of clusters given as (C, M, 3) member positions and
+    their edges (see :func:`_edge_vectors`)."""
+    vectors = _edge_vectors(positions, edges)
     lengths = np.sqrt(vectors[..., 0] ** 2 + vectors[..., 1] ** 2 + vectors[..., 2] ** 2)
     ladder = np.sort(lengths, axis=1)
     means = lengths.mean(axis=1)
@@ -222,7 +233,7 @@ def _statistics(positions: np.ndarray, edges: list[tuple[int, int]], families: d
         "breathingSd": float(means.std()),
     }
     members = positions.shape[1]
-    if members == 4 and len(edges) == 6:
+    if members == 4 and vectors.shape[1] == 6:
         sums = np.stack([lengths[:, a] + lengths[:, b] for a, b in TETRAHEDRON_OPPOSITE], axis=1)
         diffs = np.stack([lengths[:, a] - lengths[:, b] for a, b in TETRAHEDRON_OPPOSITE], axis=1)
         e_modes = sums - sums.mean(axis=1, keepdims=True)
@@ -370,7 +381,13 @@ def cluster_distortion(
     chosen = [entry for entry in per_template if (len(entry[1].sites), len(entry[1].edges)) == dominant]
     result["kind"] = {"members": dominant[0], "edges": dominant[1], "clusters": kinds[dominant], "templates": len(chosen)}
 
-    def positions(shuffle: int | None) -> tuple[np.ndarray, list[tuple[int, int]]]:
+    # Each cluster is measured with its own template's edges.
+    edges = np.concatenate([
+        np.broadcast_to(np.asarray(template.edges, dtype=int), (rows.shape[1], len(template.edges), 2))
+        for _, template, rows, _ in chosen
+    ])
+
+    def positions(shuffle: int | None) -> np.ndarray:
         blocks = []
         for t_index, template, rows, base in chosen:
             n = rows.shape[1]
@@ -379,11 +396,11 @@ def cluster_distortion(
                 order = np.arange(n) if shuffle is None else shuffle_permutation(n, shuffle, t_index, m, seed)
                 picked.append(base[m] + sites.displacements[rows[m, order]])
             blocks.append(np.stack(picked, axis=1))
-        return np.concatenate(blocks, axis=0), chosen[0][1].edges
+        return np.concatenate(blocks, axis=0)
 
-    observed_positions, edges = positions(None)
+    observed_positions = positions(None)
     observed = _statistics(observed_positions, edges, families)
-    nulls = [_statistics(positions(k)[0], edges, families) for k in range(shuffles)]
+    nulls = [_statistics(positions(k), edges, families) for k in range(shuffles)]
     null_mean, null_sd, z = _null_summary(observed, nulls)
     result.update({"observed": observed, "nullMean": null_mean, "nullSd": null_sd, "z": z})
 
@@ -399,9 +416,7 @@ def cluster_distortion(
 
     # Outliers: template edges outside the window, and contacts in the window
     # that are not template bonds (counted over the whole element).
-    i_idx = [i for i, _ in edges]
-    j_idx = [j for _, j in edges]
-    lengths = np.linalg.norm(observed_positions[:, j_idx] - observed_positions[:, i_idx], axis=2)
+    lengths = np.linalg.norm(_edge_vectors(observed_positions, edges), axis=2)
     inside = (lengths >= max(lo - WINDOW_TOL, 0.0)) & (lengths <= hi + WINDOW_TOL)
     lattice = np.asarray(sites.lattice_vectors, dtype=float)
     element_rows = np.flatnonzero(np.isin(sites.site_index, members))

@@ -122,3 +122,41 @@ def origin_dimer_config_text(bias: float, *, supercell=(4, 4, 4), sigma=0.08, se
         "Atoms:",
     ]
     return "\n".join(header + lines) + "\n"
+
+
+CHAINS_CELL_A = 10.0
+# Chain A's middle atom is its second site, chain B's its first: sorted by
+# site, chain A is bonded 0-1, 1-2 and chain B 0-1, 0-2.
+CHAINS_SITES = [
+    ("Mo", [0.1, 0.2, 0.2]), ("Mo", [0.3, 0.2, 0.2]), ("Mo", [0.5, 0.2, 0.2]),
+    ("Mo", [0.6, 0.7, 0.7]), ("Mo", [0.4, 0.7, 0.7]), ("Mo", [0.8, 0.7, 0.7]),
+]
+
+
+def chains_config_text(*, supercell=(4, 4, 4), sigma=0.03, seed=3) -> str:
+    """Two linear Mo3 chains per cell (bonds 2.0 A along x), independent
+    Gaussian noise of ``sigma`` A on every atom (the 2026-10-12 review's repro)."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    lines = []
+    atom = 0
+    for ix in range(supercell[0]):
+        for iy in range(supercell[1]):
+            for iz in range(supercell[2]):
+                for ref, (element, frac) in enumerate(CHAINS_SITES, start=1):
+                    shift = rng.normal(0.0, sigma, 3) / CHAINS_CELL_A
+                    coord = np.mod((np.array(frac) + [ix, iy, iz] + shift) / supercell, 1.0)
+                    atom += 1
+                    lines.append(
+                        f"{atom:6d} {element:>2} [1] {coord[0]:.12f} {coord[1]:.12f} {coord[2]:.12f}"
+                        f" {ref:4d} {ix} {iy} {iz}"
+                    )
+    header = [
+        "(Version 6f format configuration file)",
+        f"Number of atoms: {atom}",
+        f"Supercell dimensions: {supercell[0]} {supercell[1]} {supercell[2]}",
+        "Lattice vectors (Ang):",
+        *(" ".join(f"{value:.6f}" for value in row) for row in np.diag(CHAINS_CELL_A * supercell.astype(float))),
+        "Atoms:",
+    ]
+    return "\n".join(header + lines) + "\n"

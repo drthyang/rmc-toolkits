@@ -155,15 +155,18 @@ const cellLinear = (cell, supercell) => {
 };
 
 // Shape statistics of clusters given as member positions [cluster][member] (mirrors _statistics).
+// `edges[c]` holds cluster c's member index pairs: templates of one kind need
+// not share their edges (two chains of three, one bonded 0-1-2 and one 1-0-2).
+// Mirrors _statistics / _edge_vectors.
 const clusterStatistics = (positions, edges, families) => {
     const nClusters = positions.length;
     const members = positions[0].length;
-    const lengths = positions.map((cluster) => edges.map(([i, j]) => length(sub(cluster[j], cluster[i]))));
+    const lengths = positions.map((cluster, c) => edges[c].map(([i, j]) => length(sub(cluster[j], cluster[i]))));
     const ladders = lengths.map((row) => [...row].sort((a, b) => a - b));
     const rowMeans = lengths.map(mean);
     let total = 0;
     lengths.forEach((row) => row.forEach((value) => { total += value; }));
-    const nEdges = edges.length;
+    const nEdges = lengths[0].length;
     const ladder = Array.from({ length: nEdges }, (_, k) => ladders.reduce((sum, row) => sum + row[k], 0) / nClusters);
     let shape = 0;
     lengths.forEach((row, c) => row.forEach((value) => { shape += (value - rowMeans[c]) ** 2; }));
@@ -383,7 +386,8 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         });
         return out;
     };
-    const edges = chosen[0].template.edges;
+    // Each cluster is measured with its own template's edges.
+    const edges = chosen.flatMap(({ template, rows }) => rows[0].map(() => template.edges));
     const observedPositions = positionsFor(null);
     const observed = clusterStatistics(observedPositions, edges, families);
     const nulls = Array.from({ length: shuffles }, (_, k) => clusterStatistics(positionsFor(k), edges, families));
@@ -407,7 +411,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
     const upper = hi + WINDOW_TOL;
     const insideWindow = (value) => value >= lower && value <= upper;
     let inside = 0;
-    observedPositions.forEach((cluster) => edges.forEach(([i, j]) => { if (insideWindow(length(sub(cluster[j], cluster[i])))) inside += 1; }));
+    observedPositions.forEach((cluster, c) => edges[c].forEach(([i, j]) => { if (insideWindow(length(sub(cluster[j], cluster[i])))) inside += 1; }));
     const inverse = invert3(lattice);
     const fractional = [];
     members.forEach((s) => {
@@ -431,7 +435,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
     });
     const extra = Math.floor(directed / 2) - templateBondsInside;
     result.outliers = {
-        brokenEdgeFraction: 1 - inside / (observedPositions.length * edges.length),
+        brokenEdgeFraction: 1 - inside / (observedPositions.length * kindEdges),
         extraContacts: extra,
         extraContactsPerAtom: fractional.length ? 2 * extra / fractional.length : 0
     };

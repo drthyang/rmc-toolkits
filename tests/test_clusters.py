@@ -14,7 +14,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import cluster_config_text, origin_dimer_config_text  # noqa: E402
+from cluster_configs import chains_config_text, cluster_config_text, origin_dimer_config_text  # noqa: E402
 from rmc_toolkits.clusters import (  # noqa: E402
     cluster_distortion,
     cluster_distortion_from_file,
@@ -134,6 +134,20 @@ class ClusterDistortionTests(unittest.TestCase):
             self.assertEqual(result["outliers"]["brokenEdgeFraction"], 0.0, bias)
             self.assertLess(result["z"]["breathingSd"], -10.0, bias)
         self.assertAlmostEqual(results[-1e-4]["z"]["breathingSd"], results[1e-4]["z"]["breathingSd"], delta=0.01)
+
+    def test_templates_of_one_kind_are_measured_with_their_own_edges(self):
+        # Review 2026-10-12 #2: chain B (bonded 0-1, 0-2) was measured with
+        # chain A's edges (0-1, 1-2), so one of its "edges" was its 4 A end to
+        # end: ladderWidth 1.03 A for chains whose bonds differ by 0.01 A.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "chains.rmc6f"
+            path.write_text(chains_config_text(), encoding="utf-8")
+            result = cluster_distortion(load_site_displacements(path), "Mo", (1.8, 2.2))
+        self.assertEqual([t["edges"] for t in result["templates"]], [[[0, 1], [1, 2]], [[0, 1], [0, 2]]])
+        self.assertEqual(result["kind"], {"members": 3, "edges": 2, "clusters": 128, "templates": 2})
+        self.assertLess(result["observed"]["ladderWidth"], 0.2)
+        self.assertAlmostEqual(result["observed"]["meanEdge"], 2.0, delta=0.01)
+        self.assertEqual(result["outliers"]["brokenEdgeFraction"], 0.0)
 
     def test_an_extended_network_and_an_empty_window(self):
         extended = cluster_distortion(_Configs.sites("independent"), "Se", (7.5, 8.0))

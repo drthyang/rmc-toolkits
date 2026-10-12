@@ -25,7 +25,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import cluster_config_text, origin_dimer_config_text  # noqa: E402
+from cluster_configs import chains_config_text, cluster_config_text, origin_dimer_config_text  # noqa: E402
 from rmc_toolkits.clusters import SHUFFLE_SEED, cluster_distortion, mix32, shuffle_permutation  # noqa: E402
 from rmc_toolkits.pca_kde import load_site_displacements  # noqa: E402
 
@@ -38,6 +38,8 @@ CASES = [
     ("static", lambda: cluster_config_text("static", supercell=(4, 4, 4)), [("Nb", [2.5, 3.5])]),
     # A site a hair below fraction 0 (review 2026-10-12 #1).
     ("origin-dimer", lambda: origin_dimer_config_text(-1e-4), [("V", [2.0, 2.5])]),
+    # Two chain templates with differently listed edges (review 2026-10-12 #2).
+    ("chains", chains_config_text, [("Mo", [1.8, 2.2])]),
 ]
 
 

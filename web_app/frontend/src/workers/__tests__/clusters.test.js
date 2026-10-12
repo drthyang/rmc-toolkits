@@ -64,6 +64,18 @@ describe('a site at fraction 0 (review 2026-10-12 #1)', () => {
     });
 });
 
+describe('templates with their own edges (review 2026-10-12 #2)', () => {
+    it('measures each chain with its own template\'s edges', () => {
+        // Chain B (bonded 0-1, 0-2) measured with chain A's edges (0-1, 1-2)
+        // counted its 4 Å end-to-end span as an edge: ladderWidth 1.03 Å.
+        const parsed = siteDisplacementsFromRmc6f(fixture.cases.find((entry) => entry.name === 'chains').text);
+        const result = clusterDistortion(parsed, 'Mo', [1.8, 2.2]);
+        expect(result.templates.map((template) => template.edges)).toEqual([[[0, 1], [1, 2]], [[0, 1], [0, 2]]]);
+        expect(result.observed.ladderWidth).toBeLessThan(0.2);
+        expect(result.outliers.brokenEdgeFraction).toBe(0);
+    });
+});
+
 describe('the worker\'s clusters request', () => {
     const text = fixture.cases[0].text;
     const ask = (params) => handlePcaMessage({ kind: 'clusters', ...params }, async () => text);
