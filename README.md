@@ -45,7 +45,8 @@ LM Studio) or, with your key, a cloud one. See the
 ## Status
 
 Beta: version 0.7.0, with unreleased changes on main ([changelog](docs/CHANGELOG.md)). The AI
-Copilot is experimental: trust its step cards' checks over its own verdict.
+Copilot is experimental: trust its step cards' checks over its own verdict. An answer the checks
+contradict is marked **Not verified**, with the check that contradicts it.
 
 ## Documentation
 

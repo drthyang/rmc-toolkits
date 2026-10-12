@@ -303,10 +303,16 @@ the model's own `ask_user` still works beside it.
   `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
   of it by the same margin is put to the user — the whole first shell (default) or the window as
   asked — and the analysis runs in the one chosen, its tool message saying so. The spot check's
-  2.3–2.7 Å Se–Ta–Se window: "it holds 3.8 Se per Ta of the shell's 6".
+  2.3–2.7 Å Se–Ta–Se window: "it holds 3.8 Se per Ta of the shell's 6". Once per question: the
+  choice is remembered by (centre, partner, window), and a later call with that window runs in the
+  chosen one unasked (a model that repeats its cut window every round is asked once); a call
+  identical to one already answered from the cache asks nothing. A typed "Other" window goes to the
+  window the question was about (r12 or r23).
 - **Not asked:** a question that settles the choice itself — an ideal polyhedron it names that
   exactly one option's CN matches ("…compare them with an ideal octahedron": only the whole Ta–Se
-  shell holds 6), an element pair or triplet with a clear shell, a site number, a window or a
+  shell holds 6), the shell it names ("only the first Ta–Se peak" keeps a partial window as the
+  user's, confirmed; "the whole first shell", "the entire shell", "both peaks" run a cut window in
+  the whole shell), an element pair or triplet with a clear shell, a site number, a window or a
   tolerance in Å, a window the user chose earlier in the question. The six spot-check questions
   ask nothing.
 
@@ -325,11 +331,17 @@ clause, for a clear positive claim they contradict:
 | convergence | "converged", "reached convergence", "a plateau" while the history is still improving or diverging |
 | chirality | a group called chiral whose point group is not a Sohncke group (it has mirrors, glides or rotoinversions) |
 | centrosymmetry | a group called centrosymmetric whose point group has no inversion centre |
-| inversion lost | an inversion centre "lost" or "broken" when none of the groups named has one |
+| inversion lost | an inversion centre "lost" or "broken" when no group it could be lost from has one: neither the groups the answer names nor the parent (the context's average group, or the ladder's top) |
 | direction | a "preferred direction" when no directions analysis of the question found one at ≥ 3σ |
 
-A negated claim ("has not converged", "achiral", "no preferred direction"), a question, or a
-sentence that already says the right thing raises nothing; symbols are matched however written
+A negated claim ("has not converged", "achiral", "no preferred direction"), a question, a
+hypothetical or conditional mention ("to check whether it has converged", "until χ² plateaus", "I
+tested whether site 23 has a preferred direction", "a converged run would…"), or a sentence that
+already says the run still moves raises nothing. A negation counts only in the stretch of the
+clause just before the claim, after its last comma or "and"/"so": "With no remaining drift in χ²,
+the run has converged" is a claim. A chirality claim in a clause that names a group the checks do
+not know ("its subgroup P2₁2₁2 is chiral") is not pinned on the sentence's other groups. Symbols
+are matched however written
 (`P-42₁m`, `P−4 2_1 m`, `$P\bar{4}2_1m$`). Each finding shows as a **Check** line under the
 answer, and the Outcome chip is **lowered** (`lowerOutcome`): an answer the model called
 *achieved* or *partial* (or gave no verdict) becomes **Not verified**, with "the model said
@@ -339,8 +351,10 @@ answer, and the Outcome chip is **lowered** (`lowerOutcome`): an answer the mode
 **Facts the model reads.** `detect_symmetry` and the context's ladder state each point group's
 facts (`context/pointGroups.js`: crystal system, inversion centre, Sohncke class, polarity), so the
 model need not recall them (the spot check called P-42₁m chiral). `compute_bond_angles` returns the
-10° histogram sin θ-corrected as well (1 for random directions: raw counts deplete 180°), and for a
-whole shell of about six or four neighbours the split against an ideal octahedron (80 % cis at
+10° histogram sin θ-corrected as well (1 for random directions: raw counts deplete 180°; the
+engine's bins are shared out by overlap, so 15° or 30° bins leave no comb), and for a whole shell
+of about six or four neighbours, in an A–B–A triplet with one window (a mixed or split triplet's
+angles are a subset of the polyhedron's), the split against an ideal octahedron (80 % cis at
 90°, 20 % trans at 180°) or tetrahedron: the Demo's TaSe₆ shell is 80 % cis at a mean 89° and 20 %
 trans at 158.8°, which gemma4 had read from the raw modes as "highly distorted, 75–105°". A cut
 window gets no polyhedron reading (its CN 3.9 is not a tetrahedron).
@@ -413,13 +427,18 @@ each analysis adds up to 3,000 characters more.
   `options.num_predict` = that context minus the prompt, so a long reply stops at the limit
   instead of pushing the prompt's start out of the window. The size comes from a deliberately
   high estimate (`estimatePromptTokens`: 2.5 characters per token plus 8 per message; ~32 % above
-  gemma4's real count on the Demo).
+  gemma4's real count on the Demo). Tool results and call arguments, JSON dense with numbers,
+  count at 1.4 characters per token (`JSON_CHARS_PER_TOKEN`; gemma4 reads them at 1.64), so the
+  estimate errs high there too and `num_predict` never reaches into the prompt.
 - **It refuses rather than cuts.** When the request cannot fit even the model's maximum, the turn
   stops before anything is sent, with the sizes and what to do (a new conversation, analyses off,
   a model with a longer context). LM Studio fixes the context when a model is loaded: when the
   loaded model's window (`GET /api/v0/models`) cannot hold the prompt and 4,096 tokens of reply,
-  the turn stops with the context length to load it with. Cloud providers and other servers are
-  sent the request unchanged (only `localhost` or port 11434 is ever probed).
+  the turn stops with the context length to load it with. A model not loaded yet is loaded by the
+  request itself (JIT), with LM Studio's default context: its window is read at the reply's first
+  fragment, and one too small stops the reply before any of it is shown. Cloud providers and other
+  servers are sent the request unchanged (only `localhost` or port 11434 is ever probed); an API key
+  set for an Ollama behind a proxy is sent on the native path too.
 - **A backstop.** Ollama's `prompt_eval_count` is what the model read: the whole prompt, cached
   or not, and after a cut what was left. Below 0.4 of the estimate (`READ_SHARE_LIMIT`; an uncut
   request reads 0.74 of it, the cut one above 0.18) the turn stops with an error that says the
