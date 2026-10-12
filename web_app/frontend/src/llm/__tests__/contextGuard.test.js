@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isToolsUnsupportedError } from '../copilot/agentLoop';
 import {
-    CHARS_PER_TOKEN, CONTEXT_STEP, ContextLimitError, MIN_CONTEXT, REPLY_RESERVE_TOKENS,
+    CHARS_PER_TOKEN, CONTEXT_STEP, ContextLimitError, JSON_CHARS_PER_TOKEN, MIN_CONTEXT, REPLY_RESERVE_TOKENS,
     detectServer, estimatePromptTokens, forgetServers, planContext, streamCopilotChat
 } from '../provider/contextGuard';
 import { serverOrigin, streamOllamaChat, toOllamaMessages } from '../provider/ollama';
@@ -77,7 +77,20 @@ describe('the prompt estimate', () => {
         const withCall = estimatePromptTokens({
             messages: [{ role: 'assistant', content: null, tool_calls: [{ function: { name: 'echo', arguments: '{"value":1}' } }] }]
         });
-        expect(withCall).toBe(Math.ceil(15 / CHARS_PER_TOKEN) + 8);
+        expect(withCall).toBe(Math.ceil(4 / CHARS_PER_TOKEN + 11 / JSON_CHARS_PER_TOKEN) + 8);
+    });
+
+    it('errs high on tool results too, so the reply cap never exceeds the room left (review 2026-10-12 #8)', () => {
+        // Tool JSON dense with numbers: 1.64 characters per token on gemma4:26b.
+        const result = JSON.stringify({ data: { rows: Array.from({ length: 800 }, (_, i) => [i / 7, (i * 3) / 11]) } });
+        const real = result.length / 1.64;
+        const estimate = estimatePromptTokens({ messages: [{ role: 'tool', tool_call_id: 'c1', content: result }] });
+        expect(estimate).toBeGreaterThan(real);
+        // So numPredict = numCtx − estimate stays inside what the prompt leaves.
+        const plan = planContext({ estimate, loaded: 32768, max: 262144 });
+        expect(plan.numPredict).toBeLessThanOrEqual(plan.numCtx - real);
+        // And an uncut request still reads far above the backstop's 0.4 share.
+        expect(real / estimate).toBeGreaterThan(0.75);
     });
 });
 
@@ -230,9 +243,55 @@ describe('the Copilot on LM Studio', () => {
         const parts = await collect(streamCopilotChat({ baseUrl: 'http://localhost:1234/v1', model: 'qwen/qwen3.8-27b', ...bigRequest() }));
         expect(parts).toEqual([{ content: 'ok' }]);
     });
+
+    // LM Studio loads a model on its first request (JIT), with its own
+    // default context: not loaded when asked, loaded by the time it answers.
+    const jitStudio = (loadedContext) => {
+        let started = false;
+        let chatSignal = null;
+        vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
+            const path = new URL(url).pathname;
+            if (path === '/api/version') return json({ error: 'Unexpected endpoint or method. (GET /api/version)' });
+            if (path === '/api/v0/models') {
+                return json({ data: [started
+                    ? { id: 'qwen/qwen3.8-27b', state: 'loaded', loaded_context_length: loadedContext }
+                    : { id: 'qwen/qwen3.8-27b', state: 'not-loaded', max_context_length: 262144 }] });
+            }
+            if (path === '/v1/chat/completions') {
+                started = true;
+                chatSignal = options.signal;
+                return { ok: true, status: 200, body: streamOf([`data: ${JSON.stringify({ choices: [{ delta: { content: 'ok' } }] })}\n\ndata: [DONE]\n\n`]) };
+            }
+            return json({ error: 'not found' }, 404);
+        }));
+        return { signal: () => chatSignal };
+    };
+
+    it('checks a model it loads for the request, and stops a reply its window cut, unseen (review 2026-10-12 #8)', async () => {
+        const server = jitStudio(4096);
+        const parts = [];
+        await expect((async () => {
+            for await (const part of streamCopilotChat({ baseUrl: 'http://localhost:1234/v1', model: 'qwen/qwen3.8-27b', ...bigRequest() })) parts.push(part);
+        })()).rejects.toThrow(/LM Studio runs qwen\/qwen3\.8-27b with a 4,096-token context, .* LM Studio loaded it for this request with that context, so the reply was stopped unseen/);
+        expect(parts).toEqual([]);
+        expect(server.signal().aborted).toBe(true);
+        forgetServers();
+        jitStudio(80000);
+        await expect(collect(streamCopilotChat({ baseUrl: 'http://localhost:1234/v1', model: 'qwen/qwen3.8-27b', ...bigRequest() })))
+            .resolves.toEqual([{ content: 'ok' }]);
+    });
 });
 
 describe('Ollama native chat', () => {
+    it('sends the API key, as the /v1 path does (review 2026-10-12 #8)', async () => {
+        const fetchMock = vi.fn(async () => ({ ok: true, status: 200, body: streamOf([ndjson([{ message: { content: '' }, done: true, done_reason: 'stop' }])]) }));
+        vi.stubGlobal('fetch', fetchMock);
+        await collect(streamOllamaChat({ baseUrl: 'http://gpu-box:11434/v1', model: 'gemma4:26b', messages: [{ role: 'user', content: 'q' }], apiKey: 'k-1' }));
+        expect(fetchMock.mock.calls[0][1].headers).toEqual({ 'Content-Type': 'application/json', Authorization: 'Bearer k-1' });
+        await collect(streamOllamaChat({ baseUrl: 'http://localhost:11434/v1', model: 'gemma4:26b', messages: [{ role: 'user', content: 'q' }] }));
+        expect(fetchMock.mock.calls[1][1].headers).toEqual({ 'Content-Type': 'application/json' });
+    });
+
     it('converts OpenAI-style messages: string content, object arguments, named tool results', () => {
         expect(serverOrigin('http://localhost:11434/v1/')).toBe('http://localhost:11434');
         expect(toOllamaMessages([

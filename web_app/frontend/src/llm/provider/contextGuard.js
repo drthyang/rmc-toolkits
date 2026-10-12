@@ -19,6 +19,9 @@
 //     one; it refuses the turn when even the model's own maximum is too small.
 //   - LM Studio: the context is fixed when the model is loaded; when the loaded
 //     model's window is too small it refuses the turn and says what to change.
+//     A model not loaded yet is loaded by the request itself (JIT) with
+//     LM Studio's own default context: its window is checked once it is
+//     loaded, before any of the reply is shown.
 //   - Anything else (cloud, other servers) is sent unchanged (client.js).
 
 import { streamChat } from './client';
@@ -28,6 +31,10 @@ import { isLocalUrl } from './presets';
 // A deliberately low characters-per-token ratio, so the estimate errs high:
 // the prompt is English, JSON and numbers (~3–4 characters per token).
 export const CHARS_PER_TOKEN = 2.5;
+// Tool results and call arguments are JSON dense with numbers, which
+// tokenizes far finer: 1.64 characters per token measured on gemma4:26b
+// (the 2026-10-12 review). Counted at this ratio, so they err high too.
+export const JSON_CHARS_PER_TOKEN = 1.4;
 // Template tokens around each message.
 export const MESSAGE_OVERHEAD_TOKENS = 8;
 // Room for the reply (and a reasoning model's thinking) beyond the prompt.
@@ -59,17 +66,24 @@ export class ContextLimitError extends Error {
 
 const textLength = (value) => (typeof value === 'string' ? value.length : (value == null ? 0 : JSON.stringify(value).length));
 
-/** A conservative token count for the request: messages, tool calls, tool schemas. */
+/**
+ * A conservative token count for the request: messages and tool schemas at
+ * CHARS_PER_TOKEN, tool results and call arguments (JSON with numbers) at
+ * JSON_CHARS_PER_TOKEN.
+ */
 export const estimatePromptTokens = ({ messages = [], tools = null } = {}) => {
     let chars = 0;
+    let jsonChars = 0;
     for (const message of messages || []) {
-        chars += textLength(message.content);
+        if (message.role === 'tool') jsonChars += textLength(message.content);
+        else chars += textLength(message.content);
         for (const call of message.tool_calls || []) {
-            chars += textLength(call.function?.name) + textLength(call.function?.arguments);
+            chars += textLength(call.function?.name);
+            jsonChars += textLength(call.function?.arguments);
         }
     }
     if (Array.isArray(tools) && tools.length) chars += JSON.stringify(tools).length;
-    return Math.ceil(chars / CHARS_PER_TOKEN) + MESSAGE_OVERHEAD_TOKENS * (messages?.length || 0);
+    return Math.ceil(chars / CHARS_PER_TOKEN + jsonChars / JSON_CHARS_PER_TOKEN) + MESSAGE_OVERHEAD_TOKENS * (messages?.length || 0);
 };
 
 const formatTokens = (count) => Math.round(count).toLocaleString('en-US');
@@ -225,7 +239,7 @@ export async function* streamCopilotChat({
         }
         if (session) session[key] = plan.numCtx;
         for await (const chunk of streamOllamaChat({
-            baseUrl, model, messages, tools, temperature, numCtx: plan.numCtx, numPredict: plan.numPredict, signal
+            baseUrl, model, messages, tools, temperature, apiKey, numCtx: plan.numCtx, numPredict: plan.numPredict, signal
         })) {
             // A backstop: the request was sized to fit, so a cut means the
             // server did not honour the context asked for.
@@ -243,16 +257,44 @@ export async function* streamCopilotChat({
         return;
     }
     if (server.kind === 'lmstudio') {
-        const loaded = await lmStudioLoadedContext(baseUrl, model, { signal });
         const needed = estimate + LMSTUDIO_REPLY_MIN_TOKENS;
-        if (Number.isFinite(loaded) && loaded < needed) {
+        const tooSmall = (loaded, sent) => {
             const suggest = Math.max(MIN_CONTEXT, Math.ceil((estimate + REPLY_RESERVE_TOKENS) / CONTEXT_STEP) * CONTEXT_STEP);
-            throw new ContextLimitError(
+            return new ContextLimitError(
                 `LM Studio runs ${model} with a ${formatTokens(loaded)}-token context, but this request needs about `
                 + `${formatTokens(needed)} (${WHAT_IT_HOLDS}). Reload the model in LM Studio with a context length of at least `
-                + `${formatTokens(suggest)}. Nothing was sent: the model would have answered without part of its instructions.`,
+                + `${formatTokens(suggest)}. ${sent
+                    ? 'LM Studio loaded it for this request with that context, so the reply was stopped unseen'
+                    : 'Nothing was sent'}: the model would have answered without part of its instructions.`,
                 { needed, available: loaded }
             );
+        };
+        const loaded = await lmStudioLoadedContext(baseUrl, model, { signal });
+        if (Number.isFinite(loaded) && loaded < needed) throw tooSmall(loaded, false);
+        if (!Number.isFinite(loaded)) {
+            // Not loaded: this request loads it (JIT) with LM Studio's default
+            // context. Its window is read once it is loaded, at the first
+            // fragment, and a window too small stops the reply unseen.
+            const request = new AbortController();
+            const onAbort = () => request.abort();
+            signal?.addEventListener('abort', onAbort, { once: true });
+            try {
+                let checked = false;
+                for await (const chunk of streamChat({ baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal: request.signal })) {
+                    if (!checked) {
+                        checked = true;
+                        const now = await lmStudioLoadedContext(baseUrl, model, { signal });
+                        if (Number.isFinite(now) && now < needed) {
+                            request.abort();
+                            throw tooSmall(now, true);
+                        }
+                    }
+                    yield chunk;
+                }
+            } finally {
+                signal?.removeEventListener('abort', onAbort);
+            }
+            return;
         }
     }
     yield* streamChat({ baseUrl, model, temperature, apiKey, messages, tools, toolChoice, signal });
