@@ -14,6 +14,7 @@ import {
     buildCopilotTools,
     cartesianToUvw,
     summarizeBondAngles,
+    tenDegreeBins,
     summarizeClusters,
     summarizeModulations,
     summarizeOrientation,
@@ -267,6 +268,45 @@ describe('Copilot summarizers', () => {
                 + 'Use the whole shell (find_gr_peaks\' first_shell.window_A). If the user wants this window, ask them (ask_user) '
                 + 'and call again with window_confirmed: true.'
         }]);
+    });
+
+    it('bond-angle reference: only an A–B–A triplet in one window is read against a polyhedron (review 2026-10-12 #5)', () => {
+        // Six Se per Ta, every angle near 90°: a whole octahedral shell's
+        // numbers, but for a mixed or a split triplet the angles are a subset.
+        const base = {
+            angleCount: 15, apexCount: 1, coordination: [0, 0, 0, 0, 0, 0, 1],
+            binCenters: [89.5, 90.5], counts: [8, 7], meanAngle: 90, stdAngle: 0.5,
+            lengths12: { meanLength: 2.6, uniqueBonds: 6 }
+        };
+        const mixed = summarizeBondAngles({ ...base, triplet: ['Se', 'Ta', 'Te'], sharedEnds: false, bond23: [2.4, 2.9] });
+        expect(mixed.data).not.toHaveProperty('polyhedron');
+        expect(mixed.checks.map((check) => check.level)).toEqual(['ok']);
+        const split = summarizeBondAngles({ ...base, triplet: ['Se', 'Ta', 'Se'], sharedEnds: false, bond12: [2.3, 2.6], bond23: [2.6, 2.9] });
+        expect(split.data).not.toHaveProperty('polyhedron');
+        // One shell: read against the octahedron; no trans angles is "none", never "null°".
+        const shell = summarizeBondAngles({ ...base, triplet: ['Se', 'Ta', 'Se'], sharedEnds: true });
+        expect(shell.data.polyhedron.trans_above_135_deg).toEqual({ share: 0, mean_deg: null });
+        expect(shell.checks[1].text).toMatch(/0 % of these angles lie above 135° \(mean none\)/);
+        expect(shell.checks[1].text).not.toMatch(/null/);
+    });
+
+    it('bond-angle histograms: wide engine bins are shared by overlap, not combed (review 2026-10-12 #5)', () => {
+        // A flat distribution in 15° bins: each 10° bin gets two thirds of one.
+        const centers = Array.from({ length: 12 }, (_, i) => 7.5 + 15 * i);
+        const flat = tenDegreeBins(centers, centers.map(() => 150));
+        flat.forEach((value) => expect(value).toBeCloseTo(100, 9));
+        // 30° bins too, and 1° bins as before (whole bins).
+        const wide = tenDegreeBins([15, 45, 75, 105, 135, 165], [300, 300, 300, 300, 300, 300]);
+        wide.forEach((value) => expect(value).toBeCloseTo(100, 9));
+        const fine = Array.from({ length: 180 }, (_, i) => i + 0.5);
+        expect(tenDegreeBins(fine, fine.map((_, i) => i))).toEqual(
+            Array.from({ length: 18 }, (_, j) => Array.from({ length: 10 }, (_, k) => 10 * j + k).reduce((sum, value) => sum + value, 0))
+        );
+        const summary = summarizeBondAngles({
+            triplet: ['Se', 'Ta', 'Se'], sharedEnds: true, angleCount: 1800, apexCount: 100, coordination: [0, 0, 0, 0, 0, 0, 100],
+            binCenters: centers, counts: centers.map(() => 150), meanAngle: 90, stdAngle: 50, lengths12: { meanLength: 2.6, uniqueBonds: 600 }
+        });
+        expect(summary.data.histogram_10deg.every((value) => value > 0.05)).toBe(true);
     });
 
     it('cluster checks: an extended network and an empty window fail with advice', () => {
