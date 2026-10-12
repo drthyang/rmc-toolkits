@@ -345,6 +345,19 @@ describe('runCopilotTurn', () => {
         expect(total).toBeLessThanOrEqual(1500);
     });
 
+    it('shows the result the model read, fitted to its budget (review 2026-10-12 #13)', async () => {
+        const big = echoTool({
+            run: async ({ value }) => ({ data: { value, rows: Array.from({ length: 2000 }, (_, index) => index) }, checks: [] })
+        });
+        const { callModel, requests } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 900 } }));
+        const end = events.find((event) => event.type === 'tool_end');
+        const read = JSON.parse(requests[1].messages.find((message) => message.role === 'tool').content).data;
+        expect(end.data).toEqual(read);
+        expect(end.data.rows.length).toBeLessThan(2000);
+        expect(end.data.rows_omitted).toBeGreaterThan(0);
+    });
+
     it('aborts the tool\'s own signal when it times out', async () => {
         let seen = null;
         const slow = echoTool({ run: (args, { signal }) => { seen = signal; return new Promise(() => {}); } });
