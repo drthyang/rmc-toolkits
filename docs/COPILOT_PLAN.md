@@ -1,9 +1,11 @@
 # AI Copilot — implementation plan
 
-Status: **built 2026-10-09** (uncommitted at the time of writing), then turned from a page into
-a chatbox the same day (§11). The plan below was reviewed
-independently before and during the build; §10 records each finding and what changed. Where §10
-and the sections above disagree, §10 wins. Replaces the chat-only
+Status: **built** (PR #55), then turned from a page into a floating chatbox (§11), then docked
+beside the pages, pointing at what it explains (§12). The plan below was reviewed independently
+before and during the build; §10 records each finding and what changed. Where §10 and the sections
+above disagree, §10 wins. Later changes (ask_user and the Workbench's own questions, the context
+guard, the checks on the answer, skills) are described in the
+[Copilot guide](../web_app/frontend/src/llm/README.md) and the [changelog](CHANGELOG.md). Replaces the chat-only
 **AI Assistant** page with an **AI Copilot** that runs the Workbench's analyses itself, reads what
 came back, and says whether the result answers the question.
 

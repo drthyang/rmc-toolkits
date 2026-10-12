@@ -2,8 +2,8 @@
 
 The **AI Copilot** connects the RMCProfile Workbench to an **OpenAI-compatible** LLM: a **local**
 server the user runs (Ollama, LM Studio) or a **cloud** provider (OpenAI, Gemini, Anthropic) with an
-API key. It replaced the chat-only AI Assistant on 2026-10-09. The Assistant answered from one fixed
-summary of the run. The Copilot also **runs the Workbench analyses itself**, reads what came back,
+API key. It replaced the chat-only AI Assistant, which answered from one fixed
+summary of the run; the Copilot also **runs the Workbench analyses itself**, reads what came back,
 and judges whether that answers the question.
 
 It is **docked beside the pages**, not over them, and it **points at the page** while it explains:
@@ -14,8 +14,9 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
   container queries), so it never covers a card. Drag its left edge (or focus the edge and use
   ←/→, Home/End; double-click or Enter resets) to resize it; the pages always keep at least
   760 px. On tablets in portrait, phones and short windows it is a **bottom sheet** in its own grid row,
-  resized from its top edge; when the agent brings a card on screen, the sheet comes down (to 28 %
-  of the window at most) until the card fits whole above it. Collapsed (the chevron, or Esc inside it) it is a slim **rail** at the
+  resized from its top edge; when the agent brings a card on screen, the sheet comes down until the
+  card fits whole above it (to at most 50 % of the window while a card is in focus, never below
+  28 %). Collapsed (the chevron, or Esc inside it) it is a slim **rail** at the
   right edge, or a bar at the bottom, with a red dot when an answer arrived while it was
   collapsed. The open state, the width and the sheet height are remembered
   (`localStorage` `rmc-llm-dock-v1`).
@@ -124,7 +125,7 @@ inputs on its page, stays the *user's* action.
      change the arguments on a `fail`, never repeat an identical call. It also asks for the verdict
      line. `copilotSystemPrompt()` adds `ASK_RULES` when `ask_user` is offered.
    - `buildCopilotMessages()` puts the context, inside a fenced JSON block, ahead of the
-     conversation. Earlier turns travel as question + final answer only (the newest 8).
+     conversation. Earlier turns travel as question + final answer only (the newest 8 messages: 4 exchanges).
    - `prompts/templates.js` holds the watchdog's rigid `STATUS: …` prompt and its parser.
 3. **`provider/client.js`** is a hand-rolled OpenAI-compatible client (`/models`,
    `/chat/completions`) with an SSE stream parser over `fetch` + `ReadableStream`.
@@ -381,8 +382,10 @@ from the spot check and the review:
 A local server runs a model with a fixed context window, and a prompt longer than the window is not
 refused: it is shortened to fit, without an error, and the model answers without part of what it
 was given. The Copilot's prompt is long. On the Demo the first request is ~28,400 characters (the
-rules 8,500, the run context 5,000, fourteen tool schemas 14,800), which gemma4's tokenizer reads
-as ~8,600 tokens (the Ollama log recorded 8,025–8,421 for the same request before `ask_user`);
+rules 8,500, the run context 5,000, fourteen tool schemas 14,800; measured before `read_skill` and
+the skills index were added, which bring 15 tools and ~2,150 characters more), which gemma4's
+tokenizer reads as ~8,600 tokens (the Ollama log recorded 8,025–8,421 for the same request before
+`ask_user`);
 each analysis adds up to 3,000 characters more.
 
 - **Ollama's OpenAI-compatible endpoint cannot carry a context length.** It runs the model at the
@@ -442,6 +445,8 @@ The host passes engine tools as plain objects; the module validates and runs the
   interactive: true,                     // waits for the user (ask_user): never cached, no time limit (optional)
   shellWindows: (args) => [{ centre, partner, window: [lo, hi], apply: ([lo, hi], { confirmed }) => args }],
                                          // its bond windows, checked against the shells before it runs (optional)
+  resultBudget: 9000,                    // its own result budget in characters (read_skill) (optional)
+  keep: true,                            // its result is never compacted later in the question (optional)
   run: async (args, { signal, focus, askUser }) => ({ data, checks, facts }),
 }
 ```
@@ -618,7 +623,8 @@ LaTeX raw (`$U_{iso}$`; it now renders as Markdown inline), and chips written as
 reference (`<card:direction-sphere>`) read "card:direction-sphere" (they now show the card's
 title; a re-run of the last question confirmed it). The model's numbers for the sphere differ
 from the drawn map because the tool lets the engine choose the resolution while the page keeps
-its own (ν = 10, smoothed), as noted under *Show in*.
+its own (ν = 10, smoothed), as noted under *Show in* in
+[ai-assistant.md Step 17](../../../../docs/algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict).
 
 ## Import boundary and extraction recipe
 
@@ -627,7 +633,7 @@ This module is designed to be lifted into its own repository:
 - Run data and engine tools enter **only as props** to `CopilotChat` (`runName`, `plotFiles`,
   `rValueFile`, `structure`, `symmetry`, `runSettings`, `pcaSites`, `liveData`, `tools`, `pages`,
   `onOpenPage`, `runKey`, `onOpenChange`, `cards`, `onMarks`, `onLayoutChange`, `className`,
-  `storageKey`) and `WatchdogBadge` (`rValueFile`). The host renders `CopilotChat` once, as the
+  `storageKey`, `skills`) and `WatchdogBadge` (`rValueFile`). The host renders `CopilotChat` once, as the
   last child of its app grid, and places it by its `data-mode`: a column right of the pages
   (`docked`) or a row under them (`sheet`). The page cards it may point at carry
   `data-copilot-card`. Nothing in `src/llm/` imports

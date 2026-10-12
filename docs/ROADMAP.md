@@ -77,28 +77,28 @@ Goal: make the app useful at the end of a research session. **Status: in progres
 
 - Export individual plots as PNG and SVG, and bundle a whole dashboard into one `.zip`. **Done.**
   CSV (raw series) export is *planned*.
-- Export project summary as JSON. *(Partial — the AI assistant's context builder assembles a
+- Export project summary as JSON. *(Partial — the AI Copilot's context builder assembles a
   compact run-summary JSON, viewable in its "context sent to the model" inspector.)*
 - Generate a reproducible report containing input directory, detected files, software version, plot
-  parameters, Rwp metrics, lattice metadata, and selected figures. *(Partial — the experimental AI
-  assistant exports a Markdown run report with model summary, Rwp metrics, and convergence tables,
-  plus an optional LLM-written assessment; figures and plot parameters still planned.)*
+  parameters, Rwp metrics, lattice metadata, and selected figures. *(Planned. The chat-only
+  assistant's Markdown run report was removed with it.)*
 - Add figure presets for manuscript, talk, and notebook usage. *(Planned.)*
 
-### Experimental: AI assistant (local LLM)
+### Experimental: AI Copilot
 
-An experimental track (module `web_app/frontend/src/llm/`, see its README) connecting the dashboard
-to a user-run local LLM (Ollama / LM Studio) straight from the browser — no server, no API keys,
-data stays local:
+An experimental track (module `web_app/frontend/src/llm/`, see its README and
+[COPILOT_PLAN.md](COPILOT_PLAN.md)) connecting the Workbench to a model straight from the browser:
+a local one the user runs (Ollama, LM Studio; run data stays on the machine) or a cloud one with
+the user's key.
 
-- Run summary/assessment, chat Q&A over the loaded run, Markdown report generation, and a live
-  convergence watchdog (heuristics-first, LLM-narrated). **Done (experimental).**
-- Possible next steps: feed KDE/symmetry findings into the context, run comparison Q&A, and a
-  guided "why is my fit bad?" diagnostic flow.
-- Since 2026-10-09 this is the **AI Copilot** (it runs the analyses itself; see the llm README and
-  [COPILOT_PLAN.md](COPILOT_PLAN.md)).
+- The AI Copilot docked beside the pages: it runs the Workbench analyses itself, checks each result
+  and its own answer, asks when a choice changes the result (and the Workbench asks itself where the
+  run data show one), follows written skills, points at the cards it explains, and keeps a
+  convergence watchdog badge (heuristics-first, LLM-narrated). **Done (experimental).**
+- Possible next steps: feed KDE-slice findings into the context, run comparison Q&A, and a guided
+  "why is my fit bad?" diagnostic flow.
 
-### AI Copilot speed (planned; deferred 2026-10-11)
+### AI Copilot speed (planned; deferred)
 
 The maintainer found local models "a bit slow" and asked whether the laptop or the agent's workflow
 was at fault. On 2026-10-11 they put speed **after** correctness: the tools, the workflow's
@@ -144,7 +144,8 @@ the llm README, gemma4:26b, `main` against the branch):
    the Copilot opens: load it and process the static part of the prompt once, which also leaves a
    sliding-window checkpoint at the end of that prefix so every new question reuses it.
 3. **Prompt caching:** keep the static prefix (rules, tool schemas, then the run context)
-   byte-identical across questions; the tool schemas are the largest part (~14,800 characters).
+   byte-identical across questions; the tool schemas are the largest part (~14,800 characters,
+   measured on the Demo before `read_skill` and the skills index were added).
    Sending only a page's or question's tool group would change that prefix, so do it only if the
    cache keeps working.
 4. **Reasoning control, "Fast / Thorough":** little thinking while choosing tools and normal
@@ -190,7 +191,7 @@ focus.**
 - Presets for common dataset combinations (neutron / x-ray total scattering, combined runs, and
   runs that include RMCProfile EXAFS datasets).
 
-### Preprocessing — Auto StoG (ACTIVE; shipped 2026-07-17)
+### Preprocessing — Auto StoG (ACTIVE; shipped)
 
 The former "deferred preprocessing" precondition — a dedicated preprocessing module with a clear
 user path — is met: `rmc_toolkits.scaling`/`transforms`/`scattering` (the auto-scaling engine,
@@ -212,7 +213,7 @@ validation record: [STOG_SCALING_PLAN.md](STOG_SCALING_PLAN.md).
 ## Phase 8: Remote / HPC Run Monitoring
 
 Goal: **monitor RMCProfile runs executing on an HPC cluster** with the same feature set available
-today (dashboard R-values/convergence, Atomic Density, PCA Ellipsoid, AI assistant, Live Data),
+today (dashboard R-values/convergence, Atomic Density, PCA Ellipsoid, AI Copilot, Live Data),
 without hand-copying the run down. **Status: planned.** Full design in
 [`docs/HPC_MONITORING_PLAN.md`](HPC_MONITORING_PLAN.md) (written for both this project and the
 RMCProfile team).

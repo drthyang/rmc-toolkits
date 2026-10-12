@@ -267,8 +267,9 @@ mode and refuses a non-finite fit (as `_require_finite_scaling()`); the structur
 `maxPoints` as an integer clamped to [100, 10⁶], as `/api/structure` does. Every worker answers a
 null or malformed message with an error, so the page's request always settles.
 
-**Caching and freshness.** The KDE-slice, PCA (`sites`/`kde`/`orientation`), triplets and scaling
-routes keep small in-process LRU caches of parsed files (`_FileCache` in `app.py`). Every cache key
+**Caching and freshness.** The KDE-slice, PCA (`sites`/`kde`/`orientation`), triplets, clusters and
+scaling routes keep small in-process LRU caches of parsed files (`_FileCache` in `app.py`;
+`/api/modulations` reuses the sites cache). Every cache key
 is the file's signature `(st_mtime_ns, st_ctime_ns, st_size, st_ino)` from `_file_signature()`,
 never `st_mtime` alone, so a file rewritten within the same whole-second mtime (sshfs/SFTP mounts,
 `scp -p`, rsync from a coarse filesystem) is re-parsed. The signature is taken again after each
@@ -276,7 +277,7 @@ parse: a parse of a file that changed while it was being read is never cached �
 under the new signature, and if the file changes again (a writer still busy) the request fails
 with **409** and a "changed while it was being read" message instead of returning a torn result.
 
-The table lists all 15 routes. A `dir` parameter names a run folder (the backend picks its
+The table lists all 17 API routes. A `dir` parameter names a run folder (the backend picks its
 `.rmc6f` by output-stem match, else the first alphabetically); `path` names one file. Booleans in
 query strings are true for `1`/`true`/`yes`. JSON-body booleans (`lorch`, `robust`, `force`,
 `overwrite`, `inspect`, …) must be `true`/`false`, `0`/`1`, or one of the words
@@ -343,7 +344,7 @@ python src/RMC_plot.py --dir /tmp/rmc_demo --save --no-show
 source .venv/bin/activate
 MPLCONFIGDIR=/tmp/rmc_toolkits_matplotlib python -m unittest discover -s tests
 
-# Frontend unit tests (vitest: engine ports and their Python goldens, components, AI assistant)
+# Frontend unit tests (vitest: engine ports and their Python goldens, components, AI Copilot)
 cd web_app/frontend && npm test
 ```
 

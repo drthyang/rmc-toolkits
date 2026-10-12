@@ -104,8 +104,8 @@ specificity ties, so it waits for a visible-change pass.
 ### The Problems section (errors are never silent)
 
 Every workspace page lists what is wrong on it in one compact section at its
-top (`<PageIssues />`, first child of the page; App.jsx places it above the AI
-Assistant and Auto StoG pages, which cannot import the kit's hooks). It renders
+top (`<PageIssues />`, first child of the page; App.jsx places it above the Auto
+StoG page, which cannot place it itself). It renders
 nothing when the page has no problem, so the layout only changes when
 something is wrong. Report through the hooks in `issueStore.js`, never through
 a page-level danger or caution banner:

@@ -12,8 +12,8 @@ page section before changing an engine, and update it when the math changes.
 
 Post-processing for **RMCProfile** modeling outputs, in three layers. RMCProfile performs atomistic
 configuration optimization under experimental constraints; avoid calling those runs
-"refinements" (Rietveld-style parameter refinement is a different workflow). Since 2026-07-17 the
-app also covers the *pre*-processing step: **Auto StoG** (`rmc_toolkits/scaling.py` + the
+"refinements" (Rietveld-style parameter refinement is a different workflow). The app also covers
+the *pre*-processing step: **Auto StoG** (`rmc_toolkits/scaling.py` + the
 `rmc-autoscale` CLI + the Auto StoG tab, which the shipped build hides with `SHOW_AUTO_STOG = false`
 in `App.jsx`) automatically scales measured total-scattering S(Q) and writes the classic
 stog/RMCProfile-ready file family — see
@@ -75,7 +75,7 @@ web_app/frontend/src/
   colormaps.js                   colormap LUTs for the KDE canvas
   atomColors.js                  the one element-colour map per model (CPK/Jmol table + fallbacks, placed by abundance, similar colours separated in OKLab incl. simulated colour-blind vision; speciesCounts, elementColorNote) — every page that draws atoms
   plotPalette.js                 InteractivePlot series colours (its own module for Fast Refresh)
-  figureExport.js                PNG/SVG figure export and downloadBlob/sanitizeFilename (the one host module src/llm may import)
+  figureExport.js                PNG/SVG figure export and downloadBlob/sanitizeFilename
   zipArchive.js                  dependency-free store-only ZIP writer ("Save all figures", Auto StoG export)
   moveStats.js                   per-atom sampling ratios from the .rmc6f move counters (Model information card)
   structureReport.js             whether a structure read looks mid-write (Live Data keeps the previous summary)
@@ -91,7 +91,7 @@ web_app/frontend/src/
   cameraPose.js                  readPose / applyPose / turnTo: the 650 ms slerp of a camera turn (immediate under reduced motion), exact final pose, damping flushed
   api.js                         frontend API base URL config (VITE_API_BASE_URL)
   uiScale.js                     root type size / 15px (2K / 4K scale) for code that draws in CSS px: canvas text, the 'fit' plot viewBox
-  llm/                           experimental AI Copilot (replaced the chat-only AI Assistant 2026-10-09) — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini/Anthropic) that runs the analyses itself; see its README
+  llm/                           experimental AI Copilot (it replaced the chat-only AI Assistant) — local LLM (Ollama/LM Studio) or cloud (OpenAI/Gemini/Anthropic) that runs the analyses itself; see its README
     context/                     dashboard state → compact LLM context JSON (symmetry + per-site displacements, pair correlations, char budget); pointGroups.js: what a point group implies (inversion centre, Sohncke, polar, crystal system), exported for the host's detect_symmetry
     provider/client.js           OpenAI-compatible client (models, SSE streaming incl. reasoning and tool-call fragments with extra_content, HTTP status on errors, connection hints)
     provider/contextGuard.js     the Copilot's model call (streamCopilotChat): never sends a request the model would cut — Ollama (detected by /api/version) through its native /api/chat (ollama.js, NDJSON) with num_ctx sized from a conservative prompt estimate + num_predict inside it; refuses a turn the model's maximum, or LM Studio's loaded context (/api/v0/models), cannot hold; cloud and other servers unchanged
@@ -240,8 +240,8 @@ web_app/frontend/src/
   and the PCA Ellipsoid table shows that representative.
 - **Errors are never silent: the Problems section.** Every workspace page lists every error and
   warning on it in one compact section at its top (`PageIssues`, kit `ui-issues`; App.jsx wraps the
-  app in `IssueStoreProvider`, each page in `IssueScope`, and places the section above the AI
-  Copilot and Auto StoG pages). Report with `useIssue` (a condition), `useIssueSet` (a list) or
+  app in `IssueStoreProvider`, each page in `IssueScope`, and places the section above the Auto StoG
+  page, which cannot place it itself). Report with `useIssue` (a condition), `useIssueSet` (a list) or
   `useReportIssue` (a one-off failure, until the same action succeeds, it is dismissed, or another
   run opens) — never with a page-level danger/caution banner, and never by swallowing a rejection.
   `SaveMenu` lists every failed figure save; `IssueWatcher` lists any uncaught error or rejected
@@ -440,13 +440,13 @@ web_app/frontend/src/
   states to its own `llm-*` classes) — never a bare `.is-*` rule. Adding a variant or component: `src/ui/README.md`.
 - **`src/llm/` import boundary**: the AI Copilot module receives run data **only as props**
   (`runName`, `plotFiles`, `rValueFile`, `structure`, `symmetry`, `runSettings`, `pcaSites`,
-  `liveData`) and must not import from the rest of the app except `figureExport.js`
-  (`downloadBlob`/`sanitizeFilename`). The engines reach it the same way: the host builds the
+  `liveData`) and must not import from the rest of the app. The engines reach it the same way: the host builds the
   tool objects (`copilotTools.js`, the contract in `llm/copilot/tools.js` and the llm README) and
   passes them as the `tools` prop of `CopilotChat` (the dock the host renders once, beside its
   pages), with `pages`/`onOpenPage(key, params)` for a step's Show in / Open button (`params` =
   the tool's optional `pageParams(args)`; a view tool's page switch passes null), `runKey` (a new
-  run restarts the conversation), `onOpenChange`, `cards`, `onMarks` and `onLayoutChange`.
+  run restarts the conversation), `onOpenChange`, `cards`, `onMarks`, `onLayoutChange` and `skills`
+  (the host's bundled `.claude/skills`, `copilotSkills.js`).
   Analysis tools compute and return `{ data, checks }`; none may navigate, change shared state or
   write a file — the user presses Show in. View tools (below) change only what is on screen. Cell math
   is duplicated from `ModelSummary.jsx` on purpose. This keeps the module extractable — don't
@@ -458,8 +458,8 @@ web_app/frontend/src/
   (a step's Show in / Open button); the dock, rail and sheet are the module's own look
   (`CopilotChat.css`), placed by the host in its own grid track (App.css `.app-copilot`, by
   `data-mode`), never over a page. A kit token its own CSS reads keeps the old literal as a fallback
-  (`var(--warning, #b45309)`), so an extracted copy still renders. **View tools** (since
-  2026-10-10, the maintainer's decision): `highlight_cards` (module, from the `cards` prop),
+  (`var(--warning, #b45309)`), so an extracted copy still renders. **View tools** (the
+  maintainer's decision): `highlight_cards` (module, from the `cards` prop),
   `orient_3d_view` and `current_view` (host, `copilotViewTools.js`) may open a page, scroll, give a
   card its breathing edge (`data-copilot-focus`, Copilot.css), mark a plot, turn a 3D camera, ring
   sites, and select a site as a click would — never change data, an analysis input, the shared
@@ -564,9 +564,10 @@ plot-parity tests, so those run in CI.
 12. AI Copilot phase 2 ([docs/COPILOT_PLAN.md](docs/COPILOT_PLAN.md) §9, §11): Show in for the
     PCA Ellipsoid and Atomic Density pages (only Bond Geometry and Displacement Directions take a
     `request` today); the Copilot now changes what is on screen through its view tools (card
-    focus, plot marks, 3D cameras, site selection — 2026-10-10), but not a page's analysis inputs;
+    focus, plot marks, 3D cameras, site selection), but not a page's analysis inputs;
     more tools (KDE slice statistics, CIF export behind a user confirmation); marks on the Bond
-    Geometry angle plot; persisted conversations. Live checks against each provider (Ollama, LM Studio, OpenAI, Gemini, Anthropic)
-    still need a real model and keys: the dialect handling is unit-tested on recorded shapes only.
+    Geometry angle plot; persisted conversations. Ollama and LM Studio have been checked with real
+    models (llm README, *Tested with real models*); the cloud providers (OpenAI, Gemini, Anthropic)
+    still need keys: their dialect handling is unit-tested on recorded shapes only.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phased plan.

@@ -86,12 +86,19 @@ against a cloud provider (OpenAI, Gemini, Anthropic) with your own API key.
 
 What the Copilot can do:
 
-- With a model that can call tools (e.g. `qwen3`, `llama3.1`), it runs the analyses itself: the
+- With a model that can call tools (e.g. `gemma4`, `qwen3`), it runs the analyses itself: the
   site table, displacement directions, bond angles, symmetry at a tolerance, g(r) peaks and
-  convergence.
+  coordination shells, convergence, where the fit misses the data (`compare_fit`), cluster
+  distortion against independent atoms (`analyze_clusters`) and order that enlarges the cell
+  (`analyze_modulations`).
 - It checks each result and retries when a check fails, for example by widening an empty bond
   window.
-- It ends with an **Outcome** verdict.
+- When a choice changes the result (which coordination shell, which neighbours, one site or all),
+  it asks a short question with the options and a default; where the run data show such a choice,
+  the Workbench asks it itself before the model guesses.
+- It ends with an **Outcome** verdict. Its answer is checked against what the analyses and the run
+  found: a contradiction (say, "converged" while the history is still falling) adds a **Check**
+  line and lowers the verdict to **Not verified**.
 - A step's *Show in* button loads the same analysis on its page, beside the chat.
 - It points at what it explains: the cards it talks about breathe a blue edge, it marks the peaks
   it names, its answers cite cards as chips you can click, and it turns a 3D view to look down
@@ -124,7 +131,7 @@ Firefox, or run the app locally over http so the page and the model share the `l
 cd web_app/frontend && VITE_STATIC_MODE=true npm run dev
 ```
 
-**Cloud note:** OpenAI/Gemini need no server, but your (summarized) run data is sent to that provider
+**Cloud note:** OpenAI, Gemini and Anthropic need no server, but your (summarized) run data is sent to that provider
 — the app labels those options and warns before you use them. API keys are stored in your browser only.
 
 ## 5. If Port 5000 Is Busy
@@ -168,6 +175,6 @@ rendered inline (recorded with the earlier chat-only version of the AI Copilot):
 ## Want the math?
 
 Every number on every page — how a density map is smoothed, how the space group is decided, how
-S(Q) is put on absolute scale, what the AI assistant sends and where — is written up, formula by
+S(Q) is put on absolute scale, what the AI Copilot sends and where — is written up, formula by
 formula and anchored to the function that implements it, in
 [docs/ALGORITHMS.md](docs/ALGORITHMS.md). The approximations and limitations are listed there too.

@@ -8,7 +8,7 @@ The page covers three things:
 - which analyses it may run while it answers, and the deterministic checks on each result;
 - exactly what data leaves the device.
 
-The **AI Copilot** replaced the chat-only **AI Assistant** on 2026-10-09. The run context (Steps
+The **AI Copilot** replaced the chat-only **AI Assistant**. The run context (Steps
 1–12), the watchdog (Steps 14–15) and the transport (Step 16) are the Assistant's, unchanged. Step 13
 describes the Copilot's messages and Step 17 its tool loop. Section anchors keep their old names.
 
@@ -52,7 +52,7 @@ Workbench, and points at the page while it explains (Step 17, *View tools*).
 There is also an optional **convergence watchdog** chip on the Dashboard's R-value card. Neither
 feature sends your run files anywhere.
 
-The app first *computes a compact summary* of the run: a JSON object targeted at ~4,500 characters
+The app first *computes a compact summary* of the run: a JSON object targeted at ~6,000 characters
 (a best-effort budget, not a hard cap; see Step 12). It hands that summary and your question to the
 OpenAI-compatible chat endpoint you configured. When the model asks for an analysis, the Copilot runs
 it in the browser (or through the Flask engines in server mode) and sends back a compact result with
@@ -65,7 +65,8 @@ it receives run data **only as React props** and imports nothing from the rest o
 import-boundary rule in [AGENTS.md](../../AGENTS.md) and [`src/llm/README.md`](../../web_app/frontend/src/llm/README.md)).
 There is no Python counterpart: none of this exists in `rmc_toolkits/`. The Flask backend is never
 involved in a model request. It is involved only when a Copilot analysis of a typed server folder
-runs the same `/api/pca/*` and `/api/triplets` routes the pages use. The host builds those tools in
+runs the same `/api/pca/*`, `/api/triplets`, `/api/clusters` and `/api/modulations` routes the pages
+and the tools use. The host builds those tools in
 [`copilotTools.js`](../../web_app/frontend/src/copilotTools.js) and passes them in as a prop.
 
 Two things in this section are computed statistics that a scientist should be able to audit:
@@ -81,14 +82,18 @@ Two things in this section are computed statistics that a scientist should be ab
 
 ### Data flow — precisely what leaves the device
 
-This subsection is normative: it is derived from the only two `fetch()` calls in the whole module, both
-in [`llm/provider/client.js`](../../web_app/frontend/src/llm/provider/client.js).
+This subsection is normative: it is derived from every `fetch()` in the module — in
+[`llm/provider/client.js`](../../web_app/frontend/src/llm/provider/client.js),
+[`llm/provider/contextGuard.js`](../../web_app/frontend/src/llm/provider/contextGuard.js) and
+[`llm/provider/ollama.js`](../../web_app/frontend/src/llm/provider/ollama.js).
 
 | # | When | Request | Run-derived payload |
 |---|------|---------|---------------------|
 | 1 | AI Copilot dock first opened (automatic, once per base URL; at load when it was left open), or **Test** pressed | `GET {baseUrl}/models` → `listModels()` | **None.** Only the API key, if one is set. |
-| 2 | You send a question | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~4,500 chars, best-effort; Step 12), the system prompt, the last 8 memory messages (questions and final answers only) and your question. With analyses on, the tool definitions (names, descriptions, argument schemas). |
+| 2 | You send a question | `POST {baseUrl}/chat/completions` (`stream: true`) → `postChat()` via `streamChat()` | The summarized context JSON (target ≤ ~6,000 chars, best-effort; Step 12), the system prompt, the last 8 memory messages (questions and final answers only) and your question. With analyses on, the tool definitions (names, descriptions, argument schemas). |
 | 2a | The model asked for analyses (repeats ≤ 6 times per question, plus one last request) | the same `POST`, same body grown by the exchange | Row 2's body, plus the model's own tool calls echoed back and one `tool` message per call: the analysis summary and its checks. Each is ≤ 3,000 chars and ≤ 12,000 per question; older results are compacted to their checks. Step 17 lists what each analysis sends. |
+| 2b | Before each Copilot request to a server on this machine or on port 11434 (once per base URL for the kind, per request for the context) | `GET {origin}/api/version`, else `GET {origin}/api/v0/models`; for Ollama `GET {origin}/api/ps` and `POST {origin}/api/show` `{model}` (`contextGuard.js`) | **None** but the model name: they read the server's kind, the model's loaded and maximum context. A cloud URL is never probed. |
+| 2c | Instead of row 2 / 2a, when the server is Ollama | `POST {origin}/api/chat` (NDJSON stream) → `streamOllamaChat()` | Row 2/2a's messages and tools, plus `options.num_ctx` and `options.num_predict` sized to hold the prompt (*The context window* in Step 17). |
 | 3 | Watchdog enabled *and* a model configured | `POST {baseUrl}/chat/completions` (`stream: false`) → `completeChat()` | Five numbers only: `{n_steps, first, last, min, recent_window_delta}` plus two status words. |
 
 **Row 1 fires without you asking.** The dock's panel (`CopilotChat.jsx`) mounts on first open (or at
@@ -172,13 +177,13 @@ is active, the row-1 probe above authenticates with that key on every fresh page
   identical string that `contextBlock()` embeds in the request.
   - The panel lives in the **empty-state** branch (`hasConversation = turns.length > 0 || busy`).
     It disappears with the first question and returns only after *New conversation* or a reload.
+  - It re-serializes the context *as of now*: with Live Data on, the JSON shown in the panel is not
+    necessarily the JSON that accompanied an earlier answer.
   - A second panel there lists every analysis the Copilot may run, with the description the model
     reads.
 - **Every analysis result, at any time.** Expanding a step card
   ([`ToolStep.jsx`](../../web_app/frontend/src/llm/components/ToolStep.jsx)) shows the arguments and
-  the exact result object sent to the model (before the per-question compaction of Step 17). It also
-re-serializes the context *as of now*: with Live Data on, the JSON shown in the panel is not necessarily
-the JSON that accompanied an earlier answer.
+  the exact result object sent to the model (before the per-question compaction of Step 17).
 
 ---
 
@@ -200,7 +205,7 @@ the JSON that accompanied an earlier answer.
 
 **The visibility toggle is asymmetric.** `Dashboard.jsx` builds `allPlotFiles` (every file passing
 `isDashboardPlotFile`, sorted by `comparePlotFiles`), then `plotFiles = allPlotFiles` minus
-`hiddenPlotPaths`, then `rValueFiles` from `plotFiles`. The assistant is handed
+`hiddenPlotPaths`, then `rValueFiles` from `plotFiles`. The Copilot is handed
 `assistantRun.plotFiles = allPlotFiles` — the *unfiltered* list — but `rValueFile` from the filtered
 one. Consequence: **hiding a plot on the Dashboard does not remove it from `datasets` or
 `pair_correlations`, but hiding an R-value log silently removes it from `convergence`, from
@@ -538,7 +543,9 @@ This is the app's own peak finder — it is not RMCProfile output, and it is int
 
 **Input:** one series `(x, y)` from the partials file: $x$ = $r$ in Å (assumed ascending), $y$ = the
 partial pair-correlation value as parsed from the CSV (no normalization, no baseline model). Options:
-`rMax = 6` Å, `maxPeaks = 2` — both hard-coded defaults, never overridden by any caller.
+`rMax = 6` Å, `maxPeaks = 2` — the defaults the context's `pair_correlations` uses (Step 9);
+`firstShell()` (up to 8 peaks), `find_gr_peaks` (the call's `r_max` and `max_peaks`) and the
+Workbench's question shell catalog (`clarify.js`: 8 Å, 3 peaks) pass their own.
 
 **Procedure (`extractPeaks()`).**
 
@@ -690,8 +697,8 @@ experiment:**
 
 $$R = \sqrt{\frac{\sum_i (y^{\mathrm{calc}}_i - y^{\mathrm{expt}}_i)^2}{\sum_i (y^{\mathrm{expt}}_i)^2}}$$
 
-with no weights $w_i$ — despite the name `rwp` and despite the system prompt describing it as "a weighted
-profile residual". Treat it as a relative goodness indicator between datasets of the same run, not as a
+with no weights $w_i$ — despite the name `rwp`; the system prompt says so ("an unweighted R-factor for
+one dataset, normalized by the experimental data"). Treat it as a relative goodness indicator between datasets of the same run, not as a
 Rietveld $R_{wp}$. **Undefined cases:** when no row is finite in both columns, or
 $\sum_i (y^{\mathrm{expt}}_i)^2 = 0$, both implementations return the unavailable sentinel
 `None`/`null` (never `0`, which would read as a perfect fit). `datasetContext()` keeps `rwp` only when it
@@ -795,21 +802,18 @@ $\mathrm{last} = \ln(\text{final\_chi\_squared})$ up to rounding. The series is 
 fit (in the demo run the X-ray real-space χ²; the reciprocal-space `F(Q)_1` term is not included), which
 is why the context names it rather than calling it the run's goodness of fit.
 
-> **Naming (trust the code).** Two labels attached to this data still need care:
+> **Naming (trust the code).** Three labels attached to this data:
 >
-> 1. **One term, named.** Every producer now labels the series $\ln(\chi^2)$ of the named log column
+> 1. **One term, named.** Every producer labels the series $\ln(\chi^2)$ of the named log column
 >    (`CHI_HISTORY_Y_LABEL = 'ln(χ²)'`, title `χ² history: X_ray_(R)1`), and the context says the same;
 >    only the historical metric key `final_chi_r` keeps the old name. The column is one fit term (in the
 >    demo run the X-ray real-space χ²), not the run's total χ².
-> 2. **`rwp` is not weighted** (Step 10), despite its name and the system prompt's wording.
-> 3. **The x-axis is not a move count.** `SYSTEM_PROMPT` in
->    [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js) tells the model, on
->    *every single request*, that "the convergence history is the natural log of the chi-squared goodness
->    metric **versus accepted-move steps**". It is not: the index is one point per log line, concatenated
->    across restart logs (`combineRValueFiles()` sets `x = 0,1,2,…` and the plot label is
->    `'Time steps'`). The model is therefore primed to misread the axis, and **any statement it makes
->    about "moves" derived from the convergence block should be discounted.** The move counters in
->    `configuration_optimization` (Step 3) are the only real move numbers in the context.
+> 2. **`rwp` is not weighted** (Step 10), despite its name; the system prompt says so.
+> 3. **The x-axis is not a move count.** The index is one point per log row, concatenated across
+>    restart logs (`combineRValueFiles()` sets `x = 0,1,2,…` and the plot label is `'Time steps'`), and
+>    `SYSTEM_PROMPT` ([`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js)) tells
+>    the model so ("versus log rows (one per save period)"). The move counters in
+>    `configuration_optimization` (Step 3) are the only move numbers in the context.
 
 **Code:** `runContext.js` → `convergenceContext()`, `downsampleSeries()`, `seriesStats()`;
 `Dashboard.jsx` → `combineRValueFiles()`, `comparePlotFiles()`, `rValueLogParts()`.
@@ -873,10 +877,12 @@ characters triggers every trim step in order, but no test asserts the budget is 
 **Copilot** (`buildCopilotMessages()` in
 [`llm/prompts/copilot.js`](../../web_app/frontend/src/llm/prompts/copilot.js)), in order:
 
-1. `system`: `COPILOT_PROMPT`, the fixed `SYSTEM_PROMPT` from
-   [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js) plus the tool rules
-   and the Outcome rule (Step 17). Without tools it is `COPILOT_PROMPT_NO_TOOLS` (the Outcome rule
-   only). There is no run data in it, but it carries hard numeric interpretation rules (below).
+1. `system`: `copilotSystemPrompt()` — the fixed `SYSTEM_PROMPT` from
+   [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js), then `TOOL_RULES`,
+   `ASK_RULES` (when `ask_user` is offered), the skills index (when `read_skill` is: each skill's name
+   and description), `VIEW_RULES` (with the view tools; else the compute-only sentence) and the
+   `OUTCOME_RULE` (Step 17). Without tools it is `COPILOT_PROMPT_NO_TOOLS` (`SYSTEM_PROMPT` and the
+   Outcome rule). There is no run data in it, but it carries hard numeric interpretation rules (below).
 2. `user` — `"Context for this RMC modeling run:"` followed by ```` ```json … ``` ```` containing
    `contextToJson(context)`. The fence exists so the model can distinguish data from instructions.
 3. `assistant` — a fixed one-line acknowledgement.
@@ -899,7 +905,9 @@ each earlier question with its **final answer text** only.
 
 The full context is **re-sent with every request**, which is why old turns can be dropped cheaply.
 The request body is `{model, messages, temperature, stream: true}`, plus `tools` and `tool_choice`
-when analyses are on. `temperature` comes from settings (default **0.2**).
+when analyses are on. `temperature` comes from settings (default **0.2**). For an Ollama server the
+same messages and tools go to its native `/api/chat` instead, with `options: {temperature, num_ctx,
+num_predict}` and no `tool_choice` (Step 16, Step 17 *The context window*).
 
 #### Numeric rules the system prompt asserts (no code backs them)
 
@@ -1099,6 +1107,14 @@ OpenAI-compatible client (no SDK, no SSE library).
   `tools` / `tool_choice` join the body only when given. An HTTP failure carries its `status` (the
   Copilot's tools-unsupported test reads it).
 - `completeChat()` is the non-streaming variant used by the watchdog.
+- The Copilot's requests go through `streamCopilotChat()`
+  ([`llm/provider/contextGuard.js`](../../web_app/frontend/src/llm/provider/contextGuard.js)): for a
+  server on this machine or on port 11434 it first reads the server's kind (`GET /api/version`, else
+  `GET /api/v0/models`) and, for Ollama, the model's loaded and maximum context (`GET /api/ps`,
+  `POST /api/show`), then sends Ollama requests through `streamOllamaChat()`
+  ([`llm/provider/ollama.js`](../../web_app/frontend/src/llm/provider/ollama.js): `POST /api/chat`,
+  newline-delimited JSON) and everything else through `streamChat()`. The watchdog stays on
+  `completeChat()`.
 - Rendering of replies is Markdown via `react-markdown` with `rehypeRaw → rehypeSanitize → rehypeKatex`;
   `<img>` is stripped from the sanitize schema so model output cannot trigger an external load
   ([`MarkdownMessage.jsx`](../../web_app/frontend/src/llm/components/MarkdownMessage.jsx)). Analysis
@@ -1179,7 +1195,7 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8), `firstShell` (Step 9) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; `first_shell`: its window (onset − one grid step to the boundary), the peaks inside it, mean distance and sd from $r^2g$, the CN in both directions and the CN with the cut 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next ($\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window); note: no boundary below max(r_max, r₁ + 3 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`CONSTRAINT_PILEUP_FRACTION`; demo Ga–Se 9 % at 2.2 Å), or the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å; ok: peak, shell edge, mean, CNs; fail: no peak |
 | `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; sorted by \|kurtosis\| then U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; fail: no site (holding that element) |
 | `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ; note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
-| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10°, raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for a window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (2026-10-11, the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
+| `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10°, raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for a window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
 | `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1: the edge ladder, ladder width, shape rms, breathing sd, mean edge; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>; bonds outside the window, contacts between clusters per atom | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: ladder width departs from the null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units) or does not; note: breathing departs (same rule); note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
@@ -1202,7 +1218,7 @@ per click.
 
 The Copilot never calls this itself; only the user's click does.
 
-**View tools** (2026-10-10). Three tools change what is on screen and nothing else (`view: true`;
+**View tools.** Three tools change what is on screen and nothing else (`view: true`;
 never answered from the duplicate-call cache):
 
 - `highlight_cards(cards, marks?)` (module, `copilot/viewTools.js`) gives the host cards it names
@@ -1223,7 +1239,7 @@ never answered from the duplicate-call cache):
   the simplest integer $[uvw]$ (|index| ≤ 4) within 2° (`nearestLowIndex`), else its components
   scaled to a largest of 1 (marked ≈).
 
-**Skills** (2026-10-11; `copilot/skills.js`, host `src/copilotSkills.js`). The repository's
+**Skills** (`copilot/skills.js`, host `src/copilotSkills.js`). The repository's
 Claude Code skills (`.claude/skills/<name>/SKILL.md`) are bundled with the app and passed as the
 `skills` prop; `parseSkillFiles` reads each front matter's `name` (which must be its folder's) and
 `description`, and the "## References" list (`- [label](file.md) — what it covers`, files beside
@@ -1233,7 +1249,7 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 `resultBudget` (9,000 characters for `read_skill`) replaces the 3,000-character result budget, and
 `keep: true` keeps its message out of the 12,000-character turn budget and its compaction.
 
-**Checks on the answer** (2026-10-11; `copilot/answerAudit.js`). A tool may return `facts` beside
+**Checks on the answer** (`copilot/answerAudit.js`). A tool may return `facts` beside
 `data` and `checks` (kept by the loop, not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point-group facts, `analyze_displacement_directions`
 `{subject, significant (peak or map ≥ 3σ), peak_sigma, map_sigma}`. The run context adds the
@@ -1258,7 +1274,7 @@ The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show u
 `lowerOutcome` then replaces a verdict of *achieved* or *partial* (or none) by **not verified**
 (`claimed` keeps the model's, the note says what it claimed); *not achieved* stays.
 
-**The Workbench's own questions** (2026-10-11; `copilot/clarify.js`). `buildShellCatalog` reads the
+**The Workbench's own questions** (`copilot/clarify.js`). `buildShellCatalog` reads the
 partials file: per ordered pair (centre, partner) the first shell as `firstShell` finds it (Step 9),
 its window rounded to 0.01 Å, the peaks in it, the CN $4\pi\rho_\text{partner}\int r^2 g\,dr$ over
 the window (linear interpolation between grid points), the first-peak window $[r_1 - w, r_1 + w]$
@@ -1291,7 +1307,7 @@ prism 6, square planar 4, cuboctahedron 12), a length or tolerance in Å, and a 
 The loop asks only when tools are on, an `askUser` exists, and fewer than `maxQuestions` questions
 were asked; each is an `ask_user` step with `app: true`.
 
-**Asking the user** (`ask_user`, 2026-10-11; module, `copilot/askUser.js`). An *interactive*
+**Asking the user** (`ask_user`, module, `copilot/askUser.js`). An *interactive*
 tool (`interactive: true`): it is never answered from the duplicate-call cache, has no time limit,
 and its wait is subtracted from the turn's clock. `normalizeAskRequest()` turns the arguments into
 `{question, options: 2–4 × {label, description?}, allowOther, defaultIndex}` (plain strings read as
@@ -1302,10 +1318,10 @@ distinct options. The tool calls `askUser(request, { signal })` from the tools' 
 `{answer, source: 'option' | 'other' | 'skipped', index}`; `answerResult()` turns that into the
 tool's data and one check ("use exactly this choice", the typed answer verbatim, or "use your
 default and say you assumed it"). A second call in the same round, or a third in the question, is
-answered with an error and never shown. The turn's abort signal rejects the wait (Stop, a run
+answered with an error, and its card reads *Not asked*. The turn's abort signal rejects the wait (Stop, a run
 change, an unmount). `ASK_RULES` join the prompt when the tool is offered (`copilotSystemPrompt`).
 
-**The context window** (2026-10-11; `provider/contextGuard.js`, `provider/ollama.js`). Every
+**The context window** (`provider/contextGuard.js`, `provider/ollama.js`). Every
 Copilot request goes through `streamCopilotChat()`. A server is probed only when it is local or on
 port 11434: `GET /api/version` answering a version is Ollama; `GET /api/v0/models` listing load
 states is LM Studio; anything else is sent unchanged (`client.js`).
@@ -1314,11 +1330,10 @@ states is LM Studio; anything else is sent unchanged (`client.js`).
   calls plus the tool schemas' JSON, divided by `CHARS_PER_TOKEN` = 2.5, plus
   `MESSAGE_OVERHEAD_TOKENS` = 8 per message. Deliberately high: the Demo's first request is 28,382
   characters → 11,386 estimated, 8,437 measured (gemma4:26b).
-- **Ollama** (`planContext`): needed $= 	ext{estimate} + 8192$ (`REPLY_RESERVE_TOKENS`). Refused
+- **Ollama** (`planContext`): needed $= \text{estimate} + 8192$ (`REPLY_RESERVE_TOKENS`). Refused
   when needed exceeds the model's maximum (`/api/show` `*.context_length`). Otherwise `num_ctx`
   = the loaded context (`/api/ps`) when it holds the request, else this conversation's earlier
-  value when it still does, else $\max(16384, 8192\lceil 	ext{needed}/8192
-ceil)$, capped at the
+  value when it still does, else $\max(16384, 8192\lceil \text{needed}/8192\rceil)$, capped at the
   maximum; `num_predict` = `num_ctx` − estimate. The request goes to the native `/api/chat`
   (NDJSON; messages converted: string content, object arguments, `tool_name` on tool results; no
   `tool_choice`). After the reply, `prompt_eval_count` below 0.4 × the estimate
@@ -1610,10 +1625,12 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   everything on the machine.
 - **The context inspector is only available before your first question.** It lives in the empty
   state, so once a conversation starts you cannot re-read the context without *New conversation*
-  (which clears the conversation). Analysis results stay inspectable on their step cards.
-- **The Outcome chip is the model's self-assessment.** A small model may write "achieved" over a
-  failed check. The step cards' checks are computed, not generated: read them. It also re-serializes the *current* context, which under Live Data may differ from
-  what accompanied an earlier answer.
+  (which clears the conversation), and it re-serializes the *current* context, which under Live Data may
+  differ from what accompanied an earlier answer. Analysis results stay inspectable on their step cards.
+- **The Outcome chip is the model's self-assessment, lowered only by a computed contradiction.** A
+  small model may write "achieved" over a failed check; only the answer checks of Step 17 (converged,
+  chirality, centrosymmetry, inversion, preferred direction) lower it to *Not verified*. The step cards'
+  checks are computed, not generated: read them.
 - **The peak finder is a cue extractor, not a PDF refinement.** No baseline model, no profile function,
   no interpolation, no uncertainty. The reported `r` is the grid abscissa of the *smoothed* local
   maximum — quantised to the file's $r$ step and pulled toward the heavier flank of an asymmetric peak —
@@ -1644,16 +1661,16 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 - **The convergence "steps" axis is log lines, concatenated across restart logs**, not RMCProfile move
   counts, and the concatenation assumes the logs sort chronologically. While any sibling log is mid-parse
   (routine during Live Data), the concatenation is skipped and only the first log is described.
-- **The system prompt actively mislabels that axis** as "accepted-move steps" on every request. Discount
-  anything the model says about "moves" that is derived from the convergence block.
-- **`rwp` is unweighted** (Step 10) despite its name and the system prompt's description, and exists for
+- **That axis is log rows, not moves**, as the system prompt says; the move counters are the only move
+  numbers in the context.
+- **`rwp` is unweighted** (Step 10) despite its name (the system prompt says so), and exists for
   only five dataset kinds. It is normalized by the experimental column; when it is undefined (no finite
   pair, or an all-zero experiment) it is `null` and the key is simply absent from the dataset entry.
 - **The convergence series is one χ² term, not the total** (Step 11): the last `.log` column, named in
   `convergence.column`. A run whose other terms stall while that one improves is still reported as
   improving.
 - **The character budget is best-effort.** Several blocks are never trimmed; an unusual run can exceed
-  4,500 characters. And only four of the eight trim steps leave an `*_omitted` counter — a dropped second
+  6,000 characters. And only four of the eight trim steps leave an `*_omitted` counter — a dropped second
   $g(r)$ peak, a re-downsampled history, and a dropped PCA `note` are invisible in the delivered JSON.
 - **Downsampling is decimation, not averaging.** A spike between kept indices disappears from the history
   shown to the model, though it still affects `min`/`max` (computed on the full series). Under budget
@@ -1674,9 +1691,9 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 - **The LLM never overrides the badge.** If the model is wrong, the status chip is still the heuristic;
   only the tooltip sentence comes from the model, and a malformed reply falls back to the first 200
   characters of whatever it said.
-- **Chat history is ephemeral and can be lopsided.** Turns live in component state, are cleared by a
-  reload, and an aborted or reasoning-only reply leaves your question in the re-sent history with no
-  answer beside it. Reasoning text is never re-sent.
+- **Chat history is ephemeral.** Turns live in component state and are cleared by a reload. A question
+  whose turn produced no answer (aborted, failed, or reasoning only) is dropped from the re-sent
+  history together with it (`conversationMemory()`). Reasoning text is never re-sent.
 - **Three of the system prompt's numeric rules have no code behind them** (Step 13): the 0.01–0.10 Rwp
   band, the accepted-moves-per-atom rubric, and the ladder-onset ≈ mean-static-displacement heuristic.
   They are author assertions in a prompt string, not validated thresholds.
