@@ -76,6 +76,15 @@ describe('templates with their own edges (review 2026-10-12 #2)', () => {
     });
 });
 
+describe('missing atoms (review 2026-10-12 #16)', () => {
+    it('counts the bonds of a cluster that lost an atom as its own, not as contacts between clusters', () => {
+        const parsed = siteDisplacementsFromRmc6f(fixture.cases.find((entry) => entry.name === 'vacancies').text);
+        const result = clusterDistortion(parsed, 'Nb', [2.5, 3.5]);
+        expect(result.templates[0].incomplete).toBeGreaterThan(0);
+        expect(result.outliers.extraContacts).toBe(0);
+    });
+});
+
 describe('the worker\'s clusters request', () => {
     const text = fixture.cases[0].text;
     const ask = (params) => handlePcaMessage({ kind: 'clusters', ...params }, async () => text);

@@ -348,7 +348,7 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
             clusters: complete.length,
             incomplete: nCells - complete.length
         });
-        return { tIndex, template, rows, base };
+        return { tIndex, template, rows, rowsAll, base };
     });
 
     const kinds = new Map();
@@ -427,11 +427,20 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
     const rowsLocal = fractional.map((_, index) => index);
     const directed = countPatterns(fractional, rowsLocal, rowsLocal, lattice, [[lo, hi]]).reduce((sum, value) => sum + value, 0);
     let templateBondsInside = 0;
-    perTemplate.forEach(({ template, rows, base }) => {
-        for (let c = 0; c < rows[0].length; c += 1) {
-            const cluster = template.sites.map((s, m) => add(base[m], sites[s].displacements[rows[m][c]]));
-            template.edges.forEach(([i, j]) => { if (insideWindow(length(sub(cluster[j], cluster[i])))) templateBondsInside += 1; });
-        }
+    // Every template bond whose two atoms are there, in incomplete clusters
+    // too: they are not contacts between clusters (clusters.py).
+    perTemplate.forEach(({ template, rowsAll, base }) => {
+        template.edges.forEach(([i, j]) => {
+            const si = template.sites[i];
+            const sj = template.sites[j];
+            for (let c = 0; c < nCells; c += 1) {
+                const ri = rowsAll[i][c];
+                const rj = rowsAll[j][c];
+                if (ri < 0 || rj < 0) continue;
+                const span = sub(add(base[j], sites[sj].displacements[rj]), add(base[i], sites[si].displacements[ri]));
+                if (insideWindow(length(span))) templateBondsInside += 1;
+            }
+        });
     });
     const extra = Math.floor(directed / 2) - templateBondsInside;
     result.outliers = {

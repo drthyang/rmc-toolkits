@@ -14,7 +14,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import chains_config_text, cluster_config_text, origin_dimer_config_text  # noqa: E402
+from cluster_configs import chains_config_text, cluster_config_text, origin_dimer_config_text, with_vacancies  # noqa: E402
 from rmc_toolkits.clusters import (  # noqa: E402
     cluster_distortion,
     cluster_distortion_from_file,
@@ -148,6 +148,16 @@ class ClusterDistortionTests(unittest.TestCase):
         self.assertLess(result["observed"]["ladderWidth"], 0.2)
         self.assertAlmostEqual(result["observed"]["meanEdge"], 2.0, delta=0.01)
         self.assertEqual(result["outliers"]["brokenEdgeFraction"], 0.0)
+
+    def test_missing_atoms_are_not_contacts_between_clusters(self):
+        # Review 2026-10-12 #16: the bonds of a cluster that lost an atom were
+        # counted as contacts between clusters (102 of them, 0.25 per atom).
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "vacancies.rmc6f"
+            path.write_text(with_vacancies(cluster_config_text("independent", supercell=(6, 6, 6)), "Nb", 0.05), encoding="utf-8")
+            result = cluster_distortion(load_site_displacements(path), "Nb", (2.5, 3.5))
+        self.assertGreater(result["templates"][0]["incomplete"], 0)
+        self.assertEqual(result["outliers"]["extraContacts"], 0)
 
     def test_an_extended_network_and_an_empty_window(self):
         extended = cluster_distortion(_Configs.sites("independent"), "Se", (7.5, 8.0))

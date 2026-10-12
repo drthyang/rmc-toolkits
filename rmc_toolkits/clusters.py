@@ -342,11 +342,13 @@ def cluster_distortion(
         return result
 
     per_template = []
+    rows_all = []  # per template: (M, cells) rows, -1 where the atom is missing
     for t_index, template in enumerate(templates):
         rows = np.stack([
             row_of[s, _cell_linear(cell_grid + template.offsets[m], supercell)]
             for m, s in enumerate(template.sites)
         ])  # (M, C)
+        rows_all.append(rows)
         complete = (rows >= 0).all(axis=0)
         rows = rows[:, complete]
         base = np.stack([_rows_times(frac[s] + template.offsets[m], unit) for m, s in enumerate(template.sites)])
@@ -430,12 +432,15 @@ def cluster_distortion(
         fractional, rows_local, fractional, rows_local, lattice, [(lo, hi)], count_only=True
     ).sum()
     template_bonds_inside = 0
-    for _, template, rows, base in per_template:
-        ii = [i for i, _ in template.edges]
-        jj = [j for _, j in template.edges]
-        pos = np.stack([base[m] + sites.displacements[rows[m]] for m in range(len(template.sites))], axis=1)
-        tl = np.linalg.norm(pos[:, jj] - pos[:, ii], axis=2)
-        template_bonds_inside += int(((tl >= max(lo - WINDOW_TOL, 0.0)) & (tl <= hi + WINDOW_TOL)).sum())
+    # Every template bond whose two atoms are there, in incomplete clusters
+    # too: a cluster missing an atom still has its other bonds, and they are
+    # not contacts between clusters.
+    for (t_index, template, _, base), rows in zip(per_template, rows_all):
+        for i, j in template.edges:
+            present = (rows[i] >= 0) & (rows[j] >= 0)
+            span = (base[j] + sites.displacements[rows[j, present]]) - (base[i] + sites.displacements[rows[i, present]])
+            tl = np.linalg.norm(span, axis=1)
+            template_bonds_inside += int(((tl >= max(lo - WINDOW_TOL, 0.0)) & (tl <= hi + WINDOW_TOL)).sum())
     extra = int(directed) // 2 - template_bonds_inside
     result["outliers"] = {
         "brokenEdgeFraction": float(1.0 - inside.mean()),

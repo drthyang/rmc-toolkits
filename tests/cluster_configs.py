@@ -198,3 +198,16 @@ def long_wave_config_text(*, supercell=(6, 6, 6), zone_amp=0.06, long_amp=0.15, 
         "Atoms:",
     ]
     return "\n".join(header + lines) + "\n"
+
+
+def with_vacancies(text: str, element: str, fraction: float, *, seed: int = 0) -> str:
+    """The configuration with about ``fraction`` of ``element``'s atom lines
+    dropped at random (the 2026-10-12 review's repro of missing atoms)."""
+    rng = np.random.default_rng(seed)
+    kept = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 10 and parts[1] == element and rng.random() < fraction:
+            continue
+        kept.append(line)
+    return "\n".join(kept) + "\n"
