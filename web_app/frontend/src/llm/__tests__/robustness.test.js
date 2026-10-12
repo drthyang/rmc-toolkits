@@ -237,6 +237,25 @@ describe('runCopilotTurn on a local model', () => {
         expect(events.at(-1)).toMatchObject({ stoppedBy: 'no_progress', outcome: { status: 'achieved' } });
     });
 
+    it('ends a model that repeats a window the user already settled (review 2026-10-12 #4 with the loop guard)', async () => {
+        // The Workbench applies the remembered choice without asking: the
+        // repeats are cached results, so they add nothing and end the analyses.
+        const shellTool = echoTool({
+            shellWindows: (args) => [{ centre: 'Ta', partner: 'Se', window: [args.value, 9], apply: ([lo]) => ({ ...args, value: lo }) }]
+        });
+        const clarifier = {
+            beforeTurn: () => null,
+            beforeCall: (tool, args) => (args.value === 1 ? { kind: 'cut', settled: true, args: { value: 2 }, note: 'the user already chose 2' } : null)
+        };
+        const same = { calls: [{ name: 'echo', args: { value: 1 } }] };
+        const { callModel, requests } = scriptedModel([same, same, same, { text: 'Done.\n\nOutcome: achieved.' }]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [shellTool], clarifier, toolContext: { askUser: async () => ({}) }
+        }));
+        expect(requests).toHaveLength(4);
+        expect(events.at(-1)).toMatchObject({ stoppedBy: 'no_progress' });
+    });
+
     it('counts failing calls as no progress too', async () => {
         const bad = { calls: [{ name: 'echo', args: { value: 'x' } }] };
         const { callModel, requests } = scriptedModel([bad, bad, { text: 'I could not run it.\n\nOutcome: not achieved.' }]);

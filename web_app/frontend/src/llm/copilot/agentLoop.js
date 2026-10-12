@@ -437,6 +437,9 @@ export async function* runCopilotTurn({
             let parsed = parseToolArguments(call.arguments);
             let runArguments = call.arguments;
             let appNote = null;
+            // The user answered a question for this call: news, even if the
+            // call it settles was run before.
+            let answered = false;
             // Before an analysis runs in a window that cuts a shell, the
             // Workbench asks which window (clarify.js beforeCall) — once per
             // window in a turn: a choice already made, or one the question
@@ -457,6 +460,7 @@ export async function* runCopilotTurn({
                     runArguments = JSON.stringify(resolved.args);
                     parsed = { ok: true, value: resolved.args };
                     appNote = `the Workbench asked the user about the window: ${resolved.note}`;
+                    answered = true;
                 }
             }
             const shownArgs = parsed.ok ? parsed.value : call.arguments;
@@ -512,7 +516,7 @@ export async function* runCopilotTurn({
                 }
             }
             if (appNote) note = note ? `${appNote}; ${note}` : appNote;
-            if (appNote || (!result.error && !cached)) progressed = true;
+            if (answered || (!result.error && !cached)) progressed = true;
 
             if (result.facts && !result.error) facts.push(result.facts);
             if (!tool?.keep) toolMessages.push(messages.length);
