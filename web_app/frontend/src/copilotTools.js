@@ -487,7 +487,9 @@ export const summarizeClusters = (payload) => {
         count: kind.clusters,
         templates: kind.templates
     };
-    if (payload.kinds.length > 1) data.clusters.other_sizes = payload.kinds.slice(1).map((k) => ({ members: k.members, count: k.clusters }));
+    // The other kinds, never the one analysed (a tie once listed it here).
+    const others = payload.kinds.filter((k) => k.members !== kind.members || k.edges !== kind.edges);
+    if (others.length) data.clusters.other_sizes = others.map((k) => ({ members: k.members, count: k.clusters }));
     data.average_structure = {
         edges_A: payload.ideal.ladder.map((value) => round(value, 4)),
         spread_A: round(payload.ideal.spread, 2),

@@ -13,6 +13,8 @@ import { handlePcaMessage } from '../workers/pcaKdeWorker';
 import { displacementModulations } from '../workers/modulations';
 import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
 import modulationsFixture from './fixtures/modulations_fixture.json';
+import clustersFixture from './fixtures/clusters_fixture.json';
+import { clusterDistortion } from '../workers/clusters';
 import {
     buildCopilotTools,
     cartesianToUvw,
@@ -354,6 +356,15 @@ describe('Copilot summarizers', () => {
         expect(checks[0].level).toBe('ok');
         expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\): \d+(\.\d+)?× the median power, the strongest mode apart from long waves/);
         expect(checks.some((check) => /long-wavelength wave/.test(check.text))).toBe(true);
+    });
+
+    it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {
+        const { text } = clustersFixture.cases.find((entry) => entry.name === 'tie');
+        const payload = clusterDistortion(siteDisplacementsFromRmc6f(text), 'Mo', [1.8, 2.2]);
+        expect(payload.kinds[0]).toMatchObject({ members: 2, clusters: 64 });
+        const { data } = summarizeClusters(payload);
+        expect(data.clusters).toMatchObject({ members: 2, count: 64 });
+        expect(data.clusters.other_sizes).toEqual([{ members: 3, count: 64 }]);
     });
 
     it('symmetry checks: not analysed, undetermined, lower bound', () => {

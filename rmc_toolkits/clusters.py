@@ -377,7 +377,8 @@ def cluster_distortion(
         key = (len(template.sites), len(template.edges))
         kinds[key] = kinds.get(key, 0) + rows.shape[1]
     result["kinds"] = [
-        {"members": m, "edges": e, "clusters": n} for (m, e), n in sorted(kinds.items(), key=lambda kv: -kv[1])
+        # Most clusters first, ties to the smaller kind: the dominant kind leads.
+        {"members": m, "edges": e, "clusters": n} for (m, e), n in sorted(kinds.items(), key=lambda kv: (-kv[1], kv[0][0]))
     ]
     dominant = max(kinds, key=lambda key: (kinds[key], -key[0]))
     chosen = [entry for entry in per_template if (len(entry[1].sites), len(entry[1].edges)) == dominant]

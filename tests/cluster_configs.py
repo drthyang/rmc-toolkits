@@ -211,3 +211,38 @@ def with_vacancies(text: str, element: str, fraction: float, *, seed: int = 0) -
             continue
         kept.append(line)
     return "\n".join(kept) + "\n"
+
+
+TIE_SITES = [
+    ("Mo", [0.1, 0.2, 0.2]), ("Mo", [0.3, 0.2, 0.2]), ("Mo", [0.2, 0.37, 0.2]),  # a triangle
+    ("Mo", [0.4, 0.7, 0.7]), ("Mo", [0.6, 0.7, 0.7]),  # a dimer
+]
+
+
+def tie_config_text(*, supercell=(4, 4, 4), sigma=0.03, seed=3) -> str:
+    """One Mo3 triangle and one Mo2 dimer per 10 A cell (bonds ~2.0 A), so
+    the two kinds hold as many clusters (the 2026-10-12 review's repro)."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    lines = []
+    atom = 0
+    for ix in range(supercell[0]):
+        for iy in range(supercell[1]):
+            for iz in range(supercell[2]):
+                for ref, (element, frac) in enumerate(TIE_SITES, start=1):
+                    shift = rng.normal(0.0, sigma, 3) / CHAINS_CELL_A
+                    coord = np.mod((np.array(frac) + [ix, iy, iz] + shift) / supercell, 1.0)
+                    atom += 1
+                    lines.append(
+                        f"{atom:6d} {element:>2} [1] {coord[0]:.12f} {coord[1]:.12f} {coord[2]:.12f}"
+                        f" {ref:4d} {ix} {iy} {iz}"
+                    )
+    header = [
+        "(Version 6f format configuration file)",
+        f"Number of atoms: {atom}",
+        f"Supercell dimensions: {supercell[0]} {supercell[1]} {supercell[2]}",
+        "Lattice vectors (Ang):",
+        *(" ".join(f"{value:.6f}" for value in row) for row in np.diag(CHAINS_CELL_A * supercell.astype(float))),
+        "Atoms:",
+    ]
+    return "\n".join(header + lines) + "\n"

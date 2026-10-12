@@ -25,7 +25,13 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import chains_config_text, cluster_config_text, origin_dimer_config_text, with_vacancies  # noqa: E402
+from cluster_configs import (  # noqa: E402
+    chains_config_text,
+    cluster_config_text,
+    origin_dimer_config_text,
+    tie_config_text,
+    with_vacancies,
+)
 from rmc_toolkits.clusters import SHUFFLE_SEED, cluster_distortion, mix32, shuffle_permutation  # noqa: E402
 from rmc_toolkits.pca_kde import load_site_displacements  # noqa: E402
 
@@ -42,6 +48,8 @@ CASES = [
     ("chains", chains_config_text, [("Mo", [1.8, 2.2])]),
     # Clusters missing an atom (review 2026-10-12 #16).
     ("vacancies", lambda: with_vacancies(cluster_config_text("independent", supercell=(4, 4, 4)), "Nb", 0.1), [("Nb", [2.5, 3.5])]),
+    # As many triangles as dimers (review 2026-10-12 #17).
+    ("tie", tie_config_text, [("Mo", [1.8, 2.2])]),
 ]
 
 

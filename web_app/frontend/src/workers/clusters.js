@@ -361,7 +361,8 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
             const [nMembers, nEdges] = key.split(',').map(Number);
             return { members: nMembers, edges: nEdges, clusters };
         })
-        .sort((a, b) => b.clusters - a.clusters);
+        // Most clusters first, ties to the smaller kind: the dominant kind leads.
+        .sort((a, b) => (b.clusters - a.clusters) || (a.members - b.members));
     let dominant = null;
     for (const [key, clusters] of kinds) {
         const nMembers = Number(key.split(',')[0]);

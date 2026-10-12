@@ -14,7 +14,13 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from cluster_configs import chains_config_text, cluster_config_text, origin_dimer_config_text, with_vacancies  # noqa: E402
+from cluster_configs import (  # noqa: E402
+    chains_config_text,
+    cluster_config_text,
+    origin_dimer_config_text,
+    tie_config_text,
+    with_vacancies,
+)
 from rmc_toolkits.clusters import (  # noqa: E402
     cluster_distortion,
     cluster_distortion_from_file,
@@ -158,6 +164,19 @@ class ClusterDistortionTests(unittest.TestCase):
             result = cluster_distortion(load_site_displacements(path), "Nb", (2.5, 3.5))
         self.assertGreater(result["templates"][0]["incomplete"], 0)
         self.assertEqual(result["outliers"]["extraContacts"], 0)
+
+    def test_a_tie_lists_the_analysed_kind_first(self):
+        # Review 2026-10-12 #17: 64 triangles and 64 dimers; the dimers are
+        # analysed (the smaller kind wins a tie), so they must lead the list.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tie.rmc6f"
+            path.write_text(tie_config_text(), encoding="utf-8")
+            result = cluster_distortion(load_site_displacements(path), "Mo", (1.8, 2.2))
+        self.assertEqual(result["kind"]["members"], 2)
+        self.assertEqual(result["kinds"], [
+            {"members": 2, "edges": 1, "clusters": 64},
+            {"members": 3, "edges": 3, "clusters": 64},
+        ])
 
     def test_an_extended_network_and_an_empty_window(self):
         extended = cluster_distortion(_Configs.sites("independent"), "Se", (7.5, 8.0))
