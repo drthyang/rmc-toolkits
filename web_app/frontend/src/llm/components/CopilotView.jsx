@@ -248,6 +248,22 @@ const CopilotView = ({
         if (panel && document.activeElement === panel) ta.focus();
     }, [connected]);
 
+    // A turn that ends with the focus lost (the question card it was on
+    // re-rendered as the finished turn) hands it to the composer, not to the
+    // page's start.
+    const wasBusy = useRef(false);
+    useEffect(() => {
+        if (copilot.busy) {
+            wasBusy.current = true;
+            return;
+        }
+        if (!wasBusy.current) return;
+        wasBusy.current = false;
+        const ta = textareaRef.current;
+        const active = document.activeElement;
+        if (ta && !ta.disabled && (!active || active === document.body)) ta.focus({ preventScroll: true });
+    }, [copilot.busy]);
+
     const resizeTextarea = () => {
         const ta = textareaRef.current;
         if (!ta) return;

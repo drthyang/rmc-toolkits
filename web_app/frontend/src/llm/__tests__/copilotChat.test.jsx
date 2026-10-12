@@ -364,6 +364,9 @@ describe('CopilotChat', () => {
                 /^What are the Se–Ta–Se bond angles\?\n\n\(The Workbench asked: "Which Ta–Se window should the analysis use\?" — the user chose "First peak only" for the Ta–Se bonds: the window /
             );
             expect(container.querySelector('.llm-ask').className).toContain('is-answered');
+            // The focus is not dropped to the page's start: the answered card
+            // keeps it while the turn runs, then the composer (review 2026-10-12 #12).
+            expect(document.activeElement).toBe(container.querySelector('.llm-composer-input'));
             // What the user sees as their question is what they typed.
             expect(container.querySelector('.llm-message.is-user .llm-bubble').textContent).toBe('What are the Se–Ta–Se bond angles?');
         });
