@@ -67,8 +67,9 @@ Open `http://127.0.0.1:5174/`.
 
 - `Select Folder` uses the backend native folder picker in local Flask mode, so it is intended for
   local desktop sessions.
-- GitHub Pages/static mode does not support Live Data monitoring because the browser cannot watch
-  local filesystem changes.
+- In GitHub Pages/static mode, Live Data works in Chromium browsers (Chrome, Edge, Arc, Opera),
+  which can re-read a picked folder through the File System Access API; other browsers need the
+  local Flask app for it.
 - The Dashboard page renders parsed plot data as browser-native SVG.
 - The Atomic Density page uses backend SciPy KDE data and a Three.js structure viewer. In
   static/offline mode it instead computes the KDE in a Web Worker, using a WebGPU compute shader when
