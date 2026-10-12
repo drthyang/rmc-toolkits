@@ -33,6 +33,15 @@ describe('normalizeAskRequest', () => {
         expect(normalizeAskRequest({ question: 'q', options: ['2.33–2.96 Å', '2.33–2.71 Å'] }).options[0]).toEqual({ label: '2.33–2.96 Å' });
     });
 
+    it('never splits a spaced range into a label and a description (review 2026-10-12 #9)', () => {
+        const { options } = normalizeAskRequest({ question: 'Which window?', options: ['2.2 – 2.7 Å', 'Whole shell 2.2 - 3.2 Å — CN 6', 'First peak — 2.2 – 2.7 Å'] });
+        expect(options).toEqual([
+            { label: '2.2 – 2.7 Å' },
+            { label: 'Whole shell 2.2 - 3.2 Å', description: 'CN 6' },
+            { label: 'First peak', description: '2.2 – 2.7 Å' }
+        ]);
+    });
+
     it('ignores a default that names no option', () => {
         expect(normalizeAskRequest({ question: 'q', options: ['a', 'b'], default: 'c' }).defaultIndex).toBeNull();
     });

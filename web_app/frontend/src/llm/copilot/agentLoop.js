@@ -160,6 +160,8 @@ export async function* runCopilotTurn({
     let questionText = questionIndex >= 0 && typeof messages[questionIndex].content === 'string' ? messages[questionIndex].content : '';
     const canAsk = () => Boolean(clarifier && useTools && typeof toolContext?.askUser === 'function' && questions < maxQuestions);
     let appQuestions = 0;
+    // The window choices made in this turn (clarify.js), by (centre, partner, window).
+    const clarifySession = { windows: new Map() };
     // One question the Workbench asks itself, shown as an ask_user step.
     async function* askFromApp(item) {
         appQuestions += 1;
@@ -306,14 +308,22 @@ export async function* runCopilotTurn({
             let runArguments = call.arguments;
             let appNote = null;
             // Before an analysis runs in a window that cuts a shell, the
-            // Workbench asks which window (clarify.js beforeCall).
-            if (tool && !tool.interactive && parsed.ok && position < maxCallsPerRound && !askedThisRound && canAsk()) {
+            // Workbench asks which window (clarify.js beforeCall) — once per
+            // window in a turn: a choice already made, or one the question
+            // makes, is applied without asking; an identical call already
+            // answered from the cache asks nothing.
+            if (clarifier && tool && !tool.interactive && parsed.ok && position < maxCallsPerRound) {
                 const validated = validateToolArguments(tool.parameters, parsed.value);
-                const item = validated.ok ? clarifier.beforeCall(tool, validated.value, { questionText }) : null;
-                if (item) {
+                const repeat = validated.ok && !tool.view && cache.has(`${call.name}:${canonicalJson(validated.value)}`);
+                const item = validated.ok && !repeat ? clarifier.beforeCall(tool, validated.value, { questionText, session: clarifySession }) : null;
+                if (item?.settled) {
+                    runArguments = JSON.stringify(item.args);
+                    parsed = { ok: true, value: item.args };
+                    appNote = `the Workbench applied the user's choice: ${item.note}`;
+                } else if (item && !askedThisRound && canAsk()) {
                     askedThisRound = true;
                     const reply = yield* askFromApp(item);
-                    const resolved = resolveClarification(item, reply, { args: validated.value, tool });
+                    const resolved = resolveClarification(item, reply, { args: validated.value, tool, session: clarifySession });
                     runArguments = JSON.stringify(resolved.args);
                     parsed = { ok: true, value: resolved.args };
                     appNote = `the Workbench asked the user about the window: ${resolved.note}`;

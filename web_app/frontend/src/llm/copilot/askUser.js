@@ -29,14 +29,20 @@ const clip = (text, limit) => (text.length > limit ? `${text.slice(0, limit - 1)
 
 // A label and an optional one-line description from one option. A model may
 // write the description into the label ("Both peaks — 2.33–2.96 Å"): split it
-// at a spaced dash only when no description was given.
+// at a spaced dash only when no description was given, and never inside a
+// range ("2.2 – 2.7 Å" is one window).
 const readOption = (option) => {
     const raw = typeof option === 'string' ? { label: option } : (option || {});
     let label = String(raw.label ?? '').replace(/\s+/g, ' ').trim();
     let description = String(raw.description ?? '').replace(/\s+/g, ' ').trim();
     if (!description) {
-        const split = /^(.{2,}?)\s+[—–-]\s+(.+)$/.exec(label);
-        if (split && split[1].length <= MAX_LABEL_CHARS) [, label, description] = split;
+        for (const dash of label.matchAll(/\s+[—–-]\s+/g)) {
+            const head = label.slice(0, dash.index);
+            const tail = label.slice(dash.index + dash[0].length);
+            if (/\d$/.test(head) && /^[-−]?\d/.test(tail)) continue;
+            if (head.length >= 2 && head.length <= MAX_LABEL_CHARS && tail) [label, description] = [head, tail];
+            break;
+        }
     }
     return { label: clip(label, MAX_LABEL_CHARS), ...(description ? { description: clip(description, MAX_DESCRIPTION_CHARS) } : {}) };
 };

@@ -25,8 +25,12 @@
 //
 // A question that settles the choice itself asks nothing: an ideal polyhedron
 // it names (an octahedron: 6) that exactly one option's coordination number
-// matches, an element pair or triplet, a site number, a window or a tolerance
-// in Å. Pure functions of the run data; the agent loop shows the card
+// matches, the shell it names ("only the first Ta–Se peak", "the whole first
+// shell", "both peaks"), an element pair or triplet, a site number, a window
+// or a tolerance in Å. A window question is asked once per turn: the user's
+// choice for a (centre, partner, window) is remembered in the turn's
+// `session` and applied to a later call with that window without asking
+// again. Pure functions of the run data; the agent loop shows the card
 // (agentLoop.js) and hands the model the user's choice.
 
 import { elementDensity, extractPeaks, firstShell } from '../context/pairCorrelations';
@@ -179,6 +183,9 @@ const DIRECTIONS = /\b(preferred|preferential)\b|\b(displacement|displacements)\
 const SYMMETRY = /\bspace[\s-]?groups?\b/i;
 const IN_ANGSTROM = /\d+(?:\.\d+)?\s*(?:Å|A\b|ångström|angstrom)/i;
 const SITE_NUMBER = /\bsites?\s*(?:#|no\.?|ref\.?|number)?\s*\d+\b|\bref\s*\d+\b/i;
+// A shell the question itself names: the first peak only, or the whole shell.
+const FIRST_PEAK = /\bfirst\s+(?:[A-Z][a-z]?\s*[–—−-]\s*[A-Z][a-z]?\s+)?(?:g\(r\)\s+)?peak\b/i;
+const WHOLE_SHELL = /\b(?:whole|entire|full|complete)\s+(?:first\s+)?(?:coordination\s+)?shell\b|\bboth\s+(?:[A-Z][a-z]?\s*[–—−-]\s*[A-Z][a-z]?\s+)?peaks\b/i;
 const POLYHEDRA = [[/\boctahedr/i, 6], [/\btetrahedr/i, 4], [/\btrigonal\s+prism/i, 6], [/\bsquare[\s-]planar/i, 4], [/\bcuboctahedr/i, 12]];
 // Element symbols that are also English words: named only in an element-like
 // spot ("around In", "In atoms", "In–Se").
@@ -229,6 +236,8 @@ export const readQuestion = (text, elements) => {
         namesAngstrom: IN_ANGSTROM.test(source),
         namesSite: SITE_NUMBER.test(source),
         polyhedronCn: polyhedron ? polyhedron[1] : null,
+        // 'first-peak', 'whole' or null: a window choice the question makes.
+        shellChoice: FIRST_PEAK.test(source) ? 'first-peak' : (WHOLE_SHELL.test(source) ? 'whole' : null),
         triplets,
         pairs,
         elements: singles
@@ -294,6 +303,7 @@ const neighbourQuestion = (intent, catalog) => {
 
 // (a) Which window, for a named pair or triplet whose first shell is ambiguous.
 const windowQuestion = (intent, catalog) => {
+    if (intent.shellChoice) return null;
     const candidates = [];
     for (const [end1, apex, end2] of intent.triplets) {
         candidates.push([apex, end1]);
@@ -386,7 +396,7 @@ export const buildClarifier = (run = {}, { noiseFloor = null } = {}) => {
             if (intent.symmetry && !intent.namesAngstrom) return toleranceQuestion(run, noiseFloor);
             return null;
         },
-        beforeCall: (tool, args, { questionText = '' } = {}) => {
+        beforeCall: (tool, args, { questionText = '', session = null } = {}) => {
             if (!catalog || typeof tool?.shellWindows !== 'function') return null;
             let windows;
             try {
@@ -394,7 +404,8 @@ export const buildClarifier = (run = {}, { noiseFloor = null } = {}) => {
             } catch {
                 return null;
             }
-            for (const item of windows) {
+            const shellChoice = readQuestion(questionText, elements).shellChoice;
+            for (const [windowIndex, item] of windows.entries()) {
                 const [lo, hi] = item.window || [];
                 if (!(hi > lo)) continue;
                 // A window the user wrote into the question is theirs.
@@ -406,7 +417,26 @@ export const buildClarifier = (run = {}, { noiseFloor = null } = {}) => {
                 const overlaps = hi > shell.window[0] && lo < shell.window[1];
                 if (!overlaps || !(cn < shell.cn) || !changes(cn, shell.cn)) continue;
                 const pair = `${item.partner} per ${item.centre}`;
-                return asRequest(
+                // Answered already in this turn: the same choice, unasked.
+                const key = windowKey(item.centre, item.partner, [lo, hi]);
+                const remembered = session?.windows?.get(key);
+                if (remembered) {
+                    return settled(item.apply(remembered.window, { confirmed: remembered.confirmed }),
+                        `the user already chose ${windowText(remembered.window)} for the ${item.centre}–${item.partner} window `
+                        + `${windowText([lo, hi])} in this question: run in it.`);
+                }
+                // The question names the shell: the first peak only keeps a
+                // partial window (as the user's), the whole shell replaces it.
+                if (shellChoice === 'first-peak') {
+                    return settled(item.apply([lo, hi], { confirmed: true }),
+                        `the question asks for the first peak only, so ${windowText([lo, hi])} (CN ${cnText(cn)} ${pair}) is kept as the user's window.`);
+                }
+                if (shellChoice === 'whole') {
+                    return settled(item.apply(shell.window, { confirmed: false }),
+                        `the question asks for the whole first shell, so the run uses ${windowText(shell.window)} (CN ${cnText(shell.cn)} ${pair}) `
+                        + `instead of ${windowText([lo, hi])}.`);
+                }
+                const asked = asRequest(
                     `The window ${windowText([lo, hi])} cuts the first ${item.centre}–${item.partner} shell: it holds ${cnText(cn)} ${pair} `
                         + `of the shell's ${cnText(shell.cn)}. Which window?`,
                     [
@@ -417,11 +447,16 @@ export const buildClarifier = (run = {}, { noiseFloor = null } = {}) => {
                     ],
                     'cut'
                 );
+                return { ...asked, key, windowIndex };
             }
             return null;
         }
     };
 };
+
+// A window settled without a question: the arguments to run with, and why.
+const settled = (args, note) => ({ kind: 'cut', settled: true, args, note });
+const windowKey = (centre, partner, [lo, hi]) => `${centre}|${partner}|${roundTo(lo)}|${roundTo(hi)}`;
 
 // Two numbers in a typed answer: a window.
 const typedWindow = (text) => {
@@ -435,16 +470,23 @@ const typedWindow = (text) => {
 /**
  * What a reply means: for a question before the turn, the note the model
  * reads with the user's question; for a cut window, the arguments to run with
- * and the note. `item` is the beforeCall/beforeTurn result.
+ * and the note, and the choice is remembered in the turn's `session` (a later
+ * call with the same window gets it unasked). `item` is the
+ * beforeCall/beforeTurn result.
  */
-export const resolveClarification = (item, reply, { args = null, tool = null } = {}) => {
+export const resolveClarification = (item, reply, { args = null, tool = null, session = null } = {}) => {
+    const remember = (window, confirmed) => {
+        if (item.kind === 'cut' && item.key && session?.windows) session.windows.set(item.key, { window, confirmed });
+    };
     if (reply?.source === 'other') {
         const answer = String(reply.answer || '').trim();
         if (item.kind === 'cut' && tool) {
             const window = typedWindow(answer);
-            const windows = tool.shellWindows(args) || [];
-            if (window && windows[0]) {
-                return { args: windows[0].apply(window, { confirmed: true }), note: `the user typed "${answer}": run in ${windowText(window)}.` };
+            // The window the question was about (r12 or r23), not always the first.
+            const target = (tool.shellWindows(args) || [])[item.windowIndex ?? 0];
+            if (window && target) {
+                remember(window, true);
+                return { args: target.apply(window, { confirmed: true }), note: `the user typed "${answer}": run in ${windowText(window)}.` };
             }
             return { args, note: `the user answered "${answer}"; the window was kept as asked.` };
         }
@@ -455,6 +497,7 @@ export const resolveClarification = (item, reply, { args = null, tool = null } =
     const result = picked.apply();
     const how = reply?.source === 'skipped' ? 'the user skipped, so the default stands' : 'the user chose it';
     if (item.kind === 'cut') {
+        remember(result.window, Boolean(result.args?.window_confirmed) || picked.label.startsWith('Keep'));
         return { args: result.args, note: `${how}: run in ${windowText(result.window)} (${picked.label}).` };
     }
     return { note: reply?.source === 'skipped' ? `${result} (The user skipped the question; this is the default.)` : result };
