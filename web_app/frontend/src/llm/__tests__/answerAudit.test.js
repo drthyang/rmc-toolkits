@@ -32,6 +32,31 @@ describe('the convergence check', () => {
     });
 });
 
+describe('claims, not mentions (review 2026-10-12 #3 and #15)', () => {
+    const improving = { facts: [{ convergence: 'improving' }] };
+    const none = { facts: [{ direction: { subject: 'site 23', significant: false, peak_sigma: 1.2, map_sigma: 0.8 } }] };
+
+    it('does not read a hypothetical, conditional or a question as a claim', () => {
+        for (const text of [
+            'To check whether the run has converged, I read the χ² history: it is still falling.',
+            'Keep refining until χ² plateaus.',
+            'If the run had converged, the χ² history would be flat.',
+            'Once it has converged, compare the g(r) again.',
+            'A converged run would show a flat history; this one falls.'
+        ]) {
+            expect(rules(text, improving), text).toEqual([]);
+        }
+        expect(rules('I tested whether site 23 has a preferred direction: the peak is 1.2σ.', none)).toEqual([]);
+    });
+
+    it('flags a claim that follows a negation in another part of the sentence', () => {
+        expect(rules('With no remaining drift in χ², the run has converged.', improving)).toEqual(['convergence']);
+        expect(rules('There is no drift left, and the run has converged.', improving)).toEqual(['convergence']);
+        expect(rules('The run has converged; χ² stopped improving.', improving)).toEqual(['convergence']);
+        expect(rules('Without any doubt, site 23 has a preferred displacement direction.', none)).toEqual(['direction']);
+    });
+});
+
 describe('the symmetry checks', () => {
     const groups = [
         { symbol: 'F-43m', ...pointGroupFacts('-43m') },

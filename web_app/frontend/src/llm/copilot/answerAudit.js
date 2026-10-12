@@ -16,11 +16,28 @@
 //
 // Deliberately narrow: a rule fires only on a clear positive claim, not on a
 // negated one ("has not converged", "achiral", "no preferred direction"), not
-// in a question, and not when the same sentence already says the right thing.
+// on a hypothetical, conditional or a question ("to check whether it has
+// converged", "until χ² plateaus", "I tested whether site 23 has a preferred
+// direction", "a converged run"), and not when the same sentence already
+// says the right thing.
+// A negation or such a word counts only in the stretch of the clause just
+// before the claim, after its last comma or "and"/"so": "With no remaining
+// drift in χ², the run has converged" is a claim.
 // A false alarm under a correct answer would teach the user to ignore these.
 // Each finding is `{ rule, text }`; pure, no React.
 
-const NEGATION = /\b(not|no|never|neither|nor|none|without|lacks?|lacking|absence|absent|cannot|non|yet)\b|n't\b/i;
+const NEGATION = /\b(not|no|never|neither|nor|none|without|lacks?|lacking|absence|absent|cannot|non|yet|stopped|ceased)\b|n't\b/i;
+// What makes a mention hypothetical, conditional or a question about it.
+const NOT_ASSERTED = new RegExp('\\b(whether|if|unless|until|once|when(?:ever)?|before|would|could|might|'
+    + 'to (?:check|test|see|confirm|verify|determine|assess|judge|tell|decide)|'
+    + 'test(?:s|ed|ing)? (?:for|whether|if)|check(?:s|ed|ing)? (?:for|whether|if|that)|'
+    + 'look(?:s|ed|ing)? for|make sure|ensure|verify that|confirm that)\\b', 'i');
+// An attributive use of a state names a kind, it claims nothing: "a
+// converged run" (but "has a preferred direction" is a claim).
+const ATTRIBUTIVE = /\b(a|an|any|every|each)\s+$/i;
+// The stretch of a clause a claim's negation or condition must sit in: after
+// its last comma, "and", "so", "therefore", "thus" or "hence".
+const leadOf = (text) => text.split(/,\s*|\s+(?:and|so|therefore|thus|hence)\s+/i).pop();
 
 // Sentences, then clauses: a contrast ("…, but …") starts a new claim.
 const sentencesOf = (text) => String(text || '')
@@ -33,14 +50,15 @@ const clausesOf = (sentence) => sentence
     .map((clause) => clause.trim())
     .filter(Boolean);
 
-// The positive matches of `pattern` in a clause: not in a question, not after
-// a negation in the 60 characters before it.
-const positiveMatches = (clause, pattern) => {
+// The asserted matches of `pattern` in a clause: not in a question, and not
+// after a negation or a hypothetical word in the stretch just before it (nor
+// after an article, for a `state` such as "converged").
+const positiveMatches = (clause, pattern, { state = false } = {}) => {
     if (/\?\s*$/.test(clause)) return [];
     const out = [];
     for (const match of clause.matchAll(pattern)) {
-        const before = clause.slice(Math.max(0, match.index - 60), match.index + (match[1] || '').length);
-        if (!NEGATION.test(before)) out.push(match);
+        const lead = leadOf(clause.slice(0, match.index + (match[1] || '').length));
+        if (!NEGATION.test(lead) && !NOT_ASSERTED.test(lead) && !(state && ATTRIBUTIVE.test(lead))) out.push(match);
     }
     return out;
 };
@@ -99,14 +117,16 @@ const groupNote = (group) => `${group.symbol} (${group.point_group})`;
 // --- the rules ----------------------------------------------------------------------
 
 const CONVERGED = /(^|[^\w-])(converged|reached convergence|at convergence|plateau(?:ed|s)?)\b/gi;
-const STILL_MOVING = /\b(improving|diverg\w*|still (?:falling|decreasing|dropping|declining|descending|going down|moving))\b/i;
+const STILL_MOVING = /(^|\W)(improving|diverg\w*|still (?:falling|decreasing|dropping|declining|descending|going down|moving))\b/gi;
 
 const convergenceRule = (text, facts, context) => {
     const reported = [...facts].reverse().find((fact) => fact.convergence)?.convergence ?? context?.convergence ?? null;
     if (reported !== 'improving' && reported !== 'diverging') return [];
     for (const sentence of sentencesOf(text)) {
-        if (STILL_MOVING.test(sentence)) continue;
-        if (clausesOf(sentence).some((clause) => positiveMatches(clause, CONVERGED).length)) {
+        // A sentence that itself says the run still moves already says the
+        // right thing; "stopped improving" or "no longer diverging" does not.
+        if (clausesOf(sentence).some((clause) => positiveMatches(clause, STILL_MOVING).length)) continue;
+        if (clausesOf(sentence).some((clause) => positiveMatches(clause, CONVERGED, { state: true }).length)) {
             return [{
                 rule: 'convergence',
                 text: `The answer says the run has converged, but the χ² history is still ${reported} `
