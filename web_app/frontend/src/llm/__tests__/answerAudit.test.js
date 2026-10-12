@@ -96,6 +96,28 @@ describe('the symmetry checks', () => {
         }
     });
 
+    it('accepts a lost inversion when the parent has one, even if a tool found a group without (review 2026-10-12 #4)', () => {
+        // The average group Pm-3m has inversion; a tool found P4mm, which has
+        // none. "Loses its inversion centre" is right, and no group is named.
+        const lowered = {
+            facts: [{ groups: [{ symbol: 'P4mm', ...pointGroupFacts('4mm') }] }],
+            context: { convergence: null, groups: [{ symbol: 'Pm-3m', ...pointGroupFacts('m-3m'), parent: true }] }
+        };
+        expect(rules('At 0.01 Å the local structure loses its inversion centre.', lowered)).toEqual([]);
+        expect(rules('Going to P4mm breaks the inversion symmetry of the average structure.', lowered)).toEqual([]);
+        // With a parent that has no inversion, the claim is still caught.
+        expect(rules('At 0.01 Å the local structure loses its inversion centre.', {
+            facts: lowered.facts, context: { convergence: null, groups: [{ symbol: 'F-43m', ...pointGroupFacts('-43m'), parent: true }] }
+        })).toEqual(['inversion-lost']);
+    });
+
+    it('does not blame the parent for a subgroup it does not know (review 2026-10-12 #14)', () => {
+        const parentOnly = { context: { convergence: null, groups: [{ symbol: 'P-42_1m', ...pointGroupFacts('-42m'), parent: true }] } };
+        expect(rules('The parent group is P-42₁m; its subgroup P2₁2₁2 is chiral.', parentOnly)).toEqual([]);
+        // A clause that names no group is still read with its sentence's.
+        expect(rules('The group is P-42₁m; it is chiral.', parentOnly)).toEqual(['chirality']);
+    });
+
     it('takes the groups from a tool\'s facts too', () => {
         const facts = [{ groups: [{ symbol: 'Cmm2', ...pointGroupFacts('mm2') }] }];
         expect(rules('Cmm2 is centrosymmetric.', { facts })).toEqual(['centrosymmetry']);
@@ -129,9 +151,14 @@ describe('contextAuditFacts', () => {
             symmetry: { space_group: 'F-43m (No. 216)', point_group: '-43m', ladder: [{ sg: 'P-42_1m', pg: '-42m' }, { sg: 'P1', pg: '1' }] }
         }, pointGroupFacts);
         expect(facts.convergence).toBe('improving');
-        expect(facts.groups.map((group) => [group.symbol, group.sohncke, group.centrosymmetric])).toEqual([
-            ['F-43m', false, false], ['P-42_1m', false, false], ['P1', true, false]
+        expect(facts.groups.map((group) => [group.symbol, group.sohncke, group.centrosymmetric, Boolean(group.parent)])).toEqual([
+            ['F-43m', false, false, true], ['P-42_1m', false, false, true], ['P1', true, false, true]
         ]);
+        // With operation counts, the ladder's top is the rung with the most.
+        const counted = contextAuditFacts({
+            symmetry: { space_group: 'Pm-3m', point_group: 'm-3m', ladder: [{ sg: 'P4mm', pg: '4mm', n_ops: 8 }, { sg: 'Pm-3m', pg: 'm-3m', n_ops: 48 }, { sg: 'P1', pg: '1', n_ops: 1 }] }
+        }, pointGroupFacts);
+        expect(counted.groups.filter((group) => group.parent).map((group) => group.symbol)).toEqual(['Pm-3m', 'Pm-3m']);
         expect(contextAuditFacts(null, pointGroupFacts)).toBeNull();
     });
 });
