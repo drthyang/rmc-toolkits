@@ -25,7 +25,10 @@ export const MAX_REPLY_TOKENS = 8192;
 export const createSpendTracker = ({ capUSD, prices, ledger }) => {
     if (!(capUSD > 0)) throw new Error('a spend cap in USD is required');
     if (!(prices?.inputPerMTok > 0) || !(prices?.outputPerMTok > 0)) throw new Error('prices per million tokens are required');
-    const cost = (inputTokens, outputTokens) => (inputTokens * prices.inputPerMTok + outputTokens * prices.outputPerMTok) / 1e6;
+    // Prompt tokens at the dearest prompt rate: a cache write can cost more
+    // than plain input, and the client cannot tell which was billed.
+    const promptPerMTok = Math.max(prices.inputPerMTok, prices.cacheWritePerMTok || 0, prices.cacheReadPerMTok || 0);
+    const cost = (inputTokens, outputTokens) => (inputTokens * promptPerMTok + outputTokens * prices.outputPerMTok) / 1e6;
     const spent = () => ledger.load().reduce((sum, entry) => sum + (entry.usd || 0), 0);
     return {
         capUSD,

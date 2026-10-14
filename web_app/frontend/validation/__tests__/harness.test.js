@@ -13,6 +13,7 @@ import { renderReport } from '../report';
 import { answerNumbers, traceNumbers } from '../provenance';
 import { createSpendTracker, memoryLedger, meteredCall } from '../spend';
 import { loadSkills } from '../run';
+import { resolveModel } from '../models';
 
 const skills = loadSkills();
 
@@ -112,6 +113,20 @@ describe('the live harness, scripted model', () => {
         expect(ledger.load()[0].outputTokens).toBe(1000);
         expect(tracker.spent()).toBeGreaterThan(0.015);
         expect(() => tracker.reserve({ messages: [{ role: 'user', content: 'c'.repeat(2.5e6) }] })).toThrow(/spend cap reached/);
+    });
+});
+
+describe('the API model\'s defaults', () => {
+    it('Sonnet: its id and prices by default, the key required, prompt tokens at the cache-write rate', () => {
+        expect(() => resolveModel('claude-sonnet-5.5', {})).toThrow(/set ANTHROPIC_API_KEY/);
+        const sonnet = resolveModel('claude-sonnet-5.5', { ANTHROPIC_API_KEY: 'k' });
+        expect(sonnet).toMatchObject({ model: 'claude-sonnet-5-5', capUSD: 12, splits: ['test'], arms: ['B'], runsPerCase: 3 });
+        expect(sonnet.prices).toEqual({ inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 });
+        const tracker = createSpendTracker({ capUSD: sonnet.capUSD, prices: sonnet.prices, ledger: memoryLedger() });
+        // The planned test set, arm B, 3 runs: ~2.4M prompt + 0.15M reply tokens.
+        expect(tracker.cost(2.4e6, 0.15e6)).toBeCloseTo(7.5, 6);
+        expect(tracker.cost(2.4e6, 0.15e6)).toBeLessThan(sonnet.capUSD);
+        expect(resolveModel('qwen3.8-27b', {})).toMatchObject({ api: false, temperature: 0.2 });
     });
 });
 

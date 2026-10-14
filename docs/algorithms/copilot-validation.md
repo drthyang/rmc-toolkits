@@ -115,14 +115,14 @@ Each model gets the same cases, prompt, tools and scoring, and the results are r
 - meta/muse-glimmer (LM Studio, 28B, tool use, up to 128k);
 - Claude Sonnet 5.5 (API).
 
-The API model runs the test set only, arm B, 3 runs per case, under RMC's $12 share of the
-cycle's cap. The spend tracker prices each request before sending it (prompt estimate + the
-largest reply) and refuses one that could cross the cap. A JSON-lines ledger keeps the total
-across restarts. The client reports no token usage, so charges use the Copilot's conservative
-estimate (2.5 characters per token of text). That overstates Claude's usage, so the cap binds
-before the bill does. The model id and the per-token prices must be given
-(`RMC_EVAL_SONNET_MODEL`, `RMC_EVAL_PRICE_IN`, `RMC_EVAL_PRICE_OUT`); without them the harness
-refuses.
+The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under RMC's
+$12 share of the cycle's $40 cap. The spend tracker prices each request before sending it (prompt
+estimate + the largest reply) and refuses one that could cross the cap; a JSON-lines ledger keeps
+the total across restarts. The client sees no usage report, so the charge is an upper bound: the
+Copilot's conservative token estimate (2.5 characters per token of text), with every prompt token
+at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14): input $2, output $10,
+cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL_SONNET_MODEL`,
+`RMC_EVAL_PRICE_IN` and `RMC_EVAL_PRICE_OUT` override the defaults; `ANTHROPIC_API_KEY` is required.
 
 ## Arm A results (no model; 2026-10-14, commit b4fe09f)
 
@@ -166,8 +166,7 @@ npx vite-node validation/run.js -- live --arm C --model qwen3.8-27b --split dev 
 # held-out test: from a clean committed tree
 npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split test --runs 3 --final
 # Claude Sonnet 5.5: test set, arm B, $12 cap
-RMC_EVAL_SONNET_MODEL=<model id> RMC_EVAL_PRICE_IN=<USD/Mtok> RMC_EVAL_PRICE_OUT=<USD/Mtok> ANTHROPIC_API_KEY=… \
-  npx vite-node validation/run.js -- live --arm B --model claude-sonnet-5.5 --split test --runs 3 --final
+ANTHROPIC_API_KEY=… npx vite-node validation/run.js -- live --arm B --model claude-sonnet-5.5 --split test --runs 3 --final
 # side by side
 npx vite-node validation/run.js -- report --in validation/runs/<dir> --in validation/runs/<dir> --out validation/runs/report.md
 ```
@@ -183,6 +182,6 @@ thousand tokens on a 8–15k-token prompt), expect about 8–12 minutes a run:
 - dev and test, arms B and C: about 16–20 hours per local model;
 - smoke pass: about 1.5 hours.
 
-**Tokens.** For Sonnet, about 70–90k prompt tokens and 3–6k reply tokens per run, so the 27 test
-runs of arm B come to about 2.4M prompt + 0.15M reply tokens before prices. The tracker's
-conservative count makes its charge higher than the bill.
+**Tokens and cost.** For Sonnet, about 70–90k prompt tokens and 3–6k reply tokens per run, so the
+27 test runs of arm B come to about 2.4M prompt + 0.15M reply tokens. That is about $6.30 at list
+prices ($4.80 prompt + $1.50 reply), less with cache hits. The tracker's upper bound is $7.50, inside the $12 cap.

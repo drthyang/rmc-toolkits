@@ -31,10 +31,7 @@ export const MODELS = Object.freeze({
     'claude-sonnet-5.5': {
         label: 'Claude Sonnet 5.5 (API)',
         baseUrl: 'https://api.anthropic.com/v1',
-        // The exact model id and the prices are set by whoever starts the run
-        // (RMC_EVAL_SONNET_MODEL, RMC_EVAL_PRICE_IN, RMC_EVAL_PRICE_OUT in USD
-        // per million tokens): the harness refuses an API run without them.
-        model: null,
+        model: 'claude-sonnet-5-5',
         modelEnv: 'RMC_EVAL_SONNET_MODEL',
         apiKeyEnv: 'ANTHROPIC_API_KEY',
         api: true,
@@ -42,17 +39,20 @@ export const MODELS = Object.freeze({
         capUSD: 12,
         splits: ['test'],
         runsPerCase: 3,
-        // Arm B only by default: B and C together would roughly double the
-        // spend (see the run-time and cost estimate in the validation doc).
+        // Arm B only: B and C together would roughly double the spend.
         arms: ['B'],
-        prices: { inputPerMTok: null, outputPerMTok: null },
+        // USD per million tokens (2026-10-14, from the orchestrator). The
+        // tracker charges every prompt token at the dearest prompt rate (a
+        // cache write, $2.50), an upper bound whether or not a prompt is
+        // cached: the client sees no usage report to tell.
+        prices: { inputPerMTok: 2, outputPerMTok: 10, cacheReadPerMTok: 0.1, cacheWritePerMTok: 2.5 },
         priceEnv: { inputPerMTok: 'RMC_EVAL_PRICE_IN', outputPerMTok: 'RMC_EVAL_PRICE_OUT' }
     }
 });
 
 export const TEMPERATURE = 0.2;
 
-/** A model's settings with its environment overrides; throws when an API model lacks its id or prices. */
+/** A model's settings with its environment overrides; throws when an API model lacks its key, id or prices. */
 export const resolveModel = (name, env = {}) => {
     const base = MODELS[name];
     if (!base) throw new Error(`unknown model '${name}'; known: ${Object.keys(MODELS).join(', ')}`);
@@ -60,6 +60,7 @@ export const resolveModel = (name, env = {}) => {
     if (base.modelEnv && env[base.modelEnv]) model.model = env[base.modelEnv];
     if (base.priceEnv) {
         model.prices = {
+            ...base.prices,
             inputPerMTok: Number(env[base.priceEnv.inputPerMTok] ?? base.prices.inputPerMTok),
             outputPerMTok: Number(env[base.priceEnv.outputPerMTok] ?? base.prices.outputPerMTok)
         };
