@@ -232,7 +232,9 @@ describe('CopilotChat', () => {
         // Seen with LM Studio: a GPU out-of-memory ends the stream with an
         // error event and no content. That used to end the turn as an empty
         // reply, which was dropped, and the chat then crashed rendering.
+        // The empty reply gets one reminder, which is empty too.
         const queue = [
+            sse([delta({}, 'stop')]),
             sse([delta({}, 'stop')]),
             sse([{ error: { message: 'Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)' } }])
         ];
@@ -245,11 +247,14 @@ describe('CopilotChat', () => {
 
         await ask('first?');
         expect(container.querySelectorAll('.llm-message')).toHaveLength(2);
-        expect(container.querySelector('.llm-turn-footer').textContent).toBe('The model returned an empty reply.');
+        expect(container.querySelector('.llm-turn-footer').textContent)
+            .toBe('The model returned an empty reply: the model wrote no answer, even after a reminder.');
 
         await ask('second?');
         expect(container.querySelector('[role="alert"]').textContent)
-            .toBe('The server stopped the reply: Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory)');
+            .toBe('The server stopped the reply: Insufficient Memory (kIOGPUCommandBufferCallbackErrorOutOfMemory) '
+                + 'The model server ran out of memory. Close other models (or other jobs using the GPU), load this one '
+                + 'with a smaller context, or pick a smaller model.');
         expect(container.querySelector('.llm-composer-input').disabled).toBe(false);
     });
 

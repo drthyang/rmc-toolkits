@@ -449,6 +449,27 @@ each analysis adds up to 3,000 characters more.
   `finish_reason` `length`) ends with a warning in the turn's footer instead of passing as a
   whole answer.
 
+## Robust on local models
+
+A local model can stall, loop or reply with nothing: qwen3.8-27b, a dense reasoning model, took 1–5
+minutes a question in the 2026-10-10 spot check and once over 15. `copilot/robustness.js` holds the
+pieces the agent loop uses so a turn always ends with an answer or a reason:
+
+| Failure | What the loop does | Limit |
+| --- | --- | --- |
+| No token for minutes (server busy, stopped) | Cancels the request; the error says the server may be busy | `stallMs` 180 s |
+| A reply that never ends | Cancels it; the error suggests a narrower question or a faster model | `requestMaxMs` 600 s |
+| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once with `antiRepeat` (temperature ≥ 0.6) | one reminder |
+| Reasoning only, no answer, no call | One reminder, then `done` with `stoppedBy: 'empty'` and a `reason` the footer shows | one reminder |
+| A call written as JSON text | Run as a call (`textToolCalls`: the whole reply must be the call, naming a known tool); the text is retracted | |
+| Calls that repeat earlier ones or fail | Two such rounds in a row end the analyses: the next request asks for the answer (`stoppedBy: 'no_progress'`) | `maxNoProgressRounds` 2 |
+| A long turn | Earlier results are compacted to their checks and top-level numbers (`keyNumbers`), once | `turnCharBudget` |
+| A long conversation | Earlier answers above 2,000 characters are re-sent as their sentences with numbers and their Outcome line (`compactAnswer`) | `MEMORY_ANSWER_CHARS` |
+| Out of memory, context overflow, no model loaded, connection lost | The error gets a line on what to do (`explainModelError`) | |
+
+Notes to the model (a reminder, the last-round note) join the last user message when that is the
+last message: Gemma's chat template refuses two user messages in a row.
+
 ## The tool contract (the `tools` prop)
 
 The host passes engine tools as plain objects; the module validates and runs them:

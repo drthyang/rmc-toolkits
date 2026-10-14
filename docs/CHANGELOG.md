@@ -5,6 +5,28 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### AI Copilot: robust on local models
+
+For the local models the Copilot runs on (qwen3.8-27b on LM Studio, a dense reasoning model that
+took 1–5 minutes a question in the 2026-10-10 spot check; gemma4:26b on Ollama), a turn no longer
+hangs, loops or ends in nothing without saying why (`llm/copilot/robustness.js`):
+
+- **Deadlines.** A model request that sends nothing for 3 minutes (`stallMs`; reasoning counts as
+  progress), or runs past 10 (`requestMaxMs`), is cancelled, and the error says what to do.
+- **Loops.** A reply or its reasoning that writes the same passage again and again is stopped as
+  soon as it is caught and asked again once, at temperature 0.6 or more; two rounds in a row whose
+  calls only repeat earlier ones or fail end the analyses (`stoppedBy: 'no_progress'`), so
+  repetition never spends the round budget.
+- **Empty replies.** A reply with neither an answer nor a call (a reasoning-only reply) gets one
+  reminder before the turn ends, and the footer says why it ended empty. A call written as JSON
+  text is run as a call. Notes to the model join the last user message, as Gemma's chat template
+  refuses two user messages in a row.
+- **Compaction keeps the numbers.** An earlier result shortened to fit the turn keeps its top-level
+  numbers next to its checks, and is never shortened twice; an earlier answer re-sent as memory
+  is cut to its sentences with numbers and its Outcome line above 2,000 characters.
+- **Errors explained.** Out of memory, a context overflow, no model loaded and a lost connection
+  each get a line on what to do.
+
 ### Copilot validation review (2026-10-14)
 
 A review of the Copilot's tools against synthetic configurations with planted local structure

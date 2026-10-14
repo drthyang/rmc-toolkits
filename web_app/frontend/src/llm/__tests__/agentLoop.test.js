@@ -289,13 +289,17 @@ describe('runCopilotTurn', () => {
     });
 
     it('says so when the last round comes back with tool calls only (Ollama ignores tool_choice)', async () => {
-        const { callModel } = scriptedModel([
+        // The last round's calls are not run; it is reminded once, then said so.
+        const { callModel, requests } = scriptedModel([
             { calls: [{ name: 'echo', args: { value: 1 } }] },
-            { calls: [{ name: 'echo', args: { value: 2 } }] }
+            { calls: [{ name: 'echo', args: { value: 2 } }] },
+            { calls: [{ name: 'echo', args: { value: 3 } }] }
         ]);
         const events = await collect(runCopilotTurn({
             callModel, messages: baseMessages, tools: [echoTool()], limits: { maxRounds: 1 }
         }));
+        expect(requests).toHaveLength(3);
+        expect(requests[2].toolChoice).toBe('none');
         const done = events.at(-1);
         expect(done.stoppedBy).toBe('max_rounds');
         expect(done.text).toMatch(/analysis budget/);
@@ -312,13 +316,17 @@ describe('runCopilotTurn', () => {
         expect(events.at(-1)).toMatchObject({ type: 'done', text: 'The angles are', stoppedBy: 'answer', cut: true });
     });
 
-    it('marks an empty reply', async () => {
-        const { callModel } = scriptedModel([{ text: '  ' }]);
+    it('reminds the model once after an empty reply, then marks the turn empty with a reason', async () => {
+        const { callModel, requests } = scriptedModel([{ text: '  ' }, { text: '' }]);
         const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }));
-        expect(events.at(-1)).toMatchObject({ type: 'done', text: '', outcome: null, stoppedBy: 'empty' });
+        expect(requests).toHaveLength(2);
+        expect(requests[1].messages.at(-1)).toMatchObject({ role: 'user', content: expect.stringMatching(/no answer and no analysis call/) });
+        expect(events.at(-1)).toMatchObject({
+            type: 'done', text: '', outcome: null, stoppedBy: 'empty', reason: 'the model wrote no answer, even after a reminder'
+        });
     });
 
-    it('compacts earlier results to their checks when the turn outgrows its budget', async () => {
+    it('compacts earlier results to their checks and headline numbers when the turn outgrows its budget', async () => {
         const big = echoTool({
             run: async ({ value }) => ({
                 data: { value, rows: Array.from({ length: 200 }, (_, index) => index) },
@@ -336,8 +344,9 @@ describe('runCopilotTurn', () => {
         }));
         const toolContents = requests[3].messages.filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
         expect(toolContents[0]).toEqual({
-            compacted: 'this earlier result was shortened to fit the context; its checks are kept',
-            checks: [{ level: 'ok', text: 'round 1' }]
+            compacted: 'this earlier result was shortened to fit the context; its checks and headline numbers are kept',
+            checks: [{ level: 'ok', text: 'round 1' }],
+            key: { value: 1 }
         });
         // The newest result is never compacted.
         expect(toolContents[2].data.value).toBe(3);
@@ -394,7 +403,7 @@ describe('runCopilotTurn', () => {
     it('uses sensible default limits', () => {
         expect(DEFAULT_LIMITS).toEqual({
             maxRounds: 6, maxCallsPerRound: 4, toolTimeoutMs: 120000, maxTurnMs: 600000, resultCharBudget: 3000, turnCharBudget: 12000,
-            maxQuestions: 2
+            maxQuestions: 2, stallMs: 180000, requestMaxMs: 600000, maxNoProgressRounds: 2
         });
     });
 });
