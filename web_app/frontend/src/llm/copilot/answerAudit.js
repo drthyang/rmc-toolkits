@@ -12,7 +12,10 @@
 //     point group contradicts (local-symmetry; the spot check called P-42₁m
 //     chiral and said F-43m lost its centrosymmetry);
 //   - a preferred displacement direction when every directions analysis of
-//     the question found none at ≥ 3σ (displacement-anisotropy).
+//     the question found none at ≥ 3σ (displacement-anisotropy);
+//   - a polar group the point group says is not polar (local-symmetry);
+//   - a superstructure (cell doubling, zone-boundary order) when every
+//     analyze_modulations of the question found no ordered point.
 //
 // Deliberately narrow: a rule fires only on a clear positive claim, not on a
 // negated one ("has not converged", "achiral", "no preferred direction"), not
@@ -153,6 +156,8 @@ const convergenceRule = (text, facts, context) => {
 
 const CHIRAL = /(^|[^\w-])chiral\b/gi;
 const CENTROSYMMETRIC = /(^|[^\w-])centrosymmetric\b/gi;
+// "polar" as a property ("non-polar", "nonpolar" and "polarisation" do not match).
+const POLAR = /(^|[^\w-])polar\b(?!\s+(?:plot|coordinates?|angle))/gi;
 const LOST_INVERSION = [
     /\b(los(?:e|es|t|ing)|break(?:s|ing)?|broke|broken|remov(?:e|es|ed|ing)|destroy(?:s|ed|ing)?)\b[^.;]{0,50}\b(inversion|centrosymmetr\w*|cent(?:re|er) of symmetry)/gi,
     /\b(inversion|centrosymmetr\w*|cent(?:re|er) of symmetry)\b[^.;]{0,30}\b(is|was|are|were|gets|got)\s+(lost|broken|removed|destroyed)/gi
@@ -185,6 +190,10 @@ const symmetryRules = (text, facts, context) => {
                 push('centrosymmetry', `The answer calls ${named.map(groupNote).join(', ')} centrosymmetric, but `
                     + `${named.length > 1 ? 'none of these point groups has' : 'its point group has no'} inversion centre.`);
             }
+            if (named.length && named.every((group) => group.polar === false) && positiveMatches(clause, POLAR).length) {
+                push('polar', `The answer calls ${named.map(groupNote).join(', ')} polar, but `
+                    + `${named.length > 1 ? 'none of these point groups is' : 'its point group is not'} polar: an operation reverses every direction.`);
+            }
             // Losing inversion is wrong only when no group it could be lost
             // from has it: neither a group the answer names nor the parent.
             const lost = LOST_INVERSION.some((pattern) => positiveMatches(clause, pattern).length);
@@ -216,6 +225,24 @@ const directionRule = (text, facts) => {
     return [];
 };
 
+// A claimed superstructure: cell doubling or ordered zone-boundary displacements.
+const SUPERSTRUCTURE = /(^|[^\w-])(superstructure|supercell order|cell[- ]doubling|doubl(?:es|ed|ing) (?:of )?the (?:unit )?cell|zone[- ]boundary (?:order|modulation|mode|distortion)|ordered (?:\w+ )?displacements? at q|commensurate modulation)\b/gi;
+
+const superstructureRule = (text, facts) => {
+    const analyses = facts.map((fact) => fact.modulation).filter(Boolean);
+    if (!analyses.length || analyses.some((analysis) => analysis.ordered?.length)) return [];
+    for (const sentence of sentencesOf(text)) {
+        if (clausesOf(sentence).some((clause) => positiveMatches(clause, SUPERSTRUCTURE).length)) {
+            return [{
+                rule: 'superstructure',
+                text: 'The answer claims a superstructure, but no analyze_modulations of this question found an ordered '
+                    + 'zone-boundary point (each was within the independent-displacement background after the correction).'
+            }];
+        }
+    }
+    return [];
+};
+
 /**
  * The findings on one answer: `[{ rule, text }]`, empty when nothing
  * contradicts. `facts` are the turn's tool facts; `context` the run's own
@@ -226,7 +253,8 @@ export const auditAnswer = (text, { facts = [], context = null } = {}) => {
     return [
         ...convergenceRule(text, facts, context),
         ...symmetryRules(text, facts, context),
-        ...directionRule(text, facts)
+        ...directionRule(text, facts),
+        ...superstructureRule(text, facts)
     ];
 };
 

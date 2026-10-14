@@ -5,6 +5,22 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Copilot validation review (2026-10-14)
+
+A review of the Copilot's tools against synthetic configurations with planted local structure
+(`web_app/frontend/validation/`, [docs/algorithms/copilot-validation.md](algorithms/copilot-validation.md)):
+
+- **Superstructure test calibrated.** `analyze_modulations` called a zone-boundary point ordered
+  when it was in the top 1 % of the modes, with no correction over the 7 points × elements tested,
+  and found "order" in 6 of 12 configurations without any (pure thermal motion included). A point
+  now needs ratio ≥ 3 and ≥ 3σ against independent displacements (χ² with the sites' degrees of
+  freedom, Šidák-corrected); each zone-boundary row carries its σ. Planted order stays > 8σ.
+- **Cluster check no longer denies a distortion its own axis test shows.** "LESS distorted than
+  independent atoms … no correlated shape distortion on top" was printed for Jahn–Teller octahedra
+  whose <100> elongation the gyration-axis test found; the sentence now names the favoured axis.
+- **Two answer checks.** "Polar" for a non-polar group (the local-symmetry skill promised it), and
+  a superstructure claimed when every modulation analysis found none.
+
 ### Fixes from the 2026-10-12 review
 
 An independent review of main (c26f8d4) found these; each fix has a regression test built from the

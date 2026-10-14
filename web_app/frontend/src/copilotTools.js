@@ -19,6 +19,7 @@ import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
 import { describePointGroup, pointGroupFacts } from './llm';
+import { normalQuantile, regularizedGamma } from './workers/orientation';
 
 const round = (value, digits = 3) => (
     Number.isFinite(value) ? (value === 0 ? 0 : Number(value.toPrecision(digits))) : null
@@ -550,6 +551,13 @@ export const summarizeClusters = (payload) => {
             text: `The average cluster is regular within its sampling error: edges ${ideal.edges_A[0]}–${ideal.edges_A.at(-1)} Å `
                 + `(± ${ideal.edge_se_A} Å each).`
         });
+    // The lattice axes more clusters are elongated or compressed along than
+    // by chance: a correlated shape distortion, whatever the edge spread says.
+    const favoured = [['long_axis_within_15deg', 'elongated'], ['short_axis_within_15deg', 'compressed']].flatMap(([key, verb]) => (
+        Object.entries(data.local[key] || {})
+            .filter(([, entry]) => entry.z >= CLUSTER_Z && entry.null > 0 && entry.obs / entry.null >= AXIS_ENHANCEMENT)
+            .map(([family, entry]) => ({ family, entry, verb }))
+    ));
     const width = data.local.ladder_width_A;
     if (significant(z.ladderWidth, width.change, CLUSTER_EFFECT)) {
         checks.push(width.change > 0
@@ -562,8 +570,11 @@ export const summarizeClusters = (payload) => {
             : {
                 level: 'ok',
                 text: `The clusters are ${Math.round(-width.change * 100)} % LESS distorted than independent atoms would make them `
-                    + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together, `
-                    + 'and there is no correlated shape distortion on top.'
+                    + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together`
+                    + (favoured.length
+                        ? `, yet more clusters than by chance are ${favoured[0].verb} along ${favoured[0].family} (below): a correlated `
+                            + 'shape distortion whose amplitude the independent-atom null already holds (split or disordered sites).'
+                        : ', and there is no correlated shape distortion on top.')
             });
     } else {
         checks.push({
@@ -589,15 +600,11 @@ export const summarizeClusters = (payload) => {
                 : `The edge pattern leans to one edge against its opposite (trigonality ${trig.obs} vs ${trig.null}, z = ${trig.z}).`
         });
     }
-    [['long_axis_within_15deg', 'elongated'], ['short_axis_within_15deg', 'compressed']].forEach(([key, verb]) => {
-        Object.entries(data.local[key] || {}).forEach(([family, entry]) => {
-            if (entry.z >= CLUSTER_Z && entry.null > 0 && entry.obs / entry.null >= AXIS_ENHANCEMENT) {
-                checks.push({
-                    level: 'note',
-                    text: `More clusters are ${verb} along ${family} than by chance: ${Math.round(entry.obs * 100)} % `
-                        + `vs ${Math.round(entry.null * 100)} % in the null (z = ${entry.z}).`
-                });
-            }
+    favoured.forEach(({ family, entry, verb }) => {
+        checks.push({
+            level: 'note',
+            text: `More clusters are ${verb} along ${family} than by chance: ${Math.round(entry.obs * 100)} % `
+                + `vs ${Math.round(entry.null * 100)} % in the null (z = ${entry.z}).`
         });
     });
     if (data.outliers.bonds_outside_window > CLUSTER_OUTLIER_FRACTION) {
@@ -620,11 +627,32 @@ export const summarizeClusters = (payload) => {
 // --- analyze_modulations ---------------------------------------------------------
 
 // A zone-boundary point is ordered displacement when its power is at least
-// this many times the median over all wavevectors AND it is in the top 1 %
-// of the compared modes (one per ±q pair, long waves left out: the engine's
-// percentile), or the strongest of them (rank 1: a box with < 100 pairs).
+// this many times the median over all wavevectors (the effect size) AND it
+// is significant at SIGNIFICANCE_SIGMA after a family-wise (Šidák)
+// correction over every zone-boundary point and element tested. The null:
+// for independent displacements a site's normalised power at a half-integer
+// q (a real Fourier sum) is Σ_c w_c χ²₁ with Σ w_c = 1, so an element's mean
+// over m sites has at least m degrees of freedom: P ≥ χ²_m / m is the
+// heaviest tail any site anisotropy allows (conservative). The earlier rule
+// (top 1 % of the modes, or rank 1) had no such correction: the validation
+// cases found "order" in 6 of 12 configurations without any.
 export const MODULATION_RATIO = 3;
-export const MODULATION_PERCENTILE = 99;
+
+// One-sided σ of an upper-tail probability.
+const sigmaOf = (p) => (p <= 0 ? Infinity : (p >= 1 ? -Infinity : -normalQuantile(p)));
+
+/**
+ * The family-wise significance (one-sided σ) of an element's zone-boundary
+ * power `power` (normalised: 1 = independent displacements) over `sites`
+ * sites, among `family` points tested.
+ */
+export const zoneBoundarySigma = (power, sites, family) => {
+    if (!(power > 0) || !(sites > 0)) return null;
+    const p = regularizedGamma(sites / 2, (sites * power) / 2).upper;
+    // Šidák: 1 − (1 − p)^family, computed without cancellation for small p.
+    const familyP = -Math.expm1(family * Math.log1p(-Math.min(p, 1 - 1e-16)));
+    return sigmaOf(familyP);
+};
 // A mode this strong, within this fraction of the zone centre, is a
 // long-wavelength (box-scale) displacement wave.
 export const LONG_WAVE_RATIO = 5;
@@ -637,18 +665,28 @@ const qLabel = (q) => `(${q.map((value) => {
 
 export const summarizeModulations = (payload) => {
     const checks = [...parseWarningCheck(payload)];
+    const tested = (payload.elements || []).filter((entry) => entry.sites);
+    const family = tested.reduce((sum, entry) => sum + entry.zoneBoundary.length, 0);
+    const sigmaAt = (entry, point) => (Number.isFinite(point.ratio) && Number.isFinite(entry.medianPower)
+        ? zoneBoundarySigma(point.ratio * entry.medianPower, entry.sites, family)
+        : null);
     const data = {
-        note: 'rows are [q, ratio, percentile]: an element\'s displacement power at wavevector q (fractions of the cell\'s '
-            + 'reciprocal axes) over its median across all q of the supercell grid (the diffuse background), and the share of '
-            + 'the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power. '
+        note: 'zone_boundary rows are [q, ratio, percentile, sigma]: an element\'s displacement power at wavevector q (fractions '
+            + 'of the cell\'s reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the '
+            + 'share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and '
+            + `the calibrated one-sided significance against independent displacements, corrected over all ${family} zone-boundary `
+            + 'points tested (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile]. '
             + 'A ½ component is order that doubles the cell along that axis.',
         supercell: payload.supercell,
         wavevectors: payload.wavevectors,
-        elements: (payload.elements || []).filter((entry) => entry.sites).map((entry) => ({
+        elements: tested.map((entry) => ({
             element: entry.element,
             sites: entry.sites,
-            // [q, ratio to the median, percentile] — compact rows: 7 points × elements.
-            zone_boundary: entry.zoneBoundary.map((point) => [qLabel(point.q), round(point.ratio, 2), roundFixed(point.percentile, 1)]),
+            // [q, ratio to the median, percentile, σ] — compact rows: 7 points × elements.
+            zone_boundary: entry.zoneBoundary.map((point) => {
+                const sigma = sigmaAt(entry, point);
+                return [qLabel(point.q), round(point.ratio, 2), roundFixed(point.percentile, 1), sigma === Infinity ? '>8' : roundFixed(sigma, 1)];
+            }),
             strongest: entry.strongest.slice(0, 3).map((mode) => [qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1)])
         }))
     };
@@ -658,32 +696,33 @@ export const summarizeModulations = (payload) => {
         return { data, checks };
     }
     const ordered = [];
-    (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
+    tested.forEach((entry) => {
         entry.zoneBoundary.forEach((point) => {
-            const top = point.percentile >= MODULATION_PERCENTILE || point.rank === 1;
-            if (point.ratio >= MODULATION_RATIO && top) ordered.push({ element: entry.element, point });
+            const sigma = sigmaAt(entry, point);
+            if (point.ratio >= MODULATION_RATIO && sigma != null && sigma >= SIGNIFICANCE_SIGMA) ordered.push({ element: entry.element, point, sigma });
         });
     });
+    const sigmaText = (sigma) => (sigma === Infinity || sigma > 8 ? '> 8σ' : `${round(sigma, 2)}σ`);
     if (ordered.length) {
-        ordered.forEach(({ element, point }) => {
+        ordered.forEach(({ element, point, sigma }) => {
             const axes = ['a', 'b', 'c'].filter((_, axis) => point.q[axis]).join(', ');
             checks.push({
                 level: 'ok',
                 text: `Ordered ${element} displacements at q = ${qLabel(point.q)}: ${round(point.ratio, 3)}× the median power, `
-                    + `${point.rank === 1 ? 'the strongest mode' : `above ${round(point.percentile, 3)} % of the modes`} `
-                    + 'apart from long waves — a superstructure doubling the cell along '
+                    + `${sigmaText(sigma)} against independent displacements (corrected over ${family} zone-boundary points) `
+                    + '— a superstructure doubling the cell along '
                     + `${axes}.`
             });
         });
     } else {
-        const best = (payload.elements || []).filter((entry) => entry.sites)
-            .flatMap((entry) => entry.zoneBoundary.map((point) => ({ element: entry.element, point })))
-            .sort((a, b) => b.point.percentile - a.point.percentile)[0];
+        const best = tested
+            .flatMap((entry) => entry.zoneBoundary.map((point) => ({ element: entry.element, point, sigma: sigmaAt(entry, point) })))
+            .sort((a, b) => (b.sigma ?? -Infinity) - (a.sigma ?? -Infinity))[0];
         checks.push({
             level: 'ok',
             text: 'No order that doubles the cell: no zone-boundary point stands out of the diffuse background'
-                + (best ? ` (the highest, ${best.element} at ${qLabel(best.point.q)}, is ${round(best.point.ratio, 2)}× the median, `
-                    + `percentile ${round(best.point.percentile, 3)}).` : '.')
+                + (best ? ` (the strongest, ${best.element} at ${qLabel(best.point.q)}, is ${round(best.point.ratio, 2)}× the median, `
+                    + `${best.sigma == null ? 'significance undefined' : sigmaText(best.sigma)} after the correction).` : '.')
         });
     }
     (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
@@ -699,7 +738,14 @@ export const summarizeModulations = (payload) => {
     if (payload.untestable?.length) {
         checks.push({ level: 'note', text: `An odd supercell axis cannot hold ${data.untestable_zone_boundary.join(', ')}: not tested.` });
     }
-    return { data, checks };
+    // For the answer check: a superstructure claim needs an ordered point.
+    const facts = {
+        modulation: {
+            elements: tested.map((entry) => entry.element),
+            ordered: ordered.map(({ element, point }) => ({ element, q: point.q }))
+        }
+    };
+    return { data, checks, facts };
 };
 
 // --- detect_symmetry -------------------------------------------------------------
