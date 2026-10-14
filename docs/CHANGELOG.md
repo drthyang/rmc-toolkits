@@ -5,6 +5,15 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### README: the visual front page back, with a Copilot GIF
+
+The one-screen README (2026-10-11) kept the facts but lost what made the page inviting. It gets
+back the three-step *Open the app* block, the 🔒/⚡/🤖/📖 callouts and the screenshot grid, and
+leads with a new GIF of the AI Copilot answering a question on the Demo run with a local model
+(`assets/rmc-toolkits-copilot.gif`, which replaces the chat-only `rmc-toolkits-assistant.gif` in
+QuickStart too). The feature essays, the tested-models table and the signature equations stay in
+the Copilot guide and ALGORITHMS.md.
+
 ### AI Copilot: robust on local models
 
 For the local models the Copilot runs on (qwen3.8-27b on LM Studio, a dense reasoning model that

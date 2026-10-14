@@ -156,10 +156,11 @@ Then open:
 | --- | --- |
 | ![PCA ellipsoid](assets/rmc-toolkits-pca-demo.png) | ![Displacement directions](assets/rmc-toolkits-displacement-demo.png) |
 
-A local model summarizing the bundled demo run as tables, with LaTeX math such as Rwp and χ²
-rendered inline (recorded with the earlier chat-only version of the AI Copilot):
+The AI Copilot answering a question about the bundled Demo run with a local model: it runs the
+analyses as step cards, checks them, and shows the same analysis on its page (sped up while the
+model thinks):
 
-![A local model summarizing a run as tables](assets/rmc-toolkits-assistant.gif)
+![The AI Copilot answering a question about the Demo run with a local model](assets/rmc-toolkits-copilot.gif)
 
 ## Supported Files
 
