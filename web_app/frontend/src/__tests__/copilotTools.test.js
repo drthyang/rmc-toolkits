@@ -376,8 +376,8 @@ describe('Copilot summarizers', () => {
     it('modulation checks: independent or randomly split displacements are not order (validation cases)', () => {
         // The earlier rule (top 1 % of the modes) called these ordered: Ba at
         // (½, 0, 0) in pure thermal motion, Nb in random two-site disorder, Cu
-        // in randomly oriented JT octahedra.
-        for (const id of ['dev-thermal-null', 'dev-offcentre', 'dev-jahn-teller', 'test-symmetry-lowering']) {
+        // in randomly oriented JT octahedra, Mo in breathing triangles.
+        for (const id of ['dev-thermal-null', 'dev-offcentre', 'dev-jahn-teller', 'dev-breathing']) {
             const built = buildCase(ALL_CASES.find((item) => item.id === id), { partials: false });
             const { checks, facts } = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(built.rmc6f)));
             expect(checks.filter((check) => /^Ordered/.test(check.text))).toEqual([]);

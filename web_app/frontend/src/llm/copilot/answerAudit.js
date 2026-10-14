@@ -26,6 +26,7 @@
 // A negation or such a word counts only in the stretch of the clause just
 // before the claim, after its last comma or "and"/"so": "With no remaining
 // drift in χ², the run has converged" is a claim.
+// A JSON key ("chiral": false in a structured block) is not a claim either.
 // A false alarm under a correct answer would teach the user to ignore these.
 // Each finding is `{ rule, text }`; pure, no React.
 
@@ -60,6 +61,8 @@ const positiveMatches = (clause, pattern, { state = false } = {}) => {
     if (/\?\s*$/.test(clause)) return [];
     const out = [];
     for (const match of clause.matchAll(pattern)) {
+        // A JSON key ("chiral": false) names a field, it claims nothing.
+        if (/^"\s*(?::|$)/.test(clause.slice(match.index + match[0].length))) continue;
         const lead = leadOf(clause.slice(0, match.index + (match[1] || '').length));
         if (!NEGATION.test(lead) && !NOT_ASSERTED.test(lead) && !(state && ATTRIBUTIVE.test(lead))) out.push(match);
     }

@@ -209,6 +209,12 @@ describe('the polar check (local-symmetry skill) and the superstructure check (v
         expect(rules('P4mm is polar along c.', tetragonal)).toEqual([]);
     });
 
+    it('a JSON key is a field name, not a claim (a structured verdict under the answer)', () => {
+        const json = 'VERDICT {"features": [], "space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}';
+        expect(rules(json, cubic)).toEqual([]);
+        expect(rules(`Pm-3m is polar.\n\n${json}`, cubic)).toEqual(['polar']);
+    });
+
     it('flags a superstructure claim only when every modulation analysis found none', () => {
         const none = { facts: [{ modulation: { elements: ['Ti'], ordered: [] } }] };
         const found = { facts: [{ modulation: { elements: ['Ti'], ordered: [{ element: 'Ti', q: [0, 0, 0.5] }] } }] };
