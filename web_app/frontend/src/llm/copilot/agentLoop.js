@@ -6,6 +6,7 @@ import { auditAnswer, lowerOutcome } from './answerAudit';
 import { ASK_USER, MAX_QUESTIONS, answerResult } from './askUser';
 import { resolveClarification } from './clarify';
 import { parseOutcome } from './outcome';
+import { keyNumbers, repeatsItself, textToolCalls, withDeadlines } from './robustness';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
 } from './toolCalls';
@@ -52,6 +53,18 @@ import {
 // before an analysis runs in a window that cuts a shell (`beforeCall`: it runs
 // in the window the user picks). These questions are ask_user steps
 // (`app: true`) and count toward `maxQuestions`.
+//
+// On a local model (robustness.js): a model request that sends nothing for
+// `stallMs`, or runs past `requestMaxMs`, is cancelled and explained; a reply
+// with neither an answer nor a call (a reasoning-only reply), or one stopped
+// because it kept writing the same passage (`repeatsItself`), gets one
+// reminder, asked a little warmer (`antiRepeat` on the request: the host
+// raises the temperature, as greedy decoding is what loops), before the turn
+// ends on an explained empty reply; a call written
+// as JSON text is run; and two rounds in a row that add nothing new (every
+// call repeated or failed) end the analyses: the next request asks for the
+// answer (`stoppedBy: 'no_progress'`), so repetition never spends the round
+// budget.
 
 export const DEFAULT_LIMITS = {
     maxRounds: 6,
@@ -60,7 +73,10 @@ export const DEFAULT_LIMITS = {
     maxTurnMs: 600000,
     resultCharBudget: 3000,
     turnCharBudget: 12000,
-    maxQuestions: MAX_QUESTIONS
+    maxQuestions: MAX_QUESTIONS,
+    stallMs: 180000,
+    requestMaxMs: 600000,
+    maxNoProgressRounds: 2
 };
 
 // A 4xx saying the model or server cannot take a `tools` field (Ollama:
@@ -78,11 +94,15 @@ export const assistantContent = (text) => (typeof text === 'string' && text.trim
 
 const compactToolMessage = (content) => {
     try {
-        const { checks, error } = JSON.parse(content);
+        const { checks, error, data, compacted } = JSON.parse(content);
+        // Already compacted: compacting again would lose its numbers.
+        if (compacted) return content;
+        const key = error ? null : keyNumbers(data);
         return JSON.stringify({
-            compacted: 'this earlier result was shortened to fit the context; its checks are kept',
+            compacted: `this earlier result was shortened to fit the context; its checks${key ? ' and headline numbers' : ''} are kept`,
             ...(error ? { error } : {}),
-            ...(checks ? { checks } : {})
+            ...(checks ? { checks } : {}),
+            ...(key ? { key } : {})
         });
     } catch {
         return JSON.stringify({ compacted: 'this earlier result was shortened to fit the context' });
@@ -102,6 +122,46 @@ const pageParamsFor = (tool, args) => {
 
 const EMPTY_FINAL = 'The analysis budget for this question was used before the model wrote an answer. '
     + 'The analyses it ran are listed above.';
+const EMPTY_STALLED = 'The model kept repeating analyses that added nothing new, and wrote no answer. '
+    + 'The analyses it ran are listed above.';
+
+// When a reply holds neither an answer nor an analysis call.
+const emptyNudge = (why) => ({
+    role: 'user',
+    content: `Your last reply ${why === 'loop'
+        ? 'kept repeating the same passage, so it was stopped'
+        : `had no answer and no analysis call${why === 'cut' ? ' (it reached the length limit while reasoning)' : ''}`}. `
+        + 'Answer the question now from the context and the results above, briefly, or call one analysis if '
+        + 'one is still missing. End with the Outcome line.'
+});
+
+const EMPTY_REASONS = {
+    loop: 'the model kept repeating the same passage, even after a reminder',
+    cut: 'the model spent its reply on reasoning and reached the length limit',
+    empty: 'the model wrote no answer, even after a reminder'
+};
+
+// A note for the model goes into the last user message when that is the last
+// message: some chat templates (Gemma's) refuse two user messages in a row.
+const addNote = (messages, note) => {
+    const last = messages[messages.length - 1];
+    if (last?.role === 'user' && typeof last.content === 'string') {
+        messages[messages.length - 1] = { ...last, content: `${last.content}\n\n${note.content}` };
+    } else {
+        messages.push(note);
+    }
+};
+
+// How often (in new characters) a streaming reply is checked for a loop.
+const LOOP_CHECK_CHARS = 400;
+
+// When the last rounds added nothing new.
+const noProgressNote = (rounds) => ({
+    role: 'user',
+    content: `Your last ${rounds} steps repeated earlier analyses or failed, so they added nothing new. `
+        + 'Do not call them again. Answer now from the results above, say what is still missing, or ask the user '
+        + 'with ask_user if a choice blocks you. End with the Outcome line.'
+});
 
 // The tool message the model reads: the result (fitted to the budget) and
 // the checks, or the error. Checks are never trimmed: they are the verdict.
@@ -135,8 +195,14 @@ export async function* runCopilotTurn({
     clarifier = null
 }) {
     const {
-        maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions
+        maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions,
+        stallMs, requestMaxMs, maxNoProgressRounds
     } = { ...DEFAULT_LIMITS, ...limits };
+    let noProgressRounds = 0;
+    let stalled = false;
+    let emptyNudges = 0;
+    let warmer = false;
+    let finalNoted = false;
     const startedAt = Date.now();
     // Time spent waiting for the user's answers, which the turn limit skips.
     let waitedMs = 0;
@@ -210,28 +276,51 @@ export async function* runCopilotTurn({
 
     for (;;) {
         const outOfTime = rounds > 0 && Date.now() - startedAt - waitedMs > maxTurnMs;
-        const finalRound = useTools && (rounds >= maxRounds || outOfTime);
-        if (finalRound) messages.push(toolBudgetNote(rounds));
+        const finalRound = useTools && (rounds >= maxRounds || outOfTime || stalled);
+        // The last-round note is added once (a reminder can repeat that round).
+        if (finalRound && !finalNoted) {
+            finalNoted = true;
+            addNote(messages, stalled ? noProgressNote(noProgressRounds) : toolBudgetNote(rounds));
+        }
         yield { type: 'round', round: rounds };
 
         let text = '';
+        let reasoning = '';
+        let looped = false;
+        let checkedAt = 0;
         let finishReason = null;
         const fragments = [];
+        // The request's own signal: aborted with the turn, or by a deadline.
+        const request = new AbortController();
+        const onTurnAbort = () => request.abort();
+        signal?.addEventListener('abort', onTurnAbort, { once: true });
         try {
             const stream = callModel({
                 messages,
                 tools: useTools ? requestTools : undefined,
                 toolChoice: useTools ? (finalRound ? 'none' : 'auto') : undefined,
-                signal
+                signal: request.signal,
+                ...(warmer ? { antiRepeat: true } : {})
             });
-            for await (const chunk of stream) {
+            for await (const chunk of withDeadlines(stream, { stallMs, maxMs: requestMaxMs, cancel: () => request.abort() })) {
                 if (chunk.content) {
                     text += chunk.content;
                     yield { type: 'text', delta: chunk.content };
                 }
-                if (chunk.reasoning) yield { type: 'reasoning', delta: chunk.reasoning };
+                if (chunk.reasoning) {
+                    reasoning += chunk.reasoning;
+                    yield { type: 'reasoning', delta: chunk.reasoning };
+                }
                 if (chunk.toolCall) accumulateToolCall(fragments, chunk.toolCall);
                 if (chunk.finishReason) finishReason = chunk.finishReason;
+                if (text.length + reasoning.length - checkedAt >= LOOP_CHECK_CHARS) {
+                    checkedAt = text.length + reasoning.length;
+                    if (repeatsItself(reasoning) || repeatsItself(text)) {
+                        looped = true;
+                        request.abort();
+                        break;
+                    }
+                }
             }
         } catch (error) {
             // Only the turn's first request falls back: later ones already
@@ -246,34 +335,70 @@ export async function* runCopilotTurn({
                 continue;
             }
             throw error;
+        } finally {
+            signal?.removeEventListener('abort', onTurnAbort);
         }
 
-        const calls = useTools && !finalRound ? finalizeToolCalls(fragments, `${rounds}_`) : [];
+        if (looped) {
+            // A looping reply is no answer: its text goes, and it is asked again.
+            if (text) yield { type: 'retract' };
+            text = '';
+            fragments.length = 0;
+        }
+        let calls = useTools && !finalRound ? finalizeToolCalls(fragments, `${rounds}_`) : [];
+        // A call written as JSON text (small local models do that) is run.
+        if (!calls.length && useTools && !finalRound && text.trim()) {
+            const written = textToolCalls(text, [...byName.keys()]);
+            if (written.length) {
+                calls = written.map((call, index) => ({ id: `call_text_${rounds}_${index}`, name: call.name, arguments: call.arguments, extraContent: null }));
+                text = '';
+                yield { type: 'retract' };
+            }
+        }
         const cut = finishReason === 'length';
+        const why = looped ? 'loop' : (cut ? 'cut' : 'empty');
         if (!calls.length) {
+            if (!text.trim() && emptyNudges < 1) {
+                // A reasoning-only, empty or looping reply: one reminder, then
+                // ask again (warmer after a loop).
+                emptyNudges += 1;
+                warmer = warmer || looped;
+                addNote(messages, emptyNudge(why));
+                continue;
+            }
             if (!text.trim()) {
                 // Ollama ignores tool_choice 'none': a last round can come back
                 // as tool calls only. Say so instead of ending on nothing.
                 if (finalRound) {
-                    yield { type: 'text', delta: EMPTY_FINAL };
+                    const final = stalled ? EMPTY_STALLED : EMPTY_FINAL;
+                    yield { type: 'text', delta: final };
                     yield {
                         type: 'done',
-                        text: EMPTY_FINAL,
-                        outcome: { status: 'not achieved', note: 'no answer was written within the analysis budget', body: EMPTY_FINAL },
+                        text: final,
+                        outcome: {
+                            status: 'not achieved',
+                            note: stalled ? 'the analyses stopped adding anything new and no answer was written' : 'no answer was written within the analysis budget',
+                            body: final
+                        },
                         rounds,
-                        stoppedBy: 'max_rounds',
+                        stoppedBy: stalled ? 'no_progress' : 'max_rounds',
                         cut,
                         audit: []
                     };
                 } else {
-                    yield { type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut, audit: [] };
+                    yield {
+                        type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut, audit: [],
+                        reason: EMPTY_REASONS[why]
+                    };
                 }
                 return;
             }
             // A computed contradiction outranks the model's own verdict.
             const findings = audit(text);
             const outcome = lowerOutcome(parseOutcome(text), findings, text);
-            yield { type: 'done', text, outcome, rounds, stoppedBy: finalRound ? 'max_rounds' : 'answer', cut, audit: findings };
+            yield {
+                type: 'done', text, outcome, rounds, stoppedBy: finalRound ? (stalled ? 'no_progress' : 'max_rounds') : 'answer', cut, audit: findings
+            };
             return;
         }
 
@@ -301,6 +426,9 @@ export async function* runCopilotTurn({
         });
         const roundStart = messages.length;
         let askedThisRound = false;
+        // Whether this round brought anything new: a result that was not an
+        // error and not repeated, or an answer from the user.
+        let progressed = false;
 
         for (const [position, call] of calls.entries()) {
             callCounter += 1;
@@ -309,6 +437,9 @@ export async function* runCopilotTurn({
             let parsed = parseToolArguments(call.arguments);
             let runArguments = call.arguments;
             let appNote = null;
+            // The user answered a question for this call: news, even if the
+            // call it settles was run before.
+            let answered = false;
             // Before an analysis runs in a window that cuts a shell, the
             // Workbench asks which window (clarify.js beforeCall) — once per
             // window in a turn: a choice already made, or one the question
@@ -329,6 +460,7 @@ export async function* runCopilotTurn({
                     runArguments = JSON.stringify(resolved.args);
                     parsed = { ok: true, value: resolved.args };
                     appNote = `the Workbench asked the user about the window: ${resolved.note}`;
+                    answered = true;
                 }
             }
             const shownArgs = parsed.ok ? parsed.value : call.arguments;
@@ -384,6 +516,7 @@ export async function* runCopilotTurn({
                 }
             }
             if (appNote) note = note ? `${appNote}; ${note}` : appNote;
+            if (answered || (!result.error && !cached)) progressed = true;
 
             if (result.facts && !result.error) facts.push(result.facts);
             if (!tool?.keep) toolMessages.push(messages.length);
@@ -406,5 +539,7 @@ export async function* runCopilotTurn({
                 pageParams: result.error ? null : pageParamsFor(tool, result.args)
             };
         }
+        noProgressRounds = progressed ? 0 : noProgressRounds + 1;
+        if (noProgressRounds >= maxNoProgressRounds) stalled = true;
     }
 }

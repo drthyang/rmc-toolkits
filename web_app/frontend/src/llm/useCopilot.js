@@ -7,6 +7,7 @@ import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState
 import { contextAuditFacts } from './copilot/answerAudit';
 import { ASK_USER } from './copilot/askUser';
 import { READ_SKILL, skillIndex } from './copilot/skills';
+import { compactAnswer, explainModelError } from './copilot/robustness';
 import { pointGroupFacts } from './context/pointGroups';
 import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS } from './prompts/copilot';
 import { streamCopilotChat } from './provider/contextGuard';
@@ -33,14 +34,24 @@ import { streamCopilotChat } from './provider/contextGuard';
 // Every model request goes through provider/contextGuard.js, which never
 // sends a request the model would cut to fit its context window (it sizes
 // Ollama's context, or refuses the turn with a message that says why).
+//
+// For local models (copilot/robustness.js): a request the loop asks again
+// after a loop (`antiRepeat`) runs at least at temperature 0.6, and an error
+// says what to do about it.
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const abortError = () => new DOMException('Aborted', 'AbortError');
+// The longest earlier answer re-sent whole as memory.
+export const MEMORY_ANSWER_CHARS = 2000;
+// The temperature a request asked again after a loop runs at, at least.
+export const ANTI_REPEAT_TEMPERATURE = 0.6;
 
 /**
- * Earlier turns as model memory: each question with its final answer. A
- * question whose turn produced no answer (stopped, failed) is dropped with it,
- * so the memory never holds two user messages in a row or an empty reply.
+ * Earlier turns as model memory: each question with its final answer, a long
+ * answer shortened to its sentences with numbers and its verdict
+ * (`compactAnswer`). A question whose turn produced no answer (stopped,
+ * failed) is dropped with it, so the memory never holds two user messages in
+ * a row or an empty reply.
  */
 export const conversationMemory = (turns) => {
     const memory = [];
@@ -49,7 +60,7 @@ export const conversationMemory = (turns) => {
         const reply = turns[index + 1];
         const answer = reply?.role === 'assistant' ? (reply.text || '').trim() : '';
         if (!answer) return;
-        memory.push({ role: 'user', content: turn.content }, { role: 'assistant', content: answer });
+        memory.push({ role: 'user', content: turn.content }, { role: 'assistant', content: compactAnswer(answer, MEMORY_ANSWER_CHARS) });
     });
     return memory;
 };
@@ -133,10 +144,10 @@ export const useCopilot = ({
         // The agent moves on: the last answer's highlight ends.
         focus?.clear('question');
         const model = settings.model;
-        const callModel = (request) => streamCopilotChat({
+        const callModel = ({ antiRepeat = false, ...request }) => streamCopilotChat({
             baseUrl: settings.baseUrl,
             model,
-            temperature: settings.temperature,
+            temperature: antiRepeat ? Math.max(Number(settings.temperature) || 0, ANTI_REPEAT_TEMPERATURE) : settings.temperature,
             apiKey: settings.apiKey,
             session: contextSessionRef.current,
             ...request
@@ -170,7 +181,8 @@ export const useCopilot = ({
                 turn = closeTurn(turn, 'stopped');
             } else {
                 turn = closeTurn(turn, 'error');
-                setError(failure?.message || 'The model request failed');
+                const { message, hint } = explainModelError(failure);
+                setError(hint ? `${message} ${hint}` : message);
             }
         } finally {
             abortRef.current = null;
