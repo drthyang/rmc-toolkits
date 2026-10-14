@@ -90,6 +90,21 @@ describe('the live harness, scripted model', () => {
         expect(record.score.spurious).toEqual([]);
     });
 
+    it('a call written as JSON text is run, and its withdrawn text is recorded apart from the reasons', async () => {
+        const record = await runLiveCase({
+            built: built('dev-chiral'), arm: 'C', model: MODEL,
+            callModel: scripted([
+                { text: '{"name": "list_sites", "arguments": {}}' },
+                { text: 'Thermal motion only.\n\nVERDICT {"features": [], "space_group": "P2_13", "chiral": true, "centrosymmetric": false, "polar": false}' }
+            ])
+        });
+        expect(record.steps.map((step) => step.name)).toEqual(['list_sites']);
+        expect(record.retracted).toEqual([{ round: 0, text: '{"name": "list_sites", "arguments": {}}' }]);
+        expect(record.steps[0].why.text).toBe('');
+        expect(record.score.score).toBe(1);
+        expect(renderTranscript(record)).toMatch(/the loop withdrew the text below/);
+    });
+
     it('stops at the spend cap with the run recorded', async () => {
         const tracker = createSpendTracker({ capUSD: 0.01, prices: { inputPerMTok: 3, outputPerMTok: 15 }, ledger: memoryLedger() });
         const callModel = meteredCall(scripted([{ text: 'x' }]), tracker, 'cap test');

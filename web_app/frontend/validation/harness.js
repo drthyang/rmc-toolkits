@@ -101,6 +101,7 @@ export const runLiveCase = async ({
         tools_offered: tools.map((tool) => tool.name),
         skills_offered: parsedSkills.map((skill) => skill.name),
         steps: [],
+        retracted: [],
         rounds: 0,
         final: null,
         error: null
@@ -119,6 +120,13 @@ export const runLiveCase = async ({
             if (event.type === 'round') round = { index: event.round, reasoning: '', text: '' };
             else if (event.type === 'reasoning') round.reasoning += event.delta;
             else if (event.type === 'text') round.text += event.delta;
+            else if (event.type === 'retract') {
+                // The loop withdrew this round's text (a looping reply, or a
+                // call written as JSON text, which it then runs): kept for the
+                // reviewer, never shown as the reason for a call.
+                record.retracted.push({ round: round.index, text: round.text });
+                round.text = '';
+            }
             else if (event.type === 'tool_start') {
                 open.set(event.id, {
                     step: record.steps.length + 1,
@@ -142,7 +150,7 @@ export const runLiveCase = async ({
                 record.rounds = event.rounds;
                 record.final = {
                     text: event.text, outcome: event.outcome, stopped_by: event.stoppedBy, cut: Boolean(event.cut),
-                    audit: event.audit || [], reasoning: round.reasoning
+                    audit: event.audit || [], reasoning: round.reasoning, reason: event.reason ?? null
                 };
             }
         }

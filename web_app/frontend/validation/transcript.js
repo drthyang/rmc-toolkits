@@ -65,8 +65,13 @@ export const renderTranscript = (record) => {
     lines.push('');
     lines.push('## The answer');
     lines.push('');
+    (record.retracted || []).forEach((item) => {
+        lines.push(`*Round ${item.round}: the loop withdrew the text below (a looping reply, or a call written as text):*\n`);
+        lines.push(`${quote(clip(item.text || '(empty)', 1500))}\n`);
+    });
     if (record.final) {
-        lines.push(`Stopped by: ${record.final.stopped_by}${record.final.cut ? ' (cut at the length limit)' : ''} · rounds: ${record.rounds} · outcome: ${record.final.outcome?.status ?? 'none'}`);
+        lines.push(`Stopped by: ${record.final.stopped_by}${record.final.reason ? ` (${record.final.reason})` : ''}`
+            + `${record.final.cut ? ' (cut at the length limit)' : ''} · rounds: ${record.rounds} · outcome: ${record.final.outcome?.status ?? 'none'}`);
         lines.push('');
         lines.push(quote(record.final.text || '(empty)'));
     } else {
