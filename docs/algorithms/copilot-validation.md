@@ -1,0 +1,187 @@
+# AI Copilot validation: does the Copilot help?
+
+The Copilot's own tests replay scripted answers. This protocol asks a different question: given a
+configuration whose local structure is **known**, does the Copilot reach the right conclusion more
+often than the Workbench without it, and does it avoid claiming order that is not there? It was
+fixed in code (`web_app/frontend/validation/`) before any model run. The tool and skill review
+that went with it is [copilot-review.md](copilot-review.md).
+
+## Arms
+
+| Arm | What answers | Code |
+| --- | --- | --- |
+| **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules (`SWEEP_RULES`); no model. **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
+| **C** | B without the skills (no `read_skill`, no skills index): the ablation | `harness.js` |
+| **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
+
+Arm A's rules are a competent reading, not a straw man. A site is called split only when its
+ellipsoid is prolate (PC1/PC2 ≥ 1.3) **and** its PC1 kurtosis is clearly negative (≤ −0.5), so an
+anisotropic Gaussian is thermal motion. A split g(r) shell counts only when the average structure
+has no distances that far apart, and an off-centred centre explains its own split shell.
+
+The live arms leave out the view tools, which need a screen. The simulated user skips every
+question, so the model uses its stated default and no truth reaches it except through the tools.
+
+## Cases
+
+Nine kinds, each a **dev** case (for improving tools and skills) and a held-out **test** case (for
+reported numbers only): the same physics with other elements, directions, magnitudes or
+structures. Each case is an `.rmc6f` supercell (reference sites and cell indices; coordinates
+wrapped into [0, 1) as RMCProfile writes them) with its partial g(r). `run.js write` saves each as
+a run folder the Workbench opens.
+
+| Kind | Planted (dev / test) | The trap |
+| --- | --- | --- |
+| offcentre | Two-site disorder: Nb ±0.20 Å along [001] in KNbO₃ / Ge ±0.16 Å along [110] | A split site looks like large thermal motion in the ellipsoid alone |
+| zone_boundary | Ordered antiphase Ti ±0.10 Å along c, q = (0,0,½) / Zr ±0.09 Å along a, q = (½,½,½); plus a stronger box-scale wave of the A cation | Identical single-site statistics to two-site disorder; the strongest mode is the decoy |
+| breathing | Mo₃ triangles / Nb₄ tetrahedra whose size fluctuates collectively (sd 4 % / 3.5 %), shape regular | Size is not shape |
+| jahn_teller | Isolated CuF₆ (4 × 1.93 + 2 × 2.25 Å) / MnCl₆ (2.48 / 2.85 Å), long axis random over x, y, z | The first peak holds 4 neighbours; the average octahedron is regular |
+| cell_wrap | Rigid V₂ / Ti₂ dimers whose first site sits at fractional 0 (half its atoms written near 1) | The cell wrap |
+| thermal_null | BaTiO₃ / PbTiO₃ composition, thermal motion only (O flattened across its bond) | Literature off-centring; anisotropic but Gaussian O |
+| symmetry_lowering | Every Ta shifted 0.07 Å along [001] (P4mm) / Ti 0.06 Å along [111] (R3m) | The 0.2 Å card still says Pm-3m |
+| sites_only (achiral) | Zincblende CuBr, F-43m / sulvanite Cu₃VS₄, P-43m | No inversion does not make a structure chiral |
+| sites_only (chiral) | B20 FeSi / MnSi, P2₁3 | A genuinely chiral (Sohncke) group |
+
+Thermal rms: 0.05–0.09 Å. Supercells: 6–8 cells a side, 1,024–2,560 atoms.
+
+**The split is enforced in code** (`__tests__/split.test.js`):
+- the test set is pinned by a sha256 of its configurations, partials and truths;
+- dev and test share no id, and no tool, skill or app source names a test case;
+- `--split test` needs `--final` and a clean git tree, and every record names its commit;
+- a supervisor finding on a test case may only report a bug, with the user's approval.
+
+## The question and the verdict
+
+Every case, arm and model gets the same open question (`CASE_QUESTION`): is there order beyond
+the average structure, and what is the space group (chiral, centrosymmetric, polar)? The live arms
+end their answer with one `VERDICT {…}` line in a fixed schema (`verdict.js`): features of seven
+kinds (`off_centre`, `modulation`, `cluster_distortion`, `cluster_breathing`, `rigid_cluster`,
+`jahn_teller`, `symmetry_lowering`), each with element, direction [uvw], magnitude and q, plus the
+four symmetry fields. Arm A writes the same object from its readings. Nothing is parsed from
+prose: an answer with no parseable verdict scores 0.
+
+## Scoring (`scoring.js`), fixed before any run
+
+The case score is the mean of these components, each 0 to 1:
+- each planted feature: 1 if found (kind and element) and accurate, 0.5 if found with a quantity
+  off, 0 if missed;
+- "no spurious claim": every claim is planted or tolerated (a true partial description, e.g.
+  "F off-centre" in the JT case); in a no-order case this is the **over-claim** test;
+- each symmetry field the truth defines: wrong or unanswered scores 0.
+
+Tolerances, from the physics of the cases:
+- **Direction 15°:** half the smallest angle between distinct low-index families (<110>–<111> is
+  35.3°). ±u count as one for a split site; any cubic image counts for a JT axis.
+- **Magnitude: 25 % or 0.03 Å, whichever is larger.** 0.03 Å is half the smallest thermal rms of
+  the cases, below which a static shift cannot be told from the thermal width. 25 % accepts
+  √(rms1² − rms⊥²) and fails quoting the thermal-broadened rms.
+- **Wavevector 0.02 r.l.u.:** with 8 cells a side the allowed q are multiples of 0.125; q ≡ −q ≡ q + G.
+
+Reported beside the score, per run:
+- the answer checks against the contradictions the score found (caught, missed, not covered);
+- unsafe actions (a window marked as the user's choice when no question was asked; must be 0);
+- unknown-tool and failed calls;
+- **number provenance:** each number with a decimal point or a unit, matched to a value the
+  model was shown, or "unsourced";
+- **reproducibility over 3 runs:** an identical verdict signature (kinds, elements, q, group,
+  symmetry facts), pair agreement, and the score's sd.
+
+## Records, transcripts, findings
+
+Each live run writes:
+- `<case>__<arm>__<model>__r<n>.json`: every step with who decided it (the model or the
+  Workbench), the reasoning and text the model wrote before the call, the arguments, the checks
+  and the result it read, then the final answer, verdict, score, answer checks, provenance,
+  safety, and the truth;
+- `.md`: the same as a self-contained transcript, with numbered steps and the planted truth last.
+
+`report` puts every record side by side (case × model·arm), keeps failed runs as score 0, and
+lists every run used.
+
+Supervisor findings (`findings.js`, `run.js findings <file.jsonl>` validates them) take the form
+`{case, run, step, kind: bug | missing-tool | skill-gap | orchestration | science-error, evidence,
+proposed_fix, needs_user_approval}`:
+- bugs are fixed with a regression test and merged on green CI;
+- `missing-tool` and `skill-gap` always need the user's approval (batched per cycle);
+- a test case may only report a bug.
+
+## Models and spend
+
+Each model gets the same cases, prompt, tools and scoring, and the results are reported side by side:
+- qwen3.8-27b (LM Studio, 32k);
+- gemma4:26b (Ollama);
+- meta/muse-glimmer (LM Studio, 28B, tool use, up to 128k);
+- Claude Sonnet 5.5 (API).
+
+The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under RMC's
+$12 share of the cycle's $40 cap. The spend tracker prices each request before sending it (prompt
+estimate + the largest reply) and refuses one that could cross the cap; a JSON-lines ledger keeps
+the total across restarts. The client sees no usage report, so the charge is an upper bound: the
+Copilot's conservative token estimate (2.5 characters per token of text), with every prompt token
+at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14): input $2, output $10,
+cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL_SONNET_MODEL`,
+`RMC_EVAL_PRICE_IN` and `RMC_EVAL_PRICE_OUT` override the defaults; `ANTHROPIC_API_KEY` is required.
+
+## Arm A results (no model; 2026-10-14, commit b4fe09f)
+
+`npx vite-node validation/run.js -- arm-a --split dev` (and `--split test --final`). Records:
+`validation/baseline/arm-a-{dev,test}.json`.
+
+| Kind | A dev / test | A+ dev / test | Where the default analyses mislead |
+| --- | --- | --- | --- |
+| offcentre | 1 / 1 | 1 / 1 | They don't: split site found, direction within 7° / 10°, δ 0.201 / 0.162 Å |
+| zone_boundary | 0.67 / 0.67 | 1 / 1 | **Ordered antiphase order read as random off-centring** (the PCA cloud is split exactly as for disorder); q missed |
+| breathing | 0.50 / 0.50 | 1 / 0.50 | **"No order"**: no page sees cluster breathing. A+ test: breathing found, plus a spurious "shape distortion" from the gyration-axis test (L2) |
+| jahn_teller | 0.92 / 0.92 | 0.92 / 0.92 | Split shell seen (Δ 0.31 / 0.38 Å for 0.32 / 0.37), but not the long-axis family |
+| cell_wrap | 0.83 / 0.83 | 1 / 1 | No wrap artefact (the engines handle x = 0), but the rigid dimers are invisible without the cluster engine |
+| thermal_null | 1 / 1 | 1 / 1 | They don't over-claim (with the calibrated superstructure test; before it, A+ found "order" in 6 of 12 configurations without any) |
+| symmetry_lowering | 0.33 / 0.33 | 0.83 / 0.83 | **The 0.2 Å card says Pm-3m:** wrong group, called centrosymmetric and non-polar. A+ reads the noise floor and gets the group, but has no rule naming the shift |
+| sites_only (achiral) | 1 / 1 | 1 / 1 | They don't: the point-group facts are deterministic |
+| sites_only (chiral) | 1 / 1 | 1 / 1 | They don't |
+| **mean** | **0.81 / 0.81** | **0.97 / 0.92** | |
+
+**The bar.**
+- **Arm B must beat A** where the pages mislead: ordered vs disordered splits, collective cluster
+  motion, symmetry below the card's tolerance, the JT axis.
+- **B must beat A+ to show the language model itself helps.** The engines alone already score
+  0.92 on the test set.
+- **B must match A on the symmetry-fact cases**, where the card is already perfect and a model
+  can only lose. The chirality trap measures exactly that.
+
+The A/A+ rules were set on the dev cases and frozen before the test set was scored. The test-set
+A+ spurious distortion was seen and left unchanged.
+
+## Running the live arms (later, on the Mac)
+
+From `web_app/frontend`, with the model loaded in LM Studio or Ollama:
+
+```bash
+# smoke pass: one run per dev case
+npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split dev --runs 1
+# dev, both arms, 3 runs (repeat for gemma4:26b and meta/muse-glimmer)
+npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split dev --runs 3
+npx vite-node validation/run.js -- live --arm C --model qwen3.8-27b --split dev --runs 3
+# held-out test: from a clean committed tree
+npx vite-node validation/run.js -- live --arm B --model qwen3.8-27b --split test --runs 3 --final
+# Claude Sonnet 5.5: test set, arm B, $12 cap
+ANTHROPIC_API_KEY=… npx vite-node validation/run.js -- live --arm B --model claude-sonnet-5.5 --split test --runs 3 --final
+# side by side
+npx vite-node validation/run.js -- report --in validation/runs/<dir> --in validation/runs/<dir> --out validation/runs/report.md
+```
+
+A rerun keeps runs already recorded in its folder, so an interrupted batch resumes. Merge the
+local-model hardening (`fix/local-model-robustness`) first: its deadlines and loop guards keep a
+stalled run from holding the batch.
+
+**Time.** Each run is bounded by the agent loop: 6 rounds, 10 minutes plus the final reply. On
+qwen3.8-27b (1–5 minutes a question in the 2026-10-10 spot check; a reasoning round of a few
+thousand tokens on a 8–15k-token prompt), expect about 8–12 minutes a run:
+- one split, one arm, 3 runs: 27 runs, about 4–5 hours;
+- dev and test, arms B and C: about 16–20 hours per local model;
+- smoke pass: about 1.5 hours.
+
+**Tokens and cost.** For Sonnet, about 70–90k prompt tokens and 3–6k reply tokens per run, so the
+27 test runs of arm B come to about 2.4M prompt + 0.15M reply tokens. That is about $6.30 at list
+prices ($4.80 prompt + $1.50 reply), less with cache hits. The tracker's upper bound is $7.50, inside the $12 cap.

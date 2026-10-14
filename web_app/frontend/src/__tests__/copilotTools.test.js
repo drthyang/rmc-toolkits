@@ -15,6 +15,7 @@ import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
 import modulationsFixture from './fixtures/modulations_fixture.json';
 import clustersFixture from './fixtures/clusters_fixture.json';
 import { clusterDistortion } from '../workers/clusters';
+import { ALL_CASES, buildCase } from '../../validation/cases';
 import {
     buildCopilotTools,
     cartesianToUvw,
@@ -22,6 +23,7 @@ import {
     tenDegreeBins,
     summarizeClusters,
     summarizeModulations,
+    zoneBoundarySigma,
     summarizeOrientation,
     summarizeSites,
     summarizeSymmetry
@@ -333,6 +335,7 @@ describe('Copilot summarizers', () => {
             elements: [{
                 element: 'Nb',
                 sites: 4,
+                medianPower: 0.85,
                 zoneBoundary: [point([0, 0, 0.5], 204, 99.53), point([0.5, 0, 0], 0.9, 40)],
                 strongest: [point([0, 0, 0.5], 204, 99.53), point([0.1, 0, 0], 2, 90)]
             }]
@@ -340,8 +343,8 @@ describe('Copilot summarizers', () => {
         expect(checks).toHaveLength(1);
         expect(checks[0]).toEqual({
             level: 'ok',
-            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, above 99.5 % of the modes apart from long waves '
-                + '— a superstructure doubling the cell along c.'
+            text: 'Ordered Nb displacements at q = (0, 0, ½): 204× the median power, > 8σ against independent displacements '
+                + '(corrected over 2 zone-boundary points) — a superstructure doubling the cell along c.'
         });
         const odd = summarizeModulations({ supercell: [3, 4, 4], wavevectors: 47, untestable: [[1, 0, 0]], elements: [{ element: 'Nb', sites: 0 }] });
         expect(odd.checks[0].level).toBe('fail');
@@ -354,8 +357,48 @@ describe('Copilot summarizers', () => {
         const payload = displacementModulations(siteDisplacementsFromRmc6f(text), 'Ti');
         const { checks } = summarizeModulations(payload);
         expect(checks[0].level).toBe('ok');
-        expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\): \d+(\.\d+)?× the median power, the strongest mode apart from long waves/);
+        expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\): \d+(\.\d+)?× the median power, (> 8|\d+(\.\d+)?)σ against independent displacements/);
         expect(checks.some((check) => /long-wavelength wave/.test(check.text))).toBe(true);
+    });
+
+    it('zone-boundary significance: calibrated against independent displacements, corrected over the points tested', () => {
+        // Power 1 is the independent-displacement mean: nothing.
+        expect(zoneBoundarySigma(1, 1, 7)).toBeLessThan(0);
+        // One site, one point: P(χ²₁ ≥ 9) = 0.0027, 2.78σ; over seven points 1 − (1 − p)⁷ = 0.019, 2.08σ.
+        expect(zoneBoundarySigma(9, 1, 1)).toBeCloseTo(2.78, 2);
+        expect(zoneBoundarySigma(9, 1, 7)).toBeCloseTo(2.08, 2);
+        // More sites average the noise down: the same power is stronger evidence.
+        expect(zoneBoundarySigma(3, 16, 7)).toBeGreaterThan(zoneBoundarySigma(3, 1, 7));
+        expect(zoneBoundarySigma(250, 1, 21)).toBeGreaterThan(8);
+        expect(zoneBoundarySigma(null, 1, 7)).toBeNull();
+    });
+
+    it('modulation checks: independent or randomly split displacements are not order (validation cases)', () => {
+        // The earlier rule (top 1 % of the modes) called these ordered: Ba at
+        // (½, 0, 0) in pure thermal motion, Nb in random two-site disorder, Cu
+        // in randomly oriented JT octahedra, Mo in breathing triangles.
+        for (const id of ['dev-thermal-null', 'dev-offcentre', 'dev-jahn-teller', 'dev-breathing']) {
+            const built = buildCase(ALL_CASES.find((item) => item.id === id), { partials: false });
+            const { checks, facts } = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(built.rmc6f)));
+            expect(checks.filter((check) => /^Ordered/.test(check.text))).toEqual([]);
+            expect(checks.at(-1).text.startsWith('No order that doubles the cell') || checks.some((c) => /^No order/.test(c.text))).toBe(true);
+            expect(facts.modulation.ordered).toEqual([]);
+        }
+        // The planted order is still found, and only it (not the decoy long wave).
+        const planted = buildCase(ALL_CASES.find((item) => item.id === 'dev-zone-boundary'), { partials: false });
+        const { checks, facts } = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(planted.rmc6f)));
+        expect(facts.modulation.ordered).toEqual([{ element: 'Ti', q: [0, 0, 0.5] }]);
+        expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\)/);
+        expect(checks.some((check) => /Sr's strongest mode is a long-wavelength wave/.test(check.text))).toBe(true);
+    });
+
+    it('cluster summary: "LESS distorted" does not deny a distortion the axis families show (Jahn–Teller octahedra)', () => {
+        const built = buildCase(ALL_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
+        const { checks } = summarizeClusters(clusterDistortion(siteDisplacementsFromRmc6f(built.rmc6f), 'F', [2.5, 3.25]));
+        const less = checks.find((check) => /LESS distorted/.test(check.text));
+        expect(less.text).toMatch(/yet more clusters than by chance are (elongated|compressed) along <100>/);
+        expect(less.text).not.toMatch(/no correlated shape distortion/);
+        expect(checks.some((check) => /^More clusters are (elongated|compressed) along <100>/.test(check.text))).toBe(true);
     });
 
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {

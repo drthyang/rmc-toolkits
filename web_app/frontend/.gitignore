@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Copilot validation: live-run records and written case folders (kept locally;
+# the orchestrator decides what to publish).
+validation/runs/
+validation/cases-out/

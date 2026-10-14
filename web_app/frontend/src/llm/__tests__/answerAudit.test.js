@@ -191,3 +191,43 @@ describe('lowerOutcome', () => {
         expect(lowerOutcome(null, [])).toBeNull();
     });
 });
+
+describe('the polar check (local-symmetry skill) and the superstructure check (validation 2026-10-14)', () => {
+    const cubic = { facts: [{ groups: [{ symbol: 'Pm-3m', ...pointGroupFacts('m-3m') }] }] };
+    const tetragonal = { facts: [{ groups: [{ symbol: 'P4mm', ...pointGroupFacts('4mm') }] }] };
+
+    it('flags "polar" for a group whose point group is not, and nothing else', () => {
+        expect(rules('The average structure, Pm-3m, is polar along c.', cubic)).toEqual(['polar']);
+        for (const text of [
+            'Pm-3m is non-polar and centrosymmetric.',
+            'Pm-3m is not polar.',
+            'Is Pm-3m polar? No.',
+            'Pm-3m has no polar axis.'
+        ]) {
+            expect(rules(text, cubic)).toEqual([]);
+        }
+        expect(rules('P4mm is polar along c.', tetragonal)).toEqual([]);
+    });
+
+    it('a JSON key is a field name, not a claim (a structured verdict under the answer)', () => {
+        const json = 'VERDICT {"features": [], "space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}';
+        expect(rules(json, cubic)).toEqual([]);
+        expect(rules(`Pm-3m is polar.\n\n${json}`, cubic)).toEqual(['polar']);
+    });
+
+    it('flags a superstructure claim only when every modulation analysis found none', () => {
+        const none = { facts: [{ modulation: { elements: ['Ti'], ordered: [] } }] };
+        const found = { facts: [{ modulation: { elements: ['Ti'], ordered: [{ element: 'Ti', q: [0, 0, 0.5] }] } }] };
+        expect(rules('Ti forms a superstructure that doubles the cell along c.', none)).toEqual(['superstructure']);
+        expect(rules('The Ti displacements show zone-boundary order at (0, 0, ½).', none)).toEqual(['superstructure']);
+        for (const text of [
+            'There is no superstructure: no zone-boundary point stands out.',
+            'I tested whether a superstructure doubles the cell.',
+            'Without a superstructure, the split is random two-site disorder.'
+        ]) {
+            expect(rules(text, none)).toEqual([]);
+        }
+        expect(rules('Ti forms a superstructure that doubles the cell along c.', found)).toEqual([]);
+        expect(rules('Ti forms a superstructure.', {})).toEqual([]);
+    });
+});

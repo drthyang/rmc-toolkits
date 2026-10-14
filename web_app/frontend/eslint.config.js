@@ -26,4 +26,9 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', ignoreRestSiblings: true }],
     },
   },
+  {
+    // The validation harness runs under Node (vite-node).
+    files: ['validation/**/*.js'],
+    languageOptions: { globals: { ...globals.node } },
+  },
 ])

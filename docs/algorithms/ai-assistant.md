@@ -8,6 +8,10 @@ The page covers three things:
 - which analyses it may run while it answers, and the deterministic checks on each result;
 - exactly what data leaves the device.
 
+How well it does on configurations with a known answer is measured separately: see the
+[validation protocol](copilot-validation.md) (planted-truth cases, arms with and without the
+Copilot, fixed scoring) and the [tool and skill review](copilot-review.md) that came with it.
+
 The **AI Copilot** replaced the chat-only **AI Assistant**. The run context (Steps
 1–12), the watchdog (Steps 14–15) and the transport (Step 16) are the Assistant's, unchanged. Step 13
 describes the Copilot's messages and Step 17 its tool loop. Section anchors keep their old names.
@@ -1199,7 +1203,7 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
 | `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1: the edge ladder, ladder width, shape rms, breathing sd, mean edge; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>; bonds outside the window, contacts between clusters per atom | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: ladder width departs from the null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units) or does not; note: breathing departs (same rule); note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
-| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile]` rows, the three strongest modes the same way; the supercell, wavevector count and untestable points | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and the top 1 % of the compared modes, or rank 1 among them); ok: no cell doubling (the highest point named); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile]` rows, the three strongest modes the same way; the supercell, wavevector count and untestable points | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
 parameters from the validated arguments (null after an error), and the step's button hands them to
@@ -1255,7 +1259,8 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 **Checks on the answer** (`copilot/answerAudit.js`). A tool may return `facts` beside
 `data` and `checks` (kept by the loop, not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point-group facts, `analyze_displacement_directions`
-`{subject, significant (peak or map ≥ 3σ), peak_sigma, map_sigma}`. The run context adds the
+`{subject, significant (peak or map ≥ 3σ), peak_sigma, map_sigma}`, `analyze_modulations`
+`{elements, ordered: [{element, q}]}`. The run context adds the
 watchdog's status and every ladder group (`contextAuditFacts`). When the model answers,
 `auditAnswer(text)` splits it into sentences and clauses (a new clause at `;`, `:` and before
 "but", "while", "whereas", "unlike", "although", "though", "however") and looks for positive
@@ -1279,8 +1284,13 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
   "… inversion is lost" when no group it could be lost from has one: neither the groups the answer
   names nor the parent groups (`parent` in `contextAuditFacts`: the context's average group and the
   ladder's rung with the most operations, or its two ends without operation counts);
+- *polar:* "polar" (not "non-polar", "nonpolar", "polar plot / coordinates / angle") in a clause
+  whose named groups are all non-polar, read as for chirality (the local-symmetry skill's rule);
 - *direction:* "preferred (preferential) direction (orientation, axis)" when the question's
-  directions analyses found none at ≥ 3σ.
+  directions analyses found none at ≥ 3σ;
+- *superstructure:* "superstructure", "cell doubling", "doubles the cell", "zone-boundary order
+  (modulation, mode, distortion)", "ordered … displacements at q" or "commensurate modulation" when
+  every `analyze_modulations` of the question found no ordered point.
 
 The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show under the answer.
 `lowerOutcome` then replaces a verdict of *achieved* or *partial* (or none) by **not verified**
@@ -1521,9 +1531,16 @@ Counting both members of a pair, and the box-scale waves RMC leaves, pushed real
 $\mathbf q$ under a stronger long wave and its partner; among the compared modes it is rank 1.
 
 **Checks** (`summarizeModulations`): ok — ordered displacements at a zone-boundary point when its
-ratio ≥ 3 (`MODULATION_RATIO`) **and** it is in the top 1 % of the compared modes or ranks first
-among them (a box with < 100 of them cannot reach the 99th percentile); otherwise ok — no cell doubling, naming the
-highest point; note — an element's strongest mode within 0.25 of the zone centre on every axis at
+ratio ≥ 3 (`MODULATION_RATIO`, the effect size) **and** its calibrated significance is ≥ 3σ
+(`zoneBoundarySigma`): for independent displacements a site's normalised power at a half-integer
+$\mathbf q$ (a real Fourier sum) is $\sum_c w_c\chi^2_1$ with $\sum_c w_c = 1$, so an element's
+mean over $m$ sites has at least $m$ degrees of freedom and $P \ge \chi^2_m/m$ is the heaviest
+tail any site anisotropy allows; the p-value is Šidák-corrected over every zone-boundary point and
+element tested, and each row carries it as a fourth entry. (Until 2026-10-14 the rule was "top 1 %
+of the compared modes, or rank 1", with no correction over the 7 points × elements: the validation
+cases found "order" in 6 of 12 configurations without any, e.g. Ba at (½, 0, 0) under pure thermal
+motion.) Real RMC runs carry *less* zone-boundary power than independent cells (above), so the test
+is conservative there. Otherwise ok — no cell doubling, naming the most significant point; note — an element's strongest mode within 0.25 of the zone centre on every axis at
 ≥ 5× the median is a long-wavelength (box-scale) wave, not a superstructure; note — untestable points.
 A planted doubling (Nb ± 0.1 Å along z in alternate cells, 6³ cells) gives 204× at (0,0,½), the
 strongest of 215 wavevectors. Both real runs: no zone-boundary point near the top (below the 85th
@@ -1629,7 +1646,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `CLUSTER_Z`, `CLUSTER_EFFECT`, `TRIGONALITY_EFFECT`, `AXIS_ENHANCEMENT` | 3, 5 %, 0.02, 1.1 | — | `copilotTools.js` | A cluster statistic is a finding only when both its z and its size clear these |
 | `STATIC_SPREAD_SE` | 5 | sampling errors | `copilotTools.js` | The average cluster counts as distorted above this spread |
 | `CLUSTER_OUTLIER_FRACTION` | 0.05 | fraction / per atom | `copilotTools.js` | Bonds outside the window, contacts between clusters |
-| `MODULATION_RATIO`, `MODULATION_PERCENTILE` | 3, 99 | × median, percentile | `copilotTools.js` | A zone-boundary point is order above both (or at rank 1 among the compared modes) |
+| `MODULATION_RATIO` (+ `SIGNIFICANCE_SIGMA`) | 3 (+ 3σ) | × median (+ family-wise σ, `zoneBoundarySigma`) | `copilotTools.js` | A zone-boundary point is order above both |
 | `LONG_WAVE_Q` | 0.25 | of the reciprocal axes | `modulations.py`, `workers/modulations.js` | A mode with every component within this is a long wave, left out of the compared modes |
 | `LONG_WAVE_RATIO`, `LONG_WAVE_Q` | 5, 0.25 | × median, r.l.u. | `copilotTools.js` | A strongest mode this strong and this close to the zone centre is a box-scale wave |
 | constraint margin | 0.05 | Å | `copilot/runTools.js` | First-peak low side within this of the closest-approach constraint: warn |

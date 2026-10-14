@@ -332,7 +332,9 @@ clause, for a clear positive claim they contradict:
 | chirality | a group called chiral whose point group is not a Sohncke group (it has mirrors, glides or rotoinversions) |
 | centrosymmetry | a group called centrosymmetric whose point group has no inversion centre |
 | inversion lost | an inversion centre "lost" or "broken" when no group it could be lost from has one: neither the groups the answer names nor the parent (the context's average group, or the ladder's top) |
+| polar | a group called polar whose point group is not polar |
 | direction | a "preferred direction" when no directions analysis of the question found one at ≥ 3σ |
+| superstructure | a superstructure, cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered point |
 
 A negated claim ("has not converged", "achiral", "no preferred direction"), a question, a
 hypothetical or conditional mention ("to check whether it has converged", "until χ² plateaus", "I
@@ -371,7 +373,7 @@ from the spot check and the review:
 |---|---|---|
 | `rmc-fit-assessment` | convergence, where the fit misses (`compare_fit`), constraint-limited peaks, sampling, overfitting, the report | the convergence check on the answer (*Checks on the answer*) |
 | `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell (fewer than 60 % of the central atoms share the most common count, or most have none; the 60 % is an interview item) and returns the counts that show the cut, not the angles, unless `window_confirmed` — which the Workbench's window question sets when the user keeps their window; the polyhedron reading |
-| `local-symmetry` | the tolerance ladder, what breaks between rungs, the noise floor, point-group facts | the point-group facts and the chirality / centrosymmetry / inversion checks |
+| `local-symmetry` | the tolerance ladder, what breaks between rungs, the noise floor, point-group facts | the point-group facts and the chirality / centrosymmetry / polar / inversion checks |
 | `displacement-anisotropy` | ellipsoids, kurtosis, preferred directions and their σ, effect sizes | the preferred-direction check; the Workbench's one-site-or-pooled question |
 
 - **Progressive disclosure** (`copilot/skills.js`). The system prompt lists only each skill's name
