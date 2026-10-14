@@ -8,6 +8,10 @@ The page covers three things:
 - which analyses it may run while it answers, and the deterministic checks on each result;
 - exactly what data leaves the device.
 
+How well it does on configurations with a known answer is measured separately: see the
+[validation protocol](copilot-validation.md) (planted-truth cases, arms with and without the
+Copilot, fixed scoring) and the [tool and skill review](copilot-review.md) that came with it.
+
 The **AI Copilot** replaced the chat-only **AI Assistant**. The run context (Steps
 1–12), the watchdog (Steps 14–15) and the transport (Step 16) are the Assistant's, unchanged. Step 13
 describes the Copilot's messages and Step 17 its tool loop. Section anchors keep their old names.

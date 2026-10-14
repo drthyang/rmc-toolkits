@@ -100,6 +100,7 @@ written.
 | **PCA Ellipsoid** | Per-site displacement clouds: covariance, eigen-decomposition, ADP readouts, $\chi^2$ probability ellipsoid, separable 3-D Gaussian KDE + marching-cubes isosurface, wall projections, Mardia non-Gaussianity and per-axis kurtosis, and the PCA↔crystal frame algebra | [PCA Ellipsoid](algorithms/pca-ellipsoid.md) |
 | **Displacement Directions** | Directions only, amplitude discarded: Goldberg (hex + 12 pentagon) sphere tiling, exact solid-angle histogram, enhancement, calibrated peak/map/asymmetry/anisotropy significance tests, antipodal asymmetry, orientation tensor, and the sphere/axis-view rendering | [Displacement Directions](algorithms/displacement-directions.md) |
 | **AI Copilot** | The run context built *before* any model call: cell/composition, symmetry orbits, per-site PCA summary, average-structure neighbour distances, $g(r)$ peak extraction, residuals, convergence heuristics, character budget. The tool loop: which analyses the Copilot may run, their summaries, deterministic checks and budgets, the Outcome verdict. And exactly what leaves the device | [AI Copilot](algorithms/ai-assistant.md) |
+| **Copilot validation** | Synthetic configurations with planted local structure (dev and held-out test), the arms with and without the Copilot, the fixed scoring and its tolerances, the default analyses' results; the tool and skill review | [Validation](algorithms/copilot-validation.md) · [Review](algorithms/copilot-review.md) |
 
 ---
 
