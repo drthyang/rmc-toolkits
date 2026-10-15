@@ -5,6 +5,18 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Charts: the wheel scrolls the page; ctrl/⌘ + wheel or a pinch zooms
+
+React registers `onWheel` as a passive listener, so a chart's `preventDefault()` was ignored
+(Chromium logged "Unable to preventDefault inside passive event listener invocation" on every wheel
+tick) and a wheel over any chart both scrolled the page and zoomed the chart. A plain wheel now only
+scrolls the page; ctrl/⌘ + wheel, and a trackpad pinch (which browsers send as ctrl + wheel), zoom x
+through a native non-passive listener without zooming the page. The zoom is anchored at the pointer,
+a notch is 1.22× either way (exact inverses), and a pinch's small deltas zoom in proportion and
+compose between renders. Drag-to-zoom and double-click are unchanged
+(`interactivePlotWheel.test.jsx`; checked with trusted wheel events in headless Chromium on the
+Dashboard and Bond Geometry).
+
 ### README: the visual front page back, with a Copilot GIF
 
 The one-screen README (2026-10-11) kept the facts but lost what made the page inviting. It gets

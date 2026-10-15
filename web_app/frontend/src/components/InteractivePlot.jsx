@@ -59,6 +59,19 @@ const isExperimental = (label) => /exp/i.test(label);
 
 const MARKER_RADIUS = 2.8;
 
+// Wheel zoom (x only, anchored at the pointer) takes ctrl/⌘ + wheel, which is
+// also how browsers deliver a trackpad pinch; a plain wheel is left to scroll
+// the page, as it does over any other content (a dashboard is a grid of charts).
+// A notched wheel (≥ 20 px, or a line/page delta) zooms 1.22× either way, so
+// out and in are exact inverses; a pinch's small pixel deltas zoom in
+// proportion (Chromium reports a pinch as deltaY = −100·ln(scale)), so the
+// chart follows the fingers instead of taking a full step per event.
+const WHEEL_STEP = Math.log(1.22);
+const wheelZoomFactor = (event) => {
+    const step = event.deltaMode === 0 ? event.deltaY / 100 : Math.sign(event.deltaY) * WHEEL_STEP;
+    return Math.exp(Math.max(-WHEEL_STEP, Math.min(WHEEL_STEP, step)));
+};
+
 
 const formatNumber = (value) => {
     const abs = Math.abs(value);
@@ -546,15 +559,40 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     };
 
     const zoom = (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        // Not the browser's page zoom (ctrl + wheel, a pinch) over a chart.
         event.preventDefault();
-        const px = clampPlotX(pointerToViewX(event));
-        const center = xInvert(px);
-        const factor = event.deltaY > 0 ? 1.22 : 0.82;
-        const span = (domains.x[1] - domains.x[0]) * factor;
-        let next = [center - span / 2, center + span / 2];
-        next = [Math.max(domains.baseX[0], next[0]), Math.min(domains.baseX[1], next[1])];
-        if (next[1] - next[0] > 1e-9) setXDomain(next);
+        const fraction = (clampPlotX(pointerToViewX(event)) - view.left) / plotWidth;
+        const factor = wheelZoomFactor(event);
+        const [lo, hi] = domains.baseX;
+        // From the latest range, not this render's: a pinch's events can
+        // arrive faster than the chart re-renders, and each must compose.
+        // The value under the pointer stays under it, so many small steps
+        // zoom without panning.
+        setXDomain((current) => {
+            const [x0, x1] = current || domains.baseX;
+            const anchor = x0 + fraction * (x1 - x0);
+            const span = (x1 - x0) * factor;
+            const next = [Math.max(lo, anchor - fraction * span), Math.min(hi, anchor + (1 - fraction) * span)];
+            return next[1] - next[0] > 1e-9 ? next : current;
+        });
     };
+
+    // React registers wheel listeners as passive, where preventDefault is
+    // ignored (and logged), so the zoom listens natively. The svg mounts with
+    // the plot; the listener calls the latest zoom through a ref.
+    const zoomRef = useRef(zoom);
+    useEffect(() => {
+        zoomRef.current = zoom;
+    });
+    const hasPlot = Boolean(effectivePlot);
+    useEffect(() => {
+        const svg = svgRef.current;
+        if (!svg) return undefined;
+        const onWheel = (event) => zoomRef.current(event);
+        svg.addEventListener('wheel', onWheel, { passive: false });
+        return () => svg.removeEventListener('wheel', onWheel);
+    }, [hasPlot]);
 
     const saveFigure = async (format) => {
         if (!svgRef.current) return;
@@ -640,7 +678,6 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                     onPointerUp={finishDrag}
                     onPointerCancel={() => setDrag(null)}
                     onPointerLeave={() => setHover(null)}
-                    onWheel={zoom}
                     onDoubleClick={() => {
                         const atDefault = !xDomain && !yDomain;
                         setXDomain(null);

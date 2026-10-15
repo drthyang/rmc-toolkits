@@ -1017,7 +1017,7 @@ caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`
 | axis padding | 5 % of range each side; ±1 if min = max; `[0,1]` if no finite values | `InteractivePlot.jsx` → `niceDomain` | display only |
 | tick counts | 7 x × 6 y (grid), 11 x × 4 y (wide) | `InteractivePlot.jsx` | display only |
 | tick multiplier rule | ν < 1.5 → 1; < 3 → 2; < 7 → 5; else 10 | `InteractivePlot.jsx` → `niceTicks` | display only |
-| wheel zoom factors | `1.22` out / `0.82` in, clamped to the base x domain, min span `1e-9` | `InteractivePlot.jsx` → `zoom` | display only |
+| wheel zoom factors | ctrl/⌘ + wheel only; `1.22` out / `1/1.22` in per notch, `exp(Δ/100)` for smaller pixel deltas, anchored at the pointer, clamped to the base x domain, min span `1e-9` | `InteractivePlot.jsx` → `wheelZoomFactor`, `zoom` | display only |
 | drag-zoom threshold | `8` px per axis | `InteractivePlot.jsx` → `finishDrag` | display only |
 | marker radius / palette | `2.8`; 8 colours cycled mod 8 | `InteractivePlot.jsx` | display only |
 | tooltip precision | 4 significant digits; `toExponential(2)` outside `[0.01, 1e6)`; integer above 1000 | `InteractivePlot.jsx` → `formatNumber` | display only |
@@ -1731,34 +1731,51 @@ There is no limit on how far in one may zoom, and no pan gesture.
 
 ### Step 11 — Wheel zoom (x only)
 
-**Inputs:** a `wheel` event. **Outputs:** a new `xDomain`.
+**Inputs:** a `wheel` event with ctrl or ⌘ held (a trackpad pinch arrives as one). **Outputs:** a
+new `xDomain`.
 
-`zoom(event)` calls `preventDefault()`, converts the pointer to a data coordinate
-$c = x(\mathrm{clampPlotX}(p_x))$, and rescales the **x-domain only** about that point:
+A plain wheel (neither ctrl nor ⌘) is not handled: it scrolls the page, as over any other content.
+The Dashboard is a grid of charts, and a chart that took the plain wheel would trap the page scroll
+under the pointer. With ctrl or ⌘ held, `zoom(event)` calls `preventDefault()`, so the browser does
+not zoom the page, and rescales the **x-domain only**, anchored at the pointer. With
+$u = (\mathrm{clampPlotX}(p_x) - L)/W_p$ the pointer's fraction of the plot width and
+$c = x_0 + u\,(x_1 - x_0)$ the value under it,
 
 $$\Delta' = (x_1 - x_0)\cdot f,\qquad
-f = \begin{cases} 1.22 & \Delta_{\mathrm{wheel}} > 0 \ (\text{zoom out})\\ 0.82 & \mathrm{otherwise}\end{cases}$$
+f = \exp\big(\mathrm{clamp}(s,\ -\ln 1.22,\ \ln 1.22)\big),\qquad
+s = \begin{cases} \Delta_{\mathrm{wheel}}/100 & \text{pixel deltas}\\
+\mathrm{sign}(\Delta_{\mathrm{wheel}})\,\ln 1.22 & \text{line or page deltas}\end{cases}$$
 
-$$\texttt{xDomain} \leftarrow \big[\max(\mathrm{baseX}_0,\; c - \Delta'/2),\;
-\min(\mathrm{baseX}_1,\; c + \Delta'/2)\big]$$
+$$\texttt{xDomain} \leftarrow \big[\max(\mathrm{baseX}_0,\; c - u\,\Delta'),\;
+\min(\mathrm{baseX}_1,\; c + (1 - u)\,\Delta')\big]$$
 
-applied only if the resulting span exceeds $10^{-9}$.
+applied only if the resulting span exceeds $10^{-9}$. $\Delta_{\mathrm{wheel}} > 0$ zooms out.
+
+The listener is native, `addEventListener('wheel', …, { passive: false })` in an effect keyed on the
+plot being on screen, and calls the latest `zoom` through a ref. React registers `onWheel` as a
+passive listener, where `preventDefault()` is ignored (Chromium logs "Unable to preventDefault
+inside passive event listener invocation"); through 0.7.0 that made every wheel over a chart both
+scroll the page and zoom the chart.
 
 Honest details:
 
-- The factors are **not exact inverses**: $1.22 \times 0.82 = 1.0004$, so a zoom-out followed by a
-  zoom-in does not return to the identical window (0.04 % drift per pair).
-- The wheel **delta magnitude is ignored** — only its sign. A high-resolution trackpad emits many
-  small events, each applying a full 22 %/18 % step, so trackpad zooming is much faster than a
-  notched mouse wheel.
+- A notched mouse wheel ($|\Delta_{\mathrm{wheel}}| \ge 20$ px, or a line/page delta) zooms by
+  exactly 1.22 out or 1/1.22 in, so a zoom-out undoes a zoom-in at the same pointer (up to
+  round-off and the clamp below).
+- A trackpad pinch arrives as many ctrl + wheel events with small pixel deltas. Chromium reports a
+  pinch of scale $k$ as $\Delta_{\mathrm{wheel}} = -100\ln k$, so the span follows the fingers
+  ($\Delta' = \Delta/k$). Each event applies to the latest range (a functional state update), so
+  events that arrive before the chart re-renders compose instead of being lost, and the anchor keeps
+  many small steps from panning. A pinch a browser reports as `gesture*` events (WebKit's own)
+  rather than ctrl + wheel is not handled.
 - The clamp is applied to each endpoint independently against `baseX` (the padded full extent of the
   *visible* series). Zooming out near an axis end therefore produces an asymmetric window rather than
   re-centring, and the zoom-out limit is the un-zoomed extent — you cannot wheel out past the data.
 - The wheel never touches y. Because `yDomain` stays null until the user drags a y-box, the y-axis
-  re-autoscales to the new x-window on every wheel notch (Step 4).
+  re-autoscales to the new x-window on every wheel step (Step 4).
 - `zoom` clears **neither** an in-progress `drag` nor the `hover` state; see the hazard in Step 10.
 
-**Code:** `InteractivePlot.jsx` → `zoom`.
+**Code:** `InteractivePlot.jsx` → `wheelZoomFactor`, `zoom` and the native `wheel` listener.
 
 ---
 
@@ -2260,7 +2277,7 @@ rounding matter as much as the formula:
 | legend strip | `max-height: 4.2rem`, overflow auto | — | `.plot-legend` |
 | tooltip number format | exp(2) if ≥1e6 or <0.01; rounded if ≥1000; else 4 sig figs | — | `formatNumber` |
 | drag-zoom threshold | 8, per axis | user units | `finishDrag` |
-| wheel zoom-out / zoom-in factor | 1.22 / 0.82 | — | `zoom` |
+| wheel zoom-out / zoom-in factor (ctrl/⌘ + wheel) | 1.22 / 1/1.22 per notch; `exp(Δ/100)` below 20 px | — | `wheelZoomFactor` |
 | minimum zoom span | 1e-9 | data units | `zoom` |
 | plot-area background | `#f8fafc` (default/dark theme) / `#ffffff` (light) | — | `index.css` → `--plot-bg` |
 | $R_\mathrm{wp}$ chip precision | 4 significant figures | — | `Dashboard.jsx` |
@@ -2367,9 +2384,10 @@ rounding matter as much as the formula:
   segments that would cross the axis boundary, so curves can appear to start slightly inside the
   frame; conversely grid lines, tick marks, the frame and the axis labels are drawn outside the
   clip group.
-- **Zoom is not exactly invertible by wheel.** 1.22 × 0.82 = 1.0004; use "Reset zoom" or
-  double-click for an exact return. A wheel notch *during* a drag makes the released rectangle
-  disagree with the preview (Step 10).
+- **Wheel zoom needs ctrl/⌘ (or a pinch).** A plain wheel scrolls the page (Step 11). A wheel zoom
+  undone at the same pointer returns to the same window only up to round-off and the `baseX` clamp;
+  "Reset zoom" or double-click is exact. A ctrl + wheel step *during* a drag makes the released
+  rectangle disagree with the preview (Step 10).
 - **A y-zoom survives a file switch in Flask mode.** The fetch-path reset omits `yDomain` and
   `fullExtent`; the static/`plotData` path resets both (Step 12).
 - **`isExperimental` is a substring test.** Marker styling and the experimental/calculated ordering
