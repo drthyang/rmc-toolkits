@@ -60,6 +60,9 @@ const standaloneSvg = (svgElement) => {
     const height = box?.height || svgElement.clientHeight || 450;
     const clone = svgElement.cloneNode(true);
     inlineComputedStyles(svgElement, clone);
+    // Screen-only marks (a chart's hover crosshair, which a tap leaves up on
+    // touch) are not part of the figure. After the lockstep walk above.
+    clone.querySelectorAll('[data-export="omit"]').forEach((node) => node.remove());
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clone.setAttribute('width', width);
     clone.setAttribute('height', height);

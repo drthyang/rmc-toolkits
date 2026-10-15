@@ -5,6 +5,19 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Charts on touch: a finger scrolls the page; a sideways swipe zooms x, a tap reads the value
+
+The chart SVG carried `touch-action: none`, so on phones and tablets every finger drag on a chart
+box-zoomed it, and a phone Dashboard, which is mostly charts, could hardly be scrolled. It is now
+`touch-action: pan-y pinch-zoom`: a vertical drag scrolls the page and a pinch zooms the page, as over
+any other content. A drag that starts sideways selects an x range and zooms x only, with y re-fitting
+to it (a finger drifts far more than the 8-unit box threshold, about 4 CSS px on a phone card, so a
+box would squash y on nearly every swipe). A press that travels at most 16 CSS px is a tap: it shows
+the value readout, which touch never had, until the next press; a double tap resets. The readout's
+crosshair is marked `data-export="omit"` and left out of saved figures. The mouse keeps box zoom,
+hover, double-click and ctrl/⌘ + wheel (`interactivePlotTouch.test.jsx`; checked with CDP touch
+input in headless Chromium at 375 × 812 on the Dashboard and Bond Geometry).
+
 ### Charts: the wheel scrolls the page; ctrl/⌘ + wheel or a pinch zooms
 
 React registers `onWheel` as a passive listener, so a chart's `preventDefault()` was ignored
