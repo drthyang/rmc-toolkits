@@ -72,6 +72,14 @@ const wheelZoomFactor = (event) => {
     return Math.exp(Math.max(-WHEEL_STEP, Math.min(WHEEL_STEP, step)));
 };
 
+// A finger (pointerType 'touch') that starts sideways selects an x range; a
+// vertical start scrolls the page and a pinch zooms it (touch-action: pan-y
+// pinch-zoom). It never zooms y: a finger drifts far more than the 8-unit box
+// threshold (≈ 4 CSS px on a phone's chart card), so every swipe would also
+// squash y. A finger that travels at most TOUCH_SWIPE_PX across is a tap,
+// which shows the readout touch has no hover for.
+const TOUCH_SWIPE_PX = 16;
+
 
 const formatNumber = (value) => {
     const abs = Math.abs(value);
@@ -516,6 +524,8 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     };
 
     const startDrag = (event) => {
+        // Any press clears the readout; on touch, that is how a tap's goes.
+        setHover(null);
         const { x, y } = pointerToView(event);
         if (x < view.left || x > view.width - view.right) return;
         try {
@@ -523,17 +533,21 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         } catch {
             // Pointer capture is best-effort; drag still works without it.
         }
-        setDrag({ x0: clampPlotX(x), y0: clampPlotY(y), x1: clampPlotX(x), y1: clampPlotY(y) });
-        setHover(null);
+        // A finger selects an x range, previewed as a band the plot's height.
+        const touch = event.pointerType === 'touch';
+        const y0 = touch ? view.top : clampPlotY(y);
+        const y1 = touch ? view.top + plotHeight : y0;
+        setDrag({ x0: clampPlotX(x), y0, x1: clampPlotX(x), y1, touch, clientX: event.clientX });
     };
 
     const moveDrag = (event) => {
         if (!drag) {
-            nearestHover(event);
+            // Touch has no hover: a tap shows the readout (finishDrag).
+            if (event.pointerType !== 'touch') nearestHover(event);
             return;
         }
         const { x, y } = pointerToView(event);
-        setDrag((current) => ({ ...current, x1: clampPlotX(x), y1: clampPlotY(y) }));
+        setDrag((current) => current && ({ ...current, x1: clampPlotX(x), y1: current.touch ? current.y1 : clampPlotY(y) }));
     };
 
     const finishDrag = (event) => {
@@ -544,18 +558,30 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
         const yLo = Math.min(drag.y0, clampPlotY(y));
         const yHi = Math.max(drag.y0, clampPlotY(y));
         setDrag(null);
-        // Zoom whichever dimension(s) the drag actually spans (> 8px): a real box
-        // zooms both axes to it, a thin horizontal/vertical drag zooms just that
-        // axis. Screen y grows downward, so the top pixel is the higher value.
-        const zoomX = xHi - xLo > 8;
-        const zoomY = yHi - yLo > 8;
-        if (zoomX) setXDomain([xInvert(xLo), xInvert(xHi)]);
-        if (zoomY) setYDomain([yInvert(yHi), yInvert(yLo)]);
+        if (drag.touch) {
+            // A finger zooms x only, and y re-fits to the new range; a tap
+            // shows the readout, which stays until the next press.
+            if (Math.abs(event.clientX - drag.clientX) <= TOUCH_SWIPE_PX) nearestHover(event);
+            else if (xHi - xLo > 8) setXDomain([xInvert(xLo), xInvert(xHi)]);
+        } else {
+            // Zoom whichever dimension(s) the drag actually spans (> 8px): a real box
+            // zooms both axes to it, a thin horizontal/vertical drag zooms just that
+            // axis. Screen y grows downward, so the top pixel is the higher value.
+            const zoomX = xHi - xLo > 8;
+            const zoomY = yHi - yLo > 8;
+            if (zoomX) setXDomain([xInvert(xLo), xInvert(xHi)]);
+            if (zoomY) setYDomain([yInvert(yHi), yInvert(yLo)]);
+        }
         try {
             event.currentTarget.releasePointerCapture?.(event.pointerId);
         } catch {
             // No capture was held for this pointer.
         }
+    };
+
+    // A finger leaves as it lifts, which would take a tap's readout at once.
+    const leavePlot = (event) => {
+        if (event.pointerType !== 'touch') setHover(null);
     };
 
     const zoom = (event) => {
@@ -677,11 +703,13 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                     onPointerMove={moveDrag}
                     onPointerUp={finishDrag}
                     onPointerCancel={() => setDrag(null)}
-                    onPointerLeave={() => setHover(null)}
+                    onPointerLeave={leavePlot}
                     onDoubleClick={() => {
                         const atDefault = !xDomain && !yDomain;
                         setXDomain(null);
                         setYDomain(null);
+                        // Its crosshair was placed in the old range.
+                        setHover(null);
                         if (effectivePlot?.initialYDomain) {
                             setFullExtent(atDefault ? !fullExtent : false);
                         }
@@ -776,7 +804,7 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                     <AxisLabel label={effectivePlot.xLabel} x={view.left + plotWidth / 2} y={view.height - 10} />
                     <AxisLabel label={effectivePlot.yLabel} x={18} y={view.top + plotHeight / 2} rotate />
                     {hover && (
-                        <g clipPath={`url(#${clipId})`}>
+                        <g clipPath={`url(#${clipId})`} data-export="omit">
                             <line className="hover-line" x1={hover.px} x2={hover.px} y1={view.top} y2={view.top + plotHeight} />
                             {hover.values.map((value) => (
                                 <circle key={value.label} className="hover-dot" cx={value.cx} cy={value.cy} r="3.6" fill={value.color} />

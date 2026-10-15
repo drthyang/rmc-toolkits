@@ -38,7 +38,11 @@
     display: block;
     width: 100%;
     height: auto;
-    touch-action: none;
+    /* A finger's vertical drag scrolls the page and a pinch zooms it, as over
+       any other content (on a phone the charts cover most of the Dashboard);
+       a drag that starts sideways reaches the chart, which zooms x
+       (InteractivePlot.jsx → finishDrag). */
+    touch-action: pan-y pinch-zoom;
     aspect-ratio: 8 / 5;
 }
 

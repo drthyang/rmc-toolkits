@@ -1018,7 +1018,8 @@ caches (KDE slice, PCA, triplets, scaling) are keyed on a full file signature (`
 | tick counts | 7 x × 6 y (grid), 11 x × 4 y (wide) | `InteractivePlot.jsx` | display only |
 | tick multiplier rule | ν < 1.5 → 1; < 3 → 2; < 7 → 5; else 10 | `InteractivePlot.jsx` → `niceTicks` | display only |
 | wheel zoom factors | ctrl/⌘ + wheel only; `1.22` out / `1/1.22` in per notch, `exp(Δ/100)` for smaller pixel deltas, anchored at the pointer, clamped to the base x domain, min span `1e-9` | `InteractivePlot.jsx` → `wheelZoomFactor`, `zoom` | display only |
-| drag-zoom threshold | `8` px per axis | `InteractivePlot.jsx` → `finishDrag` | display only |
+| drag-zoom threshold | `8` px per axis (mouse and pen) | `InteractivePlot.jsx` → `finishDrag` | display only |
+| touch drag | x only; a swipe is > `16` CSS px across, less is a tap (the readout) | `InteractivePlot.jsx` → `TOUCH_SWIPE_PX`, `finishDrag` | display only |
 | marker radius / palette | `2.8`; 8 colours cycled mod 8 | `InteractivePlot.jsx` | display only |
 | tooltip precision | 4 significant digits; `toExponential(2)` outside `[0.01, 1e6)`; integer above 1000 | `InteractivePlot.jsx` → `formatNumber` | display only |
 | watchdog enable | `settings.watchdogEnabled` (default off) + ≥ 2 points | `useWatchdog.js` | badge renders nothing otherwise |
@@ -1452,7 +1453,10 @@ Two fixed viewBoxes, chosen by `variant`:
 The `<svg>` is `width: 100%; height: auto` with a CSS `aspect-ratio` that exactly matches the
 viewBox (8/5 and 1440/320), so `preserveAspectRatio` never letterboxes and the user-space → CSS-px
 map is a single uniform scale $s = W_{\mathrm{CSS}}/W$. The element also carries
-`touch-action: none`, so touch drags zoom the chart instead of scrolling the page.
+`touch-action: pan-y pinch-zoom`: a finger's vertical drag scrolls the page and a pinch zooms it, as
+over any other content, and only a drag that starts sideways reaches the chart, which zooms x
+(Step 10). Through 0.7.0 it was `touch-action: none`, so every finger drag on a chart zoomed it, and
+a phone Dashboard, which is mostly charts, could hardly be scrolled by touch.
 
 The data → user-space map is affine and axis-independent:
 
@@ -1678,10 +1682,17 @@ Details that matter:
 - Guides (`role: 'guide'`) are excluded from the search entirely.
 - Hover is cleared when the pointer leaves the SVG (`onPointerLeave`) or moves outside
   $[L,\,W-R]$ horizontally; there is no vertical bound, so hovering over the tick-label strip still
-  produces a crosshair.
+  produces a crosshair. Any press on the SVG clears it too (`startDrag`), and so does a double-click
+  (Step 12).
+- **A finger has no hover; a tap reads the value.** A touch `pointermove` never searches. A tap (a
+  touch press that travels at most `TOUCH_SWIPE_PX` = 16 CSS px across, Step 10) runs the same search
+  at the lift point, and the readout stays up: a finger leaves the SVG as it lifts, so a touch
+  `pointerleave` does not clear it. The next press on the chart does, including one the browser
+  turns into a page scroll, and so does a double tap.
 
 Rendering: a dashed vertical line at $p_x$ of the series-0 match, one filled circle of radius 3.6
-user units per series, and an **HTML** tooltip positioned at
+user units per series (a group marked `data-export="omit"`, which `figureExport.js` drops from a
+saved figure, so a tap's readout is never exported), and an **HTML** tooltip positioned at
 $\mathrm{left} = 100\,p_x/W\,\% + 14\mathrm{px}$ (or mirrored to `right` when $p_x > W/2$) so it sits on
 the emptier side. Tooltip numbers use `formatNumber`: `toExponential(2)` when $|v|\ge10^6$ or
 $0<|v|<0.01$; rounded and locale-grouped when $|v|\ge1000$; otherwise `toPrecision(4)`.
@@ -1707,6 +1718,24 @@ $$\mathrm{zoomX} \Leftrightarrow x_{hi}-x_{lo} > 8, \qquad
   A genuine box zooms both axes; a thin horizontal swipe zooms x only; a thin vertical swipe zooms y
   only; a click (both below 8) zooms nothing and simply clears the drag.
 
+**A finger selects an x range, never a box.** That is the rule above for the mouse and a pen. For a
+touch press (`pointerType === 'touch'`) the drag reaches the chart only when it starts sideways:
+`touch-action: pan-y pinch-zoom` (Step 5) hands a vertical start to the browser, which scrolls the
+page and sends `pointercancel` (the drag is dropped, nothing zooms), and a second finger to its page
+zoom (both pointers cancelled). For a drag the chart keeps:
+
+- `startDrag` sets the rectangle's y-extent to the whole plot, $[T,\,T+H_p]$, and records the press's
+  `clientX`; `moveDrag` moves only $x_1$, so the preview is a full-height band.
+- `finishDrag` never zooms y. A finger drifts far more than 8 user units: at a phone's 346 CSS px
+  chart card, $s = 346/720 \approx 0.48$, so 8 units are 3.8 CSS px, and 1.9 on the `wide` strip, so
+  with the box rule nearly every swipe would also squash y into a thin band. y re-fits to the new x
+  window instead (Step 4), as after a wheel zoom.
+- The press is a swipe when it ends more than `TOUCH_SWIPE_PX` = 16 CSS px across from where it
+  started, measured in client pixels so the same finger travel counts on every card size. A swipe
+  zooms $\texttt{xDomain} \leftarrow [x(x_{lo}),\,x(x_{hi})]$ when $x_{hi}-x_{lo} > 8$ user units (a
+  swipe that ran off the plot edge clamps to less and zooms nothing). Anything shorter is a tap and
+  shows the readout (Step 9).
+
 The inversion uses Step 5's inverses evaluated with the **pre-zoom** domain:
 
 $$\texttt{xDomain} \leftarrow [\,x(x_{lo}),\; x(x_{hi})\,], \qquad
@@ -1725,7 +1754,8 @@ correspond to the rectangle the user saw. Nothing guards against this.
 
 There is no limit on how far in one may zoom, and no pan gesture.
 
-**Code:** `InteractivePlot.jsx` → `startDrag`, `moveDrag`, `finishDrag`, the `.zoom-selection` rect.
+**Code:** `InteractivePlot.jsx` → `TOUCH_SWIPE_PX`, `startDrag`, `moveDrag`, `finishDrag`, the
+`.zoom-selection` rect; `InteractivePlot.css` → `touch-action`.
 
 ---
 
@@ -1786,7 +1816,10 @@ Honest details:
 - **Double-click** always clears `xDomain` and `yDomain`. Additionally, when the chart was supplied
   with an `initialYDomain` *and* was already at its default view, it toggles `fullExtent`, i.e. it
   switches between the caller's preferred y-window and the full 5 %-padded data extent. Without an
-  `initialYDomain` a double-click is a plain zoom reset.
+  `initialYDomain` a double-click is a plain zoom reset. It also clears the hover, whose crosshair
+  was placed in the old range (a mouse's returns on its next move). A double tap is a double-click:
+  the chart's `touch-action` excludes the browser's double-tap zoom, so the browser sends
+  `dblclick`.
 - When a *new* `plotData` object arrives (static mode / Auto StoG), the component resets `hidden`
   (re-seeded from `defaultHidden`), `xDomain`, `yDomain`, `hover`, `drag`, and `fullExtent` during
   render, using React's "adjust state when a prop changes" pattern rather than an effect.
@@ -2230,7 +2263,7 @@ rounding matter as much as the formula:
 | margins L/R/T/B, wide | 64 / 20 / 18 / 58 | user units | `InteractivePlot.jsx` → `view` |
 | domain padding | 5 % of data range, each side | — | `niceDomain` |
 | degenerate-series widening | ±1 before padding | data units | `niceDomain` |
-| touch behaviour | `touch-action: none` on the `<svg>` | — | `InteractivePlot.css` |
+| touch behaviour | `touch-action: pan-y pinch-zoom` on the `<svg>` | — | `InteractivePlot.css` |
 
 **Ticks and labels**
 
@@ -2276,7 +2309,8 @@ rounding matter as much as the formula:
 | tooltip offset / placement | 14 px from the crosshair, `top: 0.7rem`, `max-width: min(17rem, 100% − 1.5rem)` | CSS px | `.plot-tooltip` |
 | legend strip | `max-height: 4.2rem`, overflow auto | — | `.plot-legend` |
 | tooltip number format | exp(2) if ≥1e6 or <0.01; rounded if ≥1000; else 4 sig figs | — | `formatNumber` |
-| drag-zoom threshold | 8, per axis | user units | `finishDrag` |
+| drag-zoom threshold (mouse, pen) | 8, per axis | user units | `finishDrag` |
+| touch swipe vs tap | 16, across | CSS px | `TOUCH_SWIPE_PX` |
 | wheel zoom-out / zoom-in factor (ctrl/⌘ + wheel) | 1.22 / 1/1.22 per notch; `exp(Δ/100)` below 20 px | — | `wheelZoomFactor` |
 | minimum zoom span | 1e-9 | data units | `zoom` |
 | plot-area background | `#f8fafc` (default/dark theme) / `#ffffff` (light) | — | `index.css` → `--plot-bg` |
@@ -2324,9 +2358,10 @@ rounding matter as much as the formula:
    siblings of the `<svg>`; only the SVG is serialised. An exported PNG/SVG therefore has axes,
    grid, curves and axis labels — **but no legend and no title**. The title survives only as the
    filename.
-2. **The hover tooltip is HTML and never exported.** The crosshair line and hover dots *are* inside
-   the SVG, but moving the pointer to the Save button fires `onPointerLeave`, which clears them, so
-   in practice exports are clean.
+2. **The hover readout is never exported.** The tooltip is HTML. The crosshair line and hover dots
+   are inside the SVG, in a group marked `data-export="omit"`, which `figureExport.js` removes from
+   the clone it saves. A mouse's leave clears them before Save anyway; a tap's readout stays up on
+   touch (Step 9), and the mark is what keeps it out of the figure and out of "Save all figures".
 3. **Margins turn white in PNG; the plot rectangle was already near-white.** On screen the area
    outside the plot rectangle is transparent and shows the (dark or light) panel background; the PNG
    is composited over opaque `#ffffff`. The exported SVG leaves those margins transparent, so an SVG
