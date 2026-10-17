@@ -229,8 +229,46 @@ export async function* runCopilotTurn({
     const stepLog = [];
     const gatesFired = new Set();
     const gates = [];
-    const ranCalls = () => stepLog.filter((step) => !step.error && !step.interactive && !step.reading)
+    const ranCalls = () => stepLog.filter((step) => step.executed && !step.error && !step.interactive && !step.reading && !step.view)
         .map((step) => ({ name: step.name, args: step.args }));
+    // The last answer the gate sent back: it stands if no other comes.
+    let withdrawn = null;
+    // The turn's end: references filled, then the checks on the filled
+    // answer (and its missing evidence), then the verdict from the checks —
+    // the model's own grade never decides.
+    const finish = (text, stoppedBy, cut) => {
+        const filled = fillReferences(text, references);
+        const answer = filled.text;
+        const findings = [
+            ...audit(answer),
+            ...(filled.unknown.length ? [{
+                rule: 'reference',
+                text: `The answer cites ${filled.unknown.map((name) => `{{${name}}}`).join(', ')}, which `
+                    + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: those numbers are missing.`
+            }] : []),
+            // With tools off (or unsupported) too: a conclusion no analysis
+            // backs is not verified, whether or not one could have run.
+            ...(evidence ? evidence.unmet(answer, ranCalls()).map((rule) => ({
+                rule: 'evidence',
+                id: rule.id,
+                missing: rule.missing,
+                text: `The answer concludes ${rule.what}, but ${rule.missing.join(', ')} did not run in this question.`
+            })) : [])
+        ];
+        const outcome = computeOutcome({ text: answer, steps: stepLog, findings, stoppedBy, cut, modelOutcome: parseOutcome(answer) });
+        return {
+            type: 'done',
+            text: answer,
+            ...(answer !== text ? { rawText: text } : {}),
+            outcome,
+            rounds,
+            stoppedBy,
+            cut,
+            audit: findings,
+            references: { written: filled.written, filled: filled.filled, unknown: filled.unknown },
+            gates
+        };
+    };
     let noProgressRounds = 0;
     let stalled = false;
     let emptyNudges = 0;
@@ -399,7 +437,14 @@ export async function* runCopilotTurn({
                 addNote(messages, emptyNudge(why));
                 continue;
             }
+            const stoppedBy = finalRound ? (stalled ? 'no_progress' : 'max_rounds') : 'answer';
             if (!text.trim()) {
+                // An answer the evidence gate sent back is not lost when the
+                // model then writes nothing: it stands, with its finding.
+                if (withdrawn) {
+                    yield finish(withdrawn, stoppedBy, cut);
+                    return;
+                }
                 // Ollama ignores tool_choice 'none': a last round can come back
                 // as tool calls only. Say so instead of ending on nothing.
                 if (finalRound) {
@@ -414,7 +459,7 @@ export async function* runCopilotTurn({
                             body: final
                         },
                         rounds,
-                        stoppedBy: stalled ? 'no_progress' : 'max_rounds',
+                        stoppedBy,
                         cut,
                         audit: []
                     };
@@ -426,52 +471,24 @@ export async function* runCopilotTurn({
                 }
                 return;
             }
-            // The evidence gate: a conclusion whose analysis did not run goes
-            // back to the model, once per rule, while tools can still run.
-            const gate = evidence && useTools && !finalRound && gates.length < maxEvidenceGates
-                ? evidence.check(text, { ran: ranCalls(), fired: gatesFired })
+            // The evidence gate, on the answer as it will read (references
+            // filled): a conclusion whose analysis did not run goes back to the
+            // model, once per rule, while tools can still run in the next round.
+            const turnTimeLeft = !(rounds > 0 && Date.now() - startedAt - waitedMs > maxTurnMs);
+            const gate = evidence && useTools && !finalRound && turnTimeLeft && gates.length < maxEvidenceGates
+                ? evidence.check(fillReferences(text, references).text, { ran: ranCalls(), fired: gatesFired })
                 : null;
             if (gate) {
                 gatesFired.add(gate.id);
                 gates.push({ round: rounds, id: gate.id, missing: gate.missing });
-                yield { type: 'gate', id: gate.id, what: gate.what, missing: gate.missing, notice: gate.notice };
+                withdrawn = text;
+                yield { type: 'gate', id: gate.id, what: gate.what, missing: gate.missing, notice: gate.notice, text };
                 yield { type: 'retract' };
                 messages.push({ role: 'assistant', content: assistantContent(text) });
                 messages.push({ role: 'user', content: gate.nudge });
                 continue;
             }
-            // Numbers by reference, then the checks on the filled answer, then
-            // the verdict from the checks: the model's own grade never decides.
-            const filled = fillReferences(text, references);
-            const answer = filled.text;
-            const findings = [
-                ...audit(answer),
-                ...(filled.unknown.length ? [{
-                    rule: 'reference',
-                    text: `The answer cites ${filled.unknown.map((name) => `{{${name}}}`).join(', ')}, which `
-                        + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: those numbers are missing.`
-                }] : []),
-                ...(evidence && useTools ? evidence.unmet(answer, ranCalls()).map((rule) => ({
-                    rule: 'evidence',
-                    id: rule.id,
-                    missing: rule.missing,
-                    text: `The answer concludes ${rule.what}, but ${rule.missing.join(', ')} did not run in this question.`
-                })) : [])
-            ];
-            const stoppedBy = finalRound ? (stalled ? 'no_progress' : 'max_rounds') : 'answer';
-            const outcome = computeOutcome({ text: answer, steps: stepLog, findings, stoppedBy, modelOutcome: parseOutcome(answer) });
-            yield {
-                type: 'done',
-                text: answer,
-                ...(answer !== text ? { rawText: text } : {}),
-                outcome,
-                rounds,
-                stoppedBy,
-                cut,
-                audit: findings,
-                references: { written: filled.written, filled: filled.filled, unknown: filled.unknown },
-                gates
-            };
+            yield finish(text, stoppedBy, cut);
             return;
         }
 
@@ -552,6 +569,9 @@ export async function* runCopilotTurn({
             let result;
             let note = null;
             let cached = false;
+            // Whether the tool really ran (or its identical earlier run is
+            // repeated): not a skipped call, an unknown name or a refused question.
+            let executed = false;
             if (position >= maxCallsPerRound) {
                 result = { args: shownArgs, data: null, checks: [], ms: 0,
                     error: `skipped: at most ${maxCallsPerRound} tool calls per step — call it again in the next step if it is still needed` };
@@ -571,6 +591,7 @@ export async function* runCopilotTurn({
                 // user saw counts toward the limit (not malformed arguments).
                 askedThisRound = true;
                 result = await executeToolCall(tool, call.arguments, { signal, timeoutMs: null, context: toolContext });
+                executed = true;
                 waitedMs += result.ms;
                 if (!result.error) questions += 1;
             } else {
@@ -582,9 +603,11 @@ export async function* runCopilotTurn({
                 if (key && cache.has(key)) {
                     result = { ...cache.get(key), ms: 0 };
                     cached = true;
+                    executed = true;
                     note = 'identical call earlier in this question — the same result is repeated; change the arguments or answer';
                 } else {
                     result = await executeToolCall(tool, runArguments, { signal, timeoutMs: toolTimeoutMs, context: toolContext });
+                    executed = true;
                     if (key && !result.error) cache.set(key, result);
                 }
             }
@@ -601,7 +624,7 @@ export async function* runCopilotTurn({
             if (ref) references.put(ref, sent.data);
             stepLog.push({
                 name: call.name, args: result.args, status: stepStatus(result), error: result.error || null,
-                interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), ref
+                interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view), executed, ref
             });
             messages.push({ role: 'tool', tool_call_id: call.id, content: sent.content });
             keepWithinTurnBudget(roundStart);

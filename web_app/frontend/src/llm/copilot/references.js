@@ -13,8 +13,9 @@
 // (answer checks), which the computed verdict counts (verdict.js).
 //
 // Values print as the tools gave them: a number as written in the data, a
-// string as is, a list of scalars as [a, b, c] (valid in prose and in JSON).
-// Pure, no React.
+// list of numbers as [a, b, c] (valid in prose and in JSON), a string as is —
+// so inside JSON the writer adds its quotes ("element": "{{r1.sites.0.element}}"),
+// and a list holding strings reads [a, b] in prose only. Pure, no React.
 
 // A reference's name: a root (r<n> or ctx), then .key or [n] steps; keys as
 // the tools name them (letters, digits, _ - < > +, as in "<100>").

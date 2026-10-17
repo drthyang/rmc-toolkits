@@ -734,6 +734,43 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
         expect(events.at(-1)).toMatchObject({ stoppedBy: 'max_rounds', outcome: { status: 'not verified' } });
     });
 
+    it('an answer the gate withdrew stands when the model then writes nothing (review)', async () => {
+        const { callModel } = scriptedModel([{ text: 'Ti forms a superstructure.\nOutcome: sure.' }, { text: '' }, { text: '' }]);
+        const done = (await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [modulations()], evidence: buildEvidenceGate() }))).at(-1);
+        expect(done).toMatchObject({ type: 'done', text: 'Ti forms a superstructure.\nOutcome: sure.', stoppedBy: 'answer' });
+        expect(done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
+        expect(done.outcome.status).toBe('not verified');
+    });
+
+    it('the gate reads the answer with its references filled, and never sends back once the turn is out of time (review)', async () => {
+        const cnTool = echoTool({ name: 'echo', run: vi.fn(async () => ({ data: { cn: 4 }, checks: [{ level: 'ok', text: 'fine' }] })) });
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 } }] },
+            { text: 'Ti has CN = {{r1.cn}}.' },
+            { text: 'Ti has CN = {{r1.cn}}.' }
+        ]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [cnTool, { ...echoTool(), name: 'find_gr_peaks' }], evidence: buildEvidenceGate({ elements: ['Ti', 'O'] })
+        }));
+        expect(events.find((event) => event.type === 'gate')).toMatchObject({ id: 'coordination' });
+        expect(requests).toHaveLength(3);
+        const late = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'Ti forms a superstructure.' }]);
+        const lateEvents = await collect(runCopilotTurn({
+            callModel: late.callModel, messages: baseMessages, tools: [echoTool(), modulations()], evidence: buildEvidenceGate(), limits: { maxTurnMs: -1 }
+        }));
+        expect(lateEvents.some((event) => event.type === 'gate')).toBe(false);
+        expect(lateEvents.at(-1).audit.map((finding) => finding.rule)).toEqual(['evidence']);
+    });
+
+    it('with tools off, a conclusion no analysis backs is not verified (review)', async () => {
+        const { callModel } = scriptedModel([{ text: 'Ti forms a superstructure.' }]);
+        const done = (await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [modulations()], toolsEnabled: false, evidence: buildEvidenceGate()
+        }))).at(-1);
+        expect(done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
+        expect(done.outcome.status).toBe('not verified');
+    });
+
     it('a reference that names nothing is a finding, and the number stays missing', async () => {
         const { callModel } = scriptedModel([
             { calls: [{ name: 'echo', args: { value: 4 } }] },

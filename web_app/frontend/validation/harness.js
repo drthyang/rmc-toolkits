@@ -34,7 +34,7 @@ import { buildRunTools } from '../src/llm/copilot/runTools';
 import { contextAuditFacts } from '../src/llm/copilot/answerAudit';
 import { buildRunContext } from '../src/llm/context/runContext';
 import { pointGroupFacts } from '../src/llm/context/pointGroups';
-import { buildCopilotMessages } from '../src/llm/prompts/copilot';
+import { buildCopilotMessages, shownContext } from '../src/llm/prompts/copilot';
 import { buildCopilotTools } from '../src/copilotTools';
 import { loadRun } from './runFolder';
 import { parseVerdict, VERDICT_INSTRUCTIONS, VERDICT_MARK } from './verdict';
@@ -128,7 +128,7 @@ export const runLiveCase = async ({
             auditContext: contextAuditFacts(context, pointGroupFacts),
             clarifier,
             evidence: buildEvidenceGate({ catalog: clarifier.catalog, offered: tools.map((tool) => tool.name), elements: run.elements }),
-            referenceContext: context
+            referenceContext: shownContext(context)
         })) {
             if (event.type === 'round') round = { index: event.round, reasoning: '', text: '' };
             else if (event.type === 'reasoning') round.reasoning += event.delta;

@@ -32,7 +32,8 @@ export const VERDICT_INSTRUCTIONS = 'Finish with one line that starts with VERDI
     + `kind is one of ${FEATURE_KINDS.join(', ')}. features is [] when there is no order beyond thermal motion. `
     + 'direction_uvw is a crystal direction; magnitude_A the static displacement (off_centre, symmetry_lowering) '
     + 'or the long minus short bond (jahn_teller); q in reciprocal-lattice units. Use null for what you did not determine. '
-    + 'A number may be a reference to a tool result, as in the answer ("magnitude_A": {{r3.sites.0.shift_A}}): the app fills it in.';
+    + 'A number may be a reference to a tool result, as in the answer ("magnitude_A": {{r3.sites.0.shift_A}}): the app fills it in; '
+    + 'a text reference goes inside its quotes ("element": "{{r3.sites.0.element}}").';
 
 const isVector = (value) => Array.isArray(value) && value.length === 3 && value.every((x) => Number.isFinite(Number(x)));
 const bool = (value) => (value === true || value === false ? value : null);

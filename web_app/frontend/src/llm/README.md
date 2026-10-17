@@ -368,8 +368,9 @@ Three rules keep an answer tied to what the engines computed in that question.
   tetrahedron 3, an octahedron 4 per member). A model cannot be forced to call a tool (not every
   model takes `tool_choice`), so the check runs after the answer: the agent loop withdraws it and
   sends it back once per rule, at most twice a turn (`maxEvidenceGates`), with what to run (a
-  **gate** event; the footer says so). An answer that still lacks its evidence stands, with an
-  `evidence` finding under it. Claims are read as the answer checks read them (`asserts`: not
+  **gate** event; the footer says so), never on the final round or once the turn's time is spent.
+  An answer that still lacks its evidence stands, with an `evidence` finding under it (with tools
+  off too), and a withdrawn answer is kept if the model then writes nothing. Claims are read as the answer checks read them (`asserts`: not
   negated, hypothetical or asked), and only in a sentence about this run: one that names an
   element of the run (Ti, Mo₃, TaSe₆) or the run itself (this structure, the clusters, site 3) — a
   definition ("A superstructure is order that enlarges the cell") needs no analysis; "no order" is
@@ -377,15 +378,16 @@ Three rules keep an answer tied to what the engines computed in that question.
 - **Numbers by reference** (`copilot/references.js`). Every tool message carries a `ref` (r1,
   r2, … in the order of the turn); the model writes `{{r2.peak.significance_sigma}}` — the ref, then
   the path in the data it was shown, array items by index (`{{r3.sites.0.shift_A}}`) — or
-  `{{ctx.<path>}}` for the run context, and the app writes the engine's value in place where the
-  answer is shown, recorded and checked. A number keeps the tool's rounding, a list of scalars reads
+  `{{ctx.<path>}}` for the run context as the model read it (trimmed), and the app writes the
+  engine's value in place where the answer is shown, recorded and checked. A number keeps the tool's rounding, a list of scalars reads
   `[a, b, c]`. A reference that names nothing stays as written and is a `reference` finding.
 - **The computed verdict** (`copilot/verdict.js`). The Outcome chip is the app's: **not verified**
   when a check contradicts the answer, a reference names nothing or a conclusion's evidence did not
-  run; **not achieved** when analyses ran and none succeeded; **partial** when the turn was cut
-  short, an analysis failed and was not rerun successfully, or one warned; **achieved** otherwise.
-  The model's `Outcome:` line explains; a grade in it is kept as `claimed` and named in the note
-  when the checks disagree ("The model said 'achieved': …"). Self-graded, the Outcome had been
+  run; **not achieved** when analyses ran and none succeeded; **partial** when the turn or the
+  reply was cut short, an analysis failed and was not rerun successfully, or one warned;
+  **achieved** otherwise. The model's `Outcome:` line explains; a grade in it is kept as `claimed`
+  and named in the note when the checks disagree ("The model said 'achieved': …"); a lower grade it
+  gives stands (it knows when it could not answer). Self-graded, the Outcome had been
   "achieved" nearly always.
 
 **Facts the model reads.** `detect_symmetry` and the context's ladder state each point group's

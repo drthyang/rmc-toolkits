@@ -1335,11 +1335,13 @@ verified**.
 `asserts` (the answer checks' claim reading) and names the analysis it needs in this turn:
 order between cells (superstructure, cell doubling, zone-boundary order, modulation, incommensurate
 order) and a split site called random disorder (split site, two-site disorder, random
-off-centring, `off_centre`) — `analyze_modulations`; a preferred direction —
+off-centring or off-centring at random, a displacement of ± x Å or ± x Å along a direction — not a
+± sampling error — `off_centre`) — `analyze_modulations`; a preferred direction —
 `analyze_displacement_directions`; distorted, breathing or rigid clusters (and `cluster_*`,
 `rigid_cluster`) — `analyze_clusters`; a coordination number, a polyhedral coordination, a split
 shell or a Jahn–Teller distortion — `find_gr_peaks` or `compute_bond_angles`; a lowering of the
-average structure (symmetry lowering, lowered symmetry, a coherent shift, a polar shift) —
+average structure (symmetry lowering, lowered symmetry, a coherent shift, a polar shift, a shift
+of x Å, "(coherent)"; not "coherent scattering") —
 `measure_symmetry_lowering` (`detect_symmetry` when that is not offered); "no order" (no local
 order, thermal motion only, nothing beyond the average structure; an empty `"features": []`;
 not the modulation tool's own "no order that doubles the cell") — `analyze_modulations`, a
@@ -1353,10 +1355,16 @@ needs no analysis; with no element list every sentence counts. A step counts whe
 returned without an error (a refused bond-angle window still counted its coordination). Rules for
 tools the turn does not offer are dropped. When the model answers with tools still allowed and
 fewer than `maxEvidenceGates` (2) send-backs this turn, the first unmet rule not sent back yet is
-sent back: a `gate` event, a `retract` of the answer's text, the answer as an assistant message
-and the note "(From the app, not the user.) Your answer concludes …, but this question has not
-run …". On the final round, or once the gates are spent, an unmet rule is an `evidence` finding
-naming what did not run.
+sent back: a `gate` event (carrying the withdrawn text), a `retract` of the answer's text, the
+answer as an assistant message and the note "(From the app, not the user.) Your answer concludes
+…, but this question has not run …". The gate reads the answer with its references filled (as the
+checks will), and sends nothing back on the final round or once the turn's time is spent. On the
+final round, or once the gates are spent, an unmet rule is an `evidence` finding naming what did
+not run; with tools off or unsupported the findings still apply (nothing is sent back). A
+withdrawn answer is not lost: if the model then writes nothing, it stands with its finding, and a
+Stop keeps it as the partial answer. A step counts as run only when the tool ran (or its identical
+earlier run is repeated): not a call to an unknown tool, one skipped by the per-round limit, a
+refused question, or a view tool.
 
 **Numbers by reference** (`copilot/references.js`). The loop names each successful result
 `r<n>` (in the order of the turn), puts it first in the tool message (`ref`, kept through
@@ -1365,17 +1373,23 @@ saw). `fillReferences` replaces every `{{r<n>.<path>}}` or `{{ctx.<path>}}` (pat
 `.n` or `[n]`; keys may hold `<>+-`, as in `<100>`) by the value: a finite number as written in the
 data, a string as is, a boolean, or a list of scalars as `[a, b, c]`; anything else in double
 braces that does not start with `r<n>` or `ctx` (a LaTeX group) is left alone. An unfilled
-reference stays and is a `reference` finding. The `done` event carries the filled `text`, the
+reference stays and is a `reference` finding. `{{ctx.…}}` resolves against the context as the
+model read it (`shownContext`: contextToJson's trimmed copy), never a value the trim removed. An
+ended or stopped turn fills the references in every text segment from its own steps (each keeps
+its `ref` and the data it sent). The `done` event carries the filled `text`, the
 `rawText` and `references: {written, filled, unknown}`. `analyze_clusters` asks for a
 4,500-character result (`CLUSTER_RESULT_BUDGET`): at 3,000 its result with checks (~3.4k on the
 demo) reached the model cut to a text fragment no path could name.
 
 **The computed verdict** (`copilot/verdict.js` `computeOutcome`). In order: **not verified** —
 any finding (answer check, unfilled reference, missing evidence); **not achieved** — analyses ran
-and every one failed; **partial** — `stoppedBy` max_rounds or no_progress, a failed step with no
-later success of the same tool, or a step that warned; **achieved** — otherwise. Questions to the
-user and skill reads are not analyses. The note lists the reasons, then the model's sentence; a
-status the model wrote is `claimed`, and named ("The model said 'achieved': …") when it differs.
+and every one failed; **partial** — `stoppedBy` max_rounds or no_progress, a reply cut at the
+length limit, a failed step with no later success of the same tool, or a step that warned;
+**achieved** — otherwise. Questions to the user, skill reads, view tools and calls that never ran
+are not analyses. The model may lower the status, never raise it: a `partial` or `not achieved` it
+writes stands over a computed `achieved` or `partial` ("the model says the answer is …"). The note
+lists the reasons, then the model's sentence; a status the model wrote is `claimed`, and named
+("The model said 'achieved': …") when it differs.
 
 **The Workbench's own questions** (`copilot/clarify.js`). `buildShellCatalog` reads the
 partials file: per ordered pair (centre, partner) the first shell as `firstShell` finds it (Step 9),

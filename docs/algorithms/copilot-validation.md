@@ -230,9 +230,12 @@ A rerun keeps runs already recorded in its folder, so an interrupted batch resum
 local-model hardening (`fix/local-model-robustness`) first: its deadlines and loop guards keep a
 stalled run from holding the batch.
 
-**Time.** Each run is bounded by the agent loop: 6 rounds, 10 minutes plus the final reply. On
+**Time.** Each run is bounded by the agent loop: 6 rounds, 10 minutes plus the final reply. Since
+protocol 2026-10-17.2 the evidence gate can add up to two answer requests to a run (an answer sent
+back, then the analysis it asked for inside the same round budget). On
 qwen3.8-27b (1–5 minutes a question in the 2026-10-10 spot check; a reasoning round of a few
-thousand tokens on a 8–15k-token prompt), expect about 8–12 minutes a run:
+thousand tokens on a 8–15k-token prompt), expect about 8–12 minutes a run, a few more when the gate
+sends an answer back:
 - one split, one arm, 3 runs: 27 runs, about 4–5 hours;
 - dev and test, arms B and C: about 16–20 hours per local model;
 - smoke pass: about 1.5 hours.

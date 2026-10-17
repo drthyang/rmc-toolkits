@@ -143,7 +143,7 @@ describe('the turn shows the send-back and the filled answer', () => {
             }
         ];
         events.forEach((event) => { turn = applyTurnEvent(turn, event, 0); });
-        expect(turn.gates).toEqual([{ id: 'order-between-cells', notice: expect.stringMatching(/^The answer concluded order between cells/) }]);
+        expect(turn.gates).toEqual([{ id: 'order-between-cells', notice: expect.stringMatching(/^The answer concluded order between cells/), text: '' }]);
         expect(turn.items.filter((item) => item.kind === 'text').map((item) => item.text)).toEqual(['', 'Ordered at 498×.']);
         expect(turn.references).toEqual({ written: 1, filled: 1, unknown: [] });
     });
@@ -163,5 +163,84 @@ describe('the gate reads conclusions about this run only', () => {
         // "No order" is always about the run; a word that only contains a symbol is no mention of it.
         expect(gate.unmet('There is no local order.', []).map((rule) => rule.id)).toEqual(['no-order']);
         expect(gate.unmet('Tiny clusters breathe in general.', [])).toEqual([]);
+    });
+});
+
+describe('a lowering, read in its usual words', () => {
+    it('a quantified shift or "(coherent)" is a lowering; a ± shift and coherent scattering are not', () => {
+        const gate = buildEvidenceGate({ elements: ['K', 'Ta', 'O'] });
+        const ids = (text) => gate.unmet(text, []).map((rule) => rule.id);
+        expect(ids('Every Ta is shifted by 0.07 Å along [0 0 1].')).toEqual(['lowering']);
+        expect(ids('Every Ta shifted along [0 0 1] (coherent): the average structure is P4mm.')).toEqual(['lowering']);
+        expect(ids('Ta is displaced ±0.07 Å at random.')).toEqual(['split-site']);
+        expect(ids('The coherent scattering length of Ta weights the Ta–O partial.')).toEqual([]);
+        // A ± sampling error, as the cluster check writes it, is no split site.
+        expect(ids('The Ta edges are 3.03–3.05 Å (± 0.006 Å each).')).toEqual([]);
+        expect(ids('Ta is off-centred ±0.2 Å along [0 0 1].')).toEqual(['split-site']);
+        expect(gate.unmet('Every Ta is shifted by 0.07 Å along [0 0 1].', [{ name: 'measure_symmetry_lowering', args: {} }])).toEqual([]);
+    });
+});
+
+describe('the review of the first version (2026-10-17)', () => {
+    it('a random thermal displacement, a random distribution or local symmetry is no split site and no lowering', () => {
+        const gate = buildEvidenceGate({ elements: ['Ga', 'Ta', 'Se'] });
+        for (const text of [
+            'Se shows random thermal displacements about its site.',
+            'The Ta atoms are randomly distributed around their mean positions.',
+            'Locally the Ta4 clusters have lower symmetry than the average structure.',
+            'A local symmetry lowering of the Ta4 clusters.'
+        ]) {
+            expect(gate.unmet(text, []), text).toEqual([]);
+        }
+        expect(gate.unmet('The Ta shift lowers the average symmetry to P-42_1m.', []).map((rule) => rule.id)).toEqual(['lowering']);
+        expect(gate.unmet('Ta is randomly displaced along [111].', []).map((rule) => rule.id)).toEqual(['split-site']);
+        // An empty element list (a context without one) reads every sentence.
+        expect(buildEvidenceGate({ elements: [] }).unmet('Ta4 tetrahedra breathe.', []).map((rule) => rule.id)).toEqual(['clusters']);
+    });
+
+    it('the verdict: a cut reply is partial, a model may lower it, views and calls that never ran are no analyses', () => {
+        const ok = { name: 'list_sites', status: 'ok', executed: true };
+        expect(computeOutcome({ steps: [ok], cut: true }).note).toMatch(/^the reply was cut at the length limit\./);
+        const lowered = computeOutcome({ steps: [ok], modelOutcome: { status: 'not achieved', note: 'the run cannot tell.', body: 'B' } });
+        expect(lowered).toMatchObject({ status: 'not achieved', claimed: 'not achieved' });
+        expect(lowered.note).toBe('1 analysis ran and passed its checks, and no check contradicts the answer; the model says the answer is not achieved. the run cannot tell.');
+        // Never raised: the checks' "not verified" stands.
+        expect(computeOutcome({ findings: [{ rule: 'direction', text: 'x' }], modelOutcome: { status: 'achieved', note: '', body: 'B' } }).status).toBe('not verified');
+        const view = { name: 'highlight_cards', status: 'failed', error: 'no card', view: true, executed: true };
+        const typo = { name: 'analyse_sites', status: 'failed', error: 'unknown tool', executed: false };
+        expect(computeOutcome({ steps: [view] }).status).toBe('achieved');
+        expect(computeOutcome({ steps: [typo, ok] }).status).toBe('achieved');
+    });
+
+    it('a {{ctx…}} reference names the context as the model read it, trimmed', async () => {
+        const { shownContext } = await import('../prompts/copilot');
+        const ladder = Array.from({ length: 40 }, (_, index) => ({ from: index * 0.01, to: (index + 1) * 0.01, group: `G${index}`, note: 'x'.repeat(120) }));
+        const shown = shownContext({ run: 'r', symmetry: { ladder } });
+        const store = createReferenceStore({ context: shown });
+        const second = fillReferences('{{ctx.symmetry.ladder.1.group}}', store).text;
+        expect(second).toBe(String(shown.symmetry.ladder[1].group));
+        expect(shownContext(null)).toBeNull();
+    });
+
+    it('an ended or stopped turn shows every segment with its references filled, and keeps an answer the gate withdrew', async () => {
+        const { applyTurnEvent, closeTurn, newAssistantTurn } = await import('../copilot/turnState');
+        let turn = newAssistantTurn(0);
+        [
+            { type: 'round', round: 0 },
+            { type: 'tool_start', id: 't1', name: 'echo', label: 'Echo', args: {} },
+            { type: 'tool_end', id: 't1', name: 'echo', status: 'ok', args: {}, data: { value: 4 }, checks: [], error: null, ms: 1, ref: 'r1' },
+            { type: 'round', round: 1 },
+            { type: 'text', delta: 'The value is {{r1.value}}; checking more.' }
+        ].forEach((event) => { turn = applyTurnEvent(turn, event, 0); });
+        const stopped = closeTurn(turn, 'stopped');
+        expect(stopped.items.find((item) => item.kind === 'text' && item.text).text).toBe('The value is 4; checking more.');
+        let gated = newAssistantTurn(0);
+        [
+            { type: 'round', round: 0 },
+            { type: 'text', delta: 'Ti forms a superstructure.' },
+            { type: 'gate', id: 'order-between-cells', notice: 'n', text: 'Ti forms a superstructure.' },
+            { type: 'retract' }
+        ].forEach((event) => { gated = applyTurnEvent(gated, event, 0); });
+        expect(closeTurn(gated, 'stopped').text).toBe('Ti forms a superstructure.\n\n(Interrupted before the answer was finished.)');
     });
 });

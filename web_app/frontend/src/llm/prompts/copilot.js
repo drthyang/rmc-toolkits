@@ -110,6 +110,14 @@ export const contextBlock = (context) => (
     `Context for this RMC modeling run:\n\`\`\`json\n${contextToJson(context)}\n\`\`\``
 );
 
+/**
+ * The run context as the model reads it (contextBlock trims it to its
+ * budget: a long ladder to its two ends, a long history downsampled), for
+ * {{ctx.…}} references: a reference names what the model saw, never a value
+ * the trim removed.
+ */
+export const shownContext = (context) => (context ? JSON.parse(contextToJson(context)) : null);
+
 // Keep only the newest turns so long conversations stay inside small local
 // models' context windows; the run context is re-sent every call anyway.
 // Earlier turns travel as their question and final answer only — never their

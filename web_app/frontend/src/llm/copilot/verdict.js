@@ -13,10 +13,15 @@
 //     answer concludes something whose analysis did not run (evidence.js);
 //   not achieved — analyses ran and none of them succeeded;
 //   partial — the analyses were cut short (the round budget, or rounds that
-//     added nothing), an analysis failed and was not run again successfully,
-//     or one warned (use its result with the stated caveat);
+//     added nothing), the reply was cut at the length limit, an analysis failed
+//     and was not run again successfully, or one warned (use its result with
+//     the stated caveat);
 //   achieved — otherwise: every analysis the answer rests on ran and passed
 //     its checks (or the context answered, and nothing contradicts it).
+// The model may lower that, never raise it: when it says its own answer is
+// partial or not achieved ("the run cannot tell"), that stands.
+// Analyses are the steps that ran: not a question to the user, a skill read, a
+// view tool, a call to an unknown tool or one skipped by the budget.
 // Pure, no React.
 
 export const VERDICT_STATUSES = ['achieved', 'partial', 'not verified', 'not achieved'];
@@ -43,14 +48,17 @@ const listNames = (steps) => [...new Set(steps.map((step) => step.name))].join('
  * reading of the model's line (its status is only kept as `claimed`).
  * Returns `{ status, note, body, claimed, computed: true, reasons }`.
  */
-export const computeOutcome = ({ text = '', steps = [], findings = [], stoppedBy = 'answer', modelOutcome = null } = {}) => {
+// The model may lower the computed verdict to these, in this order.
+const LOWER = ['achieved', 'partial', 'not achieved'];
+
+export const computeOutcome = ({ text = '', steps = [], findings = [], stoppedBy = 'answer', cut = false, modelOutcome = null } = {}) => {
     const reasons = [];
     let status = null;
     if (findings.length) {
         status = 'not verified';
         reasons.push(findingReason(findings));
     }
-    const analyses = steps.filter((step) => !step.interactive && !step.reading);
+    const analyses = steps.filter((step) => !step.interactive && !step.reading && !step.view && step.executed !== false);
     if (!status && analyses.length && analyses.every((step) => step.status === 'failed' || step.error)) {
         status = 'not achieved';
         reasons.push(`no analysis succeeded (${listNames(analyses)})`);
@@ -61,6 +69,7 @@ export const computeOutcome = ({ text = '', steps = [], findings = [], stoppedBy
             && !analyses.slice(index + 1).some((later) => later.name === step.name && later.status !== 'failed'));
         const warned = analyses.filter((step) => step.status === 'warn');
         if (stoppedBy === 'max_rounds' || stoppedBy === 'no_progress') reasons.push('the analyses were cut short before the answer');
+        if (cut) reasons.push('the reply was cut at the length limit');
         if (unresolved.length) reasons.push(`${listNames(unresolved)} failed`);
         if (warned.length) reasons.push(`${listNames(warned)} warned: its result holds with the stated caveat`);
         if (reasons.length) status = 'partial';
@@ -72,8 +81,13 @@ export const computeOutcome = ({ text = '', steps = [], findings = [], stoppedBy
             : 'answered from the run context, and no check contradicts it');
     }
     // The model's sentence explains; a grade it gave that the checks do not
-    // bear out is said, never used.
+    // bear out is said, never used — unless it is lower: the model knows when
+    // its answer falls short.
     const claimed = modelOutcome?.status ?? null;
+    if (claimed && LOWER.includes(status) && LOWER.indexOf(claimed) > LOWER.indexOf(status)) {
+        reasons.push(`the model says the answer is ${claimed}`);
+        status = claimed;
+    }
     const sentence = modelOutcome?.note || '';
     const explanation = claimed && claimed !== status
         ? ` The model said "${claimed}"${sentence ? `: ${sentence}` : '.'}`

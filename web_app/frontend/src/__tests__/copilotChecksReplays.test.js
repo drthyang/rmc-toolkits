@@ -22,6 +22,7 @@ import { buildEvidenceGate } from '../llm/copilot/evidence';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { pointGroupFacts } from '../llm/context/pointGroups';
 import { buildRunContext } from '../llm/context/runContext';
+import { shownContext } from '../llm/prompts/copilot';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { handlePcaMessage } from '../workers/pcaKdeWorker';
 
@@ -95,7 +96,7 @@ const replay = async (question, replies, { answer = null, withClarifier = true, 
         auditContext,
         clarifier: withClarifier ? clarifier : null,
         evidence: withEvidence ? evidence : null,
-        referenceContext: context
+        referenceContext: shownContext(context)
     })) events.push(event);
     const ends = events.filter((event) => event.type === 'tool_end');
     const lastToolMessage = () => JSON.parse(requests.at(-1).filter((message) => message.role === 'tool').at(-1).content);

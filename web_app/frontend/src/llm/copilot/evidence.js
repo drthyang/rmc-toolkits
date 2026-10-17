@@ -41,10 +41,16 @@
 import { BREATHING, CELL_DOUBLING, CN_CLAIMS, DISTORTED, POLYHEDRON_CN, PREFERRED, RIGID, SUPERSTRUCTURE, asserts } from './answerAudit';
 
 const MODULATION = /(^|[^\w-])(modulat(?:ion|ions|ed)|incommensurate|order(?:ed)? between cells|correlated displacements between cells)\b/gi;
-const SPLIT_SITE = /(^|[^\w-])(split[- ]sites?|two[- ]site(?:\s+disorder)?|disordered over two|random(?:ly)?\s+(?:\w+\s+)?(?:off[- ]cent\w*|displac\w*|distribut\w*)|off[- ]cent(?:re|er|ring|ering)\s+(?:dis)?order|off_centre)\b/gi;
+// A split site: named, random off-centring either way round, a ± displacement
+// (not a ± sampling error; not random thermal displacements, which are no order).
+const SPLIT_SITE = /(^|[^\w-])(split[- ]sites?|two[- ]site(?:\s+disorder)?|disordered over two|random(?:ly)?\s+(?:(?!thermal\b)\w+\s+)?(?:off[- ]cent\w*|displac\w*)|(?:off[- ]cent\w*|displac\w*)[^.;]{0,40}?\bat random|(?:displac\w*|off[- ]cent\w*|shift\w*|split)\s+(?:by\s+)?±\s*\d+(?:\.\d+)?\s*(?:Å|A\b)|±\s*\d+(?:\.\d+)?\s*(?:Å|A\b)\s+along|off[- ]cent(?:re|er|ring|ering)\s+(?:dis)?order|off_centre)/gi;
 const CLUSTER_KINDS = /(^|[^\w-])(cluster_distortion|cluster_breathing|rigid_cluster)\b/gi;
 const SHELL_CLAIMS = /(^|[^\w-])(jahn[-–_ ]teller|split (?:first )?(?:coordination )?shell|short and long bonds|jahn_teller)\b/gi;
-const LOWERING = /(^|[^\w-])(symmetry[-_ ]lowering|lower(?:s|ed|ing)? (?:the )?(?:average )?symmetry|coherent(?:ly)? (?:shift\w*|off[- ]cent\w*|displace\w*)|polar shift)\b/gi;
+// A lowering of the average structure (lowers / lowered its symmetry), or a
+// quantified shift every copy shares ("shifted by 0.07 Å", "(coherent)"); a ±
+// shift is a split site, "coherent scattering" none, and "lower symmetry
+// locally" or a local symmetry lowering is about the clusters, not the average.
+const LOWERING = /(^|[^\w-])((?<!local\s)symmetry[-_ ]lowering|lower(?:s|ed|ing) (?:the )?(?:average )?symmetry|(?:average structure|space group)\s+(?:is\s+)?lowered|coherent(?:ly)? (?:shift\w*|off[- ]cent\w*|displace\w*)|polar shift|shift(?:ed|s)? (?:by )?\d+(?:\.\d+)?\s*(?:Å|A\b)|\(coherent\))/gi;
 const NO_ORDER = /(^|[^\w-])(no (?:local |short-range |additional )?order(?!\s+(?:that|which)\s+doubles)|no (?:ordered|correlated) (?:displacements?|distortions?)|(?:only|purely) thermal motion|thermal motion only|nothing beyond (?:the )?(?:average structure|thermal motion)|no (?:sign|evidence) of (?:local )?order)\b/gi;
 const EMPTY_VERDICT = /"features"\s*:\s*\[\s*\]/;
 const RUN_NOUN = /\b(?:th(?:is|e) (?:run|configuration|structure|model|box|supercell|sample|compound|crystal|material|system)|the (?:sites?|atoms|clusters|octahedra|tetrahedra|polyhedra|displacements)|sites? \d+)\b/i;
@@ -66,7 +72,7 @@ const ranTool = (ran, name) => ran.some((call) => call.name === name);
 export const buildEvidenceGate = ({ catalog = null, offered = null, elements = null } = {}) => {
     const has = (name) => !offered || offered.includes(name);
     // A sentence about this run (above); every sentence without the elements.
-    const symbols = elements ? elements.map((element) => new RegExp(`(?<![A-Za-z])${element}(?![a-z])`)) : null;
+    const symbols = elements?.length ? elements.map((element) => new RegExp(`(?<![A-Za-z])${element}(?![a-z])`)) : null;
     const within = symbols ? (sentence) => RUN_NOUN.test(sentence) || symbols.some((pattern) => pattern.test(sentence)) : null;
     const claims = (text, pattern) => asserts(text, pattern, { within });
     const clusterElements = catalog
