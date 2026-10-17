@@ -120,3 +120,34 @@ describe('the Workbench\'s questions', () => {
         expect(clarifier.beforeCall(tool, { lo: 2.2, hi: 3.2 })).toBeNull();
     });
 });
+
+describe('a split shell whose bond lengths are well resolved (review L1)', () => {
+    // Cu–F: 4 × 1.93 + 2 × 2.25 Å, σ 0.05 Å: the trough between the peaks
+    // is deep, so the first minimum alone gave CN 4. Density 0.1 Å⁻³ (the
+    // structure above): a narrow peak holds 4π ρ h σ √(2π) r0² atoms.
+    const height = (cn, r0, sigma) => cn / (4 * Math.PI * 0.1 * sigma * Math.sqrt(2 * Math.PI) * r0 * r0);
+    const jt = series('In-Se', [[1.93, 0.05, height(4, 1.93, 0.05)], [2.25, 0.05, height(2, 2.25, 0.05)]]);
+    const run = { plotFiles: partials([jt]), structure };
+
+    it('is one shell of CN 6, with the first peak alone (CN 4, to the trough) as the alternative', () => {
+        const shell = buildShellCatalog(run).shell('In', 'Se');
+        expect(shell.cn).toBeCloseTo(6, 1);
+        expect(shell.peaks).toHaveLength(2);
+        const options = ambiguousWindows(shell);
+        expect(options.map((option) => option.label)).toEqual(['Whole first shell', 'First peak only']);
+        expect(options[1].cn).toBeCloseTo(4, 1);
+        expect(options[1].window[1]).toBeGreaterThan(2.0);
+        expect(options[1].window[1]).toBeLessThan(2.2);
+    });
+
+    it('the Workbench asks before an analysis runs in the first peak alone, the whole octahedron the default', () => {
+        const clarifier = buildClarifier(run);
+        const tool = { shellWindows: (args) => [{ centre: 'In', partner: 'Se', window: [args.lo, args.hi], apply: ([lo, hi]) => ({ ...args, lo, hi }) }] };
+        const item = clarifier.beforeCall(tool, { lo: 1.7, hi: 2.1 });
+        expect(item.kind).toBe('cut');
+        expect(item.request.question).toMatch(/holds 4 Se per In of the shell's 6/);
+        expect(item.request.options[item.request.defaultIndex].label).toBe('Whole first shell');
+        expect(clarifier.beforeTurn('Se–In–Se bond angles?').kind).toBe('window');
+        expect(clarifier.beforeTurn('Is InSe6 a regular octahedron? Se–In–Se angles')).toBeNull();
+    });
+});

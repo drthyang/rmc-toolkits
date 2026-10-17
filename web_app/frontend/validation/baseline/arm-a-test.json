@@ -1,8 +1,8 @@
 [
  {
   "id": "test-offcentre__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-offcentre",
   "split": "test",
   "arm": "A",
@@ -205,8 +205,8 @@
  },
  {
   "id": "test-offcentre__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-offcentre",
   "split": "test",
   "arm": "A+",
@@ -362,7 +362,7 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Sr at (0, ½, 0), is 3.3× the median, -1σ after the correction)."
    },
@@ -421,8 +421,8 @@
  },
  {
   "id": "test-offcentre__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-offcentre",
   "split": "test",
   "arm": "D",
@@ -508,8 +508,8 @@
  },
  {
   "id": "test-zone-boundary__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "A",
@@ -727,8 +727,8 @@
  },
  {
   "id": "test-zone-boundary__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "A+",
@@ -892,7 +892,7 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "Ordered Zr displacements at q = (½, ½, ½): 425× the median power, > 8σ against independent displacements (corrected over 21 zone-boundary points) — a superstructure doubling the cell along a, b, c. Ca's strongest mode is a long-wavelength wave, q = (0, 0.125, 0) at 110× the median: box-scale displacement correlations (common in RMC), not a crystallographic superstructure."
    },
@@ -941,8 +941,8 @@
  },
  {
   "id": "test-zone-boundary__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-zone-boundary",
   "split": "test",
   "arm": "D",
@@ -1041,8 +1041,8 @@
  },
  {
   "id": "test-breathing__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-breathing",
   "split": "test",
   "arm": "A",
@@ -1194,8 +1194,8 @@
  },
  {
   "id": "test-breathing__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-breathing",
   "split": "test",
   "arm": "A+",
@@ -1204,10 +1204,6 @@
    "features": [
     {
      "kind": "cluster_breathing",
-     "element": "Nb"
-    },
-    {
-     "kind": "cluster_distortion",
      "element": "Nb"
     }
    ],
@@ -1229,23 +1225,12 @@
      "accurate": true
     }
    ],
-   "spurious": [
-    {
-     "index": 1,
-     "kind": "cluster_distortion",
-     "element": "Nb"
-    }
-   ],
+   "spurious": [],
    "tolerated": [],
    "overclaim": false,
    "symmetry": null,
-   "contradictions": [
-    {
-     "what": "spurious cluster_distortion (Nb)",
-     "rule": "cluster"
-    }
-   ],
-   "score": 0.5
+   "contradictions": [],
+   "score": 1
   },
   "readings": [
    {
@@ -1351,7 +1336,7 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Se at (0, ½, 0), is 2.8× the median, -0.83σ after the correction)."
    },
@@ -1361,9 +1346,9 @@
     "value": {
      "ladder_width": {
       "obs": 0.162,
-      "null": 0.208,
-      "z": -14,
-      "change": -0.22
+      "null": 0.161,
+      "z": 0.82,
+      "change": 0.01
      },
      "breathing_sd": {
       "obs": 0.107,
@@ -1372,7 +1357,7 @@
       "change": 0.65
      }
     },
-    "reading": "The average cluster is regular within its sampling error: edges 2.939–2.944 Å (± 0.0044 Å each). The clusters are 22 % LESS distorted than independent atoms would make them (edge spread 0.162 vs 0.208 Å, z = -14): the atoms of a cluster move together, yet more clusters than by chance are compressed along <100> (below): a correlated shape distortion whose amplitude the independent-atom null already holds (split or disordered sites). The cluster size (mean edge) fluctuates 65 % more than for independent atoms (breathing sd 0.107 vs 0.0649 Å, z = 22). More clusters are compressed along <100> than by chance: 10 % vs 5 % in the null (z = 4)."
+    "reading": "The average cluster is regular within its sampling error: edges 2.939–2.944 Å (± 0.0044 Å each). No cluster shape distortion beyond independent atoms (at each cluster's own size): the edge spread (0.162 Å) matches the shuffle null (0.161 Å; change 1 %, z = 0.82). The clusters breathe: their size (mean edge) fluctuates 65 % more than for independent atoms (breathing sd 0.107 vs 0.0649 Å, z = 22) — a collective size fluctuation, not a shape distortion."
    }
   ],
   "truth": {
@@ -1395,8 +1380,8 @@
  },
  {
   "id": "test-breathing__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-breathing",
   "split": "test",
   "arm": "D",
@@ -1454,8 +1439,8 @@
  },
  {
   "id": "test-jahn-teller__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "A",
@@ -1754,8 +1739,8 @@
  },
  {
   "id": "test-jahn-teller__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "A+",
@@ -1994,7 +1979,7 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Cl at (½, 0, ½), is 3.5× the median, 1.3σ after the correction)."
    },
@@ -2031,9 +2016,9 @@
     "value": {
      "ladder_width": {
       "obs": 0.479,
-      "null": 0.543,
-      "z": -8.5,
-      "change": -0.12
+      "null": 0.58,
+      "z": -13,
+      "change": -0.17
      },
      "breathing_sd": {
       "obs": 0.0354,
@@ -2042,7 +2027,7 @@
       "change": -0.67
      }
     },
-    "reading": "The average cluster is regular within its sampling error: edges 3.66–3.704 Å (± 0.013 Å each). The clusters are 12 % LESS distorted than independent atoms would make them (edge spread 0.479 vs 0.543 Å, z = -8.5): the atoms of a cluster move together, yet more clusters than by chance are elongated along <100> (below): a correlated shape distortion whose amplitude the independent-atom null already holds (split or disordered sites). The cluster size (mean edge) fluctuates 67 % less than for independent atoms (breathing sd 0.0354 vs 0.107 Å, z = -16). More clusters are elongated along <100> than by chance: 100 % vs 50 % in the null (z = 15). More clusters are compressed along <110> than by chance: 31 % vs 15 % in the null (z = 5.5). 0.12 Cl–Cl contacts per atom inside the window are not cluster bonds: atoms crossing the gap between clusters."
+    "reading": "The average cluster is regular within its sampling error: edges 3.66–3.704 Å (± 0.013 Å each). The clusters are 17 % LESS distorted than independent atoms would make them (at each cluster's own size) (edge spread 0.479 vs 0.58 Å, z = -13): the atoms of a cluster move together, yet more clusters than by chance are elongated along <100> (below): a correlated shape distortion whose amplitude the independent-atom null already holds (split or disordered sites). The cluster size (mean edge) fluctuates 67 % less than for independent atoms (breathing sd 0.0354 vs 0.107 Å, z = -16): the split sites' positions combine in a pattern that keeps the size (as a Jahn–Teller distortion does), not stiff bonds. More clusters are elongated along <100> than by chance: 100 % vs 53 % in the null (z = 14). More clusters are compressed along <110> than by chance: 31 % vs 15 % in the null (z = 5). Split sites: 5 of the 6 member sites (3, 4, 5, 6, 8) have two positions (PC1 excess kurtosis ≤ −0.5). The null keeps each site's two positions, so it already holds the distortion's amplitude: the edge spread cannot show it, and \"no distortion\" or \"less distorted\" does not make the clusters regular. Read the pattern (axis families, trigonality), the partial g(r) shell (find_gr_peaks) and the bond angles. 0.12 Cl–Cl contacts per atom inside the window are not cluster bonds: atoms crossing the gap between clusters."
    }
   ],
   "truth": {
@@ -2088,8 +2073,8 @@
  },
  {
   "id": "test-jahn-teller__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-jahn-teller",
   "split": "test",
   "arm": "D",
@@ -2185,8 +2170,8 @@
  },
  {
   "id": "test-cell-wrap__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "A",
@@ -2292,8 +2277,8 @@
  },
  {
   "id": "test-cell-wrap__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "A+",
@@ -2382,7 +2367,7 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Ti at (½, 0, ½), is 1.5× the median, -1.3σ after the correction)."
    },
@@ -2402,7 +2387,7 @@
       "change": -0.83
      }
     },
-    "reading": "The average cluster is regular within its sampling error: edges 2.29–2.29 Å (± 0.0043 Å each). No cluster distortion beyond independent atoms: the edge spread (0 Å) matches the shuffle null (0 Å; change 0 %, z = null). The cluster size (mean edge) fluctuates 83 % less than for independent atoms (breathing sd 0.0163 vs 0.0962 Å, z = -35)."
+    "reading": "The average cluster is regular within its sampling error: edges 2.29–2.29 Å (± 0.0043 Å each). Dimers have one edge: the shape is the bond length, read from the size row (breathing_sd_A, against independent atoms). The cluster size (mean edge) fluctuates 83 % less than for independent atoms (breathing sd 0.0163 vs 0.0962 Å, z = -35): the bonds are stiffer than independent atoms make them — the atoms move together."
    }
   ],
   "truth": {
@@ -2431,8 +2416,8 @@
  },
  {
   "id": "test-cell-wrap__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-cell-wrap",
   "split": "test",
   "arm": "D",
@@ -2501,8 +2486,8 @@
  },
  {
   "id": "test-thermal-null__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "A",
@@ -2652,8 +2637,8 @@
  },
  {
   "id": "test-thermal-null__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "A+",
@@ -2785,7 +2770,7 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, O at (½, ½, ½), is 2.1× the median, -1.4σ after the correction)."
    },
@@ -2815,8 +2800,8 @@
  },
  {
   "id": "test-thermal-null__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-thermal-null",
   "split": "test",
   "arm": "D",
@@ -2864,8 +2849,8 @@
  },
  {
   "id": "test-symmetry-lowering__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "A",
@@ -3041,14 +3026,25 @@
  },
  {
   "id": "test-symmetry-lowering__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "A+",
   "model": null,
   "verdict": {
-   "features": [],
+   "features": [
+    {
+     "kind": "symmetry_lowering",
+     "element": "Ti",
+     "direction_uvw": [
+      1,
+      1,
+      1
+     ],
+     "magnitude_A": 0.055
+    }
+   ],
    "space_group": "R3m",
    "chiral": false,
    "centrosymmetric": false,
@@ -3059,9 +3055,16 @@
    "null_case": false,
    "features": [
     {
+     "planted": "symmetry_lowering",
+     "found": true,
+     "claim_index": 0,
      "kind": "symmetry_lowering",
      "element": "Ti",
-     "found": false
+     "direction_error_deg": 0,
+     "direction_ok": true,
+     "magnitude_claimed_A": 0.055,
+     "magnitude_ok": true,
+     "accurate": true
     }
    ],
    "spurious": [],
@@ -3074,7 +3077,7 @@
     "polar": "right"
    },
    "contradictions": [],
-   "score": 0.8333
+   "score": 1
   },
   "readings": [
    {
@@ -3180,9 +3183,29 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Ti at (0, ½, 0), is 3.8× the median, -0.76σ after the correction)."
+   },
+   {
+    "page": "measure_symmetry_lowering",
+    "what": "shifts from the 0.2 Å group",
+    "value": {
+     "parent": "Pm-3m",
+     "lower": "R3m",
+     "shifted": [
+      {
+       "element": "Ti",
+       "shift_A": 0.055,
+       "direction_uvw": [
+        1,
+        1,
+        1
+       ]
+      }
+     ]
+    },
+    "reading": "Ti shifted 0.055 Å along [1 1 1] (3° off) from the Pm-3m positions (site 2; noise floor 0.027 Å) (the lower group R3m at 0.027 Å): a coherent shift every copy shares, a static distortion of the average structure. Pm-3m → R3m loses the inversion centre and becomes polar."
    },
    {
     "page": "analyze_clusters",
@@ -3225,8 +3248,8 @@
  },
  {
   "id": "test-symmetry-lowering__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-symmetry-lowering",
   "split": "test",
   "arm": "D",
@@ -3313,8 +3336,8 @@
  },
  {
   "id": "test-chirality-trap__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "A",
@@ -3520,8 +3543,8 @@
  },
  {
   "id": "test-chirality-trap__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "A+",
@@ -3710,7 +3733,7 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, V at (½, ½, ½), is 3.4× the median, -1.2σ after the correction)."
    },
@@ -3739,8 +3762,8 @@
  },
  {
   "id": "test-chirality-trap__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-chirality-trap",
   "split": "test",
   "arm": "D",
@@ -3787,8 +3810,8 @@
  },
  {
   "id": "test-chiral__A",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-chiral",
   "split": "test",
   "arm": "A",
@@ -3994,8 +4017,8 @@
  },
  {
   "id": "test-chiral__A+",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-chiral",
   "split": "test",
   "arm": "A+",
@@ -4184,7 +4207,7 @@
    },
    {
     "page": "analyze_modulations",
-    "what": "zone-boundary points",
+    "what": "zone-boundary points and general modes",
     "value": null,
     "reading": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Si at (½, 0, 0), is 1.9× the median, -1.1σ after the correction)."
    },
@@ -4219,8 +4242,8 @@
  },
  {
   "id": "test-chiral__D",
-  "protocol": "2026-10-14.1",
-  "commit": "b4fe09fdf4ba72c18338811cf79fc535664c8b79",
+  "protocol": "2026-10-17.1",
+  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
   "case": "test-chiral",
   "split": "test",
   "arm": "D",

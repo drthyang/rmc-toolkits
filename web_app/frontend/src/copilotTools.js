@@ -19,7 +19,14 @@ import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
 import { describePointGroup, pointGroupFacts } from './llm';
+import { symmetryNoiseFloor } from './llm/context/runContext';
+import { symmetryShifts } from './symmetryShift';
+import { nearestLowIndex } from './viewer3d';
 import { normalQuantile, regularizedGamma } from './workers/orientation';
+
+// A tolerance this factor above the sampling noise floor holds clearly above
+// it (the Workbench's tolerance question uses the same margin, clarify.js).
+export const NOISE_FLOOR_MARGIN = 1.25;
 
 const round = (value, digits = 3) => (
     Number.isFinite(value) ? (value === 0 ? 0 : Number(value.toPrecision(digits))) : null
@@ -177,7 +184,16 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     if (payload.mapSignificance == null) {
         checks.push({ level: 'note', text: 'The whole-map test is undefined here (too few points per cell).' });
     } else if (payload.mapSignificance >= SIGNIFICANCE_SIGMA) {
-        checks.push({ level: 'ok', text: `The map departs from isotropy at ${round(payload.mapSignificance)}σ.` });
+        // Any anisotropic Gaussian ellipsoid passes the map test (a
+        // thermal-only O flattened across its bond: map 7.2σ, peak 2.3σ):
+        // it shows anisotropy, and only the peak test a preferred direction.
+        checks.push({
+            level: 'ok',
+            text: `The displacements are anisotropic: the map departs from isotropy at ${round(payload.mapSignificance)}σ. `
+                + (payload.peakSignificance >= SIGNIFICANCE_SIGMA
+                    ? 'The peak test above names the preferred direction.'
+                    : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs the peak test.')
+        });
     }
     if (payload.peakTieCount > 1) {
         checks.push({ level: 'note', text: `${payload.peakTieCount} cells tie for the peak: the peak direction is one of several equal ones.` });
@@ -199,12 +215,15 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
                 + 'against a per-site or cluster distortion. Test single sites (site_ref), or analyze_clusters for a cluster\'s shape.'
         });
     }
-    // For the answer check: no "preferred direction" unless one of the
-    // question's analyses found it at ≥ 3σ.
+    // For the answer check: no "preferred direction" unless the peak test of
+    // one of the question's analyses found it at ≥ 3σ. The map test alone is
+    // anisotropy (review L3, approved 2026-10-14): before, it counted too, and
+    // let a preferred direction through on plain thermal anisotropy.
     const facts = {
         direction: {
             subject: payload.referenceNumber != null ? `site ${payload.referenceNumber}` : (payload.element || 'all atoms'),
-            significant: payload.peakSignificance >= SIGNIFICANCE_SIGMA || payload.mapSignificance >= SIGNIFICANCE_SIGMA,
+            significant: payload.peakSignificance >= SIGNIFICANCE_SIGMA,
+            anisotropic: payload.mapSignificance >= SIGNIFICANCE_SIGMA,
             peak_sigma: round(payload.peakSignificance),
             map_sigma: payload.mapSignificance == null ? null : round(payload.mapSignificance)
         }
@@ -389,6 +408,18 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
                 + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
         }
     }
+    // For the coordination answer check (review L5): the A–B count in this
+    // window, and whether it is the whole shell or a window the user chose.
+    const facts = {
+        coordination: {
+            centre: b,
+            partner: a,
+            window: payload.bond12 ?? null,
+            cn: round(meanCoordination),
+            whole_shell: !cutText,
+            confirmed: windowConfirmed
+        }
+    };
     if (cutText && !windowConfirmed) {
         // Refused: keep what shows the cut, never the angles.
         ['mean_deg', 'sd_deg', 'modes', 'histogram_10deg', 'histogram_10deg_sin_corrected'].forEach((key) => { delete data[key]; });
@@ -398,7 +429,7 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
             text: `Refused: ${cutText} Use the whole shell (find_gr_peaks' first_shell.window_A). If the user wants this window, `
                 + 'ask them (ask_user) and call again with window_confirmed: true.'
         });
-        return { data, checks };
+        return { data, checks, facts };
     }
     if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its angles are of a partial shell.` });
     const cut = Boolean(cutText);
@@ -423,7 +454,7 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
                 + 'at 90°. Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.'
         });
     }
-    return { data, checks };
+    return { data, checks, facts };
 };
 
 // --- analyze_clusters ------------------------------------------------------------
@@ -449,7 +480,32 @@ const significant = (z, change, effect) => (
     Number.isFinite(z) && Math.abs(z) >= CLUSTER_Z && Number.isFinite(change) && Math.abs(change) >= effect
 );
 
-export const summarizeClusters = (payload) => {
+// A member site is split (two positions) when its PC1 is resolved and its
+// PC1 excess kurtosis is at most −0.5 — the value at which two equal wells
+// ±δ of thermal width σ separate (δ = σ: κ = −2δ⁴/(δ² + σ²)² = −0.5) — and at
+// least this many sampling errors (√(24/n)) below zero.
+export const SPLIT_SITE_KURTOSIS = -0.5;
+export const SPLIT_SITE_SE = 3;
+
+/** The sites (list_sites' engine rows) among `refs` whose clouds are split. */
+export const splitMemberSites = (siteRows, refs) => (siteRows || []).filter((site) => {
+    const kappa = site.excessKurtosis?.[0];
+    return refs.includes(site.referenceNumber) && site.axisResolved?.[0] && Number.isFinite(kappa) && site.count > 0
+        && kappa <= SPLIT_SITE_KURTOSIS && kappa <= -SPLIT_SITE_SE * Math.sqrt(24 / site.count);
+});
+
+/**
+ * The cluster result the model reads. The shape statistics (edge spread,
+ * shape rms, tetrahedral modes, gyration-axis families) are read against the
+ * engine's shape null — independent atoms at each cluster's own breathing —
+ * and the size statistics (mean edge, breathing) against independent atoms:
+ * against the latter alone, a collective size fluctuation read as "LESS
+ * distorted" and as a shape preference (the review's L2, approved
+ * 2026-10-14). `siteRows` (the engine's 'sites' rows, when the tool could
+ * read them) tell split member sites, for which the null already holds the
+ * distortion's amplitude.
+ */
+export const summarizeClusters = (payload, { siteRows = null } = {}) => {
     const [lo, hi] = payload.window || [];
     const element = payload.element;
     const data = {
@@ -475,7 +531,10 @@ export const summarizeClusters = (payload) => {
         });
         return { data, checks };
     }
-    const { observed: obs, nullMean: mean, z } = payload;
+    const { observed: obs } = payload;
+    // Shape statistics against the shape null (when the engine gave one).
+    const shape = payload.shapeNull ? { mean: payload.shapeNull.mean, z: payload.shapeNull.z } : { mean: payload.nullMean, z: payload.z };
+    const size = { mean: payload.nullMean, z: payload.z };
     const row = (value, nullValue, zValue, digits = 3) => {
         const entry = { obs: round(value, digits), null: round(nullValue, digits), z: round(zValue, 2) };
         if (Number.isFinite(value) && Number.isFinite(nullValue) && nullValue !== 0) entry.change = round(value / nullValue - 1, 2);
@@ -498,30 +557,32 @@ export const summarizeClusters = (payload) => {
         spread_over_se: round(payload.ideal.spreadOverSe, 2)
     };
     data.local = {
-        note: 'obs = the configuration; null = each atom keeps its own site\'s displacements, taken from a random other '
-            + 'cluster (independent atoms); z = (obs − null) / null sd over the shuffles; change = obs/null − 1; '
+        note: 'obs = the configuration. Shape rows (ladder, edge spread, shape rms, modes, axis families): null = each '
+            + 'cluster keeps its own breathing (size) and each atom its own site\'s other displacements, taken from a '
+            + 'random other cluster. Size rows (breathing_sd_A, mean_edge_A): null = independent atoms (each atom\'s whole '
+            + 'displacement from a random other cluster). z = (obs − null) / null sd over the shuffles; change = obs/null − 1; '
             + 'ladder_A[k] = the mean over clusters of each cluster\'s k-th shortest edge (not the range of single bonds)',
         ladder_A: {
             obs: obs.ladder.map((value) => round(value, 4)),
-            null: mean.ladder.map((value) => round(value, 4)),
-            z: z.ladder.map((value) => round(value, 2))
+            null: shape.mean.ladder.map((value) => round(value, 4)),
+            z: shape.z.ladder.map((value) => round(value, 2))
         },
-        ladder_width_A: row(obs.ladderWidth, mean.ladderWidth, z.ladderWidth),
-        shape_rms_A: row(obs.shapeRms, mean.shapeRms, z.shapeRms),
-        breathing_sd_A: row(obs.breathingSd, mean.breathingSd, z.breathingSd),
-        mean_edge_A: row(obs.meanEdge, mean.meanEdge, z.meanEdge, 4)
+        ladder_width_A: row(obs.ladderWidth, shape.mean.ladderWidth, shape.z.ladderWidth),
+        shape_rms_A: row(obs.shapeRms, shape.mean.shapeRms, shape.z.shapeRms),
+        breathing_sd_A: row(obs.breathingSd, size.mean.breathingSd, size.z.breathingSd),
+        mean_edge_A: row(obs.meanEdge, size.mean.meanEdge, size.z.meanEdge, 4)
     };
     if (Number.isFinite(obs.eRms)) {
         data.local.tetrahedral_modes = {
             note: 'E: opposite-edge-pair sums (tetragonal-type); T2: opposite-pair differences; t2_trigonality = '
                 + 'mean Σd⁴/(Σd²)², 1/3 when three edges at one vertex differ alike (trigonal, C3v), 1 when one edge differs from its opposite',
-            e_rms_A: row(obs.eRms, mean.eRms, z.eRms),
-            t2_rms_A: row(obs.t2Rms, mean.t2Rms, z.t2Rms),
-            t2_trigonality: row(obs.t2Trigonality, mean.t2Trigonality, z.t2Trigonality)
+            e_rms_A: row(obs.eRms, shape.mean.eRms, shape.z.eRms),
+            t2_rms_A: row(obs.t2Rms, shape.mean.t2Rms, shape.z.t2Rms),
+            t2_trigonality: row(obs.t2Trigonality, shape.mean.t2Trigonality, shape.z.t2Trigonality)
         };
     }
     const families = (name) => (obs[name] ? Object.fromEntries(Object.keys(obs[name]).map((family) => [
-        `<${family}>`, row(obs[name][family], mean[name][family], z[name][family], 3)
+        `<${family}>`, row(obs[name][family], shape.mean[name][family], shape.z[name][family], 3)
     ])) : undefined);
     if (obs.longAxis) data.local.long_axis_within_15deg = families('longAxis');
     if (obs.shortAxis) data.local.short_axis_within_15deg = families('shortAxis');
@@ -529,6 +590,13 @@ export const summarizeClusters = (payload) => {
         bonds_outside_window: round(payload.outliers.brokenEdgeFraction, 2),
         contacts_between_clusters_per_atom: round(payload.outliers.extraContactsPerAtom, 2)
     };
+    // The analysed kind's member sites, and which of them are split.
+    const memberRefs = [...new Set(payload.templates
+        .filter((template) => template.referenceNumbers.length === kind.members && template.edges.length === kind.edges)
+        .flatMap((template) => template.referenceNumbers))];
+    const split = splitMemberSites(siteRows, memberRefs);
+    const splitSites = split.length && 2 * split.length >= memberRefs.length;
+    if (split.length) data.split_member_sites = split.map((site) => site.referenceNumber);
 
     const otherShare = payload.kinds.slice(1).reduce((sum, k) => sum + k.clusters, 0)
         / payload.kinds.reduce((sum, k) => sum + k.clusters, 0);
@@ -558,41 +626,68 @@ export const summarizeClusters = (payload) => {
             .filter(([, entry]) => entry.z >= CLUSTER_Z && entry.null > 0 && entry.obs / entry.null >= AXIS_ENHANCEMENT)
             .map(([family, entry]) => ({ family, entry, verb }))
     ));
+    const trig = data.local.tetrahedral_modes?.t2_trigonality;
+    const trigonalLean = Boolean(trig && significant(trig.z, trig.obs - trig.null, TRIGONALITY_EFFECT));
     const width = data.local.ladder_width_A;
-    if (significant(z.ladderWidth, width.change, CLUSTER_EFFECT)) {
-        checks.push(width.change > 0
-            ? {
-                level: 'ok',
-                text: `The clusters are distorted beyond independent atoms: the spread of their edges (longest − shortest, `
-                    + `${width.obs} Å) is ${Math.round(width.change * 100)} % above the shuffle null (${width.null} Å, z = ${width.z}) — `
-                    + 'a correlated distortion the data put in.'
-            }
-            : {
-                level: 'ok',
-                text: `The clusters are ${Math.round(-width.change * 100)} % LESS distorted than independent atoms would make them `
-                    + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together`
-                    + (favoured.length
-                        ? `, yet more clusters than by chance are ${favoured[0].verb} along ${favoured[0].family} (below): a correlated `
-                            + 'shape distortion whose amplitude the independent-atom null already holds (split or disordered sites).'
-                        : ', and there is no correlated shape distortion on top.')
-            });
+    const widthChanged = significant(width.z, width.change, CLUSTER_EFFECT);
+    const breathing = data.local.breathing_sd_A;
+    const breathes = significant(breathing.z, breathing.change, CLUSTER_EFFECT);
+    const pattern = favoured.length
+        ? `more clusters than by chance are ${favoured[0].verb} along ${favoured[0].family} (below)`
+        : (trigonalLean ? 'the edge pattern leans to one form (below)' : null);
+    const sizeText = '(at each cluster\'s own size)';
+    if (kind.edges === 1) {
+        checks.push({
+            level: 'ok',
+            text: `${kind.members === 2 ? 'Dimers have' : 'Each cluster has'} one edge: the shape is the bond length, read from the size `
+                + `row (breathing_sd_A, against independent atoms)${pattern ? `; ${pattern}` : ''}.`
+        });
+    } else if (widthChanged && width.change > 0) {
+        checks.push({
+            level: 'ok',
+            text: `The clusters are distorted beyond independent atoms ${sizeText}: the spread of their edges (longest − shortest, `
+                + `${width.obs} Å) is ${Math.round(width.change * 100)} % above the shuffle null (${width.null} Å, z = ${width.z}) — `
+                + 'a correlated distortion the data put in.'
+        });
+    } else if (widthChanged) {
+        checks.push({
+            level: 'ok',
+            text: `The clusters are ${Math.round(-width.change * 100)} % LESS distorted than independent atoms would make them ${sizeText} `
+                + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together`
+                + (pattern
+                    ? `, yet ${pattern}: a correlated shape distortion whose amplitude the independent-atom null already holds (split or disordered sites).`
+                    : ', and there is no correlated shape distortion on top.')
+        });
+    } else if (pattern) {
+        checks.push({
+            level: 'ok',
+            text: `The edge spread (${width.obs} Å) matches the shuffle null ${sizeText} (${width.null} Å; change `
+                + `${Math.round((width.change ?? 0) * 100)} %, z = ${width.z}), but the pattern does not: ${pattern}. A correlated shape `
+                + 'distortion whose amplitude the sites\' own displacements already hold.'
+        });
     } else {
         checks.push({
             level: 'ok',
-            text: `No cluster distortion beyond independent atoms: the edge spread (${width.obs} Å) matches the shuffle null `
+            text: `No cluster shape distortion beyond independent atoms ${sizeText}: the edge spread (${width.obs} Å) matches the shuffle null `
                 + `(${width.null} Å; change ${Math.round((width.change ?? 0) * 100)} %, z = ${width.z}).`
         });
     }
-    const breathing = data.local.breathing_sd_A;
-    if (significant(z.breathingSd, breathing.change, CLUSTER_EFFECT)) {
+    if (breathes) {
         checks.push({
             level: 'note',
-            text: `The cluster size (mean edge) fluctuates ${Math.round(Math.abs(breathing.change) * 100)} % `
-                + `${breathing.change > 0 ? 'more' : 'less'} than for independent atoms (breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}).`
+            text: breathing.change > 0
+                ? `The clusters breathe: their size (mean edge) fluctuates ${Math.round(breathing.change * 100)} % more than for independent `
+                    + `atoms (breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}) — a collective size fluctuation, `
+                    + 'not a shape distortion.'
+                : `The cluster size (mean edge) fluctuates ${Math.round(-breathing.change * 100)} % less than for independent atoms `
+                    + `(breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z})`
+                    + (splitSites
+                        ? ': the split sites\' positions combine in a pattern that keeps the size (as a Jahn–Teller distortion does), '
+                            + 'not stiff bonds.'
+                        : ': the bonds are stiffer than independent atoms make them — the atoms move together.')
         });
     }
-    const trig = data.local.tetrahedral_modes?.t2_trigonality;
-    if (trig && significant(z.t2Trigonality, trig.obs - trig.null, TRIGONALITY_EFFECT)) {
+    if (trigonalLean) {
         checks.push({
             level: 'note',
             text: trig.obs < trig.null
@@ -607,6 +702,15 @@ export const summarizeClusters = (payload) => {
                 + `vs ${Math.round(entry.null * 100)} % in the null (z = ${entry.z}).`
         });
     });
+    if (splitSites) {
+        checks.push({
+            level: 'note',
+            text: `Split sites: ${split.length} of the ${memberRefs.length} member sites (${split.map((site) => site.referenceNumber).join(', ')}) `
+                + 'have two positions (PC1 excess kurtosis ≤ −0.5). The null keeps each site\'s two positions, so it already holds the '
+                + 'distortion\'s amplitude: the edge spread cannot show it, and "no distortion" or "less distorted" does not make the '
+                + 'clusters regular. Read the pattern (axis families, trigonality), the partial g(r) shell (find_gr_peaks) and the bond angles.'
+        });
+    }
     if (data.outliers.bonds_outside_window > CLUSTER_OUTLIER_FRACTION) {
         checks.push({
             level: 'warn',
@@ -621,7 +725,21 @@ export const summarizeClusters = (payload) => {
                 + 'are not cluster bonds: atoms crossing the gap between clusters.'
         });
     }
-    return { data, checks };
+    // For the answer checks (review L5): what this analysis found.
+    const facts = {
+        cluster: {
+            element,
+            members: kind.members,
+            window: [lo, hi],
+            distorted: (widthChanged && width.change > 0) || Boolean(pattern),
+            static: payload.ideal.spreadOverSe >= STATIC_SPREAD_SE,
+            breathing: breathes && breathing.change > 0,
+            rigid: !splitSites && ((widthChanged && width.change < 0 && !pattern) || (breathes && breathing.change < 0)),
+            split: Boolean(splitSites),
+            families: favoured.map(({ family, verb }) => `${verb} ${family}`)
+        }
+    };
+    return { data, checks, facts };
 };
 
 // --- analyze_modulations ---------------------------------------------------------
@@ -658,6 +776,24 @@ export const zoneBoundarySigma = (power, sites, family) => {
 export const LONG_WAVE_RATIO = 5;
 export const LONG_WAVE_Q = 0.25;
 
+/**
+ * The same family-wise significance at a general wavevector (not a
+ * zone-boundary point, not a long wave): there the Fourier sum is complex, so
+ * for independent displacements a site's normalised power is Σ_c w_c χ²₂/2,
+ * and an element's mean over m sites has at least 2m degrees of freedom
+ * (P ≥ χ²_2m / 2m); `family` = the compared modes (one per ±q pair). Order
+ * there is correlation between cells that does not double the cell:
+ * incommensurate, or short-range (the review's L4, approved 2026-10-14).
+ */
+export const generalModeSigma = (power, sites, family) => {
+    if (!(power > 0) || !(sites > 0) || !(family >= 1)) return null;
+    const p = regularizedGamma(sites, sites * power).upper;
+    const familyP = -Math.expm1(family * Math.log1p(-Math.min(p, 1 - 1e-16)));
+    return sigmaOf(familyP);
+};
+const isZoneBoundary = (q) => q.every((value) => Math.abs(value) < 1e-9 || Math.abs(Math.abs(value) - 0.5) < 1e-9);
+const isLongWave = (q) => q.every((value) => Math.abs(value) <= LONG_WAVE_Q + 1e-12);
+
 const qLabel = (q) => `(${q.map((value) => {
     const rounded = Math.round(value * 1000) / 1000;
     return rounded === 0.5 ? '½' : String(rounded + 0);
@@ -670,13 +806,21 @@ export const summarizeModulations = (payload) => {
     const sigmaAt = (entry, point) => (Number.isFinite(point.ratio) && Number.isFinite(entry.medianPower)
         ? zoneBoundarySigma(point.ratio * entry.medianPower, entry.sites, family)
         : null);
+    // The general modes: the compared modes over every tested element.
+    const generalFamily = tested.reduce((sum, entry) => sum + (Number.isFinite(entry.comparedModes) ? entry.comparedModes : 0), 0);
+    const generalSigmaAt = (entry, mode) => (Number.isFinite(mode.ratio) && Number.isFinite(entry.medianPower) && generalFamily > 0
+        && !isZoneBoundary(mode.q) && !isLongWave(mode.q)
+        ? generalModeSigma(mode.ratio * entry.medianPower, entry.sites, generalFamily)
+        : null);
     const data = {
         note: 'zone_boundary rows are [q, ratio, percentile, sigma]: an element\'s displacement power at wavevector q (fractions '
             + 'of the cell\'s reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the '
             + 'share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and '
             + `the calibrated one-sided significance against independent displacements, corrected over all ${family} zone-boundary `
-            + 'points tested (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile]. '
-            + 'A ½ component is order that doubles the cell along that axis.',
+            + 'points tested (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a '
+            + 'general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes), null otherwise. '
+            + 'A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells '
+            + '(incommensurate or short-range) that does not.',
         supercell: payload.supercell,
         wavevectors: payload.wavevectors,
         elements: tested.map((entry) => ({
@@ -687,7 +831,10 @@ export const summarizeModulations = (payload) => {
                 const sigma = sigmaAt(entry, point);
                 return [qLabel(point.q), round(point.ratio, 2), roundFixed(point.percentile, 1), sigma === Infinity ? '>8' : roundFixed(sigma, 1)];
             }),
-            strongest: entry.strongest.slice(0, 3).map((mode) => [qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1)])
+            strongest: entry.strongest.slice(0, 3).map((mode) => {
+                const sigma = generalSigmaAt(entry, mode);
+                return [qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1), sigma == null ? null : (sigma === Infinity ? '>8' : roundFixed(sigma, 1))];
+            })
         }))
     };
     if (payload.untestable?.length) data.untestable_zone_boundary = payload.untestable.map((flags) => qLabel(flags.map((flag) => flag / 2)));
@@ -725,6 +872,26 @@ export const summarizeModulations = (payload) => {
                     + `${best.sigma == null ? 'significance undefined' : sigmaText(best.sigma)} after the correction).` : '.')
         });
     }
+    // Correlation between cells at a general wavevector: the strongest modes
+    // that are neither zone-boundary points nor long waves, by the same rule.
+    const general = [];
+    tested.forEach((entry) => {
+        entry.strongest.forEach((mode) => {
+            const sigma = generalSigmaAt(entry, mode);
+            if (sigma != null && mode.ratio >= MODULATION_RATIO && sigma >= SIGNIFICANCE_SIGMA
+                && !general.some((item) => item.element === entry.element)) {
+                general.push({ element: entry.element, mode, sigma });
+            }
+        });
+    });
+    general.forEach(({ element, mode, sigma }) => {
+        checks.push({
+            level: 'ok',
+            text: `Correlated ${element} displacements between cells at q = ${qLabel(mode.q)}: ${round(mode.ratio, 3)}× the median power, `
+                + `${sigmaText(sigma)} against independent displacements (corrected over ${generalFamily} compared modes) — order at a `
+                + 'general wavevector (incommensurate, or short-range correlation between cells), not a cell doubling.'
+        });
+    });
     (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
         const mode = entry.strongest[0];
         if (mode && mode.ratio >= LONG_WAVE_RATIO && mode.q.every((value) => Math.abs(value) <= LONG_WAVE_Q)) {
@@ -742,7 +909,8 @@ export const summarizeModulations = (payload) => {
     const facts = {
         modulation: {
             elements: tested.map((entry) => entry.element),
-            ordered: ordered.map(({ element, point }) => ({ element, q: point.q }))
+            ordered: ordered.map(({ element, point }) => ({ element, q: point.q })),
+            general: general.map(({ element, mode }) => ({ element, q: mode.q }))
         }
     };
     return { data, checks, facts };
@@ -796,6 +964,119 @@ export const summarizeSymmetry = (described, tolerance) => {
         result.facts = { groups: [{ symbol: described.spaceGroup, ...facts }] };
     }
     return result;
+};
+
+// --- measure_symmetry_lowering ---------------------------------------------------
+
+// Shifts reported per element: the largest site's, and how many sites move.
+const SHIFT_ROWS = 12;
+// A direction within this angle of a <100>, <110> or <111> direction is named
+// by it: half the smallest angle between two such families (<110>–<111>,
+// 35.3°), the validation's direction tolerance.
+export const LOW_INDEX_CONE_DEG = 15;
+// The nearest low-index direction of a Cartesian vector, within the cone, or null.
+const lowIndexOf = (vector, unitCell) => {
+    const found = unitCell ? nearestLowIndex(vector, unitCell, { maxIndex: 1, toleranceDeg: LOW_INDEX_CONE_DEG }) : null;
+    return found?.exact ? { uvw: found.uvw, off_deg: roundFixed(found.offDeg, 1) } : null;
+};
+
+/**
+ * The coherent shift of a symmetry lowering (symmetryShift.js), for the model:
+ * the parent group and the lower group, each site's shift from the parent
+ * positions with its crystal direction, against the sampling noise floor
+ * (the review's L4, approved 2026-10-14). `lower` is describeSymmetry at
+ * `tolerance`; `noiseFloor` the run context's (3√2 × rms/√copies).
+ */
+export const summarizeSymmetryLowering = (shifts, lower, { tolerance, noiseFloor = null, unitCell = null } = {}) => {
+    if (!shifts) {
+        return { data: {}, checks: [{ level: 'fail', text: 'The structure has no average sites to analyse.' }] };
+    }
+    if (shifts.skipped) return { data: {}, checks: [{ level: 'warn', text: `Not analysed: ${shifts.reason}` }] };
+    const floor = Number.isFinite(noiseFloor) ? noiseFloor : null;
+    const parentFacts = pointGroupFacts(shifts.parent.pointGroup);
+    const lowerFacts = lower?.pointGroup ? pointGroupFacts(lower.pointGroup) : null;
+    const data = {
+        note: 'shift_A = the site mean\'s distance from the position the parent group puts it at, measured with the parent '
+            + 'placed on the majority of the atoms (the origin a lowering leaves free is fixed by the geometric median of all '
+            + 'shifts); a shift every copy of a site shares, which the displacement analyses cannot show; direction_uvw is a '
+            + 'direct-lattice direction (±); se_A the sampling error of the site mean along it',
+        parent: { tolerance_A: shifts.parent.tolerance, space_group: shifts.parent.spaceGroup, point_group: shifts.parent.pointGroup },
+        lower: lower ? { tolerance_A: tolerance, space_group: lower.spaceGroup, point_group: lower.pointGroup } : null,
+        noise_floor_A: floor == null ? null : round(floor, 2),
+        sites: [...shifts.sites].sort((a, b) => b.length - a.length).slice(0, SHIFT_ROWS).map((site) => ({
+            ref: site.referenceNumber,
+            element: site.element,
+            shift_A: roundFixed(site.length, 3),
+            direction_uvw: site.length > 0 && unitCell ? cartesianToUvw(site.shift.map((v) => v / site.length), unitCell) : null,
+            ...(site.length > 0 && lowIndexOf(site.shift, unitCell) ? { nearest_low_index: lowIndexOf(site.shift, unitCell) } : {}),
+            se_A: site.standardError == null ? null : round(site.standardError, 2),
+            ...(floor != null ? { above_noise_floor: site.length > floor } : {})
+        }))
+    };
+    if (lowerFacts) data.lower.point_group_facts = describePointGroup(lower.pointGroup);
+    const checks = [];
+    if (!shifts.sites.length) {
+        checks.push({ level: 'fail', text: `No operation of a parent group fits at ${shifts.parent.tolerance} Å.` });
+        return { data, checks };
+    }
+    // The largest shift of each element, above the floor.
+    const byElement = new Map();
+    shifts.sites.forEach((site) => {
+        const current = byElement.get(site.element);
+        if (!current || site.length > current.length) byElement.set(site.element, site);
+    });
+    const moved = [...byElement.values()]
+        .filter((site) => (floor == null ? false : site.length > floor))
+        .sort((a, b) => b.length - a.length);
+    const sameGroup = lower && lower.spaceGroup === shifts.parent.spaceGroup;
+    const groups = lower && !sameGroup ? ` (the lower group ${lower.spaceGroup} at ${tolerance} Å` : '';
+    if (moved.length) {
+        moved.forEach((site) => {
+            const uvw = unitCell ? cartesianToUvw(site.shift.map((v) => v / site.length), unitCell) : null;
+            const family = lowIndexOf(site.shift, unitCell);
+            const along = family ? ` along [${family.uvw.join(' ')}] (${family.off_deg}° off)` : (uvw ? ` along [${uvw.join(' ')}]` : '');
+            const count = shifts.sites.filter((s) => s.element === site.element && floor != null && s.length > floor).length;
+            checks.push({
+                level: 'ok',
+                text: `${site.element} shifted ${roundFixed(site.length, 3)} Å${along} from the ${shifts.parent.spaceGroup} `
+                    + `positions (site ${site.referenceNumber}${count > 1 ? ` and ${count - 1} more` : ''}; noise floor ${round(floor, 2)} Å)${groups ? `${groups})` : ''}: `
+                    + 'a coherent shift every copy shares, a static distortion of the average structure.'
+            });
+        });
+        if (lowerFacts && parentFacts) {
+            const changes = [
+                parentFacts.centrosymmetric && !lowerFacts.centrosymmetric ? 'loses the inversion centre' : null,
+                !parentFacts.polar && lowerFacts.polar ? 'becomes polar' : null
+            ].filter(Boolean);
+            if (changes.length && !sameGroup) {
+                checks.push({ level: 'note', text: `${shifts.parent.spaceGroup} → ${lower.spaceGroup} ${changes.join(' and ')}.` });
+            }
+        }
+    } else if (floor != null) {
+        checks.push({
+            level: 'ok',
+            text: `No site is shifted from the ${shifts.parent.spaceGroup} positions above the ${round(floor, 2)} Å noise floor `
+                + `(largest ${roundFixed(Math.max(...shifts.sites.map((s) => s.length)), 3)} Å): no coherent lowering of the average structure.`
+        });
+    } else {
+        checks.push({ level: 'note', text: 'No noise floor for this structure: compare the shifts with their se_A.' });
+    }
+    if (sameGroup && moved.length) {
+        checks.push({ level: 'note', text: `The lower tolerance still gives ${lower.spaceGroup}: the shifts lie within it.` });
+    }
+    const facts = {
+        lowering: {
+            parent: shifts.parent.spaceGroup,
+            lower: lower?.spaceGroup ?? null,
+            shifted: moved.map((site) => ({
+                element: site.element,
+                shift_A: roundFixed(site.length, 3),
+                direction_uvw: lowIndexOf(site.shift, unitCell)?.uvw
+                    ?? (unitCell ? cartesianToUvw(site.shift.map((v) => v / site.length), unitCell) : null)
+            }))
+        }
+    };
+    return { data, checks, facts };
 };
 
 // --- the tool list ---------------------------------------------------------------
@@ -983,7 +1264,13 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             ),
             run: async ({ element, r_min: rMin, r_max: rMax }, { signal } = {}) => {
                 if (rMin >= rMax) throw new Error('r_min must be below r_max');
-                return summarizeClusters(await request('clusters', { element, rMin, rMax }, { signal }));
+                // The site rows tell split member sites; the engine's parse
+                // cache makes them cheap, and a failure only drops that note.
+                const [payload, sites] = await Promise.all([
+                    request('clusters', { element, rMin, rMax }, { signal }),
+                    request('sites', {}, { signal }).catch(() => null)
+                ]);
+                return summarizeClusters(payload, { siteRows: sites?.sites ?? null });
             }
         });
 
@@ -1025,6 +1312,34 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             page: 'dashboard',
             cards: () => ['detected-sg'],
             run: async ({ tolerance_A: tol }) => summarizeSymmetry(describeSymmetry(structure, tol), tol)
+        });
+
+        const floor = symmetryNoiseFloor(structure.basis);
+        // The lower group's default tolerance: just above the noise floor.
+        const lowerDefault = Number(((floor ?? 0.02) * NOISE_FLOOR_MARGIN).toPrecision(2));
+        tools.push({
+            name: 'measure_symmetry_lowering',
+            description: 'How far each average site sits from the position a higher-symmetry (parent) group puts it at: the '
+                + 'size and direction of a coherent shift every copy of a site shares (a polar off-centring of the average '
+                + 'structure), which the displacement analyses cannot show — each site\'s cloud is centred on its own mean. The '
+                + 'parent is the group at parent_tolerance_A (default 0.2 Å, the Detected SG card\'s); the lower group is the one '
+                + `at tolerance_A (default ${lowerDefault} Å, just above the sampling noise floor). Each shift is in Å with its `
+                + 'crystal [u v w], measured with the parent on the majority of the atoms, against the noise floor.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    parent_tolerance_A: { type: 'number', minimum: 0.001, maximum: 1, description: 'Tolerance of the parent group (Å). Default 0.2.' },
+                    tolerance_A: { type: 'number', minimum: 0.001, maximum: 1, description: `Tolerance of the lower group (Å). Default ${lowerDefault}.` }
+                }
+            },
+            label: ({ parent_tolerance_A: parentTol = 0.2 }) => `Symmetry lowering from ${parentTol} Å`,
+            page: 'dashboard',
+            cards: () => ['detected-sg'],
+            run: async ({ parent_tolerance_A: parentTol = 0.2, tolerance_A: tol = lowerDefault }) => summarizeSymmetryLowering(
+                symmetryShifts(structure, parentTol),
+                describeSymmetry(structure, tol),
+                { tolerance: tol, noiseFloor: floor, unitCell: unitCellVectors(structure.latticeVectors, structure.supercell) }
+            )
         });
     }
     return tools;

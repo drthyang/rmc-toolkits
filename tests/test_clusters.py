@@ -22,6 +22,7 @@ from cluster_configs import (  # noqa: E402
     with_vacancies,
 )
 from rmc_toolkits.clusters import (  # noqa: E402
+    FAMILIES,
     cluster_distortion,
     cluster_distortion_from_file,
     lattice_families,
@@ -94,6 +95,33 @@ class ClusterDistortionTests(unittest.TestCase):
         for key in ("ladderWidth", "shapeRms", "breathingSd", "eRms", "t2Rms", "t2Trigonality"):
             self.assertLess(abs(z[key]), 3.0, key)
         self.assertLess(result["ideal"]["spreadOverSe"], 5.0)
+        # The shape null (each cluster's breathing kept) matches too: the
+        # radial noise its per-cluster fit takes out is put back.
+        shape = result["shapeNull"]
+        for key in ("ladderWidth", "shapeRms", "eRms", "t2Rms", "t2Trigonality"):
+            self.assertLess(abs(shape["z"][key]), 3.0, key)
+            self.assertLess(abs(result["observed"][key] / shape["mean"][key] - 1.0), 0.03, key)
+        self.assertNotIn("breathingSd", shape["mean"])
+        self.assertNotIn("meanEdge", shape["z"])
+
+    def test_breathing_is_size_not_shape(self):
+        # Review 2026-10-14 L2: every tetrahedron scaled by 1 + eps, sd(eps)
+        # 0.04, its shape regular. Against independent atoms the size
+        # fluctuates more, and the shape reads "less distorted" with a
+        # spurious axis preference (the null spreads the breathing over
+        # independent atoms); against the shape null the shape is regular.
+        result = cluster_distortion(_Configs.sites("breathing"), "Nb", (2.5, 3.5))
+        observed, null, z, shape = result["observed"], result["nullMean"], result["z"], result["shapeNull"]
+        self.assertGreater(z["breathingSd"], 3.0)
+        self.assertGreater(observed["breathingSd"] / null["breathingSd"] - 1.0, 0.05)
+        self.assertLess(z["ladderWidth"], -3.0)
+        self.assertLess(observed["ladderWidth"] / null["ladderWidth"] - 1.0, -0.05)
+        for key in ("ladderWidth", "shapeRms", "t2Rms", "t2Trigonality"):
+            self.assertLess(abs(shape["z"][key]), 3.0, key)
+            self.assertLess(abs(observed[key] / shape["mean"][key] - 1.0), 0.05, key)
+        for axis in ("longAxis", "shortAxis"):
+            for family in FAMILIES:
+                self.assertLess(abs(shape["z"][axis][family] or 0.0), 3.0, (axis, family))
 
     def test_a_local_trigonal_distortion_is_found_and_classified(self):
         # One random vertex per cluster pushed out along its 3-fold axis: the
@@ -107,6 +135,12 @@ class ClusterDistortionTests(unittest.TestCase):
         # Exactly one vertex out per cluster: less size variation than a
         # binomial number of them (the null).
         self.assertLess(z["breathingSd"], -3.0)
+        # At the clusters' own size the vertex sites' two positions hold the
+        # edge spread; the pattern still shows: trigonal, long axis <111>.
+        shape = result["shapeNull"]
+        self.assertLess(shape["z"]["t2Trigonality"], -3.0)
+        self.assertGreater(shape["z"]["longAxis"]["111"], 3.0)
+        self.assertLess(abs(shape["z"]["ladderWidth"]), 3.0)
 
     def test_a_static_distortion_shows_in_the_average_cluster_only(self):
         result = cluster_distortion(_Configs.sites("static"), "Nb", (2.5, 3.5))

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { buildRunContext, seriesStats } from '../context/runContext';
-import { elementDensity, extractPeaks, firstShell, gJustAbove } from '../context/pairCorrelations';
+import { elementDensity, extractPeaks, firstShell, gJustAbove, isIdealCoordination } from '../context/pairCorrelations';
 import { classifyConvergence } from '../watchdog/heuristics';
 
 // Copilot tools over the run data this module already receives as props
@@ -182,7 +182,8 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
             // its boundary even when the caller's r_max stops short of it.
             const shell = firstShell(entry.x, entry.y, {
                 rMax: Math.max(rMax, first.r + 3),
-                partnerDensity: elementDensity(structure, b)
+                partnerDensity: elementDensity(structure, b),
+                centreDensity: elementDensity(structure, a)
             });
             const step = entry.x.length > 1 ? Math.abs(entry.x[1] - entry.x[0]) : 0;
             if (shell?.boundaryR != null) {
@@ -204,7 +205,31 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
                     block.cn_if_cut_0p2A_earlier_later = shell.cnRange.map((value) => roundSig(value));
                 }
                 block.trough_g_fraction = roundSig(shell.troughRatio, 2);
+                // A split shell joined across a deep trough: the first peak alone.
+                if (shell.split) {
+                    block.first_peak_only = {
+                        window_A: [block.window_A[0], roundSig(shell.split.firstBoundaryR, 3)],
+                        cn: { [`${b}_per_${a}`]: roundSig(shell.split.firstCn) },
+                        trough_g_fraction: roundSig(shell.split.firstTroughRatio, 2)
+                    };
+                }
                 data.first_shell = block;
+                if (shell.split && Number.isFinite(shell.cn)) {
+                    // Said in the direction whose summed count is the ideal one.
+                    const ratio = a !== b ? (elementDensity(structure, a) || 0) / (elementDensity(structure, b) || 1) : 1;
+                    const forward = isIdealCoordination(shell.cn) || !(ratio > 0);
+                    const [whole, part, counted, around] = forward
+                        ? [shell.cn, shell.split.firstCn, b, a]
+                        : [shell.cn * ratio, shell.split.firstCn * ratio, a, b];
+                    checks.push({
+                        level: 'note',
+                        text: `One split shell across a deep trough: the peaks at ${shell.peaksInShell.map((r) => roundSig(r, 4)).join(' and ')} Å `
+                            + `(${roundSig(shell.peaksInShell.at(-1) - shell.peaksInShell[0], 2)} Å apart) hold ${roundSig(part)} ${counted} per ${around} `
+                            + `in the first peak alone (to ${roundSig(shell.split.firstBoundaryR, 3)} Å) and ${roundSig(whole)} together, an ideal `
+                            + 'polyhedral count: first_shell.window_A holds both, the short and long bonds of one distorted polyhedron (e.g. '
+                            + 'Jahn–Teller). The first peak alone (first_peak_only) cuts the polyhedron; use it only if the user chooses it.'
+                    });
+                }
                 if (shell.troughRatio > SHELL_OVERLAP_FRACTION) {
                     checks.push({
                         level: 'warn',
@@ -217,7 +242,7 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
                                 : '.')
                     });
                 }
-                if (shell.peaksInShell.length > 1) {
+                if (shell.peaksInShell.length > 1 && !shell.split) {
                     checks.push({
                         level: 'note',
                         text: `The first shell holds ${shell.peaksInShell.length} peaks (${shell.peaksInShell.map((r) => roundSig(r, 4)).join(', ')} Å): `
@@ -257,6 +282,15 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
                         + (data.first_shell?.cn ? `, CN ${Object.entries(data.first_shell.cn).map(([k, v]) => `${v} ${k.replace(/_/g, ' ')}`).join(', ')}` : '')
                         + '.'
                 });
+            }
+            // For the coordination answer check: the whole first shell's count,
+            // each way (B around A, and A around B for a mixed pair).
+            if (shell?.boundaryR != null && Number.isFinite(shell.cn)) {
+                const window = data.first_shell.window_A;
+                const counts = [{ centre: a, partner: b, window, cn: roundSig(shell.cn), whole_shell: true, confirmed: false }];
+                const reverse = data.first_shell.cn[`${a}_per_${b}`];
+                if (a !== b && Number.isFinite(reverse)) counts.push({ centre: b, partner: a, window, cn: reverse, whole_shell: true, confirmed: false });
+                return { data, checks, facts: { coordination: counts } };
             }
             return { data, checks };
         }

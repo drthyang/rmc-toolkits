@@ -17,7 +17,10 @@ noise; ``mode`` plants a distortion on the tetrahedra:
   tetrahedron is distorted and the clusters are not, beyond it;
 * ``doubled`` -- every Nb moves by +delta/3 along z in even-z cells and by
   -delta/3 in odd ones: order with wavevector (0, 0, 1/2) that doubles the
-  cell along c and averages away in the folded structure.
+  cell along c and averages away in the folded structure;
+* ``breathing`` -- every tetrahedron is scaled about its centre by 1 + eps,
+  eps ~ N(0, ``breathe``) per cluster: its size fluctuates collectively while
+  its shape stays regular (the 2026-10-14 review's L2).
 """
 
 from __future__ import annotations
@@ -42,7 +45,9 @@ def cluster_sites() -> list[tuple[str, np.ndarray]]:
     return sites
 
 
-def cluster_config_text(mode: str = "independent", *, supercell=(4, 4, 4), sigma=0.06, delta=0.3, seed=7) -> str:
+def cluster_config_text(
+    mode: str = "independent", *, supercell=(4, 4, 4), sigma=0.06, delta=0.3, breathe=0.04, seed=7
+) -> str:
     """The ``.rmc6f`` text of one synthetic configuration (see the module doc)."""
     rng = np.random.default_rng(seed)
     supercell = np.asarray(supercell, dtype=int)
@@ -60,10 +65,14 @@ def cluster_config_text(mode: str = "independent", *, supercell=(4, 4, 4), sigma
                     pushed = 0
                 else:
                     pushed = None
+                scale = rng.normal(0.0, breathe) if mode == "breathing" else 0.0
                 for ref, (element, frac) in enumerate(sites, start=1):
                     shift = rng.normal(0.0, sigma, size=3)
                     if element == "Nb" and pushed is not None and ref - 1 == pushed:
                         shift = shift + delta * _VERTICES[pushed] / np.sqrt(3.0)
+                    if element == "Nb" and mode == "breathing":
+                        # Centre to vertex: TETRA_EDGE_A / (2 sqrt 2) along each axis.
+                        shift = shift + scale * TETRA_EDGE_A / (2.0 * np.sqrt(2.0)) * _VERTICES[ref - 1]
                     if element == "Nb" and mode == "doubled":
                         shift = shift + np.array([0.0, 0.0, delta / 3.0 * (1 if iz % 2 == 0 else -1)])
                     coord = (frac + cell + shift / CELL_A) / supercell

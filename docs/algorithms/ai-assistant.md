@@ -630,7 +630,8 @@ sort order (Step 11) is used.
    describe the same unordered pair; only the string differs.
 5. `first_shell` = `{mean_d_A, to_A, cn_<B>_per_<A>?}` from `firstShell()` (below), when a shell
    boundary is found: the shell's mean distance from $r^2 g(r)$, its outer edge, and — with the cell —
-   the coordination number of B around A.
+   the coordination number of B around A. A split shell joined across a deep trough (below) adds
+   `first_peak_to_A` and `first_peak_cn`: where its first peak alone ends, and what it holds.
 6. The entry is kept only if at least one of `avg_structure_d_A` / `gr_peaks_A` is present.
 
 **The first coordination shell (`firstShell()`).** On the 5-point moving average $\tilde g$ of the
@@ -655,6 +656,19 @@ height $h$:
   $r_b \mp 0.2$ Å (`cnRange`): how much the count depends on the cut. The reverse count is
   $\mathrm{CN}_{A|B} = \mathrm{CN}_{B|A}\,\rho_A/\rho_B$. Demo checks: Ga 3.99 Se, Ta 6.00 Se,
   Se 12.0 Se, and Ta 2.76 Ta (the intracluster 3 with the Ta–Ta gap at 3.3–4.0 Å not empty).
+- **a split shell cut at a deep trough** (the 2026-10-14 review's L1, approved for batch 1): when the
+  two bond lengths of a distorted polyhedron are well resolved, the trough between them is deep
+  (a Jahn–Teller CuF₆, 4 × 1.93 + 2 × 2.25 Å at σ 0.05 Å: $\tilde g$ falls to 12 % of the first
+  peak), and the first boundary cuts the polyhedron (CN 4, the long bonds read as "the next
+  shell"). With the densities, each later peak within `SPLIT_SHELL_REACH_A` $= 0.5$ Å of the first
+  is closed at its own boundary (the same rule, against its own height); the furthest whose summed
+  CN is within `IDEAL_CN_TOLERANCE` $= 0.5$ of an ideal polyhedral count (`IDEAL_COORDINATION` =
+  4, 6, 8, 12), in either direction ($\mathrm{CN}_{B|A}$, or $\mathrm{CN}_{A|B}$ when the centre's
+  density is given), joins the shell. `split = {firstBoundaryR, firstTroughRatio, firstCn}` keeps
+  the first peak's own window: the Workbench offers it as *First peak only* (clarify.js, its window
+  ends at the trough) and asks before an analysis runs in it. Bond-length splits of distorted
+  polyhedra are 0.1–0.4 Å; the next coordination shell lies a sizeable fraction of the bond further
+  out, and a summed count that is no polyhedron (4 + 3) is never joined.
 
 **Cap:** at most `maxPairs = 10` accepted entries (the loop breaks once 10 have been pushed); the function
 returns `null` if none. Nothing records how many pairs were dropped at this stage.
@@ -1196,14 +1210,15 @@ not answer as asked". A tool is offered only when its inputs exist.
 |---|---|---|---|---|
 | `read_run_data(section)` | the context has the section | `buildRunContext` | one context section as built (the builder's caps apply: ≤ 12 sites, 48 history points), before `contextToJson`'s trims | — |
 | `assess_convergence()` | an R-value series exists | `classifyConvergence` (Step 14), `seriesStats` | column, status, n, first/last/min, total drop, least-squares slope per row over the last 10 / 25 / 50 % (≥ 3 points each) | note: judged on one `.log` column, not the total; ok: converged; note: improving; warn: stalled/diverging; warn: non-finite rows; warn: < 5 rows; fail: < 2 finite rows |
-| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8), `firstShell` (Step 9) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; `first_shell`: its window (onset − one grid step to the boundary), the peaks inside it, mean distance and sd from $r^2g$, the CN in both directions and the CN with the cut 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next ($\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window); note: no boundary below max(r_max, r₁ + 3 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`CONSTRAINT_PILEUP_FRACTION`; demo Ga–Se 9 % at 2.2 Å), or the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å; ok: peak, shell edge, mean, CNs; fail: no peak |
+| `find_gr_peaks(pair, r_max = 6, max_peaks = 3)` | a parsed partials file | `extractPeaks` (Step 8), `firstShell` (Step 9) | peaks (r, FWHM); first-peak window `[r − FWHM, r + FWHM]`; `first_shell`: its window (onset − one grid step to the boundary), the peaks inside it, mean distance and sd from $r^2g$, the CN in both directions and the CN with the cut 0.2 Å earlier / later, the trough $\tilde g/h$ at the boundary; the pair's `MINIMUM_DISTANCES` value, matched order-free, and `g_at_constraint_fraction` | warn: the first shell is not separated from the next ($\tilde g/h > 0.02$ at its boundary: distances fill the gap, the CN depends on the cut); note: the shell holds several peaks (a split shell: use its window); note: a split shell joined across a deep trough, with the first peak's CN and window (`first_shell.first_peak_only`) and the summed count, said in the direction that is ideal (review L1); note: no boundary below max(r_max, r₁ + 3 Å); warn: the closest-approach constraint cuts the distribution — raw $g$ in $(d_{\min}, d_{\min} + 2.5\,\Delta r]$ above 2 % of the peak (`CONSTRAINT_PILEUP_FRACTION`; demo Ga–Se 9 % at 2.2 Å), or the old $r - \mathrm{FWHM}/2 \le d_{\min} + 0.05$ Å; ok: peak, shell edge, mean, CNs; fail: no peak |
 | `list_sites(element?)` | a browser-loaded run or Flask mode | worker `sites` / `/api/pca/sites` | per site: ref, label (composition if mixed), count, U_iso, rms axes, anisotropy, Mardia kurtosis; sorted by \|kurtosis\| then U_iso; top-3 refs by \|kurtosis\|, U_iso and anisotropy | warn: parse warning; note: reconstructed sites; warn: zero-spread sites; fail: no site (holding that element) |
-| `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ; note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
+| `analyze_displacement_directions(site_ref \| element, frequency?)` | same | worker `orientation` / `/api/pca/orientation`, `geometry: false` | used / rejected points; peak enhancement, count, expected and calibrated `peakSignificance`; peak direction as a Cartesian unit vector, as `[u v w]` (direct lattice, $M^{-T}d$ scaled to max \|component\| = 1, sign kept, since the map is not antipodally folded) and as angles to a, b, c; `mapSignificance`; antipodal asymmetry, its z and flag; orientation-tensor eigenvalues, anisotropy and its Bingham significance; the principal axis `[u v w]` (`crystalOrientationRows`) | warn: < 100 vectors; ok: peak ≥ 3σ; note: peak < 3σ; note: map test undefined; ok: map ≥ 3σ, said as *anisotropic* and, without a significant peak, "not a preferred direction" (any anisotropic Gaussian ellipsoid passes the map test: the validation's thermal-only O, peak 2.3σ, map 7.2σ; review L3); note: tied peak cells; note: significant ± asymmetry; warn: parse warning; note: an element pooled over > 1 site (the site count from the basis) — where their local axes differ, as for the four vertices of a tetrahedral cluster, a per-site preference cancels, so an isotropic pooled map is not evidence against a per-site or cluster distortion |
 | `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
+| `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
-| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1: the edge ladder, ladder width, shape rms, breathing sd, mean edge; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>; bonds outside the window, contacts between clusters per atom | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: ladder width departs from the null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units) or does not; note: breathing departs (same rule); note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
-| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile]` rows, the three strongest modes the same way; the supercell, wavevector count and untestable points | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
+| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`), from the engine's `sites` rows the tool also requests; bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}` for the cluster answer check | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}` | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every tested element — incommensurate or short-range order between cells, not a cell doubling (review L4); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
 parameters from the validated arguments (null after an error), and the step's button hands them to
@@ -1259,8 +1274,11 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 **Checks on the answer** (`copilot/answerAudit.js`). A tool may return `facts` beside
 `data` and `checks` (kept by the loop, not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point-group facts, `analyze_displacement_directions`
-`{subject, significant (peak or map ≥ 3σ), peak_sigma, map_sigma}`, `analyze_modulations`
-`{elements, ordered: [{element, q}]}`. The run context adds the
+`{subject, significant (peak ≥ 3σ), anisotropic (map ≥ 3σ), peak_sigma, map_sigma}` (until the 2026-10-14 review's L3, `significant` also counted the map test, which any thermal ellipsoid passes), `analyze_modulations`
+`{elements, ordered: [{element, q}], general: [{element, q}]}`, `analyze_clusters`
+`{element, members, window, distorted, static, breathing, rigid, split, families}`,
+`compute_bond_angles` and `find_gr_peaks` the whole-shell or chosen-window counts
+`{centre, partner, window, cn, whole_shell, confirmed}` (review L5). The run context adds the
 watchdog's status and every ladder group (`contextAuditFacts`). When the model answers,
 `auditAnswer(text)` splits it into sentences and clauses (a new clause at `;`, `:` and before
 "but", "while", "whereas", "unlike", "although", "though", "however") and looks for positive
@@ -1287,10 +1305,27 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
 - *polar:* "polar" (not "non-polar", "nonpolar", "polar plot / coordinates / angle") in a clause
   whose named groups are all non-polar, read as for chirality (the local-symmetry skill's rule);
 - *direction:* "preferred (preferential) direction (orientation, axis)" when the question's
-  directions analyses found none at ≥ 3σ;
-- *superstructure:* "superstructure", "cell doubling", "doubles the cell", "zone-boundary order
-  (modulation, mode, distortion)", "ordered … displacements at q" or "commensurate modulation" when
-  every `analyze_modulations` of the question found no ordered point.
+  directions analyses found no peak at ≥ 3σ (a significant map test alone is anisotropy: L3);
+- *superstructure:* "cell doubling", "doubles the cell", "zone-boundary order (modulation, mode,
+  distortion)" or "commensurate modulation" when no `analyze_modulations` of the question found an
+  ordered zone-boundary point; "superstructure", "supercell order", "ordered … displacements at q"
+  or "incommensurate order (modulation)" when none found order at a zone-boundary point or a
+  general wavevector;
+- *cluster* (review L5): "distorted clusters / tetrahedra / trimers / dimers / triangles /
+  octahedra / polyhedra", "… are (adverb) distorted / deformed" (no negation in the adverb slot) or
+  "cluster distortion"; "breathe / breathing"; "rigid", "move as (rigid) units / bodies" — checked
+  against the `analyze_clusters` facts of the element the clause or sentence names (as a symbol or a
+  formula, Mo or Mo₃), or of every analysis for a clause that says "cluster(s)" and names none; it
+  fires when every one of them found otherwise (distorted: no shape distortion, no pattern, no split
+  sites, a regular average cluster; breathing; rigid). A polyhedron word with neither the element
+  nor "cluster" may be about another polyhedron (TaSe₆ octahedra beside Ta₄ clusters) and is left;
+- *coordination* (review L5): "(n)-(fold-)coordinate(d)", "coordination (number) (of) n", "CN n",
+  "tetrahedral / octahedral / square-planar / cubic coordination" (4, 6, 4, 8) for the element
+  nearest the claim in its clause (the partner, when the clause names one, narrows the counts):
+  it fires when every whole-shell count of that element (`find_gr_peaks`' first shell both ways,
+  `compute_bond_angles` in a window that does not cut the shell) differs by more than half an atom
+  and no window the user chose gave n. A clause about part of the shell — the first peak, the short
+  bonds, a window in Å — is not a claim about the whole.
 
 The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show under the answer.
 `lowerOutcome` then replaces a verdict of *achieved* or *partial* (or none) by **not verified**
@@ -1459,6 +1494,33 @@ a departure is a correlation the data put in. Each statistic is reported as obse
 ladder and the axis families. With thousands of clusters a 1 % effect reaches $z > 3$, so the Copilot's
 checks also require an effect size (Step 17).
 
+**The shape null (`shapeNull`, the 2026-10-14 review's L2, approved for batch 1).** The null above
+also removes collective motion. A collective size fluctuation — breathing, every member moving out or
+in together — then *lowers* the shape statistics, because the null spreads the same radial
+displacements over independent atoms: the validation's breathing Mo₃ triangles (sd 4 %, shape
+regular) read "28 % LESS distorted", and the gyration-axis test read breathing tetrahedra as a shape
+preference (synthetic 10×10×10 Nb₄: long axes along <100> z = +6.2). So a second null keeps each
+cluster's breathing. With $\mathbf r_m = \mathbf b_m - ar{\mathbf b}$ (the template about its
+centroid), a cluster's breathing is its least-squares scale
+$arepsilon_c = \sum_m \mathbf u_{mc}\cdot\mathbf r_m / \sum_m |\mathbf r_m|^2$, and the
+breathing-free displacements are $\mathbf u'_{mc} = \mathbf u_{mc} - arepsilon_c\mathbf r_m$. The fit
+takes out a share $eta_m = |\mathbf r_m|^2/\sum_k|\mathbf r_k|^2$ of each member's own radial noise:
+for members of equal radial variance $v$, the residual's radial variance is $v(1-eta_m)$ whatever the
+geometry, so the radial component of $\mathbf u'_{mc}$ is scaled by $1/\sqrt{1-eta_m}$ (without it the
+shuffled shapes came out ~6 % too regular for independent atoms, z ≈ +2.5 with only 64 clusters). Shuffle $k$ puts
+in slot $c$ the members' corrected residuals from the clusters $\pi_{k,t,m}(c)$ (the same permutations),
+removes the breathing their combination happens to carry, and adds the slot's own
+$arepsilon_c\mathbf r_m$: every null cluster has exactly its own size. The shape statistics
+(`ladder`, `ladderWidth`, `shapeRms`, `eRms`, `t2Rms`, `t2Trigonality`, the axis families) are read
+against `shapeNull`; its size statistics are no test and are left out (`SIZE_STATISTICS`:
+`meanEdge`, `breathingSd`, read against the independent-atom null). Synthetic checks (10×10×10):
+independent atoms — every shape statistic within 0.3 % of `shapeNull`; breathing tetrahedra (sd 4 %) —
+edge spread −23 % against independent atoms (z = −24) but +0.5 % (z = 0.6) against `shapeNull`, no axis
+family at |z| > 2, breathing +67 %; one vertex pushed out per cluster — the edge-spread excess goes too
+(the vertex sites' own two positions hold it), the pattern stays (trigonality z = −16.5, long axes
+along <111> z = +16.8). The Copilot's summary names split member sites (PC1 excess kurtosis ≤ −0.5 and
+3 sampling errors below 0; Step 17): there the null holds the distortion's amplitude.
+
 **The average cluster.** The template's own bonds $|\mathbf b_j - \mathbf b_i|$ (a *static*
 distortion shows here, not in the shuffle test, which keeps the site means) with each bond's sampling
 error $\sqrt{\sum_{s\in\{i,j\}} \langle (\mathbf u\cdot\hat e)^2\rangle_s / N_s}$ from the two sites'
@@ -1474,15 +1536,18 @@ clusters missing an atom included: atoms crossing the gap between clusters; per 
 over the element's atom count.
 
 **Synthetic checks** (`tests/test_clusters.py`, 6×6×6 cells of an Nb₄ tetrahedron, a Ga₂ dimer and a
-Se): independent noise — every \|z\| < 3; one random vertex per cluster pushed 0.3 Å out along its
-3-fold axis — average cluster regular, trigonality z ≈ −8, long axes along <111> z ≈ 9, breathing
-lower than the null's binomial count of pushed vertices; the same vertex pushed everywhere — average
-cluster spread ≈ 45 SE, local statistics at the null.
+Se): independent noise — every \|z\| < 3, against both nulls; one random vertex per cluster pushed
+0.3 Å out along its 3-fold axis — average cluster regular, trigonality z ≈ −8, long axes along <111>
+z ≈ 9, breathing lower than the null's binomial count of pushed vertices; the same vertex pushed
+everywhere — average cluster spread ≈ 45 SE, local statistics at the null; every cluster breathing
+(sd 4 %) — breathing up, shape "less distorted" against independent atoms, regular against
+`shapeNull`.
 
-**The demo (GaTa₄Se₈, 250 K, Ta 2.65–3.33 Å, 4000 clusters).** Ladder width 0.295 Å against 0.386 Å
-in the null (−23 %, z = −64): the RMC clusters are *more rigid* than independent atoms; breathing +27 %;
-short axes along <111> in 19 % of clusters against 14 % (z = 11), long axes along <110> 23 % against
-20 % (z = 4) — the axis of the monoclinic distortion small-box PDF fits report for this compound
+**The demo (GaTa₄Se₈, 250 K, Ta 2.65–3.33 Å, 4000 clusters).** Ladder width 0.295 Å against 0.370 Å
+in the shape null (−20 %, z = −49; 0.386 Å, −23 %, against independent atoms): the RMC clusters are
+*more rigid* than independent atoms at their own size; breathing +27 % (z = 27); short axes along
+<111> in 19 % of clusters against 14 % (z = 11), long axes along <111> 16 % against 14 % (z = 5) and
+along <110> 23 % against 21 % (z = 1.9) — <111> the axis of the distortion small-box PDF fits report for this compound
 ([Yang et al., Phys. Rev. Research 4, 033123 (2022)](https://doi.org/10.1103/PhysRevResearch.4.033123));
 average cluster 3.031–3.054 Å, 5.5 SE.
 
@@ -1638,6 +1703,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `MODAL_COORDINATION_SHARE` | 0.6 | fraction | `copilotTools.js` | Central atoms with the most common A–B bond count below this share: the window cuts the shell — refused unless `window_confirmed` (then warn) (a spread coordination, as when the window cuts through a shell; demo Se–Ta–Se at 2.3–2.7 Å: 0.47, whole shells 0.83–0.96) |
 | `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `pairCorrelations.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
 | `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `pairCorrelations.js` | Shell onset; a tail below this closes the shell |
+| `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `IDEAL_CN_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `pairCorrelations.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1) |
 | `CONSTRAINT_PILEUP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $g$ just above a closest-approach constraint above this: the constraint cuts the distribution |
 | `SHELL_OVERLAP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $\tilde g$ at the shell boundary above this: shells not separated |
 | `MISFIT_CONCENTRATION`, `RELATIVE_MISFIT_FACTOR` | 0.4, 3 | share; × the dataset's R | `runTools.js` | `compare_fit`'s concentration and weak-signal notes |

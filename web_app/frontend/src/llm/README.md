@@ -333,8 +333,10 @@ clause, for a clear positive claim they contradict:
 | centrosymmetry | a group called centrosymmetric whose point group has no inversion centre |
 | inversion lost | an inversion centre "lost" or "broken" when no group it could be lost from has one: neither the groups the answer names nor the parent (the context's average group, or the ladder's top) |
 | polar | a group called polar whose point group is not polar |
-| direction | a "preferred direction" when no directions analysis of the question found one at ≥ 3σ |
-| superstructure | a superstructure, cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered point |
+| direction | a "preferred direction" when no directions analysis of the question found a peak at ≥ 3σ (the whole-map test alone is anisotropy, which thermal ellipsoids show too: review L3) |
+| superstructure | a cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered zone-boundary point; a superstructure or incommensurate order when none found order at a zone-boundary point or a general wavevector |
+| cluster | clusters of an element called distorted, breathing or rigid when every `analyze_clusters` of that element (or of every element, for "the clusters") found otherwise: distorted needs a shape distortion, a pattern (axis family, trigonality), split sites or a distorted average cluster; a polyhedron word naming neither the element nor "cluster" is left alone (review L5) |
+| coordination | a coordination number for an element ("four-coordinated", "CN 4", "square-planar coordination") that every whole-shell count of it contradicts by more than half an atom (`find_gr_peaks`' first shell, `compute_bond_angles` in a whole shell), unless a window the user chose gave it; a clause about part of the shell (the first peak, the short bonds, a window in Å) is not a claim about the whole (review L5) |
 
 A negated claim ("has not converged", "achiral", "no preferred direction"), a question, a
 hypothetical or conditional mention ("to check whether it has converged", "until χ² plateaus", "I
@@ -504,7 +506,7 @@ The host passes engine tools as plain objects; the module validates and runs the
   (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools.
 - `facts` (optional, not sent to the model) are findings the final answer must not contradict
   (*Checks on the answer*): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
-  sohncke, polar }] }`, `{ direction: { subject, significant, peak_sigma, map_sigma } }`.
+  sohncke, polar }] }`, `{ direction: { subject, significant, anisotropic, peak_sigma, map_sigma } }`.
 - `shellWindows(args)` names the bond windows a call will use, so the Workbench can ask before a
   window that cuts a coordination shell runs; `apply(window, { confirmed })` returns the
   arguments for the window the user chose (`confirmed`: they kept their own).
@@ -533,8 +535,9 @@ In this repository the host tools live in `src/copilotTools.js`:
 | `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion |
-| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show |
+| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range) |
 | `detect_symmetry` | the symmetry finder at any tolerance, without changing the card (browser-loaded runs only), with the point group's facts (inversion, Sohncke, polar) |
+| `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor (browser-loaded runs only) |
 | `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
 | `current_view` (view) | the page on screen, its cards, the highlight, and each 3D view's direction and site |
 

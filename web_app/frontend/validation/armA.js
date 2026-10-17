@@ -197,17 +197,14 @@ export const runArmSweep = async (run) => {
     const { payload: sites, found } = await splitSites(run, readings);
     const features = [];
 
-    // Superstructure: the modulation tool's own rule for an ordered point.
+    // Superstructure: the modulation tool's own rules, for an ordered
+    // zone-boundary point and (batch 1, review L4) a general wavevector.
     const modulations = await tools.analyze_modulations.run({});
-    readings.push({ page: 'analyze_modulations', what: 'zone-boundary points', value: null, reading: modulations.checks.map((c) => c.text).join(' ') });
+    readings.push({ page: 'analyze_modulations', what: 'zone-boundary points and general modes', value: null, reading: modulations.checks.map((c) => c.text).join(' ') });
     const modulated = new Set();
-    for (const check of modulations.checks) {
-        const match = /^Ordered (\S+) displacements at q = \(([^)]*)\)/.exec(check.text);
-        if (!match) continue;
-        const element = match[1];
+    for (const { element, q } of [...modulations.facts.modulation.ordered, ...(modulations.facts.modulation.general || [])]) {
         if (modulated.has(element)) continue;
         modulated.add(element);
-        const q = match[2].split(',').map((part) => (part.trim() === '½' ? 0.5 : Number(part)));
         // Polarisation: PC1 of the element's most prolate site.
         const site = (sites.sites || []).filter((s) => s.element === element && s.axes)
             .sort((x, y) => (y.rms[0] / y.rms[1]) - (x.rms[0] / x.rms[1]))[0];
@@ -224,6 +221,18 @@ export const runArmSweep = async (run) => {
     for (const shell of splitShells(run, readings)) {
         if (found.has(shell.centre)) continue;
         features.push({ kind: 'jahn_teller', element: shell.centre, magnitude_A: round(shell.width) });
+    }
+
+    // A lowering of the average structure (batch 1, review L4): when the
+    // group at the noise floor is not the card's, the shift tool measures
+    // each element's coherent shift from the card's group, above the floor.
+    if (tools.measure_symmetry_lowering && symmetry.verdict.space_group
+        && symmetry.verdict.space_group !== describeSymmetry(run.structure, ARM_A_RULES.CARD_TOLERANCE_A)?.spaceGroup) {
+        const lowering = await tools.measure_symmetry_lowering.run({ parent_tolerance_A: ARM_A_RULES.CARD_TOLERANCE_A, tolerance_A: tolerance });
+        readings.push({ page: 'measure_symmetry_lowering', what: `shifts from the ${ARM_A_RULES.CARD_TOLERANCE_A} Å group`, value: lowering.facts?.lowering ?? null, reading: lowering.checks.map((c) => c.text).join(' ') });
+        for (const shifted of lowering.facts?.lowering?.shifted || []) {
+            features.push({ kind: 'symmetry_lowering', element: shifted.element, direction_uvw: shifted.direction_uvw, magnitude_A: shifted.shift_A });
+        }
     }
 
     // Clusters: every element whose own first shell is short and closed.

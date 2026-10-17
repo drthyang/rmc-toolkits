@@ -12,7 +12,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES, TEST_CASES } from '../cases';
-import { validateFinding } from '../findings';
+import { parseFindings, validateFinding } from '../findings';
 import { guardSplit } from '../run';
 
 const FRONTEND = resolve(__dirname, '../..');
@@ -92,5 +92,47 @@ describe('supervisor findings', () => {
         expect(validateFinding(onTest).errors[0]).toMatch(/held-out test case: file science-error findings from dev cases only/);
         expect(validateFinding({ ...onTest, kind: 'bug' }).errors).toEqual(['a bug found on a held-out test case needs the user\'s approval before it is fixed']);
         expect(validateFinding({ ...onTest, kind: 'bug', needs_user_approval: true }).ok).toBe(true);
+    });
+});
+
+describe('where a finding stands, and validation batch 1', () => {
+    const base = {
+        case: 'dev-breathing', run: 'dev-breathing__A+', step: null, kind: 'bug',
+        evidence: 'Breathing triangles read "28 % LESS distorted" against independent atoms.',
+        proposed_fix: 'A shape null that keeps each cluster\'s breathing.', needs_user_approval: true
+    };
+    const approval = { by: 'user', date: '2026-10-14', batch: 1 };
+
+    it('an approved or implemented finding records the approval; an implemented one its commit and, for code, its tests', () => {
+        expect(validateFinding({ ...base, status: 'approved', approval }).ok).toBe(true);
+        expect(validateFinding({ ...base, status: 'approved' }).errors).toEqual(['an approved finding that needs the user\'s approval records it (approval)']);
+        expect(validateFinding({ ...base, status: 'implemented', approval }).errors).toEqual([
+            'an implemented finding names its commit', 'an implemented code change names its regression tests'
+        ]);
+        expect(validateFinding({ ...base, status: 'implemented', approval, commit: 'abc1234', tests: ['a.test.js › it works'] }).ok).toBe(true);
+        expect(validateFinding({ ...base, kind: 'skill-gap', status: 'implemented', approval, commit: 'abc1234' }).ok).toBe(true);
+        expect(validateFinding({ ...base, status: 'done', approval: { by: 'model', date: '14 Oct', batch: 0 }, commit: 'xyz' }).errors).toEqual([
+            'status must be one of proposed, approved, implemented, rejected',
+            'approval.by is \'user\': only the user approves', 'approval.date is YYYY-MM-DD', 'approval.batch is the batch number (1, 2, …)',
+            'commit is a commit hash (7–40 hex digits)'
+        ]);
+    });
+
+    it('batch 1: every tool change the 2026-10-14 review proposed, approved by the user and implemented, each with its commit', () => {
+        const results = parseFindings(readFileSync(join(FRONTEND, 'validation/findings/batch-1.jsonl'), 'utf8'));
+        results.forEach((result) => expect(result.errors, `line ${result.line}`).toEqual([]));
+        const findings = results.map((result) => result.finding);
+        // The tool changes; the skill proposals come with the skills PR (user review).
+        const tools = findings.filter((finding) => finding.kind !== 'skill-gap');
+        expect(tools).toHaveLength(6);
+        findings.forEach((finding) => {
+            expect(finding).toMatchObject({ status: 'implemented', needs_user_approval: true, approval: { by: 'user', date: '2026-10-14', batch: 1 } });
+            expect(finding.case.startsWith('dev-')).toBe(true);
+        });
+        // L1–L5 (L4 is two tools).
+        expect(tools.map((finding) => finding.kind).sort()).toEqual(['bug', 'bug', 'bug', 'missing-tool', 'missing-tool', 'orchestration']);
+        for (const label of ['L1', 'L2', 'L3', 'L4', 'L5']) {
+            expect(tools.some((finding) => finding.evidence.includes(label)), label).toBe(true);
+        }
     });
 });

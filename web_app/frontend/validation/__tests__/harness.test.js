@@ -90,6 +90,30 @@ describe('the live harness, scripted model', () => {
         expect(record.score.spurious).toEqual([]);
     });
 
+    it('the cluster and coordination checks catch the review\'s misreadings on the dev cases (review L5)', async () => {
+        // Breathing triangles called rigid: analyze_clusters found breathing, no rigidity.
+        const rigid = await runLiveCase({
+            built: built('dev-breathing'), arm: 'C', model: MODEL,
+            callModel: scripted([
+                { calls: [['analyze_clusters', { element: 'Mo', r_min: 2.4, r_max: 3.21 }]] },
+                { text: 'The Mo3 triangles move as rigid units.\n\nVERDICT {"features": [{"kind": "rigid_cluster", "element": "Mo"}], "space_group": null, "chiral": null, "centrosymmetric": null, "polar": null}' }
+            ])
+        });
+        expect(rigid.final.audit.map((finding) => finding.rule)).toEqual(['cluster']);
+        expect(rigid.audit_eval.caught).toEqual(['spurious rigid_cluster (Mo)']);
+        // The Jahn–Teller Cu read as four-coordinate: the whole shell holds 6 F.
+        const square = await runLiveCase({
+            built: built('dev-jahn-teller'), arm: 'C', model: MODEL,
+            callModel: scripted([
+                { calls: [['find_gr_peaks', { pair: 'Cu-F' }]] },
+                { text: 'Cu is four-coordinated (square planar), with the next F shell at 2.25 Å.\n\nVERDICT {"features": [], "space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}' }
+            ])
+        });
+        expect(square.steps[0].data.first_shell.cn.F_per_Cu).toBeCloseTo(6, 1);
+        expect(square.final.audit.map((finding) => finding.rule)).toEqual(['coordination']);
+        expect(square.final.outcome.status).toBe('not verified');
+    });
+
     it('a call written as JSON text is run, and its withdrawn text is recorded apart from the reasons', async () => {
         const record = await runLiveCase({
             built: built('dev-chiral'), arm: 'C', model: MODEL,

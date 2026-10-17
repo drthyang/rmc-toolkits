@@ -21,6 +21,9 @@ const runBoth = async (item) => {
 };
 
 // [case, arm A score, arm A spurious claims, A+ score, A+ spurious claims]
+// Batch 1 (2026-10-17): the sweep gained measure_symmetry_lowering and the
+// general-wavevector test (review L4), and dev-symmetry-lowering's A+ went
+// from 0.8333 to 1 (the shift is named); every other pin is unchanged.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -28,7 +31,7 @@ const BAR = [
     ['dev-jahn-teller', 0.9167, [], 0.9167, []],
     ['dev-cell-wrap', 0.8333, [], 1, []],
     ['dev-thermal-null', 1, [], 1, []],
-    ['dev-symmetry-lowering', 0.3333, [], 0.8333, []],
+    ['dev-symmetry-lowering', 0.3333, [], 1, []],
     ['dev-chirality-trap', 1, [], 1, []],
     ['dev-chiral', 1, [], 1, []]
 ];
@@ -48,6 +51,10 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(lowering.a.verdict).toMatchObject({ space_group: 'Pm-3m', centrosymmetric: true, polar: false });
         expect(lowering.a.readings[0]).toMatchObject({ page: 'Detected SG card', value: 'Pm-3m' });
         expect(lowering.sweep.verdict).toMatchObject({ space_group: 'P4mm', centrosymmetric: false, polar: true });
+        // The shift tool names the shift the card hides (batch 1, review L4).
+        const [shift] = lowering.sweep.verdict.features;
+        expect(shift).toMatchObject({ kind: 'symmetry_lowering', element: 'Ta', direction_uvw: [0, 0, 1] });
+        expect(Math.abs(shift.magnitude_A - 0.07)).toBeLessThan(0.01);
 
         const zone = await runBoth(DEV_CASES.find((item) => item.id === 'dev-zone-boundary'));
         const ti = zone.a.readings.find((r) => r.page === 'PCA Ellipsoid' && r.what.endsWith('Ti'));

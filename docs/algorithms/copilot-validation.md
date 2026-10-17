@@ -107,6 +107,15 @@ proposed_fix, needs_user_approval}`:
 - `missing-tool` and `skill-gap` always need the user's approval (batched per cycle);
 - a test case may only report a bug.
 
+Where a finding stands is recorded beside it: `status` (`proposed`, the default, `approved`,
+`implemented`, `rejected`), `approval: {by: 'user', date, batch}`, the `commit` that implemented it
+and the regression `tests` that pin it. An approved or implemented finding that needs approval
+records it; an implemented one names its commit, and an implemented code change names its tests.
+Batch 1 (`validation/findings/batch-1.jsonl`) holds every tool change of the
+[review](copilot-review.md), approved by the user on 2026-10-14 and implemented on 2026-10-17:
+L1–L5 (L4 is two analyses), six findings; the five skill proposals are added by the skills PR,
+which waits for the user's review. `split.test.js` validates the file.
+
 ## Models and spend
 
 Each model gets the same cases, prompt, tools and scoring, and the results are reported side by side:
@@ -127,7 +136,8 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 ## Arm A results (no model; 2026-10-14, commit b4fe09f)
 
 `npx vite-node validation/run.js -- arm-a --split dev` (and `--split test --final`). Records:
-`validation/baseline/arm-a-{dev,test}.json`.
+`validation/baseline/arm-a-{dev,test}.json` (re-recorded after batch 1 at commit 5780c50, below;
+the 2026-10-14 records are in git at b4fe09f).
 
 | Kind | A dev / test | A+ dev / test | Where the default analyses mislead |
 | --- | --- | --- | --- |
@@ -152,6 +162,35 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 
 The A/A+ rules were set on the dev cases and frozen before the test set was scored. The test-set
 A+ spurious distortion was seen and left unchanged.
+
+**Batch 1 (2026-10-17): A+ follows the engines.** A+ is every Copilot engine, so B − A+ stays what
+the model adds only if A+ gets the batch's new engines too. The sweep now reads the modulation
+tool's facts (zone-boundary order, and order at a general wavevector, review L4) and, when the group
+at the noise floor is not the card's, `measure_symmetry_lowering` from the card's 0.2 Å group: each
+element shifted above the noise floor is a `symmetry_lowering` claim with its direction and size.
+The cluster readings use the engine's shape null (review L2) through the tool. On the dev cases
+only dev-symmetry-lowering moves: A+ 0.83 → 1 (Ta 0.065 Å along [0 0 1] for 0.07 Å). The rules
+were set on the dev cases; the test set was re-run once batch 1 was committed (`arm-a --split test
+--final`, commit 5780c50, protocol 2026-10-17.1), reported and not tuned:
+
+| Kind | A dev / test | A+ dev / test (batch 1) | What moved |
+| --- | --- | --- | --- |
+| offcentre | 1 / 1 | 1 / 1 | — |
+| zone_boundary | 0.67 / 0.67 | 1 / 1 | — |
+| breathing | 0.50 / 0.50 | 1 / **1** | test: the spurious "shape distortion" is gone (L2's shape null) |
+| jahn_teller | 0.92 / 0.92 | 0.92 / 0.92 | — (the long-axis family is still not named) |
+| cell_wrap | 0.83 / 0.83 | 1 / 1 | — |
+| thermal_null | 1 / 1 | 1 / 1 | — |
+| symmetry_lowering | 0.33 / 0.33 | **1** / **1** | the shift named (L4): Ta 0.065 Å [0 0 1] for 0.07; Ti 0.055 Å [1 1 1] for 0.06 |
+| sites_only (achiral) | 1 / 1 | 1 / 1 | — |
+| sites_only (chiral) | 1 / 1 | 1 / 1 | — |
+| **mean** | **0.81 / 0.81** | **0.99 / 0.99** | |
+
+**The bar after batch 1.** The engines alone now score 0.99 on both sets, so B cannot beat A+ by
+more than 0.01 on the case score: on these cases the question "does the model add to the engines"
+reduces to whether B *matches* A+ — reaches the engines' conclusions, no over-claim — and to what
+the score does not measure (the answer checks, the evidence gate, number provenance,
+reproducibility). B − A (0.81) is still where the Copilot's value over the default pages shows.
 
 ## Running the live arms (later, on the Mac)
 

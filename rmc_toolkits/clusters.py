@@ -20,6 +20,17 @@ like this null; a departure is a correlation the data put in. Each statistic is
 reported as observed, null mean and sd over ``shuffles`` shuffles, and
 z = (observed - null mean) / null sd.
 
+That null also removes collective motion, and a collective size fluctuation
+(breathing: every member moving out or in together) then lowers the shape
+statistics, because the null spreads the same radial displacements over
+independent atoms: breathing triangles came out "28 % LESS distorted", and the
+gyration-axis test read breathing tetrahedra as a shape preference (the
+2026-10-14 review's L2). So a second null, ``shapeNull``, keeps each cluster's
+own breathing -- its least-squares scale about the template centroid -- and
+shuffles only the breathing-free displacements, with the same permutations.
+The shape statistics are read against ``shapeNull``, the size statistics
+(``meanEdge``, ``breathingSd``) against the independent-atom null.
+
 Statistics, pooled over the templates of the dominant kind (members, edges):
 
 * ``meanEdge``, ``ladder`` (mean of each cluster's k-th shortest edge),
@@ -72,6 +83,9 @@ AXIS_CONE_DEG = 15.0
 #: (0,1) (0,2) (0,3) (1,2) (1,3) (2,3).
 TETRAHEDRON_OPPOSITE = ((0, 5), (1, 4), (2, 3))
 FAMILIES = ("100", "110", "111")
+#: The size statistics: read against the independent-atom null only (the
+#: shape null keeps every cluster's own size).
+SIZE_STATISTICS = ("meanEdge", "breathingSd")
 
 _U32 = np.uint32
 
@@ -401,11 +415,59 @@ def cluster_distortion(
             blocks.append(np.stack(picked, axis=1))
         return np.concatenate(blocks, axis=0)
 
+    # Each cluster's breathing: its least-squares scale about the template
+    # centroid, eps_c = sum_m d_mc . r_m / sum_m |r_m|^2 (r_m = base_m - centroid),
+    # and the displacements with it taken out, d'_mc = d_mc - eps_c r_m. The
+    # fit also takes out a share beta_m = |r_m|^2 / sum_k |r_k|^2 of each
+    # member's own radial noise: for members of equal radial variance v the
+    # residual's radial variance is v (1 - beta_m), whatever the geometry, so
+    # its radial component is scaled back by 1 / sqrt(1 - beta_m). Without it
+    # the shuffled shapes came out ~6 % too regular for independent atoms.
+    breathing = []
+    for _, template, rows, base in chosen:
+        radial = base - base.mean(axis=0)
+        displaced = np.stack([sites.displacements[rows[m]] for m in range(len(template.sites))], axis=1)  # (C, M, 3)
+        lengths2 = (radial ** 2).sum(axis=1)
+        scale = np.einsum("cmi,mi->c", displaced, radial) / float(lengths2.sum())
+        residual = displaced - scale[:, None, None] * radial[None, :, :]
+        unit = np.zeros_like(radial)
+        np.divide(radial, np.sqrt(lengths2)[:, None], out=unit, where=lengths2[:, None] > 0)
+        boost = 1.0 / np.sqrt(1.0 - lengths2 / lengths2.sum()) - 1.0
+        along = np.einsum("cmi,mi->cm", residual, unit)
+        residual = residual + (boost[None, :] * along)[:, :, None] * unit[None, :, :]
+        breathing.append((radial, scale, residual))
+
+    def shape_positions(shuffle: int) -> np.ndarray:
+        """The shape null: every cluster keeps exactly its own breathing, and
+        its members' breathing-free displacements come from random other
+        clusters (the same permutations as the independent-atom null), with
+        the breathing their combination happens to carry taken out again."""
+        blocks = []
+        for (t_index, template, rows, base), (radial, scale, residual) in zip(chosen, breathing):
+            n = rows.shape[1]
+            mixed = np.stack([
+                residual[shuffle_permutation(n, shuffle, t_index, m, seed), m] for m in range(len(template.sites))
+            ], axis=1)  # (C, M, 3)
+            stray = np.einsum("cmi,mi->c", mixed, radial) / float((radial ** 2).sum())
+            blocks.append(base[None, :, :] + mixed + (scale - stray)[:, None, None] * radial[None, :, :])
+        return np.concatenate(blocks, axis=0)
+
     observed_positions = positions(None)
     observed = _statistics(observed_positions, edges, families)
     nulls = [_statistics(positions(k), edges, families) for k in range(shuffles)]
     null_mean, null_sd, z = _null_summary(observed, nulls)
-    result.update({"observed": observed, "nullMean": null_mean, "nullSd": null_sd, "z": z})
+    shape_mean, shape_sd, shape_z = _null_summary(
+        observed, [_statistics(shape_positions(k), edges, families) for k in range(shuffles)]
+    )
+    # The shape null holds each cluster's size by construction: its size
+    # statistics are no test, and are left out.
+    for summary in (shape_mean, shape_sd, shape_z):
+        for key in SIZE_STATISTICS:
+            summary.pop(key, None)
+    result.update({
+        "observed": observed, "nullMean": null_mean, "nullSd": null_sd, "z": z,
+        "shapeNull": {"mean": shape_mean, "sd": shape_sd, "z": shape_z},
+    })
 
     ideal_sorted = np.mean([np.sort(result["templates"][t]["idealEdges"]) for t, *_ in chosen], axis=0)
     spreads = [np.ptp(result["templates"][t]["idealEdges"]) for t, *_ in chosen]

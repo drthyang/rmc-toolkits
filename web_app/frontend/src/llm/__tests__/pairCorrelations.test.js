@@ -4,6 +4,10 @@
 import { describe, expect, it } from 'vitest';
 import {
     extractPeaks,
+    firstShell,
+    IDEAL_COORDINATION,
+    SHELL_TROUGH_FRACTION,
+    SPLIT_SHELL_REACH_A,
     nearestNeighborDistances,
     pairCorrelationsContext
 } from '../context/pairCorrelations';
@@ -97,5 +101,58 @@ describe('pairCorrelationsContext', () => {
         expect(pairs[0].gr_peaks_A.length).toBeGreaterThan(0);
         expect(pairCorrelationsContext(rockSaltish(), [])).toBeNull();
         expect(pairCorrelationsContext(rockSaltish(), [{ plotKind: 'npdf' }])).toBeNull();
+    });
+});
+
+// Shells of Gaussian peaks, each holding `cn` partner atoms at density rho
+// (CN = 4π ρ ∫ r² g dr; a narrow Gaussian at r0 holds 4π ρ h σ √(2π) r0²).
+const shellG = (shells, rho, step = 0.005) => {
+    const x = grid(1400, step);
+    const y = x.map((r) => shells.reduce((sum, [r0, sigma, cn]) => (
+        sum + gaussian(r, r0, sigma, cn / (4 * Math.PI * rho * sigma * Math.sqrt(2 * Math.PI) * r0 * r0))
+    ), 0) + (r > 5 ? 1 : 0));
+    return { x, y };
+};
+
+describe('firstShell: a split shell cut at a deep trough (review L1)', () => {
+    const rho = 0.05;
+
+    it('joins a Jahn–Teller octahedron (4 short + 2 long, deep trough) to CN 6, and keeps the first peak\'s own window', () => {
+        const { x, y } = shellG([[1.93, 0.05, 4], [2.25, 0.05, 2]], rho);
+        const shell = firstShell(x, y, { partnerDensity: rho });
+        expect(shell.peaksInShell).toEqual([expect.closeTo(1.93, 1), expect.closeTo(2.25, 1)]);
+        expect(shell.cn).toBeCloseTo(6, 1);
+        expect(shell.boundaryR).toBeGreaterThan(2.35);
+        expect(shell.split.firstCn).toBeCloseTo(4, 1);
+        expect(shell.split.firstBoundaryR).toBeGreaterThan(2.0);
+        expect(shell.split.firstBoundaryR).toBeLessThan(2.2);
+        expect(shell.split.firstTroughRatio).toBeLessThan(SHELL_TROUGH_FRACTION);
+        // Without a density there is no CN to judge by: the old cut stands.
+        const blind = firstShell(x, y);
+        expect(blind.split).toBeUndefined();
+        expect(blind.boundaryR).toBeCloseTo(shell.split.firstBoundaryR, 5);
+    });
+
+    it('never joins a peak beyond the reach, nor one whose summed CN is no polyhedron', () => {
+        const far = shellG([[2.0, 0.05, 6], [2.0 + SPLIT_SHELL_REACH_A + 0.1, 0.05, 2]], rho);
+        expect(firstShell(far.x, far.y, { partnerDensity: rho }).cn).toBeCloseTo(6, 1);
+        const odd = shellG([[2.0, 0.05, 4], [2.35, 0.05, 3]], rho);
+        const shell = firstShell(odd.x, odd.y, { partnerDensity: rho });
+        expect(shell.split).toBeUndefined();
+        expect(shell.cn).toBeCloseTo(4, 1);
+    });
+
+    it('takes the furthest peak that completes a polyhedron (2 + 2 + 2), and counts either direction', () => {
+        const ortho = shellG([[1.95, 0.03, 2], [2.12, 0.03, 2], [2.32, 0.03, 2]], rho);
+        const shell = firstShell(ortho.x, ortho.y, { partnerDensity: rho });
+        expect(shell.cn).toBeCloseTo(6, 1);
+        expect(shell.split.firstCn).toBeCloseTo(2, 1);
+        // 1 + 0.5 B per A is no polyhedron, but A is four times as dense: 6 A per B.
+        const reverse = shellG([[1.93, 0.05, 1], [2.25, 0.05, 0.5]], rho);
+        expect(firstShell(reverse.x, reverse.y, { partnerDensity: rho }).split).toBeUndefined();
+        const joined = firstShell(reverse.x, reverse.y, { partnerDensity: rho, centreDensity: 4 * rho });
+        expect(joined.cn).toBeCloseTo(1.5, 1);
+        expect(joined.split.firstCn).toBeCloseTo(1, 1);
+        expect(IDEAL_COORDINATION).toEqual([4, 6, 8, 12]);
     });
 });
