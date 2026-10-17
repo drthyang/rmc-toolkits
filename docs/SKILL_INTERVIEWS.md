@@ -1,7 +1,7 @@
 # Skill interviews
 
 A skill is the user's method in their own words (`.claude/skills/<name>/SKILL.md`), read by the AI
-Copilot (`read_skill`) and by Claude Code alike. The four skills here are **drafts**: written on
+Copilot (`read_skill`) and by Claude Code alike. The five skills here are **drafts**: the first four written on
 2026-10-11 from the Workbench's own record (the llm README's spot check and referee-style review,
 `docs/algorithms/*`, the analyses' code and the papers the README cites), not yet from the user.
 This page is the guide for turning each into the user's method. Each answer lands in one of three
@@ -102,3 +102,40 @@ each failure they describe, remove the draft status line, and show them the diff
    preferred direction that no analysis of the question found.)
 8. A recent site you analysed this way; one time a direction or an anisotropy turned out to be
    noise.
+
+## 5. Local order (`local-order`, draft, added in validation batch 1)
+
+Written on 2026-10-17 from the 2026-10-14 tool review's proposal (approved by the user that day)
+and the validation's dev cases: how to conclude "no order".
+
+1. The draft says "no order" only when every analysis that could show one came back empty:
+   directions per site, split sites against `analyze_modulations`, clusters, order between cells,
+   a lowering of the average structure, split coordination shells. Is that your list? What would
+   you add or drop?
+2. Must every symmetry-inequivalent site have its directions tested, or only those whose
+   kurtosis or anisotropy stands out?
+3. A partial the data barely weight (a few % of the signal): must its polyhedra be tested before
+   "no order", or is "not constrained by the data" the answer?
+4. How do you word "no order" when a test is undefined (too few points per sphere cell, a
+   zone-boundary point an odd supercell axis cannot hold)?
+5. Firm rules: should the Copilot refuse a "no order" answer until each analysis ran? (Part B of
+   the validation cycle, the evidence gate, does this for the analyses the draft lists.)
+6. A recent run you called ordered or disordered; one time an order was there that you first
+   missed.
+
+## Batch 1 changes to the four drafts (2026-10-17)
+
+Each was approved by the user on 2026-10-14 as a proposal of the tool review
+([copilot-review.md](algorithms/copilot-review.md)); each is still a draft item to confirm.
+
+- `coordination-shells`: a split shell whose two bond lengths are well resolved (a deep trough
+  between them) is one polyhedron when a second peak within 0.5 Å brings the CN to 4, 6, 8 or 12
+  (a Jahn–Teller octahedron is never four-coordinate). Is 0.5 Å the right reach, and are those the
+  right counts?
+- `displacement-anisotropy`: a split site is called disorder only after `analyze_modulations`; a
+  low-index family is named only within 15°; a preferred direction needs the peak test (the map
+  test is anisotropy). Is 15° your cone?
+- `local-symmetry`: report the lowest rung above the noise floor, with the card's 0.2 Å group
+  beside it, and size a lowering with `measure_symmetry_lowering`. Is that the group you quote?
+- `rmc-fit-assessment`: a box-scale wave (every |q_i| ≤ 0.25) voids a claim of order at its own q,
+  never a zone-boundary point or general mode that passes its own test. Is that your rule?

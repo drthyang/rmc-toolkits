@@ -13,9 +13,9 @@ const skills = parseSkillFiles(copilotSkills.files, { available: copilotSkills.r
 const reader = buildReadSkillTool(skills, { load: copilotSkills.load });
 
 describe('the Copilot\'s skills', () => {
-    it('are the four drafted from the spot check and the review', () => {
+    it('are the four drafted from the spot check and the review, and local-order from validation batch 1', () => {
         expect(skills.map((skill) => skill.name)).toEqual([
-            'coordination-shells', 'displacement-anisotropy', 'local-symmetry', 'rmc-fit-assessment'
+            'coordination-shells', 'displacement-anisotropy', 'local-order', 'local-symmetry', 'rmc-fit-assessment'
         ]);
     });
 
@@ -46,7 +46,7 @@ describe('the Copilot\'s skills', () => {
 
     it('cost the system prompt only their names and descriptions', () => {
         const index = skillIndex(skills);
-        expect(index.split('\n')).toHaveLength(4);
-        expect(index.length).toBeLessThan(2400);
+        expect(index.split('\n')).toHaveLength(5);
+        expect(index.length).toBeLessThan(2800);
     });
 });
