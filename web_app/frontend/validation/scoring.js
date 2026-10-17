@@ -170,6 +170,20 @@ export const scoreVerdict = (truth, verdict) => {
     };
 };
 
+/**
+ * The app's computed verdict against the case score (THY-18), reported beside
+ * the score, never mixed into it: 'earned' — achieved, and the case right
+ * (score 1); 'over' — achieved, but the case score below 1 (the checks passed
+ * what the planted truth shows wrong: what they cannot see); 'under' — not
+ * achieved, yet right; 'held' — not achieved, and wrong (the verdict warned).
+ */
+export const outcomeAgreement = (status, score) => {
+    const right = Number.isFinite(score) && score >= 0.9999;
+    if (status == null) return { status, right, agreement: 'none' };
+    if (status === 'achieved') return { status, right, agreement: right ? 'earned' : 'over' };
+    return { status, right, agreement: right ? 'under' : 'held' };
+};
+
 /** What must agree across repeated runs for a case to count as reproducible. */
 export const verdictSignature = (verdict) => {
     if (!verdict) return 'none';

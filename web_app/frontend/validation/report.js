@@ -29,7 +29,14 @@ export const aggregate = (records) => {
         covered: group.runs.reduce((sum, run) => sum + (run.audit_eval?.caught?.length || 0) + (run.audit_eval?.missed?.length || 0), 0),
         numbers: group.runs.reduce((sum, run) => sum + (run.provenance?.checkable || 0), 0),
         unsourced: group.runs.reduce((sum, run) => sum + (run.provenance?.unsourced?.length || 0), 0),
-        errors: group.runs.filter((run) => run.error).length
+        errors: group.runs.filter((run) => run.error).length,
+        // THY-18: the gate's send-backs, evidence still missing, numbers by
+        // reference, and the computed verdict against the score.
+        gates: group.runs.reduce((sum, run) => sum + (run.evidence?.gates?.length || 0), 0),
+        missing: group.runs.filter((run) => run.evidence?.missing?.length).length,
+        refsFilled: group.runs.reduce((sum, run) => sum + (run.provenance?.by_reference?.filled || 0), 0),
+        refsUnknown: group.runs.reduce((sum, run) => sum + (run.provenance?.by_reference?.unknown?.length || 0), 0),
+        verdicts: group.runs.map((run) => run.outcome_eval?.agreement ?? 'none')
     }));
     return cells;
 };
@@ -69,6 +76,18 @@ export const renderReport = (records, { title = 'Copilot validation runs' } = {}
                 + `${covered ? `${caught}/${covered}` : '–'} | ${mine.reduce((sum, cell) => sum + cell.unsafe, 0)} | `
                 + `${multi.length ? `${multi.filter((cell) => cell.repro.identical).length}/${multi.length}` : '–'} | `
                 + `${mine.reduce((sum, cell) => sum + cell.unsourced, 0)}/${mine.reduce((sum, cell) => sum + cell.numbers, 0)} |`);
+        });
+        lines.push('');
+        lines.push('| Column | Evidence gate: send-backs / runs still missing evidence | Numbers by reference: filled / unknown | Computed verdict: earned / over / under / held |');
+        lines.push('| --- | --- | --- | --- |');
+        columns.forEach((column) => {
+            const mine = inSplit.filter((cell) => cell.column === column);
+            const runs = mine.reduce((sum, cell) => sum + cell.runs.length, 0);
+            const verdicts = mine.flatMap((cell) => cell.verdicts);
+            const count = (kind) => verdicts.filter((value) => value === kind).length;
+            lines.push(`| ${column} | ${mine.reduce((sum, cell) => sum + cell.gates, 0)} / ${mine.reduce((sum, cell) => sum + cell.missing, 0)} of ${runs} | `
+                + `${mine.reduce((sum, cell) => sum + cell.refsFilled, 0)} / ${mine.reduce((sum, cell) => sum + cell.refsUnknown, 0)} | `
+                + `${count('earned')} / ${count('over')} / ${count('under')} / ${count('held')} |`);
         });
         lines.push('');
     }

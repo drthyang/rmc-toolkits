@@ -66,14 +66,31 @@ export const renderTranscript = (record) => {
     lines.push('## The answer');
     lines.push('');
     (record.retracted || []).forEach((item) => {
-        lines.push(`*Round ${item.round}: the loop withdrew the text below (a looping reply, or a call written as text):*\n`);
+        lines.push(item.by
+            ? `*Round ${item.round}: the ${item.by} sent the answer below back to the model:*\n`
+            : `*Round ${item.round}: the loop withdrew the text below (a looping reply, or a call written as text):*\n`);
         lines.push(`${quote(clip(item.text || '(empty)', 1500))}\n`);
     });
+    (record.gates || []).forEach((gate) => lines.push(`- Evidence gate, round ${gate.round}: ${gate.notice}`));
+    if (record.gates?.length) lines.push('');
     if (record.final) {
+        const outcome = record.final.outcome;
         lines.push(`Stopped by: ${record.final.stopped_by}${record.final.reason ? ` (${record.final.reason})` : ''}`
-            + `${record.final.cut ? ' (cut at the length limit)' : ''} · rounds: ${record.rounds} · outcome: ${record.final.outcome?.status ?? 'none'}`);
+            + `${record.final.cut ? ' (cut at the length limit)' : ''} · rounds: ${record.rounds} · outcome (computed): ${outcome?.status ?? 'none'}`
+            + `${outcome?.claimed && outcome.claimed !== outcome.status ? ` (the model said "${outcome.claimed}")` : ''}`
+            + `${record.outcome_eval ? ` · against the score: ${record.outcome_eval.agreement}` : ''}`);
+        if (outcome?.note) lines.push(`\nWhy: ${outcome.note}`);
         lines.push('');
         lines.push(quote(record.final.text || '(empty)'));
+        const refs = record.final.references;
+        if (refs?.written) {
+            lines.push('');
+            lines.push(`Numbers by reference: ${refs.filled} of ${refs.written} filled from the analyses`
+                + `${refs.unknown.length ? `; not filled: ${refs.unknown.map((name) => `{{${name}}}`).join(', ')}` : ''}.`);
+            if (record.final.raw_text && record.final.raw_text !== record.final.text) {
+                lines.push(`\n<details><summary>The answer as the model wrote it</summary>\n\n${quote(clip(record.final.raw_text, 4000))}\n\n</details>`);
+            }
+        }
     } else {
         lines.push('*No answer.*');
     }
