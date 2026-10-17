@@ -5,6 +5,25 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Copilot validation batch 1: the review's tool changes
+
+Every tool change the 2026-10-14 tool and skill review proposed ([copilot-review.md](algorithms/copilot-review.md)),
+approved by the user that day, each with a regression test and a finding in
+`web_app/frontend/validation/findings/batch-1.jsonl`:
+
+- **L1, split shells:** a peak within 0.5 Å of the first joins a shell cut at a deep trough when the
+  summed CN is 4, 6, 8 or 12 (a Jahn–Teller CuF₆ is CN 6, never four-coordinate); the first peak
+  alone is offered and asked about.
+- **L2, the cluster null:** `analyze_clusters` reads the shape at each cluster's own breathing (a new
+  shape null in `clusters.py` and its port, with the radial noise the per-cluster fit takes out put
+  back) and the breathing against independent atoms; split member sites are named.
+- **L3, directions:** a preferred direction needs the peak test; the map test is anisotropy.
+- **L4, two analyses:** `measure_symmetry_lowering` gives the coherent shift of a lowering (Å,
+  direction, against the noise floor); `analyze_modulations` also tests general wavevectors.
+- **L5, answer checks:** cluster claims (distorted, breathing, rigid) and coordination numbers.
+
+The A+ control follows the new engines (dev-symmetry-lowering 0.83 → 1).
+
 ### Charts on touch: a finger scrolls the page; a sideways swipe zooms x, a tap reads the value
 
 The chart SVG carried `touch-action: none`, so on phones and tablets every finger drag on a chart

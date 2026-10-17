@@ -34,8 +34,9 @@ import { parseVerdict, VERDICT_INSTRUCTIONS, VERDICT_MARK } from './verdict';
 import { scoreVerdict } from './scoring';
 import { shownValues, traceNumbers } from './provenance';
 
-// Bumped when the cases, question, scoring or harness change what a run means.
-export const PROTOCOL_VERSION = '2026-10-14.1';
+// Bumped when the cases, question, scoring, harness, tools or skills change what
+// a run means (2026-10-17.1: validation batch 1's tools).
+export const PROTOCOL_VERSION = '2026-10-17.1';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },

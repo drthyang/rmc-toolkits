@@ -107,6 +107,15 @@ proposed_fix, needs_user_approval}`:
 - `missing-tool` and `skill-gap` always need the user's approval (batched per cycle);
 - a test case may only report a bug.
 
+Where a finding stands is recorded beside it: `status` (`proposed`, the default, `approved`,
+`implemented`, `rejected`), `approval: {by: 'user', date, batch}`, the `commit` that implemented it
+and the regression `tests` that pin it. An approved or implemented finding that needs approval
+records it; an implemented one names its commit, and an implemented code change names its tests.
+Batch 1 (`validation/findings/batch-1.jsonl`) holds every tool change of the
+[review](copilot-review.md), approved by the user on 2026-10-14 and implemented on 2026-10-17:
+L1–L5 (L4 is two analyses), six findings; the five skill proposals are added by the skills PR,
+which waits for the user's review. `split.test.js` validates the file.
+
 ## Models and spend
 
 Each model gets the same cases, prompt, tools and scoring, and the results are reported side by side:

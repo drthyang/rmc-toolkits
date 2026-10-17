@@ -54,10 +54,30 @@ regression pin on the demo run.
 - **L5, unchecked claims.** Bond angles and clusters return no `facts`. A cluster rule would
   misfire today because of L2.
 
+### Implemented in validation batch 1 (approved by the user on 2026-10-14; 2026-10-17)
+
+Every tool proposal above (the skill proposals below go in a PR of their own, which waits for the
+user's review), each recorded as a finding in
+`web_app/frontend/validation/findings/batch-1.jsonl` with its commit and tests:
+
+| Item | Change | Commit |
+| --- | --- | --- |
+| L1 | `firstShell` joins a later peak within 0.5 Å when the summed CN is 4, 6, 8 or 12 (either direction); the first peak alone is `first_peak_only`, offered and asked about (clarify.js) | 0a7fdf0 |
+| L2 | `clusters.py` / `clusters.js` `shapeNull`: each cluster keeps its breathing, only the breathing-free displacements are shuffled, their radial component scaled by 1/√(1 − β_m); shape rows read against it, size rows against independent atoms; split member sites named | 6b308f3 |
+| L3 | `facts.direction.significant` from the peak test; `anisotropic` from the map test | b867260 |
+| L4 | `measure_symmetry_lowering` (`symmetryShift.js`); `analyze_modulations` tests general wavevectors | 56cd672 |
+| L5 | coordination facts from `compute_bond_angles` and `find_gr_peaks`; cluster and coordination answer checks | 4481a86 |
+
+Two consequences the proposals did not spell out: the per-cluster breathing fit takes out a share
+β_m of each member's own radial noise, which the shape null puts back (without it independent atoms
+read ~6 % too regular); and against the shape null a trigonal push of one vertex keeps its pattern
+(trigonality, the <111> axis family) but no longer its excess edge spread, which the vertex sites'
+own two positions hold.
+
 ## Skills
 
 All four are drafts awaiting the user's interview. Changes to them need the user's approval; these
-are proposals.
+are proposals; batch 1 implements them in a separate PR, with the missing local-order skill as a fifth draft.
 
 | Skill | Every decision tied to a tool output? | Criteria explicit and physical? | Contradictions and gaps |
 | --- | --- | --- | --- |
