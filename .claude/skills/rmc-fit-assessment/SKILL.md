@@ -86,8 +86,9 @@ a Rietveld refinement: never call it a refinement, and there are no esds of refi
 - **Missed the Ga–Se pile-up at the 2.2 Å constraint** (review): `find_gr_peaks` now checks
   each pair's constraint.
 - **Judged one space only** (the 5 K run: G(r) misfit checked, F(Q) not, still "achieved").
-- **The verdict is a self-assessment:** models wrote "achieved" even over a cut coordination
-  shell. The step cards' checks are the part to trust.
+- **The verdict was a self-assessment:** models wrote "achieved" even over a cut coordination
+  shell. *Firm rule in the app (THY-18):* the Outcome is computed from the checks; the model's
+  line only explains it.
 
 ## Report
 

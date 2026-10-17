@@ -80,7 +80,8 @@ back empty. What was not run is "not tested", never "absent".
   them apart.
 - *Firm rule in the app:* an answer that claims a superstructure, a cluster distortion, breathing,
   rigidity or a preferred direction that the question's analyses did not find gets a warning under
-  it.
+  it; and an answer that concludes "no order" before the superstructure test, a per-site direction
+  map and the cluster analyses ran is sent back to run them (the evidence gate, THY-18).
 
 ## Report
 
