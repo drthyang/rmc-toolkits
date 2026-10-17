@@ -421,6 +421,38 @@ describe('Copilot summarizers', () => {
         expect(checks.some((check) => /^More clusters are (elongated|compressed) along <100>/.test(check.text))).toBe(true);
     });
 
+    it('cluster summary: breathing is size, not shape; split sites are named (review L2)', async () => {
+        // Mo3 triangles whose size fluctuates collectively (sd 4 %), shape
+        // regular: against independent atoms alone they read "LESS distorted".
+        const breathing = buildCase(ALL_CASES.find((item) => item.id === 'dev-breathing'), { partials: false });
+        const ask = (built) => (kind, params) => handlePcaMessage({ kind, ...params }, async () => built.rmc6f);
+        const triangles = buildCopilotTools({ request: ask(breathing), structure: null, elements: ['Mo', 'O'] })
+            .find((tool) => tool.name === 'analyze_clusters');
+        const { data, checks, facts } = await triangles.run({ element: 'Mo', r_min: 2.4, r_max: 3.21 });
+        const payload = clusterDistortion(siteDisplacementsFromRmc6f(breathing.rmc6f), 'Mo', [2.4, 3.21]);
+        expect(payload.z.ladderWidth).toBeLessThan(-3);
+        expect(Math.abs(data.local.ladder_width_A.z)).toBeLessThan(3);
+        expect(data.local.breathing_sd_A.change).toBeGreaterThan(0.3);
+        expect(checks.find((check) => check.level === 'ok').text).toMatch(/^No cluster shape distortion beyond independent atoms \(at each cluster's own size\)/);
+        expect(checks.some((check) => /^The clusters breathe: their size \(mean edge\) fluctuates \d+ % more/.test(check.text))).toBe(true);
+        expect(checks.some((check) => /LESS distorted|More clusters are/.test(check.text))).toBe(false);
+        expect(facts.cluster).toMatchObject({ element: 'Mo', distorted: false, breathing: true, rigid: false, split: false });
+
+        // Jahn–Teller F6 octahedra: the F sites have two positions each, so
+        // the null holds the distortion's amplitude; the pattern shows it.
+        const jt = buildCase(ALL_CASES.find((item) => item.id === 'dev-jahn-teller'), { partials: false });
+        const octahedra = buildCopilotTools({ request: ask(jt), structure: null, elements: ['Cu', 'F', 'K'] })
+            .find((tool) => tool.name === 'analyze_clusters');
+        const split = await octahedra.run({ element: 'F', r_min: 2.5, r_max: 3.25 });
+        expect(split.data.split_member_sites.length).toBeGreaterThanOrEqual(3);
+        expect(split.checks.find((check) => /^Split sites:/.test(check.text)).text).toMatch(/already holds the distortion's amplitude/);
+        expect(split.facts.cluster).toMatchObject({ distorted: true, split: true, rigid: false });
+        // Without the site rows, no split-site note, the rest unchanged.
+        const bare = summarizeClusters(clusterDistortion(siteDisplacementsFromRmc6f(jt.rmc6f), 'F', [2.5, 3.25]));
+        expect(bare.checks.some((check) => /^Split sites:/.test(check.text))).toBe(false);
+        expect(bare.facts.cluster.split).toBe(false);
+    });
+
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {
         const { text } = clustersFixture.cases.find((entry) => entry.name === 'tie');
         const payload = clusterDistortion(siteDisplacementsFromRmc6f(text), 'Mo', [1.8, 2.2]);

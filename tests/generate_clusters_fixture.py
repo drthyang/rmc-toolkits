@@ -42,6 +42,8 @@ CASES = [
     ("trigonal", lambda: cluster_config_text("trigonal", supercell=(4, 4, 4)),
      [("Nb", [2.5, 3.5]), ("Ga", [2.0, 3.0]), ("Se", [7.5, 8.0]), ("Nb", [0.5, 1.0])]),
     ("static", lambda: cluster_config_text("static", supercell=(4, 4, 4)), [("Nb", [2.5, 3.5])]),
+    # Collective breathing: size, not shape (review 2026-10-14 L2).
+    ("breathing", lambda: cluster_config_text("breathing", supercell=(4, 4, 4)), [("Nb", [2.5, 3.5])]),
     # A site a hair below fraction 0 (review 2026-10-12 #1).
     ("origin-dimer", lambda: origin_dimer_config_text(-1e-4), [("V", [2.0, 2.5])]),
     # Two chain templates with differently listed edges (review 2026-10-12 #2).

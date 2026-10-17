@@ -1216,7 +1216,7 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `compute_bond_angles(end1, apex, end2, r12_min, r12_max, r23_min?, r23_max?, bin_width = 1)` | same | worker `triplets` / `/api/triplets` (`APP_MAX_ANGLES` applies) | angle count, central atoms, mean ± sd; ≤ 3 modes (local maxima of a 5-bin running mean of the counts, each with the share of angles within ± 7.5°); the distribution in 18 bins of 10° (the engine's bins shared by overlap), raw and sin θ-corrected ($S_j = (N_j/N)\,/\,[(\cos\theta_j - \cos\theta_{j+1})/2]$, 1 for random directions); for an A–B–A triplet in one window that does not cut the shell and a mean coordination within 0.5 of 6, the share and mean angle below and above 135° against an ideal octahedron (80 % cis at 90°, 20 % trans at 180°), within 0.5 of 4, the share within 15° of 109.47°; mean bond length, its sd from the engine's 40-bin length histogram, and unique bonds per window; coordination histogram and mean | fail: 0 angles ("widen the window"); warn: > 50 % of central atoms have no A–B bond in the window; otherwise warn: < 60 % of central atoms have the most common A–B bond count (the window cuts a coordination shell) — **refused** (fail) unless `window_confirmed`, the modes, mean, sd and histograms withheld (the coordination-shells skill's firm rule), else a warn "kept: the user chose this window"; note: raw counts deplete 180° (with the octahedron split); warn: parse warning; ok otherwise. Refused before running: min ≥ max, an r23 bound without its pair |
 | `detect_symmetry(tolerance_A ∈ [0.001, 1])` | the structure has a `basis` (browser-loaded runs) | `describeSymmetry` (the Detected SG card's finder), *not* changing the card | group, number (only when certain), point group and its facts (`point_group_facts`, as in the context), n ops, max residual, every orbit with `orbitLabel` Wyckoff label, site symmetry and representative fractional coordinates (4 decimals) | ok: group holds; note: the point group's facts ("take inversion, chirality and polarity from this"); note: undetermined; note: "≥" lower bound; warn: not analysed (caps); fail: no basis |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
-| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1: the edge ladder, ladder width, shape rms, breathing sd, mean edge; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>; bonds outside the window, contacts between clusters per atom | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: ladder width departs from the null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units) or does not; note: breathing departs (same rule); note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
+| `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`), from the engine's `sites` rows the tool also requests; bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}` for the cluster answer check | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
 | `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile]` rows, the three strongest modes the same way; the supercell, wavevector count and untestable points | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points tested); ok: no cell doubling (the most significant point named); note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
@@ -1473,6 +1473,33 @@ a departure is a correlation the data put in. Each statistic is reported as obse
 ladder and the axis families. With thousands of clusters a 1 % effect reaches $z > 3$, so the Copilot's
 checks also require an effect size (Step 17).
 
+**The shape null (`shapeNull`, the 2026-10-14 review's L2, approved for batch 1).** The null above
+also removes collective motion. A collective size fluctuation — breathing, every member moving out or
+in together — then *lowers* the shape statistics, because the null spreads the same radial
+displacements over independent atoms: the validation's breathing Mo₃ triangles (sd 4 %, shape
+regular) read "28 % LESS distorted", and the gyration-axis test read breathing tetrahedra as a shape
+preference (synthetic 10×10×10 Nb₄: long axes along <100> z = +6.2). So a second null keeps each
+cluster's breathing. With $\mathbf r_m = \mathbf b_m - ar{\mathbf b}$ (the template about its
+centroid), a cluster's breathing is its least-squares scale
+$arepsilon_c = \sum_m \mathbf u_{mc}\cdot\mathbf r_m / \sum_m |\mathbf r_m|^2$, and the
+breathing-free displacements are $\mathbf u'_{mc} = \mathbf u_{mc} - arepsilon_c\mathbf r_m$. The fit
+takes out a share $eta_m = |\mathbf r_m|^2/\sum_k|\mathbf r_k|^2$ of each member's own radial noise:
+for members of equal radial variance $v$, the residual's radial variance is $v(1-eta_m)$ whatever the
+geometry, so the radial component of $\mathbf u'_{mc}$ is scaled by $1/\sqrt{1-eta_m}$ (without it the
+shuffled shapes came out ~6 % too regular for independent atoms, z ≈ +2.5 with only 64 clusters). Shuffle $k$ puts
+in slot $c$ the members' corrected residuals from the clusters $\pi_{k,t,m}(c)$ (the same permutations),
+removes the breathing their combination happens to carry, and adds the slot's own
+$arepsilon_c\mathbf r_m$: every null cluster has exactly its own size. The shape statistics
+(`ladder`, `ladderWidth`, `shapeRms`, `eRms`, `t2Rms`, `t2Trigonality`, the axis families) are read
+against `shapeNull`; its size statistics are no test and are left out (`SIZE_STATISTICS`:
+`meanEdge`, `breathingSd`, read against the independent-atom null). Synthetic checks (10×10×10):
+independent atoms — every shape statistic within 0.3 % of `shapeNull`; breathing tetrahedra (sd 4 %) —
+edge spread −23 % against independent atoms (z = −24) but +0.5 % (z = 0.6) against `shapeNull`, no axis
+family at |z| > 2, breathing +67 %; one vertex pushed out per cluster — the edge-spread excess goes too
+(the vertex sites' own two positions hold it), the pattern stays (trigonality z = −16.5, long axes
+along <111> z = +16.8). The Copilot's summary names split member sites (PC1 excess kurtosis ≤ −0.5 and
+3 sampling errors below 0; Step 17): there the null holds the distortion's amplitude.
+
 **The average cluster.** The template's own bonds $|\mathbf b_j - \mathbf b_i|$ (a *static*
 distortion shows here, not in the shuffle test, which keeps the site means) with each bond's sampling
 error $\sqrt{\sum_{s\in\{i,j\}} \langle (\mathbf u\cdot\hat e)^2\rangle_s / N_s}$ from the two sites'
@@ -1488,15 +1515,18 @@ clusters missing an atom included: atoms crossing the gap between clusters; per 
 over the element's atom count.
 
 **Synthetic checks** (`tests/test_clusters.py`, 6×6×6 cells of an Nb₄ tetrahedron, a Ga₂ dimer and a
-Se): independent noise — every \|z\| < 3; one random vertex per cluster pushed 0.3 Å out along its
-3-fold axis — average cluster regular, trigonality z ≈ −8, long axes along <111> z ≈ 9, breathing
-lower than the null's binomial count of pushed vertices; the same vertex pushed everywhere — average
-cluster spread ≈ 45 SE, local statistics at the null.
+Se): independent noise — every \|z\| < 3, against both nulls; one random vertex per cluster pushed
+0.3 Å out along its 3-fold axis — average cluster regular, trigonality z ≈ −8, long axes along <111>
+z ≈ 9, breathing lower than the null's binomial count of pushed vertices; the same vertex pushed
+everywhere — average cluster spread ≈ 45 SE, local statistics at the null; every cluster breathing
+(sd 4 %) — breathing up, shape "less distorted" against independent atoms, regular against
+`shapeNull`.
 
-**The demo (GaTa₄Se₈, 250 K, Ta 2.65–3.33 Å, 4000 clusters).** Ladder width 0.295 Å against 0.386 Å
-in the null (−23 %, z = −64): the RMC clusters are *more rigid* than independent atoms; breathing +27 %;
-short axes along <111> in 19 % of clusters against 14 % (z = 11), long axes along <110> 23 % against
-20 % (z = 4) — the axis of the monoclinic distortion small-box PDF fits report for this compound
+**The demo (GaTa₄Se₈, 250 K, Ta 2.65–3.33 Å, 4000 clusters).** Ladder width 0.295 Å against 0.370 Å
+in the shape null (−20 %, z = −49; 0.386 Å, −23 %, against independent atoms): the RMC clusters are
+*more rigid* than independent atoms at their own size; breathing +27 % (z = 27); short axes along
+<111> in 19 % of clusters against 14 % (z = 11), long axes along <111> 16 % against 14 % (z = 5) and
+along <110> 23 % against 21 % (z = 1.9) — <111> the axis of the distortion small-box PDF fits report for this compound
 ([Yang et al., Phys. Rev. Research 4, 033123 (2022)](https://doi.org/10.1103/PhysRevResearch.4.033123));
 average cluster 3.031–3.054 Å, 5.5 SE.
 

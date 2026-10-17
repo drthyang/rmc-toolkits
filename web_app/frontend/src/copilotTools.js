@@ -461,7 +461,32 @@ const significant = (z, change, effect) => (
     Number.isFinite(z) && Math.abs(z) >= CLUSTER_Z && Number.isFinite(change) && Math.abs(change) >= effect
 );
 
-export const summarizeClusters = (payload) => {
+// A member site is split (two positions) when its PC1 is resolved and its
+// PC1 excess kurtosis is at most −0.5 — the value at which two equal wells
+// ±δ of thermal width σ separate (δ = σ: κ = −2δ⁴/(δ² + σ²)² = −0.5) — and at
+// least this many sampling errors (√(24/n)) below zero.
+export const SPLIT_SITE_KURTOSIS = -0.5;
+export const SPLIT_SITE_SE = 3;
+
+/** The sites (list_sites' engine rows) among `refs` whose clouds are split. */
+export const splitMemberSites = (siteRows, refs) => (siteRows || []).filter((site) => {
+    const kappa = site.excessKurtosis?.[0];
+    return refs.includes(site.referenceNumber) && site.axisResolved?.[0] && Number.isFinite(kappa) && site.count > 0
+        && kappa <= SPLIT_SITE_KURTOSIS && kappa <= -SPLIT_SITE_SE * Math.sqrt(24 / site.count);
+});
+
+/**
+ * The cluster result the model reads. The shape statistics (edge spread,
+ * shape rms, tetrahedral modes, gyration-axis families) are read against the
+ * engine's shape null — independent atoms at each cluster's own breathing —
+ * and the size statistics (mean edge, breathing) against independent atoms:
+ * against the latter alone, a collective size fluctuation read as "LESS
+ * distorted" and as a shape preference (the review's L2, approved
+ * 2026-10-14). `siteRows` (the engine's 'sites' rows, when the tool could
+ * read them) tell split member sites, for which the null already holds the
+ * distortion's amplitude.
+ */
+export const summarizeClusters = (payload, { siteRows = null } = {}) => {
     const [lo, hi] = payload.window || [];
     const element = payload.element;
     const data = {
@@ -487,7 +512,10 @@ export const summarizeClusters = (payload) => {
         });
         return { data, checks };
     }
-    const { observed: obs, nullMean: mean, z } = payload;
+    const { observed: obs } = payload;
+    // Shape statistics against the shape null (when the engine gave one).
+    const shape = payload.shapeNull ? { mean: payload.shapeNull.mean, z: payload.shapeNull.z } : { mean: payload.nullMean, z: payload.z };
+    const size = { mean: payload.nullMean, z: payload.z };
     const row = (value, nullValue, zValue, digits = 3) => {
         const entry = { obs: round(value, digits), null: round(nullValue, digits), z: round(zValue, 2) };
         if (Number.isFinite(value) && Number.isFinite(nullValue) && nullValue !== 0) entry.change = round(value / nullValue - 1, 2);
@@ -510,30 +538,32 @@ export const summarizeClusters = (payload) => {
         spread_over_se: round(payload.ideal.spreadOverSe, 2)
     };
     data.local = {
-        note: 'obs = the configuration; null = each atom keeps its own site\'s displacements, taken from a random other '
-            + 'cluster (independent atoms); z = (obs − null) / null sd over the shuffles; change = obs/null − 1; '
+        note: 'obs = the configuration. Shape rows (ladder, edge spread, shape rms, modes, axis families): null = each '
+            + 'cluster keeps its own breathing (size) and each atom its own site\'s other displacements, taken from a '
+            + 'random other cluster. Size rows (breathing_sd_A, mean_edge_A): null = independent atoms (each atom\'s whole '
+            + 'displacement from a random other cluster). z = (obs − null) / null sd over the shuffles; change = obs/null − 1; '
             + 'ladder_A[k] = the mean over clusters of each cluster\'s k-th shortest edge (not the range of single bonds)',
         ladder_A: {
             obs: obs.ladder.map((value) => round(value, 4)),
-            null: mean.ladder.map((value) => round(value, 4)),
-            z: z.ladder.map((value) => round(value, 2))
+            null: shape.mean.ladder.map((value) => round(value, 4)),
+            z: shape.z.ladder.map((value) => round(value, 2))
         },
-        ladder_width_A: row(obs.ladderWidth, mean.ladderWidth, z.ladderWidth),
-        shape_rms_A: row(obs.shapeRms, mean.shapeRms, z.shapeRms),
-        breathing_sd_A: row(obs.breathingSd, mean.breathingSd, z.breathingSd),
-        mean_edge_A: row(obs.meanEdge, mean.meanEdge, z.meanEdge, 4)
+        ladder_width_A: row(obs.ladderWidth, shape.mean.ladderWidth, shape.z.ladderWidth),
+        shape_rms_A: row(obs.shapeRms, shape.mean.shapeRms, shape.z.shapeRms),
+        breathing_sd_A: row(obs.breathingSd, size.mean.breathingSd, size.z.breathingSd),
+        mean_edge_A: row(obs.meanEdge, size.mean.meanEdge, size.z.meanEdge, 4)
     };
     if (Number.isFinite(obs.eRms)) {
         data.local.tetrahedral_modes = {
             note: 'E: opposite-edge-pair sums (tetragonal-type); T2: opposite-pair differences; t2_trigonality = '
                 + 'mean Σd⁴/(Σd²)², 1/3 when three edges at one vertex differ alike (trigonal, C3v), 1 when one edge differs from its opposite',
-            e_rms_A: row(obs.eRms, mean.eRms, z.eRms),
-            t2_rms_A: row(obs.t2Rms, mean.t2Rms, z.t2Rms),
-            t2_trigonality: row(obs.t2Trigonality, mean.t2Trigonality, z.t2Trigonality)
+            e_rms_A: row(obs.eRms, shape.mean.eRms, shape.z.eRms),
+            t2_rms_A: row(obs.t2Rms, shape.mean.t2Rms, shape.z.t2Rms),
+            t2_trigonality: row(obs.t2Trigonality, shape.mean.t2Trigonality, shape.z.t2Trigonality)
         };
     }
     const families = (name) => (obs[name] ? Object.fromEntries(Object.keys(obs[name]).map((family) => [
-        `<${family}>`, row(obs[name][family], mean[name][family], z[name][family], 3)
+        `<${family}>`, row(obs[name][family], shape.mean[name][family], shape.z[name][family], 3)
     ])) : undefined);
     if (obs.longAxis) data.local.long_axis_within_15deg = families('longAxis');
     if (obs.shortAxis) data.local.short_axis_within_15deg = families('shortAxis');
@@ -541,6 +571,13 @@ export const summarizeClusters = (payload) => {
         bonds_outside_window: round(payload.outliers.brokenEdgeFraction, 2),
         contacts_between_clusters_per_atom: round(payload.outliers.extraContactsPerAtom, 2)
     };
+    // The analysed kind's member sites, and which of them are split.
+    const memberRefs = [...new Set(payload.templates
+        .filter((template) => template.referenceNumbers.length === kind.members && template.edges.length === kind.edges)
+        .flatMap((template) => template.referenceNumbers))];
+    const split = splitMemberSites(siteRows, memberRefs);
+    const splitSites = split.length && 2 * split.length >= memberRefs.length;
+    if (split.length) data.split_member_sites = split.map((site) => site.referenceNumber);
 
     const otherShare = payload.kinds.slice(1).reduce((sum, k) => sum + k.clusters, 0)
         / payload.kinds.reduce((sum, k) => sum + k.clusters, 0);
@@ -570,41 +607,65 @@ export const summarizeClusters = (payload) => {
             .filter(([, entry]) => entry.z >= CLUSTER_Z && entry.null > 0 && entry.obs / entry.null >= AXIS_ENHANCEMENT)
             .map(([family, entry]) => ({ family, entry, verb }))
     ));
+    const trig = data.local.tetrahedral_modes?.t2_trigonality;
+    const trigonalLean = Boolean(trig && significant(trig.z, trig.obs - trig.null, TRIGONALITY_EFFECT));
     const width = data.local.ladder_width_A;
-    if (significant(z.ladderWidth, width.change, CLUSTER_EFFECT)) {
-        checks.push(width.change > 0
-            ? {
-                level: 'ok',
-                text: `The clusters are distorted beyond independent atoms: the spread of their edges (longest − shortest, `
-                    + `${width.obs} Å) is ${Math.round(width.change * 100)} % above the shuffle null (${width.null} Å, z = ${width.z}) — `
-                    + 'a correlated distortion the data put in.'
-            }
-            : {
-                level: 'ok',
-                text: `The clusters are ${Math.round(-width.change * 100)} % LESS distorted than independent atoms would make them `
-                    + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together`
-                    + (favoured.length
-                        ? `, yet more clusters than by chance are ${favoured[0].verb} along ${favoured[0].family} (below): a correlated `
-                            + 'shape distortion whose amplitude the independent-atom null already holds (split or disordered sites).'
-                        : ', and there is no correlated shape distortion on top.')
-            });
+    const widthChanged = significant(width.z, width.change, CLUSTER_EFFECT);
+    const breathing = data.local.breathing_sd_A;
+    const breathes = significant(breathing.z, breathing.change, CLUSTER_EFFECT);
+    const pattern = favoured.length
+        ? `more clusters than by chance are ${favoured[0].verb} along ${favoured[0].family} (below)`
+        : (trigonalLean ? 'the edge pattern leans to one form (below)' : null);
+    const sizeText = '(at each cluster\'s own size)';
+    if (kind.edges === 1) {
+        checks.push({
+            level: 'ok',
+            text: `${kind.members === 2 ? 'Dimers have' : 'Each cluster has'} one edge: the shape is the bond length, read from the size `
+                + `row (breathing_sd_A, against independent atoms)${pattern ? `; ${pattern}` : ''}.`
+        });
+    } else if (widthChanged && width.change > 0) {
+        checks.push({
+            level: 'ok',
+            text: `The clusters are distorted beyond independent atoms ${sizeText}: the spread of their edges (longest − shortest, `
+                + `${width.obs} Å) is ${Math.round(width.change * 100)} % above the shuffle null (${width.null} Å, z = ${width.z}) — `
+                + 'a correlated distortion the data put in.'
+        });
+    } else if (widthChanged) {
+        checks.push({
+            level: 'ok',
+            text: `The clusters are ${Math.round(-width.change * 100)} % LESS distorted than independent atoms would make them ${sizeText} `
+                + `(edge spread ${width.obs} vs ${width.null} Å, z = ${width.z}): the atoms of a cluster move together`
+                + (pattern
+                    ? `, yet ${pattern}: a correlated shape distortion whose amplitude the independent-atom null already holds (split or disordered sites).`
+                    : ', and there is no correlated shape distortion on top.')
+        });
+    } else if (pattern) {
+        checks.push({
+            level: 'ok',
+            text: `The edge spread (${width.obs} Å) matches the shuffle null ${sizeText} (${width.null} Å; change `
+                + `${Math.round((width.change ?? 0) * 100)} %, z = ${width.z}), but the pattern does not: ${pattern}. A correlated shape `
+                + 'distortion whose amplitude the sites\' own displacements already hold.'
+        });
     } else {
         checks.push({
             level: 'ok',
-            text: `No cluster distortion beyond independent atoms: the edge spread (${width.obs} Å) matches the shuffle null `
+            text: `No cluster shape distortion beyond independent atoms ${sizeText}: the edge spread (${width.obs} Å) matches the shuffle null `
                 + `(${width.null} Å; change ${Math.round((width.change ?? 0) * 100)} %, z = ${width.z}).`
         });
     }
-    const breathing = data.local.breathing_sd_A;
-    if (significant(z.breathingSd, breathing.change, CLUSTER_EFFECT)) {
+    if (breathes) {
         checks.push({
             level: 'note',
-            text: `The cluster size (mean edge) fluctuates ${Math.round(Math.abs(breathing.change) * 100)} % `
-                + `${breathing.change > 0 ? 'more' : 'less'} than for independent atoms (breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}).`
+            text: breathing.change > 0
+                ? `The clusters breathe: their size (mean edge) fluctuates ${Math.round(breathing.change * 100)} % more than for independent `
+                    + `atoms (breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}) — a collective size fluctuation, `
+                    + 'not a shape distortion.'
+                : `The cluster size (mean edge) fluctuates ${Math.round(-breathing.change * 100)} % less than for independent atoms `
+                    + `(breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}): the bonds are stiffer than independent `
+                    + 'atoms make them — the atoms move together.'
         });
     }
-    const trig = data.local.tetrahedral_modes?.t2_trigonality;
-    if (trig && significant(z.t2Trigonality, trig.obs - trig.null, TRIGONALITY_EFFECT)) {
+    if (trigonalLean) {
         checks.push({
             level: 'note',
             text: trig.obs < trig.null
@@ -619,6 +680,15 @@ export const summarizeClusters = (payload) => {
                 + `vs ${Math.round(entry.null * 100)} % in the null (z = ${entry.z}).`
         });
     });
+    if (splitSites) {
+        checks.push({
+            level: 'note',
+            text: `Split sites: ${split.length} of the ${memberRefs.length} member sites (${split.map((site) => site.referenceNumber).join(', ')}) `
+                + 'have two positions (PC1 excess kurtosis ≤ −0.5). The null keeps each site\'s two positions, so it already holds the '
+                + 'distortion\'s amplitude: the edge spread cannot show it, and "no distortion" or "less distorted" does not make the '
+                + 'clusters regular. Read the pattern (axis families, trigonality), the partial g(r) shell (find_gr_peaks) and the bond angles.'
+        });
+    }
     if (data.outliers.bonds_outside_window > CLUSTER_OUTLIER_FRACTION) {
         checks.push({
             level: 'warn',
@@ -633,7 +703,21 @@ export const summarizeClusters = (payload) => {
                 + 'are not cluster bonds: atoms crossing the gap between clusters.'
         });
     }
-    return { data, checks };
+    // For the answer checks (review L5): what this analysis found.
+    const facts = {
+        cluster: {
+            element,
+            members: kind.members,
+            window: [lo, hi],
+            distorted: (widthChanged && width.change > 0) || Boolean(pattern),
+            static: payload.ideal.spreadOverSe >= STATIC_SPREAD_SE,
+            breathing: breathes && breathing.change > 0,
+            rigid: !splitSites && ((widthChanged && width.change < 0 && !pattern) || (breathes && breathing.change < 0)),
+            split: Boolean(splitSites),
+            families: favoured.map(({ family, verb }) => `${verb} ${family}`)
+        }
+    };
+    return { data, checks, facts };
 };
 
 // --- analyze_modulations ---------------------------------------------------------
@@ -995,7 +1079,13 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             ),
             run: async ({ element, r_min: rMin, r_max: rMax }, { signal } = {}) => {
                 if (rMin >= rMax) throw new Error('r_min must be below r_max');
-                return summarizeClusters(await request('clusters', { element, rMin, rMax }, { signal }));
+                // The site rows tell split member sites; the engine's parse
+                // cache makes them cheap, and a failure only drops that note.
+                const [payload, sites] = await Promise.all([
+                    request('clusters', { element, rMin, rMax }, { signal }),
+                    request('sites', {}, { signal }).catch(() => null)
+                ]);
+                return summarizeClusters(payload, { siteRows: sites?.sites ?? null });
             }
         });
 

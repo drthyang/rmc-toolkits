@@ -27,6 +27,9 @@ export const SHUFFLE_SEED = 0x5eed;
 // partners from the next cell. clusters.py `_cell_positions`.
 const cellPosition = (site) => site.siteCellFractional ?? site.siteFractional;
 export const AXIS_CONE_DEG = 15;
+// The size statistics: read against the independent-atom null only (the
+// shape null keeps every cluster's own size).
+export const SIZE_STATISTICS = ['meanEdge', 'breathingSd'];
 // Opposite edge pairs of a tetrahedron, as indices into its sorted edge list
 // (0,1) (0,2) (0,3) (1,2) (1,3) (2,3).
 export const TETRAHEDRON_OPPOSITE = [[0, 5], [1, 4], [2, 3]];
@@ -387,13 +390,67 @@ export const clusterDistortion = (parsed, element, [rmin, rmax], { shuffles = DE
         });
         return out;
     };
+    // Each cluster's breathing: its least-squares scale about the template
+    // centroid, ε_c = Σ_m d_mc·r_m / Σ_m |r_m|² (r_m = base_m − centroid), and
+    // the displacements with it taken out, d'_mc = d_mc − ε_c r_m. The fit also
+    // takes out a share β_m = |r_m|² / Σ_k |r_k|² of each member's own radial
+    // noise, so the residual's radial component is scaled back by
+    // 1/√(1 − β_m) (clusters.py: exact for members of equal radial variance).
+    const breathing = chosen.map(({ template, rows, base }) => {
+        const centroid = [0, 1, 2].map((k) => mean(base.map((point) => point[k])));
+        const radial = base.map((point) => sub(point, centroid));
+        const lengths2 = radial.map((r) => dot(r, r));
+        const norm2 = lengths2.reduce((sum, value) => sum + value, 0);
+        const unit = radial.map((r, m) => (lengths2[m] > 0 ? r.map((x) => x / Math.sqrt(lengths2[m])) : [0, 0, 0]));
+        const boost = lengths2.map((value) => 1 / Math.sqrt(1 - value / norm2) - 1);
+        const n = rows[0].length;
+        const scale = new Float64Array(n);
+        const residual = [];
+        for (let c = 0; c < n; c += 1) {
+            const displaced = template.sites.map((s, m) => sites[s].displacements[rows[m][c]]);
+            const eps = displaced.reduce((sum, d, m) => sum + dot(d, radial[m]), 0) / norm2;
+            scale[c] = eps;
+            residual.push(displaced.map((d, m) => {
+                const left = sub(d, radial[m].map((x) => eps * x));
+                const along = dot(left, unit[m]);
+                return add(left, unit[m].map((x) => boost[m] * along * x));
+            }));
+        }
+        return { radial, scale, residual };
+    });
+    // The shape null: every cluster keeps exactly its own breathing, and its
+    // members' breathing-free displacements come from random other clusters
+    // (the same permutations as the independent-atom null), with the
+    // breathing their combination happens to carry taken out again.
+    const shapePositionsFor = (shuffle) => {
+        const out = [];
+        chosen.forEach(({ tIndex, template, rows, base }, index) => {
+            const { radial, scale, residual } = breathing[index];
+            const norm2 = radial.reduce((sum, r) => sum + dot(r, r), 0);
+            const n = rows[0].length;
+            const orders = template.sites.map((_, m) => shufflePermutation(n, shuffle, tIndex, m, seed));
+            for (let c = 0; c < n; c += 1) {
+                const mixed = template.sites.map((_, m) => residual[orders[m][c]][m]);
+                const stray = mixed.reduce((sum, d, m) => sum + dot(d, radial[m]), 0) / norm2;
+                out.push(mixed.map((d, m) => add(add(base[m], d), radial[m].map((x) => (scale[c] - stray) * x))));
+            }
+        });
+        return out;
+    };
     // Each cluster is measured with its own template's edges.
     const edges = chosen.flatMap(({ template, rows }) => rows[0].map(() => template.edges));
     const observedPositions = positionsFor(null);
     const observed = clusterStatistics(observedPositions, edges, families);
     const nulls = Array.from({ length: shuffles }, (_, k) => clusterStatistics(positionsFor(k), edges, families));
     const { means, sds, zs } = nullSummary(observed, nulls);
-    Object.assign(result, { observed, nullMean: means, nullSd: sds, z: zs });
+    const shape = nullSummary(observed, Array.from({ length: shuffles }, (_, k) => clusterStatistics(shapePositionsFor(k), edges, families)));
+    // The shape null holds each cluster's size by construction: its size
+    // statistics are no test, and are left out.
+    [shape.means, shape.sds, shape.zs].forEach((summary) => SIZE_STATISTICS.forEach((key) => { delete summary[key]; }));
+    Object.assign(result, {
+        observed, nullMean: means, nullSd: sds, z: zs,
+        shapeNull: { mean: shape.means, sd: shape.sds, z: shape.zs }
+    });
 
     const chosenTemplates = chosen.map(({ tIndex }) => result.templates[tIndex]);
     const sortedIdeal = chosenTemplates.map((t) => [...t.idealEdges].sort((a, b) => a - b));
