@@ -16,7 +16,11 @@
 //     whole-map test alone is anisotropy, not a direction: review L3);
 //   - a polar group the point group says is not polar (local-symmetry);
 //   - a superstructure (cell doubling, zone-boundary order) when every
-//     analyze_modulations of the question found no ordered point.
+//     analyze_modulations of the question found no ordered point (a general
+//     wavevector's order allows "superstructure", never "cell doubling");
+//   - cluster claims (distorted, breathing, rigid) that every analyze_clusters
+//     of the element contradicts, and a coordination number that every
+//     whole-shell count of the element contradicts (review L5).
 //
 // Deliberately narrow: a rule fires only on a clear positive claim, not on a
 // negated one ("has not converged", "achiral", "no preferred direction"), not
@@ -231,19 +235,143 @@ const directionRule = (text, facts) => {
     return [];
 };
 
-// A claimed superstructure: cell doubling or ordered zone-boundary displacements.
-const SUPERSTRUCTURE = /(^|[^\w-])(superstructure|supercell order|cell[- ]doubling|doubl(?:es|ed|ing) (?:of )?the (?:unit )?cell|zone[- ]boundary (?:order|modulation|mode|distortion)|ordered (?:\w+ )?displacements? at q|commensurate modulation)\b/gi;
+// A claimed superstructure: cell doubling or ordered zone-boundary
+// displacements (needs a zone-boundary point), or order between cells in
+// general (a zone-boundary point or a general wavevector will do).
+const CELL_DOUBLING = /(^|[^\w-])(cell[- ]doubling|doubl(?:es|ed|ing) (?:of )?the (?:unit )?cell|zone[- ]boundary (?:order|modulation|mode|distortion)|commensurate modulation)\b/gi;
+const SUPERSTRUCTURE = /(^|[^\w-])(superstructure|supercell order|ordered (?:\w+ )?displacements? at q|incommensurate (?:order|modulation))\b/gi;
 
 const superstructureRule = (text, facts) => {
     const analyses = facts.map((fact) => fact.modulation).filter(Boolean);
-    if (!analyses.length || analyses.some((analysis) => analysis.ordered?.length)) return [];
+    if (!analyses.length) return [];
+    const doubling = analyses.some((analysis) => analysis.ordered?.length);
+    const any = doubling || analyses.some((analysis) => analysis.general?.length);
     for (const sentence of sentencesOf(text)) {
-        if (clausesOf(sentence).some((clause) => positiveMatches(clause, SUPERSTRUCTURE).length)) {
+        const clauses = clausesOf(sentence);
+        if (!doubling && clauses.some((clause) => positiveMatches(clause, CELL_DOUBLING).length)) {
             return [{
                 rule: 'superstructure',
-                text: 'The answer claims a superstructure, but no analyze_modulations of this question found an ordered '
+                text: 'The answer claims a cell doubling, but no analyze_modulations of this question found an ordered '
                     + 'zone-boundary point (each was within the independent-displacement background after the correction).'
             }];
+        }
+        if (!any && clauses.some((clause) => positiveMatches(clause, SUPERSTRUCTURE).length)) {
+            return [{
+                rule: 'superstructure',
+                text: 'The answer claims a superstructure, but no analyze_modulations of this question found order between cells '
+                    + '(no zone-boundary point or general wavevector beyond the independent-displacement background after the correction).'
+            }];
+        }
+    }
+    return [];
+};
+
+// --- cluster and coordination claims (the review's L5, approved 2026-10-14) ---------
+
+// An element symbol as written in a formula or alone (Mo, Mo3, Ta₄), not inside a word.
+const elementPattern = (element) => new RegExp(`(?<![A-Za-z])${element}(?:[0-9₀-₉]+)?(?![a-z])`);
+const namesElement = (text, element) => elementPattern(element).test(text);
+
+const CLUSTER_NOUN = '(?:clusters?|tetrahedr(?:on|a)|trimers?|dimers?|triangles?|octahedr(?:on|a)|polyhedr(?:on|a))';
+// An adverb may stand between the verb and "distorted", but not a negation.
+const DISTORTED = new RegExp(`(^|[^\\w-])(distorted\\s+(?:\\w+\\s+)?${CLUSTER_NOUN}|${CLUSTER_NOUN}\\s+(?:are|is|appear|look|seem)\\s+`
+    + '(?:(?!not\\b|never\\b|hardly\\b|barely\\b)\\w+\\s+)?(?:distorted|deformed)|cluster\\s+distortions?)\\b', 'gi');
+const BREATHING = /(^|[^\w-])(breath(?:e|es|ing))\b/gi;
+const RIGID = /(^|[^\w-])(rigid(?:ly)?\b|move(?:s|d)?\s+(?:together\s+)?as\s+(?:a\s+)?(?:rigid\s+)?(?:units?|bod(?:y|ies))\b)/gi;
+const CLUSTER_CLAIMS = [
+    { key: 'distorted', pattern: DISTORTED, holds: (fact) => fact.distorted || fact.split || fact.static, says: 'are distorted', found: 'no shape distortion beyond independent atoms, no split sites and a regular average cluster' },
+    { key: 'breathing', pattern: BREATHING, holds: (fact) => fact.breathing, says: 'breathe', found: 'no size fluctuation beyond independent atoms' },
+    { key: 'rigid', pattern: RIGID, holds: (fact) => fact.rigid, says: 'are rigid', found: 'no rigidity beyond independent atoms (or split sites, where the null already holds the distortion)' }
+];
+
+// A claim about clusters is checked against the analyses of the element it
+// names (or, naming none but saying "cluster", all of them); a polyhedron word
+// without an element or "cluster" may be about another polyhedron and is left.
+const clusterRule = (text, facts) => {
+    const analyses = facts.map((fact) => fact.cluster).filter(Boolean);
+    if (!analyses.length) return [];
+    const found = [];
+    for (const claim of CLUSTER_CLAIMS) {
+        let hit = null;
+        for (const sentence of sentencesOf(text)) {
+            for (const clause of clausesOf(sentence)) {
+                if (!positiveMatches(clause, claim.pattern).length) continue;
+                const named = analyses.filter((fact) => namesElement(clause, fact.element) || namesElement(sentence, fact.element));
+                const about = named.length ? named : (/\bclusters?\b/i.test(clause) ? analyses : []);
+                if (about.length && about.every((fact) => !claim.holds(fact))) hit = about;
+            }
+            if (hit) break;
+        }
+        if (hit) {
+            const which = [...new Set(hit.map((fact) => `${fact.element}${fact.members}`))].join(', ');
+            found.push({
+                rule: 'cluster',
+                text: `The answer says the ${which} clusters ${claim.says}, but analyze_clusters found ${claim.found}.`
+            });
+        }
+    }
+    return found;
+};
+
+const WORD_NUMBER = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+const COUNT = '(\\d+(?:\\.\\d+)?|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)';
+const CN_CLAIMS = [
+    new RegExp(`(^|[^\\w.-])${COUNT}[- ]?(?:fold[- ]?)?coordinat(?:e|ed|ion)\\b`, 'gi'),
+    new RegExp(`(^|[^\\w-])(?:coordination(?:\\s+number)?|CN)\\s*(?:of|is|=|equals?|:)?\\s*${COUNT}(?!\\d|\\.\\d)`, 'gi')
+];
+const POLYHEDRON_CN = [
+    [/(^|[^\w-])(tetrahedral(?:ly)?)\s+(?:\w+\s+)?coordinat/gi, 4],
+    [/(^|[^\w-])(octahedral(?:ly)?)\s+(?:\w+\s+)?coordinat/gi, 6],
+    [/(^|[^\w-])(square[- ]planar)\s+(?:\w+\s+)?coordinat/gi, 4],
+    [/(^|[^\w-])(cub(?:ic|ically))\s+(?:\w+\s+)?coordinat/gi, 8]
+];
+const countOf = (word) => (WORD_NUMBER[word.toLowerCase()] ?? Number(word));
+// A clause about part of the shell (the first peak, the short bonds, a window
+// in Å) is not a claim about the whole shell's count.
+const PARTIAL_SHELL = /\bfirst[- ]peak\b|\bshort(?:est|er)?\s+bonds?\b|\bwithin\s+[\d.]+\s*(?:[–—−-]|to)\s*[\d.]+\s*(?:Å|A\b)|\d+(?:\.\d+)?\s*[–—−-]\s*\d+(?:\.\d+)?\s*(?:Å|A\b)/i;
+
+// A coordination number claimed for an element, against every whole-shell
+// count of it (find_gr_peaks' first shell, compute_bond_angles in a whole
+// shell) — not against a window the user chose, whose count stands.
+const coordinationRule = (text, facts) => {
+    const counts = facts.flatMap((fact) => (Array.isArray(fact.coordination) ? fact.coordination : (fact.coordination ? [fact.coordination] : [])))
+        .filter((count) => Number.isFinite(count.cn));
+    if (!counts.length) return [];
+    const centres = [...new Set(counts.map((count) => count.centre))];
+    // The centre a claim is about: the named element nearest to it.
+    const nearestCentre = (clause, at) => {
+        let best = null;
+        centres.forEach((centre) => {
+            for (const match of clause.matchAll(new RegExp(elementPattern(centre).source, 'g'))) {
+                const distance = Math.abs(match.index - at);
+                if (!best || distance < best.distance) best = { centre, distance };
+            }
+        });
+        return best?.centre ?? null;
+    };
+    for (const sentence of sentencesOf(text)) {
+        for (const clause of clausesOf(sentence)) {
+            if (PARTIAL_SHELL.test(clause)) continue;
+            const claimed = [
+                ...CN_CLAIMS.flatMap((pattern) => positiveMatches(clause, pattern).map((match) => ({ n: countOf(match[2]), at: match.index }))),
+                ...POLYHEDRON_CN.flatMap(([pattern, cn]) => positiveMatches(clause, pattern).map((match) => ({ n: cn, at: match.index })))
+            ].filter((claim) => Number.isFinite(claim.n));
+            for (const { n, at } of claimed) {
+                const centre = nearestCentre(clause, at);
+                if (!centre) continue;
+                const mine = counts.filter((count) => count.centre === centre);
+                const partners = [...new Set(mine.map((count) => count.partner))].filter((partner) => partner !== centre && namesElement(clause, partner));
+                const relevant = partners.length === 1 ? mine.filter((count) => count.partner === partners[0]) : mine;
+                const whole = relevant.filter((count) => count.whole_shell);
+                if (!whole.length) continue;
+                if (relevant.some((count) => (count.whole_shell || count.confirmed) && Math.abs(count.cn - n) <= 0.5)) continue;
+                const shells = whole.map((count) => `${count.cn} ${count.partner} per ${centre}${count.window ? ` in ${count.window[0]}–${count.window[1]} Å` : ''}`);
+                return [{
+                    rule: 'coordination',
+                    text: `The answer gives ${centre} a coordination of ${n}, but its whole first shell holds ${[...new Set(shells)].join('; ')} `
+                        + '(a window that cuts the shell counts fewer: say so if that window was meant).'
+                }];
+            }
         }
     }
     return [];
@@ -260,7 +388,9 @@ export const auditAnswer = (text, { facts = [], context = null } = {}) => {
         ...convergenceRule(text, facts, context),
         ...symmetryRules(text, facts, context),
         ...directionRule(text, facts),
-        ...superstructureRule(text, facts)
+        ...superstructureRule(text, facts),
+        ...clusterRule(text, facts),
+        ...coordinationRule(text, facts)
     ];
 };
 

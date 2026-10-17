@@ -408,6 +408,18 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
                 + `the counts spread from ${present[0]} to ${present.at(-1)}. The window cuts through a coordination shell.`;
         }
     }
+    // For the coordination answer check (review L5): the A–B count in this
+    // window, and whether it is the whole shell or a window the user chose.
+    const facts = {
+        coordination: {
+            centre: b,
+            partner: a,
+            window: payload.bond12 ?? null,
+            cn: round(meanCoordination),
+            whole_shell: !cutText,
+            confirmed: windowConfirmed
+        }
+    };
     if (cutText && !windowConfirmed) {
         // Refused: keep what shows the cut, never the angles.
         ['mean_deg', 'sd_deg', 'modes', 'histogram_10deg', 'histogram_10deg_sin_corrected'].forEach((key) => { delete data[key]; });
@@ -417,7 +429,7 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
             text: `Refused: ${cutText} Use the whole shell (find_gr_peaks' first_shell.window_A). If the user wants this window, `
                 + 'ask them (ask_user) and call again with window_confirmed: true.'
         });
-        return { data, checks };
+        return { data, checks, facts };
     }
     if (cutText) checks.push({ level: 'warn', text: `${cutText} Kept: the user chose this window; say that its angles are of a partial shell.` });
     const cut = Boolean(cutText);
@@ -442,7 +454,7 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
                 + 'at 90°. Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.'
         });
     }
-    return { data, checks };
+    return { data, checks, facts };
 };
 
 // --- analyze_clusters ------------------------------------------------------------
@@ -668,8 +680,11 @@ export const summarizeClusters = (payload, { siteRows = null } = {}) => {
                     + `atoms (breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}) — a collective size fluctuation, `
                     + 'not a shape distortion.'
                 : `The cluster size (mean edge) fluctuates ${Math.round(-breathing.change * 100)} % less than for independent atoms `
-                    + `(breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z}): the bonds are stiffer than independent `
-                    + 'atoms make them — the atoms move together.'
+                    + `(breathing sd ${breathing.obs} vs ${breathing.null} Å, z = ${breathing.z})`
+                    + (splitSites
+                        ? ': the split sites\' positions combine in a pattern that keeps the size (as a Jahn–Teller distortion does), '
+                            + 'not stiff bonds.'
+                        : ': the bonds are stiffer than independent atoms make them — the atoms move together.')
         });
     }
     if (trigonalLean) {

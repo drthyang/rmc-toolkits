@@ -1275,7 +1275,10 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 `data` and `checks` (kept by the loop, not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point-group facts, `analyze_displacement_directions`
 `{subject, significant (peak ≥ 3σ), anisotropic (map ≥ 3σ), peak_sigma, map_sigma}` (until the 2026-10-14 review's L3, `significant` also counted the map test, which any thermal ellipsoid passes), `analyze_modulations`
-`{elements, ordered: [{element, q}]}`. The run context adds the
+`{elements, ordered: [{element, q}], general: [{element, q}]}`, `analyze_clusters`
+`{element, members, window, distorted, static, breathing, rigid, split, families}`,
+`compute_bond_angles` and `find_gr_peaks` the whole-shell or chosen-window counts
+`{centre, partner, window, cn, whole_shell, confirmed}` (review L5). The run context adds the
 watchdog's status and every ladder group (`contextAuditFacts`). When the model answers,
 `auditAnswer(text)` splits it into sentences and clauses (a new clause at `;`, `:` and before
 "but", "while", "whereas", "unlike", "although", "though", "however") and looks for positive
@@ -1302,10 +1305,27 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
 - *polar:* "polar" (not "non-polar", "nonpolar", "polar plot / coordinates / angle") in a clause
   whose named groups are all non-polar, read as for chirality (the local-symmetry skill's rule);
 - *direction:* "preferred (preferential) direction (orientation, axis)" when the question's
-  directions analyses found none at ≥ 3σ;
-- *superstructure:* "superstructure", "cell doubling", "doubles the cell", "zone-boundary order
-  (modulation, mode, distortion)", "ordered … displacements at q" or "commensurate modulation" when
-  every `analyze_modulations` of the question found no ordered point.
+  directions analyses found no peak at ≥ 3σ (a significant map test alone is anisotropy: L3);
+- *superstructure:* "cell doubling", "doubles the cell", "zone-boundary order (modulation, mode,
+  distortion)" or "commensurate modulation" when no `analyze_modulations` of the question found an
+  ordered zone-boundary point; "superstructure", "supercell order", "ordered … displacements at q"
+  or "incommensurate order (modulation)" when none found order at a zone-boundary point or a
+  general wavevector;
+- *cluster* (review L5): "distorted clusters / tetrahedra / trimers / dimers / triangles /
+  octahedra / polyhedra", "… are (adverb) distorted / deformed" (no negation in the adverb slot) or
+  "cluster distortion"; "breathe / breathing"; "rigid", "move as (rigid) units / bodies" — checked
+  against the `analyze_clusters` facts of the element the clause or sentence names (as a symbol or a
+  formula, Mo or Mo₃), or of every analysis for a clause that says "cluster(s)" and names none; it
+  fires when every one of them found otherwise (distorted: no shape distortion, no pattern, no split
+  sites, a regular average cluster; breathing; rigid). A polyhedron word with neither the element
+  nor "cluster" may be about another polyhedron (TaSe₆ octahedra beside Ta₄ clusters) and is left;
+- *coordination* (review L5): "(n)-(fold-)coordinate(d)", "coordination (number) (of) n", "CN n",
+  "tetrahedral / octahedral / square-planar / cubic coordination" (4, 6, 4, 8) for the element
+  nearest the claim in its clause (the partner, when the clause names one, narrows the counts):
+  it fires when every whole-shell count of that element (`find_gr_peaks`' first shell both ways,
+  `compute_bond_angles` in a window that does not cut the shell) differs by more than half an atom
+  and no window the user chose gave n. A clause about part of the shell — the first peak, the short
+  bonds, a window in Å — is not a claim about the whole.
 
 The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show under the answer.
 `lowerOutcome` then replaces a verdict of *achieved* or *partial* (or none) by **not verified**

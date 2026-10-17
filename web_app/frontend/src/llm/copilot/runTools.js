@@ -283,6 +283,15 @@ const grPeaksTool = (plotFiles, context, structure, cardIds) => {
                         + '.'
                 });
             }
+            // For the coordination answer check: the whole first shell's count,
+            // each way (B around A, and A around B for a mixed pair).
+            if (shell?.boundaryR != null && Number.isFinite(shell.cn)) {
+                const window = data.first_shell.window_A;
+                const counts = [{ centre: a, partner: b, window, cn: roundSig(shell.cn), whole_shell: true, confirmed: false }];
+                const reverse = data.first_shell.cn[`${a}_per_${b}`];
+                if (a !== b && Number.isFinite(reverse)) counts.push({ centre: b, partner: a, window, cn: reverse, whole_shell: true, confirmed: false });
+                return { data, checks, facts: { coordination: counts } };
+            }
             return { data, checks };
         }
     };

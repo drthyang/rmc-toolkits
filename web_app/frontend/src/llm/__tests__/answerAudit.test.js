@@ -231,3 +231,63 @@ describe('the polar check (local-symmetry skill) and the superstructure check (v
         expect(rules('Ti forms a superstructure.', {})).toEqual([]);
     });
 });
+
+describe('cluster and coordination claims (review L5)', () => {
+    const breathing = { facts: [{ cluster: { element: 'Mo', members: 3, distorted: false, static: false, breathing: true, rigid: false, split: false } }] };
+    const jt = { facts: [{ cluster: { element: 'F', members: 6, distorted: true, static: false, breathing: false, rigid: false, split: true } }] };
+
+    it('flags a cluster distortion, breathing or rigidity every analysis of that element contradicts', () => {
+        expect(rules('The Mo3 triangles are distorted beyond thermal motion.', breathing)).toEqual(['cluster']);
+        expect(rules('The Mo clusters move as rigid units.', breathing)).toEqual(['cluster']);
+        expect(auditAnswer('The Mo3 triangles are distorted.', breathing)[0].text).toMatch(/^The answer says the Mo3 clusters are distorted, but analyze_clusters found no shape distortion/);
+        const rigidDimers = { facts: [{ cluster: { element: 'V', members: 2, distorted: false, static: false, breathing: false, rigid: true, split: false } }] };
+        expect(rules('The V2 dimers breathe.', rigidDimers)).toEqual(['cluster']);
+    });
+
+    it('stays quiet on what an analysis found, a negation, split sites, and a polyhedron of another element', () => {
+        for (const text of [
+            'The Mo3 clusters breathe: their size fluctuates collectively.',
+            'The Mo3 triangles are not distorted; their size fluctuates.',
+            'The TaSe6 octahedra are distorted.',
+            'I checked whether the Mo3 clusters are distorted.'
+        ]) {
+            expect(rules(text, breathing)).toEqual([]);
+        }
+        expect(rules('The F6 octahedra are distorted (Jahn–Teller).', jt)).toEqual([]);
+        expect(rules('The Mo3 clusters are distorted.', {})).toEqual([]);
+    });
+
+    const shell = { facts: [{ coordination: [
+        { centre: 'Cu', partner: 'F', window: [1.7, 2.52], cn: 6, whole_shell: true, confirmed: false },
+        { centre: 'F', partner: 'Cu', window: [1.7, 2.52], cn: 1, whole_shell: true, confirmed: false }
+    ] }] };
+
+    it('flags a coordination number the whole first shell contradicts', () => {
+        expect(rules('Cu is four-coordinated (square planar).', shell)).toEqual(['coordination']);
+        expect(rules('Each Cu has CN 4.', shell)).toEqual(['coordination']);
+        expect(rules('Cu sits in a square-planar coordination.', shell)).toEqual(['coordination']);
+        expect(auditAnswer('Cu is 4-coordinated.', shell)[0].text).toMatch(/^The answer gives Cu a coordination of 4, but its whole first shell holds 6 F per Cu in 1\.7–2\.52 Å/);
+    });
+
+    it('stays quiet on the right count, a partial shell, a hypothetical, and a window the user chose', () => {
+        for (const text of [
+            'Cu is six-coordinated by F.',
+            'Cu has an octahedral coordination with 4 short and 2 long bonds.',
+            'Within the first peak, Cu is four-coordinated.',
+            'In 1.7–2.1 Å Cu is four-coordinated.',
+            'Cu would be four-coordinated if only the short bonds counted.',
+            'The coordination number of Cu is not 4.'
+        ]) {
+            expect(rules(text, shell)).toEqual([]);
+        }
+        const chosen = { facts: [...shell.facts, { coordination: { centre: 'Cu', partner: 'F', window: [1.7, 2.1], cn: 4, whole_shell: false, confirmed: true } }] };
+        expect(rules('Cu is four-coordinated.', chosen)).toEqual([]);
+        expect(rules('Cu is four-coordinated.', {})).toEqual([]);
+    });
+
+    it('a general wavevector\'s order allows "superstructure", never "cell doubling"', () => {
+        const general = { facts: [{ modulation: { elements: ['Ti'], ordered: [], general: [{ element: 'Ti', q: [0.375, 0, 0] }] } }] };
+        expect(rules('Ti shows an incommensurate superstructure.', general)).toEqual([]);
+        expect(rules('Ti order doubles the cell along a.', general)).toEqual(['superstructure']);
+    });
+});

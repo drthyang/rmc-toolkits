@@ -151,7 +151,7 @@ export const scoreVerdict = (truth, verdict) => {
     const contradictions = [];
     spurious.forEach((claim) => contradictions.push({
         what: `spurious ${claim.kind}${claim.element ? ` (${claim.element})` : ''}`,
-        rule: { modulation: 'superstructure', cluster_distortion: 'cluster', cluster_breathing: 'cluster', off_centre: 'direction' }[claim.kind] || 'none'
+        rule: { modulation: 'superstructure', cluster_distortion: 'cluster', cluster_breathing: 'cluster', rigid_cluster: 'cluster', off_centre: 'direction' }[claim.kind] || 'none'
     }));
     if (symmetry?.chiral === 'wrong' && verdict.chiral === true) contradictions.push({ what: 'called chiral', rule: 'chirality' });
     if (symmetry?.centrosymmetric === 'wrong' && verdict.centrosymmetric === true) contradictions.push({ what: 'called centrosymmetric', rule: 'centrosymmetry' });

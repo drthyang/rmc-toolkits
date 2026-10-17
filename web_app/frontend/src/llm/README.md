@@ -334,7 +334,9 @@ clause, for a clear positive claim they contradict:
 | inversion lost | an inversion centre "lost" or "broken" when no group it could be lost from has one: neither the groups the answer names nor the parent (the context's average group, or the ladder's top) |
 | polar | a group called polar whose point group is not polar |
 | direction | a "preferred direction" when no directions analysis of the question found a peak at ≥ 3σ (the whole-map test alone is anisotropy, which thermal ellipsoids show too: review L3) |
-| superstructure | a superstructure, cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered point |
+| superstructure | a cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered zone-boundary point; a superstructure or incommensurate order when none found order at a zone-boundary point or a general wavevector |
+| cluster | clusters of an element called distorted, breathing or rigid when every `analyze_clusters` of that element (or of every element, for "the clusters") found otherwise: distorted needs a shape distortion, a pattern (axis family, trigonality), split sites or a distorted average cluster; a polyhedron word naming neither the element nor "cluster" is left alone (review L5) |
+| coordination | a coordination number for an element ("four-coordinated", "CN 4", "square-planar coordination") that every whole-shell count of it contradicts by more than half an atom (`find_gr_peaks`' first shell, `compute_bond_angles` in a whole shell), unless a window the user chose gave it; a clause about part of the shell (the first peak, the short bonds, a window in Å) is not a claim about the whole (review L5) |
 
 A negated claim ("has not converged", "achiral", "no preferred direction"), a question, a
 hypothetical or conditional mention ("to check whether it has converged", "until χ² plateaus", "I
