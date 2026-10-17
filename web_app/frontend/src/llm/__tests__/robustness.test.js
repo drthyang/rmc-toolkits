@@ -234,7 +234,8 @@ describe('runCopilotTurn on a local model', () => {
         expect(requests[3].toolChoice).toBe('none');
         expect(requests[3].messages.at(-1).content).toMatch(/added nothing new/);
         expect(events.filter((event) => event.type === 'tool_end')).toHaveLength(3);
-        expect(events.at(-1)).toMatchObject({ stoppedBy: 'no_progress', outcome: { status: 'achieved' } });
+        // Cut short by the loop guard: partial, whatever the model said (THY-18).
+        expect(events.at(-1)).toMatchObject({ stoppedBy: 'no_progress', outcome: { status: 'partial', claimed: 'achieved' } });
     });
 
     it('ends a model that repeats a window the user already settled (review 2026-10-12 #4 with the loop guard)', async () => {

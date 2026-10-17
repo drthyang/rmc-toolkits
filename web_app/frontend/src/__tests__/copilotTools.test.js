@@ -140,8 +140,10 @@ describe('Copilot tools on the demo run', () => {
         expect(data.local.ladder_width_A.change).toBeLessThan(-0.1);
         expect(checks.find((check) => /LESS distorted/.test(check.text)).level).toBe('ok');
         expect(checks.some((check) => /compressed along <111>/.test(check.text))).toBe(true);
-        // Fits the per-result budget the agent loop gives a tool.
+        // Fits, with its checks and ref, the result budget the tool asks for:
+        // cut to text, its numbers could not be quoted by reference (THY-18).
         expect(JSON.stringify(data).length).toBeLessThan(3000);
+        expect(JSON.stringify({ ref: 'r1', checks, data }).length).toBeLessThan(tools.analyze_clusters.resultBudget);
         expect(tools.analyze_clusters.label({ element: 'Ta', r_min: 2.65, r_max: 3.33 })).toBe('Clusters Ta · 2.65–3.33 Å');
         await expect(tools.analyze_clusters.run({ element: 'Ta', r_min: 3.3, r_max: 2.6 })).rejects.toThrow('r_min must be below r_max');
     });

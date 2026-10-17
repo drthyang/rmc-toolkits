@@ -475,6 +475,8 @@ export const AXIS_ENHANCEMENT = 1.1;
 export const STATIC_SPREAD_SE = 5;
 // Template bonds outside the window, or contacts linking clusters, per atom.
 export const CLUSTER_OUTLIER_FRACTION = 0.05;
+// analyze_clusters' own result budget (characters of the tool message).
+export const CLUSTER_RESULT_BUDGET = 4500;
 
 const significant = (z, change, effect) => (
     Number.isFinite(z) && Math.abs(z) >= CLUSTER_Z && Number.isFinite(change) && Math.abs(change) >= effect
@@ -1262,6 +1264,10 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             label: ({ element, r_min: lo, r_max: hi }) => (
                 `Clusters ${element || ''}${Number.isFinite(lo) && Number.isFinite(hi) ? ` · ${lo}–${hi} Å` : ''}`.trim()
             ),
+            // The shape and size rows with their checks run to ~3.4k characters
+            // (the demo's Ta4): within the default 3k they reached the model as
+            // a cut-off text, whose numbers no reference could name (THY-18).
+            resultBudget: CLUSTER_RESULT_BUDGET,
             run: async ({ element, r_min: rMin, r_max: rMax }, { signal } = {}) => {
                 if (rMin >= rMax) throw new Error('r_min must be below r_max');
                 // The site rows tell split member sites; the engine's parse

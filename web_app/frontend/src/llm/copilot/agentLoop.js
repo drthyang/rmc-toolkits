@@ -2,10 +2,12 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { toolBudgetNote } from '../prompts/copilot';
-import { auditAnswer, lowerOutcome } from './answerAudit';
+import { auditAnswer } from './answerAudit';
 import { ASK_USER, MAX_QUESTIONS, answerResult } from './askUser';
 import { resolveClarification } from './clarify';
 import { parseOutcome } from './outcome';
+import { createReferenceStore, fillReferences } from './references';
+import { computeOutcome } from './verdict';
 import { keyNumbers, repeatsItself, textToolCalls, withDeadlines } from './robustness';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
@@ -28,10 +30,16 @@ import {
 //   { type: 'tool_start', id, name, label, args, page, cards, interactive }
 //   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
 //   { type: 'tools_unsupported', error }           retried without tools
-//   { type: 'done', text, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty', cut, audit }
+//   { type: 'gate', id, what, missing, notice }    the evidence gate sent the answer back
+//                                                  (a 'retract' withdraws its text)
+//   { type: 'done', text, rawText, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty', cut, audit,
+//     references, gates }
+//                                                  text: the answer with its {{references}} filled in
+//                                                  (rawText: as the model wrote it)
 //                                                  cut: the last reply stopped at the length limit
-//                                                  audit: findings on the answer (answerAudit.js);
-//                                                  any finding lowers the outcome to 'not verified'
+//                                                  audit: findings on the answer (answer checks,
+//                                                  unfilled references, missing evidence)
+//                                                  outcome: computed from the checks (verdict.js)
 // Errors (HTTP, network) and aborts are thrown to the caller.
 //
 // Budgets: at most `maxRounds` model requests with tool calls and
@@ -53,6 +61,16 @@ import {
 // before an analysis runs in a window that cuts a shell (`beforeCall`: it runs
 // in the window the user picks). These questions are ask_user steps
 // (`app: true`) and count toward `maxQuestions`.
+//
+// Evidence, numbers and the verdict (THY-18). Every tool message carries a
+// `ref` (r1, r2, …) the model quotes values by ({{r2.peak.significance_sigma}},
+// references.js); the answer is shown, recorded and checked with them filled
+// in from what the tools returned. `evidence` (evidence.js buildEvidenceGate)
+// sends an answer that concludes something without its analysis back to the
+// model, once per rule and at most `maxEvidenceGates` times a turn, when tools
+// can still run; evidence still missing at the end is a finding. The Outcome
+// is computed from the steps' checks and the findings (verdict.js); the
+// model's Outcome line only explains it.
 //
 // On a local model (robustness.js): a model request that sends nothing for
 // `stallMs`, or runs past `requestMaxMs`, is cancelled and explained; a reply
@@ -76,7 +94,8 @@ export const DEFAULT_LIMITS = {
     maxQuestions: MAX_QUESTIONS,
     stallMs: 180000,
     requestMaxMs: 600000,
-    maxNoProgressRounds: 2
+    maxNoProgressRounds: 2,
+    maxEvidenceGates: 2
 };
 
 // A 4xx saying the model or server cannot take a `tools` field (Ollama:
@@ -94,11 +113,13 @@ export const assistantContent = (text) => (typeof text === 'string' && text.trim
 
 const compactToolMessage = (content) => {
     try {
-        const { checks, error, data, compacted } = JSON.parse(content);
+        const { ref, checks, error, data, compacted } = JSON.parse(content);
         // Already compacted: compacting again would lose its numbers.
         if (compacted) return content;
         const key = error ? null : keyNumbers(data);
         return JSON.stringify({
+            // The ref still resolves: the app keeps the result it sent.
+            ...(ref ? { ref } : {}),
             compacted: `this earlier result was shortened to fit the context; its checks${key ? ' and headline numbers' : ''} are kept`,
             ...(error ? { error } : {}),
             ...(checks ? { checks } : {}),
@@ -167,8 +188,9 @@ const noProgressNote = (rounds) => ({
 // the checks, or the error. Checks are never trimmed: they are the verdict.
 // Returns the message text and the fitted data, which the step shows as the
 // result sent to the model.
-const toolMessageContent = ({ data, checks, error, note }, budget) => {
+const toolMessageContent = ({ data, checks, error, note }, budget, ref = null) => {
     const message = {};
+    if (ref && !error) message.ref = ref;
     if (error) message.error = error;
     if (note) message.note = note;
     if (checks?.length) message.checks = checks;
@@ -192,12 +214,23 @@ export async function* runCopilotTurn({
     // (answerAudit.js contextAuditFacts).
     auditContext = null,
     // The Workbench's own questions (clarify.js buildClarifier).
-    clarifier = null
+    clarifier = null,
+    // The evidence gate (evidence.js buildEvidenceGate), or null for none.
+    evidence = null,
+    // The run context, for {{ctx.…}} references.
+    referenceContext = null
 }) {
     const {
         maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions,
-        stallMs, requestMaxMs, maxNoProgressRounds
+        stallMs, requestMaxMs, maxNoProgressRounds, maxEvidenceGates
     } = { ...DEFAULT_LIMITS, ...limits };
+    // The turn's referable results, its steps, and the evidence gate's state.
+    const references = createReferenceStore({ context: referenceContext });
+    const stepLog = [];
+    const gatesFired = new Set();
+    const gates = [];
+    const ranCalls = () => stepLog.filter((step) => !step.error && !step.interactive && !step.reading)
+        .map((step) => ({ name: step.name, args: step.args }));
     let noProgressRounds = 0;
     let stalled = false;
     let emptyNudges = 0;
@@ -393,11 +426,51 @@ export async function* runCopilotTurn({
                 }
                 return;
             }
-            // A computed contradiction outranks the model's own verdict.
-            const findings = audit(text);
-            const outcome = lowerOutcome(parseOutcome(text), findings, text);
+            // The evidence gate: a conclusion whose analysis did not run goes
+            // back to the model, once per rule, while tools can still run.
+            const gate = evidence && useTools && !finalRound && gates.length < maxEvidenceGates
+                ? evidence.check(text, { ran: ranCalls(), fired: gatesFired })
+                : null;
+            if (gate) {
+                gatesFired.add(gate.id);
+                gates.push({ round: rounds, id: gate.id, missing: gate.missing });
+                yield { type: 'gate', id: gate.id, what: gate.what, missing: gate.missing, notice: gate.notice };
+                yield { type: 'retract' };
+                messages.push({ role: 'assistant', content: assistantContent(text) });
+                messages.push({ role: 'user', content: gate.nudge });
+                continue;
+            }
+            // Numbers by reference, then the checks on the filled answer, then
+            // the verdict from the checks: the model's own grade never decides.
+            const filled = fillReferences(text, references);
+            const answer = filled.text;
+            const findings = [
+                ...audit(answer),
+                ...(filled.unknown.length ? [{
+                    rule: 'reference',
+                    text: `The answer cites ${filled.unknown.map((name) => `{{${name}}}`).join(', ')}, which `
+                        + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: those numbers are missing.`
+                }] : []),
+                ...(evidence && useTools ? evidence.unmet(answer, ranCalls()).map((rule) => ({
+                    rule: 'evidence',
+                    id: rule.id,
+                    missing: rule.missing,
+                    text: `The answer concludes ${rule.what}, but ${rule.missing.join(', ')} did not run in this question.`
+                })) : [])
+            ];
+            const stoppedBy = finalRound ? (stalled ? 'no_progress' : 'max_rounds') : 'answer';
+            const outcome = computeOutcome({ text: answer, steps: stepLog, findings, stoppedBy, modelOutcome: parseOutcome(answer) });
             yield {
-                type: 'done', text, outcome, rounds, stoppedBy: finalRound ? (stalled ? 'no_progress' : 'max_rounds') : 'answer', cut, audit: findings
+                type: 'done',
+                text: answer,
+                ...(answer !== text ? { rawText: text } : {}),
+                outcome,
+                rounds,
+                stoppedBy,
+                cut,
+                audit: findings,
+                references: { written: filled.written, filled: filled.filled, unknown: filled.unknown },
+                gates
             };
             return;
         }
@@ -521,7 +594,15 @@ export async function* runCopilotTurn({
             if (result.facts && !result.error) facts.push(result.facts);
             if (!tool?.keep) toolMessages.push(messages.length);
             const budget = Number.isFinite(tool?.resultBudget) && tool.resultBudget > 0 ? tool.resultBudget : resultCharBudget;
-            const sent = toolMessageContent({ ...result, note }, budget);
+            // A result the model can quote by reference: its ref, kept with
+            // the data it was sent.
+            const ref = result.error ? null : `r${references.size() + 1}`;
+            const sent = toolMessageContent({ ...result, note }, budget, ref);
+            if (ref) references.put(ref, sent.data);
+            stepLog.push({
+                name: call.name, args: result.args, status: stepStatus(result), error: result.error || null,
+                interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), ref
+            });
             messages.push({ role: 'tool', tool_call_id: call.id, content: sent.content });
             keepWithinTurnBudget(roundStart);
             yield {
@@ -536,6 +617,7 @@ export async function* runCopilotTurn({
                 error: result.error,
                 ms: result.ms,
                 cached,
+                ref,
                 pageParams: result.error ? null : pageParamsFor(tool, result.args)
             };
         }

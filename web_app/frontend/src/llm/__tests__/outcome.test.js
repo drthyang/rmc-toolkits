@@ -46,9 +46,17 @@ describe('parseOutcome', () => {
         expect(parsed.body).toBe('Outcome: partial — draft\nmore');
     });
 
-    it('returns null without a verdict or for an unknown status', () => {
+    it('reads a line with no status word as the explanation (the verdict is the app\'s: THY-18)', () => {
+        expect(parseOutcome('Answer.\n\nOutcome: the split site is ordered at (0, 0, ½), from analyze_modulations.')).toEqual({
+            status: null, note: 'the split site is ordered at (0, 0, ½), from analyze_modulations.', body: 'Answer.'
+        });
+        expect(parseOutcome('x\n**Outcome:** — no partials file, so no shell.')).toMatchObject({ status: null, note: 'no partials file, so no shell.' });
+        // A word that is no status stays in the sentence.
+        expect(parseOutcome('Outcome: excellent — hm')).toMatchObject({ status: null, note: 'excellent — hm' });
+    });
+
+    it('returns null without an Outcome line', () => {
         expect(parseOutcome('No verdict here.')).toBeNull();
-        expect(parseOutcome('Outcome: excellent — hm')).toBeNull();
         expect(parseOutcome('The outcome: achieved is in the text')).toBeNull();
         expect(parseOutcome('')).toBeNull();
         expect(parseOutcome(null)).toBeNull();

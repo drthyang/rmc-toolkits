@@ -87,6 +87,9 @@ export const applyTurnEvent = (turn, event, now = 0) => {
             };
         case 'tools_unsupported':
             return { ...turn, toolsUnsupported: true };
+        case 'gate':
+            // The evidence gate sent the answer back (a 'retract' follows).
+            return { ...turn, gates: [...(turn.gates || []), { id: event.id, notice: event.notice }] };
         case 'done': {
             // The verdict line is shown as the chip, not repeated in the text.
             const items = event.outcome
@@ -101,6 +104,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                 cut: Boolean(event.cut),
                 reason: event.reason || null,
                 audit: Array.isArray(event.audit) ? event.audit : [],
+                references: event.references ?? null,
                 streaming: false
             };
         }

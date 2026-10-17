@@ -74,6 +74,17 @@ const positiveMatches = (clause, pattern, { state = false } = {}) => {
     return out;
 };
 
+/**
+ * Whether a text asserts `pattern` somewhere: a positive match in one of its
+ * clauses, read as the checks read claims (not negated, not hypothetical, not
+ * a question, not a JSON key). Group 1 of the pattern is the character before
+ * the claim. `within(sentence)`, when given, keeps only the sentences it
+ * accepts. Shared with the evidence gate (evidence.js).
+ */
+export const asserts = (text, pattern, { within = null } = {}) => sentencesOf(text)
+    .some((sentence) => (!within || within(sentence))
+        && clausesOf(sentence).some((clause) => positiveMatches(clause, pattern).length > 0));
+
 // --- space-group symbols ----------------------------------------------------------
 
 const SUBSCRIPTS = { '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9' };
@@ -215,7 +226,7 @@ const symmetryRules = (text, facts, context) => {
     return found;
 };
 
-const PREFERRED = /(^|[^\w-])(preferred|preferential)\s+(?:displacement\s+)?(direction|orientation|axis)\b/gi;
+export const PREFERRED = /(^|[^\w-])(preferred|preferential)\s+(?:displacement\s+)?(direction|orientation|axis)\b/gi;
 
 const directionRule = (text, facts) => {
     const analyses = facts.map((fact) => fact.direction).filter(Boolean);
@@ -238,8 +249,8 @@ const directionRule = (text, facts) => {
 // A claimed superstructure: cell doubling or ordered zone-boundary
 // displacements (needs a zone-boundary point), or order between cells in
 // general (a zone-boundary point or a general wavevector will do).
-const CELL_DOUBLING = /(^|[^\w-])(cell[- ]doubling|doubl(?:es|ed|ing) (?:of )?the (?:unit )?cell|zone[- ]boundary (?:order|modulation|mode|distortion)|commensurate modulation)\b/gi;
-const SUPERSTRUCTURE = /(^|[^\w-])(superstructure|supercell order|ordered (?:\w+ )?displacements? at q|incommensurate (?:order|modulation))\b/gi;
+export const CELL_DOUBLING = /(^|[^\w-])(cell[- ]doubling|doubl(?:es|ed|ing) (?:of )?the (?:unit )?cell|zone[- ]boundary (?:order|modulation|mode|distortion)|commensurate modulation)\b/gi;
+export const SUPERSTRUCTURE = /(^|[^\w-])(superstructure|supercell order|ordered (?:\w+ )?displacements? at q|incommensurate (?:order|modulation))\b/gi;
 
 const superstructureRule = (text, facts) => {
     const analyses = facts.map((fact) => fact.modulation).filter(Boolean);
@@ -274,10 +285,10 @@ const namesElement = (text, element) => elementPattern(element).test(text);
 
 const CLUSTER_NOUN = '(?:clusters?|tetrahedr(?:on|a)|trimers?|dimers?|triangles?|octahedr(?:on|a)|polyhedr(?:on|a))';
 // An adverb may stand between the verb and "distorted", but not a negation.
-const DISTORTED = new RegExp(`(^|[^\\w-])(distorted\\s+(?:\\w+\\s+)?${CLUSTER_NOUN}|${CLUSTER_NOUN}\\s+(?:are|is|appear|look|seem)\\s+`
+export const DISTORTED = new RegExp(`(^|[^\\w-])(distorted\\s+(?:\\w+\\s+)?${CLUSTER_NOUN}|${CLUSTER_NOUN}\\s+(?:are|is|appear|look|seem)\\s+`
     + '(?:(?!not\\b|never\\b|hardly\\b|barely\\b)\\w+\\s+)?(?:distorted|deformed)|cluster\\s+distortions?)\\b', 'gi');
-const BREATHING = /(^|[^\w-])(breath(?:e|es|ing))\b/gi;
-const RIGID = /(^|[^\w-])(rigid(?:ly)?\b|move(?:s|d)?\s+(?:together\s+)?as\s+(?:a\s+)?(?:rigid\s+)?(?:units?|bod(?:y|ies))\b)/gi;
+export const BREATHING = /(^|[^\w-])(breath(?:e|es|ing))\b/gi;
+export const RIGID = /(^|[^\w-])(rigid(?:ly)?\b|move(?:s|d)?\s+(?:together\s+)?as\s+(?:a\s+)?(?:rigid\s+)?(?:units?|bod(?:y|ies))\b)/gi;
 const CLUSTER_CLAIMS = [
     { key: 'distorted', pattern: DISTORTED, holds: (fact) => fact.distorted || fact.split || fact.static, says: 'are distorted', found: 'no shape distortion beyond independent atoms, no split sites and a regular average cluster' },
     { key: 'breathing', pattern: BREATHING, holds: (fact) => fact.breathing, says: 'breathe', found: 'no size fluctuation beyond independent atoms' },
@@ -315,11 +326,11 @@ const clusterRule = (text, facts) => {
 
 const WORD_NUMBER = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
 const COUNT = '(\\d+(?:\\.\\d+)?|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)';
-const CN_CLAIMS = [
+export const CN_CLAIMS = [
     new RegExp(`(^|[^\\w.-])${COUNT}[- ]?(?:fold[- ]?)?coordinat(?:e|ed|ion)\\b`, 'gi'),
     new RegExp(`(^|[^\\w-])(?:coordination(?:\\s+number)?|CN)\\s*(?:of|is|=|equals?|:)?\\s*${COUNT}(?!\\d|\\.\\d)`, 'gi')
 ];
-const POLYHEDRON_CN = [
+export const POLYHEDRON_CN = [
     [/(^|[^\w-])(tetrahedral(?:ly)?)\s+(?:\w+\s+)?coordinat/gi, 4],
     [/(^|[^\w-])(octahedral(?:ly)?)\s+(?:\w+\s+)?coordinat/gi, 6],
     [/(^|[^\w-])(square[- ]planar)\s+(?:\w+\s+)?coordinat/gi, 4],
@@ -392,25 +403,6 @@ export const auditAnswer = (text, { facts = [], context = null } = {}) => {
         ...clusterRule(text, facts),
         ...coordinationRule(text, facts)
     ];
-};
-
-/**
- * The verdict after the checks: a finding contradicts the answer, so a
- * self-assessed 'achieved' or 'partial' (or no verdict at all) becomes
- * 'not verified', keeping what the model claimed; 'not achieved' is already
- * the lowest and stays. The model's own verdict never overrides a computed
- * contradiction. `outcome` is parseOutcome's `{ status, note, body }` or null.
- */
-export const lowerOutcome = (outcome, findings, text = '') => {
-    if (!Array.isArray(findings) || !findings.length) return outcome;
-    if (outcome?.status === 'not achieved') return outcome;
-    return {
-        status: 'not verified',
-        claimed: outcome?.status ?? null,
-        note: `${findings.length === 1 ? 'a check below contradicts' : `${findings.length} checks below contradict`} the answer`
-            + `${outcome?.status ? ` (the model said "${outcome.status}"${outcome.note ? `: ${outcome.note}` : ''})` : ''}.`,
-        body: outcome?.body ?? text
-    };
 };
 
 /**

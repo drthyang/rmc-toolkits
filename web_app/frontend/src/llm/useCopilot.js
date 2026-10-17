@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { runCopilotTurn } from './copilot/agentLoop';
 import { applyTurnEvent, closeTurn, newAssistantTurn } from './copilot/turnState';
 import { contextAuditFacts } from './copilot/answerAudit';
+import { buildEvidenceGate } from './copilot/evidence';
 import { ASK_USER } from './copilot/askUser';
 import { READ_SKILL, skillIndex } from './copilot/skills';
 import { compactAnswer, explainModelError } from './copilot/robustness';
@@ -166,7 +167,15 @@ export const useCopilot = ({
                 noToolsSystemPrompt: COPILOT_PROMPT_NO_TOOLS,
                 toolContext: { ...(focus ? { focus } : {}), askUser },
                 auditContext: contextAuditFacts(context, pointGroupFacts),
-                clarifier
+                clarifier,
+                // A conclusion needs its analysis in this turn (THY-18): the
+                // gate reads the run's shells from the clarifier's catalog.
+                evidence: toolsOn ? buildEvidenceGate({
+                    catalog: clarifier?.catalog ?? null,
+                    offered: tools.map((tool) => tool.name),
+                    elements: Object.keys(context?.structure?.elements || {})
+                }) : null,
+                referenceContext: context
             })) {
                 turn = applyTurnEvent(turn, event, now());
                 if (event.type === 'tool_start' && event.cards?.length) focus?.running(event.id, event.cards);

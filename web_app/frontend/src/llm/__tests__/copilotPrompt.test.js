@@ -45,9 +45,15 @@ describe('the Copilot prompt', () => {
     it('extends the shared domain rules with the tool rules and the Outcome line', () => {
         expect(COPILOT_PROMPT.startsWith(SYSTEM_PROMPT)).toBe(true);
         expect(COPILOT_PROMPT).toContain('checks');
-        expect(COPILOT_PROMPT).toContain('Outcome: achieved|partial|not achieved');
-        expect(COPILOT_PROMPT_NO_TOOLS).toContain('Outcome: achieved|partial|not achieved');
+        // The model explains the Outcome; the app grades it (THY-18).
+        expect(COPILOT_PROMPT).toContain('`Outcome: <one sentence>`');
+        expect(COPILOT_PROMPT).toContain('Do not grade your answer');
+        expect(COPILOT_PROMPT_NO_TOOLS).toContain('`Outcome: <one sentence>`');
         expect(COPILOT_PROMPT_NO_TOOLS).not.toContain('tools provided');
+        // Numbers by reference and the evidence gate, with the tools only.
+        expect(COPILOT_PROMPT).toContain('{{r2.peak.significance_sigma}}');
+        expect(COPILOT_PROMPT).toContain('The app sends an answer back when its analysis did not run.');
+        expect(COPILOT_PROMPT_NO_TOOLS).not.toContain('{{r2');
     });
 
     it('with the view tools, asks to point at cards and cite them as card: links', () => {

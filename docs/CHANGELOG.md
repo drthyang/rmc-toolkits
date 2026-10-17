@@ -5,6 +5,23 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Copilot: no conclusion without its evidence; numbers by reference; the verdict computed (THY-18)
+
+- **Evidence gate:** an answer that concludes order between cells, a split site as disorder, a
+  preferred direction, a cluster distortion, a coordination number, a lowering or "no order" must
+  have run, in that question, the analysis that shows it; otherwise the agent loop withdraws it and
+  sends it back once per rule (at most twice a turn) with what to run. It is a check after the
+  answer, since not every model takes a forced tool choice; evidence still missing is a finding.
+- **Numbers by reference:** every tool result carries a `ref`; the model writes
+  `{{r2.peak.significance_sigma}}` and the app fills in the engine's value where the answer is
+  shown, recorded and scored. A reference that names nothing is a finding.
+- **Computed verdict:** the Outcome chip comes from the checks (not verified, not achieved,
+  partial, achieved); the model's Outcome line only explains, and its own grade is kept as
+  `claimed`. `analyze_clusters` gets a 4,500-character result budget so its numbers reach the model
+  whole.
+- The validation runs with all three (protocol 2026-10-17.2) and reports the gate's send-backs, the
+  references and the computed verdict against the score beside the case score.
+
 ### Copilot validation batch 1: the review's tool changes
 
 Every tool change the 2026-10-14 tool and skill review proposed ([copilot-review.md](algorithms/copilot-review.md)),

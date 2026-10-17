@@ -167,10 +167,12 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
                         )}
                     </div>
                 )}
-                {!turn.streaming && (summary || stopNote || turn.toolsUnsupported || turn.cut) && (
+                {!turn.streaming && (summary || stopNote || turn.toolsUnsupported || turn.cut || turn.gates?.length > 0) && (
                     <p className={`llm-turn-footer${turn.cut ? ' is-cut' : ''}`}>
                         {[
                             summary,
+                            // The evidence gate's send-backs (THY-18).
+                            ...(turn.gates || []).map((gate) => gate.notice),
                             turn.toolsUnsupported ? 'this model cannot run analyses — answered from the run summary' : '',
                             cutNote ? 'the reply reached the model\'s length limit and is cut short' : '',
                             turn.stoppedBy !== 'answer' ? stopNote : ''

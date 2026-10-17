@@ -13,6 +13,7 @@ import { plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
 import { runCopilotTurn } from '../llm/copilot/agentLoop';
 import { auditAnswer } from '../llm/copilot/answerAudit';
+import { buildEvidenceGate } from '../llm/copilot/evidence';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { handlePcaMessage } from '../workers/pcaKdeWorker';
 
@@ -52,7 +53,9 @@ const replay = async (replies, { auditContext = null } = {}) => {
     const { callModel, requests } = scriptedModel([...replies]);
     const events = [];
     for await (const event of runCopilotTurn({
-        callModel, messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Q' }], tools, auditContext
+        callModel, messages: [{ role: 'system', content: 'S' }, { role: 'user', content: 'Q' }], tools, auditContext,
+        // The evidence gate is on, as in the app (THY-18).
+        evidence: buildEvidenceGate({ offered: tools.map((tool) => tool.name) })
     })) events.push(event);
     const steps = events.filter((event) => event.type === 'tool_end');
     const toolMessages = requests.at(-1).filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
