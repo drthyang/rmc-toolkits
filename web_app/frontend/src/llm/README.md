@@ -415,9 +415,10 @@ from the spot check and the review:
 | `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell (fewer than 60 % of the central atoms share the most common count, or most have none; the 60 % is an interview item) and returns the counts that show the cut, not the angles, unless `window_confirmed` — which the Workbench's window question sets when the user keeps their window; the polyhedron reading |
 | `local-symmetry` | the tolerance ladder, what breaks between rungs, the noise floor, point-group facts | the point-group facts and the chirality / centrosymmetry / polar / inversion checks |
 | `displacement-anisotropy` | ellipsoids, kurtosis, preferred directions and their σ, effect sizes | the preferred-direction check; the Workbench's one-site-or-pooled question |
+| `local-order` (validation batch 1) | when to say "no order": every analysis that could show one came back empty | the superstructure, cluster and direction checks |
 
 - **Progressive disclosure** (`copilot/skills.js`). The system prompt lists only each skill's name
-  and description (`skillIndex`, 2,150 characters for the four); the agent reads a skill
+  and description (`skillIndex`, 2,622 characters for the five); the agent reads a skill
   (4,700–5,500 characters each) with `read_skill(name)` and a reference file beside it with
   `read_skill(name, reference)`. `read_skill` has its own result budget (`resultBudget` 9,000) and
   is never compacted later in the question (`keep: true` in the tool contract), so the agent can
