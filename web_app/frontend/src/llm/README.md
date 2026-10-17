@@ -533,8 +533,9 @@ In this repository the host tools live in `src/copilotTools.js`:
 | `analyze_displacement_directions` | the orientation engine with calibrated significances and `[u v w]` (Show in Displacement Directions selects the site and resolution) |
 | `compute_bond_angles` | the triplets engine (Show in Bond Geometry fills the triplet and windows, then computes); the sin θ-corrected histogram, and a whole shell of ~6 or ~4 neighbours read against an ideal octahedron or tetrahedron |
 | `analyze_clusters` | the cluster engine (`workers/clusters.js`, `/api/clusters`): the shape of an element's finite clusters (M₄ tetrahedra, dimers, trimers) against a shuffle null of independent atoms, and the average cluster's own distortion |
-| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show |
+| `analyze_modulations` | the modulation engine (`workers/modulations.js`, `/api/modulations`): each element's displacement power at the zone-boundary points and its strongest modes against the configuration's diffuse background — order that enlarges the cell, which the folded average cannot show, and correlation between cells at a general wavevector (incommensurate or short-range) |
 | `detect_symmetry` | the symmetry finder at any tolerance, without changing the card (browser-loaded runs only), with the point group's facts (inversion, Sohncke, polar) |
+| `measure_symmetry_lowering` | the size and direction of the coherent shift of a symmetry lowering: each average site's distance from the position a parent group puts it at, against the noise floor (browser-loaded runs only) |
 | `orient_3d_view` (view) | turns a 3D view (`src/copilotViewTools.js`): look down `[u v w]` / a, b, c / PC1–3 (c up, or b looking down c), centre or ring sites, select a site, reset |
 | `current_view` (view) | the page on screen, its cards, the highlight, and each 3D view's direction and site |
 

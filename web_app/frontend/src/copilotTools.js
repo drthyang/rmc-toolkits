@@ -19,7 +19,14 @@ import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
 import { describePointGroup, pointGroupFacts } from './llm';
+import { symmetryNoiseFloor } from './llm/context/runContext';
+import { symmetryShifts } from './symmetryShift';
+import { nearestLowIndex } from './viewer3d';
 import { normalQuantile, regularizedGamma } from './workers/orientation';
+
+// A tolerance this factor above the sampling noise floor holds clearly above
+// it (the Workbench's tolerance question uses the same margin, clarify.js).
+export const NOISE_FLOOR_MARGIN = 1.25;
 
 const round = (value, digits = 3) => (
     Number.isFinite(value) ? (value === 0 ? 0 : Number(value.toPrecision(digits))) : null
@@ -754,6 +761,24 @@ export const zoneBoundarySigma = (power, sites, family) => {
 export const LONG_WAVE_RATIO = 5;
 export const LONG_WAVE_Q = 0.25;
 
+/**
+ * The same family-wise significance at a general wavevector (not a
+ * zone-boundary point, not a long wave): there the Fourier sum is complex, so
+ * for independent displacements a site's normalised power is Σ_c w_c χ²₂/2,
+ * and an element's mean over m sites has at least 2m degrees of freedom
+ * (P ≥ χ²_2m / 2m); `family` = the compared modes (one per ±q pair). Order
+ * there is correlation between cells that does not double the cell:
+ * incommensurate, or short-range (the review's L4, approved 2026-10-14).
+ */
+export const generalModeSigma = (power, sites, family) => {
+    if (!(power > 0) || !(sites > 0) || !(family >= 1)) return null;
+    const p = regularizedGamma(sites, sites * power).upper;
+    const familyP = -Math.expm1(family * Math.log1p(-Math.min(p, 1 - 1e-16)));
+    return sigmaOf(familyP);
+};
+const isZoneBoundary = (q) => q.every((value) => Math.abs(value) < 1e-9 || Math.abs(Math.abs(value) - 0.5) < 1e-9);
+const isLongWave = (q) => q.every((value) => Math.abs(value) <= LONG_WAVE_Q + 1e-12);
+
 const qLabel = (q) => `(${q.map((value) => {
     const rounded = Math.round(value * 1000) / 1000;
     return rounded === 0.5 ? '½' : String(rounded + 0);
@@ -766,13 +791,21 @@ export const summarizeModulations = (payload) => {
     const sigmaAt = (entry, point) => (Number.isFinite(point.ratio) && Number.isFinite(entry.medianPower)
         ? zoneBoundarySigma(point.ratio * entry.medianPower, entry.sites, family)
         : null);
+    // The general modes: the compared modes over every tested element.
+    const generalFamily = tested.reduce((sum, entry) => sum + (Number.isFinite(entry.comparedModes) ? entry.comparedModes : 0), 0);
+    const generalSigmaAt = (entry, mode) => (Number.isFinite(mode.ratio) && Number.isFinite(entry.medianPower) && generalFamily > 0
+        && !isZoneBoundary(mode.q) && !isLongWave(mode.q)
+        ? generalModeSigma(mode.ratio * entry.medianPower, entry.sites, generalFamily)
+        : null);
     const data = {
         note: 'zone_boundary rows are [q, ratio, percentile, sigma]: an element\'s displacement power at wavevector q (fractions '
             + 'of the cell\'s reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the '
             + 'share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and '
             + `the calibrated one-sided significance against independent displacements, corrected over all ${family} zone-boundary `
-            + 'points tested (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile]. '
-            + 'A ½ component is order that doubles the cell along that axis.',
+            + 'points tested (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a '
+            + 'general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes), null otherwise. '
+            + 'A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells '
+            + '(incommensurate or short-range) that does not.',
         supercell: payload.supercell,
         wavevectors: payload.wavevectors,
         elements: tested.map((entry) => ({
@@ -783,7 +816,10 @@ export const summarizeModulations = (payload) => {
                 const sigma = sigmaAt(entry, point);
                 return [qLabel(point.q), round(point.ratio, 2), roundFixed(point.percentile, 1), sigma === Infinity ? '>8' : roundFixed(sigma, 1)];
             }),
-            strongest: entry.strongest.slice(0, 3).map((mode) => [qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1)])
+            strongest: entry.strongest.slice(0, 3).map((mode) => {
+                const sigma = generalSigmaAt(entry, mode);
+                return [qLabel(mode.q), round(mode.ratio, 2), roundFixed(mode.percentile, 1), sigma == null ? null : (sigma === Infinity ? '>8' : roundFixed(sigma, 1))];
+            })
         }))
     };
     if (payload.untestable?.length) data.untestable_zone_boundary = payload.untestable.map((flags) => qLabel(flags.map((flag) => flag / 2)));
@@ -821,6 +857,26 @@ export const summarizeModulations = (payload) => {
                     + `${best.sigma == null ? 'significance undefined' : sigmaText(best.sigma)} after the correction).` : '.')
         });
     }
+    // Correlation between cells at a general wavevector: the strongest modes
+    // that are neither zone-boundary points nor long waves, by the same rule.
+    const general = [];
+    tested.forEach((entry) => {
+        entry.strongest.forEach((mode) => {
+            const sigma = generalSigmaAt(entry, mode);
+            if (sigma != null && mode.ratio >= MODULATION_RATIO && sigma >= SIGNIFICANCE_SIGMA
+                && !general.some((item) => item.element === entry.element)) {
+                general.push({ element: entry.element, mode, sigma });
+            }
+        });
+    });
+    general.forEach(({ element, mode, sigma }) => {
+        checks.push({
+            level: 'ok',
+            text: `Correlated ${element} displacements between cells at q = ${qLabel(mode.q)}: ${round(mode.ratio, 3)}× the median power, `
+                + `${sigmaText(sigma)} against independent displacements (corrected over ${generalFamily} compared modes) — order at a `
+                + 'general wavevector (incommensurate, or short-range correlation between cells), not a cell doubling.'
+        });
+    });
     (payload.elements || []).filter((entry) => entry.sites).forEach((entry) => {
         const mode = entry.strongest[0];
         if (mode && mode.ratio >= LONG_WAVE_RATIO && mode.q.every((value) => Math.abs(value) <= LONG_WAVE_Q)) {
@@ -838,7 +894,8 @@ export const summarizeModulations = (payload) => {
     const facts = {
         modulation: {
             elements: tested.map((entry) => entry.element),
-            ordered: ordered.map(({ element, point }) => ({ element, q: point.q }))
+            ordered: ordered.map(({ element, point }) => ({ element, q: point.q })),
+            general: general.map(({ element, mode }) => ({ element, q: mode.q }))
         }
     };
     return { data, checks, facts };
@@ -892,6 +949,119 @@ export const summarizeSymmetry = (described, tolerance) => {
         result.facts = { groups: [{ symbol: described.spaceGroup, ...facts }] };
     }
     return result;
+};
+
+// --- measure_symmetry_lowering ---------------------------------------------------
+
+// Shifts reported per element: the largest site's, and how many sites move.
+const SHIFT_ROWS = 12;
+// A direction within this angle of a <100>, <110> or <111> direction is named
+// by it: half the smallest angle between two such families (<110>–<111>,
+// 35.3°), the validation's direction tolerance.
+export const LOW_INDEX_CONE_DEG = 15;
+// The nearest low-index direction of a Cartesian vector, within the cone, or null.
+const lowIndexOf = (vector, unitCell) => {
+    const found = unitCell ? nearestLowIndex(vector, unitCell, { maxIndex: 1, toleranceDeg: LOW_INDEX_CONE_DEG }) : null;
+    return found?.exact ? { uvw: found.uvw, off_deg: roundFixed(found.offDeg, 1) } : null;
+};
+
+/**
+ * The coherent shift of a symmetry lowering (symmetryShift.js), for the model:
+ * the parent group and the lower group, each site's shift from the parent
+ * positions with its crystal direction, against the sampling noise floor
+ * (the review's L4, approved 2026-10-14). `lower` is describeSymmetry at
+ * `tolerance`; `noiseFloor` the run context's (3√2 × rms/√copies).
+ */
+export const summarizeSymmetryLowering = (shifts, lower, { tolerance, noiseFloor = null, unitCell = null } = {}) => {
+    if (!shifts) {
+        return { data: {}, checks: [{ level: 'fail', text: 'The structure has no average sites to analyse.' }] };
+    }
+    if (shifts.skipped) return { data: {}, checks: [{ level: 'warn', text: `Not analysed: ${shifts.reason}` }] };
+    const floor = Number.isFinite(noiseFloor) ? noiseFloor : null;
+    const parentFacts = pointGroupFacts(shifts.parent.pointGroup);
+    const lowerFacts = lower?.pointGroup ? pointGroupFacts(lower.pointGroup) : null;
+    const data = {
+        note: 'shift_A = the site mean\'s distance from the position the parent group puts it at, measured with the parent '
+            + 'placed on the majority of the atoms (the origin a lowering leaves free is fixed by the geometric median of all '
+            + 'shifts); a shift every copy of a site shares, which the displacement analyses cannot show; direction_uvw is a '
+            + 'direct-lattice direction (±); se_A the sampling error of the site mean along it',
+        parent: { tolerance_A: shifts.parent.tolerance, space_group: shifts.parent.spaceGroup, point_group: shifts.parent.pointGroup },
+        lower: lower ? { tolerance_A: tolerance, space_group: lower.spaceGroup, point_group: lower.pointGroup } : null,
+        noise_floor_A: floor == null ? null : round(floor, 2),
+        sites: [...shifts.sites].sort((a, b) => b.length - a.length).slice(0, SHIFT_ROWS).map((site) => ({
+            ref: site.referenceNumber,
+            element: site.element,
+            shift_A: roundFixed(site.length, 3),
+            direction_uvw: site.length > 0 && unitCell ? cartesianToUvw(site.shift.map((v) => v / site.length), unitCell) : null,
+            ...(site.length > 0 && lowIndexOf(site.shift, unitCell) ? { nearest_low_index: lowIndexOf(site.shift, unitCell) } : {}),
+            se_A: site.standardError == null ? null : round(site.standardError, 2),
+            ...(floor != null ? { above_noise_floor: site.length > floor } : {})
+        }))
+    };
+    if (lowerFacts) data.lower.point_group_facts = describePointGroup(lower.pointGroup);
+    const checks = [];
+    if (!shifts.sites.length) {
+        checks.push({ level: 'fail', text: `No operation of a parent group fits at ${shifts.parent.tolerance} Å.` });
+        return { data, checks };
+    }
+    // The largest shift of each element, above the floor.
+    const byElement = new Map();
+    shifts.sites.forEach((site) => {
+        const current = byElement.get(site.element);
+        if (!current || site.length > current.length) byElement.set(site.element, site);
+    });
+    const moved = [...byElement.values()]
+        .filter((site) => (floor == null ? false : site.length > floor))
+        .sort((a, b) => b.length - a.length);
+    const sameGroup = lower && lower.spaceGroup === shifts.parent.spaceGroup;
+    const groups = lower && !sameGroup ? ` (the lower group ${lower.spaceGroup} at ${tolerance} Å` : '';
+    if (moved.length) {
+        moved.forEach((site) => {
+            const uvw = unitCell ? cartesianToUvw(site.shift.map((v) => v / site.length), unitCell) : null;
+            const family = lowIndexOf(site.shift, unitCell);
+            const along = family ? ` along [${family.uvw.join(' ')}] (${family.off_deg}° off)` : (uvw ? ` along [${uvw.join(' ')}]` : '');
+            const count = shifts.sites.filter((s) => s.element === site.element && floor != null && s.length > floor).length;
+            checks.push({
+                level: 'ok',
+                text: `${site.element} shifted ${roundFixed(site.length, 3)} Å${along} from the ${shifts.parent.spaceGroup} `
+                    + `positions (site ${site.referenceNumber}${count > 1 ? ` and ${count - 1} more` : ''}; noise floor ${round(floor, 2)} Å)${groups ? `${groups})` : ''}: `
+                    + 'a coherent shift every copy shares, a static distortion of the average structure.'
+            });
+        });
+        if (lowerFacts && parentFacts) {
+            const changes = [
+                parentFacts.centrosymmetric && !lowerFacts.centrosymmetric ? 'loses the inversion centre' : null,
+                !parentFacts.polar && lowerFacts.polar ? 'becomes polar' : null
+            ].filter(Boolean);
+            if (changes.length && !sameGroup) {
+                checks.push({ level: 'note', text: `${shifts.parent.spaceGroup} → ${lower.spaceGroup} ${changes.join(' and ')}.` });
+            }
+        }
+    } else if (floor != null) {
+        checks.push({
+            level: 'ok',
+            text: `No site is shifted from the ${shifts.parent.spaceGroup} positions above the ${round(floor, 2)} Å noise floor `
+                + `(largest ${roundFixed(Math.max(...shifts.sites.map((s) => s.length)), 3)} Å): no coherent lowering of the average structure.`
+        });
+    } else {
+        checks.push({ level: 'note', text: 'No noise floor for this structure: compare the shifts with their se_A.' });
+    }
+    if (sameGroup && moved.length) {
+        checks.push({ level: 'note', text: `The lower tolerance still gives ${lower.spaceGroup}: the shifts lie within it.` });
+    }
+    const facts = {
+        lowering: {
+            parent: shifts.parent.spaceGroup,
+            lower: lower?.spaceGroup ?? null,
+            shifted: moved.map((site) => ({
+                element: site.element,
+                shift_A: roundFixed(site.length, 3),
+                direction_uvw: lowIndexOf(site.shift, unitCell)?.uvw
+                    ?? (unitCell ? cartesianToUvw(site.shift.map((v) => v / site.length), unitCell) : null)
+            }))
+        }
+    };
+    return { data, checks, facts };
 };
 
 // --- the tool list ---------------------------------------------------------------
@@ -1127,6 +1297,34 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             page: 'dashboard',
             cards: () => ['detected-sg'],
             run: async ({ tolerance_A: tol }) => summarizeSymmetry(describeSymmetry(structure, tol), tol)
+        });
+
+        const floor = symmetryNoiseFloor(structure.basis);
+        // The lower group's default tolerance: just above the noise floor.
+        const lowerDefault = Number(((floor ?? 0.02) * NOISE_FLOOR_MARGIN).toPrecision(2));
+        tools.push({
+            name: 'measure_symmetry_lowering',
+            description: 'How far each average site sits from the position a higher-symmetry (parent) group puts it at: the '
+                + 'size and direction of a coherent shift every copy of a site shares (a polar off-centring of the average '
+                + 'structure), which the displacement analyses cannot show — each site\'s cloud is centred on its own mean. The '
+                + 'parent is the group at parent_tolerance_A (default 0.2 Å, the Detected SG card\'s); the lower group is the one '
+                + `at tolerance_A (default ${lowerDefault} Å, just above the sampling noise floor). Each shift is in Å with its `
+                + 'crystal [u v w], measured with the parent on the majority of the atoms, against the noise floor.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    parent_tolerance_A: { type: 'number', minimum: 0.001, maximum: 1, description: 'Tolerance of the parent group (Å). Default 0.2.' },
+                    tolerance_A: { type: 'number', minimum: 0.001, maximum: 1, description: `Tolerance of the lower group (Å). Default ${lowerDefault}.` }
+                }
+            },
+            label: ({ parent_tolerance_A: parentTol = 0.2 }) => `Symmetry lowering from ${parentTol} Å`,
+            page: 'dashboard',
+            cards: () => ['detected-sg'],
+            run: async ({ parent_tolerance_A: parentTol = 0.2, tolerance_A: tol = lowerDefault }) => summarizeSymmetryLowering(
+                symmetryShifts(structure, parentTol),
+                describeSymmetry(structure, tol),
+                { tolerance: tol, noiseFloor: floor, unitCell: unitCellVectors(structure.latticeVectors, structure.supercell) }
+            )
         });
     }
     return tools;

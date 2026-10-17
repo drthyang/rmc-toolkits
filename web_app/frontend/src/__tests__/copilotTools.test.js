@@ -16,7 +16,7 @@ import modulationsFixture from './fixtures/modulations_fixture.json';
 import clustersFixture from './fixtures/clusters_fixture.json';
 import { clusterDistortion } from '../workers/clusters';
 import { auditAnswer } from '../llm/copilot/answerAudit';
-import { ALL_CASES, buildCase } from '../../validation/cases';
+import { ALL_CASES, buildCase, buildConfiguration } from '../../validation/cases';
 import {
     buildCopilotTools,
     cartesianToUvw,
@@ -24,6 +24,8 @@ import {
     tenDegreeBins,
     summarizeClusters,
     summarizeModulations,
+    summarizeSymmetryLowering,
+    generalModeSigma,
     zoneBoundarySigma,
     summarizeOrientation,
     summarizeSites,
@@ -42,7 +44,7 @@ describe('Copilot tools on the demo run', () => {
     it('offers the engine tools with the run\'s elements', () => {
         expect(Object.keys(tools)).toEqual([
             'list_sites', 'analyze_displacement_directions', 'compute_bond_angles', 'analyze_clusters',
-            'analyze_modulations', 'detect_symmetry'
+            'analyze_modulations', 'detect_symmetry', 'measure_symmetry_lowering'
         ]);
         expect(tools.compute_bond_angles.parameters.properties.apex.enum).toEqual(['Ga', 'Se', 'Ta']);
         expect(tools.analyze_displacement_directions.parameters.properties.element.enum).toEqual(['Ga', 'Se', 'Ta', 'all']);
@@ -50,7 +52,7 @@ describe('Copilot tools on the demo run', () => {
 
     it('offers no engine tools without a reachable engine, and no symmetry tool without a basis', () => {
         expect(buildCopilotTools({ request: null, structure: { latticeVectors: structure.latticeVectors } })).toEqual([]);
-        expect(buildCopilotTools({ request: null, structure }).map((tool) => tool.name)).toEqual(['detect_symmetry']);
+        expect(buildCopilotTools({ request: null, structure }).map((tool) => tool.name)).toEqual(['detect_symmetry', 'measure_symmetry_lowering']);
     });
 
     it('list_sites: every site, ranked by |kurtosis|, and an ok check', async () => {
@@ -384,6 +386,7 @@ describe('Copilot summarizers', () => {
             expect(checks.filter((check) => /^Ordered/.test(check.text))).toEqual([]);
             expect(checks.at(-1).text.startsWith('No order that doubles the cell') || checks.some((c) => /^No order/.test(c.text))).toBe(true);
             expect(facts.modulation.ordered).toEqual([]);
+            expect(facts.modulation.general).toEqual([]);
         }
         // The planted order is still found, and only it (not the decoy long wave).
         const planted = buildCase(ALL_CASES.find((item) => item.id === 'dev-zone-boundary'), { partials: false });
@@ -451,6 +454,52 @@ describe('Copilot summarizers', () => {
         const bare = summarizeClusters(clusterDistortion(siteDisplacementsFromRmc6f(jt.rmc6f), 'F', [2.5, 3.25]));
         expect(bare.checks.some((check) => /^Split sites:/.test(check.text))).toBe(false);
         expect(bare.facts.cluster.split).toBe(false);
+    });
+
+    it('measure_symmetry_lowering: the coherent shift the 0.2 Å card hides, and none where there is none (review L4)', async () => {
+        const tool = (id) => {
+            const built = buildCase(ALL_CASES.find((item) => item.id === id), { partials: false });
+            const parsed = structureFromRmc6f({ path: `${id}.rmc6f`, text: built.rmc6f });
+            return buildCopilotTools({ request: null, structure: parsed, elements: [] }).find((entry) => entry.name === 'measure_symmetry_lowering');
+        };
+        // Every Ta shifted 0.07 Å along [001] (P4mm): at 0.2 Å the card says Pm-3m.
+        const lowering = await tool('dev-symmetry-lowering').run({});
+        expect(lowering.data.parent).toMatchObject({ tolerance_A: 0.2, space_group: 'Pm-3m' });
+        expect(lowering.data.lower.space_group).toBe('P4mm');
+        expect(lowering.data.sites[0]).toMatchObject({ element: 'Ta', above_noise_floor: true, nearest_low_index: { uvw: [0, 0, 1] } });
+        expect(Math.abs(lowering.data.sites[0].shift_A - 0.07)).toBeLessThan(0.01);
+        expect(lowering.data.sites.slice(1).every((site) => !site.above_noise_floor)).toBe(true);
+        expect(lowering.checks[0].text).toMatch(/^Ta shifted 0\.0\d+ Å along \[0 0 1\] \([\d.]+° off\) from the Pm-3m positions .* \(the lower group P4mm at 0\.0\d+ Å\)/);
+        expect(lowering.checks[1].text).toBe('Pm-3m → P4mm loses the inversion centre and becomes polar.');
+        expect(lowering.facts.lowering).toMatchObject({ parent: 'Pm-3m', lower: 'P4mm', shifted: [{ element: 'Ta', direction_uvw: [0, 0, 1] }] });
+        // Thermal motion only: nothing above the noise floor.
+        const none = await tool('dev-thermal-null').run({});
+        expect(none.facts.lowering.shifted).toEqual([]);
+        expect(none.checks[0].text).toMatch(/^No site is shifted from the Pm-3m positions above the 0\.0\d+ Å noise floor/);
+        expect(summarizeSymmetryLowering(null, null).checks[0].level).toBe('fail');
+    });
+
+    it('modulation checks: correlation between cells at a general wavevector, calibrated (review L4)', () => {
+        // q = (3/8, 0, 0) on an 8-cell axis: neither a zone-boundary point nor a long wave.
+        const config = buildConfiguration({
+            cell: [4, 4, 4], supercell: [8, 8, 8], seed: 11,
+            sites: [{ el: 'Ti', frac: [0.5, 0.5, 0.5] }, { el: 'O', frac: [0.5, 0.5, 0] }],
+            shift: (index, _, rng, n) => {
+                const thermal = [0, 1, 2].map(() => 0.06 * Math.sqrt(-2 * Math.log(rng() || 1e-12)) * Math.cos(2 * Math.PI * rng()));
+                return index === 0 ? [thermal[0], thermal[1], thermal[2] + 0.08 * Math.cos(2 * Math.PI * 0.375 * n[0])] : thermal;
+            }
+        });
+        const { checks, facts, data } = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(config.text)));
+        expect(facts.modulation.ordered).toEqual([]);
+        expect(facts.modulation.general).toEqual([{ element: 'Ti', q: [expect.closeTo(0.375, 6), 0, 0] }]);
+        expect(checks.find((check) => /^Correlated Ti displacements between cells at q = \(0\.375, 0, 0\)/.test(check.text)).text)
+            .toMatch(/not a cell doubling\.$/);
+        expect(data.elements.find((entry) => entry.element === 'Ti').strongest[0][3]).not.toBeNull();
+        // The null: P ≥ χ²_2m / 2m. Power 1 (independent) is nothing; one site, one mode:
+        // P(χ²₂ ≥ 18) = e⁻⁹ = 1.23e-4, 3.67σ; corrected over 255 modes: 0.031, 1.87σ.
+        expect(generalModeSigma(1, 1, 255)).toBeLessThan(0);
+        expect(generalModeSigma(9, 1, 1)).toBeCloseTo(3.666, 2);
+        expect(generalModeSigma(9, 1, 255)).toBeCloseTo(1.867, 2);
     });
 
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {

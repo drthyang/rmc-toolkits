@@ -79,7 +79,7 @@ describe('buildCopilotCards', () => {
         const ids = new Set(buildCopilotCards({ symmetry: {} }).map((card) => card.id));
         const tools = buildCopilotTools({ request: async () => ({}), structure: { basis: [{ el: 'Ga' }] }, elements: ['Ga'] });
         const named = tools.flatMap((tool) => (tool.cards ? tool.cards({}) : []));
-        expect(named).toEqual(['pca-stats', 'direction-sphere', 'bond-angles', 'detected-sg']);
+        expect(named).toEqual(['pca-stats', 'direction-sphere', 'bond-angles', 'detected-sg', 'detected-sg']);
         named.forEach((id) => expect(ids.has(id), id).toBe(true));
     });
 });

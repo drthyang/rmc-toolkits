@@ -153,6 +153,16 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 The A/A+ rules were set on the dev cases and frozen before the test set was scored. The test-set
 A+ spurious distortion was seen and left unchanged.
 
+**Batch 1 (2026-10-17): A+ follows the engines.** A+ is every Copilot engine, so B − A+ stays what
+the model adds only if A+ gets the batch's new engines too. The sweep now reads the modulation
+tool's facts (zone-boundary order, and order at a general wavevector, review L4) and, when the group
+at the noise floor is not the card's, `measure_symmetry_lowering` from the card's 0.2 Å group: each
+element shifted above the noise floor is a `symmetry_lowering` claim with its direction and size.
+The cluster readings use the engine's shape null (review L2) through the tool. On the dev cases
+only dev-symmetry-lowering moves: A+ 0.83 → 1 (Ta 0.065 Å along [0 0 1] for 0.07 Å); the dev mean
+is 1.00. The rules were set on the dev cases; the test set's A+ is re-run once batch 1 is
+committed, and reported, not tuned.
+
 ## Running the live arms (later, on the Mac)
 
 From `web_app/frontend`, with the model loaded in LM Studio or Ollama:
