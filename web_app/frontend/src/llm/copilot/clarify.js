@@ -101,14 +101,24 @@ export const buildShellCatalog = ({ plotFiles, structure } = {}) => {
         let result = null;
         if (data) {
             const peaks = extractPeaks(data.x, data.y, { rMax: 8, maxPeaks: 3 });
-            const found = peaks.length ? firstShell(data.x, data.y, { rMax: Math.max(6, peaks[0].r + 3) }) : null;
+            // With both densities a split shell cut at a deep trough is joined
+            // when its summed CN is an ideal polyhedral count (firstShell).
+            const found = peaks.length ? firstShell(data.x, data.y, {
+                rMax: Math.max(6, peaks[0].r + 3),
+                partnerDensity: elementDensity(structure, partner),
+                centreDensity: elementDensity(structure, centre)
+            }) : null;
             if (found?.boundaryR != null) {
                 const step = data.x.length > 1 ? Math.abs(data.x[1] - data.x[0]) : 0;
                 // Rounded as shown to the user (0.01 Å), so a window applied
                 // from a card is the one its option names.
                 const window = [roundTo(Math.max(0, found.onsetR - step)), roundTo(found.boundaryR)];
                 const first = peaks[0];
-                const firstWindow = [roundTo(Math.max(0, first.r - first.fwhm)), roundTo(first.r + first.fwhm)];
+                // A joined split shell: its first peak alone ends at the deep
+                // trough the shell was cut at before.
+                const firstWindow = found.split
+                    ? [window[0], roundTo(found.split.firstBoundaryR)]
+                    : [roundTo(Math.max(0, first.r - first.fwhm)), roundTo(first.r + first.fwhm)];
                 result = {
                     centre,
                     partner,

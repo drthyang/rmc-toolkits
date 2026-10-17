@@ -116,6 +116,21 @@ const SHELL_ONSET_FRACTION = 0.01;
 // A shell whose tail decays into an empty gap ends where g falls below this
 // fraction of its peak (3.7σ out on a Gaussian shell: < 0.1 % of its atoms).
 const SHELL_EMPTY_FRACTION = 0.001;
+// A split shell whose two bond lengths are well resolved has a DEEP trough
+// between them (a Jahn–Teller octahedron, 4 × 1.93 + 2 × 2.25 Å: g falls to
+// 12 % of the first peak), so the first deep minimum cuts the polyhedron. A
+// later peak within this distance of the first (Å; bond-length splits of
+// distorted polyhedra are 0.1–0.4 Å, the next coordination shell lies a
+// sizeable fraction of the bond further out) joins the shell when the summed
+// coordination number reaches an ideal polyhedral count (the review's L1,
+// approved 2026-10-14).
+export const SPLIT_SHELL_REACH_A = 0.5;
+export const IDEAL_COORDINATION = Object.freeze([4, 6, 8, 12]);
+// How close a CN must come to an ideal count (half an atom).
+export const IDEAL_CN_TOLERANCE = 0.5;
+/** Whether a coordination number is within IDEAL_CN_TOLERANCE of an ideal polyhedral count. */
+export const isIdealCoordination = (cn) => Number.isFinite(cn) && IDEAL_COORDINATION.some((count) => Math.abs(cn - count) <= IDEAL_CN_TOLERANCE);
+const nearIdeal = isIdealCoordination;
 
 const trapezoid = (x, f, from, to) => {
     let sum = 0;
@@ -147,9 +162,17 @@ const movingAverage5 = (y, end) => {
  * With the partner's number density (atoms/Å³) it also integrates the
  * coordination number CN = 4π ρ ∫ r² g(r) dr, and the CN 0.2 Å either side of
  * the boundary — how much the count depends on where the cut is put.
+ *
+ * A split shell cut at a deep trough is joined (needs partnerDensity): a
+ * later peak within SPLIT_SHELL_REACH_A of the first, whose shell brings the
+ * summed CN to an ideal polyhedral count (IDEAL_COORDINATION) in either
+ * direction (B per A, or with centreDensity A per B), extends the shell to its
+ * own boundary; the furthest such peak wins (2 + 2 + 2 is one octahedron).
+ * `split` then holds the first peak's own boundary and CN, the window that
+ * would cut the polyhedron (the Workbench offers it as "First peak only").
  * Returns null when no peak is found below rMax.
  */
-export const firstShell = (x, y, { rMax = 8, partnerDensity = null } = {}) => {
+export const firstShell = (x, y, { rMax = 8, partnerDensity = null, centreDensity = null } = {}) => {
     if (!Array.isArray(x) || !Array.isArray(y) || x.length !== y.length) return null;
     let end = x.findIndex((value) => value > rMax);
     if (end < 0) end = x.length;
@@ -162,14 +185,44 @@ export const firstShell = (x, y, { rMax = 8, partnerDensity = null } = {}) => {
     let onset = peakIndex;
     while (onset > 0 && smooth[onset - 1] > SHELL_ONSET_FRACTION * height) onset -= 1;
     // The boundary: a local minimum in a deep trough, or the point where g
-    // has fallen back to ~0 (a tail that decays into an empty gap).
-    let boundary = -1;
-    for (let i = peakIndex + 1; i < end - 1; i++) {
-        const deepMinimum = smooth[i] <= smooth[i - 1] && smooth[i] <= smooth[i + 1]
-            && smooth[i] < SHELL_TROUGH_FRACTION * height;
-        if (deepMinimum || smooth[i] < SHELL_EMPTY_FRACTION * height) {
-            boundary = i;
-            break;
+    // has fallen back to ~0 (a tail that decays into an empty gap). Measured
+    // against the height of the peak that opens the shell part (`from`).
+    const boundaryAfter = (from, top) => {
+        for (let i = from + 1; i < end - 1; i++) {
+            const deepMinimum = smooth[i] <= smooth[i - 1] && smooth[i] <= smooth[i + 1]
+                && smooth[i] < SHELL_TROUGH_FRACTION * top;
+            if (deepMinimum || smooth[i] < SHELL_EMPTY_FRACTION * top) return i;
+        }
+        return -1;
+    };
+    let boundary = boundaryAfter(peakIndex, height);
+    const radial = y.map((value, i) => Math.max(0, value) * x[i] * x[i]);
+    const hasDensity = Number.isFinite(partnerDensity) && partnerDensity > 0;
+    const cnTo = (index) => 4 * Math.PI * partnerDensity * trapezoid(x, radial, 0, index);
+    const idealEitherWay = (cn) => nearIdeal(cn)
+        || (Number.isFinite(centreDensity) && centreDensity > 0 && nearIdeal((cn * centreDensity) / partnerDensity));
+    let split = null;
+    if (boundary >= 0 && hasDensity) {
+        // Later peaks of the same split shell: each closes at its own deep
+        // minimum; keep the furthest whose summed CN is an ideal count.
+        let reach = boundary;
+        let joined = -1;
+        for (const peak of peaks) {
+            if (peak.r - peaks[0].r > SPLIT_SHELL_REACH_A) break;
+            const index = x.indexOf(peak.r);
+            if (index <= reach) continue;
+            const closes = boundaryAfter(index, smooth[index]);
+            if (closes < 0) break;
+            reach = closes;
+            if (idealEitherWay(cnTo(closes))) joined = closes;
+        }
+        if (joined > boundary) {
+            split = {
+                firstBoundaryR: x[boundary],
+                firstTroughRatio: Math.max(0, smooth[boundary]) / height,
+                firstCn: cnTo(boundary)
+            };
+            boundary = joined;
         }
     }
     const shell = {
@@ -178,10 +231,10 @@ export const firstShell = (x, y, { rMax = 8, partnerDensity = null } = {}) => {
         peakG: height,
         boundaryR: boundary >= 0 ? x[boundary] : null,
         troughRatio: boundary >= 0 ? Math.max(0, smooth[boundary]) / height : null,
-        peaksInShell: peaks.filter((peak) => boundary < 0 || peak.r < x[boundary]).map((peak) => peak.r)
+        peaksInShell: peaks.filter((peak) => boundary < 0 || peak.r < x[boundary]).map((peak) => peak.r),
+        ...(split ? { split } : {})
     };
     if (boundary < 0) return shell;
-    const radial = y.map((value, i) => Math.max(0, value) * x[i] * x[i]);
     const weight = trapezoid(x, radial, onset, boundary);
     if (weight > 0) {
         const mean = trapezoid(x, radial.map((value, i) => value * x[i]), onset, boundary) / weight;
@@ -258,10 +311,18 @@ export const pairCorrelationsContext = (structure, plotFiles, { maxPairs = 10, c
         }
         // The first shell's mean distance (from r²g, not the g peak) and, with
         // the cell, its coordination number: B atoms around each A.
-        const shell = firstShell(series.x, series.y, { partnerDensity: elementDensity(structure, match[2]) });
+        const shell = firstShell(series.x, series.y, {
+            partnerDensity: elementDensity(structure, match[2]),
+            centreDensity: elementDensity(structure, match[1])
+        });
         if (shell?.boundaryR != null && Number.isFinite(shell.meanR)) {
             entry.first_shell = { mean_d_A: roundSig(shell.meanR), to_A: roundSig(shell.boundaryR) };
             if (Number.isFinite(shell.cn)) entry.first_shell[`cn_${match[2]}_per_${match[1]}`] = roundSig(shell.cn);
+            // A split shell joined across a deep trough: where its first peak ends.
+            if (shell.split) {
+                entry.first_shell.first_peak_to_A = roundSig(shell.split.firstBoundaryR);
+                entry.first_shell.first_peak_cn = roundSig(shell.split.firstCn);
+            }
             // Distances filling the gap to the next shell.
             if (shell.troughRatio > PAIR_FLAG_FRACTION) entry.first_shell.gap_g_fraction = roundSig(shell.troughRatio, 2);
         }

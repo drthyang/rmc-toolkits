@@ -162,6 +162,27 @@ describe('buildRunTools', () => {
         expect(checks[0].text).toMatch(/first shell holds 2 peaks/);
     });
 
+    it('joins a split shell across a deep trough when the two peaks make an octahedron (review L1)', async () => {
+        // A Jahn–Teller CuF6: 4 × 1.93 + 2 × 2.25 Å, σ 0.05 Å; the old rule cut at the trough: CN 4.
+        const L = 20;
+        const counts = { Cu: 200, F: 1200 };
+        const rhoF = counts.F / L ** 3;
+        const x = grid(600, 0.005);
+        const normal = (r, r0) => Math.exp(-((r - r0) ** 2) / (2 * 0.05 ** 2)) / (0.05 * Math.sqrt(2 * Math.PI));
+        const y = x.map((r) => (r > 0 ? (4 * normal(r, 1.93) + 2 * normal(r, 2.25)) / (4 * Math.PI * rhoF * r * r) : 0));
+        const { find_gr_peaks: tool } = toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts: counts },
+            plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Cu-F', x, y }] } }]
+        });
+        const { data, checks } = await tool.run({ pair: 'Cu-F' });
+        expect(data.first_shell.cn.F_per_Cu).toBeCloseTo(6, 1);
+        expect(data.first_shell.window_A[1]).toBeGreaterThan(2.35);
+        expect(data.first_shell.first_peak_only.cn.F_per_Cu).toBeCloseTo(4, 1);
+        expect(data.first_shell.first_peak_only.window_A[1]).toBeLessThan(2.2);
+        expect(checks.map((check) => check.level)).toEqual(['note', 'ok']);
+        expect(checks[0].text).toMatch(/^One split shell across a deep trough: .* hold 4 F per Cu in the first peak alone .* and 6 together/);
+    });
+
     it('flags a distribution cut at the closest-approach constraint even when its half-maximum clears it', async () => {
         // Ga–Se at 2.42 Å (FWHM ~0.2 Å) with a 2.2 Å constraint: g just above 2.2 Å is ~9 % of the peak.
         const x = grid(500, 0.01);
