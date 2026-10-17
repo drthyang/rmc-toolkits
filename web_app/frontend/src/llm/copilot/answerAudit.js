@@ -11,8 +11,9 @@
 //   - chirality, centrosymmetry, a lost inversion centre: claims a group's
 //     point group contradicts (local-symmetry; the spot check called P-42₁m
 //     chiral and said F-43m lost its centrosymmetry);
-//   - a preferred displacement direction when every directions analysis of
-//     the question found none at ≥ 3σ (displacement-anisotropy);
+//   - a preferred displacement direction when no directions analysis of the
+//     question found a peak at ≥ 3σ (displacement-anisotropy; a significant
+//     whole-map test alone is anisotropy, not a direction: review L3);
 //   - a polar group the point group says is not polar (local-symmetry);
 //   - a superstructure (cell doubling, zone-boundary order) when every
 //     analyze_modulations of the question found no ordered point.
@@ -219,9 +220,11 @@ const directionRule = (text, facts) => {
         if (clausesOf(sentence).some((clause) => positiveMatches(clause, PREFERRED).length)) {
             const detail = analyses.map((analysis) => `${analysis.subject}: peak ${analysis.peak_sigma}σ`
                 + `${analysis.map_sigma != null ? `, map ${analysis.map_sigma}σ` : ''}`).join('; ');
+            const anisotropic = analyses.some((analysis) => analysis.anisotropic);
             return [{
                 rule: 'direction',
-                text: `The answer claims a preferred displacement direction, but no directions analysis in it found one at ≥ 3σ (${detail}).`
+                text: `The answer claims a preferred displacement direction, but no directions analysis in it found a peak at ≥ 3σ (${detail}).`
+                    + (anisotropic ? ' A significant map test is anisotropy, which any thermal ellipsoid shows, not a preferred direction.' : '')
             }];
         }
     }

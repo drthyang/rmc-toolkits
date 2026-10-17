@@ -15,6 +15,7 @@ import { siteDisplacementsFromRmc6f } from '../workers/pcaKde';
 import modulationsFixture from './fixtures/modulations_fixture.json';
 import clustersFixture from './fixtures/clusters_fixture.json';
 import { clusterDistortion } from '../workers/clusters';
+import { auditAnswer } from '../llm/copilot/answerAudit';
 import { ALL_CASES, buildCase } from '../../validation/cases';
 import {
     buildCopilotTools,
@@ -390,6 +391,25 @@ describe('Copilot summarizers', () => {
         expect(facts.modulation.ordered).toEqual([{ element: 'Ti', q: [0, 0, 0.5] }]);
         expect(checks[0].text).toMatch(/^Ordered Ti displacements at q = \(0, 0, ½\)/);
         expect(checks.some((check) => /Sr's strongest mode is a long-wavelength wave/.test(check.text))).toBe(true);
+    });
+
+    it('displacement directions: a thermal ellipsoid is anisotropic, not a preferred direction (review L3)', async () => {
+        // An O flattened across its bond, thermal motion only: the map test
+        // passes (7.2σ), the peak test does not (2.3σ). The direction fact
+        // used to count the map test, so "preferred direction" went unflagged.
+        const built = buildCase(ALL_CASES.find((item) => item.id === 'dev-thermal-null'), { partials: false });
+        const payload = await handlePcaMessage({ kind: 'orientation', referenceNumber: 3, geometry: false }, async () => built.rmc6f);
+        const { checks, facts } = summarizeOrientation(payload, null);
+        expect(payload.peakSignificance).toBeLessThan(3);
+        expect(payload.mapSignificance).toBeGreaterThan(3);
+        expect(facts.direction).toMatchObject({ subject: 'site 3', significant: false, anisotropic: true });
+        expect(checks.find((check) => /anisotropic/.test(check.text)).text)
+            .toMatch(/^The displacements are anisotropic: the map departs from isotropy at 7\.\d+σ\. Thermal ellipsoids pass this test too: it is not a preferred direction/);
+        const [finding] = auditAnswer('Site 3 has a preferred displacement direction along [1 0 0].', { facts: [facts] });
+        expect(finding.rule).toBe('direction');
+        expect(finding.text).toMatch(/found a peak at ≥ 3σ \(site 3: peak 2\.\d+σ, map 7\.\d+σ\)\. A significant map test is anisotropy/);
+        // A significant peak still counts, with or without the map.
+        expect(summarizeOrientation({ ...payload, peakSignificance: 4.1 }, null).facts.direction.significant).toBe(true);
     });
 
     it('cluster summary: "LESS distorted" does not deny a distortion the axis families show (Jahn–Teller octahedra)', () => {

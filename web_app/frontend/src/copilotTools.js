@@ -177,7 +177,16 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
     if (payload.mapSignificance == null) {
         checks.push({ level: 'note', text: 'The whole-map test is undefined here (too few points per cell).' });
     } else if (payload.mapSignificance >= SIGNIFICANCE_SIGMA) {
-        checks.push({ level: 'ok', text: `The map departs from isotropy at ${round(payload.mapSignificance)}σ.` });
+        // Any anisotropic Gaussian ellipsoid passes the map test (a
+        // thermal-only O flattened across its bond: map 7.2σ, peak 2.3σ):
+        // it shows anisotropy, and only the peak test a preferred direction.
+        checks.push({
+            level: 'ok',
+            text: `The displacements are anisotropic: the map departs from isotropy at ${round(payload.mapSignificance)}σ. `
+                + (payload.peakSignificance >= SIGNIFICANCE_SIGMA
+                    ? 'The peak test above names the preferred direction.'
+                    : 'Thermal ellipsoids pass this test too: it is not a preferred direction, which needs the peak test.')
+        });
     }
     if (payload.peakTieCount > 1) {
         checks.push({ level: 'note', text: `${payload.peakTieCount} cells tie for the peak: the peak direction is one of several equal ones.` });
@@ -199,12 +208,15 @@ export const summarizeOrientation = (payload, unitCell, { pooledSites = 0 } = {}
                 + 'against a per-site or cluster distortion. Test single sites (site_ref), or analyze_clusters for a cluster\'s shape.'
         });
     }
-    // For the answer check: no "preferred direction" unless one of the
-    // question's analyses found it at ≥ 3σ.
+    // For the answer check: no "preferred direction" unless the peak test of
+    // one of the question's analyses found it at ≥ 3σ. The map test alone is
+    // anisotropy (review L3, approved 2026-10-14): before, it counted too, and
+    // let a preferred direction through on plain thermal anisotropy.
     const facts = {
         direction: {
             subject: payload.referenceNumber != null ? `site ${payload.referenceNumber}` : (payload.element || 'all atoms'),
-            significant: payload.peakSignificance >= SIGNIFICANCE_SIGMA || payload.mapSignificance >= SIGNIFICANCE_SIGMA,
+            significant: payload.peakSignificance >= SIGNIFICANCE_SIGMA,
+            anisotropic: payload.mapSignificance >= SIGNIFICANCE_SIGMA,
             peak_sigma: round(payload.peakSignificance),
             map_sigma: payload.mapSignificance == null ? null : round(payload.mapSignificance)
         }

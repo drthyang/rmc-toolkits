@@ -333,7 +333,7 @@ clause, for a clear positive claim they contradict:
 | centrosymmetry | a group called centrosymmetric whose point group has no inversion centre |
 | inversion lost | an inversion centre "lost" or "broken" when no group it could be lost from has one: neither the groups the answer names nor the parent (the context's average group, or the ladder's top) |
 | polar | a group called polar whose point group is not polar |
-| direction | a "preferred direction" when no directions analysis of the question found one at ≥ 3σ |
+| direction | a "preferred direction" when no directions analysis of the question found a peak at ≥ 3σ (the whole-map test alone is anisotropy, which thermal ellipsoids show too: review L3) |
 | superstructure | a superstructure, cell doubling or zone-boundary order when no `analyze_modulations` of the question found an ordered point |
 
 A negated claim ("has not converged", "achiral", "no preferred direction"), a question, a
@@ -504,7 +504,7 @@ The host passes engine tools as plain objects; the module validates and runs the
   (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools.
 - `facts` (optional, not sent to the model) are findings the final answer must not contradict
   (*Checks on the answer*): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
-  sohncke, polar }] }`, `{ direction: { subject, significant, peak_sigma, map_sigma } }`.
+  sohncke, polar }] }`, `{ direction: { subject, significant, anisotropic, peak_sigma, map_sigma } }`.
 - `shellWindows(args)` names the bond windows a call will use, so the Workbench can ask before a
   window that cuts a coordination shell runs; `apply(window, { confirmed })` returns the
   arguments for the window the user chose (`confirmed`: they kept their own).

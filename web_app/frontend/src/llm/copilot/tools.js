@@ -32,7 +32,7 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 // `{ level: 'ok' | 'note' | 'warn' | 'fail', text }`. `facts` (optional, not
 // sent to the model) are machine-readable findings the final answer must not
 // contradict (answerAudit.js): `{ convergence }`, `{ groups: [...] }`,
-// `{ direction: { subject, significant, peak_sigma, map_sigma } }`. A thrown error becomes a
+// `{ direction: { subject, significant, anisotropic, peak_sigma, map_sigma } }`. A thrown error becomes a
 // failed step whose message the model reads, so it can correct its arguments.
 // `focus` (when the chat has a page to point at) is the card-focus controller
 // (focus/focus.js): view tools call focus.show(ids) and focus.onClear(undo);
