@@ -60,7 +60,10 @@ end their answer with one `VERDICT {…}` line in a fixed schema (`verdict.js`):
 kinds (`off_centre`, `modulation`, `cluster_distortion`, `cluster_breathing`, `rigid_cluster`,
 `jahn_teller`, `symmetry_lowering`), each with element, direction [uvw], magnitude and q, plus the
 four symmetry fields. Arm A writes the same object from its readings. Nothing is parsed from
-prose: an answer with no parseable verdict scores 0.
+prose: an answer with no parseable verdict scores 0. Since protocol 2026-10-17.2 a number in the
+verdict may be a reference to a tool result (`"magnitude_A": {{r3.sites.0.shift_A}}`): the verdict
+is parsed from the answer with its references filled, and one that names nothing leaves the JSON
+unparseable (score 0), as an invented number would be wrong.
 
 ## Scoring (`scoring.js`), fixed before any run
 
@@ -86,7 +89,20 @@ Reported beside the score, per run:
 - **number provenance:** each number with a decimal point or a unit, matched to a value the
   model was shown, or "unsourced";
 - **reproducibility over 3 runs:** an identical verdict signature (kinds, elements, q, group,
-  symmetry facts), pair agreement, and the score's sd.
+  symmetry facts), pair agreement, and the score's sd;
+- **the evidence gate** (THY-18): how often an answer was sent back because a conclusion's
+  analysis had not run, and which runs still lacked evidence at the end;
+- **numbers by reference:** references written, filled and unknown (provenance traces the filled
+  answer, so a number written by reference always has its source);
+- **the computed verdict against the score:** *earned* (achieved, score 1), *over* (achieved,
+  score below 1: what the checks cannot see), *under* (not achieved, score 1) and *held* (not
+  achieved, score below 1: the verdict warned). The Outcome is the app's, computed from its checks;
+  the model only explains it.
+
+**Protocol 2026-10-17.2 (THY-18).** The live arms run with the evidence gate, numbers by reference
+and the computed verdict, exactly as the app does. The case score is unchanged; the three are
+reported beside it (`report.js`: one more table per split) and in each transcript (the answers the
+gate sent back, the answer as written and as filled, the computed outcome with its reasons).
 
 ## Records, transcripts, findings
 
@@ -214,9 +230,12 @@ A rerun keeps runs already recorded in its folder, so an interrupted batch resum
 local-model hardening (`fix/local-model-robustness`) first: its deadlines and loop guards keep a
 stalled run from holding the batch.
 
-**Time.** Each run is bounded by the agent loop: 6 rounds, 10 minutes plus the final reply. On
+**Time.** Each run is bounded by the agent loop: 6 rounds, 10 minutes plus the final reply. Since
+protocol 2026-10-17.2 the evidence gate can add up to two answer requests to a run (an answer sent
+back, then the analysis it asked for inside the same round budget). On
 qwen3.8-27b (1–5 minutes a question in the 2026-10-10 spot check; a reasoning round of a few
-thousand tokens on a 8–15k-token prompt), expect about 8–12 minutes a run:
+thousand tokens on a 8–15k-token prompt), expect about 8–12 minutes a run, a few more when the gate
+sends an answer back:
 - one split, one arm, 3 runs: 27 runs, about 4–5 hours;
 - dev and test, arms B and C: about 16–20 hours per local model;
 - smoke pass: about 1.5 hours.

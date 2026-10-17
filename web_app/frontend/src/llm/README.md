@@ -321,7 +321,9 @@ the model's own `ask_user` still works beside it.
 The reviews found answers that contradicted what the tools had just computed. The tools now
 return `facts` beside their data (not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point group's facts, `analyze_displacement_directions`
-whether a direction is significant (peak or map ≥ 3σ); the run context adds the watchdog's status
+whether a direction is significant (its peak ≥ 3σ), `analyze_modulations` the ordered points,
+`analyze_clusters` what its clusters showed, `find_gr_peaks` and `compute_bond_angles` the
+coordination they counted; the run context adds the watchdog's status
 and the tolerance ladder's groups (`contextAuditFacts`). When the model answers,
 `auditAnswer()` (`copilot/answerAudit.js`) reads the answer, sentence by sentence and clause by
 clause, for a clear positive claim they contradict:
@@ -347,10 +349,46 @@ the run has converged" is a claim. A chirality claim in a clause that names a gr
 not know ("its subgroup P2₁2₁2 is chiral") is not pinned on the sentence's other groups. Symbols
 are matched however written
 (`P-42₁m`, `P−4 2_1 m`, `$P\bar{4}2_1m$`). Each finding shows as a **Check** line under the
-answer, and the Outcome chip is **lowered** (`lowerOutcome`): an answer the model called
-*achieved* or *partial* (or gave no verdict) becomes **Not verified**, with "the model said
-'achieved'" in its note — the model's own verdict never overrides a computed contradiction;
-*not achieved* stays. gemma4:26b's correct answers of 2026-10-11 raise no check.
+answer, and the computed Outcome is **Not verified** (below). gemma4:26b's correct answers of
+2026-10-11 raise no check.
+
+## Evidence, numbers by reference, the computed verdict (THY-18)
+
+Three rules keep an answer tied to what the engines computed in that question.
+
+- **The evidence gate** (`copilot/evidence.js`). An answer that concludes something needs, in
+  this turn, the analysis that gives the evidence for it: order between cells, or a split site
+  called random disorder, needs `analyze_modulations` (ordered antiphase displacements give a site
+  the same cloud); a preferred direction `analyze_displacement_directions`; distorted, breathing or
+  rigid clusters `analyze_clusters`; a coordination number, a split shell or a Jahn–Teller
+  distortion `find_gr_peaks` or `compute_bond_angles`; a lowering of the average structure
+  `measure_symmetry_lowering`; and "no order beyond thermal motion" every one of them —
+  `analyze_modulations`, a per-site directions map, and `analyze_clusters` for every element whose
+  own first shell holds at most 4.5 neighbours (`CLUSTER_CN_MAX`: a dimer 1, a trimer 2, a
+  tetrahedron 3, an octahedron 4 per member). A model cannot be forced to call a tool (not every
+  model takes `tool_choice`), so the check runs after the answer: the agent loop withdraws it and
+  sends it back once per rule, at most twice a turn (`maxEvidenceGates`), with what to run (a
+  **gate** event; the footer says so), never on the final round or once the turn's time is spent.
+  An answer that still lacks its evidence stands, with an `evidence` finding under it (with tools
+  off too), and a withdrawn answer is kept if the model then writes nothing. Claims are read as the answer checks read them (`asserts`: not
+  negated, hypothetical or asked), and only in a sentence about this run: one that names an
+  element of the run (Ti, Mo₃, TaSe₆) or the run itself (this structure, the clusters, site 3) — a
+  definition ("A superstructure is order that enlarges the cell") needs no analysis; "no order" is
+  always about the run. The gate never asks for a tool the turn does not offer.
+- **Numbers by reference** (`copilot/references.js`). Every tool message carries a `ref` (r1,
+  r2, … in the order of the turn); the model writes `{{r2.peak.significance_sigma}}` — the ref, then
+  the path in the data it was shown, array items by index (`{{r3.sites.0.shift_A}}`) — or
+  `{{ctx.<path>}}` for the run context as the model read it (trimmed), and the app writes the
+  engine's value in place where the answer is shown, recorded and checked. A number keeps the tool's rounding, a list of scalars reads
+  `[a, b, c]`. A reference that names nothing stays as written and is a `reference` finding.
+- **The computed verdict** (`copilot/verdict.js`). The Outcome chip is the app's: **not verified**
+  when a check contradicts the answer, a reference names nothing or a conclusion's evidence did not
+  run; **not achieved** when analyses ran and none succeeded; **partial** when the turn or the
+  reply was cut short, an analysis failed and was not rerun successfully, or one warned;
+  **achieved** otherwise. The model's `Outcome:` line explains; a grade in it is kept as `claimed`
+  and named in the note when the checks disagree ("The model said 'achieved': …"); a lower grade it
+  gives stands (it knows when it could not answer). Self-graded, the Outcome had been
+  "achieved" nearly always.
 
 **Facts the model reads.** `detect_symmetry` and the context's ladder state each point group's
 facts (`context/pointGroups.js`: crystal system, inversion centre, Sohncke class, polarity), so the
@@ -506,7 +544,11 @@ The host passes engine tools as plain objects; the module validates and runs the
   (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools.
 - `facts` (optional, not sent to the model) are findings the final answer must not contradict
   (*Checks on the answer*): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
-  sohncke, polar }] }`, `{ direction: { subject, significant, anisotropic, peak_sigma, map_sigma } }`.
+  sohncke, polar }] }`, `{ direction: { subject, significant, anisotropic, peak_sigma, map_sigma } }`,
+  `{ modulation: { elements, ordered, general } }`, `{ cluster: { element, members, distorted, breathing,
+  rigid, split, … } }`, `{ coordination: { centre, partner, window, cn, whole_shell, confirmed } }`.
+- The loop gives every result the model reads a `ref` (r1, r2, …) and keeps the data it sent, for
+  numbers by reference (*Evidence, numbers by reference, the computed verdict*).
 - `shellWindows(args)` names the bond windows a call will use, so the Workbench can ask before a
   window that cuts a coordination shell runs; `apply(window, { confirmed })` returns the
   arguments for the window the user chose (`confirmed`: they kept their own).
@@ -730,11 +772,13 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   one replay per skill on the Demo (`copilotSkillReplays.test.js`); the cut-shell refusal and its
   confirmed escape (`copilotTools.test.js`).
 - **Checks and the Workbench's questions:** the answer checks with their negated and qualified
-  phrasings and `lowerOutcome` (`answerAudit.test.js`); the clarifier on synthetic shells — split,
+  phrasings (`answerAudit.test.js`); the evidence gate, numbers by reference and the computed
+  verdict on their own (`evidence.test.js`) and in the loop (`agentLoop.test.js`); the clarifier on synthetic shells — split,
   merged, clean, word-like element symbols, the tolerance ladder, typed windows
   (`clarify.test.js`); and on the Demo with the real engines and context
-  (`src/__tests__/copilotChecksReplays.test.js`): a contradicted answer is lowered, gemma4's
-  correct answers keep *achieved*, each Workbench question (an element alone, a split shell, a
+  (`src/__tests__/copilotChecksReplays.test.js`, the evidence gate on, as in the app): a
+  contradicted answer is not verified, gemma4's correct answers stay *achieved* and are never sent
+  back, a cluster conclusion sent back for its analysis and its numbers filled from it, each Workbench question (an element alone, a split shell, a
   cut window kept or replaced, one site or pooled), the clear questions that never ask, the
   model's own `ask_user` beside them within two per request, and cancel. In the dock
   (`copilotChat.test.jsx`): the Workbench's card before any model request, the lowered chip.

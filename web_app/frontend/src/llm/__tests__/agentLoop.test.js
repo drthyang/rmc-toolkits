@@ -6,6 +6,7 @@ import { DEFAULT_LIMITS, assistantContent, isToolsUnsupportedError, runCopilotTu
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
 import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
 import { ASK_RULES, buildCopilotMessages } from '../prompts/copilot';
+import { buildEvidenceGate } from '../copilot/evidence';
 
 // A scripted model: each request consumes the next reply. A reply is either
 // { text } or { calls: [{ name, args }] } (optionally with text), or an
@@ -86,14 +87,19 @@ describe('runCopilotTurn', () => {
         });
         expect(second.at(-1).role).toBe('tool');
         expect(second.at(-1).tool_call_id).toBe('c1_0');
+        // Each result carries the ref the model quotes its values by (THY-18).
         expect(JSON.parse(second.at(-1).content)).toEqual({
+            ref: 'r1',
             checks: [{ level: 'ok', text: 'fine' }],
             data: { value: 4, list: [1, 2, 3] }
         });
+        expect(end.ref).toBe('r1');
 
         const done = events.at(-1);
         expect(done).toMatchObject({ type: 'done', rounds: 1, stoppedBy: 'answer' });
-        expect(done.outcome).toEqual({ status: 'achieved', note: 'echoed 4.', body: 'The value is 4.' });
+        // The verdict is computed from the checks; the model's line explains it.
+        expect(done.outcome).toMatchObject({ status: 'achieved', claimed: 'achieved', body: 'The value is 4.', computed: true });
+        expect(done.outcome.note).toBe('1 analysis ran and passed its checks, and no check contradicts the answer. echoed 4.');
     });
 
     it('returns argument errors to the model, which can correct them', async () => {
@@ -344,6 +350,7 @@ describe('runCopilotTurn', () => {
         }));
         const toolContents = requests[3].messages.filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
         expect(toolContents[0]).toEqual({
+            ref: 'r1',
             compacted: 'this earlier result was shortened to fit the context; its checks and headline numbers are kept',
             checks: [{ level: 'ok', text: 'round 1' }],
             key: { value: 1 }
@@ -403,7 +410,7 @@ describe('runCopilotTurn', () => {
     it('uses sensible default limits', () => {
         expect(DEFAULT_LIMITS).toEqual({
             maxRounds: 6, maxCallsPerRound: 4, toolTimeoutMs: 120000, maxTurnMs: 600000, resultCharBudget: 3000, turnCharBudget: 12000,
-            maxQuestions: 2, stallMs: 180000, requestMaxMs: 600000, maxNoProgressRounds: 2
+            maxQuestions: 2, stallMs: 180000, requestMaxMs: 600000, maxNoProgressRounds: 2, maxEvidenceGates: 2
         });
     });
 });
@@ -666,5 +673,113 @@ describe('ask_user: the agent asks instead of guessing a parameter', () => {
         expect(end.status).toBe('failed');
         expect(end.error).toMatch(/cannot be asked here: proceed with your default/);
         expect(end.args.options).toEqual([{ label: '250 K' }, { label: '5 K' }]);
+    });
+});
+
+describe('evidence, numbers by reference and the computed verdict (THY-18)', () => {
+    const modulations = () => echoTool({
+        name: 'analyze_modulations',
+        description: 'Order between cells.',
+        parameters: { type: 'object', properties: {} },
+        label: () => 'Superstructure test',
+        run: vi.fn(async () => ({ data: { elements: [{ element: 'Ti', zone_boundary: [['(0, 0, ½)', 498, 99.5, '>8']] }] }, checks: [{ level: 'ok', text: 'Ordered Ti.' }] }))
+    });
+
+    it('sends an answer whose analysis did not run back once, and lets the answer stand once it ran', async () => {
+        const tool = modulations();
+        const { callModel, requests } = scriptedModel([
+            { text: 'Ti forms a superstructure at (0, 0, ½).\nOutcome: achieved — the split Ti.' },
+            { calls: [{ name: 'analyze_modulations', args: {} }] },
+            { text: 'Ti orders at (0, 0, ½), {{r1.elements.0.zone_boundary.0.1}}× the median.\nOutcome: the zone-boundary point is ordered.' }
+        ]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [tool], evidence: buildEvidenceGate() }));
+        const gate = events.find((event) => event.type === 'gate');
+        expect(gate).toMatchObject({ id: 'order-between-cells', missing: ['analyze_modulations'] });
+        // Its text is withdrawn; the model reads its answer and the app's note.
+        expect(events[events.indexOf(gate) + 1]).toEqual({ type: 'retract' });
+        expect(requests[1].messages.at(-2)).toEqual({ role: 'assistant', content: 'Ti forms a superstructure at (0, 0, ½).\nOutcome: achieved — the split Ti.' });
+        expect(requests[1].messages.at(-1).content).toMatch(/^\(From the app, not the user\.\) Your answer concludes order between cells/);
+        const done = events.at(-1);
+        expect(done.gates).toEqual([{ round: 0, id: 'order-between-cells', missing: ['analyze_modulations'] }]);
+        expect(done.audit).toEqual([]);
+        // The number by reference is the engine's; the verdict the checks'.
+        expect(done.text).toBe('Ti orders at (0, 0, ½), 498× the median.\nOutcome: the zone-boundary point is ordered.');
+        expect(done.rawText).toContain('{{r1.elements.0.zone_boundary.0.1}}');
+        expect(done.references).toEqual({ written: 1, filled: 1, unknown: [] });
+        expect(done.outcome).toMatchObject({ status: 'achieved', claimed: null, body: 'Ti orders at (0, 0, ½), 498× the median.' });
+    });
+
+    it('an answer that still lacks its evidence stands, not verified, with the missing analysis named', async () => {
+        const answer = { text: 'Ti forms a superstructure.\nOutcome: achieved — sure.' };
+        const { callModel } = scriptedModel([answer, answer]);
+        const events = await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [modulations()], evidence: buildEvidenceGate() }));
+        const done = events.at(-1);
+        expect(events.filter((event) => event.type === 'gate')).toHaveLength(1);
+        expect(done.audit).toEqual([expect.objectContaining({
+            rule: 'evidence', id: 'order-between-cells', text: 'The answer concludes order between cells, but analyze_modulations did not run in this question.'
+        })]);
+        expect(done.outcome).toMatchObject({ status: 'not verified', claimed: 'achieved' });
+    });
+
+    it('no send-back once the analysis budget is used: the finding stands instead', async () => {
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 } }] },
+            { text: 'Ti forms a superstructure.' }
+        ]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [echoTool(), modulations()], evidence: buildEvidenceGate(), limits: { maxRounds: 1 }
+        }));
+        expect(requests).toHaveLength(2);
+        expect(events.some((event) => event.type === 'gate')).toBe(false);
+        expect(events.at(-1)).toMatchObject({ stoppedBy: 'max_rounds', outcome: { status: 'not verified' } });
+    });
+
+    it('an answer the gate withdrew stands when the model then writes nothing (review)', async () => {
+        const { callModel } = scriptedModel([{ text: 'Ti forms a superstructure.\nOutcome: sure.' }, { text: '' }, { text: '' }]);
+        const done = (await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [modulations()], evidence: buildEvidenceGate() }))).at(-1);
+        expect(done).toMatchObject({ type: 'done', text: 'Ti forms a superstructure.\nOutcome: sure.', stoppedBy: 'answer' });
+        expect(done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
+        expect(done.outcome.status).toBe('not verified');
+    });
+
+    it('the gate reads the answer with its references filled, and never sends back once the turn is out of time (review)', async () => {
+        const cnTool = echoTool({ name: 'echo', run: vi.fn(async () => ({ data: { cn: 4 }, checks: [{ level: 'ok', text: 'fine' }] })) });
+        const { callModel, requests } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 1 } }] },
+            { text: 'Ti has CN = {{r1.cn}}.' },
+            { text: 'Ti has CN = {{r1.cn}}.' }
+        ]);
+        const events = await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [cnTool, { ...echoTool(), name: 'find_gr_peaks' }], evidence: buildEvidenceGate({ elements: ['Ti', 'O'] })
+        }));
+        expect(events.find((event) => event.type === 'gate')).toMatchObject({ id: 'coordination' });
+        expect(requests).toHaveLength(3);
+        const late = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'Ti forms a superstructure.' }]);
+        const lateEvents = await collect(runCopilotTurn({
+            callModel: late.callModel, messages: baseMessages, tools: [echoTool(), modulations()], evidence: buildEvidenceGate(), limits: { maxTurnMs: -1 }
+        }));
+        expect(lateEvents.some((event) => event.type === 'gate')).toBe(false);
+        expect(lateEvents.at(-1).audit.map((finding) => finding.rule)).toEqual(['evidence']);
+    });
+
+    it('with tools off, a conclusion no analysis backs is not verified (review)', async () => {
+        const { callModel } = scriptedModel([{ text: 'Ti forms a superstructure.' }]);
+        const done = (await collect(runCopilotTurn({
+            callModel, messages: baseMessages, tools: [modulations()], toolsEnabled: false, evidence: buildEvidenceGate()
+        }))).at(-1);
+        expect(done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
+        expect(done.outcome.status).toBe('not verified');
+    });
+
+    it('a reference that names nothing is a finding, and the number stays missing', async () => {
+        const { callModel } = scriptedModel([
+            { calls: [{ name: 'echo', args: { value: 4 } }] },
+            { text: 'The value is {{r1.value}}, the list ends at {{r1.list.2}}, and the shift is {{r2.shift}} Å.' }
+        ]);
+        const done = (await collect(runCopilotTurn({ callModel, messages: baseMessages, tools: [echoTool()] }))).at(-1);
+        expect(done.text).toBe('The value is 4, the list ends at 3, and the shift is {{r2.shift}} Å.');
+        expect(done.references).toEqual({ written: 3, filled: 2, unknown: ['r2.shift'] });
+        expect(done.audit).toEqual([{ rule: 'reference', text: 'The answer cites {{r2.shift}}, which names no value this question\'s analyses returned: those numbers are missing.' }]);
+        expect(done.outcome.status).toBe('not verified');
     });
 });

@@ -1327,9 +1327,69 @@ has converged" is a claim; "To check whether the run has converged" is not). "Co
   and no window the user chose gave n. A clause about part of the shell — the first peak, the short
   bonds, a window in Å — is not a claim about the whole.
 
-The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show under the answer.
-`lowerOutcome` then replaces a verdict of *achieved* or *partial* (or none) by **not verified**
-(`claimed` keeps the model's, the note says what it claimed); *not achieved* stays.
+The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show under the answer,
+with the `reference` and `evidence` findings below; any finding makes the computed verdict **not
+verified**.
+
+**The evidence gate** (`copilot/evidence.js`, THY-18). Each rule reads a kind of conclusion with
+`asserts` (the answer checks' claim reading) and names the analysis it needs in this turn:
+order between cells (superstructure, cell doubling, zone-boundary order, modulation, incommensurate
+order) and a split site called random disorder (split site, two-site disorder, random
+off-centring or off-centring at random, a displacement of ± x Å or ± x Å along a direction — not a
+± sampling error — `off_centre`) — `analyze_modulations`; a preferred direction —
+`analyze_displacement_directions`; distorted, breathing or rigid clusters (and `cluster_*`,
+`rigid_cluster`) — `analyze_clusters`; a coordination number, a polyhedral coordination, a split
+shell or a Jahn–Teller distortion — `find_gr_peaks` or `compute_bond_angles`; a lowering of the
+average structure (symmetry lowering, lowered symmetry, a coherent shift, a polar shift, a shift
+of x Å, "(coherent)"; not "coherent scattering") —
+`measure_symmetry_lowering` (`detect_symmetry` when that is not offered); "no order" (no local
+order, thermal motion only, nothing beyond the average structure; an empty `"features": []`;
+not the modulation tool's own "no order that doubles the cell") — `analyze_modulations`, a
+directions map with `site_ref`, and `analyze_clusters` for every element of the clarifier's shell
+catalog whose own first shell holds 0.5–4.5 neighbours (`CLUSTER_CN_MAX`). Every rule but "no
+order" reads only sentences about this run: naming an element of the run (as a symbol not followed
+by a lower-case letter, so Ti in TiO₆ but not in "Tiny") or the run itself (this / the run,
+configuration, structure, model, box, supercell, sample, compound, crystal, material, system; the
+sites, atoms, clusters, octahedra, tetrahedra, polyhedra, displacements; site n), so a definition
+needs no analysis; with no element list every sentence counts. A step counts when it
+returned without an error (a refused bond-angle window still counted its coordination). Rules for
+tools the turn does not offer are dropped. When the model answers with tools still allowed and
+fewer than `maxEvidenceGates` (2) send-backs this turn, the first unmet rule not sent back yet is
+sent back: a `gate` event (carrying the withdrawn text), a `retract` of the answer's text, the
+answer as an assistant message and the note "(From the app, not the user.) Your answer concludes
+…, but this question has not run …". The gate reads the answer with its references filled (as the
+checks will), and sends nothing back on the final round or once the turn's time is spent. On the
+final round, or once the gates are spent, an unmet rule is an `evidence` finding naming what did
+not run; with tools off or unsupported the findings still apply (nothing is sent back). A
+withdrawn answer is not lost: if the model then writes nothing, it stands with its finding, and a
+Stop keeps it as the partial answer. A step counts as run only when the tool ran (or its identical
+earlier run is repeated): not a call to an unknown tool, one skipped by the per-round limit, a
+refused question, or a view tool.
+
+**Numbers by reference** (`copilot/references.js`). The loop names each successful result
+`r<n>` (in the order of the turn), puts it first in the tool message (`ref`, kept through
+compaction) and stores the data it sent (the fitted result, so a reference names what the model
+saw). `fillReferences` replaces every `{{r<n>.<path>}}` or `{{ctx.<path>}}` (path steps `.key`,
+`.n` or `[n]`; keys may hold `<>+-`, as in `<100>`) by the value: a finite number as written in the
+data, a string as is, a boolean, or a list of scalars as `[a, b, c]`; anything else in double
+braces that does not start with `r<n>` or `ctx` (a LaTeX group) is left alone. An unfilled
+reference stays and is a `reference` finding. `{{ctx.…}}` resolves against the context as the
+model read it (`shownContext`: contextToJson's trimmed copy), never a value the trim removed. An
+ended or stopped turn fills the references in every text segment from its own steps (each keeps
+its `ref` and the data it sent). The `done` event carries the filled `text`, the
+`rawText` and `references: {written, filled, unknown}`. `analyze_clusters` asks for a
+4,500-character result (`CLUSTER_RESULT_BUDGET`): at 3,000 its result with checks (~3.4k on the
+demo) reached the model cut to a text fragment no path could name.
+
+**The computed verdict** (`copilot/verdict.js` `computeOutcome`). In order: **not verified** —
+any finding (answer check, unfilled reference, missing evidence); **not achieved** — analyses ran
+and every one failed; **partial** — `stoppedBy` max_rounds or no_progress, a reply cut at the
+length limit, a failed step with no later success of the same tool, or a step that warned;
+**achieved** — otherwise. Questions to the user, skill reads, view tools and calls that never ran
+are not analyses. The model may lower the status, never raise it: a `partial` or `not achieved` it
+writes stands over a computed `achieved` or `partial` ("the model says the answer is …"). The note
+lists the reasons, then the model's sentence; a status the model wrote is `claimed`, and named
+("The model said 'achieved': …") when it differs.
 
 **The Workbench's own questions** (`copilot/clarify.js`). `buildShellCatalog` reads the
 partials file: per ordered pair (centre, partner) the first shell as `firstShell` finds it (Step 9),
@@ -1417,8 +1477,8 @@ states is LM Studio; anything else is sent unchanged (`client.js`).
 - A reply that stops at the length limit (`done_reason` / `finish_reason` `length`) sets `cut` on
   the turn, and its footer says so.
 
-**The verdict.** The prompt asks every answer to end with
-`Outcome: achieved|partial|not achieved — <one sentence>`.
+**The verdict.** The prompt asks every answer to end with `Outcome: <one sentence>` — what the
+evidence shows or what is missing — and tells the model not to grade itself (THY-18).
 [`copilot/outcome.js`](../../web_app/frontend/src/llm/copilot/outcome.js) `parseOutcome()` reads
 the line:
 
@@ -1426,11 +1486,12 @@ the line:
 - decoration is tolerated (bold or italics, inline-code backticks, a list bullet or heading
   marker, an en dash or a colon). The prompt shows the line in backticks, and some models copy
   them;
-- `not_achieved` is accepted for "not achieved";
-- the three statuses are matched strictly; any other word is not a verdict.
+- a status word first (achieved, partial, not achieved; `not_achieved` too), as the old prompt
+  asked, is read as the model's claim; any other first word stays in the sentence.
 
-The line is removed from the answer text and shown as the chip. A reply without it has no chip. The
-verdict is the model's own self-assessment. The checks are the deterministic part: read both.
+The line is removed from the answer text. The chip shows the **computed** verdict
+(`computeOutcome`, above), with the model's sentence in its note; a model's status is kept as
+`claimed` and never decides.
 
 ---
 
@@ -1703,6 +1764,9 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `MODAL_COORDINATION_SHARE` | 0.6 | fraction | `copilotTools.js` | Central atoms with the most common A–B bond count below this share: the window cuts the shell — refused unless `window_confirmed` (then warn) (a spread coordination, as when the window cuts through a shell; demo Se–Ta–Se at 2.3–2.7 Å: 0.47, whole shells 0.83–0.96) |
 | `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `pairCorrelations.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
 | `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `pairCorrelations.js` | Shell onset; a tail below this closes the shell |
+| `maxEvidenceGates` | 2 | send-backs per turn | `agentLoop.js` | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
+| `CLUSTER_CN_MAX` | 4.5 | neighbours | `evidence.js` | An element whose own first shell holds at most this many may form finite clusters: "no order" needs `analyze_clusters` on it |
+| `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
 | `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `IDEAL_CN_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `pairCorrelations.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1) |
 | `CONSTRAINT_PILEUP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $g$ just above a closest-approach constraint above this: the constraint cuts the distribution |
 | `SHELL_OVERLAP_FRACTION` | 0.02 | of the first peak | `runTools.js` | $\tilde g$ at the shell boundary above this: shells not separated |
@@ -1751,10 +1815,10 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   state, so once a conversation starts you cannot re-read the context without *New conversation*
   (which clears the conversation), and it re-serializes the *current* context, which under Live Data may
   differ from what accompanied an earlier answer. Analysis results stay inspectable on their step cards.
-- **The Outcome chip is the model's self-assessment, lowered only by a computed contradiction.** A
-  small model may write "achieved" over a failed check; only the answer checks of Step 17 (converged,
-  chirality, centrosymmetry, inversion, preferred direction) lower it to *Not verified*. The step cards'
-  checks are computed, not generated: read them.
+- **The Outcome chip is computed from checks, which see only what they test.** *Achieved* means
+  every analysis the answer rests on ran and passed its checks and no answer check contradicts it
+  (THY-18); it cannot know a claim the checks do not cover is wrong. The validation reports how
+  often an *achieved* answer still scored below 1 against the planted truth ("over").
 - **The peak finder is a cue extractor, not a PDF refinement.** No baseline model, no profile function,
   no interpolation, no uncertainty. The reported `r` is the grid abscissa of the *smoothed* local
   maximum — quantised to the file's $r$ step and pulled toward the heavier flank of an asymmetric peak —

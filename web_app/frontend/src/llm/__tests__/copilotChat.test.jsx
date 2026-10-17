@@ -397,7 +397,7 @@ describe('CopilotChat', () => {
             const chip = container.querySelector('.llm-outcome');
             expect(chip.className).toContain('is-not-verified');
             expect(chip.querySelector('strong').textContent).toBe('Not verified');
-            expect(chip.textContent).toContain('a check below contradicts the answer (the model said "achieved": flat history.)');
+            expect(chip.textContent).toContain('a check below contradicts the answer. The model said "achieved": flat history.');
             expect(container.querySelector('.llm-sr-only[aria-live]').textContent).toMatch(/^Outcome: Not verified\. .* Check: The answer says the run has converged/);
         });
 

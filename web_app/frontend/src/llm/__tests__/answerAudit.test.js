@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { describe, expect, it } from 'vitest';
-import { auditAnswer, contextAuditFacts, lowerOutcome, normalizeSymbol } from '../copilot/answerAudit';
+import { auditAnswer, contextAuditFacts, normalizeSymbol } from '../copilot/answerAudit';
 import { pointGroupFacts } from '../context/pointGroups';
 
 const rules = (text, options) => auditAnswer(text, options).map((finding) => finding.rule);
@@ -160,35 +160,6 @@ describe('contextAuditFacts', () => {
         }, pointGroupFacts);
         expect(counted.groups.filter((group) => group.parent).map((group) => group.symbol)).toEqual(['Pm-3m', 'Pm-3m']);
         expect(contextAuditFacts(null, pointGroupFacts)).toBeNull();
-    });
-});
-
-describe('lowerOutcome', () => {
-    const finding = [{ rule: 'convergence', text: 'x' }];
-
-    it('turns a contradicted "achieved" or "partial" into "not verified", keeping what the model said', () => {
-        expect(lowerOutcome({ status: 'achieved', note: 'flat history.', body: 'B' }, finding)).toEqual({
-            status: 'not verified',
-            claimed: 'achieved',
-            note: 'a check below contradicts the answer (the model said "achieved": flat history.).',
-            body: 'B'
-        });
-        expect(lowerOutcome({ status: 'partial', note: null, body: 'B' }, [...finding, { rule: 'direction', text: 'y' }]).note)
-            .toBe('2 checks below contradict the answer (the model said "partial").');
-    });
-
-    it('gives an answer without a verdict line one, and never raises "not achieved"', () => {
-        expect(lowerOutcome(null, finding, 'The text.')).toEqual({
-            status: 'not verified', claimed: null, note: 'a check below contradicts the answer.', body: 'The text.'
-        });
-        const failed = { status: 'not achieved', note: 'no data', body: 'B' };
-        expect(lowerOutcome(failed, finding)).toBe(failed);
-    });
-
-    it('leaves an answer no check contradicts as the model judged it', () => {
-        const fine = { status: 'achieved', note: 'n', body: 'B' };
-        expect(lowerOutcome(fine, [])).toBe(fine);
-        expect(lowerOutcome(null, [])).toBeNull();
     });
 });
 

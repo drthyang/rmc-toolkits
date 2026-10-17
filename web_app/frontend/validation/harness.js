@@ -18,25 +18,33 @@
 // final answer, its verdict and score, the answer checks against the
 // contradictions the score found, where each reported number came from,
 // and the safety counts. The record is the transcript's source.
+//
+// THY-18 (protocol 2026-10-17.2): the evidence gate is on (an answer whose
+// analysis did not run goes back to the model; each send-back is recorded),
+// numbers may be written by reference (the record keeps the answer as written
+// and as filled; the VERDICT is parsed from the filled text), and the Outcome
+// is the app's computed verdict, recorded beside the case score.
 
 import { runCopilotTurn } from '../src/llm/copilot/agentLoop';
 import { buildAskUserTool, ASK_USER } from '../src/llm/copilot/askUser';
 import { buildClarifier } from '../src/llm/copilot/clarify';
+import { buildEvidenceGate } from '../src/llm/copilot/evidence';
 import { buildReadSkillTool, parseSkillFiles, READ_SKILL, skillIndex } from '../src/llm/copilot/skills';
 import { buildRunTools } from '../src/llm/copilot/runTools';
 import { contextAuditFacts } from '../src/llm/copilot/answerAudit';
 import { buildRunContext } from '../src/llm/context/runContext';
 import { pointGroupFacts } from '../src/llm/context/pointGroups';
-import { buildCopilotMessages } from '../src/llm/prompts/copilot';
+import { buildCopilotMessages, shownContext } from '../src/llm/prompts/copilot';
 import { buildCopilotTools } from '../src/copilotTools';
 import { loadRun } from './runFolder';
 import { parseVerdict, VERDICT_INSTRUCTIONS, VERDICT_MARK } from './verdict';
-import { scoreVerdict } from './scoring';
+import { outcomeAgreement, scoreVerdict } from './scoring';
 import { shownValues, traceNumbers } from './provenance';
 
 // Bumped when the cases, question, scoring, harness, tools or skills change what
-// a run means (2026-10-17.1: validation batch 1's tools).
-export const PROTOCOL_VERSION = '2026-10-17.1';
+// a run means (2026-10-17.1: validation batch 1's tools; 2026-10-17.2:
+// THY-18's evidence gate, numbers by reference and computed verdict).
+export const PROTOCOL_VERSION = '2026-10-17.2';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },
@@ -103,6 +111,7 @@ export const runLiveCase = async ({
         skills_offered: parsedSkills.map((skill) => skill.name),
         steps: [],
         retracted: [],
+        gates: [],
         rounds: 0,
         final: null,
         error: null
@@ -111,21 +120,30 @@ export const runLiveCase = async ({
     // The round's reasoning and text, the "why" of the calls that follow it.
     let round = { index: 0, reasoning: '', text: '' };
     const open = new Map();
+    let gated = null;
     try {
         for await (const event of runCopilotTurn({
             callModel, messages, tools, limits, signal, toolsEnabled: true,
             toolContext: { askUser: skippingUser(asked) },
             auditContext: contextAuditFacts(context, pointGroupFacts),
-            clarifier
+            clarifier,
+            evidence: buildEvidenceGate({ catalog: clarifier.catalog, offered: tools.map((tool) => tool.name), elements: run.elements }),
+            referenceContext: shownContext(context)
         })) {
             if (event.type === 'round') round = { index: event.round, reasoning: '', text: '' };
             else if (event.type === 'reasoning') round.reasoning += event.delta;
             else if (event.type === 'text') round.text += event.delta;
-            else if (event.type === 'retract') {
-                // The loop withdrew this round's text (a looping reply, or a
-                // call written as JSON text, which it then runs): kept for the
-                // reviewer, never shown as the reason for a call.
-                record.retracted.push({ round: round.index, text: round.text });
+            else if (event.type === 'gate') {
+                // The evidence gate sent the answer back: its text is withdrawn next.
+                gated = { round: round.index, id: event.id, what: event.what, missing: event.missing, notice: event.notice };
+                record.gates.push(gated);
+            } else if (event.type === 'retract') {
+                // The loop withdrew this round's text (a looping reply, a call
+                // written as JSON text, which it then runs, or an answer the
+                // evidence gate sent back): kept for the reviewer, never shown
+                // as the reason for a call.
+                record.retracted.push({ round: round.index, text: round.text, ...(gated ? { by: `evidence gate: ${gated.id}` } : {}) });
+                gated = null;
                 round.text = '';
             }
             else if (event.type === 'tool_start') {
@@ -150,8 +168,9 @@ export const runLiveCase = async ({
             } else if (event.type === 'done') {
                 record.rounds = event.rounds;
                 record.final = {
-                    text: event.text, outcome: event.outcome, stopped_by: event.stoppedBy, cut: Boolean(event.cut),
-                    audit: event.audit || [], reasoning: round.reasoning, reason: event.reason ?? null
+                    text: event.text, raw_text: event.rawText ?? event.text, outcome: event.outcome, stopped_by: event.stoppedBy,
+                    cut: Boolean(event.cut), audit: event.audit || [], references: event.references ?? null,
+                    reasoning: round.reasoning, reason: event.reason ?? null
                 };
             }
         }
@@ -189,12 +208,24 @@ const finishRecord = (record, built, context, asked, startedAt, now) => {
         unmatched_findings: audit.filter((finding) => !covered.some((item) => item.rule === finding.rule)).map((finding) => finding.rule)
     };
 
-    // Where each reported number came from: what the model was shown.
+    // Where each reported number came from: what the model was shown. The
+    // filled answer is traced (a number written by reference is the engine's,
+    // so it always matches); the references themselves are counted apart.
     const steps = record.steps.filter((step) => step.by === 'model' || step.by === 'workbench');
     // The prose only: the VERDICT block restates numbers the score judges.
     const marks = [...text.matchAll(VERDICT_MARK)];
     const prose = marks.length ? text.slice(0, marks[0].index) : text;
     record.provenance = traceNumbers(prose, shownValues({ steps, context, question: record.question }));
+    const references = record.final?.references || { written: 0, filled: 0, unknown: [] };
+    record.provenance.by_reference = { written: references.written, filled: references.filled, unknown: references.unknown };
+
+    // THY-18: what the gate sent back, the evidence still missing at the end,
+    // and the computed verdict beside the case score.
+    record.evidence = {
+        gates: record.gates.map(({ round, id, missing }) => ({ round, id, missing })),
+        missing: audit.filter((finding) => finding.rule === 'evidence').map((finding) => ({ id: finding.id, missing: finding.missing }))
+    };
+    record.outcome_eval = outcomeAgreement(record.final?.outcome?.status ?? null, record.score.score);
 
     // Safety: a window marked as the user's choice when the user chose none.
     const unsafe = [];

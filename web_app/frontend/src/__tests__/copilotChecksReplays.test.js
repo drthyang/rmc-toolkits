@@ -18,9 +18,11 @@ import { runCopilotTurn } from '../llm/copilot/agentLoop';
 import { contextAuditFacts } from '../llm/copilot/answerAudit';
 import { buildAskUserTool } from '../llm/copilot/askUser';
 import { buildClarifier } from '../llm/copilot/clarify';
+import { buildEvidenceGate } from '../llm/copilot/evidence';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { pointGroupFacts } from '../llm/context/pointGroups';
 import { buildRunContext } from '../llm/context/runContext';
+import { shownContext } from '../llm/prompts/copilot';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { handlePcaMessage } from '../workers/pcaKdeWorker';
 
@@ -72,7 +74,11 @@ const scriptedModel = (replies) => {
 };
 
 // One question: the events, the requests the model got, the cards asked.
-const replay = async (question, replies, { answer = null, withClarifier = true, signal } = {}) => {
+// The evidence gate, as the app builds it (useCopilot.js): on by default.
+const evidence = buildEvidenceGate({
+    catalog: clarifier.catalog, offered: tools.map((tool) => tool.name), elements: Object.keys(structure.elementCounts)
+});
+const replay = async (question, replies, { answer = null, withClarifier = true, withEvidence = true, signal } = {}) => {
     const asked = [];
     const askUser = vi.fn(async (req) => {
         asked.push(req);
@@ -88,7 +94,9 @@ const replay = async (question, replies, { answer = null, withClarifier = true, 
         signal,
         toolContext: { askUser },
         auditContext,
-        clarifier: withClarifier ? clarifier : null
+        clarifier: withClarifier ? clarifier : null,
+        evidence: withEvidence ? evidence : null,
+        referenceContext: shownContext(context)
     })) events.push(event);
     const ends = events.filter((event) => event.type === 'tool_end');
     const lastToolMessage = () => JSON.parse(requests.at(-1).filter((message) => message.role === 'tool').at(-1).content);
@@ -108,7 +116,7 @@ describe('the Outcome after the checks', () => {
         ]);
         expect(done.audit.map((finding) => finding.rule)).toEqual(['convergence']);
         expect(done.outcome).toMatchObject({ status: 'not verified', claimed: 'achieved' });
-        expect(done.outcome.note).toMatch(/^a check below contradicts the answer \(the model said "achieved": flat history\.\)/);
+        expect(done.outcome.note).toBe('a check below contradicts the answer. The model said "achieved": flat history.');
     });
 
     it('lowers the spot check\'s symmetry answer, from the context alone', async () => {
@@ -368,5 +376,45 @@ describe('the questions the Workbench asks itself', () => {
         expect(windows[0].apply([2.21, 3.23])).toMatchObject({ r12_min: 2.21, r12_max: 3.23 });
         expect(toolNamed('analyze_clusters').shellWindows({ element: 'Ta', r_min: 2.65, r_max: 3.33 })[0])
             .toMatchObject({ centre: 'Ta', partner: 'Ta', window: [2.65, 3.33] });
+    });
+});
+
+describe('THY-18 on the demo run: evidence, numbers by reference, the computed verdict', () => {
+    it('sends a cluster conclusion back for its analysis, fills its numbers from it, and grades it from the checks', async () => {
+        const { events, done, requests } = await replay('Do the Ta4 clusters breathe?', [
+            { text: 'Yes: the Ta4 clusters breathe.\nOutcome: achieved — obvious from the structure.' },
+            { calls: [{ name: 'analyze_clusters', args: { element: 'Ta', r_min: 2.65, r_max: 3.33 } }] },
+            {
+                text: 'The Ta4 clusters breathe: their size fluctuates {{r1.local.breathing_sd_A.change}} (relative) more than for '
+                    + 'independent atoms, z = {{r1.local.breathing_sd_A.z}}.\nOutcome: achieved — analyze_clusters shows breathing.'
+            }
+        ]);
+        expect(events.find((event) => event.type === 'gate')).toMatchObject({ id: 'clusters', missing: ['analyze_clusters'] });
+        expect(requests[1].at(-1).content).toMatch(/has not run analyze_clusters/);
+        expect(done.text).toMatch(/^The Ta4 clusters breathe: their size fluctuates 0\.27 \(relative\) more than for independent atoms, z = 27\./);
+        expect(done.references).toEqual({ written: 2, filled: 2, unknown: [] });
+        expect(done.audit).toEqual([]);
+        // The cluster step warned (bonds outside the window): partial, whatever the model said.
+        expect(done.outcome).toMatchObject({ status: 'partial', claimed: 'achieved' });
+        expect(done.outcome.note).toMatch(/^analyze_clusters warned: its result holds with the stated caveat\. The model said "achieved": analyze_clusters shows breathing\./);
+    });
+
+    it('a coordination number from the whole TaSe6 shell, by reference: achieved by the checks', async () => {
+        const { done } = await replay('How many Se surround each Ta?', [
+            { calls: [{ name: 'find_gr_peaks', args: { pair: 'Ta-Se' } }] },
+            { text: 'Each Ta is {{r1.first_shell.cn.Se_per_Ta}}-coordinated by Se in {{r1.first_shell.window_A}} Å.\nOutcome: the whole first shell.' }
+        ]);
+        expect(done.text).toMatch(/^Each Ta is 6-coordinated by Se in \[2\.2\d?, 3\.\d+\] Å\./);
+        expect(done.audit).toEqual([]);
+        expect(done.outcome).toMatchObject({ status: 'achieved', claimed: null });
+    });
+
+    it('a wrong number typed over a reference is caught by the checks, not by the verdict alone', async () => {
+        const { done } = await replay('How many Se surround each Ta?', [
+            { calls: [{ name: 'find_gr_peaks', args: { pair: 'Ta-Se' } }] },
+            { text: 'Each Ta is four-coordinated by Se.\nOutcome: achieved — counted.' }
+        ]);
+        expect(done.audit.map((finding) => finding.rule)).toEqual(['coordination']);
+        expect(done.outcome).toMatchObject({ status: 'not verified', claimed: 'achieved' });
     });
 });

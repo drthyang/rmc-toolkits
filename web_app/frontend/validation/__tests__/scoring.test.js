@@ -121,3 +121,14 @@ describe('the verdict line', () => {
         expect(parseVerdict('VERDICT {"order": "none"}').error).toMatch(/no features array/);
     });
 });
+
+describe('the computed verdict against the score (THY-18)', () => {
+    it('earned, over, under, held', async () => {
+        const { outcomeAgreement } = await import('../scoring');
+        expect(outcomeAgreement('achieved', 1)).toEqual({ status: 'achieved', right: true, agreement: 'earned' });
+        expect(outcomeAgreement('achieved', 0.75)).toMatchObject({ agreement: 'over' });
+        expect(outcomeAgreement('partial', 1)).toMatchObject({ agreement: 'under' });
+        expect(outcomeAgreement('not verified', 0.5)).toMatchObject({ agreement: 'held' });
+        expect(outcomeAgreement(null, 0)).toMatchObject({ agreement: 'none' });
+    });
+});

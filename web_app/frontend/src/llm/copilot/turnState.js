@@ -6,6 +6,21 @@
 // model request, with that request's reasoning) and tool steps — plus the
 // final verdict. Pure: `applyTurnEvent(turn, event, now)` returns a new turn.
 
+import { createReferenceStore, fillReferences } from './references';
+
+// Every text segment of an ended turn with its {{r<n>.…}} references filled
+// from the turn's own steps (each keeps its ref and the data it sent): the
+// answer arrives filled, but text written beside earlier calls, or the part
+// a Stop leaves, would show the raw references otherwise.
+const fillTexts = (items) => {
+    if (!items.some((item) => item.kind === 'text' && item.text?.includes('{{'))) return items;
+    const store = createReferenceStore();
+    items.forEach((item) => { if (item.kind === 'tool' && item.ref) store.put(item.ref, item.data); });
+    return items.map((item) => (item.kind === 'text' && item.text?.includes('{{')
+        ? { ...item, text: fillReferences(item.text, store).text }
+        : item));
+};
+
 export const newAssistantTurn = (now = 0) => ({
     role: 'assistant',
     items: [],
@@ -82,16 +97,22 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                     error: event.error,
                     ms: event.ms,
                     cached: Boolean(event.cached),
+                    ref: event.ref ?? null,
                     pageParams: event.pageParams ?? null
                 } : item))
             };
         case 'tools_unsupported':
             return { ...turn, toolsUnsupported: true };
+        case 'gate':
+            // The evidence gate sent the answer back (a 'retract' follows).
+            return { ...turn, gates: [...(turn.gates || []), { id: event.id, notice: event.notice, text: event.text ?? '' }] };
         case 'done': {
-            // The verdict line is shown as the chip, not repeated in the text.
+            // The verdict line is shown as the chip, not repeated in the text;
+            // the answer comes filled, earlier segments are filled here.
+            const filled = fillTexts(turn.items);
             const items = event.outcome
-                ? updateLastText(turn.items, () => ({ text: event.outcome.body }))
-                : turn.items;
+                ? updateLastText(filled, () => ({ text: event.outcome.body }))
+                : filled;
             return {
                 ...turn,
                 items: closeTexts(items),
@@ -101,6 +122,7 @@ export const applyTurnEvent = (turn, event, now = 0) => {
                 cut: Boolean(event.cut),
                 reason: event.reason || null,
                 audit: Array.isArray(event.audit) ? event.audit : [],
+                references: event.references ?? null,
                 streaming: false
             };
         }
@@ -115,10 +137,13 @@ export const applyTurnEvent = (turn, event, now = 0) => {
  * unfinished so a later question does not read it as a complete answer.
  */
 export const closeTurn = (turn, stoppedBy) => {
-    const partial = turn.text || [...turn.items].reverse().find((item) => item.kind === 'text' && item.text)?.text || '';
+    const items = fillTexts(turn.items);
+    // The partial text, or an answer the evidence gate withdrew.
+    const partial = turn.text || [...items].reverse().find((item) => item.kind === 'text' && item.text)?.text
+        || turn.gates?.at(-1)?.text || '';
     return {
         ...turn,
-        items: closeTexts(turn.items).map((item) => (item.kind === 'tool' && item.status === 'running'
+        items: closeTexts(items).map((item) => (item.kind === 'tool' && item.status === 'running'
             ? { ...item, status: 'stopped' }
             : item)),
         text: partial.trim() ? `${partial.trim()}\n\n(Interrupted before the answer was finished.)` : '',

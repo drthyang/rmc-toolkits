@@ -110,8 +110,60 @@ describe('the live harness, scripted model', () => {
             ])
         });
         expect(square.steps[0].data.first_shell.cn.F_per_Cu).toBeCloseTo(6, 1);
-        expect(square.final.audit.map((finding) => finding.rule)).toEqual(['coordination']);
+        // Its empty feature list concludes "no order" without the analyses
+        // that would show order: the gate sent it back once (THY-18), and the
+        // repeated answer keeps that finding beside the coordination check.
+        expect(square.gates.map((gate) => gate.id)).toEqual(['no-order']);
+        expect(square.final.audit.map((finding) => finding.rule)).toEqual(['coordination', 'evidence']);
         expect(square.final.outcome.status).toBe('not verified');
+    });
+
+    it('THY-18: the gate sends a split site called disorder back to the superstructure test, which finds the order', async () => {
+        const record = await runLiveCase({
+            built: built('dev-zone-boundary'), arm: 'B', model: MODEL, skills,
+            callModel: scripted([
+                { calls: [['list_sites', { element: 'Ti' }]] },
+                { text: 'Ti shows random two-site disorder along c (a split site).\n\nVERDICT {"features": [{"kind": "off_centre", "element": "Ti", "direction_uvw": [0, 0, 1], "magnitude_A": 0.1}], "space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}' },
+                { calls: [['analyze_modulations', {}]] },
+                { text: 'The split Ti is ordered: q = (0, 0, ½) at {{r2.elements.2.zone_boundary.0.1}}× the median power.\n\nOutcome: the order the split cloud hides.\n\n'
+                    + 'VERDICT {"features": [{"kind": "modulation", "element": "Ti", "q": [0, 0, 0.5], "direction_uvw": [0, 0, 1], "magnitude_A": null}], "space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}' }
+            ])
+        });
+        expect(record.gates).toEqual([expect.objectContaining({ id: 'split-site', missing: ['analyze_modulations'] })]);
+        expect(record.retracted).toEqual([expect.objectContaining({ by: 'evidence gate: split-site' })]);
+        expect(record.steps.map((step) => step.name)).toEqual(['list_sites', 'analyze_modulations']);
+        expect(record.score.score).toBe(1);
+        expect(record.final.text).toMatch(/q = \(0, 0, ½\) at \d+(\.\d+)?× the median power/);
+        expect(record.provenance.by_reference).toEqual({ written: 1, filled: 1, unknown: [] });
+        expect(record.evidence).toEqual({ gates: [{ round: expect.any(Number), id: 'split-site', missing: ['analyze_modulations'] }], missing: [] });
+        expect(record.final.outcome.status).toBe('achieved');
+        expect(record.outcome_eval).toEqual({ status: 'achieved', right: true, agreement: 'earned' });
+        const transcript = renderTranscript(record);
+        expect(transcript).toMatch(/the evidence gate: split-site sent the answer below back to the model/);
+        expect(transcript).toMatch(/outcome \(computed\): achieved · against the score: earned/);
+        expect(transcript).toMatch(/Numbers by reference: 1 of 1 filled from the analyses/);
+        const report = renderReport([record]);
+        expect(report).toMatch(/\| scripted · B \| 1 \/ 0 of 1 \| 1 \/ 0 \| 1 \/ 0 \/ 0 \/ 0 \|/);
+    });
+
+    it('THY-18: a verdict written by reference is scored on the engine\'s numbers', async () => {
+        const record = await runLiveCase({
+            built: built('dev-symmetry-lowering'), arm: 'C', model: MODEL,
+            callModel: scripted([
+                { calls: [['measure_symmetry_lowering', {}]] },
+                { text: '{{r1.sites.0.element}} is shifted {{r1.sites.0.shift_A}} Å along {{r1.sites.0.nearest_low_index.uvw}}: '
+                    + 'the average structure is {{r1.lower.space_group}}, not {{r1.parent.space_group}}.\n\nOutcome: the shift the card hides.\n\n'
+                    + 'VERDICT {"features": [{"kind": "symmetry_lowering", "element": "{{r1.sites.0.element}}", "direction_uvw": {{r1.sites.0.nearest_low_index.uvw}}, '
+                    + '"magnitude_A": {{r1.sites.0.shift_A}}, "q": null}], "space_group": "{{r1.lower.space_group}}", "chiral": false, "centrosymmetric": false, "polar": true}' }
+            ])
+        });
+        expect(record.final.text).toMatch(/^Ta is shifted 0\.0\d+ Å along \[0, 0, 1\]: the average structure is P4mm, not Pm-3m\./);
+        expect(record.verdict.features[0]).toMatchObject({ kind: 'symmetry_lowering', element: 'Ta', direction_uvw: [0, 0, 1] });
+        expect(record.score.score).toBe(1);
+        expect(record.provenance.by_reference.unknown).toEqual([]);
+        expect(record.provenance.by_reference.filled).toBe(9);
+        // Written by reference, every number in the prose has a source.
+        expect(record.provenance.unsourced).toEqual([]);
     });
 
     it('a call written as JSON text is run, and its withdrawn text is recorded apart from the reasons', async () => {
@@ -123,7 +175,9 @@ describe('the live harness, scripted model', () => {
             ])
         });
         expect(record.steps.map((step) => step.name)).toEqual(['list_sites']);
-        expect(record.retracted).toEqual([{ round: 0, text: '{"name": "list_sites", "arguments": {}}' }]);
+        // The call written as text, then the answer the evidence gate sent back.
+        expect(record.retracted[0]).toEqual({ round: 0, text: '{"name": "list_sites", "arguments": {}}' });
+        expect(record.retracted[1]).toMatchObject({ by: 'evidence gate: no-order' });
         expect(record.steps[0].why.text).toBe('');
         expect(record.score.score).toBe(1);
         expect(renderTranscript(record)).toMatch(/the loop withdrew the text below/);

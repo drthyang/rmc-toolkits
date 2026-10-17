@@ -10,12 +10,32 @@ import { contextToJson } from '../context/runContext';
 // context still travels inside a fenced JSON block, so the model can tell
 // data from instructions, and tool results arrive as `tool` messages.
 
-const OUTCOME_RULE = [
+// The Outcome line explains; the app computes the verdict from its checks
+// (copilot/verdict.js), so the model is not asked to grade itself.
+export const OUTCOME_RULE = [
     'Finish every answer with one final line, exactly:',
-    '`Outcome: achieved|partial|not achieved — <one sentence>`.',
-    'achieved: the question is answered by numbers you quoted; partial: some',
-    'evidence is missing or a check warned; not achieved: the run or the tools',
-    'could not provide the evidence. Say why in the sentence.'
+    '`Outcome: <one sentence>` — what the evidence shows, or what is missing.',
+    'Do not grade your answer: the app sets the verdict (achieved, partial, not',
+    'verified, not achieved) from its own checks.'
+].join(' ');
+
+// Numbers by reference (copilot/references.js) and the evidence gate
+// (copilot/evidence.js), with the tools.
+export const REFERENCE_RULES = [
+    'Quote numbers from tool results by reference: each result has a `ref`',
+    '(r1, r2, …); write {{r2.peak.significance_sigma}} — the ref, then the path of',
+    'the value in that result\'s data, array items by index ({{r3.sites.0.shift_A}})',
+    '— and the app writes in the engine\'s value. The run context is',
+    '{{ctx.<path>}}. Type a number yourself only when you derived it, and say how.'
+].join(' ');
+
+export const EVIDENCE_RULES = [
+    'Every conclusion needs its analysis in this question: order between cells',
+    'or a split site called disorder, analyze_modulations; a preferred direction,',
+    'analyze_displacement_directions; clusters, analyze_clusters; a coordination',
+    'number or split shell, find_gr_peaks; a lowering of the average structure,',
+    'measure_symmetry_lowering; "no order", every one of them. The app sends an',
+    'answer back when its analysis did not run.'
 ].join(' ');
 
 const TOOL_RULES = [
@@ -79,16 +99,24 @@ export const VIEW_RULES = [
     'is enough: point at what matters.'
 ].join(' ');
 
-export const COPILOT_PROMPT = `${SYSTEM_PROMPT} ${TOOL_RULES} ${COMPUTE_ONLY} ${OUTCOME_RULE}`;
+export const COPILOT_PROMPT = `${SYSTEM_PROMPT} ${TOOL_RULES} ${REFERENCE_RULES} ${EVIDENCE_RULES} ${COMPUTE_ONLY} ${OUTCOME_RULE}`;
 // With the view tools: the same rules, pointing at the page instead of the
 // compute-only sentence.
-export const COPILOT_PROMPT_VIEW = `${SYSTEM_PROMPT} ${TOOL_RULES} ${VIEW_RULES} ${OUTCOME_RULE}`;
+export const COPILOT_PROMPT_VIEW = `${SYSTEM_PROMPT} ${TOOL_RULES} ${REFERENCE_RULES} ${EVIDENCE_RULES} ${VIEW_RULES} ${OUTCOME_RULE}`;
 // For a model that cannot call tools, or with the tools switched off.
 export const COPILOT_PROMPT_NO_TOOLS = `${SYSTEM_PROMPT} ${OUTCOME_RULE}`;
 
 export const contextBlock = (context) => (
     `Context for this RMC modeling run:\n\`\`\`json\n${contextToJson(context)}\n\`\`\``
 );
+
+/**
+ * The run context as the model reads it (contextBlock trims it to its
+ * budget: a long ladder to its two ends, a long history downsampled), for
+ * {{ctx.…}} references: a reference names what the model saw, never a value
+ * the trim removed.
+ */
+export const shownContext = (context) => (context ? JSON.parse(contextToJson(context)) : null);
 
 // Keep only the newest turns so long conversations stay inside small local
 // models' context windows; the run context is re-sent every call anyway.
@@ -116,6 +144,8 @@ export const copilotSystemPrompt = ({ toolsEnabled = true, viewTools = false, as
     return [
         SYSTEM_PROMPT,
         TOOL_RULES,
+        REFERENCE_RULES,
+        EVIDENCE_RULES,
         askUser ? ASK_RULES : null,
         skills ? skillsBlock(skills) : null,
         viewTools ? VIEW_RULES : COMPUTE_ONLY,
@@ -145,5 +175,6 @@ export const buildCopilotMessages = ({
 export const toolBudgetNote = (rounds) => ({
     role: 'user',
     content: `You have used the analysis budget for this question (${rounds} rounds of tool calls). `
-        + 'Answer now from the results above, say what is still missing, and end with the Outcome line.'
+        + 'Answer now from the results above (quote their numbers by reference), say what is still missing, '
+        + 'and end with the Outcome line.'
 });
