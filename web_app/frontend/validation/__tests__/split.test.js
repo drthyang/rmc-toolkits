@@ -134,5 +134,11 @@ describe('where a finding stands, and validation batch 1', () => {
         for (const label of ['L1', 'L2', 'L3', 'L4', 'L5']) {
             expect(tools.some((finding) => finding.evidence.includes(label)), label).toBe(true);
         }
+        // The five skill proposals (the skills PR, which waits for the user's review).
+        const skills = findings.filter((finding) => finding.kind === 'skill-gap');
+        expect(skills).toHaveLength(5);
+        for (const label of ['coordination-shells', 'displacement-anisotropy', 'local-symmetry', 'rmc-fit-assessment', 'local order']) {
+            expect(skills.some((finding) => finding.evidence.includes(label)), label).toBe(true);
+        }
     });
 });
