@@ -610,8 +610,9 @@ describe('Copilot summarizers', () => {
         // The modulations fixture's weak doubling: Nb at (0, 0, ½), 2.99σ over
         // the 21 zone-boundary points against the independent-cell null (F1).
         // Its usual rounding (3.0 in the row, "3σ" in the sentence) would read
-        // the bar. (Until F1 the known answer was dev-weak-order-b at 2.96σ:
-        // the calibrated null reads that order at 5.6σ.)
+        // the bar. (Until F1 the known answer was dev-weak-order-b at 2.96σ,
+        // which the calibrated null read at 5.6σ until the pair was re-set at
+        // protocol 2026-10-19.19.)
         const weak = modulationsFixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
         const synthetic = summarizeModulations(displacementModulations(siteDisplacementsFromRmc6f(weak.text)));
         expect(synthetic.checks[0].text).toBe('No order that doubles the cell: no zone-boundary point stands out of the diffuse background '
@@ -715,12 +716,16 @@ describe('Copilot summarizers', () => {
         expect(named.data.elements[0]).toEqual(every.data.elements.find((entry) => entry.element === 'Nb'));
         expect(named.data.note).toContain('corrected over all 21 zone-boundary points of the configuration\'s 3 elements, whichever the call names');
         expect(named.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
-        // dev-weak-order-b (F3's case until F1): the same Nb data whether or not the call names it, now ordered.
+        // dev-weak-order-b (F3's case until F1; below the bar again since its
+        // re-set, protocol 2026-10-19.19): the same Nb data and the same "no
+        // order" whether or not the call names it.
         const tools = devTools('dev-weak-order-b');
         const all = await tools.analyze_modulations.run({});
         const nb = await tools.analyze_modulations.run({ element: 'Nb' });
         expect(nb.data.elements[0]).toEqual(all.data.elements.find((entry) => entry.element === 'Nb'));
-        expect(nb.facts.modulation).toEqual({ elements: ['Nb'], ordered: [{ element: 'Nb', q: [0.5, 0.5, 0] }], general: [] });
+        expect(nb.checks[0].text).toBe(all.checks[0].text);
+        expect(nb.checks[0].text).toMatch(/^No order that doubles the cell: .* \(the strongest, Nb at \(½, ½, 0\), is 7\.7× the median, 2\.6σ after the correction\)\.$/);
+        expect(nb.facts.modulation).toEqual({ elements: ['Nb'], ordered: [], general: [] });
     });
 
     it('cluster summary: other_sizes never lists the analysed kind, on a tie too (review 2026-10-12 #17)', () => {
