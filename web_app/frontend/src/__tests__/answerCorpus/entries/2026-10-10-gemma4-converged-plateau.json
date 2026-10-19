@@ -7,7 +7,7 @@
   "question": "Referee review: datasets, Rwp, convergence, sampling, constraints",
   "source": {
     "file": "docs/CHANGELOG.md",
-    "lines": "596",
+    "lines": "596 on 2026-10-19 (0.6.0, \"AI Copilot replaces the AI Assistant\")",
     "commit": "8aefab6",
     "note": "the scientific review's first round as the changelog quotes it (also \"converged — a plateau\" in web_app/frontend/src/llm/README.md:706 and .claude/skills/rmc-fit-assessment/SKILL.md:70); the whole answer is not in the repo"
   },

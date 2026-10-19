@@ -7,7 +7,7 @@
   "question": "Is the Ta₄ cluster distorted?",
   "source": {
     "file": "docs/CHANGELOG.md",
-    "lines": "609",
+    "lines": "609 on 2026-10-19 (0.6.0, \"AI Copilot replaces the AI Assistant\")",
     "commit": "8aefab6",
     "note": "the scientific review's first round as the changelog quotes it; the README (line 707) and .claude/skills/coordination-shells/SKILL.md:84 quote it shorter, as \"peak shifted to 2.93 Å: distorted\", which names no cluster and reads no claim; the whole answer is not in the repo"
   },

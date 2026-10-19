@@ -15,14 +15,15 @@
 //   transcribed  read off a recording committed in the repo (the README GIF);
 //   quoted       a docs or skill quotation of a real answer, possibly shortened
 //                by its author: what the whole answer said is not in the repo.
-// Every entry is from the Demo run; nothing from or about a held-out case.
+// Every entry is from the Demo run or a dev case of the validation (its live
+// runs' records, once they exist); nothing from or about a held-out case.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { TEST_CASES } from '../../validation/cases';
-import { openCorpusRun, readAnswer, runSteps, STEPS_UNKNOWN } from './answerCorpus/readAnswer';
+import { DEV_CASES, TEST_CASES } from '../../validation/cases';
+import { openCorpusRun, readAnswer, runKeyOf, runSteps, STEPS_UNKNOWN } from './answerCorpus/readAnswer';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENTRIES = join(HERE, 'answerCorpus/entries');
@@ -56,14 +57,15 @@ const FALSE_ALARMS = [];
 const MISSES = ['2026-10-10-gemma4-pooled-no-distortion silence'];
 
 describe('the answer corpus', () => {
-    it('holds real Demo answers, each with its source', () => {
+    it('holds real answers on the Demo or a dev case, each with its source', () => {
         expect(corpus.length).toBeGreaterThanOrEqual(9);
         const testIds = TEST_CASES.map((item) => item.id);
+        const devIds = DEV_CASES.map((item) => item.id);
         for (const { file, entry } of corpus) {
             expect({ file, id: entry.id }).toEqual({ file, id: file.replace(/\.json$/, '') });
             expect(FIDELITY).toContain(entry.fidelity);
             for (const key of ['model', 'date', 'question', 'text', 'stepsSource']) expect(typeof entry[key], `${entry.id}.${key}`).toBe('string');
-            expect(entry.run, entry.id).toMatch(/^Demo \(/);
+            expect(/^Demo \(/.test(entry.run) || devIds.includes(entry.run), `${entry.id}: run ${entry.run}`).toBe(true);
             expect(entry.steps === null || Array.isArray(entry.steps), entry.id).toBe(true);
             const raw = JSON.stringify(entry);
             for (const id of testIds) expect(raw.includes(id), `${entry.id} names a held-out case`).toBe(false);
@@ -75,17 +77,20 @@ describe('the answer corpus', () => {
     });
 
     describe('read by the current gate and checks', () => {
-        let run;
+        const runs = new Map();
         const steps = new Map();
         beforeAll(async () => {
-            run = await openCorpusRun();
-            for (const { entry } of corpus) if (entry.steps) steps.set(entry.id, await runSteps(run.tools, entry.steps));
+            for (const { entry } of corpus) {
+                const key = runKeyOf(entry);
+                if (!runs.has(key)) runs.set(key, await openCorpusRun(key));
+                if (entry.steps) steps.set(entry.id, await runSteps(runs.get(key).tools, entry.steps));
+            }
         }, 120_000);
         const readingOf = (entry) => readAnswer(entry.text, {
-            gate: run.gate,
+            gate: runs.get(runKeyOf(entry)).gate,
             ran: steps.get(entry.id)?.ran ?? null,
             facts: steps.get(entry.id)?.facts ?? [],
-            auditContext: run.auditContext
+            auditContext: runs.get(runKeyOf(entry)).auditContext
         });
 
         it.each(corpus.map(({ entry }) => [entry.id, entry]))('%s: the recorded steps run and give the transcript\'s numbers', (id, entry) => {
@@ -109,6 +114,13 @@ describe('the answer corpus', () => {
                 expect(judgement.reason, `${id} ${judgement.on}`).toMatch(/\S.{10,}/);
             }
         });
+
+        it('opens a dev case too, for answers from the live runs\' records (never a held-out case)', async () => {
+            const devRun = await openCorpusRun('dev-thermal-null');
+            expect(devRun.tools.map((tool) => tool.name)).toContain('analyze_modulations');
+            expect(devRun.auditContext.groups.length).toBeGreaterThan(0);
+            await expect(openCorpusRun(TEST_CASES[0].id)).rejects.toThrow(/the Demo or a dev case/);
+        }, 120_000);
 
         it('counts the false alarms and the misses', () => {
             const wrong = (silence) => corpus.flatMap(({ entry }) => entry.judgements

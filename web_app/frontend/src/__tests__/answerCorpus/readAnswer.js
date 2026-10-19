@@ -2,10 +2,10 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // The answer corpus's runner (docs/AGENT_PLAN.md item 3.5; the corpus is the
-// entries/ folder beside this file, one JSON file per real answer): the Demo
-// run as the dock hands it to the Copilot, an entry's recorded steps run as
-// the agent loop runs them, and ONE adapter from an answer to what the
-// current checks read in it.
+// entries/ folder beside this file, one JSON file per real answer): the run
+// an answer was given on (the Demo, or a dev case of the validation) as the
+// Copilot is handed it, an entry's recorded steps run as the agent loop runs
+// them, and ONE adapter from an answer to what the current checks read in it.
 //
 // `readAnswer` is the only place that knows today's modules: the evidence
 // gate (llm/copilot/evidence.js) and the checks on the answer
@@ -23,6 +23,8 @@ import { buildReadSkillTool } from '../../llm/copilot/skills';
 import { executeToolCall } from '../../llm/copilot/tools';
 import { pointGroupFacts } from '../../llm/context/pointGroups';
 import { buildRunContext } from '../../llm/context/runContext';
+import { buildCase, DEV_CASES } from '../../../validation/cases';
+import { loadRun } from '../../../validation/runFolder';
 import { bundledSkills, loadDemoAssistantRun } from '../modelVisible/helpers';
 
 /** What an entry pins for the gate when its transcript does not show which tools ran. */
@@ -48,16 +50,30 @@ export const readAnswer = (text, { gate, ran = null, facts = [], auditContext = 
     };
 };
 
+/** The run an entry was answered on: 'Demo', or a dev case's id (validation/cases.js). */
+export const runKeyOf = (entry) => (/^Demo\b/.test(entry.run) ? 'Demo' : entry.run);
+
+// A run as the Copilot sees it (a CopilotRun): the Demo as App.jsx hands it
+// to CopilotChat, or a dev case as the validation harness opens it (never a
+// held-out case).
+const openCopilotRun = async (key) => {
+    if (key === 'Demo') return (await loadDemoAssistantRun()).copilot;
+    const item = DEV_CASES.find((candidate) => candidate.id === key);
+    if (!item) throw new Error(`the corpus reads answers on the Demo or a dev case, not "${key}"`);
+    return loadRun(buildCase(item));
+};
+
 /**
- * The Demo run (GaTa4Se8, 250 K) as App.jsx hands it to CopilotChat at the
- * default view, with what the dock builds for a turn (useCopilot.js,
- * CopilotChat.jsx): the run tools, the engine tools, ask_user and read_skill
- * (view tools offer no analysis and are left out); the clarifier's shell
- * catalog; the gate over the offered tools and the context's elements; and
- * the context's audit facts (the watchdog's status, the ladder's groups).
+ * The run (`key`: 'Demo' or a dev case's id) at the default view, with what
+ * the dock builds for a turn (useCopilot.js, CopilotChat.jsx): the run
+ * tools, the engine tools, ask_user and read_skill (view tools offer no
+ * analysis and are left out); the clarifier's shell catalog; the gate over
+ * the offered tools and the context's elements; and the context's audit
+ * facts (the watchdog's status, the ladder's groups).
  */
-export const openCorpusRun = async () => {
-    const { copilot, run } = await loadDemoAssistantRun();
+export const openCorpusRun = async (key = 'Demo') => {
+    const copilot = await openCopilotRun(key);
+    const run = copilot.props;
     const context = buildRunContext(run);
     const tools = [
         ...buildRunTools(run, { cards: [] }),
