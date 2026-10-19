@@ -306,6 +306,20 @@ describe('a split shell cut at a deep trough (the review\'s L1)', () => {
         expect(odd.cn).toBeCloseTo(4, 1);
     });
 
+    it('never joins a split M3/M4 cluster shell (1 + 1, 2 + 1): CN 2 and 3 are no ideal count (F5, a known limit)', () => {
+        const triangle = catalogueOf(shellSeries('Mo-Mo', [[2.7, 0.04, 1], [2.95, 0.04, 1]], RHO, { step: 0.005 }),
+            { structure: box({ Mo: 50, Se: 50 }) }).shell('Mo', 'Mo');
+        expect(triangle.peaksInShell).toEqual([expect.closeTo(2.7, 1)]);
+        expect(triangle.joined).toBe(false);
+        expect(triangle.cn).toBeCloseTo(1, 1);
+        const tetrahedron = catalogueOf(shellSeries('Ta-Ta', [[2.9, 0.04, 2], [3.15, 0.04, 1]], RHO, { step: 0.005 }),
+            { structure: box({ Ta: 50, Se: 50 }) }).shell('Ta', 'Ta');
+        expect(tetrahedron.joined).toBe(false);
+        expect(tetrahedron.cn).toBeCloseTo(2, 1);
+        expect(IDEAL_COORDINATION).not.toContain(2);
+        expect(IDEAL_COORDINATION).not.toContain(3);
+    });
+
     it('takes the furthest peak that completes a polyhedron (2 + 2 + 2), and counts either direction', () => {
         const ortho = catalogueOf(shellSeries('Cu-F', [[1.95, 0.03, 2], [2.12, 0.03, 2], [2.32, 0.03, 2]], RHO, { step: 0.005 }),
             { structure: box({ Cu: 50, F: 50 }) }).shell('Cu', 'F');
