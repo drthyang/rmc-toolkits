@@ -7,17 +7,23 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-    LONG_WAVE_Q, MODE_KINDS, MODULATION_BECAUSE, MODULATION_RULES, SIGMA_MAX,
-    displacementModulations, generalModeSigma, isLongWave, zoneBoundaryPoints, zoneBoundarySigma
+    AXIS_TIE_RTOL, LONG_WAVE_Q, MODE_KINDS, MODULATION_BECAUSE, MODULATION_RULES, MODULATION_SIGMA, SIGMA_MAX,
+    displacementModulations, elementSpectrum, generalModeSigma, isLongWave, modePolarisation, tensorAt, zoneBoundaryPoints,
+    zoneBoundarySigma
 } from '../modulations';
 import { siteDisplacementsFromRmc6f } from '../pcaKde';
 import { buildCase, buildConfiguration, DEV_CASES } from '../../../validation/cases';
+import { TOLERANCES } from '../../../validation/scoring';
 import fixture from '../../__tests__/fixtures/modulations_fixture.json';
 
-// Integers, strings and booleans exactly; other floats to 1e-9.
+// Integers, strings and booleans exactly; other floats to 1e-9. A
+// polarisation holds floats only: a share or a component that is 1 or 0 in
+// Python (a single site's zone-boundary tensor has rank 1: share 1) is a
+// float there too, compared to 1e-9.
 const expectClose = (actual, expected, path) => {
     if (expected === null || typeof expected !== 'object') {
-        if (typeof expected === 'number' && !Number.isInteger(expected)) expect(actual, path).toBeCloseTo(expected, 9);
+        const float = typeof expected === 'number' && (!Number.isInteger(expected) || path.includes('.polarisation.'));
+        if (float) expect(actual, path).toBeCloseTo(expected, 9);
         else expect(actual, path).toEqual(expected);
         return;
     }
@@ -151,6 +157,132 @@ describe('the verdict on the validation\'s dev cases (the decisions the tool use
         expect(ordered).toEqual([['Ti', [0, 0, 0.5]]]);
         expect(result.elements.find((entry) => entry.element === 'Sr').verdict.longWave.answer).toBe(true);
         expect(result.elements.every((entry) => entry.verdict.generalOrder.answer !== true)).toBe(true);
+    });
+});
+
+// --- plan item 4.3: the polarisation of a mode ------------------------------------
+
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+// The angle between two axes (degrees; an axis has no sign).
+const axisAngle = (a, b) => (Math.acos(Math.min(Math.abs(dot(a, b)) / Math.sqrt(dot(a, a) * dot(b, b)), 1)) * 180) / Math.PI;
+const cellOf = (parsed) => parsed.latticeVectors.map((row, axis) => row.map((value) => value / parsed.supercell[axis]));
+const cartesian = (uvw, cell) => [0, 1, 2].map((k) => uvw[0] * cell[0][k] + uvw[1] * cell[1][k] + uvw[2] * cell[2][k]);
+const outer = (v, scale = 1) => v.map((a) => v.map((b) => a * b * scale));
+// The stated known answer (tests/test_modulations.py POLARISATION_DEG, _SHARE).
+const POLARISATION_DEG = 5;
+const POLARISATION_SHARE = 0.95;
+// The fixture's planted mode: both sites of its first element along this
+// direct-lattice direction of a monoclinic cell, at q = (½, 0, 0).
+const PLANTED_UVW = [1, 0, 1];
+const POLARISED = fixture.cases.find((entry) => entry.name.startsWith('polarised'));
+
+describe('the polarisation of a mode (plan item 4.3; mode_polarisation is the reference)', () => {
+    it('pins the axis-sense tie tolerance to the Python engine\'s', () => {
+        expect(AXIS_TIE_RTOL).toBe(fixture.enums.axisTieRtol);
+    });
+
+    it('the leading axis as a crystal direction, in the sense that makes the closest crystal axis acute', () => {
+        const cell = cellOf(siteDisplacementsFromRmc6f(POLARISED.text));
+        const along = cartesian(PLANTED_UVW, cell).map((value, _, v) => value / Math.hypot(...v));
+        // [1 0 1] of the monoclinic cell is not the Cartesian (1, 0, 1).
+        expect(axisAngle(along, [1, 0, 1])).toBeGreaterThan(13);
+        for (const sign of [1, -1]) {
+            const pol = modePolarisation(outer(along.map((value) => sign * value), 2.5), cell);
+            pol.direction.forEach((value, k) => expect(value).toBeCloseTo(along[k], 12));
+            pol.uvw.forEach((value, k) => expect(value).toBeCloseTo(PLANTED_UVW[k], 12));
+            expect(pol.share).toBeCloseTo(1, 12);
+        }
+    });
+
+    it('share: the fraction of the power along the axis; a circular mode has no axis (½); no power, no polarisation', () => {
+        const cubic = [[4, 0, 0], [0, 4, 0], [0, 0, 4]];
+        const pol = modePolarisation([[0.2, 0, 0], [0, 1, 0], [0, 0, 0.05]], cubic);
+        pol.uvw.forEach((value, k) => expect(value).toBeCloseTo([0, 1, 0][k], 12));
+        expect(pol.share).toBeCloseTo(1 / 1.25, 12);
+        // Re[(a + ib)(a + ib)ᴴ] = aaᵀ + bbᵀ for orthogonal unit a, b.
+        expect(modePolarisation([[1, 0, 0], [0, 1, 0], [0, 0, 0]], cubic).share).toBeCloseTo(0.5, 12);
+        expect(modePolarisation([[0, 0, 0], [0, 0, 0], [0, 0, 0]], cubic)).toBeNull();
+        // Equally close to a and b: the first, a, is made acute.
+        const d = [-1, 1, 0].map((value) => value / Math.SQRT2);
+        modePolarisation(outer(d), cubic).uvw.forEach((value, k) => expect(value).toBeCloseTo([1, -1, 0][k], 12));
+    });
+
+    it('a planted mode in a monoclinic cell is found within the stated angle and share (the fixture\'s case)', () => {
+        const parsed = siteDisplacementsFromRmc6f(POLARISED.text);
+        const cell = cellOf(parsed);
+        const want = cartesian(PLANTED_UVW, cell);
+        const result = displacementModulations(parsed);
+        const entry = result.elements.find((item) => item.element === 'Zr');
+        const point = entry.zoneBoundary.find((item) => item.q.join() === '0.5,0,0');
+        expect(point.ordered).toBe(true);
+        expect(axisAngle(point.polarisation.direction, want)).toBeLessThan(POLARISATION_DEG);
+        expect(axisAngle(cartesian(point.polarisation.uvw, cell), want)).toBeLessThan(POLARISATION_DEG);
+        expect(point.polarisation.share).toBeGreaterThan(POLARISATION_SHARE);
+        expect(dot(point.polarisation.direction, want)).toBeGreaterThan(0);
+        // The tensor's trace is the power: the share is a part of the power at q.
+        const { power, tensor } = elementSpectrum(parsed, entry.element);
+        const q = (parsed.supercell[0] / 2) * parsed.supercell[1] * parsed.supercell[2];
+        const t = tensorAt(tensor, q);
+        expect(t[0][0] + t[1][1] + t[2][2]).toBeCloseTo(power[q], 9);
+    });
+
+    it('dev-zone-boundary: the planted order along its axis, the decoy long wave along the decoy\'s, within the scoring tolerance', () => {
+        // One site over 512 cells: the sampling error is 0.06 / (0.1·√512) rad,
+        // 1.5° per component, and this seed's draw is 5.5° off (the PC1 that
+        // arm A+ read until now, an estimator of the same noise: 6.0°); the
+        // validation scores a direction within 15° (scoring.js).
+        const item = DEV_CASES.find((entry) => entry.id === 'dev-zone-boundary');
+        const built = buildCase(item, { partials: false });
+        const result = displacementModulations(siteDisplacementsFromRmc6f(built.rmc6f));
+        const [decoyElement, orderedElement] = item.params.elements;
+        const ordered = result.elements.find((entry) => entry.element === orderedElement);
+        const point = ordered.zoneBoundary.find((entry) => entry.q.join() === item.params.q.join());
+        expect(point.ordered).toBe(true);
+        expect(axisAngle(point.polarisation.direction, item.params.axis)).toBeCloseTo(5.52, 2);
+        expect(axisAngle(point.polarisation.direction, item.params.axis)).toBeLessThan(TOLERANCES.DIRECTION_DEG);
+        expect(point.polarisation.share).toBeGreaterThan(POLARISATION_SHARE);
+        const decoy = result.elements.find((entry) => entry.element === decoyElement).strongest[0];
+        expect(decoy.kind).toBe('long_wave');
+        expect(axisAngle(decoy.polarisation.direction, item.params.decoy.axis)).toBeLessThan(POLARISATION_DEG);
+    });
+});
+
+// --- F3 (2026-10-19): the family is every element, whichever the call names ------
+
+describe('the Šidák family is every element of the configuration (F3)', () => {
+    const atQ = (result, element, q) => result.elements.find((entry) => entry.element === element).zoneBoundary.find((point) => point.q.join() === q.join());
+
+    it('the fixture\'s weak doubling: 2.98σ over every element\'s points, the same point and verdict with Nb named', () => {
+        const weak = fixture.cases.find((entry) => entry.name.startsWith('weak doubling'));
+        const parsed = siteDisplacementsFromRmc6f(weak.text);
+        const every = displacementModulations(parsed);
+        const named = displacementModulations(parsed, 'Nb');
+        expect(named.family).toEqual(every.family);
+        expect(every.family.elements).toEqual(['Ga', 'Nb', 'Se']);
+        const point = atQ(every, 'Nb', [0, 0, 0.5]);
+        expect(atQ(named, 'Nb', [0, 0, 0.5])).toEqual(point);
+        expect(point.sigma).toBeGreaterThan(2.95);
+        expect(point.sigma).toBeLessThan(MODULATION_SIGMA);
+        expect(point).toMatchObject({ ordered: false, because: 'below_sigma' });
+        expect(named.elements[0].verdict.cellDoubling.answer).toBe(false);
+        // Nb's own 7 points (the family before F3) would have called it ordered.
+        const nb = named.elements[0];
+        expect(zoneBoundarySigma(point.ratio * nb.medianPower, nb.sites, 7)).toBeGreaterThanOrEqual(MODULATION_SIGMA);
+    });
+
+    it('dev-weak-order-b (the finding\'s case): 2.96σ, "no order", whether or not the call names its element', () => {
+        const item = DEV_CASES.find((entry) => entry.id === 'dev-weak-order-b');
+        const parsed = siteDisplacementsFromRmc6f(buildCase(item, { partials: false }).rmc6f);
+        const element = item.params.elements[1];
+        const every = displacementModulations(parsed);
+        const named = displacementModulations(parsed, element);
+        expect(named.family).toEqual(every.family);
+        expect(every.family.zoneBoundaryPoints).toBe(21);
+        const point = atQ(named, element, item.params.q);
+        expect(point).toEqual(atQ(every, element, item.params.q));
+        expect(point.sigma).toBeCloseTo(2.959, 3);
+        expect(point.ordered).toBe(false);
+        expect(named.elements[0].verdict.cellDoubling).toMatchObject({ answer: false, because: 'no_ordered_point' });
     });
 });
 
