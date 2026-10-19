@@ -304,6 +304,42 @@ describe('the harness on the turn module: what changed', () => {
         expect(sources['0.0773']).toBeNull();
     });
 
+    // Where the two adapters' copies disagreed, the turn keeps one rule; the
+    // harness keeps its own behaviour around it.
+    it('kept: the gate reads the run\'s elements from its context, the same set the harness passed, on every case', async () => {
+        for (const item of DEV_CASES) {
+            const run = await loadRun(buildCase(item));
+            expect(Object.keys(buildRunContext(run.props).structure.elements).sort()).toEqual(run.elements);
+        }
+    });
+
+    it('kept: a malformed skill stops the run before any request, with the parse error', async () => {
+        const requests = [];
+        const port = (sent) => {
+            requests.push(sent);
+            return scripted([{ text: ANSWER }])(sent);
+        };
+        const broken = { files: { '.claude/skills/x/SKILL.md': 'no frontmatter' }, references: [], load: async () => '' };
+        await expect(runLiveCase({ built: built('dev-offcentre'), arm: 'B', model: MODEL, port, skills: broken }))
+            .rejects.toThrow(/has no frontmatter/);
+        expect(requests).toEqual([]);
+    });
+
+    it('kept: a stopped run is recorded with the abort as its error', async () => {
+        const controller = new AbortController();
+        const port = (sent, { signal }) => (async function* stream() {
+            yield { reasoning: 'Thinking' };
+            await new Promise((resolve, reject) => {
+                signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+                controller.abort();
+            });
+        }());
+        const record = await runLiveCase({ built: built('dev-offcentre'), arm: 'C', model: MODEL, port, signal: controller.signal });
+        expect(record.error).toEqual({ name: 'AbortError', message: 'Aborted' });
+        expect(record.final).toBeNull();
+        expect(record.requests).toHaveLength(1);
+    });
+
     it('4. the record keeps every request as it was sent', async () => {
         const received = [];
         const replies = [{ calls: [['list_sites', {}]] }, { text: ANSWER }];
