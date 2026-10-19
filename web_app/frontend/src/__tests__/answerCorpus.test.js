@@ -87,10 +87,9 @@ describe('the answer corpus', () => {
             }
         }, 120_000);
         const readingOf = (entry) => readAnswer(entry.text, {
-            gate: runs.get(runKeyOf(entry)).gate,
+            run: runs.get(runKeyOf(entry)),
             ran: steps.get(entry.id)?.ran ?? null,
-            facts: steps.get(entry.id)?.facts ?? [],
-            auditContext: runs.get(runKeyOf(entry)).auditContext
+            facts: steps.get(entry.id)?.facts ?? []
         });
 
         it.each(corpus.map(({ entry }) => [entry.id, entry]))('%s: the recorded steps run and give the transcript\'s numbers', (id, entry) => {
@@ -117,8 +116,9 @@ describe('the answer corpus', () => {
 
         it('opens a dev case too, for answers from the live runs\' records (never a held-out case)', async () => {
             const devRun = await openCorpusRun('dev-thermal-null');
-            expect(devRun.tools.map((tool) => tool.name)).toContain('analyze_modulations');
-            expect(devRun.auditContext.groups.length).toBeGreaterThan(0);
+            expect(devRun.offered).toContain('analyze_modulations');
+            expect(devRun.context.symmetry?.space_group).toBeTruthy();
+            expect(readAnswer('No preferred direction.', { run: devRun, ran: [] })).toEqual({ claims: [], gateSendBack: null, auditFindings: [] });
             await expect(openCorpusRun(TEST_CASES[0].id)).rejects.toThrow(/the Demo or a dev case/);
         }, 120_000);
 

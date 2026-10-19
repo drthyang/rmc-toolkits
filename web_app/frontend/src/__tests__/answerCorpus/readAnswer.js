@@ -7,8 +7,8 @@
 // Copilot is handed it, an entry's recorded steps run as the agent loop runs
 // them, and ONE adapter from an answer to what the current checks read in it.
 //
-// `readAnswer` is the only place that knows today's modules: the evidence
-// gate (llm/copilot/evidence.js) and the checks on the answer
+// `readAnswer` is the only place that knows today's verification modules:
+// the evidence gate (llm/copilot/evidence.js) and the checks on the answer
 // (llm/copilot/answerAudit.js), through their public functions only. When
 // one verification module replaces evidence / answerAudit / verdict, this
 // function is rewritten and the corpus pins stay as they are.
@@ -31,7 +31,10 @@ import { bundledSkills, loadDemoAssistantRun } from '../modelVisible/helpers';
 export const STEPS_UNKNOWN = 'steps unknown';
 
 /**
- * The adapter: an answer → what the current checks read in it.
+ * The adapter: an answer on `run` (openCorpusRun) → what the current checks
+ * read in it. The gate is built as the dock builds it for a turn
+ * (useCopilot.js: the clarifier's shell catalog, the offered tools, the
+ * context's elements), the audit's context facts likewise.
  *   claims         the gate's rules whose claim the answer makes (in a
  *                  sentence about the run), read as `unmet` reads them with
  *                  nothing run: every rule that applies is then unmet;
@@ -41,12 +44,14 @@ export const STEPS_UNKNOWN = 'steps unknown';
  *   auditFindings  the checks on the answer that fire (their rule names),
  *                  against the steps' facts and the run context's.
  */
-export const readAnswer = (text, { gate, ran = null, facts = [], auditContext = null }) => {
+export const readAnswer = (text, { run, ran = null, facts = [] }) => {
+    const gate = buildEvidenceGate({ catalog: run.catalog, offered: run.offered, elements: run.elements });
     const sendBack = ran ? gate.check(text, { ran }) : null;
     return {
         claims: gate.unmet(text, []).map((rule) => rule.id),
         gateSendBack: ran ? (sendBack && { id: sendBack.id, missing: sendBack.missing }) : STEPS_UNKNOWN,
-        auditFindings: auditAnswer(text, { facts, context: auditContext }).map((finding) => finding.rule)
+        auditFindings: auditAnswer(text, { facts, context: contextAuditFacts(run.context, pointGroupFacts) })
+            .map((finding) => finding.rule)
     };
 };
 
@@ -65,11 +70,11 @@ const openCopilotRun = async (key) => {
 
 /**
  * The run (`key`: 'Demo' or a dev case's id) at the default view, with what
- * the dock builds for a turn (useCopilot.js, CopilotChat.jsx): the run
- * tools, the engine tools, ask_user and read_skill (view tools offer no
- * analysis and are left out); the clarifier's shell catalog; the gate over
- * the offered tools and the context's elements; and the context's audit
- * facts (the watchdog's status, the ladder's groups).
+ * the dock builds for a turn (useCopilot.js, CopilotChat.jsx), as
+ * `{ tools, offered, catalog, elements, context }`: the run tools, the
+ * engine tools, ask_user and read_skill (view tools offer no analysis and
+ * are left out) and their names; the clarifier's shell catalog; the
+ * context's elements; and the run context.
  */
 export const openCorpusRun = async (key = 'Demo') => {
     const copilot = await openCopilotRun(key);
@@ -83,12 +88,13 @@ export const openCorpusRun = async (key = 'Demo') => {
     ].filter(Boolean);
     const clarifier = buildClarifier({ plotFiles: run.plotFiles, structure: run.structure, symmetry: run.symmetry },
         { noiseFloor: context.symmetry?.noise_floor_A ?? null });
-    const gate = buildEvidenceGate({
-        catalog: clarifier.catalog,
+    return {
+        tools,
         offered: tools.map((tool) => tool.name),
-        elements: Object.keys(context.structure?.elements || {})
-    });
-    return { tools, gate, auditContext: contextAuditFacts(context, pointGroupFacts), context };
+        catalog: clarifier.catalog,
+        elements: Object.keys(context.structure?.elements || {}),
+        context
+    };
 };
 
 /**
