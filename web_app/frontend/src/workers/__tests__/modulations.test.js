@@ -11,7 +11,6 @@ import {
     displacementModulations, generalModeSigma, isLongWave, zoneBoundaryPoints, zoneBoundarySigma
 } from '../modulations';
 import { siteDisplacementsFromRmc6f } from '../pcaKde';
-import { handlePcaMessage } from '../pcaKdeWorker';
 import { buildCase, buildConfiguration, DEV_CASES } from '../../../validation/cases';
 import fixture from '../../__tests__/fixtures/modulations_fixture.json';
 
@@ -155,16 +154,6 @@ describe('the verdict on the validation\'s dev cases (the decisions the tool use
     });
 });
 
-describe('the worker\'s modulations request', () => {
-    const text = fixture.cases[0].text;
-    const ask = (params) => handlePcaMessage({ kind: 'modulations', ...params }, async () => text);
-
-    it('answers every element by default and one when asked', async () => {
-        expect((await ask({})).elements.map((entry) => entry.element)).toEqual(['Ga', 'Nb', 'Se']);
-        expect((await ask({ element: 'all' })).elements).toHaveLength(3);
-        const nb = await ask({ element: 'nb' });
-        expect(nb.elements.map((entry) => entry.element)).toEqual(['Nb']);
-        expect(nb.elements[0].strongest[0].q).toEqual([0, 0, 0.5]);
-        await expect(ask({ element: 'Xx' })).rejects.toThrow('no site holds Xx');
-    });
-});
+// The worker's modulations request (every element by default, 'all' in any
+// case, one element, an unknown one) is the request contract,
+// fixtures/analysis_requests.json, replayed by src/__tests__/analysisRequests.test.js.

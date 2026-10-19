@@ -7,10 +7,13 @@
   range along the slice normal and the whole KDE path stays fractional -- no
   conversion to Angstrom, so scaling the lattice changes nothing.
 * ``/api/structure`` returns the ``.rmc6f`` move counters in Flask mode too.
-* Every ``/api/*`` route is listed in the REFERENCE.md endpoint table.
+* Every ``/api/*`` route is listed in the REFERENCE.md endpoint table, and each
+  limit of the analysis request contract (web_app/frontend/src/__tests__/
+  fixtures/analysis_requests.json) is stated in its route's row.
 """
 
 from pathlib import Path
+import json
 import os
 import re
 import shutil
@@ -125,6 +128,29 @@ class ApiContractTests(unittest.TestCase):
         reference = (ROOT / "docs" / "REFERENCE.md").read_text(encoding="utf-8")
         table = set(re.findall(r"^\| `(?:GET|POST) (/api/[^`?]+)`", reference, flags=re.MULTILINE))
         self.assertEqual(sorted(table), routes)
+
+    def test_reference_rows_state_every_request_limit(self):
+        """Each limit of the request contract is in its route's Parameters cell:
+        the parameter's name and every bound number (the replay of the contract
+        itself is tests/test_analysis_requests.py)."""
+        fixture = json.loads(
+            (ROOT / "web_app" / "frontend" / "src" / "__tests__" / "fixtures" / "analysis_requests.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        reference = (ROOT / "docs" / "REFERENCE.md").read_text(encoding="utf-8")
+        rows = {
+            match.group(1): match.group(0)
+            for match in re.finditer(r"^\| `GET (/api/[^`?]+)` \|.*$", reference, flags=re.MULTILINE)
+        }
+        for limit in fixture["limits"]:
+            with self.subTest(kind=limit["kind"], param=limit["param"]):
+                cell = rows[fixture["routes"][limit["kind"]]].split(" | ")[1]
+                self.assertIn(f"`{limit['param']}`", cell)
+                numbers = {float(token) for token in re.findall(r"(?<![\w.])\d+(?:\.\d+)?", cell)}
+                bounds = [limit[key] for key in ("gt", "ge", "lt", "le") if key in limit] + limit.get("clamp", [])
+                for bound in bounds:
+                    self.assertIn(float(bound), numbers, f"{limit['param']}: bound {bound}")
 
 
 if __name__ == "__main__":

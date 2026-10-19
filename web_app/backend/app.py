@@ -314,7 +314,11 @@ def _clean_axis_label(label: str) -> str:
 # engine that would answer 200 with bare NaN/Infinity tokens (invalid JSON for
 # a browser) or with a silently empty map. Grid sizes are clamped (not
 # rejected) to the same limits the engines apply. The accepted ranges are
-# listed with the endpoints in docs/REFERENCE.md.
+# listed with the endpoints in docs/REFERENCE.md. The analysis routes' limits
+# (the constants below, MAX_CLUSTER_WINDOW and the triplets caps) and the
+# browser worker's copies of them are one request contract,
+# web_app/frontend/src/__tests__/fixtures/analysis_requests.json, replayed
+# against both (tests/test_analysis_requests.py); change them together.
 
 KDE_GRID_CLAMP = (16, 400)  # kde.kde_slice clamps to the same range
 KDE_MAX_LEVELS = 64
