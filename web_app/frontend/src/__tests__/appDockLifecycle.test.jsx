@@ -27,7 +27,7 @@
 // serves the Demo button's files from disk and gives the connection probe one
 // model; axios refuses every call. Nothing is fetched from a network.
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { readFileSync } from 'node:fs';
@@ -196,6 +196,10 @@ describe('the Copilot dock\'s state lifecycle in App (no model, no server)', () 
     let root;
 
     beforeAll(() => {
+        rmc6fText = readFileSync(join(DEMO, RMC6F), 'utf8');
+    });
+
+    beforeEach(() => {
         globalThis.IS_REACT_ACT_ENVIRONMENT = true;
         // Only the Live Data poll's clock is faked: the dock's own timers run.
         vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
@@ -205,20 +209,28 @@ describe('the Copilot dock\'s state lifecycle in App (no model, no server)', () 
         localStorage.removeItem(DOCK_STORAGE_KEY);
         saveSettings({ ...DEFAULT_SETTINGS, model: '' });
         model.current = recordingModel(ANSWERS.map((text) => ({ text })));
+        seen.chat = null;
+        seen.axios = [];
+        seen.fetch = [];
+        folder.clear();
+        saves = 0;
         for (const { file } of demoEntries()) folder.set(file.name, file);
-        rmc6fText = readFileSync(join(DEMO, RMC6F), 'utf8');
         window.showDirectoryPicker = async () => folderHandle();
         container = document.createElement('div');
         document.body.appendChild(container);
         root = createRoot(container);
     });
 
-    afterAll(() => {
+    afterEach(() => {
         act(() => root.unmount());
         container.remove();
         delete window.showDirectoryPicker;
         vi.unstubAllGlobals();
         vi.useRealTimers();
+        // Hermetic: no server was asked, and fetch only served the Demo's files
+        // and the stubbed model server.
+        expect(seen.axios).toEqual([]);
+        expect(seen.fetch.every((href) => href.includes('/demo/') || href.startsWith(DEFAULT_SETTINGS.baseUrl.replace(/\/v1$/, '')))).toBe(true);
     });
 
     const click = async (element) => {
@@ -380,10 +392,75 @@ describe('the Copilot dock\'s state lifecycle in App (no model, no server)', () 
         expect(contextOf(fifth.request).run).toBe('Demo');
         expect(contextOf(fifth.request).symmetry.tolerance_A).toBe(DEFAULT_VIEW.toleranceA);
         expect(contextOf(fifth.request).symmetry.space_group).toMatch(/^F-43m /);
-
-        // Hermetic: no server was asked, and fetch only served the Demo's files
-        // and the stubbed model server.
-        expect(seen.axios).toEqual([]);
-        expect(seen.fetch.every((href) => href.includes('/demo/') || href.startsWith(DEFAULT_SETTINGS.baseUrl.replace(/\/v1$/, '')))).toBe(true);
     }, 180_000);
+
+    // The open run as the header, the dock and the Copilot's run show it: its
+    // name, identity, configuration, move count and the folder of its plots.
+    const openRun = () => ({
+        header: container.querySelector('.local-file-bar .ui-fieldbar__value')?.textContent,
+        runName: seen.chat.runName,
+        runKey: seen.chat.runKey,
+        configKey: seen.chat.configKey,
+        moves: seen.chat.structure?.moves?.generated,
+        folders: [...new Set(seen.chat.plotFiles.map((file) => file.path.split('/')[0]))],
+    });
+
+    it('stops watching the picked folder when the Demo opens, and watches the folder picked next', async () => {
+        model.current = recordingModel([{ text: ANSWERS[4] }]);
+        await act(async () => { root.render(<App />); });
+        await click(button('Select Folder'));
+        await click(liveData());
+        await click(container.querySelector('.llm-chat-launcher'));
+        await waitFor(() => seen.chat?.runName === FOLDER && runReady(MOVES_SAVED), 'the picked folder published to the Copilot');
+
+        // The Demo opens with Live Data still on, and gets a conversation.
+        await click(container.querySelector('button.demo-button'));
+        await waitFor(() => seen.chat.runName === 'Demo' && runReady(MOVES_SAVED)
+            && container.querySelector('.llm-composer-input:not(:disabled)'), 'the Demo run published to the Copilot');
+        const demo = openRun();
+        expect(demo).toMatchObject({ header: 'Demo', runName: 'Demo', moves: MOVES_SAVED, folders: ['Demo'] });
+        await ask(4);
+
+        // RMCProfile saves into the folder that was open before: the Demo stays.
+        saveConfiguration(1_600_000);
+        await poll();
+        await poll();
+        for (let i = 0; i < 5; i += 1) await settle();
+        expect(openRun()).toEqual(demo);
+        expect(dividers()).toHaveLength(0);
+        expect(container.querySelector('button.demo-button').getAttribute('aria-pressed')).toBe('true');
+        expect(liveData().checked).toBe(true);
+        expect(container.querySelector('.ui-status.is-error')).toBeNull();
+
+        // Leaving the Demo for the picked folder: another run, read as it is
+        // now, and watched again.
+        await click(button('Select Folder'));
+        await waitFor(() => seen.chat.runName === FOLDER && runReady(1_600_000), 'the folder picked again published to the Copilot');
+        const picked = openRun();
+        expect(picked.runKey).not.toBe(demo.runKey);
+        expect(picked).toMatchObject({ header: FOLDER, folders: [FOLDER] });
+        saveConfiguration(1_700_000);
+        await poll();
+        await waitFor(() => runReady(1_700_000), 'the save in the folder picked again', 10_000);
+        expect(openRun()).toMatchObject({ header: FOLDER, runKey: picked.runKey, folders: [FOLDER] });
+        expect(seen.chat.configKey).not.toBe(picked.configKey);
+    }, 120_000);
+
+    it('watches the folder picked after the Demo when Live Data was switched on with the Demo open', async () => {
+        await act(async () => { root.render(<App />); });
+        await click(container.querySelector('.llm-chat-launcher'));
+        await click(container.querySelector('button.demo-button'));
+        await waitFor(() => seen.chat?.runName === 'Demo' && runReady(MOVES_SAVED), 'the Demo run published to the Copilot');
+        await click(liveData());
+        expect(liveData().checked).toBe(true);
+
+        await click(button('Select Folder'));
+        await waitFor(() => seen.chat.runName === FOLDER && runReady(MOVES_SAVED), 'the picked folder published to the Copilot');
+        const picked = openRun();
+        saveConfiguration(1_600_000);
+        await poll();
+        await waitFor(() => runReady(1_600_000), 'the save in the picked folder', 10_000);
+        expect(openRun()).toMatchObject({ header: FOLDER, runKey: picked.runKey, folders: [FOLDER] });
+        expect(seen.chat.configKey).not.toBe(picked.configKey);
+    }, 120_000);
 });

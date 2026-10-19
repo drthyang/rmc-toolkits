@@ -1,4 +1,4 @@
-### Tests: an App-level smoke test of the Copilot dock's state lifecycle (plan 1.4)
+### Tests: an App-level smoke test of the Copilot dock's state lifecycle; the Demo no longer follows a folder's Live Data (plan 1.4)
 
 - `src/__tests__/appDockLifecycle.test.jsx` drives the real App, Dashboard, Detected SG card, run
   module and dock on the Demo run's files, with no model (a recording fake at
@@ -12,6 +12,13 @@
   move count); memory resumes from the divider; a Detected SG pick (a ladder brick) is kept across
   another save of the same run, on the card and in the Copilot's context; another run (the Demo
   button) brings the card and the context back to `DEFAULT_VIEW.toleranceA` and a new conversation.
-- No app code changes. Not covered in jsdom (left for the browser check): the real File System
-  Access handle and Web Worker (stand-ins here), the provider's streaming, the dock's sheet layout,
-  and Flask-mode Live Data with the real dock.
+- **Fix: opening the Demo stops static-mode Live Data watching the folder picked before.** Before,
+  a later save into that folder replaced the Demo's data (name, plots, structure) under the Demo's
+  `runKey`, so the Copilot kept the conversation and the Detected SG pick. `handleToggleDemo` now
+  clears the folder handle and its signature, and each poll tick reads the folder open at that
+  moment and drops a read whose folder was replaced meanwhile. Live Data switched on with no
+  folder open now watches the next folder picked (before, it did not start until switched off and
+  on). Pinned by two more cases in the same test file.
+- Not covered in jsdom (left for the browser check): the real File System Access handle and Web
+  Worker (stand-ins here), the provider's streaming, the dock's sheet layout, and Flask-mode Live
+  Data with the real dock.
