@@ -17,15 +17,22 @@ a dev case, no dev result and no arm score, and it must stay that way:
 - **Dev now, held out later.** The dev cases exist (`judgment: true`). Reported numbers need
   held-out matches, written by you without the dev results, joining the test set as a new pinned
   version on the user's decision. (Done at protocol 2026-10-19.11: the five matches are in the
-  test set, sealed since the holdout gate, and the dev cases are no longer `devOnly`.)
+  test set, sealed since the holdout gate, and the dev cases are no longer `devOnly`. At protocol
+  2026-10-19.19 the marginal situation's knob changed for the engine's calibrated null, and the dev
+  pair was re-set from it; its two matches are to be re-set from the same knob, below.)
 
 ## What not to read
 
 - `validation/judgmentCases.js`: the dev cases' parameters.
 - `validation/baseline/arm-a-dev.json`: the dev records, judgment cases included.
 - The judgment pins in `validation/__tests__/arms.test.js` (its last five `BAR` rows and the test
-  "the judgment subset: where A+'s fixed joining rules fail").
+  "the judgment subset: where A+'s fixed joining rules fail"), and the tests that read the dev
+  marginal pair's values: `judgment.test.js`'s marginal-pair and edge-of-significance tests, and
+  the weak-order tests in `src/workers/__tests__/modulations.test.js` and
+  `src/__tests__/copilotTools.test.js`.
 - The PR that added the dev cases, and any arm record or transcript on them.
+- `validation/findings/decisions/2026-10-19-marginal-reset-dev.json` and its PR: the dev marginal
+  pair's amplitude, seeds and results.
 
 Read `validation/cases.js` for the generators: the kinds, their options and the truths they write.
 
@@ -92,14 +99,71 @@ Read `validation/cases.js` for the generators: the kinds, their options and the 
   however hedged the prose is. A claim needs the element and q (within the scoring's wavevector
   tolerance). The app's answer check on a superstructure claim needs an ordered point (3σ or more),
   so a claim below the bar gets a finding beside its score. That tension is the point.
+- **Re-set at protocol 2026-10-19.19.** Until then this section took the modulation engine's null
+  before finding F1 (protocol 2026-10-19.16), which held a site to one component. The engine now
+  tests against independent cells, and one isotropic site has three components: an amplitude set
+  from the earlier recipe reads far above the bar, so the situation is no longer marginal. A match
+  made from that recipe is re-set from the one below.
 - **Knobs.**
-  - **The expected significance: 3σ.** Set it from the zone-boundary power after the family-wise
-    correction over every zone-boundary point of every element (`zoneBoundarySigma`,
-    `workers/modulations.js`). Take one B site of n copies, thermal rms sigma per axis, amplitude
-    delta along one axis. Along that axis the power is a noncentral χ² of one degree of freedom
-    with non-centrality n·delta²/sigma². The two other axes are central. So
-    E[P] ≈ (n·delta²/sigma² + 3) / (3 + delta²/sigma²). The realised significance scatters by about
-    one σ around its expectation.
+  - **The expected significance: 3σ.** The median of the realised significance at q over
+    configurations drawn with the case's parameters (fresh seeds): half of them clear the bar, which
+    is what an expected significance means here. The realised significance is B's σ at q in the
+    default `analyze_modulations` call (every element), the engine's unrounded value. Compute the
+    expectation from the engine's null, as follows (the engine: `workers/modulations.js`, with
+    `rmc_toolkits/modulations.py` its reference).
+    1. **The power at q.** One B site of n copies (n is the supercell's cell count), thermal rms σ
+       along each axis (the kind fixes it: `THERMAL.B` in `validation/cases.js`), displaced ±δ
+       along one axis in the antiphase pattern of a zone-boundary q. The engine transforms the
+       site's displacements u(c) from its mean position over the cell grid,
+       U(q) = Σ_c u(c) e^(−2πi q·c), a real sum at a zone-boundary point. Each component of U is
+       normal with variance nσ² (n independent thermal terms). The two components across the
+       displacement have mean 0, and the one along it has mean nδ. The power is
+       P = |U|² / (n tr C), where tr C = 3σ² + δ² is the site's total displacement variance, the
+       static ±δ included. So
+       `P = σ²/(3σ² + δ²) · X`, `X ~ χ'²₃(Z)`, `Z = n δ²/σ²`.
+       X is a noncentral χ² with three degrees of freedom (two central components, one noncentral)
+       and noncentrality Z. The mean of P is (Z + 3)/(3 + δ²/σ²).
+    2. **The null.** The independent-cell null places the configuration's own cells at random, which
+       keeps every correlation inside a cell and destroys every correlation between cells. At a
+       zone-boundary point the element's power under it is `P₀ = Σ_k λ_k χ²₁`, a sum of independent
+       χ²₁ terms. Its weights λ_k are the eigenvalues of the element's cell covariance
+       N/(N − 1) Σ_c y(c) y(c)ᵀ, normalised as the power (`independentCellNull`): N is the cell
+       count, y(c) holds the displacements of the element's sites in cell c, and the weights sum to
+       N/(N − 1), the mean power. For the B site of step 1,
+       `λ = n/(n − 1) · (σ², σ², σ² + δ²) / (3σ² + δ²)`: three components, one per axis the site
+       moves along, where the earlier recipe took one.
+    3. **The family-wise significance of a power P.** The p-value is p = Pr(P₀ ≥ P)
+       (`nullTail(P, λ, true)`: a Lugannani–Rice saddlepoint, 0 to 8 % above the exact tail). Then
+       σ = Φ⁻¹((1 − p)^F) (`zoneBoundarySigma(P, λ, F)`). F, the Šidák family, is the number of
+       zone-boundary points the supercell holds (7 when every axis is even) times the number of
+       elements in the configuration with displacements (three in an ABX₃ case), whichever element
+       a call names.
+    4. **The expected significance** is the σ of step 3 at the median power,
+       `P_med = σ²/(3σ² + δ²) · median χ'²₃(Z)`, since σ increases with P. The median is
+       `scipy.stats.ncx2.median(3, Z)` in Python. In JavaScript it is the root x of
+       Σ_j e^(−Z/2) (Z/2)^j / j! · P(3/2 + j, x/2) = ½, where P is the lower regularized gamma
+       (`regularizedGamma(a, x).lower`, `workers/orientation.js`). Solve σ(P_med) = 3 for δ.
+       - At a fixed F the result depends on Z, and only weakly on δ/σ: for F = 21, σ(P_med) = 3 at
+         Z ≈ 20. The amplitude therefore scales as σ/√n, so the supercell sets it.
+       - Do not take the σ at the mean power: it reads about 0.14σ higher than at the median.
+       - The formula leaves out how tr C and λ vary from one configuration to the next; the engine
+         check below includes it.
+    5. **The ratio bar.** An ordered point also needs a power of at least 3 × the median power over
+       q. Near an expected 3σ that bar is passed by a wide margin, because an isotropic site's median
+       power is about 0.9.
+  - **The scatter.** At an expected 3σ the realised significance has a standard deviation of about
+    1.4σ, with a longer tail below than above. About 30 % of configurations land in [3, 4] and
+    about 14 % in [2.5, 3).
+  - **Check it with the engine** before taking seeds:
+    - Build K configurations of your case on seeds that no case uses and that lie outside your seed
+      sequence (`buildCase(item, { partials: false })` skips the g(r)).
+    - Run the engine as the default call does, every element:
+      `displacementModulations(siteDisplacementsFromRmc6f(rmc6f))` (`workers/modulations.js`,
+      `workers/pcaKde.js`). Read B's σ at q.
+    - Their median should match your expected significance to within its sampling error, about
+      1.25 × 1.4σ/√K.
+    - About half of them should reach 3σ, within the binomial interval.
+    - B's `nullDof` should be close to 3, one isotropic site's three components.
   - **The seeds.** A pair, by a rule that does not depend on which side an arm lands: in a fixed
     sequence, the first seed whose realised significance at q lies in [3, 4], and the first in
     [2.5, 3).
