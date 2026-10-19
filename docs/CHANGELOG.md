@@ -16,6 +16,28 @@ Chronological record of notable changes, newest first. For current architecture 
   2026-10-19 sit in a reviewed allow-list with exact counts, listed as known risks in
   [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan) (plan item 1.5).
 
+### Tests: generated goldens at the orientation and site seams
+
+- The displacement-direction engine and its JS port are held to one generated golden instead of
+  values copied by hand into both suites: `tests/generate_orientation_fixture.py` writes
+  `orientation_fixture.json` (21 full payloads with their key sets — the golden cloud, the 8-well
+  model, isotropic, one-sided, prolate in the PCA frame, sparse, singly occupied pairs and demo-run
+  sites, at ν 2–10 — plus the tie-family cells, neighbour checksums, polygon starts, the
+  `recommendedFrequency` table and Pearson's null moments), checked by `orientationParity.test.js`.
+  The hand-copied tables (`GOLDEN_PEAK`/`_MAP`/`_ASYMMETRY`/`_ANISOTROPY`, `WELL_MODEL_PEAKS`,
+  `SPECIAL_DIRECTION_CELLS`, `AXIS_CELLS_NU3`, `NEIGHBOR_CHECKSUMS`, `POLYGON_STARTS_NU38`,
+  `PEARSON_MOMENTS`, the `recommendedFrequency` pins) are gone; the generated values equal them bit
+  for bit.
+- The PCA site table (`site_ellipsoids` ↔ `siteEllipsoids`) gets its first cross-engine golden:
+  `tests/generate_pca_sites_fixture.py` → `pca_sites_fixture.json` (all 52 demo-run sites and
+  synthetic isotropic, split, zero-spread and mixed sites), checked by `pcaSitesParity.test.js`.
+- `tests/test_orientation_fixture.py` and `tests/test_pca_sites_fixture.py` re-run the generators
+  on the committed inputs, so a fixture cannot go stale. Both sides compare by one rule
+  (`goldenCompare.js` ↔ `tests/golden_compare.py`): integers, booleans and nulls exactly, other
+  numbers to 1e-9 relative + 1e-12, p-values to 1e-9 relative, eigenvector sets eigenspace by
+  eigenspace (a degenerate one, where LAPACK and the JS Jacobi solver pick different bases, by its
+  projector). No engine changed.
+
 ### Copilot: snapshots of what the model sees
 
 - `web_app/frontend/src/__tests__/modelVisible/` pins, as readable files, every system-prompt

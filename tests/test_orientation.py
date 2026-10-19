@@ -152,15 +152,8 @@ class RecommendedFrequencyTests(unittest.TestCase):
         cells = 10 * frequency**2 + 2
         per_cell = 12000 / cells
         self.assertGreaterEqual(per_cell, 12)  # a floor: never over-binned
-
-    def test_exact_values_pin_cross_engine_parity(self):
-        # Hard-coded expectations shared verbatim with the JS suite, so the
-        # browser and server always pick the same tiling for the same data.
-        # The rule floors to the largest nu with 12 * (10 nu^2 + 2) <= N
-        # (the full boundary table is in test_orientation_fixes.py).
-        self.assertEqual(recommended_frequency(774), 2)
-        self.assertEqual(recommended_frequency(300), 1)
-        self.assertEqual(recommended_frequency(12000), 9)
+        # The values both engines must pick (the boundary table) are in
+        # orientation_fixture.json (tests/generate_orientation_fixture.py).
 
 
 class HistogramTests(unittest.TestCase):
