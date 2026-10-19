@@ -3,18 +3,16 @@
 
 // The AI Copilot's analysis tools: the host side of the llm module's tool
 // contract (src/llm/copilot/tools.js). Each tool runs one of the Workbench
-// engines the pages use — the shared PCA worker for a browser-loaded run, the
-// Flask /api/pca/* and /api/triplets routes for a server folder (both through
-// useSiteCloud's requestAnalysis), and the symmetry finder — and returns a
+// engines the pages use through the run's engine (`request`, the run module's
+// `engine`: the Copilot's own PCA worker for a browser-loaded run or the Flask
+// routes for a server folder, useCopilotRun.js; the workers' handlers
+// in-thread in Node, openRunFolder.js), or the symmetry finder, and returns a
 // compact summary for the model plus deterministic checks on the full result.
 // The tools only compute: none changes a page, the shared tolerance, or a file.
 // Each names the card it reads (`cards`), which breathes while it runs when
 // that card is on screen (the llm module's card focus).
 // The summarizers are pure and exported for tests.
 
-import { useEffect, useMemo, useRef } from 'react';
-import { isStaticMode } from './browserData';
-import { requestAnalysis } from './useSiteCloud';
 import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
@@ -1350,57 +1348,3 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
     }
     return tools;
 };
-
-/**
- * The Copilot's tools for the open run. A browser-loaded run (a picked folder
- * or the Demo) is analysed from its `.rmc6f` text, read lazily on the first
- * request and cached per file, in a worker of the Copilot's own: a stopped or
- * timed-out request terminates it (the next request starts a fresh one), and
- * the pages' shared worker never queues behind the Copilot. A typed server
- * folder goes to Flask, the request cancelled on abort. The list is rebuilt
- * only when the run, the folder or the structure changes.
- */
-export default function useCopilotTools({ directory, localRun, structure }) {
-    const textRef = useRef({ file: null, text: null });
-    const workerRef = useRef(null);
-    const localFile = localRun?.structureFile?.sourceFile || null;
-    const canRequest = Boolean(localFile) || (!localRun && !isStaticMode());
-
-    useEffect(() => () => {
-        workerRef.current?.terminate();
-        workerRef.current = null;
-    }, []);
-
-    return useMemo(() => {
-        const readText = async () => {
-            if (textRef.current.file !== localFile) {
-                textRef.current = { file: localFile, text: await localFile.text() };
-            }
-            return textRef.current.text;
-        };
-        const workerRequest = async (kind, params, signal) => {
-            const text = await readText();
-            if (!workerRef.current) {
-                workerRef.current = new Worker(new URL('./workers/pcaKdeWorker.js', import.meta.url), { type: 'module' });
-            }
-            const worker = workerRef.current;
-            const onAbort = () => {
-                if (workerRef.current === worker) workerRef.current = null;
-                worker.terminate();
-            };
-            signal?.addEventListener('abort', onAbort, { once: true });
-            try {
-                return await requestAnalysis(kind, params, { rmc6fText: text, worker, signal });
-            } finally {
-                signal?.removeEventListener('abort', onAbort);
-            }
-        };
-        const request = canRequest
-            ? (kind, params, { signal } = {}) => (localFile
-                ? workerRequest(kind, params, signal)
-                : requestAnalysis(kind, params, { directory, signal }))
-            : null;
-        const elements = Object.keys(structure?.elementCounts || {}).sort();
-        return buildCopilotTools({ request, structure, elements });
-    }, [canRequest, localFile, directory, structure]);
-}

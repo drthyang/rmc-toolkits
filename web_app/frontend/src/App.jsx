@@ -11,8 +11,9 @@ import BondGeometryPage from './components/BondGeometryPage';
 import AutoStogPage from './components/AutoStogPage';
 import { CopilotChat } from './llm';
 import { copilotSkills } from './copilotSkills';
-import useCopilotTools from './copilotTools';
-import { buildCopilotCards } from './copilotCards';
+import { DEFAULT_VIEW } from './copilotRun';
+import useCopilotRun from './useCopilotRun';
+import { buildCopilotCards, COPILOT_PAGES } from './copilotCards';
 import { buildViewTools } from './copilotViewTools';
 import API_BASE_URL from './api';
 import {
@@ -40,22 +41,15 @@ const SHOW_AUTO_STOG = false;
 // on its own uploads): opening another run keeps them listed.
 const RUN_INDEPENDENT_PAGES = ['autostog'];
 
-// The pages an AI Copilot step can open ("Show in Bond Geometry"), by page key.
-const COPILOT_PAGES = {
-  dashboard: 'Dashboard',
-  structure: 'Atomic Density',
-  geometry: 'Bond Geometry',
-  ellipsoids: 'PCA Ellipsoid',
-  orientation: 'Displacement Directions',
-};
-
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [visitedPages, setVisitedPages] = useState({ autostog: false, dashboard: true, structure: false, ellipsoids: false, orientation: false, geometry: false });
-  // Parsed run context published by the Dashboard, consumed by the AI Copilot chatbox.
-  const [assistantRun, setAssistantRun] = useState(null);
+  // The run as the Dashboard holds it ({ files, structure, structurePath,
+  // hiddenPlots }), published for the AI Copilot's run module once it is open.
+  const [dashboardRun, setDashboardRun] = useState(null);
   // Whether the AI Copilot chatbox has been opened yet: until then the
-  // Dashboard skips the work that only feeds it (symmetry ladder, .dat parse).
+  // Dashboard does not publish its run and the run module does none of the
+  // work that only feeds the Copilot (symmetry ladder, .dat parse).
   const [copilotOpened, setCopilotOpened] = useState(false);
   // "Show in <page>" from a Copilot step: the page to load and what to load
   // there (Bond Geometry's triplet + windows, Displacement Directions' site).
@@ -88,8 +82,9 @@ function App() {
   // the same folder again re-check its .rmc6f (with Live Data off, the only
   // way short of a browser reload).
   const [loadRequest, setLoadRequest] = useState(0);
-  // Shared "Detected SG" tolerance, so the ladder selection persists across pages.
-  const symTolState = useState(0.2);
+  // Shared "Detected SG" tolerance, so the ladder selection persists across
+  // pages; it starts at the card's default (copilotRun.js DEFAULT_VIEW).
+  const symTolState = useState(DEFAULT_VIEW.toleranceA);
   const directoryInputRef = useRef(null);
   const dirHandleRef = useRef(null);
   const lastSignatureRef = useRef('');
@@ -102,27 +97,33 @@ function App() {
   // The open run's identity: another run clears its one-off problems and
   // starts the AI Copilot on a new conversation.
   const runKey = `${currentDirectory}|${localRun?.runId ?? ''}`;
-  // The analyses the AI Copilot may run on the open run (copilotTools.js):
-  // they compute through the same engines as the pages and change nothing.
-  const analysisTools = useCopilotTools({
+  // The run as the AI Copilot sees it (copilotRun.js, through its browser
+  // adapter useCopilotRun.js): CopilotChat's eight run props, and the
+  // analyses it may run, which compute through the same engines as the pages
+  // and change nothing. The view is what is on screen: the shared Detected SG
+  // tolerance, the PCA table once that page has computed it, Live Data.
+  const copilotRun = useCopilotRun({
     directory: currentDirectory,
     localRun,
-    structure: assistantRun?.structure ?? null,
+    dashboard: dashboardRun,
+    view: { toleranceA: symTolState[0], pcaSites, liveData: watchFiles },
+    enabled: copilotOpened,
   });
+  const { plotFiles: copilotPlotFiles, rValueFile: copilotRValueFile, symmetry: copilotSymmetry } = copilotRun.props;
   // The cards it may point at, and the view tools that turn the 3D views
   // (copilotCards.js, copilotViewTools.js). current_view reads the page on
   // screen through a ref, so the tools are not rebuilt on every page switch.
   const activePageRef = useRef(activePage);
   activePageRef.current = activePage;
   const copilotCards = useMemo(() => buildCopilotCards({
-    plotFiles: assistantRun?.plotFiles ?? [],
-    rValueFile: assistantRun?.rValueFile ?? null,
-    symmetry: assistantRun?.symmetry ?? null,
-  }), [assistantRun?.plotFiles, assistantRun?.rValueFile, assistantRun?.symmetry]);
+    plotFiles: copilotPlotFiles,
+    rValueFile: copilotRValueFile,
+    symmetry: copilotSymmetry,
+  }), [copilotPlotFiles, copilotRValueFile, copilotSymmetry]);
   const copilotTools = useMemo(() => [
-    ...analysisTools,
+    ...copilotRun.tools,
     ...buildViewTools({ cards: copilotCards, pages: COPILOT_PAGES, activePage: () => activePageRef.current }),
-  ], [analysisTools, copilotCards]);
+  ], [copilotRun.tools, copilotCards]);
   // Only where the dock sits matters here (not its width), so dragging the
   // dock's edge does not re-render the pages.
   const handleCopilotLayout = useCallback((layout) => setCopilotLayout((current) => (
@@ -663,7 +664,7 @@ function App() {
                   watchFiles={watchFiles}
                   cardMarks={copilotMarks}
                   wantAssistantData={copilotOpened}
-                  onRunContextChange={setAssistantRun}
+                  onRunChange={setDashboardRun}
                 />
               </IssueScope>
             </div>
@@ -730,14 +731,7 @@ function App() {
           mounts on first open and keeps its conversation while collapsed. */}
       <CopilotChat
         className="app-copilot"
-        runName={assistantRun?.runName ?? (localRun ? localRun.name : currentDirectory)}
-        plotFiles={assistantRun?.plotFiles ?? []}
-        rValueFile={assistantRun?.rValueFile ?? null}
-        structure={assistantRun?.structure ?? null}
-        symmetry={assistantRun?.symmetry ?? null}
-        runSettings={assistantRun?.runSettings ?? null}
-        pcaSites={pcaSites}
-        liveData={watchFiles}
+        {...copilotRun.props}
         tools={copilotTools}
         pages={COPILOT_PAGES}
         onOpenPage={handleCopilotOpenPage}
