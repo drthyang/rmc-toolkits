@@ -10,11 +10,11 @@
   "approval": { "by": "user", "date": "2026-10-19", "batch": 2 },
   "commit": "6da2b15b98121bf2c66734e21269d1286d45178d",
   "tests": [
-    "web_app/frontend/src/workers/__tests__/modulations.test.js › the fixture's weak doubling: 2.98σ over every element's points, the same point and verdict with Nb named",
-    "web_app/frontend/src/workers/__tests__/modulations.test.js › dev-weak-order-b (the finding's case): 2.96σ, \"no order\", whether or not the call names its element",
-    "web_app/frontend/src/__tests__/copilotTools.test.js › F2: a σ just below the 3σ bar is never printed as 3σ beside a \"no order\" verdict (dev-weak-order-b)",
+    "web_app/frontend/src/workers/__tests__/modulations.test.js › the fixture's weak doubling: 2.99σ over every element's points, the same point and verdict with Nb named",
+    "web_app/frontend/src/workers/__tests__/modulations.test.js › dev-weak-order-b (F3's case): the same point and verdict whether or not the call names its element",
+    "web_app/frontend/src/__tests__/copilotTools.test.js › F2: a σ just below the 3σ bar is never printed as 3σ beside a \"no order\" verdict (the fixture's weak doubling)",
     "web_app/frontend/src/__tests__/copilotTools.test.js › F2: nearer the bar than six significant digits reads \"<3\"; at or above the bar, the usual rounding",
-    "web_app/frontend/src/__tests__/copilotTools.test.js › F3: naming one element corrects over every element's points, so 2.96σ stays \"no order\" (dev-weak-order-b)",
+    "web_app/frontend/src/__tests__/copilotTools.test.js › F3: naming one element corrects over every element's points, so 2.99σ stays \"no order\" (the fixture's weak doubling)",
     "web_app/frontend/src/__tests__/modelVisible/toolResults.test.js › %s",
     "web_app/frontend/validation/__tests__/arms.test.js › %s: arm A %s, A+ %s"
   ]

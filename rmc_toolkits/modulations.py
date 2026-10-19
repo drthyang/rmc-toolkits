@@ -131,8 +131,8 @@ AXIS_TIE_RTOL = 1e-9
 # real Fourier sum) and of chi2_2 / 2 at a general q (a complex one), whose
 # weights are the eigenvalues of that covariance normalised as the power
 # (independent_cell_null); the tail is the Lugannani-Rice saddlepoint
-# (null_tail), within +1 to +7 % of the exact tail from p = 1e-2 to 1e-9 on
-# every weight pattern checked, never below it. Until F1 the null took the
+# (null_tail), 0 to +8 % above the exact tail from p = 1e-2 to 1e-9 on every
+# weight pattern checked (conservative). Until F1 the null took the
 # sites as independent, P >= chi2_m / m (and chi2_2m / 2m at a general q):
 # anti-conservative where sites share a cell-level variable (a Jahn-Teller
 # axis, a cluster's breathing), conservative where they do not. The general
