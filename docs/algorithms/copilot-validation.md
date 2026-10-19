@@ -38,6 +38,16 @@ Copilot worker's handler in-thread. The view is `HARNESS_VIEW`, the app's defaul
 SG card at 0.2 Å with its ladder, nothing hidden, no PCA table (the PCA Ellipsoid page not
 visited), Live Data off. Arms A and A+ read the same run, with the ladder off.
 
+**The question is the app's.** Each live run is one question through the turn module
+(`src/llm/copilot/turn.js`, `runTurn`), the same module the dock runs each question through: it
+builds the context, the prompt, `ask_user` and `read_skill`, the history, the Workbench's
+questions, the evidence gate, the answer checks and the references from the run props. The
+harness (`harness.js`) is its second adapter and passes only what is its own: the case's run, its
+compute-only tools (the tools over the run props with no cards, and the run's engine tools), the
+simulated user, the arm's skills (arm B) and a model port. `run.js` builds that port as the app
+does, with `providerModel` (`src/llm/provider/model.js`: the context guard, the warmer retry), and
+meters it for an API model (`spend.js` `meteredModel`).
+
 ## Cases
 
 Nine kinds, each a **dev** case (for improving tools and skills) and a held-out **test** case (for
@@ -233,6 +243,26 @@ user's text and is unchanged.
 - **The holdout scan's open-leak list is now empty**, and the four allow-list entries for the old
   cluster have left it ([the holdout scan](#the-holdout-scan)).
 
+**Protocol 2026-10-19.3 (the turn module).** The harness had assembled each question itself,
+beside the dock's own assembly, and the two had drifted apart. Both now run the turn module
+(above), and four things change for the harness; each is pinned in `harness.test.js`:
+1. **The warmer retry.** After a reply that kept repeating itself, the loop asks again warmer: the
+   dock sent that request at a temperature of 0.6 or more, the harness at the model's own (0.2), as
+   `streamCopilotChat` ignored the loop's flag. It now runs at 0.6 or more in both
+   (`providerModel`, `ANTI_REPEAT_TEMPERATURE`).
+2. **The no-tools prompt.** A model that refuses tools gets the tool-free system prompt, as in the
+   dock; the harness had kept the tool rules.
+3. **Provenance against what the model read.** Each answer number is matched against the run
+   context as the model was shown it (trimmed to its budget, the turn's `start.shown`), no longer
+   the whole context: a value the trim removed was never shown. No case's context is over the
+   budget at the default view (the largest is ~4,500 of 6,000 characters, ~5,600 for the Demo with
+   the PCA table), so no default record moves.
+4. **Every request as sent.** The record keeps `requests` (below).
+
+Changes 1 and 2 change what a run sends, so the protocol moves. Live runs under an earlier
+protocol that looped or met a model without tools are not comparable; arms A, A+ and D have no
+model and are unaffected.
+
 ## Records, transcripts, findings
 
 Each live run writes:
@@ -253,7 +283,15 @@ harness, so each record states it:
   is one fresh question (the app sends up to eight earlier turns). A case has `structure`,
   `symmetry`, `pair_correlations` and `datasets` (its partial g(r)). It has no
   `configuration_optimization` (no move counters), `run_settings`, `partial_weights` or
-  `convergence`, and no `pca_displacements` unless the PCA table is on.
+  `convergence`, and no `pca_displacements` unless the PCA table is on. Read from the context as
+  the model was shown it (the turn's `start`);
+- `requests` (since protocol 2026-10-19.3): every model request as it was sent, in order, as
+  `{ round, why, sent }`: `why` is `first`, `tools` (the results of the round before), `reminder`
+  (after an empty or looping reply), `gate` (an answer the evidence gate sent back), `final` (the
+  analysis budget used: `tool_choice` 'none') or `no_tools` (the retry of a model that refuses
+  tools); `sent` is the request as the port prepared it (`providerModel`: base URL, model id,
+  temperature, messages, tools, tool choice; never the API key). A request the spend cap refused
+  was never sent and is not there.
 
 The transcript prints both under its header. **The PCA-table option** (`run.js live --pca-table`,
 dev set only; `runLiveCase({ pcaTable: true })`) gives each run the PCA table from its own engine,
@@ -295,8 +333,9 @@ Each model gets the same cases, prompt, tools and scoring, and the results are r
 
 The API model (`claude-sonnet-5-5`) runs the test set only, arm B, 3 runs per case, under RMC's
 $12 share of the cycle's $40 cap. The spend tracker prices each request before sending it (prompt
-estimate + the largest reply) and refuses one that could cross the cap; a JSON-lines ledger keeps
-the total across restarts. The client sees no usage report, so the charge is an upper bound: the
+estimate + the largest reply) and refuses one that could cross the cap (`spend.js`
+`meteredModel`, a decorator over the model port: it reserves when the request is prepared, so a
+refused request is never sent); a JSON-lines ledger keeps the total across restarts. The client sees no usage report, so the charge is an upper bound: the
 Copilot's conservative token estimate (2.5 characters per token of text), with every prompt token
 at the dearest prompt rate. Prices (USD per million tokens, 2026-10-14): input $2, output $10,
 cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL_SONNET_MODEL`,
@@ -375,11 +414,16 @@ folder, with no model and no network:
   (CopilotChat → useCopilot, captured at `streamCopilotChat`): its fields, its messages and the
   `tools` field exactly as sent;
 - `harness/first-request.arm-B.txt`, `harness/first-request.arm-C.txt` and
-  `harness/tools.arm-B.json`: the same for `runLiveCase` on `dev-offcentre`, captured at its
-  `callModel`;
+  `harness/tools.arm-B.json`: the same for `runLiveCase` on `dev-offcentre`, captured at its model
+  port (the files' header still calls it `callModel`, its name before the turn module);
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note).
+
+`turnRequests.test.js` (no snapshot file of its own) runs the turn module directly with a
+dock-shaped spec (the Demo run, the dock's tools, `providerModel`) and a harness-shaped one
+(`dev-offcentre` through the run module, arms B and C): its first requests are the requests in
+these files, so the dock and the harness send what the one module builds.
 
 Beside them, `caseBlind.test.js` (no snapshot file) checks that the harness tells the model nothing
 about the case:
