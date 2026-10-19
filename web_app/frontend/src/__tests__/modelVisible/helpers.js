@@ -6,22 +6,24 @@
 // change to these files is a change to what the model sees.
 //
 //   - the system-prompt variants (copilotSystemPrompt);
-//   - the Demo run as the Dashboard hands it to the Copilot (the dock's run);
+//   - the Demo run as the Dashboard holds it and the run module
+//     (copilotRun.js) hands it to the Copilot (the dock's run);
 //   - a fake model port that records each request and answers at once;
 //   - the renderers: a prompt with a line break after each sentence, a
 //     request as text, a tool message as JSON.
 
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-    combineRValueFiles, loadDemoRun, parseRunSettings, readAndParseLocalPlotFile
+    DASHBOARD_MAX_POINTS, isDashboardPlotFile, loadDemoRun, parseDashboardPlotFile, parseRunSettings
 } from '../../browserData';
+import { copilotRun, DEFAULT_VIEW } from '../../copilotRun';
 import { copilotSkills } from '../../copilotSkills';
 import { parseSkillFiles } from '../../llm/copilot/skills';
 import { copilotSystemPrompt } from '../../llm/prompts/copilot';
-import { describeSymmetry, toleranceLadder } from '../../symmetryModel';
+import { handlePcaMessage } from '../../workers/pcaKdeWorker';
 import { handleStructureMessage } from '../../workers/localStructureWorker';
 
 // --- the system prompt -----------------------------------------------------------
@@ -87,39 +89,45 @@ const DEMO = join(HERE, '../../../public/demo');
 export const appSource = (path) => readFileSync(join(HERE, '../..', path), 'utf8');
 // The Demo button stamps each file with Date.now(); pinned, so nothing about
 // the moment of the test can reach a snapshot.
-const DEMO_TIME = Date.UTC(2026, 0, 1);
+export const DEMO_TIME = Date.UTC(2026, 0, 1);
 
-// Dashboard.jsx's own (not exported) plot-file filter and order: the order of
-// `plotFiles` the Copilot receives (dock.test.jsx checks they still match).
-export const PLOT_ORDER =['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'exafs_q', 'exafs_r', 'xpdf', 'npdf', 'pdf_partials'];
-const isDashboardPlotFile = (file) => file.plotKind && file.plotKind !== 'stog';
-const logParts = (name) => {
-    const match = name.match(/^(.+)-(\d{2,})\.log$/);
-    return match ? { stem: match[1].toLowerCase(), sequence: Number(match[2]) } : null;
-};
-const comparePlotFiles = (a, b) => {
-    const kindOrder = PLOT_ORDER.indexOf(a.plotKind) - PLOT_ORDER.indexOf(b.plotKind);
-    if (kindOrder !== 0) return kindOrder;
-    const aLog = logParts(a.name);
-    const bLog = logParts(b.name);
-    if (aLog && bLog) {
-        const stemOrder = aLog.stem.localeCompare(bLog.stem);
-        if (stemOrder !== 0) return stemOrder;
-        if (aLog.sequence !== bLog.sequence) return aLog.sequence - bLog.sequence;
-    }
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-};
+/** The Demo folder as a picked folder's entries ({ path: 'Demo/<name>', file }), from public/demo. */
+export const demoEntries = () => readdirSync(DEMO).sort().map((name) => ({
+    path: `Demo/${name}`,
+    file: new File([readFileSync(join(DEMO, name))], name, { lastModified: DEMO_TIME })
+}));
 
-// The Detected SG card's starting tolerance (Å), as the Dashboard starts.
-export const CARD_TOLERANCE_A = 0.2;
+/** An engine over .rmc6f text: the Copilot worker's handler in-thread, with the worker's message. */
+export const inThreadEngine = (rmc6fText) => (kind, params = {}) => handlePcaMessage({ ...params, kind }, async () => rmc6fText);
+
+/**
+ * A browser-loaded run as the Dashboard holds it once everything is parsed,
+ * as a LoadedRun (copilotRun.js): its files with each plot file parsed
+ * (parseDashboardPlotFile), the structure worker's parse (maxPoints 100), the
+ * structure file's path, the parsed .dat as useCopilotRun reads it, and an
+ * in-thread engine.
+ */
+export const dashboardLoadedRun = async (localRun) => {
+    const files = await Promise.all(localRun.files.map((file) => (isDashboardPlotFile(file) ? parseDashboardPlotFile(file) : file)));
+    const structure = await handleStructureMessage({ file: localRun.structureFile, maxPoints: DASHBOARD_MAX_POINTS });
+    const settings = localRun.settingsFile ? parseRunSettings(await localRun.settingsFile.sourceFile.text()) : null;
+    const rmc6fText = await localRun.structureFile.sourceFile.text();
+    return {
+        loaded: {
+            name: localRun.name, files, structure, structurePath: localRun.structureFile.path, settings, engine: inThreadEngine(rmc6fText)
+        },
+        rmc6fText
+    };
+};
 
 /**
  * The Demo as App.jsx passes it to CopilotChat once the Copilot is open: the
- * Demo button's files (browserData.loadDemoRun, served from public/demo), the
- * Dashboard's parsed plot files in its order, its χ² history
- * (combineRValueFiles), the structure worker's parse (maxPoints 100), the
- * symmetry at the shared tolerance with its ladder, and the parsed .dat.
- * `localRun` is returned too (the host tools read its structure file).
+ * Demo button's files (browserData.loadDemoRun, served from public/demo) as
+ * the Dashboard holds them, through the run module's core (copilotRun.js) at
+ * the default view — the Dashboard's plot files in its order, its χ² history,
+ * the symmetry at the card's tolerance with its ladder, the parsed .dat.
+ * `run` is the eight CopilotChat props, `copilot` the whole CopilotRun,
+ * `loaded` its LoadedRun; `localRun` is returned too.
  */
 export const loadDemoAssistantRun = async () => {
     const fetchBefore = globalThis.fetch;
@@ -137,36 +145,9 @@ export const loadDemoAssistantRun = async () => {
         globalThis.fetch = fetchBefore;
         Date.now = nowBefore;
     }
-    const parsed = await Promise.all(localRun.files.map(async (file) => {
-        if (!isDashboardPlotFile(file)) return file;
-        try {
-            return { ...file, plotData: await readAndParseLocalPlotFile(file) };
-        } catch (failure) {
-            return { ...file, parseError: failure.message || 'Could not parse plot file' };
-        }
-    }));
-    const plotFiles = parsed.filter(isDashboardPlotFile).sort(comparePlotFiles);
-    const rValueFile = combineRValueFiles(plotFiles.filter((file) => file.plotKind === 'r_value'), localRun.structureFile?.path);
-    const structure = await handleStructureMessage({ file: localRun.structureFile, maxPoints: 100 });
-    const detected = describeSymmetry(structure, CARD_TOLERANCE_A);
-    const symmetry = detected ? { ...detected, toleranceA: CARD_TOLERANCE_A, ladder: toleranceLadder(structure, 1.0) } : null;
-    const runSettings = localRun.settingsFile ? parseRunSettings(await localRun.settingsFile.sourceFile.text()) : null;
-    const rmc6fText = await localRun.structureFile.sourceFile.text();
-    return {
-        localRun,
-        rmc6fText,
-        run: { runName: localRun.name, plotFiles, rValueFile, structure, symmetry, runSettings, pcaSites: null, liveData: false }
-    };
-};
-
-// App.jsx's COPILOT_PAGES (not exported): the page labels the Copilot's tools
-// name (dock.test.jsx checks they still match).
-export const COPILOT_PAGES = {
-    dashboard: 'Dashboard',
-    structure: 'Atomic Density',
-    geometry: 'Bond Geometry',
-    ellipsoids: 'PCA Ellipsoid',
-    orientation: 'Displacement Directions'
+    const { loaded, rmc6fText } = await dashboardLoadedRun(localRun);
+    const copilot = copilotRun(loaded, DEFAULT_VIEW);
+    return { localRun, rmc6fText, loaded, copilot, run: copilot.props };
 };
 
 // --- a fake model port ------------------------------------------------------------

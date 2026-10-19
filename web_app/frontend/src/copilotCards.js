@@ -10,6 +10,17 @@
 // `view3d` that it is a 3D view orient_3d_view can turn (viewer3d.js), and
 // `sites` that it shows the unit cell's sites.
 
+// The pages an AI Copilot step can open ("Show in Bond Geometry") and a card
+// can live on, by page key, with their tab labels: CopilotChat's `pages` and
+// the view tools' page names (App.jsx). Auto StoG is not one of them.
+export const COPILOT_PAGES = Object.freeze({
+    dashboard: 'Dashboard',
+    structure: 'Atomic Density',
+    geometry: 'Bond Geometry',
+    ellipsoids: 'PCA Ellipsoid',
+    orientation: 'Displacement Directions'
+});
+
 const PLOT_ABOUT = {
     pdf_partials: 'the partial g(r) of every element pair (x: r in Å)',
     xpdf: 'the fitted X-ray G(r), model against data (x: r in Å)',

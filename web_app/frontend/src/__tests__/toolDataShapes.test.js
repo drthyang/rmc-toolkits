@@ -207,15 +207,9 @@ describe('every live tool\'s data fits its declared dataShape', () => {
         }];
         // The dev cases only: the held-out test cases are never built here.
         for (const item of DEV_CASES) {
-            const run = loadRun(buildCase(item));
-            runs.push({
-                name: item.id,
-                props: {
-                    runName: run.runName, plotFiles: run.plotFiles, rValueFile: null, structure: run.structure,
-                    symmetry: run.symmetry, runSettings: null, pcaSites: null, liveData: false
-                },
-                request: run.request
-            });
+            // The harness's run (validation/runFolder.js → the run module).
+            const run = await loadRun(buildCase(item));
+            runs.push({ name: item.id, props: run.props, request: run.engine });
         }
         for (const run of runs) {
             const tools = await runTools(run);
