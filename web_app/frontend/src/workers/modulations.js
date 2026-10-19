@@ -20,12 +20,20 @@
 // power (modePolarisation). The engine also decides what these show (the
 // verdict, modulations.py's): each tested point's calibrated σ, kind,
 // ordered, because and bar, each element's cellDoubling / generalOrder /
-// longWave, the family (every element of the configuration, whichever the
-// call names: F3) and the rules — which the Copilot's analyze_modulations
-// only renders.
+// longWave / diffuseOrder, the family (every element of the configuration,
+// whichever the call names: F3) and the rules — which the Copilot's
+// analyze_modulations only renders.
+//
+// The null (F1, 2026-10-19): the configuration's own cells placed at random,
+// every correlation inside a cell kept (independentCellNull); the power is a
+// weighted sum of χ²₁ (zone boundary) or χ²₂/2 (general q) terms, its tail a
+// saddlepoint (nullTail). diffuseOrder (plan item 4.4): the ranks of the
+// power over the compared modes regressed on the 13 neighbour-cell lags
+// (diffuseOrder): short-range order between cells spread over many q.
 
 import { normalQuantile, regularizedGamma } from './orientation.js';
 import { eigenDecomposition } from './pcaKde.js';
+import { evidenceClears } from './clusters.js';
 
 export const TOP_MODES = 5;
 export const PERCENTILE_RTOL = 1e-9;
@@ -47,12 +55,15 @@ export const AXIS_TIE_RTOL = 1e-9;
 // at MODULATION_SIGMA after a family-wise (Šidák) correction over every
 // zone-boundary point of every element the configuration has, whichever the
 // call names (F3, 2026-10-19: choosing the element after seeing the data is
-// selective inference, so the family never shrinks with the request): for independent displacements a
-// site's normalised power at a half-integer q is Σ_c w_c χ²₁ (Σ w_c = 1), so an
-// element's mean over m sites has at least m degrees of freedom, P ≥ χ²_m/m. At
-// a general q (neither a zone-boundary point nor a long wave) the sum is
-// complex: P ≥ χ²_2m/2m, corrected over the compared modes. These were the
-// Copilot tool's rules until 2026-10-19, ported unchanged.
+// selective inference, so the family never shrinks with the request). The
+// null is the independent-cell null (F1, 2026-10-19): the element's power at q
+// is a weighted sum of χ²₁ (a half-integer q, a real Fourier sum) or χ²₂/2 (a
+// general q) terms whose weights are the eigenvalues of its cells' covariance
+// N/(N − 1) Σ_c y(c) y(c)ᵀ normalised as the power (independentCellNull), with
+// a Lugannani–Rice tail (nullTail). Until F1 the sites were taken as
+// independent (P ≥ χ²_m/m, χ²_2m/2m at a general q): anti-conservative where
+// they share a cell-level variable, conservative where they do not. General
+// modes are corrected over the compared modes.
 
 /** Ratio to the median power an ordered point needs (the effect size). */
 export const MODULATION_RATIO = 3;
@@ -64,21 +75,57 @@ export const LONG_WAVE_RATIO = 5;
 export const SIGMA_MAX = 40;
 const P_CAP = 1 - 1e-16;
 
+// --- the independent-cell null (F1; modulations.py's constants) -------------------
+
+/** A null weight below this fraction of the largest is a direction no site moves in (or rounding): left out. */
+export const NULL_WEIGHT_RTOL = 1e-12;
+/** Weights within this relative spread are one weight: the null is then exactly a gamma. */
+export const NULL_EQUAL_RTOL = 1e-12;
+/** Bisection steps for the saddlepoint equation K'(t) = x (the same in both engines). */
+export const SADDLEPOINT_STEPS = 200;
+/** Within this |w| of the null mean the Lugannani–Rice formula cancels: its limit there. */
+export const SADDLEPOINT_W_MIN = 1e-6;
+
+// --- diffuse order between cells (plan item 4.4) ----------------------------------
+
+/** The neighbour-cell lags (in cells) the diffuse test reads: one of each ±R pair of the 26 cells around a cell. */
+export const DIFFUSE_LAGS = Object.freeze([
+    [1, 0, 0], [0, 1, 0], [0, 0, 1],
+    [1, 1, 0], [1, -1, 0], [1, 0, 1], [1, 0, -1], [0, 1, 1], [0, 1, -1],
+    [1, 1, 1], [1, 1, -1], [1, -1, 1], [-1, 1, 1]
+].map((lag) => Object.freeze(lag)));
+/** Family-wise one-sided σ diffuse order needs (Šidák over every element). */
+export const DIFFUSE_SIGMA = 3;
+/** The effect size it needs: the strongest neighbour-cell correlation |Γ(R)|. */
+export const DIFFUSE_CORRELATION = 0.1;
+/** Compared modes needed per term of the regression (the constant and every lag the grid resolves). */
+export const DIFFUSE_MODES_PER_TERM = 2;
+/** A lag whose template is, within this relative norm, a combination of the earlier ones is left out. */
+export const DIFFUSE_RANK_RTOL = 1e-9;
+
 export const MODULATION_RULES = Object.freeze({
     ratio: MODULATION_RATIO,
     sigma: MODULATION_SIGMA,
     longWaveRatio: LONG_WAVE_RATIO,
     longWaveQ: LONG_WAVE_Q,
-    sigmaMax: SIGMA_MAX
+    sigmaMax: SIGMA_MAX,
+    diffuseSigma: DIFFUSE_SIGMA,
+    diffuseCorrelation: DIFFUSE_CORRELATION,
+    diffuseLags: DIFFUSE_LAGS.map((lag) => [...lag]),
+    diffuseModesPerTerm: DIFFUSE_MODES_PER_TERM
 });
 /** Every `because` a point and each element finding can give (closed sets, pinned by the parity fixture). */
 export const MODULATION_BECAUSE = Object.freeze({
     point: ['ordered', 'below_ratio', 'below_sigma', 'undefined_statistic', 'zone_boundary', 'long_wave'],
     cellDoubling: ['ordered_point', 'no_ordered_point', 'undefined_statistic', 'untestable', 'no_displacements'],
     generalOrder: ['ordered_mode', 'no_ordered_mode', 'undefined_statistic', 'no_general_mode', 'no_displacements'],
-    longWave: ['long_wave_dominates', 'below_ratio', 'strongest_not_long_wave', 'undefined_statistic', 'no_displacements']
+    longWave: ['long_wave_dominates', 'below_ratio', 'strongest_not_long_wave', 'undefined_statistic', 'no_displacements'],
+    diffuseOrder: ['correlated_in_phase', 'correlated_antiphase', 'below_correlation', 'below_sigma', 'undefined_statistic',
+        'too_few_modes', 'no_displacements']
 });
 export const MODE_KINDS = Object.freeze(['zone_boundary', 'long_wave', 'general']);
+/** The phase of the strongest neighbour-cell correlation: in phase (Γ > 0) or in antiphase (Γ < 0). */
+export const DIFFUSE_PHASES = Object.freeze(['in_phase', 'antiphase']);
 
 /** A long-wavelength mode: every component within LONG_WAVE_Q of the zone centre. The one predicate. */
 export const isLongWave = (q) => q.every((value) => Math.abs(value) <= LONG_WAVE_Q + LONG_WAVE_TOL);
@@ -94,21 +141,126 @@ const sidakSigma = (p, family) => {
 // σ as reported: −∞ as null, +∞ as SIGMA_MAX.
 const reported = (sigma) => (sigma === -Infinity ? null : Math.min(sigma, SIGMA_MAX));
 
-/**
- * The family-wise significance (one-sided σ) of an element's zone-boundary
- * power (normalised: 1 = independent displacements) over `sites` sites,
- * among `family` points tested. Null where undefined (power ≤ 0) or −∞;
- * +∞ is SIGMA_MAX. Mirrors zone_boundary_sigma.
- */
-export const zoneBoundarySigma = (power, sites, family) => {
-    if (!(power > 0) || !(sites > 0)) return null;
-    return reported(sidakSigma(regularizedGamma(sites / 2, (sites * power) / 2).upper, family));
+// The null's weights as an array: an integer m stands for m equal weights 1/m
+// (the bound P ≥ χ²_m/m used until F1). Mirrors _null_weights.
+const nullWeightsOf = (weights) => {
+    if (typeof weights === 'number') return Number.isInteger(weights) && weights > 0 ? Array(weights).fill(1 / weights) : [];
+    return Array.from(weights ?? [], Number);
 };
 
-/** The same at a general wavevector (a complex sum, P ≥ χ²_2m/2m), `family` = the compared modes. Mirrors general_mode_sigma. */
-export const generalModeSigma = (power, sites, family) => {
-    if (!(power > 0) || !(sites > 0) || !(family >= 1)) return null;
-    return reported(sidakSigma(regularizedGamma(sites, sites * power).upper, family));
+// P(Z > w) for a standard normal Z, accurate in both tails (modulations.py _normal_upper).
+const normalUpper = (w) => {
+    const half = 0.5 * regularizedGamma(0.5, 0.5 * w * w).upper;
+    return w >= 0 ? half : 1 - half;
+};
+
+// Lugannani–Rice upper tail of X with K(t) = −a Σ log(1 − b_k t) (b_k > 0):
+// a = ½, b = 2λ for Σ λ χ²₁; a = 1, b = λ for Σ λ χ²₂/2 (modulations.py
+// _saddlepoint_tail, the same bisection and the same limit near the mean).
+const saddlepointTail = (x, b, a) => {
+    let sum = 0;
+    let largest = 0;
+    b.forEach((value) => { sum += value; largest = Math.max(largest, value); });
+    const mean = a * sum;
+    let [lo, hi] = x > mean ? [0, 1 / largest] : [(-a * b.length) / x, 0];
+    for (let step = 0; step < SADDLEPOINT_STEPS; step += 1) {
+        const mid = 0.5 * (lo + hi);
+        if (!(lo < mid && mid < hi)) break;
+        let slope = 0;
+        b.forEach((value) => { slope += value / (1 - value * mid); });
+        if (a * slope < x) lo = mid;
+        else hi = mid;
+    }
+    const t = x > mean ? lo : 0.5 * (lo + hi);
+    let cgf = 0;
+    b.forEach((value) => { cgf -= Math.log1p(-value * t); });
+    cgf *= a;
+    const w = Math.sign(t) * Math.sqrt(Math.max(2 * (t * x - cgf), 0));
+    if (Math.abs(w) < SADDLEPOINT_W_MIN) {
+        let k2 = 0;
+        let k3 = 0;
+        b.forEach((value) => { k2 += value * value; k3 += value * value * value; });
+        return 0.5 - (2 * a * k3) / (6 * Math.sqrt(2 * Math.PI) * (a * k2) ** 1.5);
+    }
+    let curvature = 0;
+    b.forEach((value) => { curvature += (value / (1 - value * t)) ** 2; });
+    const u = t * Math.sqrt(a * curvature);
+    const tail = normalUpper(w) + (Math.exp(-0.5 * w * w) / Math.sqrt(2 * Math.PI)) * (1 / u - 1 / w);
+    return Math.min(Math.max(tail, 0), 1);
+};
+
+/**
+ * P(P_null ≥ power) under the independent-cell null with `weights` (the
+ * eigenvalues of independentCellNull, or an integer m for m equal weights
+ * 1/m); `real` at a zone-boundary point (Σ λ χ²₁), else a general q
+ * (Σ λ χ²₂/2). One weight value: the exact gamma; several: the saddlepoint.
+ * Null where undefined. Mirrors null_tail.
+ */
+export const nullTail = (power, weights, real) => {
+    const lam = nullWeightsOf(weights).filter((value) => value > 0);
+    if (!(power > 0) || !lam.length) return null;
+    const [a, scale] = real ? [0.5, 2] : [1, 1];
+    const largest = Math.max(...lam);
+    const smallest = Math.min(...lam);
+    if (largest - smallest <= NULL_EQUAL_RTOL * largest) {
+        const mean = lam.reduce((sum, value) => sum + value, 0) / lam.length;
+        return regularizedGamma(a * lam.length, power / (scale * mean)).upper;
+    }
+    return saddlepointTail(power, lam.map((value) => scale * value), a);
+};
+
+/**
+ * The family-wise significance (one-sided σ) of an element's zone-boundary
+ * power against the independent-cell null with `weights` (nullTail, real),
+ * among `family` points tested. Null where undefined (power ≤ 0) or −∞; +∞
+ * is SIGMA_MAX. Mirrors zone_boundary_sigma.
+ */
+export const zoneBoundarySigma = (power, weights, family) => {
+    const p = nullTail(power, weights, true);
+    return p == null ? null : reported(sidakSigma(p, family));
+};
+
+/** The same at a general wavevector (a complex sum), `family` = the compared modes. Mirrors general_mode_sigma. */
+export const generalModeSigma = (power, weights, family) => {
+    if (!(family >= 1)) return null;
+    const p = nullTail(power, weights, false);
+    return p == null ? null : reported(sidakSigma(p, family));
+};
+
+// Cyclic Jacobi eigenvalues of a symmetric n × n matrix (Float64Array, row
+// major), largest first: the role numpy's eigvalsh has in the engine.
+const symmetricEigenvalues = (matrix, n) => {
+    const a = Float64Array.from(matrix);
+    let scale = 0;
+    for (let i = 0; i < n * n; i += 1) scale += a[i] * a[i];
+    for (let sweep = 0; sweep < 100; sweep += 1) {
+        let off = 0;
+        for (let p = 0; p < n; p += 1) for (let q = p + 1; q < n; q += 1) off += a[p * n + q] * a[p * n + q];
+        if (!(off > 1e-30 * scale)) break;
+        for (let p = 0; p < n; p += 1) {
+            for (let q = p + 1; q < n; q += 1) {
+                const apq = a[p * n + q];
+                if (apq === 0) continue;
+                const theta = (a[q * n + q] - a[p * n + p]) / (2 * apq);
+                const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+                const c = 1 / Math.sqrt(t * t + 1);
+                const s = t * c;
+                for (let k = 0; k < n; k += 1) {
+                    const akp = a[k * n + p];
+                    const akq = a[k * n + q];
+                    a[k * n + p] = c * akp - s * akq;
+                    a[k * n + q] = s * akp + c * akq;
+                }
+                for (let k = 0; k < n; k += 1) {
+                    const apk = a[p * n + k];
+                    const aqk = a[q * n + k];
+                    a[p * n + k] = c * apk - s * aqk;
+                    a[q * n + k] = s * apk + c * aqk;
+                }
+            }
+        }
+    }
+    return Array.from({ length: n }, (_, i) => a[i * n + i]).sort((x, y) => y - x);
 };
 
 // Mᵀx = d for the rows a, b, c of `cell` (Cramer's rule): the direct-lattice
@@ -229,6 +381,51 @@ export const tensorAt = (tensor, q) => {
 };
 
 /**
+ * The weights of the independent-cell null of one element's power (F1):
+ * the eigenvalues, largest first, of W^½ (N/(N − 1) Σ_c y(c) y(c)ᵀ) W^½, with
+ * y(c) the displacements of the element's m moving sites in cell c (a
+ * missing copy is a zero) and W = diag(1 / (m n_s tr C_s)); their sum is the
+ * mean power over q ≠ 0, N/(N − 1). Weights below NULL_WEIGHT_RTOL of the
+ * largest are left out; empty when no site moves. Mirrors independent_cell_null.
+ */
+export const independentCellNull = (parsed, name) => {
+    const supercell = parsed.supercell.map(Number);
+    const nQ = supercell[0] * supercell[1] * supercell[2];
+    const linear = gridLinear(supercell);
+    const moving = parsed.sites.filter((site) => site.element === name && siteVariance(site.displacements) > 0);
+    if (!moving.length) return [];
+    const width = 3 * moving.length;
+    // z: the cells' scaled displacements, nQ rows of width columns.
+    const z = new Float64Array(nQ * width);
+    moving.forEach((site, s) => {
+        const u = site.displacements;
+        const scale = Math.sqrt(1 / (moving.length * u.length * siteVariance(u)));
+        site.cells.forEach((cell, row) => {
+            const base = linear(cell) * width + 3 * s;
+            for (let k = 0; k < 3; k += 1) z[base + k] = u[row][k] * scale;
+        });
+    });
+    const factor = nQ / (nQ - 1);
+    const covariance = new Float64Array(width * width);
+    for (let c = 0; c < nQ; c += 1) {
+        const offset = c * width;
+        for (let i = 0; i < width; i += 1) {
+            const zi = z[offset + i];
+            if (zi === 0) continue;
+            for (let j = i; j < width; j += 1) covariance[i * width + j] += zi * z[offset + j];
+        }
+    }
+    for (let i = 0; i < width; i += 1) {
+        for (let j = i; j < width; j += 1) {
+            covariance[i * width + j] *= factor;
+            covariance[j * width + i] = covariance[i * width + j];
+        }
+    }
+    const values = symmetricEigenvalues(covariance, width);
+    return values.filter((value) => value > values[0] * NULL_WEIGHT_RTOL);
+};
+
+/**
  * One element's displacement spectrum over the supercell's cell grid, from a
  * parsed configuration: { power (Float64Array, the power averaged over the
  * element's sites that move, C order), tensor (Float64Array, 6 components
@@ -329,6 +526,10 @@ export const displacementModulations = (parsed, element = null, { top = TOP_MODE
         const partner = linear(index.map((v) => -v));
         if (q <= partner && !isLongWave(index.map((v, axis) => folded(v, supercell[axis])))) compared.push(q);
     }
+    // The diffuse test's modes: the compared modes that are not zone-boundary points.
+    const diffuseModes = compared.filter((q) => !unravel(q).every((v, axis) => v === 0 || 2 * v === supercell[axis]));
+    const diffuseQ = diffuseModes.map((q) => unravel(q).map((v, axis) => folded(v, supercell[axis])));
+    const spectra = new Map();
     for (const name of elements) {
         const { power, tensor, missing, used } = elementSpectrum(parsed, name);
         if (!used) {
@@ -364,6 +565,7 @@ export const displacementModulations = (parsed, element = null, { top = TOP_MODE
         });
         const order = Array.from({ length: nQ }, (_, q) => q).sort((a, b) => (power[b] - power[a]) || (a - b));
         const strongest = [];
+        const strongestKeys = [];
         const seen = new Set();
         for (const q of order) {
             if (q === 0) continue;
@@ -381,26 +583,191 @@ export const displacementModulations = (parsed, element = null, { top = TOP_MODE
             const boundaryMode = keyIndex.every((v, axis) => v === 0 || 2 * v === supercell[axis]);
             mode.kind = boundaryMode ? 'zone_boundary' : (isLongWave(mode.q) ? 'long_wave' : 'general');
             strongest.push(mode);
+            strongestKeys.push(key);
             if (strongest.length === top) break;
         }
+        const weights = independentCellNull(parsed, name);
+        const weightSum = weights.reduce((sum, value) => sum + value, 0);
+        const weightSquares = weights.reduce((sum, value) => sum + value * value, 0);
         result.elements.push({
-            element: name, sites: used, missingCopies: missing, medianPower: median, comparedModes: reference.length, zoneBoundary, strongest
+            element: name,
+            sites: used,
+            missingCopies: missing,
+            medianPower: median,
+            comparedModes: reference.length,
+            // The null's effective number of independent components, (Σλ)²/Σλ².
+            nullDof: (weightSum * weightSum) / weightSquares,
+            zoneBoundary,
+            strongest
         });
+        spectra.set(name, { weights, power, strongest: strongestKeys });
     }
-    decide(result, familyElements, boundary.length, compared.length);
+    decide(result, familyElements, boundary.length, compared.length, spectra, { modes: diffuseModes, q: diffuseQ });
     return result;
 };
 
 // --- the verdict (modulations.py _decide; keep the two in sync) ------------------
 
-// One point against its bar. The power is ratio × median, as the tool formed
-// it: σ far below the background is ill-conditioned, and this keeps it bit for
-// bit the value the tool reported.
-const testPoint = (point, test, entry, family) => {
+// Ranks 1..K of `values` in ascending order; a run within PERCENTILE_RTOL of
+// its smallest shares the run's mean rank (modulations.py _average_ranks).
+const averageRanks = (values) => {
+    const order = Array.from(values, (_, i) => i).sort((i, j) => (values[i] - values[j]) || (i - j));
+    const ranks = new Float64Array(values.length);
+    let start = 0;
+    while (start < values.length) {
+        const first = values[order[start]];
+        let end = start + 1;
+        while (end < values.length && values[order[end]] <= first + PERCENTILE_RTOL * Math.abs(first)) end += 1;
+        for (let k = start; k < end; k += 1) ranks[order[k]] = 0.5 * (start + 1 + end);
+        start = end;
+    }
+    return ranks;
+};
+
+const dot = (a, b) => {
+    let sum = 0;
+    for (let i = 0; i < a.length; i += 1) sum += a[i] * b[i];
+    return sum;
+};
+
+// Modified Gram–Schmidt over `columns` in order: { basis, kept }, a column
+// left out when its part orthogonal to the earlier ones is within
+// DIFFUSE_RANK_RTOL of its norm (modulations.py _orthonormal_columns).
+const orthonormalColumns = (columns) => {
+    const basis = [];
+    const kept = [];
+    columns.forEach((column, index) => {
+        const vector = Float64Array.from(column);
+        const norm = Math.sqrt(dot(vector, vector));
+        basis.forEach((unit) => {
+            const along = dot(unit, vector);
+            for (let i = 0; i < vector.length; i += 1) vector[i] -= along * unit[i];
+        });
+        const rest = Math.sqrt(dot(vector, vector));
+        if (norm > 0 && rest > DIFFUSE_RANK_RTOL * norm) {
+            basis.push(vector.map((value) => value / rest));
+            kept.push(index);
+        }
+    });
+    return { basis, kept };
+};
+
+// A small dense system by Gaussian elimination with partial pivoting (modulations.py _solve_dense).
+const solveDense = (matrix, rhs) => {
+    const a = matrix.map((row) => [...row]);
+    const b = [...rhs];
+    const n = b.length;
+    for (let column = 0; column < n; column += 1) {
+        let pivot = column;
+        for (let row = column + 1; row < n; row += 1) if (Math.abs(a[row][column]) > Math.abs(a[pivot][column])) pivot = row;
+        if (pivot !== column) {
+            [a[column], a[pivot]] = [a[pivot], a[column]];
+            [b[column], b[pivot]] = [b[pivot], b[column]];
+        }
+        for (let row = column + 1; row < n; row += 1) {
+            const factor = a[row][column] / a[column][column];
+            for (let k = column; k < n; k += 1) a[row][k] -= factor * a[column][k];
+            b[row] -= factor * b[column];
+        }
+    }
+    const x = new Array(n).fill(0);
+    for (let row = n - 1; row >= 0; row -= 1) {
+        let sum = 0;
+        for (let k = row + 1; k < n; k += 1) sum += a[row][k] * x[k];
+        x[row] = (b[row] - sum) / a[row][row];
+    }
+    return x;
+};
+
+/**
+ * The diffuse test (plan item 4.4): the normal scores of the ranks of the
+ * power over the modes compared (one per ±q pair, no long wave, no
+ * zone-boundary point, none found ordered) regressed on the neighbour-cell
+ * lags' templates cos(2π q·R) (with the constant; a lag the grid does not
+ * resolve is left out): χ² = (K − 1) |P a|² / |a|², χ² with r degrees of
+ * freedom under independent cells, Šidák over `family` elements. `power`
+ * holds those modes' powers, `q` their fractional wavevectors. Returns
+ * { modes, df, chiSquare, sigma, correlations (Γ per DIFFUSE_LAGS from the
+ * least-squares fit of the power, β_R / (2 · mean power)), lag, correlation,
+ * phase }. Mirrors diffuse_order.
+ */
+export const diffuseOrder = (power, q, family) => {
+    const modes = power.length;
+    const out = {
+        modes, df: null, chiSquare: null, sigma: null, correlations: DIFFUSE_LAGS.map(() => null), lag: null, correlation: null, phase: null
+    };
+    if (!modes) return out;
+    const columns = [Array(modes).fill(1), ...DIFFUSE_LAGS.map((lag) => q.map((v) => Math.cos(2 * Math.PI * (v[0] * lag[0] + v[1] * lag[1] + v[2] * lag[2]))))];
+    const { basis, kept } = orthonormalColumns(columns);
+    const lags = kept.filter((index) => index > 0).map((index) => index - 1);
+    if (!lags.length || kept[0] !== 0 || modes < DIFFUSE_MODES_PER_TERM * (lags.length + 1)) return out;
+    out.df = lags.length;
+    const design = kept.map((index) => columns[index]);
+    const gram = design.map((a) => design.map((b) => dot(a, b)));
+    const beta = solveDense(gram, design.map((a) => dot(a, power)));
+    const mean = power.reduce((sum, value) => sum + value, 0) / modes;
+    if (mean > 0) lags.forEach((lag, position) => { out.correlations[lag] = beta[position + 1] / (2 * mean); });
+    const ranks = averageRanks(power);
+    const raw = Array.from(ranks, (rank) => normalQuantile((rank - 0.5) / modes));
+    const centre = raw.reduce((sum, value) => sum + value, 0) / modes;
+    const scores = raw.map((value) => value - centre);
+    const total = dot(scores, scores);
+    if (!(total > 0) || !(mean > 0)) return out;
+    let projection = 0;
+    basis.slice(1).forEach((unit) => { projection += dot(unit, scores) ** 2; });
+    const chiSquare = ((modes - 1) * projection) / total;
+    out.chiSquare = chiSquare;
+    out.sigma = reported(sidakSigma(regularizedGamma(lags.length / 2, chiSquare / 2).upper, family));
+    // The strongest correlation: the largest |Γ|, the first lag on a tie.
+    const magnitude = lags.map((lag) => Math.abs(out.correlations[lag]));
+    const largest = Math.max(...magnitude);
+    const strongest = lags[magnitude.findIndex((value) => value >= largest * (1 - PERCENTILE_RTOL))];
+    out.lag = [...DIFFUSE_LAGS[strongest]];
+    out.correlation = out.correlations[strongest];
+    out.phase = out.correlation > 0 ? 'in_phase' : 'antiphase';
+    return out;
+};
+
+// diffuseOrder's finding: answer, because and one Evidence record (the
+// cluster engine's form, evidenceClears); the answer is the record's clears.
+// Mirrors _diffuse_finding.
+const diffuseFinding = (diffuse) => {
+    if (diffuse.df == null) return { answer: null, because: 'too_few_modes', evidence: [] };
+    const magnitude = diffuse.correlation != null ? Math.abs(diffuse.correlation) : null;
+    const record = {
+        statistic: 'neighbourCellCorrelation',
+        against: 'independentCells',
+        lag: diffuse.lag,
+        correlation: diffuse.correlation,
+        phase: diffuse.phase,
+        chiSquare: diffuse.chiSquare,
+        df: diffuse.df,
+        modes: diffuse.modes,
+        observed: magnitude,
+        null: 0,
+        z: diffuse.sigma,
+        change: magnitude,
+        changeKind: 'difference',
+        bar: { z: DIFFUSE_SIGMA, change: DIFFUSE_CORRELATION },
+        side: 'above'
+    };
+    record.clears = evidenceClears(record);
+    if (diffuse.chiSquare == null || magnitude == null) return { answer: null, because: 'undefined_statistic', evidence: [record] };
+    let because;
+    if (record.clears) because = diffuse.phase === 'in_phase' ? 'correlated_in_phase' : 'correlated_antiphase';
+    else if (diffuse.sigma == null || diffuse.sigma < DIFFUSE_SIGMA) because = 'below_sigma';
+    else because = 'below_correlation';
+    return { answer: record.clears, because, evidence: [record] };
+};
+
+// One point against its bar and the element's independent-cell null
+// (`weights`). The power is ratio × median, as the tool formed it: σ far
+// below the background is ill-conditioned, and this keeps it bit for bit the
+// value the tool reported.
+const testPoint = (point, test, entry, family, weights) => {
     const { ratio } = point;
     const power = ratio != null ? ratio * entry.medianPower : null;
-    const { sites } = entry;
-    const isDefined = power != null && power > 0 && sites > 0 && (test === 'zone' || family >= 1);
+    const isDefined = power != null && power > 0 && weights.length > 0 && (test === 'zone' || family >= 1);
     let sigma = null;
     let ordered;
     let because;
@@ -408,7 +775,7 @@ const testPoint = (point, test, entry, family) => {
         ordered = null;
         because = 'undefined_statistic';
     } else {
-        sigma = test === 'zone' ? zoneBoundarySigma(power, sites, family) : generalModeSigma(power, sites, family);
+        sigma = test === 'zone' ? zoneBoundarySigma(power, weights, family) : generalModeSigma(power, weights, family);
         if (ratio < MODULATION_RATIO) [ordered, because] = [false, 'below_ratio'];
         else if (sigma == null || sigma < MODULATION_SIGMA) [ordered, because] = [false, 'below_sigma'];
         else [ordered, because] = [true, 'ordered'];
@@ -457,34 +824,48 @@ const elementVerdict = (entry) => {
     else if (first.kind !== 'long_wave') longWave = modulationFinding(false, 'strongest_not_long_wave');
     else if (first.ratio >= LONG_WAVE_RATIO) longWave = modulationFinding(true, 'long_wave_dominates', [first]);
     else longWave = modulationFinding(false, 'below_ratio');
-    return { cellDoubling, generalOrder, longWave };
+    return { cellDoubling, generalOrder, longWave, diffuseOrder: diffuseFinding(entry.diffuse) };
 };
 
 // An element with no displacement to analyse (zero spread everywhere).
-const untestedVerdict = () => Object.fromEntries(
-    ['cellDoubling', 'generalOrder', 'longWave'].map((name) => [name, modulationFinding(null, 'no_displacements')])
-);
+const untestedVerdict = () => ({
+    ...Object.fromEntries(['cellDoubling', 'generalOrder', 'longWave'].map((name) => [name, modulationFinding(null, 'no_displacements')])),
+    diffuseOrder: { answer: null, because: 'no_displacements', evidence: [] }
+});
 
 // Every tested point's σ, ordered, because and bar, and each element's
 // verdict, over the family: the `points` zone-boundary points and `modes`
 // compared modes of each of `familyElements` — every element the
-// configuration has with displacements, whichever the call reports (F3).
-const decide = (result, familyElements, points, modes) => {
+// configuration has with displacements, whichever the call reports (F3) —
+// and one diffuse test per element. `spectra` holds each tested element's
+// null weights, power and strongest modes' grid indices; `diffuse` the
+// diffuse test's modes and their wavevectors.
+const decide = (result, familyElements, points, modes, spectra, diffuse) => {
     const tested = result.elements.filter((entry) => entry.sites);
     const family = {
         zoneBoundaryPoints: points * familyElements.length,
         comparedModes: modes * familyElements.length,
+        diffuse: familyElements.length,
         elements: [...familyElements]
     };
     tested.forEach((entry) => {
+        const spectrum = spectra.get(entry.element);
         entry.zoneBoundary.forEach((point) => {
             point.kind = 'zone_boundary';
-            testPoint(point, 'zone', entry, family.zoneBoundaryPoints);
+            testPoint(point, 'zone', entry, family.zoneBoundaryPoints, spectrum.weights);
         });
         entry.strongest.forEach((mode) => {
-            if (mode.kind === 'general') testPoint(mode, 'general', entry, family.comparedModes);
+            if (mode.kind === 'general') testPoint(mode, 'general', entry, family.comparedModes, spectrum.weights);
             else Object.assign(mode, { sigma: null, ordered: null, because: mode.kind, bar: null });
         });
+        // The diffuse test asks what the modes found ordered leave.
+        const found = new Set(spectrum.strongest.filter((_, i) => entry.strongest[i].kind === 'general' && entry.strongest[i].ordered === true));
+        const keep = diffuse.modes.map((q) => !found.has(q));
+        entry.diffuse = diffuseOrder(
+            diffuse.modes.filter((_, i) => keep[i]).map((q) => spectrum.power[q]),
+            diffuse.q.filter((_, i) => keep[i]),
+            family.diffuse
+        );
         entry.verdict = elementVerdict(entry);
     });
     result.family = family;

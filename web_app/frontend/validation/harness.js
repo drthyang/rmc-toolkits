@@ -146,8 +146,14 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // and mean distance, and long − short with its sampling error, in
 // first_shell.split, its description and its joined-shell note (which no
 // longer quotes the peaks' separation); arm A+ reads a Jahn–Teller claim's
-// magnitude from it.
-export const PROTOCOL_VERSION = '2026-10-19.15';
+// magnitude from it;
+// 2026-10-19.16: the modulation engines test against independent cells, each
+// cell's own correlations kept (F1: sites sharing a cell-level variable no
+// longer read as order, and an independent site is no longer held to the
+// one-component bound, so both dev weak orders are above the bar), and give
+// each element's diffuse order between cells (plan item 4.4), which
+// analyze_modulations says and A+ does not read.
+export const PROTOCOL_VERSION = '2026-10-19.16';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

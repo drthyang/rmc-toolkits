@@ -143,7 +143,7 @@
   {
    "round": 2,
    "why": "tools",
-   "sent": "32027 characters, sha256 bb650741c044eca0",
+   "sent": "32494 characters, sha256 054819f6822f393f",
    "num_ctx": null
   }
  ],
@@ -233,7 +233,7 @@
    "checks": [
     {
      "level": "ok",
-     "text": "Ordered Ti displacements at q = (0, 0, ½): 498× the median power, > 8σ against independent displacements (corrected over 21 zone-boundary points) — a superstructure doubling the cell along c, polarised along [0 0 1] (5.5° off; 100 % of the power at q)."
+     "text": "Ordered Ti displacements at q = (0, 0, ½): 498× the median power, > 8σ against independent cells (corrected over 21 zone-boundary points) — a superstructure doubling the cell along c, polarised along [0 0 1] (5.5° off; 100 % of the power at q)."
     },
     {
      "level": "note",
@@ -241,7 +241,7 @@
     }
    ],
    "data": {
-    "note": "zone_boundary rows are [q, ratio, percentile, sigma]: an element's displacement power at wavevector q (fractions of the cell's reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and the calibrated one-sided significance against independent displacements, corrected over all 21 zone-boundary points of the configuration's 3 elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes of every element), null otherwise. A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells (incommensurate or short-range) that does not. polarisation: each ordered point's displacement direction (the leading axis of the element's power tensor at q) as a direct-lattice [u v w], an axis, and share, the fraction of the power at q along it (1: one direction; ⅓: none).",
+    "note": "zone_boundary rows are [q, ratio, percentile, sigma]: an element's displacement power at wavevector q (fractions of the cell's reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and the calibrated one-sided significance against independent cells (each cell's own correlations kept), corrected over all 21 zone-boundary points of the configuration's 3 elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes of every element), null otherwise. A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells (incommensurate or short-range) that does not. diffuse is [lag, correlation, sigma]: the strongest correlation between a site's displacements in cells one lag apart that the power over the compared modes shows (+ in phase, − antiphase), and the significance of the 13 neighbour-cell lags together against independent cells (≥ 3 with |correlation| ≥ 0.1: correlation spread over many q). polarisation: each ordered point's displacement direction (the leading axis of the element's power tensor at q) as a direct-lattice [u v w], an axis, and share, the fraction of the power at q along it (1: one direction; ⅓: none).",
     "supercell": [
      8,
      8,
@@ -257,43 +257,43 @@
         "(0, 0, ½)",
         1.1,
         59.4,
-        -3.8
+        -3.9
        ],
        [
         "(0, ½, 0)",
         1.5,
         93.4,
-        -2.4
+        -1.8
        ],
        [
         "(0, ½, ½)",
         0.36,
         1.5,
-        -7.6
+        null
        ],
        [
         "(½, 0, 0)",
         0.66,
         18.8,
-        -5.6
+        -7
        ],
        [
         "(½, 0, ½)",
         1.7,
         95.9,
-        -2.1
+        -1.4
        ],
        [
         "(½, ½, 0)",
         0.46,
         4.1,
-        -6.8
+        null
        ],
        [
         "(½, ½, ½)",
         0.76,
         27.9,
-        -5.1
+        -6.1
        ]
       ],
       "strongest": [
@@ -313,8 +313,13 @@
         "(0.375, -0.25, 0.25)",
         2,
         99.5,
-        -8.2
+        -3.2
        ]
+      ],
+      "diffuse": [
+       "[0 0 1]",
+       0.028,
+       -5.3
       ]
      },
      {
@@ -325,19 +330,19 @@
         "(0, 0, ½)",
         0.54,
         12.7,
-        -5.3
+        -7.5
        ],
        [
         "(0, ½, 0)",
         1.9,
         90.4,
-        -2.9
+        -3
        ],
        [
         "(0, ½, ½)",
         0.97,
         48.2,
-        -4.3
+        -5.5
        ],
        [
         "(½, 0, 0)",
@@ -349,19 +354,19 @@
         "(½, 0, ½)",
         2.4,
         93.9,
-        -2.5
+        -2.3
        ],
        [
         "(½, ½, 0)",
         0.23,
         1,
-        -6.7
+        null
        ],
        [
         "(½, ½, ½)",
         2.8,
         97,
-        -2.1
+        -1.7
        ]
       ],
       "strongest": [
@@ -375,14 +380,19 @@
         "(0.125, ½, ½)",
         3.7,
         99.5,
-        null
+        -5.9
        ],
        [
         "(0.25, 0, ½)",
         3.7,
         99,
-        null
+        -5.9
        ]
+      ],
+      "diffuse": [
+       "[1 0 1]",
+       -0.061,
+       -2.2
       ]
      },
      {
@@ -393,19 +403,19 @@
         "(0, 0, ½)",
         500,
         99.5,
-        15.3
+        18.9
        ],
        [
         "(0, ½, 0)",
         0.38,
         8.6,
-        -6.4
+        null
        ],
        [
         "(0, ½, ½)",
         0.41,
         10.7,
-        -6.2
+        null
        ],
        [
         "(½, 0, 0)",
@@ -417,19 +427,19 @@
         "(½, 0, ½)",
         0.77,
         34.5,
-        -5.2
+        -6.8
        ],
        [
         "(½, ½, 0)",
         0.17,
         0.5,
-        -7.5
+        null
        ],
        [
         "(½, ½, ½)",
         0.54,
         18.3,
-        -5.8
+        -8
        ]
       ],
       "strongest": [
@@ -470,6 +480,11 @@
          "off_deg": 5.5
         }
        }
+      ],
+      "diffuse": [
+       "[-1 1 1]",
+       0.042,
+       -3.1
       ]
      }
     ]

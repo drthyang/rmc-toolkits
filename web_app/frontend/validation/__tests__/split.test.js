@@ -411,10 +411,10 @@ describe('where a finding stands, and validation batch 1', () => {
         const [[recomposed, { case: heldOut }]] = onTestCase();
         expect(recomposed).toBe(`2026-10-19-${heldOut}-recomposed`);
         expect(ids.filter((id) => id !== recomposed)).toEqual([
-            '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-engine-verdicts', '2026-10-19-f5-shell-join',
-            '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split', '2026-10-19-mode-polarisation',
-            '2026-10-19-modulation-bar-and-family', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue',
-            '2026-10-19-shell-cut-rule'
+            '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-diffuse-order', '2026-10-19-engine-verdicts',
+            '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split',
+            '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family', '2026-10-19-modulation-null',
+            '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
@@ -498,6 +498,23 @@ describe('where a finding stands, and validation batch 1', () => {
         expect(barAndFamily).toMatchObject({ case: 'dev-weak-order-b', kind: 'bug' });
         for (const decision of [polarisation, barAndFamily]) {
             delegated(decision);
+            expect(decision.tests.length).toBeGreaterThan(0);
+            decision.tests.forEach((test) => {
+                const [path, title] = test.split(' › ');
+                expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+            });
+        }
+    });
+
+    it('decisions: the independent-cell null (F1) and diffuse order between cells (plan 4.4), approved on the user\'s delegation, implemented with their known-answer tests', () => {
+        const nullRecord = decisions()['2026-10-19-modulation-null'];
+        expect(nullRecord).toMatchObject({ case: 'dev-jahn-teller', kind: 'bug' });
+        const diffuse = decisions()['2026-10-19-diffuse-order'];
+        expect(diffuse).toMatchObject({ case: 'dev-zone-boundary', kind: 'missing-tool' });
+        for (const decision of [nullRecord, diffuse]) {
+            delegated(decision);
+            // The calibration's evidence: seed counts, rates and their intervals.
+            expect(decision.evidence).toMatch(/Clopper-Pearson 95 % /);
             expect(decision.tests.length).toBeGreaterThan(0);
             decision.tests.forEach((test) => {
                 const [path, title] = test.split(' › ');

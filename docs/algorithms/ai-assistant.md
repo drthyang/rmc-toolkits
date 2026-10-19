@@ -1412,7 +1412,7 @@ not answer as asked". A tool is offered only when its inputs exist.
 | `measure_symmetry_lowering(parent_tolerance_A = 0.2, tolerance_A = 1.25 × noise floor)` | the structure has a `basis` | `symmetryShifts` (`symmetryShift.js`): the parent group at `parent_tolerance_A` (`analyseSymmetry`), each orbit averaged over its operations (`averageOrbit`), each member's ideal position the nearest image of that average; a member's shift = its mean − its ideal position, the common part the least-squares origin leaves removed by the geometric median of all members' shifts (Weiszfeld: the parent on the majority of the atoms, the description that moves the fewest); the lower group by `describeSymmetry` at `tolerance_A` | the parent and lower groups (the lower with its point-group facts), the noise floor, up to 12 sites (largest first) with `shift_A`, `direction_uvw`, `nearest_low_index` (within 15°, `LOW_INDEX_CONE_DEG`), `se_A` (the mean's sampling error along the shift) and `above_noise_floor`; `facts.lowering` = `{parent, lower, shifted: [{element, shift_A, direction_uvw}]}` | ok: each element whose largest shift exceeds the noise floor ("Ta shifted 0.065 Å along [0 0 1] (3.7° off) from the Pm-3m positions … a coherent shift every copy shares"); note: the parent → lower change in inversion and polarity; ok: no site above the noise floor; note: the lower tolerance still gives the parent group; warn: not analysed; fail: no basis, or no parent operation (review L4: the shift had to be worked out by hand from the orbit positions) |
 | `compare_fit(dataset, n_ranges = 6)` | a fit file with a model and a measured column (`xpdf`, `npdf`, `xray_sq`, `neutron_sq`, `bragg`; repeated kinds keyed `npdf_2`, …) | `fitTool` in `runTools.js` (roles by label `/exp\|obs/` vs `/calc\|rmc\|fit/`, else column order — `rwpColumns`, duplicated) | the dataset's $R$ (Step 10) over its range; per equal-width range of r or Q: $R$ there and its share of $\sum (y^\mathrm{calc}-y^\mathrm{expt})^2$; the 5 largest local extrema of the 5-point mean residual (position, model − data, relative to the data's rms) | ok (the card's headline): the overall $R$ and where the misfit lives — one range holding ≥ 40 % of the squared residual (`MISFIT_CONCENTRATION`), else spread; note: another range's own $R$ ≥ 3× the dataset's (`RELATIVE_MISFIT_FACTOR`) — weak signal poorly fitted, e.g. high-Q F(Q); fail: < 10 points |
 | `analyze_clusters(element, r_min, r_max)` | a browser-loaded run with site/cell columns, or Flask mode | worker `clusters` / `/api/clusters` (Step 18) | the cluster kind (members, edges, count, templates; other sizes); the average cluster's sorted edges, spread, median edge sampling error and spread/SE; per statistic obs / null mean / z / change = obs/null − 1 — the shape rows (edge ladder, ladder width, shape rms; tetrahedra: E and T2 rms and T2 trigonality; the fractions of long / short gyration axes within 15° of <100>, <110>, <111>) against `shapeNull`, the size rows (breathing sd, mean edge) against independent atoms (Step 18; review L2); `split_member_sites`: the analysed kind's member sites whose PC1 is resolved and whose PC1 excess kurtosis is ≤ −0.5 (`SPLIT_SITE_KURTOSIS`: two equal wells δ = σ, the onset of bimodality) and ≤ −3√(24/n) (`SPLIT_SITE_SE`) — `isSplitSite`, the rule `list_sites` reports — from the engine's verdict (`splitMemberSites`: the engine reads its own member clouds; until 2026-10-19 the tool made a second `sites` request, and a failed one dropped the note silently); bonds outside the window, contacts between clusters per atom. `facts.cluster` = `{element, members, window, distorted, static, breathing, rigid, split, families}`, the verdict's answers, for the cluster answer check. Every check below is a finding of the engine's verdict said through `CLUSTER_SENTENCES` (Step 18, *The verdict*) | fail: extended network; fail: no clusters; warn: other sizes hold > 10 % of clusters; note: the average cluster is distorted (spread ≥ 5 SE, `STATIC_SPREAD_SE`) or regular; ok: dimers (one edge) — the shape is the bond length, read from the size row; ok: ladder width departs from the shape null (\|z\| ≥ 3 **and** \|change\| ≥ 5 %: more distorted — a correlated distortion — or less — rigid units, unless an axis family or the trigonality shows a pattern: then a distortion whose amplitude the null already holds), or matches it while the pattern does not (a correlated distortion held by the sites' own displacements), or matches it; note: breathing departs (same rule): more — collective breathing, a size fluctuation, not a shape distortion; less — stiffer bonds, the atoms move together; note: trigonality departs (\|z\| ≥ 3, \|Δ\| ≥ 0.02); note: an axis family enhanced (z ≥ 3, obs/null ≥ 1.1); note: split sites — at least half the member sites split: the null holds the amplitude, "no distortion" does not make the clusters regular; warn: > 5 % of bonds outside the window; warn: > 0.05 inter-cluster contacts per atom |
-| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); a ratio or σ below its bar never rounded onto it (F2: 2.96, not 3; `'<3'` nearer than six significant digits); each ordered point's `polarisation` row (`q`, `uvw` to two decimals, `share`, `nearest_low_index` within 15°, plan item 4.3); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}`, the element verdicts' `decidedBy`. σ and every check below come from the engine's verdict, said through `MODULATION_SENTENCES` (Step 19, *The verdict*); its own result budget, 4,000 characters (`MODULATION_RESULT_BUDGET`) | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent displacements, corrected over the points of every element, whichever the call names: F3), with its polarisation ("polarised along [0 0 1] (5.5° off; 100 % of the power at q)"); ok: no cell doubling (the most significant point named; "2.96σ after the correction: below the 3σ bar" where its usual rounding would read the bar); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent displacements: a complex Fourier sum, so an element's mean over m sites has ≥ 2m degrees of freedom (P ≥ χ²₂ₘ/2m, `generalModeSigma`), Šidák-corrected over the compared modes of every element — incommensurate or short-range order between cells, not a cell doubling (review L4), with its polarisation; note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); note: untestable points (odd axes); fail: no displacements |
+| `analyze_modulations(element?)` | same | worker `modulations` / `/api/modulations` (Step 19) | per element: the zone-boundary points as `[q, ratio to the median, percentile, σ]` rows, the three strongest modes as `[q, ratio, percentile, σ]` (σ only at a general q); a ratio or σ below its bar never rounded onto it (F2: 2.96, not 3; `'<3'` nearer than six significant digits); each ordered point's `polarisation` row (`q`, `uvw` to two decimals, `share`, `nearest_low_index` within 15°, plan item 4.3); the supercell, wavevector count and untestable points; `facts.modulation` = `{elements, ordered: [{element, q}], general: [{element, q}]}`, the element verdicts' `decidedBy`. σ and every check below come from the engine's verdict, said through `MODULATION_SENTENCES` (Step 19, *The verdict*); each element's `diffuse` row ([lag, correlation, σ], plan item 4.4); its own result budget, 4,500 characters (`MODULATION_RESULT_BUDGET`) | ok: ordered displacements at a zone-boundary point (ratio ≥ 3 and ≥ 3σ against independent cells, each cell's own correlations kept (F1), corrected over the points of every element, whichever the call names: F3), with its polarisation ("polarised along [0 0 1] (5.5° off; 100 % of the power at q)"); ok: no cell doubling (the most significant point named; "2.96σ after the correction: below the 3σ bar" where its usual rounding would read the bar); ok: correlated displacements between cells at a general q — one of the strongest modes that is neither a zone-boundary point nor a long wave, with ratio ≥ 3 and ≥ 3σ against independent cells (a complex Fourier sum, `generalModeSigma`), Šidák-corrected over the compared modes of every element — incommensurate or short-range order between cells, not a cell doubling (review L4), with its polarisation; note: a long-wavelength wave dominates (≥ 5×, every \|q_i\| ≤ 0.25); ok: short-range order between cells, an element correlated in antiphase between neighbouring cells (diffuse order, plan item 4.4); note: every element correlated in phase between neighbouring cells, in one sentence (neighbouring cells moving together, not a superstructure); note: untestable points (odd axes); fail: no displacements |
 
 **Show in \<page\>.** A tool may declare `page` and `pageParams(args)`. The loop computes the
 parameters from the validated arguments (null after an error), and the step's button hands them to
@@ -1950,24 +1950,64 @@ mean squared angle within 25 % of twice its square, none beyond 10°). On dev-zo
 order is 5.5° from its planted axis (one site, 512 cells: 1.5° of error per component; the PC1 that
 arm A+ read before, an estimator of the same noise, 6.0°) and the decoy long wave 4.7° from its own.
 
+**The independent-cell null** (finding F1, 2026-10-19; `independent_cell_null` /
+`independentCellNull`, `null_tail` / `nullTail`). The null is the configuration's own cells placed
+at random: every correlation inside a cell is kept (the six ligands of a Jahn–Teller octahedron
+share its long axis, the vertices of a cluster its elongation or breathing) and every correlation
+between cells is destroyed. With $\mathbf y(\mathbf c)$ the $3m$ displacements of the element's $m$
+moving sites in cell $\mathbf c$ (a missing copy a zero) and $\mathbf U(\mathbf q)$ their transform,
+the permutation of cells gives, at every $\mathbf q \ne 0$,
+
+$$\mathrm E\left[\mathbf U(\mathbf q)\,\mathbf U(\mathbf q)^\dagger\right] = \frac{N}{N-1}\sum_{\mathbf c}\mathbf y(\mathbf c)\,\mathbf y(\mathbf c)^T
+= \frac{1}{N-1}\sum_{\mathbf q'\ne0}\mathbf U(\mathbf q')\,\mathbf U(\mathbf q')^\dagger,$$
+
+a white cross-spectral matrix (exactly the Parseval average over $\mathbf q \ne 0$: no estimation
+beyond the configuration's own cells), with $\mathrm E[\mathbf U\mathbf U^T] = 0$ unless
+$2\mathbf q \equiv 0$. The element's power is $P = \mathbf U^\dagger W\mathbf U$,
+$W = \mathrm{diag}(1/(m\,n_s\,\mathrm{tr}\,C_s))$, so under the null
+
+$$P = \sum_k \lambda_k\,\chi^2_{1,k}\ \text{(a zone-boundary point: a real sum)},\qquad
+P = \sum_k \lambda_k\,\tfrac12\chi^2_{2,k}\ \text{(a general }\mathbf q\text{)},$$
+
+with $\lambda_k$ the eigenvalues of $W^{1/2}\,\frac{N}{N-1}\sum_{\mathbf c}\mathbf y\mathbf y^T\,W^{1/2}$
+(largest first; below $10^{-12}$ of the largest left out, `NULL_WEIGHT_RTOL`); $\sum_k\lambda_k =
+N/(N-1)$, the mean power. Each element reports `nullDof` $= (\sum\lambda)^2/\sum\lambda^2$, its
+effective number of independent components: $3m$ for independent isotropic sites, about 3 for the
+six F of the dev Jahn–Teller octahedra. The tail is exact (a gamma) when the weights are equal
+(`NULL_EQUAL_RTOL` $= 10^{-12}$), and otherwise the Lugannani–Rice saddlepoint: with
+$K(t) = -a\sum_k\log(1-b_kt)$ ($a = \frac12$, $b = 2\lambda$ for a real sum; $a = 1$, $b = \lambda$
+for a complex one), $K'(\hat t) = P$ solved by bisection (`SADDLEPOINT_STEPS` = 200),
+$w = \mathrm{sign}(\hat t)\sqrt{2(\hat tP - K(\hat t))}$, $u = \hat t\sqrt{K''(\hat t)}$ and
+$\Pr(P_0 \ge P) = 1-\Phi(w) + \phi(w)(1/u - 1/w)$ (its limit within $|w| < 10^{-6}$ of the mean,
+`SADDLEPOINT_W_MIN`). Against the exact tail (a Moschopoulos series) it lies 0 to +8 % above it
+from $10^{-2}$ to $10^{-9}$ on every weight pattern checked — one dominant component over several
+small ones, an anisotropic site, two equal over many — while a three-moment gamma (orientation.py's
+map test) fell to 0.36 of it at $10^{-6}$. Until F1 the null took the sites as independent,
+$P \ge \chi^2_m/m$ ($\chi^2_{2m}/2m$ at a general $\mathbf q$): anti-conservative where sites
+share a cell-level variable (fewer components than $m$) and conservative where they do not (an
+isotropic site has three, the bound took one). Over 1,000 fresh configurations of each of the validation's
+dev generator kinds it found order in 8.8 % of the Jahn–Teller, 12.1 % of the two-feature and
+31.8 % of the octahedral-cluster configurations; the calibrated null in 0.1–0.6 %, each of its
+three tests at its 0.135 % (`tests/test_modulation_calibration.py`; the decision record has every
+count and interval). The weak zone-boundary order of the judgment kind (one isotropic site) is
+found in 99 % of its configurations where it was a coin flip (44 %).
+
 **The verdict** (the engine's since 2026-10-19, architecture candidate 5; `summarizeModulations`
 says it through `MODULATION_SENTENCES`). A zone-boundary point is ordered displacement when its
-ratio ≥ 3 (`MODULATION_RATIO`, the effect size) **and** its calibrated significance is ≥ 3σ
-(`MODULATION_SIGMA`, `zoneBoundarySigma`): for independent displacements a site's normalised power at a half-integer
-$\mathbf q$ (a real Fourier sum) is $\sum_c w_c\chi^2_1$ with $\sum_c w_c = 1$, so an element's
-mean over $m$ sites has at least $m$ degrees of freedom and $P \ge \chi^2_m/m$ is the heaviest
-tail any site anisotropy allows; the p-value is Šidák-corrected over every zone-boundary point of
+ratio ≥ 3 (`MODULATION_RATIO`, the effect size) **and** its calibrated significance against
+independent cells is ≥ 3σ (`MODULATION_SIGMA`, `zoneBoundarySigma`, the real-sum tail above); the
+p-value is Šidák-corrected over every zone-boundary point of
 every element the configuration has (with displacements), whichever elements the call names, and
 each row carries it as a fourth entry. Asking about one element after seeing the data is selective
 inference, so the family never shrinks with the request (finding F3, 2026-10-19: until then it was
 the elements of the call, and naming one element of three took a point just below the bar over it:
-a weak Nb doubling at 2.98σ over the 21 points of Ga, Nb and Se read 3.30σ, "ordered", over Nb's
+a weak Nb doubling at 2.99σ over the 21 points of Ga, Nb and Se reads 3.31σ, "ordered", over Nb's
 own 7). (Until 2026-10-14 the rule was "top 1 %
 of the compared modes, or rank 1", with no correction over the 7 points × elements: the validation
 cases found "order" in 6 of 12 configurations without any, e.g. Ba at (½, 0, 0) under pure thermal
 motion.) Real RMC runs carry *less* zone-boundary power than independent cells (above), so the test
 is conservative there. At a general q (neither a zone-boundary point nor a long wave) the Fourier
-sum is complex: $P \ge \chi^2_{2m}/2m$, Šidák-corrected over the compared modes of every element
+sum is complex (the complex-sum tail above), Šidák-corrected over the compared modes of every element
 of the configuration (`generalModeSigma`, review L4). An element's strongest mode within 0.25 of the zone centre
 on every axis at ≥ 5× the median (`LONG_WAVE_RATIO`) is a long-wavelength (box-scale) wave, not a
 superstructure.
@@ -1982,24 +2022,96 @@ superstructure.
   tail that underflows) is `SIGMA_MAX` = 40, which no finite double reaches (≈ 38.5 at
   p = 5·10⁻³²⁴), shown as '>8'. `because` is `ordered`, `below_ratio`, `below_sigma`,
   `undefined_statistic` (σ undefined: `ordered` null), or the untested kind.
-- **Each element** has `verdict` = {`cellDoubling`, `generalOrder`, `longWave`}, each
-  `{answer, because, decidedBy, nearest}`: `decidedBy` lists the q of the ordered points (or the
+- **Each element** has `verdict` = {`cellDoubling`, `generalOrder`, `longWave`, `diffuseOrder`};
+  the first three are `{answer, because, decidedBy, nearest}`: `decidedBy` lists the q of the ordered points (or the
   long wave), `nearest` is the miss with the largest σ (null as −∞, the first on a tie).
   `cellDoubling` is null `untestable` when no axis can be halved; `generalOrder` null
   `no_general_mode` when none of the five strongest modes is general; an element with no
-  displacement gives `no_displacements`.
+  displacement gives `no_displacements`. `diffuseOrder` is `{answer, because, evidence}` (below).
 - **The payload** carries `family` (the zone-boundary points and compared modes the corrections
-  counted, and `elements`, the elements they belong to: every element with displacements, whatever
-  the call names; for a call without an element the sizes are what the tool counted before) and
-  `rules`.
+  counted, `diffuse` the diffuse tests (one per element), and `elements`, the elements they belong
+  to: every element with displacements, whatever the call names; for a call without an element the
+  sizes are what the tool counted before) and `rules` (with the diffuse test's constants).
 - **One long-wave predicate**, `is_long_wave` / `isLongWave`: every |q_i| ≤ 0.25 + 10⁻¹². It
   replaces the engine's compared-mode test and the tool's |q_i| ≤ 0.25. On a grid they never
   differ (k/N is ¼ exactly or at least 1/(4N) from it): the tests check every grid point up to
   N = 256 in both engines.
 
+**Diffuse order between cells** (plan item 4.4, 2026-10-19; `diffuse_order` / `diffuseOrder`).
+Short-range order between cells — correlated displacements over a few cells, a diffuse sheet, rod
+or hump in reciprocal space — spreads its power over many $\mathbf q$, each far below the per-mode
+bars (ratio 3, 3σ over hundreds of compared modes). Correlation $\Gamma(\mathbf R)$ between a
+site's displacements in cells $\mathbf R$ apart enters the power as
+
+$$P(\mathbf q) = \bar P\Big(1 + 2\sum_{\mathbf R}\Gamma(\mathbf R)\cos 2\pi\mathbf q\cdot\mathbf R\Big)$$
+
+(the power is the Fourier transform of that correlation). Parseval fixes the mean power over
+$\mathbf q \ne 0$ ($N/(N-1)$, each site's mean subtracted), so the test is about how the power is
+spread, never its total. Over the **diffuse modes** — the compared modes (one per ±q pair, no long
+wave) that are not zone-boundary points (real sums, each tested on its own) and that the general
+test did not find ordered — the normal scores $a$ of the ranks of $P$ (ties within $10^{-9}$ share
+their mean rank) are regressed on the constant and the templates $\cos 2\pi\mathbf q\cdot\mathbf R$
+of the 13 neighbour-cell lags (`DIFFUSE_LAGS`: the 26 cells around a cell, one of each ±R pair):
+
+$$\chi^2 = (K-1)\,\frac{\lVert \Pi\,a\rVert^2}{\lVert a\rVert^2},$$
+
+$\Pi$ the projection onto the templates orthogonal to the constant (modified Gram–Schmidt; a lag
+the grid does not resolve, within $10^{-9}$ of the earlier ones, `DIFFUSE_RANK_RTOL`, is left out
+with its degree of freedom). Under independent cells (the null above) the power at every diffuse
+mode is identically distributed, so the ranks are exchangeable whatever the cells hold and
+$\chi^2$ is $\chi^2_r$; its σ is Šidák-corrected over every element (as F3). A model-based variant
+(the raw power against the null's variance $\sum\lambda^2$) was anti-conservative on shared-variable
+configurations: the power's fourth cumulant correlates the squared template coefficients
+($\mathrm{Var}\,\chi^2 = 2r + \kappa_4\sum_q h_q^2$, 31.5 against 26 on the Jahn–Teller configurations). Ranks
+bound what any one $\mathbf q$ adds: the statistic is unchanged by any increasing function of the
+power, and by making the strongest mode a million times stronger. The effect size is the strongest
+correlation $|\Gamma(\mathbf R)|$ of the least-squares fit of the power itself,
+$\Gamma = \beta_{\mathbf R}/(2\bar P)$ (a ±2|Γ| modulation of the power across the diffuse modes);
+it estimates the neighbour-cell displacement correlation with a bias from the modes left out
+(−0.34 ± 0.14 for a planted −0.27, +0.25 ± 0.06 for +0.27, on 8³ cells). Diffuse order needs
+σ ≥ 3 (`DIFFUSE_SIGMA`) **and** $|\Gamma| \ge 0.1$ (`DIFFUSE_CORRELATION`): with thousands of
+cells a correlation of 0.02 is significant and still means nothing physically. The test needs at
+least two diffuse modes per term of the regression (`DIFFUSE_MODES_PER_TERM`; a 4³ grid has 15).
+
+- **Long waves stay out**, as they stay out of the compared modes: RMC's box-scale waves are the
+  `longWave` finding, not short-range order. Correlation beyond them still counts: neighbouring
+  cells moving together leave the power leaning toward the zone centre beyond the long waves, in
+  phase (Γ > 0), and an order alternating between cells leaves it leaning toward the zone
+  boundary, in antiphase (Γ < 0).
+- **What it adds** to the zone-boundary and general tests: a pattern spread over many q at one test
+  per element. A single mode, however strong, cannot make it: a zone-boundary point is not among
+  its modes, an ordered general mode is left out, and ranks bound any other.
+- **`diffuse`** per element: `{modes, df, chiSquare, sigma, correlations (Γ per lag, null for a lag
+  left out), lag, correlation, phase}` (`in_phase` or `antiphase`, by the strongest lag's sign).
+  **`verdict.diffuseOrder`** = `{answer, because, evidence}` with one Evidence record in the
+  cluster engine's form (`evidence_clears`): `statistic` neighbourCellCorrelation, `against`
+  independentCells, `observed` = the strongest $|\Gamma|$, `null` 0, `z` = σ, `change`,
+  `bar` {z 3, change 0.1}, `side` above, with the lag, correlation, phase, χ², df and modes. The
+  answer is the record's `clears`; `because` is `correlated_in_phase`, `correlated_antiphase`,
+  `below_correlation`, `below_sigma`, `undefined_statistic`, `too_few_modes` or `no_displacements`.
+- **Calibration** (`tests/test_modulation_calibration.py`; 1,000 configurations per family): diffuse σ ≥ 3
+  in 0–2 of 1,000 configurations of every family without order between cells (thermal, Jahn–Teller,
+  two-feature, octahedral clusters, breathing triangles, rigid dimers: 2 of 6,000, 0.03 %), at 2σ
+  12–23 against 22.8 and at 1σ 114–165 against 158.7 (the rank test is slightly conservative); 6 of
+  5,000 octahedral configurations (0.12 %). **Power:** B displacements correlated by −0.27 between
+  neighbouring cells along a (the power on the whole sheet $q_a = \frac12$, no mode near the bar)
+  are found in 100 of 100 configurations, by +0.27 along c in 100 of 100, by −0.19 in 74, by −0.10 in 4. No
+  dev case reads as diffuse order; dev-zone-boundary's Ti doubling (18.9σ) leaves it at −3.1σ.
+- **The real runs.** The Demo's three elements are correlated in phase beyond the long waves (5.8,
+  13.4 and 9.1σ; +0.13, +0.22, +0.11, every axial and diagonal lag positive and decaying with the
+  lag): the smooth correlated motion RMC's box-scale waves extend to, which the tool says as
+  neighbouring cells moving together. The GaNb₄Se₈ 5 K run's lie below the effect bar (+0.05 to
+  +0.09 at 3.1–3.7σ).
+
 The tool's checks say it: ok — each ordered zone-boundary point with its polarisation, or no cell
 doubling (the nearest miss of every element tested); ok — each element's first ordered general
-mode with its polarisation; note — a long wave dominates; note — untestable points. A ratio or σ
+mode with its polarisation; note — a long wave dominates; ok — each element correlated in antiphase
+between neighbouring cells ("Short-range order between cells: … move in antiphase …, not a
+long-range superstructure"); note — every element correlated in phase, in one sentence ("…
+neighbouring cells moving together (as RMC's long waves and acoustic-like thermal motion give), not
+a superstructure"); note — untestable points. Each element's `diffuse` row is [lag, correlation, σ],
+the correlation shown by F2's rule against its 0.1 bar. A nearest miss whose σ is −∞ reads
+"< −8σ" (it printed "nullσ" until the calibrated null first reached it). A ratio or σ
 below its bar (3, 3σ) is never printed rounded onto it (finding F2, 2026-10-19): where its usual
 rounding (two significant digits in a sentence and for a row's ratio, one decimal for a row's σ)
 reads at or above the bar, it is shown with the fewest significant digits that stay below it
@@ -2012,9 +2124,14 @@ sits within 10⁻⁶ of its bar, where a polarisation's two largest eigenvalues 
 the trace, or where its sense is decided near the tie tolerance. Known answers: a planted doubling,
 order under a stronger long wave, order at q = (3/8, 0, 0) on an 8-cell axis (alone, and under a
 stronger long wave at (1/8, 0, 0): both found), independent displacements (nothing), the polarised
-monoclinic mode above, and (F3) a weak Nb doubling at 2.98σ over the 21 points of Ga, Nb and Se
-that stays below the bar with Nb named (its own 7 points gave 3.30σ); on the dev cases the four
-no-order cases find none and dev-zone-boundary finds only its Ti at (0, 0, ½).
+monoclinic mode above, (F3) a weak Nb doubling at 2.99σ over the 21 points of Ga, Nb and Se
+that stays below the bar with Nb named (its own 7 points give 3.31σ; under the null before F1 the
+known answer was a stronger doubling at 2.98σ and 3.30σ), (F1) Jahn–Teller octahedra whose F mode
+five times the median read 3.66σ against independent sites and reads 1.4σ against independent
+cells, and (4.4) short-range order in antiphase along a and in phase along c; the generator also
+refuses a diffuse σ or correlation within 10⁻⁶ of its bar, rank ties, lag resolutions and strongest
+lags near their tolerances, and near-equal null weights; on the dev cases the no-order cases find
+none and dev-zone-boundary finds only its Ti at (0, 0, ½).
 A planted doubling (Nb ± 0.1 Å along z in alternate cells, 6³ cells) gives 204× at (0,0,½), the
 strongest of 215 wavevectors. Both real runs: no zone-boundary point near the top (below the 85th
 percentile over all $\mathbf q$ when first measured; the Demo's highest is now the 78th percentile of
@@ -2024,8 +2141,9 @@ strongest modes are box-scale waves — GaNb₄Se₈ 5 K: q = (0.1, −0.2, −0
 carries neither the orthorhombic cell doubling nor a cluster distortion beyond independent atoms
 (Step 18), where diffraction finds both: the RMC started from, and stayed near, the cubic model.
 
-**Cost.** One 3-D transform per site and component: 0.02 s (numpy) and 0.04 s (port) for 52 sites
-on a 10³ grid.
+**Cost.** One 3-D transform per site and component, and per element the null's eigenvalues (a 3m × 3m
+matrix) and the diffuse regression: 0.02 s (numpy) and 0.1 s (port; 0.05 s before F1 and 4.4) for
+52 sites on a 10³ grid.
 
 ---
 
@@ -2241,7 +2359,7 @@ Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
 | `DEFAULT_MAX_SEND_BACKS` | 2 | send-backs per turn | `verification/index.js` (`maxSendBacks`; a run's `limits.maxEvidenceGates` sets it) | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
 | `CLUSTER_CN_MAX` | 4.5 | neighbours | `context/shells.js` (`clusterElementsOf`) | An element whose own first shell holds 0.5 to this many neighbours may form finite clusters: "no order" needs `analyze_clusters` on it, and arm A+ tries its clusters (one rule since candidate 8) |
 | `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
-| `MODULATION_RESULT_BUDGET` | 4 000 | characters | `copilotTools.js` | `analyze_modulations`' own result budget (three elements with an ordered point's polarisation run to ~2.9k with the checks) |
+| `MODULATION_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_modulations`' own result budget (the largest results are three elements each: the Demo's 3,687 characters with its notes, dev-zone-boundary's 3,344 with an ordered point's polarisation; a fourth element adds about 500) |
 | `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `CN_MATCH_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `context/shells.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1); two counts agree within `CN_MATCH_TOLERANCE` (`cnMatches`: the Workbench's named polyhedron, the answer checks, the octahedron/tetrahedron reading; `IDEAL_CN_TOLERANCE` until 2026-10-19) |
 | `SEPARATION_G_FRACTION` | 0.02 | of the first peak | `context/shells.js` | $\tilde g$ at the shell boundary above this: shells not separated; raw $g$ just above a closest-approach constraint above this: the constraint limits the pair (one constant since 2026-10-19, for `CONSTRAINT_PILEUP_FRACTION`, `SHELL_OVERLAP_FRACTION` and `PAIR_FLAG_FRACTION`) |
 | `MISFIT_CONCENTRATION`, `RELATIVE_MISFIT_FACTOR` | 0.4, 3 | share; × the dataset's R | `runTools.js` | `compare_fit`'s concentration and weak-signal notes |
@@ -2255,6 +2373,10 @@ Flask analyses read ([run-dashboard.md](run-dashboard.md), Step 9).
 | `LONG_WAVE_Q`, `LONG_WAVE_TOL` | 0.25, 1e-12 | of the reciprocal axes | `modulations.py`, `workers/modulations.js` | A mode with every component within this (`is_long_wave` / `isLongWave`, the one predicate) is a long wave: left out of the compared modes, never tested as a general mode |
 | `LONG_WAVE_RATIO`, `SIGMA_MAX` | 5, 40 | × median; σ | `modulations.py`, `workers/modulations.js` | A strongest mode this strong and a long wave is a box-scale wave; σ = +∞ is reported as `SIGMA_MAX` (no finite double reaches it) |
 | `AXIS_TIE_RTOL` | 10⁻⁹ | relative | `modulations.py`, `workers/modulations.js` | A polarisation is given in the sense that makes the closest crystal axis acute; axes whose \|cos\| lies within this of the largest tie, and the first decides |
+| `NULL_WEIGHT_RTOL`, `NULL_EQUAL_RTOL` | 10⁻¹², 10⁻¹² | of the largest weight | `modulations.py`, `workers/modulations.js` | The independent-cell null (F1): a weight below the first is a direction no site moves in, left out; weights within the second of each other are one, and the tail is the exact gamma |
+| `SADDLEPOINT_STEPS`, `SADDLEPOINT_W_MIN` | 200, 10⁻⁶ | bisection steps; \|w\| | `modulations.py`, `workers/modulations.js` | The Lugannani–Rice tail of the null: the saddlepoint equation's bisection, and the band about the mean where its limit replaces the formula |
+| `DIFFUSE_SIGMA`, `DIFFUSE_CORRELATION` | 3σ, 0.1 | family-wise σ; \|Γ(R)\| | `modulations.py`, `workers/modulations.js` (`MODULATION_RULES`) | Diffuse order between cells (plan item 4.4) needs both: the rank statistic over the 13 neighbour-cell lags at 3σ (Šidák over the elements) and the strongest neighbour-cell correlation at 0.1 |
+| `DIFFUSE_LAGS`, `DIFFUSE_MODES_PER_TERM`, `DIFFUSE_RANK_RTOL` | 13 lags, 2, 10⁻⁹ | cells; modes per term; relative norm | `modulations.py`, `workers/modulations.js` | The lags (the 26 cells around a cell, one of each ±R pair); the test needs two diffuse modes per term of the regression; a lag whose template the earlier ones span within the tolerance is left out |
 | `BAR_DIGITS_MAX` | 6 | significant digits | `copilotTools.js` | A ratio or σ below its bar is shown with up to this many digits to stay below it, else as `'<3'` (F2) |
 | constraint margin | 0.05 | Å | `copilot/runTools.js` | First-peak low side within this of the closest-approach constraint: warn |
 | `temperature` (chat) | 0.2 (editable 0–2, step 0.1) | — | `settings.js`, `ConnectionSettings.jsx` | Sampling temperature |

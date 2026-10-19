@@ -12,6 +12,7 @@ import { buildCase, DEV_CASES } from '../cases';
 import { loadRun } from '../runFolder';
 import { ARM_A_RULES, runArmA, runArmSweep } from '../armA';
 import { scoreVerdict } from '../scoring';
+import { zoneBoundarySigma } from '../../src/workers/modulations';
 
 const runBoth = async (item) => {
     const built = buildCase(item);
@@ -34,6 +35,9 @@ const runBoth = async (item) => {
 // Plan item 4.2 (protocol 2026-10-19.15, A+ reads a joined shell's split): no
 // pin moved; dev-jahn-teller's A+ claim reads long − short 0.321 Å where it
 // read the maxima's 0.31, pinned below.
+// F1 (protocol 2026-10-19.16, the independent-cell null): dev-weak-order-b's
+// A+ went from 0.8333 to 1 — the calibrated null reads its weak order at
+// 5.6σ (the bound χ²₁ read 2.96σ) — and no other pin moved.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -49,7 +53,7 @@ const BAR = [
     ['dev-eight-site', 0.6667, ['jahn_teller Nb'], 0.6667, ['jahn_teller Nb']],
     ['dev-octahedral-clusters', 0.8333, [], 1, []],
     ['dev-weak-order-a', 0.8333, [], 1, []],
-    ['dev-weak-order-b', 0.8333, [], 0.8333, []]
+    ['dev-weak-order-b', 0.8333, [], 1, []]
 ];
 
 describe('the model-free arms on the dev cases (the bar)', () => {
@@ -221,15 +225,22 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(cut.verdict.window.extendedNetwork.because).toBe('no_clusters');
 
         // A signal at the edge of significance: one weak order, a seed on
-        // each side of the fixed 3σ bar; A+ claims the one above only.
-        for (const [id, ordered] of [['dev-weak-order-a', true], ['dev-weak-order-b', false]]) {
+        // each side of the fixed 3σ bar as the null before F1 read them
+        // (realised 3–4σ and 2.5–3σ). Against the independent-cell null (F1,
+        // protocol 2026-10-19.16) one isotropic Nb site has three components,
+        // not the one the bound took, and both are far above the bar: A+ claims
+        // both. The situation needs its amplitude re-set from the calibrated
+        // null (the case definitions are the user's call).
+        for (const [id, sigma] of [['dev-weak-order-a', 6.41], ['dev-weak-order-b', 5.65]]) {
             const weak = await judged(id);
             const payload = await (await weak.run).engine('modulations', {});
-            const point = payload.elements.find((entry) => entry.element === 'Nb').zoneBoundary.find((entry) => entry.q.join() === '0.5,0.5,0');
-            expect(point.sigma, id).toBeGreaterThanOrEqual(2.5);
-            expect(point.sigma, id).toBeLessThanOrEqual(4);
-            expect(point.ordered, id).toBe(ordered);
-            expect(found(weak.scoreSweep), id).toEqual([`modulation:${ordered}`]);
+            const nb = payload.elements.find((entry) => entry.element === 'Nb');
+            const point = nb.zoneBoundary.find((entry) => entry.q.join() === '0.5,0.5,0');
+            expect(point.sigma, id).toBeCloseTo(sigma, 1);
+            expect(point.ordered, id).toBe(true);
+            expect(found(weak.scoreSweep), id).toEqual(['modulation:true']);
+            // The bound before F1 (one component per site) put them on either side of the bar.
+            expect(zoneBoundarySigma(point.ratio * nb.medianPower, nb.sites, payload.family.zoneBoundaryPoints) >= 3, id).toBe(id === 'dev-weak-order-a');
         }
     }, 120000);
 });

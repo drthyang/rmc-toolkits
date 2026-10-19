@@ -289,8 +289,12 @@ const uvwText = (uvw) => uvw.map((value) => Number(value.toFixed(2)) + 0);
 // The point of an element's payload entry at q (a zone-boundary point or a strongest mode).
 const pointAt = (entry, q) => [...(entry.zoneBoundary || []), ...(entry.strongest || [])].find((point) => sameQ(point.q, q)) ?? null;
 
-// The modulation engine's verdicts, per element tested, as a reading, with
-// the polarisation of each ordered point (the direction a claim rests on).
+// The modulation engine's verdicts A+ reads, per element tested, as a
+// reading, with the polarisation of each ordered point (the direction a
+// claim rests on). Diffuse order between cells (verdict.diffuseOrder, plan
+// item 4.4) is not among them: the verdict has no feature kind for it, and
+// adding one changes the scoring (the user's call).
+const MODULATION_FINDINGS_READ = ['cellDoubling', 'generalOrder', 'longWave'];
 const modulationReading = (payload) => {
     const tested = (payload.elements || []).filter((entry) => entry.sites);
     const named = (name) => tested.filter((entry) => entry.verdict[name].answer === true)
@@ -302,7 +306,7 @@ const modulationReading = (payload) => {
         .map(({ q, polarisation }) => ({ q: qText(q), uvw: uvwText(polarisation.uvw), share: round(polarisation.share) }));
     return {
         value: Object.fromEntries(tested.map((entry) => {
-            const verdicts = Object.fromEntries(Object.entries(entry.verdict).map(([name, finding]) => [name, said(finding)]));
+            const verdicts = Object.fromEntries(MODULATION_FINDINGS_READ.map((name) => [name, said(entry.verdict[name])]));
             const rows = polarisations(entry);
             return [entry.element, rows.length ? { ...verdicts, polarisation: rows } : verdicts];
         })),
