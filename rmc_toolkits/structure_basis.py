@@ -78,9 +78,9 @@ def _round_half_up(values: np.ndarray) -> np.ndarray:
     return floor + (values - floor >= 0.5)
 
 
-def _at_least_zero(value: float) -> float:
-    """``Math.max(value, 0)``: NaN stays NaN; -0 and every negative value give +0."""
-    return value if value > 0.0 or value != value else 0.0
+def _at_least_zero(values: np.ndarray) -> np.ndarray:
+    """``Math.max(value, 0)`` elementwise: NaN stays NaN; -0 and every negative value give +0."""
+    return np.where((values > 0.0) | np.isnan(values), values, 0.0)
 
 
 def structure_basis(atoms: Iterable[Rmc6fAtom], lattice_vectors, supercell) -> list[dict]:
@@ -128,10 +128,20 @@ def structure_basis(atoms: Iterable[Rmc6fAtom], lattice_vectors, supercell) -> l
     squared = dr[:, 0] * dr[:, 0] + dr[:, 1] * dr[:, 1] + dr[:, 2] * dr[:, 2]
 
     counts = np.bincount(site_index, minlength=n_sites)
-    sum_dr = [per_site(dr[:, k]) for k in range(3)]
-    sum_squared = per_site(squared)
-    sum_d = [per_site(offset[:, i]) for i in range(3)]
-    sum_dd = [per_site(offset[:, i] * offset[:, j]) for i, j in _PAIRS]
+    n = counts.astype(float)
+    s0, s1, s2 = (per_site(dr[:, k]) for k in range(3))
+    # Per site, the browser's scalar arithmetic, one IEEE operation for another.
+    mean_squared = (s0 * s0 + s1 * s1 + s2 * s2) / (n * n)
+    disp = np.sqrt(_at_least_zero(per_site(squared) / n - mean_squared))
+    m = [per_site(offset[:, i]) / n for i in range(3)]
+    c = [per_site(offset[:, i] * offset[:, j]) / n - m[i] * m[j] for i, j in _PAIRS]
+    mean = np.column_stack([frac[:, i] + m[i] for i in range(3)])
+    diagonal = [_at_least_zero(c[k]) for k in range(3)]
+    cov = np.stack([
+        np.column_stack([diagonal[0], c[3], c[4]]),
+        np.column_stack([c[3], diagonal[1], c[5]]),
+        np.column_stack([c[4], c[5], diagonal[2]]),
+    ], axis=1)
 
     first_element: list[str | None] = [None] * n_sites
     element_counts: list[dict[str, int]] = [{} for _ in range(n_sites)]
@@ -142,31 +152,22 @@ def structure_basis(atoms: Iterable[Rmc6fAtom], lattice_vectors, supercell) -> l
         tally = element_counts[site]
         tally[element] = tally.get(element, 0) + 1
 
-    basis = []
-    for site in range(n_sites):
-        n = int(counts[site])
-        s0, s1, s2 = (float(values[site]) for values in sum_dr)
-        mean_squared = (s0 * s0 + s1 * s1 + s2 * s2) / (n * n)
-        m = [float(values[site]) / n for values in sum_d]
-        c = [float(sum_dd[k][site]) / n - m[i] * m[j] for k, (i, j) in enumerate(_PAIRS)]
-        centre = [float(value) for value in frac[site]]
-        basis.append(
-            {
-                "el": first_element[site],
-                "referenceNumber": int(site_numbers[site]),
-                "frac": centre,
-                "dispA": math.sqrt(_at_least_zero(float(sum_squared[site]) / n - mean_squared)),
-                "count": n,
-                "elementCounts": element_counts[site],
-                "mean": [centre[i] + m[i] for i in range(3)],
-                "covFrac": [
-                    [_at_least_zero(c[0]), c[3], c[4]],
-                    [c[3], _at_least_zero(c[1]), c[5]],
-                    [c[4], c[5], _at_least_zero(c[2])],
-                ],
-            }
+    return [
+        {
+            "el": species,
+            "referenceNumber": number,
+            "frac": centre,
+            "dispA": spread,
+            "count": copies,
+            "elementCounts": tally,
+            "mean": average,
+            "covFrac": covariance,
+        }
+        for species, number, centre, spread, copies, tally, average, covariance in zip(
+            first_element, site_numbers.tolist(), frac.tolist(), disp.tolist(), counts.tolist(),
+            element_counts, mean.tolist(), cov.tolist(),
         )
-    return basis
+    ]
 
 
 def read_structure_basis(rmc6f_path: str | Path) -> list[dict]:
