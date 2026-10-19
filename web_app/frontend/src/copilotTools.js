@@ -1009,8 +1009,10 @@ export const summarizeClusters = (payload) => {
 
 // analyze_modulations' own result budget (characters): the rows of four
 // elements with an ordered point's polarisation and their diffuse rows, and
-// its checks (three elements, dev-zone-boundary, run to 3,344 since plan item
-// 4.4's diffuse rows and note; a fourth element adds about 500).
+// its checks. Since plan item 4.4's diffuse rows and note the largest results
+// are three elements each: the Demo's 3,687 (three long-wave notes and the
+// in-phase note), dev-zone-boundary's 3,344 (an ordered point); a fourth
+// element adds about 500.
 export const MODULATION_RESULT_BUDGET = 4500;
 
 const qLabel = (q) => `(${q.map((value) => {
