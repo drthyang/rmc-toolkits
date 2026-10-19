@@ -146,7 +146,7 @@ const AssistantTurn = ({ turn, pages, onOpenPage, cardLinks, question = null, on
                     <TextSegment key={index} item={group} last={turn.streaming && index === groups.length - 1} cardLinks={cardLinks} />
                 )))}
                 {turn.audit?.length > 0 && (
-                    // Checks on the answer itself (answerAudit.js): where it
+                    // Checks on the answer itself (the verification, facts.js): where it
                     // contradicts what the tools or the run context established.
                     <ul className="llm-audit" aria-label="Checks on this answer">
                         {turn.audit.map((finding) => (

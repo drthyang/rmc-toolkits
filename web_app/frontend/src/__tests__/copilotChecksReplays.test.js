@@ -19,15 +19,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
 import { runCopilotTurn } from '../llm/copilot/agentLoop';
-import { contextAuditFacts } from '../llm/copilot/answerAudit';
 import { buildAskUserTool } from '../llm/copilot/askUser';
 import { buildClarifier } from '../llm/copilot/clarify';
-import { buildEvidenceGate } from '../llm/copilot/evidence';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { runTurn } from '../llm/copilot/turn';
-import { pointGroupFacts } from '../llm/context/pointGroups';
+import { createVerification } from '../llm/copilot/verification';
 import { buildRunContext } from '../llm/context/runContext';
-import { shownContext } from '../llm/prompts/copilot';
 import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { inProcessEngine } from '../workers/pcaKdeWorker';
 
@@ -103,8 +100,8 @@ const replay = async (question, replies, { answer = null } = {}) => {
 
 // On the agent loop itself, for what the turn does not do: its ask_user comes
 // with the Workbench's questions (one ask-user port serves both), and an abort
-// ends a turn with a `stopped` event where the loop throws. The checks as the
-// app built them before the turn module.
+// ends a turn with a `stopped` event where the loop throws. The verification
+// as the turn builds it.
 const context = buildRunContext(run);
 const clarifier = buildClarifier({ plotFiles, structure, symmetry }, { noiseFloor: context.symmetry?.noise_floor_A ?? null });
 const loopReplay = async (question, replies, { answer = null } = {}) => {
@@ -116,11 +113,7 @@ const loopReplay = async (question, replies, { answer = null } = {}) => {
         messages: [{ role: 'system', content: 'S' }, { role: 'user', content: question }],
         tools: loopTools,
         toolContext: { askUser: answeringUser(asked, answer) },
-        auditContext: contextAuditFacts(context, pointGroupFacts),
-        evidence: buildEvidenceGate({
-            catalog: clarifier.catalog, offered: loopTools.map((tool) => tool.name), elements: Object.keys(structure.elementCounts)
-        }),
-        referenceContext: shownContext(context)
+        verification: createVerification({ context, catalog: clarifier.catalog, offered: loopTools.map((tool) => tool.name) })
     })) void event;
     return { asked };
 };

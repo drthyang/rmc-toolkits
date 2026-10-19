@@ -171,7 +171,8 @@ inputs on its page, stays the *user's* action.
 6. **`copilot/agentLoop.js`**: `runCopilotTurn()` is a pure async generator of UI events, the turn
    module's internal module (`copilot/turn.js` is its one production caller). It calls a model
    port, so the tests script the model's replies, and before each model call it emits the request
-   as sent (`request`). Its rules:
+   as sent (`request`). It records each tool step with the turn's verification and asks it to
+   judge each answer (*Evidence, numbers by reference, the computed verdict*). Its rules:
    - **Budgets.** ≤ 6 rounds of tool calls; ≤ 4 calls per round (extra calls are answered
      "skipped"); 120 s per call; no new round after 10 min. Each result is fitted to 3,000
      characters, and a turn's tool messages to 12,000 in total. Older results are compacted to
@@ -207,10 +208,14 @@ inputs on its page, stays the *user's* action.
    - `compare_fit(dataset)`: where the model misses the data, as Rw and the share of the misfit
      per range of r or Q, and the largest residual features.
 8. **`copilot/askUser.js`**: the `ask_user` tool (*Asking the user* below).
-   **`copilot/outcome.js`**: `parseOutcome()` splits the verdict line from the answer. It is
-   lenient about Markdown and dashes, strict about the three statuses, and takes the last line.
+   **`copilot/verification/`**: "is this answer verified?" — the evidence gate, the checks on the
+   answer, numbers by reference and the computed Outcome behind one interface (*Evidence, numbers
+   by reference, the computed verdict* below). Inside it, `outcome.js` `parseOutcome()` splits the
+   verdict line from the answer: lenient about Markdown and dashes, strict about the three
+   statuses, and it takes the last line.
    **`copilot/turnState.js`** folds loop events into a turn: ordered text segments (with
-   reasoning) and tool steps.
+   reasoning) and tool steps; the footer counts the steps that ended as analyses
+   (`tool_end.analysis`).
 9. **`watchdog/`**: slope heuristics over the ln(χ²) history are the **source of truth** for the
    badge. The LLM only writes the tooltip note, and only when the status flips or enough new data
    arrived.
@@ -268,7 +273,7 @@ runTurn({
   history = [],            // [{ question, answer }], oldest first
   signal = null, clock = { now: Date.now },
   toolContext = null,      // more context for a tool's run() (the dock's card-focus controller)
-  config = {}              // { toolsEnabled = true, method = 'full', limits = {} }
+  config = {}              // { toolsEnabled = true, method = 'full', limits = {}, phrasings = null }
 }) → AsyncIterable<event>
 
 describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'tools' | 'view' | 'no_tools',
@@ -281,8 +286,11 @@ describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'too
   method; the system prompt for them; the
   history window (an unanswered question is dropped, each answer compacted to
   `MEMORY_ANSWER_CHARS` = 2,000 characters, the newest `HISTORY_MESSAGES` = 8 messages kept); the
-  Workbench's questions (`clarify.js`), the evidence gate, the context facts the answer checks read,
-  and the context `{{ctx.…}}` references read.
+  Workbench's questions (`clarify.js`); and one verification (`createVerification`, *Evidence,
+  numbers by reference, the computed verdict*): the run context, its shell catalogue, the tools
+  offered, the method, the caller's claim phrasings (`config.phrasings`: the validation harness
+  passes the verdict's words) and, when the limits state it, the send-backs per turn
+  (`config.limits.maxEvidenceGates`; the loop's own limits do not hold it).
 - **The method** (`config.method`, `copilot/method.js`, `TURN_METHODS`): `'full'` (the default:
   the dock, the validation's arm B) sends the skills and the method in the prompt, the tool
   descriptions and the checks, byte for byte as before the switch; `'off'` (the validation's arm C,
@@ -379,7 +387,8 @@ the spend cap is refused in `prepare`, after the guard's plan, so it is never se
 **What stays in the adapters.** The dock: React state, Stop, the question card (its ask-user port),
 the card-focus effects (it maps events to focus), the unsupported-model memory, the `runKey`
 reset and the `configKey` history window. The harness: the case's run (the run module), its compute-only tools, the simulated user,
-the arm's skills and method (arm C: `'off'`), its port, and the record (every request as sent, the
+the arm's skills and method (arm C: `'off'`), the verdict's words for the gate
+(`validation/verdict.js` `VERDICT_PHRASINGS`, as `config.phrasings`), its port, and the record (every request as sent, the
 steps, the score; number provenance against `start.shown`; the method).
 
 ## Asking the user (`ask_user`)
@@ -492,10 +501,11 @@ return `facts` beside their data (not sent to the model): `assess_convergence` i
 `detect_symmetry` its group with the point group's facts, `analyze_displacement_directions`
 whether a direction is significant (its peak ≥ 3σ), `analyze_modulations` the ordered points,
 `analyze_clusters` what its clusters showed, `find_gr_peaks` and `compute_bond_angles` the
-coordination they counted; the run context adds the watchdog's status
-and the tolerance ladder's groups (`contextAuditFacts`). When the model answers,
-`auditAnswer()` (`copilot/answerAudit.js`) reads the answer, sentence by sentence and clause by
-clause, for a clear positive claim they contradict:
+coordination they counted, `measure_symmetry_lowering` its shifts (no check reads them yet); the
+run context adds the watchdog's status and the tolerance ladder's groups. When the model answers,
+the verification's checks (one row per facts key, the facts catalogue FACTS,
+`copilot/verification/facts.js`) read the answer, sentence by sentence and clause by clause, for a
+clear positive claim they contradict:
 
 | Check | Fires on |
 |---|---|
@@ -523,20 +533,66 @@ answer, and the computed Outcome is **Not verified** (below). gemma4:26b's corre
 
 ## Evidence, numbers by reference, the computed verdict (THY-18)
 
-Three rules keep an answer tied to what the engines computed in that question.
+Three rules keep an answer tied to what the engines computed in that question. One module holds
+them, the verification (`copilot/verification/`, architecture candidate #4): it answers "is this
+answer verified?", one verification per turn.
 
-- **The evidence gate** (`copilot/evidence.js`). An answer that concludes something needs, in
+```js
+createVerification({ context, catalog, offered, phrasings, maxSendBacks = 2, method = 'full' }) → verification
+verification.record(step, show) → { ref, analysis, ...show(ref) }
+verification.judge(text, { canSendBack, rounds, stoppedBy, cut }) → { sendBack } | { done } | null
+verification.claims        // the claim rows the turn checks: [{ id, what, prompt, analyses, need }]
+isAnalysis(step)           // the one definition of an analysis
+```
+
+- **Who calls it.** The turn builds it (`turnChecks`: the run context, its shell catalogue, the
+  tools offered, tools on or off, the method, `config.phrasings` and `config.limits.maxEvidenceGates`
+  when set); the agent loop records every tool step with it, in the order the model reads them, and
+  judges every answer. `context` gives `{{ctx.…}}` (its shown, trimmed form only), the checks'
+  context facts (the watchdog, the ladder's groups, the parents) and the gate's elements; `offered:
+  []` means no claim row (no gate), while references are still filled and the checks and the
+  Outcome computed (the loop's default without a verification).
+- **record(step, show).** `step` is `{ name, args, status, error, executed, interactive, reading,
+  view, facts? }`; `show(ref)` builds the tool message, once and synchronously, and the ref then
+  resolves to exactly the data it returns (a callback: the ref is written into the message before
+  the data is fitted to the budget). Refs are r1, r2, … in record order; a step with an error takes
+  none, and its facts are dropped. `analysis` (`isAnalysis`: executed, and not a question, a skill
+  read or a view) rides on `tool_end`; the dock footer counts it, as the Outcome does.
+- **judge(text, …), in a fixed order.** 1. fill the references; 2. decide a send-back on the
+  FILLED text: it needs `canSendBack` (tools can still run: not the final round, the turn's time
+  not spent), an unmet claim not sent back yet this turn, in CLAIMS order, and fewer than
+  `maxSendBacks` send-backs so far — the raw text becomes the standing answer; 3. run the checks on
+  the answer, in FACTS order; 4. add the unfilled-reference finding; 5. add the missing-evidence
+  findings, whether tools were on, off or unsupported; 6. compute the Outcome, which the model's
+  Outcome line (read from the filled text) can only lower. Blank text judges the standing answer
+  (never sent back again), or gives null when there is none; the loop's empty-reply paths are its
+  own. `sendBack` is `{ id, what, missing, nudge, notice }`; `done` is the turn's `done` event. One
+  verification serves one turn: record or judge after `done` throws. A phrasing for an unknown
+  claim, or an `asserted` pattern that is not a global RegExp, is a TypeError; model text and tool
+  facts never throw.
+- **The catalogues are data.** CLAIMS (`claims.js`, one row per claim, in send-back order) and
+  FACTS (`facts.js`, one row per facts key, in check order: the producing tools, the shape in the
+  dataShape notation, the phrasings it reads, `contradicts` — the `lowering` row has none yet, so
+  the missing consumer shows), over one reading of the text (`reading.js`, `phrasings.js`).
+  `EVIDENCE_RULES` stays written by hand in `prompts/copilot.js`; `verificationCatalogue.test.js`
+  binds it to CLAIMS: `evidenceSentence` renders it from the rows byte for byte, each row's prompt
+  names its first analysis, and `promptGaps` pins what the sentence does not say (coordination
+  also takes `compute_bond_angles`; a lowering falls back to `detect_symmetry`; "no order" needs a
+  per-site map and each finite cluster, and neither `find_gr_peaks` nor
+  `measure_symmetry_lowering`). Generating the sentence from the catalogue is the user's call.
+- **The evidence gate** (CLAIMS). An answer that concludes something needs, in
   this turn, the analysis that gives the evidence for it: order between cells, or a split site
   called random disorder, needs `analyze_modulations` (ordered antiphase displacements give a site
   the same cloud); a preferred direction `analyze_displacement_directions`; distorted, breathing or
   rigid clusters `analyze_clusters`; a coordination number, a split shell or a Jahn–Teller
-  distortion `find_gr_peaks` or `compute_bond_angles`; a lowering of the average structure
-  `measure_symmetry_lowering`; and "no order beyond thermal motion" every one of them —
-  `analyze_modulations`, a per-site directions map, and `analyze_clusters` for every element whose
-  own first shell holds at most 4.5 neighbours (`CLUSTER_CN_MAX`: a dimer 1, a trimer 2, a
+  distortion `find_gr_peaks` or `compute_bond_angles` (`anyOf`); a lowering of the average structure
+  `measure_symmetry_lowering`, `detect_symmetry` where it is not offered (`firstOffered`); and "no
+  order beyond thermal motion" every one of them (`allOf`) — `analyze_modulations`, a per-site
+  directions map, and `analyze_clusters` for every element whose own first shell holds at most 4.5
+  neighbours (`context/shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`: a dimer 1, a trimer 2, a
   tetrahedron 3, an octahedron 4 per member). A model cannot be forced to call a tool (not every
   model takes `tool_choice`), so the check runs after the answer: the agent loop withdraws it and
-  sends it back once per rule, at most twice a turn (`maxEvidenceGates`), with what to run (a
+  sends it back once per claim, at most twice a turn (`DEFAULT_MAX_SEND_BACKS`), with what to run (a
   **gate** event; the footer says so), never on the final round or once the turn's time is spent.
   An answer that still lacks its evidence stands, with an `evidence` finding under it (with tools
   off too), and a withdrawn answer is kept if the model then writes nothing. Claims are read as the answer checks read them (`asserts`: not
@@ -544,18 +600,25 @@ Three rules keep an answer tied to what the engines computed in that question.
   element of the run (Ti, Mo₃, TaSe₆) or the run itself (this structure, the clusters, site 3) — a
   definition ("A superstructure is order that enlarges the cell") needs no analysis; "no order" is
   always about the run. The gate never asks for a tool the turn does not offer. Under the turn's
-  method `'off'` (the validation's arm C, *The turn*) it checks the same rules, but its send-back
+  method `'off'` (the validation's arm C, *The turn*) it checks the same claims, but its send-back
   names no analysis and no tool, since which analysis a conclusion needs is the method: "Your answer
   concludes … , but this conclusion needs its evidence from an analysis run in this question. …"
   (`OFF_NUDGE`). The gate event's notice and the end-of-turn finding, which the model never reads,
-  still name the missing analyses.
-- **Numbers by reference** (`copilot/references.js`). Every tool message carries a `ref` (r1,
+  still name the missing analyses. The app's own phrasings read prose; a caller adds its own
+  through `phrasings` (`{ [claim id]: { asserted, literal } }`): the validation harness adds the
+  verdict schema's words (`validation/verdict.js` `VERDICT_PHRASINGS`: `off_centre`, the cluster
+  kinds, `jahn_teller`, `symmetry_lowering`, and `"features": []` as "no order"), which the app
+  itself no longer reads.
+- **Numbers by reference** (filled by the verification; the store is `copilot/references.js`).
+  Every tool message carries a `ref` (r1,
   r2, … in the order of the turn); the model writes `{{r2.peak.significance_sigma}}` — the ref, then
   the path in the data it was shown, array items by index (`{{r3.sites.0.shift_A}}`) — or
   `{{ctx.<path>}}` for the run context as the model read it (trimmed), and the app writes the
   engine's value in place where the answer is shown, recorded and checked. A number keeps the tool's rounding, a list of scalars reads
-  `[a, b, c]`. A reference that names nothing stays as written and is a `reference` finding.
-- **The computed verdict** (`copilot/verdict.js`). The Outcome chip is the app's: **not verified**
+  `[a, b, c]`. A reference that names nothing stays as written and is a `reference` finding. The
+  dock fills the earlier text segments of a turn, and a stopped one, the same way (`turnState.js`,
+  `{{ctx.…}}` from the turn's `start.shown`).
+- **The computed verdict** (`verification/verdict.js`). The Outcome chip is the app's: **not verified**
   when a check contradicts the answer, a reference names nothing or a conclusion's evidence did not
   run; **not achieved** when analyses ran and none succeeded; **partial** when the turn or the
   reply was cut short, an analysis failed and was not rerun successfully, or one warned;
@@ -748,10 +811,13 @@ tool with either name is refused, and the dock says so in its error line.
 - `askUser(request, { signal })` shows a question card and resolves with the user's reply
   (`{ answer, source: 'option' | 'other' | 'skipped', index }`), for interactive tools.
 - `facts` (optional, not sent to the model) are findings the final answer must not contradict
-  (*Checks on the answer*): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
+  (*Checks on the answer*), one key per row of the verification's facts catalogue (FACTS, with
+  each key's producing tools and shape): `{ convergence }`, `{ groups: [{ symbol, point_group, centrosymmetric,
   sohncke, polar }] }`, `{ direction: { subject, significant, anisotropic, peak_sigma, map_sigma } }`,
   `{ modulation: { elements, ordered, general } }`, `{ cluster: { element, members, distorted, breathing,
-  rigid, split, … } }`, `{ coordination: { centre, partner, window, cn, whole_shell, confirmed } }`.
+  rigid, split, … } }`, `{ coordination: { centre, partner, window, cn, whole_shell, confirmed } }`,
+  `{ lowering: { parent, lower, shifted } }`. A key no row names is kept and read by nothing;
+  `src/__tests__/verificationFacts.test.js` checks the real tools' facts against the rows.
 - The loop gives every result the model reads a `ref` (r1, r2, …) and keeps the data it sent, for
   numbers by reference (*Evidence, numbers by reference, the computed verdict*).
 - `shellWindows(args)` names the bond windows a call will use, so the Workbench can ask before a
@@ -1049,9 +1115,15 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   Today's violations sit in its allow-list with why (a value entry with its line, the skill's value
   and the tool's: the coordination-shells skill's old first peak, 2.33–2.71 Å and 3.9, against
   2.21–2.65 Å and 3.25); a new one fails, and so does an entry a fix cleared.
-- **Checks and the Workbench's questions:** the answer checks with their negated and qualified
-  phrasings (`answerAudit.test.js`); the evidence gate, numbers by reference and the computed
-  verdict on their own (`evidence.test.js`) and in the loop (`agentLoop.test.js`); the clarifier on synthetic shells — split,
+- **Checks and the Workbench's questions:** the verification at its interface, steps recorded and
+  the answer judged — the answer checks with their negated and qualified phrasings
+  (`answerChecks.test.js`); the evidence gate under both methods, the fixed order, numbers by
+  reference, the computed verdict, the errors (`verification.test.js`); the catalogues and the
+  binding of `EVIDENCE_RULES` to CLAIMS (`verificationCatalogue.test.js`); the reference store
+  (`references.test.js`) and the dock's reducer and footer (`turnState.test.js`); the real tools'
+  facts against FACTS (`src/__tests__/verificationFacts.test.js`); the verdict's words through
+  the harness's phrasings (`validation/__tests__/verdictPhrasings.test.js`); and in the loop
+  (`agentLoop.test.js`); the clarifier on synthetic shells — split,
   merged, clean, word-like element symbols, the tolerance ladder, typed windows
   (`clarify.test.js`); and on the Demo with the real engines and context
   (`src/__tests__/copilotChecksReplays.test.js`, each question through the turn module, as in the

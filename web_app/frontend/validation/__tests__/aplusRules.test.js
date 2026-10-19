@@ -15,7 +15,7 @@ import { loadRun } from '../runFolder';
 import { appSplitSites, ARM_A_RULES, runArmSweep, SWEEP_RULES } from '../armA';
 import { splitDisplacement, summarizeSites } from '../../src/copilotTools';
 import { buildClarifier } from '../../src/llm/copilot/clarify';
-import { buildEvidenceGate } from '../../src/llm/copilot/evidence';
+import { createVerification } from '../../src/llm/copilot/verification';
 import { lowerGroupTolerance, NOISE_FLOOR_MARGIN, symmetryNoiseFloor } from '../../src/llm/context/runContext';
 import { CLUSTER_CN_MAX, clusterElementsOf, shellCatalogue } from '../../src/llm/context/shells';
 import { describeSymmetry } from '../../src/symmetryModel';
@@ -108,12 +108,17 @@ describe('the split site as A+ applies it (isSplitSite, list_sites\' δ)', () =>
     });
 });
 
+// The elements the evidence gate (the verification) asks analyze_clusters for
+// before "no order", read off its finding with nothing run.
+const gateClusterElements = (catalog) => createVerification({ catalog }).judge('There is no local order beyond thermal motion.').done.audit[0].missing
+    .filter((item) => item.startsWith('analyze_clusters for ')).map((item) => item.split(' ')[2]);
+
 describe('the cluster elements as A+ applies them (the evidence gate\'s rule)', () => {
     it('an element whose own first shell holds 0.5–4.5 neighbours: dimers, trimers, tetrahedra and octahedra, not networks', () => {
         const cns = { D: 1, T: 2, Te: 3, O: 4, B: 4.5, Ic: 5, S: 6, P: 8, F: 12, I: 0.3, U: null };
         const catalog = { elements: Object.keys(cns).sort(), shell: (a, b) => (a === b ? { cn: cns[a] } : null) };
         expect(clusterElementsOf(catalog)).toEqual(['B', 'D', 'O', 'T', 'Te']);
-        expect(buildEvidenceGate({ catalog }).clusterElements).toEqual(clusterElementsOf(catalog));
+        expect(gateClusterElements(catalog)).toEqual(clusterElementsOf(catalog));
         expect(clusterElementsOf(null)).toEqual([]);
     });
 
@@ -129,7 +134,7 @@ describe('the cluster elements as A+ applies them (the evidence gate\'s rule)', 
                 const catalogue = shellCatalogue(run.props);
                 const { readings } = await runArmSweep(run);
                 const elements = readings.filter((reading) => reading.page === 'analyze_clusters').map((reading) => reading.what.split(' ')[0]);
-                expect(elements, id).toEqual(buildEvidenceGate({ catalog: catalogue }).clusterElements);
+                expect(elements, id).toEqual(gateClusterElements(catalogue));
                 if (elements.length) tried[id] = elements;
             }
             expect(tried).toEqual({

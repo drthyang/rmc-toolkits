@@ -8,9 +8,9 @@
 // only explains; a status word in it is kept as `claimed` and nothing more.
 //
 // In order, the first that holds:
-//   not verified — a check on the answer contradicts it (answerAudit.js),
-//     a reference names no value the turn has (references.js), or the
-//     answer concludes something whose analysis did not run (evidence.js);
+//   not verified — a check on the answer contradicts it (facts.js), a
+//     reference names no value the turn has (references.js), or the answer
+//     concludes something whose analysis did not run (claims.js);
 //   not achieved — analyses ran and none of them succeeded;
 //   partial — the analyses were cut short (the round budget, or rounds that
 //     added nothing), the reply was cut at the length limit, an analysis failed
@@ -20,11 +20,22 @@
 //     its checks (or the context answered, and nothing contradicts it).
 // The model may lower that, never raise it: when it says its own answer is
 // partial or not achieved ("the run cannot tell"), that stands.
-// Analyses are the steps that ran: not a question to the user, a skill read, a
-// view tool, a call to an unknown tool or one skipped by the budget.
+// Analyses are the steps that ran (isAnalysis, the one definition: the
+// evidence gate's, the Outcome's and the dock footer's, through tool_end's
+// `analysis`): not a question to the user, a skill read, a view tool, a call
+// to an unknown tool or one skipped by the budget.
 // Pure, no React.
 
 export const VERDICT_STATUSES = ['achieved', 'partial', 'not verified', 'not achieved'];
+
+/**
+ * Whether a recorded step is an analysis: it ran (`executed`: not skipped by
+ * the budget, not an unknown tool, not a refused question) and it is not a
+ * question to the user (`interactive`), a skill read (`reading`) or a view
+ * tool (`view`). A failed analysis is one too; the evidence gate also needs
+ * it to have no error.
+ */
+export const isAnalysis = (step) => Boolean(step?.executed) && !step.interactive && !step.reading && !step.view;
 
 // The findings that make an answer unverified, by rule, as the note says them.
 const findingReason = (findings) => {
@@ -41,8 +52,8 @@ const findingReason = (findings) => {
 const listNames = (steps) => [...new Set(steps.map((step) => step.name))].join(', ');
 
 /**
- * The Outcome of one answer. `steps` are the turn's tool steps
- * (`{ name, status: 'ok'|'warn'|'failed', error, interactive, reading }`),
+ * The Outcome of one answer. `steps` are the turn's recorded tool steps
+ * (`{ name, status: 'ok'|'warn'|'failed', error, executed, interactive, reading, view }`),
  * `findings` the answer's findings (answer checks, unfilled references,
  * missing evidence), `stoppedBy` the loop's, `modelOutcome` parseOutcome's
  * reading of the model's line (its status is only kept as `claimed`).
@@ -58,7 +69,7 @@ export const computeOutcome = ({ text = '', steps = [], findings = [], stoppedBy
         status = 'not verified';
         reasons.push(findingReason(findings));
     }
-    const analyses = steps.filter((step) => !step.interactive && !step.reading && !step.view && step.executed !== false);
+    const analyses = steps.filter(isAnalysis);
     if (!status && analyses.length && analyses.every((step) => step.status === 'failed' || step.error)) {
         status = 'not achieved';
         reasons.push(`no analysis succeeded (${listNames(analyses)})`);

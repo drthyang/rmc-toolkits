@@ -14,7 +14,7 @@
   },
   "commit": "fb5d68ee73a280dc85d8957a41c8f29d5e3297f7",
   "tests": [
-    "web_app/frontend/validation/__tests__/split.test.js › the judgment subset (plan 1.6 ii): dev only, every situation covered, the truth says which",
+    "web_app/frontend/validation/__tests__/split.test.js › the judgment subset (plan 1.6 ii): paired by situation, every situation covered, the truth says which",
     "web_app/frontend/validation/__tests__/split.test.js › the judgment subset removes no test case's token (plan 1.6 ii): it is never a kind's physics",
     "web_app/frontend/validation/__tests__/split.test.js › pins the test set: configurations, partials and truths",
     "web_app/frontend/validation/__tests__/holdoutScan.test.js › a judgment dev case (plan 1.6 ii) never removes a token: it is an option of the kind, not its physics",

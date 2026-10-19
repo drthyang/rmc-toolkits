@@ -6,7 +6,7 @@ import { DEFAULT_LIMITS, assistantContent, runCopilotTurn } from '../copilot/age
 import { ToolsUnsupportedError } from '../provider/model';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
 import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
-import { buildEvidenceGate } from '../copilot/evidence';
+import { createVerification } from '../copilot/verification';
 
 // A scripted model: each request consumes the next reply. A reply is either
 // { text } or { calls: [{ name, args }] } (optionally with text), or an
@@ -442,10 +442,10 @@ describe('runCopilotTurn', () => {
         expect(events.filter((event) => event.type === 'tool_end').map((event) => event.pageParams)).toEqual([{ shown: 3 }, null, null]);
     });
 
-    it('uses sensible default limits', () => {
+    it('uses sensible default limits (the send-backs per turn are the verification\'s: verification.test.js)', () => {
         expect(DEFAULT_LIMITS).toEqual({
             maxRounds: 6, maxCallsPerRound: 4, toolTimeoutMs: 120000, maxTurnMs: 600000, resultCharBudget: 3000, turnCharBudget: 12000,
-            maxQuestions: 2, stallMs: 180000, requestMaxMs: 600000, maxNoProgressRounds: 2, maxEvidenceGates: 2
+            maxQuestions: 2, stallMs: 180000, requestMaxMs: 600000, maxNoProgressRounds: 2
         });
     });
 });
@@ -720,7 +720,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
             { calls: [{ name: 'analyze_modulations', args: {} }] },
             { text: 'Ti orders at (0, 0, ½), {{r1.elements.0.zone_boundary.0.1}}× the median.\nOutcome: the zone-boundary point is ordered.' }
         ]);
-        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [tool], evidence: buildEvidenceGate() }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [tool], verification: createVerification() }));
         const gate = events.find((event) => event.type === 'gate');
         expect(gate).toMatchObject({ id: 'order-between-cells', missing: ['analyze_modulations'] });
         // Its text is withdrawn; the model reads its answer and the app's note.
@@ -740,7 +740,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
     it('an answer that still lacks its evidence stands, not verified, with the missing analysis named', async () => {
         const answer = { text: 'Ti forms a superstructure.\nOutcome: achieved — sure.' };
         const { callModel } = scriptedModel([answer, answer]);
-        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [modulations()], evidence: buildEvidenceGate() }));
+        const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [modulations()], verification: createVerification() }));
         const done = events.at(-1);
         expect(events.filter((event) => event.type === 'gate')).toHaveLength(1);
         expect(done.audit).toEqual([expect.objectContaining({
@@ -755,7 +755,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
             { text: 'Ti forms a superstructure.' }
         ]);
         const events = await collect(runCopilotTurn({
-            model: callModel, messages: baseMessages, tools: [echoTool(), modulations()], evidence: buildEvidenceGate(), limits: { maxRounds: 1 }
+            model: callModel, messages: baseMessages, tools: [echoTool(), modulations()], verification: createVerification(), limits: { maxRounds: 1 }
         }));
         expect(requests).toHaveLength(2);
         expect(events.some((event) => event.type === 'gate')).toBe(false);
@@ -764,7 +764,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
 
     it('an answer the gate withdrew stands when the model then writes nothing (review)', async () => {
         const { callModel } = scriptedModel([{ text: 'Ti forms a superstructure.\nOutcome: sure.' }, { text: '' }, { text: '' }]);
-        const done = (await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [modulations()], evidence: buildEvidenceGate() }))).at(-1);
+        const done = (await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [modulations()], verification: createVerification() }))).at(-1);
         expect(done).toMatchObject({ type: 'done', text: 'Ti forms a superstructure.\nOutcome: sure.', stoppedBy: 'answer' });
         expect(done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
         expect(done.outcome.status).toBe('not verified');
@@ -778,13 +778,14 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
             { text: 'Ti has CN = {{r1.cn}}.' }
         ]);
         const events = await collect(runCopilotTurn({
-            model: callModel, messages: baseMessages, tools: [cnTool, { ...echoTool(), name: 'find_gr_peaks' }], evidence: buildEvidenceGate({ elements: ['Ti', 'O'] })
+            model: callModel, messages: baseMessages, tools: [cnTool, { ...echoTool(), name: 'find_gr_peaks' }],
+            verification: createVerification({ context: { structure: { elements: { Ti: 1, O: 3 } } } })
         }));
         expect(events.find((event) => event.type === 'gate')).toMatchObject({ id: 'coordination' });
         expect(requests).toHaveLength(3);
         const late = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'Ti forms a superstructure.' }]);
         const lateEvents = await collect(runCopilotTurn({
-            model: late.callModel, messages: baseMessages, tools: [echoTool(), modulations()], evidence: buildEvidenceGate(), limits: { maxTurnMs: -1 }
+            model: late.callModel, messages: baseMessages, tools: [echoTool(), modulations()], verification: createVerification(), limits: { maxTurnMs: -1 }
         }));
         expect(lateEvents.some((event) => event.type === 'gate')).toBe(false);
         expect(lateEvents.at(-1).audit.map((finding) => finding.rule)).toEqual(['evidence']);
@@ -793,7 +794,7 @@ describe('evidence, numbers by reference and the computed verdict (THY-18)', () 
     it('with tools off, a conclusion no analysis backs is not verified (review)', async () => {
         const { callModel } = scriptedModel([{ text: 'Ti forms a superstructure.' }]);
         const done = (await collect(runCopilotTurn({
-            model: callModel, messages: baseMessages, tools: [modulations()], toolsEnabled: false, evidence: buildEvidenceGate()
+            model: callModel, messages: baseMessages, tools: [modulations()], toolsEnabled: false, verification: createVerification()
         }))).at(-1);
         expect(done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
         expect(done.outcome.status).toBe('not verified');

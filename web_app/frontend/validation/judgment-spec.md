@@ -14,9 +14,10 @@ a dev case, no dev result and no arm score, and it must stay that way:
 - **The subset.** Cases where A+'s fixed joining rules (`validation/armA.js`, `runArmSweep`) are
   ambiguous or wrong, so a model that reads the tools' results with judgment has room to add. One
   situation, the user's choice, is a control on the score (below).
-- **Dev now, held out later.** The dev cases exist (`judgment: true`, `devOnly`). Reported numbers
-  need held-out matches, written by you without the dev results, joining the test set as a new pinned
-  version on the user's decision.
+- **Dev now, held out later.** The dev cases exist (`judgment: true`). Reported numbers need
+  held-out matches, written by you without the dev results, joining the test set as a new pinned
+  version on the user's decision. (Done at protocol 2026-10-19.11: the five matches are in
+  `TEST_CASES`, and the dev cases are no longer `devOnly`.)
 
 ## What not to read
 

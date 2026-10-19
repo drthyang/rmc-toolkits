@@ -5,7 +5,7 @@
 // tools and scoring, reported side by side. Local models cost nothing and
 // may run dev and test; the API model runs the test set only, under a spend
 // cap the tracker enforces (spend.js). Settings are the Copilot's own
-// defaults (temperature 0.2, the agent loop's DEFAULT_LIMITS).
+// defaults (temperature 0.2, the turn's limits: runPolicy.js TURN_LIMITS).
 //
 // `server` is the server kind the model runs on, as the context guard names
 // it (contextGuard.js detectServer: 'lmstudio', 'ollama', 'openai' for a

@@ -38,8 +38,8 @@ export const OUTCOME_RULE = [
     'verified, not achieved) from its own checks.'
 ].join(' ');
 
-// Numbers by reference (copilot/references.js) and the evidence gate
-// (copilot/evidence.js), with the tools.
+// Numbers by reference (copilot/references.js, filled by the verification),
+// with the tools.
 export const REFERENCE_RULES = [
     'Quote numbers from tool results by reference: each result has a `ref`',
     '(r1, r2, …); write {{r2.peak.significance_sigma}} — the ref, then the path of',
@@ -49,7 +49,11 @@ export const REFERENCE_RULES = [
 ].join(' ');
 
 // Which analysis each conclusion needs: the local-order method, sent with
-// method 'full' only (the evidence gate checks under either method).
+// method 'full' only (the evidence gate checks under either method). Still
+// written by hand: the verification's claim catalogue renders the same
+// sentence from its rows (copilot/verification/claims.js evidenceSentence),
+// and a test binds the two byte for byte and pins what the sentence does not
+// say of the rows (promptGaps).
 export const EVIDENCE_RULES = [
     'Every conclusion needs its analysis in this question: order between cells',
     'or a split site called disorder, analyze_modulations; a preferred direction,',
@@ -150,17 +154,12 @@ export const COPILOT_PROMPT_VIEW = `${SYSTEM_PROMPT} ${TOOL_RULES} ${REFERENCE_R
 // For a model that cannot call tools, or with the tools switched off.
 export const COPILOT_PROMPT_NO_TOOLS = `${SYSTEM_PROMPT} ${OUTCOME_RULE}`;
 
+// The run context as the model reads it: trimmed to its budget by
+// contextToJson (the verification's shownContext parses the same text, so
+// {{ctx.…}} names what the model saw).
 export const contextBlock = (context) => (
     `Context for this RMC modeling run:\n\`\`\`json\n${contextToJson(context)}\n\`\`\``
 );
-
-/**
- * The run context as the model reads it (contextBlock trims it to its
- * budget: a long ladder to its two ends, a long history downsampled), for
- * {{ctx.…}} references: a reference names what the model saw, never a value
- * the trim removed.
- */
-export const shownContext = (context) => (context ? JSON.parse(contextToJson(context)) : null);
 
 // Keep only the newest memory messages (8 messages: 4 exchanges) so long
 // conversations stay inside small local models' context windows; the run

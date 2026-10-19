@@ -19,8 +19,8 @@
 // its own; and the judgment subset (`judgment: true` and a `situation`, plan
 // item 1.6 part ii), whose cases live in judgmentCases.js and build with the
 // kinds below (options of existing kinds, and elongated_clusters). Its
-// held-out matches are written later by a fresh author from
-// judgment-spec.md alone, never from these cases or their results.
+// held-out matches, at the end of TEST_CASES, were written by a fresh author
+// from judgment-spec.md alone, never from these cases or their results.
 
 import { JUDGMENT_DEV_CASES } from './judgmentCases';
 
@@ -934,6 +934,34 @@ export const TEST_CASES = [
             sites: [...b20(0.138).map((frac) => ({ el: 'Mn', frac })), ...b20(0.845).map((frac) => ({ el: 'Si', frac }))],
             group: 'P2_13', facts: { chiral: true, centrosymmetric: false, polar: false }, traps: [CHIRAL_TRAP], seed: 209
         }
+    },
+    // The judgment subset's held-out matches (plan item 1.6 ii), one per dev
+    // judgment case, written blind from judgment-spec.md alone (protocol
+    // 2026-10-19.11). Each seed is the first of its own sequence that its
+    // fixed rule accepts, from the case's engine readings only
+    // (docs/algorithms/copilot-validation.md).
+    {
+        id: 'test-two-features', kind: 'jahn_teller', judgment: true, situation: 'two_features',
+        params: {
+            elements: ['Rb', 'Cr', 'Br'], a: 10.6, short: 2.53, long: 2.97, sigma: 0.055, supercell: [7, 7, 7],
+            offCentre: { axis: [0, 1, 0], delta: 0.11 }, seed: 211
+        }
+    },
+    {
+        id: 'test-marginal-above', kind: 'zone_boundary', judgment: true, situation: 'marginal',
+        params: { elements: ['Ba', 'Hf', 'O'], a: 4.17, supercell: [10, 10, 10], q: [0.5, 0, 0.5], axis: [1, 1, 0], delta: 0.0128, weak: true, decoy: null, seed: 227 }
+    },
+    {
+        id: 'test-marginal-below', kind: 'zone_boundary', judgment: true, situation: 'marginal',
+        params: { elements: ['Ba', 'Hf', 'O'], a: 4.17, supercell: [10, 10, 10], q: [0.5, 0, 0.5], axis: [1, 1, 0], delta: 0.0128, weak: true, decoy: null, seed: 223 }
+    },
+    {
+        id: 'test-two-readings', kind: 'offcentre', judgment: true, situation: 'two_readings',
+        params: { elements: ['Cs', 'Ge', 'Cl'], a: 5.43, supercell: [8, 8, 8], axis: [1, 1, 1], delta: 0.23, wells: 8, seed: 231 }
+    },
+    {
+        id: 'test-user-choice', kind: 'elongated_clusters', judgment: true, situation: 'user_choice',
+        params: { element: 'Re', anion: 'Te', a: 8.4, edge: 2.62, elongation: 0.36, sigma: 0.035, supercell: [7, 7, 7], seed: 241 }
     }
 ];
 

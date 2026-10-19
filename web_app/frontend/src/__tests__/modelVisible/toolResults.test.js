@@ -9,7 +9,7 @@
 //
 // Each sample is one turn, set up as useCopilot sets one up (the dock's tools
 // without the view tools, which need a screen; the Workbench's own questions;
-// the evidence gate; the answer checks): a recording model calls the tool,
+// the verification: the evidence gate, the answer checks): a recording model calls the tool,
 // and its second request holds the tool message. The engines run in-thread
 // (pcaKdeWorker's inProcessEngine, as src/openRunFolder.js runs them).
 // Also: an ask_user answer, a read_skill result, and a window that cuts the
@@ -25,16 +25,14 @@
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { runCopilotTurn } from '../../llm/copilot/agentLoop';
-import { contextAuditFacts } from '../../llm/copilot/answerAudit';
 import { buildAskUserTool } from '../../llm/copilot/askUser';
 import { buildClarifier } from '../../llm/copilot/clarify';
-import { buildEvidenceGate } from '../../llm/copilot/evidence';
 import { toolAsSent } from '../../llm/copilot/method';
 import { buildReadSkillTool, skillIndex } from '../../llm/copilot/skills';
 import { buildRunTools } from '../../llm/copilot/runTools';
+import { createVerification } from '../../llm/copilot/verification';
 import { buildRunContext } from '../../llm/context/runContext';
-import { pointGroupFacts } from '../../llm/context/pointGroups';
-import { buildCopilotMessages, shownContext } from '../../llm/prompts/copilot';
+import { buildCopilotMessages } from '../../llm/prompts/copilot';
 import { copilotSkills } from '../../copilotSkills';
 import { buildCopilotCards } from '../../copilotCards';
 import { buildCopilotTools } from '../../copilotTools';
@@ -117,7 +115,7 @@ describe('tool results as the model reads them (the Demo run)', () => {
     });
 
     it.each([...SAMPLES, ...METHOD_OFF_SAMPLES])('%s', async (file, name, args, { user = null, workbench = true, method = 'full' } = {}) => {
-        const { run, context, index, clarifier } = setup;
+        const { context, index, clarifier } = setup;
         // The tools as the turn offers them under the method (toolAsSent).
         const tools = setup.tools.map((tool) => toolAsSent(tool, method));
         const model = recordingModel([{ calls: [[name, args]] }, { text: 'Recorded.\n\nOutcome: a recorded tool result.' }]);
@@ -135,14 +133,10 @@ describe('tool results as the model reads them (the Demo run)', () => {
             messages,
             tools,
             toolContext: { askUser },
-            auditContext: contextAuditFacts(context, pointGroupFacts),
             clarifier: workbench ? clarifier : null,
-            evidence: buildEvidenceGate({
-                catalog: workbench ? clarifier.catalog : null,
-                offered: tools.map((tool) => tool.name),
-                elements: Object.keys(run.structure.elementCounts || {})
-            }),
-            referenceContext: shownContext(context)
+            verification: createVerification({
+                context, catalog: workbench ? clarifier.catalog : null, offered: tools.map((tool) => tool.name), method
+            })
         })) events.push(event);
 
         const second = model.requests[1];

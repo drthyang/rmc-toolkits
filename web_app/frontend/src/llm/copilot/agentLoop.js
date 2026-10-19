@@ -3,12 +3,8 @@
 
 import { toolBudgetNote } from '../prompts/copilot';
 import { asModelPort, ToolsUnsupportedError } from '../provider/model';
-import { auditAnswer } from './answerAudit';
 import { ASK_USER, MAX_QUESTIONS, answerResult } from './askUser';
 import { resolveClarification } from './clarify';
-import { parseOutcome } from './outcome';
-import { createReferenceStore, fillReferences } from './references';
-import { computeOutcome } from './verdict';
 import { beforeStall, keyNumbers, repeatsItself, textToolCalls, withDeadlines } from './robustness';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
@@ -16,6 +12,7 @@ import {
 import {
     executeToolCall, fitToBudget, stepStatus, toolCards, toolLabel, toRequestTools, usableTools
 } from './tools';
+import { createVerification } from './verification';
 
 // One Copilot turn: plan → act → observe → assess. The model is called with
 // the tools; when it asks for some, each call is validated, run and answered
@@ -40,19 +37,24 @@ import {
 //                                                  context guard, a spend cap) has none
 //   { type: 'text', delta } / { type: 'reasoning', delta }
 //   { type: 'tool_start', id, name, label, args, page, cards, interactive }
-//   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, pageParams }
+//   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, ref, analysis, pageParams }
+//                                                  ref: the result's reference (null on an error);
+//                                                  analysis: the step is an analysis
+//                                                  (verification isAnalysis; the footer counts these)
 //   { type: 'tools_unsupported', error }           the port's ToolsUnsupportedError on the
 //                                                  first request: retried without tools
 //   { type: 'gate', id, what, missing, notice }    the evidence gate sent the answer back
 //                                                  (a 'retract' withdraws its text)
 //   { type: 'done', text, rawText, outcome, rounds, stoppedBy: 'answer' | 'max_rounds' | 'empty', cut, audit,
 //     references, gates }
+//                                                  the verification's (verification/ judge):
 //                                                  text: the answer with its {{references}} filled in
 //                                                  (rawText: as the model wrote it)
 //                                                  cut: the last reply stopped at the length limit
 //                                                  audit: findings on the answer (answer checks,
 //                                                  unfilled references, missing evidence)
-//                                                  outcome: computed from the checks (verdict.js)
+//                                                  outcome: computed from the checks (verification/verdict.js)
+//                                                  An empty reply's done is the loop's own.
 // Errors (HTTP, network) and aborts are thrown to the caller.
 //
 // Budgets: at most `maxRounds` model requests with tool calls and
@@ -76,15 +78,16 @@ import {
 // in the window the user picks). These questions are ask_user steps
 // (`app: true`) and count toward `maxQuestions`.
 //
-// Evidence, numbers and the verdict (THY-18). Every tool message carries a
-// `ref` (r1, r2, …) the model quotes values by ({{r2.peak.significance_sigma}},
-// references.js); the answer is shown, recorded and checked with them filled
-// in from what the tools returned. `evidence` (evidence.js buildEvidenceGate)
-// sends an answer that concludes something without its analysis back to the
-// model, once per rule and at most `maxEvidenceGates` times a turn, when tools
-// can still run; evidence still missing at the end is a finding. The Outcome
-// is computed from the steps' checks and the findings (verdict.js); the
-// model's Outcome line only explains it.
+// Evidence, numbers and the verdict (THY-18) are the verification's
+// (verification/: one per turn, the turn's `verification`; without one, a
+// verification with no claims). The loop records each tool step with it,
+// which names the step's `ref` (r1, r2, …: the model quotes values by it,
+// {{r2.peak.significance_sigma}}) and keeps the data the message carries,
+// and asks it to judge each answer: a send-back (the gate: once per claim,
+// at most its maxSendBacks times a turn, only while tools can still run) or
+// the `done` event — the answer with its references filled, its findings and
+// the Outcome computed from the checks; the model's Outcome line only
+// explains it.
 //
 // On a local model (robustness.js): a model request that sends nothing for
 // `stallMs`, or runs past `requestMaxMs`, is cancelled and explained; a reply
@@ -108,8 +111,7 @@ export const DEFAULT_LIMITS = {
     maxQuestions: MAX_QUESTIONS,
     stallMs: 180000,
     requestMaxMs: 600000,
-    maxNoProgressRounds: 2,
-    maxEvidenceGates: 2
+    maxNoProgressRounds: 2
 };
 
 // Assistant content that is only whitespace (models often stream a newline
@@ -219,69 +221,23 @@ export async function* runCopilotTurn({
     // Passed to every tool's run() beside its signal (the card-focus
     // controller for view tools).
     toolContext = null,
-    // The run context's facts the answer must not contradict
-    // (answerAudit.js contextAuditFacts).
-    auditContext = null,
     // The Workbench's own questions (clarify.js buildClarifier).
     clarifier = null,
-    // The evidence gate (evidence.js buildEvidenceGate), or null for none.
-    evidence = null,
-    // The run context, for {{ctx.…}} references.
-    referenceContext = null,
+    // The turn's verification (verification/ createVerification): the
+    // references, the evidence gate, the checks on the answer and the
+    // Outcome. Null: one with no claims (no gate; references, checks and the
+    // Outcome as ever).
+    verification = null,
     // The turn's clock: its time limit and the user's waits.
     clock = DEFAULT_CLOCK
 }) {
     const port = asModelPort(model);
     const now = () => clock.now();
+    const verify = verification || createVerification({ offered: [] });
     const {
         maxRounds, maxCallsPerRound, toolTimeoutMs, maxTurnMs, resultCharBudget, turnCharBudget, maxQuestions,
-        stallMs, requestMaxMs, maxNoProgressRounds, maxEvidenceGates
+        stallMs, requestMaxMs, maxNoProgressRounds
     } = { ...DEFAULT_LIMITS, ...limits };
-    // The turn's referable results, its steps, and the evidence gate's state.
-    const references = createReferenceStore({ context: referenceContext });
-    const stepLog = [];
-    const gatesFired = new Set();
-    const gates = [];
-    const ranCalls = () => stepLog.filter((step) => step.executed && !step.error && !step.interactive && !step.reading && !step.view)
-        .map((step) => ({ name: step.name, args: step.args }));
-    // The last answer the gate sent back: it stands if no other comes.
-    let withdrawn = null;
-    // The turn's end: references filled, then the checks on the filled
-    // answer (and its missing evidence), then the verdict from the checks —
-    // the model's own grade never decides.
-    const finish = (text, stoppedBy, cut) => {
-        const filled = fillReferences(text, references);
-        const answer = filled.text;
-        const findings = [
-            ...audit(answer),
-            ...(filled.unknown.length ? [{
-                rule: 'reference',
-                text: `The answer cites ${filled.unknown.map((name) => `{{${name}}}`).join(', ')}, which `
-                    + `${filled.unknown.length === 1 ? 'names' : 'name'} no value this question's analyses returned: those numbers are missing.`
-            }] : []),
-            // With tools off (or unsupported) too: a conclusion no analysis
-            // backs is not verified, whether or not one could have run.
-            ...(evidence ? evidence.unmet(answer, ranCalls()).map((rule) => ({
-                rule: 'evidence',
-                id: rule.id,
-                missing: rule.missing,
-                text: `The answer concludes ${rule.what}, but ${rule.missing.join(', ')} did not run in this question.`
-            })) : [])
-        ];
-        const outcome = computeOutcome({ text: answer, steps: stepLog, findings, stoppedBy, cut, modelOutcome: parseOutcome(answer) });
-        return {
-            type: 'done',
-            text: answer,
-            ...(answer !== text ? { rawText: text } : {}),
-            outcome,
-            rounds,
-            stoppedBy,
-            cut,
-            audit: findings,
-            references: { written: filled.written, filled: filled.filled, unknown: filled.unknown },
-            gates
-        };
-    };
     let noProgressRounds = 0;
     let stalled = false;
     let emptyNudges = 0;
@@ -293,9 +249,6 @@ export async function* runCopilotTurn({
     // Time spent waiting for the user's answers, which the turn limit skips.
     let waitedMs = 0;
     let questions = 0;
-    // The tools' facts this question, for the answer check.
-    const facts = [];
-    const audit = (answer) => auditAnswer(answer, { facts, context: auditContext });
     const available = toolsEnabled ? usableTools(tools) : [];
     const byName = new Map(available.map((tool) => [tool.name, tool]));
     const requestTools = available.length ? toRequestTools(available) : null;
@@ -471,59 +424,53 @@ export async function* runCopilotTurn({
                 continue;
             }
             const stoppedBy = finalRound ? (stalled ? 'no_progress' : 'max_rounds') : 'answer';
-            if (!text.trim()) {
-                // An answer the evidence gate sent back is not lost when the
-                // model then writes nothing: it stands, with its finding.
-                if (withdrawn) {
-                    yield finish(withdrawn, stoppedBy, cut);
-                    return;
-                }
-                // A last round that came back as tool calls only (a provider
-                // that does not honour tool_choice 'none'), or with nothing
-                // after its reminder: say so instead of ending on nothing.
-                if (finalRound) {
-                    const final = stalled ? EMPTY_STALLED : EMPTY_FINAL;
-                    yield { type: 'text', delta: final };
-                    yield {
-                        type: 'done',
-                        text: final,
-                        outcome: {
-                            status: 'not achieved',
-                            note: stalled ? 'the analyses stopped adding anything new and no answer was written' : 'no answer was written within the analysis budget',
-                            body: final
-                        },
-                        rounds,
-                        stoppedBy,
-                        cut,
-                        audit: []
-                    };
-                } else {
-                    yield {
-                        type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut, audit: [],
-                        reason: EMPTY_REASONS[emptyWhy]
-                    };
-                }
-                return;
-            }
-            // The evidence gate, on the answer as it will read (references
-            // filled): a conclusion whose analysis did not run goes back to the
-            // model, once per rule, while tools can still run in the next round.
-            const turnTimeLeft = !(rounds > 0 && now() - startedAt - waitedMs > maxTurnMs);
-            const gate = evidence && useTools && !finalRound && turnTimeLeft && gates.length < maxEvidenceGates
-                ? evidence.check(fillReferences(text, references).text, { ran: ranCalls(), fired: gatesFired })
-                : null;
-            if (gate) {
-                gatesFired.add(gate.id);
-                gates.push({ round: rounds, id: gate.id, missing: gate.missing });
-                withdrawn = text;
-                yield { type: 'gate', id: gate.id, what: gate.what, missing: gate.missing, notice: gate.notice, text };
+            // The verification judges the answer as it will read (references
+            // filled): a conclusion whose analysis did not run goes back to
+            // the model, once per claim, while tools can still run in the next
+            // round; otherwise the turn ends on its `done`. No answer: the one
+            // the gate sent back stands, if any, with its finding.
+            const answered = Boolean(text.trim());
+            const turnTimeLeft = answered && !(rounds > 0 && now() - startedAt - waitedMs > maxTurnMs);
+            const verdict = verify.judge(text, { canSendBack: useTools && !finalRound && turnTimeLeft, rounds, stoppedBy, cut });
+            if (verdict?.sendBack) {
+                const { id, what, missing, notice, nudge } = verdict.sendBack;
+                yield { type: 'gate', id, what, missing, notice, text };
                 yield { type: 'retract' };
                 messages.push({ role: 'assistant', content: assistantContent(text) });
-                messages.push({ role: 'user', content: gate.nudge });
+                messages.push({ role: 'user', content: nudge });
                 why = 'gate';
                 continue;
             }
-            yield finish(text, stoppedBy, cut);
+            if (verdict) {
+                yield verdict.done;
+                return;
+            }
+            // No answer, and none standing. A last round that came back as
+            // tool calls only (a provider that does not honour tool_choice
+            // 'none'), or with nothing after its reminder: say so instead of
+            // ending on nothing.
+            if (finalRound) {
+                const final = stalled ? EMPTY_STALLED : EMPTY_FINAL;
+                yield { type: 'text', delta: final };
+                yield {
+                    type: 'done',
+                    text: final,
+                    outcome: {
+                        status: 'not achieved',
+                        note: stalled ? 'the analyses stopped adding anything new and no answer was written' : 'no answer was written within the analysis budget',
+                        body: final
+                    },
+                    rounds,
+                    stoppedBy,
+                    cut,
+                    audit: []
+                };
+            } else {
+                yield {
+                    type: 'done', text: '', outcome: null, rounds, stoppedBy: 'empty', cut, audit: [],
+                    reason: EMPTY_REASONS[emptyWhy]
+                };
+            }
             return;
         }
 
@@ -651,18 +598,16 @@ export async function* runCopilotTurn({
             if (appNote) note = note ? `${appNote}; ${note}` : appNote;
             if (answered || (!result.error && !cached)) progressed = true;
 
-            if (result.facts && !result.error) facts.push(result.facts);
             if (!tool?.keep) toolMessages.push(messages.length);
             const budget = Number.isFinite(tool?.resultBudget) && tool.resultBudget > 0 ? tool.resultBudget : resultCharBudget;
-            // A result the model can quote by reference: its ref, kept with
-            // the data it was sent.
-            const ref = result.error ? null : `r${references.size() + 1}`;
-            const sent = toolMessageContent({ ...result, note }, budget, ref);
-            if (ref) references.put(ref, sent.data);
-            stepLog.push({
+            // The step, recorded with the verification: a result the model
+            // can quote by reference gets its ref, kept with the data it was
+            // sent; its facts are for the checks on the answer.
+            const sent = verify.record({
                 name: call.name, args: result.args, status: stepStatus(result), error: result.error || null,
-                interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view), executed, ref
-            });
+                interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view), executed,
+                facts: result.facts
+            }, (ref) => toolMessageContent({ ...result, note }, budget, ref));
             messages.push({ role: 'tool', tool_call_id: call.id, content: sent.content });
             keepWithinTurnBudget(roundStart);
             yield {
@@ -677,7 +622,8 @@ export async function* runCopilotTurn({
                 error: result.error,
                 ms: result.ms,
                 cached,
-                ref,
+                ref: sent.ref,
+                analysis: sent.analysis,
                 pageParams: result.error ? null : pageParamsFor(tool, result.args)
             };
         }
