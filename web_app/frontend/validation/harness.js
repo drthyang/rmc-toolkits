@@ -49,6 +49,12 @@
 // cap, the context guard's decisions, the final round's tool_choice form),
 // and each request the num_ctx Ollama was sent. validation/run.js runs the
 // pre-run check (runPolicy.js preflight) and passes what it read as `server`.
+//
+// The model port (protocol 2026-10-19.7; src/llm/provider/model.js): each
+// request in `requests` is the request as sent with the context guard's plan
+// (`sent.plan`: the server kind, Ollama's numCtx / numPredict, LM Studio's
+// loaded context, the tool choice's form); a request the guard refuses is
+// never sent, has no entry, and the run's `error` is the ContextLimitError.
 
 import { ASK_USER } from '../src/llm/copilot/askUser';
 import { READ_SKILL } from '../src/llm/copilot/skills';
@@ -75,8 +81,12 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // context as shown, every request recorded;
 // 2026-10-19.5: the run policy — an LM Studio model runs only when loaded
 // with at least 48k, checked before every run; the record keeps the policy
-// and the window it ran under; what the model is sent is unchanged).
-export const PROTOCOL_VERSION = '2026-10-19.5';
+// and the window it ran under; what the model is sent is unchanged;
+// 2026-10-19.7: the model port — an Ollama run's final request carries no
+// tools (tool_choice 'none' enforced; the native API has none), each request
+// as sent keeps the context guard's plan, and a request the guard refuses is
+// not recorded as sent; .6 is #87's, stacked beside this one on the run policy).
+export const PROTOCOL_VERSION = '2026-10-19.7';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },
@@ -123,13 +133,13 @@ export const contextRecord = (context) => ({
  * is `{ files, references, load }` as copilotSkills.js gives the app (read in
  * arm B only). `view` (merged over HARNESS_VIEW) and `pcaTable` set what is
  * "on screen" (runFolder.js loadRun); the defaults change nothing. `server`
- * is what the pre-run check read (runPolicy.js preflight; null: not read) and
- * `contextUsed` the num_ctx log of runPolicy.js observeContext over `port`:
- * both go into the record's run policy.
+ * is what the pre-run check read (runPolicy.js preflight; null: not read): it
+ * goes into the record's run policy, with the num_ctx each request was sent
+ * (read from the context guard's plan in the request as sent).
  */
 export const runLiveCase = async ({
     built, arm, model, runIndex = 0, port, skills = null, commit = null, limits = {}, signal = null, now = () => Date.now(),
-    view = HARNESS_VIEW, pcaTable = false, server = null, contextUsed = null
+    view = HARNESS_VIEW, pcaTable = false, server = null
 }) => {
     if (!ARMS[arm]) throw new Error(`unknown arm '${arm}' (B or C)`);
     const startedAt = now();
@@ -249,20 +259,19 @@ export const runLiveCase = async ({
             record.error = { name: failure?.name || 'Error', message: failure?.message || String(failure) };
             if (failure?.name === 'SpendCapError') {
                 record.finished_at = new Date(now()).toISOString();
-                throw Object.assign(failure, { record: finishRecord(record, built, shown, asked, startedAt, now, contextUsed) });
+                throw Object.assign(failure, { record: finishRecord(record, built, shown, asked, startedAt, now) });
             }
         }
     }
-    return finishRecord(record, built, shown, asked, startedAt, now, contextUsed);
+    return finishRecord(record, built, shown, asked, startedAt, now);
 };
 
-// `shown` is the run context as the model read it (trimmed to its budget);
-// `contextUsed` the num_ctx log of the observed port, or null.
-const finishRecord = (record, built, shown, asked, startedAt, now, contextUsed) => {
+// `shown` is the run context as the model read it (trimmed to its budget).
+const finishRecord = (record, built, shown, asked, startedAt, now) => {
     record.finished_at = new Date(now()).toISOString();
     record.wall_ms = now() - startedAt;
     record.questions = asked;
-    noteContextUsed(record, contextUsed);
+    noteContextUsed(record);
     const text = record.final?.text || '';
     const { verdict, error } = parseVerdict(text);
     record.verdict = verdict;

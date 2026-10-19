@@ -266,11 +266,16 @@ describe('the harness on the turn module: what changed', () => {
     });
 
     it('2. a model that refuses tools gets the no-tools prompt, as in the dock', async () => {
-        const port = (sent) => (async function* stream() {
-            if (sent.tools) throw Object.assign(new Error('scripted does not support tools'), { status: 400 });
-            yield { content: ANSWER };
-            yield { finishReason: 'stop' };
-        }());
+        // The provider's HTTP 400; the port (providerModel) reads it as a
+        // ToolsUnsupportedError, the type the loop falls back on.
+        provider.replies = [
+            () => (async function* stream() {
+                yield* [];
+                throw Object.assign(new Error('HTTP 400: scripted does not support tools'), { status: 400, body: { error: 'scripted does not support tools' } });
+            }()),
+            { text: ANSWER }
+        ];
+        const port = providerModel(MODEL, { session: {} });
         const record = await runLiveCase({ built: built('dev-offcentre'), arm: 'C', model: MODEL, port });
         expect(record.tools_unsupported).toMatch(/does not support tools/);
         expect(record.requests.map((request) => request.why)).toEqual(['first', 'no_tools']);

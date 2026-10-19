@@ -11,10 +11,11 @@
 //   - what a record, its transcript and the report gain: the policy, the
 //     window the run ran under (LM Studio's loaded context before and after,
 //     the num_ctx each Ollama request was sent), and the columns side by side;
-//   - the scripted check of the final round: what each provider adapter
-//     sends today for tool_choice 'none' (FINAL_ROUND_FORMS). Acceptance by
-//     each provider is not testable without a live call; the doc says which
-//     forms are known to be honoured.
+//   - the scripted check of the final round: what the model port sends each
+//     provider for tool_choice 'none' (FINAL_ROUND_FORMS): the field beside
+//     the tools on the OpenAI-compatible servers, no tools on Ollama (since
+//     protocol 2026-10-19.7). Acceptance of the field by each provider is not
+//     testable without a live call; the doc says which are known to honour it.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LIMITS, runCopilotTurn } from '../../src/llm/copilot/agentLoop';
@@ -278,6 +279,10 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         expect(sent).toHaveLength(2);
         expect(sent.every((value) => value >= guard.MIN_CONTEXT && value % guard.CONTEXT_STEP === 0)).toBe(true);
         expect(record.requests.map((request) => request.num_ctx)).toEqual(sent);
+        // Read from the guard's plan, in each request as sent (the model port's prepare).
+        expect(record.requests.map((request) => request.sent.plan)).toEqual(chats.map((chat) => expect.objectContaining({
+            server: 'ollama', version: '0.40.2', numCtx: chat.body.options.num_ctx, numPredict: chat.body.options.num_predict, maxContext: 262144
+        })));
         expect(record.policy.context).toMatchObject({
             min_tokens: null, loaded_tokens: null, model_max_tokens: 262144, num_ctx_used: [...new Set(sent)]
         });
@@ -286,6 +291,16 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         // num_predict keeps the reply inside the num_ctx asked for.
         expect(chats.every((chat) => chat.body.options.num_predict < chat.body.options.num_ctx)).toBe(true);
         expect(renderTranscript(record)).toContain(`- Server: Ollama 0.40.2 · context window: num_ctx ${[...new Set(sent)].map((value) => value.toLocaleString('en-US')).join(' → ')} (sized per request; the model holds 262,144)`);
+    });
+
+    it('Ollama, a model that cannot hold the turn: the guard refuses in prepare, so no request is recorded; the run\'s error is the guard\'s', async () => {
+        const { chats } = fakeServer({ kind: 'ollama', id: 'gemma4:26b', loaded: null, max: 8192, replies: [{ text: ANSWER }] });
+        const model = gemma();
+        const record = await liveRun({ built: built('dev-offcentre'), arm: 'C', model, runIndex: 0, base: providerModel(model, { session: {} }) });
+        expect(chats).toEqual([]);
+        expect(record.requests).toEqual([]);
+        expect(record.error).toMatchObject({ name: 'ContextLimitError', message: expect.stringMatching(/but gemma4:26b holds at most 8,192\. .* Nothing was sent/) });
+        expect(record.policy.context.num_ctx_used).toEqual([]);
     });
 
     it('the report sets two columns\' policies side by side and flags limits that differ', async () => {
@@ -298,7 +313,12 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
         const session = {};
         const b = await liveRun({ built: built('dev-offcentre'), arm: 'C', model: ollama, runIndex: 0, base: providerModel(ollama, { session }), session, limits: { maxRounds: 3 } });
         const report = renderReport([a, b]);
-        expect(report).toMatch(/\| gemma4:26b · C \| Ollama 0\.40\.2 \| num_ctx [\d,]+, sized per request \(the model holds 262,144\) \| num_ctx minus the prompt estimate, per request \| no tool_choice \(tools sent\) \| 0\.2 \(retry ≥ 0\.6\) \| 3 rounds × 4 calls/);
+        expect(report).toMatch(/\| gemma4:26b · C \| Ollama 0\.40\.2 \| num_ctx [\d,]+, sized per request \(the model holds 262,144\) \| num_ctx minus the prompt estimate, per request \| no tools sent \| 0\.2 \(retry ≥ 0\.6\) \| 3 rounds × 4 calls/);
+        expect(renderTranscript(b)).toContain('· final round: no tools sent (the native API has no tool_choice)');
+        // An Ollama record from before protocol 2026-10-19.7 keeps its own form.
+        const before = { ...b, policy: { ...b.policy, final_round: { tool_choice: null, tools: 'sent', how: 'not sent' } } };
+        expect(renderReport([before])).toMatch(/\| no tool_choice \(tools sent\) \|/);
+        expect(renderTranscript(before)).toContain('· final round: no tool_choice, tools still sent');
         expect(report).toMatch(/\| qwen3\.8-27b · C \| LM Studio \| 65,536 loaded \(minimum 49,152\) \|/);
         expect(report).toContain('**Not the same in every run: the limits.**');
         // A record from before the policy is shown as such, not dropped.
@@ -312,9 +332,12 @@ describe('a live run under the policy (run.js liveRun, fake servers)', () => {
 // The scripted check of plan item 1.2: what the final round (the analysis
 // budget used: the loop's tool_choice 'none') sends, through the production
 // port (providerModel → streamCopilotChat → client.js / ollama.js) to each
-// provider preset. It records today's forms; changing one is the model
-// port's job (plan candidate 3).
-describe('the final round\'s tool_choice \'none\', as each provider adapter sends it today', () => {
+// provider preset. The model port decides the form (provider/model.js
+// toolChoiceForm): the field beside the tools on the OpenAI-compatible
+// servers; on Ollama, whose native API has no tool_choice, no tools (since
+// protocol 2026-10-19.7: before it, the tools were still offered and a final
+// reply could come back as calls only).
+describe('the final round\'s tool_choice \'none\', as the model port sends it to each provider', () => {
     const echo = {
         name: 'echo',
         description: 'Echo the value.',
@@ -323,38 +346,48 @@ describe('the final round\'s tool_choice \'none\', as each provider adapter send
     };
     const KINDS = { ollama: 'ollama', lmstudio: 'lmstudio', openai: 'cloud', gemini: 'cloud', anthropic: 'cloud' };
 
-    // What each preset was sent in the first and the final round.
+    // What each preset was sent in the first and the final round, and the
+    // form each request as sent names (its plan).
     const sentForms = async (preset) => {
         const kind = KINDS[preset.id];
         const { chats, calls } = fakeServer({ kind, id: 'm', loaded: 49152, replies: [{ call: ['echo', { value: 1 }] }, { text: 'Done.' }] });
         const port = providerModel({ baseUrl: preset.baseUrl, model: 'm', temperature: 0.2, apiKey: preset.cloud ? 'test-key' : '' }, { session: {} });
         const whys = [];
+        const forms = [];
         for await (const event of runCopilotTurn({
             model: port, messages: [{ role: 'system', content: 'Rules.' }, { role: 'user', content: 'Echo 1.' }], tools: [echo], limits: { maxRounds: 1 }
         })) {
-            if (event.type === 'request') whys.push(event.why);
+            if (event.type === 'request') {
+                whys.push(event.why);
+                forms.push(event.sent.plan.toolChoice);
+            }
             if (event.type === 'tool_end') expect(event.error).toBeFalsy();
+            if (event.type === 'done') expect(event.text).toBe('Done.');
         }
         const form = (body) => ({ tool_choice: body.tool_choice ?? null, tools: Array.isArray(body.tools) && body.tools.length ? 'sent' : 'not sent' });
-        return { whys, chats, calls, first: form(chats[0].body), final: form(chats[1].body) };
+        return { whys, forms, chats, calls, first: form(chats[0].body), final: form(chats[1].body) };
     };
 
     it.each(PROVIDER_PRESETS.map((preset) => [preset.label, preset]))('%s', async (_, preset) => {
-        const { whys, chats, calls, first, final } = await sentForms(preset);
+        const { whys, forms, chats, calls, first, final } = await sentForms(preset);
         expect(whys).toEqual(['first', 'final']);
         const kind = { ollama: 'ollama', lmstudio: 'lmstudio' }[preset.id] ?? 'openai';
         // The final round's form is the policy's, for the kind the guard detects.
         expect(final).toEqual({ tool_choice: FINAL_ROUND_FORMS[kind].tool_choice, tools: FINAL_ROUND_FORMS[kind].tools });
         if (kind === 'ollama') {
-            // The native API: no tool_choice in any round; the tools are still offered.
+            // The native API: no tool_choice in any round; the tools offered in
+            // the first request, none in the final one (the model cannot call one).
             expect(chats.map((chat) => chat.url)).toEqual(['http://localhost:11434/api/chat', 'http://localhost:11434/api/chat']);
             expect(first).toEqual({ tool_choice: null, tools: 'sent' });
+            expect(final).toEqual({ tool_choice: null, tools: 'not sent' });
             expect(chats.every((chat) => !('tool_choice' in chat.body))).toBe(true);
+            expect(forms).toEqual(['omitted', 'tools_withheld']);
         } else {
             expect(chats.map((chat) => chat.url)).toEqual([`${preset.baseUrl}/chat/completions`, `${preset.baseUrl}/chat/completions`]);
             expect(first).toEqual({ tool_choice: 'auto', tools: 'sent' });
-            // The string form, beside the tools that are still sent.
+            // The string form, beside the tools that are still sent: the body as before.
             expect(chats[1].body.tool_choice).toBe('none');
+            expect(forms).toEqual(['body', 'body']);
         }
         // A cloud provider is never probed: only its chat endpoint is called.
         if (preset.cloud) expect(calls.map((call) => call.url)).toEqual(chats.map((chat) => chat.url));

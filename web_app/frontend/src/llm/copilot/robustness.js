@@ -9,6 +9,8 @@
 //
 //   - withDeadlines: a model reply that stalls (nothing for `stallMs`) or runs
 //     past `maxMs` is cancelled and explained, never waited on forever;
+//     beforeStall: so is a request whose preparation (the server probes)
+//     hangs;
 //   - repeatsItself: a reply (or its reasoning) caught in a loop, writing the
 //     same passage again and again, is stopped early instead of running until
 //     the context is full;
@@ -33,6 +35,32 @@ export class ModelTimeoutError extends Error {
         this.ms = ms;
     }
 }
+
+/**
+ * A request's preparation (the model port's prepare: the server probes and
+ * the context guard's plan) under the stall clock: unsettled after
+ * `stallMs`, it calls `cancel()` (which should abort the request) and rejects
+ * with a ModelTimeoutError, as a reply that sends nothing does.
+ */
+export const beforeStall = async (preparing, { stallMs, cancel = null }) => {
+    if (!Number.isFinite(stallMs)) return preparing;
+    let timer = null;
+    try {
+        return await Promise.race([
+            preparing,
+            new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                    // The timeout settles the race first; the cancelled
+                    // preparation's own AbortError comes after it, unseen.
+                    reject(new ModelTimeoutError('stall', stallMs));
+                    cancel?.();
+                }, stallMs);
+            })
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+};
 
 /**
  * Iterate `stream` (an async iterator of model fragments) under two clocks:
