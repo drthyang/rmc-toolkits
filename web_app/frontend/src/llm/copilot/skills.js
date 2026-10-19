@@ -131,6 +131,8 @@ export const buildReadSkillTool = (skills, { load = null } = {}) => {
             },
             required: ['name']
         },
+        // The skill's text, or (with `reference`) that reference's text.
+        dataShape: { skill: 'string', 'reference?': 'string', text: 'string' },
         label: ({ name, reference }) => (reference ? `Reading ${name}: ${reference}` : `Reading the ${name} skill`),
         run: async ({ name, reference }) => {
             const skill = byName.get(name);
