@@ -357,8 +357,10 @@ the cluster's sites split by `isSplitSite`) instead of arm A's split site (a pro
 narrower edge spread; collective breathing no longer blocks it (the edge spread is read against the
 shape null, which keeps each cluster's breathing). On the dev set every score and every claim is
 unchanged (the `arms.test.js` pins hold); only the ten A+ records' cluster and modulation readings
-change, from the tool's sentences to the engines' answers. Only a held-out case would exercise the
-rule changes; the test set was not run, and its A+ records are re-recorded at the freeze. Approved
+change, from the tool's sentences to the engines' answers; they are re-recorded in
+`arm-a-dev.json` (at 3f90a80; the A and D records stay as recorded). Only a held-out case would
+exercise the rule changes; the test set was not run, and its A+ records are re-recorded at the
+freeze. Approved
 by the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-engine-verdicts.json`).
 
 ## Records, transcripts, findings
@@ -604,7 +606,8 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 `npx vite-node validation/run.js -- arm-a --split dev` (and `--split test --final`). Records:
 `validation/baseline/arm-a-{dev,test}.json` (re-recorded after batch 1 at commit 5780c50, below;
 the 2026-10-14 records are in git at b4fe09f; the test records again at 4ab9eab for protocol
-2026-10-19.2, with the same scores).
+2026-10-19.2, with the same scores; the dev A+ records again at 3f90a80 for the engine verdicts,
+their cluster and modulation readings only, with the same scores and claims).
 
 | Kind | A dev / test | A+ dev / test | Where the default analyses mislead |
 | --- | --- | --- | --- |

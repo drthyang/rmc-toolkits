@@ -33,5 +33,6 @@
   its own: trigonality counts for tetrahedra; rigidity defers to the engine's split member sites
   (not arm A's split site) and to a pattern beside a narrower edge spread, and collective
   breathing no longer blocks it. On the dev set every score and claim is unchanged; only its
-  cluster and modulation readings change. Only a held-out case would exercise the rule changes.
+  cluster and modulation readings change (the ten dev A+ records, re-recorded in
+  `validation/baseline/arm-a-dev.json`). Only a held-out case would exercise the rule changes.
   Approved by the manager on the user's delegation, 2026-10-19.
