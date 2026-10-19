@@ -22,7 +22,12 @@ anisotropic Gaussian is thermal motion. A split g(r) shell counts only when the 
 has no distances that far apart, and an off-centred centre explains its own split shell.
 
 The live arms leave out the view tools, which need a screen. The simulated user skips every
-question, so the model uses its stated default and no truth reaches it except through the tools.
+question, so the model uses its stated default. The model is told nothing about the case: every
+case is loaded as the same run, `rmc_run`, with files `rmc_run.rmc6f` and
+`rmc_run_PDFpartials.csv` (`runFolder.js` `RUN_NAME`), because the run name reaches the model in
+its context (`"run": "rmc_run"`) and a case id names the case's kind. The record keeps the case
+id; the model never sees the record. So no truth reaches the model except through the tools
+(checked by `caseBlind.test.js`, below).
 
 ## Cases
 
@@ -30,7 +35,8 @@ Nine kinds, each a **dev** case (for improving tools and skills) and a held-out 
 reported numbers only): the same physics with other elements, directions, magnitudes or
 structures. Each case is an `.rmc6f` supercell (reference sites and cell indices; coordinates
 wrapped into [0, 1) as RMCProfile writes them) with its partial g(r). `run.js write` saves each as
-a run folder the Workbench opens.
+`<out>/<case>/rmc_run/`, a run folder the Workbench opens, named as the harness names every run
+(the Workbench names a run after its folder), with the truth beside it in `<out>/<case>/truth.json`.
 
 | Kind | Planted (dev / test) | The trap |
 | --- | --- | --- |
@@ -172,6 +178,13 @@ and the computed verdict, exactly as the app does. The case score is unchanged; 
 reported beside it (`report.js`: one more table per split) and in each transcript (the answers the
 gate sent back, the answer as written and as filled, the computed outcome with its reasons).
 
+**Protocol 2026-10-19.1 (the case-id leak).** Until this version the harness named each run, and
+its `.rmc6f` and partials files, after the case id. The run name reaches the model as the
+context's `run`, in the first message, so every arm B and C run was told its case kind
+(`"run": "dev-zone-boundary"`). Runs are now named `rmc_run`, the same for every case. Live runs
+under an earlier protocol, if any, are not comparable with later ones and must be run again. Arms
+A, A+ and D have no model and are unaffected; their records keep protocol 2026-10-17.1.
+
 ## Records, transcripts, findings
 
 Each live run writes:
@@ -294,6 +307,19 @@ folder, with no model and no network:
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note).
+
+Beside them, `caseBlind.test.js` (no snapshot file) checks that the harness tells the model nothing
+about the case:
+- the first request on every case, dev and test, in arms B and C, names no case id in any spelling
+  (dashes, underscores, spaces, any case);
+- no case kind, and no multi-word case id without its split ("cell-wrap"), appears in that
+  request's run-specific parts: the context, the question past the fixed case question, the request
+  fields, and every tool string that is not the same in every case. The fixed text (the system
+  prompt, the verdict format, the tool names and descriptions) names kinds of order on purpose;
+- with every tool the harness offers called once on each dev case (every section, pair, element
+  and skill it lists), no request of the turn and no tool result names the case id.
+
+It reads only each case's id and kind, never a test case's parameters or truth.
 
 A change to any of these files is a change to what the model sees: say so in the PR, and bump
 `PROTOCOL_VERSION` when it changes what a run means. Refresh them with

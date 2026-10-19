@@ -18,6 +18,19 @@ Chronological record of notable changes, newest first. For current architecture 
   and pinned line by line. Both lists are in
   [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan) (plan item 1.5).
 
+### Copilot validation: the harness no longer tells the model the case kind
+
+- The harness named each run, and its `.rmc6f` and partials files, after the case id, and the
+  run name reaches the model in its context (`"run": "dev-offcentre"`): every arm B and C run was
+  told its case kind. Every case is now the run `rmc_run` (`validation/runFolder.js` `RUN_NAME`,
+  `RUN_FILES`); the record keeps the case id. `run.js write` saves each case's run folder as
+  `<out>/<case>/rmc_run/`, with `truth.json` beside it rather than in it.
+- `PROTOCOL_VERSION` 2026-10-19.1: live runs under an earlier protocol, if any, are not comparable.
+  Arms A and A+ are unchanged. The model-visible snapshot changes in one line, the context's `run`.
+- `src/__tests__/modelVisible/caseBlind.test.js`: no case id or kind in the harness's first
+  request on any case (dev and test, arms B and C), and no case id in any tool result on the dev
+  cases ([copilot-validation.md](algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
+
 ### Tests: generated goldens at the orientation and site seams
 
 - The displacement-direction engine and its JS port are held to one generated golden instead of

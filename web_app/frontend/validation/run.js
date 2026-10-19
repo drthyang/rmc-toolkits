@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { streamCopilotChat } from '../src/llm/provider/contextGuard';
 import { buildCase, casesOf } from './cases';
-import { loadRun } from './runFolder';
+import { loadRun, RUN_FILES, RUN_NAME } from './runFolder';
 import { runArmA, runArmSweep } from './armA';
 import { scoreVerdict } from './scoring';
 import { truthVerdict } from './verdict';
@@ -101,17 +101,21 @@ export const loadSkills = () => {
 };
 
 const commands = {
-    // Each case as a run folder the Workbench opens (Choose folder), plus its truth.
+    // Each case as <out>/<case>/rmc_run/, the run folder the Workbench opens
+    // (Choose folder), named as the harness names every run: the Workbench
+    // names a run after its folder, and a case id names the case's kind. The
+    // truth sits beside the folder (<out>/<case>/truth.json), not in it.
     write: async (args) => {
         const out = resolve(args.out || 'validation/cases-out');
         for (const item of selectCases(args.split || 'dev', args.cases)) {
             const built = buildCase(item);
             const dir = join(out, built.id);
-            mkdirSync(dir, { recursive: true });
-            writeFileSync(join(dir, built.rmc6fName), built.rmc6f);
-            writeFileSync(join(dir, built.partialsName), built.partials);
+            const runDir = join(dir, RUN_NAME);
+            mkdirSync(runDir, { recursive: true });
+            writeFileSync(join(runDir, RUN_FILES.rmc6f), built.rmc6f);
+            writeFileSync(join(runDir, RUN_FILES.partials), built.partials);
             writeFileSync(join(dir, 'truth.json'), `${JSON.stringify({ id: built.id, split: built.split, question: built.question, truth: built.truth }, null, 1)}\n`);
-            console.log(`wrote ${dir}`);
+            console.log(`wrote ${runDir} (truth: ${join(dir, 'truth.json')})`);
         }
     },
 
