@@ -42,6 +42,10 @@ import { providerModel } from './provider/model';
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const CLOCK = Object.freeze({ now });
 const abortError = () => new DOMException('Aborted', 'AbortError');
+const EMPTY_DESCRIPTION = Object.freeze({
+    offered: Object.freeze({ tools: [], skills: [], askUser: false, view: false }),
+    skillsError: null
+});
 
 /**
  * The conversation's earlier questions as the turn's history: each question
@@ -112,11 +116,17 @@ export const useCopilot = ({
     /** The user's reply to the waiting question: { answer, source, index }. */
     const answerQuestion = useCallback((reply) => questionRef.current?.reply(reply), []);
 
-    // What the Copilot can run on this run, with its analyses on.
-    const description = useMemo(
-        () => describeTurn({ run, tools, askUser, skills, config: { toolsEnabled: true } }),
-        [run, tools, askUser, skills]
-    );
+    // What the Copilot can run on this run, with its analyses on. A host that
+    // hands the turn what it refuses (a tool named ask_user, say) gets the
+    // reason in the error line instead of a broken panel; asking then fails
+    // with the same reason.
+    const description = useMemo(() => {
+        try {
+            return describeTurn({ run, tools, askUser, skills, config: { toolsEnabled: true } });
+        } catch (failure) {
+            return { ...EMPTY_DESCRIPTION, setupError: failure?.message || String(failure) };
+        }
+    }, [run, tools, askUser, skills]);
     const offersTools = description.offered.tools.length > 0;
     const unsupported = unsupportedModels.has(settings.model);
     const toolsOn = toolsEnabled && offersTools && !unsupported;
@@ -206,7 +216,7 @@ export const useCopilot = ({
         turns,
         live,
         busy: Boolean(live),
-        error,
+        error: error ?? description.setupError ?? null,
         ask,
         stop,
         clear,
