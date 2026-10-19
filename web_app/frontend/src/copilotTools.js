@@ -1169,12 +1169,16 @@ export const MODULATION_SENTENCES = {
         no_general_mode: null,
         no_displacements: null
     },
+    // What a pattern is evidence of is inference, method as in the domain
+    // rules (llm copilot/method.js; decided 2026-10-19): arm C's method 'off'
+    // sends the long-wave and in-phase notes without their causal
+    // parenthetical, and with their limit ("not a … superstructure").
     longWave: {
-        long_wave_dominates: ({ element, mode }) => ({
-            level: 'note',
-            text: `${element}'s strongest mode is a long-wavelength wave, q = ${qLabel(mode.q)} at ${round(mode.ratio, 2)}× the median: `
-                + 'box-scale displacement correlations (common in RMC), not a crystallographic superstructure.'
-        }),
+        long_wave_dominates: ({ element, mode }) => methodCheck('note',
+            `${element}'s strongest mode is a long-wavelength wave, q = ${qLabel(mode.q)} at ${round(mode.ratio, 2)}× the median: `
+                + 'box-scale displacement correlations',
+            { method: ' (common in RMC)' },
+            ', not a crystallographic superstructure.'),
         below_ratio: null,
         strongest_not_long_wave: null,
         undefined_statistic: null,
@@ -1191,13 +1195,12 @@ export const MODULATION_SENTENCES = {
                 + `cells, corrected over ${family} elements), the power spread over many q toward the zone boundary with no single mode `
                 + 'standing out — order that alternates between cells over a short range, not a long-range superstructure.'
         }),
-        correlated_in_phase: ({ elements, strongest, diffuse }) => ({
-            level: 'note',
-            text: `${listText(elements)} displacements are correlated in phase between neighbouring cells (${elements.length > 1 ? `the strongest, ${strongest}, ` : ''}`
+        correlated_in_phase: ({ elements, strongest, diffuse }) => methodCheck('note',
+            `${listText(elements)} displacements are correlated in phase between neighbouring cells (${elements.length > 1 ? `the strongest, ${strongest}, ` : ''}`
                 + `${signedText(round(diffuse.correlation, 2))} between cells ${lagLabel(diffuse.lag)} apart, ${sigmaText(diffuse.sigma)} against `
-                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together '
-                + '(as RMC\'s long waves and acoustic-like thermal motion give), not a superstructure.'
-        }),
+                + 'independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together',
+            { method: ' (as RMC\'s long waves and acoustic-like thermal motion give)' },
+            ', not a superstructure.'),
         below_correlation: null,
         below_sigma: null,
         undefined_statistic: null,
