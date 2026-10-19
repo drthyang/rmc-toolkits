@@ -62,8 +62,11 @@ const NO_MARKS = {};
 // `wantAssistantData` (the AI Copilot has been opened) gates `onRunChange`:
 // only then does the page publish its run ({ files, structure, structurePath,
 // hiddenPlots }) for App's Copilot run module (useCopilotRun.js), so before
-// that its parses and Live Data polls do not re-render App.
-const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData = false, onRunChange, cardMarks = NO_MARKS }) => {
+// that its parses and Live Data polls do not re-render App. `dataEpoch` is
+// App's Flask-mode configuration epoch: the structure follows it (below).
+const Dashboard = ({
+    directory, localRun, watchFiles = false, wantAssistantData = false, onRunChange, cardMarks = NO_MARKS, dataEpoch = 0
+}) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
@@ -89,6 +92,11 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     const manuallyToggledPathsRef = useRef(new Set());
     const currentRunIdRef = useRef(null);
     const filesRef = useRef([]);
+    // Every Flask structure request is numbered and only the latest one's
+    // answer is applied: a Live Data poll and a new configuration's re-read in
+    // flight together, or a request for the folder or run that was open
+    // before, never overwrite a newer structure.
+    const structureRequestRef = useRef(0);
 
     useEffect(() => {
         filesRef.current = files;
@@ -97,6 +105,35 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     useEffect(() => {
         structureRef.current = structure;
     }, [structure]);
+
+    // The run's structure from Flask: the Model information card, the Detected
+    // SG card and its CIF (from the response's average-structure basis, as the
+    // browser's structureFromRmc6f gives a picked folder) and, published below,
+    // the Copilot's structure, symmetry and symmetry tools. A silent (Live
+    // Data) re-read that lands mid-write keeps the previous complete model
+    // instead of flashing a short count.
+    const loadServerStructure = useCallback(async ({ silent = false } = {}) => {
+        structureRequestRef.current += 1;
+        const request = structureRequestRef.current;
+        try {
+            const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
+                params: { dir: directory || '.', maxPoints: DASHBOARD_MAX_POINTS }
+            });
+            if (request !== structureRequestRef.current) return;
+            if (silent && structureRef.current && isIncompleteStructure(structureResponse.data)) {
+                setStructureStale(true);
+            } else {
+                setStructure(structureResponse.data);
+                setStructureStale(false);
+            }
+            setStructureError(null);
+        } catch (structureErr) {
+            if (request !== structureRequestRef.current) return;
+            setStructure(null);
+            setStructureStale(false);
+            setStructureError(structureErr.response?.data?.error || 'No model structure detected');
+        }
+    }, [directory]);
 
     const loadServerDashboard = useCallback(async ({ silent = false, loadedFiles: knownFiles = null } = {}) => {
         if (!silent) setLoading(true);
@@ -131,36 +168,36 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
             );
             setMetadata(Object.fromEntries(metadataEntries));
 
-            try {
-                const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
-                    params: { dir: directory || '.', maxPoints: DASHBOARD_MAX_POINTS }
-                });
-                // A silent (Live Data) re-read that lands mid-write keeps the
-                // previous complete model instead of flashing a short count.
-                if (silent && structureRef.current && isIncompleteStructure(structureResponse.data)) {
-                    setStructureStale(true);
-                } else {
-                    setStructure(structureResponse.data);
-                    setStructureStale(false);
-                }
-                setStructureError(null);
-            } catch (structureErr) {
-                setStructure(null);
-                setStructureStale(false);
-                setStructureError(structureErr.response?.data?.error || 'No model structure detected');
-            }
+            await loadServerStructure({ silent });
         } catch (err) {
             setError(err.response?.data?.error || 'Could not list the run folder');
+            structureRequestRef.current += 1;
             setStructure(null);
             setStructureError(null);
         } finally {
             if (!silent) setLoading(false);
         }
-    }, [directory]);
+    }, [directory, loadServerStructure]);
+
+    // Flask mode: App's configuration epoch moves when the run's .rmc6f changes
+    // on disk (seen by a Load of the same folder or a Live Data poll), and the
+    // structure is re-read in place, as the analysis pages re-read theirs. So
+    // the model card, the Detected SG card and the basis the Copilot's
+    // symmetry tools read are the configuration the analysis pages and the
+    // Copilot's Flask analyses read. The plots keep following Live Data.
+    const epochRef = useRef(dataEpoch);
+    useEffect(() => {
+        if (epochRef.current === dataEpoch) return;
+        epochRef.current = dataEpoch;
+        if (localRun || isStaticMode()) return;
+        loadServerStructure({ silent: true });
+    }, [dataEpoch, localRun, loadServerStructure]);
 
     useEffect(() => {
         if (localRun) {
             let cancelled = false;
+            // A server structure still in flight belongs to the folder before.
+            structureRequestRef.current += 1;
             const loadedFiles = localRun.files || [];
             const plotFiles = loadedFiles.filter(isDashboardPlotFile);
             // Live Data sends a new localRun (same runId) when files change. Refresh the existing

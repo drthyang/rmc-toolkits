@@ -76,7 +76,7 @@ function App() {
   const [watchFiles, setWatchFiles] = useState(false);
   // Flask-mode configuration epoch: bumped when the run's .rmc6f changes on disk
   // (see the effect below); the analysis pages take it as `dataEpoch` and
-  // re-read their data in place when it changes.
+  // re-read their data in place when it changes, and the Dashboard its structure.
   const [configEpoch, setConfigEpoch] = useState(0);
   // Bumped by every Load / Select Folder, even of the folder already shown:
   // React skips an unchanged currentDirectory, so this is what makes loading
@@ -272,7 +272,9 @@ function App() {
   // backend fetches, so they re-read everything from the one new file in
   // place — keeping the picks and view settings that still apply, as static
   // mode does when a picked folder's files change (docs/algorithms/notation.md
-  // §3c). A browser-loaded run (Demo, picked folder) is a snapshot and is not
+  // §3c). The Dashboard re-reads its structure on it too (the model card, the
+  // Detected SG card, and the basis the Copilot's symmetry tools read), not its
+  // plots. A browser-loaded run (Demo, picked folder) is a snapshot and is not
   // watched here.
   useEffect(() => {
     if (staticMode || localRun) return undefined;
@@ -678,6 +680,7 @@ function App() {
             >
               <IssueScope page="dashboard">
                 <Dashboard
+                  dataEpoch={configEpoch}
                   directory={currentDirectory}
                   localRun={localRun}
                   watchFiles={watchFiles}
