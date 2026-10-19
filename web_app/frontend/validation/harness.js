@@ -141,6 +141,12 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // note included, never a Workbench question's card — so a number only the
 // card held is unsourced, and one only a note or an error held is sourced;
 // what the model is sent is unchanged;
+// 2026-10-19.15: find_gr_peaks gives a shell joined across a deep trough its
+// split by number (plan item 4.2) — each part's coordination number, share
+// and mean distance, and long − short with its sampling error, in
+// first_shell.split, its description and its joined-shell note (which no
+// longer quotes the peaks' separation); arm A+ reads a Jahn–Teller claim's
+// magnitude from it;
 // 2026-10-19.16: the Displacement Directions page and the tool at the same
 // settings (plan item 2.5) — the page opens at the engine's resolution (Auto)
 // and reads every readout from the raw histogram, so arm A (and A+, through

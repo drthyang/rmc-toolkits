@@ -196,6 +196,8 @@ describe('buildRunTools', () => {
         const alone = data.first_shell.first_peak_only;
         expect(alone.cn.Se_per_Ta).toBeGreaterThan(3);
         expect(alone.cn.Se_per_Ta).toBeLessThan(4);
+        // Not joined (no deep trough between the two peaks): no split by number.
+        expect(data.first_shell.split).toBeUndefined();
         expect(checks[0].text).toBe(`The first shell holds 2 peaks (${data.first_shell.peaks_in_shell_A.join(', ')} Å): a split shell, e.g. two `
             + 'bond lengths of one distorted polyhedron. Use first_shell.window_A, not the first peak alone. The first peak alone '
             + `(first_peak_only, to ${alone.window_A[1]} Å) holds ${alone.cn.Se_per_Ta} Se per Ta of the shell's ${data.first_shell.cn.Se_per_Ta}.`);
@@ -219,7 +221,57 @@ describe('buildRunTools', () => {
         expect(data.first_shell.first_peak_only.cn.F_per_Cu).toBeCloseTo(4, 1);
         expect(data.first_shell.first_peak_only.window_A[1]).toBeLessThan(2.2);
         expect(checks.map((check) => check.level)).toEqual(['note', 'ok']);
-        expect(checks[0].text).toMatch(/^One split shell across a deep trough: .* hold 4 F per Cu in the first peak alone .* and 6 together/);
+        expect(checks[0].text).toMatch(/^One split shell across a deep trough: 4 F per Cu at 1\.93 Å \+ 2 at 2\.25 Å \(first_shell\.split\.parts\), 6 together/);
+    });
+
+    it('gives a joined shell its split by number, the parts and long − short by path, and quotes them (plan item 4.2)', async () => {
+        // The CuF6 above: 4 F at 1.93 Å and 2 at 2.25 Å (σ 0.05 Å), 200 Cu.
+        const L = 20;
+        const counts = { Cu: 200, F: 1200 };
+        const x = grid(600, 0.005);
+        const normal = (r, r0, s) => Math.exp(-((r - r0) ** 2) / (2 * s * s)) / (s * Math.sqrt(2 * Math.PI));
+        const toolFor = (shells, elementCounts = counts) => toolMap({
+            structure: { latticeVectors: [[L, 0, 0], [0, L, 0], [0, 0, L]], elementCounts },
+            plotFiles: [{
+                plotKind: 'pdf_partials',
+                plotData: {
+                    series: [{
+                        label: 'Cu-F',
+                        x,
+                        y: x.map((r) => (r > 0 ? shells.reduce((sum, [r0, s, n]) => sum + n * normal(r, r0, s), 0) / (4 * Math.PI * (elementCounts.F / L ** 3) * r * r) : 0))
+                    }]
+                }
+            }]
+        }).find_gr_peaks;
+        const { data, checks } = await toolFor([[1.93, 0.05, 4], [2.25, 0.05, 2]]).run({ pair: 'Cu-F' });
+        const { split } = data.first_shell;
+        expect(split.parts.map((part) => part.window_A)).toEqual([data.first_shell.first_peak_only.window_A, [data.first_shell.first_peak_only.window_A[1], data.first_shell.window_A[1]]]);
+        expect(split.parts.map((part) => part.mean_d_A)).toEqual([1.93, 2.25]);
+        expect(split.parts.map((part) => part.cn)).toEqual([{ F_per_Cu: 4 }, { F_per_Cu: 2 }]);
+        expect(split.parts.map((part) => part.share)).toEqual([0.667, 0.333]);
+        expect(split.parts.map((part) => part.sd_d_A)).toEqual([0.05, 0.05]);
+        expect(split.long_minus_short_A).toBe(0.32);
+        // 0.05 Å over √800 and √400 bonds.
+        expect(split.long_minus_short_se_A).toBeCloseTo(0.05 * Math.sqrt(1 / 800 + 1 / 400), 3);
+        expect(checks[0].text).toBe('One split shell across a deep trough: 4 F per Cu at 1.93 Å + 2 at 2.25 Å (first_shell.split.parts), 6 together, '
+            + 'an ideal polyhedral count: the short and long bonds of one distorted polyhedron (e.g. Jahn–Teller). '
+            + `Long − short 0.32 ± ${split.long_minus_short_se_A} Å (first_shell.split: long_minus_short_A ± long_minus_short_se_A, the configuration's `
+            + 'sampling error); 67 % / 33 % of the shell\'s count. first_shell.window_A holds every part; the first peak alone (first_peak_only, '
+            + `to ${data.first_shell.first_peak_only.window_A[1]} Å) cuts the polyhedron; use it only if the user chooses it.`);
+
+        // 2 + 2 + 2: every part, short to long.
+        const ortho = await toolFor([[1.95, 0.03, 2], [2.12, 0.03, 2], [2.32, 0.03, 2]]).run({ pair: 'Cu-F' });
+        expect(ortho.data.first_shell.split.parts.map((part) => part.mean_d_A)).toEqual([1.95, 2.12, 2.32]);
+        expect(ortho.data.first_shell.split.long_minus_short_A).toBe(0.37);
+        expect(ortho.checks[0].text).toMatch(/^One split shell across a deep trough: 2 F per Cu at 1\.95 Å \+ [\d.]+ at 2\.12 Å \+ 2 at 2\.32 Å .* the 3 bond lengths, short to long, of one distorted polyhedron .* Long − short 0\.37 ± [\d.]+ Å .*; 33 % \/ 33 % \/ 33 % of the shell's count\./);
+
+        // Joined by the reverse count (1 + 0.5 F per Cu; 4 + 2 Cu per F with
+        // Cu four times as dense): the parts are said as Cu per F.
+        const reverse = await toolFor([[1.93, 0.05, 1], [2.25, 0.05, 0.5]], { Cu: 1200, F: 300 }).run({ pair: 'Cu-F' });
+        expect(reverse.data.first_shell.cn).toEqual({ F_per_Cu: 1.5, Cu_per_F: 6 });
+        expect(reverse.data.first_shell.split.parts.map((part) => part.cn)).toEqual([{ Cu_per_F: 4 }, { Cu_per_F: 2 }]);
+        expect(reverse.data.first_shell.split.long_minus_short_A).toBe(0.32);
+        expect(reverse.checks[0].text).toMatch(/^One split shell across a deep trough: 4 Cu per F at 1\.93 Å \+ 2 at 2\.25 Å \(first_shell\.split\.parts\), 6 together/);
     });
 
     it('flags a distribution cut at the closest-approach constraint even when its half-maximum clears it', async () => {
@@ -411,8 +463,9 @@ describe('the run tools\' method advice: arm C reads them without it', () => {
             plotFiles: [{ plotKind: 'pdf_partials', plotData: { series: [{ label: 'Cu-F', x, y }] } }]
         });
         const { checks } = await tool.run({ pair: 'Cu-F' });
-        expect(checks[0].text).toMatch(/The first peak alone \(first_peak_only\) cuts the polyhedron; use it only if the user chooses it\.$/);
+        expect(checks[0].text).toMatch(/the first peak alone \(first_peak_only, to [\d.]+ Å\) cuts the polyhedron; use it only if the user chooses it\.$/);
         expect(checks[0].method).toEqual(['; use it only if the user chooses it']);
-        expect(checkText(checks[0], 'off')).toMatch(/^One split shell across a deep trough: .* \(e\.g\. Jahn–Teller\)\. The first peak alone \(first_peak_only\) cuts the polyhedron\.$/);
+        // The split by number is a reading: arm C keeps it.
+        expect(checkText(checks[0], 'off')).toMatch(/^One split shell across a deep trough: .* \(e\.g\. Jahn–Teller\)\. Long − short 0\.32 ± [\d.]+ Å .* the first peak alone \(first_peak_only, to [\d.]+ Å\) cuts the polyhedron\.$/);
     });
 });

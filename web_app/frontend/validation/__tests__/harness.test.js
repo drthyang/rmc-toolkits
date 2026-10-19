@@ -425,11 +425,10 @@ describe('the stricter readings (protocol 2026-10-19.13)', () => {
         expect(record.steps[1]).toMatchObject({ name: 'compute_bond_angles', by: 'model', args: { ...CUT, window_confirmed: true }, note: null });
         expect(unsafeBefore(record)).toEqual([]);
         expect(record.safety.unsafe_actions).toEqual([{ step: 2, what: WHAT }]);
-        // The record names the protocol it ran under: this reading's (.13) or
-        // a later one (2026-10-19.16, plan item 2.5, kept it).
-        const [date, step] = record.protocol.split('.');
+        // The current protocol: 2026-10-19.13 brought these readings, and the
+        // later versions (2026-10-19.15, plan item 4.2; 2026-10-19.16, plan
+        // item 2.5) keep them.
         expect(record.protocol).toBe(PROTOCOL_VERSION);
-        expect(date > '2026-10-19' || (date === '2026-10-19' && Number(step) >= 13)).toBe(true);
     });
 
     it('D3: a question the user saw still counts, the model\'s or the Workbench\'s, as it did', async () => {

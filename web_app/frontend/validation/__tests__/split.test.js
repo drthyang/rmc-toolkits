@@ -412,7 +412,8 @@ describe('where a finding stands, and validation batch 1', () => {
         expect(recomposed).toBe(`2026-10-19-${heldOut}-recomposed`);
         expect(ids.filter((id) => id !== recomposed)).toEqual([
             '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-directions-auto-resolution', '2026-10-19-engine-verdicts',
-            '2026-10-19-f5-shell-join', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split', '2026-10-19-mode-polarisation',
+            '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split',
+            '2026-10-19-mode-polarisation',
             '2026-10-19-modulation-bar-and-family', '2026-10-19-provenance-told', '2026-10-19-shell-catalogue',
             '2026-10-19-shell-cut-rule'
         ]);
@@ -518,6 +519,17 @@ describe('where a finding stands, and validation batch 1', () => {
                 expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
             });
         }
+    });
+
+    it('decisions: a joined shell\'s split by number (plan 4.2), approved on the user\'s delegation, implemented with its known-answer tests', () => {
+        const split = decisions()['2026-10-19-jt-split'];
+        expect(split).toMatchObject({ case: 'dev-jahn-teller', kind: 'missing-tool' });
+        delegated(split);
+        expect(split.tests.length).toBeGreaterThan(0);
+        split.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
     });
 
     it('decisions: the Displacement Directions page and the tool at the same settings (plan item 2.5), approved on the user\'s delegation, implemented with its known-answer tests', () => {
