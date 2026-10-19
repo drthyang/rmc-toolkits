@@ -111,6 +111,15 @@ describe('no case id or kind reaches the model (validation harness)', () => {
         expect(found).toEqual([]);
     });
 
+    // Since plan item 4.6 the fit-data case (dev-fit-unconverged) offers the
+    // fit tools, so every tool the sweep below calls is offered, and its
+    // results checked, on some dev case.
+    it('the dev cases between them offer every tool the sweep below calls', () => {
+        const offered = (id) => captured.get(id).B.tools.map((tool) => tool.function.name);
+        expect([...new Set(DEV_CASES.flatMap((item) => offered(item.id)))].sort()).toEqual(Object.keys(SWEEP).sort());
+        expect(offered('dev-fit-unconverged')).toEqual(expect.arrayContaining(['assess_convergence', 'compare_fit']));
+    });
+
     it.each(['B', 'C'])('arm %s: the first request names no case id, anywhere', (arm) => {
         const found = [...captured].flatMap(([id, requests]) => findings(id, 'the request', JSON.stringify(requests[arm]), ID_PATTERNS));
         expect(found).toEqual([]);

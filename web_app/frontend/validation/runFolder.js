@@ -18,7 +18,13 @@ import { openRunFolder, readRunFolder } from '../src/openRunFolder';
 export const RUN_NAME = 'rmc_run';
 export const RUN_FILES = Object.freeze({
     rmc6f: `${RUN_NAME}.rmc6f`,
-    partials: `${RUN_NAME}_PDFpartials.csv`
+    partials: `${RUN_NAME}_PDFpartials.csv`,
+    // A case with fit data (built.fitFiles): RMCProfile's X-ray file family,
+    // named as RMCProfile names them, so the run module detects their kinds
+    // (detectPlotKind: xray_sq, xpdf, r_value) as for a user's run.
+    fq: `${RUN_NAME}_FQ1.csv`,
+    gr: `${RUN_NAME}_FT_XFQ1.csv`,
+    log: `${RUN_NAME}-00.log`
 });
 
 /**
@@ -32,11 +38,19 @@ export const HARNESS_VIEW = Object.freeze({ ...DEFAULT_VIEW });
 // time is fixed so nothing about the moment of the run reaches it.
 const entry = (name, text) => ({ path: `${RUN_NAME}/${name}`, file: new File([text], name, { lastModified: 0 }) });
 
-/** The case's run folder: the .rmc6f, and the partial g(r) when the case has one. */
-export const caseEntries = (built) => [
-    entry(RUN_FILES.rmc6f, built.rmc6f),
-    ...(built.partials ? [entry(RUN_FILES.partials, built.partials)] : [])
+/**
+ * The case's run-folder files as `[{ name, text }]`: the .rmc6f, the partial
+ * g(r) when the case has one, and its fit files (F(Q), its Fourier transform
+ * G(r), the χ² log) when it has fit data. `run.js write` should write these.
+ */
+export const caseFiles = (built) => [
+    { name: RUN_FILES.rmc6f, text: built.rmc6f },
+    ...(built.partials ? [{ name: RUN_FILES.partials, text: built.partials }] : []),
+    ...(built.fitFiles ? ['fq', 'gr', 'log'].map((role) => ({ name: RUN_FILES[role], text: built.fitFiles[role] })) : [])
 ];
+
+/** The case's run folder as the browser hands a picked folder to the app (caseFiles). */
+export const caseEntries = (built) => caseFiles(built).map(({ name, text }) => entry(name, text));
 
 /**
  * The case as the Copilot sees it (a CopilotRun: { props, tools, elements,

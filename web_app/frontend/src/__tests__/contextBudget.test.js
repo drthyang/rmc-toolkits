@@ -103,24 +103,27 @@ const DOCK_WORST_TURN_TODAY = Object.freeze({
 // By how much the dock's worst turn overflows the window today.
 const DOCK_OVERFLOW_TOKENS_TODAY = 5757;
 
-// Arm B's first request on each dev case is 9.6k–10.4k tokens; the largest:
-const ARM_B_LARGEST_DEV_CASE = 'dev-symmetry-lowering';
+// Arm B's first request on each dev case is 9.6k–11.1k tokens; the largest,
+// since plan item 4.6, is the fit-data case: its fit tools (assess_convergence,
+// compare_fit) and its sampling, datasets, weights and convergence sections
+// (before it, dev-symmetry-lowering: 10,353 tokens, 35,081 needed, 2,313 over).
+const ARM_B_LARGEST_DEV_CASE = 'dev-fit-unconverged';
 const ARM_B_WORST_TURN_TODAY = Object.freeze({
     systemPrompt: 4422,
-    toolJson: 4002,
-    contextBlock: 1224,
-    question: 707,
+    toolJson: 4535,
+    contextBlock: 1574,
+    question: 610,
     skills: 7814,
     analyses: 8723,
     replyReserve: 8192,
-    firstRequest: 10353,
-    prompt: 26889,
-    needed: 35081,
-    headroom: -2313,
-    lmStudioHeadroom: 1783
+    firstRequest: 11140,
+    prompt: 27676,
+    needed: 35868,
+    headroom: -3100,
+    lmStudioHeadroom: 996
 });
 // By how much arm B's worst turn (largest dev case) overflows the window today.
-const ARM_B_OVERFLOW_TOKENS_TODAY = 2313;
+const ARM_B_OVERFLOW_TOKENS_TODAY = 3100;
 
 // --- the turn ------------------------------------------------------------------------
 
