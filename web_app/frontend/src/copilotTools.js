@@ -1368,10 +1368,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
         tools.push({
             name: 'list_sites',
             description: 'List every reference site of the RMC configuration with its displacement statistics from a '
-                + 'PCA of its displacement cloud: U_iso (Å²), principal RMS amplitudes (Å), anisotropy, Mardia '
-                + 'kurtosis, the excess kurtosis along each resolved principal axis, PC1 as a crystal direction [u v w], '
-                + 'and for a split site (two positions along PC1) its static displacement with its sampling error. Use it '
-                + 'to find the most disordered, anisotropic or anharmonic sites (their `ref`).',
+                + 'PCA of its displacement cloud: U_iso (Å²), principal RMS amplitudes (Å), anisotropy, Mardia and '
+                + 'per-axis kurtosis, PC1 as [u v w], and a split site\'s static displacement (Å) with its sampling error. '
+                + 'Use it to find the most disordered, anisotropic or anharmonic sites (their `ref`).',
             parameters: {
                 type: 'object',
                 properties: {

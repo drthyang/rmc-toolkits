@@ -18,7 +18,9 @@
   0.202 ± 0.0028 and 0.0989 ± 0.0029 Å.
 - Split sites come first in the table, so trimming to the result budget never drops one before
   another site, and a note check names them; the tool's description lists the new fields. What the
-  model sees changes: the `list_sites` result and description snapshots. Arms A and A+ do not read
+  model sees changes: the `list_sites` result and description snapshots. The description adds 38
+  tokens to every request, so the 32k budget test's pins move: the dock's worst turn needs 38,562
+  tokens (5,794 over 32,768) and arm B's 35,119 (2,351 over). Arms A and A+ do not read
   `list_sites`, and their dev records are unchanged. Approved by the manager on the user's
   delegation, 2026-10-19.
 
