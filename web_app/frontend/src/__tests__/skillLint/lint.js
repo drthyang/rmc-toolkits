@@ -163,7 +163,8 @@ const sameValue = (stated, constant) => (Array.isArray(constant)
 const constantNote = (constants) => constants.map(({ name, value, module }) => `${name} = ${JSON.stringify(value)} (${module})`).join(', ');
 
 /**
- * One binding against one flat text: `{ problem, at, end, stated, context }`;
+ * One binding against one flat text: `{ problem, at, end, stated, written,
+ * context }` (`written`: the number as the skill writes it, "60 %", "most");
  * problem null when the sentence states the constant's number (and names the
  * statistic it gates, when the binding says which).
  */
@@ -183,8 +184,12 @@ export const evaluateBinding = (binding, flat) => {
         binding.constants.every(({ value }) => sameValue(stated, value)) ? null : 'differs',
         binding.statistic && !binding.statistic.pattern.test(sentence) ? 'statistic' : null
     ].filter(Boolean);
-    return { problem: problems[0] ?? null, problems, at: numberAt, end, stated, context: sentence };
+    const written = `${match.groups.n}${binding.unit === '%' ? ' %' : ''}`;
+    return { problem: problems[0] ?? null, problems, at: numberAt, end, stated, written, context: sentence };
 };
+
+/** The constants a binding names, as an allow-list entry writes the app's side: "CN_CHANGE_REL = 0.15". */
+export const decidedBy = (constants) => constants.map(({ name, value }) => `${name} = ${JSON.stringify(value)}`).join(', ');
 
 const bindingDetail = (binding, result) => {
     const constants = constantNote(binding.constants);
@@ -281,7 +286,8 @@ export const firmRuleSentences = (flat) => [...flat.matchAll(FIRM_RULE)].map((ma
 
 /**
  * Every finding on the skills: `[{ check, kind, file, line, fragment, context,
- * detail }]` (a value finding also carries `stated` and `measured`). `files`
+ * detail }]` (a value finding also carries `stated` and `measured`, a gate
+ * finding whose number disagrees `stated` and `decided`). `files`
  * maps a repository path (.claude/skills/<name>/<file>.md) to its text;
  * `tools` is the set of tool names the Copilot can offer, `fields` the
  * parameter and field names the model sees; `bindings`, `notGates`,
@@ -321,7 +327,11 @@ export const lintSkills = async ({
         for (const binding of bindings.filter((item) => item.file === file)) {
             const result = evaluateBinding(binding, flat);
             if (result.problem !== 'stale' && result.problem !== 'no-number') covered.push([result.at, result.end]);
-            if (result.problem) add('gate', result.problem, result.at, result.context, bindingDetail(binding, result));
+            // A number that disagrees also says both sides: the skill's as written, the app's constants.
+            const sides = result.problem === 'differs' || result.problem === 'statistic'
+                ? { stated: result.written, decided: decidedBy(binding.constants) }
+                : {};
+            if (result.problem) add('gate', result.problem, result.at, result.context, bindingDetail(binding, result), sides);
         }
         for (const item of notGates.filter((entry) => entry.file === file)) {
             const at = flat.indexOf(item.find);

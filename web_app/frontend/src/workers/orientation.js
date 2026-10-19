@@ -524,6 +524,15 @@ const sphericalPolygonArea = (polygon) => {
     return total;
 };
 
+// Circumscribed angular radius of a cell (radian): the largest angle from its
+// centre to its own vertices, so every direction assigned to the cell lies
+// within it. atan2(|c x v|, c . v) is accurate at every angle; a pentagon's
+// repeated vertex cannot change the maximum. Mirrors `_cell_radii`.
+const cellRadius = (center, polygon) => polygon.reduce(
+    (largest, vertex) => Math.max(largest, Math.atan2(norm(cross(center, vertex)), dot(center, vertex))),
+    0
+);
+
 // Nearest cell centre for one unit direction: gnomonic seed (exact ray/cone
 // face test + largest-remainder lattice rounding) then a greedy walk on the
 // adjacency graph. Mirrors `_assign`.
@@ -672,6 +681,8 @@ export const goldbergTiling = (frequency = 8) => {
         polygons,
         sizes,
         areas,
+        // How finely each cell's centre names a direction (radian).
+        radii: polygons.map((polygon, cell) => cellRadius(centers[cell], polygon)),
         neighbors,
         isPentagon: sizes.map((size) => size === 5),
         faceInverse,
@@ -1063,6 +1074,9 @@ export const orientationHistogram = (vectors, options = {}) => {
         peakCell: peak,
         peakTieCount,
         peakDirection: tiling.centers[peak],
+        // The peak cell's circumscribed radius (degrees): the peak names its
+        // direction no more finely than this. Mirrors peakCellRadiusDeg.
+        peakCellRadiusDeg: tiling.radii[peak] * (180 / Math.PI),
         peakEnhancement: enhancement[peak],
         // Local, uncorrected Gaussian z -- kept for API compatibility; the
         // calibrated readout is peakSignificance (see _peak_significance).

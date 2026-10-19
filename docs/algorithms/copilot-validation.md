@@ -10,8 +10,8 @@ that went with it is [copilot-review.md](copilot-review.md).
 
 | Arm | What answers | Code |
 | --- | --- | --- |
-| **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page at its own defaults (the engine's resolution, its readouts from the raw histogram, since protocol 2026-10-19.17; [below](#the-displacement-directions-page-at-its-defaults)) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15), and a split site's direction is the direction map's peak only where the peak cell resolves it, else PC1 (`directionResolved`, 15°; since protocol 2026-10-19.17). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -50,6 +50,37 @@ arm's skills (arm B) and method (arm C), the verdict's words for the gate (`verd
 the same claim in prose; the app's own claim catalogue reads prose only) and a model port. `run.js` builds that port as the app
 does, with `providerModel` (`src/llm/provider/model.js`: the context guard, the warmer retry), and
 meters it for an API model (`spend.js` `meteredModel`).
+
+### The Displacement Directions page at its defaults
+
+Decided 2026-10-19 (plan item 2.5; protocol 2026-10-19.17). Arm A reads a split site's direction
+map on the Displacement Directions page as the page shows it at its defaults, and takes those
+defaults from the page itself: `ARM_A_RULES.DIRECTION_SETTINGS` *is* the page's
+`DIRECTION_DEFAULTS` (`src/directionSettings.js`), and the request is the page's own readout
+request (`directionReadoutRequest`), so no number is copied into the protocol. Since this decision
+the page opens at Auto, the engine's recommended resolution (`recommendedFrequency`), and takes
+every readout (the peak, its direction and σ, the map test, the ± asymmetry, the Bingham
+anisotropy) from the raw histogram, at smoothing 0; the smoothing redraws the map only. That is
+exactly what `analyze_displacement_directions` computes when it is given no frequency, so arm A,
+A+ (which reads a split site's map through the same reading, `directionsOf`) and the Copilot read
+one tiling and one set of numbers; a known-answer test checks it site by site on a dev case
+(`validation/__tests__/directionsDefault.test.js`). Before it, the page opened at ν = 10 and read
+its numbers off the 2× smoothed map, whose peak cell, direction and σ follow the smoothing (the
+engines pick the peak cell on the smoothed map).
+
+What it changes in a reading: the reading records the resolution it read (`frequency`) and the
+peak cell's radius (`radius_deg`, the "± R°" the page prints beside the direction), and a peak
+that reaches 3σ on the engine's coarser tiling names the claim's direction where PC1 named it
+before. A tiling names a direction only to within its cell (the engines' `peakCellRadiusDeg`, the
+cell's circumscribed radius): below 504 copies Auto is ν = 1, twelve cells 37.4° in radius whose
+centres lie 31.7° from every cube axis; at ν = 2 a cell is 19.3–20.9°, still wider than the 15°
+direction tolerance. Arm A takes a significant peak whatever its radius, as a user reading the
+page. A+ applies the tool's bound (`SWEEP_RULES.directionResolved`: `LOW_INDEX_CONE_DEG`, 15°)
+and takes PC1 where the peak cell is wider, since a cell cannot localise a direction more finely
+than its own size. The page's map opens unsmoothed, which no reading or score depends on.
+The moved dev records are re-recorded in `arm-a-dev.json` (the others as recorded) and pinned in
+`arms.test.js`; the tables under [Arm A results](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)
+were recorded under the earlier default, and the test set's records move at its next scoring.
 
 ### Arm C: the Copilot without the method
 
@@ -686,6 +717,8 @@ not approved): `compute_bond_angles` refuses on the CN-margin reading, the Workb
 window the Workbench did not question is not refused and a whole shell never is; the 10 slightly
 cut windows would then run (their CN within 15 % of the shell's), and the 4 sub-shell first peaks be
 refused unless the user chose them — which the Workbench's question already asks. The user decides.
+*(Approved by the user and implemented on 2026-10-19, with exactly those 15 changes: protocol
+2026-10-19.18 below, `validation/findings/decisions/2026-10-19-shell-cut-rule.json`.)*
 
 **Protocol 2026-10-19.9 (plan item 1.6, part ii: the judgment subset).** Five dev cases join the dev
 set ([the judgment subset](#the-judgment-subset-plan-item-16-part-ii)). The question, the scoring,
@@ -928,6 +961,46 @@ request's length and hash); the edge-of-significance harness test now finds its 
 a smaller amplitude by the weak pair's own rule, since both dev weak orders are above the bar. Approved by the
 manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-modulation-null.json`,
 `2026-10-19-diffuse-order.json`).
+
+**Protocol 2026-10-19.18 (one cut rule: `compute_bond_angles` refuses on the CN margin).** Protocol
+2026-10-19.8 left two readings of a window that cuts a shell, the Workbench asking on the CN margin
+and the tool refusing on the coordination counts, with a recommendation for the user (below that
+entry). The user approved it: one rule now decides, the shell module's `windowCut`
+([ai-assistant.md, Step 9](ai-assistant.md#step-9--assembling-contextpair_correlations)). A window
+that meets its first shell is cut when it holds fewer partner atoms than the whole shell by at least
+max(0.5, 15 % of its CN), whatever its counts; the counts (more than half unbonded, under 60 % with
+the modal count) decide only where the run reads no shell to compare: no partials file, no closed
+shell for the pair, no density, or a window apart from the first shell (the module reads first
+shells only). The Workbench asks on it and the tool refuses on it, unless `window_confirmed`. What
+changes for every arm:
+- **What the tool refuses.** `run.js shell-cuts` (now the Workbench's question and the tool's own
+  refusal on every natural window, beside the counts rule): on the record's 149 windows (the ten
+  dev cases it read and the Demo) the two agree on all 149 and 15 change verdict, as the readings
+  predicted — 11 no longer refused (dev-offcentre's whole Nb–Nb shell, and ten windows with the top
+  0.2 Å early, each within 15 % of its shell's CN), 4 refused now (the first peaks of the Demo's
+  Ta–Se and Se–Se, dev-jahn-teller's four short Cu–F and dev-offcentre's one short Nb–O). With the
+  judgment subset the dev and Demo windows number 227: 16 refused, the Workbench asking on the same
+  16, 22 changed (16 no longer refused, 6 refused now).
+- **What the model reads.** The refusal names the CN shortfall by path ("it holds 3.75 Se per Ta
+  (shell_ab.cn_in_window) of the shell's 6 (shell_ab.cn, in shell_ab.window_A)…") instead of the
+  share of central atoms; every result adds the shell reading (`shell_ab`, and `shell_bc` for a B–C
+  window of its own) and the counts' `modal`, `modal_share` and `unbonded_share`, as information:
+  no note says a count spread, since under a passing margin it was a whole shell running into the
+  next or a window within 15 % of its shell's CN. The model-visible snapshots move in the five
+  `compute_bond_angles` tool results (+197 characters of content for a whole shell, +248 for the
+  refused spot-check window) and four Workbench tool messages; the tool's description and schema,
+  the tool lists and the budget pins are unchanged. The scripted runs' record files move only in
+  `harness.unsafe-window` (its step's data and the two later requests' lengths and hashes).
+- **`facts.coordination.whole_shell`** of `compute_bond_angles` is the window's CN within the CN
+  margin of the shell's, so a window apart from the first shell, or one holding more than it by
+  the margin, is no whole-shell count for the coordination check.
+- **The skills** still state the counts rule (coordination-shells SKILL.md lines 61, 78 and 79):
+  the skill lint binds those numbers to the CN margin and holds them on its allow-list with both
+  sides until the skill fact-sync PR.
+
+**Arms A, A+ and D on dev** (`arm-a --split dev`, before and after): none of the 45 records moves
+(A+ reads no bond-angle window); `arm-a-dev.json` stays as recorded. The test set was not run.
+Approved by the user, 2026-10-19 (`validation/findings/decisions/2026-10-19-shell-cut-rule.json`).
 
 **Protocol 2026-10-19.19 (the marginal situation re-set for the independent-cell null).** The
 calibrated null of protocol 2026-10-19.16 gives an isotropic site three components where the

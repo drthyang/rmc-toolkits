@@ -588,7 +588,9 @@ the model's own `ask_user` still works beside it.
 - **Before an analysis runs** (`beforeCall`, for tools that declare `shellWindows(args)`:
   `compute_bond_angles`, `analyze_clusters`): a window that overlaps a first shell but holds less
   of it by the same margin is put to the user — the whole first shell (default) or the window as
-  asked — and the analysis runs in the one chosen, its tool message saying so. The spot check's
+  asked — and the analysis runs in the one chosen, its tool message saying so. It is the one cut
+  rule (`context/shells.js` `windowCut`): `compute_bond_angles` refuses exactly such a window
+  unless the user chose it. The spot check's
   2.3–2.7 Å Se–Ta–Se window: "it holds 3.8 Se per Ta of the shell's 6". Once per question: the
   choice is remembered by (centre, partner, window), and a later call with that window runs in the
   chosen one unasked (a model that repeats its cut window every round is asked once); a call
@@ -762,7 +764,7 @@ from the spot check and the review:
 | Skill | For | Its firm rules in code |
 |---|---|---|
 | `rmc-fit-assessment` | convergence, where the fit misses (`compare_fit`), constraint-limited peaks, sampling, overfitting, the report | the convergence check on the answer (*Checks on the answer*) |
-| `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell (fewer than 60 % of the central atoms share the most common count, or most have none; the 60 % is an interview item) and returns the counts that show the cut, not the angles, unless `window_confirmed` — which the Workbench's window question sets when the user keeps their window; the polyhedron reading |
+| `coordination-shells` | bond windows from the partial g(r), coordination against the ideal polyhedron, reading angle distributions | `compute_bond_angles` **refuses** a window that cuts the shell — by the one cut rule the Workbench's window question asks on (`context/shells.js` `windowCut`, approved by the user 2026-10-19): a window that meets its shell and holds fewer partner atoms than the whole shell by ≥ max(0.5, 15 % of its CN); the coordination counts (fewer than 60 % with the most common count, or most with none) decide only where the run reads no shell to compare — and returns the counts and the shell reading that show the cut (`shell_ab.cn_in_window` of `shell_ab.cn`), not the angles, unless `window_confirmed`, which the Workbench's window question sets when the user keeps their window; the polyhedron reading. The skill still states the counts rule (skill-lint allow-list, until the skill fact-sync PR) |
 | `local-symmetry` | the tolerance ladder, what breaks between rungs, the noise floor, point-group facts | the point-group facts and the chirality / centrosymmetry / polar / inversion checks |
 | `displacement-anisotropy` | ellipsoids, kurtosis, preferred directions and their σ, effect sizes | the preferred-direction check; the Workbench's one-site-or-pooled question |
 
@@ -1136,7 +1138,9 @@ The runs found four bugs, now fixed:
    is at 2.74 Å, and no check said so. It now adds `first_two_peaks_window_A` and a note when the
    second peak overlaps the window.
 3. `compute_bond_angles` said "ok" for such a window. It now warns when fewer than 60 % of the
-   central atoms share the most common bond count.
+   central atoms share the most common bond count. (Later it refused such a window, and since
+   2026-10-19 it refuses on the Workbench's CN margin, the counts deciding only where the run has
+   no shell to compare: *the skills* above.)
 4. A server error sent mid-stream (LM Studio ran out of GPU memory) was skipped, the turn ended
    empty, and the chat crashed rendering it (`turn.items is not iterable`). The error now shows,
    and an empty reply shows its note.
@@ -1188,7 +1192,9 @@ reference (`<card:direction-sphere>`) read "card:direction-sphere" (they now sho
 title; a re-run of the last question confirmed it). The model's numbers for the sphere differ
 from the drawn map because the tool lets the engine choose the resolution while the page keeps
 its own (ν = 10, smoothed), as noted under *Show in* in
-[ai-assistant.md Step 17](../../../../docs/algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict).
+[ai-assistant.md Step 17](../../../../docs/algorithms/ai-assistant.md#step-17--the-copilot-tool-loop-analyses-checks-budgets-verdict). Since
+protocol 2026-10-19.17 the page opens at the engine's resolution (Auto) and reads its numbers from
+the raw histogram, so the page and the tool agree by default.
 
 ## Import boundary and extraction recipe
 

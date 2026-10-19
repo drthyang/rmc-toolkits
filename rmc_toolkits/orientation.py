@@ -182,6 +182,10 @@ class SphereTiling:
     polygons: np.ndarray  # (C, 6, 3) unit vectors, CCW seen from outside
     sizes: np.ndarray  # (C,) 5 or 6
     areas: np.ndarray  # (C,) solid angle in steradian, sums to 4*pi
+    # Circumscribed angular radius of each cell (radian): the largest angle
+    # from its centre to its own vertices, so every direction assigned to the
+    # cell lies within it -- how finely the cell's centre names a direction.
+    radii: np.ndarray  # (C,)
     neighbors: np.ndarray  # (C, 6) adjacent cells, -1 padded
     # Index of the cell whose centre is exactly -centers[c] (the tiling is
     # centrosymmetric). Powers the antipodal-asymmetry readout: comparing a
@@ -368,6 +372,22 @@ def _angular_order(
     return order, rank, degree
 
 
+def _cell_radii(centers: np.ndarray, polygons: np.ndarray) -> np.ndarray:
+    """Circumscribed angular radius of each cell, in radian.
+
+    The largest angle from a cell's centre to its own vertices. A cell is a
+    convex spherical polygon well inside the hemisphere about its centre, so
+    the angle to the centre peaks at a vertex: every direction assigned to
+    the cell (its spherical Voronoi region) lies within this radius. Evaluated
+    as atan2(|c x v|, c . v), accurate at every angle (arccos of the dot
+    product loses digits near 0). A pentagon's padded sixth vertex repeats its
+    fifth and cannot change the maximum.
+    """
+    sines = np.linalg.norm(np.cross(centers[:, None, :], polygons), axis=-1)
+    cosines = np.einsum("ck,cvk->cv", centers, polygons)
+    return np.arctan2(sines, cosines).max(axis=1)
+
+
 def _spherical_polygon_areas(polygons: np.ndarray) -> np.ndarray:
     """Solid angle of each padded polygon, by a signed triangle fan.
 
@@ -530,6 +550,7 @@ def goldberg_tiling(frequency: int = 8) -> SphereTiling:
         polygons=polygons,
         sizes=degree.astype(int),
         areas=areas,
+        radii=_cell_radii(centers, polygons),
         neighbors=neighbors,
         antipode=antipode,
         is_pentagon=(degree == 5),
@@ -870,7 +891,9 @@ def orientation_histogram(
         local (uncorrected, Gaussian-approximation) z of each raw count
         against the isotropic null; ``peakSignificance`` is the calibrated
         peak test (exact Poisson tail of the peak cell's raw count, Sidak-
-        corrected over all cells, as a one-sided normal deviate);
+        corrected over all cells, as a one-sided normal deviate), and
+        ``peakCellRadiusDeg`` the peak cell's circumscribed radius (degrees),
+        the bound within which ``peakDirection`` names the direction;
         ``antipodalAsymmetry`` is ``sum_pairs |n(u) - n(-u)| / N`` (0 for an
         inversion-symmetric cloud, 1 for a fully one-sided one), with
         ``antipodalAsymmetryNull`` / ``...NullSd`` its exact mean and spread for
@@ -1081,6 +1104,11 @@ def orientation_histogram(
         # Number of cells tied for the maximum (1 = a unique peak).
         "peakTieCount": int(tied.size),
         "peakDirection": tiling.centers[peak].tolist(),
+        # The peak cell's circumscribed angular radius (degrees): every
+        # direction assigned to that cell lies within it of peakDirection, so
+        # the peak names its direction no more finely than this (37.4 deg at
+        # nu = 1, 19-21 deg at nu = 2).
+        "peakCellRadiusDeg": float(np.degrees(tiling.radii[peak])),
         "peakEnhancement": float(enhancement[peak]),
         # Local, uncorrected Gaussian z of the peak cell's raw count -- kept
         # for API compatibility; NOT a significance (see peakSignificance).

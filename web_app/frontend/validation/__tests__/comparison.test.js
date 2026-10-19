@@ -136,9 +136,12 @@ describe('the dev baselines through the report (A, A+ and D; no B runs yet)', ()
         expect(result.disagreements.filter((item) => item.made.some((m) => m.column === APLUS)).map((item) => `${item.case} ${item.where}`))
             .toEqual(['dev-jahn-teller direction of jahn_teller Cu']);
         expect(result.disagreements.filter((item) => item.made.some((m) => m.column === 'no model · D'))).toEqual([]);
+        // The spurious claim's direction is the Displacement Directions page's
+        // peak at its default, the engine's tiling (plan item 2.5; on ν = 10 the
+        // peak was not significant and the claim took PC1, [-0.03 0.1 1]).
         expect(disagreementsIn(result, 'dev-zone-boundary')).toEqual([
             `missed: modulation Ti | read as off_centre Ti (wrong kind) | ${A} 1/1`,
-            `spurious claim: off_centre Ti | [-0.03 0.1 1], 0.0987 Å | ${A} 1/1`
+            `spurious claim: off_centre Ti | [0 0 1], 0.0987 Å | ${A} 1/1`
         ]);
         expect(disagreementsIn(result, 'dev-symmetry-lowering')).toEqual([
             `missed: symmetry_lowering Ta | not claimed | ${A} 1/1`,
@@ -241,7 +244,7 @@ describe('B against A+ on synthetic records', () => {
             `missed: modulation Ti | read as off_centre Ti (wrong kind); read as modulation Sr (wrong element) | ${A} 1/1, ${B} 1/3`,
             `q of modulation Ti | (0, 0, 0.375) | ${B} 1/3`,
             `spurious claim: modulation Sr | q (0.125, 0, 0) | ${B} 1/3`,
-            `spurious claim: off_centre Ti | [-0.03 0.1 1], 0.0987 Å | ${A} 1/1`
+            `spurious claim: off_centre Ti | [0 0 1], 0.0987 Å | ${A} 1/1`
         ]);
     });
 

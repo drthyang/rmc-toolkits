@@ -140,7 +140,7 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // only what the model was told — each tool message it read, its error and
 // note included, never a Workbench question's card — so a number only the
 // card held is unsourced, and one only a note or an error held is sourced;
-// what the model is sent is unchanged.
+// what the model is sent is unchanged;
 // 2026-10-19.15: find_gr_peaks gives a shell joined across a deep trough its
 // split by number (plan item 4.2) — each part's coordination number, share
 // and mean distance, and long − short with its sampling error, in
@@ -152,7 +152,30 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // longer read as order, and an independent site is no longer held to the
 // one-component bound, so both dev weak orders are above the bar), and give
 // each element's diffuse order between cells (plan item 4.4), which
-// analyze_modulations says and A+ does not read.
+// analyze_modulations says and A+ does not read;
+// 2026-10-19.17: the Displacement Directions page and the tool at the same
+// settings (plan item 2.5) — the page opens at the engine's resolution (Auto)
+// and reads every readout from the raw histogram, so arm A (and A+, through
+// the same reading) reads a split site's direction map at the tiling
+// analyze_displacement_directions reads, from the page's own defaults
+// (src/directionSettings.js); and the direction resolution, a measurement
+// limit — the engines give the peak cell's circumscribed radius, the tool
+// gives the peak direction ± that radius and, above 15° (LOW_INDEX_CONE_DEG),
+// says it is not resolved finer and names no low-index family (its
+// description and result change; nothing else the model is sent does), arm
+// A+ takes PC1 over a significant peak whose cell is wider than 15°
+// (directionResolved), arm A reads the page as a user would, and both record
+// the radius; the page's map opens unsmoothed (UI only);
+// 2026-10-19.18: compute_bond_angles refuses on the one cut rule, the
+// Workbench's (shells.js windowCut, approved by the user): a window that meets
+// its first shell is cut when it holds fewer partner atoms than the shell by
+// at least max(0.5, 15 % of its CN), whatever its coordination counts, which
+// decide only where the run reads no shell to compare (as before); the
+// refusal names the CN shortfall by path (shell_ab.cn_in_window against
+// shell_ab.cn), and every result adds the shell reading (shell_ab, shell_bc)
+// and the counts' modal, modal_share and unbonded_share. A whole shell is
+// never refused (dev-offcentre's Nb–Nb), a sub-shell first peak always unless
+// the user chose it (the Demo's Ta–Se, dev-jahn-teller's Cu–F);
 // 2026-10-19.19: the marginal situation re-set for the independent-cell null
 // — the dev weak-order pair's amplitude set so its expected (median)
 // significance at q is 3σ (judgment-spec.md's new formula), its seeds by its

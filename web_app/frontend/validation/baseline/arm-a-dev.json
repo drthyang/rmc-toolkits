@@ -1,8 +1,8 @@
 [
  {
   "id": "dev-offcentre__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-offcentre",
   "split": "dev",
   "arm": "A",
@@ -13,8 +13,8 @@
      "kind": "off_centre",
      "element": "Nb",
      "direction_uvw": [
-      0.1,
-      0.06,
+      0,
+      0,
       -1
      ],
      "magnitude_A": 0.201
@@ -35,7 +35,7 @@
      "claim_index": 0,
      "kind": "off_centre",
      "element": "Nb",
-     "direction_error_deg": 6.651732748715295,
+     "direction_error_deg": 0,
      "direction_ok": true,
      "magnitude_claimed_A": 0.201,
      "magnitude_ok": true,
@@ -160,16 +160,18 @@
     "page": "Displacement Directions",
     "what": "site 2 Nb",
     "value": {
-     "peak_sigma": 4.33,
-     "enhancement": 11.7,
+     "frequency": 2,
+     "peak_sigma": 17.2,
+     "enhancement": 9.12,
      "peak_uvw": [
-      0.1,
-      0.06,
+      0,
+      0,
       -1
      ],
-     "map_sigma": 27.3
+     "radius_deg": 20.9,
+     "map_sigma": 37
     },
-    "reading": "preferred direction [0.1 0.06 -1]"
+    "reading": "preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -217,8 +219,8 @@
  },
  {
   "id": "dev-offcentre__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-offcentre",
   "split": "dev",
   "arm": "A+",
@@ -229,9 +231,9 @@
      "kind": "off_centre",
      "element": "Nb",
      "direction_uvw": [
-      0.1,
-      0.06,
-      -1
+      0,
+      -0.01,
+      1
      ],
      "magnitude_A": 0.202
     }
@@ -251,7 +253,7 @@
      "claim_index": 0,
      "kind": "off_centre",
      "element": "Nb",
-     "direction_error_deg": 6.651732748715295,
+     "direction_error_deg": 0.5729386976826285,
      "direction_ok": true,
      "magnitude_claimed_A": 0.202,
      "magnitude_ok": true,
@@ -406,16 +408,18 @@
     "page": "Displacement Directions",
     "what": "site 2 Nb",
     "value": {
-     "peak_sigma": 4.33,
-     "enhancement": 11.7,
+     "frequency": 2,
+     "peak_sigma": 17.2,
+     "enhancement": 9.12,
      "peak_uvw": [
-      0.1,
-      0.06,
+      0,
+      0,
       -1
      ],
-     "map_sigma": 27.3
+     "radius_deg": 20.9,
+     "map_sigma": 37
     },
-    "reading": "preferred direction [0.1 0.06 -1]"
+    "reading": "preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -550,8 +554,8 @@
  },
  {
   "id": "dev-zone-boundary__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-zone-boundary",
   "split": "dev",
   "arm": "A",
@@ -562,8 +566,8 @@
      "kind": "off_centre",
      "element": "Ti",
      "direction_uvw": [
-      -0.03,
-      0.1,
+      0,
+      0,
       1
      ],
      "magnitude_A": 0.0987
@@ -590,8 +594,8 @@
      "kind": "off_centre",
      "element": "Ti",
      "direction_uvw": [
-      -0.03,
-      0.1,
+      0,
+      0,
       1
      ],
      "magnitude_A": 0.0987
@@ -719,16 +723,18 @@
     "page": "Displacement Directions",
     "what": "site 2 Ti",
     "value": {
-     "peak_sigma": 2.29,
-     "enhancement": 5.36,
+     "frequency": 2,
+     "peak_sigma": 5.44,
+     "enhancement": 3.17,
      "peak_uvw": [
-      -0.22,
-      0.4,
+      0,
+      0,
       1
      ],
-     "map_sigma": 7.58
+     "radius_deg": 20.9,
+     "map_sigma": 15.4
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 0 1] ± 20.9°, the cell radius at ν = 2"
    }
   ],
   "truth": {
@@ -1496,8 +1502,8 @@
  },
  {
   "id": "dev-jahn-teller__A",
-  "protocol": "2026-10-17.1",
-  "commit": "5780c50fd3ecca41eb75bad10c1a95b48bc99565",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A",
@@ -1508,9 +1514,9 @@
      "kind": "off_centre",
      "element": "F",
      "direction_uvw": [
-      1,
+      -1,
       0,
-      -0.01
+      -0.62
      ],
      "magnitude_A": 0.16
     },
@@ -1549,9 +1555,9 @@
      "kind": "off_centre",
      "element": "F",
      "direction_uvw": [
-      1,
+      -1,
       0,
-      -0.01
+      -0.62
      ],
      "magnitude_A": 0.16
     }
@@ -1729,16 +1735,18 @@
     "page": "Displacement Directions",
     "what": "site 3 F",
     "value": {
-     "peak_sigma": 2.71,
-     "enhancement": 13.5,
+     "frequency": 1,
+     "peak_sigma": 6.58,
+     "enhancement": 3.06,
      "peak_uvw": [
-      1,
+      -1,
       0,
-      -0.12
+      -0.62
      ],
-     "map_sigma": 10.6
+     "radius_deg": 37.4,
+     "map_sigma": 14.9
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [-1 0 -0.62] ± 37.4°, the cell radius at ν = 1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -1796,8 +1804,8 @@
  },
  {
   "id": "dev-jahn-teller__A+",
-  "protocol": "2026-10-19.15",
-  "commit": "e9e67e1eef6661947ea128a9976adda112d1d199",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A+",
@@ -2077,16 +2085,18 @@
     "page": "Displacement Directions",
     "what": "site 3 F",
     "value": {
-     "peak_sigma": 2.71,
-     "enhancement": 13.5,
+     "frequency": 1,
+     "peak_sigma": 6.58,
+     "enhancement": 3.06,
      "peak_uvw": [
-      1,
+      -1,
       0,
-      -0.12
+      -0.62
      ],
-     "map_sigma": 10.6
+     "radius_deg": 37.4,
+     "map_sigma": 14.9
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [-1 0 -0.62] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -5035,8 +5045,8 @@
  },
  {
   "id": "dev-jt-off-centre__A",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "A",
@@ -5047,8 +5057,8 @@
      "kind": "off_centre",
      "element": "Ag",
      "direction_uvw": [
-      0.02,
-      -0.02,
+      0,
+      -0.62,
       1
      ],
      "magnitude_A": 0.148
@@ -5058,7 +5068,7 @@
      "element": "F",
      "direction_uvw": [
       0,
-      0.01,
+      -0.62,
       1
      ],
      "magnitude_A": 0.173
@@ -5084,11 +5094,11 @@
      "claim_index": 0,
      "kind": "off_centre",
      "element": "Ag",
-     "direction_error_deg": 1.620137424565442,
-     "direction_ok": true,
+     "direction_error_deg": 31.79891282429443,
+     "direction_ok": false,
      "magnitude_claimed_A": 0.148,
      "magnitude_ok": true,
-     "accurate": true
+     "accurate": false
     }
    ],
    "spurious": [],
@@ -5099,7 +5109,7 @@
      "element": "F",
      "direction_uvw": [
       0,
-      0.01,
+      -0.62,
       1
      ],
      "magnitude_A": 0.173
@@ -5113,7 +5123,7 @@
     "polar": "right"
    },
    "contradictions": [],
-   "score": 0.8571
+   "score": 0.7857
   },
   "readings": [
    {
@@ -5278,31 +5288,35 @@
     "page": "Displacement Directions",
     "what": "site 2 Ag",
     "value": {
-     "peak_sigma": 2.61,
-     "enhancement": 11.3,
+     "frequency": 1,
+     "peak_sigma": 6.75,
+     "enhancement": 3.11,
      "peak_uvw": [
-      -0.1,
-      -0.06,
-      -1
+      0,
+      -0.62,
+      1
      ],
-     "map_sigma": 9.96
+     "radius_deg": 37.4,
+     "map_sigma": 14.5
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1"
    },
    {
     "page": "Displacement Directions",
     "what": "site 8 F",
     "value": {
-     "peak_sigma": 1.44,
-     "enhancement": 15.6,
+     "frequency": 1,
+     "peak_sigma": 6.41,
+     "enhancement": 3,
      "peak_uvw": [
       0,
-      -0.12,
-      -1
+      -0.62,
+      1
      ],
-     "map_sigma": 12.1
+     "radius_deg": 37.4,
+     "map_sigma": 15.1
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -5378,8 +5392,8 @@
  },
  {
   "id": "dev-jt-off-centre__A+",
-  "protocol": "2026-10-19.9",
-  "commit": "3de8fc5eb093a09fdafccfa58a0a7703c57e2267",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-jt-off-centre",
   "split": "dev",
   "arm": "A+",
@@ -5671,31 +5685,35 @@
     "page": "Displacement Directions",
     "what": "site 2 Ag",
     "value": {
-     "peak_sigma": 2.61,
-     "enhancement": 11.3,
+     "frequency": 1,
+     "peak_sigma": 6.75,
+     "enhancement": 3.11,
      "peak_uvw": [
-      -0.1,
-      -0.06,
-      -1
+      0,
+      -0.62,
+      1
      ],
-     "map_sigma": 9.96
+     "radius_deg": 37.4,
+     "map_sigma": 14.5
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Displacement Directions",
     "what": "site 8 F",
     "value": {
-     "peak_sigma": 1.44,
-     "enhancement": 15.6,
+     "frequency": 1,
+     "peak_sigma": 6.41,
+     "enhancement": 3,
      "peak_uvw": [
       0,
-      -0.12,
-      -1
+      -0.62,
+      1
      ],
-     "map_sigma": 12.1
+     "radius_deg": 37.4,
+     "map_sigma": 15.1
     },
-    "reading": "no significant direction"
+    "reading": "preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "Dashboard partial g(r)",
@@ -6464,8 +6482,8 @@
  },
  {
   "id": "dev-octahedral-clusters__A",
-  "protocol": "2026-10-19.9",
-  "commit": "75bf5252048fa344e7bdeee4fe1b5988daa65ee1",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "A",
@@ -6476,7 +6494,7 @@
      "kind": "off_centre",
      "element": "W",
      "direction_uvw": [
-      1,
+      -1,
       0,
       0
      ],
@@ -6505,7 +6523,7 @@
      "kind": "off_centre",
      "element": "W",
      "direction_uvw": [
-      1,
+      -1,
       0,
       0
      ],
@@ -6666,16 +6684,18 @@
     "page": "Displacement Directions",
     "what": "site 2 W",
     "value": {
-     "peak_sigma": 9.55,
-     "enhancement": 26.2,
+     "frequency": 2,
+     "peak_sigma": 23.1,
+     "enhancement": 13.1,
      "peak_uvw": [
-      1,
+      -1,
       0,
       0
      ],
+     "radius_deg": 20.9,
      "map_sigma": 37
     },
-    "reading": "preferred direction [1 0 0]"
+    "reading": "preferred direction [-1 0 0] ± 20.9°, the cell radius at ν = 2"
    }
   ],
   "truth": {
@@ -6717,8 +6737,8 @@
  },
  {
   "id": "dev-octahedral-clusters__A+",
-  "protocol": "2026-10-19.9",
-  "commit": "3de8fc5eb093a09fdafccfa58a0a7703c57e2267",
+  "protocol": "2026-10-19.17",
+  "commit": "8adbeb1a2da5ee0b3b568a539e119d4c916012ec",
   "case": "dev-octahedral-clusters",
   "split": "dev",
   "arm": "A+",
@@ -6963,16 +6983,18 @@
     "page": "Displacement Directions",
     "what": "site 2 W",
     "value": {
-     "peak_sigma": 9.55,
-     "enhancement": 26.2,
+     "frequency": 2,
+     "peak_sigma": 23.1,
+     "enhancement": 13.1,
      "peak_uvw": [
-      1,
+      -1,
       0,
       0
      ],
+     "radius_deg": 20.9,
      "map_sigma": 37
     },
-    "reading": "preferred direction [1 0 0]"
+    "reading": "preferred direction [-1 0 0] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1"
    },
    {
     "page": "analyze_clusters",

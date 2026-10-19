@@ -35,10 +35,12 @@
 //
 // The shells, their first peaks, the cut sensitivity and whether a window
 // cuts a shell are the run's one shell reading (context/shells.js): the
-// clarifier asks on its CN-margin reading (window().cnMargin), as before.
+// clarifier asks on the one cut rule (windowCut: the CN margin, where the
+// window meets a shell), the rule compute_bond_angles refuses on (approved by
+// the user, 2026-10-19).
 
 import { NOISE_FLOOR_MARGIN } from '../context/runContext';
-import { CN_MATCH_TOLERANCE, cnMatches, shellCatalogue } from '../context/shells';
+import { CN_MATCH_TOLERANCE, cnMatches, shellCatalogue, windowCut } from '../context/shells';
 
 const roundTo = (value, digits = 2) => (Number.isFinite(value) ? Number(value.toFixed(digits)) + 0 : null);
 const cnText = (value) => (Number.isFinite(value) ? (Math.abs(value - Math.round(value)) < 0.05 ? String(Math.round(value)) : value.toFixed(1)) : '?');
@@ -346,10 +348,11 @@ export const buildClarifier = (run = {}, { noiseFloor = null } = {}) => {
                 if (named) continue;
                 const shell = catalog.shell(item.centre, item.partner);
                 if (!shell?.window || !Number.isFinite(shell.cn)) continue;
-                // The CN-margin reading: the window overlaps the shell and
-                // holds fewer atoms by max(0.5, 15 % of the shell's).
+                // The one cut rule (windowCut), compute_bond_angles' too: the
+                // window overlaps the shell and holds fewer atoms by
+                // max(0.5, 15 % of the shell's).
                 const reading = catalog.window(item.centre, item.partner, [lo, hi]);
-                if (!reading?.cnMargin.cut) continue;
+                if (!windowCut(reading).cut) continue;
                 const { cn } = reading;
                 const pair = `${item.partner} per ${item.centre}`;
                 // Answered already in this turn: the same choice, unasked.

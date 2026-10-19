@@ -46,7 +46,7 @@ import { shellCatalogue } from '../llm/context/shells';
 import { inProcessEngine } from '../workers/pcaKdeWorker';
 import { bundledSkills, COPILOT_PAGES, loadDemoAssistantRun } from './modelVisible/helpers';
 import {
-    classifyIdentifier, compareAllowList, describeFinding, evaluateBinding, evaluateRule, evaluateValue, firmRuleSentences, flatten,
+    classifyIdentifier, compareAllowList, decidedBy, describeFinding, evaluateBinding, evaluateRule, evaluateValue, firmRuleSentences, flatten,
     gateNumberCandidates, identifierMentions, lintSkills
 } from './skillLint/lint';
 import { ALLOW_LIST, BINDINGS, FIRM_RULES, NOT_GATES, RULES, VALUES } from './skillLint/tables';
@@ -70,7 +70,9 @@ const offeredTools = async () => {
     const tools = [
         ...buildRunTools(run, { cards }),
         ...buildFocusTools({ cards, pages: COPILOT_PAGES }),
-        ...buildCopilotTools({ request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort() }),
+        ...buildCopilotTools({
+            request, structure: run.structure, elements: Object.keys(run.structure.elementCounts || {}).sort(), plotFiles: run.plotFiles, runSettings: run.runSettings
+        }),
         ...buildViewTools({ cards, pages: COPILOT_PAGES, activePage: () => 'dashboard' }),
         buildAskUserTool(),
         buildReadSkillTool(bundledSkills(), { load: copilotSkills.load })
@@ -217,6 +219,17 @@ describe('the skill lint (AGENT_PLAN 5.1)', () => {
         }
     });
 
+    it('names each gate mismatch it holds with a line: the line, the skill\'s number as written and the app\'s constant', () => {
+        const entries = ALLOW_LIST.filter((item) => item.check === 'gate' && item.line != null);
+        expect(entries.length).toBeGreaterThan(0);
+        for (const entry of entries) {
+            const finding = result.findings.find((item) => item.check === 'gate' && item.file === entry.file && item.context.includes(entry.fragment));
+            expect(finding, entry.fragment).toBeDefined();
+            expect({ line: finding.line, skill: finding.stated, tool: finding.decided }, `${entry.file}: ${entry.fragment}`)
+                .toEqual({ line: entry.line, skill: entry.skill, tool: entry.tool });
+        }
+    });
+
     it('names each rule mismatch it holds: the line, the skill\'s rule and the app\'s', () => {
         for (const entry of ALLOW_LIST.filter((item) => item.check === 'rule')) {
             const finding = result.findings.find((item) => item.check === 'rule' && item.file === entry.file && item.context.includes(entry.fragment));
@@ -274,7 +287,11 @@ describe('the lint itself', () => {
         expect(read('Preferred direction only with a significance ≥ 3σ.', { statistic: { pattern: /peak/, says: 'the peak test' } }).problem).toBe('statistic');
         expect(read('Preferred direction only with a peak\nsignificance ≥ 3σ.', { statistic: { pattern: /peak/, says: 'the peak test' } }).problem).toBeNull();
         const percent = { gate: 'a share', find: 'of the atoms', before: 20, number: /fewer than (?<n>\d+) % of the atoms/, unit: '%', constants: [{ name: 'F', value: 0.6, module: 'm.js' }] };
-        expect(evaluateBinding(percent, flatten('Refused when fewer than 60 % of the atoms agree.').flat).problem).toBeNull();
+        expect(evaluateBinding(percent, flatten('Refused when fewer than 60 % of the atoms agree.').flat)).toMatchObject({ problem: null, written: '60 %' });
+        // A number bound to another constant: both sides, for an allow-list entry.
+        const moved = { ...percent, constants: [{ name: 'G', value: 0.15, module: 'n.js' }] };
+        expect(evaluateBinding(moved, flatten('Refused when fewer than 60 % of the atoms agree.').flat)).toMatchObject({ problem: 'differs', stated: 0.6, written: '60 %' });
+        expect(decidedBy(moved.constants)).toBe('G = 0.15');
     });
 
     it('requires every comparator number to be bound or listed as no gate', async () => {

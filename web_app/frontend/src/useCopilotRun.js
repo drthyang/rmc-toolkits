@@ -7,7 +7,9 @@
 // run's <stem>.dat, builds the engine, and memoizes each field of the core on
 // exactly its own inputs, so a field keeps its identity until they change:
 //   symmetry: structure + toleranceA;  ladder: structure;
-//   rValueFile: files + hiddenPlots + structurePath;  tools: engine + structure.
+//   rValueFile: files + hiddenPlots + structurePath;
+//   tools: engine + structure + files + run settings (the shell catalogue
+//   compute_bond_angles judges its windows against).
 // A new PCA table (view.pcaSites) replaces `props` but not `tools` or `engine`.
 //
 // Ordering: until the Copilot is opened (`enabled`) and the Dashboard has
@@ -142,9 +144,12 @@ export default function useCopilotRun({ directory, localRun, dashboard = null, v
         [structure, normalized.toleranceA, ladderList]
     );
     const elements = useMemo(() => runElements(structure), [structure]);
-    const tools = useMemo(() => runEngineTools(engine, structure, elements), [engine, structure, elements]);
-    const name = localRun ? localRun.name : directory;
     const runSettings = published ? settings : null;
+    const tools = useMemo(
+        () => runEngineTools({ engine, structure, elements, plotFiles, settings: runSettings }),
+        [engine, structure, elements, plotFiles, runSettings]
+    );
+    const name = localRun ? localRun.name : directory;
 
     return useMemo(() => assembleCopilotRun({
         name, plotFiles, rValueFile, structure, symmetry, settings: runSettings, tools, elements, engine, view: normalized
