@@ -908,16 +908,18 @@ characters triggers every trim step in order, but no test asserts the budget is 
 2. `user` — `"Context for this RMC modeling run:"` followed by ```` ```json … ``` ```` containing
    `contextToJson(context)`. The fence exists so the model can distinguish data from instructions.
 3. `assistant` — a fixed one-line acknowledgement.
-4. the last `CHAT_HISTORY_TURNS = 8` memory messages (`slice(-8)`: 8 *messages*, i.e. 4 exchanges).
+4. the last `HISTORY_MESSAGES = 8` memory messages (`slice(-8)`: 8 *messages*, i.e. 4 exchanges).
 5. `user`: the question you typed.
 
 Then, within the question, the tool exchange (Step 17): one `assistant` message with `tool_calls` per
 round, and one `tool` message per call.
 
 **What "memory" contains.** The turns live in `useCopilot`'s state: never persisted, and cleared on
-reload, on *New conversation*, and when another run opens (`runKey`).
-`conversationMemory()` ([`llm/useCopilot.js`](../../web_app/frontend/src/llm/useCopilot.js)) sends
-each earlier question with its **final answer text** only.
+reload, on *New conversation*, and when another run opens (`runKey`). `useCopilot` hands each
+turn the conversation so far as `[{ question, answer }]` (`turnHistory`), and the turn module
+([`llm/copilot/turn.js`](../../web_app/frontend/src/llm/copilot/turn.js)) sends each earlier
+question with its **final answer text** only, an answer over `MEMORY_ANSWER_CHARS` (2,000)
+compacted to its sentences with numbers and its Outcome line.
 
 - Tool calls, tool results and chain-of-thought (`reasoning` / `reasoningMs`) are **never re-sent**.
   The model re-runs an analysis it needs again.
@@ -1442,8 +1444,8 @@ and its wait is subtracted from the turn's clock. `normalizeAskRequest()` turns 
 `{question, options: 2–4 × {label, description?}, allowOther, defaultIndex}` (plain strings read as
 labels, `"label — description"` split at a spaced dash, labels deduplicated case-insensitively, the
 default matched by label or by number 1–4) and throws on an empty question or fewer than two
-distinct options. The tool calls `askUser(request, { signal })` from the tools' context
-(`useCopilot`), which shows the question card and resolves with
+distinct options. The tool calls `askUser(request, { signal })` from the tools' context (the
+turn's ask-user port, which `useCopilot` supplies), which shows the question card and resolves with
 `{answer, source: 'option' | 'other' | 'skipped', index}`; `answerResult()` turns that into the
 tool's data and one check ("use exactly this choice", the typed answer verbatim, or "use your
 default and say you assumed it"). A second call in the same round, or a third in the question, is
@@ -1857,7 +1859,7 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | coincidence cutoff | $10^{-3}$ | Å | `pairCorrelations.js` | Distances below this are ignored |
 | image shell | $\pm1$ | cells | `pairCorrelations.js` | Periodic images searched for nearest neighbours |
 | `maxPairs` | 10 | pairs | `pairCorrelations.js` | Cap on `pair_correlations` entries |
-| `CHAT_HISTORY_TURNS` | 8 | messages | `prompts/copilot.js` | Memory messages re-sent (questions + final answers, in-memory only) |
+| `HISTORY_MESSAGES` | 8 | messages | `prompts/copilot.js` | Memory messages re-sent (questions + final answers, in-memory only) |
 | `maxRounds` | 6 | rounds | `copilot/agentLoop.js` | Model requests with tool calls per question |
 | `maxCallsPerRound` | 4 | calls | `copilot/agentLoop.js` | Extra calls are answered "skipped" |
 | `toolTimeoutMs` | 120 000 | ms | `copilot/agentLoop.js` | One analysis; its signal is aborted |
@@ -2001,7 +2003,8 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
   characters of whatever it said.
 - **Chat history is ephemeral.** Turns live in component state and are cleared by a reload. A question
   whose turn produced no answer (aborted, failed, or reasoning only) is dropped from the re-sent
-  history together with it (`conversationMemory()`). Reasoning text is never re-sent.
+  history together with it (the turn module's history window, `copilot/turn.js`). Reasoning text is
+  never re-sent.
 - **Three of the system prompt's numeric rules have no code behind them** (Step 13): the 0.01–0.10 Rwp
   band, the accepted-moves-per-atom rubric, and the ladder-onset ≈ mean-static-displacement heuristic.
   They are author assertions in a prompt string, not validated thresholds.

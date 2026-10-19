@@ -23,7 +23,7 @@ import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { streamCopilotChat } from '../src/llm/provider/contextGuard';
+import { providerModel } from '../src/llm/provider/model';
 import { buildCase, casesOf } from './cases';
 import { loadRun, RUN_FILES, RUN_NAME } from './runFolder';
 import { runArmA, runArmSweep } from './armA';
@@ -33,7 +33,7 @@ import { ARMS, PROTOCOL_VERSION, runLiveCase } from './harness';
 import { renderTranscript } from './transcript';
 import { renderReport } from './report';
 import { resolveModel } from './models';
-import { createSpendTracker, meteredCall } from './spend';
+import { createSpendTracker, meteredModel } from './spend';
 import { parseFindingFiles, parseFindings } from './findings';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -166,10 +166,9 @@ const commands = {
         mkdirSync(out, { recursive: true });
         const commit = commitOf();
         const skills = arm === 'B' ? loadSkills() : null;
-        const session = {};
-        const callModel = (request) => streamCopilotChat({
-            baseUrl: model.baseUrl, model: model.model, temperature: model.temperature, apiKey: model.apiKey, session, ...request
-        });
+        // The app's production model port, bound to this model (the warmer
+        // retry, the context guard); one context-size session for the batch.
+        const base = providerModel(model, { session: {} });
         let tracker = null;
         if (model.api) {
             const ledgerPath = resolve(args.ledger || 'validation/runs/api-spend.jsonl');
@@ -192,10 +191,10 @@ const commands = {
                     console.log(`${id}: already recorded, kept`);
                     continue;
                 }
-                const metered = tracker ? meteredCall(callModel, tracker, id) : callModel;
+                const port = tracker ? meteredModel(base, tracker, id) : base;
                 let record;
                 try {
-                    record = await runLiveCase({ built, arm, model, runIndex: index, callModel: metered, skills, commit, pcaTable });
+                    record = await runLiveCase({ built, arm, model, runIndex: index, port, skills, commit, pcaTable });
                 } catch (failure) {
                     if (failure?.name !== 'SpendCapError') throw failure;
                     record = failure.record;

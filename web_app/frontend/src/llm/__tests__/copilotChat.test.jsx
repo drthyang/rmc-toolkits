@@ -258,6 +258,40 @@ describe('CopilotChat', () => {
         expect(container.querySelector('.llm-composer-input').disabled).toBe(false);
     });
 
+    it('sends the earlier question and its answer with the next question, and forgets them in a new conversation', async () => {
+        stubReplies([
+            sse([delta({ content: 'Not converged.\n\nOutcome: achieved — still falling.' }, 'stop')]),
+            sse([delta({ content: 'Six Se.\n\nOutcome: achieved — counted.' }, 'stop')]),
+            sse([delta({ content: 'Fresh.\n\nOutcome: achieved — x' }, 'stop')])
+        ]);
+        act(() => root.render(chat()));
+        await openChat();
+        await ask('Has it converged?');
+        await ask('And around Ta?');
+        expect(chatBodies).toHaveLength(2);
+        // system, context, acknowledgement, then the memory, then the question.
+        expect(chatBodies[1].messages.slice(3)).toEqual([
+            { role: 'user', content: 'Has it converged?' },
+            { role: 'assistant', content: 'Not converged.\n\nOutcome: achieved — still falling.' },
+            { role: 'user', content: 'And around Ta?' }
+        ]);
+        act(() => container.querySelector('.llm-link-btn').click());
+        await ask('Again?');
+        expect(chatBodies[2].messages.slice(3)).toEqual([{ role: 'user', content: 'Again?' }]);
+    });
+
+    it('says why it cannot ask when the host hands it a tool the turn adds itself', async () => {
+        const shadow = { ...bondAngles, name: 'ask_user', description: 'A host ask_user.' };
+        act(() => root.render(chat({ tools: [shadow] })));
+        await openChat();
+        // The panel stays up and says what is wrong; asking fails with the same reason.
+        expect(container.querySelector('[role="alert"]').textContent).toMatch(/tools must not contain ask_user/);
+        await ask('angles?');
+        expect(chatBodies).toHaveLength(0);
+        expect(container.querySelector('[role="alert"]').textContent).toMatch(/tools must not contain ask_user/);
+        expect(container.querySelector('.llm-composer-input').disabled).toBe(false);
+    });
+
     it('says when analyses are off, and asks for a run when none is open', async () => {
         saveSettings({ copilotTools: false });
         act(() => root.render(chat()));

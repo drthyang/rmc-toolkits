@@ -47,15 +47,16 @@ It is **docked beside the pages**, not over them, and it **points at the page** 
   established, a **Check** line says so under it and the Outcome chip drops to **Not verified**,
   whatever the model said of its own answer. See *Checks on the answer* below.
 
-How one question runs:
+How one question runs (one turn of `copilot/turn.js`, which builds the prompt, the tools offered
+and the checks from the run props; *The turn* below):
 
 ```
         question
            │
-   ┌───────▼────────┐   tools offered    ┌──────────────┐
-   │  agent loop    │ ─────────────────▶ │    model     │
-   │ (agentLoop.js) │ ◀───────────────── │ (client.js)  │
-   └───────┬────────┘  tool calls / text └──────────────┘
+   ┌───────▼────────┐   tools offered    ┌──────────────────────────┐
+   │  agent loop    │ ─────────────────▶ │ model port (model.js) →  │
+   │ (agentLoop.js) │ ◀───────────────── │ contextGuard / client.js │
+   └───────┬────────┘  tool calls / text └──────────────────────────┘
            │ validate → run → fit to budget
    ┌───────▼─────────────────────────────┐
    │ tools: run data (runTools.js) and   │   result + deterministic checks
@@ -125,7 +126,8 @@ inputs on its page, stays the *user's* action.
      change the arguments on a `fail`, never repeat an identical call. It also asks for the verdict
      line. `copilotSystemPrompt()` adds `ASK_RULES` when `ask_user` is offered.
    - `buildCopilotMessages()` puts the context, inside a fenced JSON block, ahead of the
-     conversation. Earlier turns travel as question + final answer only (the newest 8 messages: 4 exchanges).
+     conversation. Earlier turns travel as question + final answer only (the newest
+     `HISTORY_MESSAGES` = 8 messages: 4 exchanges); the turn module turns its history into them.
    - `prompts/templates.js` holds the watchdog's rigid `STATUS: …` prompt and its parser.
 3. **`provider/client.js`** is a hand-rolled OpenAI-compatible client (`/models`,
    `/chat/completions`) with an SSE stream parser over `fetch` + `ReadableStream`.
@@ -139,6 +141,9 @@ inputs on its page, stays the *user's* action.
    - **`provider/contextGuard.js` + `provider/ollama.js`**: every Copilot request goes through
      `streamCopilotChat()`, which never sends a request the model would cut (*The context window*
      below). Ollama's requests use its native `/api/chat` (NDJSON) with a fitting `num_ctx`.
+   - **`provider/model.js`**: the model port, the one seam between a turn and whatever answers it
+     (*The turn* below). `providerModel(settings, { session })` is the production port over
+     `streamCopilotChat()`.
    - `checkConnection()` turns failures into actionable hints: a bare `TypeError` means "server
      down **or** CORS blocked", and 401 / 429 name the key and quota problems.
 4. **`copilot/toolCalls.js`** turns streamed fragments into calls.
@@ -152,8 +157,10 @@ inputs on its page, stays the *user's* action.
    run with a timeout, and give the tool its own `AbortSignal`, which is aborted on Stop or timeout.
    A thrown error becomes a failed step whose message the model reads. `fitToBudget()` halves the
    largest array, recording `*_omitted`, until a result fits. It never trims silently.
-6. **`copilot/agentLoop.js`**: `runCopilotTurn()` is a pure async generator of UI events. The model
-   call is injected, so the tests script the model's replies. Its rules:
+6. **`copilot/agentLoop.js`**: `runCopilotTurn()` is a pure async generator of UI events, the turn
+   module's internal module (`copilot/turn.js` is its one production caller). It calls a model
+   port, so the tests script the model's replies, and before each model call it emits the request
+   as sent (`request`). Its rules:
    - **Budgets.** ≤ 6 rounds of tool calls; ≤ 4 calls per round (extra calls are answered
      "skipped"); 120 s per call; no new round after 10 min. Each result is fitted to 3,000
      characters, and a turn's tool messages to 12,000 in total. Older results are compacted to
@@ -187,9 +194,12 @@ inputs on its page, stays the *user's* action.
 10. **`useAssistant.js`, `useCopilot.js` and `components/`**
     - `useAssistant()` holds the settings, the connection probe (with auto-connect) and the run
       context.
-    - `useCopilot()` holds the conversation: Stop, which models cannot call tools, and a new
-      conversation when `runKey` changes. It also builds the memory (`conversationMemory`): a
-      question without an answer is dropped.
+    - `useCopilot()` is the dock's adapter of the turn module: the conversation's React state,
+      Stop, the question card (its ask-user port), the card-focus effects, which models cannot call
+      tools (passed to the turn as `toolsEnabled: false`), and a new conversation when `runKey`
+      changes. It hands each turn the conversation so far (`turnHistory`); the turn builds the
+      memory from it (a question without an answer is dropped). It describes the turn
+      (`describeTurn`) for the composer's status line and the tool list.
     - `CopilotChat` is the dock (`components/dockLayout.js` holds its pure size rules): the rail,
       then the panel, and the resize handle. The panel mounts on first open, so nothing is fetched
       before that, and stays mounted while collapsed, so a running answer continues. It composes
@@ -215,6 +225,76 @@ inputs on its page, stays the *user's* action.
       card for the model, and run() resolves the ids, keeps marks for plot cards (`marks: true`),
       and reports what was shown and what was not on screen.
 
+## The turn: one question (`copilot/turn.js`)
+
+One module runs one question. The dock (`useCopilot.js`) and the validation harness
+(`validation/harness.js`) are its two adapters: each passes what is its own and gets the events
+back. Neither builds a prompt, a tool the turn adds, or a check, so the two cannot drift apart
+(before this module the harness lost the warmer retry and the no-tools prompt).
+
+```js
+runTurn({
+  question, run,           // required; run = CopilotChat's eight run props (the run module's)
+  model,                   // required: a model port (below)
+  tools = [],              // the caller's tools, in order; never ask_user or read_skill (a TypeError)
+  askUser = null,          // the ask-user port; null: no ask_user tool and no Workbench questions
+  skills = null,           // the host's bundle { files, references, load } (parsed here) or { list, load }
+  history = [],            // [{ question, answer }], oldest first
+  signal = null, clock = { now: Date.now },
+  toolContext = null,      // more context for a tool's run() (the dock's card-focus controller)
+  config = {}              // { toolsEnabled = true, method = 'full', limits = {} }
+}) → AsyncIterable<event>
+
+describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'tools' | 'view' | 'no_tools',
+                       method, toolsActive, shown, skillsError }   // pure: the same assembly, not run
+```
+
+- **What it builds.** The run context and the context as the model reads it (`shown`: trimmed to
+  its budget); the tools offered (the caller's, then `ask_user` with an ask-user port and tools on,
+  then `read_skill` with skills, tools on and method `'full'`); the system prompt for them; the
+  history window (an unanswered question is dropped, each answer compacted to
+  `MEMORY_ANSWER_CHARS` = 2,000 characters, the newest `HISTORY_MESSAGES` = 8 messages kept); the
+  Workbench's questions (`clarify.js`), the evidence gate, the context facts the answer checks read,
+  and the context `{{ctx.…}}` references read.
+- **Tools are active** exactly when `config.toolsEnabled` holds and at least one tool is offered;
+  inactive, the request carries no tools and the prompt is the no-tools one. The memory of models
+  that refused tools stays with the caller (the dock passes `toolsEnabled: false` for them).
+- **Events.** Every event the loop emits (`agentLoop.js`), shape unchanged, each with `at`
+  (`clock.now()`), and:
+  - `start { offered, prompt, method, toolsActive, shown, skillsError }`: first, exactly once
+    (`describeTurn` for this question);
+  - `request { round, why, sent }`: before each model call, after the port's `prepare`; `sent` is
+    the request as sent (after the notes, the gate's send-backs, compaction, the Workbench's
+    appended answer and the retry temperature); `why` is `first`, `tools`, `reminder`, `gate`,
+    `final` or `no_tools`;
+  - exactly one terminal event, always last: `done` (the loop's), `stopped { error }` (an abort) or
+    `failed { error, message, hint }` (`explainModelError`: a context-limit refusal or a spend cap
+    lands here too).
+- **Order.** `start`, then a Workbench question (a `tool_start` / `tool_end` pair, `app: true`), then
+  per request: `round`, `request`, the text and reasoning deltas, the tool pairs (sharing an id). A
+  `gate` is always followed by a `retract`. `tools_unsupported` comes at most once, before any tool
+  step, and a new `round` and `request` under the no-tools prompt follow it.
+- **Errors.** Invalid input (a reserved tool name, no model, a blank question) throws a TypeError at
+  the first `next()`; after `start` the iterator never throws. A malformed skill is `skillsError`,
+  never a throw: the turn runs without skills.
+- **State.** None between calls: the caller passes the history, the clock and whether tools are on.
+
+**The model port** (`provider/model.js`): `{ prepare?(intent, { signal }) → sent, stream(sent,
+{ signal }) → fragments }`, a bare function being `stream` with an identity `prepare`. The intent
+is `{ messages, tools, toolChoice, retry }`, `retry` null or `'warmer'` (the request asked again
+after a looping reply). `providerModel(settings, { session })` is the production port: `sent` is
+`{ baseUrl, model, temperature, messages, tools, toolChoice }` (a `'warmer'` retry at
+`ANTI_REPEAT_TEMPERATURE` = 0.6 or above; the API key joins only as the request goes out, so no
+event or record holds it), sent through `streamCopilotChat()`. The validation meters it
+(`validation/spend.js` `meteredModel`: a request that could cross the spend cap is refused in
+`prepare`, so it is never sent). Provider quirks belong behind this port, not in the turn.
+
+**What stays in the adapters.** The dock: React state, Stop, the question card (its ask-user port),
+the card-focus effects (it maps events to focus), the unsupported-model memory and the `runKey`
+reset. The harness: the case's run (the run module), its compute-only tools, the simulated user,
+the arm's skills, its port, and the record (every request as sent, the steps, the score; number
+provenance against `start.shown`).
+
 ## Asking the user (`ask_user`)
 
 The spot check's worst answer was a guess: asked for "Se–Ta–Se angles against an ideal
@@ -234,7 +314,8 @@ offer two, so the agent asks:
   field. It takes focus when it appears unless the user is typing in a field, and the log never
   scrolls its question out of view. A collapsed dock marks the rail ("a question for you").
   Answered, it keeps the question and the reply.
-- **The loop** waits. `useCopilot` passes `askUser(request, { signal })` in the tools' context; the
+- **The loop** waits. `useCopilot` hands the turn its ask-user port, `askUser(request, { signal })`,
+  which the turn offers `ask_user` with and puts in the tools' context; the
   card settles it, and the answer returns as the tool's result (`answerResult()`: the chosen label
   and its meaning with "use exactly this choice", a typed answer verbatim, or a skip as "use your
   default and say you assumed it"). Stop, a new run or an unmount rejects it with an AbortError:
@@ -499,12 +580,12 @@ pieces the agent loop uses so a turn always ends with an answer or a reason:
 | --- | --- | --- |
 | No token for minutes (server busy, stopped) | Cancels the request; the error says the server may be busy | `stallMs` 180 s |
 | A reply that never ends | Cancels it; the error suggests a narrower question or a faster model | `requestMaxMs` 600 s |
-| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once with `antiRepeat` (temperature ≥ 0.6) | one reminder |
+| Reasoning (or text) repeating a passage | Stops it when caught (`repeatsItself`: its last 200 characters 4 times in the last 8,000), asks again once warmer (`retry: 'warmer'`: the model port sends it at temperature ≥ 0.6, `ANTI_REPEAT_TEMPERATURE`; in the dock and the harness alike) | one reminder |
 | Reasoning only, no answer, no call | One reminder, then `done` with `stoppedBy: 'empty'` and a `reason` the footer shows | one reminder |
 | A call written as JSON text | Run as a call (`textToolCalls`: the whole reply must be the call, naming a known tool); the text is retracted | |
 | Calls that repeat earlier ones or fail | Two such rounds in a row end the analyses: the next request asks for the answer (`stoppedBy: 'no_progress'`) | `maxNoProgressRounds` 2 |
 | A long turn | Earlier results are compacted to their checks and top-level numbers (`keyNumbers`), once | `turnCharBudget` |
-| A long conversation | Earlier answers above 2,000 characters are re-sent as their sentences with numbers and their Outcome line (`compactAnswer`) | `MEMORY_ANSWER_CHARS` |
+| A long conversation | Earlier answers above 2,000 characters are re-sent as their sentences with numbers and their Outcome line (`compactAnswer`, in the turn's history window) | `MEMORY_ANSWER_CHARS` (`turn.js`) |
 | Out of memory, context overflow, no model loaded, connection lost | The error gets a line on what to do (`explainModelError`) | |
 
 Notes to the model (a reminder, the last-round note) join the last user message when that is the
@@ -512,7 +593,9 @@ last message: Gemma's chat template refuses two user messages in a row.
 
 ## The tool contract (the `tools` prop)
 
-The host passes engine tools as plain objects; the module validates and runs them:
+The host passes engine tools as plain objects; the module validates and runs them. `ask_user` and
+`read_skill` are the turn's own (it adds them from its ask-user port and the `skills` prop): a host
+tool with either name is refused, and the dock says so in its error line.
 
 ```js
 {
@@ -772,7 +855,15 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
 `__tests__/` covers everything that doesn't need a live model:
 
 - **Context and prompts:** context assembly and the character budget; the watchdog heuristics and
-  reply parsing; the prompt builders and conversation memory.
+  reply parsing; the prompt texts.
+- **The turn** (`turn.test.js`, at its interface: a scripted model port, a fake ask-user and a fake
+  clock): the order of the events and the single terminal event, why each request was made, the
+  tools offered and the prompt for them (the tools-on rule, the reserved names, "when to ask"), the
+  history window (the dock's turns as history, compaction), the warmer retry at 0.6 or more through
+  `providerModel` (and the API key never in a request event), `stopped` and `failed`, invalid input.
+  `src/__tests__/modelVisible/turnRequests.test.js`: the turn's first request for a dock-shaped and
+  a harness-shaped spec equals the snapshot files (it needs the host's run module, so it sits
+  beside them: this folder imports nothing from the host).
 - **Streaming:** SSE parsing, including tool-call fragments split mid-arguments and Gemini-style
   whole calls with `extra_content`; tool-call assembly and argument validation.
 - **The context window** (`contextGuard.test.js`): the estimate errs high; the plan keeps a loaded
@@ -809,7 +900,8 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   verdict on their own (`evidence.test.js`) and in the loop (`agentLoop.test.js`); the clarifier on synthetic shells — split,
   merged, clean, word-like element symbols, the tolerance ladder, typed windows
   (`clarify.test.js`); and on the Demo with the real engines and context
-  (`src/__tests__/copilotChecksReplays.test.js`, the evidence gate on, as in the app): a
+  (`src/__tests__/copilotChecksReplays.test.js`, each question through the turn module, as in the
+  app; two loop-level cases said in place): a
   contradicted answer is not verified, gemma4's correct answers stay *achieved* and are never sent
   back, a cluster conclusion sent back for its analysis and its numbers filled from it, each Workbench question (an element alone, a split shell, a
   cut window kept or replaced, one site or pooled), the clear questions that never ask, the
@@ -828,9 +920,10 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   keys, sends the option picked by its number key back to the model, which computes in that window;
   *Other…*; Stop while waiting; a run change drops the question; a collapsed dock marks the rail.
 - **What the model sees** (`src/__tests__/modelVisible/`): snapshot files of every system-prompt
-  variant, the dock's and the validation harness's first request and tool list, and one tool
-  message per tool on the Demo. A diff there is a change to what the model sees: call it out in
-  the PR ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
+  variant, the dock's and the validation harness's first request and tool list (both through the
+  turn module), and one tool message per tool on the Demo. A diff there is a change to what the
+  model sees: call it out in the PR
+  ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
 - **The shape of each tool's data:** the notation and its checker (`dataShape.test.js`), and every
   live tool's results on the Demo and the dev cases against its `dataShape`
   (`src/__tests__/toolDataShapes.test.js`, *The tool contract*).

@@ -158,7 +158,7 @@ const skillMessages = async (skills, messages) => {
     const out = [];
     for (const skill of skills) {
         const model = recordingModel([{ calls: [[READ_SKILL, { name: skill.name }]] }, { text: 'Recorded.' }]);
-        await drain(runCopilotTurn({ callModel: model.callModel, messages, tools }));
+        await drain(runCopilotTurn({ model: model.port, messages, tools }));
         const message = model.requests[1].messages.at(-1);
         out.push({ skill, message, chars: message.content.length, tokens: estimatePromptTokens({ messages: [message] }) });
     }
@@ -200,7 +200,7 @@ const worstTurn = async ({ first, skills, readSkills }) => {
         { calls: ANALYSES.map(([name, args]) => [name, args(elements)]) },
         { text: 'Recorded.\n\nOutcome: a recorded turn.' }
     ]);
-    await drain(runCopilotTurn({ callModel: model.callModel, messages: first.messages, tools }));
+    await drain(runCopilotTurn({ model: model.port, messages: first.messages, tools }));
     const request = model.requests[2];
     // The tools went out exactly as in the first request.
     expect(request.tools).toEqual(first.tools);
@@ -264,7 +264,7 @@ describe('the worst realistic turn in a 32,768-token window (plan 5.5)', () => {
         armB = [];
         for (const item of DEV_CASES) {
             const recording = recordingModel();
-            const record = await runLiveCase({ built: buildCase(item), arm: 'B', model, callModel: recording.callModel, skills: disk });
+            const record = await runLiveCase({ built: buildCase(item), arm: 'B', model, port: recording.port, skills: disk });
             expect(record.error).toBeNull();
             const [request] = recording.requests;
             armB.push({ id: item.id, request, tokens: estimatePromptTokens({ messages: request.messages, tools: request.tools }) });

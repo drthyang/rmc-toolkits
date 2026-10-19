@@ -214,11 +214,10 @@ const UserMessage = ({ content }) => (
 );
 
 const CopilotView = ({
-    context, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey,
-    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, clarifier = null,
-    skills = null, skillsError = null
+    context, run, settings, connected, tools, toolsEnabled, pages, onOpenPage, runKey,
+    cards = null, focus = null, onTurnEnd = null, onBusyChange = null, onQuestion = null, skills = null
 }) => {
-    const copilot = useCopilot({ settings, context, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion, clarifier, skills });
+    const copilot = useCopilot({ settings, run, tools, toolsEnabled, runKey, focus, onTurnEnd, onQuestion, skills });
     useEffect(() => { onBusyChange?.(copilot.busy); }, [copilot.busy, onBusyChange]);
     const showCard = useCallback((id) => { focus?.show([id], { source: 'user' }); }, [focus]);
     const previewCard = useCallback((id) => { focus?.preview(id); }, [focus]);
@@ -299,13 +298,17 @@ const CopilotView = ({
         }
     };
 
+    // What the Copilot can run on this run with its analyses on (the turn's
+    // own ask_user and read_skill included): the status line and the list.
+    const offered = copilot.offered;
     const toolStatus = (() => {
         if (copilot.toolsUnsupported) return 'This model cannot run analyses — answers come from the run summary.';
         if (!toolsEnabled) return 'Analyses are off — answers come from the run summary.';
-        const analyses = tools.filter((tool) => !tool.view && !tool.interactive && !tool.keep).length;
+        const analyses = offered.tools.filter((tool) => !tool.view && !tool.interactive && !tool.keep).length;
         if (!analyses) return 'No analyses are available for this run.';
-        const pointing = tools.some((tool) => tool.view) ? ' and point at its cards' : '';
-        const methods = skills?.length ? `, following ${skills.length} skill${skills.length === 1 ? '' : 's'}` : '';
+        const pointing = offered.view ? ' and point at its cards' : '';
+        const count = offered.skills.length;
+        const methods = count ? `, following ${count} skill${count === 1 ? '' : 's'}` : '';
         return `Can run ${analyses} ${analyses === 1 ? 'analysis' : 'analyses'} on this run${pointing}${methods}.`;
     })();
 
@@ -344,13 +347,13 @@ const CopilotView = ({
                             ))}
                         </div>
                     )}
-                    {tools.length > 0 && (
+                    {offered.tools.length > 0 && (
                         <details className="llm-context-inspector">
                             <summary title="The analyses the Copilot may run on this run, and its view tools. Analyses only compute; view tools only point at cards and turn 3D views — none changes data or a file.">
                                 What the Copilot can run
                             </summary>
                             <ul className="llm-tool-list">
-                                {tools.map((tool) => (
+                                {offered.tools.map((tool) => (
                                     <li key={tool.name}><code>{tool.name}</code> — {tool.description}</li>
                                 ))}
                             </ul>
@@ -369,7 +372,7 @@ const CopilotView = ({
 
             <div className="llm-sr-only" aria-live="polite">{announcement}</div>
             {copilot.error && <div className="llm-connection-status is-error" role="alert">{copilot.error}</div>}
-            {skillsError && <div className="llm-connection-status is-error" role="alert">The Copilot's skills could not be read: {skillsError}</div>}
+            {copilot.skillsError && <div className="llm-connection-status is-error" role="alert">The Copilot's skills could not be read: {copilot.skillsError}</div>}
 
             <form
                 className="llm-composer"
