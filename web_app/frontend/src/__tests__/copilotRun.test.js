@@ -238,7 +238,8 @@ describe('the Detected SG card\'s default tolerance is one number: DEFAULT_VIEW.
     const tolerance = DEFAULT_VIEW.toleranceA;
 
     it('the app starts the shared tolerance there, and the copies the module cannot import agree', async () => {
-        expect(read('src/App.jsx')).toContain('const symTolState = useState(DEFAULT_VIEW.toleranceA);');
+        // ...and back there when another run opens (appStateLifecycle.test.jsx).
+        expect(read('src/App.jsx')).toContain('const symTolState = useRunTolerance(runKey, DEFAULT_VIEW.toleranceA);');
         // Arm A reads the card at its default (a reading rule fixed before any run).
         expect(ARM_A_RULES.CARD_TOLERANCE_A).toBe(tolerance);
         // ModelSummary's fallback without a provider, and the Workbench's

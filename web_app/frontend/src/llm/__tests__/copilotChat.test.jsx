@@ -280,6 +280,91 @@ describe('CopilotChat', () => {
         expect(chatBodies[2].messages.slice(3)).toEqual([{ role: 'user', content: 'Again?' }]);
     });
 
+    describe('a new configuration of the run (configKey: a Live Data save)', () => {
+        const DIVIDER = 'New configuration saved — earlier answers were about the previous one';
+        // The conversation log, one word per entry.
+        const logEntries = () => [...container.querySelector('.llm-chat-log').children].map((element) => {
+            if (element.classList.contains('llm-config-divider')) return 'divider';
+            return element.classList.contains('is-user') ? 'user' : 'assistant';
+        });
+
+        it('keeps the conversation on screen, ends it with a divider, and sends none of it as memory', async () => {
+            stubReplies([
+                sse([delta({ content: 'Not converged.\n\nOutcome: achieved — still falling.' }, 'stop')]),
+                sse([delta({ content: 'Six Se.\n\nOutcome: achieved — counted.' }, 'stop')]),
+                sse([delta({ content: 'Still six.\n\nOutcome: achieved — counted.' }, 'stop')])
+            ]);
+            act(() => root.render(chat({ configKey: 'epoch|0' })));
+            await openChat();
+            await ask('Has it converged?');
+
+            // The same configuration (a re-render, a save of the plots only): nothing changes.
+            act(() => root.render(chat({ configKey: 'epoch|0' })));
+            await settle();
+            expect(logEntries()).toEqual(['user', 'assistant']);
+
+            // A new configuration: the answers stay, the divider ends them, and
+            // the screen reader hears it.
+            act(() => root.render(chat({ configKey: 'epoch|1' })));
+            await settle();
+            expect(logEntries()).toEqual(['user', 'assistant', 'divider']);
+            expect(container.querySelector('.llm-config-divider').textContent).toBe(DIVIDER);
+            expect(container.querySelector('.llm-sr-only[aria-live]').textContent).toContain(DIVIDER);
+            // A second save before any question: still one divider.
+            act(() => root.render(chat({ configKey: 'epoch|2' })));
+            await settle();
+            expect(logEntries()).toEqual(['user', 'assistant', 'divider']);
+
+            // The next question is sent as in a fresh conversation: no memory
+            // of the answer about the previous configuration.
+            await ask('And around Ta?');
+            expect(chatBodies[1].messages.slice(3)).toEqual([{ role: 'user', content: 'And around Ta?' }]);
+            expect(logEntries()).toEqual(['user', 'assistant', 'divider', 'user', 'assistant']);
+
+            // Memory holds the exchanges about the current configuration, and only them.
+            await ask('Still?');
+            expect(chatBodies[2].messages.slice(3)).toEqual([
+                { role: 'user', content: 'And around Ta?' },
+                { role: 'assistant', content: 'Six Se.\n\nOutcome: achieved — counted.' },
+                { role: 'user', content: 'Still?' }
+            ]);
+
+            // Another run still starts a new conversation, divider and all.
+            act(() => root.render(chat({ runKey: 'run-2', configKey: 'epoch|2' })));
+            await settle();
+            expect(container.querySelector('.llm-chat-log')).toBeNull();
+            expect(container.querySelector('.llm-config-divider')).toBeNull();
+        });
+
+        it('puts the divider after an answer still running at the save: it was asked about the previous one', async () => {
+            let release;
+            stubReplies([
+                () => new Promise((resolve) => {
+                    release = () => resolve(sse([delta({ content: 'Not converged.\n\nOutcome: achieved — x' }, 'stop')]));
+                }),
+                sse([delta({ content: 'Six Se.\n\nOutcome: achieved — counted.' }, 'stop')])
+            ]);
+            act(() => root.render(chat({ configKey: 'epoch|0' })));
+            await openChat();
+            await ask('Has it converged?');
+            await settleUntil(() => typeof release === 'function');
+            expect(container.querySelector('.llm-send.is-stop')).not.toBeNull();
+
+            act(() => root.render(chat({ configKey: 'epoch|1' })));
+            await settle();
+            expect(logEntries()).toEqual(['user', 'assistant', 'divider']);
+
+            await act(async () => { release(); });
+            await settleUntil(() => !container.querySelector('.llm-send.is-stop'));
+            expect(logEntries()).toEqual(['user', 'assistant', 'divider']);
+            expect(container.textContent).toContain('Not converged.');
+
+            await ask('And around Ta?');
+            expect(chatBodies[1].messages.slice(3)).toEqual([{ role: 'user', content: 'And around Ta?' }]);
+            expect(logEntries()).toEqual(['user', 'assistant', 'divider', 'user', 'assistant']);
+        });
+    });
+
     it('says why it cannot ask when the host hands it a tool the turn adds itself', async () => {
         const shadow = { ...bondAngles, name: 'ask_user', description: 'A host ask_user.' };
         act(() => root.render(chat({ tools: [shadow] })));

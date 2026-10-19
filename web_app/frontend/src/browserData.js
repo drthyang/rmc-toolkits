@@ -28,6 +28,15 @@ export const fileSignature = (items) => items
     .sort()
     .join('|');
 
+// The run's configuration as one string: the fileSignature of its .rmc6f
+// entries alone, so a plot or .log that changes leaves it as it was. A Flask
+// /api/files listing and a browser-loaded run's files give it alike; App.jsx
+// compares it to tell that a new configuration was saved (configEpoch, and
+// the AI Copilot's configKey).
+export const configurationSignature = (items) => fileSignature(
+    (items || []).filter((file) => file?.type === 'file' && /\.rmc6f$/i.test(file.name || ''))
+);
+
 export const detectPlotKind = (name) => {
     if (/-EXAFS-.+_Q_OUTPUT\.csv$/.test(name)) return 'exafs_q';
     if (/-EXAFS-.+_R_OUTPUT\.csv$/.test(name)) return 'exafs_r';
