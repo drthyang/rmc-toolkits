@@ -5,6 +5,22 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Copilot: one module for the run as the Copilot sees it; the harness records its view
+
+- `src/copilotRun.js` turns an open run and the view on screen into everything the AI Copilot is
+  handed: CopilotChat's eight run props, the engine tools, the elements, the engine and the
+  normalised view (`DEFAULT_VIEW`: the Detected SG card's 0.2 Å, nothing hidden, no PCA table,
+  Live Data off). Its browser adapter `useCopilotRun.js` takes over the Dashboard's symmetry and
+  `.dat` work and copilotTools.js's `useCopilotTools`; its in-process adapter `openRunFolder.js`
+  (Node and tests only; an eslint rule keeps it out of `src/`) is how the validation harness now
+  opens each case. The Dashboard's plot list, χ² history and plot parse are shared from
+  browserData. App behaviour and what the model sees are unchanged (the model-visible snapshots
+  pass as they were; arms A and A+ are unchanged).
+- Plan item 1.3: each live record keeps the view it ran with (`record.view`) and the context
+  sections the model had and lacked, with `earlier_turns: 0`; `run.js live --pca-table` (dev
+  only, off by default) adds the PCA table for a check of its effect
+  ([copilot-validation.md](algorithms/copilot-validation.md#records-transcripts-findings)).
+
 ### Copilot validation: the held-out breathing case recomposed
 
 - The test breathing case's cluster and anion were the skills' reference compound, whose

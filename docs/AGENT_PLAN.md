@@ -43,7 +43,10 @@ drafts of batch 1 wait in PR #71 for the user's review.
     `rValueFile` are null in the harness (`harness.js:77-78`). In the app the PCA table joins the
     context once the PCA Ellipsoid page has loaded (`src/App.jsx:687,739`), and the Detected SG
     tolerance is the user's ladder pick (`src/components/Dashboard.jsx:423`), not the harness's
-    0.2 Å (`runFolder.js:15,24-27`).
+    0.2 Å (`runFolder.js:15,24-27`). **Stated (1.3, with the run module):** the harness opens each
+    case through the run module's in-process adapter with the app's default view, and every record
+    keeps that view (`record.view`), its context sections and `earlier_turns: 0`; `--pca-table`
+    adds the PCA table for a dev check.
   - **The prompt and history.** The harness offers no view tools, so the model reads the
     compute-only rules instead of `VIEW_RULES` (`harness.js:90-92`,
     `src/llm/prompts/copilot.js:151`), and it never has earlier turns (`harness.js:91`); the
@@ -182,7 +185,7 @@ user decided on 2026-10-19:
 | # | Deepening | Strength · dependency | Decision |
 | --- | --- | --- | --- |
 | a | **The case-id leak** (a bug, not a deepening). The harness names the run after the case id (`validation/runFolder.js:30`), which reaches the model as `context.run` in the first message (`src/llm/context/runContext.js:422`). Every arm B and C run is told its case kind. | — | Start, first: **fixed** (protocol 2026-10-19.1) |
-| 2 | **The run as the Copilot sees it.** One module turns a run's files and the view state into the Copilot's run. Today App, Dashboard and useAssistant each hold a piece, and the harness copies them (`runFolder.js:15-38`). The browser and the harness become its two adapters. | Strong · local-substitutable | Start, second |
+| 2 | **The run as the Copilot sees it.** One module turns a run's files and the view state into the Copilot's run. Today App, Dashboard and useAssistant each hold a piece, and the harness copies them (`runFolder.js:15-38`). The browser and the harness become its two adapters. | Strong · local-substitutable | Start, second: **built** (`src/copilotRun.js` with `useCopilotRun.js` and `openRunFolder.js`) |
 | 1 | **The turn.** One module runs one question. Today `useCopilot.js:126,137-181` and `harness.js:75-132` each assemble the turn, and they have drifted apart: the harness loses the warmer retry, the no-tools prompt and the tools-on rule, and the gate setup is copied in both. The dock and the harness become its two adapters, and the module emits each request as it was sent. | Strong · mock (model port) | Start, third |
 | C | **Arm C's "method off" switch** in the turn module (1.8). | — | Start, after 1 |
 | 3 | **Provider quirks behind the model port.** `streamCopilotChat` takes over the retry temperature, honours or enforces `tool_choice: 'none'`, and reports "tools unsupported" as a typed failure instead of a regex over error text. | Strong · mock | Start, fourth |
@@ -317,7 +320,7 @@ Beyond single contradictions:
 | --- | --- | --- |
 | 1.1 | **The warmer retry in the harness.** Now part of the turn module (1) and the model port (3): both adapters get the same retry, and a test at the port asserts it. | — |
 | 1.2 | **One run policy, recorded.** A `RunPolicy` states the limits, temperature, server kind, context size, reply cap and the context-guard decisions; each record and transcript keeps it; the report lists what a comparison across models also compares. One scripted check that the final round's `tool_choice: 'none'` is sent in the form each provider accepts. | M |
-| 1.3 | **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. | S |
+| 1.3 | **Context parity, stated.** The record says which context sections the run had (no PCA table, no run settings, the 0.2 Å card) and that it is one fresh question; the harness gets an option for a PCA-table context, as after a visit to the PCA page, for a dev check of its effect. **Built with the run module (Phase 2, PR 2):** `record.view`, `record.context`, `run.js live --pca-table`. | S |
 | 1.4 | **State lifecycle.** A Live Data save that changes the configuration starts a new conversation, as a new run does, or marks earlier answers as about the previous configuration; the Detected SG pick resets with the run. | S |
 | 1.5 | **Holdout scan widened** (done, 2026-10-19): test-case materials, formulas, magnitudes and directions (from `cases.js`) across `src`, `.claude/skills`, `rmc_toolkits` and `docs/` except the validation docs. The overlap with the skills' reference compound reaches arm B through `read_skill`: copilot-validation.md lists it as an open leak pending the user. Only test- or doc-only hits are allow-listed, as known risks. | S |
 | 1.6 | **An informative comparison with A+** **(approval)**. Dev set only. (i) The report gives feature-only scores, B against A+ per component, and every disagreement with the planted truth beside it, with no change to the case score. (ii) A "judgment" dev subset, designed and tried on dev only: cases where A+'s fixed joining rules are ambiguous or wrong — two features at once, a signal at 2.5–4σ, evidence that two tools read differently, a choice only the user can make — so the model has room to add. The test set gets matching cases only through a new, pinned test version authored without reference to the dev results, decided by the user. | M |
@@ -331,7 +334,7 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 | PR | Change | Size |
 | --- | --- | --- |
 | a | **The case-id leak.** The harness gives the run a neutral name; a test asserts that no case id or kind reaches the model. The model-visible snapshot changes by the run name only. **(this PR:** `rmc_run`, `caseBlind.test.js`, protocol 2026-10-19.1**)** | S |
-| 2 | **The run module** (candidate 2). The browser and the harness are its two adapters; the harness records the view state it chose. | M |
+| 2 | **The run module** (candidate 2). The browser and the harness are its two adapters; the harness records the view state it chose. **(this PR:** `copilotRun.js`, `useCopilotRun.js`, `openRunFolder.js`, the harness on `openRunFolder`, item 1.3**)** | M |
 | 1 | **The turn module** (candidate 1). The dock and the harness are its two adapters; it emits each request as sent. | L |
 | C | **Arm C's "method off" switch** in the turn module (1.8). Arm C's snapshot is checked for skill names and the method sentences. | M |
 | 3 | **The model port** (candidate 3): the retry temperature, `tool_choice: 'none'`, "tools unsupported" as a typed failure. | S |

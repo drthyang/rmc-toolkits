@@ -23,9 +23,17 @@ import { symmetryNoiseFloor } from '../src/llm/context/runContext';
 import { describeSymmetry } from '../src/symmetryModel';
 import { unitCellVectors } from '../src/pcaCrystalFrame';
 import {
-    AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, buildCopilotTools, cartesianToUvw
+    AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, cartesianToUvw
 } from '../src/copilotTools';
 import { normalizeVerdict } from './verdict';
+
+// What the arms read of a case: the run as the Copilot is handed it
+// (runFolder.js loadRun: a CopilotRun, or the promise loadRun returns), its
+// structure and plot files, its engine, elements and engine tools.
+const readRun = async (copilotRun) => {
+    const run = await copilotRun;
+    return { structure: run.props.structure, plotFiles: run.props.plotFiles, engine: run.engine, elements: run.elements, tools: run.tools };
+};
 
 /** Arm A's reading rules, fixed before any run. */
 export const ARM_A_RULES = Object.freeze({
@@ -68,7 +76,7 @@ const symmetryReading = (described, tolerance, source) => {
 
 // PCA Ellipsoid rows → split sites (one claim per element: its largest).
 const splitSites = async (run, readings) => {
-    const payload = await run.request('sites');
+    const payload = await run.engine('sites');
     const found = new Map();
     for (const site of payload.sites || []) {
         if (!site.rms || !site.axes) continue;
@@ -90,7 +98,7 @@ const splitSites = async (run, readings) => {
 
 // Displacement Directions page on one site, at the page's defaults.
 const directionsOf = async (run, site, readings) => {
-    const payload = await run.request('orientation', {
+    const payload = await run.engine('orientation', {
         referenceNumber: site.referenceNumber, frequency: ARM_A_RULES.FREQUENCY, smoothing: ARM_A_RULES.SMOOTHING, geometry: false
     });
     const significant = payload.peakSignificance >= ARM_A_RULES.SIGMA;
@@ -153,8 +161,9 @@ const splitShells = (run, readings) => {
     return found;
 };
 
-/** Arm A: the default pages, read by ARM_A_RULES. */
-export const runArmA = async (run) => {
+/** Arm A: the default pages, read by ARM_A_RULES. `copilotRun`: loadRun's run (or its promise). */
+export const runArmA = async (copilotRun) => {
+    const run = await readRun(copilotRun);
     const readings = [];
     const card = describeSymmetry(run.structure, ARM_A_RULES.CARD_TOLERANCE_A);
     const symmetry = symmetryReading(card, ARM_A_RULES.CARD_TOLERANCE_A, 'Detected SG card');
@@ -182,11 +191,12 @@ export const SWEEP_RULES = Object.freeze({
 const significantChange = (row) => Number.isFinite(row?.z) && Math.abs(row.z) >= CLUSTER_Z
     && Number.isFinite(row?.change) && Math.abs(row.change) >= CLUSTER_EFFECT;
 
-/** Arm A+: every engine, its own thresholds, fixed joining rules; no model. */
-export const runArmSweep = async (run) => {
+/** Arm A+: every engine, its own thresholds, fixed joining rules; no model. `copilotRun` as in runArmA. */
+export const runArmSweep = async (copilotRun) => {
+    const run = await readRun(copilotRun);
     const readings = [];
-    const tools = Object.fromEntries(buildCopilotTools({ request: run.request, structure: run.structure, elements: run.elements })
-        .map((tool) => [tool.name, tool]));
+    // The run's engine tools, as the Copilot is offered them.
+    const tools = Object.fromEntries(run.tools.map((tool) => [tool.name, tool]));
     // Symmetry at the sampling noise floor: the local-symmetry skill's rule
     // (a group change below the floor is noise).
     const floor = symmetryNoiseFloor(run.structure.basis);

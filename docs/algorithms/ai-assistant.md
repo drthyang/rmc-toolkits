@@ -194,33 +194,36 @@ is active, the row-1 probe above authenticates with that key on every fresh page
 ### Step 1 — Inputs, and when the context is built
 
 **Inputs.** `buildRunContext()` takes eight optional fields
-([`llm/context/runContext.js`](../../web_app/frontend/src/llm/context/runContext.js)):
+([`llm/context/runContext.js`](../../web_app/frontend/src/llm/context/runContext.js)). One host
+module builds all eight from the open run and the view on screen:
+[`copilotRun.js`](../../web_app/frontend/src/copilotRun.js) (`props` of `copilotRun(loaded, view)`),
+through `useCopilotRun.js` in the app and `openRunFolder.js` in the validation harness.
 
 | Prop | Origin | Used for |
 |------|--------|----------|
 | `runName` | folder name / directory string | `context.run` (falls back to `'unnamed run'`) |
-| `plotFiles` | `Dashboard.jsx` → `allPlotFiles`, the **unfiltered** dashboard plot list | `datasets`, `pair_correlations` |
-| `rValueFile` | combined R-value log, built from the **visibility-filtered** list | `convergence` |
+| `plotFiles` | `dashboardPlotFiles(files)` (browserData), the **unfiltered** dashboard plot list | `datasets`, `pair_correlations` |
+| `rValueFile` | `chartedRValueFile()` (browserData): the combined R-value log of the **visible** logs | `convergence` |
 | `structure` | parsed `.rmc6f` summary | `structure`, `configuration_optimization`, per-site displacements, average-structure distances |
-| `symmetry` | `describeSymmetry()` + `toleranceLadder()` | `symmetry` |
+| `symmetry` | `describeSymmetry()` at the view's tolerance + `toleranceLadder()` | `symmetry` |
 | `runSettings` | `parseRunSettings()` of `<stem>.dat` | `run_settings` |
-| `pcaSites` | PCA Ellipsoid page's site table | `pca_displacements` |
-| `liveData` | Live Data toggle | `live_mode` (boolean) |
+| `pcaSites` | PCA Ellipsoid page's site table (`view.pcaSites`) | `pca_displacements` |
+| `liveData` | Live Data toggle (`view.liveData`) | `live_mode` (boolean) |
 
-**The visibility toggle is asymmetric.** `Dashboard.jsx` builds `allPlotFiles` (every file passing
-`isDashboardPlotFile`, sorted by `comparePlotFiles`), then `plotFiles = allPlotFiles` minus
-`hiddenPlotPaths`, then `rValueFiles` from `plotFiles`. The Copilot is handed
-`assistantRun.plotFiles = allPlotFiles` — the *unfiltered* list — but `rValueFile` from the filtered
-one. Consequence: **hiding a plot on the Dashboard does not remove it from `datasets` or
+**The visibility toggle is asymmetric.** The Dashboard and the run module share the plot list
+(`dashboardPlotFiles`: every file passing `isDashboardPlotFile`, in `compareDashboardPlotFiles`
+order) and the χ² history (`chartedRValueFile`: the r_value logs not in `hiddenPlotPaths`). The
+Copilot is handed the *unfiltered* list as `plotFiles` but the history of the visible logs as
+`rValueFile`. Consequence: **hiding a plot on the Dashboard does not remove it from `datasets` or
 `pair_correlations`, but hiding an R-value log silently removes it from `convergence`, from
 `recent_slope_per_step`, and from the watchdog.**
 
 **Gating.** `useAssistant({…, enabled})` builds the context in a `useMemo` only when `enabled` is true
 ([`llm/useAssistant.js`](../../web_app/frontend/src/llm/useAssistant.js)). The chatbox panel is mounted
 only when the user first opens it (`copilotOpened` in
-[`App.jsx`](../../web_app/frontend/src/App.jsx)), and `Dashboard.jsx` computes the symmetry finder, the
-tolerance ladder, and the `.dat` parse *only* when `wantAssistantData` is set — so a Dashboard/KDE-only
-session performs none of this work.
+[`App.jsx`](../../web_app/frontend/src/App.jsx)); until then `Dashboard.jsx` does not publish its run
+and `useCopilotRun` computes neither the symmetry finder, the tolerance ladder nor the `.dat` parse —
+so a Dashboard/KDE-only session performs none of this work.
 
 **Rounding convention.** A single helper is used throughout:
 

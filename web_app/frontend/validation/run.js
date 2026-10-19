@@ -6,13 +6,18 @@
 //
 //   npx vite-node validation/run.js -- write   --split dev --out <dir>
 //   npx vite-node validation/run.js -- arm-a   --split dev [--out <dir>]
-//   npx vite-node validation/run.js -- live    --arm B --model qwen3.8-27b --split dev [--runs 3] [--cases id,id] [--out <dir>]
+//   npx vite-node validation/run.js -- live    --arm B --model qwen3.8-27b --split dev [--runs 3] [--cases id,id] [--out <dir>] [--pca-table]
 //   npx vite-node validation/run.js -- report  --in <dir> [--in <dir>…] [--out <file>]
 //   npx vite-node validation/run.js -- findings <file.jsonl>
 //
 // The held-out test set: `--split test` also needs `--final` and a clean git
 // tree (its commit is recorded in every record), so its numbers always come
 // from committed code. API models run the test set only, under their spend cap.
+//
+// `--pca-table` (live, dev set only) gives each run the PCA table, as after a
+// visit to the PCA Ellipsoid page, to check that context section's effect;
+// its records say so (`view.pcaSites`, `context.sections`) and go to their own
+// folder by default (…_pca-table).
 
 import { execSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -127,7 +132,7 @@ const commands = {
         const records = [];
         for (const item of selectCases(split, args.cases)) {
             const built = buildCase(item);
-            const run = loadRun(built, { ladder: false });
+            const run = await loadRun(built, { ladder: false });
             for (const result of [await runArmA(run), await runArmSweep(run), { arm: 'D', readings: [], verdict: truthVerdict(built.truth) }]) {
                 const score = scoreVerdict(built.truth, result.verdict);
                 records.push({
@@ -154,8 +159,10 @@ const commands = {
             if (!model.arms.includes(arm) && !args['allow-arm']) throw new Error(`${model.name} runs arm ${model.arms.join(', ')} by default (--allow-arm to override within the cap)`);
         }
         guardSplit({ split, final: args.final, clean: split === 'test' ? treeClean() : true });
+        const pcaTable = Boolean(args['pca-table']);
+        if (pcaTable && split !== 'dev') throw new Error('--pca-table is a dev check: --split dev only');
         const runs = Number(args.runs || model.runsPerCase || 3);
-        const out = resolve(args.out || `validation/runs/${new Date().toISOString().slice(0, 10)}_${model.name.replace(/[^\w.-]+/g, '-')}_${arm}_${split}`);
+        const out = resolve(args.out || `validation/runs/${new Date().toISOString().slice(0, 10)}_${model.name.replace(/[^\w.-]+/g, '-')}_${arm}_${split}${pcaTable ? '_pca-table' : ''}`);
         mkdirSync(out, { recursive: true });
         const commit = commitOf();
         const skills = arm === 'B' ? loadSkills() : null;
@@ -188,7 +195,7 @@ const commands = {
                 const metered = tracker ? meteredCall(callModel, tracker, id) : callModel;
                 let record;
                 try {
-                    record = await runLiveCase({ built, arm, model, runIndex: index, callModel: metered, skills, commit });
+                    record = await runLiveCase({ built, arm, model, runIndex: index, callModel: metered, skills, commit, pcaTable });
                 } catch (failure) {
                     if (failure?.name !== 'SpendCapError') throw failure;
                     record = failure.record;
