@@ -529,7 +529,7 @@ cross-engine bound and your number is inside it. Those bounds are section-specif
 | Auto StoG level sweep (§4) | level rel. err. < 1e-9; window edges to 9 dp |
 | Auto StoG $(a,b)$ (§4) | rel. err. < 1e-6; `iterations` exactly equal |
 | Auto StoG $\rho_0$ self-consistency (§4) | **only ~1e-4 relative** — and §4 argues this is a genuine algorithmic divergence (the JS filter omits `s0Target` inside the loop), not pure float noise |
-| PCA ellipsoids (§10) | round-off equality asserted at `rtol=1e-9, atol=1e-12` |
+| PCA ellipsoids (§10) | round-off equality asserted at `rtol=1e-9, atol=1e-12`; the KDE volume likewise above the 20 000-point fit cap, where both engines fit the same subsample (`pca_kde_fixture.json`) |
 | Orientation frame (§13) | $\max\lvert\mathbf A_\mathrm{orient}-\mathbf A_\mathrm{ellipsoid}\rvert = 5\times10^{-16}$ — **but** the two suites are *parallel*, not shared-golden |
 | Structure KDE (§8) | **no cross-runtime numerical test exists.** Bandwidth matrices genuinely differ (different subsample); GPU branch is float32; contour tracers differ; element-label case handling differs |
 
