@@ -11,7 +11,7 @@
 // without the view tools, which need a screen; the Workbench's own questions;
 // the evidence gate; the answer checks): a recording model calls the tool,
 // and its second request holds the tool message. The engines run in-thread
-// (pcaKdeWorker's handlePcaMessage, as validation/runFolder.js runs them).
+// (pcaKdeWorker's handlePcaMessage, as src/openRunFolder.js runs them).
 // Also: an ask_user answer, a read_skill result, and a window that cuts the
 // Ta–Se shell, once as the app runs it (the Workbench asks, the user skips:
 // the call runs in the whole shell, with a note) and once as the tool itself

@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../api';
 import {
-    combineRValueFiles,
+    chartedRValueFile,
+    DASHBOARD_MAX_POINTS,
+    dashboardPlotFiles,
     fileSignature,
+    isDashboardPlotFile,
     isStaticMode,
-    parseRunSettings,
+    parseDashboardPlotFile,
     plotMetadataFromFile,
-    readAndParseLocalPlotFile,
     WATCH_INTERVAL_MS
 } from '../browserData';
 import { saveSvgFiguresAsZip } from '../figureExport';
 import { WatchdogBadge } from '../llm';
-import { describeSymmetry, toleranceLadder } from '../symmetryModel';
 import { isIncompleteStructure } from '../structureReport';
-import { SymTolContext } from '../symTolContext';
 import InteractivePlot from './InteractivePlot';
 import {
     Banner, Card, CardTitle, Chip, EmptyState, IconButton, Page, PageIssues, Pill,
@@ -29,33 +29,10 @@ import ModelSummary from './ModelSummary';
 import AppFooter from './AppFooter';
 import './Dashboard.css';
 
-const plotOrder = ['r_value', 'bragg', 'xray_sq', 'neutron_sq', 'exafs_q', 'exafs_r', 'xpdf', 'npdf', 'pdf_partials'];
-const isDashboardPlotFile = (file) => file.plotKind && file.plotKind !== 'stog';
-
 const CHART_SAVE_OPTIONS = [
     { id: 'png', label: 'PNG image', hint: '.png' },
     { id: 'svg', label: 'SVG vector', hint: '.svg' },
 ];
-
-const rValueLogParts = (name) => {
-    const match = name.match(/^(.+)-(\d{2,})\.log$/);
-    return match ? { stem: match[1].toLowerCase(), sequence: Number(match[2]) } : null;
-};
-
-const comparePlotFiles = (a, b) => {
-    const kindOrder = plotOrder.indexOf(a.plotKind) - plotOrder.indexOf(b.plotKind);
-    if (kindOrder !== 0) return kindOrder;
-
-    const aLog = rValueLogParts(a.name);
-    const bLog = rValueLogParts(b.name);
-    if (aLog && bLog) {
-        const stemOrder = aLog.stem.localeCompare(bLog.stem);
-        if (stemOrder !== 0) return stemOrder;
-        if (aLog.sequence !== bLog.sequence) return aLog.sequence - bLog.sequence;
-    }
-
-    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-};
 
 const STRUCTURE_LOADING = 'Loading structure…';
 
@@ -82,7 +59,11 @@ const renderRwpChip = (meta) => {
 // marks on a plot card while it points at it (highlight_cards).
 const NO_MARKS = {};
 
-const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData = false, onRunContextChange, cardMarks = NO_MARKS }) => {
+// `wantAssistantData` (the AI Copilot has been opened) gates `onRunChange`:
+// only then does the page publish its run ({ files, structure, structurePath,
+// hiddenPlots }) for App's Copilot run module (useCopilotRun.js), so before
+// that its parses and Live Data polls do not re-render App.
+const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData = false, onRunChange, cardMarks = NO_MARKS }) => {
     const [files, setFiles] = useState([]);
     const [metadata, setMetadata] = useState({});
     const [structure, setStructure] = useState(null);
@@ -92,9 +73,6 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     // "previous read" chip).
     const [structureStale, setStructureStale] = useState(false);
     const structureRef = useRef(null);
-    // Parsed <stem>.dat run-control settings (static mode) for the AI assistant.
-    const [runSettings, setRunSettings] = useState(null);
-    const settingsSigRef = useRef('');
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
     const [showRValue, setShowRValue] = useState(false);
@@ -155,7 +133,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
 
             try {
                 const structureResponse = await axios.get(`${API_BASE_URL}/api/structure`, {
-                    params: { dir: directory || '.', maxPoints: 100 }
+                    params: { dir: directory || '.', maxPoints: DASHBOARD_MAX_POINTS }
                 });
                 // A silent (Live Data) re-read that lands mid-write keeps the
                 // previous complete model instead of flashing a short count.
@@ -217,11 +195,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                     if (sameRun && prev?.plotData && prev.modified === file.modified && prev.size === file.size) {
                         return [file.path, { ...file, plotData: prev.plotData }];
                     }
-                    try {
-                        return [file.path, { ...file, plotData: await readAndParseLocalPlotFile(file) }];
-                    } catch (plotError) {
-                        return [file.path, { ...file, parseError: plotError.message || 'Could not parse plot file' }];
-                    }
+                    return [file.path, await parseDashboardPlotFile(file)];
                 }));
                 if (cancelled) return;
                 const parsedByPath = Object.fromEntries(parsedEntries);
@@ -276,7 +250,7 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
                 structureWorker.postMessage({
                     id: 1,
                     file: localRun.structureFile,
-                    maxPoints: 100
+                    maxPoints: DASHBOARD_MAX_POINTS
                 });
             }
 
@@ -306,25 +280,6 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         setHiddenPlotPaths(new Set());
         return undefined;
     }, [directory, loadServerDashboard, localRun]);
-
-    // Parse the run-control settings (<stem>.dat) only once the assistant is in
-    // use — the file is tiny but this keeps Dashboard/KDE-only startup clean and
-    // re-reads only when the file identity/mtime changes.
-    useEffect(() => {
-        const settingsFile = wantAssistantData ? localRun?.settingsFile : null;
-        const sig = settingsFile ? `${settingsFile.path}:${settingsFile.modified}` : '';
-        if (sig === settingsSigRef.current) return undefined;
-        settingsSigRef.current = sig;
-        if (!settingsFile?.sourceFile) {
-            setRunSettings(null);
-            return undefined;
-        }
-        let cancelled = false;
-        settingsFile.sourceFile.text()
-            .then((text) => { if (!cancelled) setRunSettings(parseRunSettings(text)); })
-            .catch(() => { if (!cancelled) setRunSettings(null); });
-        return () => { cancelled = true; };
-    }, [wantAssistantData, localRun]);
 
     useEffect(() => {
         // Reset view state only when the folder changes, not on each Live Data refresh
@@ -363,25 +318,19 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
         return () => window.clearInterval(interval);
     }, [directory, loadServerDashboard, localRun, watchFiles]);
 
-    const allPlotFiles = useMemo(() => {
-        return files
-            .filter(isDashboardPlotFile)
-            .sort(comparePlotFiles);
-    }, [files]);
+    // Every plot file in the Dashboard's order, hidden ones included (browserData:
+    // the Copilot's run module reads the same list).
+    const allPlotFiles = useMemo(() => dashboardPlotFiles(files), [files]);
 
     const plotFiles = useMemo(() => {
         return allPlotFiles.filter((file) => !hiddenPlotPaths.has(file.path));
     }, [allPlotFiles, hiddenPlotPaths]);
 
-    const rValueFiles = useMemo(
-        () => plotFiles.filter((file) => file.plotKind === 'r_value'),
-        [plotFiles]
-    );
     // The run the Model card describes picks which log group is charted.
     const structurePath = localRun ? localRun.structureFile?.path : structure?.source;
     const rValueFile = useMemo(
-        () => combineRValueFiles(rValueFiles, structurePath),
-        [rValueFiles, structurePath]
+        () => chartedRValueFile(allPlotFiles, hiddenPlotPaths, structurePath),
+        [allPlotFiles, hiddenPlotPaths, structurePath]
     );
     const gridFiles = useMemo(
         () => plotFiles.filter((file) => file.plotKind !== 'r_value'),
@@ -407,36 +356,23 @@ const Dashboard = ({ directory, localRun, watchFiles = false, wantAssistantData 
     useIssueSet('files', fileIssues);
     const reportIssue = useReportIssue();
 
-    // Detected space group for the AI Copilot's run context, at the shared
-    // tolerance — keeps symmetryModel out of the llm module's imports. The
-    // ladder rides along so the context can express distortion magnitude.
-    // Gated on wantAssistantData: this symmetry finder (+ ladder) is redundant
-    // with ModelSummary's and only feeds the assistant, so it stays idle until
-    // the user opens the AI Copilot chatbox — Dashboard/KDE-only startup does no
-    // extra work.
-    const sharedSymTol = useContext(SymTolContext);
-    const symTol = sharedSymTol ? sharedSymTol[0] : 0.2;
-    const symmetry = useMemo(() => {
-        if (!wantAssistantData) return null;
-        const detected = describeSymmetry(structure, symTol);
-        if (!detected) return null;
-        return { ...detected, toleranceA: symTol, ladder: toleranceLadder(structure, 1.0) };
-    }, [wantAssistantData, structure, symTol]);
-
-    // Publish the parsed run context for App → CopilotChat, but only once the
-    // Copilot has been opened; the WatchdogBadge below stays on the dashboard.
-    const assistantRun = useMemo(() => (wantAssistantData ? {
-        runName: localRun ? localRun.name : directory,
-        plotFiles: allPlotFiles,
-        rValueFile,
+    // Publish the run as this page holds it for App's Copilot run module
+    // (useCopilotRun.js), which turns it into what the AI Copilot is handed:
+    // the symmetry at the shared tolerance with its ladder, the χ² history,
+    // the parsed .dat. Only once the Copilot has been opened, so Dashboard- or
+    // KDE-only use does no extra work; the WatchdogBadge below stays on the
+    // dashboard. The hidden list keeps its identity while the hidden set does.
+    const hiddenPlots = useMemo(() => [...hiddenPlotPaths], [hiddenPlotPaths]);
+    const publishedRun = useMemo(() => (wantAssistantData ? {
+        files,
         structure,
-        symmetry,
-        runSettings,
-    } : null), [wantAssistantData, localRun, directory, allPlotFiles, rValueFile, structure, symmetry, runSettings]);
+        structurePath: structurePath ?? null,
+        hiddenPlots,
+    } : null), [wantAssistantData, files, structure, structurePath, hiddenPlots]);
 
     useEffect(() => {
-        onRunContextChange?.(assistantRun);
-    }, [assistantRun, onRunContextChange]);
+        onRunChange?.(publishedRun);
+    }, [publishedRun, onRunChange]);
 
     const handleTogglePlotVisibility = (path) => {
         manuallyToggledPathsRef.current.add(path);

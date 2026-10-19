@@ -5,19 +5,21 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
-### Copilot: the budget test for a 32k window (plan 5.5)
+### Copilot: one module for the run as the Copilot sees it; the harness records its view
 
-- `src/__tests__/contextBudget.test.js` runs the worst realistic turn through the real agent loop
-  with a scripted model and counts it with the context guard's own estimator and constants: the
-  dock's largest system prompt and full tool set, the Demo's context block, the two largest
-  skills read whole (`read_skill`'s budget and keep rule), a round of analyses filling the loop's
-  12,000-character turn budget, and the 8,192-token reply reserve. The same for the harness's arm
-  B on the dev case with the largest first request.
-- It does not fit today: the guard counts tool messages at 1.4 characters a token, so the dock's
-  worst turn needs 38,525 tokens (5,757 over 32,768) and arm B's 35,081 (2,313 over). The test pins
-  every term and the overflow, and keeps "fits in 32,768" as an expected failure (`it.fails`) that
-  turns red once it fits. Plan 5.5's other half, moving long skill material to on-demand
-  references, waits for the user's skill review; no prompt, tool, skill or snapshot changed.
+- `src/copilotRun.js` turns an open run and the view on screen into everything the AI Copilot is
+  handed: CopilotChat's eight run props, the engine tools, the elements, the engine and the
+  normalised view (`DEFAULT_VIEW`: the Detected SG card's 0.2 Å, nothing hidden, no PCA table,
+  Live Data off). Its browser adapter `useCopilotRun.js` takes over the Dashboard's symmetry and
+  `.dat` work and copilotTools.js's `useCopilotTools`; its in-process adapter `openRunFolder.js`
+  (Node and tests only; an eslint rule keeps it out of `src/`) is how the validation harness now
+  opens each case. The Dashboard's plot list, χ² history and plot parse are shared from
+  browserData. App behaviour and what the model sees are unchanged (the model-visible snapshots
+  pass as they were; arms A and A+ are unchanged).
+- Plan item 1.3: each live record keeps the view it ran with (`record.view`) and the context
+  sections the model had and lacked, with `earlier_turns: 0`; `run.js live --pca-table` (dev
+  only, off by default) adds the PCA table for a check of its effect
+  ([copilot-validation.md](algorithms/copilot-validation.md#records-transcripts-findings)).
 
 ### Copilot validation: the held-out breathing case recomposed
 

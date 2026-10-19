@@ -8,7 +8,9 @@
 // 2026-10-19.1 the run was named after the case id, and the context's `run`
 // told the model its case kind. No model runs here.
 //
-//   1. The run folder as the harness loads it: no case id in its names or paths.
+//   1. The run folder as the harness loads it (validation/runFolder.js loadRun,
+//      through the run module's in-process adapter src/openRunFolder.js): no
+//      case id in the CopilotRun's names, paths or view.
 //   2. The first request runLiveCase sends on every case, dev and test, arms B
 //      and C, captured at its model port: no case id, in any spelling, anywhere
 //      in it; no case kind (nor a case id without its split), in any spelling,
@@ -92,17 +94,20 @@ describe('no case id or kind reaches the model (validation harness)', () => {
         }
     }, 120000);
 
-    it('loads every case as a run named RUN_NAME, with no case id in a name or path', () => {
-        const found = [...captured].flatMap(([id, { built }]) => {
-            const run = loadRun(built, { ladder: false });
-            expect(run.runName).toBe(RUN_NAME);
+    it('loads every case as a run named RUN_NAME, with no case id in a name or path', async () => {
+        const found = [];
+        for (const [id, { built }] of captured) {
+            // The run as the Copilot is handed it (the run module's interface).
+            const run = await loadRun(built, { ladder: false });
+            expect(run.props.runName).toBe(RUN_NAME);
             const names = JSON.stringify({
-                runName: run.runName,
-                structure: run.structure.source,
-                files: run.plotFiles.map((file) => [file.name, file.path])
+                runName: run.props.runName,
+                structure: run.props.structure.source,
+                files: run.props.plotFiles.map((file) => [file.name, file.path]),
+                view: run.view
             });
-            return findings(id, 'the run folder', names, ID_PATTERNS);
-        });
+            found.push(...findings(id, 'the run folder', names, ID_PATTERNS));
+        }
         expect(found).toEqual([]);
     });
 

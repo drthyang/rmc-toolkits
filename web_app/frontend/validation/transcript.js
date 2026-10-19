@@ -38,6 +38,15 @@ export const renderTranscript = (record) => {
     lines.push(`- Protocol ${record.protocol} · commit ${record.commit || 'unknown'} · ${record.started_at} → ${record.finished_at} (${Math.round((record.wall_ms || 0) / 1000)} s)`);
     lines.push(`- Tools offered: ${record.tools_offered.join(', ')}`);
     lines.push(`- Skills offered: ${record.skills_offered.length ? record.skills_offered.join(', ') : 'none (ablation)'}`);
+    if (record.view && record.context) {
+        const view = record.view;
+        lines.push(`- View: Detected SG at ${view.toleranceA} Å${view.ladder ? ' with its ladder' : ''}, `
+            + `${view.hiddenPlots.length ? `${view.hiddenPlots.length} plot(s) hidden` : 'nothing hidden'}, `
+            + `${view.pcaSites ? 'the PCA table' : 'no PCA table'}, Live Data ${view.liveData ? 'on' : 'off'}`);
+        lines.push(`- Context sections: ${record.context.sections.join(', ') || 'none'}`
+            + `${record.context.absent.length ? ` (absent: ${record.context.absent.join(', ')})` : ''}`
+            + ` · ${record.context.earlier_turns ? `${record.context.earlier_turns} earlier turns` : 'one fresh question, no earlier turns'}`);
+    }
     if (record.error) lines.push(`- **Run error:** ${record.error.name}: ${record.error.message}`);
     lines.push('');
     lines.push('## Step 0 · the question');
