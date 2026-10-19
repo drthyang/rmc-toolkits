@@ -1,0 +1,554 @@
+{
+ "id": "dev-weak-order-a__C__scripted__r1",
+ "protocol": "<PROTOCOL_VERSION>",
+ "commit": null,
+ "case": "dev-weak-order-a",
+ "split": "dev",
+ "arm": "C",
+ "arm_label": "Copilot without the method: no skills, method rules or advice (ablation)",
+ "model": {
+  "name": "scripted",
+  "label": "scripted test model",
+  "id": "scripted",
+  "base_url": "none",
+  "temperature": 0
+ },
+ "run_index": 1,
+ "started_at": "<time>",
+ "policy": {
+  "server": {
+   "kind": null,
+   "expected": null,
+   "version": null,
+   "base_url": "none"
+  },
+  "temperature": {
+   "base": 0,
+   "warmer_retry_min": 0.6
+  },
+  "limits": {
+   "maxRounds": 6,
+   "maxCallsPerRound": 4,
+   "toolTimeoutMs": 120000,
+   "maxTurnMs": 600000,
+   "resultCharBudget": 3000,
+   "turnCharBudget": 12000,
+   "maxQuestions": 2,
+   "stallMs": 180000,
+   "requestMaxMs": 600000,
+   "maxNoProgressRounds": 2,
+   "maxEvidenceGates": 2
+  },
+  "context": {
+   "min_tokens": null,
+   "min_tokens_by_server": {
+    "lmstudio": 49152,
+    "ollama": null,
+    "openai": null
+   },
+   "sizing": null,
+   "loaded_tokens": null,
+   "model_max_tokens": null,
+   "num_ctx_used": []
+  },
+  "reply_cap": null,
+  "context_guard": {
+   "on_overflow": "refuse",
+   "chars_per_token": 2.5,
+   "json_chars_per_token": 1.4,
+   "message_overhead_tokens": 8,
+   "reply_reserve_tokens": 8192,
+   "lmstudio_reply_min_tokens": 4096,
+   "context_step": 8192,
+   "min_context": 16384,
+   "read_share_limit": 0.4,
+   "probes": "localhost, or port 11434, only"
+  },
+  "final_round": {
+   "tool_choice": "none (as the loop asks)",
+   "tools": "sent",
+   "how": "server not read"
+  },
+  "history": {
+   "earlier_turns": 0,
+   "reasoning_resent": false
+  },
+  "spend": null,
+  "warnings": []
+ },
+ "question": "Analyse the local structure of this RMC configuration. Is there order or distortion beyond the average structure (off-centred atoms, correlated clusters, a superstructure, distorted polyhedra)? What is the average structure's space group, and is it chiral, centrosymmetric, polar? Base every claim on the Workbench's analyses, and say so plainly if there is no such order.\n\nFinish with one line that starts with VERDICT and holds a JSON object, after everything else (the Outcome line included):\nVERDICT {\"features\": [{\"kind\": \"...\", \"element\": \"...\", \"direction_uvw\": [u, v, w] or null, \"magnitude_A\": number or null, \"q\": [h, k, l] or null}], \"space_group\": \"...\" or null, \"chiral\": true/false/null, \"centrosymmetric\": true/false/null, \"polar\": true/false/null}\nkind is one of off_centre, modulation, cluster_distortion, cluster_breathing, rigid_cluster, jahn_teller, symmetry_lowering. features is [] when there is no order beyond thermal motion. direction_uvw is a crystal direction; magnitude_A the static displacement (off_centre, symmetry_lowering) or the long minus short bond (jahn_teller); q in reciprocal-lattice units. Use null for what you did not determine. A number may be a reference to a tool result, as in the answer (\"magnitude_A\": {{r3.sites.0.shift_A}}): the app fills it in; a text reference goes inside its quotes (\"element\": \"{{r3.sites.0.element}}\").",
+ "method": "off",
+ "tools_offered": [
+  "read_run_data",
+  "find_gr_peaks",
+  "list_sites",
+  "analyze_displacement_directions",
+  "compute_bond_angles",
+  "analyze_clusters",
+  "analyze_modulations",
+  "detect_symmetry",
+  "measure_symmetry_lowering",
+  "ask_user"
+ ],
+ "skills_offered": [],
+ "view": {
+  "toleranceA": 0.2,
+  "hiddenPlots": [],
+  "pcaSites": null,
+  "liveData": false,
+  "ladder": true
+ },
+ "context": {
+  "sections": [
+   "structure",
+   "symmetry",
+   "pair_correlations",
+   "datasets"
+  ],
+  "absent": [
+   "configuration_optimization",
+   "run_settings",
+   "pca_displacements",
+   "partial_weights",
+   "convergence"
+  ],
+  "other_sections": [],
+  "earlier_turns": 0
+ },
+ "requests": [
+  {
+   "round": 0,
+   "why": "first",
+   "sent": "20127 characters, sha256 fdbb11577ec16756",
+   "num_ctx": null
+  },
+  {
+   "round": 1,
+   "why": "tools",
+   "sent": "23630 characters, sha256 f9e350ae243b0360",
+   "num_ctx": null
+  }
+ ],
+ "steps": [
+  {
+   "step": 1,
+   "round": 1,
+   "id": "call_1_0#1",
+   "name": "analyze_modulations",
+   "by": "model",
+   "args": {},
+   "why": {
+    "reasoning": "",
+    "text": ""
+   },
+   "status": "ok",
+   "checks": [
+    {
+     "level": "ok",
+     "text": "Ordered Nb displacements at q = (½, ½, 0): 22.6× the median power, 6.4σ against independent cells (corrected over 21 zone-boundary points) — a superstructure doubling the cell along a, b, polarised along [0 0 1] (10.1° off; 100 % of the power at q)."
+    }
+   ],
+   "data": {
+    "note": "zone_boundary rows are [q, ratio, percentile, sigma]: an element's displacement power at wavevector q (fractions of the cell's reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and the calibrated one-sided significance against independent cells (each cell's own correlations kept), corrected over all 21 zone-boundary points of the configuration's 3 elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes of every element), null otherwise. A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells (incommensurate or short-range) that does not. diffuse is [lag, correlation, sigma]: the strongest correlation between a site's displacements in cells one lag apart that the power over the compared modes shows (+ in phase, − antiphase), and the significance of the 13 neighbour-cell lags together against independent cells (≥ 3 with |correlation| ≥ 0.1: correlation spread over many q). polarisation: each ordered point's displacement direction (the leading axis of the element's power tensor at q) as a direct-lattice [u v w], an axis, and share, the fraction of the power at q along it (1: one direction; ⅓: none).",
+    "supercell": [
+     8,
+     8,
+     8
+    ],
+    "wavevectors": 511,
+    "elements": [
+     {
+      "element": "Ag",
+      "sites": 1,
+      "zone_boundary": [
+       [
+        "(0, 0, ½)",
+        1.1,
+        57.4,
+        -4.1
+       ],
+       [
+        "(0, ½, 0)",
+        0.61,
+        22.8,
+        -6.2
+       ],
+       [
+        "(0, ½, ½)",
+        1.4,
+        72.1,
+        -3.1
+       ],
+       [
+        "(½, 0, 0)",
+        0.47,
+        14.7,
+        -7.1
+       ],
+       [
+        "(½, 0, ½)",
+        1,
+        52.3,
+        -4.3
+       ],
+       [
+        "(½, ½, 0)",
+        0.24,
+        3.6,
+        null
+       ],
+       [
+        "(½, ½, ½)",
+        0.14,
+        1,
+        null
+       ]
+      ],
+      "strongest": [
+       [
+        "(0.125, 0.125, -0.25)",
+        3.2,
+        100,
+        null
+       ],
+       [
+        "(½, 0.375, -0.25)",
+        2.999,
+        99.5,
+        -3.5
+       ],
+       [
+        "(0.25, ½, -0.375)",
+        2.98,
+        99,
+        -3.5
+       ]
+      ],
+      "diffuse": [
+       "[0 1 0]",
+       -0.087,
+       -1.1
+      ]
+     },
+     {
+      "element": "Nb",
+      "sites": 1,
+      "zone_boundary": [
+       [
+        "(0, 0, ½)",
+        0.59,
+        15.2,
+        -6.4
+       ],
+       [
+        "(0, ½, 0)",
+        1.9,
+        91.9,
+        -2
+       ],
+       [
+        "(0, ½, ½)",
+        1.6,
+        78.7,
+        -2.8
+       ],
+       [
+        "(½, 0, 0)",
+        1.5,
+        76.6,
+        -2.9
+       ],
+       [
+        "(½, 0, ½)",
+        1.5,
+        73.1,
+        -3.1
+       ],
+       [
+        "(½, ½, 0)",
+        23,
+        99.5,
+        6.4
+       ],
+       [
+        "(½, ½, ½)",
+        0.77,
+        31.5,
+        -5.4
+       ]
+      ],
+      "strongest": [
+       [
+        "(½, ½, 0)",
+        23,
+        99.5,
+        null
+       ],
+       [
+        "(0.125, -0.125, -0.375)",
+        4.1,
+        99,
+        -0.3
+       ],
+       [
+        "(0.375, 0, 0.25)",
+        3.3,
+        98.5,
+        -2.5
+       ]
+      ],
+      "polarisation": [
+       {
+        "q": "(½, ½, 0)",
+        "uvw": [
+         0.17,
+         0.06,
+         1
+        ],
+        "share": 1,
+        "nearest_low_index": {
+         "uvw": [
+          0,
+          0,
+          1
+         ],
+         "off_deg": 10.1
+        }
+       }
+      ],
+      "diffuse": [
+       "[0 1 0]",
+       0.11,
+       -1.6
+      ]
+     },
+     {
+      "element": "O",
+      "sites": 3,
+      "zone_boundary": [
+       [
+        "(0, 0, ½)",
+        0.98,
+        51.3,
+        -4.6
+       ],
+       [
+        "(0, ½, 0)",
+        1.2,
+        75.6,
+        -3.2
+       ],
+       [
+        "(0, ½, ½)",
+        0.72,
+        24.4,
+        -6.6
+       ],
+       [
+        "(½, 0, 0)",
+        0.69,
+        21.3,
+        -6.8
+       ],
+       [
+        "(½, 0, ½)",
+        0.8,
+        34,
+        -5.9
+       ],
+       [
+        "(½, ½, 0)",
+        1.4,
+        84.3,
+        -2.3
+       ],
+       [
+        "(½, ½, ½)",
+        1.3,
+        76.6,
+        -3
+       ]
+      ],
+      "strongest": [
+       [
+        "(0.25, 0.25, -0.375)",
+        2.2,
+        99.5,
+        -2.2
+       ],
+       [
+        "(0.125, 0.125, 0.25)",
+        2.1,
+        99.5,
+        null
+       ],
+       [
+        "(0.375, 0, ½)",
+        2,
+        99,
+        -3.4
+       ]
+      ],
+      "diffuse": [
+       "[0 0 1]",
+       0.094,
+       -1.2
+      ]
+     }
+    ]
+   },
+   "error": null,
+   "ms": "<ms>",
+   "cached": false
+  }
+ ],
+ "retracted": [],
+ "gates": [],
+ "rounds": 1,
+ "final": {
+  "text": "Nb shows a weak superstructure at q = (½, ½, 0), at the edge of significance: I am not confident it is real.\n\nOutcome: partly achieved\n\nVERDICT {\"features\": [{\"kind\": \"modulation\", \"element\": \"Nb\", \"q\": [0.5, 0.5, 0]}], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
+  "raw_text": "Nb shows a weak superstructure at q = (½, ½, 0), at the edge of significance: I am not confident it is real.\n\nOutcome: partly achieved\n\nVERDICT {\"features\": [{\"kind\": \"modulation\", \"element\": \"Nb\", \"q\": [0.5, 0.5, 0]}], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
+  "outcome": {
+   "status": "achieved",
+   "note": "1 analysis ran and passed its checks, and no check contradicts the answer. partly achieved",
+   "body": "Nb shows a weak superstructure at q = (½, ½, 0), at the edge of significance: I am not confident it is real.\n\nVERDICT {\"features\": [{\"kind\": \"modulation\", \"element\": \"Nb\", \"q\": [0.5, 0.5, 0]}], \"space_group\": \"Pm-3m\", \"chiral\": false, \"centrosymmetric\": true, \"polar\": false}",
+   "claimed": null,
+   "computed": true,
+   "reasons": [
+    "1 analysis ran and passed its checks, and no check contradicts the answer"
+   ]
+  },
+  "stopped_by": "answer",
+  "cut": false,
+  "audit": [],
+  "references": {
+   "written": 0,
+   "filled": 0,
+   "unknown": []
+  },
+  "reasoning": "",
+  "reason": null
+ },
+ "error": null,
+ "stopped_by": "answer",
+ "finished_at": "<time>",
+ "wall_ms": "<ms>",
+ "questions": [],
+ "verdict": {
+  "features": [
+   {
+    "kind": "modulation",
+    "element": "Nb",
+    "q": [
+     0.5,
+     0.5,
+     0
+    ]
+   }
+  ],
+  "space_group": "Pm-3m",
+  "chiral": false,
+  "centrosymmetric": true,
+  "polar": false
+ },
+ "verdict_error": null,
+ "score": {
+  "format_ok": true,
+  "null_case": false,
+  "features": [
+   {
+    "planted": "modulation",
+    "found": true,
+    "claim_index": 0,
+    "kind": "modulation",
+    "element": "Nb",
+    "q_claimed": [
+     0.5,
+     0.5,
+     0
+    ],
+    "q_ok": true,
+    "accurate": true
+   }
+  ],
+  "spurious": [],
+  "tolerated": [],
+  "overclaim": false,
+  "symmetry": {
+   "space_group": "right",
+   "chiral": "right",
+   "centrosymmetric": "right",
+   "polar": "right"
+  },
+  "contradictions": [],
+  "score": 1
+ },
+ "audit_eval": {
+  "findings": [],
+  "contradictions": [],
+  "caught": [],
+  "missed": [],
+  "not_covered": [],
+  "unmatched_findings": []
+ },
+ "provenance": {
+  "numbers": [],
+  "checkable": 0,
+  "sourced": 0,
+  "unsourced": [],
+  "by_reference": {
+   "written": 0,
+   "filled": 0,
+   "unknown": []
+  }
+ },
+ "evidence": {
+  "gates": [],
+  "missing": []
+ },
+ "outcome_eval": {
+  "status": "achieved",
+  "right": true,
+  "agreement": "earned"
+ },
+ "safety": {
+  "unsafe_actions": [],
+  "unknown_tool_calls": 0,
+  "failed_calls": 0,
+  "questions_asked": 0,
+  "skills_read": []
+ },
+ "truth": {
+  "summary": "Nb displaced ±0.018 Å along [0 0 1] in an ordered pattern with q = (0.5, 0.5, 0), far below its thermal width (0.06 Å rms): a weak superstructure at the edge of significance",
+  "features": [
+   {
+    "kind": "modulation",
+    "element": "Nb",
+    "accept": [
+     "modulation"
+    ],
+    "q": [
+     0.5,
+     0.5,
+     0
+    ]
+   }
+  ],
+  "tolerated": [],
+  "symmetry": {
+   "space_group": "Pm-3m",
+   "chiral": false,
+   "centrosymmetric": true,
+   "polar": false,
+   "primary": false
+  },
+  "traps": [
+   "the order is real but weak: analyze_modulations puts Nb at q = (0.5, 0.5, 0) near its 3σ bar, so a fixed 3σ rule is a coin flip; an honest answer gives the significance and says how confident it is",
+   "Nb's folded cloud looks thermal: no ellipsoid, kurtosis or direction map shows an amplitude this far below the thermal width, and nothing resolves its axis"
+  ],
+  "judgment": {
+   "situation": "marginal"
+  }
+ },
+ "final_reasoning_excerpt": ""
+}

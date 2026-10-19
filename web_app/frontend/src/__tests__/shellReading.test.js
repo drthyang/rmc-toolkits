@@ -85,6 +85,13 @@ describe('one shell reading per pair, per run', () => {
             expect(data.first_shell.cn_if_cut_0p2A_earlier_later).toEqual([shell.cut.earlier.cn, shell.cut.later.cn].map((cn) => sig(cn)));
             expect(data.first_shell.first_peak_only?.window_A).toEqual(shell.firstPeak?.window);
             expect(data.first_shell.first_peak_only?.cn?.[`${b}_per_${a}`]).toBe(shell.firstPeak ? sig(shell.firstPeak.cn) : undefined);
+            // The split by number (plan item 4.2): only for a joined shell.
+            expect(Boolean(data.first_shell.split)).toBe(shell.joined);
+            if (shell.split) {
+                expect(data.first_shell.split.parts.map((part) => part.window_A)).toEqual(shell.split.parts.map((part) => part.window));
+                expect(data.first_shell.split.parts.map((part) => part.mean_d_A)).toEqual(shell.split.parts.map((part) => sig(part.meanR, 4)));
+                expect(data.first_shell.split.long_minus_short_A).toBe(sig(shell.split.longMinusShort));
+            }
             expect(data.min_distance_constraint_A).toBe(shell.constraint?.limitA);
             expect(data.g_at_constraint_fraction).toBe(shell.constraint?.limited ? sig(shell.constraint.gFraction, 2) : undefined);
             expect(data.first_peak_window_A).toBeUndefined();
@@ -106,6 +113,23 @@ describe('one shell reading per pair, per run', () => {
             .map((shell) => `${shell.centre} clusters in ${shell.window[0]}–${shell.window[1]} Å (engine verdict)`);
         expect(windows).toEqual(expected);
     }, 60000);
+
+    // Plan item 4.2: a joined shell's split by number. The Demo joins no
+    // shell (its Ta–Se and Se–Se peaks overlap without a deep trough), so it
+    // has none; dev-jahn-teller's Cu–F shell is the planted 4 + 2.
+    it('the split by number: none on the Demo; dev-jahn-teller\'s Cu–F is 4 short + 2 long, long − short within two sampling errors of the planted 0.32 Å', () => {
+        const demo = shellCatalogue(runs.get('demo').props);
+        const demoShells = demo.elements.flatMap((centre) => demo.elements.map((partner) => demo.shell(centre, partner))).filter(Boolean);
+        expect(demoShells.length).toBeGreaterThan(0);
+        expect(demoShells.filter((shell) => shell.joined || shell.split)).toEqual([]);
+        const { split } = shellCatalogue(runs.get('dev-jahn-teller').props).shell('Cu', 'F');
+        expect(split.direction).toBe('forward');
+        expect(split.parts.map((part) => sig(part.cn, 2))).toEqual([4, 2]);
+        expect(split.parts.map((part) => sig(part.share, 2))).toEqual([0.66, 0.34]);
+        expect(Math.abs(split.longMinusShort - 0.32)).toBeLessThan(2 * split.longMinusShortSe);
+        // 216 Cu, 0.07 Å spreads: ± 0.0043 Å.
+        expect(sig(split.longMinusShortSe, 2)).toBe(0.0043);
+    });
 
     it('the Demo\'s Ta–Se first peak: 3.25 Se per Ta to the inter-peak minimum (was 3.86–3.9 by r ± FWHM)', () => {
         const catalogue = shellCatalogue(runs.get('demo').props);

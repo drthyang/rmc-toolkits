@@ -1,0 +1,4 @@
+# The tool messages the model reads: a skip, without a default
+# ask_user with no default; the user skips
+## messages[3] · tool · call_1_0
+{"ref":"r1","checks":[{"level":"note","text":"The user skipped the question: choose the most standard option and say in the answer what you assumed."}],"data":{"question":"Which Ta–Se window?","answer":null,"skipped":true}}

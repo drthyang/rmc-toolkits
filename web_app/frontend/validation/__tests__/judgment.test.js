@@ -21,12 +21,15 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { shellCatalogue } from '../../src/llm/context/shells';
+import { displacementModulations } from '../../src/workers/modulations';
+import { siteDisplacementsFromRmc6f } from '../../src/workers/pcaKde';
 import { buildCase, DEV_CASES, JUDGMENT_SITUATIONS } from '../cases';
 import { runLiveCase } from '../harness';
 import { aggregate, renderJudgment, renderReport } from '../report';
 import { loadRun } from '../runFolder';
 import { renderTranscript } from '../transcript';
 import { holdoutTokens, readText, scanText } from './holdoutScan';
+import { pinRecord } from './recordFiles';
 
 const FRONTEND = resolve(__dirname, '../..');
 const REPO = resolve(FRONTEND, '../..');
@@ -131,6 +134,7 @@ describe('two situations through the live harness (scripted model, no model runs
         const { judgment, ...ordinary } = record.truth;
         expect(judgment).toEqual({ situation: 'user_choice' });
         expect(renderTranscript({ ...record, truth: ordinary })).not.toMatch(/judgment case/);
+        await pinRecord('judgment.user-choice', record);
     }, 60000);
 
     it('a signal at the edge of significance: a superstructure claimed below the bar scores as a claim, and the answer check flags it', async () => {
@@ -141,13 +145,28 @@ describe('two situations through the live harness (scripted model, no model runs
             built, arm: 'C', model: MODEL,
             port: scripted([{ calls: [['analyze_modulations', {}]] }, { text: answer }])
         });
-        // Against the independent-cell null (F1, protocol 2026-10-19.14) both
+        // Against the independent-cell null (F1, protocol 2026-10-19.16) both
         // dev weak orders are above the bar (6.4σ and 5.6σ): below it, the
-        // same kind at a smaller amplitude (2.8σ at q). Their seeds and
-        // amplitude were set from the null before F1 (the case definitions are
-        // the user's to re-set).
+        // same kind at two thirds of their amplitude, the first draw upward
+        // from the pair's own whose σ at q lies in [2.5, 3) (the pair's rule).
+        // Their amplitude was set from the null before F1 (the case
+        // definitions are the user's to re-set).
         const weak = JUDGED.find((item) => item.id === 'dev-weak-order-b');
-        const below = await run(buildCase({ ...weak, params: { ...weak.params, delta: 0.012, seed: 173 } }));
+        const sigmaAtQ = (built) => {
+            const result = displacementModulations(siteDisplacementsFromRmc6f(built.rmc6f));
+            return result.elements.find((entry) => entry.element === weak.params.elements[1]).zoneBoundary
+                .find((entry) => entry.q.join() === weak.params.q.join()).sigma;
+        };
+        const weakerDelta = Math.round((2e4 * weak.params.delta) / 3) / 1e4;
+        let draw = weak.params.seed;
+        let params = null;
+        while (!params) {
+            const trial = { ...weak.params, delta: weakerDelta, seed: draw };
+            const sigma = sigmaAtQ(buildCase({ ...weak, params: trial }, { partials: false }));
+            if (sigma >= 2.5 && sigma < 3) params = trial;
+            draw += 1;
+        }
+        const below = await run(buildCase({ ...weak, params }));
         const above = await run(judgedCase('dev-weak-order-a'));
         for (const record of [below, above]) {
             expect(record.error).toBeNull();
@@ -157,6 +176,8 @@ describe('two situations through the live harness (scripted model, no model runs
         expect(below.final.audit.map((finding) => finding.rule)).toContain('superstructure');
         expect(below.final.outcome.status).toBe('not verified');
         expect(above.final.audit.map((finding) => finding.rule)).not.toContain('superstructure');
+        await pinRecord('judgment.edge-below', below);
+        await pinRecord('judgment.edge-above', above);
     }, 60000);
 });
 

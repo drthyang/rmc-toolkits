@@ -15,10 +15,17 @@ import { assignWyckoffLetters } from './wyckoff.js';
  * thread (ModelSummary's useMemo), and a box with one reference site per atom — a glass,
  * or an imported configuration declared as a 1×1×1 supercell — is not a unit-cell
  * configuration anyway; above this the card says so instead of freezing the page.
+ * Flask's /api/structure sends no basis above it either (rmc_toolkits.structure_basis
+ * MAX_BASIS_SITES, the same value: structureBasisParity.test.js), only
+ * `basisOmitted: { sites, cap }`, which gives the same 'not analysed' description.
  */
 export const MAX_SYMMETRY_SITES = 2000;
 
-const tooLarge = (structure) => structure.basis.length > MAX_SYMMETRY_SITES;
+// The number of average sites: the basis's, or, for a server folder above the cap, the
+// count /api/structure sends in place of the rows (`basisOmitted.sites`).
+const siteCount = (structure) => structure?.basis?.length || structure?.basisOmitted?.sites || 0;
+
+const tooLarge = (structure) => siteCount(structure) > MAX_SYMMETRY_SITES;
 
 /**
  * Most candidate operations (lattice rotations × pure translations, operationEstimate) the
@@ -110,17 +117,19 @@ function lettersInSetting(sg, found, basis, A, tol) {
  * named in (null when there is none); found = siteOrbits (index lists into
  * structure.basis); positions = one { letter, multiplicity } per orbit in that setting.
  * Returns null without a basis, and the card's 'not analysed' description (skipped: true)
- * when the structure is too large or over the operation budget.
+ * when the structure is too large (its basis, or a server folder's `basisOmitted` count,
+ * holds more than MAX_SYMMETRY_SITES sites) or over the operation budget.
  */
 export function analyseSymmetry(structure, tol = 0.2) {
-  if (!structure?.basis?.length || !structure?.latticeVectors) return null;
+  if (!siteCount(structure) || !structure?.latticeVectors) return null;
   if (tooLarge(structure)) {
-    const n = structure.basis.length;
+    const n = siteCount(structure);
     return notAnalysed(`${n} sites > ${MAX_SYMMETRY_SITES} limit`,
       `The average structure has ${n} reference sites; symmetry detection runs in the browser `
       + `and is limited to ${MAX_SYMMETRY_SITES} sites (a box with one reference site per atom is not `
       + 'a unit-cell configuration).');
   }
+  if (!structure.basis?.length) return null;   // a count at or below the cap comes with its rows
   const A = conventionalCell(structure);
   const budget = overBudget(A, structure.basis, tol);
   if (budget.exceeds) {

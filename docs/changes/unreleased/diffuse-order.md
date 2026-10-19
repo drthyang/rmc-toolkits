@@ -1,4 +1,4 @@
-### Modulations: the independent-cell null (F1) and diffuse order between cells (plan item 4.4; protocol 2026-10-19.14)
+### Modulations: the independent-cell null (F1) and diffuse order between cells (plan item 4.4; protocol 2026-10-19.16)
 
 - **F1.** The modulation engines (`modulations.py`, `workers/modulations.js`) test an element's
   power against its own cells placed at random: every correlation inside a cell is kept (the
@@ -8,10 +8,10 @@
   eigenvalues as weights (`independent_cell_null` / `independentCellNull`); the tail is a
   Lugannani–Rice saddlepoint, 0 to +8 % above the exact tail from 10⁻² to 10⁻⁹ (`null_tail` /
   `nullTail`). Each element reports `nullDof`. The null of independent sites it replaces found
-  order in 8.8–31.8 % of fresh seeds of the dev Jahn–Teller, two-feature and octahedral generator
+  order in 8.8–31.8 % of fresh configurations of the dev Jahn–Teller, two-feature and octahedral generator
   kinds (1,000 each); the calibrated null in 0.1–0.6 %, each of its three tests at its 0.135 %. It
   also stops holding an independent site to one component: a weak order on one isotropic site is
-  found in 99 % of seeds where it was found in 44 %, and both dev weak orders are now far above the
+  found in 99 % of configurations where it was found in 44 %, and both dev weak orders are now far above the
   3σ bar.
 - **4.4.** Each element gains `diffuse` and `verdict.diffuseOrder`: the ranks of the power over the
   compared modes (no long wave, no zone-boundary point, none found ordered) regressed on the 13
@@ -19,9 +19,9 @@
   order needs 3σ and a neighbour-cell correlation |Γ| ≥ 0.1. Its Finding carries one Evidence
   record in the cluster engine's form, `clears` recomputable. Parseval fixes the total power, so
   the test reads how the power is spread. Planted short-range order (neighbour correlation ∓0.27)
-  is found in every seed, in antiphase or in phase; no configuration without order between cells
+  is found in every configuration, in antiphase or in phase; no configuration without order between cells
   reads as it beyond its bar (`tests/test_modulation_calibration.py`: a fast CI subset, and 1,000
-  seeds per family with `RMC_TOOLKITS_FULL_CALIBRATION=1`). One strong mode never makes it. The
+  configurations per family with `RMC_TOOLKITS_FULL_CALIBRATION=1`). One strong mode never makes it. The
   Demo's three elements are correlated in phase beyond the long waves.
 - `analyze_modulations` shows a `diffuse` row [lag, correlation, σ] per element (F2's rule on the
   correlation's 0.1 bar), says antiphase correlation as short-range order and in-phase correlation

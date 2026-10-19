@@ -12,12 +12,16 @@
 // validation/__tests__/verdictPhrasings.test.js.
 
 import { describe, expect, it, vi } from 'vitest';
+import { toolResult } from '../copilot/tools';
 import { createVerification, DEFAULT_MAX_SEND_BACKS, isAnalysis, shownContext } from '../copilot/verification';
 
-// A step as the agent loop records it: run, without an error, unless said.
-const step = (name, extra = {}) => ({
-    name, args: {}, status: 'ok', error: null, executed: true, interactive: false, reading: false, view: false, ...extra
+// A step as the agent loop records it: the call's result (tools.js
+// toolResult: it ran and answered, unless said) with the tool's name and kind.
+const step = (name, { interactive = false, reading = false, view = false, ...result } = {}) => ({
+    name, interactive, reading, view, ...toolResult(result)
 });
+// A fail check, the tool's own refusal ('refused': it ran, without an error).
+const REFUSAL = [{ level: 'fail', text: 'refused' }];
 // A verification with `calls` recorded (a name, or { name, args, … }).
 const verifying = (config, calls = []) => {
     const verification = createVerification(config);
@@ -95,7 +99,7 @@ describe('the evidence gate', () => {
             { name: 'analyze_clusters', args: { element: 'Mo' } }])).toEqual([]);
         // A call that failed is no evidence.
         expect(missing(['analyze_modulations', { name: 'analyze_displacement_directions', args: { site_ref: 2 } },
-            { name: 'analyze_clusters', args: { element: 'Mo' }, status: 'failed', error: 'boom' }])).toHaveLength(1);
+            { name: 'analyze_clusters', args: { element: 'Mo' }, resultStatus: 'error', error: 'boom' }])).toHaveLength(1);
     });
 
     it('never asks for a tool the turn does not offer', () => {
@@ -226,7 +230,7 @@ describe('record', () => {
         const verification = createVerification();
         const show = vi.fn((ref) => ({ data: { ref }, content: `message ${ref}` }));
         expect(verification.record(step('a'), show)).toEqual({ ref: 'r1', analysis: true, data: { ref: 'r1' }, content: 'message r1' });
-        expect(verification.record(step('b', { status: 'failed', error: 'boom' }), show)).toEqual({ ref: null, analysis: true, data: { ref: null }, content: 'message null' });
+        expect(verification.record(step('b', { resultStatus: 'error', error: 'boom' }), show)).toEqual({ ref: null, analysis: true, data: { ref: null }, content: 'message null' });
         expect(verification.record(step('c'), show)).toMatchObject({ ref: 'r2' });
         expect(show).toHaveBeenCalledTimes(3);
         expect(verification.judge('{{r1.ref}} and {{r2.ref}}').done.text).toBe('r1 and r2');
@@ -236,8 +240,12 @@ describe('record', () => {
         const verification = createVerification();
         const analysis = (extra) => verification.record(step('x', extra), () => ({ data: null })).analysis;
         expect(analysis({})).toBe(true);
-        expect(analysis({ status: 'failed', error: 'bad arguments' })).toBe(true);
-        expect(analysis({ executed: false })).toBe(false);
+        expect(analysis({ resultStatus: 'error', error: 'bad arguments' })).toBe(true);
+        // The tool's own refusal ran: an analysis (a compute_bond_angles refusal backs its claim).
+        expect(analysis({ resultStatus: 'refused', checks: REFUSAL })).toBe(true);
+        // A call that never ran is none.
+        expect(analysis({ resultStatus: 'unknown_tool', error: 'unknown tool "x"' })).toBe(false);
+        expect(analysis({ resultStatus: 'skipped', error: 'skipped: at most 4 tool calls per step' })).toBe(false);
         expect(analysis({ interactive: true })).toBe(false);
         expect(analysis({ reading: true })).toBe(false);
         expect(analysis({ view: true })).toBe(false);
@@ -249,7 +257,10 @@ describe('record', () => {
     it('drops a failed step\'s facts; facts that are no object are ignored, unknown keys kept and read by nothing', () => {
         const none = { direction: { subject: 'Ga', significant: false, peak_sigma: -0.887, map_sigma: 0.561 } };
         const text = 'The Ga atoms have a preferred displacement direction along [111].';
-        const failed = verifying({}, [{ name: 'analyze_displacement_directions', status: 'failed', error: 'boom', facts: none }]);
+        // A result the constructors would refuse (an error with facts), for the verification's own guard.
+        const broken = { ...step('analyze_displacement_directions', { resultStatus: 'error', error: 'boom' }), facts: none };
+        const failed = createVerification();
+        failed.record(broken, () => ({ data: null }));
         expect(failed.judge(text).done.audit.map((finding) => finding.rule)).toEqual(['evidence']);
         const odd = verifying({}, [{ name: 'analyze_displacement_directions', facts: 'significant' }, { name: 'x', facts: { someday: true } }]);
         expect(odd.judge(text).done.audit).toEqual([]);
@@ -274,17 +285,17 @@ describe('the computed Outcome', () => {
         expect(createVerification().judge('Ti forms a superstructure.').done.outcome.note)
             .toBe('the analysis a conclusion needs did not run (analyze_modulations).');
         expect(createVerification().judge('{{r1.x}}').done.outcome.status).toBe('not verified');
-        expect(verifying({}, [{ name: 'compute_bond_angles', status: 'failed' }, { name: 'list_sites', status: 'failed', error: 'boom' }])
+        expect(verifying({}, [{ name: 'compute_bond_angles', resultStatus: 'refused', checks: REFUSAL }, { name: 'list_sites', resultStatus: 'error', error: 'boom' }])
             .judge('Nothing.').done.outcome).toMatchObject({ status: 'not achieved' });
     });
 
     it('partial when cut short, when a failure was not run again successfully, or when a check warned', () => {
         const outcome = (calls, options = {}) => verifying({}, calls).judge('An answer.', options).done.outcome;
         expect(outcome(['list_sites'], { stoppedBy: 'max_rounds' }).status).toBe('partial');
-        expect(outcome([{ name: 'compute_bond_angles', status: 'failed' }, 'list_sites']).note).toBe('compute_bond_angles failed.');
+        expect(outcome([{ name: 'compute_bond_angles', resultStatus: 'refused', checks: REFUSAL }, 'list_sites']).note).toBe('compute_bond_angles failed.');
         // A refused window, run again in the whole shell: resolved.
-        expect(outcome([{ name: 'compute_bond_angles', status: 'failed' }, 'compute_bond_angles']).status).toBe('achieved');
-        expect(outcome([{ name: 'find_gr_peaks', status: 'warn' }]).note).toBe('find_gr_peaks warned: its result holds with the stated caveat.');
+        expect(outcome([{ name: 'compute_bond_angles', resultStatus: 'refused', checks: REFUSAL }, 'compute_bond_angles']).status).toBe('achieved');
+        expect(outcome([{ name: 'find_gr_peaks', checks: [{ level: 'warn', text: 'a caveat' }] }]).note).toBe('find_gr_peaks warned: its result holds with the stated caveat.');
         // A question to the user or a skill read is no analysis.
         expect(outcome([{ name: 'ask_user', interactive: true }]).note).toBe('answered from the run context, and no check contradicts it.');
         expect(outcome([{ name: 'read_skill', reading: true }]).note).toBe('answered from the run context, and no check contradicts it.');
@@ -297,8 +308,8 @@ describe('the computed Outcome', () => {
         expect(lowered.note).toBe('1 analysis ran and passed its checks, and no check contradicts the answer; the model says the answer is not achieved. the run cannot tell.');
         // Never raised: the checks' "not verified" stands.
         expect(createVerification().judge('{{r1.x}}\nOutcome: achieved').done.outcome.status).toBe('not verified');
-        const view = { name: 'highlight_cards', status: 'failed', error: 'no card', view: true };
-        const typo = { name: 'analyse_sites', status: 'failed', error: 'unknown tool', executed: false };
+        const view = { name: 'highlight_cards', resultStatus: 'error', error: 'no card', view: true };
+        const typo = { name: 'analyse_sites', resultStatus: 'unknown_tool', error: 'unknown tool' };
         expect(verifying({}, [view]).judge('B').done.outcome.status).toBe('achieved');
         expect(verifying({}, [typo, 'list_sites']).judge('B').done.outcome.status).toBe('achieved');
     });

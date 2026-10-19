@@ -1539,8 +1539,12 @@ const elementProperty = (elements, description) => (
  * The analysis tools for one run. `request(kind, params, { signal })` runs an
  * engine request (worker or Flask) and stops when `signal` aborts; null means
  * no engine is reachable (the static build with no run). `structure` is the
- * Dashboard's parsed structure; its `basis` (browser-loaded runs only) enables
- * detect_symmetry. Model arguments reach the engines only through the explicit
+ * Dashboard's parsed structure; its average-structure `basis` (a browser-loaded
+ * run's structureFromRmc6f, or a server folder's /api/structure; none for a
+ * coords-only file) enables detect_symmetry and measure_symmetry_lowering, and
+ * so does a server folder's `basisOmitted` (above the finder's site cap, where
+ * both answer "not analysed", as for the browser's basis).
+ * Model arguments reach the engines only through the explicit
  * mapping in each run(), never by spreading.
  */
 export const buildCopilotTools = ({ request, structure, elements = [] }) => {
@@ -1766,7 +1770,11 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
         });
     }
 
-    if (structure?.basis?.length) {
+    // The browser offers both symmetry tools for any basis, and above the
+    // finder's site cap they answer "not analysed". A server folder above the
+    // cap sends only the basis's size (`basisOmitted`): the same two tools,
+    // with the same answers.
+    if (structure?.basis?.length || structure?.basisOmitted) {
         tools.push({
             name: 'detect_symmetry',
             description: 'Run the space-group finder on the average structure (the folded reference sites) at a '
@@ -1787,6 +1795,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
             run: async ({ tolerance_A: tol }) => summarizeSymmetry(describeSymmetry(structure, tol), tol)
         });
 
+        // Without rows (`basisOmitted`) the noise floor is unknown: null, and
+        // the default below assumes 0.02 Å, as for a basis whose sites have one
+        // copy each (the usual case above the cap: a glass or a 1×1×1 box).
         const floor = symmetryNoiseFloor(structure.basis);
         // The lower group's default tolerance: NOISE_FLOOR_MARGIN × the noise
         // floor, just above it (the one rule; arm A+ reads it too).

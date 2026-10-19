@@ -1,0 +1,4 @@
+# The tool messages the model reads: highlight_cards, shown
+# the partial g(r) card with one mark; the focus controller shows it
+## messages[3] · tool · call_1_0
+{"ref":"r1","checks":[{"level":"ok","text":"Pointing at Partial g(r) on the Dashboard page, 1 mark."}],"data":{"highlighted":[{"id":"plot:rmc_run_PDFpartials.csv","title":"Partial g(r)","page":"Dashboard"}],"page":"Dashboard","marks":[{"x":2.52,"label":"Ta–Se 2.52 Å"}]}}

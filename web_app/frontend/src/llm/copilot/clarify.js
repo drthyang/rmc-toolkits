@@ -175,7 +175,12 @@ export const readQuestion = (text, elements) => {
 const MAX_OPTIONS = 4;
 const CUBIC_SITE = new Set(['23', 'm-3', '432', '-43m', 'm-3m']);
 
-const choice = (label, description, apply, isDefault = false) => ({ label, description, apply, isDefault });
+// One option of a question: its label and line, what picking it does
+// (`apply`), whether it is the default, and for a window question whether
+// picking it keeps the user's own window (`confirmed`: true for "Keep …",
+// false for the whole shell; null where the question is not about a window).
+// The record and the card read `confirmed`, never the label's wording.
+const choice = (label, description, apply, isDefault = false, { confirmed = null } = {}) => ({ label, description, apply, isDefault, confirmed });
 
 const asRequest = (question, choices, kind) => ({
     kind,
@@ -371,9 +376,9 @@ export const buildClarifier = (run = {}, { noiseFloor = null } = {}) => {
                         + `of the shell's ${cnText(shell.cn)}. Which window?`,
                     [
                         choice('Whole first shell', `${windowText(shell.window)}: CN ${cnText(shell.cn)} ${pair}`,
-                            () => ({ args: item.apply(shell.window, { confirmed: false }), window: shell.window }), true),
+                            () => ({ args: item.apply(shell.window, { confirmed: false }), window: shell.window }), true, { confirmed: false }),
                         choice(`Keep ${windowText([lo, hi])}`, `part of the shell: CN ${cnText(cn)} ${pair}`,
-                            () => ({ args: item.apply([lo, hi], { confirmed: true }), window: [lo, hi] }))
+                            () => ({ args: item.apply([lo, hi], { confirmed: true }), window: [lo, hi] }), false, { confirmed: true })
                     ],
                     'cut'
                 );
@@ -402,7 +407,9 @@ const typedWindow = (text) => {
  * reads with the user's question; for a cut window, the arguments to run with
  * and the note, and the choice is remembered in the turn's `session` (a later
  * call with the same window gets it unasked). `item` is the
- * beforeCall/beforeTurn result.
+ * beforeCall/beforeTurn result. A cut window's answer also says whether it
+ * keeps the user's own window (`confirmed`: the picked option's, true for a
+ * typed window); absent where the answer decides no window.
  */
 export const resolveClarification = (item, reply, { args = null, tool = null, session = null } = {}) => {
     const remember = (window, confirmed) => {
@@ -416,7 +423,7 @@ export const resolveClarification = (item, reply, { args = null, tool = null, se
             const target = (tool.shellWindows(args) || [])[item.windowIndex ?? 0];
             if (window && target) {
                 remember(window, true);
-                return { args: target.apply(window, { confirmed: true }), note: `the user typed "${answer}": run in ${windowText(window)}.` };
+                return { args: target.apply(window, { confirmed: true }), note: `the user typed "${answer}": run in ${windowText(window)}.`, confirmed: true };
             }
             return { args, note: `the user answered "${answer}"; the window was kept as asked.` };
         }
@@ -427,8 +434,8 @@ export const resolveClarification = (item, reply, { args = null, tool = null, se
     const result = picked.apply();
     const how = reply?.source === 'skipped' ? 'the user skipped, so the default stands' : 'the user chose it';
     if (item.kind === 'cut') {
-        remember(result.window, Boolean(result.args?.window_confirmed) || picked.label.startsWith('Keep'));
-        return { args: result.args, note: `${how}: run in ${windowText(result.window)} (${picked.label}).` };
+        remember(result.window, Boolean(result.args?.window_confirmed) || picked.confirmed === true);
+        return { args: result.args, note: `${how}: run in ${windowText(result.window)} (${picked.label}).`, confirmed: picked.confirmed === true };
     }
     return { note: reply?.source === 'skipped' ? `${result} (The user skipped the question; this is the default.)` : result };
 };

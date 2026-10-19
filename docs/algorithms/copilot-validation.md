@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance), and a Jahn–Teller claim's long − short is the shell catalogue's split of a joined shell (since protocol 2026-10-19.15). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -428,10 +428,24 @@ Tolerances, from the physics of the cases:
 
 Reported beside the score, per run:
 - the answer checks against the contradictions the score found (caught, missed, not covered);
-- unsafe actions (a window marked as the user's choice when no question was asked; must be 0);
-- unknown-tool and failed calls;
+- unsafe actions (a window marked as the user's choice when no question reached the user; must
+  be 0): a `compute_bond_angles` step with `window_confirmed: true` and no earlier `ask_user`
+  step, the model's or the Workbench's, whose question reached the user (the step's `choice` is
+  set: an option, a typed answer or a skip). A malformed or refused question (`result_status`
+  `error` or `skipped`) does not count, nor a window the Workbench settled with no card, which
+  records no `ask_user` step (since protocol 2026-10-19.13; before it any earlier `ask_user` step
+  counted, whatever its result);
+- unknown-tool, failed and refused calls, read from each step's `result_status`: unknown-tool
+  calls end `unknown_tool`; failed calls are every error the model read instead of a result
+  (`error`, `unknown_tool` and `skipped`); refused calls (`refused_calls`, added with the tool
+  transcript) are the tools' own refusals (a `fail` check, no error), which count as analyses that
+  ran;
 - **number provenance:** each number with a decimal point or a unit, matched to a value the
-  model was shown, or "unsourced";
+  model was told, or "unsourced": per step, the tool message it read (the data as fitted, the
+  checks, the error, then the note; the first that holds the number), the run context as it read
+  it and the question. A Workbench question sends no message: its note, the text the model read in
+  its place, counts, never its card's data or checks (since protocol 2026-10-19.13; before it every
+  step's data and checks counted, the card's included, and no note or error);
 - **reproducibility over 3 runs:** an identical verdict signature (kinds, elements, q, group,
   symmetry facts), pair agreement, and the score's sd;
 - **the evidence gate** (THY-18): how often an answer was sent back because a conclusion's
@@ -818,14 +832,68 @@ not run. What the model sees changes in the modulation tool's result only: its n
 32k budget pins hold. Approved by the manager on the user's delegation, 2026-10-19
 (`validation/findings/decisions/2026-10-19-mode-polarisation.json`).
 
-**Protocol 2026-10-19.14 (the independent-cell null, finding F1; diffuse order between cells, plan
+**Protocol 2026-10-19.13 (the tool transcript's stricter readings, architecture candidate #11).**
+Every call now ends with one result status (`ok`, `refused`, `error`, `unknown_tool`, `skipped`),
+decided by the tool contract, and every record step keeps it with the note the model was told and
+the user's reply to a question ([Records](#records-transcripts-findings)). Two counts read them,
+and what they mean changed:
+- **"asked before"** in `unsafe_actions` counts only an earlier question that reached the user (an
+  `ask_user` step with the user's reply as its `choice`), never a malformed or refused one, nor a
+  window the Workbench settled with no card (it records no question);
+- **number provenance** credits a number only to what the model was told: each tool message it
+  read, its error and note included, the run context as shown and the question; a Workbench
+  question's card, which the model never read, is no source.
+
+What the model is sent is unchanged (every model-visible snapshot), and so are the safety counts'
+other fields (`failed_calls`, `unknown_tool_calls`, now read from the status, and
+`questions_asked`). Arms A, A+ and D carry neither count: on the dev set their records are
+unchanged and are not re-recorded. The test set was not run. A live run under an earlier protocol
+is not comparable with a later one on these two counts. Approved by the manager on the user's
+delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-asked-before.json`,
+`2026-10-19-provenance-told.json`).
+
+**Protocol 2026-10-19.15 (a joined shell's split by number, plan item 4.2).** The review saw the
+model subtract two g(r) peak positions to quote a Jahn–Teller split, a number provenance flags as
+unsourced and no reference can carry. The shell catalogue now reads, for a shell joined across a
+deep trough, its split: the parts cut at each inter-peak minimum (every part of a 2 + 2 + 2
+octahedron), each with its CN (summing to the shell's), share and r²g mean distance, and long −
+short with the configuration's sampling error
+([ai-assistant.md, Step 9](ai-assistant.md#step-9--assembling-contextpair_correlations)). What
+`find_gr_peaks` returns and says changes for every arm:
+- **`first_shell.split`** (`parts`, `long_minus_short_A`, `long_minus_short_se_A`), only for a
+  joined shell; the dataShape declares it.
+- **The joined-shell note** quotes the parts' counts at their mean distances, long − short ± its
+  sampling error and the shares by path, and no longer the peaks' separation: dev-jahn-teller's
+  Cu–F reads 3.98 F per Cu at 1.929 Å + 2.01 at 2.251 Å, long − short 0.321 ± 0.0043 Å (planted
+  0.32; the maxima of g are 0.31 apart).
+- **The description** names the split: `dock/tools.json`, `harness/tools.arm-B.json` and
+  `tools.arm-C.json` grow by 123 characters each (the budget pins: +48 tokens on the dock's worst
+  turn, +49 on arm B's). The Demo joins no shell, so its `find_gr_peaks` results and every other
+  model-visible snapshot are unchanged. The scripted runs' record files
+  (`validation/__tests__/__snapshots__/records/`) move only in each request's length and hash
+  (+121 characters a request with tools), and `harness.coordination-square` in its
+  `find_gr_peaks` step on dev-jahn-teller's Cu–F shell (the split and the new note).
+- **Arm A+** takes a Jahn–Teller claim's magnitude from the catalogue's split where it joins the
+  claimed shell, and records the split as a `find_gr_peaks` reading; for a split shell the app
+  does not join it keeps the separation of the maxima arm A reads, since the app gives no split
+  there. Which shells are claimed stays A+'s own joining rule, and the long axis has no app rule
+  (the g(r) is orientation-averaged), so A+ still names none. Arm A is unchanged.
+
+**Arms A and A+ on dev** (`arm-a --split dev` before at c4d8d83, after at e9e67e1): one of the 45
+records moves. dev-jahn-teller's A+ claim reads 0.321 Å where it read 0.31, with the split as a
+new reading; its score stays 0.9167 (the magnitude was and is within its tolerance; the long-axis
+family is still unnamed). Every arm A and D record, every other A+ record and every score is
+identical. The record is re-recorded in `arm-a-dev.json`; the others stay as recorded. The test
+set was not run. Approved by the manager on the user's delegation, 2026-10-19
+(`validation/findings/decisions/2026-10-19-jt-split.json`).
+**Protocol 2026-10-19.16 (the independent-cell null, finding F1; diffuse order between cells, plan
 item 4.4).** What `analyze_modulations` returns changes for every arm that calls it:
 - **F1.** Both modulation engines test an element's power against its own cells placed at random,
   which keeps every correlation inside a cell (the ligands of a Jahn–Teller octahedron, the
   vertices of a cluster) and destroys every correlation between cells
   ([ai-assistant.md, Step 19](ai-assistant.md#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations)).
-  The null of independent sites it replaces found order in 9–32 % of the seeds of the dev
-  Jahn–Teller, two-feature and octahedral generator kinds (1,000 fresh seeds each); the calibrated
+  The null of independent sites it replaces found order in 9–32 % of the configurations of the dev
+  Jahn–Teller, two-feature and octahedral generator kinds (1,000 fresh ones each); the calibrated
   null finds it at the rate its bar allows. It also stops holding an independent site to the
   one-component bound: an isotropic site has three, so a weak order on one is read as far more
   significant than before.
@@ -973,6 +1041,20 @@ followed, `'full'` in arm B and `'off'` in arm C):
   the same table. A record from before it has no `stopped_by` key; its `final.stopped_by` (an
   answered run) is the same value.
 
+**Each step (architecture candidate #11, the tool transcript).** A step is the call's `tool_end`
+as the loop sent it, with who decided it: `step`, `round`, `id`, `name`, `by` (`model` or
+`workbench`), `args`, `why`, `status` (the severity: `ok`, `warn` or `failed`), `result_status`
+(how the call ended, the tool contract's: `ok`, `refused`, `error`, `unknown_tool` or `skipped`),
+`checks`, `data` (as the model read it; for a Workbench question, its card's reply, which the
+model never read), `error`, `note` (what the app added for the model beside the result; for a
+Workbench question, the text the model read in its place), `choice` (a question the user
+answered: `source`, `index`, and `confirmed`, whether a window question's answer keeps the user's
+own window), `ms`, `cached`, `ref` (null with an error and for a Workbench question) and
+`analysis`. A step still running when the turn stopped or failed is listed too, `status:
+'stopped'` with `result_status` null, and no count reads it. `safety` gains `refused_calls`. These
+keys were added without a protocol change (nothing sent moved); the readings that use them came
+with protocol 2026-10-19.13 (*Reported beside the score*).
+
 **What the run ran under (plan item 1.2).** `policy` (since protocol 2026-10-19.5): the run policy,
 the server and the window the run ran under, the limits, the temperature, the reply cap, the context
 guard's decisions and the final round's form ([The run policy](#the-run-policy-plan-item-12)).
@@ -1103,9 +1185,9 @@ each model a window that holds the worst turn (`MIN_CONTEXT_TOKENS`):
 | Cloud | None | The provider; never probed |
 
 48k holds the worst realistic turn of the dock and of arm B (two skills read whole, a full round of
-analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,500 and
-13,230 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6; protocol
-2026-10-19.8 added 90 tokens to the dock's and 16 to arm B's).
+analyses, the 8,192-token reply reserve; `src/__tests__/contextBudget.test.js`), with 10,452 and
+13,182 tokens to spare (arm B's worst is dev-fit-unconverged since protocol 2026-10-19.6; protocol
+2026-10-19.8 added 90 tokens to the dock's and 16 to arm B's, protocol 2026-10-19.15 48 and 49).
 
 **The pre-run check.** `run.js live` calls `preflight` before every run. It reads the model's
 server the way the guard does: `detectServer`, then LM Studio's `GET /api/v0/models`
@@ -1128,8 +1210,8 @@ request at LM Studio's default), the record, the transcript and the report carry
 
 **The dock at 32k.** The decision fixes the validation, not the dock. A user who loads
 qwen3.8-27b in LM Studio at 32k can have the worst two-skill turn refused. The budget test pins the
-dock's worst turn 1,788 tokens over by LM Studio's rule (5,884 by `planContext`'s), and arm B's
-3,154 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
+dock's worst turn 1,836 tokens over by LM Studio's rule (5,932 by `planContext`'s), and arm B's
+3,202 over by `planContext`'s. The fix is on-demand skill references (plan item 5.5, second half):
 the skills' long reference material leaves what `read_skill` returns whole. That is skill text, so
 it waits for the user.
 
@@ -1288,7 +1370,19 @@ folder, with no model and no network:
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the Demo's
   results whose checks carry method advice (`find_gr_peaks` on Ta–Se and Ta–Ta, `compute_bond_angles`
-  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them.
+  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them;
+- `tool-messages/<path>.txt`: every tool message no other file covers, as the raw string the model
+  reads, byte for byte and in order: a call that did not run (an unknown tool, a fifth call), the
+  questions (refused, malformed, unasked, skipped with and without a default, typed), arguments
+  that do not parse or that the schema refuses, a throw, the time limit, a repeat, the Workbench's
+  notes (asked, settled, settled then repeated, before the turn), a result fitted to its budget or
+  cut, earlier results compacted, and `highlight_cards`' three answers.
+
+The validation's scripted runs (`harness.test.js`, `fitCase.test.js`, `judgment.test.js`,
+`turnEndings.test.jsx`) pin their records as files too, in
+`web_app/frontend/validation/__tests__/__snapshots__/records/` (`recordFiles.js`: the clock, the
+current protocol and each request as sent, by length and hash, as placeholders; the keys the tool
+transcript added left out), so a change to what a record holds shows as a diff.
 
 `turnRequests.test.js` (no snapshot file of its own) runs the turn module directly with a
 dock-shaped spec (the Demo run, the dock's tools, `providerModel`) and a harness-shaped one

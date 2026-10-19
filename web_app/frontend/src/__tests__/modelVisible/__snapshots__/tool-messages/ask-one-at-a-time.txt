@@ -1,0 +1,6 @@
+# The tool messages the model reads: one question at a time
+# two ask_user calls in one round: the first asked (the user picks option 1), the second refused
+## messages[3] · tool · call_1_0
+{"ref":"r1","checks":[{"level":"ok","text":"The user chose \"Whole first shell\". Use exactly this choice and say in the answer which one you used."}],"data":{"question":"Which Ta–Se window?","answer":"Whole first shell"}}
+## messages[4] · tool · call_1_1
+{"error":"one question at a time: ask the next one after this answer, if it is still needed"}

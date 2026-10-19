@@ -1,0 +1,19 @@
+{
+  "case": "dev-cell-wrap",
+  "run": "finding F5: an experiment on main a24dfdd (uncommitted) with the shell catalogue's ideal counts widened to {2, 3, 4, 6, 8, 12}; every cluster element's shell on the Demo and the dev cases; arms A, A+ and D on dev (no test split), 2026-10-19",
+  "step": null,
+  "kind": "science-error",
+  "evidence": "The shell catalogue (src/llm/context/shells.js) joins a split first shell only when the summed CN is an ideal polyhedral count (IDEAL_COORDINATION = 4, 6, 8, 12), so a metal triangle or tetrahedron whose edges a distortion splits (CN 2 or 3) stays cut at its first trough. Accepting 2 and 3 as well joins exactly one Demo or dev shell: dev-cell-wrap's V-V, the dimer bond at 2.245 A with the inter-dimer distance at 2.775 A (window 2.17-2.35 A, CN 1 -> 2.17-3.12 A, CN 2), which is not the cluster's edge; analyze_clusters then reads 'no clusters: extended network' instead of rigid V dimers, and arm A+ falls from 1.00 to 0.83 on that case. dev-breathing's Mo-Mo (CN 2.00) and the Demo's Ta-Ta (CN 2.75) gain an ideal label with no join and no change in what they report; the already ideal shells are unchanged; arms A and D are unchanged on every dev case. The experiment's builder saw a structure helper only a held-out case uses (sealed since #104); the table is evidence for a decision, not a tuned rule. Approved by the manager on the user's delegation, 2026-10-19.",
+  "proposed_fix": "Leave the join rule as it is (helps no case, breaks one). Document it as a known limit in docs/algorithms/ai-assistant.md (a split M3/M4 cluster shell does not join, because a join needs an ideal polyhedron), keep the evidence table there so the user can reopen F5, and pin the limit with a known-answer test (a split triangle 1 + 1 and a split tetrahedron 2 + 1 never join). Commit 887e523. Approved by the manager on the user's delegation, 2026-10-19; the user may reverse it.",
+  "needs_user_approval": true,
+  "status": "implemented",
+  "approval": {
+    "by": "user",
+    "date": "2026-10-19",
+    "batch": 2
+  },
+  "commit": "887e523",
+  "tests": [
+    "web_app/frontend/src/llm/__tests__/shells.test.js › never joins a split M3/M4 cluster shell (1 + 1, 2 + 1): CN 2 and 3 are no ideal count (F5, a known limit)"
+  ]
+}

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LIMITS, assistantContent, runCopilotTurn } from '../copilot/agentLoop';
 import { ToolsUnsupportedError } from '../provider/model';
 import { ASK_USER, buildAskUserTool } from '../copilot/askUser';
-import { budgetJson, fitToBudget, stepStatus, usableTools } from '../copilot/tools';
+import { compactToolMessage, REPEAT_NOTE } from '../copilot/tools';
 import { createVerification } from '../copilot/verification';
 
 // A scripted model: each request consumes the next reply. A reply is either
@@ -120,6 +120,9 @@ describe('runCopilotTurn', () => {
         expect(requests[1].messages.at(-2).content).toBeNull();
     });
 
+    // The texts of these errors are the tool contract's (tools.test.js) and
+    // pinned as sent (modelVisible/toolMessages.test.js); the loop forwards
+    // the status each ended with.
     it('answers unknown tools, invalid JSON and thrown errors as tool errors', async () => {
         const failing = echoTool({ name: 'boom', run: async () => { throw new Error('engine said no'); } });
         const { callModel, requests } = scriptedModel([
@@ -131,10 +134,10 @@ describe('runCopilotTurn', () => {
             { text: 'ok' }
         ]);
         const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [echoTool(), failing] }));
-        const errors = events.filter((event) => event.type === 'tool_end').map((event) => event.error);
-        expect(errors[0]).toBe('unknown tool "nope"; available: echo, boom');
-        expect(errors[1]).toMatch(/not valid JSON/);
-        expect(errors[2]).toBe('engine said no');
+        const ends = events.filter((event) => event.type === 'tool_end');
+        expect(ends.map((event) => [event.resultStatus, event.status, Boolean(event.error)])).toEqual([
+            ['unknown_tool', 'failed', true], ['error', 'failed', true], ['error', 'failed', true]
+        ]);
         // Every listed call is answered, and unparseable arguments are echoed as '{}'.
         const assistant = requests[1].messages.find((message) => message.tool_calls);
         expect(assistant.tool_calls.map((call) => call.function.arguments)).toEqual(['{}', '{}', '{"value":1}']);
@@ -151,8 +154,9 @@ describe('runCopilotTurn', () => {
         ]);
         const events = await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [tool] }));
         expect(tool.run).toHaveBeenCalledTimes(1);
-        expect(events.filter((event) => event.type === 'tool_end').map((event) => event.cached)).toEqual([false, true]);
-        expect(JSON.parse(requests[2].messages.at(-1).content).note).toMatch(/identical call/);
+        expect(events.filter((event) => event.type === 'tool_end').map((event) => [event.resultStatus, event.cached, event.note]))
+            .toEqual([['ok', false, null], ['ok', true, REPEAT_NOTE]]);
+        expect(JSON.parse(requests[2].messages.at(-1).content).note).toBe(REPEAT_NOTE);
     });
 
     it('answers calls beyond the per-step limit as skipped', async () => {
@@ -165,7 +169,7 @@ describe('runCopilotTurn', () => {
             model: callModel, messages: baseMessages, tools: [tool], limits: { maxCallsPerRound: 2 }
         }));
         expect(tool.run).toHaveBeenCalledTimes(2);
-        expect(events.filter((event) => event.type === 'tool_end').at(-1).error).toMatch(/^skipped/);
+        expect(events.filter((event) => event.type === 'tool_end').map((event) => event.resultStatus)).toEqual(['ok', 'ok', 'skipped']);
         expect(requests[1].messages.filter((message) => message.role === 'tool')).toHaveLength(3);
     });
 
@@ -287,23 +291,6 @@ describe('runCopilotTurn', () => {
         expect(events.find((event) => event.type === 'tool_end').error).toMatch(/did not finish within/);
     });
 
-    it('fits large results to the budget without dropping the checks', async () => {
-        const big = echoTool({
-            run: async () => ({
-                data: { rows: Array.from({ length: 500 }, (_, index) => ({ index, value: index * 1.5 })) },
-                checks: [{ level: 'warn', text: 'big' }]
-            })
-        });
-        const { callModel, requests } = scriptedModel([{ calls: [{ name: 'echo', args: { value: 1 } }] }, { text: 'ok' }]);
-        await collect(runCopilotTurn({ model: callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 1200 } }));
-        const content = requests[1].messages.at(-1).content;
-        expect(content.length).toBeLessThanOrEqual(1300);
-        const parsed = JSON.parse(content);
-        expect(parsed.checks).toEqual([{ level: 'warn', text: 'big' }]);
-        expect(parsed.data.rows_omitted).toBeGreaterThan(400);
-        expect(parsed.data.rows.length + parsed.data.rows_omitted).toBe(500);
-    });
-
     it('echoes a call\'s extra_content (Gemini thought_signature) and sends no index', async () => {
         const signature = { google: { thought_signature: 'c2ln' } };
         const { callModel, requests } = scriptedModel([
@@ -383,15 +370,13 @@ describe('runCopilotTurn', () => {
         await collect(runCopilotTurn({
             model: callModel, messages: baseMessages, tools: [big], limits: { resultCharBudget: 900, turnCharBudget: 1500 }
         }));
-        const toolContents = requests[3].messages.filter((message) => message.role === 'tool').map((message) => JSON.parse(message.content));
-        expect(toolContents[0]).toEqual({
-            ref: 'r1',
-            compacted: 'this earlier result was shortened to fit the context; its checks and headline numbers are kept',
-            checks: [{ level: 'ok', text: 'round 1' }],
-            key: { value: 1 }
-        });
-        // The newest result is never compacted.
-        expect(toolContents[2].data.value).toBe(3);
+        const toolContents = requests[3].messages.filter((message) => message.role === 'tool').map((message) => message.content);
+        // The earliest is compacted (its form: tools.test.js compactToolMessage),
+        // from the message the model first read; the newest never is.
+        const firstRead = requests[1].messages.filter((message) => message.role === 'tool')[0].content;
+        expect(toolContents[0]).toBe(compactToolMessage(firstRead));
+        expect(JSON.parse(toolContents[0]).compacted).toBeDefined();
+        expect(JSON.parse(toolContents[2]).data.value).toBe(3);
         const total = requests[3].messages.filter((message) => message.role === 'tool').reduce((sum, message) => sum + message.content.length, 0);
         expect(total).toBeLessThanOrEqual(1500);
     });
@@ -447,30 +432,6 @@ describe('runCopilotTurn', () => {
             maxRounds: 6, maxCallsPerRound: 4, toolTimeoutMs: 120000, maxTurnMs: 600000, resultCharBudget: 3000, turnCharBudget: 12000,
             maxQuestions: 2, stallMs: 180000, requestMaxMs: 600000, maxNoProgressRounds: 2
         });
-    });
-});
-
-describe('tool helpers', () => {
-    it('keeps only well-formed, uniquely named tools', () => {
-        const ok = echoTool();
-        expect(usableTools([ok, { ...ok }, { ...ok, name: 'Bad Name' }, { name: 'x', description: 'd' }, null])).toEqual([ok]);
-    });
-
-    it('derives a step status from the error and checks', () => {
-        expect(stepStatus({ error: 'x', checks: [] })).toBe('failed');
-        expect(stepStatus({ error: null, checks: [{ level: 'fail', text: 'a' }] })).toBe('failed');
-        expect(stepStatus({ error: null, checks: [{ level: 'warn', text: 'a' }, { level: 'ok', text: 'b' }] })).toBe('warn');
-        expect(stepStatus({ error: null, checks: [{ level: 'note', text: 'a' }] })).toBe('ok');
-    });
-
-    it('trims nested arrays and hard-cuts as a last resort, never silently', () => {
-        const value = { a: { b: Array.from({ length: 100 }, (_, i) => i) }, c: 'x' };
-        const fitted = fitToBudget(value, 120);
-        expect(JSON.stringify(fitted).length).toBeLessThanOrEqual(120);
-        expect(fitted.a.b_omitted + fitted.a.b.length).toBe(100);
-        const cut = JSON.parse(budgetJson({ s: 'y'.repeat(500) }, 100));
-        expect(cut.truncated).toBe(true);
-        expect(fitToBudget(null, 10)).toBeNull();
     });
 });
 
@@ -683,13 +644,14 @@ describe('ask_user: the agent asks instead of guessing a parameter', () => {
             { text: 'Done.\nOutcome: partial — assumed the default.' }
         ], askUser);
         // Asked in steps 1 and 2 (the same question twice: a real exchange
-        // each time); the second call of step 1 and the third question refused.
+        // each time); the second call of step 1 and the third question refused
+        // (skipped by the loop: their texts are the contract's, tools.test.js).
         expect(askUser).toHaveBeenCalledTimes(2);
         const ends = events.filter((event) => event.type === 'tool_end');
         expect(ends.map((event) => event.cached)).toEqual([false, false, false, false]);
-        expect(ends[1].error).toMatch(/one question at a time/);
-        expect(ends[3].error).toMatch(/already asked 2 questions .* proceed with your default/);
-        expect(JSON.parse(requests[3].messages.at(-1).content).error).toMatch(/already asked 2 questions/);
+        expect(ends.map((event) => event.resultStatus)).toEqual(['ok', 'skipped', 'ok', 'skipped']);
+        expect(ends.map((event) => event.choice?.source ?? null)).toEqual(['option', null, 'option', null]);
+        expect(JSON.parse(requests[3].messages.at(-1).content).error).toBe(ends[3].error);
     });
 
     it('reads plain strings as options, and says so when nobody can be asked', async () => {

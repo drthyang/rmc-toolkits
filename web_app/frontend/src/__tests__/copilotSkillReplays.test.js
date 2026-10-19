@@ -13,6 +13,7 @@ import { plotDataFromText, structureFromRmc6f } from '../browserData';
 import { buildCopilotTools } from '../copilotTools';
 import { buildRunTools } from '../llm/copilot/runTools';
 import { runTurn } from '../llm/copilot/turn';
+import { toolResult } from '../llm/copilot/tools';
 import { createVerification } from '../llm/copilot/verification';
 import { inProcessEngine } from '../workers/pcaKdeWorker';
 
@@ -162,7 +163,7 @@ describe('the real model\'s correct answers (gemma4:26b, 2026-10-11)', () => {
     // tools' facts recorded, the run context given, no claim offered.
     const auditAnswer = (text, { facts = [], context = null } = {}) => {
         const verification = createVerification({ context, offered: [] });
-        facts.forEach((item) => verification.record({ name: 'analysis', args: {}, status: 'ok', error: null, executed: true, facts: item }, () => ({ data: null })));
+        facts.forEach((item) => verification.record({ name: 'analysis', ...toolResult({ facts: item }) }, () => ({ data: null })));
         return verification.judge(text).done.audit;
     };
 

@@ -1796,8 +1796,8 @@
  },
  {
   "id": "dev-jahn-teller__A+",
-  "protocol": "2026-10-19.8",
-  "commit": "63569f340cf81501c131d3e16144664861ea2c9b",
+  "protocol": "2026-10-19.15",
+  "commit": "e9e67e1eef6661947ea128a9976adda112d1d199",
   "case": "dev-jahn-teller",
   "split": "dev",
   "arm": "A+",
@@ -1817,7 +1817,7 @@
     {
      "kind": "jahn_teller",
      "element": "Cu",
-     "magnitude_A": 0.31
+     "magnitude_A": 0.321
     },
     {
      "kind": "cluster_distortion",
@@ -1841,7 +1841,7 @@
      "element": "Cu",
      "direction_error_deg": null,
      "direction_ok": false,
-     "magnitude_claimed_A": 0.31,
+     "magnitude_claimed_A": 0.321,
      "magnitude_ok": true,
      "accurate": false
     }
@@ -2099,6 +2099,36 @@
      "average_structure_spread_A": 0.0402
     },
     "reading": "split shell around Cu: 0.31 Å between its maxima"
+   },
+   {
+    "page": "find_gr_peaks",
+    "what": "Cu-F first shell split (joined across a deep trough)",
+    "value": {
+     "cn_of": "F_per_Cu",
+     "parts": [
+      {
+       "window_A": [
+        1.7,
+        2.1
+       ],
+       "mean_d_A": 1.929,
+       "cn": 3.98,
+       "share": 0.664
+      },
+      {
+       "window_A": [
+        2.1,
+        2.52
+       ],
+       "mean_d_A": 2.251,
+       "cn": 2.01,
+       "share": 0.336
+      }
+     ],
+     "long_minus_short_A": 0.321,
+     "long_minus_short_se_A": 0.0043
+    },
+    "reading": "3.98 at 1.929 Å + 2.01 at 2.251 Å F per Cu: long − short 0.321 ± 0.0043 Å"
    },
    {
     "page": "analyze_clusters",

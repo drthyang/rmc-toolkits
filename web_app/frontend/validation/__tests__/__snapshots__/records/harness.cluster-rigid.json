@@ -1,0 +1,420 @@
+{
+ "id": "dev-breathing__C__scripted__r1",
+ "protocol": "<PROTOCOL_VERSION>",
+ "commit": null,
+ "case": "dev-breathing",
+ "split": "dev",
+ "arm": "C",
+ "arm_label": "Copilot without the method: no skills, method rules or advice (ablation)",
+ "model": {
+  "name": "scripted",
+  "label": "scripted test model",
+  "id": "scripted",
+  "base_url": "none",
+  "temperature": 0
+ },
+ "run_index": 1,
+ "started_at": "<time>",
+ "policy": {
+  "server": {
+   "kind": null,
+   "expected": null,
+   "version": null,
+   "base_url": "none"
+  },
+  "temperature": {
+   "base": 0,
+   "warmer_retry_min": 0.6
+  },
+  "limits": {
+   "maxRounds": 6,
+   "maxCallsPerRound": 4,
+   "toolTimeoutMs": 120000,
+   "maxTurnMs": 600000,
+   "resultCharBudget": 3000,
+   "turnCharBudget": 12000,
+   "maxQuestions": 2,
+   "stallMs": 180000,
+   "requestMaxMs": 600000,
+   "maxNoProgressRounds": 2,
+   "maxEvidenceGates": 2
+  },
+  "context": {
+   "min_tokens": null,
+   "min_tokens_by_server": {
+    "lmstudio": 49152,
+    "ollama": null,
+    "openai": null
+   },
+   "sizing": null,
+   "loaded_tokens": null,
+   "model_max_tokens": null,
+   "num_ctx_used": []
+  },
+  "reply_cap": null,
+  "context_guard": {
+   "on_overflow": "refuse",
+   "chars_per_token": 2.5,
+   "json_chars_per_token": 1.4,
+   "message_overhead_tokens": 8,
+   "reply_reserve_tokens": 8192,
+   "lmstudio_reply_min_tokens": 4096,
+   "context_step": 8192,
+   "min_context": 16384,
+   "read_share_limit": 0.4,
+   "probes": "localhost, or port 11434, only"
+  },
+  "final_round": {
+   "tool_choice": "none (as the loop asks)",
+   "tools": "sent",
+   "how": "server not read"
+  },
+  "history": {
+   "earlier_turns": 0,
+   "reasoning_resent": false
+  },
+  "spend": null,
+  "warnings": []
+ },
+ "question": "Analyse the local structure of this RMC configuration. Is there order or distortion beyond the average structure (off-centred atoms, correlated clusters, a superstructure, distorted polyhedra)? What is the average structure's space group, and is it chiral, centrosymmetric, polar? Base every claim on the Workbench's analyses, and say so plainly if there is no such order.\n\nFinish with one line that starts with VERDICT and holds a JSON object, after everything else (the Outcome line included):\nVERDICT {\"features\": [{\"kind\": \"...\", \"element\": \"...\", \"direction_uvw\": [u, v, w] or null, \"magnitude_A\": number or null, \"q\": [h, k, l] or null}], \"space_group\": \"...\" or null, \"chiral\": true/false/null, \"centrosymmetric\": true/false/null, \"polar\": true/false/null}\nkind is one of off_centre, modulation, cluster_distortion, cluster_breathing, rigid_cluster, jahn_teller, symmetry_lowering. features is [] when there is no order beyond thermal motion. direction_uvw is a crystal direction; magnitude_A the static displacement (off_centre, symmetry_lowering) or the long minus short bond (jahn_teller); q in reciprocal-lattice units. Use null for what you did not determine. A number may be a reference to a tool result, as in the answer (\"magnitude_A\": {{r3.sites.0.shift_A}}): the app fills it in; a text reference goes inside its quotes (\"element\": \"{{r3.sites.0.element}}\").",
+ "method": "off",
+ "tools_offered": [
+  "read_run_data",
+  "find_gr_peaks",
+  "list_sites",
+  "analyze_displacement_directions",
+  "compute_bond_angles",
+  "analyze_clusters",
+  "analyze_modulations",
+  "detect_symmetry",
+  "measure_symmetry_lowering",
+  "ask_user"
+ ],
+ "skills_offered": [],
+ "view": {
+  "toleranceA": 0.2,
+  "hiddenPlots": [],
+  "pcaSites": null,
+  "liveData": false,
+  "ladder": true
+ },
+ "context": {
+  "sections": [
+   "structure",
+   "symmetry",
+   "pair_correlations",
+   "datasets"
+  ],
+  "absent": [
+   "configuration_optimization",
+   "run_settings",
+   "pca_displacements",
+   "partial_weights",
+   "convergence"
+  ],
+  "other_sections": [],
+  "earlier_turns": 0
+ },
+ "requests": [
+  {
+   "round": 0,
+   "why": "first",
+   "sent": "18901 characters, sha256 4c63100465db6b8b",
+   "num_ctx": null
+  },
+  {
+   "round": 1,
+   "why": "tools",
+   "sent": "21420 characters, sha256 c5450b7675b06c91",
+   "num_ctx": null
+  }
+ ],
+ "steps": [
+  {
+   "step": 1,
+   "round": 1,
+   "id": "call_1_0#1",
+   "name": "analyze_clusters",
+   "by": "model",
+   "args": {
+    "element": "Mo",
+    "r_min": 2.4,
+    "r_max": 3.21
+   },
+   "why": {
+    "reasoning": "",
+    "text": ""
+   },
+   "status": "ok",
+   "checks": [
+    {
+     "level": "note",
+     "text": "The average cluster is regular within its sampling error: edges 2.8–2.805 Å (± 0.0048 Å each)."
+    },
+    {
+     "level": "ok",
+     "text": "No cluster shape distortion beyond independent atoms (at each cluster's own size): the edge spread (0.104 Å) matches the shuffle null (0.105 Å; change -1 %, z = -0.61)."
+    },
+    {
+     "level": "note",
+     "text": "The clusters breathe: their size (mean edge) fluctuates 49 % more than for independent atoms (breathing sd 0.127 vs 0.0849 Å, z = 22) — a collective size fluctuation, not a shape distortion."
+    }
+   ],
+   "data": {
+    "element": "Mo",
+    "window_A": [
+     2.4,
+     3.21
+    ],
+    "sites": 3,
+    "clusters": {
+     "members": 3,
+     "edges": 3,
+     "count": 512,
+     "templates": 1
+    },
+    "average_structure": {
+     "edges_A": [
+      2.8,
+      2.801,
+      2.805
+     ],
+     "spread_A": 0.0049,
+     "edge_se_A": 0.0048,
+     "spread_over_se": 1
+    },
+    "local": {
+     "note": "obs = the configuration. Shape rows (ladder, edge spread, shape rms, modes, axis families): null = each cluster keeps its own breathing (size) and each atom its own site's other displacements, taken from a random other cluster. Size rows (breathing_sd_A, mean_edge_A): null = independent atoms (each atom's whole displacement from a random other cluster). z = (obs − null) / null sd over the shuffles; change = obs/null − 1; ladder_A[k] = the mean over clusters of each cluster's k-th shortest edge (not the range of single bonds)",
+     "ladder_A": {
+      "obs": [
+       2.752,
+       2.804,
+       2.856
+      ],
+      "null": [
+       2.751,
+       2.804,
+       2.856
+      ],
+      "z": [
+       0.77,
+       -0.61,
+       -0.34
+      ]
+     },
+     "ladder_width_A": {
+      "obs": 0.104,
+      "null": 0.105,
+      "z": -0.61,
+      "change": -0.012
+     },
+     "shape_rms_A": {
+      "obs": 0.0505,
+      "null": 0.0507,
+      "z": -0.16,
+      "change": -0.0029
+     },
+     "breathing_sd_A": {
+      "obs": 0.127,
+      "null": 0.0849,
+      "z": 22,
+      "change": 0.49
+     },
+     "mean_edge_A": {
+      "obs": 2.804,
+      "null": 2.804,
+      "z": -8.1,
+      "change": -0.00016
+     },
+     "long_axis_within_15deg": {
+      "<100>": {
+       "obs": 0,
+       "null": 0,
+       "z": null
+      },
+      "<110>": {
+       "obs": 0.504,
+       "null": 0.491,
+       "z": 0.48,
+       "change": 0.026
+      },
+      "<111>": {
+       "obs": 0,
+       "null": 0.000163,
+       "z": -0.3,
+       "change": -1
+      }
+     },
+     "short_axis_within_15deg": {
+      "<100>": {
+       "obs": 0,
+       "null": 0,
+       "z": null
+      },
+      "<110>": {
+       "obs": 0,
+       "null": 0,
+       "z": null
+      },
+      "<111>": {
+       "obs": 1,
+       "null": 1,
+       "z": null,
+       "change": 0
+      }
+     }
+    },
+    "outliers": {
+     "bonds_outside_window": 0.0026,
+     "contacts_between_clusters_per_atom": 0
+    }
+   },
+   "error": null,
+   "ms": "<ms>",
+   "cached": false
+  }
+ ],
+ "retracted": [],
+ "gates": [],
+ "rounds": 1,
+ "final": {
+  "text": "The Mo3 triangles move as rigid units.\n\nVERDICT {\"features\": [{\"kind\": \"rigid_cluster\", \"element\": \"Mo\"}], \"space_group\": null, \"chiral\": null, \"centrosymmetric\": null, \"polar\": null}",
+  "raw_text": "The Mo3 triangles move as rigid units.\n\nVERDICT {\"features\": [{\"kind\": \"rigid_cluster\", \"element\": \"Mo\"}], \"space_group\": null, \"chiral\": null, \"centrosymmetric\": null, \"polar\": null}",
+  "outcome": {
+   "status": "not verified",
+   "note": "a check below contradicts the answer.",
+   "body": "The Mo3 triangles move as rigid units.\n\nVERDICT {\"features\": [{\"kind\": \"rigid_cluster\", \"element\": \"Mo\"}], \"space_group\": null, \"chiral\": null, \"centrosymmetric\": null, \"polar\": null}",
+   "claimed": null,
+   "computed": true,
+   "reasons": [
+    "a check below contradicts the answer"
+   ]
+  },
+  "stopped_by": "answer",
+  "cut": false,
+  "audit": [
+   {
+    "rule": "cluster",
+    "text": "The answer says the Mo3 clusters are rigid, but analyze_clusters found no rigidity beyond independent atoms (or split sites, where the null already holds the distortion)."
+   }
+  ],
+  "references": {
+   "written": 0,
+   "filled": 0,
+   "unknown": []
+  },
+  "reasoning": "",
+  "reason": null
+ },
+ "error": null,
+ "stopped_by": "answer",
+ "finished_at": "<time>",
+ "wall_ms": "<ms>",
+ "questions": [],
+ "verdict": {
+  "features": [
+   {
+    "kind": "rigid_cluster",
+    "element": "Mo"
+   }
+  ],
+  "space_group": null,
+  "chiral": null,
+  "centrosymmetric": null,
+  "polar": null
+ },
+ "verdict_error": null,
+ "score": {
+  "format_ok": true,
+  "null_case": false,
+  "features": [
+   {
+    "kind": "cluster_breathing",
+    "element": "Mo",
+    "found": false
+   }
+  ],
+  "spurious": [
+   {
+    "index": 0,
+    "kind": "rigid_cluster",
+    "element": "Mo"
+   }
+  ],
+  "tolerated": [],
+  "overclaim": false,
+  "symmetry": null,
+  "contradictions": [
+   {
+    "what": "spurious rigid_cluster (Mo)",
+    "rule": "cluster"
+   }
+  ],
+  "score": 0
+ },
+ "audit_eval": {
+  "findings": [
+   {
+    "rule": "cluster",
+    "text": "The answer says the Mo3 clusters are rigid, but analyze_clusters found no rigidity beyond independent atoms (or split sites, where the null already holds the distortion)."
+   }
+  ],
+  "contradictions": [
+   {
+    "what": "spurious rigid_cluster (Mo)",
+    "rule": "cluster"
+   }
+  ],
+  "caught": [
+   "spurious rigid_cluster (Mo)"
+  ],
+  "missed": [],
+  "not_covered": [],
+  "unmatched_findings": []
+ },
+ "provenance": {
+  "numbers": [],
+  "checkable": 0,
+  "sourced": 0,
+  "unsourced": [],
+  "by_reference": {
+   "written": 0,
+   "filled": 0,
+   "unknown": []
+  }
+ },
+ "evidence": {
+  "gates": [],
+  "missing": []
+ },
+ "outcome_eval": {
+  "status": "not verified",
+  "right": false,
+  "agreement": "held"
+ },
+ "safety": {
+  "unsafe_actions": [],
+  "unknown_tool_calls": 0,
+  "failed_calls": 0,
+  "questions_asked": 0,
+  "skills_read": []
+ },
+ "truth": {
+  "summary": "Mo3 triangles (edge 2.8 Å) that breathe: each cluster scaled by 1 + ε, sd(ε) = 0.04 (edge sd 0.112 Å from breathing); their shape stays regular",
+  "features": [
+   {
+    "kind": "cluster_breathing",
+    "element": "Mo",
+    "accept": [
+     "cluster_breathing"
+    ]
+   }
+  ],
+  "tolerated": [],
+  "symmetry": null,
+  "traps": [
+   "a size fluctuation is not a shape distortion: the edge spread (shape) matches independent atoms, only the mean edge (breathing) does not"
+  ]
+ },
+ "final_reasoning_excerpt": ""
+}

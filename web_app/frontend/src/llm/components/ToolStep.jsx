@@ -5,7 +5,8 @@ import React, { useState } from 'react';
 import { ChevronIcon } from './icons';
 
 // One analysis the Copilot ran: status, title, duration and the verdict that
-// matters most, expandable to every check, the arguments and the exact data
+// matters most, expandable to every check, the arguments, the note the app
+// added for the model (the Workbench's choice, a repeat) and the exact data
 // the model read. Data is shown as JSON text, never as HTML. "Show in <page>"
 // switches the workbench to that analysis's page and loads the same analysis
 // there ("Open <page>" when the step has nothing to load) — a user action;
@@ -79,6 +80,12 @@ const ToolStep = ({ step, pageLabel, onOpenPage }) => {
                         <span className="llm-step-section-title">{step.name} arguments</span>
                         <pre>{pretty(step.args)}</pre>
                     </div>
+                    {step.note && (
+                        <div className="llm-step-section">
+                            <span className="llm-step-section-title">Note sent to the model</span>
+                            <pre>{step.note}</pre>
+                        </div>
+                    )}
                     <div className="llm-step-section">
                         <span className="llm-step-section-title">{step.error ? 'Error sent to the model' : 'Result sent to the model'}</span>
                         <pre>{step.error ? step.error : pretty(step.data)}</pre>

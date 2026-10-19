@@ -5,8 +5,10 @@
 // a known answer for every rule — the search range, the rounding, the CN
 // integral, the first-peak window (the inter-peak minimum, approved
 // 2026-10-19), separation, the closest-approach pile-up (the FWHM edge clause
-// dropped), the CN match, both cut readings (pinned as they were) and the
-// split-shell joins of the review's L1 (moved here from pairCorrelations).
+// dropped), the CN match, both cut readings (pinned as they were), the
+// split-shell joins of the review's L1 (moved here from pairCorrelations) and
+// a joined shell's split by number (plan item 4.2): its parts, long − short
+// and its sampling error.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -306,6 +308,20 @@ describe('a split shell cut at a deep trough (the review\'s L1)', () => {
         expect(odd.cn).toBeCloseTo(4, 1);
     });
 
+    it('never joins a split M3/M4 cluster shell (1 + 1, 2 + 1): CN 2 and 3 are no ideal count (F5, a known limit)', () => {
+        const triangle = catalogueOf(shellSeries('Mo-Mo', [[2.7, 0.04, 1], [2.95, 0.04, 1]], RHO, { step: 0.005 }),
+            { structure: box({ Mo: 50, Se: 50 }) }).shell('Mo', 'Mo');
+        expect(triangle.peaksInShell).toEqual([expect.closeTo(2.7, 1)]);
+        expect(triangle.joined).toBe(false);
+        expect(triangle.cn).toBeCloseTo(1, 1);
+        const tetrahedron = catalogueOf(shellSeries('Ta-Ta', [[2.9, 0.04, 2], [3.15, 0.04, 1]], RHO, { step: 0.005 }),
+            { structure: box({ Ta: 50, Se: 50 }) }).shell('Ta', 'Ta');
+        expect(tetrahedron.joined).toBe(false);
+        expect(tetrahedron.cn).toBeCloseTo(2, 1);
+        expect(IDEAL_COORDINATION).not.toContain(2);
+        expect(IDEAL_COORDINATION).not.toContain(3);
+    });
+
     it('takes the furthest peak that completes a polyhedron (2 + 2 + 2), and counts either direction', () => {
         const ortho = catalogueOf(shellSeries('Cu-F', [[1.95, 0.03, 2], [2.12, 0.03, 2], [2.32, 0.03, 2]], RHO, { step: 0.005 }),
             { structure: box({ Cu: 50, F: 50 }) }).shell('Cu', 'F');
@@ -321,6 +337,182 @@ describe('a split shell cut at a deep trough (the review\'s L1)', () => {
         expect(joined.ideal).toBeNull();
         expect(joined.firstPeak.cn).toBeCloseTo(1, 1);
         expect(IDEAL_COORDINATION).toEqual([4, 6, 8, 12]);
+    });
+});
+
+describe('a joined shell\'s split by number (plan item 4.2)', () => {
+    // A Jahn–Teller CuF₆: r²g holds exactly 4 F at 1.93 Å and 2 at 2.25 Å
+    // (σ 0.05 Å each), 50 Cu in the box. The tolerance on each mean and on
+    // long − short, 0.002 Å: the means are moments of r²g, not grid
+    // positions, so the grid moves them only through the quadrature (< 1e-4
+    // Å at h/σ ≤ 0.4) and the window edges, and the tails cut off beyond the
+    // inter-peak minimum and below the shell's onset lie 3σ out (~0.1 % of a
+    // part), moving a part's mean by < 5e-4 Å; 0.002 Å is four times that,
+    // and a fifth of the 0.01 Å every window is rounded to.
+    const JT = [[1.93, 0.05, 4], [2.25, 0.05, 2]];
+    const CU_F = box({ Cu: 50, F: 50 });
+    const TOLERANCE_A = 0.002;
+
+    it.each([0.005, 0.01, 0.02])('a 4 + 2 Jahn–Teller octahedron (grid %s Å): 4 short at 1.93 + 2 long at 2.25 Å, long − short 0.32 Å, shares 2/3 and 1/3, the parts summing to the shell', (step) => {
+        const shell = catalogueOf(shellSeries('Cu-F', JT, RHO, { step }), { structure: CU_F }).shell('Cu', 'F');
+        expect(shell.joined).toBe(true);
+        const { split } = shell;
+        expect(split.direction).toBe('forward');
+        expect(split.parts).toHaveLength(2);
+        const [short, long] = split.parts;
+        // The short part is the first peak alone; the long part runs from its
+        // end to the shell's boundary.
+        expect(short.window).toEqual(shell.firstPeak.window);
+        expect(short.cn).toBe(shell.firstPeak.cn);
+        expect(long.window).toEqual([shell.firstPeak.window[1], shell.window[1]]);
+        // Each CN over exactly its window: the parts sum to the shell's.
+        expect(short.cn + long.cn).toBeCloseTo(shell.cn, 12);
+        expect(short.share + long.share).toBeCloseTo(1, 12);
+        expect(Math.abs(short.cn - 4)).toBeLessThanOrEqual(0.02);
+        expect(Math.abs(long.cn - 2)).toBeLessThanOrEqual(0.02);
+        expect(Math.abs(short.share - 2 / 3)).toBeLessThanOrEqual(0.005);
+        expect(Math.abs(long.share - 1 / 3)).toBeLessThanOrEqual(0.005);
+        expect(Math.abs(short.meanR - 1.93)).toBeLessThanOrEqual(TOLERANCE_A);
+        expect(Math.abs(long.meanR - 2.25)).toBeLessThanOrEqual(TOLERANCE_A);
+        expect(Math.abs(split.longMinusShort - 0.32)).toBeLessThanOrEqual(TOLERANCE_A);
+        expect(short.sdR).toBeCloseTo(0.05, 2);
+        expect(long.sdR).toBeCloseTo(0.05, 2);
+        // The shell's mean distance is the parts', weighted by their shares.
+        expect(short.share * short.meanR + long.share * long.meanR).toBeCloseTo(shell.meanR, 10);
+        // Its sampling error: each part's spread over √ its bonds in the box
+        // (50 Cu × 4 and × 2), the bonds taken as independent.
+        expect(split.longMinusShortSe).toBeCloseTo(Math.hypot(short.sdR / Math.sqrt(50 * short.cn), long.sdR / Math.sqrt(50 * long.cn)), 12);
+        expect(split.longMinusShortSe).toBeCloseTo(0.05 * Math.sqrt(1 / 200 + 1 / 100), 3);
+    });
+
+    it('2 + 2 + 2 (an orthorhombic octahedron): every part, a third of the shell each, long − short the longest minus the shortest', () => {
+        // Short, medium and long pairs, as a Jahn–Teller octahedron with both
+        // the Q2 and the Q3 mode; lumping the medium pair with either end
+        // would read it as a 4 + 2 elongation or a 2 + 4 compression.
+        const shell = catalogueOf(shellSeries('Cu-F', [[1.95, 0.03, 2], [2.12, 0.03, 2], [2.32, 0.03, 2]], RHO, { step: 0.005 }), { structure: CU_F })
+            .shell('Cu', 'F');
+        expect(shell.joined).toBe(true);
+        const { parts, longMinusShort } = shell.split;
+        expect(parts).toHaveLength(3);
+        expect(parts[0].window).toEqual(shell.firstPeak.window);
+        // Contiguous, from the shell's start to its boundary.
+        expect(parts.map((part) => part.window[0])).toEqual([shell.window[0], parts[0].window[1], parts[1].window[1]]);
+        expect(parts[2].window[1]).toBe(shell.window[1]);
+        parts.forEach((part, k) => {
+            expect(Math.abs(part.cn - 2), `part ${k}`).toBeLessThanOrEqual(0.03);
+            expect(Math.abs(part.share - 1 / 3), `part ${k}`).toBeLessThanOrEqual(0.005);
+            expect(Math.abs(part.meanR - [1.95, 2.12, 2.32][k]), `part ${k}`).toBeLessThanOrEqual(TOLERANCE_A);
+        });
+        expect(parts.reduce((sum, part) => sum + part.cn, 0)).toBeCloseTo(shell.cn, 12);
+        expect(Math.abs(longMinusShort - 0.37)).toBeLessThanOrEqual(TOLERANCE_A);
+    });
+
+    it('says the counts in the direction the join decided: reverse when only the centre\'s count is ideal', () => {
+        // 1 + 0.5 F per Cu is no polyhedron; with Cu four times as dense,
+        // 4 + 2 Cu per F is.
+        const series = shellSeries('Cu-F', [[1.93, 0.05, 1], [2.25, 0.05, 0.5]], RHO, { step: 0.005 });
+        const structure = box({ Cu: 200, F: 50 });
+        const shell = catalogueOf(series, { structure }).shell('Cu', 'F');
+        expect(shell.joined).toBe(true);
+        expect(shell.split.direction).toBe('reverse');
+        expect(shell.split.parts.map((part) => part.reverseCn)).toEqual([expect.closeTo(4, 1), expect.closeTo(2, 1)]);
+        expect(shell.split.parts.map((part) => part.share)).toEqual([expect.closeTo(2 / 3, 2), expect.closeTo(1 / 3, 2)]);
+        expect(Math.abs(shell.split.longMinusShort - 0.32)).toBeLessThanOrEqual(TOLERANCE_A);
+        // The same shell from the F side, whose own count (6 Cu per F) is
+        // ideal: forward, the same split, the same bonds and so the same error.
+        const fromF = catalogueOf(series, { structure }).shell('F', 'Cu');
+        expect(fromF.split.direction).toBe('forward');
+        expect(fromF.split.parts.map((part) => part.cn)).toEqual(shell.split.parts.map((part) => expect.closeTo(part.reverseCn, 9)));
+        expect(fromF.split.longMinusShort).toBe(shell.split.longMinusShort);
+        expect(fromF.split.longMinusShortSe).toBeCloseTo(shell.split.longMinusShortSe, 12);
+    });
+
+    it('no split for a shell that is not joined: one peak, two overlapping peaks with no deep trough, no density to join by', () => {
+        expect(catalogueOf(shellSeries('Ta-Se', [[2.6, 0.08, 6]], RHO)).shell('Ta', 'Se').split).toBeNull();
+        // 3 + 3 at 2.5 and 2.75 Å, the trough at ~40 % of the first peak:
+        // the first peak alone is read, but the minimum cuts through both
+        // bond groups, so no split by number.
+        const overlapping = catalogueOf(shellSeries('Ta-Se', [[2.5, 0.07, 3], [2.75, 0.07, 3]], RHO)).shell('Ta', 'Se');
+        expect(overlapping.firstPeak).not.toBeNull();
+        expect(overlapping.joined).toBe(false);
+        expect(overlapping.split).toBeNull();
+        expect(catalogueOf(shellSeries('Cu-F', JT, RHO, { step: 0.005 }), { structure: null }).shell('Cu', 'F').split).toBeNull();
+    });
+
+    it('the cut at the minimum: a small positive bias as the parts overlap, below 1 % of the split at a 0.07 Å bond spread and 2 % at the edge of the join', () => {
+        // Noise-free r²g, so only the cut acts: each part's tail beyond the
+        // minimum moves its mean toward the other part's, the long part's
+        // more (its tail is the larger share of it).
+        for (const step of [0.005, 0.01, 0.02]) {
+            const shell = catalogueOf(shellSeries('Cu-F', [[1.93, 0.07, 4], [2.25, 0.07, 2]], RHO, { step }), { structure: CU_F }).shell('Cu', 'F');
+            const bias = shell.split.longMinusShort - 0.32;
+            expect(bias, `grid ${step} Å`).toBeGreaterThan(0);
+            expect(bias, `grid ${step} Å`).toBeLessThan(0.0032);
+        }
+        // σ 0.085 Å: the trough at 20 % of the first peak, the deepest the join takes.
+        const edge = catalogueOf(shellSeries('Cu-F', [[1.93, 0.085, 4], [2.25, 0.085, 2]], RHO, { step: 0.005 }), { structure: CU_F }).shell('Cu', 'F');
+        expect(edge.firstPeak.troughRatio).toBeGreaterThan(0.19);
+        expect(edge.split.longMinusShort - 0.32).toBeGreaterThan(0);
+        expect(edge.split.longMinusShort - 0.32).toBeLessThan(0.0064);
+    });
+});
+
+describe('the split\'s sampling error: the configuration\'s own, the bonds independent', () => {
+    // Seeded draws (mulberry32, Box–Muller), so the test is deterministic.
+    const generator = (seed) => () => {
+        seed = (seed + 0x6d2b79f5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const normal = (random) => {
+        let u = 0;
+        while (u === 0) u = random();
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * random());
+    };
+    // `centres` octahedra of independent bond lengths, 4 ~ N(1.93, σ) and 2 ~
+    // N(2.25, σ), histogrammed as the dev cases' partials are
+    // (validation/cases.js partialGr: 0.01 Å bins, each distance spread as a
+    // 0.015 Å Gaussian), g normalised so that CN = 4π ρ ∫ r² g dr.
+    const configuration = (seed, { centres = 216, sigma = 0.05, dr = 0.01, kernel = 0.015 } = {}) => {
+        const random = generator(seed);
+        const bins = Math.round(6 / dr);
+        const counts = new Float64Array(bins);
+        const spread = Math.ceil((3 * kernel) / dr);
+        const weights = Array.from({ length: 2 * spread + 1 }, (_, k) => Math.exp(-0.5 * (((k - spread) * dr) / kernel) ** 2));
+        const total = weights.reduce((sum, w) => sum + w, 0);
+        for (let c = 0; c < centres; c += 1) {
+            for (const [r0, n] of [[1.93, 4], [2.25, 2]]) {
+                for (let j = 0; j < n; j += 1) {
+                    const bin = Math.floor((r0 + sigma * normal(random)) / dr);
+                    weights.forEach((w, k) => { if (bin + k - spread >= 0 && bin + k - spread < bins) counts[bin + k - spread] += w / total; });
+                }
+            }
+        }
+        const L = 8 * Math.cbrt(centres);
+        const rho = (6 * centres) / L ** 3;
+        const x = Array.from({ length: bins }, (_, k) => (k + 0.5) * dr);
+        const y = x.map((r, k) => counts[k] / (centres * 4 * Math.PI * r * r * dr * rho));
+        return { series: { label: 'Cu-F', x, y }, structure: box({ Cu: centres, F: 6 * centres }, L) };
+    };
+
+    it('(long − short − 0.32) / its sampling error is standard normal over 300 configurations of 216 octahedra', () => {
+        const z = [];
+        for (let seed = 1; seed <= 300; seed += 1) {
+            const { series, structure } = configuration(seed);
+            const { split } = catalogueOf(series, { structure }).shell('Cu', 'F');
+            expect(split?.parts, `seed ${seed}`).toHaveLength(2);
+            z.push((split.longMinusShort - 0.32) / split.longMinusShortSe);
+        }
+        const mean = z.reduce((sum, value) => sum + value, 0) / z.length;
+        const sd = Math.sqrt(z.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (z.length - 1));
+        const covered = z.filter((value) => Math.abs(value) <= 1.96).length / z.length;
+        // Each bound ~3.5 standard errors of its statistic at 300 draws.
+        expect(Math.abs(mean)).toBeLessThan(0.2);
+        expect(sd).toBeGreaterThan(0.85);
+        expect(sd).toBeLessThan(1.15);
+        expect(covered).toBeGreaterThan(0.91);
+        expect(covered).toBeLessThan(0.99);
     });
 });
 

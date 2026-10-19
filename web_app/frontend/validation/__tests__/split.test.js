@@ -411,9 +411,10 @@ describe('where a finding stands, and validation batch 1', () => {
         const [[recomposed, { case: heldOut }]] = onTestCase();
         expect(recomposed).toBe(`2026-10-19-${heldOut}-recomposed`);
         expect(ids.filter((id) => id !== recomposed)).toEqual([
-            '2026-10-19-aplus-app-rules', '2026-10-19-diffuse-order', '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases',
-            '2026-10-19-list-sites-split', '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family',
-            '2026-10-19-modulation-null', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
+            '2026-10-19-aplus-app-rules', '2026-10-19-asked-before', '2026-10-19-diffuse-order', '2026-10-19-engine-verdicts',
+            '2026-10-19-f5-shell-join', '2026-10-19-jt-split', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split',
+            '2026-10-19-mode-polarisation', '2026-10-19-modulation-bar-and-family', '2026-10-19-modulation-null',
+            '2026-10-19-provenance-told', '2026-10-19-shell-catalogue', '2026-10-19-shell-cut-rule'
         ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, `${recomposed}.json`), 'utf8');
@@ -520,6 +521,31 @@ describe('where a finding stands, and validation batch 1', () => {
                 expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
             });
         }
+    });
+
+    it('decisions: the tool transcript\'s stricter readings (candidate 11, D3 and D6), approved on the user\'s delegation, implemented with their known-answer tests', () => {
+        const askedBefore = decisions()['2026-10-19-asked-before'];
+        const provenanceTold = decisions()['2026-10-19-provenance-told'];
+        for (const decision of [askedBefore, provenanceTold]) {
+            expect(decision).toMatchObject({ case: 'dev-offcentre', kind: 'bug' });
+            delegated(decision);
+            expect(decision.tests.length).toBeGreaterThan(0);
+            decision.tests.forEach((test) => {
+                const [path, title] = test.split(' › ');
+                expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+            });
+        }
+    });
+
+    it('decisions: a joined shell\'s split by number (plan 4.2), approved on the user\'s delegation, implemented with its known-answer tests', () => {
+        const split = decisions()['2026-10-19-jt-split'];
+        expect(split).toMatchObject({ case: 'dev-jahn-teller', kind: 'missing-tool' });
+        delegated(split);
+        expect(split.tests.length).toBeGreaterThan(0);
+        split.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
     });
 
     it('decisions: one shell reading per pair (candidate 6): the first-peak window approved on the user\'s delegation and implemented; the cut rule only proposed', () => {
