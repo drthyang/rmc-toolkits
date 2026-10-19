@@ -840,6 +840,13 @@ followed, `'full'` in arm B and `'off'` in arm C):
   2026-10-19.7 for the guard, which decides in `prepare`). A request sent and then stopped (Ollama
   read only part of the prompt; a model LM Studio loaded for the request at too small a window)
   is there, followed by the error.
+- `stopped_by` (architecture candidate #10; no protocol change, since nothing sent moves): how
+  the turn ended, from its terminal event (`done`, `stopped` or `failed`), as one of the turn
+  policy's `STOPPED_BY` keys (`src/llm/copilot/turnPolicy.js`): `answer`, `max_rounds` (the
+  analysis budget or the turn's time used), `no_progress`, `empty`, `stopped` (Stop) or `error`
+  (a stall included). The dock's note under a turn and the computed Outcome's "cut short" read
+  the same table. A record from before it has no `stopped_by` key; its `final.stopped_by` (an
+  answered run) is the same value.
 
 **What the run ran under (plan item 1.2).** `policy` (since protocol 2026-10-19.5): the run policy,
 the server and the window the run ran under, the limits, the temperature, the reply cap, the context
