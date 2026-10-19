@@ -5,6 +5,17 @@ Chronological record of notable changes, newest first. For current architecture 
 
 ## Unreleased
 
+### Copilot validation: the holdout scan widened
+
+- `validation/__tests__/split.test.js` (with `holdoutScan.js`) now looks for each held-out test
+  case's composition, cluster, structure type, planted lengths, directions and wavevector, read
+  from `cases.js` at run time, not only its id. It scans `src` (js, jsx, md and the model-visible
+  snapshots), every skill file, `rmc_toolkits`, `docs/` and the top-level docs; the validation and
+  copilot-validation.md are not scanned. A bare element symbol is never a hit, and a failure prints
+  the matched text masked. The skills' reference compound (by design) and five hits found on
+  2026-10-19 sit in a reviewed allow-list with exact counts, listed as known risks in
+  [copilot-validation.md](algorithms/copilot-validation.md#the-holdout-scan) (plan item 1.5).
+
 ### Copilot: snapshots of what the model sees
 
 - `web_app/frontend/src/__tests__/modelVisible/` pins, as readable files, every system-prompt

@@ -48,9 +48,59 @@ Thermal rms: 0.05–0.09 Å. Supercells: 6–8 cells a side, 1,024–2,560 atoms
 
 **The split is enforced in code** (`__tests__/split.test.js`):
 - the test set is pinned by a sha256 of its configurations, partials and truths;
-- dev and test share no id, and no tool, skill or app source names a test case;
+- dev and test share no id, and no tool, skill, app source or doc names a test case, its
+  material, its planted lengths or its directions ([the holdout scan](#the-holdout-scan));
 - `--split test` needs `--final` and a clean git tree, and every record names its commit;
 - a supervisor finding on a test case may only report a bug, with the user's approval.
+
+## The holdout scan
+
+`__tests__/split.test.js` (with `__tests__/holdoutScan.js`) keeps the test cases out of what the
+tools, the skills and the docs say. It reads each test case's parameters from `cases.js` at run
+time, so no test-case value is written in the test, and a failure prints the line with what matched
+masked (■).
+
+- **Tokens, from the parameters:**
+  - the id, anywhere;
+  - the composition (two or more elements): a formula with exactly that element set, with or
+    without subscripts, or, for three or more elements, an element-dash chain naming each once;
+  - the cluster written as a formula of its own (a tetrahedron's M₄, a dimer's M₂);
+  - a structure-type word that only a test case uses;
+  - each planted length in Å (displacement, bond lengths with their split and mean, cluster
+    edge, the dimers' shared shift, the lattice parameter) within six words of its element;
+  - each planted direction family ([uvw] or <uvw>, any order and sign) and wavevector
+    (q ≡ −q ≡ q + G, any order) within six words of its element.
+
+  Lengths, directions and wavevectors count only where they differ from the dev cases of the same
+  kind, and thermal widths never count: those are the kind's physics, not the test case.
+- **Not hits:** a bare element symbol (they are everywhere); a formula with more or fewer
+  elements; a chain that repeats an element (A–X–A is a bond angle, which every study of that pair
+  writes); a number with more digits (0.371 is not 0.37) or more than six words from its element.
+- **Where:** `web_app/frontend/src` (js, jsx, md, and the snapshots of what the model sees), every
+  file in `.claude/skills`, `rmc_toolkits` (py), `docs/` (md) and the top-level md files. Not
+  scanned: the validation itself (`web_app/frontend/validation/`) and this document, whose Cases
+  table names every test case. [AGENT_PLAN.md](../AGENT_PLAN.md) is scanned; it points at the
+  overlap below without naming it.
+- **Checks on the scanner:** every test case yields more than its id, and the scan finds every
+  test case in its own truth (summary and traps, prose written from the same parameters). Its own
+  rules are pinned on made-up cases (`holdoutScan.test.js`).
+
+**Known risks: the allow-list** (`HOLDOUT_ALLOWED` in `split.test.js`). Each entry allows an exact
+number of hits of one test case's kind of token in one file, so a new mention there, or a removed
+one, fails until the entry is reviewed.
+
+| File | Case · token | Hits | Why |
+| --- | --- | --- | --- |
+| `.claude/skills/coordination-shells/lacunar-spinel-shells.md` (lines 9, 31, 32) | breathing · cluster | 3 | **By design.** The test breathing case's cluster is the cluster of the skills' reference compound, whose published distortion this skill describes. A model that has read it may expect a distortion where the case plants breathing only |
+| `web_app/frontend/src/llm/README.md` (685) | breathing · cluster | 1 | Found 2026-10-19, to review: the same compound's cluster in the real-model check's 5 K question |
+| `web_app/frontend/src/workers/__tests__/triplets.test.js` (215) | breathing · cluster | 1 | Found 2026-10-19, to review: a synthetic cluster of that compound in a bond-angle engine test |
+| `docs/algorithms/ai-assistant.md` (1563, 1599) | breathing · cluster | 2 | Found 2026-10-19, to review: the cluster engine's synthetic checks use that compound's cluster |
+| `docs/algorithms/bond-geometry.md` (304) | breathing · cluster | 1 | Found 2026-10-19, to review: that compound's cluster among the bond-angle engine's test geometries |
+| `web_app/frontend/src/__tests__/fixtures/symmetryStructures.js` (65) | symmetry_lowering · composition | 1 | Found 2026-10-19, to review: a symmetry-finder fixture of a real orthorhombic perovskite with the case's composition, unrelated to the planted shift |
+
+The reference compound is the project's own data, so its cluster will keep appearing where those
+data are discussed. If the overlap is judged a leak, the remedy is a new, pinned test version
+(`TEST_SET_SHA256`, with a dated note here), not an edit of the skills.
 
 ## The question and the verdict
 
