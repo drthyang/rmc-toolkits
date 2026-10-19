@@ -66,8 +66,21 @@ snapshot files pass unchanged).
   `compare_fit` for where the fit fails); a z-score with a tiny change is not a finding. `ASK_RULES`
   loses its one ("Settle what the data can first: e.g. run find_gr_peaks, then offer its shells as
   the options."). The sentences on working with the tools (the four steps, reading `checks`, never
-  repeating a call), asking, quoting by reference and the Outcome line stay, and so do the domain
-  rules (`SYSTEM_PROMPT`: what each context field means), shared with the watchdog.
+  repeating a call), asking, quoting by reference and the Outcome line stay.
+- **The domain rules** (`SYSTEM_PROMPT`'s ground rules, shared with the watchdog; decided by the
+  manager on the user's delegation, 2026-10-19): every part of every sentence is marked in
+  `src/llm/prompts/system.js` (`GROUND_RULES`) as a **definition** (what a context field is: the
+  quantity, its units, how it is computed, its limits as a measurement), an **inference** (which
+  field to use for a conclusion, or what a pattern is evidence of) or **conduct** (how to answer:
+  numbers from the context or a tool, no invented uncertainty, say what is missing, be cautious). A
+  sentence that does both is split into its parts. Arm C reads the definitions and the conduct;
+  every inference part goes (an inference part that ends a sentence leaves its full stop). Of the 26
+  ground-rule sentences, 7 are definitions, 2 inference, 4 conduct and 13 split; for example "first
+  shell gives the shell's mean distance (from r^2 g, unbiased) …" stays, and "Compare
+  first_shell.mean_d_A, not the peak, with the average distance" and "A split shell … is evidence of
+  short-range correlations …" go. `systemPrompt.test.js` pins the classification sentence by
+  sentence. The tool-free prompt follows the method too (a model that refuses tools in arm C is asked
+  again under the domain rules' definitions and conduct and the Outcome rule).
 - **The tool descriptions:** a tool spec carries its advice apart from its description (`method`),
   sent with `'full'` and left out with `'off'`; the description keeps what the tool does and
   returns. On `dev-offcentre` eight pieces go: `find_gr_peaks`' "use first_shell.window_A for
@@ -106,10 +119,10 @@ snapshot files pass unchanged).
 The other texts the model can receive name no analysis as method and are the same in both arms:
 the Workbench's questions and their notes, the view rules (never offered in the live arms), the
 loop's notes and reminders (`ask_user` is named there as the way to ask, not as a method),
-`ask_user`'s own messages, the "unknown tool" answer to a `read_skill` call in arm C (it lists the
-tools offered), and the tool-free prompt. `modelVisible/harness.test.js` checks arm C's first
+`ask_user`'s own messages, and the "unknown tool" answer to a `read_skill` call in arm C (it lists the
+tools offered). `modelVisible/harness.test.js` checks arm C's first
 request for every skill name, the skills' step headings of more than one word, the prompt's method
-sentences, `EVIDENCE_RULES` and every piece of tool advice. So B against C measures what the
+sentences, `EVIDENCE_RULES`, the domain rules' inference parts and every piece of tool advice. So B against C measures what the
 method adds: the skills together with the method in the prompt, the descriptions and the checks.
 
 ## Cases
@@ -605,7 +618,8 @@ protocol has no judgment case, and its means are not comparable with one under t
 `method: 'off'` ([Arm C](#arm-c-the-copilot-without-the-method)): no skills, no `EVIDENCE_RULES`, no
 method sentence of `TOOL_RULES` or `ASK_RULES`, no method advice in a tool description or a check.
 What arm C is sent changes: on `dev-offcentre` its system prompt is the `tools-ask.method-off`
-variant (7,651 characters; the full method's `tools-ask` is 8,575), its tool descriptions are
+variant (5,975 characters, the domain rules' inference parts gone too; the full method's `tools-ask`
+is 8,575), its tool-free prompt is `no-tools.method-off`, its tool descriptions are
 `harness/tools.arm-C.json`, a check that carried advice reaches it without
 (`tool-results/*.method-off.json`), and the evidence gate's send-back names no analysis
 (`harness/gate-send-back.arm-C.txt`). Arm B, the dock and arms A, A+ and D are unchanged: every
@@ -1021,7 +1035,7 @@ folder, with no model and no network:
 
 - `system-prompt/<variant>.txt`: every system prompt `copilotSystemPrompt` builds (tools off; tools
   on with or without the view tools, `ask_user` and the skills' index; and with method `'off'`,
-  arm C's, `*.method-off.txt`, with or without the view tools and `ask_user`), with a line break
+  arm C's, `*.method-off.txt`: tools off, and tools on with or without the view tools and `ask_user`), with a line break
   after each sentence for reading, and the exact length and hash of the string sent;
 - `dock/first-request.txt` and `dock/tools.json`: the dock's first request on the Demo run
   (CopilotChat → useCopilot, captured at `streamCopilotChat`): its fields, its messages and the

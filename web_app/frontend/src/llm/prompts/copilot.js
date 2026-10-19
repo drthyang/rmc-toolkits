@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Tsung-Han Yang
 
-import { SYSTEM_PROMPT } from './system';
+import { SYSTEM_PROMPT, systemPrompt } from './system';
 import { contextToJson } from '../context/runContext';
 import { TURN_METHODS } from '../copilot/method';
 
@@ -12,10 +12,13 @@ import { TURN_METHODS } from '../copilot/method';
 // data from instructions, and tool results arrive as `tool` messages.
 //
 // The method (copilot/method.js): with method 'full' the prompt holds the
-// skills' index, EVIDENCE_RULES and every sentence of TOOL_RULES and
-// ASK_RULES; with 'off' (the validation's arm C) none of the three, only
-// the sentences of those rules that say how to work with the tools, ask and
-// quote (each rule is a list of sentences, its method sentences marked).
+// skills' index, EVIDENCE_RULES, every sentence of TOOL_RULES and ASK_RULES
+// and every part of the domain rules; with 'off' (the validation's arm C)
+// none of the first two, only the sentences of those rules that say how to
+// work with the tools, ask and quote (each rule is a list of sentences, its
+// method sentences marked), and of the domain rules only what defines a
+// context field and how to answer (system.js GROUND_RULES, each part marked
+// definition, inference or conduct).
 
 // A rule as sentences in order; a method sentence is sent with method 'full'
 // only. Each is its lines joined by a space, as the rule always was.
@@ -180,15 +183,17 @@ export const skillsBlock = (index) => [
  * rules when ask_user is among them, the skills' index when read_skill is,
  * then pointing (view tools) or the compute-only sentence, then the Outcome
  * rule. With method 'off' (copilot/method.js) the rules lose their method
- * sentences, and EVIDENCE_RULES and the skills' index are not sent. With
- * tools off the prompt is the no-tools one, which holds no method.
+ * sentences, the domain rules their inference parts (system.js), and
+ * EVIDENCE_RULES and the skills' index are not sent. With tools off the
+ * prompt is the no-tools one: the domain rules, under the same method, and
+ * the Outcome rule.
  */
 export const copilotSystemPrompt = ({ toolsEnabled = true, viewTools = false, askUser = false, skills = '', method = 'full' } = {}) => {
     if (!TURN_METHODS.includes(method)) throw new TypeError(`copilotSystemPrompt: method must be one of ${TURN_METHODS.join(', ')}`);
-    if (!toolsEnabled) return COPILOT_PROMPT_NO_TOOLS;
     const full = method === 'full';
+    if (!toolsEnabled) return full ? COPILOT_PROMPT_NO_TOOLS : `${systemPrompt(method)} ${OUTCOME_RULE}`;
     return [
-        SYSTEM_PROMPT,
+        systemPrompt(method),
         ruleText(TOOL_RULE_SENTENCES, method),
         REFERENCE_RULES,
         full ? EVIDENCE_RULES : null,

@@ -970,8 +970,10 @@ characters triggers every trim step in order, but no test asserts the budget is 
    Outcome rule). There is no run data in it, but it carries hard numeric interpretation rules (below).
    With the turn's method `'off'` (the validation's arm C, plan item 1.8;
    [`llm/copilot/method.js`](../../web_app/frontend/src/llm/copilot/method.js)) it holds no
-   `EVIDENCE_RULES` and no skills index, and `TOOL_RULES` and `ASK_RULES` lose their method sentences
-   (`METHOD_SENTENCES`); the tools' descriptions and checks lose their method advice
+   `EVIDENCE_RULES` and no skills index, `TOOL_RULES` and `ASK_RULES` lose their method sentences
+   (`METHOD_SENTENCES`), and `SYSTEM_PROMPT`'s ground rules their inference parts (`GROUND_RULES`
+   in `system.js`, each part a definition, an inference or conduct; the tool-free prompt too); the
+   tools' descriptions and checks lose their method advice
    ([copilot-validation.md](copilot-validation.md#arm-c-the-copilot-without-the-method)).
 2. `user` — `"Context for this RMC modeling run:"` followed by ```` ```json … ``` ```` containing
    `contextToJson(context)`. The fence exists so the model can distinguish data from instructions.

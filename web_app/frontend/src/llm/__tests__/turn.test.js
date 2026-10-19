@@ -19,8 +19,9 @@ import { MEMORY_ANSWER_CHARS, TURN_METHODS, describeTurn, runTurn } from '../cop
 import { configurationBreaks, turnHistory } from '../useCopilot';
 import {
     ASK_RULES, COPILOT_PROMPT, COPILOT_PROMPT_NO_TOOLS, COPILOT_PROMPT_VIEW, EVIDENCE_RULES, HISTORY_MESSAGES, METHOD_SENTENCES,
-    REFERENCE_RULES, copilotSystemPrompt
+    OUTCOME_RULE, REFERENCE_RULES, copilotSystemPrompt
 } from '../prompts/copilot';
+import { GROUND_RULES, systemPrompt } from '../prompts/system';
 import { ContextLimitError, forgetServers } from '../provider/contextGuard';
 import { ANTI_REPEAT_TEMPERATURE, ToolsUnsupportedError, providerModel } from '../provider/model';
 
@@ -519,13 +520,34 @@ describe('the method: full (the Copilot as it ships) and off (arm C)', () => {
         }
     });
 
-    it('with tools off, the no-tools prompt under either method: it holds no method', async () => {
+    it('with tools off, the no-tools prompt under the method: with off, the domain rules without their inference', async () => {
         for (const method of TURN_METHODS) {
             const { sent } = await firstRequest({ tools: [advised()], skills: SKILLS, config: { toolsEnabled: false, method } });
-            expect(sent.messages[0].content).toBe(COPILOT_PROMPT_NO_TOOLS);
+            expect(sent.messages[0].content).toBe(method === 'full' ? COPILOT_PROMPT_NO_TOOLS : `${systemPrompt('off')} ${OUTCOME_RULE}`);
             expect(sent.tools).toBeUndefined();
         }
         expect(() => copilotSystemPrompt({ method: 'none' })).toThrow(TypeError);
+    });
+
+    it('off: a model that refuses tools is asked again under the tool-free prompt without the method', async () => {
+        for (const method of TURN_METHODS) {
+            const unsupported = new ToolsUnsupportedError('HTTP 400: qwen does not support tools', { status: 400 });
+            const { port, requests } = scriptedPort([unsupported, answer()]);
+            const events = await collect(runTurn(spec({ model: port, tools: [advised()], config: { method } })));
+            expect(events.some((event) => event.type === 'tools_unsupported')).toBe(true);
+            expect(requests[1].sent.messages[0].content).toBe(copilotSystemPrompt({ toolsEnabled: false, method }));
+        }
+        expect(copilotSystemPrompt({ toolsEnabled: false, method: 'off' })).not.toBe(COPILOT_PROMPT_NO_TOOLS);
+    });
+
+    it('off: the system prompt holds the domain rules\' definitions and conduct, and no inference part', async () => {
+        const { sent } = await firstRequest({ tools: [advised()], askUser: vi.fn(), config: { method: 'off' } });
+        const system = sent.messages[0].content;
+        expect(system.startsWith(systemPrompt('off'))).toBe(true);
+        for (const part of GROUND_RULES.flat()) {
+            if (part.kind === 'inference') expect(system).not.toContain(part.text.trim());
+            else expect(system).toContain(part.text);
+        }
     });
 });
 

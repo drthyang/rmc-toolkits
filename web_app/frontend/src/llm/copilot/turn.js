@@ -46,8 +46,9 @@
 // The method (method.js): 'full' is the Copilot as it ships; 'off' (the
 // validation's arm C) sends none of the method. One pure function, planTurn,
 // decides from it what the model reads: the prompt's sections (no skills'
-// index, no EVIDENCE_RULES and no method sentence of TOOL_RULES or ASK_RULES
-// with 'off'; prompts/copilot.js), read_skill (only with 'full'), and each
+// index, no EVIDENCE_RULES, no method sentence of TOOL_RULES or ASK_RULES and
+// no inference part of the domain rules with 'off', the tool-free prompt
+// included; prompts/copilot.js, prompts/system.js), read_skill (only with 'full'), and each
 // tool as offered (toolAsSent: its description with its `method` advice
 // with 'full', without it with 'off', and with 'off' its checks without
 // their advice). With 'full' every request is byte for byte what it was
@@ -99,7 +100,7 @@ import { READ_SKILL, buildReadSkillTool, parseSkillFiles, skillIndex } from './s
 import { usableTools } from './tools';
 import { pointGroupFacts } from '../context/pointGroups';
 import { buildRunContext } from '../context/runContext';
-import { buildCopilotMessages, COPILOT_PROMPT_NO_TOOLS, shownContext } from '../prompts/copilot';
+import { buildCopilotMessages, copilotSystemPrompt, shownContext } from '../prompts/copilot';
 import { asModelPort } from '../provider/model';
 
 // The longest earlier answer re-sent whole as memory.
@@ -286,7 +287,9 @@ export async function* runTurn(spec) {
             limits: turn.config.limits,
             signal: turn.signal,
             toolsEnabled: plan.toolsActive,
-            noToolsSystemPrompt: COPILOT_PROMPT_NO_TOOLS,
+            // The tool-free prompt under the turn's method (with 'off', the
+            // domain rules' definitions and conduct only).
+            noToolsSystemPrompt: copilotSystemPrompt({ toolsEnabled: false, method: plan.method }),
             toolContext: { ...(turn.toolContext || {}), ...(turn.askUser ? { askUser: turn.askUser } : {}) },
             clock: turn.clock,
             ...checks

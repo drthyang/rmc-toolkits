@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
     buildCopilotMessages, COPILOT_PROMPT, COPILOT_PROMPT_NO_TOOLS, COPILOT_PROMPT_VIEW, EVIDENCE_RULES, METHOD_SENTENCES
 } from '../../llm/prompts/copilot';
+import { GROUND_RULES, SYSTEM_PROMPT, systemPrompt } from '../../llm/prompts/system';
 import { parseSkillFiles, skillIndex } from '../../llm/copilot/skills';
 import { loadSkills } from '../../../validation/run';
 import { bundledSkills, PROMPT_VARIANTS, promptVariants, renderPrompt, variantFlags } from './helpers';
@@ -39,22 +40,24 @@ describe('the system prompt the model receives', () => {
         expect(COPILOT_PROMPT_NO_TOOLS).toBe(variants.get('no-tools'));
         expect(COPILOT_PROMPT).toBe(variants.get('tools'));
         expect(COPILOT_PROMPT_VIEW).toBe(variants.get('tools-view'));
-        // With tools off nothing else changes the prompt, the method included.
+        // With tools off nothing else changes the prompt but the method.
         expect(buildCopilotMessages({ context: {}, userText: 'q', toolsEnabled: false, viewTools: true, askUser: true, skills: index })[0].content)
             .toBe(variants.get('no-tools'));
-        expect(buildCopilotMessages({ context: {}, userText: 'q', toolsEnabled: false, askUser: true, method: 'off' })[0].content)
-            .toBe(variants.get('no-tools'));
+        expect(buildCopilotMessages({ context: {}, userText: 'q', toolsEnabled: false, viewTools: true, askUser: true, skills: index, method: 'off' })[0].content)
+            .toBe(variants.get('no-tools.method-off'));
     });
 
-    it('method off (arm C): each variant is its full one without EVIDENCE_RULES and the method sentences, and never the skills\' index', () => {
+    it('method off (arm C): each variant is its full one without EVIDENCE_RULES, the method sentences and the domain rules\' inference, and never the skills\' index', () => {
         const off = PROMPT_VARIANTS.filter((name) => name.endsWith('.method-off'));
-        expect(off).toEqual(['tools.method-off', 'tools-ask.method-off', 'tools-view.method-off', 'tools-view-ask.method-off']);
+        expect(off).toEqual(['no-tools.method-off', 'tools.method-off', 'tools-ask.method-off', 'tools-view.method-off', 'tools-view-ask.method-off']);
+        const inference = GROUND_RULES.flat().filter((part) => part.kind === 'inference').map((part) => part.text.trim());
         for (const name of off) {
             const text = variants.get(name);
             expect(text).not.toContain(EVIDENCE_RULES);
             expect(text).not.toContain('Skills —');
             METHOD_SENTENCES.forEach((sentence) => expect(text).not.toContain(sentence));
-            let full = variants.get(name.replace('.method-off', ''));
+            inference.forEach((part) => expect(text).not.toContain(part));
+            let full = variants.get(name.replace('.method-off', '')).replace(SYSTEM_PROMPT, systemPrompt('off'));
             [EVIDENCE_RULES, ...METHOD_SENTENCES].forEach((sentence) => { full = full.replace(` ${sentence}`, ''); });
             expect(text).toBe(full);
             // A skills' index passed with method off is not sent.

@@ -17,7 +17,8 @@
 // Arm C follows no method (the turn's method 'off', src/llm/copilot/method.js,
 // plan item 1.8, protocol 2026-10-19.10): its first request is also checked
 // for every skill name, the skills' step headings, the prompt's method
-// sentences, EVIDENCE_RULES and the tools' method advice.
+// sentences, EVIDENCE_RULES, the domain rules' inference parts and the tools'
+// method advice.
 //
 // A change to these files is a change to what the model sees: call it out in
 // the PR. The files' header line still names the capture point by its name
@@ -32,6 +33,7 @@ import { loadRun } from '../../../validation/runFolder';
 import { buildRunTools } from '../../llm/copilot/runTools';
 import { parseSkillFiles, skillIndex } from '../../llm/copilot/skills';
 import { EVIDENCE_RULES, METHOD_SENTENCES } from '../../llm/prompts/copilot';
+import { GROUND_RULES } from '../../llm/prompts/system';
 import { bundledSkills, jsonFile, promptVariants, recordingModel, renderRequest } from './helpers';
 
 const CASE = 'dev-offcentre';
@@ -101,6 +103,11 @@ describe(`the harness's first request (${CASE})`, () => {
         expect(system).not.toContain(EVIDENCE_RULES);
         expect(system).not.toContain('Skills —');
         for (const sentence of METHOD_SENTENCES) expect(sent).not.toContain(sentence);
+        // The domain rules: every definition and conduct part, no inference part (system.js GROUND_RULES).
+        for (const part of GROUND_RULES.flat()) {
+            if (part.kind === 'inference') expect(sent).not.toContain(part.text.trim());
+            else expect(system).toContain(part.text);
+        }
         // Every piece of method advice the tools carry: in arm B's request,
         // in none of arm C's descriptions.
         const run = await loadRun(buildCase(DEV_CASES.find((item) => item.id === CASE)));
