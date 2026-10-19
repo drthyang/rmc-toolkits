@@ -38,6 +38,14 @@ const runBoth = async (item) => {
 // F1 (protocol 2026-10-19.16, the independent-cell null): dev-weak-order-b's
 // A+ went from 0.8333 to 1 — the calibrated null reads its weak order at
 // 5.6σ (the bound χ²₁ read 2.96σ) — and no other pin moved.
+// Plan item 2.5 (protocol 2026-10-19.17, the Displacement Directions page at
+// the engine's resolution, its readouts the raw histogram's): one pin moved,
+// dev-jt-off-centre's A and A+ 0.8571 → 0.7857. At its 216 copies Auto is
+// ν = 1, twelve cells with [0 0 1] on a boundary, so the now significant Ag
+// peak names [0 −0.62 1], 31.7° off the planted axis (pinned below). Then the
+// peak cell's radius (± 37.4° there): A+ applies the tool's bound and takes
+// PC1 where the cell is wider than 15° (every dev case: ν = 1 or 2), so its
+// pin is 0.8571 again; arm A reads the page as a user would, 0.7857.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -49,7 +57,7 @@ const BAR = [
     ['dev-chirality-trap', 1, [], 1, []],
     ['dev-chiral', 1, [], 1, []],
     ['dev-fit-unconverged', 1, [], 1, []],
-    ['dev-jt-off-centre', 0.8571, [], 0.8571, []],
+    ['dev-jt-off-centre', 0.7857, [], 0.8571, []],
     ['dev-eight-site', 0.6667, ['jahn_teller Nb'], 0.6667, ['jahn_teller Nb']],
     ['dev-octahedral-clusters', 0.8333, [], 1, []],
     ['dev-weak-order-a', 0.8333, [], 1, []],
@@ -158,9 +166,18 @@ describe('the model-free arms on the dev cases (the bar)', () => {
             expect(site(jt.sweep, n).value.pc1_kurtosis_z).toBeGreaterThan(-3);
         }
         expect(site(jt.sweep, 3).value).toMatchObject({ delta_A: 0.16, delta_se_A: 0.0043, pc1_kurtosis_z: -4.43 });
+        // Its direction since plan item 2.5: PC1, because the map's peak on the
+        // engine's ν = 1 tiling, though significant, sits in a cell 37.4° wide,
+        // over the tool's 15° bound (directionResolved). F off-centring is
+        // tolerated, unscored.
         expect(jt.sweep.verdict.features[0]).toEqual({ kind: 'off_centre', element: 'F', direction_uvw: [1, 0, -0.01], magnitude_A: 0.16 });
         const offcentre = await runBoth(DEV_CASES.find((item) => item.id === 'dev-offcentre'));
-        expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0.1, 0.06, -1], magnitude_A: 0.202 }]);
+        // ν = 2 (512 copies): the peak names [0 0 −1], a cell centre, but its
+        // cell is 20.9° wide, so A+ takes PC1, the same axis.
+        expect(offcentre.sweep.verdict.features).toEqual([{ kind: 'off_centre', element: 'Nb', direction_uvw: [0, -0.01, 1], magnitude_A: 0.202 }]);
+        expect(offcentre.sweep.readings.find((r) => r.page === 'Displacement Directions').reading)
+            .toBe('preferred direction [0 0 -1] ± 20.9°, the cell radius at ν = 2: not resolved finer than that, so the claim takes PC1');
+        expect(offcentre.a.verdict.features[0].direction_uvw).toEqual([0, 0, -1]);
         expect(offcentre.a.verdict.features[0].magnitude_A).toBe(0.201);
         // The cluster elements: the gate's (CN 0.5–4.5); perovskite O (CN 8) no longer tried.
         expect(offcentre.sweep.readings.filter((r) => r.page === 'analyze_clusters')).toEqual([]);
@@ -183,6 +200,24 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         expect(two.sweep.readings.find((r) => r.page === 'Dashboard partial g(r)').value.peaks_A).toHaveLength(2);
         expect(two.sweep.verdict.features.some((feature) => feature.kind === 'jahn_teller')).toBe(false);
         expect(found(two.scoreSweep)).toEqual(['jahn_teller:false', 'off_centre:true']);
+        // The Ag direction map at the engine's resolution (plan item 2.5):
+        // ν = 1 for 216 copies, whose twelve cell centres sit 31.7° from every
+        // cube axis. Its peak is significant, at [0 −0.62 1] ± 37.4°. Arm A,
+        // reading the page as a user would, takes that direction and misses
+        // the 15° tolerance (a side miss); A+ applies the tool's bound
+        // (directionResolved: a 37.4° cell does not resolve it) and takes PC1.
+        const agMap = (arm) => arm.readings.find((r) => r.page === 'Displacement Directions' && r.what.endsWith('Ag'));
+        for (const arm of [two.a, two.sweep]) {
+            expect(agMap(arm).value).toMatchObject({ frequency: 1, peak_uvw: [0, -0.62, 1], radius_deg: 37.4 });
+            expect(agMap(arm).value.peak_sigma).toBeGreaterThanOrEqual(ARM_A_RULES.SIGMA);
+        }
+        expect(agMap(two.a).reading).toBe('preferred direction [0 -0.62 1] ± 37.4°, the cell radius at ν = 1');
+        expect(agMap(two.sweep).reading).toMatch(/: not resolved finer than that, so the claim takes PC1$/);
+        const agOf = (score) => score.features.find((feature) => feature.planted === 'off_centre');
+        expect(agOf(two.scoreA)).toMatchObject({ direction_ok: false, magnitude_ok: true });
+        expect(agOf(two.scoreA).direction_error_deg).toBeCloseTo(31.7, 0);
+        expect(agOf(two.scoreSweep)).toMatchObject({ direction_ok: true, magnitude_ok: true });
+        expect(agOf(two.scoreSweep).direction_error_deg).toBeLessThan(2);
 
         // Two readings: the eight wells average to a round Nb ellipsoid, so
         // no split site; the 3 + 3 shell it leaves unexplained becomes a
