@@ -260,7 +260,13 @@ when the frontend is not built.
 
 **The static-mode workers apply the same rules** (`workers/requestGuards.js`: `requestNumber()`
 mirrors `_number()`, `assertFiniteResult()` mirrors `_strict_result_response()` with its exact
-message). The PCA worker requires an integer orientation `frequency` and an integer `smoothing`
+message). What the six analysis routes (`/api/pca/sites`, `/api/pca/kde`, `/api/pca/orientation`,
+`/api/triplets`, `/api/clusters`, `/api/modulations`) and the PCA worker accept and refuse is one
+fixture, `web_app/frontend/src/__tests__/fixtures/analysis_requests.json`, replayed against both
+(`tests/test_analysis_requests.py`, `analysisRequests.test.js`); the few requests where they still
+differ (a fractional or blank `grid`, a negative `minAmplitude`, numeric text for `bwScale`,
+`extent` or `referenceNumber`, a null `probability`, a blank `binWidth`) are listed there with the
+reason each stays. The PCA worker requires an integer orientation `frequency` and an integer `smoothing`
 in [0, 64], refuses a KDE or orientation result holding `NaN`/`Infinity`, and rejects an unknown
 request `kind`; the Auto StoG worker requires a finite, non-zero `a` and a finite `b` in manual
 mode and refuses a non-finite fit (as `_require_finite_scaling()`); the structure worker reads
