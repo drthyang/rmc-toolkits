@@ -22,7 +22,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { DEV_CASES, TEST_CASES } from '../../validation/cases';
+import { DEV_CASES, TEST_CASE_IDS } from '../../validation/cases';
 import { openCorpusRun, readAnswer, runKeyOf, runSteps, STEPS_UNKNOWN } from './answerCorpus/readAnswer';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -59,7 +59,7 @@ const MISSES = ['2026-10-10-gemma4-pooled-no-distortion silence'];
 describe('the answer corpus', () => {
     it('holds real answers on the Demo or a dev case, each with its source', () => {
         expect(corpus.length).toBeGreaterThanOrEqual(9);
-        const testIds = TEST_CASES.map((item) => item.id);
+        const testIds = TEST_CASE_IDS;
         const devIds = DEV_CASES.map((item) => item.id);
         for (const { file, entry } of corpus) {
             expect({ file, id: entry.id }).toEqual({ file, id: file.replace(/\.json$/, '') });
@@ -118,7 +118,7 @@ describe('the answer corpus', () => {
             expect(devRun.offered).toContain('analyze_modulations');
             expect(devRun.context.symmetry?.space_group).toBeTruthy();
             expect(readAnswer('No preferred direction.', { run: devRun, steps: [] })).toEqual({ claims: [], gateSendBack: null, auditFindings: [] });
-            await expect(openCorpusRun(TEST_CASES[0].id)).rejects.toThrow(/the Demo or a dev case/);
+            await expect(openCorpusRun(TEST_CASE_IDS[0])).rejects.toThrow(/the Demo or a dev case/);
         }, 120_000);
 
         it('counts the false alarms and the misses', () => {

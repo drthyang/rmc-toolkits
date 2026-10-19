@@ -2,13 +2,15 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 // The holdout scan of split.test.js: what identifies a held-out test case,
-// derived at run time from its parameters in cases.js, and a scanner that
+// derived at run time from its parameters (the sealed test cases, loaded
+// through validation/holdoutLoader.js, so the scan of every kind but the id
+// runs only where the loader may open them: CI's flag), and a scanner that
 // finds it in text with few false positives. No test-case value is written
 // here, and a hit is reported with what matched masked, so a failure never
 // prints one either.
 //
 // A case's tokens:
-//   id           its id, anywhere;
+//   id           its id, anywhere (the ids alone are public: cases.js TEST_CASE_IDS);
 //   composition  all its elements together (two or more): a formula with exactly
 //                that element set ("AbCdX3", with or without subscripts), or, for
 //                three or more elements, an element-dash chain of exactly that
@@ -18,19 +20,29 @@
 //                tetrahedron, "Ab2" for a dimer), not inside a larger formula;
 //   structure    a word of its structure name that no dev case uses and that is
 //                not a formula (a structure type);
-//   magnitude    a planted length in Å within NEAR_WORDS words of its element
-//                (alone, in a dash chain, a cluster or a formula);
+//   magnitude    a planted value within NEAR_WORDS words of its element (alone,
+//                in a dash chain, a cluster or a formula): every length in Å
+//                (shifts, bonds, edges, elongations, the lattice parameter), the
+//                thermal widths a case sets itself, and a breathing sd (as a
+//                fraction and in per cent); a lattice parameter and a thermal
+//                width next to a cation, not the anion;
+//   supercell    its supercell ("N³", "N × N × N", "[N, N, N]") within
+//                NEAR_WORDS words of its element (not of the word "supercell":
+//                a real run's supercell, the Demo's among them, is not a case);
 //   direction    a [uvw] or <uvw> of the planted family within NEAR_WORDS words
 //                of its element;
 //   wavevector   an (h, k, l) equivalent to the planted q within NEAR_WORDS words
-//                of its element.
-// Magnitudes, directions and wavevectors count only where they differ from the
-// dev cases of the same kind (otherwise they are the kind's physics, not the
-// test case). The judgment subset's dev cases (`judgment: true`, plan item 1.6
-// ii) never count as that kind's physics: they are options of a kind, written
-// apart from its test case, so they never remove a test case's token. Thermal
-// widths are never tokens. A bare element symbol is never a hit: element
-// symbols are everywhere.
+//                of its element;
+//   seed         its seed, a whole number within NEAR_WORDS words of the word
+//                "seed" (or "seeds").
+// Magnitudes, supercells, directions and wavevectors count only where they
+// differ from the dev cases of the same kind (otherwise they are the kind's
+// physics, not the test case); a seed always counts. The judgment subset's dev
+// cases (`judgment: true`, plan item 1.6 ii) never count as that kind's
+// physics: they are options of a kind, written apart from its test case, so
+// they never remove a test case's token. A thermal width the kind fixes for
+// every case (the perovskites') is no case's parameter and never a token. A
+// bare element symbol is never a hit: element symbols are everywhere.
 
 export const NEAR_WORDS = 6;
 
@@ -63,18 +75,22 @@ const round = (value, digits) => Number(value.toFixed(digits));
 // What each kind plants, read from its parameters: the elements, the cluster
 // (if any), the lengths, directions and wavevectors with the elements they
 // belong to, and the structure name. Each item has a name, so a test case's
-// item is compared with the same item of the dev cases of its kind.
+// item is compared with the same item of the dev cases of its kind. A
+// lattice parameter or a thermal width counts next to a cation of the case
+// (A and B of an ABX₃-type case, the cluster element), not next to its anion:
+// the perovskite cases share O, and a number beside O alone names no case.
+const cations = (p) => p.elements.slice(0, 2);
 const PLANTED = {
     offcentre: (p) => ({
         elements: p.elements,
-        magnitudes: [{ name: 'delta', value: p.delta, near: [p.elements[1]] }, { name: 'a', value: p.a, near: p.elements }],
+        magnitudes: [{ name: 'delta', value: p.delta, near: [p.elements[1]] }, { name: 'a', value: p.a, near: cations(p) }],
         directions: [{ name: 'axis', uvw: p.axis, near: [p.elements[1]] }]
     }),
     // A weak order (the judgment subset) has no decoy.
     zone_boundary: (p) => ({
         elements: p.elements,
         magnitudes: [
-            { name: 'delta', value: p.delta, near: [p.elements[1]] }, { name: 'a', value: p.a, near: p.elements },
+            { name: 'delta', value: p.delta, near: [p.elements[1]] }, { name: 'a', value: p.a, near: cations(p) },
             ...(p.decoy ? [{ name: 'decoy.amp', value: p.decoy.amp, near: [p.elements[0]] }] : [])
         ],
         directions: [
@@ -89,7 +105,11 @@ const PLANTED = {
     breathing: (p) => ({
         elements: [p.element, p.anion],
         cluster: { element: p.element, count: p.shape === 'triangle' ? 3 : 4 },
-        magnitudes: [{ name: 'edge', value: p.edge, near: [p.element] }, { name: 'a', value: p.a, near: [p.element, p.anion] }]
+        magnitudes: [
+            { name: 'edge', value: p.edge, near: [p.element] }, { name: 'a', value: p.a, near: [p.element] },
+            { name: 'sigma', value: p.sigma, near: [p.element] },
+            { name: 'breathe', value: p.breathe, near: [p.element] }, { name: 'breathe %', value: round(p.breathe * 100, 4), near: [p.element] }
+        ]
     }),
     // An off-centred centre (the judgment subset) adds its shift and axis.
     jahn_teller: (p) => {
@@ -101,7 +121,7 @@ const PLANTED = {
                 { name: 'short', value: p.short, near: bond }, { name: 'long', value: p.long, near: bond },
                 { name: 'long-short', value: round(split, 2), near: bond }, { name: 'long-short (3)', value: round(split, 3), near: bond },
                 { name: 'mean bond', value: round((p.long + 2 * p.short) / 3, 3), near: bond },
-                { name: 'a', value: p.a, near: p.elements },
+                { name: 'a', value: p.a, near: cations(p) }, { name: 'sigma', value: p.sigma, near: cations(p) },
                 ...(p.offCentre ? [{ name: 'offCentre.delta', value: p.offCentre.delta, near: [p.elements[1]] }] : [])
             ],
             directions: p.offCentre ? [{ name: 'offCentre.axis', uvw: p.offCentre.axis, near: [p.elements[1]] }] : []
@@ -117,7 +137,7 @@ const PLANTED = {
                 { name: 'edge', value: p.edge, near: [p.element] },
                 { name: 'long edge', value: round(Math.hypot(r0, r0 + p.elongation), 2), near: [p.element] },
                 { name: 'elongation', value: p.elongation, near: [p.element] },
-                { name: 'a', value: p.a, near: [p.element, p.anion] }
+                { name: 'a', value: p.a, near: [p.element] }, { name: 'sigma', value: p.sigma, near: [p.element] }
             ]
         };
     },
@@ -126,29 +146,41 @@ const PLANTED = {
         cluster: { element: p.element, count: 2 },
         magnitudes: [
             { name: 'bond', value: p.bond, near: [p.element] }, { name: 'sigmaCommon', value: p.sigmaCommon, near: [p.element] },
-            { name: 'a', value: p.a, near: [p.element] }
+            { name: 'sigmaOwn', value: p.sigmaOwn, near: [p.element] }, { name: 'a', value: p.a, near: [p.element] }
         ],
         directions: [{ name: 'axis', uvw: [0, 1, 2].map((k) => (k === p.axis ? 1 : 0)), near: [p.element] }]
     }),
     thermal_null: (p) => ({
         elements: p.elements,
-        magnitudes: [{ name: 'a', value: p.a, near: p.elements }]
+        magnitudes: [{ name: 'a', value: p.a, near: cations(p) }]
     }),
     symmetry_lowering: (p) => ({
         elements: p.elements,
-        magnitudes: [{ name: 'delta', value: p.delta, near: [p.elements[1]] }, { name: 'a', value: p.a, near: p.elements }],
+        magnitudes: [{ name: 'delta', value: p.delta, near: [p.elements[1]] }, { name: 'a', value: p.a, near: cations(p) }],
         directions: [{ name: 'axis', uvw: p.axis, near: [p.elements[1]] }]
     }),
     sites_only: (p) => {
         const elements = unique(p.sites.map((site) => site.el));
-        return { elements, magnitudes: [{ name: 'a', value: p.a, near: elements }], structure: p.structure };
+        return {
+            elements, structure: p.structure,
+            magnitudes: [{ name: 'a', value: p.a, near: elements }, { name: 'sigma', value: p.sigma, near: elements }]
+        };
     }
 };
 
+// Every kind also plants its supercell and its seed. A value a case does not
+// set (a made-up case without a thermal width) is no token.
 const planted = (item) => {
     const read = PLANTED[item.kind];
     if (!read) throw new Error(`holdout scan: no tokens for case kind '${item.kind}' (add it to PLANTED)`);
-    return { magnitudes: [], directions: [], wavevectors: [], structure: '', ...read(item.params) };
+    const own = { magnitudes: [], directions: [], wavevectors: [], structure: '', ...read(item.params) };
+    const { supercell, seed } = item.params;
+    return {
+        ...own,
+        magnitudes: own.magnitudes.filter((m) => Number.isFinite(m.value)),
+        supercells: Array.isArray(supercell) ? [{ name: 'supercell', cells: supercell, near: own.elements }] : [],
+        seed: Number.isInteger(seed) ? seed : null
+    };
 };
 
 const structureWords = (name) => name.split(/\s+/).filter((word) => word && !FORMULA.test(word));
@@ -176,6 +208,9 @@ export const holdoutTokens = (item, devCases) => {
         .forEach((d) => tokens.push({ case: item.id, kind: 'direction', name: d.name, family: cubicFamily(d.uvw), near: new Set(d.near) }));
     mine.wavevectors.filter((w) => !sameAsDev('wavevectors', w, (x) => reducedQ(x.q)))
         .forEach((w) => tokens.push({ case: item.id, kind: 'wavevector', name: w.name, q: reducedQ(w.q), near: new Set(w.near) }));
+    mine.supercells.filter((c) => !sameAsDev('supercells', c, (x) => x.cells.join(',')))
+        .forEach((c) => tokens.push({ case: item.id, kind: 'supercell', name: c.name, cells: c.cells, near: new Set(c.near) }));
+    if (mine.seed !== null) tokens.push({ case: item.id, kind: 'seed', name: 'seed', value: mine.seed });
     // Two magnitudes that round to one value are one token.
     return tokens.filter((token, index) => token.kind !== 'magnitude'
         || tokens.findIndex((other) => other.kind === 'magnitude' && other.value === token.value && sameSet(other.near, token.near)) === index);
@@ -221,6 +256,19 @@ const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // not "0.51", "10.5" or the "0.5" of "0.5.1".
 const numberPattern = (value) => new RegExp(`(?<![\\d.])${escape(String(value))}0*(?![\\d]|\\.\\d)`, 'g');
 
+// A whole number as written: 987 matches "987" and "seed 987," but not
+// "9870", "1987" or the "987" of "2.987" or "987.5".
+const integerPattern = (value) => new RegExp(`(?<![\\d.])${value}(?![\\d]|\\.\\d)`, 'g');
+// A supercell as written: "N × N × N" (× or x), "[N, N, N]" or "(N N N)" with
+// its own three counts, and, for a cubic one, "N³" or "N^3".
+const supercellPattern = (cells) => {
+    const [a, b, c] = cells.map(String);
+    const by = '\\s*[×xX]\\s*';
+    const forms = [`${a}${by}${b}${by}${c}`, `[[(]\\s*${a}\\s*,?\\s*${b}\\s*,?\\s*${c}\\s*[\\])]`];
+    if (a === b && b === c) forms.push(`${a}\\s*(?:³|\\^\\s*3)`);
+    return new RegExp(`(?<![\\d.])(?:${forms.join('|')})(?![\\d]|\\.\\d)`, 'g');
+};
+
 const lowerBound = (sorted, value) => {
     let lo = 0;
     let hi = sorted.length;
@@ -253,12 +301,18 @@ export const readText = (text) => {
     for (const match of text.matchAll(SUBTOKEN)) {
         readSubtoken(match[0]).forEach((piece) => pieces.push({ ...piece, start: match.index + piece.start, end: match.index + piece.end }));
     }
+    // The words that say "seed": a seed counts only next to one.
+    const seedWords = [];
+    wordStarts.forEach((start, index) => {
+        const word = /[A-Za-z]+/.exec(text.slice(start, start + 24).split(/\s/)[0]);
+        if (word && /^seeds?$/i.test(word[0])) seedWords.push(index);
+    });
     const wordsOf = new Map();
     pieces.forEach((piece) => piece.elements.forEach((el) => {
         if (!wordsOf.has(el)) wordsOf.set(el, []);
         wordsOf.get(el).push({ word: indexAt(wordStarts, piece.start), start: piece.start, end: piece.end });
     }));
-    return { text, wordStarts, lineStarts, pieces, wordsOf };
+    return { text, wordStarts, lineStarts, pieces, wordsOf, seedWords };
 };
 
 // The occurrences of the token's elements within NEAR_WORDS words of an offset.
@@ -300,6 +354,13 @@ export const scanText = (read, tokens) => {
             for (const match of text.matchAll(DIRECTION)) {
                 const uvw = match.slice(1, 4).map((value) => Number(value.replace('−', '-')));
                 if (cubicFamily(uvw) === token.family) nearHits(token, match.index, match.index + match[0].length);
+            }
+        } else if (token.kind === 'supercell') {
+            for (const match of text.matchAll(supercellPattern(token.cells))) nearHits(token, match.index, match.index + match[0].length);
+        } else if (token.kind === 'seed') {
+            for (const match of text.matchAll(integerPattern(token.value))) {
+                const word = indexAt(read.wordStarts, match.index);
+                if (read.seedWords.some((at) => Math.abs(at - word) <= NEAR_WORDS)) hit(token, [[match.index, match.index + match[0].length]]);
             }
         } else if (token.kind === 'wavevector') {
             for (const match of text.matchAll(WAVEVECTOR)) {

@@ -11,16 +11,20 @@
 //
 // Every kind has a DEV case (used to improve tools and skills) and a TEST
 // case (the reported numbers only): the same physics with other elements,
-// directions, magnitudes or structures. Never tune on TEST: the split test
-// pins the TEST definitions by hash and keeps their ids out of the tools and
-// skills. A dev-only case (`devOnly`, saying why) has no test twin:
-// dev-fit-unconverged, the one case with fit files (a χ² log, an F(Q) and its
-// G(r)), for the fit tools and the rmc-fit-assessment skill, with a kind of
-// its own; and the judgment subset (`judgment: true` and a `situation`, plan
-// item 1.6 part ii), whose cases live in judgmentCases.js and build with the
-// kinds below (options of existing kinds, and elongated_clusters). Its
-// held-out matches, at the end of TEST_CASES, were written by a fresh author
-// from judgment-spec.md alone, never from these cases or their results.
+// directions, magnitudes or structures. Never tune on TEST. The TEST
+// definitions are sealed: they are not in this file but in the held-out
+// folder, which only validation/holdoutLoader.js may import (on the --final
+// path, or in CI with RMC_VALIDATION_HOLDOUT=1); this file keeps only their
+// ids (TEST_CASE_IDS). The split test pins them by hash and keeps their ids
+// and values out of the tools, skills and docs. A dev-only case (`devOnly`,
+// saying why) has no test twin: dev-fit-unconverged, the one case with fit
+// files (a χ² log, an F(Q) and its G(r)), for the fit tools and the
+// rmc-fit-assessment skill, with a kind of its own; and the judgment subset
+// (`judgment: true` and a `situation`, plan item 1.6 part ii), whose cases
+// live in judgmentCases.js and build with the kinds below (options of
+// existing kinds, and elongated_clusters). Its held-out matches, sealed with
+// the other test cases, were written by a fresh author from judgment-spec.md
+// alone, never from these cases or their results.
 
 import { JUDGMENT_DEV_CASES } from './judgmentCases';
 
@@ -818,17 +822,13 @@ const zincblende = (M, X) => [
     ...FCC.map((t) => ({ el: X, frac: t.map((value) => value + 0.25) }))
 ];
 // B20 (P2₁3): (x,x,x), (½+x,½−x,−x), (−x,½+x,½−x), (½−x,−x,½+x).
-const b20 = (x) => [[x, x, x], [0.5 + x, 0.5 - x, -x], [-x, 0.5 + x, 0.5 - x], [0.5 - x, -x, 0.5 + x]]
+// Exported, with the two symmetry traps, for the sealed test cases
+// (holdoutLoader.js), which build their structures with the same helpers.
+export const b20 = (x) => [[x, x, x], [0.5 + x, 0.5 - x, -x], [-x, 0.5 + x, 0.5 - x], [0.5 - x, -x, 0.5 + x]]
     .map((v) => v.map((value) => ((value % 1) + 1) % 1));
-// Sulvanite (P-43m): V at the origin, Cu on the edge centres, S at (x,x,x) and its -43m images.
-const sulvanite = (x) => [
-    { el: 'V', frac: [0, 0, 0] },
-    { el: 'Cu', frac: [0.5, 0, 0] }, { el: 'Cu', frac: [0, 0.5, 0] }, { el: 'Cu', frac: [0, 0, 0.5] },
-    ...[[x, x, x], [-x, -x, x], [-x, x, -x], [x, -x, -x]].map((v) => ({ el: 'S', frac: v.map((value) => ((value % 1) + 1) % 1) }))
-];
 
-const ACHIRAL_TRAP = 'no inversion centre does not make a structure chiral: a group with mirrors or rotoinversions is achiral';
-const CHIRAL_TRAP = 'a chiral (Sohncke) group: no mirrors, no inversion, no rotoinversions';
+export const ACHIRAL_TRAP = 'no inversion centre does not make a structure chiral: a group with mirrors or rotoinversions is achiral';
+export const CHIRAL_TRAP = 'a chiral (Sohncke) group: no mirrors, no inversion, no rotoinversions';
 
 // --- the cases -----------------------------------------------------------------------
 
@@ -909,67 +909,29 @@ export const JUDGMENT_SITUATIONS = Object.freeze({
     user_choice: 'a choice only the user can make, where the Workbench asks, the simulated user skips, and the answer must state its default and its consequence'
 });
 
-export const TEST_CASES = [
-    { id: 'test-offcentre', kind: 'offcentre', params: { elements: ['Sr', 'Ge', 'O'], a: 3.95, supercell: [8, 8, 8], axis: [1, 1, 0], delta: 0.16, seed: 201 } },
-    {
-        id: 'test-zone-boundary', kind: 'zone_boundary',
-        params: { elements: ['Ca', 'Zr', 'O'], a: 4.1, supercell: [8, 8, 8], q: [0.5, 0.5, 0.5], axis: [1, 0, 0], delta: 0.09, decoy: { axis: [0, 0, 1], q: [0, 0.125, 0], amp: 0.12 }, seed: 202 }
-    },
-    { id: 'test-breathing', kind: 'breathing', params: { shape: 'tetrahedron', element: 'Fe', anion: 'Cl', a: 6.90, edge: 2.75, breathe: 0.035, sigma: 0.05, supercell: [8, 8, 8], seed: 732 } },
-    { id: 'test-jahn-teller', kind: 'jahn_teller', params: { elements: ['Rb', 'Mn', 'Cl'], a: 9.5, short: 2.48, long: 2.85, sigma: 0.06, supercell: [6, 6, 6], seed: 204 } },
-    { id: 'test-cell-wrap', kind: 'rigid_dimer', params: { element: 'Ti', a: 5.2, axis: 2, bond: 2.29, sigmaCommon: 0.07, sigmaOwn: 0.012, supercell: [8, 8, 8], seed: 205 } },
-    { id: 'test-thermal-null', kind: 'thermal_null', params: { elements: ['Pb', 'Ti', 'O'], a: 3.97, supercell: [8, 8, 8], seed: 206 } },
-    { id: 'test-symmetry-lowering', kind: 'symmetry_lowering', params: { elements: ['Ca', 'Ti', 'O'], a: 3.85, supercell: [8, 8, 8], axis: [1, 1, 1], delta: 0.06, group: 'R3m', seed: 207 } },
-    {
-        id: 'test-chirality-trap', kind: 'sites_only',
-        params: {
-            structure: 'sulvanite Cu3VS4', a: 5.39, supercell: [6, 6, 6], sigma: 0.07, sites: sulvanite(0.235), group: 'P-43m',
-            facts: { chiral: false, centrosymmetric: false, polar: false }, traps: [ACHIRAL_TRAP], seed: 208
-        }
-    },
-    {
-        id: 'test-chiral', kind: 'sites_only',
-        params: {
-            structure: 'B20 MnSi', a: 4.558, supercell: [6, 6, 6], sigma: 0.06,
-            sites: [...b20(0.138).map((frac) => ({ el: 'Mn', frac })), ...b20(0.845).map((frac) => ({ el: 'Si', frac }))],
-            group: 'P2_13', facts: { chiral: true, centrosymmetric: false, polar: false }, traps: [CHIRAL_TRAP], seed: 209
-        }
-    },
-    // The judgment subset's held-out matches (plan item 1.6 ii), one per dev
-    // judgment case, written blind from judgment-spec.md alone (protocol
-    // 2026-10-19.11). Each seed is the first of its own sequence that its
-    // fixed rule accepts, from the case's engine readings only
-    // (docs/algorithms/copilot-validation.md).
-    {
-        id: 'test-two-features', kind: 'jahn_teller', judgment: true, situation: 'two_features',
-        params: {
-            elements: ['Rb', 'Cr', 'Br'], a: 10.6, short: 2.53, long: 2.97, sigma: 0.055, supercell: [7, 7, 7],
-            offCentre: { axis: [0, 1, 0], delta: 0.11 }, seed: 211
-        }
-    },
-    {
-        id: 'test-marginal-above', kind: 'zone_boundary', judgment: true, situation: 'marginal',
-        params: { elements: ['Ba', 'Hf', 'O'], a: 4.17, supercell: [10, 10, 10], q: [0.5, 0, 0.5], axis: [1, 1, 0], delta: 0.0128, weak: true, decoy: null, seed: 227 }
-    },
-    {
-        id: 'test-marginal-below', kind: 'zone_boundary', judgment: true, situation: 'marginal',
-        params: { elements: ['Ba', 'Hf', 'O'], a: 4.17, supercell: [10, 10, 10], q: [0.5, 0, 0.5], axis: [1, 1, 0], delta: 0.0128, weak: true, decoy: null, seed: 223 }
-    },
-    {
-        id: 'test-two-readings', kind: 'offcentre', judgment: true, situation: 'two_readings',
-        params: { elements: ['Cs', 'Ge', 'Cl'], a: 5.43, supercell: [8, 8, 8], axis: [1, 1, 1], delta: 0.23, wells: 8, seed: 231 }
-    },
-    {
-        id: 'test-user-choice', kind: 'elongated_clusters', judgment: true, situation: 'user_choice',
-        params: { element: 'Re', anion: 'Te', a: 8.4, edge: 2.62, elongation: 0.36, sigma: 0.035, supercell: [7, 7, 7], seed: 241 }
-    }
-];
+/**
+ * The held-out test cases' ids, in their order, and nothing else of them: the
+ * definitions are sealed (validation/holdoutLoader.js loadTestCases, on the
+ * --final path or with RMC_VALIDATION_HOLDOUT=1 in CI). The ids are public so
+ * that a finding or a record can name its case, and split.test.js checks,
+ * with the flag, that they are exactly the sealed cases' ids.
+ */
+export const TEST_CASE_IDS = Object.freeze([
+    'test-offcentre', 'test-zone-boundary', 'test-breathing', 'test-jahn-teller', 'test-cell-wrap', 'test-thermal-null',
+    'test-symmetry-lowering', 'test-chirality-trap', 'test-chiral',
+    'test-two-features', 'test-marginal-above', 'test-marginal-below', 'test-two-readings', 'test-user-choice'
+]);
 
-export const ALL_CASES = [...DEV_CASES, ...TEST_CASES];
-export const splitOf = (id) => (TEST_CASES.some((item) => item.id === id) ? 'test' : (DEV_CASES.some((item) => item.id === id) ? 'dev' : null));
+/** The split a case id belongs to ('dev' or 'test'), or null for no case. */
+export const splitOf = (id) => (TEST_CASE_IDS.includes(id) ? 'test' : (DEV_CASES.some((item) => item.id === id) ? 'dev' : null));
+
+/**
+ * The cases of a split, synchronously: the dev set only. The test set is
+ * sealed and loads through holdoutLoader.js (casesFor / loadTestCases).
+ */
 export const casesOf = (split) => {
     if (split === 'dev') return DEV_CASES;
-    if (split === 'test') return TEST_CASES;
+    if (split === 'test') throw new Error('the test set is sealed: load it through validation/holdoutLoader.js (casesFor, on the --final path)');
     throw new Error(`unknown split '${split}' (dev or test)`);
 };
 
