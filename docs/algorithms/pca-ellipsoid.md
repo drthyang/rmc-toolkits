@@ -397,11 +397,17 @@ within the degenerate subspace — no convention can fix that, and the code says
 
 **Agreement between the two eigensolvers.** Both compute the exact symmetric decomposition to machine
 precision, so eigenvalues agree at the $10^{-15}$ relative level; eigenvectors agree only up to the
-arbitrariness of a (near-)degenerate subspace. This is **not** asserted by any cross-engine test —
-the JS test (`eigenDecomposition` "recovers a known symmetric matrix") checks a hand-built
-rotated `diag(4,2,1)` to 6 decimals, and the Python tests check orthonormality and ordering. There is
-no golden-file parity test between `pca_kde.py` and `pcaKde.js` (unlike the
-[Auto StoG](auto-stog.md) engines, which do have one — `autoscale_fixture.json`).
+arbitrariness of a (near-)degenerate subspace. The site table is asserted across engines by a
+generated golden, `pca_sites_fixture.json` (`tests/generate_pca_sites_fixture.py` →
+`src/__tests__/pcaSitesParity.test.js`; `tests/test_pca_sites_fixture.py` fails when it is stale):
+every `site_ellipsoids` row of the 52 demo-run sites and of a synthetic configuration (isotropic,
+split, zero-spread and two mixed-occupancy sites, at $p$ = 0.5 and 0.95), with integers, booleans
+and nulls exact, floats to $10^{-9}$ relative + $10^{-12}$, and each site's axes compared
+eigenspace by eigenspace to $10^{-9}$ (up to sign where the eigenvalue is separated by more than
+$10^{-6}$ of the largest, by the projector where it is not). Measured: floats $\le 3.4\times10^{-11}$
+relative (a near-zero kurtosis), axes $\le 5\times10^{-14}$. Beyond the table, the JS test
+(`eigenDecomposition` "recovers a known symmetric matrix") checks a hand-built rotated
+`diag(4,2,1)` to 6 decimals, and the Python tests check orthonormality and ordering.
 
 ---
 
@@ -1202,8 +1208,9 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    Whether that estimator is the right description of the cloud is a separate question, and Scott's
    rule is a rule of thumb calibrated for Gaussian data — it over-smooths multimodal (split-site)
    clouds.
-4. **The two engines are not proven equal to each other.** Each is pinned against its own reference.
-   There is no golden-file parity test between `pca_kde.py` and `pcaKde.js`. The known systematic
+4. **The two KDE volumes are not proven equal to each other.** Each is pinned against its own
+   reference; no golden file connects the volumes of `pca_kde.py` and `pcaKde.js` (the site table
+   has one, `pca_sites_fixture.json`, Step 3). The known systematic
    difference is the different subsample draw above 20 000 points (Step 2). Eigenvector signs follow the same canonicalisation rule
    in both engines (with one unreachable difference in how the handedness flip is written — next
    section, Step 3), so they do not differ.

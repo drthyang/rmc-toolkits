@@ -4,9 +4,14 @@
 """Regression tests for the 0.6.0 audit of the displacement-direction engine.
 
 Each class pins one root cause found by the audit (the finding ids are in
-the class docstrings). The JS twin of every engine-level assertion lives in
-web_app/frontend/src/workers/__tests__/orientationFixes.test.js, with the
-same inputs and the same expected values, so the two engines cannot drift.
+the class docstrings). The JS twin of each rule lives in
+web_app/frontend/src/workers/__tests__/orientationFixes.test.js. The values
+the two engines must share -- the recommendedFrequency table, the tie
+families' cells, the neighbour checksums and polygon starts, the 8-well
+peaks and every significance statistic on the golden cloud -- are no longer
+copied into both suites: tests/generate_orientation_fixture.py writes them
+once (orientation_fixture.json, checked here by test_orientation_fixture.py
+and in the browser by src/__tests__/orientationParity.test.js).
 """
 
 from pathlib import Path
@@ -24,6 +29,21 @@ from rmc_toolkits.orientation import (
     site_orientation_histogram,
 )
 from rmc_toolkits.pca_kde import load_site_displacements
+
+try:  # `python -m unittest discover -s tests` puts tests/ itself on sys.path
+    from generate_orientation_fixture import (
+        PEARSON_MOMENTS as PEARSON_MOMENT_CASES,
+        golden_cloud,
+        pinned_probabilities,
+        special_directions,
+    )
+except ModuleNotFoundError:  # `python -m unittest tests.test_orientation_fixes`
+    from tests.generate_orientation_fixture import (
+        PEARSON_MOMENTS as PEARSON_MOMENT_CASES,
+        golden_cloud,
+        pinned_probabilities,
+        special_directions,
+    )
 
 
 def _cloud(n=200, seed=0):
@@ -77,31 +97,14 @@ class NonFiniteInputTests(unittest.TestCase):
         self.assertEqual(recommended_frequency(1000, max_frequency=MIN_FREQUENCY), MIN_FREQUENCY)
 
 
-# Shared verbatim with orientationFixes.test.js: (N, recommended frequency).
-# The boundaries sit exactly where 12 * (10 nu^2 + 2) == N.
-RECOMMENDED_FREQUENCY_PINS = [
-    (0, 1),
-    (294, 1),
-    (300, 1),
-    (503, 1),
-    (504, 2),
-    (774, 2),
-    (1000, 2),
-    (1103, 2),
-    (1104, 3),
-    (12000, 9),
-    (12023, 9),
-    (12024, 10),
-    (10_000_000, 24),
-]
-
-
 class RecommendedFrequencyFloorTests(unittest.TestCase):
     """orientation.physics.10/.25, orientation.numerics.30.
 
     The docstring promised the largest frequency whose cells still average
     target_per_cell points, but the code rounded to the nearest frequency and
     returned cells averaging as few as 7 points (N=294 -> nu=2, 42 cells).
+    The boundary table both engines share (where 12 (10 nu^2 + 2) == N) is in
+    orientation_fixture.json.
     """
 
     def test_never_drops_below_the_target_occupancy(self):
@@ -113,12 +116,6 @@ class RecommendedFrequencyFloorTests(unittest.TestCase):
             if frequency < 24:
                 finer = 10 * (frequency + 1) ** 2 + 2
                 self.assertLess(n / finer, 12, msg=f"N={n}: nu+1 would still hold 12/cell")
-
-    def test_pinned_values_shared_with_the_js_engine(self):
-        for n, expected in RECOMMENDED_FREQUENCY_PINS:
-            self.assertEqual(recommended_frequency(n), expected, msg=f"N={n}")
-        self.assertEqual(recommended_frequency(1000, target_per_cell=5), 4)
-        self.assertEqual(recommended_frequency(5000, max_frequency=3), 3)
 
 
 def _axis_cloud(copies=500, length=0.1):
@@ -173,36 +170,6 @@ class CentrosymmetricTieBreakTests(unittest.TestCase):
         minus = assign_cells(tiling, -directions)
         np.testing.assert_array_equal(minus, tiling.antipode[plus])
 
-    def test_axis_cells_pinned_for_cross_engine_parity(self):
-        # Shared verbatim with orientationFixes.test.js.
-        tiling = goldberg_tiling(3)
-        axes = np.vstack([np.eye(3), -np.eye(3)])
-        self.assertEqual(assign_cells(tiling, axes).tolist(), AXIS_CELLS_NU3)
-
-
-# Cells of +x, +y, +z, -x, -y, -z at nu = 3 (the -u cells are the antipodes).
-# +x and +y are exact two-way ties there; since review:4 they go to the lower
-# index of the pair (35, 14; previously 36, 15 by the walk's path).
-AXIS_CELLS_NU3 = [35, 14, 16, 85, 70, 62]
-
-
-def _special_directions():
-    """<111>, <100> and <110> (26 directions), in the order the JS suite uses."""
-    signs = (1.0, -1.0)
-    directions = [[a, b, c] for a in signs for b in signs for c in signs]
-    for axis in range(3):
-        for sign in signs:
-            v = [0.0, 0.0, 0.0]
-            v[axis] = sign
-            directions.append(v)
-    for i, j in ((0, 1), (0, 2), (1, 2)):
-        for a in signs:
-            for b in signs:
-                v = [0.0, 0.0, 0.0]
-                v[i], v[j] = a, b
-                directions.append(v)
-    return np.asarray(directions)
-
 
 def _lowest_index_rule(tiling, directions, tolerance=1e-12):
     """Brute-force reference for the tie rule, over all cells.
@@ -232,11 +199,14 @@ class ExactTieResolutionTests(unittest.TestCase):
     frequencies, <110> at 9, and an 8-well <111> model had a different peak
     direction in Flask and in the browser. Ties are now resolved
     combinatorially: the lowest cell index among the cells within
-    ASSIGN_TIE_TOL of the best dot product.
+    ASSIGN_TIE_TOL of the best dot product. (+x and +y, exact two-way ties
+    at nu = 3, now go to the lower index of their pair.) The cells both
+    engines give the 26 directions, and the 8-well model's peaks, are in
+    orientation_fixture.json.
     """
 
     def test_special_directions_follow_the_lowest_index_rule(self):
-        directions = _special_directions()
+        directions = special_directions()
         for frequency in list(range(1, 31)) + [38]:
             tiling = goldberg_tiling(frequency)
             np.testing.assert_array_equal(
@@ -265,72 +235,6 @@ class ExactTieResolutionTests(unittest.TestCase):
             assign_cells(tiling, directions), np.argmax(unit @ tiling.centers.T, axis=1)
         )
 
-    def test_special_direction_cells_pinned_for_cross_engine_parity(self):
-        directions = _special_directions()
-        for frequency, expected in SPECIAL_DIRECTION_CELLS.items():
-            self.assertEqual(
-                assign_cells(goldberg_tiling(frequency), directions).tolist(), expected,
-                msg=f"nu={frequency}",
-            )
-
-    def test_well_model_peak_is_engine_independent(self):
-        # The reviewer's 8-well <111> model (weights 30 / 6 x 20 / 30).
-        for frequency, expected in WELL_MODEL_PEAKS.items():
-            result = orientation_histogram(_well_model(), frequency=frequency, geometry=False)
-            self.assertEqual(result["peakCell"], expected["peakCell"], msg=f"nu={frequency}")
-            np.testing.assert_allclose(result["peakDirection"], expected["peakDirection"], atol=1e-12)
-            self.assertEqual(
-                int(np.count_nonzero(result["counts"])), expected["occupiedCells"], msg=f"nu={frequency}"
-            )
-
-
-def _well_model(length=0.1):
-    """Atoms on the eight <111> wells: 30 at +[111], 30 at -[111], 20 at each other."""
-    rows = []
-    for direction in _special_directions()[:8]:
-        weight = 30 if abs(direction.sum()) == 3 else 20
-        rows.append(np.repeat(direction[None, :] * length / np.sqrt(3.0), weight, axis=0))
-    return np.vstack(rows)
-
-
-# Shared verbatim with orientationFixes.test.js: cells of _special_directions()
-# (8 x <111>, 6 x <100>, 12 x <110>).
-SPECIAL_DIRECTION_CELLS = {
-    1: [0, 1, 2, 6, 5, 9, 11, 10, 2, 9, 1, 11, 0, 10, 1, 8, 3, 11, 2, 6, 5, 9, 0, 7, 4, 10],
-    2: [1, 16, 10, 26, 15, 27, 39, 38, 18, 40, 8, 34, 9, 30, 2, 24, 7, 35, 5, 17, 14, 29, 0, 21, 11, 31],
-    3: [5, 43, 49, 77, 28, 56, 83, 91, 35, 85, 14, 70, 16, 62, 6, 47, 57, 89, 7, 45, 26, 68, 1, 40, 75, 80],
-    4: [6, 71, 81, 130, 48, 98, 145, 159, 59, 148, 23, 120, 29, 104, 8, 79, 96, 155, 12, 76, 43, 115,
-        1, 68, 128, 137],
-    10: [33, 405, 460, 761, 257, 561, 858, 983, 320, 880, 110, 690, 155, 590, 287, 525, 919, 927, 128,
-         635, 223, 656, 77, 377, 736, 792],
-    11: [37, 485, 551, 915, 306, 673, 1033, 1193, 381, 1061, 128, 830, 182, 710, 343, 633, 1110, 1119,
-         152, 765, 268, 788, 90, 454, 887, 954],
-}
-# Shared verbatim with orientationFixes.test.js. Before the tie rule Python
-# put the nu=2 peak at [0.5, 0.309, 0.809] and JS at [0.309, 0.809, 0.5].
-WELL_MODEL_PEAKS = {
-    2: {"peakCell": 1, "peakDirection": [0.3090169943749474, 0.8090169943749473, 0.5], "occupiedCells": 8},
-    4: {"peakCell": 6, "peakDirection": [0.42532540417601994, 0.5877852522924731, 0.6881909602355868],
-        "occupiedCells": 8},
-}
-
-
-# Shared verbatim with orientationFixes.test.js:
-# sum over cells c and slots k of (k+1) * (neighbors[c][k]+1) * (c % 97 + 1).
-NEIGHBOR_CHECKSUMS = {4: 13107810, 6: 68604861, 10: 524199205, 38: 108147532718}
-# First polygon vertex of the two nu = 38 cells whose start used to differ.
-POLYGON_STARTS_NU38 = {
-    2052: [0.008313449390497447, 0.01625704168659895, 0.9998332836802503],
-    4275: [0.9998332836802503, 0.00831344939049745, -0.016257041686598955],
-}
-
-
-def neighbor_checksum(neighbors):
-    neighbors = np.asarray(neighbors)
-    cells = np.arange(neighbors.shape[0])
-    weights = (np.arange(6) + 1)[None, :] * ((cells % 97) + 1)[:, None]
-    return int((weights * (neighbors + 1)).sum())
-
 
 class CanonicalCyclicOrderTests(unittest.TestCase):
     """orientation.parity.17.
@@ -339,7 +243,9 @@ class CanonicalCyclicOrderTests(unittest.TestCase):
     the cell centre; a neighbour on the -e1 ray sits at +pi in one engine and
     -pi in the other (a 1e-17 round-off sign), so the exported ``neighbors``
     rows were cyclically rotated between Python and JS (185 of 1002 rows at
-    nu=10), and two polygons at nu=38 started on a different vertex.
+    nu=10), and two polygons at nu=38 started on a different vertex. The
+    neighbour checksums and those two polygon starts, as both engines give
+    them, are in orientation_fixture.json.
     """
 
     def test_neighbor_rows_start_at_their_smallest_index(self):
@@ -348,15 +254,6 @@ class CanonicalCyclicOrderTests(unittest.TestCase):
             for row in tiling.neighbors:
                 valid = row[row >= 0]
                 self.assertEqual(valid[0], valid.min())
-
-    def test_neighbor_checksums_pinned_for_cross_engine_parity(self):
-        for frequency, expected in NEIGHBOR_CHECKSUMS.items():
-            self.assertEqual(neighbor_checksum(goldberg_tiling(frequency).neighbors), expected)
-
-    def test_polygon_starts_pinned_for_cross_engine_parity(self):
-        tiling = goldberg_tiling(38)
-        for cell, vertex in POLYGON_STARTS_NU38.items():
-            np.testing.assert_allclose(tiling.polygons[cell, 0], vertex, atol=1e-12)
 
     def test_cycle_is_still_counter_clockwise(self):
         tiling = goldberg_tiling(6)
@@ -441,24 +338,10 @@ class TiedPeakTests(unittest.TestCase):
         self.assertEqual(result["peakCell"], int(np.argmax(result["enhancement"])))
 
 
-def golden_cloud(n_sphere=900, n_lobe=60, lobe=(0.3, -0.5, 0.81)):
-    """Deterministic, RNG-free cloud built identically in the JS suite.
-
-    A Fibonacci-spiral sphere (radius modulated by index) plus a tight lobe of
-    `n_lobe` points around `lobe` -- a cross-engine golden input for the
-    significance statistics.
-    """
-    i = np.arange(n_sphere, dtype=float)
-    z = 1.0 - (2.0 * i + 1.0) / n_sphere
-    r = np.sqrt(1.0 - z * z)
-    phi = i * 2.399963229728653
-    radius = 0.05 + 0.03 * ((i * 7) % 11) / 11.0
-    sphere = np.column_stack([r * np.cos(phi), r * np.sin(phi), z]) * radius[:, None]
-    j = np.arange(n_lobe, dtype=float)
-    lobe = np.asarray(lobe) / np.linalg.norm(lobe)
-    jitter = 0.02 * np.column_stack([np.cos(j * 1.3), np.sin(j * 1.7), np.cos(j * 0.9)])
-    lobe_points = (lobe[None, :] + jitter) * 0.12
-    return np.vstack([sphere, lobe_points])
+# golden_cloud() (tests/generate_orientation_fixture.py): a deterministic,
+# RNG-free Fibonacci-spiral sphere plus a tight lobe of n_lobe points -- the
+# golden fixture's input for the significance statistics, whose values on it
+# both engines are held to.
 
 
 def _isotropic_units(rng, n):
@@ -517,45 +400,6 @@ class PeakSignificanceTests(unittest.TestCase):
         self.assertGreater(result["peakSignificance"], 5.0)
         self.assertLess(result["peakPValue"], 1e-6)
 
-    def test_golden_values_shared_with_the_js_engine(self):
-        assert_golden(self, GOLDEN_PEAK)
-
-
-def assert_golden(case, table):
-    for (frequency, smoothing, n_lobe), expected in table.items():
-        result = orientation_histogram(
-            golden_cloud(n_lobe=n_lobe), frequency=frequency, smoothing=smoothing, geometry=False
-        )
-        for key, value in expected.items():
-            message = f"nu={frequency} s={smoothing} lobe={n_lobe} {key}"
-            if isinstance(value, (bool, int)) or value is None:
-                case.assertEqual(result[key], value, msg=message)
-            else:
-                # Relative tolerance -- p-values here reach 1e-142, so an
-                # absolute bound would check nothing.
-                case.assertLessEqual(abs(result[key] - value), 1e-9 * abs(value), msg=message)
-
-
-# Shared verbatim with orientationFixes.test.js (GOLDEN_PEAK there):
-# (frequency, smoothing, n_lobe) -> expected peak-test fields.
-GOLDEN_PEAK = {
-    (6, 1, 60): {"peakCell": 181, "peakCount": 39, "peakExpected": 2.5649892741371745,
-                 "peakLocalPValue": 3.6267987030691646e-32, "peakPValue": 1.3129011305110377e-29,
-                 "peakSignificance": 11.238918217145391},
-    (10, 2, 60): {"peakCell": 480, "peakCount": 45, "peakExpected": 0.8960392805524379,
-                  "peakLocalPValue": 2.4905767221833515e-59, "peakPValue": 2.4955578756277183e-56,
-                  "peakSignificance": 15.770175177825124},
-    (None, 0, 60): {"peakCell": 10, "peakCount": 72, "peakExpected": 23.631937108780438,
-                    "peakLocalPValue": 1.0240227941836545e-15, "peakPValue": 4.300895735571259e-14,
-                    "peakSignificance": 7.460770577845533},
-    (10, 2, 0): {"peakCell": 436, "peakCount": 2, "peakExpected": 0.9029912627020413,
-                 "peakLocalPValue": 0.22861236738599036, "peakPValue": 1.0,
-                 "peakSignificance": -22.629329003077444},
-    (2, 0, 6): {"peakCell": 10, "peakCount": 27, "peakExpected": 22.30264064641154,
-                "peakLocalPValue": 0.18477705092278982, "peakPValue": 0.999812237582693,
-                "peakSignificance": -3.5567124319438927},
-}
-
 
 def _hemisphere_cloud(rng, n):
     u = _isotropic_units(rng, n)
@@ -592,13 +436,13 @@ class MapSignificanceTests(unittest.TestCase):
             moments = _pearson_null_moments(used, p)
             np.testing.assert_allclose(moments, exact, rtol=1e-10, atol=1e-10, err_msg=f"N={used} C={cells}")
 
-    def test_null_moments_pinned_for_cross_engine_parity(self):
+    def test_null_moments_match_enumeration_on_the_golden_cases(self):
+        # The (N, C) cases orientation_fixture.json holds both engines to.
         from rmc_toolkits.orientation import _pearson_null_moments
 
-        for (used, cells), expected in PEARSON_MOMENTS.items():
-            p = _pinned_probabilities(cells)
-            np.testing.assert_allclose(_pearson_null_moments(used, p), expected, rtol=1e-12)
-            np.testing.assert_allclose(_exact_pearson_moments(used, p), expected, rtol=1e-12)
+        for used, cells in PEARSON_MOMENT_CASES:
+            p = pinned_probabilities(cells)
+            np.testing.assert_allclose(_pearson_null_moments(used, p), _exact_pearson_moments(used, p), rtol=1e-12)
 
     def test_value_is_the_three_moment_gamma_tail(self):
         from scipy.stats import gamma, norm, pearson3
@@ -726,9 +570,6 @@ class MapSignificanceTests(unittest.TestCase):
         sparse = orientation_histogram(cap, frequency=10, geometry=False)
         self.assertGreater(sparse["mapSignificance"], 8.0)
 
-    def test_golden_values_shared_with_the_js_engine(self):
-        assert_golden(self, GOLDEN_MAP)
-
 
 def _exact_pearson_moments(used, p):
     """Mean, variance, third central moment of X^2 by full enumeration."""
@@ -757,51 +598,6 @@ def _exact_pearson_moments(used, p):
         np.sum(weights * (values - mean) ** 2),
         np.sum(weights * (values - mean) ** 3),
     )
-
-
-def _pinned_probabilities(cells):
-    """Deterministic unequal cell probabilities, built identically in JS."""
-    raw = 1.0 + 0.3 * np.sin(np.arange(1, cells + 1, dtype=float))
-    return raw / raw.sum()
-
-
-# Shared verbatim with PEARSON_MOMENTS in orientationFixes.test.js:
-# (N, C) -> exact (mean, variance, third central moment) of X^2 for
-# _pinned_probabilities(C).
-PEARSON_MOMENTS = {
-    (3, 4): (3.0, 4.218531116561122, 13.943752126285027),
-    (6, 5): (4.0, 6.91373687143512, 29.01155630009905),
-    (9, 4): (3.0, 5.406177038853709, 20.39545791721937),
-    (12, 3): (2.0, 3.6728421787498275, 12.957998592922594),
-    (2, 7): (6.0, 7.183146093091783, 43.811413401314184),
-}
-
-
-# Shared verbatim with GOLDEN_MAP in orientationFixes.test.js.
-GOLDEN_MAP = {
-    (6, 1, 60): {"mapChiSquare": 800.1657022469657, "mapDegreesOfFreedom": 361,
-                 "mapNullSd": 26.89394588964023, "mapNullSkewness": 0.178121379052147,
-                 "mapExpectedPairs": 1288.2313214115104,
-                 "mapPValue": 8.22254884213926e-33, "mapSignificance": 11.87251368423015},
-    (10, 2, 60): {"mapChiSquare": 2596.980147082603, "mapDegreesOfFreedom": 1001,
-                  "mapNullSd": 44.93009360956353, "mapNullSkewness": 0.13854679111724788,
-                  "mapExpectedPairs": 466.6502011243447,
-                  "mapPValue": 5.115170092676409e-113, "mapSignificance": 22.56203637660662},
-    (None, 0, 60): {"mapChiSquare": 109.05527451398147, "mapDegreesOfFreedom": 41,
-                    "mapNullSd": 9.050975709801982, "mapNullSkewness": 0.4503623992125751,
-                    "mapExpectedPairs": 10991.483242707845,
-                    "mapPValue": 4.869112256098684e-08, "mapSignificance": 5.331542086891653},
-    # A Fibonacci sphere is far more uniform than counting noise: X^2 lies
-    # below the reference's support, so the deviate sits at the floor.
-    (10, 2, 0): {"mapChiSquare": 206.08354289942974, "mapDegreesOfFreedom": 1001,
-                 "mapNullSd": 44.942491392316214, "mapNullSkewness": 0.14177901437232995,
-                 "mapExpectedPairs": 410.1132665642458,
-                 "mapPValue": 1.0, "mapSignificance": -37.0470962993612},
-    (2, 0, 6): {"mapChiSquare": 2.8616952082936087, "mapDegreesOfFreedom": 41,
-                "mapNullSd": 9.05071282835656, "mapNullSkewness": 0.450877377382182,
-                "mapExpectedPairs": 9789.110678651203,
-                "mapPValue": 1.0, "mapSignificance": -8.886765298073716},
-}
 
 
 def _skewed_cloud(rng, n, fraction=0.2, shift=0.4, sigma=0.05):
@@ -894,30 +690,6 @@ class AntipodalNullTests(unittest.TestCase):
         self.assertEqual(result["antipodalAsymmetry"], 1.0)
         self.assertEqual(result["antipodalAsymmetryNull"], 1.0)
 
-    def test_golden_values_shared_with_the_js_engine(self):
-        assert_golden(self, GOLDEN_ASYMMETRY)
-
-
-# Shared verbatim with GOLDEN_ASYMMETRY in orientationFixes.test.js.
-GOLDEN_ASYMMETRY = {
-    (6, 1, 60): {"antipodalAsymmetry": 0.2, "antipodalAsymmetryNull": 0.3401168600567151,
-                 "antipodalAsymmetryNullSd": 0.019345746381926036,
-                 "antipodalAsymmetryZ": -7.2427735425923245, "antipodalAsymmetrySignificant": False},
-    (None, 0, 60): {"antipodalAsymmetry": 0.08333333333333333,
-                    "antipodalAsymmetryNull": 0.11738132743663726,
-                    "antipodalAsymmetryNullSd": 0.01946344130131603,
-                    "antipodalAsymmetryZ": -1.7493306335813166,
-                    "antipodalAsymmetrySignificant": False},
-    (10, 2, 0): {"antipodalAsymmetry": 0.19111111111111112,
-                 "antipodalAsymmetryNull": 0.5672222222222222,
-                 "antipodalAsymmetryNullSd": 0.020957040126511128,
-                 "antipodalAsymmetryZ": -17.94676675907692, "antipodalAsymmetrySignificant": False},
-    (4, 0, 400): {"antipodalAsymmetry": 0.3415384615384615,
-                  "antipodalAsymmetryNull": 0.1752318529176018,
-                  "antipodalAsymmetryNullSd": 0.01673666421475673,
-                  "antipodalAsymmetryZ": 9.936663990320547, "antipodalAsymmetrySignificant": True},
-}
-
 
 class AnisotropyNullTests(unittest.TestCase):
     """orientation.physics.9/.24, orientation.numerics.27.
@@ -971,44 +743,6 @@ class AnisotropyNullTests(unittest.TestCase):
         result = orientation_histogram(vectors, frequency=10, smoothing=2, geometry=False)
         self.assertGreater(result["orientationAnisotropySignificance"], 4.0)
         self.assertGreater(result["orientationAnisotropy"], 3 * result["orientationAnisotropyNull"])
-
-    def test_golden_values_shared_with_the_js_engine(self):
-        assert_golden(self, GOLDEN_ANISOTROPY)
-        weighted = orientation_histogram(
-            golden_cloud(), frequency=6, smoothing=1, weight="amplitude2", geometry=False
-        )
-        for key, value in GOLDEN_ANISOTROPY_AMPLITUDE2.items():
-            self.assertLessEqual(abs(weighted[key] - value), 1e-9 * abs(value), msg=key)
-
-
-# Shared verbatim with GOLDEN_ANISOTROPY in orientationFixes.test.js.
-GOLDEN_ANISOTROPY = {
-    (6, 1, 60): {"orientationAnisotropy": 0.12495614840544977, "orientationEffectivePoints": 960.0,
-                 "orientationAnisotropyNull": 0.05182412242070032,
-                 "orientationBinghamStatistic": 18.73684781045718,
-                 "orientationBinghamPValue": 0.0021515346560243643,
-                 "orientationAnisotropySignificance": 2.855045282725758},
-    (10, 2, 0): {"orientationEffectivePoints": 900.0, "orientationAnisotropyNull": 0.05352372348458313,
-                 "orientationBinghamPValue": 0.9999999999999987,
-                 "orientationAnisotropySignificance": -7.9084691847240896},
-    (4, 0, 400): {"orientationAnisotropy": 0.6150392816231949, "orientationEffectivePoints": 1300.0,
-                  "orientationAnisotropyNull": 0.04453442987940475,
-                  "orientationBinghamStatistic": 614.6941425286471,
-                  "orientationBinghamPValue": 1.3514132534260834e-130,
-                  "orientationAnisotropySignificance": 24.286800999672977},
-    (2, 0, 6): {"orientationAnisotropy": 0.013271734268148538, "orientationEffectivePoints": 906.0,
-                "orientationAnisotropyNull": 0.05334619820786263,
-                "orientationBinghamStatistic": 0.19947859577278887,
-                "orientationBinghamPValue": 0.9991194624727917,
-                "orientationAnisotropySignificance": -3.127820820781734},
-}
-GOLDEN_ANISOTROPY_AMPLITUDE2 = {
-    "orientationEffectivePoints": 725.3165446406116,
-    "orientationAnisotropyNull": 0.05962162122187657,
-    "orientationBinghamStatistic": 129.85364394492348,
-    "orientationBinghamPValue": 2.5564292957448824e-26,
-    "orientationAnisotropySignificance": 10.549388830489368,
-}
 
 
 if __name__ == "__main__":

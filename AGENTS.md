@@ -127,11 +127,11 @@ web_app/frontend/src/
     localKdeWorker.js            static-mode KDE worker (same kernel, decline rules, warnings and slab test as kde.py; GPU-or-CPU density map, contours); parity-tested against Python goldens (kdeParity.test.js ← tests/generate_kde_fixture.py)
     gpuKde.js                    WGSL compute-shader density map + shouldUseGpu heuristic + cached device init
     slabSelection.js             shared slab membership (isInSlab, SLAB_FACE_TOLERANCE), Miller-plane labels, the custom-slice frame (freePlaneBasis) and the /api/kde/slice orientation query that carries it (kdeSliceQuery: ux..vz, so Flask draws in the page's frame), kernel σ and slab thickness in Å — pure, used by the KDE worker and StructurePage
-    pcaKde.js                    static-mode PCA-KDE engine (JS port of pca_kde.py): 3×3 Jacobi eigensolver, per-site clouds, separable volume + projections
+    pcaKde.js                    static-mode PCA-KDE engine (JS port of pca_kde.py): 3×3 Jacobi eigensolver, per-site clouds, separable volume + projections; the site table parity-tested against the generated Python golden (pcaSitesParity.test.js ← tests/generate_pca_sites_fixture.py)
     autoScale.js                 static-mode Auto StoG engine (JS port of scaling.py + transforms.py + stog parsers + Faber-Ziman); parity-tested against Python goldens (autoScale.test.js)
     autoScaleWorker.js           off-thread runner for autoScale.js (transferable buffers); runAutoScaleJob() is the testable core
     requestGuards.js             Flask-boundary rules for every worker: requestNumber() (= app._number), assertFiniteResult() (= _strict_result_response), requestObject() (null message → error)
-    orientation.js               static-mode displacement-orientation engine (JS port of orientation.py: Goldberg hex+pentagon sphere tiling, solid-angle histogram); parity-tested against Python goldens in orientationFixes.test.js (incl. JS regularizedGamma/normalQuantile pinned to scipy)
+    orientation.js               static-mode displacement-orientation engine (JS port of orientation.py: Goldberg hex+pentagon sphere tiling, solid-angle histogram); parity-tested against the generated Python golden (orientationParity.test.js ← tests/generate_orientation_fixture.py); the audit's rules in orientationFixes.test.js (incl. JS regularizedGamma/normalQuantile pinned to scipy)
     triplets.js                  static-mode bond-angle engine (port of triplets.py; parity-tested against Python goldens in triplets_fixture.json — regenerate with tests/generate_triplets_fixture.py)
     clusters.js                  static-mode cluster-distortion engine (port of clusters.py; parity-tested against Python goldens in clusters_fixture.json — regenerate with tests/generate_clusters_fixture.py)
     modulations.js               static-mode displacement-modulation engine (port of modulations.py, a separable DFT for fftn; parity-tested in modulations_fixture.json — regenerate with tests/generate_modulations_fixture.py)
@@ -210,8 +210,10 @@ web_app/frontend/src/
   `ZERO_SPREAD_VARIANCE` (1e-8 Å², e.g. an `*AVERAGE.rmc6f`) is `zeroSpread`: its axes, anisotropy
   and κ are null and the KDE refuses it. `cubicBox` only sizes the display box (`boxHalfWidths`); the
   volume, mass, iso levels and PC walls are always sampled on the per-axis box. `_shape_statistics`
-  (pca_kde.py) and `shapeStatistics` (pcaKde.js) are line-for-line ports; keep them in sync. The
-  browser χ²₃ quantile is exact (`chiSquare3Quantile`).
+  (pca_kde.py) and `shapeStatistics` (pcaKde.js) are line-for-line ports; keep them in sync — the
+  generated `pca_sites_fixture.json` holds every site row of both engines to one golden (regenerate
+  with `PYTHONPATH=. python tests/generate_pca_sites_fixture.py`). The browser χ²₃ quantile is exact
+  (`chiSquare3Quantile`).
 - **Orientation histogram bins are hexes + exactly 12 pentagons, area-normalized.** A sphere cannot
   be tiled by hexagons alone (Euler), so `orientation.py` uses a Goldberg polyhedron (10ν²+2 cells)
   and divides every count by the cell's exact solid angle — never plot raw counts, or the 12
@@ -232,9 +234,18 @@ web_app/frontend/src/
   centrosymmetric hemisphere fold and then to the lowest cell index (`ASSIGN_TIE_TOL`); tied peak
   cells go to the lowest index within `PEAK_TIE_RTOL = 1e-9`; neighbour/polygon cycles start at their
   smallest index. `recommended_frequency` floors to ≥ 12 points per cell. `workers/orientation.js` is
-  a straight port: keep the two in sync, with the same construction order so cell indices agree, and
-  regenerate the shared golden values in `tests/test_orientation_fixes.py` ↔
-  `orientationFixes.test.js` together.
+  a straight port: keep the two in sync, with the same construction order so cell indices agree. The
+  values both engines must share live in ONE generated golden, never copied into the two suites:
+  `orientation_fixture.json` (full payloads incl. demo-run sites, tie-family cells, neighbour
+  checksums, the `recommendedFrequency` table, Pearson's null moments), checked by
+  `orientationParity.test.js` in the browser and `tests/test_orientation_fixture.py` in Python.
+  Regenerate it whenever the engine's output changes:
+  `PYTHONPATH=. python tests/generate_orientation_fixture.py`. The site table (`site_ellipsoids` ↔
+  `siteEllipsoids`) has its own: `PYTHONPATH=. python tests/generate_pca_sites_fixture.py` →
+  `pca_sites_fixture.json` (`pcaSitesParity.test.js`, `tests/test_pca_sites_fixture.py`). Both
+  compare by one rule (`goldenCompare.js` ↔ `tests/golden_compare.py`): integers, booleans and nulls
+  exactly, other numbers to 1e-9 relative + 1e-12, p-values to 1e-9 relative, eigenvector sets
+  eigenspace by eigenspace (a degenerate one by its projector).
 - **Principal axes in the crystal frame: angles are Cartesian, `[u v w]` is fractional.** The PCA
   axes and the unit-cell vectors live in the same Cartesian basis, so ∠a/∠b/∠c (`pcaCrystalFrame.js`)
   are honest angles between directions for any cell, oblique included. `[u v w] = M⁻ᵀ·axis` is a
