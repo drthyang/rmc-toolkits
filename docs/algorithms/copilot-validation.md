@@ -326,6 +326,13 @@ A change to any of these files is a change to what the model sees: say so in the
 `npx vitest run src/__tests__/modelVisible -u` and read the diff before committing; CI never writes
 them, so a stale file fails there.
 
+The paths a run's answer quotes by reference (`{{r3.sites.0.shift_A}}`) are pinned too: every live
+tool declares the shape of its data on its spec (`dataShape`, never sent to the model), and
+`src/__tests__/toolDataShapes.test.js` checks every tool's results on the Demo and on each dev case
+against it — no undeclared key, no required key missing, every declared key returned by some call.
+A change to a tool's output changes its `dataShape` in the same PR, so it shows in the diff
+([llm README](../../web_app/frontend/src/llm/README.md), *The tool contract*).
+
 ## Running the live arms (later, on the Mac)
 
 From `web_app/frontend`, with the model loaded in LM Studio or Ollama:
