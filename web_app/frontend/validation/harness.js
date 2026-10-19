@@ -58,8 +58,10 @@ import { shownValues, traceNumbers } from './provenance';
 // 2026-10-19.1: the run is named RUN_NAME, no longer after the case id, which
 // told the model the case's kind; 2026-10-19.2: test-breathing recomposed,
 // its old cluster being the skills' reference compound's, which read_skill
-// serves to arm B).
-export const PROTOCOL_VERSION = '2026-10-19.2';
+// serves to arm B; 2026-10-19.3: list_sites shows the split — per-axis kurtosis,
+// PC1 as [u v w], a split site's static displacement — and says so in its
+// description).
+export const PROTOCOL_VERSION = '2026-10-19.3';
 
 export const ARMS = Object.freeze({
     B: { skills: true, label: 'Copilot with skills and guardrails' },

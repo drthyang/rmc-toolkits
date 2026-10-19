@@ -233,6 +233,14 @@ user's text and is unchanged.
 - **The holdout scan's open-leak list is now empty**, and the four allow-list entries for the old
   cluster have left it ([the holdout scan](#the-holdout-scan)).
 
+**Protocol 2026-10-19.3 (`list_sites` shows the split, plan 4.1).** Each site row gains its
+per-axis excess kurtosis on resolved axes (`kurtosis_axes`), PC1 as a direct-lattice [u v w]
+(`pc1_uvw`), and, for a site the tools call split (one rule, `isSplitSite`), its static
+displacement `delta_A` with its sampling error `delta_se_A`; the tool's description says so. What
+the model sees changes (the `list_sites` result and its description), so live runs under earlier
+protocols are not comparable. Arms A and A+ do not call `list_sites` and are unchanged. Approved by
+the manager on the user's delegation, 2026-10-19 (`validation/findings/decisions/`).
+
 ## Records, transcripts, findings
 
 Each live run writes:
