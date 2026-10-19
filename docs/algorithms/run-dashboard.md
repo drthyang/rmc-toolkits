@@ -466,6 +466,11 @@ hold:
    where files come from `/api/files` and carry none of those (the server concatenates);
 3. any browser-backed log of the group is still being parsed (`sourceFile && !plotData && !parseError`).
 
+The run the Dashboard publishes for the AI Copilot in Flask mode is the one exception to condition 2.
+There only the charted log carries `plotData`, the server's whole history fetched once for the
+Copilot, and the concatenation over that one log returns the history as it is. It never splices in
+a copy per log.
+
 So the concatenation shown here happens **client-side only in static mode**. Condition 3 means that
 during a Live Data re-parse the strip transiently shows only the first log's curve. And the
 "hiding a log removes its segment from the combined curve" behaviour (Step 8) is **static-mode
@@ -952,7 +957,11 @@ does not tear down the view. Instead:
   changed; the previous model summary stays on screen until the new one arrives, so there is no
   flash to empty.
 * `InteractivePlot` receives `refreshKey = "${file.modified}:${file.size}"`, which forces the
-  Flask-mode `/api/plot/data` fetch to re-run when a file changes.
+  Flask-mode `/api/plot/data` fetch to re-run when a file changes. The χ² panel's key is the
+  `fileSignature` of every log of its run, because the server concatenates them all: the chart
+  follows a later restart log as it grows, not only the first log. With the AI Copilot open, the run
+  the Dashboard publishes asks again only for the files whose key moved, and keeps a file's previous
+  data until the new answer lands; a load of another folder drops the answers still in flight.
 
 **Cost of a refresh — every parse is a full parse.** Nothing here is incremental: an appending
 `.log` is never tail-read, it is re-read and re-parsed from byte 0.
@@ -1189,7 +1198,12 @@ There are two producers, one per runtime mode:
   CSV is the shared x array; every remaining column becomes one series, labelled by its header cell
   (an *empty* header cell is replaced by `Series {idx}`, 1-based over the data columns; a
   *duplicate* header is left as-is — see Step 3).
-  `InteractivePlot` fetches this itself when no `plotData` prop is supplied.
+  `InteractivePlot` fetches this itself when no `plotData` prop is supplied, through
+  [`plotDataCache.js`](../../web_app/frontend/src/plotDataCache.js): one request per file and
+  version (its `refreshKey`), shared with the run the Dashboard publishes for the AI Copilot, which
+  fetches every plot file once the Copilot is open
+  ([ai-assistant.md Step 1](ai-assistant.md#step-1--inputs-and-when-the-context-is-built)). A masked
+  point arrives as JSON `null` and is `NaN` again, as `plotDataFromText` gives it.
 - **Static mode** — [`browserData.js`](../../web_app/frontend/src/browserData.js) →
   `plotDataFromText()`, a JS re-implementation of the same parsing and labelling, run in the browser
   on a locally-picked file. `Dashboard.jsx` passes the result down as the `plotData` prop, and the

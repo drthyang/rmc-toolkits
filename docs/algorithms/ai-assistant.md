@@ -219,6 +219,21 @@ Copilot is handed the *unfiltered* list as `plotFiles` but the history of the vi
 `pair_correlations`, but hiding an R-value log silently removes it from `convergence`, from
 `recent_slope_per_step`, and from the watchdog.**
 
+**Flask mode: the plot data comes from `/api/plot/data`.** A picked folder's files are parsed up front
+(`parseDashboardPlotFile`), so they carry `plotData`. A server folder's charts fetch their own data,
+so once the Copilot is open the Dashboard fetches every plot file's payload too, hidden ones included,
+and attaches `plotData` (or `parseError`) to the files it publishes. Both go through
+[`plotDataCache.js`](../../web_app/frontend/src/plotDataCache.js): one request per file and version,
+whoever asks first, with masked points (JSON `null`) back to `NaN`. The χ² history is fetched once,
+for the charted log: the server concatenates every log of its run (`related_r_value_logs`), so only
+that log carries `plotData` and `chartedRValueFile` takes the one history as it is. Hidden logs are
+therefore still in a server folder's `convergence`, as they are in its chart. For the same files the
+run module then gives the browser path's tools and run context, and `flaskCopilotRun.test.jsx` checks
+the whole context text and every tool definition. Until 2026-10-19 the published files carried no
+data: the context had no dataset titles or Rwp, no `pair_correlations` and no `convergence`, and the
+dock had no `assess_convergence`, `find_gr_peaks` or `compare_fit`. `runSettings` is still always
+null in Flask mode: the `.dat` is read only for a picked folder.
+
 **Gating.** `useAssistant({…, enabled})` builds the context in a `useMemo` only when `enabled` is true
 ([`llm/useAssistant.js`](../../web_app/frontend/src/llm/useAssistant.js)). The chatbox panel is mounted
 only when the user first opens it (`copilotOpened` in

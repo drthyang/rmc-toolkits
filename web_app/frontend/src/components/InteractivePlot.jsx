@@ -3,10 +3,9 @@
 
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import axios from 'axios';
-import API_BASE_URL from '../api';
 import { saveSvgFigure } from '../figureExport';
-import { markWindow, nearestFiniteIndex, niceDomain, plotPayloadError } from '../plotDomain';
+import { markWindow, nearestFiniteIndex, niceDomain } from '../plotDomain';
+import { fetchPlotData } from '../plotDataCache';
 import { GUIDE_STROKE, PLOT_PALETTE } from '../plotPalette';
 import { Banner, Pill, useIssue, useReportIssue } from '../ui';
 import { uiScale } from '../uiScale';
@@ -213,25 +212,19 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
     // screen) is listed in the page's Problems section, named by its file.
     useIssue(`plot-load:${clipId}`, error, { source: file?.name || 'Plot' });
 
+    // Flask mode: the file's data from /api/plot/data, through the cache the
+    // Dashboard's Copilot run shares (plotDataCache.js: one request per file
+    // and refreshKey). An answer for a file or version no longer shown is dropped.
     useEffect(() => {
         if (plotData) {
-            return;
+            return undefined;
         }
-
+        let cancelled = false;
         const fetchData = async () => {
             setError(null);
             try {
-                const response = await axios.get(`${API_BASE_URL}/api/plot/data`, {
-                    params: { path: file.path }
-                });
-                // A body that is not valid JSON arrives as a raw string; never
-                // hand that to the renderer — say what went wrong instead.
-                const payloadError = plotPayloadError(response.data);
-                if (payloadError) {
-                    setPlot(null);
-                    setError(payloadError);
-                    return;
-                }
+                const payload = await fetchPlotData(file.path, refreshKey);
+                if (cancelled) return;
                 if (loadedPathRef.current !== file.path) {
                     setHidden(new Set());
                     setXDomain(null);
@@ -239,13 +232,17 @@ const InteractivePlot = ({ file, variant, plotData, refreshKey, legend = true, a
                     setDrag(null);
                     loadedPathRef.current = file.path;
                 }
-                setPlot(response.data);
-            } catch (err) {
-                setError(err.response?.data?.error || 'Failed to load interactive plot');
+                setPlot(payload);
+            } catch (failure) {
+                if (cancelled) return;
+                // A body that is not plot data replaces the chart; a failed
+                // reload keeps the older chart on screen.
+                if (failure.invalidPayload) setPlot(null);
+                setError(failure.message);
             }
         };
-
         fetchData();
+        return () => { cancelled = true; };
     }, [file.path, plotData, refreshKey]);
 
     // Reset view state (zoom, hover, hidden series) when direct plotData is
