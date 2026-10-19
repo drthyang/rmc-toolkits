@@ -68,8 +68,9 @@ general q) with the eigenvalues of that matrix, normalised as the power, as
 weights; its tail is a saddlepoint approximation (:func:`null_tail`). Until
 2026-10-19 the null took the element's m sites as independent (P >= chi^2_m /
 m): sites that share a cell-level variable carry fewer independent components,
-and it found order in 3 of 12 seeds of a two-feature configuration, 2 of 16
-Jahn-Teller and 1 of 10 octahedral ones; for independent sites it was
+and it found order in 9 to 32 % of fresh seeds of the validation's
+Jahn-Teller, two-feature and octahedral generator kinds (the calibrated null:
+0.1 to 0.6 %, each of three tests at its 0.135 %); for independent sites it was
 conservative (one component per site where an isotropic site has three).
 
 ``diffuseOrder`` (plan item 4.4; :func:`diffuse_order`) asks whether the power
