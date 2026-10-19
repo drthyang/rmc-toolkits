@@ -815,6 +815,9 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   cut window kept or replaced, one site or pooled), the clear questions that never ask, the
   model's own `ask_user` beside them within two per request, and cancel. In the dock
   (`copilotChat.test.jsx`): the Workbench's card before any model request, the lowered chip.
+  Real answers (`src/__tests__/answerCorpus.test.js`): the gate's claims and send-back and the
+  checks that fire, pinned per answer with a judgement of each, and the false alarms counted
+  ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#the-answer-corpus-plan-item-35)).
 - **Rendering:** Outcome parsing, the Markdown pipeline with its card chips, and
   `copilotChat.test.jsx`, which drives the dock end to end against a mocked server: nothing is
   fetched before it opens, Show in hands over the page parameters, Esc keeps the conversation, a

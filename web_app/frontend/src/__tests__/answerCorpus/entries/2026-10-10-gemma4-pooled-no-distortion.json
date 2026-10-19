@@ -1,0 +1,26 @@
+{
+  "id": "2026-10-10-gemma4-pooled-no-distortion",
+  "fidelity": "quoted",
+  "model": "gemma4:26b (Ollama)",
+  "date": "2026-10-10",
+  "run": "Demo (GaTa4Se8, 250 K)",
+  "question": "Preferred Ta displacement direction; trigonal or tetragonal?",
+  "source": {
+    "file": "docs/CHANGELOG.md",
+    "lines": "616 on 2026-10-19 (0.6.0, \"AI Copilot replaces the AI Assistant\")",
+    "commit": "8aefab6",
+    "note": "the scientific review's first round as the changelog quotes it (the README, line 708: pooled map isotropic → \"no distortion\"); the whole answer is not in the repo"
+  },
+  "text": "No preferred direction, so no cluster distortion.",
+  "steps": null,
+  "stepsSource": "not recorded: the README says a pooled directions map of the 16 Ta sites, without the call's arguments or the other calls",
+  "reproduces": [],
+  "expected": {
+    "claims": [],
+    "gateSendBack": "steps unknown",
+    "auditFindings": []
+  },
+  "judgements": [
+    { "on": "silence", "right": false, "reason": "A miss: \"no cluster distortion\" is concluded from a pooled direction map, but the gate reads cluster conclusions only when positive and \"no order\" only in its own words, so nothing asks for analyze_clusters (which finds <111> compression, z = 11)." }
+  ]
+}
