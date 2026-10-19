@@ -66,7 +66,7 @@ from .parsers import (
     write_stog_xy,
 )
 from .plots import PlotResult, close_plot, detect_plot_kind, make_plot, plot_to_png
-from .structure_basis import read_structure_basis, structure_basis
+from .structure_basis import MAX_BASIS_SITES, basis_site_count, read_structure_basis, structure_basis
 from .triplets import (
     BondAngleDistribution,
     bond_angle_distribution,
@@ -229,6 +229,8 @@ __all__ = [
     "read_structure",
     "read_structure_basis",
     "structure_basis",
+    "basis_site_count",
+    "MAX_BASIS_SITES",
     "rmc6f_problem",
     "run_stem_from_output_name",
     "rwp",

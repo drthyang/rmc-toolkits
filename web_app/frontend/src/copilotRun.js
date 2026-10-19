@@ -102,10 +102,12 @@ export const runLadder = (structure, ladder) => (
 /**
  * The Detected SG card at the view's tolerance, with that tolerance and the
  * ladder; null with no structure, no basis (a coords-only .rmc6f, a server
- * before /api/structure sent one, before load) or no result.
+ * before /api/structure sent one, before load) or no result. A server folder
+ * above the finder's site cap sends only the count (`basisOmitted`): its card
+ * is the 'not analysed' one the browser shows for the same files.
  */
 export const runSymmetry = (structure, toleranceA, ladder) => {
-    if (!structure?.basis?.length) return null;
+    if (!structure?.basis?.length && !structure?.basisOmitted) return null;
     const detected = describeSymmetry(structure, toleranceA);
     return detected ? { ...detected, toleranceA, ladder } : null;
 };

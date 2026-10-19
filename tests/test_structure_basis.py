@@ -12,8 +12,10 @@ coords-only atoms left out, sites sorted by reference number, and
 ``Math.round``'s ties -- so the parity golden
 (``tests/generate_structure_basis_fixture.py``) holds two runtimes that agree
 on purpose, not by luck. The route tests check that ``/api/structure`` returns
-the basis of the same read, an empty one for a coords-only file, and a 400 for
-a basis that is not finite (a computed result, never nulled).
+the basis of the same read, an empty one for a coords-only file, a 400 for a
+basis that is not finite (a computed result, never nulled), and above the
+space-group finder's site cap (``MAX_BASIS_SITES`` = ``MAX_SYMMETRY_SITES``,
+pinned here against symmetryModel.js) only ``basisOmitted: {sites, cap}``.
 """
 
 from __future__ import annotations
@@ -22,19 +24,31 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
 
 import numpy as np
 
-from rmc_toolkits import read_structure_basis, structure_basis
+from rmc_toolkits import MAX_BASIS_SITES, basis_site_count, read_structure_basis, structure_basis
 from rmc_toolkits.parsers import parse_rmc6f_atoms
 from rmc_toolkits.structure_basis import _round_half_up
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "web_app" / "frontend" / "src" / "__tests__" / "fixtures" / "structure_basis_fixture.json"
+SYMMETRY_MODEL = ROOT / "web_app" / "frontend" / "src" / "symmetryModel.js"
 KEYS = ["count", "covFrac", "dispA", "el", "elementCounts", "frac", "mean", "referenceNumber"]
+
+
+def _one_copy_box(sites: int) -> str:
+    """A 1x1x1 box of `sites` atoms, each its own reference site (a glass, or an
+    imported configuration): the case the finder's site cap is for."""
+    lines = []
+    for number in range(1, sites + 1):
+        x, y, z = ((number * 0.6180339887) % 1.0, (number * 0.4142135623) % 1.0, (number * 0.7320508075) % 1.0)
+        lines.append(f"{number} {'Si' if number % 3 else 'O'} [{number}] {x:.10f} {y:.10f} {z:.10f} {number} 0 0 0")
+    return _config(lines, supercell=(1, 1, 1), lattice=((40.0, 0.0, 0.0), (0.0, 40.0, 0.0), (0.0, 0.0, 40.0)))
 
 
 def _config(lines, supercell=(2, 1, 1), lattice=((20.0, 0.0, 0.0), (0.0, 10.0, 0.0), (0.0, 0.0, 10.0))):
@@ -158,6 +172,24 @@ class StructureBasisConventionTests(unittest.TestCase):
             lattice = np.array([[20.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]])
             self.assertEqual(structure_basis(atoms, lattice, np.array([2.0, 1.0, 1.0])), read_structure_basis(path))
 
+    def test_the_site_count_is_the_basis_length_without_the_rows(self):
+        fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        for text in (fixture["synthetic"], fixture["coordsOnly"], _one_copy_box(25)):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "config.rmc6f"
+                path.write_text(text, encoding="utf-8")
+                atoms, _ = parse_rmc6f_atoms(path)
+                self.assertEqual(basis_site_count(atoms), len(read_structure_basis(path)))
+
+    def test_the_cap_is_the_symmetry_finders(self):
+        # MAX_SYMMETRY_SITES in symmetryModel.js: above it the finder declines,
+        # so /api/structure sends no basis. (The JS parity test holds the JS
+        # constant to the golden's maxBasisSites too.)
+        match = re.search(r"^export const MAX_SYMMETRY_SITES = (\d+);$", SYMMETRY_MODEL.read_text(encoding="utf-8"), re.MULTILINE)
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)), MAX_BASIS_SITES)
+        self.assertEqual(MAX_BASIS_SITES, 2000)
+
     def test_offsets_round_like_math_round(self):
         # Ties towards +infinity, and 0.49999999999999994 (where floor(x + 0.5) is 1) to 0.
         values = np.array([-1.5, -0.5, -0.49999999999999994, 0.49999999999999994, 0.5, 1.5, 2.5])
@@ -199,6 +231,7 @@ class StructureBasisEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["basis"], read_structure_basis(path))
+        self.assertIsNone(payload["basisOmitted"])
         self.assertEqual([sorted(site) for site in payload["basis"]], [KEYS] * len(payload["basis"]))
         # The basis sees every copy, whatever maxPoints samples for the points.
         self.assertEqual(sum(site["count"] for site in payload["basis"]), payload["totalAtoms"] - 3)
@@ -219,7 +252,29 @@ class StructureBasisEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["basis"], [])
+        self.assertIsNone(payload["basisOmitted"])
         self.assertEqual(payload["totalAtoms"], 8)
+
+    def test_above_the_finders_cap_only_the_site_count_is_sent(self):
+        # 2001 one-copy sites: nothing in the app can use the rows (the card
+        # says "not analysed"), so the route sends their number instead.
+        _, response = self._structure(_one_copy_box(MAX_BASIS_SITES + 1), maxPoints=100)
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNone(payload["basis"])
+        self.assertEqual(payload["basisOmitted"], {"sites": MAX_BASIS_SITES + 1, "cap": MAX_BASIS_SITES})
+        # The rest of the model is there as before.
+        self.assertEqual(payload["totalAtoms"], MAX_BASIS_SITES + 1)
+        self.assertEqual(len(payload["points"]), payload["sampledAtoms"])
+        self.assertEqual(sum(len(refs) for refs in payload["atomIndices"].values()), MAX_BASIS_SITES + 1)
+
+    def test_at_the_cap_the_basis_is_sent(self):
+        path, response = self._structure(_one_copy_box(MAX_BASIS_SITES), maxPoints=100)
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIsNone(payload["basisOmitted"])
+        self.assertEqual(len(payload["basis"]), MAX_BASIS_SITES)
+        self.assertEqual(payload["basis"], read_structure_basis(path))
 
     def test_a_basis_that_is_not_finite_is_a_400(self):
         # Finite in the file, but x * N overflows: NaN positions are refused, not nulled.

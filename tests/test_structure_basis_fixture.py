@@ -40,6 +40,10 @@ class StructureBasisFixtureTests(unittest.TestCase):
         regenerated = build_fixture(cls.committed["synthetic"], cls.committed["coordsOnly"])
         cls.regenerated = json.loads(json.dumps(regenerated, allow_nan=False))
 
+    def test_the_cap_is_the_engines(self):
+        # The JS test holds symmetryModel.js MAX_SYMMETRY_SITES to this value.
+        self.assertEqual(self.regenerated["maxBasisSites"], self.committed["maxBasisSites"], STALE)
+
     def test_basis_rows(self):
         got_cases = self.regenerated["cases"]
         want_cases = self.committed["cases"]

@@ -2100,8 +2100,8 @@ basis is the exception since plan item 4.5 (`/api/structure`'s `basis`). What su
 | `structure` (cell, angles, composition) | yes | yes (`/api/structure`) |
 | `configuration_optimization` | yes | yes — `/api/structure` returns the header's move counters (`moves`) |
 | `run_settings` | yes | **no** — the `.dat` is read only from a locally picked folder |
-| `symmetry` (+ per-site displacements, `frac`) | yes | yes — `/api/structure` returns the `basis` (`structure_basis.py`, the browser's rows to round-off; through 0.7.0 it had none and the block was absent); none for a coords-only file |
-| `detect_symmetry`, `measure_symmetry_lowering` | yes (needs reference-site columns) | yes — on `/api/structure`'s `basis`, computed in the browser as for a picked folder |
+| `symmetry` (+ per-site displacements, `frac`) | yes | yes — `/api/structure` returns the `basis` (`structure_basis.py`, the browser's rows to round-off; through 0.7.0 it had none and the block was absent); none for a coords-only file. Above the finder's 2000-site cap only `basisOmitted: {sites, cap}`: the same "not analysed" block as the browser's, without `noise_floor_A` (the browser's is null too when every site has one copy) |
+| `detect_symmetry`, `measure_symmetry_lowering` | yes (needs reference-site columns) | yes — on `/api/structure`'s `basis`, computed in the browser as for a picked folder; above the cap offered and answering "Not analysed", as the browser's are (the lowering's default tolerance assumes the 0.02 Å floor of one-copy sites) |
 | `pair_correlations` | yes (needs parsed partials) | **no** — plot files carry no `plotData.series` |
 | `datasets` | `kind` + `title` + `rwp` (never `stog`) | `kind` only (never `stog`) |
 | `convergence` + watchdog badge | yes | **no** — no parsed R-value series, so the badge stays hidden |

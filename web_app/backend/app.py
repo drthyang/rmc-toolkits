@@ -35,7 +35,7 @@ from rmc_toolkits.pca_kde import (
 )
 from rmc_toolkits.triplets import APP_MAX_ANGLES, bond_angle_summary_from_file
 from rmc_toolkits.clusters import cluster_distortion
-from rmc_toolkits.structure_basis import structure_basis
+from rmc_toolkits.structure_basis import MAX_BASIS_SITES, basis_site_count, structure_basis
 from rmc_toolkits.modulations import displacement_modulations
 from rmc_toolkits.parsers import (
     Rmc6fParseReport,
@@ -736,9 +736,17 @@ def structure():
         # The average-structure basis (one site per reference number, with its
         # moments) from this same read of the file, as structureFromRmc6f adds
         # it in the browser: the Detected SG card, its CIF export and the
-        # Copilot's symmetry tools exist for a server folder too.
-        basis = structure_basis(atoms, lattice_vectors, supercell)
-        _require_finite_basis(basis)
+        # Copilot's symmetry tools exist for a server folder too. Above the
+        # space-group finder's cap nothing can use it (the card says "not
+        # analysed"), so only its size is sent -- the page shows that state from it.
+        sites = basis_site_count(atoms)
+        if sites > MAX_BASIS_SITES:
+            basis = None
+            basis_omitted = {"sites": sites, "cap": MAX_BASIS_SITES}
+        else:
+            basis = structure_basis(atoms, lattice_vectors, supercell)
+            _require_finite_basis(basis)
+            basis_omitted = None
         sampled, stride = _sample_atoms_by_site(atoms, max_points)
         points = []
         counts: dict[str, int] = {}
@@ -773,6 +781,7 @@ def structure():
                 "supercell": supercell.tolist(),
                 "latticeVectors": lattice_vectors.tolist(),
                 "basis": basis,
+                "basisOmitted": basis_omitted,
                 "moves": moves,
                 "parseReport": parse_report.to_dict(),
                 "parseWarning": parse_report.warning(),

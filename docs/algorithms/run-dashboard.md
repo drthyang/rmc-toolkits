@@ -2876,6 +2876,8 @@ $10^{-12}$ (`structureBasisParity.test.js`), and the server's demo basis gives t
 orbits and CIF byte for byte; `tests/test_structure_basis_fixture.py` keeps the golden current. A
 basis holding NaN or Infinity (a coordinate so large that $x_i N_i$ overflows) is a computed result,
 so the route refuses it with a 400 (`_require_finite_basis`) instead of nulling it like a data point.
+Above the finder's 2000-site cap the route sends no rows, only `basisOmitted: { sites, cap }` (Part B,
+*Where and how often this runs*).
 
 #### What Model information does *not* compute
 
@@ -3606,6 +3608,20 @@ the residual is `NaN`, never `0`, because nothing was fitted and `0` would read 
 LLM context omits a non-finite residual), and `toleranceLadder` returns no bricks. A box whose `.rmc6f` declares a $1\times1\times1$ supercell with
 one reference number per atom (a glass, an imported P1 configuration) reaches this; it is not a
 unit-cell configuration, and a symmetry search on it would only ever return `P1`.
+
+**A server folder above the cap.** Flask's `/api/structure` counts the sites first
+(`structure_basis.basis_site_count`) and above `MAX_BASIS_SITES` — the same 2000, pinned against
+`MAX_SYMMETRY_SITES` by `tests/test_structure_basis.py` and, through the golden's `maxBasisSites`,
+by `structureBasisParity.test.js` — sends `basis: null` with `basisOmitted: { sites, cap }` instead
+of rows nothing could use (a one-site-per-atom box of 52 000 atoms was a 15 MB basis on every
+request). `analyseSymmetry` takes the site count from `basisOmitted` and returns the same
+description, so the card, the empty ladder, the missing CIF button, the Copilot's `symmetry`
+context and its two symmetry tools (offered, answering "Not analysed: …") match a browser-loaded
+copy of the same file (`structureBasisCap.test.jsx`). Two things the browser derives from the rows
+are not sent: the sampling noise floor (`noise_floor_A` in the context, and
+`measure_symmetry_lowering`'s default tolerance), which is null in the browser too when every site
+has one copy — the usual case above the cap — but not for a large cell with several copies per site;
+and the "Pooled over N sites" note of `analyze_displacement_directions` for an element.
 
 The site cap alone does not bound the time. If such a box is **crystalline**, every lattice rotation
 holds with every pure translation of its repeat unit, so the candidate operations grow with the

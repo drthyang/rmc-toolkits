@@ -10,7 +10,9 @@ CIF export and the AI Copilot's ``detect_symmetry`` and
 ``measure_symmetry_lowering`` read for a server folder.
 ``structureFromRmc6f()`` (``browserData.js``) is held to it
 (``src/__tests__/structureBasisParity.test.js``), and the frontend's Flask-mode
-tests use the demo run's rows as the server's payload.
+tests use the demo run's rows as the server's payload. It also carries
+``maxBasisSites`` (``structure_basis.MAX_BASIS_SITES``), which the JS test holds
+``MAX_SYMMETRY_SITES`` (``symmetryModel.js``) equal to.
 ``tests/test_structure_basis_fixture.py`` fails when the committed file no
 longer matches the Python engine.
 
@@ -45,7 +47,7 @@ from pathlib import Path
 
 import numpy as np
 
-from rmc_toolkits.structure_basis import read_structure_basis
+from rmc_toolkits.structure_basis import MAX_BASIS_SITES, read_structure_basis
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "web_app" / "frontend" / "src" / "__tests__" / "fixtures" / "structure_basis_fixture.json"
@@ -164,6 +166,9 @@ def build_fixture(synthetic_text: str | None = None, coords_only_text: str | Non
     if coords_only_text is None:
         coords_only_text = coords_only_config_text()
     return {
+        # The most sites /api/structure sends a basis for (above: basis null,
+        # basisOmitted); the JS test holds symmetryModel.js MAX_SYMMETRY_SITES to it.
+        "maxBasisSites": MAX_BASIS_SITES,
         "synthetic": synthetic_text,
         "coordsOnly": coords_only_text,
         "cases": [

@@ -49,6 +49,13 @@ only those has an empty basis (and no symmetry analysis).
 The sums run in file order, one copy after another, and every per-copy step is
 the browser's own floating-point operation in the browser's order, so the two
 runtimes differ only where their ``cos``/``sin``/``atan2`` differ (an ulp).
+
+The app uses a basis of at most :data:`MAX_BASIS_SITES` sites: above it the
+space-group finder declines (``MAX_SYMMETRY_SITES`` in ``symmetryModel.js``, the
+same value, pinned by the parity golden), and everything that reads the basis goes
+through the finder. So ``/api/structure`` counts the sites first
+(:func:`basis_site_count`) and, above the cap, sends ``basis: null`` with
+``basisOmitted: {sites, cap}`` instead of rows nothing would use.
 """
 
 from __future__ import annotations
@@ -62,6 +69,13 @@ import numpy as np
 from .parsers import Rmc6fAtom, parse_rmc6f_atoms, read_cell_vectors
 
 TWO_PI = 2.0 * math.pi
+
+#: The most average sites the app analyses: the space-group finder's cap
+#: (``MAX_SYMMETRY_SITES`` in ``web_app/frontend/src/symmetryModel.js``; the golden
+#: written by ``tests/generate_structure_basis_fixture.py`` carries this value and
+#: ``structureBasisParity.test.js`` holds the JS constant to it). Above it the
+#: finder reports the structure "not analysed", so ``/api/structure`` omits the basis.
+MAX_BASIS_SITES = 2000
 
 # The covariance's upper triangle, in the order browserData.js accumulates it.
 _PAIRS = ((0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2))
@@ -168,6 +182,12 @@ def structure_basis(atoms: Iterable[Rmc6fAtom], lattice_vectors, supercell) -> l
             element_counts, mean.tolist(), cov.tolist(),
         )
     ]
+
+
+def basis_site_count(atoms: Iterable[Rmc6fAtom]) -> int:
+    """How many sites :func:`structure_basis` would return: the distinct reference
+    numbers of ``atoms`` (coords-only atoms carry none), without computing the rows."""
+    return len({atom["reference_number"] for atom in atoms if atom["reference_number"] is not None})
 
 
 def read_structure_basis(rmc6f_path: str | Path) -> list[dict]:

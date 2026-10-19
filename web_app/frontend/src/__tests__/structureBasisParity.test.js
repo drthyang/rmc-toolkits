@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { structureFromRmc6f } from '../browserData';
 import { brickCif } from '../symmetryCif';
-import { describeSymmetry, toleranceLadder } from '../symmetryModel';
+import { describeSymmetry, MAX_SYMMETRY_SITES, toleranceLadder } from '../symmetryModel';
 import fixture from './fixtures/structure_basis_fixture.json';
 
 const TOL = 1e-12;
@@ -44,6 +44,12 @@ const expectNumbers = (actual, expected, path) => {
 };
 
 describe('average-structure basis parity (structure_basis_fixture.json)', () => {
+    it('the server omits the basis exactly where the finder declines: one site cap', () => {
+        // rmc_toolkits.structure_basis.MAX_BASIS_SITES, written by the generator
+        // (and held to this file's JS constant by tests/test_structure_basis.py).
+        expect(fixture.maxBasisSites).toBe(MAX_SYMMETRY_SITES);
+    });
+
     it('covers the kinds of site the fixture promises', () => {
         const [demo, synthetic, coordsOnly] = fixture.cases.map((entry) => entry.basis);
         expect(demo).toHaveLength(52);

@@ -12,6 +12,16 @@
 - A file of coords-only atoms gets `basis: []`. A basis holding NaN or Infinity (a coordinate too
   large to fold into the cell) is a computed result, so the route answers 400 rather than writing
   null.
+- Above `MAX_BASIS_SITES` = 2000 sites, the space-group finder's cap (`MAX_SYMMETRY_SITES`, pinned
+  equal in both test suites), nothing in the app can use the basis, so the route sends `basis: null`
+  and `basisOmitted: {sites, cap}`; a one-site-per-atom box of 52 000 atoms would otherwise send
+  15 MB on every request. The page turns that count into the browser's own "not analysed"
+  description: the card, its missing ladder and CIF button, the Copilot's `symmetry` context and its
+  two symmetry tools (offered, answering "Not analysed") are the same as for the same file picked in
+  the browser. Two things the browser derives from the rows are not sent: the sampling noise floor
+  (the context's `noise_floor_A` and the lowering tool's default tolerance; null in the browser too
+  when every site has one copy, the usual case above the cap) and the pooled-site count in
+  `analyze_displacement_directions`' note for an element.
 - In Flask mode a server folder now gets the Detected SG card, its CIF button, the Copilot's
   `symmetry` context and the `detect_symmetry` / `measure_symmetry_lowering` tools. Until now only a
   browser-loaded run had a basis. The browser path is unchanged, and so is everything the model is
