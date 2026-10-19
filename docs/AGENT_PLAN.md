@@ -229,7 +229,7 @@ user decided on 2026-10-19:
   `rmc_toolkits/pca_kde.py:72,570-576` against `src/workers/pcaKde.js:317-331`). It affects the
   KDE, not a Copilot tool.
 - **No test pins the shape of a live tool's output** (old 3.3). With numbers by reference, the data
-  paths a result exposes are an interface the model writes against.
+  paths a result exposes are an interface the model writes against. Closed by 3.3.
 - **No corpus of real answers** tests the claim regexes of the checks and the gate (old 3.5).
 
 ### D. Tool gaps
@@ -350,7 +350,7 @@ The candidates of B and C, in this order. Each is one PR, stacked on the one bef
 | 11 | Tool transcript; result statuses (old 3.2). | M |
 | 2.5 | **The page and the tool at the same settings** **(approval)**: the directions tool also reports at the page's ν and smoothing, or the page defaults to the engine's choice. Changes arm A's reading. | S |
 | 2.6 | PCA subsamples identical in both runtimes (AGENTS.md next step 8). | M |
-| 3.3 | **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. | M |
+| 3.3 | **Output-shape contracts** for every live tool: a schema of its `data` (the paths references name), checked on the demo and on each dev case. Before any tool output changes in phase 4. Built: each live tool's spec carries a `dataShape` (`llm/copilot/dataShape.js`, never sent to the model), and `toolDataShapes.test.js` checks every result on the demo and the dev cases against it, both ways (no undeclared key; every declared key returned by some call, the unreachable forms listed). | M |
 | 3.5 | A small corpus of real answers for the claim regexes of the checks and the gate. | S |
 
 ### Phase 4 — Tool science
