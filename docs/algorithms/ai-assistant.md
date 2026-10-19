@@ -1368,16 +1368,19 @@ names) or one reference file, with a note when the skill is a draft. The tool co
 `resultBudget` (9,000 characters for `read_skill`) replaces the 3,000-character result budget, and
 `keep: true` keeps its message out of the 12,000-character turn budget and its compaction.
 
-**Checks on the answer** (`copilot/answerAudit.js`). A tool may return `facts` beside
+**Checks on the answer** (the verification's facts catalogue, `copilot/verification/facts.js`
+FACTS: one row per facts key, its producing tools, its shape and the check that reads it, in the
+order below). A tool may return `facts` beside
 `data` and `checks` (kept by the loop, not sent to the model): `assess_convergence` its status,
 `detect_symmetry` its group with the point-group facts, `analyze_displacement_directions`
 `{subject, significant (peak ≥ 3σ), anisotropic (map ≥ 3σ), peak_sigma, map_sigma}` (until the 2026-10-14 review's L3, `significant` also counted the map test, which any thermal ellipsoid passes), `analyze_modulations`
 `{elements, ordered: [{element, q}], general: [{element, q}]}`, `analyze_clusters`
 `{element, members, window, distorted, static, breathing, rigid, split, families}`,
 `compute_bond_angles` and `find_gr_peaks` the whole-shell or chosen-window counts
-`{centre, partner, window, cn, whole_shell, confirmed}` (review L5). The run context adds the
-watchdog's status and every ladder group (`contextAuditFacts`). When the model answers,
-`auditAnswer(text)` splits it into sentences and clauses (a new clause at `;`, `:` and before
+`{centre, partner, window, cn, whole_shell, confirmed}` (review L5), `measure_symmetry_lowering`
+`{parent, lower, shifted}` (no check reads it yet). The run context adds the watchdog's status and
+every ladder group (`contextAuditFacts`). When the model answers, the verification's reading
+(`reading.js`) splits it into sentences and clauses (a new clause at `;`, `:` and before
 "but", "while", "whereas", "unlike", "although", "though", "however") and looks for positive
 claims. One does not count in a question; after a negation (not, no, never, neither, nor, none,
 without, lack, absence, cannot, non, yet, stopped, ceased, n't); or after a word that makes it
@@ -1428,31 +1431,37 @@ The findings (`{rule, text}`, one per rule) reach the turn as `audit` and show u
 with the `reference` and `evidence` findings below; any finding makes the computed verdict **not
 verified**.
 
-**The evidence gate** (`copilot/evidence.js`, THY-18). Each rule reads a kind of conclusion with
-`asserts` (the answer checks' claim reading) and names the analysis it needs in this turn:
+**The evidence gate** (the verification's claim catalogue, `copilot/verification/claims.js`
+CLAIMS, THY-18). Each row reads a kind of conclusion with `asserts` (the answer checks' claim
+reading) and names the analysis it needs in this turn (`backedBy`: `anyOf`, `firstOffered` or
+`allOf`), in this order:
 order between cells (superstructure, cell doubling, zone-boundary order, modulation, incommensurate
 order) and a split site called random disorder (split site, two-site disorder, random
 off-centring or off-centring at random, a displacement of ± x Å or ± x Å along a direction — not a
-± sampling error — `off_centre`) — `analyze_modulations`; a preferred direction —
-`analyze_displacement_directions`; distorted, breathing or rigid clusters (and `cluster_*`,
-`rigid_cluster`) — `analyze_clusters`; a coordination number, a polyhedral coordination, a split
-shell or a Jahn–Teller distortion — `find_gr_peaks` or `compute_bond_angles`; a lowering of the
+± sampling error) — `analyze_modulations`; a preferred direction —
+`analyze_displacement_directions`; distorted, breathing or rigid clusters — `analyze_clusters`; a
+coordination number, a polyhedral coordination, a split shell or a Jahn–Teller distortion —
+`find_gr_peaks` or `compute_bond_angles`; a lowering of the
 average structure (symmetry lowering, lowered symmetry, a coherent shift, a polar shift, a shift
 of x Å, "(coherent)"; not "coherent scattering") —
 `measure_symmetry_lowering` (`detect_symmetry` when that is not offered); "no order" (no local
-order, thermal motion only, nothing beyond the average structure; an empty `"features": []`;
-not the modulation tool's own "no order that doubles the cell") — `analyze_modulations`, a
-directions map with `site_ref`, and `analyze_clusters` for every element of the clarifier's shell
-catalog whose own first shell holds 0.5–4.5 neighbours (`CLUSTER_CN_MAX`). Every rule but "no
-order" reads only sentences about this run: naming an element of the run (as a symbol not followed
+order, thermal motion only, nothing beyond the average structure; not the modulation tool's own
+"no order that doubles the cell") — `analyze_modulations`, a directions map with `site_ref`, and
+`analyze_clusters` for every element of the clarifier's shell catalog whose own first shell holds
+0.5–4.5 neighbours (`context/shells.js` `clusterElementsOf`, `CLUSTER_CN_MAX`). The verdict
+schema's words (`off_centre`, `cluster_distortion`, `cluster_breathing`, `rigid_cluster`,
+`jahn_teller`, `symmetry_lowering`, and an empty `"features": []` anywhere in the text for "no
+order") are not the app's: the validation harness adds them to its turns
+(`validation/verdict.js` `VERDICT_PHRASINGS`, the verification's `phrasings`), so they read there
+as before. Every rule but "no order" reads only sentences about this run: naming an element of the run (as a symbol not followed
 by a lower-case letter, so Ti in TiO₆ but not in "Tiny") or the run itself (this / the run,
 configuration, structure, model, box, supercell, sample, compound, crystal, material, system; the
 sites, atoms, clusters, octahedra, tetrahedra, polyhedra, displacements; site n), so a definition
 needs no analysis; with no element list every sentence counts. A step counts when it
 returned without an error (a refused bond-angle window still counted its coordination). Rules for
 tools the turn does not offer are dropped. When the model answers with tools still allowed and
-fewer than `maxEvidenceGates` (2) send-backs this turn, the first unmet rule not sent back yet is
-sent back: a `gate` event (carrying the withdrawn text), a `retract` of the answer's text, the
+fewer than `maxSendBacks` (2, `DEFAULT_MAX_SEND_BACKS`; a run's `limits.maxEvidenceGates` sets it)
+send-backs this turn, the first unmet rule not sent back yet is sent back: a `gate` event (carrying the withdrawn text), a `retract` of the answer's text, the
 answer as an assistant message and the note "(From the app, not the user.) Your answer concludes
 …, but this question has not run …". The gate reads the answer with its references filled (as the
 checks will), and sends nothing back on the final round or once the turn's time is spent. On the
@@ -1463,9 +1472,10 @@ Stop keeps it as the partial answer. A step counts as run only when the tool ran
 earlier run is repeated): not a call to an unknown tool, one skipped by the per-round limit, a
 refused question, or a view tool.
 
-**Numbers by reference** (`copilot/references.js`). The loop names each successful result
-`r<n>` (in the order of the turn), puts it first in the tool message (`ref`, kept through
-compaction) and stores the data it sent (the fitted result, so a reference names what the model
+**Numbers by reference** (the verification, over the store in `copilot/references.js`). The
+verification names each successful result the loop records `r<n>` (in the order of the turn), the
+loop puts it first in the tool message (`ref`, kept through compaction), and the verification keeps
+the data that message sent (the fitted result, so a reference names what the model
 saw). `fillReferences` replaces every `{{r<n>.<path>}}` or `{{ctx.<path>}}` (path steps `.key`,
 `.n` or `[n]`; keys may hold `<>+-`, as in `<100>`) by the value: a finite number as written in the
 data, a string as is, a boolean, or a list of scalars as `[a, b, c]`; anything else in double
@@ -1473,17 +1483,20 @@ braces that does not start with `r<n>` or `ctx` (a LaTeX group) is left alone. A
 reference stays and is a `reference` finding. `{{ctx.…}}` resolves against the context as the
 model read it (`shownContext`: contextToJson's trimmed copy), never a value the trim removed. An
 ended or stopped turn fills the references in every text segment from its own steps (each keeps
-its `ref` and the data it sent). The `done` event carries the filled `text`, the
+its `ref` and the data it sent), and `{{ctx.…}}` from its `start` event's `shown` (`turnState.js`). The `done` event carries the filled `text`, the
 `rawText` and `references: {written, filled, unknown}`. `analyze_clusters` asks for a
 4,500-character result (`CLUSTER_RESULT_BUDGET`): at 3,000 its result with checks (~3.4k on the
 demo) reached the model cut to a text fragment no path could name.
 
-**The computed verdict** (`copilot/verdict.js` `computeOutcome`). In order: **not verified** —
+**The computed verdict** (`copilot/verification/verdict.js` `computeOutcome`; the verification's
+judge computes it last, after the references, the send-back, the checks and the findings). In
+order: **not verified** —
 any finding (answer check, unfilled reference, missing evidence); **not achieved** — analyses ran
 and every one failed; **partial** — `stoppedBy` max_rounds or no_progress, a reply cut at the
 length limit, a failed step with no later success of the same tool, or a step that warned;
 **achieved** — otherwise. Questions to the user, skill reads, view tools and calls that never ran
-are not analyses. The model may lower the status, never raise it: a `partial` or `not achieved` it
+are not analyses (`isAnalysis`, the one definition, which the dock's footer counts too, through
+`tool_end.analysis`). The model may lower the status, never raise it: a `partial` or `not achieved` it
 writes stands over a computed `achieved` or `partial` ("the model says the answer is …"). The note
 lists the reasons, then the model's sentence; a status the model wrote is `claimed`, and named
 ("The model said 'achieved': …") when it differs.
@@ -1579,7 +1592,7 @@ else is sent unchanged (`client.js`).
 
 **The verdict.** The prompt asks every answer to end with `Outcome: <one sentence>` — what the
 evidence shows or what is missing — and tells the model not to grade itself (THY-18).
-[`copilot/outcome.js`](../../web_app/frontend/src/llm/copilot/outcome.js) `parseOutcome()` reads
+[`copilot/verification/outcome.js`](../../web_app/frontend/src/llm/copilot/verification/outcome.js) `parseOutcome()` reads
 the line:
 
 - the **last** such line wins;
@@ -2077,8 +2090,8 @@ Flask mode"; that code path exists and is tested, but no caller currently suppli
 | `SHELL_TROUGH_FRACTION` | 0.2 | of the first peak | `context/shells.js` | A deeper local minimum closes the first shell; a shallower dip is inside a split shell |
 | `SHELL_ONSET_FRACTION`, `SHELL_EMPTY_FRACTION` | 0.01, 0.001 | of the first peak | `context/shells.js` | Shell onset; a tail below this closes the shell |
 | `PEAK_SEARCH_MAX_A`, `BOUNDARY_REACH_A`, `CUT_SHIFT_A` | 8, 3, 0.2 | Å | `context/shells.js` | Peaks below 8 Å; the minimum closing the shell sought to max(8, r₁ + 3); the shell's top moved this far for the cut sensitivity |
-| `maxEvidenceGates` | 2 | send-backs per turn | `agentLoop.js` | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
-| `CLUSTER_CN_MAX` | 4.5 | neighbours | `evidence.js` | An element whose own first shell holds at most this many may form finite clusters: "no order" needs `analyze_clusters` on it |
+| `DEFAULT_MAX_SEND_BACKS` | 2 | send-backs per turn | `verification/index.js` (`maxSendBacks`; a run's `limits.maxEvidenceGates` sets it) | The evidence gate sends an answer back at most this often, once per rule (THY-18) |
+| `CLUSTER_CN_MAX` | 4.5 | neighbours | `context/shells.js` (`clusterElementsOf`) | An element whose own first shell holds at most this many may form finite clusters: "no order" needs `analyze_clusters` on it |
 | `CLUSTER_RESULT_BUDGET` | 4 500 | characters | `copilotTools.js` | `analyze_clusters`' own result budget |
 | `SPLIT_SHELL_REACH_A`, `IDEAL_COORDINATION`, `CN_MATCH_TOLERANCE` | 0.5, [4, 6, 8, 12], 0.5 | Å; atoms; atoms | `context/shells.js` | A later peak within the reach joins a shell cut at a deep trough when the summed CN is an ideal count (review L1); two counts agree within `CN_MATCH_TOLERANCE` (`cnMatches`: the Workbench's named polyhedron, the answer checks, the octahedron/tetrahedron reading; `IDEAL_CN_TOLERANCE` until 2026-10-19) |
 | `SEPARATION_G_FRACTION` | 0.02 | of the first peak | `context/shells.js` | $\tilde g$ at the shell boundary above this: shells not separated; raw $g$ just above a closest-approach constraint above this: the constraint limits the pair (one constant since 2026-10-19, for `CONSTRAINT_PILEUP_FRACTION`, `SHELL_OVERLAP_FRACTION` and `PAIR_FLAG_FRACTION`) |
