@@ -18,7 +18,7 @@ import { buildAskUserTool } from '../../llm/copilot/askUser';
 import { buildClarifier } from '../../llm/copilot/clarify';
 import { buildRunTools } from '../../llm/copilot/runTools';
 import { buildReadSkillTool } from '../../llm/copilot/skills';
-import { executeToolCall, stepStatus } from '../../llm/copilot/tools';
+import { executeToolCall, toolResult } from '../../llm/copilot/tools';
 import { createVerification } from '../../llm/copilot/verification';
 import { buildRunContext } from '../../llm/context/runContext';
 import { buildCase, DEV_CASES } from '../../../validation/cases';
@@ -108,10 +108,10 @@ export const openCorpusRun = async (key = 'Demo') => {
 /**
  * An entry's recorded steps, run as the agent loop runs a model's calls
  * (executeToolCall: arguments parsed and validated): `results` per step, and
- * `steps` as the loop records them with the verification — each with its
- * status, error and facts. A question, a skill read or a view tool is not run
- * here (it returns no facts) and is recorded as the loop records it: no
- * analysis.
+ * `steps` as the loop records them with the verification — each the call's
+ * ToolResult (its result status, error and facts) with the tool's name and
+ * kind. A question, a skill read or a view tool is not run here (it returns
+ * no facts) and is recorded as a call that answered: no analysis.
  */
 export const runSteps = async (tools, steps) => {
     const results = [];
@@ -122,14 +122,12 @@ export const runSteps = async (tools, steps) => {
         const kind = { interactive: Boolean(tool.interactive), reading: Boolean(tool.keep), view: Boolean(tool.view) };
         if (kind.interactive || kind.reading || kind.view) {
             results.push({ step, result: null });
-            recorded.push({ name: step.name, args: step.args || {}, status: 'ok', error: null, executed: true, ...kind });
+            recorded.push({ name: step.name, ...kind, ...toolResult({ args: step.args || {} }) });
             continue;
         }
         const result = await executeToolCall(tool, JSON.stringify(step.args || {}), { timeoutMs: 120_000 });
         results.push({ step, result });
-        recorded.push({
-            name: step.name, args: result.args, status: stepStatus(result), error: result.error || null, executed: true, ...kind, facts: result.facts
-        });
+        recorded.push({ name: step.name, ...kind, ...result });
     }
     return { results, steps: recorded };
 };

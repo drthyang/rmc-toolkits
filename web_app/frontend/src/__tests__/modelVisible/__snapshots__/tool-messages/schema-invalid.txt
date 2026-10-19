@@ -1,0 +1,4 @@
+# The tool messages the model reads: arguments the schema refuses
+# echo({ value: 99, colour, size }): value above its maximum, two unknown keys dropped with a note each
+## messages[3] · tool · call_1_0
+{"error":"value must be ≤ 10, got 99","checks":[{"level":"note","text":"ignored unknown argument \"colour\""},{"level":"note","text":"ignored unknown argument \"size\""}]}

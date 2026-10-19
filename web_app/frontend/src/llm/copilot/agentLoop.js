@@ -2,14 +2,15 @@
 // Copyright (C) 2026 Tsung-Han Yang
 
 import { asModelPort, ToolsUnsupportedError } from '../provider/model';
-import { ASK_USER, MAX_QUESTIONS, answerResult } from './askUser';
+import { ASK_USER, MAX_QUESTIONS } from './askUser';
 import { resolveClarification } from './clarify';
-import { beforeStall, keyNumbers, repeatsItself, textToolCalls, withDeadlines } from './robustness';
+import { beforeStall, repeatsItself, textToolCalls, withDeadlines } from './robustness';
 import {
     accumulateToolCall, canonicalJson, finalizeToolCalls, parseToolArguments, validateToolArguments
 } from './toolCalls';
 import {
-    executeToolCall, fitToBudget, stepStatus, toolCards, toolLabel, toRequestTools, usableTools
+    compactToolMessage, executeToolCall, questionResult, repeatedCall, severityOf, skippedCall, toolCards, toolLabel,
+    toolMessage, toRequestTools, unknownToolCall, usableTools, withNote
 } from './tools';
 import { createTurnPolicy } from './turnPolicy';
 import { createVerification } from './verification';
@@ -44,8 +45,28 @@ import { createVerification } from './verification';
 //                                                  context guard, a spend cap) has none
 //   { type: 'text', delta } / { type: 'reasoning', delta }
 //   { type: 'tool_start', id, name, label, args, page, cards, interactive }
-//   { type: 'tool_end', id, name, status, args, data, checks, error, ms, cached, ref, analysis, pageParams }
-//                                                  ref: the result's reference (null on an error);
+//   { type: 'tool_end', id, name, status, resultStatus, args, data, checks, error, note, choice,
+//     ms, cached, ref, analysis, pageParams }       the step's end: the transcript
+//                                                  of the call, its ToolResult as the
+//                                                  tool contract decided it (tools.js),
+//                                                  never re-derived here:
+//                                                  status: its severity (severityOf:
+//                                                  'ok' | 'warn' | 'failed');
+//                                                  resultStatus: how it ended ('ok',
+//                                                  'refused', 'error', 'unknown_tool',
+//                                                  'skipped');
+//                                                  data: what the model read (the
+//                                                  result fitted to its budget; a
+//                                                  Workbench question's own data,
+//                                                  which is not sent);
+//                                                  note: what the app told the model
+//                                                  beside the result (a Workbench
+//                                                  question: the text it read in its
+//                                                  place), or null;
+//                                                  choice: the user's reply to a
+//                                                  question, or null;
+//                                                  ref: the result's reference (null on
+//                                                  an error and for a Workbench question);
 //                                                  analysis: the step is an analysis
 //                                                  (verification isAnalysis; the footer counts these)
 //   { type: 'tools_unsupported', error }           the port's ToolsUnsupportedError on the
@@ -135,24 +156,26 @@ export const DEFAULT_LIMITS = {
 // before a tool call) is sent as null: Anthropic rejects empty text blocks.
 export const assistantContent = (text) => (typeof text === 'string' && text.trim() ? text : null);
 
-const compactToolMessage = (content) => {
-    try {
-        const { ref, checks, error, data, compacted } = JSON.parse(content);
-        // Already compacted: compacting again would lose its numbers.
-        if (compacted) return content;
-        const key = error ? null : keyNumbers(data);
-        return JSON.stringify({
-            // The ref still resolves: the app keeps the result it sent.
-            ...(ref ? { ref } : {}),
-            compacted: `this earlier result was shortened to fit the context; its checks${key ? ' and headline numbers' : ''} are kept`,
-            ...(error ? { error } : {}),
-            ...(checks ? { checks } : {}),
-            ...(key ? { key } : {})
-        });
-    } catch {
-        return JSON.stringify({ compacted: 'this earlier result was shortened to fit the context' });
-    }
-};
+// The step's end (see the header): the result as the tool contract decided
+// it, with what the model read of it.
+const toolEnd = ({ id, name, result, data, ref, analysis, pageParams }) => ({
+    type: 'tool_end',
+    id,
+    name,
+    status: severityOf(result),
+    resultStatus: result.resultStatus,
+    args: result.args,
+    data,
+    checks: result.checks,
+    error: result.error,
+    note: result.note,
+    choice: result.choice ?? null,
+    ms: result.ms,
+    cached: result.cached,
+    ref,
+    analysis,
+    pageParams
+});
 
 // What "Open <page>" should load on that page to show this step's analysis:
 // the tool's own mapping of its validated arguments, or null.
@@ -178,21 +201,6 @@ const addNote = (messages, note) => {
 
 // How often (in new characters) a streaming reply is checked for a loop.
 const LOOP_CHECK_CHARS = 400;
-
-// The tool message the model reads: the result (fitted to the budget) and
-// the checks, or the error. Checks are never trimmed: they are the verdict.
-// Returns the message text and the fitted data, which the step shows as the
-// result sent to the model.
-const toolMessageContent = ({ data, checks, error, note }, budget, ref = null) => {
-    const message = {};
-    if (ref && !error) message.ref = ref;
-    if (error) message.error = error;
-    if (note) message.note = note;
-    if (checks?.length) message.checks = checks;
-    const head = JSON.stringify(message).length;
-    if (!error) message.data = fitToBudget(data, Math.max(400, budget - head));
-    return { content: JSON.stringify(message), data: error ? null : message.data };
-};
 
 // The turn's clock when none is given (ms).
 const DEFAULT_CLOCK = Object.freeze({ now: () => Date.now() });
@@ -252,8 +260,12 @@ export async function* runCopilotTurn({
     // The window choices made in this turn (clarify.js), by (centre, partner, window).
     const clarifySession = { windows: new Map() };
     // One question the Workbench asks itself, shown as an ask_user step: the
-    // user's reply and the time the user took (off the turn's time).
-    async function* askFromApp(item) {
+    // user's reply, what it means (`resolve(reply)`: clarify.js
+    // resolveClarification, with `told`, the text the model reads of it, and
+    // `confirmed`), and the time the user took (off the turn's time). The
+    // question sends no tool message and takes no ref; its step carries what
+    // the model was told as its note, and the user's reply as its choice.
+    async function* askFromApp(item, resolve) {
         appQuestions += 1;
         const id = `app_ask_${appQuestions}`;
         const args = {
@@ -266,9 +278,10 @@ export async function* runCopilotTurn({
         const reply = await toolContext.askUser(item.request, { signal });
         const ms = now() - started;
         questions += 1;
-        const { data, checks } = answerResult(item.request, reply);
-        yield { type: 'tool_end', id, name: ASK_USER, status: 'ok', args, data, checks, error: null, ms, cached: false, pageParams: null };
-        return { reply, ms };
+        const resolved = resolve(reply);
+        const result = withNote(questionResult(item.request, reply, { args, ms, confirmed: resolved.confirmed ?? null }), resolved.told);
+        yield toolEnd({ id, name: ASK_USER, result, data: result.data, ref: null, analysis: false, pageParams: null });
+        return { ms, resolved };
     }
 
     // The time the Workbench's question before the first request waited.
@@ -276,10 +289,12 @@ export async function* runCopilotTurn({
     if (canAsk() && questionText) {
         const item = clarifier.beforeTurn(questionText);
         if (item) {
-            const { reply, ms } = yield* askFromApp(item);
+            const { ms, resolved } = yield* askFromApp(item, (reply) => {
+                const { note } = resolveClarification(item, reply);
+                return { told: `(The Workbench asked: "${item.request.question}" — ${note})` };
+            });
             startWaitedMs = ms;
-            const { note } = resolveClarification(item, reply);
-            questionText = `${questionText}\n\n(The Workbench asked: "${item.request.question}" — ${note})`;
+            questionText = `${questionText}\n\n${resolved.told}`;
             messages[questionIndex] = { ...messages[questionIndex], content: questionText };
         }
     }
@@ -470,12 +485,14 @@ export async function* runCopilotTurn({
                     appNote = `the Workbench applied the user's choice: ${item.note}`;
                 } else if (item && !askedThisRound && canAsk()) {
                     askedThisRound = true;
-                    const { reply, ms } = yield* askFromApp(item);
+                    const { ms, resolved } = yield* askFromApp(item, (reply) => {
+                        const read = resolveClarification(item, reply, { args: validated.value, tool, session: clarifySession });
+                        return { ...read, told: `the Workbench asked the user about the window: ${read.note}` };
+                    });
                     waitedMs += ms;
-                    const resolved = resolveClarification(item, reply, { args: validated.value, tool, session: clarifySession });
                     runArguments = JSON.stringify(resolved.args);
                     parsed = { ok: true, value: resolved.args };
-                    appNote = `the Workbench asked the user about the window: ${resolved.note}`;
+                    appNote = resolved.told;
                     answered = true;
                 }
             }
@@ -492,32 +509,24 @@ export async function* runCopilotTurn({
                 reading: Boolean(tool?.keep)
             };
 
+            // The call's result, as the tool contract decides it (tools.js):
+            // the loop chooses which constructor answers the call, never the
+            // status.
             let result;
-            let note = null;
-            let cached = false;
-            // Whether the tool really ran (or its identical earlier run is
-            // repeated): not a skipped call, an unknown name or a refused question.
-            let executed = false;
             if (position >= maxCallsPerRound) {
-                result = { args: shownArgs, data: null, checks: [], ms: 0,
-                    error: `skipped: at most ${maxCallsPerRound} tool calls per step — call it again in the next step if it is still needed` };
+                result = skippedCall(shownArgs, 'call_limit', maxCallsPerRound);
             } else if (!tool) {
-                result = { args: shownArgs, data: null, checks: [], ms: 0,
-                    error: `unknown tool "${call.name}"; available: ${[...byName.keys()].join(', ') || 'none'}` };
+                result = unknownToolCall(shownArgs, call.name, [...byName.keys()]);
             } else if (tool.interactive && askedThisRound) {
-                result = { args: shownArgs, data: null, checks: [], ms: 0,
-                    error: 'one question at a time: ask the next one after this answer, if it is still needed' };
+                result = skippedCall(shownArgs, 'one_question');
             } else if (tool.interactive && questions >= maxQuestions) {
-                result = { args: shownArgs, data: null, checks: [], ms: 0,
-                    error: `already asked ${questions} question${questions === 1 ? '' : 's'} for this request: `
-                        + 'proceed with your default and say in the answer what you assumed' };
+                result = skippedCall(shownArgs, 'question_limit', questions);
             } else if (tool.interactive) {
                 // A question is a real exchange every time: never cached, and
                 // no time limit while the user thinks. Only a question the
                 // user saw counts toward the limit (not malformed arguments).
                 askedThisRound = true;
                 result = await executeToolCall(tool, call.arguments, { signal, timeoutMs: null, context: toolContext });
-                executed = true;
                 waitedMs += result.ms;
                 if (!result.error) questions += 1;
             } else {
@@ -527,18 +536,15 @@ export async function* runCopilotTurn({
                 // real request (point at the card again), never a cached result.
                 const key = validated?.ok && !tool.view ? `${call.name}:${canonicalJson(validated.value)}` : null;
                 if (key && cache.has(key)) {
-                    result = { ...cache.get(key), ms: 0 };
-                    cached = true;
-                    executed = true;
-                    note = 'identical call earlier in this question — the same result is repeated; change the arguments or answer';
+                    result = repeatedCall(cache.get(key));
                 } else {
                     result = await executeToolCall(tool, runArguments, { signal, timeoutMs: toolTimeoutMs, context: toolContext });
-                    executed = true;
                     if (key && !result.error) cache.set(key, result);
                 }
             }
-            if (appNote) note = note ? `${appNote}; ${note}` : appNote;
-            if (answered || (!result.error && !cached)) progressed = true;
+            // The Workbench's note goes before the repeat's.
+            result = withNote(result, appNote);
+            if (answered || (!result.error && !result.cached)) progressed = true;
 
             if (!tool?.keep) toolMessages.push(messages.length);
             const budget = Number.isFinite(tool?.resultBudget) && tool.resultBudget > 0 ? tool.resultBudget : resultCharBudget;
@@ -546,28 +552,20 @@ export async function* runCopilotTurn({
             // can quote by reference gets its ref, kept with the data it was
             // sent; its facts are for the checks on the answer.
             const sent = verify.record({
-                name: call.name, args: result.args, status: stepStatus(result), error: result.error || null,
-                interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view), executed,
-                facts: result.facts
-            }, (ref) => toolMessageContent({ ...result, note }, budget, ref));
+                name: call.name, interactive: Boolean(tool?.interactive), reading: Boolean(tool?.keep), view: Boolean(tool?.view), ...result
+            }, (ref) => toolMessage(result, { budget, ref }));
             messages.push({ role: 'tool', tool_call_id: call.id, content: sent.content });
             keepWithinTurnBudget(roundStart);
-            yield {
-                type: 'tool_end',
+            yield toolEnd({
                 id: stepId,
                 name: call.name,
-                status: stepStatus(result),
-                args: result.args,
+                result,
                 // What the model read: the result fitted to its budget.
                 data: sent.data,
-                checks: result.checks,
-                error: result.error,
-                ms: result.ms,
-                cached,
                 ref: sent.ref,
                 analysis: sent.analysis,
                 pageParams: result.error ? null : pageParamsFor(tool, result.args)
-            };
+            });
         }
         // The next request carries this round's results.
         step = policy.next({ kind: 'round', progressed, waitedMs });

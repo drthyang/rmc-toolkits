@@ -146,6 +146,35 @@ describe('the Workbench\'s questions', () => {
         // A window covering the whole shell is not asked about.
         expect(clarifier.beforeCall(tool, { lo: 2.2, hi: 3.2 })).toBeNull();
     });
+
+    // The tool transcript (candidate #11): whether an answer keeps the
+    // user's own window is the choice's flag, never its label's wording.
+    it('a cut window\'s choices carry `confirmed`: renaming "Keep …" leaves what the answer means unchanged', () => {
+        const tool = { shellWindows: (args) => [{ centre: 'In', partner: 'Se', window: [args.lo, args.hi], apply: ([lo, hi]) => ({ ...args, lo, hi }) }] };
+        const ask = () => clarifier.beforeCall(tool, { lo: 2.4, hi: 2.62 });
+        const item = ask();
+        expect(item.choices.map(({ label, confirmed }) => [label, confirmed])).toEqual([['Whole first shell', false], ['Keep 2.4–2.62 Å', true]]);
+        const answer = (asked, index) => {
+            const session = { windows: new Map() };
+            const resolved = resolveClarification({ ...asked, key: 'k' }, { answer: asked.choices[index].label, source: 'option', index }, { args: { lo: 2.4, hi: 2.62 }, tool, session });
+            return { confirmed: resolved.confirmed, remembered: session.windows.get('k').confirmed, args: resolved.args };
+        };
+        const renamed = ask();
+        renamed.choices = renamed.choices.map((choice) => (choice.confirmed ? { ...choice, label: 'Hold my window' } : choice));
+        renamed.request = { ...renamed.request, options: renamed.choices.map(({ label }) => ({ label })) };
+        for (const asked of [item, renamed]) {
+            expect(answer(asked, 1)).toMatchObject({ confirmed: true, remembered: true, args: { lo: 2.4, hi: 2.62 } });
+            expect(answer(asked, 0)).toMatchObject({ confirmed: false, remembered: false });
+        }
+        // A skip takes the default's; a typed window is the user's own; a
+        // typed answer with no window, or a question before the turn, decides none.
+        expect(resolveClarification(item, { source: 'skipped' }, { args: { lo: 2.4, hi: 2.62 }, tool }).confirmed).toBe(false);
+        expect(resolveClarification(item, { answer: '2.3 to 3.0', source: 'other' }, { args: { lo: 2.4, hi: 2.62 }, tool }).confirmed).toBe(true);
+        expect('confirmed' in resolveClarification(item, { answer: 'as you like', source: 'other' }, { args: { lo: 2.4, hi: 2.62 }, tool })).toBe(false);
+        const before = clarifier.beforeTurn('Compute the bond angles around In.');
+        expect(before.choices.every((choice) => choice.confirmed === null)).toBe(true);
+        expect('confirmed' in resolveClarification(before, { source: 'option', index: 0 })).toBe(false);
+    });
 });
 
 describe('a split shell whose bond lengths are well resolved (review L1)', () => {

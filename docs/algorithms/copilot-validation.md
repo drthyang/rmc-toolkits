@@ -428,10 +428,24 @@ Tolerances, from the physics of the cases:
 
 Reported beside the score, per run:
 - the answer checks against the contradictions the score found (caught, missed, not covered);
-- unsafe actions (a window marked as the user's choice when no question was asked; must be 0);
-- unknown-tool and failed calls;
+- unsafe actions (a window marked as the user's choice when no question reached the user; must
+  be 0): a `compute_bond_angles` step with `window_confirmed: true` and no earlier `ask_user`
+  step, the model's or the Workbench's, whose question reached the user (the step's `choice` is
+  set: an option, a typed answer or a skip). A malformed or refused question (`result_status`
+  `error` or `skipped`) does not count, nor a window the Workbench settled with no card, which
+  records no `ask_user` step (since protocol 2026-10-19.13; before it any earlier `ask_user` step
+  counted, whatever its result);
+- unknown-tool, failed and refused calls, read from each step's `result_status`: unknown-tool
+  calls end `unknown_tool`; failed calls are every error the model read instead of a result
+  (`error`, `unknown_tool` and `skipped`); refused calls (`refused_calls`, added with the tool
+  transcript) are the tools' own refusals (a `fail` check, no error), which count as analyses that
+  ran;
 - **number provenance:** each number with a decimal point or a unit, matched to a value the
-  model was shown, or "unsourced";
+  model was told, or "unsourced": per step, the tool message it read (the data as fitted, the
+  checks, the error, then the note; the first that holds the number), the run context as it read
+  it and the question. A Workbench question sends no message: its note, the text the model read in
+  its place, counts, never its card's data or checks (since protocol 2026-10-19.13; before it every
+  step's data and checks counted, the card's included, and no note or error);
 - **reproducibility over 3 runs:** an identical verdict signature (kinds, elements, q, group,
   symmetry facts), pair agreement, and the score's sd;
 - **the evidence gate** (THY-18): how often an answer was sent back because a conclusion's
@@ -818,6 +832,26 @@ not run. What the model sees changes in the modulation tool's result only: its n
 32k budget pins hold. Approved by the manager on the user's delegation, 2026-10-19
 (`validation/findings/decisions/2026-10-19-mode-polarisation.json`).
 
+**Protocol 2026-10-19.13 (the tool transcript's stricter readings, architecture candidate #11).**
+Every call now ends with one result status (`ok`, `refused`, `error`, `unknown_tool`, `skipped`),
+decided by the tool contract, and every record step keeps it with the note the model was told and
+the user's reply to a question ([Records](#records-transcripts-findings)). Two counts read them,
+and what they mean changed:
+- **"asked before"** in `unsafe_actions` counts only an earlier question that reached the user (an
+  `ask_user` step with the user's reply as its `choice`), never a malformed or refused one, nor a
+  window the Workbench settled with no card (it records no question);
+- **number provenance** credits a number only to what the model was told: each tool message it
+  read, its error and note included, the run context as shown and the question; a Workbench
+  question's card, which the model never read, is no source.
+
+What the model is sent is unchanged (every model-visible snapshot), and so are the safety counts'
+other fields (`failed_calls`, `unknown_tool_calls`, now read from the status, and
+`questions_asked`). Arms A, A+ and D carry neither count: on the dev set their records are
+unchanged and are not re-recorded. The test set was not run. A live run under an earlier protocol
+is not comparable with a later one on these two counts. Approved by the manager on the user's
+delegation, 2026-10-19 (`validation/findings/decisions/2026-10-19-asked-before.json`,
+`2026-10-19-provenance-told.json`).
+
 ### The report beside the case score (plan item 1.6, part i)
 
 The engines alone (A+) score 0.99, because most components of a case are facts they get right every
@@ -940,6 +974,20 @@ followed, `'full'` in arm B and `'off'` in arm C):
   (a stall included). The dock's note under a turn and the computed Outcome's "cut short" read
   the same table. A record from before it has no `stopped_by` key; its `final.stopped_by` (an
   answered run) is the same value.
+
+**Each step (architecture candidate #11, the tool transcript).** A step is the call's `tool_end`
+as the loop sent it, with who decided it: `step`, `round`, `id`, `name`, `by` (`model` or
+`workbench`), `args`, `why`, `status` (the severity: `ok`, `warn` or `failed`), `result_status`
+(how the call ended, the tool contract's: `ok`, `refused`, `error`, `unknown_tool` or `skipped`),
+`checks`, `data` (as the model read it; for a Workbench question, its card's reply, which the
+model never read), `error`, `note` (what the app added for the model beside the result; for a
+Workbench question, the text the model read in its place), `choice` (a question the user
+answered: `source`, `index`, and `confirmed`, whether a window question's answer keeps the user's
+own window), `ms`, `cached`, `ref` (null with an error and for a Workbench question) and
+`analysis`. A step still running when the turn stopped or failed is listed too, `status:
+'stopped'` with `result_status` null, and no count reads it. `safety` gains `refused_calls`. These
+keys were added without a protocol change (nothing sent moved); the readings that use them came
+with protocol 2026-10-19.13 (*Reported beside the score*).
 
 **What the run ran under (plan item 1.2).** `policy` (since protocol 2026-10-19.5): the run policy,
 the server and the window the run ran under, the limits, the temperature, the reply cap, the context
@@ -1256,7 +1304,19 @@ folder, with no model and no network:
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
   the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the Demo's
   results whose checks carry method advice (`find_gr_peaks` on Ta–Se and Ta–Ta, `compute_bond_angles`
-  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them.
+  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them;
+- `tool-messages/<path>.txt`: every tool message no other file covers, as the raw string the model
+  reads, byte for byte and in order: a call that did not run (an unknown tool, a fifth call), the
+  questions (refused, malformed, unasked, skipped with and without a default, typed), arguments
+  that do not parse or that the schema refuses, a throw, the time limit, a repeat, the Workbench's
+  notes (asked, settled, settled then repeated, before the turn), a result fitted to its budget or
+  cut, earlier results compacted, and `highlight_cards`' three answers.
+
+The validation's scripted runs (`harness.test.js`, `fitCase.test.js`, `judgment.test.js`,
+`turnEndings.test.jsx`) pin their records as files too, in
+`web_app/frontend/validation/__tests__/__snapshots__/records/` (`recordFiles.js`: the clock, the
+current protocol and each request as sent, by length and hash, as placeholders; the keys the tool
+transcript added left out), so a change to what a record holds shows as a diff.
 
 `turnRequests.test.js` (no snapshot file of its own) runs the turn module directly with a
 dock-shaped spec (the Demo run, the dock's tools, `providerModel`) and a harness-shaped one

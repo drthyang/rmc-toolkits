@@ -6,7 +6,7 @@
 // turn, and the footer's count of analyses.
 
 import { describe, expect, it } from 'vitest';
-import { applyTurnEvent, closeTurn, newAssistantTurn, stepSummary } from '../copilot/turnState';
+import { applyTurnEvent, closeTurn, newAssistantTurn, questionReply, stepSummary } from '../copilot/turnState';
 
 const fold = (events) => events.reduce((turn, event) => applyTurnEvent(turn, event, 0), newAssistantTurn(0));
 const tool = (id, end = {}) => [
@@ -96,5 +96,38 @@ describe('the footer counts analyses as the Outcome does', () => {
         expect(stepSummary(closeTurn(turn, 'stopped').items)).toBe('2 analyses · 1 warning · 1 failed');
         expect(stepSummary(fold(tool('highlight_cards', { analysis: false })).items)).toBe('');
         expect(stepSummary(fold(tool('list_sites', { analysis: true })).items)).toBe('1 analysis');
+    });
+});
+
+// The tool transcript (candidate #11): a step keeps how its call ended, the
+// app's note and the user's choice, as tool_end carries them; a question's
+// card and the screen reader read its state from them.
+describe('a step keeps its result: the status, the note, the choice', () => {
+    it('null while it runs and once stopped; tool_end\'s at its end', () => {
+        const running = fold(tool('list_sites', null));
+        expect(running.items[0]).toMatchObject({ status: 'running', resultStatus: null, note: null, choice: null });
+        expect(closeTurn(running, 'stopped').items[0]).toMatchObject({ status: 'stopped', resultStatus: null });
+        const ended = fold(tool('list_sites', { resultStatus: 'ok', cached: true, note: 'identical call earlier in this question', analysis: true }));
+        expect(ended.items[0]).toMatchObject({ status: 'ok', resultStatus: 'ok', cached: true, note: 'identical call earlier in this question', choice: null });
+    });
+
+    it('a question\'s state, from its result and the user\'s choice', () => {
+        const question = (end) => fold([
+            { type: 'tool_start', id: 'q', name: 'ask_user', label: 'Question for you', args: { question: 'Which?' }, interactive: true },
+            ...(end ? [{ type: 'tool_end', id: 'q', name: 'ask_user', status: 'ok', resultStatus: 'ok', args: {}, checks: [], error: null, ms: 1, ref: null, ...end }] : [])
+        ]).items[0];
+        expect(questionReply(question(null))).toEqual({ state: 'waiting', text: '' });
+        expect(questionReply(closeTurn({ ...newAssistantTurn(0), items: [question(null)] }, 'stopped').items[0])).toEqual({ state: 'stopped', text: 'Not answered' });
+        expect(questionReply(question({ status: 'failed', resultStatus: 'skipped', error: 'one question at a time', data: null })))
+            .toEqual({ state: 'not_asked', text: 'one question at a time' });
+        expect(questionReply(question({ status: 'failed', resultStatus: 'error', error: 'the user cannot be asked here', data: null })).state).toBe('not_asked');
+        expect(questionReply(question({ data: { answer: 'Whole shell', skipped: true }, choice: { source: 'skipped', index: null, confirmed: false } })))
+            .toEqual({ state: 'skipped', text: 'Skipped: the Copilot uses its default, Whole shell.' });
+        expect(questionReply(question({ data: { answer: null, skipped: true }, choice: { source: 'skipped', index: null, confirmed: null } })))
+            .toEqual({ state: 'skipped', text: 'Skipped.' });
+        expect(questionReply(question({ data: { answer: 'First peak' }, choice: { source: 'option', index: 1, confirmed: null } })))
+            .toEqual({ state: 'answered', text: 'First peak' });
+        // The words the model read play no part: "skipped" in the data alone is no skip.
+        expect(questionReply(question({ data: { answer: 'A', skipped: true }, choice: { source: 'option', index: 0, confirmed: null } })).state).toBe('answered');
     });
 });

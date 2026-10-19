@@ -1,0 +1,6 @@
+# The tool messages the model reads: the Workbench asked before the turn
+# a bond-angle question naming only Ta: the Workbench asks which neighbours, the user skips; no tool message, the question as read
+## messages[3] · user (the question as the model reads it)
+Compute the bond angles around Ta.
+
+(The Workbench asked: "Which bond angles around Ta?" — the user chose Se–Ta–Se: Se around Ta in the whole first Ta–Se shell, 2.21–3.23 Å (CN 6). Use exactly this. (The user skipped the question; this is the default.))
