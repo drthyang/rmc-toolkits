@@ -7818,14 +7818,29 @@
  },
  {
   "id": "dev-weak-order-b__A+",
-  "protocol": "2026-10-19.9",
-  "commit": "3de8fc5eb093a09fdafccfa58a0a7703c57e2267",
+  "protocol": "2026-10-19.16",
+  "commit": "303e68e195d4c0e883cb3358f2c9b258a5d01c86",
   "case": "dev-weak-order-b",
   "split": "dev",
   "arm": "A+",
   "model": null,
   "verdict": {
-   "features": [],
+   "features": [
+    {
+     "kind": "modulation",
+     "element": "Nb",
+     "direction_uvw": [
+      -0.07,
+      -0.01,
+      1
+     ],
+     "q": [
+      0.5,
+      0.5,
+      0
+     ]
+    }
+   ],
    "space_group": "Pm-3m",
    "chiral": false,
    "centrosymmetric": true,
@@ -7836,9 +7851,18 @@
    "null_case": false,
    "features": [
     {
+     "planted": "modulation",
+     "found": true,
+     "claim_index": 0,
      "kind": "modulation",
      "element": "Nb",
-     "found": false
+     "q_claimed": [
+      0.5,
+      0.5,
+      0
+     ],
+     "q_ok": true,
+     "accurate": true
     }
    ],
    "spurious": [],
@@ -7851,7 +7875,7 @@
     "polar": "right"
    },
    "contradictions": [],
-   "score": 0.8333
+   "score": 1
   },
   "readings": [
    {
@@ -7971,9 +7995,20 @@
       "longWave": "false (strongest_not_long_wave)"
      },
      "Nb": {
-      "cellDoubling": "false (no_ordered_point)",
+      "cellDoubling": "true (ordered_point)",
       "generalOrder": "false (no_ordered_mode)",
-      "longWave": "false (strongest_not_long_wave)"
+      "longWave": "false (strongest_not_long_wave)",
+      "polarisation": [
+       {
+        "q": "(0.5, 0.5, 0)",
+        "uvw": [
+         -0.07,
+         -0.01,
+         1
+        ],
+        "share": 1
+       }
+      ]
      },
      "O": {
       "cellDoubling": "false (no_ordered_point)",
@@ -7981,7 +8016,7 @@
       "longWave": "false (strongest_not_long_wave)"
      }
     },
-    "reading": "cell doubling: none; order at a general q: none; long wave: none"
+    "reading": "cell doubling: Nb at (0.5, 0.5, 0); order at a general q: none; long wave: none"
    }
   ],
   "truth": {

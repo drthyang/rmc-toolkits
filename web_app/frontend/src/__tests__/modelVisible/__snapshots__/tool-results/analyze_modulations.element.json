@@ -3,21 +3,25 @@
   "arguments": {
     "element": "Ta"
   },
-  "content_chars": 1748,
+  "content_chars": 2490,
   "content": {
     "ref": "r1",
     "checks": [
       {
         "level": "ok",
-        "text": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Ta at (½, ½, ½), is 0.92× the median, -7.5σ after the correction)."
+        "text": "No order that doubles the cell: no zone-boundary point stands out of the diffuse background (the strongest, Ta at (0, 0, ½), is 0.9× the median, < −8σ after the correction)."
       },
       {
         "level": "note",
         "text": "Ta's strongest mode is a long-wavelength wave, q = (0.1, 0.2, -0.1) at 13× the median: box-scale displacement correlations (common in RMC), not a crystallographic superstructure."
+      },
+      {
+        "level": "note",
+        "text": "Ta displacements are correlated in phase between neighbouring cells (+0.11 between cells [0 1 0] apart, > 8σ against independent cells): the power beyond the long waves leans toward the zone centre — neighbouring cells moving together (as RMC's long waves and acoustic-like thermal motion give), not a superstructure."
       }
     ],
     "data": {
-      "note": "zone_boundary rows are [q, ratio, percentile, sigma]: an element's displacement power at wavevector q (fractions of the cell's reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and the calibrated one-sided significance against independent displacements, corrected over all 21 zone-boundary points of the configuration's 3 elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes of every element), null otherwise. A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells (incommensurate or short-range) that does not.",
+      "note": "zone_boundary rows are [q, ratio, percentile, sigma]: an element's displacement power at wavevector q (fractions of the cell's reciprocal axes) over its median across all q of the supercell grid (the diffuse background), the share of the compared modes (one per ±q pair, long waves with every |q_i| ≤ 0.25 left out) with less power, and the calibrated one-sided significance against independent cells (each cell's own correlations kept), corrected over all 21 zone-boundary points of the configuration's 3 elements, whichever the call names (≥ 3 with ratio ≥ 3 is order). strongest rows are [q, ratio, percentile, sigma]: the sigma of a general q (neither zone boundary nor long wave; a complex sum, corrected over the compared modes of every element), null otherwise. A ½ component is order that doubles the cell along that axis; order at a general q is correlation between cells (incommensurate or short-range) that does not. diffuse is [lag, correlation, sigma]: the strongest correlation between a site's displacements in cells one lag apart that the power over the compared modes shows (+ in phase, − antiphase), and the significance of the 13 neighbour-cell lags together against independent cells (≥ 3 with |correlation| ≥ 0.1: correlation spread over many q).",
       "supercell": [10, 10, 10],
       "wavevectors": 999,
       "elements": [
@@ -25,18 +29,23 @@
           "element": "Ta",
           "sites": 16,
           "zone_boundary": [
-            ["(0, 0, ½)", 0.9, 40.6, -7.7],
-            ["(0, ½, 0)", 0.89, 38.8, -7.8],
+            ["(0, 0, ½)", 0.9, 40.6, null],
+            ["(0, ½, 0)", 0.89, 38.8, null],
             ["(0, ½, ½)", 0.7, 6.6, null],
             ["(½, 0, 0)", 0.7, 6.8, null],
             ["(½, 0, ½)", 0.67, 4.1, null],
             ["(½, ½, 0)", 0.71, 7.3, null],
-            ["(½, ½, ½)", 0.92, 44.4, -7.5]
+            ["(½, ½, ½)", 0.92, 44.4, null]
           ],
           "strongest": [
             ["(0.1, 0.2, -0.1)", 13, 100, null],
             ["(0.2, 0, 0)", 11, 100, null],
             ["(0, 0.1, -0.2)", 8.4, 100, null]
+          ],
+          "diffuse": [
+            "[0 1 0]",
+            0.11,
+            9.1
           ]
         }
       ]

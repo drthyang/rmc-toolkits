@@ -21,6 +21,8 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { shellCatalogue } from '../../src/llm/context/shells';
+import { displacementModulations } from '../../src/workers/modulations';
+import { siteDisplacementsFromRmc6f } from '../../src/workers/pcaKde';
 import { buildCase, DEV_CASES, JUDGMENT_SITUATIONS } from '../cases';
 import { runLiveCase } from '../harness';
 import { aggregate, renderJudgment, renderReport } from '../report';
@@ -139,12 +141,33 @@ describe('two situations through the live harness (scripted model, no model runs
         const answer = 'Nb shows a weak superstructure at q = (½, ½, 0), at the edge of significance: I am not confident it is real.'
             + '\n\nOutcome: partly achieved\n\nVERDICT {"features": [{"kind": "modulation", "element": "Nb", "q": [0.5, 0.5, 0]}], '
             + '"space_group": "Pm-3m", "chiral": false, "centrosymmetric": true, "polar": false}';
-        const run = (id) => runLiveCase({
-            built: judgedCase(id), arm: 'C', model: MODEL,
+        const run = (built) => runLiveCase({
+            built, arm: 'C', model: MODEL,
             port: scripted([{ calls: [['analyze_modulations', {}]] }, { text: answer }])
         });
-        const below = await run('dev-weak-order-b');
-        const above = await run('dev-weak-order-a');
+        // Against the independent-cell null (F1, protocol 2026-10-19.16) both
+        // dev weak orders are above the bar (6.4σ and 5.6σ): below it, the
+        // same kind at two thirds of their amplitude, the first draw upward
+        // from the pair's own whose σ at q lies in [2.5, 3) (the pair's rule).
+        // Their amplitude was set from the null before F1 (the case
+        // definitions are the user's to re-set).
+        const weak = JUDGED.find((item) => item.id === 'dev-weak-order-b');
+        const sigmaAtQ = (built) => {
+            const result = displacementModulations(siteDisplacementsFromRmc6f(built.rmc6f));
+            return result.elements.find((entry) => entry.element === weak.params.elements[1]).zoneBoundary
+                .find((entry) => entry.q.join() === weak.params.q.join()).sigma;
+        };
+        const weakerDelta = Math.round((2e4 * weak.params.delta) / 3) / 1e4;
+        let draw = weak.params.seed;
+        let params = null;
+        while (!params) {
+            const trial = { ...weak.params, delta: weakerDelta, seed: draw };
+            const sigma = sigmaAtQ(buildCase({ ...weak, params: trial }, { partials: false }));
+            if (sigma >= 2.5 && sigma < 3) params = trial;
+            draw += 1;
+        }
+        const below = await run(buildCase({ ...weak, params }));
+        const above = await run(judgedCase('dev-weak-order-a'));
         for (const record of [below, above]) {
             expect(record.error).toBeNull();
             // The verdict has no confidence field: the hedged claim counts in full.

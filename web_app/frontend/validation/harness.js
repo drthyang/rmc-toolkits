@@ -147,6 +147,12 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // first_shell.split, its description and its joined-shell note (which no
 // longer quotes the peaks' separation); arm A+ reads a Jahn–Teller claim's
 // magnitude from it;
+// 2026-10-19.16: the modulation engines test against independent cells, each
+// cell's own correlations kept (F1: sites sharing a cell-level variable no
+// longer read as order, and an independent site is no longer held to the
+// one-component bound, so both dev weak orders are above the bar), and give
+// each element's diffuse order between cells (plan item 4.4), which
+// analyze_modulations says and A+ does not read;
 // 2026-10-19.17: the Displacement Directions page and the tool at the same
 // settings (plan item 2.5) — the page opens at the engine's resolution (Auto)
 // and reads every readout from the raw histogram, so arm A (and A+, through
