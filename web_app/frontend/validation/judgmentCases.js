@@ -8,10 +8,11 @@
 // tools that read the same atoms differently, a choice only the user can
 // make. cases.js appends them to DEV_CASES and builds them with its kinds.
 //
-// DEV ONLY. Each is `devOnly` until its held-out match exists, and that match
-// is written by a fresh author who never sees these parameters or the dev
-// results: they work from validation/judgment-spec.md alone (the situations,
-// the kinds and the difficulty knobs, no values). Keep these parameters, and
+// Paired since protocol 2026-10-19.11: each has a held-out match in
+// TEST_CASES (same situation, kind and option), written by a fresh author who
+// never saw these parameters or the dev results: they worked from
+// validation/judgment-spec.md alone (the situations, the kinds and the
+// difficulty knobs, no values). Keep these parameters, and
 // every result on these cases, out of that file and out of any text the
 // held-out author reads; the numbers belong in the PR and the baselines.
 //
@@ -30,35 +31,32 @@
 // at q (every element tested, as A+ and analyze_modulations test it) lies in
 // [3, 4], and the first in [2.5, 3).
 
-export const JUDGMENT_DEV_ONLY = 'judgment subset (plan item 1.6 ii): dev only until its held-out match, written by a fresh author '
-    + 'without the dev results, joins the test set';
-
 export const JUDGMENT_DEV_CASES = [
     // Two features at once: Jahn–Teller octahedra whose centre is also
     // off-centred.
     {
-        id: 'dev-jt-off-centre', kind: 'jahn_teller', judgment: true, situation: 'two_features', devOnly: JUDGMENT_DEV_ONLY,
+        id: 'dev-jt-off-centre', kind: 'jahn_teller', judgment: true, situation: 'two_features',
         params: { elements: ['Cs', 'Ag', 'F'], a: 8.5, short: 2.05, long: 2.4, sigma: 0.05, supercell: [6, 6, 6], offCentre: { axis: [0, 0, 1], delta: 0.15 }, seed: 114 }
     },
     // Two tools read differently: eight-site <111> off-centring.
     {
-        id: 'dev-eight-site', kind: 'offcentre', judgment: true, situation: 'two_readings', devOnly: JUDGMENT_DEV_ONLY,
+        id: 'dev-eight-site', kind: 'offcentre', judgment: true, situation: 'two_readings',
         params: { elements: ['Na', 'Nb', 'O'], a: 3.94, supercell: [8, 8, 8], axis: [1, 1, 1], delta: 0.25, wells: 8, seed: 113 }
     },
     // A choice only the user can make: elongated octahedral clusters whose
     // split M–M shell the Workbench joins and asks about.
     {
-        id: 'dev-octahedral-clusters', kind: 'elongated_clusters', judgment: true, situation: 'user_choice', devOnly: JUDGMENT_DEV_ONLY,
+        id: 'dev-octahedral-clusters', kind: 'elongated_clusters', judgment: true, situation: 'user_choice',
         params: { element: 'W', anion: 'Br', a: 8.5, edge: 2.65, elongation: 0.5, sigma: 0.05, supercell: [8, 8, 8], seed: 115 }
     },
     // A signal at the edge of significance: one weak zone-boundary order, two
     // seeds (the rule above).
     {
-        id: 'dev-weak-order-a', kind: 'zone_boundary', judgment: true, situation: 'marginal', devOnly: JUDGMENT_DEV_ONLY,
+        id: 'dev-weak-order-a', kind: 'zone_boundary', judgment: true, situation: 'marginal',
         params: { elements: ['Ag', 'Nb', 'O'], a: 3.95, supercell: [8, 8, 8], q: [0.5, 0.5, 0], axis: [0, 0, 1], delta: 0.018, decoy: null, weak: true, seed: 132 }
     },
     {
-        id: 'dev-weak-order-b', kind: 'zone_boundary', judgment: true, situation: 'marginal', devOnly: JUDGMENT_DEV_ONLY,
+        id: 'dev-weak-order-b', kind: 'zone_boundary', judgment: true, situation: 'marginal',
         params: { elements: ['Ag', 'Nb', 'O'], a: 3.95, supercell: [8, 8, 8], q: [0.5, 0.5, 0], axis: [0, 0, 1], delta: 0.018, decoy: null, weak: true, seed: 133 }
     }
 ];

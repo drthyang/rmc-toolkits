@@ -107,8 +107,10 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 1.8) — no EVIDENCE_RULES, no method sentence in TOOL_RULES or ASK_RULES, the
 // domain rules' definitions and conduct without their inference, no method
 // advice in a tool description or a check, and an evidence-gate send-back
-// that names no analysis; arm B unchanged).
-export const PROTOCOL_VERSION = '2026-10-19.10';
+// that names no analysis; arm B unchanged);
+// 2026-10-19.11: five held-out judgment cases join the test set, written
+// blind from judgment-spec.md).
+export const PROTOCOL_VERSION = '2026-10-19.11';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.
