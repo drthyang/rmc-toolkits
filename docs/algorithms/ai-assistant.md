@@ -722,6 +722,14 @@ quantity:
   only* and asks before an analysis runs in it. Bond-length splits of distorted polyhedra are
   0.1–0.4 Å; the next coordination shell lies a sizeable fraction of the bond further out, and a
   summed count that is no polyhedron (4 + 3) is never joined;
+- **Known limit (F5, decided 2026-10-19): a split M₃/M₄ cluster shell does not join.** A metal
+  triangle or tetrahedron whose edges a distortion splits (1 + 1, 2 + 1) sums to CN 2 or 3, and a
+  join needs an ideal polyhedral count, so the shell stays cut at its first trough and reads the
+  short edges only. Accepting 2 and 3 as ideal counts was tried on the Demo and every dev case and
+  left out. It helps no case and breaks one: on dev-cell-wrap it joins the V–V dimer bond
+  (2.245 Å) to the inter-dimer distance (2.775 Å), so the clusters read "no clusters: extended
+  network" instead of rigid V dimers, and arm A+ falls from 1.00 to 0.83 there
+  ([the evidence](#f5-evidence-accepting-cn-2-and-3-as-ideal-cluster-counts));
 - **`ideal`:** the ideal count $\mathrm{CN}_{B|A}$ matches (`cnMatches`), or null.
 
 `window(centre, partner, [lo, hi], { counts })` reads a caller's window (as given, not rounded)
@@ -749,6 +757,28 @@ single-basis-site self-pairs of Step 7, where $d^{\,\mathrm{avg}}$ is a lattice 
 is meaningless.)
 
 **Code:** `pairCorrelations.js` → `pairCorrelationsContext()`, over `shells.js` → `shellCatalogue()`.
+
+#### F5 evidence: accepting CN 2 and 3 as ideal cluster counts
+
+This was an experiment on main at a24dfdd and was not committed. `shells.js` was given the ideal set
+{2, 3, 4, 6, 8, 12}. The shell of every cluster element was read on the Demo and the dev cases, and
+arms A, A+ and D were run on dev. The test split was not run. The manager decided on the user's
+delegation (2026-10-19) to leave the join as it is; the user may reopen it
+(`validation/findings/decisions/2026-10-19-f5-shell-join.json`).
+
+| Shell | Today (ideal 4, 6, 8, 12) | With 2 and 3 accepted | Is the join the cluster's edge? |
+| --- | --- | --- | --- |
+| dev-cell-wrap V–V | peaks 2.245 and 2.775 Å; window 2.17–2.35 Å, CN 1; clusters: V dimers, rigid (stiffer bonds) | **joins** both peaks: window 2.17–3.12 Å, CN 2, ideal 2; clusters: "no clusters: extended network" | **No.** The dimer bond is the 2.245 Å peak; 2.775 Å is the next V–V distance, between dimers. |
+| dev-breathing Mo–Mo | window 2.39–3.21 Å, CN 2.00, ideal none | ideal 2; no join; window unchanged | — (it reports the same) |
+| Demo Ta–Ta (Ta₄ tetrahedra) | window 2.65–3.33 Å, CN 2.75, ideal none | ideal 3; no join; window unchanged | — (it reports the same) |
+| dev-jahn-teller F–F, dev-symmetry-lowering Ta–Ta | CN 4.00 and 6.00, already ideal | unchanged | — |
+
+- **Arms on dev:** arm A and arm D are unchanged. Arm A+ changes once: dev-cell-wrap falls from 1.00
+  to 0.83, losing the rigid V cluster to the extended-network join. Every other cluster window is
+  identical.
+- **Disclosure:** the experiment's builder saw a structure helper in the generator library that only
+  a held-out case uses. That helper is sealed since #104. The table is evidence for a decision, not
+  a tuned rule.
 
 ---
 
