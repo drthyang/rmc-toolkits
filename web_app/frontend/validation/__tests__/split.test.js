@@ -9,12 +9,13 @@
 // committed code, and a supervisor finding on them cannot propose tuning.
 
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildCase, DEV_CASES, TEST_CASES } from '../cases';
 import { parseFindings, validateFinding } from '../findings';
 import { guardSplit } from '../run';
+import { copilotSkills } from '../../src/copilotSkills';
 import { describeHit, holdoutTokens, readText, scanText } from './holdoutScan';
 
 const FRONTEND = resolve(__dirname, '../..');
@@ -74,48 +75,64 @@ const scannedFiles = () => [
     ...readdirSync(REPO).filter((name) => name.endsWith('.md')).map((name) => join(REPO, name))
 ].filter((path) => !NOT_SCANNED.has(relative(REPO, path)));
 
-// The known hits, each to be reviewed by a person. An entry allows exactly
-// `count` hits of one test case's kind of token in one file: a different
-// count fails, so a new mention in a listed file is still caught and a
-// removed one must leave the list. copilot-validation.md lists these as
-// known risks ("The holdout scan"). Nothing here names a test-case value.
+// Two lists, and nothing in either names a test-case value. An entry covers
+// exactly `count` hits of one test case's kind of token in one file (and, for
+// a leak, on one line): a different count fails, so a new mention there is
+// still caught and a removed one must leave the list.
+//
+// HOLDOUT_ALLOWED: hits the model can never read, in any arm. Model-visible
+// text is the system prompt, the tool descriptions and results, read_skill's
+// output and every skill file (the SKILL.md files and the reference files
+// copilotSkills.js bundles), so an allowed file is none of those, is in no
+// snapshot of what the model sees, and no app module can import it (checked
+// below). copilot-validation.md lists these as known risks.
 const HOLDOUT_ALLOWED = [
-    // By design (docs/AGENT_PLAN.md, section A): the test breathing case's
-    // cluster is the cluster of the skills' reference compound, whose
-    // published distortion this skill describes. A model that has read it may
-    // expect a distortion there; the case plants breathing only.
-    {
-        file: '.claude/skills/coordination-shells/lacunar-spinel-shells.md', case: 'test-breathing', kind: 'cluster', count: 3,
-        reason: 'by design: the skills\' reference compound has the test breathing case\'s cluster'
-    },
-    // FOUND 2026-10-19, to review: the same reference compound's cluster,
-    // outside the skills (the 5 K question of the Copilot's real-model check,
-    // an engine test's synthetic cluster, the cluster engine's synthetic
-    // checks, the Bond Geometry engine's test structures).
+    // FOUND 2026-10-19, reviewed: the skills' reference compound's cluster
+    // (the test breathing case's cluster) in text no model reads.
     {
         file: 'web_app/frontend/src/llm/README.md', case: 'test-breathing', kind: 'cluster', count: 1,
-        reason: 'FOUND 2026-10-19, to review: the reference compound\'s cluster in the real-model check\'s 5 K question'
+        reason: 'doc-only: the module README (the real-model check\'s 5 K question); no app module imports it, read_skill bundles only .claude/skills'
     },
     {
         file: 'web_app/frontend/src/workers/__tests__/triplets.test.js', case: 'test-breathing', kind: 'cluster', count: 1,
-        reason: 'FOUND 2026-10-19, to review: a synthetic cluster of the reference compound in a bond-angle engine test'
+        reason: 'test-only: a synthetic cluster in a bond-angle engine test; no app module imports it'
     },
     {
         file: 'docs/algorithms/ai-assistant.md', case: 'test-breathing', kind: 'cluster', count: 2,
-        reason: 'FOUND 2026-10-19, to review: the cluster engine\'s synthetic checks use the reference compound\'s cluster'
+        reason: 'doc-only: the cluster engine\'s synthetic checks; docs/ is never bundled'
     },
     {
         file: 'docs/algorithms/bond-geometry.md', case: 'test-breathing', kind: 'cluster', count: 1,
-        reason: 'FOUND 2026-10-19, to review: the reference compound\'s cluster among the bond-angle engine\'s test geometries'
+        reason: 'doc-only: among the bond-angle engine\'s test geometries; docs/ is never bundled'
     },
-    // FOUND 2026-10-19, to review: a real-compound fixture of the symmetry
+    // FOUND 2026-10-19, reviewed: a real-compound fixture of the symmetry
     // finder (an orthorhombic Pnma perovskite) whose composition is the test
-    // symmetry-lowering case's; unrelated to the planted shift.
+    // symmetry-lowering case's, unrelated to the planted shift. Imported only by
+    // the symmetry tests in src/__tests__, never by the app, the tools or the
+    // snapshot tests.
     {
         file: 'web_app/frontend/src/__tests__/fixtures/symmetryStructures.js', case: 'test-symmetry-lowering', kind: 'composition', count: 1,
-        reason: 'FOUND 2026-10-19, to review: a symmetry-finder fixture of a real perovskite with the case\'s composition'
+        reason: 'test-only: a symmetry-finder fixture imported only by src/__tests__/*.test.js; never model-visible'
     }
 ];
+
+// HOLDOUT_LEAKS_PENDING_USER: hits the model CAN read. They are leaks, not
+// allowed hits: printed on every run, pinned line by line so a change shows,
+// and left for the user, whose text the skills are. The scan still fails on
+// any hit in neither list. copilot-validation.md lists them as open leaks.
+const LEAK_STATUS = 'reaches arm B via read_skill; awaiting the user\'s decision (skill text is the user\'s)';
+const HOLDOUT_LEAKS_PENDING_USER = [9, 31, 32].map((line) => ({
+    // The skills' reference compound has the test breathing case's cluster,
+    // and this reference file describes its published distortion.
+    file: '.claude/skills/coordination-shells/lacunar-spinel-shells.md', line, case: 'test-breathing', kind: 'cluster', count: 1, status: LEAK_STATUS
+}));
+
+// Every file the model can read: the skill files copilotSkills.js bundles
+// for the prompt and read_skill, anything under .claude/skills, and the
+// snapshots of what the model is sent.
+const SNAPSHOTS = 'web_app/frontend/src/__tests__/modelVisible/__snapshots__/';
+const modelVisible = (file) => file.startsWith('.claude/skills/') || file.startsWith(SNAPSHOTS)
+    || [...Object.keys(copilotSkills.files), ...copilotSkills.references].includes(file);
 
 describe('the holdout scan: no tool, skill, app source or doc names a test case', () => {
     const tokens = TEST_CASES.flatMap((item) => holdoutTokens(item, DEV_CASES));
@@ -138,24 +155,63 @@ describe('the holdout scan: no tool, skill, app source or doc names a test case'
         });
     });
 
-    it('finds nothing outside the reviewed allow-list, and every entry still matches its count', () => {
-        const files = scannedFiles();
-        expect(files.length).toBeGreaterThan(300);
-        const seen = new Map(HOLDOUT_ALLOWED.map((entry) => [entry, 0]));
-        const unexpected = [];
-        files.forEach((path) => {
+    // Every scanned file with its hits, each hit with the list entry that covers it.
+    let scanned = null;
+    const scanAll = () => {
+        if (scanned) return scanned;
+        scanned = scannedFiles().map((path) => {
             const file = relative(REPO, path);
             const read = readText(readFileSync(path, 'utf8'));
-            const hits = scanText(read, tokens);
-            hits.forEach((hit) => {
-                const entry = HOLDOUT_ALLOWED.find((allowed) => allowed.file === file && allowed.case === hit.case && allowed.kind === hit.kind);
-                if (entry) seen.set(entry, seen.get(entry) + 1);
-                else unexpected.push(describeHit(read, hit, hits, file));
-            });
+            const hits = scanText(read, tokens).map((hit) => ({
+                ...hit,
+                text: read.text.slice(...hit.spans[0]),
+                leak: HOLDOUT_LEAKS_PENDING_USER.find((entry) => entry.file === file && entry.line === hit.line && entry.case === hit.case && entry.kind === hit.kind),
+                allowed: HOLDOUT_ALLOWED.find((entry) => entry.file === file && entry.case === hit.case && entry.kind === hit.kind)
+            }));
+            return { file, read, hits };
         });
-        expect(unexpected, 'a held-out test case is named (matched text masked as ■); remove it, or add a reviewed HOLDOUT_ALLOWED entry').toEqual([]);
+        return scanned;
+    };
+    const covered = (entry) => scanAll().flatMap(({ hits }) => hits).filter((hit) => hit.leak === entry || (!hit.leak && hit.allowed === entry));
+
+    it('finds nothing outside the two lists, and every entry still matches its count', () => {
+        const files = scanAll();
+        expect(files.length).toBeGreaterThan(300);
+        const unexpected = files.flatMap(({ file, read, hits }) => hits.filter((hit) => !hit.leak && !hit.allowed)
+            .map((hit) => describeHit(read, hit, hits, file)));
+        expect(unexpected, 'a held-out test case is named (matched text masked as ■): remove it; only text no model can read may be allow-listed').toEqual([]);
+        [...HOLDOUT_ALLOWED, ...HOLDOUT_LEAKS_PENDING_USER].forEach((entry) => {
+            expect(covered(entry).length, `${entry.file}${entry.line ? `:${entry.line}` : ''} ${entry.case} ${entry.kind}: update the count after a review`).toBe(entry.count);
+        });
+    });
+
+    it('reports every leak pending the user\'s decision, each in text the model can read', () => {
+        HOLDOUT_LEAKS_PENDING_USER.forEach((entry) => expect(modelVisible(entry.file), entry.file).toBe(true));
+        if (HOLDOUT_LEAKS_PENDING_USER.length) {
+            console.warn([
+                `HOLDOUT LEAKS PENDING THE USER (${HOLDOUT_LEAKS_PENDING_USER.length}): text the model can read names a held-out test case`,
+                ...HOLDOUT_LEAKS_PENDING_USER.map((entry) => `  ${entry.file}:${entry.line}  ${entry.case} (${entry.kind})  ${entry.status}`)
+            ].join('\n'));
+        }
+    });
+
+    it('allows only text no model can read: no skill, bundled file or snapshot, nothing the app can import', () => {
+        const appModules = filesUnder(join(FRONTEND, 'src'), (path) => /\.(js|jsx)$/.test(path) && !path.includes('__tests__'))
+            .map((path) => readFileSync(path, 'utf8'));
+        const snapshots = filesUnder(join(REPO, SNAPSHOTS), () => true).map((path) => readFileSync(path, 'utf8'));
+        expect(snapshots.length).toBeGreaterThan(10);
+        const bundled = [...Object.keys(copilotSkills.files), ...copilotSkills.references];
+        expect(Object.keys(copilotSkills.files).length).toBeGreaterThan(3);
+        bundled.forEach((file) => expect(existsSync(join(REPO, file)), `bundled skill file ${file}`).toBe(true));
         HOLDOUT_ALLOWED.forEach((entry) => {
-            expect(seen.get(entry), `${entry.file} ${entry.case} ${entry.kind}: update the entry's count after a review`).toBe(entry.count);
+            expect(modelVisible(entry.file), `${entry.file} is model-visible: a hit there is a leak, not an allowed hit`).toBe(false);
+            const stem = entry.file.split('/').pop().replace(/\.[^.]+$/, '');
+            const named = new RegExp(`['"\`][^'"\`\\n]*\\b${stem}\\b[^'"\`\\n]*['"\`]`);
+            expect(appModules.some((text) => named.test(text)), `an app module names ${entry.file}`).toBe(false);
+            covered(entry).forEach((hit) => {
+                const token = new RegExp(`(?<![A-Za-z0-9₀-₉])${hit.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9₀-₉])`);
+                expect(snapshots.some((text) => token.test(text)), `${entry.file}: its matched text is in a snapshot of what the model sees`).toBe(false);
+            });
         });
     });
 });
