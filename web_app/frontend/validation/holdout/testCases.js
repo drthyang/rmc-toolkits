@@ -186,10 +186,10 @@ export const TEST_CASES = [
 //   by the Workbench's CN margin); the long edges empty from 3.11 Å, the nearest Re–Re between
 //   clusters 3.98 Å.
 // - **The coincidence check.** The lead compared these values with the dev cases' without showing
-//   them, and two coincided: test-two-features' A-site element (now Rb, for Cs: the same spectator
-//   role, a 12-coordinate ion of similar size) and test-user-choice's elongation (now 0.36 Å, 25 %
-//   below the first choice, 0.48 Å, with the thermal sd from 0.045 to 0.035 Å, so the
-//   elongation-to-thermal ratio and the deep trough stay). Both rules were re-run unchanged and
+//   them, and two coincided: test-two-features' A-site element (now Rb: a spectator, a
+//   12-coordinate ion) and test-user-choice's elongation (now 0.36 Å, with the thermal sd at
+//   0.035 Å, so the elongation-to-thermal ratio and the deep trough stay). The values that
+//   coincided are not kept here: they would tell a later author a dev value. Both rules were re-run unchanged and
 //   took their first seeds again (211, 241); the numbers above are the new configurations'.
 //
 // `TEST_SET_SHA256` changes: results on the earlier test set are not comparable with this one.

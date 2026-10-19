@@ -257,8 +257,9 @@ const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const numberPattern = (value) => new RegExp(`(?<![\\d.])${escape(String(value))}0*(?![\\d]|\\.\\d)`, 'g');
 
 // A whole number as written: 987 matches "987" and "seed 987," but not
-// "9870", "1987" or the "987" of "2.987" or "987.5".
-const integerPattern = (value) => new RegExp(`(?<![\\d.])${value}(?![\\d]|\\.\\d)`, 'g');
+// "9870", "1987", the "987" of "2.987" or "987.5", or the digits that end an
+// identifier ("SHA987").
+const integerPattern = (value) => new RegExp(`(?<![\\w.])${value}(?![\\d]|\\.\\d)`, 'g');
 // A supercell as written: "N × N × N" (× or x), "[N, N, N]" or "(N N N)" with
 // its own three counts, and, for a cubic one, "N³" or "N^3".
 const supercellPattern = (cells) => {

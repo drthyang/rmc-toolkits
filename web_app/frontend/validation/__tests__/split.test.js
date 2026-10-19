@@ -40,6 +40,8 @@ const TEST_CASES = HOLDOUT ? await loadTestCases() : [];
 // 2026-10-19 (protocol 2026-10-19.11): five held-out judgment cases join the test set
 // (two values then changed after the lead's coincidence check, before any run).
 // 2026-10-19 (holdout gate): the definitions sealed, unchanged; the hash holds.
+// 2026-10-19 (protocol 2026-10-19.20): the marginal pair's amplitude and seeds re-chosen by a
+// fresh blind author from the updated spec (F1's corrected null raised the test's power).
 const TEST_SET_SHA256 = '1f782a560f65484602e68c6615eb8634883862db66de25efef937c59f7acea19';
 
 // Every file under a folder, never node_modules, dist or the sealed folder
