@@ -119,8 +119,14 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // 2026-10-19.12: analyze_modulations gives each ordered point's polarisation
 // (plan item 4.3), never prints a ratio or σ below its bar rounded onto it
 // (F2), and corrects over every element's points whichever the call names
-// (F3); arm A+ reads a modulation's direction from the polarisation).
-export const PROTOCOL_VERSION = '2026-10-19.12';
+// (F3); arm A+ reads a modulation's direction from the polarisation;
+// 2026-10-19.15: find_gr_peaks gives a shell joined across a deep trough its
+// split by number (plan item 4.2) — each part's coordination number, share
+// and mean distance, and long − short with its sampling error, in
+// first_shell.split, its description and its joined-shell note (which no
+// longer quotes the peaks' separation); arm A+ reads a Jahn–Teller claim's
+// magnitude from it).
+export const PROTOCOL_VERSION = '2026-10-19.15';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one
 // follows the full method.

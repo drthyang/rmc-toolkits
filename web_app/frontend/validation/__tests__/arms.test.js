@@ -31,6 +31,9 @@ const runBoth = async (item) => {
 // above them is unchanged.
 // Candidate 8 (2026-10-19, A+ reads the app's rules): no pin moved; only A+'s
 // readings (and dev-offcentre's δ, 0.201 → 0.202 Å) did, pinned below.
+// Plan item 4.2 (protocol 2026-10-19.15, A+ reads a joined shell's split): no
+// pin moved; dev-jahn-teller's A+ claim reads long − short 0.321 Å where it
+// read the maxima's 0.31, pinned below.
 const BAR = [
     ['dev-offcentre', 1, [], 1, []],
     ['dev-zone-boundary', 0.6667, ['off_centre Ti'], 1, []],
@@ -109,6 +112,34 @@ describe('the model-free arms on the dev cases (the bar)', () => {
         // one (10° from the planted axis, which the truth does not score).
         const weak = await runBoth(DEV_CASES.find((item) => item.id === 'dev-weak-order-a'));
         expect(weak.sweep.verdict.features).toEqual([{ kind: 'modulation', element: 'Nb', q: [0.5, 0.5, 0], direction_uvw: [0.17, 0.06, 1] }]);
+    });
+
+    it('A+ reads a Jahn–Teller claim\'s long − short from the app\'s split where the shell is joined (plan item 4.2)', async () => {
+        // dev-jahn-teller: the Cu–F shell is joined (4 + 2), so A+ claims the
+        // catalogue's long − short (find_gr_peaks' first_shell.split), 0.321 Å
+        // for the planted 0.32; arm A keeps the separation of the g(r)
+        // maxima it reads, 0.31 Å (its frozen rule).
+        const jt = await runBoth(DEV_CASES.find((item) => item.id === 'dev-jahn-teller'));
+        const { split } = shellCatalogue((await jt.run).props).shell('Cu', 'F');
+        const claim = (verdict) => verdict.features.find((feature) => feature.kind === 'jahn_teller');
+        expect(claim(jt.sweep.verdict)).toEqual({ kind: 'jahn_teller', element: 'Cu', magnitude_A: Number(split.longMinusShort.toPrecision(3)) });
+        expect(claim(jt.sweep.verdict).magnitude_A).toBe(0.321);
+        expect(claim(jt.a.verdict).magnitude_A).toBe(0.31);
+        const reading = jt.sweep.readings.find((r) => r.page === 'find_gr_peaks');
+        expect(reading).toMatchObject({
+            what: 'Cu-F first shell split (joined across a deep trough)',
+            value: { cn_of: 'F_per_Cu', long_minus_short_A: 0.321, long_minus_short_se_A: 0.0043 }
+        });
+        expect(reading.value.parts.map((part) => [part.cn, part.mean_d_A, part.share])).toEqual([[3.98, 1.929, 0.664], [2.01, 2.251, 0.336]]);
+        // Scored as before: the magnitude within its tolerance, no long axis
+        // (the g(r) is orientation-averaged: the app has no rule for it).
+        expect(jt.scoreSweep.features[0]).toMatchObject({ planted: 'jahn_teller', magnitude_ok: true, direction_ok: false });
+        // A split shell the app does not join (no deep trough) has no split:
+        // A+ keeps the maxima's separation there (the eight-site case).
+        const eight = await runBoth(DEV_CASES.find((item) => item.id === 'dev-eight-site'));
+        expect(shellCatalogue((await eight.run).props).shell('Nb', 'O').split).toBeNull();
+        expect(eight.sweep.verdict.features).toEqual([{ kind: 'jahn_teller', element: 'Nb', magnitude_A: 0.28 }]);
+        expect(eight.sweep.readings.some((r) => r.page === 'find_gr_peaks')).toBe(false);
     });
 
     it('A+ reads the app\'s rules: the split site, the cluster elements, the lower group\'s tolerance (candidate 8, 2026-10-19)', async () => {
