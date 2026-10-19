@@ -57,6 +57,9 @@ const SAMPLES = [
     ['compute_bond_angles.cut-window-refused', 'compute_bond_angles', CUT, { workbench: false }],
     ['analyze_clusters', 'analyze_clusters', { element: 'Ta', r_min: 2.65, r_max: 3.33 }],
     ['analyze_modulations', 'analyze_modulations', {}],
+    // One element named: the significance is still corrected over every
+    // element's points (F3, 2026-10-19), and the note says so.
+    ['analyze_modulations.element', 'analyze_modulations', { element: 'Ta' }],
     ['detect_symmetry', 'detect_symmetry', { tolerance_A: 0.2 }],
     ['measure_symmetry_lowering', 'measure_symmetry_lowering', {}],
     ['ask_user', 'ask_user', {

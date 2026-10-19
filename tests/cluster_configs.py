@@ -355,6 +355,58 @@ def rigid_dimer_config_text(*, supercell=(4, 4, 4), sigma=0.08, own=0.01, seed=2
     return _rmc6f(lines, supercell, DIMER_CELL_A)
 
 
+#: A monoclinic cell (beta = 105 degrees between a and c, Angstrom rows a, b, c):
+#: a direct-lattice direction [u v w] here is not the Cartesian vector with
+#: those components ([1 0 1] is 14 degrees from (1, 0, 1)), so a polarisation's
+#: [u v w] is tested as a crystal direction.
+POLARISED_CELL = np.array([
+    [4.0, 0.0, 0.0],
+    [0.0, 4.4, 0.0],
+    [4.8 * np.cos(np.radians(105.0)), 0.0, 4.8 * np.sin(np.radians(105.0))],
+])
+POLARISED_SITES = [("Zr", np.array([0.25, 0.5, 0.5])), ("Zr", np.array([0.75, 0.5, 0.5])), ("S", np.array([0.0, 0.0, 0.0]))]
+
+
+def polarised_direction(uvw) -> np.ndarray:
+    """The Cartesian unit vector of the direct-lattice direction ``uvw`` in POLARISED_CELL."""
+    vector = POLARISED_CELL.T @ np.asarray(uvw, dtype=float)
+    return vector / np.linalg.norm(vector)
+
+
+def polarised_config_text(*, supercell=(8, 4, 4), uvw=(1, 0, 1), flags=(1, 0, 0), amp=0.1, sigma=0.06, seed=29) -> str:
+    """Both Zr sites displaced by ``amp`` A along the direct-lattice direction
+    ``uvw`` (the Cartesian u a + v b + w c, normalised), with the sign
+    alternating along every axis ``flags`` marks -- order at q = flags / 2 --
+    and the second site in antiphase with the first; independent Gaussian
+    noise of ``sigma`` A on every atom, in the monoclinic POLARISED_CELL. The
+    mode's polarisation is ``uvw`` (plan item 4.3's known answer)."""
+    rng = np.random.default_rng(seed)
+    supercell = np.asarray(supercell, dtype=int)
+    planted = amp * polarised_direction(uvw)
+    lines = []
+    for ix in range(supercell[0]):
+        for iy in range(supercell[1]):
+            for iz in range(supercell[2]):
+                cell = np.array([ix, iy, iz])
+                sign = (-1) ** int(sum(int(flag) * int(index) for flag, index in zip(flags, cell)))
+                for ref, (element, frac) in enumerate(POLARISED_SITES, start=1):
+                    shift = rng.normal(0.0, sigma, size=3)
+                    if element == "Zr":
+                        shift = shift + (sign if ref == 1 else -sign) * planted
+                    # Cartesian r = M^T f: the fractional shift solves M^T f = shift.
+                    coord = np.mod((frac + cell + np.linalg.solve(POLARISED_CELL.T, shift)) / supercell, 1.0)
+                    lines.append(_atom_line(len(lines) + 1, element, coord, ref, cell))
+    header = [
+        "(Version 6f format configuration file)",
+        f"Number of atoms: {len(lines)}",
+        f"Supercell dimensions: {supercell[0]} {supercell[1]} {supercell[2]}",
+        "Lattice vectors (Ang):",
+        *(" ".join(f"{value:.6f}" for value in row) for row in POLARISED_CELL * supercell[:, None]),
+        "Atoms:",
+    ]
+    return "\n".join(header + lines) + "\n"
+
+
 WAVE_CELL_A = 4.0
 WAVE_SITES = [("Ti", np.array([0.5, 0.5, 0.5])), ("O", np.array([0.5, 0.5, 0.0]))]
 

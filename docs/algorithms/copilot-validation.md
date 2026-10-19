@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19), a modulation claim with the engine's polarisation as its direction (since protocol 2026-10-19.12). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -638,8 +638,9 @@ joins the engines:
 - one claim per element;
 - an ordered mode explains its element's split sites;
 - an off-centred centre explains its own split shell;
-- a mode's polarisation is the PC1 of the element's most prolate site (PC1/PC2 ≥ 1.3); the app
-  has no polarisation rule (plan section D).
+- a mode's polarisation was the PC1 of the element's most prolate site (PC1/PC2 ≥ 1.3), when the
+  app had no polarisation rule (plan section D); since protocol 2026-10-19.12 A+ reads the
+  modulation engine's polarisation (below).
 
 **Arms A and A+ on dev** (`arm-a --split dev`: before at a2c5dad and after at 63569f3 on the ten
 paired cases; after again at 3de8fc5 with the judgment subset):
@@ -724,6 +725,42 @@ fixed beforehand accepts, from the case's engine readings:
   took their first seeds again (211, 241); the numbers above are the new configurations'.
 
 `TEST_SET_SHA256` changes: results on the earlier test set are not comparable with this one.
+
+**Protocol 2026-10-19.12 (the polarisation of an ordered mode, plan item 4.3; findings F2 and
+F3).** What `analyze_modulations` returns changes for every arm that calls it:
+- **The polarisation (4.3).** Both modulation engines give every reported point its
+  `polarisation`: the leading axis of the real part of the element's cross-spectral tensor at q,
+  as a Cartesian direction and a direct-lattice [u v w], with its share of the power
+  ([ai-assistant.md, Step 19](ai-assistant.md#step-19--displacement-modulations-order-that-enlarges-the-cell-analyze_modulations)).
+  The tool shows it for each ordered point (a `polarisation` row and its check: "polarised along
+  [0 0 1] (5.5° off; 100 % of the power at q)").
+- **F2.** A ratio or σ below its bar (3, 3σ) is never printed rounded onto it: a point at 2.98σ
+  (the synthetic known answer) read "3σ" beside "≥ 3 is order" and a "no order" verdict; it now
+  reads 2.98 and "below the 3σ bar".
+- **F3.** The Šidák family is every element of the configuration, whichever the call names:
+  `analyze_modulations({element})` corrected over that element's points alone, so naming one
+  element of three took a point just below the bar over it. The note says so; a call without an
+  element is unchanged.
+- **Arm A+** reads a modulation claim's direction from the engine's polarisation at the q that
+  decided the order, no longer from the PC1 of the element's most prolate site (a rule of its
+  own, above), and records each ordered point's polarisation in its reading. A+ calls the engine
+  for every element, so F3 changes none of its σ.
+
+**Arms A and A+ on dev** (`arm-a --split dev` before at d9cb984, after on the code of 9a72a6f,
+recorded under this protocol): every arm A and D record is identical, and every score. Two A+ records move,
+each in its claim's direction and its reading, with the same score:
+- dev-zone-boundary: the Ti claim reads [−0.05 0.09 1], 5.9° from the planted [0 0 1] as scored
+  (the polarisation is 5.5°; the PC1 it read before, [−0.03 0.1 1], scored 6.0°: one site over
+  512 cells, 1.5° of sampling error per component);
+- one record of the judgment subset: its claim gains a direction, which its truth does not score
+  (its values are in `arm-a-dev.json` and the `arms.test.js` pins, not here).
+
+The two are re-recorded in `arm-a-dev.json`; the other records stay as recorded. The test set was
+not run. What the model sees changes in the modulation tool's result only: its note
+(`tool-results/analyze_modulations.json`) and a new sample of a call naming one element
+(`analyze_modulations.element.json`); no tool description, prompt or first request changes, so the
+32k budget pins hold. Approved by the manager on the user's delegation, 2026-10-19
+(`validation/findings/decisions/2026-10-19-mode-polarisation.json`).
 
 ### The report beside the case score (plan item 1.6, part i)
 
