@@ -304,8 +304,8 @@ Five details matter for interpretation:
    synthetic $8^3$ site (and `np.array_equal` is `False`).
 4. **For large element-pooled clouds the two frames genuinely differ.** The orientation engine
    never subsamples; the KDE path caps its fit at `MAX_PCA_FIT_POINTS = 20000` points with
-   `rng_seed = 0`, and the two engines draw *different* subsets above that (*PCA Ellipsoid page*
-   → Step 2, "Subsampling"). Above 20 000 pooled points the PCA-KDE page's frame is a subsample
+   `rng_seed = 0` (the same rows in both engines, *PCA Ellipsoid page* → Step 2,
+   "Subsampling"). Above 20 000 pooled points the PCA-KDE page's frame is a subsample
    fit and this page's is the full fit — a real difference, not round-off. (Per-site
    `site_ellipsoids`, which is what the site picker and the panel header show, is not
    subsampled either.)
@@ -3058,13 +3058,13 @@ returns **ν = 2** (42 cells). At ν = 10 the expected count per cell is ≈ 1. 
 
 **2. Every surviving vector is binned — there is no point budget, and no RNG.** Unlike the PCA-KDE
 path, which explicitly caps its fit with `subsample(points, maxFitPoints, rngSeed)`
-([`workers/pcaKde.js:196, 326`](../../web_app/frontend/src/workers/pcaKde.js)), the orientation engine
+([`workers/pcaKde.js`](../../web_app/frontend/src/workers/pcaKde.js), `fitSubsampleIndices`), the orientation engine
 subsamples **nothing**: every vector above the amplitude cutoff enters the histogram, however many
 there are. Two consequences. First, the map is fully **deterministic** given the options — re-running
 it cannot shift a lobe, so a feature that moves between runs is a data change, not sampling noise.
 Second, a very large site costs time and memory linearly, with no ceiling. Readers arriving from
-*PCA Ellipsoid page* → Step 2 ("Subsampling") should not carry that page's cap — or the fact that
-its two engines draw *different* 20 000-point subsets — over to this one.
+*PCA Ellipsoid page* → Step 2 ("Subsampling") should not carry that page's cap — or its seeded
+20 000-point draw — over to this one.
 
 Relatedly, the **reachable resolution range is ν = 2 … 24**: `recommendedFrequency` caps at
 `maxFrequency = 24` and `FREQUENCY_OPTIONS` stops at 24, so the engine's `MAX_FREQUENCY = 64` is a

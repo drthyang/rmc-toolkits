@@ -321,19 +321,59 @@ orientations — the pooled covariance is then a symmetry-averaged tensor, not a
 The current UI only ever requests a single `referenceNumber`; element pooling is reachable through
 the API/engine only.
 
+**Row order.** A pooled (or all-atom) cloud is **site-major** in both engines: sites by ascending
+reference number, each site's atoms in file order. RMCProfile writes each element's atoms cell by
+cell (the demo: Ga sites 4, 8, 12, 16 of cell (0, 0, 0), then of cell (0, 0, 1), …), so file order
+would interleave the sites;
+`displacement_cloud()` takes a stable sort by site (`np.argsort(site_index, kind="stable")`) to give
+the order `displacementCloud()` builds. A single site's cloud is its atoms in file order in both. The
+order changes no statistic below the cap (a permutation: summation round-off only — the demo's
+pooled Ta and Ga volumes, eigenvalues and kurtosis move by ≤ 1e-14 of their scale, the pooled-Ga
+orientation map's values by ≤ 3e-13), but the subsample below picks rows **by position**.
+
 **Subsampling.** `pca_kde_volume()` caps the cloud fed to the KDE at
-`MAX_PCA_FIT_POINTS = 20000` points (same constant in both engines). Python draws
-`np.random.default_rng(rng_seed).choice(n, limit, replace=False)` then sorts the indices; JS runs a
-partial Fisher–Yates with a `mulberry32(seed)` PRNG then sorts. Both are deterministic with default
-seed 0, but they draw **different subsets** — so above 20 000 points the two engines agree only
-statistically, not to round-off. A single site in an $n\times n\times n$ box has $n^3$ copies — 1000
-for a 10³ box, but 21 952 for 28³ and 27 000 for 30³ (a normal ~54k-atom box for a two-atom cell) —
-so the cap binds for **per-site clouds in boxes of 28 or more cells per edge** as well as for
-element-pooled clouds. There the KDE volume, its mass levels, its axes and eigenvalues come from
-20 000 of the copies, and the Flask and static apps use different ones (a 27 000-copy Gaussian site:
-eigenvalues differ by up to 0.6%; the audit measured up to 6% of $v_\mathrm{max}$ in the density).
-The result reports both `count` (total) and `fitCount` (used), and the panel's metadata line prints
-`fit {fitCount}/{count}`.
+`MAX_PCA_FIT_POINTS = 20000` points (same constant in both engines). Above it, both engines fit the
+**same rows**, drawn by one algorithm — `fit_subsample_indices(n, limit, rng_seed)` (Python) ⟷
+`fitSubsampleIndices(n, limit, seed)` (JS):
+
+1. **Generator.** mulberry32, seeded with the seed taken modulo $2^{32}$ (JS `seed >>> 0`; Python
+   `int(seed) & 0xFFFFFFFF`, an integer seed only). Output $k = 1, 2, \dots$ mixes the state
+   $s_k = (\text{seed} + k\cdot\texttt{0x6D2B79F5}) \bmod 2^{32}$:
+   `t = imul(s ^ s>>>15, s | 1); t ^= t + imul(t ^ t>>>7, t | 61); out = t ^ t>>>14`, every operation
+   modulo $2^{32}$, and $u_k = \text{out}_k / 2^{32}\in[0,1)$. Python (`mulberry32_uint32`) computes
+   the whole stream at once in uint64 — a product of two uint32 values wraps modulo $2^{64}$ and keeps
+   its low 32 bits, which is `Math.imul` — so it runs on numpy 1.22 as on 2.x.
+2. **Draw.** A partial Fisher–Yates shuffle of $0,\dots,n-1$: step $i = 0,\dots,\text{limit}-1$ swaps
+   position $i$ with $i + \lfloor u_{i+1}\,(n-i)\rfloor$, the product taken in float64 as JavaScript
+   does (it never rounds up to $n-i$: $u\le1-2^{-32}$). Python keeps only the displaced entries (a
+   dict), since a step touches positions $\ge i$ only; JS shuffles the full index array — the same
+   permutation.
+3. **Order.** The first `limit` positions, sorted ascending; the fit rows are the cloud's rows at
+   those indices, in that order.
+
+With $n\le$ `limit` nothing is drawn and every row is used. Seed 0 is the default and the only
+value either app uses (`rng_seed` / `rngSeed` is an engine parameter; neither `/api/pca/kde` nor the
+worker exposes it). A single site in an $n\times n\times n$ box has $n^3$ copies — 1000 for a 10³
+box, but 21 952 for 28³ and 27 000 for 30³ (a normal ~54k-atom box for a two-atom cell) — so the cap
+binds for **per-site clouds in boxes of 28 or more cells per edge** as well as for element-pooled
+clouds (the demo's Se: 32 000; all atoms: 52 000). There the KDE volume, its mass levels, its axes,
+eigenvalues and kurtosis come from 20 000 of the copies — the same 20 000 in the Flask and static
+apps. (Before 0.8.0 Python drew them with `np.random.default_rng(0).choice` from a file-ordered
+cloud, a different subset from the browser's: on a 27 000-copy Gaussian site the eigenvalues
+differed by up to 0.5% and the density by up to 6% of $v_\mathrm{max}$; on the demo's pooled Se,
+1.8% and 11%.) The result reports both `count` (total) and `fitCount` (used), and the panel's
+metadata line prints `fit {fitCount}/{count}`.
+
+**Verification.** `pca_kde_fixture.json` (`tests/generate_pca_kde_fixture.py` →
+`src/__tests__/pcaKdeParity.test.js`; `tests/test_pca_kde_fixture.py` fails when it is stale) holds
+the mulberry32 stream for six seeds (negative and $>2^{32}$ ones pin `seed >>> 0`), the drawn indices
+— in full for small draws, as the 1 952 excluded indices of the 28³ site's 21 952 → 20 000 draw, and
+as order-sensitive checksums $\sum_i (i+1)\,\text{index}_i$ for 27 000 and 32 000 — all compared
+exactly; then two volumes above the cap to the golden rule (1e-9 relative + 1e-12 absolute, axes by
+eigenspace): a 21 952-copy synthetic site both runtimes build from the same mulberry32 stream with
+exactly rounded operations only (no stored cloud; its first and last points compared bit for bit),
+and the demo's pooled Se cloud (32 000 atoms, written cell by cell), whose head, tail and a
+position-weighted checksum pin the site-major order.
 
 Note `site_ellipsoids()` (the ADP table) **never** subsamples — it always uses every atom of every
 site.
@@ -1177,7 +1217,7 @@ direction information appears in the picker.
 | kurtosis definedness | — | — | $\lambda_1\ge10^{-8}$ Å² and $\lambda_a\ge10^{-6}\lambda_1$, else `null` (both engines) | — | — |
 | `AXIS_RESOLUTION_SIGMAS` | — | — | **3** (both engines) | — | standard errors of an eigenvalue gap for `axisResolved` |
 | Jacobi sweeps / tolerance | — | — | 50 sweeps; off-diagonal sum $\le10^{-15}\lVert\mathbf U\rVert_F$ (**relative**); rotation skipped at $\lvert a_{pq}\rvert<10^{-300}$ | — | — |
-| `rng_seed` | — | — | 0 | — | — |
+| `rng_seed` / `rngSeed` | — | — | 0 | integer, taken modulo $2^{32}$ (mulberry32 seed) | — |
 | $k(0.5)$ | — | — | 1.5381722 | — | — |
 | contour fractions | — | — | 0.10, 0.25, 0.40, 0.55, 0.70, 0.85 | — | × plane's $v_\mathrm{max}$ |
 | wall / contour offsets | — | — | $-1.06\,w_t$ / $-1.05\,w_t$; wall opacity 0.96, `renderOrder = 2` on contours | — | along the third axis from `mean` |
@@ -1211,10 +1251,11 @@ Derived quantities and their units: `covariance`, `eigenvalues`, `uIso`, `bIso` 
    Whether that estimator is the right description of the cloud is a separate question, and Scott's
    rule is a rule of thumb calibrated for Gaussian data — it over-smooths multimodal (split-site)
    clouds.
-4. **The two KDE volumes are not proven equal to each other.** Each is pinned against its own
-   reference; no golden file connects the volumes of `pca_kde.py` and `pcaKde.js` (the site table
-   has one, `pca_sites_fixture.json`, Step 3). The known systematic
-   difference is the different subsample draw above 20 000 points (Step 2). Eigenvector signs follow the same canonicalisation rule
+4. **The two KDE volumes are proven equal only above the fit cap.** Each is pinned against its own
+   reference, and `pca_kde_fixture.json` (Step 2) connects the volumes of `pca_kde.py` and
+   `pcaKde.js` for two clouds above 20 000 points, where both fit the same subsample; no golden
+   covers a volume below the cap (the site table has its own, `pca_sites_fixture.json`, Step 3).
+   Eigenvector signs follow the same canonicalisation rule
    in both engines (with one unreachable difference in how the handedness flip is written — next
    section, Step 3), so they do not differ.
 5. **Server-mode PCA cannot reconstruct the sites of a coordinates-only `.rmc6f`.** Both runtimes'
@@ -2008,7 +2049,7 @@ defaults". The table below lists only what this section owns.
   directional content discarded (Step 11). It never appears in a UI panel, and it exists only in the
   browser structure parser.
 - **Where the numbers themselves come from is the previous section's problem.** The estimator
-  choices that set the *magnitudes* — the subsample cap and the two engines' different draws, the
+  choices that set the *magnitudes* — the subsample cap (one draw, the same rows in both engines), the
   browser's Jacobi solver, the KDE bandwidth broadening,
   the display magnification of the Site-ellipsoids markers — are all documented in "PCA Ellipsoid
   page", Caveats. None of them changes a *direction*, except through the eigenframe of a
