@@ -1,0 +1,55 @@
+{
+  "tool": "detect_symmetry",
+  "arguments": {
+    "tolerance_A": 0.2
+  },
+  "content_chars": 755,
+  "content": {
+    "ref": "r1",
+    "checks": [
+      {
+        "level": "ok",
+        "text": "F-43m (No. 216) holds at 0.2 Å."
+      },
+      {
+        "level": "note",
+        "text": "Point group -43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar."
+      }
+    ],
+    "data": {
+      "tolerance_A": 0.2,
+      "space_group": "F-43m",
+      "number": 216,
+      "point_group": "-43m",
+      "point_group_facts": "-43m: cubic; no inversion centre; achiral (not a Sohncke group); non-polar",
+      "n_ops": 96,
+      "max_residual_A": 0.031,
+      "orbits": [
+        {
+          "element": "Ta",
+          "wyckoff": "16e",
+          "site_symmetry": "3m",
+          "frac": [0.6468, 0.8535, 0.8535]
+        },
+        {
+          "element": "Se",
+          "wyckoff": "16e",
+          "site_symmetry": "3m",
+          "frac": [0.8858, 0.8858, 0.8857]
+        },
+        {
+          "element": "Se",
+          "wyckoff": "16e",
+          "site_symmetry": "3m",
+          "frac": [0.3854, 0.8851, 0.8848]
+        },
+        {
+          "element": "Ga",
+          "wyckoff": "4c",
+          "site_symmetry": "-43m",
+          "frac": [0.2503, 0.7502, 0.7498]
+        }
+      ]
+    }
+  }
+}

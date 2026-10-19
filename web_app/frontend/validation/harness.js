@@ -108,9 +108,10 @@ import { buildRunPolicy, noteContextUsed } from './runPolicy';
 // a fresh author writes their held-out matches), so a dev batch now holds
 // them, and its means are not an earlier batch's;
 // 2026-10-19.10: arm C follows no method (the turn's method 'off', plan item
-// 1.8) — no EVIDENCE_RULES, no method sentence in TOOL_RULES or ASK_RULES, no
-// method advice in a tool description or a check, and an evidence-gate
-// send-back that names no analysis; arm B unchanged).
+// 1.8) — no EVIDENCE_RULES, no method sentence in TOOL_RULES or ASK_RULES, the
+// domain rules' definitions and conduct without their inference, no method
+// advice in a tool description or a check, and an evidence-gate send-back
+// that names no analysis; arm B unchanged).
 export const PROTOCOL_VERSION = '2026-10-19.10';
 
 // `method` is the turn's (src/llm/copilot/method.js); an arm without one

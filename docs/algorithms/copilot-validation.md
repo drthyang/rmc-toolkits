@@ -11,7 +11,7 @@ that went with it is [copilot-review.md](copilot-review.md).
 | Arm | What answers | Code |
 | --- | --- | --- |
 | **A** | The default Workbench, no agent: the Detected SG card (0.2 Å), the PCA Ellipsoid table, the Displacement Directions page (ν = 10, smoothing 2) and the partial g(r), read by fixed rules (`ARM_A_RULES`). The cluster and superstructure engines have no page, so A cannot use them | `armA.js` `runArmA` |
-| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules (`SWEEP_RULES`); no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
+| **A+** (control) | Every Copilot engine run exhaustively with its own thresholds, joined by fixed rules; no model. The cluster and modulation engines return their own verdicts, which A+ maps to claims (since 2026-10-19). Where the app has a rule, A+ calls the app's function (`SWEEP_RULES`, since 2026-10-19: the split site, the cluster elements, the lower group's tolerance). **B − A+ is what the language model adds**; B − A mixes that with the new engines | `armA.js` `runArmSweep` |
 | **B** | The Copilot as the app assembles it: tools, skills, guardrails (refusals, the Workbench's window questions, answer checks) | `harness.js` |
 | **C** | B without the method ([below](#arm-c-the-copilot-without-the-method)): no skills (no `read_skill`, no skills index), no method rules in the prompt, no method advice in a tool's description or check; the tools, refusals, the Workbench's questions, the evidence gate and the answer checks still run. The ablation | `harness.js` |
 | **D** | The planted truth, scored as a verdict; it must score 1 (a test checks this) | `verdict.js` `truthVerdict` |
@@ -69,8 +69,21 @@ snapshot files pass unchanged).
   `compare_fit` for where the fit fails); a z-score with a tiny change is not a finding. `ASK_RULES`
   loses its one ("Settle what the data can first: e.g. run find_gr_peaks, then offer its shells as
   the options."). The sentences on working with the tools (the four steps, reading `checks`, never
-  repeating a call), asking, quoting by reference and the Outcome line stay, and so do the domain
-  rules (`SYSTEM_PROMPT`: what each context field means), shared with the watchdog.
+  repeating a call), asking, quoting by reference and the Outcome line stay.
+- **The domain rules** (`SYSTEM_PROMPT`'s ground rules, shared with the watchdog; decided by the
+  manager on the user's delegation, 2026-10-19): every part of every sentence is marked in
+  `src/llm/prompts/system.js` (`GROUND_RULES`) as a **definition** (what a context field is: the
+  quantity, its units, how it is computed, its limits as a measurement), an **inference** (which
+  field to use for a conclusion, or what a pattern is evidence of) or **conduct** (how to answer:
+  numbers from the context or a tool, no invented uncertainty, say what is missing, be cautious). A
+  sentence that does both is split into its parts. Arm C reads the definitions and the conduct;
+  every inference part goes (an inference part that ends a sentence leaves its full stop). Of the 26
+  ground-rule sentences, 7 are definitions, 2 inference, 4 conduct and 13 split; for example "first
+  shell gives the shell's mean distance (from r^2 g, unbiased) …" stays, and "Compare
+  first_shell.mean_d_A, not the peak, with the average distance" and "A split shell … is evidence of
+  short-range correlations …" go. `systemPrompt.test.js` pins the classification sentence by
+  sentence. The tool-free prompt follows the method too (a model that refuses tools in arm C is asked
+  again under the domain rules' definitions and conduct and the Outcome rule).
 - **The tool descriptions:** a tool spec carries its advice apart from its description (`method`),
   sent with `'full'` and left out with `'off'`; the description keeps what the tool does and
   returns. On `dev-offcentre` eight pieces go: `find_gr_peaks`' "use first_shell.window_A for
@@ -92,7 +105,12 @@ snapshot files pass unchanged).
   `analyze_clusters`' window failures lose the `find_gr_peaks` window and its split-site note "Read
   the pattern …, the partial g(r) shell (find_gr_peaks) and the bond angles"; `find_gr_peaks`' two
   split-shell notes lose "Use first_shell.window_A, not the first peak alone" and "use it only if the
-  user chooses it".
+  user chooses it". Three reading hints that name no tool go too (decided by the manager on the
+  user's delegation, 2026-10-19): `find_gr_peaks`' unseparated-shell warning loses "Ask whether the
+  crystal has A–B distances there", `compute_bond_angles`' octahedron note "Read the shape from
+  histogram_10deg_sin_corrected (1 = random directions), not from the raw modes", and
+  `detect_symmetry`'s point-group note "Take inversion, chirality and polarity from this, not from
+  memory".
 - **The evidence gate** runs and checks the same rules (decided by the manager on the user's
   delegation, 2026-10-19), but its send-back names no analysis and no tool: "… Your answer concludes
   "no order beyond thermal motion", but this conclusion needs its evidence from an analysis run in
@@ -104,10 +122,10 @@ snapshot files pass unchanged).
 The other texts the model can receive name no analysis as method and are the same in both arms:
 the Workbench's questions and their notes, the view rules (never offered in the live arms), the
 loop's notes and reminders (`ask_user` is named there as the way to ask, not as a method),
-`ask_user`'s own messages, the "unknown tool" answer to a `read_skill` call in arm C (it lists the
-tools offered), and the tool-free prompt. `modelVisible/harness.test.js` checks arm C's first
+`ask_user`'s own messages, and the "unknown tool" answer to a `read_skill` call in arm C (it lists the
+tools offered). `modelVisible/harness.test.js` checks arm C's first
 request for every skill name, the skills' step headings of more than one word, the prompt's method
-sentences, `EVIDENCE_RULES` and every piece of tool advice. So B against C measures what the
+sentences, `EVIDENCE_RULES`, the domain rules' inference parts and every piece of tool advice. So B against C measures what the
 method adds: the skills together with the method in the prompt, the descriptions and the checks.
 
 ## Cases
@@ -198,7 +216,7 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
   | --- | --- | --- | --- | --- |
   | Two features at once | dev-jt-off-centre | `jahn_teller`, `offCentre` | Jahn–Teller octahedra whose centre is also off-centred: both on the centre | A split centre explains its own split shell |
   | A signal at 2.5–4σ | dev-weak-order-a, dev-weak-order-b | `zone_boundary`, `weak: true`, `decoy: null` | A weak cell-doubling order of B, below half its thermal rms; the truth names q only. One seed on each side of the bar | The fixed 3σ bar |
-  | Two tools read differently | dev-eight-site | `offcentre`, `wells: 8` | Eight-site <111> off-centring of B | A split only from a prolate ellipsoid; the 3 + 3 shell it leaves unexplained |
+  | Two tools read differently | dev-eight-site | `offcentre`, `wells: 8` | Eight-site <111> off-centring of B | A split only from the ellipsoid (a resolved PC1, `isSplitSite`); the 3 + 3 shell it leaves unexplained |
   | A choice only the user can make | dev-octahedral-clusters | `elongated_clusters` (new) | M6 octahedra, each elongated along a random axis: a cluster distortion | None: the control (below) |
 
   `elongated_clusters` is the subset's one new kind: no other kind plants a cluster distortion. The
@@ -602,11 +620,64 @@ protocol has no judgment case, and its means are not comparable with one under t
 - Approved by the manager on the user's delegation, 2026-10-19
   (`validation/findings/decisions/2026-10-19-judgment-dev-cases.json`).
 
+**A+ reads the app's rules (2026-10-19, architecture candidate 8; not a protocol change).** A+ had
+three rules of its own where the app has one. It now calls the app's functions, which
+`SWEEP_RULES` holds, and a test checks they are the app's:
+
+| Rule | A+ before | The app's, which A+ now applies | Evidence |
+| --- | --- | --- | --- |
+| Split site | arm A's: PC1/PC2 ≥ 1.3, PC1 resolved, κ₁ ≤ −0.5; δ = √(rms1² − rms2²) | `isSplitSite`: PC1 resolved, κ₁ ≤ −0.5 and at least 3 sampling errors (√(24/n)) below zero; δ ± its error from `list_sites` (`splitDisplacement`, √(rms1² − rms⊥²)) | On synthetic prolate Gaussian sites arm A's rule called 3.6 % (216 copies) and 14 % (100 copies) split, `isSplitSite` none (2,000 seeds each). A planted ±0.15 Å split over a 0.05 Å width at 216 copies is found in all 300 seeds, its δ within 1.96 errors in 94 % of them. rms2 alone biases δ low (ai-assistant.md Step 20). |
+| Cluster elements | every same-element first shell peaking below 3.6 Å | the evidence gate's: the element's own first shell holds 0.5–4.5 neighbours (`clusterElementsOf`, `CLUSTER_CN_MAX`, now in `shells.js`; `evidence.js` imports it) | Dimers 1, trimers 2, tetrahedra 3, octahedra 4 are finite clusters; CN 6–12 is a network. On the ten paired dev cases the CN rule tries the planted V₂, Mo₃ and the F around Cu. The eight elements the old rule also tried there (the O of four perovskites, FeSi's Fe and Si, rock-salt Mg and O) are extended networks that the engine itself refuses. |
+| Lower group's tolerance | the noise floor | `lowerGroupTolerance`: `NOISE_FLOOR_MARGIN` (1.25) × the floor, `measure_symmetry_lowering`'s default; the Workbench's tolerance question counts a group only where it holds to the same margin (`clarify.js`, until now its own `NOISE_MARGIN`) | No dev group moves: every lower rung ends below 0.7 × the floor and every true group holds past 1.25 × it. The cost: a lowering whose group holds only to 1–1.25 × the floor is not read. A synthetic shift of 0.0147 Å, whose group holds to 1.18 × the floor, now reads Pm-3m, while one of 0.027 Å (2.2 ×) reads P4mm. The app chose the margin, and no dev case shows it wrong. |
+
+Arm A's rules are the frozen protocol's and are unchanged. What A+ keeps of its own is only how it
+joins the engines:
+- one claim per element;
+- an ordered mode explains its element's split sites;
+- an off-centred centre explains its own split shell;
+- a mode's polarisation is the PC1 of the element's most prolate site (PC1/PC2 ≥ 1.3); the app
+  has no polarisation rule (plan section D).
+
+**Arms A and A+ on dev** (`arm-a --split dev`: before at a2c5dad and after at 63569f3 on the ten
+paired cases; after again at 3de8fc5 with the judgment subset):
+- Every arm A and D record is identical, and so is every score and claim.
+- Every A+ record moves in its readings. On the ten paired cases:
+  - The group is read at 1.25 × the floor (0.026 → 0.032 Å on dev-symmetry-lowering), with the
+    same group in every case, and the shift tool names its lower group at that tolerance.
+  - The split-site readings say `list_sites`, with κ₁, its z and δ ± its error.
+  - The eight network cluster readings are gone (six records).
+  - dev-jahn-teller's F sites 5 and 6 (κ₁ −0.95 and −0.93 at 216 copies, z −2.84 and −2.78) are no
+    longer split. The F claim, from the site with the largest δ, stays.
+  - dev-offcentre's claim reads δ 0.202 Å, where it read 0.201 (planted 0.2).
+- The judgment subset's five A+ records move in the same ways, with every score unchanged. Their
+  readings are in `arm-a-dev.json` and the `arms.test.js` pins, not here, since the held-out
+  author may read this document.
+- The moved A+ records are re-recorded in `arm-a-dev.json`; the A and D records stay as recorded.
+- The test set was not run; its A+ records are re-recorded at the freeze.
+
+**The protocol does not move.** What the model sees is byte-identical (the model-visible snapshots
+pass without `-u`), so live runs under 2026-10-19.9 stay comparable. Arms A and A+ have no model,
+and each of their records carries its own commit and protocol.
+
+**The skills.** The skill lint gained a `rule` check (`RULES` in `skillLint/tables.js`). It flags
+a skill sentence that states one of these rules otherwise. Five such sentences sit on its
+allow-list with the skill's rule and the app's, awaiting the user's skill review (plan 5.3):
+- displacement-anisotropy SKILL.md:27 and significance-reading.md:17: a split site is a negative
+  Mardia kurtosis;
+- coordination-shells SKILL.md:51: any polyhedron distortion goes to `analyze_clusters`;
+- local-symmetry SKILL.md:38: a rung above the floor is a distortion;
+- local-symmetry SKILL.md:59: whether a rung just above the floor counts is left to the user.
+
+Approved by the manager on the user's delegation, 2026-10-19
+(`validation/findings/decisions/2026-10-19-aplus-app-rules.json`; known answers in
+`validation/__tests__/aplusRules.test.js`).
+
 **Protocol 2026-10-19.10 (arm C without the method, plan item 1.8).** Arm C runs the turn with
 `method: 'off'` ([Arm C](#arm-c-the-copilot-without-the-method)): no skills, no `EVIDENCE_RULES`, no
 method sentence of `TOOL_RULES` or `ASK_RULES`, no method advice in a tool description or a check.
 What arm C is sent changes: on `dev-offcentre` its system prompt is the `tools-ask.method-off`
-variant (7,651 characters; the full method's `tools-ask` is 8,575), its tool descriptions are
+variant (5,975 characters, the domain rules' inference parts gone too; the full method's `tools-ask`
+is 8,575), its tool-free prompt is `no-tools.method-off`, its tool descriptions are
 `harness/tools.arm-C.json`, a check that carried advice reaches it without
 (`tool-results/*.method-off.json`), and the evidence gate's send-back names no analysis
 (`harness/gate-send-back.arm-C.txt`). Arm B, the dock and arms A, A+ and D are unchanged: every
@@ -950,7 +1021,9 @@ cache hits $0.10, cache writes $2.50, so prompts are charged at $2.50. `RMC_EVAL
 `validation/baseline/arm-a-{dev,test}.json` (re-recorded after batch 1 at commit 5780c50, below;
 the 2026-10-14 records are in git at b4fe09f; the test records again at 4ab9eab for protocol
 2026-10-19.2, with the same scores; the dev A+ records again at 3f90a80 for the engine verdicts,
-their cluster and modulation readings only, with the same scores and claims).
+their cluster and modulation readings only, with the same scores and claims; and at 63569f3 for
+candidate 8, A+ reading the app's rules, with the same scores and claims apart from
+dev-offcentre's δ, 0.201 → 0.202 Å).
 
 | Kind | A dev / test | A+ dev / test | Where the default analyses mislead |
 | --- | --- | --- | --- |
@@ -1023,7 +1096,7 @@ folder, with no model and no network:
 
 - `system-prompt/<variant>.txt`: every system prompt `copilotSystemPrompt` builds (tools off; tools
   on with or without the view tools, `ask_user` and the skills' index; and with method `'off'`,
-  arm C's, `*.method-off.txt`, with or without the view tools and `ask_user`), with a line break
+  arm C's, `*.method-off.txt`: tools off, and tools on with or without the view tools and `ask_user`), with a line break
   after each sentence for reading, and the exact length and hash of the string sent;
 - `dock/first-request.txt` and `dock/tools.json`: the dock's first request on the Demo run
   (CopilotChat → useCopilot, captured at `streamCopilotChat`): its fields, its messages and the
@@ -1038,8 +1111,9 @@ folder, with no model and no network:
   arm's model receives, beside the rule and the missing analyses the record keeps;
 - `tool-results/<tool>.json`: one result of every run tool and engine tool on the Demo, plus an
   `ask_user` answer, a `read_skill` and a window that cuts the Ta–Se shell, as the `tool` message
-  the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the two whose
-  checks carry method advice (`find_gr_peaks` on Ta–Se, the refused cut window), as arm C reads them.
+  the agent loop appends (budget applied, checks, `ref`, note); `*.method-off.json`: the Demo's
+  results whose checks carry method advice (`find_gr_peaks` on Ta–Se and Ta–Ta, `compute_bond_angles`
+  on the whole shell and in the refused cut window, `detect_symmetry`), as arm C reads them.
 
 `turnRequests.test.js` (no snapshot file of its own) runs the turn module directly with a
 dock-shaped spec (the Demo run, the dock's tools, `providerModel`) and a harness-shaped one

@@ -43,6 +43,9 @@
 //               a closest-approach constraint limits the pair when the raw g
 //               just above it is above the same fraction.
 //   CN match    two counts agree within half an atom (cnMatches).
+//   clusters    an element whose own first shell holds 0.5–4.5 neighbours
+//               may form finite clusters (clusterElementsOf: the evidence
+//               gate's "no order" and arm A+'s cluster sweep).
 //   cut         two readings of whether a window cuts a shell, both today's:
 //               the Workbench asks on the CN margin (cnMarginCut: the window
 //               overlaps the shell and holds fewer atoms by at least
@@ -85,6 +88,12 @@ export const SPLIT_SHELL_REACH_A = 0.5;
 export const IDEAL_COORDINATION = Object.freeze([4, 6, 8, 12]);
 // Two coordination numbers agree within this many atoms (half an atom).
 export const CN_MATCH_TOLERANCE = 0.5;
+// An element whose own first shell holds at most this many neighbours may
+// form finite clusters (a dimer 1, a trimer 2, a tetrahedron 3, an
+// octahedron 4 per member): the evidence gate's "no order" needs
+// analyze_clusters on it, and arm A+ tries its clusters (clusterElementsOf,
+// one rule since architecture candidate 8).
+export const CLUSTER_CN_MAX = 4.5;
 // g at a shell's boundary (smoothed), or just above a closest-approach
 // constraint (raw), above this fraction of the first peak: the shell runs
 // into the next, or the constraint shapes the peak. One constant for both.
@@ -104,11 +113,6 @@ export const UNBONDED_APEX_FRACTION = 0.5;
 // count — the coordination is spread, as when the window edge cuts through a
 // shell (Demo Se–Ta–Se at 2.3–2.7 Å: 47 %; whole shells there: 83–96 %).
 export const MODAL_COORDINATION_SHARE = 0.6;
-// An element whose own first shell holds at most this many neighbours may
-// form finite clusters (a dimer 1, a trimer 2, a tetrahedron 3, an octahedron
-// 4 per member): "no order" needs analyze_clusters on it (clusterElementsOf,
-// the verification's claim catalogue).
-export const CLUSTER_CN_MAX = 4.5;
 // Windows are rounded to this many decimals (0.01 Å, the grid).
 const WINDOW_DECIMALS = 2;
 // A caller's window covers a shell edge within half a rounding unit of it.
@@ -123,17 +127,17 @@ export const cnMatches = (cn, count) => Number.isFinite(cn) && Number.isFinite(c
 export const isIdealCoordination = (cn) => IDEAL_COORDINATION.some((count) => cnMatches(cn, count));
 
 /**
- * The elements of a shell catalogue whose own first shell is a finite
- * cluster's: its CN (`shell(element, element).cn`, as the context and
- * find_gr_peaks report it) from CN_MATCH_TOLERANCE to CLUSTER_CN_MAX, in the
- * catalogue's order. [] without a catalogue.
+ * The elements of a shell catalogue (shellCatalogue, below) that may form
+ * finite clusters: those whose own first shell (the element around itself)
+ * holds from CN_MATCH_TOLERANCE to CLUSTER_CN_MAX neighbours, both
+ * inclusive — a closed shell, since only a closed shell has a CN. In the
+ * catalogue's (alphabetical) order; [] without a catalogue. The evidence
+ * gate and arm A+ (validation/armA.js) read this one rule.
  */
-export const clusterElementsOf = (catalogue) => (catalogue
-    ? catalogue.elements.filter((element) => {
-        const cn = catalogue.shell(element, element)?.cn;
-        return Number.isFinite(cn) && cn >= CN_MATCH_TOLERANCE && cn <= CLUSTER_CN_MAX;
-    })
-    : []);
+export const clusterElementsOf = (catalogue) => (catalogue?.elements || []).filter((element) => {
+    const cn = catalogue.shell(element, element)?.cn;
+    return Number.isFinite(cn) && cn >= CN_MATCH_TOLERANCE && cn <= CLUSTER_CN_MAX;
+});
 
 /** The Workbench's CN margin: |cn − reference| ≥ max(CN_CHANGE_ABS, CN_CHANGE_REL · reference). */
 export const cnChanges = (cn, reference) => Number.isFinite(cn) && Number.isFinite(reference)

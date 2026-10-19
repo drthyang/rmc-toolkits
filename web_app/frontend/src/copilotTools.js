@@ -19,7 +19,7 @@
 import { describeSymmetry, orbitLabel } from './symmetryModel';
 import { siteLabel } from './siteLabel';
 import { crystalOrientationRows, invert3, matVec3, transpose3, unitCellVectors } from './pcaCrystalFrame';
-import { cnMatches, countsCut, describePointGroup, methodCheck, pointGroupFacts } from './llm';
+import { cnMatches, countsCut, describePointGroup, lowerGroupTolerance, methodCheck, pointGroupFacts } from './llm';
 import { symmetryNoiseFloor } from './llm/context/runContext';
 import { symmetryShifts } from './symmetryShift';
 import { nearestLowIndex } from './viewer3d';
@@ -30,10 +30,6 @@ import { oneOf } from './llm/copilot/dataShape';
 // its summarizer builds — the paths the model quotes by reference — declared
 // beside that summarizer and carried on the tool's spec.
 const XYZ = ['number|null', 'number|null', 'number|null'];
-
-// A tolerance this factor above the sampling noise floor holds clearly above
-// it (the Workbench's tolerance question uses the same margin, clarify.js).
-export const NOISE_FLOOR_MARGIN = 1.25;
 
 const round = (value, digits = 3) => (
     Number.isFinite(value) ? (value === 0 ? 0 : Number(value.toPrecision(digits))) : null
@@ -635,13 +631,14 @@ export const summarizeBondAngles = (payload, { windowConfirmed = false } = {}) =
     if (reference?.trans_above_135_deg) {
         // A band with no angles has no mean: say "none", never "null°".
         const meanOf = (band) => (band.mean_deg == null ? 'none' : `${band.mean_deg}°`);
-        checks.push({
-            level: 'note',
-            text: `Raw counts deplete angles near 180° (as sin θ): ${Math.round(reference.trans_above_135_deg.share * 100)} % of these angles `
+        // Which histogram to read the shape from is method (llm copilot/method.js):
+        // arm C's method 'off' sends the counts against the ideal octahedron alone.
+        checks.push(methodCheck('note',
+            `Raw counts deplete angles near 180° (as sin θ): ${Math.round(reference.trans_above_135_deg.share * 100)} % of these angles `
                 + `lie above 135° (mean ${meanOf(reference.trans_above_135_deg)}) and ${Math.round(reference.cis_below_135_deg.share * 100)} % `
                 + `below (mean ${meanOf(reference.cis_below_135_deg)}), against an ideal octahedron's 20 % trans at 180° and 80 % cis `
-                + 'at 90°. Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.'
-        });
+                + 'at 90°.',
+            { method: ' Read the shape from histogram_10deg_sin_corrected (1 = random directions), not from the raw modes.' }));
     }
     return { data, checks, facts };
 };
@@ -1212,11 +1209,12 @@ export const summarizeSymmetry = (described, tolerance) => {
     } else {
         checks.push({ level: 'ok', text: `${described.spaceGroup}${described.spaceGroupNumber ? ` (No. ${described.spaceGroupNumber})` : ''} holds at ${tolerance} Å.` });
     }
+    // Where to read inversion, chirality and polarity from is method (llm
+    // copilot/method.js): arm C's method 'off' sends the point group's facts alone.
     if (facts) {
-        checks.push({
-            level: 'note',
-            text: `Point group ${describePointGroup(described.pointGroup)}. Take inversion, chirality and polarity from this, not from memory.`
-        });
+        checks.push(methodCheck('note',
+            `Point group ${describePointGroup(described.pointGroup)}.`,
+            { method: ' Take inversion, chirality and polarity from this, not from memory.' }));
     }
     // For the answer check (llm/copilot/verification/facts.js): the group and what its
     // point group implies.
@@ -1614,8 +1612,9 @@ export const buildCopilotTools = ({ request, structure, elements = [] }) => {
         });
 
         const floor = symmetryNoiseFloor(structure.basis);
-        // The lower group's default tolerance: just above the noise floor.
-        const lowerDefault = Number(((floor ?? 0.02) * NOISE_FLOOR_MARGIN).toPrecision(2));
+        // The lower group's default tolerance: NOISE_FLOOR_MARGIN × the noise
+        // floor, just above it (the one rule; arm A+ reads it too).
+        const lowerDefault = lowerGroupTolerance(structure.basis);
         tools.push({
             name: 'measure_symmetry_lowering',
             description: 'How far each average site sits from the position a higher-symmetry (parent) group puts it at: the '

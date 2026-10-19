@@ -379,16 +379,16 @@ const grPeaksTool = (run, cardIds) => {
                         '.'));
                 }
                 if (!shell.separated) {
-                    checks.push({
-                        level: 'warn',
-                        text: `The first shell is not separated from the next: at its boundary (${roundSig(shell.window[1], 3)} Å) `
-                            + `g(r) is still ${Math.round(shell.troughRatio * 100)} % of the peak, so ${a}–${b} distances fill the gap `
-                            + 'between shells'
-                            + (Number.isFinite(shell.cn)
-                                ? ` and the coordination number depends on the cut (${roundSig(shell.cut.earlier.cn)}–${roundSig(shell.cut.later.cn)} `
-                                    + `for a cut 0.2 Å earlier or later). Ask whether the crystal has ${a}–${b} distances there.`
-                                : '.')
-                    });
+                    // What to ask about the gap is method (method.js): arm C's method 'off' sends the reading alone.
+                    const head = `The first shell is not separated from the next: at its boundary (${roundSig(shell.window[1], 3)} Å) `
+                        + `g(r) is still ${Math.round(shell.troughRatio * 100)} % of the peak, so ${a}–${b} distances fill the gap `
+                        + 'between shells';
+                    checks.push(Number.isFinite(shell.cn)
+                        ? methodCheck('warn',
+                            `${head} and the coordination number depends on the cut (${roundSig(shell.cut.earlier.cn)}–${roundSig(shell.cut.later.cn)} `
+                                + 'for a cut 0.2 Å earlier or later).',
+                            { method: ` Ask whether the crystal has ${a}–${b} distances there.` })
+                        : { level: 'warn', text: `${head}.` });
                 }
                 if (shell.peaksInShell.length > 1 && !shell.joined) {
                     const alone = Number.isFinite(shell.firstPeak?.cn) && Number.isFinite(shell.cn)

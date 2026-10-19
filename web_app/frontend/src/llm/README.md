@@ -120,7 +120,10 @@ inputs on its page, stays the *user's* action.
    ~6,000-character budget and records each trim with an `*_omitted` count. The context travels with
    every question, so simple questions need no tool.
 2. **`prompts/system.js` + `prompts/copilot.js`**
-   - `SYSTEM_PROMPT` holds the domain rules: what Rwp means, that the history is ln(χ²) of one fit
+   - `SYSTEM_PROMPT` (`systemPrompt(method)`) holds the domain rules, each part of each ground-rule
+     sentence marked a definition (what a context field is), an inference (which field to use, what
+     a pattern is evidence of: the method) or conduct (`GROUND_RULES`); with method `'off'` no
+     inference part is sent. The rules: what Rwp means, that the history is ln(χ²) of one fit
      term, and "quote the numbers, don't guess".
    - `COPILOT_PROMPT` adds how to work with tools: say why before each call, read the `checks`,
      change the arguments on a `fail`, never repeat an identical call. It also asks for the verdict
@@ -292,8 +295,9 @@ describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'too
   the dock, the validation's arm B) sends the skills and the method in the prompt, the tool
   descriptions and the checks, byte for byte as before the switch; `'off'` (the validation's arm C,
   plan item 1.8) sends none of the method. One pure function, `planTurn`, decides from it: no
-  `read_skill` and no skills' index; no `EVIDENCE_RULES` and no method sentence of `TOOL_RULES` or
-  `ASK_RULES`; each tool offered through `toolAsSent` — its description without its `method`
+  `read_skill` and no skills' index; no `EVIDENCE_RULES`, no method sentence of `TOOL_RULES` or
+  `ASK_RULES` and no inference part of the domain rules (`prompts/system.js`; the tool-free prompt
+  too); each tool offered through `toolAsSent` — its description without its `method`
   advice, and each check of its results without the advice it lists (*The tool contract*). The
   tools, their refusals, the Workbench's questions, the evidence gate and the answer checks run
   under both. `start.method` says which one a turn followed.
@@ -797,9 +801,10 @@ tool with either name is refused, and the dock says so in its error line.
   - a check built with `methodCheck(level, ...parts)` (parts: strings and `{ method: '…' }`) has the
     whole text in `text`, as the dock reads it and as the step cards, the record and arm A+ read it,
     and lists its advice in `method`; with `'off'` the turn sends `text` without it (`checkText`). A
-    refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal and
-    no-angles failure, the pooled-directions note, `analyze_clusters`' window failures and split-site
-    note, `find_gr_peaks`' split-shell notes.
+    refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal,
+    no-angles failure and octahedron note, the pooled-directions note, `analyze_clusters`' window
+    failures and split-site note, `find_gr_peaks`' split-shell notes and unseparated-shell warning,
+    `detect_symmetry`'s point-group note.
 - `signal` aborts on Stop or timeout. Stop the work if you can.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
@@ -1045,7 +1050,9 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
 `__tests__/` covers everything that doesn't need a live model:
 
 - **Context and prompts:** context assembly and the character budget; the watchdog heuristics and
-  reply parsing; the prompt texts.
+  reply parsing; the prompt texts; the domain rules' split (`systemPrompt.test.js`: every part of
+  every ground-rule sentence classified, the classification pinned sentence by sentence, method
+  `'off'` with every definition and conduct part and no inference part).
 - **The turn** (`turn.test.js`, at its interface: a scripted model port, a fake ask-user and a fake
   clock): the order of the events and the single terminal event, why each request was made, the
   tools offered and the prompt for them (the tools-on rule, the reserved names, "when to ask"), the

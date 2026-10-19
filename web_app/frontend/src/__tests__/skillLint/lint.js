@@ -26,6 +26,11 @@
 //              table binds (VALUES: a phrase, the number as written, and what
 //              the tool measures there now) equals the tool's, rounded as the
 //              skill writes it (candidate #6: the shell readings).
+//   rule       every rule a skill states in words that the app and arm A+
+//              apply (RULES, architecture candidate 8: the split site, the
+//              cluster elements, the lower group's tolerance) is stated as
+//              they apply it: a phrase finds the sentence, a pattern says
+//              whether it states the app's rule.
 //
 // The tables live in tables.js; skillLint.test.js runs the lint on the skills
 // the app bundles, against an allow-list of today's violations.
@@ -238,6 +243,25 @@ export const evaluateValue = (entry, flat, measured) => {
     };
 };
 
+// --- check 5: rules the app and arm A+ apply -----------------------------------------------
+
+/**
+ * One rule entry against one flat text: `{ problem, at, end, context }`.
+ * `entry.find` locates the rule's statement (the finding names its line),
+ * `before` / `after` widen the sentence read around it, and `entry.states`
+ * is a pattern the sentence matches when it states the rule as the app
+ * applies it. problem: null (stated as applied), 'differs', or 'stale' (the
+ * phrase is gone).
+ */
+export const evaluateRule = (entry, flat) => {
+    const at = flat.indexOf(entry.find);
+    if (at < 0) return { problem: 'stale', at: 0, end: 0, context: entry.find };
+    const start = Math.max(0, at - (entry.before ?? 0));
+    const end = Math.min(flat.length, at + entry.find.length + (entry.after ?? 0));
+    const context = flat.slice(start, end).trim();
+    return { problem: entry.states.test(context) ? null : 'differs', at, end, context };
+};
+
 // --- check 3: firm rules ----------------------------------------------------------------
 
 // "*Firm rule in the app:*", also "*Firm rule in the app (THY-18):*"; the
@@ -261,11 +285,14 @@ export const firmRuleSentences = (flat) => [...flat.matchAll(FIRM_RULE)].map((ma
  * maps a repository path (.claude/skills/<name>/<file>.md) to its text;
  * `tools` is the set of tool names the Copilot can offer, `fields` the
  * parameter and field names the model sees; `bindings`, `notGates`,
- * `firmRules` and `values` are the tables (tables.js). Firm-rule probes and
- * value measurements run here, each given `probeContext`: one that throws is a
- * finding.
+ * `firmRules`, `values` and `rules` are the tables (tables.js). Firm-rule
+ * probes and value measurements run here, each given `probeContext`: one that
+ * throws is a finding. A rule finding also carries the skill's rule (`skill`)
+ * and the app's (`app`).
  */
-export const lintSkills = async ({ files, tools, fields, bindings = [], notGates = [], firmRules = [], values = [], probeContext = {} }) => {
+export const lintSkills = async ({
+    files, tools, fields, bindings = [], notGates = [], firmRules = [], values = [], rules = [], probeContext = {}
+}) => {
     const findings = [];
     const texts = Object.entries(files)
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -349,6 +376,17 @@ export const lintSkills = async ({ files, tools, fields, bindings = [], notGates
                     : `states no number for ${entry.what}, which ${entry.tool} measures`;
             add('value', result.problem, result.at, result.context, detail,
                 result.problem === 'differs' ? { stated: result.stated, measured: result.measured } : {});
+        }
+
+        // 5. Rules the app and arm A+ apply.
+        for (const entry of rules.filter((item) => item.file === file)) {
+            const result = evaluateRule(entry, flat);
+            if (!result.problem) continue;
+            const detail = result.problem === 'stale'
+                ? `the rule entry "${entry.rule}" no longer finds "${clip(entry.find, 50)}": rebind it to the new text, or remove it`
+                : `states ${entry.skill} for ${entry.rule}; the app and arm A+ apply ${entry.app}`;
+            add('rule', result.problem, result.at, result.context, detail,
+                result.problem === 'differs' ? { skill: entry.skill, app: entry.app } : {});
         }
     }
     return { findings, named };

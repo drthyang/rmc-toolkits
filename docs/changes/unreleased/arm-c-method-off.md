@@ -16,11 +16,21 @@
 - Checks built with `methodCheck` list the advice inside their text; arm C reads the fact and the
   verdict without it, and a refusal still refuses: the cut-window refusal, no angles, the pooled
   directions note, `analyze_clusters`' window failures and split-site note, `find_gr_peaks`' two
-  split-shell notes. The text everyone else reads (the step cards, the record, arm A+) is unchanged.
+  split-shell notes; and three reading hints that name no tool (the manager, 2026-10-19):
+  `find_gr_peaks`' "Ask whether the crystal has A–B distances there", `compute_bond_angles`' "Read the
+  shape from histogram_10deg_sin_corrected …", `detect_symmetry`'s "Take inversion, chirality and
+  polarity from this, not from memory". The text everyone else reads (the step cards, the record,
+  arm A+) is unchanged.
+- The shared system prompt's ground rules are written part by part (`src/llm/prompts/system.js`
+  `GROUND_RULES`), each part a definition (what a context field is: quantity, units, computation,
+  limits as a measurement), an inference (which field to use for a conclusion, or what a pattern is
+  evidence of) or conduct (how to answer); a sentence that does both is split. Method `'off'` sends no
+  inference part, the tool-free prompt included (the manager, 2026-10-19): of 26 sentences, 7
+  definitions, 2 inference, 4 conduct, 13 split. `'full'` is byte for byte the prompt as before.
 - The harness's `ARMS.C` sets `method: 'off'`; `ARMS.B` is unchanged. What the model sees moves for
   arm C only: `harness/first-request.arm-C.txt` (its system prompt is the `tools-ask.method-off`
-  variant, 7,651 characters against 8,575), new `harness/tools.arm-C.json`, four
-  `system-prompt/*.method-off.txt` variants and two `tool-results/*.method-off.json` samples; the
+  variant, 5,975 characters against 8,575), new `harness/tools.arm-C.json`, five
+  `system-prompt/*.method-off.txt` variants and five `tool-results/*.method-off.json` samples; the
   dock's and arm B's snapshots and the budget pins pass unchanged. A test checks arm C's first request
   for every skill name, the skills' step headings, the method sentences, `EVIDENCE_RULES` and every
   piece of tool advice. Arms A, A+ and D are unaffected.

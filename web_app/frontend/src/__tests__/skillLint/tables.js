@@ -9,6 +9,9 @@
 //               probe that exercises that code;
 //   VALUES      a value a skill quotes as measured on the Demo → what the tool
 //               measures there now (the shell readings, candidate #6);
+//   RULES       a rule a skill states in words → the rule the app and arm A+
+//               apply (candidate 8: the split site, the cluster elements, the
+//               lower group's tolerance), and a probe that the code applies it;
 //   ALLOW_LIST  today's violations, each with why and what clears it.
 //
 // When a skill's text changes (the user's review of a draft), its entries here
@@ -21,10 +24,12 @@ import assert from 'node:assert/strict';
 import {
     LOW_INDEX_CONE_DEG, SIGNIFICANCE_SIGMA, summarizeBondAngles, summarizeOrientation, summarizeSymmetry
 } from '../../copilotTools';
+import { buildClarifier } from '../../llm/copilot/clarify';
 import { buildRunTools } from '../../llm/copilot/runTools';
 import { createVerification } from '../../llm/copilot/verification';
-import { buildRunContext } from '../../llm/context/runContext';
-import { MODAL_COORDINATION_SHARE, UNBONDED_APEX_FRACTION } from '../../llm/context/shells';
+import { buildRunContext, lowerGroupTolerance, NOISE_FLOOR_MARGIN } from '../../llm/context/runContext';
+import { CLUSTER_CN_MAX, clusterElementsOf, MODAL_COORDINATION_SHARE, UNBONDED_APEX_FRACTION } from '../../llm/context/shells';
+import { SWEEP_RULES } from '../../../validation/armA';
 import {
     AXIS_CONE_DEG, AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, isSplitSite
 } from '../../workers/clusters';
@@ -557,6 +562,101 @@ export const VALUES = [
     }
 ];
 
+// --- RULES ----------------------------------------------------------------------------
+
+// A rule a skill states in words that the app and arm A+ apply, one reading
+// since architecture candidate 8 (validation/armA.js SWEEP_RULES holds the
+// app's functions): `find` locates the statement (`before` / `after` widen
+// the sentence read), `states` matches a sentence that states the rule as the
+// app applies it, `skill` and `app` say each rule in brief (an allow-list
+// entry repeats them), and `verify` checks the app and A+ apply `app`.
+const SPLIT_RULE = `PC1 resolved, its excess kurtosis ≤ ${String(SPLIT_SITE_KURTOSIS).replace('-', '−')} and ≥ ${SPLIT_SITE_SE} sampling errors below 0 (isSplitSite)`;
+const CLUSTER_RULE = `analyze_clusters for each element whose own first shell holds 0.5–${CLUSTER_CN_MAX} neighbours (clusterElementsOf, CLUSTER_CN_MAX)`;
+const TOLERANCE_RULE = `a group counts where it holds to ${NOISE_FLOOR_MARGIN} × the noise floor (lowerGroupTolerance, NOISE_FLOOR_MARGIN)`;
+
+const verifySplitRule = () => {
+    assert.equal(SWEEP_RULES.splitSite, isSplitSite, 'arm A+ does not read the app\'s split rule');
+    const site = (kappa, count = 4000, resolved = true) => ({ referenceNumber: 1, count, axisResolved: [resolved, true, true], excessKurtosis: [kappa, 0, 0] });
+    assert.equal(isSplitSite(site(-0.6)), true);
+    assert.equal(isSplitSite(site(-0.3)), false, 'a negative kurtosis alone made a site split');
+    assert.equal(isSplitSite(site(-1.5, 4000, false)), false, 'an unresolved PC1 made a site split');
+    assert.equal(isSplitSite(site(-0.93, 216)), false, 'κ₁ −0.93 at 216 copies (2.8 errors) made a site split');
+};
+const verifyClusterRule = () => {
+    assert.equal(SWEEP_RULES.clusterElements, clusterElementsOf, 'arm A+ does not read the app\'s cluster-element rule');
+    const cns = { Mo: 2, F: 4, O: 8, Fe: 6, Mg: 12, V: 1, K: 0.3 };
+    const catalog = { elements: Object.keys(cns).sort(), shell: (a, b) => (a === b ? { cn: cns[a] } : null) };
+    assert.deepEqual(clusterElementsOf(catalog), ['F', 'Mo', 'V']);
+    // The evidence gate (the verification) asks analyze_clusters for exactly these before "no order".
+    const missing = createVerification({ catalog }).judge('There is no local order beyond thermal motion.').done.audit[0].missing;
+    assert.deepEqual(missing.filter((item) => item.startsWith('analyze_clusters for ')).map((item) => item.split(' ')[2]), clusterElementsOf(catalog),
+        'the gate reads another rule');
+};
+const verifyToleranceRule = () => {
+    assert.equal(SWEEP_RULES.lowerGroupTolerance, lowerGroupTolerance, 'arm A+ does not read the app\'s lower-group tolerance');
+    // A floor of 3√2 · 0.1/√450 = 0.02 Å: the lower group at 0.025 Å.
+    const basis = [{ dispA: 0.1, count: 450 }];
+    assert.equal(lowerGroupTolerance(basis), 0.025);
+    // The Workbench asks between two groups only when both hold to 1.25 × the floor.
+    const ask = (to) => buildClarifier({ symmetry: { ladder: [{ spaceGroup: 'P4mm', from: 0, to }, { spaceGroup: 'Pm-3m', from: to, to: 1 }] } }, { noiseFloor: 0.02 })
+        .beforeTurn('What is the space group?');
+    assert.equal(ask(0.024), null, 'a group holding to 1.2 × the floor was offered');
+    assert.equal(ask(0.026)?.kind, 'tolerance');
+};
+
+export const RULES = [
+    {
+        file: ANISOTROPY,
+        rule: 'a split site',
+        find: '< 0 flat or split, e.g. two wells',
+        before: 70,
+        states: /\bPC1\b/,
+        skill: 'a negative Mardia kurtosis',
+        app: SPLIT_RULE,
+        verify: verifySplitRule
+    },
+    {
+        file: SIGNIFICANCE,
+        rule: 'a split site',
+        find: 'negative for a flat or split site',
+        before: 80,
+        after: 0,
+        states: /\bPC1\b/,
+        skill: 'a negative Mardia kurtosis',
+        app: SPLIT_RULE,
+        verify: verifySplitRule
+    },
+    {
+        file: SHELLS,
+        rule: 'the cluster elements',
+        find: 'For a cluster or polyhedron distortion (Jahn–Teller, dimers, trimers), run `analyze_clusters`',
+        states: /own first shell|finite cluster|\b4\.5\b/,
+        skill: 'analyze_clusters for any cluster or polyhedron distortion (Jahn–Teller, dimers, trimers)',
+        app: CLUSTER_RULE,
+        verify: verifyClusterRule
+    },
+    {
+        file: SYMMETRY,
+        rule: 'the lower group\'s tolerance',
+        find: 'A rung above it is a distortion of the average structure',
+        before: 60,
+        states: /1\.25|clearly above/,
+        skill: 'a rung above noise_floor_A is a distortion',
+        app: TOLERANCE_RULE,
+        verify: verifyToleranceRule
+    },
+    {
+        file: SYMMETRY,
+        rule: 'the lower group\'s tolerance',
+        find: 'Whether a rung just above the noise floor is reported as a distortion',
+        after: 60,
+        states: /1\.25|clearly above/,
+        skill: 'left to the user: a rung just above the noise floor reported as a distortion or as "at the limit of the sampling"',
+        app: TOLERANCE_RULE,
+        verify: verifyToleranceRule
+    }
+];
+
 // --- ALLOW_LIST -----------------------------------------------------------------------
 
 // Today's violations (docs/AGENT_PLAN.md section E). `fragment` (≤ 60
@@ -567,6 +667,10 @@ export const VALUES = [
 const FIRST_PEAK_WHY = 'the first-peak window moved from r ± FWHM, which reached into the second Ta–Se peak, to the inter-peak minimum '
     + '(shells.js; approved by the manager on the user\'s delegation, 2026-10-19: validation/findings/decisions/2026-10-19-shell-catalogue.json). '
     + 'The skill text is the user\'s and is not edited: awaiting the user\'s skill review, a precondition for the freeze';
+// Candidate 8: arm A+ reads the app's rules; the skills that state them otherwise wait for the user.
+const APP_RULES_WHY = 'arm A+ reads the app\'s rule since candidate 8 (approved by the manager on the user\'s delegation, 2026-10-19: '
+    + 'validation/findings/decisions/2026-10-19-aplus-app-rules.json), so the skill, the app and A+ must say one rule. The skill text is the '
+    + 'user\'s and is not edited: awaiting the user\'s skill review (plan 5.3)';
 export const ALLOW_LIST = [
     {
         check: 'value',
@@ -620,6 +724,51 @@ export const ALLOW_LIST = [
         check: 'gate',
         file: ANISOTROPY,
         fragment: '< 0 flat or split',
-        why: 'the skill\'s split site is a negative Mardia kurtosis; the tools\' is a PC1 kurtosis ≤ −0.5, 3 errors below zero. Left after PR #71: plan 5.3 (with candidates 8 and 4.1)'
+        why: 'the skill\'s split site is a negative Mardia kurtosis; the tools\' and arm A+\'s (since candidate 8) is a PC1 kurtosis ≤ −0.5, 3 errors below zero. Left after PR #71: plan 5.3 (the rule entry below holds the same sentence)'
+    },
+    {
+        check: 'rule',
+        file: ANISOTROPY,
+        fragment: '< 0 flat or split, e.g. two wells',
+        line: 27,
+        skill: 'a negative Mardia kurtosis',
+        app: SPLIT_RULE,
+        why: `step 1 calls a negative Mardia kurtosis "flat or split"; a negative kurtosis is also a flat-topped thermal cloud, and at 100–216 copies arm A's prolate rule called 3.6–14 % of prolate Gaussian sites split where isSplitSite called none: ${APP_RULES_WHY}`
+    },
+    {
+        check: 'rule',
+        file: SIGNIFICANCE,
+        fragment: 'negative for a flat or split site',
+        line: 17,
+        skill: 'a negative Mardia kurtosis',
+        app: SPLIT_RULE,
+        why: `the Mardia kurtosis paragraph reads a negative value as a flat or split site; the app calls a site split on its PC1 kurtosis only: ${APP_RULES_WHY}`
+    },
+    {
+        check: 'rule',
+        file: SHELLS,
+        fragment: 'For a cluster or polyhedron distortion (Jahn–Teller, dimers',
+        line: 51,
+        skill: 'analyze_clusters for any cluster or polyhedron distortion (Jahn–Teller, dimers, trimers)',
+        app: CLUSTER_RULE,
+        why: `step 7 sends any polyhedron distortion to analyze_clusters; the app tries clusters of an element only where its own first shell is a finite cluster's (a corner-sharing octahedron's ligands, perovskite O–O at CN 8, are an extended network the engine refuses). Dimers and trimers agree: ${APP_RULES_WHY}`
+    },
+    {
+        check: 'rule',
+        file: SYMMETRY,
+        fragment: 'A rung above it is a distortion of the average structure',
+        line: 38,
+        skill: 'a rung above noise_floor_A is a distortion',
+        app: TOLERANCE_RULE,
+        why: `step 4 takes the noise floor itself as the line; the app reads the lower group at 1.25 × the floor (measure_symmetry_lowering's default) and the Workbench offers a group only where it holds to 1.25 × the floor: ${APP_RULES_WHY}`
+    },
+    {
+        check: 'rule',
+        file: SYMMETRY,
+        fragment: 'Whether a rung just above the noise floor is reported as a',
+        line: 59,
+        skill: 'left to the user: a rung just above the noise floor reported as a distortion or as "at the limit of the sampling"',
+        app: TOLERANCE_RULE,
+        why: `a judgment call the skill leaves to the user, which the app decides (a rung holding only to 1–1.25 × the floor is not read as a group): ${APP_RULES_WHY}`
     }
 ];

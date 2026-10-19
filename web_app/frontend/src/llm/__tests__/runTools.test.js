@@ -148,6 +148,10 @@ describe('buildRunTools', () => {
         expect(checks[0].level).toBe('warn');
         expect(checks[0].text).toMatch(/not separated from the next/);
         expect(checks[0].text).toMatch(/depends on the cut/);
+        // What to ask about the gap is method (method.js): arm C reads the reading alone.
+        expect(checks[0].text).toMatch(/for a cut 0\.2 Å earlier or later\)\. Ask whether the crystal has Ta–Ta distances there\.$/);
+        expect(checks[0].method).toEqual([' Ask whether the crystal has Ta–Ta distances there.']);
+        expect(checkText(checks[0], 'off')).toMatch(/^The first shell is not separated from the next: .* for a cut 0\.2 Å earlier or later\)\.$/);
     });
 
     it('holds a split shell whole and says so', async () => {
