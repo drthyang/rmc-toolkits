@@ -14,8 +14,9 @@
 //                  (Ollama), and the kind the model expects (models.js `server`);
 //   temperature    the model's, and the floor of the request asked again
 //                  after a looping reply (model.js ANTI_REPEAT_TEMPERATURE);
-//   limits         the agent loop's budgets as the run used them
-//                  (DEFAULT_LIMITS with the run's overrides);
+//   limits         the turn's budgets as the run used them (TURN_LIMITS: the
+//                  agent loop's DEFAULT_LIMITS and the verification's
+//                  send-backs, maxEvidenceGates, with the run's overrides);
 //   context        the minimum window for this server kind (MIN_CONTEXT_TOKENS),
 //                  how the window is sized, the window read from the server
 //                  before the run (LM Studio's loaded context; Ollama's loaded
@@ -43,6 +44,7 @@
 // (`preflight`). Ollama sizes num_ctx itself (the guard) and is recorded only.
 
 import { DEFAULT_LIMITS } from '../src/llm/copilot/agentLoop';
+import { DEFAULT_MAX_SEND_BACKS } from '../src/llm/copilot/verification';
 import {
     CHARS_PER_TOKEN, CONTEXT_STEP, JSON_CHARS_PER_TOKEN, LMSTUDIO_REPLY_MIN_TOKENS, MESSAGE_OVERHEAD_TOKENS, MIN_CONTEXT,
     READ_SHARE_LIMIT, REPLY_RESERVE_TOKENS, detectServer, lmStudioLoadedContext, ollamaLoadedContext, ollamaMaxContext
@@ -57,6 +59,12 @@ import { MAX_REPLY_TOKENS } from './spend';
 // guard sizes num_ctx per request. A cloud provider's window is its own and
 // is never probed.
 export const MIN_CONTEXT_TOKENS = Object.freeze({ lmstudio: 49152, ollama: null, openai: null });
+
+// The budgets a turn runs under, as a policy states them: the agent loop's,
+// and the evidence gate's send-backs per turn, which the verification holds
+// (DEFAULT_MAX_SEND_BACKS) and a run's `limits.maxEvidenceGates` sets (the
+// turn passes it on).
+export const TURN_LIMITS = Object.freeze({ ...DEFAULT_LIMITS, maxEvidenceGates: DEFAULT_MAX_SEND_BACKS });
 
 export const SERVER_LABELS = Object.freeze({
     lmstudio: 'LM Studio',
@@ -204,14 +212,14 @@ export const preflight = async (model, { minimum = MIN_CONTEXT_TOKENS, signal } 
 /**
  * A run's policy, as its record keeps it. `server` is what the pre-run check
  * read (null: not read, as in the scripted tests); `limits` the run's
- * overrides of the agent loop's budgets.
+ * overrides of the turn's budgets (TURN_LIMITS).
  */
 export const buildRunPolicy = ({ model, limits = {}, server = null, minimum = MIN_CONTEXT_TOKENS }) => {
     const kind = server?.kind ?? null;
     return {
         server: { kind, expected: model?.server ?? null, version: server?.version ?? null, base_url: model?.baseUrl ?? null },
         temperature: { base: model?.temperature ?? null, warmer_retry_min: ANTI_REPEAT_TEMPERATURE },
-        limits: { ...DEFAULT_LIMITS, ...limits },
+        limits: { ...TURN_LIMITS, ...limits },
         context: {
             min_tokens: kind ? (minimum[kind] ?? null) : null,
             min_tokens_by_server: { ...minimum },

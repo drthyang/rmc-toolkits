@@ -41,10 +41,13 @@ visited), Live Data off. Arms A and A+ read the same run, with the ladder off.
 **The question is the app's.** Each live run is one question through the turn module
 (`src/llm/copilot/turn.js`, `runTurn`), the same module the dock runs each question through: it
 builds the context, the prompt, `ask_user` and `read_skill`, the history, the Workbench's
-questions, the evidence gate, the answer checks and the references from the run props. The
-harness (`harness.js`) is its second adapter and passes only what is its own: the case's run, its
-compute-only tools (the tools over the run props with no cards, and the run's engine tools), the
-simulated user, the arm's skills (arm B) and method (arm C) and a model port. `run.js` builds that port as the app
+questions and the verification (`src/llm/copilot/verification/`: the evidence gate, the answer
+checks, the references and the computed verdict) from the run props. The harness (`harness.js`)
+is its second adapter and passes only what is its own: the case's run, its compute-only tools
+(the tools over the run props with no cards, and the run's engine tools), the simulated user, the
+arm's skills (arm B) and method (arm C), the verdict's words for the gate (`verdict.js`
+`VERDICT_PHRASINGS`: a kind in the VERDICT line, or an empty feature list, needs its analysis as
+the same claim in prose; the app's own claim catalogue reads prose only) and a model port. `run.js` builds that port as the app
 does, with `providerModel` (`src/llm/provider/model.js`: the context guard, the warmer retry), and
 meters it for an API model (`spend.js` `meteredModel`).
 
@@ -384,7 +387,10 @@ them), every component against A+, and every disagreement with the planted truth
 **Protocol 2026-10-17.2 (THY-18).** The live arms run with the evidence gate, numbers by reference
 and the computed verdict, exactly as the app does. The case score is unchanged; the three are
 reported beside it (`report.js`: one more table per split) and in each transcript (the answers the
-gate sent back, the answer as written and as filled, the computed outcome with its reasons).
+gate sent back, the answer as written and as filled, the computed outcome with its reasons). Since
+architecture candidate #4 (2026-10-19) the three are one module, the verification; the harness
+adds the verdict schema's words to the claims its gate reads (`VERDICT_PHRASINGS`), which the
+app's catalogue read itself before. What a run sends and records is unchanged (no protocol bump).
 
 **Protocol 2026-10-19.1 (the case-id leak).** Until this version the harness named each run, and
 its `.rmc6f` and partials files, after the case id. The run name reaches the model as the
@@ -884,9 +890,9 @@ proposed fix.
 
 ### The answer corpus (plan item 3.5)
 
-The evidence gate (`src/llm/copilot/evidence.js`) and the checks on the answer
-(`answerAudit.js`) read claims with regexes. `src/__tests__/answerCorpus.test.js` runs them over
-real answers and records what they read:
+The evidence gate and the checks on the answer (the verification,
+`src/llm/copilot/verification/`: the claim and facts catalogues) read claims with regexes.
+`src/__tests__/answerCorpus.test.js` runs them over real answers and records what they read:
 - **The corpus:** one file per answer in `src/__tests__/answerCorpus/entries/`. Each file holds:
   - the text and its `fidelity`: `verbatim` (committed as the model's words), `transcribed` (read
     off a committed recording) or `quoted` (a docs or skill quotation, possibly shortened);
@@ -896,14 +902,15 @@ real answers and records what they read:
 - **The steps run** with the real engines. They must reproduce the numbers the transcript shows
   (`reproduces`).
 - **One adapter** turns an answer into the pinned reading (`readAnswer` in
-  `answerCorpus/readAnswer.js`, public functions only):
+  `answerCorpus/readAnswer.js`, through the verification's interface only: the steps recorded,
+  then the answer judged):
   - the claims the gate reads;
   - the gate's send-back given the steps, or "steps unknown";
   - the checks that fire.
 - **Each reading is judged by a person.** Every send-back, every finding, or the silence carries
   `right` and a one-line `reason`. The test lists the false alarms and the misses.
-- **When one verification module replaces the gate and the checks**, only `readAnswer` changes.
-  The pins stay.
+- **When one verification module replaced the gate and the checks** (architecture candidate
+  #4, 2026-10-19), only `readAnswer` changed (and its two call sites): the pins stayed.
 
 **On 2026-10-19** the corpus holds nine answers on the Demo:
 - **Verbatim:** gemma4:26b's three correct answers of 2026-10-11.
@@ -943,7 +950,7 @@ policies side by side.
 | --- | --- |
 | `server` | The kind the context guard detects (`detectServer`: `lmstudio`, `ollama`, or `openai` for any other server, the cloud providers among them), Ollama's version, and the kind the model expects (`models.js` `server`) |
 | `temperature` | The model's (0.2), and the floor of a request asked again after a looping reply (0.6) |
-| `limits` | The agent loop's budgets as the run used them (`DEFAULT_LIMITS`): 6 rounds of at most 4 calls, 10 minutes, 3,000 characters a result and 12,000 a turn, 2 questions, 2 gate send-backs, the stall and no-progress guards |
+| `limits` | The turn's budgets as the run used them (`runPolicy.js` `TURN_LIMITS`: the agent loop's `DEFAULT_LIMITS` and the verification's send-backs, `maxEvidenceGates`): 6 rounds of at most 4 calls, 10 minutes, 3,000 characters a result and 12,000 a turn, 2 questions, 2 gate send-backs, the stall and no-progress guards |
 | `context` | The minimum window for the server kind; how the window is sized; the window read before the run (and after it, on LM Studio); the model's maximum (Ollama); every `num_ctx` an Ollama request was sent (`num_ctx_used`; each request in `requests` keeps its own) |
 | `reply_cap` | Ollama: `num_predict`, the num_ctx minus the prompt estimate. LM Studio: none sent (the guard needs 4,096 tokens of room). Cloud: none sent |
 | `context_guard` | The guard's decisions: a request that would not fit is refused, never cut; 2.5 characters a token, 1.4 for tool JSON, 8 tokens a message; 8,192 tokens reserved for the reply; 4,096 of room on LM Studio; contexts in steps of 8,192, at least 16,384; the 0.4 read-share backstop |

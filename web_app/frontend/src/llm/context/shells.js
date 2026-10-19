@@ -5,9 +5,10 @@
 // coordination shell of every element pair in the run's partial-PDF file is
 // read here once, and every reader takes it from here: the run context's
 // pair_correlations (pairCorrelations.js), find_gr_peaks (runTools.js), the
-// Workbench's window questions (clarify.js), the evidence gate (evidence.js),
-// the answer checks (answerAudit.js: cnMatches), compute_bond_angles' window
-// refusal (copilotTools.js: countsCut) and arm A+ (validation/armA.js).
+// Workbench's window questions (clarify.js), the verification
+// (copilot/verification/: the evidence gate's finite clusters,
+// clusterElementsOf; the answer checks, cnMatches), compute_bond_angles'
+// window refusal (copilotTools.js: countsCut) and arm A+ (validation/armA.js).
 // Before, five readers each searched their own r range, rounded their own way
 // and integrated the coordination number their own way, and one shell could
 // read three ways (the Demo's Ta–Se first peak: 3.9 Se per Ta in one, 3.86 in

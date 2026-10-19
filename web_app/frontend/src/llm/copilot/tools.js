@@ -35,9 +35,10 @@ import { parseToolArguments, validateToolArguments } from './toolCalls';
 // `checks` are deterministic verdicts on the full result, each
 // `{ level: 'ok' | 'note' | 'warn' | 'fail', text }`. `facts` (optional, not
 // sent to the model) are machine-readable findings the final answer must not
-// contradict (answerAudit.js): `{ convergence }`, `{ groups: [...] }`,
-// `{ direction: { subject, significant, anisotropic, peak_sigma, map_sigma } }`. A thrown error becomes a
-// failed step whose message the model reads, so it can correct its arguments.
+// contradict: one key per row of the verification's facts catalogue
+// (verification/facts.js FACTS: each key, the tools that return it, its shape
+// and the check that reads it). A thrown error becomes a failed step whose
+// message the model reads, so it can correct its arguments.
 // `focus` (when the chat has a page to point at) is the card-focus controller
 // (focus/focus.js): view tools call focus.show(ids) and focus.onClear(undo);
 // analysis tools leave it alone. `askUser(request, { signal })` (when the

@@ -24,6 +24,24 @@ export const FEATURE_KINDS = [
     'symmetry_lowering'
 ];
 
+/**
+ * The verdict's words, as claims the evidence gate reads (adapter 2 of the
+ * verification's `phrasings` seam, src/llm/copilot/verification/: the app's
+ * own catalogue reads prose only). The harness passes them to every turn
+ * (`config.phrasings`), so a kind in the VERDICT line needs its analysis as
+ * the same claim in prose would: off_centre a split site, the cluster kinds
+ * the clusters', jahn_teller a split shell, symmetry_lowering a lowering, and
+ * `"features": []` "no order" (anywhere in the text). `modulation` is a prose
+ * word the app reads itself (order between cells).
+ */
+export const VERDICT_PHRASINGS = Object.freeze({
+    'split-site': Object.freeze({ asserted: Object.freeze([/(^|[^\w-])(off_centre)\b/gi]) }),
+    clusters: Object.freeze({ asserted: Object.freeze([/(^|[^\w-])(cluster_distortion|cluster_breathing|rigid_cluster)\b/gi]) }),
+    coordination: Object.freeze({ asserted: Object.freeze([/(^|[^\w-])(jahn_teller)\b/gi]) }),
+    lowering: Object.freeze({ asserted: Object.freeze([/(^|[^\w-])((?<!local\s)symmetry_lowering)\b/gi]) }),
+    'no-order': Object.freeze({ literal: Object.freeze([/"features"\s*:\s*\[\s*\]/]) })
+});
+
 export const VERDICT_INSTRUCTIONS = 'Finish with one line that starts with VERDICT and holds a JSON object, '
     + 'after everything else (the Outcome line included):\n'
     + 'VERDICT {"features": [{"kind": "...", "element": "...", "direction_uvw": [u, v, w] or null, '

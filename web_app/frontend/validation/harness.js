@@ -46,7 +46,11 @@
 // analysis did not run goes back to the model; each send-back is recorded),
 // numbers may be written by reference (the record keeps the answer as written
 // and as filled; the VERDICT is parsed from the filled text), and the Outcome
-// is the app's computed verdict, recorded beside the case score.
+// is the app's computed verdict, recorded beside the case score. All three
+// are the turn's verification (src/llm/copilot/verification/); the harness
+// adds the verdict's words to the claims it reads (verdict.js
+// VERDICT_PHRASINGS, the turn's `config.phrasings`), which the app's own
+// catalogue does not read.
 //
 // The run policy (plan item 1.2, protocol 2026-10-19.5; runPolicy.js): the
 // record keeps the rules the run ran under (`record.policy`: the server and
@@ -66,7 +70,7 @@ import { READ_SKILL } from '../src/llm/copilot/skills';
 import { buildRunTools } from '../src/llm/copilot/runTools';
 import { runTurn } from '../src/llm/copilot/turn';
 import { HARNESS_VIEW, loadRun } from './runFolder';
-import { parseVerdict, VERDICT_INSTRUCTIONS, VERDICT_MARK } from './verdict';
+import { parseVerdict, VERDICT_INSTRUCTIONS, VERDICT_MARK, VERDICT_PHRASINGS } from './verdict';
 import { outcomeAgreement, scoreVerdict } from './scoring';
 import { shownValues, traceNumbers } from './provenance';
 import { buildRunPolicy, noteContextUsed } from './runPolicy';
@@ -219,7 +223,7 @@ export const runLiveCase = async ({
     // dock runs it; the harness adds only what is its own: the case's run, its
     // compute-only tools (the tools over the run props, with no cards, and the
     // run's engine tools), the simulated user, the arm's skills and method,
-    // and its port.
+    // the verdict's words for the evidence gate, and its port.
     for await (const event of runTurn({
         question,
         run: run.props,
@@ -229,7 +233,7 @@ export const runLiveCase = async ({
         skills: ARMS[arm].skills ? skills : null,
         signal,
         clock: { now },
-        config: { limits, method: ARMS[arm].method || 'full' }
+        config: { limits, method: ARMS[arm].method || 'full', phrasings: VERDICT_PHRASINGS }
     })) {
         if (event.type === 'start') {
             // Refused before any request: a broken harness, not a run.

@@ -6,7 +6,7 @@
 // run; a change here is a change of protocol and is dated in the validation
 // doc. Pure, no I/O.
 
-import { normalizeSymbol } from '../src/llm/copilot/answerAudit';
+import { normalizeSymbol } from '../src/llm/copilot/verification';
 
 /**
  * The tolerances, each from the physics of the cases:
@@ -147,7 +147,7 @@ export const scoreVerdict = (truth, verdict) => {
     Object.values(symmetry || {}).forEach((value) => components.push(value === 'right' ? 1 : 0));
 
     // Wrong positive claims, by the answer check that should catch them
-    // (answerAudit rules); 'none' = no check covers it.
+    // (the verification's answer checks, by rule); 'none' = no check covers it.
     const contradictions = [];
     spurious.forEach((claim) => contradictions.push({
         what: `spurious ${claim.kind}${claim.element ? ` (${claim.element})` : ''}`,

@@ -10,9 +10,8 @@
 // arms.test.js pins A and A+); the fit truth is not scored. No model runs here.
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { auditAnswer, contextAuditFacts } from '../../src/llm/copilot/answerAudit';
 import { buildRunTools, MISFIT_CONCENTRATION } from '../../src/llm/copilot/runTools';
-import { pointGroupFacts } from '../../src/llm/context/pointGroups';
+import { createVerification } from '../../src/llm/copilot/verification';
 import { buildRunContext } from '../../src/llm/context/runContext';
 import { buildCase, DEV_CASES } from '../cases';
 import { CONTEXT_SECTIONS, runLiveCase } from '../harness';
@@ -128,8 +127,12 @@ describe('dev-fit-unconverged: a run with fit data (plan item 4.6)', () => {
 
     it('the answer check flags "converged", against the tool\'s status and against the context alone', async () => {
         const { facts } = await tools.assess_convergence.run({});
-        const audit = contextAuditFacts(context, pointGroupFacts);
-        const rules = (text, turnFacts) => auditAnswer(text, { facts: turnFacts, context: audit }).map((finding) => finding.rule);
+        // The checks through the verification: the run context given, the tool's facts recorded, no claim offered.
+        const rules = (text, turnFacts) => {
+            const verification = createVerification({ context, offered: [] });
+            turnFacts.forEach((item) => verification.record({ name: 'assess_convergence', args: {}, status: 'ok', error: null, executed: true, facts: item }, () => ({ data: null })));
+            return verification.judge(text).done.audit.map((finding) => finding.rule);
+        };
         expect(rules('The run has converged: the χ² history has plateaued.', [facts])).toEqual(['convergence']);
         expect(rules('The run has converged.', [])).toEqual(['convergence']);
         expect(rules('The run has not converged: χ² is still falling.', [facts])).toEqual([]);

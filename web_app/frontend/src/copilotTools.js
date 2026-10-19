@@ -1216,7 +1216,7 @@ export const summarizeSymmetry = (described, tolerance) => {
             `Point group ${describePointGroup(described.pointGroup)}.`,
             { method: ' Take inversion, chirality and polarity from this, not from memory.' }));
     }
-    // For the answer check (llm/copilot/answerAudit.js): the group and what its
+    // For the answer check (llm/copilot/verification/facts.js): the group and what its
     // point group implies.
     const result = { data, checks };
     if (facts && !String(described.spaceGroup).startsWith('≥') && described.spaceGroup !== 'undetermined') {

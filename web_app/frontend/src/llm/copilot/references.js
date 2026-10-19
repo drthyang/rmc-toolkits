@@ -9,8 +9,10 @@
 // writes the engine's value in place of each reference where the words are
 // read — the answer, the record and the score — so no number is mistyped,
 // rounded otherwise than the engine rounds it, or invented. A reference that
-// names nothing the turn has stays as written and is a finding on the answer
-// (answer checks), which the computed verdict counts (verdict.js).
+// names nothing the turn has stays as written and is a finding on the answer,
+// which the computed verdict counts (verification/: the turn's store, filled
+// before the answer is judged; turnState.js fills the earlier text segments
+// and a stopped turn's from the steps it shows).
 //
 // Values print as the tools gave them: a number as written in the data, a
 // list of numbers as [a, b, c] (valid in prose and in JSON), a string as is —
@@ -44,19 +46,15 @@ export const formatReferenceValue = (value) => {
 };
 
 /**
- * The turn's referable values: `add(data)` registers a tool result the model
- * was shown and returns its ref; `resolve(path)` the value text or null.
+ * The turn's referable values: `put(ref, data)` keeps a tool result the model
+ * was shown under its ref; `resolve(path)` gives the value text or null.
+ * `context` is what {{ctx.…}} reads: the run context as the model read it.
  */
 export const createReferenceStore = ({ context = null } = {}) => {
     const results = new Map();
     return {
-        add: (data) => {
-            const ref = `r${results.size + 1}`;
-            results.set(ref, data);
-            return ref;
-        },
-        // Under a ref the caller named (the agent loop names it before it fits
-        // the data into the message that carries the ref).
+        // Under a ref the caller named (the verification names it before the
+        // loop fits the data into the message that carries the ref).
         put: (ref, data) => { results.set(ref, data); },
         resolve: (path) => {
             const [root, ...rest] = steps(path);
