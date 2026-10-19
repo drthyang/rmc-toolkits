@@ -394,13 +394,37 @@ to a thousand copies gets $\nu = 1$ or 2 from Auto — twelve or forty-two cells
 default until plan item 2.5 was a fixed $\nu = 10$ (1002 cells). That gap is the content of
 caveat 7.
 
-**A cell names a direction only to within its own size.** The peak test says whether a direction
-is preferred; `peakDirection` is the peak cell's centre. At $\nu = 1$ the twelve cells are centred
-on the icosahedron's vertices, which lie $31.7°$ from every cube axis (a cube axis is a 2-fold axis
-of the tiling's icosahedron, on the boundary between two cells), and a cell reaches $37.4°$ from
-its centre; at $\nu = 2$ the cube axes are cell centres. So below 504 copies a lobe along a cube
-axis is found, significant, but its reported direction is $31.7°$ off — beyond the validation's
-$15°$ direction tolerance. A finer manual $\nu$ places it more closely, with fewer atoms per cell.
+**A cell names a direction only to within its own size — a measurement limit, reported.** The
+peak test says whether a direction is preferred; `peakDirection` is the peak cell's centre. Both
+engines return the peak cell's **circumscribed radius**, `peakCellRadiusDeg` (plan item 2.5): the
+largest angle from the cell's centre to its own vertices, $R_m = \max_v \operatorname{atan2}(|\mathbf
+c_m \times \mathbf v|,\ \mathbf c_m \cdot \mathbf v)$ (`_cell_radii` / `cellRadius`, cached with the
+tiling as `radii`). A cell is a convex spherical polygon well inside the hemisphere about its
+centre, so the angle to the centre peaks at a vertex: **every direction assigned to the cell lies
+within $R_m$ of `peakDirection`**. The equal-area cap ($\arccos(1 - \Omega_m/2\pi)$, 33.6° at
+$\nu = 1$) is smaller and would leave the cell's corners outside, so it would understate the bound.
+
+| $\nu$ | $R_m$ (min – max over cells) | $\nu$ | $R_m$ |
+|---|---|---|---|
+| 1 | 37.38° (every cell: $\arccos\sqrt{(5+2\sqrt5)/15}$, the dodecahedron) | 4 | 8.96 – 10.81° |
+| 2 | 19.35 – 20.91° | 6 | 5.76 – 7.17° |
+| 3 | 12.34 – 13.68° | 10 | 3.34 – 4.37° |
+
+Pentagons are the smallest cells at every $\nu$. On Auto every site with fewer than 1104 copies gets
+$\nu \le 2$, so its peak direction is known no better than ~20° (37.4° below 504 copies); the Demo's
+52 sites (1000 copies, $\nu = 2$) read 19.35° (a pentagon peak) or 20.91°. At $\nu = 1$ the cell
+centres lie 31.7° from every cube axis (a cube axis is a 2-fold axis of the tiling's icosahedron, on
+the boundary between two cells): a lobe along a cube axis is found, significant, but named 31.7°
+off. At $\nu = 2$ the cube axes are cell centres, yet a cell still spans ~20°.
+
+**What reads it.** `analyze_displacement_directions` gives the peak direction "± R°, the cell
+radius at ν = n" (`peak.radius_deg`) and, where $R_m$ exceeds `LOW_INDEX_CONE_DEG` = 15° (half
+the smallest angle between the <110> and <111> families, the validation's direction tolerance;
+`directionResolved`), says the direction is not resolved finer than $R_m$ and names no low-index
+family. The page prints the same "± R°" beside the peak. Arm A+ applies that bound (a significant
+peak in a cell wider than 15° gives way to PC1); arm A, reading the page as a user would, takes the
+peak. The 15° line falls between $\nu = 2$ and $\nu = 3$ (both suites pin it). A finer manual $\nu$
+places a lobe more closely, with fewer atoms per cell.
 
 **Why 12.** At $n$ points per cell the fractional Poisson noise on an isotropic map is
 $1/\sqrt{n}$; $n = 12$ gives $\approx 29\%$ cell-to-cell scatter. That is small enough that a
@@ -1120,19 +1144,19 @@ Applied to: `mass`, the per-cell amplitude sum $S_m$, and a float copy of the co
 
 > **Caveat — smoothing is mass-conserving but not area-weighted.** The diffusion moves mass
 > *per cell*, taking no account of the $\pm$36 %/+18 % area spread of §4.8. A perfectly
-> isotropic input (mass $\propto \Omega_m$) does not stay perfectly isotropic. Measured at the UI
-> default $\nu = 10$, an exactly-isotropic map reads:
+> isotropic input (mass $\propto \Omega_m$) does not stay perfectly isotropic. Measured at
+> $\nu = 10$, an exactly-isotropic map reads:
 >
 > | passes | resulting $\mathcal{E}$ range |
 > |---|---|
 > | 1 | 0.978 – 1.035 |
-> | **2 (UI default)** | **0.976 – 1.060** |
+> | **2 (the UI default until 2026-10-19; it is 0 since)** | **0.976 – 1.060** |
 > | 4 | 0.955 – 1.098 |
 > | 12 (slider max) | 0.903 – 1.202 |
 >
 > The excess sits in the ring of hexagons *around* each of the 12 pentagons (mean 1.060 there
 > versus 0.999 elsewhere at 2 passes), so heavy smoothing paints a faint icosahedral pattern
-> onto an isotropic site. At the default 2 passes it is a $\pm 6\%$ effect — well below the
+> onto an isotropic site. At 2 passes it is a $\pm 6\%$ effect — well below the
 > Poisson noise of any real map — but at 8–12 passes it approaches the size of a weak real lobe.
 > Read the raw `counts` and the calibrated tests (§6.3) when in doubt. The map test is untouched by
 > smoothing; the peak test always tests a raw count, but of the cell the smoothed map picks, so its
@@ -1455,6 +1479,7 @@ the workers themselves). "Frame" is `req` for the request's frame (PCA-rotated w
 | `peakCell`, `peakEnhancement` | int / float | — | tie-tolerant argmax over the **smoothed** enhancement: the lowest index within a relative `PEAK_TIE_RTOL = 1e-9` of the maximum | `peakEnhancement` only, from the page's smoothing-0 readout (so the raw histogram's) |
 | `peakTieCount` | int | — | number of cells within `PEAK_TIE_RTOL` of the maximum (1 = unique peak) | yes, as "(1 of k equal cells)" when $k > 1$ |
 | `peakDirection` | unit vector | **req** | `centers[peakCell]` | yes |
+| `peakCellRadiusDeg` | degrees | — | the peak cell's circumscribed radius: the largest angle from its centre to its vertices, so every direction assigned to it lies within it (§3; 37.38° at $\nu = 1$, 19.35–20.91° at $\nu = 2$) | yes, "± R°, the cell radius at ν = n" beside the peak (plan item 2.5) |
 | `peakZScore` | float | — | the **raw, local** $z$ at that cell — kept for compatibility, **not a significance** (§6.3) | no |
 | `peakCount`, `peakExpected` | int / float | — | raw count and isotropic expectation $e$ of the peak cell | no |
 | `peakLocalPValue`, `peakPValue` | probability | — | exact Poisson tail $P(X \ge n \mid e)$; the same Šidák-corrected over the $C$ cells (§6.3) | no |
@@ -1506,7 +1531,7 @@ through: **HTTP** = read by `pca_orientation_endpoint` in [app.py](../../web_app
 | `weight` | `weight` | HTTP + worker + UI | `count` \| `amplitude` \| `amplitude2` | `count` | `count` | what each cell accumulates |
 | `min_amplitude` | `minAmplitude` | HTTP + worker, **never sent by the UI** | finite; negatives are accepted and reported as `amplitudeCutoff = 0` | `0.0` | — | absolute short-displacement cut |
 | `min_amplitude_quantile` | `minAmplitudeQuantile` | HTTP + worker + UI | $[0, 1)$, validated | `0.0` | `0` (slider caps at 0.5) | quantile short-displacement cut; skipped entirely at $q = 0$ |
-| `smoothing` | `smoothing` | HTTP + worker + UI | finite $\ge 0$, truncated toward 0; negative/`NaN` rejected | `0` | **2** (slider max 12) on the drawn map only; the readouts are requested at 0 | neighbour-diffusion passes |
+| `smoothing` | `smoothing` | HTTP + worker + UI | finite $\ge 0$, truncated toward 0; negative/`NaN` rejected | `0` | **0** (slider max 12; 2 until 2026-10-19) on the drawn map only; the readouts are requested at 0 | neighbour-diffusion passes |
 | `frame` | `frame` | HTTP + worker + UI | `cartesian` \| `pca` | `cartesian` | `cartesian` | crystal frame vs PCA frame |
 | `geometry` | `geometry` | HTTP + worker + UI | bool | `True` | `true` | include `polygons` + `neighbors` |
 | `target_per_cell` | `targetPerCell` | **library call only** — neither the Flask route nor the worker forwards it | finite $\ge 1$, truncated to an int; otherwise rejected | `12` | not exposed | auto-resolution target |
@@ -1597,6 +1622,8 @@ independently computed in each language — not a shared-golden parity suite.
 | Unnormalised input accepted | yes | — |
 | **Monte-Carlo area cross-check** (assignment Voronoi fractions × $4\pi$ = analytic $\Omega_m$) | 200 000 dirs, $\nu = 3$, rtol 12 % | 60 000 dirs, $\nu = 2$, tol 15 % |
 | `recommendedFrequency` at 774 / 300 / 12000 = 2 / 1 / 9, plus the exact boundary table | **the generated golden** ([test_orientation_fixture.py](../../tests/test_orientation_fixture.py)) | **the same golden** ([orientationParity.test.js](../../web_app/frontend/src/__tests__/orientationParity.test.js)) |
+| `peakCellRadiusDeg` in every payload (plan item 2.5) | **the generated golden** | **the same golden** |
+| Cell radius: the dodecahedron's closed form at $\nu = 1$, every assigned direction within its cell's radius, the 15° line between $\nu = 2$ and 3, the payload's value for the peak cell | `PeakCellRadiusTests` (20 000 dirs, $\nu \in \{1,2,3,6,10\}$) | `the peak cell radius` (6000 dirs, $\nu \in \{1,2,3,6\}$) |
 | Isotropic cloud: $\langle\mathcal{E}\rangle \approx 1$, significance < 1.5, \|anisotropy\| < 0.05 | 20 000 pts, $\nu=8$ | same |
 | Lobed cloud peaks on the long axis, $\mathcal{E}_{\text{peak}} > 2$, significance > 3 | yes | yes |
 | One-sided cloud: peak > 4× its antipode, $\mathcal{A} > 0.5$ and $> 3\mathcal{A}_{\text{null}}$ | yes | yes |
@@ -1720,9 +1747,9 @@ independently computed in each language — not a shared-golden parity suite.
    histogram carries a $\approx 35\%$ dark spot at each of the 12 pentagons.
    The module docstring's "±10 %" understates this.
 2. **Smoothing introduces a small icosahedral artefact** (§6.4): it conserves total mass exactly
-   but is not area-weighted, so an exactly isotropic map reads 0.976–1.060 at the UI default of
-   2 passes and 0.903–1.202 at 12. `zScore` and `antipodalAsymmetry` are computed from raw
-   counts and are immune.
+   but is not area-weighted, so an exactly isotropic map reads 0.976–1.060 at 2 passes and
+   0.903–1.202 at 12 (the page's map opens unsmoothed since 2026-10-19). `zScore` and
+   `antipodalAsymmetry` are computed from raw counts and are immune.
 3. **`zScore` ignores the weight, and mixes smoothed with raw.** Under
    `amplitude`/`amplitude2` the colour shows weighted mass per steradian while the significance
    readout still describes the head count — deliberate (there is no clean Poisson null for a
@@ -2081,11 +2108,16 @@ A reads too (`validation/armA.js`: `ARM_A_RULES.DIRECTION_SETTINGS` *is* `DIRECT
 page and the rule that reads it cannot drift:
 
 ```js
-DIRECTION_DEFAULTS = { frequency: 'auto', weight: 'count', frame: 'cartesian', minQuantile: 0, smoothing: 2 }
+DIRECTION_DEFAULTS = { frequency: 'auto', weight: 'count', frame: 'cartesian', minQuantile: 0, smoothing: 0 }
 directionReadoutRequest(s) = { referenceNumber, frequency: s.frequency === 'auto' ? null : s.frequency,
                                weight, frame, minAmplitudeQuantile: s.minQuantile, smoothing: 0 }
 directionMapRequest(s)     = { ...directionReadoutRequest(s), smoothing: s.smoothing }
 ```
+
+The map opens unsmoothed (smoothing 0, decided 2026-10-19; it was 2): Auto's cells already average
+at least 12 displacements, and on its coarse tilings two passes left about 30 % of a cell's excess
+in place, a blur of 35–63°. It is a display setting only — no readout, and so no score of the
+validation's arms, depends on it — and at 0 the drawn map *is* the readout (one request).
 
 At the defaults the readout request is what `analyze_displacement_directions` asks for itself (no
 frequency, so the engine's `recommendedFrequency`; count weight, Crystal frame, no amplitude cut, no
@@ -2485,7 +2517,7 @@ isotropic expectation.
 
 | Readout | Engine field | Definition | Format |
 | --- | --- | --- | --- |
-| `peak N.NN× at [x, y, z] · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakTieCount`, `peakSignificance` | the raw histogram's cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction, good to within the cell (engine §3); and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 0.6.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
+| `peak N.NN× at [x, y, z] ± R°, the cell radius at ν = n · N.Nσ` | `peakEnhancement`, `peakDirection`, `peakCellRadiusDeg`, `frequency`, `peakTieCount`, `peakSignificance` | the raw histogram's cell with the largest `enhancement` (lowest index among ties within $10^{-9}$, with "(1 of k equal cells)" appended when $k > 1$); its centre direction ± the cell's circumscribed radius, the bound within which the direction is named (engine §3; since plan item 2.5); and the calibrated peak test — the peak cell's exact Poisson tail, Šidák-corrected over all $C$ cells, as a one-sided deviate (engine §6.3). A deviate $\le 0$ prints **"not significant"**. Before the 0.6.0 audit this slot printed `(z = N.N)`, the local Gaussian $z$ of the peak cell, which reads 3–5 on pure noise | 2 dp, direction 2 dp, σ 1 dp |
 | `anisotropy N.NN (isotropic ≈ N.NN) · N.Nσ` | `orientationAnisotropy`, `orientationAnisotropyNull`, `orientationAnisotropySignificance` | $3\lambda_1 - 1$ of the orientation tensor $T = \langle \mathbf u\mathbf u^{\mathsf T}\rangle$ (weighted by the selected weight), $\lambda_1$ its largest eigenvalue: **2 for a perfect single axis, and 0 for isotropy only as $N \to \infty$** — a finite isotropic sample reads $\approx 1.6/\sqrt{N_{\text{eff}}}$, printed in brackets; the σ is Bingham's $\chi^2_5$ test of isotropy on the same tensor (engine §8). Computed from the vectors, not the bins, so it is resolution-independent. Until the 0.6.0 audit the InfoBadge said "0 for an isotropic direction distribution" and no reference was shown | 2 dp, σ 1 dp |
 | `± asymmetry N.NN (symmetric null N.NN ± N.NN) · N.Nσ` | `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`, `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant` | $\dfrac{1}{2N}\sum_c \lvert n_c - n_{\bar c}\rvert$ over cells, $\bar c$ the exact antipodal cell — equivalently $\sum_{\text{pairs}}\lvert n(\mathbf u) - n(-\mathbf u)\rvert / N$: **0 for an inversion-symmetric cloud, 1 for a fully one-sided one**. The null is its exact mean ± SD if every antipodal pair's atoms had split at random between $\pm\mathbf u$ (same pair totals, engine §7), and $z = (\mathcal{A} - \text{null})/\text{SD}$. Until the 0.6.0 audit the slot printed "(noise floor $\sqrt{C/\pi N}$)", an isotropic Gaussian-limit mean that could exceed 1 | values 2 dp, σ 1 dp |
 | `map significance N.Nσ` | `mapSignificance` (InfoBadge also prints `mapChiSquare`, `mapDegreesOfFreedom`, `mapNullSd`, and `mapExpectedPairs` when withheld) | Pearson's $X^2 = \sum_c z_c^2$, $z_c = (n_c - e_c)/\sqrt{e_c}$, against a gamma curve matched to its exact isotropic mean, SD and skewness, as a one-sided normal deviate (engine §6.3); "not significant" when $\le 0$, **"— (too sparse)"** when the engine withholds it (fewer than 0.1 atom pairs expected to share a cell). Until the 0.6.0 audit this slot printed the RMS of $z_c$ with a σ unit, whose noise value is $1 \pm 1/\sqrt{2C}$ — "1.4σ" for a cloud with every atom in one hemisphere. The first audit fix referred $X^2$ to $\chi^2_{C-1}$, which read noise above 3σ 13–20× too often on sparse maps (27 copies at $\nu = 10$, 64 at $\nu = 24$), while the InfoBadge promised the tail ran only "slightly heavy" | σ 1 dp |
@@ -2572,8 +2604,8 @@ Two honest notes on this readout:
 
 * **Mixed provenance in one tooltip.** The colour/enhancement and ⟨|Δr|⟩ lines reflect the smoothed
   field; the count and z lines are the raw counts (by design — smoothing correlates neighbours and
-  would overstate the evidence). With the default 2× smoothing they refer to different populations of
-  the same cell.
+  would overstate the evidence). With smoothing on they refer to different populations of the same
+  cell; at the default 0 (since 2026-10-19) they agree.
 * **The direction is a Cartesian cell centre, not a crystallographic index.** In the Crystal frame it
   is $[x,y,z]$ in the shared Cartesian Å basis; in the PCA frame it is
   $[\text{PC1}, \text{PC2}, \text{PC3}]$ components. Neither is converted to $[uvw]$ — and neither
@@ -2999,7 +3031,7 @@ The engines return considerably more than this page shows. From the drawn map's 
 (`result`), the UI reads only `polygons`, `enhancement`, `vmax`, `cellMeanAmplitude`,
 `meanAmplitude`, `centers`, `counts`, `zScore`, `cellCount`, `weight`, `smoothing`,
 `browserOrientation` and `pcaAxes` (fallback rods only); from the readout's (`readout`, Step 3)
-`peakEnhancement`, `peakDirection`, `peakSignificance`, `peakTieCount`, `cellCount`,
+`peakEnhancement`, `peakDirection`, `peakCellRadiusDeg`, `frequency`, `peakSignificance`, `peakTieCount`, `cellCount`,
 `orientationAnisotropy`, `orientationAnisotropyNull`, `orientationAnisotropySignificance`,
 `antipodalAsymmetry`, `antipodalAsymmetryNull`, `antipodalAsymmetryNullSd`,
 `antipodalAsymmetryZ`, `antipodalAsymmetrySignificant`, `mapSignificance`, `mapChiSquare`,
@@ -3036,7 +3068,7 @@ destructure.
 | Resolution | `frequency` | **`auto`**, labelled `Auto · ν=n (10n²+2)` with the engine's ν (since plan item 2.5; until then 10) | `auto`, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24 → $10\nu^2+2$ cells | — |
 | Weight | `weight` | `count` | `count` \| `amplitude` (\|Δr\|) \| `amplitude2` (\|Δr\|²) | — |
 | Min \|Δr\| | `minQuantile` | **0** | 0 – 0.5, step 0.05 (displayed as %) | quantile of \|Δr\| |
-| Smoothing | `smoothing` | **2** | 0 – 12, step 1; the drawn map only (the readouts are requested at 0) | diffusion passes |
+| Smoothing | `smoothing` | **0** (2 until 2026-10-19) | 0 – 12, step 1; the drawn map only (the readouts are requested at 0) | diffusion passes |
 | Frame | `frame` | `cartesian` (**Crystal**) | `cartesian` \| `pca` | — |
 | Cluster | `clusterThreshold` | 1.5 | 0.4 – 2.5, step 0.1; visible only when `sites.reconstructed` (browser path) | Å |
 | — | `geometry` | always `true` | — | — |
@@ -3112,10 +3144,10 @@ site with ~1000 copies (one per unit cell of a 10×10×10 supercell) it returns 
 At a manual ν = 10 the expected count per cell is ≈ 1. Three consequences there:
 
 * The colour field is only legible because of the smoothing; the raw map at ~1 count/cell is Poisson
-  confetti. Turning smoothing to 0 at ν = 10 shows that directly. (On Auto the 2× smoothing blurs
-  a coarse map further: two passes leave about 30 % of a cell's excess in place and spread most of
-  the rest over its neighbours, about 63° away at ν = 1 and about 35° at ν = 2. The readouts are
-  unaffected, Step 3.)
+  confetti. Turning smoothing to 0 at ν = 10 shows that directly. On Auto the map opens
+  unsmoothed (since 2026-10-19): there two passes, the old default, left about 30 % of a cell's
+  excess in place and spread most of the rest over its neighbours, about 63° away at ν = 1 and
+  about 35° at ν = 2. The readouts never depended on it (Step 3).
 * Per-cell `zScore` and the map test are computed from raw counts against
   $\text{expected} \approx 1$ or less. The calibrated `map significance` is valid there: it is
   referred to the exact isotropic mean, SD and skewness of $X^2$, so pure noise exceeds 3σ at the
