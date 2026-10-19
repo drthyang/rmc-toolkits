@@ -136,7 +136,7 @@ ambiguous or wrong, so a model that reads the tools with judgment has room to ad
   | --- | --- | --- | --- | --- |
   | Two features at once | dev-jt-off-centre | `jahn_teller`, `offCentre` | Jahn–Teller octahedra whose centre is also off-centred: both on the centre | A split centre explains its own split shell |
   | A signal at 2.5–4σ | dev-weak-order-a, dev-weak-order-b | `zone_boundary`, `weak: true`, `decoy: null` | A weak cell-doubling order of B, below half its thermal rms; the truth names q only. One seed on each side of the bar | The fixed 3σ bar |
-  | Two tools read differently | dev-eight-site | `offcentre`, `wells: 8` | Eight-site <111> off-centring of B | A split only from a prolate ellipsoid; the 3 + 3 shell it leaves unexplained |
+  | Two tools read differently | dev-eight-site | `offcentre`, `wells: 8` | Eight-site <111> off-centring of B | A split only from the ellipsoid (a resolved PC1, `isSplitSite`); the 3 + 3 shell it leaves unexplained |
   | A choice only the user can make | dev-octahedral-clusters | `elongated_clusters` (new) | M6 octahedra, each elongated along a random axis: a cluster distortion | None: the control (below) |
 
   `elongated_clusters` is the subset's one new kind: no other kind plants a cluster distortion. The
