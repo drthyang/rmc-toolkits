@@ -303,10 +303,16 @@ const bandwidthFactor = (method, count, dimensions) => {
     throw new Error("bw must be 'scott', 'silverman', or a positive number");
 };
 
-const mulberry32 = (seed) => {
+/**
+ * mulberry32 (Tommy Ettinger's 32-bit generator): `random()` returns the next
+ * uint32 output divided by 2^32, in [0, 1). `mulberry32_uint32` in pca_kde.py is
+ * its bit-exact port (the parity golden pca_kde_fixture.json pins the stream).
+ * The state wraps modulo 2^32 explicitly, so the stream is exact for any length.
+ */
+export const mulberry32 = (seed) => {
     let value = seed >>> 0;
     return () => {
-        value += 0x6d2b79f5;
+        value = (value + 0x6d2b79f5) >>> 0;
         let mixed = value;
         mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
         mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
@@ -314,20 +320,33 @@ const mulberry32 = (seed) => {
     };
 };
 
-const subsample = (points, limit, seed) => {
-    if (points.length <= limit) return points;
+/**
+ * Which of `count` cloud points the KDE fits: `limit` of them, ascending. A
+ * partial Fisher-Yates shuffle of 0..count-1 driven by mulberry32(seed), whose
+ * step i swaps position i with i + floor(random() * (count - i)); the first
+ * `limit` positions, sorted. `fit_subsample_indices` in pca_kde.py draws the same
+ * indices (pca_kde_fixture.json), so both runtimes fit the same points. With
+ * count <= limit nothing is drawn and every index is returned.
+ */
+export const fitSubsampleIndices = (count, limit, seed = 0) => {
+    if (count <= limit) return Array.from({ length: count }, (_, index) => index);
     const random = mulberry32(seed);
-    const indices = Array.from({ length: points.length }, (_, index) => index);
+    const indices = Array.from({ length: count }, (_, index) => index);
     for (let index = 0; index < limit; index += 1) {
-        const swap = index + Math.floor(random() * (indices.length - index));
+        const swap = index + Math.floor(random() * (count - index));
         [indices[index], indices[swap]] = [indices[swap], indices[index]];
     }
-    return indices.slice(0, limit).sort((i, j) => i - j).map((index) => points[index]);
+    return indices.slice(0, limit).sort((i, j) => i - j);
+};
+
+const subsample = (points, limit, seed) => {
+    if (points.length <= limit) return points;
+    return fitSubsampleIndices(points.length, limit, seed).map((index) => points[index]);
 };
 
 // Same cap as pca_kde.py. It binds for pooled clouds and for a single site in a
-// box of >= 28 cells per edge; this draw (mulberry32 Fisher-Yates) differs from
-// numpy's, so above the cap the two runtimes agree only statistically.
+// box of >= 28 cells per edge; above it both runtimes fit the same points
+// (fitSubsampleIndices ⟷ fit_subsample_indices, over the same site-major cloud).
 export const MAX_PCA_FIT_POINTS = 20000;
 
 // One 1D Gaussian kernel matrix, laid out row-major as grid x N in a Float64Array
@@ -947,6 +966,8 @@ export const siteEllipsoids = (sites, probability = 0.5) => {
  * `displacement_cloud`. Element pooling selects each atom by its OWN species
  * (`atomElements`), so a mixed-occupancy site contributes only the matching
  * atoms. Returns `{ cloud, site }`, `site` being the record for a reference number.
+ * A pooled cloud is site-major (sites by reference number, each in file order),
+ * as displacement_cloud returns it: the fit subsample picks rows by position.
  */
 export const displacementCloud = (parsed, { referenceNumber = null, element = null } = {}) => {
     if (referenceNumber !== null) {

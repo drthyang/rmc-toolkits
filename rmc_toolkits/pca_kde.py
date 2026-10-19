@@ -66,10 +66,15 @@ from .parsers import Rmc6fParseReport, iter_rmc6f_atoms, read_cell_vectors
 # Cap on the number of cloud points fed to the KDE (the ADP table never
 # subsamples). A site in an n x n x n box has n^3 copies, so this binds for
 # element-pooled clouds (e.g. 32000 Se atoms) AND for a single site once the box
-# has >= 28 cells per edge. The subset is a seeded draw that differs from the
-# JS port's (mulberry32 Fisher-Yates), so above the cap the two runtimes agree
-# only statistically; the density estimate is stable well below it.
+# has >= 28 cells per edge. The subset is the seeded draw of
+# :func:`fit_subsample_indices` -- mulberry32 and a partial Fisher-Yates, the
+# draw of workers/pcaKde.js -- so above the cap both runtimes fit the SAME
+# points; the density estimate is stable well below it.
 MAX_PCA_FIT_POINTS = 20000
+
+_UINT32_MASK = 0xFFFFFFFF
+# mulberry32's Weyl increment (Tommy Ettinger's 32-bit generator).
+_MULBERRY32_INCREMENT = 0x6D2B79F5
 
 # The KDE needs a positive-definite bandwidth. A site whose cloud is flat along
 # one axis (a frozen or perfectly ordered direction) drives an eigenvalue to
@@ -329,11 +334,19 @@ def displacement_cloud(
     Pooling is meaningful because each site is centered on its own average
     position: the union describes how an element moves, independent of where its
     sites sit in the cell.
+
+    The rows are in site-major order -- sites by ascending reference number, each
+    site's atoms in file order -- the order of ``displacementCloud`` in
+    workers/pcaKde.js. RMCProfile writes a file cell by cell, so file order would
+    interleave the sites of a pooled cloud; the order matters because the KDE's fit
+    subsample (:func:`fit_subsample_indices`) picks rows by position.
     """
     if reference_number is not None:
         position = sites.site_position(reference_number)
         return sites.displacements[sites.site_index == position]
 
+    # Stable: within a site, rows keep their file order.
+    order = np.argsort(sites.site_index, kind="stable")
     if element not in (None, "", "all"):
         wanted = str(element).lower()
         if sites.atom_elements is not None:
@@ -346,9 +359,9 @@ def displacement_cloud(
         if not rows.any():
             available = ", ".join(sites.species)
             raise ValueError(f"Unknown element {element!r}; available: {available}")
-        return sites.displacements[rows]
+        return sites.displacements[order[rows[order]]]
 
-    return sites.displacements
+    return sites.displacements[order]
 
 
 def probability_scale(probability: float) -> float:
@@ -567,13 +580,70 @@ def _bandwidth_factor(method: str | float, count: int, dimensions: int) -> float
     raise ValueError("bw must be 'scott', 'silverman', or a positive number")
 
 
+def _uint32_seed(seed) -> int:
+    """A seed as JavaScript's ``seed >>> 0`` reads an integer: modulo 2**32."""
+    if isinstance(seed, (bool, np.bool_)) or not isinstance(seed, (int, np.integer)):
+        raise ValueError("rng_seed must be an integer")
+    return int(seed) & _UINT32_MASK
+
+
+def mulberry32_uint32(seed: int, count: int) -> np.ndarray:
+    """The first ``count`` outputs of mulberry32(``seed``) as uint32 integers.
+
+    A bit-exact port of ``mulberry32`` in workers/pcaKde.js, whose ``random()``
+    returns each output divided by 2**32. Output ``k`` (from 1) mixes the state
+    ``seed + k * 0x6D2B79F5 (mod 2**32)``, so the whole stream is computed at
+    once; every operation is uint32 arithmetic carried in uint64 (a product of
+    two uint32 values is reduced modulo 2**64, which keeps its low 32 bits --
+    exactly ``Math.imul``'s).
+    """
+    count = int(count)
+    if count < 0:
+        raise ValueError("count must be non-negative")
+    mask = np.uint64(_UINT32_MASK)
+    steps = np.arange(1, count + 1, dtype=np.uint64)
+    state = (np.uint64(_uint32_seed(seed)) + steps * np.uint64(_MULBERRY32_INCREMENT)) & mask
+    # mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1)
+    mixed = ((state ^ (state >> np.uint64(15))) * (state | np.uint64(1))) & mask
+    # mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61)
+    product = ((mixed ^ (mixed >> np.uint64(7))) * (mixed | np.uint64(61))) & mask
+    mixed = mixed ^ ((mixed + product) & mask)
+    # (mixed ^ (mixed >>> 14)) >>> 0
+    return ((mixed ^ (mixed >> np.uint64(14))) & mask).astype(np.uint32)
+
+
+def fit_subsample_indices(count: int, limit: int, rng_seed: int = 0) -> np.ndarray:
+    """Which of ``count`` cloud points the KDE fits: ``limit`` of them, ascending.
+
+    The draw of ``subsample`` in workers/pcaKde.js, index for index: a partial
+    Fisher-Yates shuffle of ``0 .. count-1`` whose step ``i`` swaps position
+    ``i`` with ``i + floor(u_i * (count - i))``, ``u_i`` the i-th mulberry32
+    output divided by 2**32 (the product taken in float64, as JavaScript does),
+    then the first ``limit`` positions sorted ascending. With ``count <= limit``
+    nothing is drawn and every index is returned.
+
+    The positions a step can still touch are all >= i, so the shuffle keeps only
+    the displaced entries (a dict) instead of a ``count``-long index array.
+    """
+    count = int(count)
+    limit = int(limit)
+    if count <= limit:
+        return np.arange(count)
+    uniforms = mulberry32_uint32(rng_seed, limit).astype(float) / 4294967296.0
+    steps = np.arange(limit)
+    targets = steps + np.floor(uniforms * (count - steps).astype(float)).astype(np.int64)
+    displaced: dict[int, int] = {}
+    chosen = [0] * limit
+    for index, target in enumerate(targets.tolist()):
+        chosen[index] = displaced.get(target, target)
+        displaced[target] = displaced.get(index, index)
+    return np.sort(np.asarray(chosen, dtype=np.int64))
+
+
 def _subsample(points: np.ndarray, limit: int, rng_seed: int) -> np.ndarray:
     if points.shape[0] <= limit:
         return points
-    rng = np.random.default_rng(rng_seed)
-    choice = rng.choice(points.shape[0], limit, replace=False)
-    choice.sort()
-    return points[choice]
+    return points[fit_subsample_indices(points.shape[0], limit, rng_seed)]
 
 
 def _kernel_matrix(grid_axis: np.ndarray, projected: np.ndarray, bandwidth: float) -> np.ndarray:
@@ -679,6 +749,12 @@ def pca_kde_volume(
     whose walls are all the same size. (Until 0.6.0 it also sampled every axis on
     that cube, which puts a thin axis's kernels between nodes: a planar cloud
     read 0% captured mass on an even grid and ~2e5 % on an odd one.)
+
+    A cloud of more than ``max_fit_points`` points is fitted on the
+    ``max_fit_points`` rows :func:`fit_subsample_indices` draws with ``rng_seed``
+    (mulberry32, the browser engine's draw, so both fit the same rows); every
+    statistic and the volume then come from those rows, while ``count`` reports
+    the whole cloud and ``fitCount`` the rows used.
     """
     points = np.asarray(points, dtype=float)
     if points.ndim != 2 or points.shape[1] != 3:

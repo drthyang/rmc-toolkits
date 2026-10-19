@@ -111,7 +111,8 @@ method adds: the skills together with the method in the prompt, the descriptions
 
 Nine kinds, each a **dev** case (for improving tools and skills) and a held-out **test** case (for
 reported numbers only): the same physics with other elements, directions, magnitudes or
-structures, plus one dev-only case with fit data ([below](#the-fit-data-dev-case)). Each case is
+structures, plus one dev-only case with fit data ([below](#the-fit-data-dev-case)) and the
+dev-only judgment subset ([below](#the-judgment-subset-plan-item-16-part-ii)). Each case is
 an `.rmc6f` supercell (reference sites and cell indices; coordinates wrapped into [0, 1) as
 RMCProfile writes them) with its partial g(r). `run.js write` saves each as
 `<out>/<case>/rmc_run/`, a run folder the Workbench opens, named as the harness names every run
@@ -133,8 +134,8 @@ Thermal rms: 0.05–0.09 Å. Supercells: 6–8 cells a side, 1,024–2,560 atoms
 
 **The split is enforced in code** (`__tests__/split.test.js`):
 - the test set is pinned by a sha256 of its configurations, partials and truths;
-- every paired dev kind has a test case of the same kind; a dev-only case (`devOnly`) has a kind
-  no test case has;
+- every paired dev kind has a test case of the same kind; a dev-only case (`devOnly`) outside the
+  judgment subset has a kind no test case has;
 - dev and test share no id, and no tool, skill, app source or doc names a test case, its
   material, its planted lengths or its directions ([the holdout scan](#the-holdout-scan));
 - `--split test` needs `--final` and a clean git tree, and every record names its commit;
@@ -143,7 +144,7 @@ Thermal rms: 0.05–0.09 Å. Supercells: 6–8 cells a side, 1,024–2,560 atoms
 ### The fit-data dev case
 
 **dev-fit-unconverged** (plan item 4.6, kind `unconverged_fit`, `devOnly` in `cases.js`) is the one
-dev-only case. No other case has fit files, so without it `assess_convergence`,
+dev-only case outside the judgment subset. No other case has fit files, so without it `assess_convergence`,
 `compare_fit` and the rmc-fit-assessment skill were never exercised. It has no test twin and
 gives no reported number.
 - **The configuration:** rock-salt MgO (a = 4.212 Å, 6 × 6 × 6 cells, 1,728 atoms), independent
@@ -179,6 +180,68 @@ gives no reported number.
   ran and what the answer made of them. `__tests__/fitCase.test.js` pins all of this with a
   scripted model.
 
+### The judgment subset (plan item 1.6, part ii)
+
+On the paired cases the engines alone already score close to 1, so the case score cannot show a
+model adding to them ([the bar after batch 1](#arm-a-results-no-model-2026-10-14-commit-b4fe09f)).
+The judgment subset holds dev cases where A+'s fixed joining rules (`armA.js` `runArmSweep`) are
+ambiguous or wrong, so a model that reads the tools with judgment has room to add.
+
+- **The cases.** Each has `judgment: true`, a `situation` (`cases.js` `JUDGMENT_SITUATIONS`) and
+  `devOnly`. Their parameters sit apart in `validation/judgmentCases.js`; `cases.js` appends them to
+  `DEV_CASES` and builds them with its kinds. Every case before them builds byte for byte as before.
+
+  | Situation | Case | Kind and option | Planted | The fixed rule at issue |
+  | --- | --- | --- | --- | --- |
+  | Two features at once | dev-jt-off-centre | `jahn_teller`, `offCentre` | Jahn–Teller octahedra whose centre is also off-centred: both on the centre | A split centre explains its own split shell |
+  | A signal at 2.5–4σ | dev-weak-order-a, dev-weak-order-b | `zone_boundary`, `weak: true`, `decoy: null` | A weak cell-doubling order of B, below half its thermal rms; the truth names q only. One seed on each side of the bar | The fixed 3σ bar |
+  | Two tools read differently | dev-eight-site | `offcentre`, `wells: 8` | Eight-site <111> off-centring of B | A split only from a prolate ellipsoid; the 3 + 3 shell it leaves unexplained |
+  | A choice only the user can make | dev-octahedral-clusters | `elongated_clusters` (new) | M6 octahedra, each elongated along a random axis: a cluster distortion | None: the control (below) |
+
+  `elongated_clusters` is the subset's one new kind: no other kind plants a cluster distortion. The
+  other cases are options of existing kinds; without the option a kind draws exactly as before.
+- **The control.** The octahedral clusters' M–M shell is split across a trough. The Workbench joins
+  it (an octahedron) and asks when an analysis' window cuts it. The choice of window is the user's,
+  and the case's truth follows the default, the whole shell. Since protocol 2026-10-19.8, A+ takes
+  its cluster windows from the same shell reading (`armA.js`), so its fixed rule and the default
+  coincide: on the score this situation is a control, and the judgment (saying which window was
+  used and what the other gives) shows in the answer only. The case was designed against the
+  earlier rule, a cut at the first trough. It still pins the question and its default
+  (`judgment.test.js`) and would show a reader that leaves the one shell reading again.
+- **Seeds.** The first three cases take the first seed, upward from their base, on which A+ errs
+  only where the situation says, so each measures its own situation. The situation's own failure
+  held on every seed tried (the octahedral case's under the cluster window before protocol
+  2026-10-19.8). The side failures seen are reported with the PR as findings for the engines. The
+  weak-order pair shares one amplitude, set so the expected significance is 3σ. Its seeds come from
+  an outcome-neutral rule: one realised on each side of the bar (`judgmentCases.js`).
+- **Scoring is unchanged.** Three things to read with it:
+  - the verdict has no confidence field, so an honest "marginal" shows in the prose, the answer
+    checks and the computed verdict, not in the score;
+  - stating the default of a window the user skipped is not scored; the planted truth is the one
+    the Workbench's default (the whole first shell) leads to;
+  - each case keeps its kind's tolerated partial descriptions, and the new kind tolerates its own.
+- **Dev only, until the held-out version.** A fresh author writes the held-out matches from
+  [`validation/judgment-spec.md`](../../web_app/frontend/validation/judgment-spec.md) alone: the
+  situations, the kinds and options, the knobs, and no value. They do not read `judgmentCases.js`,
+  the dev records or the judgment pins. The lead checks their cases against the dev ones without
+  showing them. The matches join the test set as a new pinned version on the user's decision.
+  Until then:
+  - no test case is a judgment case, and `TEST_SET_SHA256` is unchanged (`split.test.js`);
+  - a judgment case never removes a test case's token from the holdout scan (`holdoutScan.js`);
+  - `__tests__/judgment.test.js` scans the spec, this section and the change note for the dev
+    cases' ids and values.
+- **How the report reads it.** Each split with judgment cases gets a table: each column's mean
+  score per situation, over the subset and over the rest, every run counted (`report.js`
+  `renderJudgment`; a record is a judgment case's when its truth says so, `truth.judgment`). The
+  comparison beside the case score (part i) lists their components like any case's, and a
+  transcript's planted truth names the situation.
+- **Two situations through the harness** (`judgment.test.js`, a scripted model): a window that
+  cuts the octahedral clusters' split shell is asked about, and the simulated user's skip keeps
+  the whole shell; a superstructure claimed below the bar scores as a claim while the answer
+  check flags it and the computed verdict is "not verified".
+- **Where the results are.** In the PR, `validation/baseline/arm-a-dev.json` and the `arms.test.js`
+  pins, not here: the held-out author may read this document.
+
 ## The holdout scan
 
 `__tests__/split.test.js` (with `__tests__/holdoutScan.js`) keeps the test cases out of what the
@@ -198,7 +261,9 @@ masked (■).
     (q ≡ −q ≡ q + G, any order) within six words of its element.
 
   Lengths, directions and wavevectors count only where they differ from the dev cases of the same
-  kind, and thermal widths never count: those are the kind's physics, not the test case.
+  kind, and thermal widths never count: those are the kind's physics, not the test case. A judgment
+  dev case ([above](#the-judgment-subset-plan-item-16-part-ii)) is never that comparison: it cannot
+  remove a token.
 - **Not hits:** a bare element symbol (they are everywhere); a formula with more or fewer
   elements; a chain that repeats an element (A–X–A is a bond angle, which every study of that pair
   writes); a number with more digits (0.371 is not 0.37) or more than six words from its element.
@@ -514,6 +579,23 @@ window the Workbench did not question is not refused and a whole shell never is;
 cut windows would then run (their CN within 15 % of the shell's), and the 4 sub-shell first peaks be
 refused unless the user chose them — which the Workbench's question already asks. The user decides.
 
+**Protocol 2026-10-19.9 (plan item 1.6, part ii: the judgment subset).** Five dev cases join the dev
+set ([the judgment subset](#the-judgment-subset-plan-item-16-part-ii)). The question, the scoring,
+the verdict schema, the tools and the skills are unchanged, and the run module reads the new cases
+as any case. What a dev batch holds changes, so the protocol moves: a dev batch under an earlier
+protocol has no judgment case, and its means are not comparable with one under this.
+- **Arms A, A+ and D on the new cases** are appended to `arm-a-dev.json`, under this protocol and
+  on top of protocol 2026-10-19.8's re-recorded windows. The earlier dev records stay as recorded:
+  a re-run equals each of them apart from protocol and commit. D scores 1 on each new case.
+- **The test set is unchanged:** every test case builds byte for byte as before, and
+  `TEST_SET_SHA256` holds.
+- **What the model is told:** nothing about the case. No new id, kind or id stem reaches a request
+  or a tool result (`caseBlind.test.js` covers every case). The model-visible snapshots are
+  unchanged. Arm B's largest first request on dev is still dev-fit-unconverged's
+  (`contextBudget.test.js`).
+- Approved by the manager on the user's delegation, 2026-10-19
+  (`validation/findings/decisions/2026-10-19-judgment-dev-cases.json`).
+
 **Protocol 2026-10-19.10 (arm C without the method, plan item 1.8).** Arm C runs the turn with
 `method: 'off'` ([Arm C](#arm-c-the-copilot-without-the-method)): no skills, no `EVIDENCE_RULES`, no
 method sentence of `TOOL_RULES` or `ASK_RULES`, no method advice in a tool description or a check.
@@ -522,8 +604,8 @@ variant (7,651 characters; the full method's `tools-ask` is 8,575), its tool des
 `harness/tools.arm-C.json`, a check that carried advice reaches it without
 (`tool-results/*.method-off.json`), and the evidence gate's send-back names no analysis
 (`harness/gate-send-back.arm-C.txt`). Arm B, the dock and arms A, A+ and D are unchanged: every
-other snapshot file passes as it was. No arm C run exists under an earlier protocol. The number
-follows .8 and the .9 an open PR holds. Each record keeps the method its run followed (`method`).
+other snapshot file passes as it was. No arm C run exists under an earlier protocol. Each record
+keeps the method its run followed (`method`).
 
 ### The report beside the case score (plan item 1.6, part i)
 
@@ -568,7 +650,9 @@ records). It adds three sections:
   B makes alone is the model's own. One that A+ makes alone is where the model added something.
 
 **On the dev baselines** (`arm-a-dev.json`; no B run yet, so the report says so and shows A
-beside A+):
+beside A+). These are the ten dev cases outside the judgment subset; the subset's results are kept
+out of this document ([the judgment subset](#the-judgment-subset-plan-item-16-part-ii)), and
+`comparison.test.js` pins this table on the ten:
 
 | Column | Case score | Feature-only score (6 cases) | No spurious claim | Symmetry fields (9 cases) |
 | --- | --- | --- | --- | --- |
@@ -595,7 +679,7 @@ baseline record, the truth and no verdict: their mean is the case score; the bas
 exactly as recorded; and the listing matches the components. **Not a protocol change.** The report
 reads records: it changes no record, no score and nothing a run sends, so `PROTOCOL_VERSION`
 stays 2026-10-19.7, and records under every protocol go through it. Plan item 1.6's part (ii),
-the judgment cases, is a separate change.
+the judgment cases, is a separate change (protocol 2026-10-19.9).
 
 ## Records, transcripts, findings
 
@@ -675,11 +759,16 @@ Decisions on the validation itself take the same form, one JSON file per record 
 `validation/findings/decisions/`, named by the record's id (the date and a slug,
 `2026-10-19-list-sites-split.json`), so that parallel changes never edit the same file.
 `parseFindingFiles` (`findings.js`) reads every `*.json` there in id order and validates each by the
-findings schema, in `split.test.js` and in `run.js findings <folder>`. So far two, both approved by
-the manager on the user's delegation on 2026-10-19: the recomposed test breathing case (protocol
-2026-10-19.2) and plan item 4.1, `list_sites` showing a split site's static displacement
-([ai-assistant.md](ai-assistant.md), Step 20). The schema's approver is the user, so the delegation
-is stated in each record's evidence and proposed fix.
+findings schema, in `split.test.js` and in `run.js findings <folder>`. So far four, all approved by
+the manager on the user's delegation on 2026-10-19:
+- the recomposed test breathing case (protocol 2026-10-19.2);
+- plan item 4.1, `list_sites` showing a split site's static displacement
+  ([ai-assistant.md](ai-assistant.md), Step 20);
+- the engines' own verdicts (architecture candidate 5);
+- the judgment dev subset (plan item 1.6, part ii; protocol 2026-10-19.9).
+
+The schema's approver is the user, so the delegation is stated in each record's evidence and
+proposed fix.
 
 ### The answer corpus (plan item 3.5)
 
@@ -914,8 +1003,10 @@ B against A+ component by component and every disagreement with the truth
 dev the engines' feature-only score is 0.92, not 0.99).
 
 The dev-only fit-data case (protocol 2026-10-19.6) is not in these tables, whose means are over the
-nine paired kinds: A and A+ both score 1 on it, so over all ten dev cases the means are A 0.825
-and A+ 0.99.
+nine paired kinds: A and A+ both score 1 on it, so over the ten dev cases outside the judgment
+subset the means are A 0.825 and A+ 0.99. The judgment subset (protocol 2026-10-19.9) is not in
+these tables either. Its results are in its PR, the dev records and the `arms.test.js` pins, because
+the author of its held-out matches may read this document.
 
 ## What the model sees (snapshot tests)
 

@@ -56,7 +56,7 @@ rmc_toolkits/
 
 web_app/backend/app.py    Flask API; `server_settings()` (bind 127.0.0.1, debug off unless RMC_TOOLKITS_HOST / RMC_TOOLKITS_DEBUG opt in); data-root guard; `_number()` numeric-parameter validation (bad input → 400); StrictJSONProvider (NaN → null in data series) + `_strict_result_response()` / `_require_finite_scaling()` (a non-finite computed result → 400); file-signature LRU caches (`_FileCache` keyed on `_file_signature()` = (st_mtime_ns, st_ctime_ns, st_size, st_ino); a torn read is never cached → 409) for KDE, PCA, triplets, clusters and scaling; /api/scaling/preview|run share the CLI writer
 
-web_app/frontend/validation/     the Copilot validation (no app code imports it; run with vite-node): planted-truth cases split dev / held-out test (cases.js), each opened as the run `rmc_run` through the run module's in-process adapter (runFolder.js `loadRun` → src/openRunFolder.js, view `HARNESS_VIEW` = the app's `DEFAULT_VIEW`, optional PCA table for a dev check), the VERDICT schema and fixed scoring, arm A (default pages) and A+ (engine sweep, no model), the live harness for arms B/C (harness.js: the turn module's second adapter — each question through runTurn with the case's run, compute-only tools, the simulated user, the arm's skills and method (arm C: the turn's method 'off', no method anywhere) and a model port, run.js building it with providerModel and spend.js meteredModel) with transcripts (each record keeps its `view`, its context sections, every request as sent and its run policy — runPolicy.js: server, window, limits, temperature, reply cap, guard decisions, final round's tool_choice form; `preflight` refuses a run on an LM Studio model loaded below 48k), provenance and a spend cap, the supervisor findings schema, and the decisions on the validation one JSON file per record (findings/decisions/<id>.json, `parseFindingFiles`) — docs/algorithms/copilot-validation.md
+web_app/frontend/validation/     the Copilot validation (no app code imports it; run with vite-node): planted-truth cases split dev / held-out test (cases.js) plus a dev-only judgment subset (judgmentCases.js; judgment-spec.md is what the author of its held-out matches reads), each opened as the run `rmc_run` through the run module's in-process adapter (runFolder.js `loadRun` → src/openRunFolder.js, view `HARNESS_VIEW` = the app's `DEFAULT_VIEW`, optional PCA table for a dev check), the VERDICT schema and fixed scoring, arm A (default pages) and A+ (engine sweep, no model), the live harness for arms B/C (harness.js: the turn module's second adapter — each question through runTurn with the case's run, compute-only tools, the simulated user, the arm's skills and method (arm C: the turn's method 'off', no method anywhere) and a model port, run.js building it with providerModel and spend.js meteredModel) with transcripts (each record keeps its `view`, its context sections, every request as sent and its run policy — runPolicy.js: server, window, limits, temperature, reply cap, guard decisions, final round's tool_choice form; `preflight` refuses a run on an LM Studio model loaded below 48k), provenance and a spend cap, the supervisor findings schema, and the decisions on the validation one JSON file per record (findings/decisions/<id>.json, `parseFindingFiles`) — docs/algorithms/copilot-validation.md
 
 web_app/frontend/src/
   main.jsx                       React entry point (mounts App)
@@ -207,6 +207,13 @@ web_app/frontend/src/
   `atomElements`, also in the browser orientation histogram via `displacementCloud`), and a
   mixed-occupancy site is labelled by its majority species (ties to the alphabetically first) with
   `elementCounts` + `mixed`; the pages name it by its composition (`siteLabel.js`).
+  A pooled cloud is **site-major** in both engines (sites by reference number, file order within a
+  site — `displacement_cloud` stable-sorts the file's cell-by-cell rows), because above
+  `MAX_PCA_FIT_POINTS` (20 000) the KDE fits the rows ONE draw picks by position:
+  `fit_subsample_indices` ⟷ `fitSubsampleIndices` (mulberry32 seeded `seed mod 2³²`, a partial
+  Fisher–Yates with `floor(u·(n−i))` in float64, the first `limit` positions sorted ascending). Keep
+  the two bit-identical; `pca_kde_fixture.json` pins the stream, the indices and two above-cap volumes
+  (regenerate with `PYTHONPATH=. python tests/generate_pca_kde_fixture.py`).
 - **PCA statistics conventions (0.6.0)**: `nonGaussianity` is Mardia's multivariate excess kurtosis,
   (b₂ − 15)/5. It is rotation- and affine-invariant, and it equals the marginal κ of any elliptical
   distribution. A symmetric split site is NEGATIVE. Per-axis κ means something only where
@@ -634,8 +641,9 @@ plot-parity tests, so those run in CI.
    the chart and the badge follow the last `.log` column only).
 7. Displacement Directions: decide the default resolution (Auto instead of ν = 10), and remove or
    rename the legacy `significance` / `peakZScore` payload fields before an API freeze.
-8. PCA: identical subsamples in both engines above 20 000 copies (port the JS draw to Python, or drop
-   the per-site cap).
+8. ~~PCA: identical subsamples in both engines above 20 000 copies~~ **DONE** — the JS draw
+   (mulberry32 + partial Fisher–Yates) ported to Python over the same site-major cloud;
+   `pca_kde_fixture.json` holds the volumes above the cap to one golden.
 9. Bond Geometry: pair A = C distinct-window requests as (w12 bond, w23 bond) so the work, not only
    the angle count, is bounded by `APP_MAX_ANGLES`.
 10. Add the z-distribution histogram and global x-z projection panels to match `src/RMC_KDE.py`;
