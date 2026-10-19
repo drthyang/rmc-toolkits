@@ -5,10 +5,11 @@
 // a known answer for every rule — the search range, the rounding, the CN
 // integral, the first-peak window (the inter-peak minimum, approved
 // 2026-10-19), separation, the closest-approach pile-up (the FWHM edge clause
-// dropped), the CN match, both cut readings (pinned as they were), the
-// split-shell joins of the review's L1 (moved here from pairCorrelations) and
-// a joined shell's split by number (plan item 4.2): its parts, long − short
-// and its sampling error.
+// dropped), the CN match, the one cut rule (windowCut: the CN margin where a
+// window meets a shell, the counts where there is none to compare; approved
+// by the user, 2026-10-19), the split-shell joins of the review's L1 (moved
+// here from pairCorrelations) and a joined shell's split by number (plan item
+// 4.2): its parts, long − short and its sampling error.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -32,7 +33,8 @@ import {
     extractPeaks,
     isIdealCoordination,
     labelledMinimumDistances,
-    shellCatalogue
+    shellCatalogue,
+    windowCut
 } from '../context/shells';
 
 const grid = (n, step) => Array.from({ length: n }, (_, i) => Number((i * step).toFixed(6)));
@@ -538,11 +540,12 @@ describe('the CN match and the two cut readings', () => {
         expect(cnChanges(null, 3)).toBe(false);
     });
 
-    it('window(): what a window holds, and the Workbench\'s CN-margin reading (today\'s rule)', () => {
+    it('window(): what a window holds, and its CN-margin reading', () => {
         const catalogue = catalogueOf(shellSeries('Ta-Se', [[2.52, 0.06, 3], [2.74, 0.1, 3]], RHO));
         const shell = catalogue.shell('Ta', 'Se');
         const [lo, hi] = shell.window;
-        expect(catalogue.window('Ta', 'Se', [lo, hi])).toMatchObject({ holds: 'whole', cnMargin: { cut: false }, counts: null, shell });
+        expect(catalogue.window('Ta', 'Se', [lo, hi])).toMatchObject({ holds: 'whole', cnMargin: { cut: false }, shell });
+        expect(catalogue.window('Ta', 'Se', [lo, hi])).not.toHaveProperty('counts');
         expect(catalogue.window('Ta', 'Se', [lo - 0.3, hi])).toMatchObject({ holds: 'whole', cnMargin: { cut: false } });
         expect(catalogue.window('Ta', 'Se', [lo, hi + 0.3])).toMatchObject({ holds: 'more', cnMargin: { cut: false } });
         expect(catalogue.window('Ta', 'Se', shell.firstPeak.window)).toMatchObject({ holds: 'part', cnMargin: { cut: true } });
@@ -554,6 +557,9 @@ describe('the CN match and the two cut readings', () => {
         expect(cnMarginCut(shell.firstPeak.cn, shell, shell.firstPeak.window)).toBe(true);
     });
 
+    // Since 2026-10-19 compute_bond_angles' rule only where there is no shell
+    // to compare a window with (windowCut's fallback, below). The title is the
+    // one the shell-catalogue decision record names.
     it('countsCut: compute_bond_angles\' rule, pinned (60 % modal share, more than half unbonded)', () => {
         expect([MODAL_COORDINATION_SHARE, UNBONDED_APEX_FRACTION]).toEqual([0.6, 0.5]);
         const summary = (modalShare, unbondedShare) => ({ mean: 3, modal: 3, modalShare, unbondedShare });
@@ -564,9 +570,55 @@ describe('the CN match and the two cut readings', () => {
         expect(countsCut(summary(0.5, 0.5))).toEqual({ cut: true, by: 'count-spread' });
         expect(countsCut(summary(0.7, 0.5))).toEqual({ cut: false, by: null });
         expect(countsCut({ mean: null, modal: null, modalShare: null, unbondedShare: null })).toEqual({ cut: false, by: null });
-        // The Demo's Se–Ta–Se at 2.3–2.7 Å: 47 % share the modal count.
+    });
+
+    // The counts the bond-angle engine would give: a share with the modal
+    // count, a share with none.
+    const counts = (modalShare, unbondedShare = 0) => ({ mean: 3, modal: 3, modalShare, unbondedShare });
+
+    it('windowCut, the one rule: where a window meets a shell with a CN the CN margin decides, whatever the counts', () => {
+        // 3 + 3 partners at 2.52 and 2.74 Å: one split shell of 6.
         const catalogue = catalogueOf(shellSeries('Ta-Se', [[2.52, 0.06, 3], [2.74, 0.1, 3]], RHO));
-        expect(catalogue.window('Ta', 'Se', [2.3, 2.7], { counts: summary(0.47, 0) }).counts).toEqual({ cut: true, by: 'count-spread' });
+        const shell = catalogue.shell('Ta', 'Se');
+        const [lo, hi] = shell.window;
+        const read = (window, given = null) => windowCut(catalogue.window('Ta', 'Se', window), given);
+        // The whole shell: not cut, even with counts that spread (a shell
+        // running into the next) — the counts no longer decide here.
+        expect(read([lo, hi], counts(0.4))).toEqual({ cut: false, by: null, rule: 'cn-margin', whole: true });
+        // The first peak alone (3 of 6): cut, even with uniform counts (a
+        // sub-shell every centre has whole); and without counts (the Workbench).
+        expect(read(shell.firstPeak.window, counts(0.95))).toEqual({ cut: true, by: 'cn-margin', rule: 'cn-margin', whole: false });
+        expect(read(shell.firstPeak.window)).toEqual({ cut: true, by: 'cn-margin', rule: 'cn-margin', whole: false });
+        // The top 0.2 Å early, within the margin: not cut, and its count is the shell's.
+        expect(shell.cut.earlier.changesCn).toBe(false);
+        expect(read(shell.cut.earlier.window, counts(0.4))).toEqual({ cut: false, by: null, rule: 'cn-margin', whole: true });
+        // Beyond the shell by more than the margin (g = 1 from 5.5 Å on: the
+        // next atoms too): not cut, and not the shell's count.
+        const wide = [lo, 6.5];
+        expect(catalogue.window('Ta', 'Se', wide).cn - shell.cn).toBeGreaterThan(Math.max(CN_CHANGE_ABS, CN_CHANGE_REL * shell.cn));
+        expect(read(wide, counts(0.95))).toEqual({ cut: false, by: null, rule: 'cn-margin', whole: false });
+    });
+
+    it('windowCut: with no shell to compare, the counts decide (the fallback); a window apart from the shell never holds it', () => {
+        const catalogue = catalogueOf(shellSeries('Ta-Se', [[2.52, 0.06, 3], [2.74, 0.1, 3]], RHO));
+        const [, hi] = catalogue.shell('Ta', 'Se').window;
+        // Apart from the first shell (the module reads first shells only).
+        const apart = catalogue.window('Ta', 'Se', [hi + 0.5, hi + 1]);
+        expect(apart.holds).toBe('apart');
+        expect(windowCut(apart, counts(0.4))).toEqual({ cut: true, by: 'count-spread', rule: 'counts', whole: false });
+        expect(windowCut(apart, counts(0.3, 0.7))).toEqual({ cut: true, by: 'unbonded', rule: 'counts', whole: false });
+        expect(windowCut(apart, counts(0.95))).toEqual({ cut: false, by: null, rule: 'counts', whole: false });
+        // No closed shell for the pair, or no partials: as before, the counts' verdict is the whole story.
+        expect(windowCut(null, counts(0.47))).toEqual({ cut: true, by: 'count-spread', rule: 'counts', whole: false });
+        expect(windowCut(null, counts(0.95))).toEqual({ cut: false, by: null, rule: 'counts', whole: true });
+        // No density, so no CN to compare: the counts.
+        const noDensity = catalogueOf(shellSeries('Ta-Se', [[2.52, 0.06, 3], [2.74, 0.1, 3]], RHO), { structure: null });
+        const reading = noDensity.window('Ta', 'Se', noDensity.shell('Ta', 'Se').firstPeak.window);
+        expect(reading.cn).toBeNull();
+        expect(windowCut(reading, counts(0.95))).toEqual({ cut: false, by: null, rule: 'counts', whole: true });
+        // Nothing to decide with (the Workbench, before a call): not cut.
+        expect(windowCut(apart)).toEqual({ cut: false, by: null, rule: null, whole: false });
+        expect(windowCut(null)).toEqual({ cut: false, by: null, rule: null, whole: false });
     });
 });
 

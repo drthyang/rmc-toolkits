@@ -7,7 +7,7 @@
     "r12_min": 2.21,
     "r12_max": 3.23
   },
-  "content_chars": 1304,
+  "content_chars": 1501,
   "content": {
     "ref": "r1",
     "checks": [
@@ -53,7 +53,17 @@
       "coordination": {
         "note": "counts[n] = central atoms with exactly n A–B bonds in the window",
         "counts": [0, 0, 0, 0, 0, 68, 15932],
-        "mean": 6
+        "mean": 6,
+        "modal": 6,
+        "modal_share": 1,
+        "unbonded_share": 0
+      },
+      "shell_ab": {
+        "note": "the first Ta–Se shell (find_gr_peaks); cn, cn_in_window: Se per Ta",
+        "window_A": [2.21, 3.23],
+        "cn": 6,
+        "cn_in_window": 6,
+        "holds": "whole"
       },
       "polyhedron": {
         "ideal": "octahedron: 80 % cis at 90°, 20 % trans at 180°",

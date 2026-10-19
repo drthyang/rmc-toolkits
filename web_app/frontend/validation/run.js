@@ -11,9 +11,11 @@
 //   npx vite-node validation/run.js -- findings <file.jsonl | folder of .json records>
 //   npx vite-node validation/run.js -- shell-cuts [--out <file.json>]
 //
-// `shell-cuts` (dev cases and the Demo only, no model): the two readings of a
-// window that cuts a coordination shell side by side on every natural window
-// (shellCuts.js), the evidence for the cut-rule recommendation of candidate #6.
+// `shell-cuts` (dev cases and the Demo only, no model): the one cut rule on
+// every natural window (shellCuts.js) — the Workbench's question and
+// compute_bond_angles' refusal, which must agree, beside the counts rule the
+// tool refused on before 2026-10-19 (the evidence for the switch, approved by
+// the user that day: findings/decisions/2026-10-19-shell-cut-rule.json).
 //
 // The held-out test set: `--split test` also needs `--final` and a clean git
 // tree (its commit is recorded in every record), so its numbers always come
@@ -309,7 +311,7 @@ const commands = {
         if (results.some((result) => !result.ok)) process.exitCode = 1;
     },
 
-    // Both cut readings on the dev cases' natural windows and the Demo's
+    // The cut rule on the dev cases' natural windows and the Demo's
     // (shellCuts.js), with the Demo's historical Ta–Se windows beside them.
     // Development evidence only: the held-out test set is never read.
     'shell-cuts': async (args) => {
@@ -317,13 +319,13 @@ const commands = {
         const rows = [];
         for (const item of casesOf('dev')) {
             const run = await loadRun(buildCase(item), { ladder: false });
-            rows.push(...await shellCutRows({ name: item.id, props: run.props, engine: run.engine }));
+            rows.push(...await shellCutRows({ name: item.id, props: run.props, engine: run.engine, tools: run.tools }));
         }
         const demoDir = join(REPO, 'web_app/frontend/public/demo');
         const demo = await openRunFolder(readdirSync(demoDir).sort().map((name) => ({
             path: `Demo/${name}`, file: new File([readFileSync(join(demoDir, name))], name, { lastModified: 0 })
         })), { ladder: false });
-        rows.push(...await shellCutRows({ name: 'demo', props: demo.props, engine: demo.engine }, {
+        rows.push(...await shellCutRows({ name: 'demo', props: demo.props, engine: demo.engine, tools: demo.tools }, {
             extraWindows: {
                 'Ta|Se': [
                     ['spot check, 2026-10-10', [2.3, 2.7]],

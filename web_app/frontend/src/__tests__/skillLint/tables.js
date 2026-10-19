@@ -29,7 +29,7 @@ import { buildRunTools } from '../../llm/copilot/runTools';
 import { toolResult } from '../../llm/copilot/tools';
 import { createVerification } from '../../llm/copilot/verification';
 import { buildRunContext, lowerGroupTolerance, NOISE_FLOOR_MARGIN } from '../../llm/context/runContext';
-import { CLUSTER_CN_MAX, clusterElementsOf, MODAL_COORDINATION_SHARE, UNBONDED_APEX_FRACTION } from '../../llm/context/shells';
+import { CLUSTER_CN_MAX, CN_CHANGE_ABS, CN_CHANGE_REL, clusterElementsOf, cnMarginCut } from '../../llm/context/shells';
 import { SWEEP_RULES } from '../../../validation/armA';
 import {
     AXIS_CONE_DEG, AXIS_ENHANCEMENT, CLUSTER_EFFECT, CLUSTER_Z, SPLIT_SITE_KURTOSIS, SPLIT_SITE_SE, TRIGONALITY_EFFECT, isSplitSite
@@ -49,8 +49,16 @@ const RUN_NUMBERS = 'rmc-fit-assessment/run-numbers.md';
 const constant = (name, value, module) => ({ name, value, module });
 const SIGMA = constant('SIGNIFICANCE_SIGMA', SIGNIFICANCE_SIGMA, 'copilotTools.js');
 const ASYMMETRY_SIGMA = constant('ASYMMETRY_FLAG_SIGMA', ASYMMETRY_FLAG_SIGMA, 'workers/orientation.js');
-// compute_bond_angles' counts rule lives in the shell module (countsCut), pinned as it was.
-const MODAL_SHARE = constant('MODAL_COORDINATION_SHARE', MODAL_COORDINATION_SHARE, 'llm/context/shells.js, countsCut');
+// compute_bond_angles' cut rule: the CN margin, the Workbench's (shells.js
+// windowCut → cnMarginCut; approved by the user, 2026-10-19), bound by its
+// relative part, the one a percentage states. The counts (countsCut) decide
+// only where the run reads no shell to compare a window with, so the skill's
+// counts thresholds no longer state the app's gate.
+const CN_MARGIN = constant('CN_CHANGE_REL', CN_CHANGE_REL, 'llm/context/shells.js, cnMarginCut via windowCut');
+const CN_MARGIN_STATISTIC = {
+    pattern: /\bCN\b|coordination number|partner atoms/,
+    says: 'the window\'s CN against the whole shell\'s (fewer by at least max(0.5, 15 % of its CN))'
+};
 
 // --- probes: the code applies a constant, or enforces a firm rule, as stated ----------
 
@@ -73,6 +81,13 @@ const bondAnglePayload = (coordination) => ({
     meanAngle: 100, stdAngle: 20, binCenters: [45, 90, 135, 180], counts: [100, 600, 200, 100], lengths12: null
 });
 const refused = (result) => typeof result.data.refused === 'string' && !('mean_deg' in result.data);
+// A bond window's reading against its first shell (a 6-atom shell at
+// 2.2–3.2 Å by default), as the shell catalogue's window() gives it, with the
+// CN-margin verdict from the shell module itself.
+const shellReading = (cn, shellCn = 6) => {
+    const shell = { window: [2.2, 3.2], cn: shellCn };
+    return { cn, holds: 'part', cnMargin: { cut: cnMarginCut(cn, shell, [2.3, 2.7]) }, shell };
+};
 
 // The answer judged by the verification (llm/copilot/verification/): the
 // tools' `facts` recorded as steps, the run `context` given, no claim offered
@@ -229,7 +244,8 @@ export const BINDINGS = [
         before: 12,
         number: /The (?<n>\d+(?:\.\d+)?) % modal-coordination/,
         unit: '%',
-        constants: [MODAL_SHARE]
+        constants: [CN_MARGIN],
+        statistic: CN_MARGIN_STATISTIC
     },
     {
         file: SHELLS,
@@ -238,11 +254,19 @@ export const BINDINGS = [
         before: 24,
         number: /fewer than (?<n>\d+(?:\.\d+)?) % of the central atoms/,
         unit: '%',
-        constants: [MODAL_SHARE],
+        constants: [CN_MARGIN],
+        statistic: CN_MARGIN_STATISTIC,
         verify: () => {
-            // 59 of 100 central atoms share the modal count: refused; 61: kept.
-            assert.ok(refused(summarizeBondAngles(bondAnglePayload([0, 0, 0, 0, 41, 0, 59]))), 'a 59 % modal share was not refused');
-            assert.ok(!refused(summarizeBondAngles(bondAnglePayload([0, 0, 0, 0, 39, 0, 61]))), 'a 61 % modal share was refused');
+            // A window that meets its shell is refused at the CN margin, whatever
+            // its counts: 15 % of a 6-atom shell is 0.9 atoms.
+            const margin = Math.max(CN_CHANGE_ABS, CN_CHANGE_REL * 6);
+            const uniform = bondAnglePayload([0, 0, 0, 0, 0, 100]);
+            const spread = bondAnglePayload([0, 0, 0, 0, 41, 0, 59]);
+            assert.ok(refused(summarizeBondAngles(uniform, { shells: [shellReading(6 - margin - 0.01)] })), 'a window 0.91 atoms short of a 6-atom shell was not refused');
+            assert.ok(!refused(summarizeBondAngles(spread, { shells: [shellReading(6 - margin + 0.01)] })), 'a window 0.89 atoms short of a 6-atom shell was refused on its counts');
+            // Its absolute part: half an atom of a 2-atom shell.
+            assert.ok(refused(summarizeBondAngles(uniform, { shells: [shellReading(2 - CN_CHANGE_ABS - 0.01, 2)] })), 'a window 0.51 atoms short of a 2-atom shell was not refused');
+            assert.ok(!refused(summarizeBondAngles(uniform, { shells: [shellReading(2 - CN_CHANGE_ABS + 0.01, 2)] })), 'a window 0.49 atoms short of a 2-atom shell was refused');
         }
     },
     {
@@ -250,10 +274,11 @@ export const BINDINGS = [
         gate: 'a window that misses the shell (firm rule)',
         find: 'or most have none',
         number: /or (?<n>most) have none/,
-        constants: [constant('UNBONDED_APEX_FRACTION', UNBONDED_APEX_FRACTION, 'llm/context/shells.js, countsCut')],
+        constants: [CN_MARGIN],
+        statistic: CN_MARGIN_STATISTIC,
         verify: () => {
-            // "Most" is more than half: 51 of 100 central atoms with no bond → refused.
-            assert.ok(refused(summarizeBondAngles(bondAnglePayload([51, 0, 49]))), 'a window that misses 51 % was not refused');
+            // A window that misses most of its shell holds fewer atoms than it by the margin: refused.
+            assert.ok(refused(summarizeBondAngles(bondAnglePayload([40, 0, 60]), { shells: [shellReading(1.2)] })), 'a window holding 1.2 of 6 was not refused');
         }
     }
 ];
@@ -288,16 +313,26 @@ export const FIRM_RULES = [
     {
         file: SHELLS,
         find: '`compute_bond_angles` refuses a window in which fewer than',
-        enforcedBy: 'compute_bond_angles\' refusal (summarizeBondAngles) and its window_confirmed parameter',
-        probe: ({ tools } = {}) => {
-            const cut = bondAnglePayload([0, 2, 30, 40, 20, 8, 0]);
-            const result = summarizeBondAngles(cut);
-            assert.ok(refused(result), 'a window with a 40 % modal share returned its angles');
-            assert.deepEqual(result.data.coordination.counts, cut.coordination, 'the refusal does not return the counts that show the cut');
+        enforcedBy: 'compute_bond_angles\' refusal (summarizeBondAngles, by the one cut rule: shells.js windowCut, the Workbench\'s) and its window_confirmed parameter',
+        probe: async ({ tools, bondAngles } = {}) => {
+            // A window that cuts its shell (4 of 6), its counts uniform: refused,
+            // with the counts and the shell reading that show the cut.
+            const cut = bondAnglePayload([0, 0, 0, 0, 100]);
+            const result = summarizeBondAngles(cut, { shells: [shellReading(4)] });
+            assert.ok(refused(result), 'a window holding 4 of 6 returned its angles');
+            assert.deepEqual(result.data.coordination.counts, cut.coordination, 'the refusal does not return the counts');
+            assert.equal(result.data.shell_ab?.cn_in_window, 4, 'the refusal does not return the shell reading that shows the cut');
             assert.ok(result.checks.some((check) => check.level === 'fail' && /window_confirmed/.test(check.text)));
-            assert.ok(!refused(summarizeBondAngles(cut, { windowConfirmed: true })), 'window_confirmed did not keep the user\'s window');
+            assert.ok(!refused(summarizeBondAngles(cut, { shells: [shellReading(4)], windowConfirmed: true })), 'window_confirmed did not keep the user\'s window');
+            // With no shell to compare, the counts refuse (the fallback).
+            assert.ok(refused(summarizeBondAngles(bondAnglePayload([0, 2, 30, 40, 20, 8, 0]))), 'with no shell, a 40 % modal share returned its angles');
             const tool = tools?.get('compute_bond_angles');
             if (tools) assert.ok(tool?.parameters?.properties?.window_confirmed, 'compute_bond_angles has no window_confirmed parameter');
+            // On the Demo, as the app runs it: the Ta–Se first peak (3.25 of 6) is refused.
+            if (bondAngles) {
+                const firstPeak = await bondAngles({ end1: 'Se', apex: 'Ta', end2: 'Se', r12_min: 2.21, r12_max: 2.65 });
+                assert.equal(typeof firstPeak.refused, 'string', 'the Demo\'s Ta–Se first peak returned its angles');
+            }
         }
     },
     {
@@ -541,16 +576,16 @@ export const VALUES = [
         before: 12,
         number: /only (?<n>\d+) % of the Ta atoms/,
         unit: '%',
-        tool: 'the bond-angle engine\'s coordinationSummary.modalShare (Se–Ta–Se, 2.3–2.7 Å; compute_bond_angles\' refusal quotes it)',
-        measure: async (ctx) => (await ctx.triplets({ end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: 2.3, r12Max: 2.7 })).coordinationSummary.modalShare
+        tool: 'compute_bond_angles coordination.modal_share (Se–Ta–Se, 2.3–2.7 Å: the engine\'s coordinationSummary, kept as information)',
+        measure: async (ctx) => (await ctx.bondAngles({ ...SE_TA_SE, r12_min: 2.3, r12_max: 2.7 })).coordination.modal_share
     },
     {
         file: SHELL_TABLE,
         what: 'the modal Se count in the 2.3–2.7 Å window',
         find: 'share the most common Se count',
         number: /most common Se count \((?<n>\d+)\)/,
-        tool: 'the bond-angle engine\'s coordinationSummary.modal (Se–Ta–Se, 2.3–2.7 Å)',
-        measure: async (ctx) => (await ctx.triplets({ end1: 'Se', apex: 'Ta', end2: 'Se', r12Min: 2.3, r12Max: 2.7 })).coordinationSummary.modal
+        tool: 'compute_bond_angles coordination.modal (Se–Ta–Se, 2.3–2.7 Å)',
+        measure: async (ctx) => (await ctx.bondAngles({ ...SE_TA_SE, r12_min: 2.3, r12_max: 2.7 })).coordination.modal
     },
     {
         file: RUN_NUMBERS,
@@ -663,8 +698,9 @@ export const RULES = [
 // Today's violations (docs/AGENT_PLAN.md section E). `fragment` (≤ 60
 // characters) is skill text at the violation; an entry that no finding needs
 // fails the test, so a fix removes its entry. Phase 5's items 5.2–5.4 empty it.
-// A value entry also names the skill's line, its value and the tool's: the
-// test fails when any of the three moves.
+// A value entry also names the skill's line, its value and the tool's, and a
+// gate entry may (the skill's number as written, the constant the app decides
+// with): the test fails when any of the three moves.
 const FIRST_PEAK_WHY = 'the first-peak window moved from r ± FWHM, which reached into the second Ta–Se peak, to the inter-peak minimum '
     + '(shells.js; approved by the manager on the user\'s delegation, 2026-10-19: validation/findings/decisions/2026-10-19-shell-catalogue.json). '
     + 'The skill text is the user\'s and is not edited: awaiting the user\'s skill review, a precondition for the freeze';
@@ -672,7 +708,39 @@ const FIRST_PEAK_WHY = 'the first-peak window moved from r ± FWHM, which reache
 const APP_RULES_WHY = 'arm A+ reads the app\'s rule since candidate 8 (approved by the manager on the user\'s delegation, 2026-10-19: '
     + 'validation/findings/decisions/2026-10-19-aplus-app-rules.json), so the skill, the app and A+ must say one rule. The skill text is the '
     + 'user\'s and is not edited: awaiting the user\'s skill review (plan 5.3)';
+// The one cut rule: the skill still states the counts rule the tool refused on before.
+const CUT_RULE_WHY = 'compute_bond_angles refuses a window that meets its shell on the CN margin, the Workbench\'s rule (fewer partner atoms '
+    + 'than the whole shell by at least max(0.5, 15 % of its CN): shells.js windowCut; approved by the user, 2026-10-19: '
+    + 'validation/findings/decisions/2026-10-19-shell-cut-rule.json); the counts decide only where the run reads no shell to compare. '
+    + 'The skill text is the user\'s and is not edited: awaits the skill fact-sync PR';
 export const ALLOW_LIST = [
+    {
+        check: 'gate',
+        file: SHELLS,
+        fragment: 'The 60 % modal-coordination',
+        line: 61,
+        skill: '60 %',
+        tool: 'CN_CHANGE_REL = 0.15',
+        why: `the judgment call on the threshold the app calls a window cut by: ${CUT_RULE_WHY}`
+    },
+    {
+        check: 'gate',
+        file: SHELLS,
+        fragment: 'fewer than 60 % of the central atoms',
+        line: 78,
+        skill: '60 %',
+        tool: 'CN_CHANGE_REL = 0.15',
+        why: `the firm rule's modal-share clause: ${CUT_RULE_WHY}`
+    },
+    {
+        check: 'gate',
+        file: SHELLS,
+        fragment: 'or most have none',
+        line: 79,
+        skill: 'most',
+        tool: 'CN_CHANGE_REL = 0.15',
+        why: `the firm rule's unbonded clause: ${CUT_RULE_WHY}`
+    },
     {
         check: 'value',
         file: SHELLS,

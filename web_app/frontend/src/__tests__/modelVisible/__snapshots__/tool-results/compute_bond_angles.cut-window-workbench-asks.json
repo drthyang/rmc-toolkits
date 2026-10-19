@@ -9,7 +9,7 @@
   },
   "workbench_asked": ["The window 2.3–2.7 Å cuts the first Ta–Se shell: it holds 3.8 Se per Ta of the shell's 6. Which window?"],
   "user_reply": "skipped",
-  "content_chars": 1441,
+  "content_chars": 1638,
   "content": {
     "ref": "r1",
     "note": "the Workbench asked the user about the window: the user skipped, so the default stands: run in 2.21–3.23 Å (Whole first shell).",
@@ -56,7 +56,17 @@
       "coordination": {
         "note": "counts[n] = central atoms with exactly n A–B bonds in the window",
         "counts": [0, 0, 0, 0, 0, 68, 15932],
-        "mean": 6
+        "mean": 6,
+        "modal": 6,
+        "modal_share": 1,
+        "unbonded_share": 0
+      },
+      "shell_ab": {
+        "note": "the first Ta–Se shell (find_gr_peaks); cn, cn_in_window: Se per Ta",
+        "window_A": [2.21, 3.23],
+        "cn": 6,
+        "cn_in_window": 6,
+        "holds": "whole"
       },
       "polyhedron": {
         "ideal": "octahedron: 80 % cis at 90°, 20 % trans at 180°",

@@ -68,7 +68,7 @@
     "type": "function",
     "function": {
       "name": "analyze_displacement_directions",
-      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w]) with its calibrated significance, the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
+      "description": "Histogram the displacement directions of one site (site_ref, from list_sites) or of every atom of one element (element; \"all\" pools every atom) on the sphere, and test them: the peak direction (Cartesian and crystal [u v w], ± its cell's radius) with its calibrated significance, the whole-map test against isotropy, the +u/−u asymmetry, and the orientation-tensor anisotropy.",
       "parameters": {
         "type": "object",
         "properties": {
