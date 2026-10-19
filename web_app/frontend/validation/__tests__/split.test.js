@@ -332,7 +332,9 @@ describe('where a finding stands, and validation batch 1', () => {
     };
 
     it('decision records: one JSON file per record, read in id order, each validated by the findings schema', () => {
-        expect(Object.keys(decisions())).toEqual(['2026-10-19-engine-verdicts', '2026-10-19-list-sites-split', '2026-10-19-test-breathing-recomposed']);
+        expect(Object.keys(decisions())).toEqual([
+            '2026-10-19-engine-verdicts', '2026-10-19-judgment-dev-cases', '2026-10-19-list-sites-split', '2026-10-19-test-breathing-recomposed'
+        ]);
         expect(existsSync(join(FRONTEND, 'validation/findings/decisions.jsonl'))).toBe(false);
         const record = readFileSync(join(DECISIONS, '2026-10-19-test-breathing-recomposed.json'), 'utf8');
         const read = parseFindingFiles([
@@ -362,6 +364,19 @@ describe('where a finding stands, and validation batch 1', () => {
         // Every test it names exists, by its title as written in the source.
         expect(verdicts.tests.length).toBeGreaterThan(0);
         verdicts.tests.forEach((test) => {
+            const [path, title] = test.split(' › ');
+            expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
+        });
+    });
+
+    it('decisions: the judgment dev subset (plan 1.6 ii), approved on the user\'s delegation, implemented with its tests', () => {
+        const judgment = decisions()['2026-10-19-judgment-dev-cases'];
+        expect(judgment).toMatchObject({ case: 'dev-jt-off-centre', kind: 'bug' });
+        expect(DEV_CASES.find((item) => item.id === judgment.case)?.judgment).toBe(true);
+        delegated(judgment);
+        // Every test it names exists, by its title as written in the source.
+        expect(judgment.tests.length).toBeGreaterThan(0);
+        judgment.tests.forEach((test) => {
             const [path, title] = test.split(' › ');
             expect(readFileSync(join(REPO, path), 'utf8').replace(/\\'/g, '\''), test).toContain(`'${title}'`);
         });
