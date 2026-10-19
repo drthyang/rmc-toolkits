@@ -124,7 +124,11 @@ inputs on its page, stays the *user's* action.
      term, and "quote the numbers, don't guess".
    - `COPILOT_PROMPT` adds how to work with tools: say why before each call, read the `checks`,
      change the arguments on a `fail`, never repeat an identical call. It also asks for the verdict
-     line. `copilotSystemPrompt()` adds `ASK_RULES` when `ask_user` is offered.
+     line. `copilotSystemPrompt()` adds `ASK_RULES` when `ask_user` is offered. `TOOL_RULES` and
+     `ASK_RULES` are lists of sentences with their method sentences marked
+     (`TOOL_RULE_SENTENCES`, `ASK_RULE_SENTENCES`, `METHOD_SENTENCES`): with the turn's method
+     `'off'` (*The turn*) they are sent without them, and `EVIDENCE_RULES` and the skills' index
+     are not sent.
    - `buildCopilotMessages()` puts the context, inside a fenced JSON block, ahead of the
      conversation. Earlier turns travel as question + final answer only (the newest
      `HISTORY_MESSAGES` = 8 messages: 4 exchanges); the turn module turns its history into them.
@@ -270,11 +274,21 @@ describeTurn(spec) → { offered: { tools, skills, askUser, view }, prompt: 'too
 
 - **What it builds.** The run context and the context as the model reads it (`shown`: trimmed to
   its budget); the tools offered (the caller's, then `ask_user` with an ask-user port and tools on,
-  then `read_skill` with skills, tools on and method `'full'`); the system prompt for them; the
+  then `read_skill` with skills, tools on and method `'full'`), each as the model reads it under the
+  method; the system prompt for them; the
   history window (an unanswered question is dropped, each answer compacted to
   `MEMORY_ANSWER_CHARS` = 2,000 characters, the newest `HISTORY_MESSAGES` = 8 messages kept); the
   Workbench's questions (`clarify.js`), the evidence gate, the context facts the answer checks read,
   and the context `{{ctx.…}}` references read.
+- **The method** (`config.method`, `copilot/method.js`, `TURN_METHODS`): `'full'` (the default:
+  the dock, the validation's arm B) sends the skills and the method in the prompt, the tool
+  descriptions and the checks, byte for byte as before the switch; `'off'` (the validation's arm C,
+  plan item 1.8) sends none of the method. One pure function, `planTurn`, decides from it: no
+  `read_skill` and no skills' index; no `EVIDENCE_RULES` and no method sentence of `TOOL_RULES` or
+  `ASK_RULES`; each tool offered through `toolAsSent` — its description without its `method`
+  advice, and each check of its results without the advice it lists (*The tool contract*). The
+  tools, their refusals, the Workbench's questions, the evidence gate and the answer checks run
+  under both. `start.method` says which one a turn followed.
 - **Tools are active** exactly when `config.toolsEnabled` holds and at least one tool is offered;
   inactive, the request carries no tools and the prompt is the no-tools one. The memory of models
   that refused tools stays with the caller (the dock passes `toolsEnabled: false` for them).
@@ -361,8 +375,8 @@ the spend cap is refused in `prepare`, after the guard's plan, so it is never se
 **What stays in the adapters.** The dock: React state, Stop, the question card (its ask-user port),
 the card-focus effects (it maps events to focus), the unsupported-model memory, the `runKey`
 reset and the `configKey` history window. The harness: the case's run (the run module), its compute-only tools, the simulated user,
-the arm's skills, its port, and the record (every request as sent, the steps, the score; number
-provenance against `start.shown`).
+the arm's skills and method (arm C: `'off'`), its port, and the record (every request as sent, the
+steps, the score; number provenance against `start.shown`; the method).
 
 ## Asking the user (`ask_user`)
 
@@ -679,7 +693,8 @@ tool with either name is refused, and the dock says so in its error line.
 ```js
 {
   name: 'compute_bond_angles',           // /^[a-z][a-z0-9_]{0,63}$/, unique
-  description: '…',                      // what it computes and when to use it, for the model
+  description: '…',                      // what it computes and returns, for the model
+  method: 'Use the whole first …',       // its method advice, apart (optional; below)
   parameters: { type: 'object', properties: {…}, required: [...] },
   dataShape: { triplet: 'string', 'mean_deg?': 'number|null', … },   // the shape of `data` (below)
   label: (args) => 'Bond angles Se–Ta–Se',   // step-card title (optional)
@@ -700,6 +715,23 @@ tool with either name is refused, and the dock says so in its error line.
   important rows first: budget trimming halves arrays from the end.
 - `checks` is a list of `{ level: 'ok' | 'note' | 'warn' | 'fail', text }`, computed from the
   full result. `fail` means "this does not answer as asked".
+- **Method advice** (`copilot/method.js`): text that tells the model which analysis answers which
+  question, where to take a parameter from, which window is right or what to run next — what the
+  skills teach. The turn's method `'off'` (the validation's arm C) sends none of it, so it is kept
+  apart from what a tool does:
+  - a spec's `method` holds the advice split out of its `description`, which keeps what the tool
+    does and returns. A string is sent after the description and a space with method `'full'`; a
+    list of parts puts each back in order, a string after the description and a space, `{ after,
+    text }` right after the one place `after` appears in the description (advice inside a
+    sentence). With `'full'` the description goes out byte for byte as it was before the advice was
+    split out; with `'off'` alone. A part whose `after` is not found exactly once is a TypeError at
+    the turn's first `next()`;
+  - a check built with `methodCheck(level, ...parts)` (parts: strings and `{ method: '…' }`) has the
+    whole text in `text`, as the dock reads it and as the step cards, the record and arm A+ read it,
+    and lists its advice in `method`; with `'off'` the turn sends `text` without it (`checkText`). A
+    refusal still refuses. In this repository: `compute_bond_angles`' cut-window refusal and
+    no-angles failure, the pooled-directions note, `analyze_clusters`' window failures and split-site
+    note, `find_gr_peaks`' split-shell notes.
 - `signal` aborts on Stop or timeout. Stop the work if you can.
 - `focus` is the dock's card-focus controller, for view tools: `await focus.show(ids, { marks })`,
   `focus.onClear(undo)` (runs when the highlight ends), `focus.state()`.
@@ -946,8 +978,13 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
 - **The turn** (`turn.test.js`, at its interface: a scripted model port, a fake ask-user and a fake
   clock): the order of the events and the single terminal event, why each request was made, the
   tools offered and the prompt for them (the tools-on rule, the reserved names, "when to ask"), the
+  method (`'full'`: each description with its advice; `'off'`: no skills, no `EVIDENCE_RULES`, no
+  method sentence, descriptions and checks without their advice, a check whose advice is not in its
+  text failing its call), the
   history window (the dock's turns as history, compaction), the warmer retry at 0.6 or more through
   `providerModel` (and the API key never in a request event), `stopped` and `failed`, invalid input.
+  `method.test.js`: a description with its advice put back or left out, a check's text with or
+  without its advice, a tool as the turn offers it.
   `src/__tests__/modelVisible/turnRequests.test.js`: the turn's first request for a dock-shaped and
   a harness-shaped spec equals the snapshot files (it needs the host's run module, so it sits
   beside them: this folder imports nothing from the host).
@@ -1025,8 +1062,10 @@ To extract: copy `src/llm/`, give your app grid a column and a row for the dock,
   keys, sends the option picked by its number key back to the model, which computes in that window;
   *Other…*; Stop while waiting; a run change drops the question; a collapsed dock marks the rail.
 - **What the model sees** (`src/__tests__/modelVisible/`): snapshot files of every system-prompt
-  variant, the dock's and the validation harness's first request and tool list (both through the
-  turn module), and one tool message per tool on the Demo. A diff there is a change to what the
+  variant (with method `'off'` too), the dock's and the validation harness's first request and tool
+  list (both through the turn module; arms B and C, arm C's request checked for every skill name,
+  skill step, method sentence and piece of tool advice), and one tool message per tool on the Demo
+  (and the two whose checks carry advice, as arm C reads them). A diff there is a change to what the
   model sees: call it out in the PR
   ([copilot-validation.md](../../../../docs/algorithms/copilot-validation.md#what-the-model-sees-snapshot-tests)).
 - **The shape of each tool's data:** the notation and its checker (`dataShape.test.js`), and every

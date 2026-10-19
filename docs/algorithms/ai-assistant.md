@@ -963,10 +963,16 @@ characters triggers every trim step in order, but no test asserts the budget is 
 
 1. `system`: `copilotSystemPrompt()` — the fixed `SYSTEM_PROMPT` from
    [`llm/prompts/system.js`](../../web_app/frontend/src/llm/prompts/system.js), then `TOOL_RULES`,
+   `REFERENCE_RULES`, `EVIDENCE_RULES`,
    `ASK_RULES` (when `ask_user` is offered), the skills index (when `read_skill` is: each skill's name
    and description), `VIEW_RULES` (with the view tools; else the compute-only sentence) and the
    `OUTCOME_RULE` (Step 17). Without tools it is `COPILOT_PROMPT_NO_TOOLS` (`SYSTEM_PROMPT` and the
    Outcome rule). There is no run data in it, but it carries hard numeric interpretation rules (below).
+   With the turn's method `'off'` (the validation's arm C, plan item 1.8;
+   [`llm/copilot/method.js`](../../web_app/frontend/src/llm/copilot/method.js)) it holds no
+   `EVIDENCE_RULES` and no skills index, and `TOOL_RULES` and `ASK_RULES` lose their method sentences
+   (`METHOD_SENTENCES`); the tools' descriptions and checks lose their method advice
+   ([copilot-validation.md](copilot-validation.md#arm-c-the-copilot-without-the-method)).
 2. `user` — `"Context for this RMC modeling run:"` followed by ```` ```json … ``` ```` containing
    `contextToJson(context)`. The fence exists so the model can distinguish data from instructions.
 3. `assistant` — a fixed one-line acknowledgement.
